@@ -91,6 +91,15 @@ type Session struct {
 // NewSession starts an empty conversation.
 func (a *Agent) NewSession() *Session { return &Session{a: a} }
 
+// Resume starts a session pre-seeded with prior messages (e.g. an imported or
+// saved transcript), so the next Send continues that conversation.
+func (a *Agent) Resume(msgs []llm.Message) *Session {
+	return &Session{a: a, msgs: msgs}
+}
+
+// Messages returns the conversation so far (for saving / live-replace handoff).
+func (s *Session) Messages() []llm.Message { return s.msgs }
+
 // Run executes a single task to completion (a one-shot Session.Send).
 func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 	if a.Provider == nil {

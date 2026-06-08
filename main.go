@@ -22,6 +22,7 @@ import (
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/tool"
+	"github.com/avifenesh/eigen/internal/transcript"
 	"github.com/avifenesh/eigen/internal/tui"
 	"github.com/mattn/go-isatty"
 )
@@ -40,6 +41,8 @@ func main() {
 	perm := flag.String("perm", envOr("EIGEN_PERMISSION", "gated"), "permission posture: gated|auto")
 	printMode := flag.Bool("p", false, "print mode: run one task headless (no TUI) and exit")
 	flag.BoolVar(printMode, "print", false, "alias for -p")
+	resumeFile := flag.String("resume", "", "resume a conversation from a transcript file (eigen/claude/codex/pi/hermes; auto-detected by path)")
+	from := flag.String("from", "", "force the transcript source for --resume (claude|codex|pi|hermes|eigen)")
 	flag.Parse()
 
 	switch agent.Permission(*perm) {
@@ -75,10 +78,24 @@ func main() {
 		Perm:     agent.Permission(*perm),
 	}
 
+	// Optionally resume a prior conversation from any supported transcript.
+	var history []llm.Message
+	if *resumeFile != "" {
+		var herr error
+		if *from != "" {
+			history, herr = transcript.ImportFrom(transcript.Source(*from), *resumeFile)
+		} else {
+			history, herr = transcript.Import(*resumeFile)
+		}
+		if herr != nil {
+			fail(fmt.Errorf("resume: %w", herr))
+		}
+	}
+
 	// Interactive terminal with no -p → the full-screen REPL (the default UX).
 	interactive := isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd())
 	if !*printMode && interactive {
-		if err := tui.Run(a, task); err != nil {
+		if err := tui.Run(a, task, history); err != nil {
 			fail(err)
 		}
 		return
@@ -108,8 +125,18 @@ func main() {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "eigen · %s · perm=%s\n", prov.Name(), *perm)
-	out, err := a.Run(context.Background(), task)
+	fmt.Fprintf(os.Stderr, "eigen · %s · perm=%s", prov.Name(), *perm)
+	if len(history) > 0 {
+		fmt.Fprintf(os.Stderr, " · resumed %d msgs", len(history))
+	}
+	fmt.Fprintln(os.Stderr)
+
+	var out string
+	if len(history) > 0 {
+		out, err = a.Resume(history).Send(context.Background(), task)
+	} else {
+		out, err = a.Run(context.Background(), task)
+	}
 	if err != nil {
 		fail(err)
 	}

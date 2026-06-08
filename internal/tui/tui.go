@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/avifenesh/eigen/internal/agent"
+	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -211,8 +212,9 @@ func (m *model) View() string {
 }
 
 // Run drives the agent under a multi-turn Bubble Tea REPL. If initialTask is
-// non-empty it is submitted automatically as the first turn.
-func Run(a *agent.Agent, initialTask string) error {
+// non-empty it is submitted automatically as the first turn. If history is
+// non-empty the session resumes that conversation.
+func Run(a *agent.Agent, initialTask string, history []llm.Message) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -224,13 +226,22 @@ func Run(a *agent.Agent, initialTask string) error {
 	ti.Prompt = "› "
 	ti.Focus()
 
+	session := a.NewSession()
+	if len(history) > 0 {
+		session = a.Resume(history)
+	}
+
 	m := &model{
 		sp:          sp,
 		ti:          ti,
-		session:     a.NewSession(),
+		session:     session,
 		ctx:         ctx,
 		state:       stInput,
 		initialTask: initialTask,
+	}
+	if len(history) > 0 {
+		renderHistory(m, history)
+		m.append(styleStatus.Render(fmt.Sprintf("— resumed %d messages —", len(history))) + "\n")
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -264,4 +275,24 @@ func firstLine(s string) string {
 		s = s[:i]
 	}
 	return compact(s)
+}
+
+// renderHistory pre-fills the transcript with a compact view of resumed
+// messages so the user sees the conversation being continued.
+func renderHistory(m *model, history []llm.Message) {
+	for _, msg := range history {
+		switch msg.Role {
+		case llm.RoleUser:
+			if msg.Text != "" {
+				m.append(styleUser.Render("» "+compact(msg.Text)) + "\n")
+			}
+		case llm.RoleAssistant:
+			if msg.Text != "" {
+				m.append(compact(msg.Text) + "\n")
+			}
+			for _, tc := range msg.ToolCalls {
+				m.append(styleTool.Render("▸ "+tc.Name) + "\n")
+			}
+		}
+	}
 }
