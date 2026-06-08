@@ -19,13 +19,14 @@ import (
 	"strings"
 
 	"github.com/avifenesh/eigen/internal/agent"
+	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/tool"
 )
 
 func main() {
 	home, _ := os.UserHomeDir()
-	loadEnvFiles(".env", filepath.Join(home, ".eigen", ".env"))
+	config.LoadEnvFiles(".env", filepath.Join(home, ".eigen", ".env"))
 
 	model := flag.String("model", "", "model id (default: openai.gpt-5.5 on bedrock mantle)")
 	perm := flag.String("perm", envOr("EIGEN_PERMISSION", "gated"), "permission posture: gated|auto")
@@ -44,9 +45,19 @@ func main() {
 
 	a := &agent.Agent{
 		Provider: provider,
-		Tools:    tool.NewRegistry(tool.Read()),
+		Tools:    tool.NewRegistry(tool.Read(tool.DefaultPolicy())),
 		Perm:     agent.Permission(*perm),
 		Approve:  cliApprove,
+		OnStep: func(step int, resp *llm.Response) {
+			if len(resp.ToolCalls) == 0 {
+				return
+			}
+			names := make([]string, len(resp.ToolCalls))
+			for i, tc := range resp.ToolCalls {
+				names[i] = tc.Name
+			}
+			fmt.Fprintf(os.Stderr, "  step %d → %s\n", step+1, strings.Join(names, ", "))
+		},
 	}
 
 	fmt.Fprintf(os.Stderr, "eigen · %s · perm=%s\n", provider.Name(), *perm)
@@ -69,44 +80,6 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
-}
-
-// loadEnvFiles loads KEY=VALUE pairs from .env files into the process
-// environment without overriding variables that are already set. Files are read
-// in order, so an earlier file wins over a later one and the real environment
-// wins over all. Lines may use an optional "export " prefix and quoted values.
-func loadEnvFiles(paths ...string) {
-	for _, p := range paths {
-		f, err := os.Open(p)
-		if err != nil {
-			continue
-		}
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			line = strings.TrimPrefix(line, "export ")
-			key, val, ok := strings.Cut(line, "=")
-			if !ok {
-				continue
-			}
-			key = strings.TrimSpace(key)
-			val = strings.TrimSpace(val)
-			if len(val) >= 2 {
-				if (val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'') {
-					val = val[1 : len(val)-1]
-				}
-			}
-			if key != "" {
-				if _, exists := os.LookupEnv(key); !exists {
-					os.Setenv(key, val)
-				}
-			}
-		}
-		f.Close()
-	}
 }
 
 func fail(err error) {

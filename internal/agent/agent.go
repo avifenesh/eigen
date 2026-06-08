@@ -35,6 +35,10 @@ type Agent struct {
 	Perm     Permission
 	MaxSteps int
 	Approve  Approver
+
+	// OnStep, if set, is called once per loop step with the model's response,
+	// for observability (logging which tools were chosen, etc.).
+	OnStep func(step int, resp *llm.Response)
 }
 
 // Run executes the loop until the model stops calling tools or MaxSteps is hit.
@@ -54,6 +58,9 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 		})
 		if err != nil {
 			return "", err
+		}
+		if a.OnStep != nil {
+			a.OnStep(step, resp)
 		}
 		if len(resp.ToolCalls) == 0 {
 			return resp.Text, nil

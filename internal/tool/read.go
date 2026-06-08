@@ -11,7 +11,7 @@ const maxReadBytes = 256 * 1024
 
 // Read returns the read-file tool: a read-only tool that returns a file's
 // UTF-8 contents, truncated to a safe size.
-func Read() Definition {
+func Read(policy *Policy) Definition {
 	return Definition{
 		Name:        "read",
 		Description: "Read the contents of a UTF-8 text file at the given path.",
@@ -37,7 +37,11 @@ func Read() Definition {
 			if in.Path == "" {
 				return "", fmt.Errorf("path is required")
 			}
-			data, err := os.ReadFile(in.Path)
+			resolved, err := policy.Resolve(in.Path)
+			if err != nil {
+				return "", err
+			}
+			data, err := os.ReadFile(resolved)
 			if err != nil {
 				return "", err
 			}

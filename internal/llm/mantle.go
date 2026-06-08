@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -110,6 +111,7 @@ func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+m.token)
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("User-Agent", "eigen/0.1.0")
 
 	resp, err := m.http.Do(httpReq)
 	if err != nil {
@@ -146,7 +148,7 @@ func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
 			out.ToolCalls = append(out.ToolCalls, ToolCall{
 				ID:        item.CallID,
 				Name:      item.Name,
-				Arguments: json.RawMessage(item.Arguments),
+				Arguments: normalizeArgs(item.Arguments),
 			})
 		}
 	}
@@ -173,7 +175,7 @@ func buildInput(req Request) []responsesInputItem {
 					Type:      "function_call",
 					CallID:    tc.ID,
 					Name:      tc.Name,
-					Arguments: string(tc.Arguments),
+					Arguments: argString(tc.Arguments),
 				})
 			}
 			if len(msg.ToolCalls) == 0 && msg.Text != "" {
@@ -204,4 +206,21 @@ func toResponsesTools(specs []ToolSpec) []responsesTool {
 		})
 	}
 	return tools
+}
+
+// argString renders tool-call arguments for the wire, defaulting empty/nil to
+// an empty JSON object so the Responses API always receives valid JSON.
+func argString(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return "{}"
+	}
+	return string(raw)
+}
+
+// normalizeArgs ensures parsed tool-call arguments are always valid JSON.
+func normalizeArgs(s string) json.RawMessage {
+	if strings.TrimSpace(s) == "" {
+		return json.RawMessage("{}")
+	}
+	return json.RawMessage(s)
 }
