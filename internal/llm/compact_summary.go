@@ -76,10 +76,11 @@ func CompactWith(ctx context.Context, c Compactor, msgs []Message, maxTokens int
 	})
 	out = append(out, recent...)
 
-	// Recursive case: if summary + recent still overflow, recurse with a
-	// smaller recent window.
-	if EstimateTokens(out) > maxTokens && len(recent) > 2 {
-		return CompactWith(ctx, c, out, maxTokens)
+	// If summary + recent still overflow, fall back to a hard deterministic
+	// trim that is guaranteed to fit — never recurse unbounded (a summary that
+	// won't shrink would otherwise loop forever and overflow the stack).
+	if EstimateTokens(out) > maxTokens {
+		return Compact(out, maxTokens), nil
 	}
 	return out, nil
 }

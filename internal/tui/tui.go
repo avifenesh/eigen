@@ -207,7 +207,14 @@ func (m *model) submit(task string) tea.Cmd {
 	m.state = stRunning
 	m.status = "thinking"
 	m.ti.Blur()
-	return tea.Batch(m.sp.Tick, func() tea.Msg {
+	return tea.Batch(m.sp.Tick, func() (msg tea.Msg) {
+		// Recover panics in the agent goroutine so a bug becomes a recoverable
+		// error in the UI instead of taking down the whole program.
+		defer func() {
+			if r := recover(); r != nil {
+				msg = turnDoneMsg{err: fmt.Errorf("internal panic: %v", r)}
+			}
+		}()
 		_, err := m.session.Send(m.ctx, task)
 		return turnDoneMsg{err: err}
 	})
