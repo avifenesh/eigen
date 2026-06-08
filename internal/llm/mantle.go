@@ -80,6 +80,10 @@ type responsesRequest struct {
 }
 
 type responsesReply struct {
+	Status            string `json:"status"`
+	IncompleteDetails *struct {
+		Reason string `json:"reason"`
+	} `json:"incomplete_details"`
 	Output []struct {
 		Type    string `json:"type"`
 		Role    string `json:"role"`
@@ -117,9 +121,17 @@ func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
 		if err != nil {
 			return nil, err
 		}
-		out, err := parseReply(raw)
+		out, status, reason, err := parseReply(raw)
 		if err != nil {
 			return nil, err
+		}
+		// Refuse possibly-truncated output rather than applying it (a truncated
+		// write/edit is worse than a loud failure). See Codex bedrock #26297.
+		if status == "incomplete" {
+			if reason == "" {
+				reason = "unknown"
+			}
+			return nil, fmt.Errorf("mantle response incomplete (%s): refusing possibly-truncated output", reason)
 		}
 		if out.Text != "" || len(out.ToolCalls) > 0 || attempt >= maxEmptyRetries {
 			return out, nil
@@ -128,14 +140,19 @@ func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
 	}
 }
 
-// parseReply decodes a Responses API body into a normalized Response.
-func parseReply(raw []byte) (*Response, error) {
+// parseReply decodes a Responses API body into a normalized Response, returning
+// the response status and any incomplete reason for the caller to act on.
+func parseReply(raw []byte) (*Response, string, string, error) {
 	var reply responsesReply
 	if err := json.Unmarshal(raw, &reply); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
+		return nil, "", "", fmt.Errorf("decode response: %w", err)
 	}
 	if reply.Error != nil {
-		return nil, fmt.Errorf("mantle error: %s", reply.Error.Message)
+		return nil, "", "", fmt.Errorf("mantle error: %s", reply.Error.Message)
+	}
+	reason := ""
+	if reply.IncompleteDetails != nil {
+		reason = reply.IncompleteDetails.Reason
 	}
 
 	out := &Response{}
@@ -155,7 +172,7 @@ func parseReply(raw []byte) (*Response, error) {
 			})
 		}
 	}
-	return out, nil
+	return out, reply.Status, reason, nil
 }
 
 // maxAttempts bounds retries for transient provider failures.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -51,6 +52,23 @@ func TestMantlePostDoesNotRetry4xx(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Fatalf("expected exactly 1 call (no retry on 4xx), got %d", got)
+	}
+}
+
+func TestMantleRejectsIncompleteResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"partial trunc"}]}]}`))
+	}))
+	defer srv.Close()
+
+	m := &Mantle{BaseURL: srv.URL, Model: "test", token: "t", http: &http.Client{Timeout: 5 * time.Second}}
+	_, err := m.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "x"}}})
+	if err == nil {
+		t.Fatal("expected error on incomplete response, got nil")
+	}
+	if !strings.Contains(err.Error(), "incomplete") {
+		t.Fatalf("error should mention incomplete: %v", err)
 	}
 }
 
