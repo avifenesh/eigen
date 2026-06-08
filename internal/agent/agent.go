@@ -66,6 +66,12 @@ type Agent struct {
 	MaxSteps int
 	Approve  Approver
 
+	// MaxContextTokens, if > 0, bounds the conversation sent to the model: at
+	// the start of each turn the transcript is compacted to fit. This is the
+	// single compaction mechanism for both live growth and resuming a large
+	// session.
+	MaxContextTokens int
+
 	// OnEvent, if set, receives the structured event stream (deltas, tool
 	// lifecycle, final answer). Streaming deltas only appear if the provider
 	// implements llm.Streamer.
@@ -126,6 +132,9 @@ func (s *Session) Send(ctx context.Context, task string) (string, error) {
 		maxSteps = 20
 	}
 	s.msgs = append(s.msgs, llm.Message{Role: llm.RoleUser, Text: task})
+	if a.MaxContextTokens > 0 {
+		s.msgs = llm.Compact(s.msgs, a.MaxContextTokens)
+	}
 	specs := a.Tools.Specs()
 	emptyTurns := 0
 

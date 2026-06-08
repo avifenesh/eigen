@@ -17,11 +17,12 @@ import (
 type Source string
 
 const (
-	SourceEigen  Source = "eigen"
-	SourceClaude Source = "claude"
-	SourceCodex  Source = "codex"
-	SourcePi     Source = "pi"
-	SourceHermes Source = "hermes"
+	SourceEigen    Source = "eigen"
+	SourceClaude   Source = "claude"
+	SourceCodex    Source = "codex"
+	SourcePi       Source = "pi"
+	SourceHermes   Source = "hermes"
+	SourceOpenCode Source = "opencode"
 )
 
 // Import reads a transcript file, auto-detecting the source from its path.
@@ -40,6 +41,8 @@ func ImportFrom(src Source, path string) ([]llm.Message, error) {
 		return parsePi(path)
 	case SourceHermes:
 		return parseHermes(path)
+	case SourceOpenCode:
+		return ImportOpenCode(path, "")
 	case SourceEigen, "":
 		return Load(path)
 	default:
@@ -58,6 +61,8 @@ func Detect(path string) Source {
 		return SourcePi
 	case strings.Contains(path, "/.hermes/sessions/"):
 		return SourceHermes
+	case path == "opencode" || strings.Contains(path, "opencode.db") || strings.Contains(path, "/opencode/"):
+		return SourceOpenCode
 	default:
 		return SourceEigen
 	}

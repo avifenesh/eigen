@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -43,8 +44,10 @@ func main() {
 	perm := flag.String("perm", envOr("EIGEN_PERMISSION", "gated"), "permission posture: gated|auto")
 	printMode := flag.Bool("p", false, "print mode: run one task headless (no TUI) and exit")
 	flag.BoolVar(printMode, "print", false, "alias for -p")
-	resumeFile := flag.String("resume", "", "resume a conversation from a transcript file (eigen/claude/codex/pi/hermes; auto-detected by path)")
-	from := flag.String("from", "", "force the transcript source for --resume (claude|codex|pi|hermes|eigen)")
+	resumeFile := flag.String("resume", "", "resume a conversation from a transcript file or 'opencode' (auto-detected)")
+	from := flag.String("from", "", "force the transcript source for --resume (claude|codex|pi|hermes|opencode|eigen)")
+	sessionID := flag.String("session", "", "opencode session id for --resume opencode (default: latest)")
+	maxTokens := flag.Int("max-tokens", 0, "context budget before compaction (0 = auto by provider)")
 	flag.Parse()
 
 	switch agent.Permission(*perm) {
@@ -75,19 +78,24 @@ func main() {
 	}
 
 	a := &agent.Agent{
-		Provider: prov,
-		Tools:    registry,
-		Perm:     agent.Permission(*perm),
+		Provider:         prov,
+		Tools:            registry,
+		Perm:             agent.Permission(*perm),
+		MaxContextTokens: contextBudget(*maxTokens, *provider, *model),
 	}
 
 	// Optionally resume a prior conversation from any supported transcript.
 	var history []llm.Message
 	if *resumeFile != "" {
+		src := transcript.Source(*from)
+		if src == "" {
+			src = transcript.Detect(*resumeFile)
+		}
 		var herr error
-		if *from != "" {
-			history, herr = transcript.ImportFrom(transcript.Source(*from), *resumeFile)
+		if src == transcript.SourceOpenCode {
+			history, herr = transcript.ImportOpenCode(*resumeFile, *sessionID)
 		} else {
-			history, herr = transcript.Import(*resumeFile)
+			history, herr = transcript.ImportFrom(src, *resumeFile)
 		}
 		if herr != nil {
 			fail(fmt.Errorf("resume: %w", herr))
@@ -188,6 +196,30 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// contextBudget returns the token budget before compaction. An explicit flag
+// wins; otherwise EIGEN_MAX_CONTEXT_TOKENS; otherwise a per-provider/model
+// default that leaves headroom under the model's true context window.
+func contextBudget(flagVal int, provider, model string) int {
+	if flagVal > 0 {
+		return flagVal
+	}
+	if v := os.Getenv("EIGEN_MAX_CONTEXT_TOKENS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	switch provider {
+	case "llama", "local":
+		return 40000
+	case "converse", "bedrock-converse", "claude":
+		// Opus supports up to 1M, but that needs the context-1m beta header
+		// (not sent yet — TODO); use the 200k-window budget for now.
+		return 180000
+	default: // mantle / gpt-5.5 (272k window)
+		return 200000
+	}
 }
 
 func fail(err error) {

@@ -81,15 +81,15 @@ const (
 // plus call_id/name/arguments or output, and reasoning turns carry a summary.
 // omitempty keeps each item valid.
 type responsesInputItem struct {
-	Type      string        `json:"type,omitempty"`
-	Role      string        `json:"role,omitempty"`
-	Content   string        `json:"content,omitempty"`
-	CallID    string        `json:"call_id,omitempty"`
-	Name      string        `json:"name,omitempty"`
-	Arguments string        `json:"arguments,omitempty"`
-	Output    string        `json:"output,omitempty"`
-	ID        string        `json:"id,omitempty"`
-	Summary   []summaryPart `json:"summary,omitempty"`
+	Type      string          `json:"type,omitempty"`
+	Role      string          `json:"role,omitempty"`
+	Content   json.RawMessage `json:"content,omitempty"`
+	CallID    string          `json:"call_id,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	Arguments string          `json:"arguments,omitempty"`
+	Output    string          `json:"output,omitempty"`
+	ID        string          `json:"id,omitempty"`
+	Summary   []summaryPart   `json:"summary,omitempty"`
 }
 
 type summaryPart struct {
@@ -163,6 +163,9 @@ func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
+	if dbg := os.Getenv("EIGEN_DEBUG_REQUEST"); dbg != "" {
+		_ = os.WriteFile(dbg, body, 0o600)
+	}
 
 	for attempt := 0; ; attempt++ {
 		raw, err := m.post(ctx, body)
@@ -204,6 +207,9 @@ func (m *Mantle) Stream(ctx context.Context, req Request, sink StreamSink) (*Res
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+	if dbg := os.Getenv("EIGEN_DEBUG_REQUEST"); dbg != "" {
+		_ = os.WriteFile(dbg, body, 0o600)
 	}
 
 	resp, err := httpStream(ctx, m.http, m.BaseURL+"/responses",
@@ -329,15 +335,19 @@ func parseReply(raw []byte) (*Response, string, string, error) {
 func buildInput(req Request) []responsesInputItem {
 	items := make([]responsesInputItem, 0, len(req.Messages)+1)
 	if req.System != "" {
-		items = append(items, responsesInputItem{Role: "developer", Content: req.System})
+		items = append(items, responsesInputItem{Role: "developer", Content: jsonStr(req.System)})
 	}
 	for _, msg := range req.Messages {
 		switch msg.Role {
 		case RoleTool:
+			out := msg.Text
+			if out == "" {
+				out = "(no output)" // output is required; omitempty would drop ""
+			}
 			items = append(items, responsesInputItem{
 				Type:   "function_call_output",
 				CallID: msg.ToolCallID,
-				Output: msg.Text,
+				Output: out,
 			})
 		case RoleAssistant:
 			if msg.Reasoning != "" {
@@ -348,7 +358,9 @@ func buildInput(req Request) []responsesInputItem {
 				})
 			}
 			if msg.Text != "" {
-				items = append(items, responsesInputItem{Role: "assistant", Content: msg.Text})
+				// Assistant history must use typed output_text content (a plain
+				// string is rejected as input by the Responses API).
+				items = append(items, responsesInputItem{Type: "message", Role: "assistant", Content: outputText(msg.Text)})
 			}
 			for _, tc := range msg.ToolCalls {
 				items = append(items, responsesInputItem{
@@ -363,10 +375,22 @@ func buildInput(req Request) []responsesInputItem {
 			if msg.Role == RoleSystem {
 				role = "developer"
 			}
-			items = append(items, responsesInputItem{Role: role, Content: msg.Text})
+			items = append(items, responsesInputItem{Role: role, Content: jsonStr(msg.Text)})
 		}
 	}
 	return items
+}
+
+// jsonStr encodes s as a JSON string value for a message's content field.
+func jsonStr(s string) json.RawMessage {
+	b, _ := json.Marshal(s)
+	return b
+}
+
+// outputText builds a Responses assistant-content array of one output_text block.
+func outputText(s string) json.RawMessage {
+	b, _ := json.Marshal([]map[string]string{{"type": "output_text", "text": s}})
+	return b
 }
 
 func toResponsesTools(specs []ToolSpec) []responsesTool {

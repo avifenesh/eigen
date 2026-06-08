@@ -21,10 +21,10 @@ func TestBuildInputSerializesToolTurns(t *testing.T) {
 	if len(items) != 4 {
 		t.Fatalf("got %d items, want 4: %+v", len(items), items)
 	}
-	if items[0].Role != "developer" || items[0].Content != "sys" {
+	if items[0].Role != "developer" || string(items[0].Content) != `"sys"` {
 		t.Errorf("system not mapped to developer: %+v", items[0])
 	}
-	if items[1].Role != "user" || items[1].Content != "hi" {
+	if items[1].Role != "user" || string(items[1].Content) != `"hi"` {
 		t.Errorf("user message wrong: %+v", items[1])
 	}
 	fc := items[2]
