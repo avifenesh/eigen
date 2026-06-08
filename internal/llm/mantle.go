@@ -49,15 +49,31 @@ func NewMantle(model string) (*Mantle, error) {
 
 func (m *Mantle) Name() string { return m.Model + " (bedrock mantle)" }
 
-// responsesInputItem is one entry in the Responses API "input" array.
+// responsesInputItem is one entry in the Responses API "input" array. The shape
+// is heterogeneous: plain messages carry role+content, while tool turns carry
+// type plus call_id/name/arguments or output. omitempty keeps each item valid.
 type responsesInputItem struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Type      string `json:"type,omitempty"`
+	Role      string `json:"role,omitempty"`
+	Content   string `json:"content,omitempty"`
+	CallID    string `json:"call_id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
+	Output    string `json:"output,omitempty"`
+}
+
+// responsesTool is a Responses API function-tool definition (flat, type=function).
+type responsesTool struct {
+	Type        string          `json:"type"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
 }
 
 type responsesRequest struct {
 	Model string               `json:"model"`
 	Input []responsesInputItem `json:"input"`
+	Tools []responsesTool      `json:"tools,omitempty"`
 }
 
 type responsesReply struct {
@@ -68,6 +84,9 @@ type responsesReply struct {
 			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"content"`
+		CallID    string `json:"call_id"`
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
 	} `json:"output"`
 	Error *struct {
 		Message string `json:"message"`
@@ -75,16 +94,12 @@ type responsesReply struct {
 }
 
 func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
-	input := make([]responsesInputItem, 0, len(req.Messages)+1)
-	if req.System != "" {
-		// The Responses API uses the "developer" role for system instructions.
-		input = append(input, responsesInputItem{Role: "developer", Content: req.System})
+	payload := responsesRequest{
+		Model: m.Model,
+		Input: buildInput(req),
+		Tools: toResponsesTools(req.Tools),
 	}
-	for _, msg := range req.Messages {
-		input = append(input, responsesInputItem{Role: string(msg.Role), Content: msg.Text})
-	}
-
-	body, err := json.Marshal(responsesRequest{Model: m.Model, Input: input})
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
@@ -118,16 +133,75 @@ func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
 		return nil, fmt.Errorf("mantle error: %s", reply.Error.Message)
 	}
 
-	var text string
+	out := &Response{}
 	for _, item := range reply.Output {
-		if item.Type != "message" {
-			continue
-		}
-		for _, part := range item.Content {
-			if part.Type == "output_text" {
-				text += part.Text
+		switch item.Type {
+		case "message":
+			for _, part := range item.Content {
+				if part.Type == "output_text" {
+					out.Text += part.Text
+				}
 			}
+		case "function_call":
+			out.ToolCalls = append(out.ToolCalls, ToolCall{
+				ID:        item.CallID,
+				Name:      item.Name,
+				Arguments: json.RawMessage(item.Arguments),
+			})
 		}
 	}
-	return &Response{Text: text}, nil
+	return out, nil
+}
+
+// buildInput serializes the normalized transcript into Responses input items.
+func buildInput(req Request) []responsesInputItem {
+	items := make([]responsesInputItem, 0, len(req.Messages)+1)
+	if req.System != "" {
+		items = append(items, responsesInputItem{Role: "developer", Content: req.System})
+	}
+	for _, msg := range req.Messages {
+		switch msg.Role {
+		case RoleTool:
+			items = append(items, responsesInputItem{
+				Type:   "function_call_output",
+				CallID: msg.ToolCallID,
+				Output: msg.Text,
+			})
+		case RoleAssistant:
+			for _, tc := range msg.ToolCalls {
+				items = append(items, responsesInputItem{
+					Type:      "function_call",
+					CallID:    tc.ID,
+					Name:      tc.Name,
+					Arguments: string(tc.Arguments),
+				})
+			}
+			if len(msg.ToolCalls) == 0 && msg.Text != "" {
+				items = append(items, responsesInputItem{Role: "assistant", Content: msg.Text})
+			}
+		default: // system / user
+			role := string(msg.Role)
+			if msg.Role == RoleSystem {
+				role = "developer"
+			}
+			items = append(items, responsesInputItem{Role: role, Content: msg.Text})
+		}
+	}
+	return items
+}
+
+func toResponsesTools(specs []ToolSpec) []responsesTool {
+	if len(specs) == 0 {
+		return nil
+	}
+	tools := make([]responsesTool, 0, len(specs))
+	for _, s := range specs {
+		tools = append(tools, responsesTool{
+			Type:        "function",
+			Name:        s.Name,
+			Description: s.Description,
+			Parameters:  s.Parameters,
+		})
+	}
+	return tools
 }

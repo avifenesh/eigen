@@ -1,37 +1,73 @@
 // Command eigen is a coding agent you own end to end.
 //
-// This entrypoint is currently a connectivity smoke test: it sends one prompt
-// to the configured provider and prints the reply, proving the Go provider
-// path works before the tool layer and agent loop are wired in.
+// Usage:
+//
+//	eigen [--model ID] [--perm gated|auto] "task"
+//
+// It drives the configured model through a tool-use loop. Today it ships the
+// read tool; write/edit/bash/grep/glob follow.
 package main
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/tool"
 )
 
 func main() {
-	provider, err := llm.NewMantle("")
+	model := flag.String("model", "", "model id (default: openai.gpt-5.5 on bedrock mantle)")
+	perm := flag.String("perm", envOr("EIGEN_PERMISSION", "gated"), "permission posture: gated|auto")
+	flag.Parse()
+
+	task := strings.TrimSpace(strings.Join(flag.Args(), " "))
+	if task == "" {
+		fmt.Fprintln(os.Stderr, `usage: eigen [--model ID] [--perm gated|auto] "task"`)
+		os.Exit(2)
+	}
+
+	provider, err := llm.NewMantle(*model)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "eigen: "+err.Error())
-		os.Exit(1)
+		fail(err)
 	}
 
-	prompt := "Reply with exactly: eigen online"
-	if len(os.Args) > 1 {
-		prompt = os.Args[1]
+	a := &agent.Agent{
+		Provider: provider,
+		Tools:    tool.NewRegistry(tool.Read()),
+		Perm:     agent.Permission(*perm),
+		Approve:  cliApprove,
 	}
 
-	resp, err := provider.Complete(context.Background(), llm.Request{
-		Messages: []llm.Message{{Role: llm.RoleUser, Text: prompt}},
-	})
+	fmt.Fprintf(os.Stderr, "eigen · %s · perm=%s\n", provider.Name(), *perm)
+	out, err := a.Run(context.Background(), task)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "eigen: "+err.Error())
-		os.Exit(1)
+		fail(err)
 	}
+	fmt.Println(out)
+}
 
-	fmt.Printf("[%s]\n%s\n", provider.Name(), resp.Text)
+// cliApprove prompts on stderr/stdin for gated mutating tool calls.
+func cliApprove(name string, args json.RawMessage) bool {
+	fmt.Fprintf(os.Stderr, "approve %s %s ? [y/N] ", name, string(args))
+	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(line)), "y")
+}
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func fail(err error) {
+	fmt.Fprintln(os.Stderr, "eigen: "+err.Error())
+	os.Exit(1)
 }
