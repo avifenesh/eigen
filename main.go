@@ -44,6 +44,8 @@ func main() {
 	printMode := flag.Bool("p", false, "print mode: run one task headless (no TUI) and exit")
 	flag.BoolVar(printMode, "print", false, "alias for -p")
 	resumeFile := flag.String("resume", "", "resume a conversation from a transcript file or 'opencode' (auto-detected)")
+	continueLatest := flag.Bool("continue", false, "continue the latest eigen session")
+	flag.BoolVar(continueLatest, "c", false, "alias for --continue")
 	from := flag.String("from", "", "force the transcript source for --resume (claude|codex|pi|hermes|opencode|eigen)")
 	sessionID := flag.String("session", "", "opencode session id for --resume opencode (default: latest)")
 	maxTokens := flag.Int("max-tokens", 0, "context budget before compaction (0 = auto by provider)")
@@ -62,6 +64,11 @@ func main() {
 	}
 
 	task := strings.TrimSpace(strings.Join(flag.Args(), " "))
+
+	// --continue is shorthand for --resume eigen (the latest eigen session).
+	if *continueLatest && *resumeFile == "" {
+		*resumeFile = "eigen"
+	}
 
 	prov, err := llm.New(*provider, *model)
 	if err != nil {
