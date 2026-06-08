@@ -1,6 +1,7 @@
 // Package tui renders an eigen session with Bubble Tea: a multi-turn REPL with
-// a scrolling transcript of streamed model output, tool calls, and results,
-// an input box, and inline gated approvals. It consumes the agent event sink.
+// a scrolling transcript of streamed model output, collapsible thinking and
+// tool blocks, an input box, and inline gated approvals. It consumes the agent
+// event sink.
 package tui
 
 import (
@@ -51,23 +52,24 @@ type turnDoneMsg struct{ err error }
 type submitMsg struct{ task string }
 
 type model struct {
-	vp          viewport.Model
-	sp          spinner.Model
-	ti          textinput.Model
-	a           *agent.Agent
-	session     *agent.Session
-	ctx         context.Context
-	content     strings.Builder
-	state       uiState
-	pending     *approvalMsg
-	status      string
+	vp      viewport.Model
+	sp      spinner.Model
+	ti      textinput.Model
+	a       *agent.Agent
+	session *agent.Session
+	ctx     context.Context
+
+	blocks  []*block
+	sel     int // index of the selected block (-1 = none / following tail)
+	state   uiState
+	pending *approvalMsg
+	status  string
+
 	initialTask string
 	width       int
 	height      int
 	ready       bool
 
-	// rebuild signals main to rebuild eigen and exec the new binary, resuming
-	// the conversation saved at rebuildPath.
 	rebuild     bool
 	rebuildPath string
 }
@@ -87,26 +89,111 @@ func (m *model) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func (m *model) append(s string) {
-	m.content.WriteString(s)
-	if m.ready {
-		m.sync()
-	}
+// --- block helpers ---------------------------------------------------------
+
+func (m *model) push(b *block) *block {
+	m.blocks = append(m.blocks, b)
+	m.sel = -1 // new content: follow the tail
+	m.sync()
+	return b
 }
 
-// sync wraps the transcript to the viewport width (the viewport does not
-// soft-wrap on its own) and scrolls to the bottom.
+func (m *model) note(s string) { m.push(&block{kind: blockNote, body: sb(s)}) }
+func (m *model) text(role, s string) *block {
+	return m.push(&block{kind: blockText, role: role, body: sb(s)})
+}
+
+func sb(s string) (b strings.Builder) { b.WriteString(s); return }
+
+// lastOpen returns the most recent block of kind k that is still being streamed
+// into (used to append deltas), or nil.
+func (m *model) lastOpen(k blockKind) *block {
+	for i := len(m.blocks) - 1; i >= 0; i-- {
+		if m.blocks[i].kind == k {
+			return m.blocks[i]
+		}
+		if m.blocks[i].kind == blockText && m.blocks[i].role == "assistant" {
+			continue
+		}
+		break
+	}
+	return nil
+}
+
+// sync rebuilds the viewport content from blocks, wrapping to width.
 func (m *model) sync() {
-	content := m.content.String()
+	if !m.ready {
+		return
+	}
+	var out strings.Builder
+	for i, b := range m.blocks {
+		out.WriteString(b.render(i == m.sel))
+		out.WriteString("\n")
+	}
+	content := out.String()
 	if w := m.vp.Width; w > 0 {
 		content = lipgloss.NewStyle().Width(w).Render(content)
 	}
 	m.vp.SetContent(content)
-	m.vp.GotoBottom()
+	if m.sel < 0 {
+		m.vp.GotoBottom()
+	}
 }
 
+// collapsibleIdx returns block indices that can be selected/toggled.
+func (m *model) collapsibleIdx() []int {
+	var idx []int
+	for i, b := range m.blocks {
+		if b.collapsible() {
+			idx = append(idx, i)
+		}
+	}
+	return idx
+}
+
+func (m *model) moveSel(dir int) {
+	idx := m.collapsibleIdx()
+	if len(idx) == 0 {
+		return
+	}
+	cur := -1
+	for j, i := range idx {
+		if i == m.sel {
+			cur = j
+			break
+		}
+	}
+	switch {
+	case cur == -1 && dir < 0:
+		m.sel = idx[len(idx)-1] // entering from tail → last
+	case cur == -1:
+		m.sel = idx[0]
+	default:
+		n := cur + dir
+		if n < 0 {
+			n = 0
+		}
+		if n >= len(idx) {
+			m.sel = -1 // past the end → back to following tail
+			m.sync()
+			return
+		}
+		m.sel = idx[n]
+	}
+	m.sync()
+}
+
+func (m *model) toggleSel() {
+	if m.sel >= 0 && m.sel < len(m.blocks) && m.blocks[m.sel].collapsible() {
+		m.blocks[m.sel].collapsed = !m.blocks[m.sel].collapsed
+		m.sync()
+	}
+}
+
+// --- update ----------------------------------------------------------------
+
 func (m *model) submit(task string) tea.Cmd {
-	m.append(styleUser.Render("» "+task) + "\n")
+	m.text("user", task)
 	m.state = stRunning
 	m.status = "thinking"
 	m.ti.Blur()
@@ -143,17 +230,36 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch strings.ToLower(msg.String()) {
 			case "y":
 				m.pending.reply <- true
-				m.append(styleStatus.Render("  approved") + "\n")
+				m.note("approved")
 				m.pending = nil
 			case "n", "esc":
 				m.pending.reply <- false
-				m.append(styleErr.Render("  denied") + "\n")
+				m.note("denied")
 				m.pending = nil
 			}
 			return m, nil
 		}
+		// Navigation/toggle works in any state (input box keeps focus for text).
+		switch msg.String() {
+		case "up", "ctrl+p":
+			m.moveSel(-1)
+			return m, nil
+		case "down", "ctrl+n":
+			m.moveSel(1)
+			return m, nil
+		case "tab":
+			m.toggleSel()
+			return m, nil
+		case "pgup":
+			m.vp.HalfViewUp()
+			return m, nil
+		case "pgdown":
+			m.vp.HalfViewDown()
+			return m, nil
+		}
 		if m.state == stInput {
-			if msg.String() == "enter" {
+			switch msg.String() {
+			case "enter":
 				task := strings.TrimSpace(m.ti.Value())
 				if task == "" {
 					return m, nil
@@ -163,15 +269,17 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.command(task)
 				}
 				return m, m.submit(task)
+			case " ":
+				if m.sel >= 0 { // space toggles when a block is selected
+					m.toggleSel()
+					return m, nil
+				}
 			}
 			var cmd tea.Cmd
 			m.ti, cmd = m.ti.Update(msg)
 			return m, cmd
 		}
-		// running: allow scrolling the transcript
-		var cmd tea.Cmd
-		m.vp, cmd = m.vp.Update(msg)
-		return m, cmd
+		return m, nil
 
 	case submitMsg:
 		return m, m.submit(msg.task)
@@ -182,12 +290,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case approvalMsg:
 		m.pending = &msg
-		m.append(styleAsk.Render(fmt.Sprintf("  approve %s %s ? [y/N]", msg.name, compact(string(msg.args)))) + "\n")
+		m.note(fmt.Sprintf("approve %s %s ? [y/N]", msg.name, compact(string(msg.args))))
 		return m, nil
 
 	case turnDoneMsg:
 		if msg.err != nil {
-			m.append(styleErr.Render("error: "+msg.err.Error()) + "\n")
+			m.push(&block{kind: blockNote, isErr: true, body: sb("error: " + msg.err.Error())})
 		}
 		m.state = stInput
 		m.status = ""
@@ -202,84 +310,40 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// command handles a /slash command typed at the input. It returns a tea.Cmd
-// (tea.Quit for /rebuild and /quit); most commands act in place.
-func (m *model) command(line string) tea.Cmd {
-	fields := strings.Fields(line)
-	name := fields[0]
-	arg := strings.TrimSpace(strings.TrimPrefix(line, name))
-	switch name {
-	case "/help":
-		m.append(styleStatus.Render("/help  /save [path]  /resume <path>  /clear  /rebuild  /quit") + "\n")
-	case "/clear":
-		m.session = m.a.NewSession()
-		m.content.Reset()
-		m.append(styleStatus.Render("— cleared —") + "\n")
-	case "/save":
-		path := arg
-		if path == "" {
-			path = defaultSessionPath()
-		}
-		if err := transcript.Save(path, m.session.Messages()); err != nil {
-			m.append(styleErr.Render("save failed: "+err.Error()) + "\n")
-		} else {
-			m.append(styleStatus.Render("saved → "+path) + "\n")
-		}
-	case "/resume":
-		if arg == "" {
-			m.append(styleErr.Render("usage: /resume <path>") + "\n")
-			break
-		}
-		msgs, err := transcript.Import(arg)
-		if err != nil {
-			m.append(styleErr.Render("resume failed: "+err.Error()) + "\n")
-			break
-		}
-		m.session = m.a.Resume(msgs)
-		m.content.Reset()
-		renderHistory(m, msgs)
-		m.append(styleStatus.Render(fmt.Sprintf("— resumed %d messages —", len(msgs))) + "\n")
-	case "/rebuild":
-		path := filepath.Join(os.TempDir(), "eigen-rebuild.eigen.jsonl")
-		if err := transcript.Save(path, m.session.Messages()); err != nil {
-			m.append(styleErr.Render("rebuild: save failed: "+err.Error()) + "\n")
-			break
-		}
-		m.rebuild = true
-		m.rebuildPath = path
-		return tea.Quit
-	case "/quit", "/exit":
-		return tea.Quit
-	default:
-		m.append(styleErr.Render("unknown command "+name+" (try /help)") + "\n")
-	}
-	return nil
-}
-
-func defaultSessionPath() string {
-	home, _ := os.UserHomeDir()
-	dir := filepath.Join(home, ".eigen", "sessions")
-	_ = os.MkdirAll(dir, 0o755)
-	return filepath.Join(dir, time.Now().Format("20060102-150405")+".eigen.jsonl")
-}
-
 func (m *model) renderEvent(e agent.Event) {
 	switch e.Kind {
 	case agent.EventTextDelta:
-		m.append(e.Text)
+		if b := m.lastOpen(blockText); b != nil && b.role == "assistant" {
+			b.body.WriteString(e.Text)
+			m.sync()
+		} else {
+			m.text("assistant", e.Text)
+		}
 	case agent.EventReasoningDelta:
-		m.append(styleReason.Render(e.Text))
+		if b := m.lastOpen(blockThinking); b != nil {
+			b.body.WriteString(e.Text)
+			m.sync()
+		} else {
+			m.push(&block{kind: blockThinking, title: "thinking", collapsed: true, body: sb(e.Text)})
+		}
 	case agent.EventToolStart:
 		m.status = "running " + e.ToolName
-		m.append("\n" + styleTool.Render("▸ "+e.ToolName+" "+compact(string(e.ToolArgs))) + "\n")
+		m.push(&block{
+			kind:      blockTool,
+			title:     e.ToolName + " " + compact(string(e.ToolArgs)),
+			collapsed: true,
+		})
 	case agent.EventToolResult:
-		if e.IsError {
-			m.append(styleErr.Render("  ✗ "+firstLine(e.Result)) + "\n")
-		} else {
-			m.append(styleStatus.Render("  ✓") + "\n")
+		// attach result to the matching open tool block (most recent)
+		for i := len(m.blocks) - 1; i >= 0; i-- {
+			if m.blocks[i].kind == blockTool && m.blocks[i].result == "" {
+				m.blocks[i].result = e.Result
+				m.blocks[i].isErr = e.IsError
+				break
+			}
 		}
+		m.sync()
 	case agent.EventDone:
-		m.append("\n")
 		m.status = "done"
 	}
 }
@@ -293,16 +357,79 @@ func (m *model) View() string {
 	case m.pending != nil:
 		bottom = styleAsk.Render("press y to approve, n to deny")
 	case m.state == stRunning:
-		bottom = m.sp.View() + " " + m.status
+		bottom = m.sp.View() + " " + m.status + dim("   ↑↓ select · tab expand")
 	default:
 		bottom = m.ti.View()
 	}
 	return m.vp.View() + "\n" + bottom
 }
 
-// Run drives the agent under a multi-turn Bubble Tea REPL. If initialTask is
-// non-empty it is submitted automatically as the first turn. If history is
-// non-empty the session resumes that conversation.
+func dim(s string) string { return styleReason.Render(s) }
+
+// --- commands --------------------------------------------------------------
+
+func (m *model) command(line string) tea.Cmd {
+	fields := strings.Fields(line)
+	name := fields[0]
+	arg := strings.TrimSpace(strings.TrimPrefix(line, name))
+	switch name {
+	case "/help":
+		m.note("/help  /save [path]  /resume <path>  /clear  /rebuild  /quit  ·  ↑↓ select, tab expand")
+	case "/clear":
+		m.session = m.a.NewSession()
+		m.blocks = nil
+		m.sel = -1
+		m.note("— cleared —")
+	case "/save":
+		path := arg
+		if path == "" {
+			path = defaultSessionPath()
+		}
+		if err := transcript.Save(path, m.session.Messages()); err != nil {
+			m.push(&block{kind: blockNote, isErr: true, body: sb("save failed: " + err.Error())})
+		} else {
+			m.note("saved → " + path)
+		}
+	case "/resume":
+		if arg == "" {
+			m.push(&block{kind: blockNote, isErr: true, body: sb("usage: /resume <path>")})
+			break
+		}
+		msgs, err := transcript.Import(arg)
+		if err != nil {
+			m.push(&block{kind: blockNote, isErr: true, body: sb("resume failed: " + err.Error())})
+			break
+		}
+		m.session = m.a.Resume(msgs)
+		m.blocks = nil
+		m.sel = -1
+		renderHistory(m, msgs)
+		m.note(fmt.Sprintf("— resumed %d messages —", len(msgs)))
+	case "/rebuild":
+		path := filepath.Join(os.TempDir(), "eigen-rebuild.eigen.jsonl")
+		if err := transcript.Save(path, m.session.Messages()); err != nil {
+			m.push(&block{kind: blockNote, isErr: true, body: sb("rebuild: save failed: " + err.Error())})
+			break
+		}
+		m.rebuild = true
+		m.rebuildPath = path
+		return tea.Quit
+	case "/quit", "/exit":
+		return tea.Quit
+	default:
+		m.push(&block{kind: blockNote, isErr: true, body: sb("unknown command " + name + " (try /help)")})
+	}
+	return nil
+}
+
+func defaultSessionPath() string {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, ".eigen", "sessions")
+	_ = os.MkdirAll(dir, 0o755)
+	return filepath.Join(dir, time.Now().Format("20060102-150405")+".eigen.jsonl")
+}
+
+// Run drives the agent under a multi-turn Bubble Tea REPL.
 func Run(a *agent.Agent, initialTask string, history []llm.Message) (Result, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -311,7 +438,7 @@ func Run(a *agent.Agent, initialTask string, history []llm.Message) (Result, err
 	sp.Spinner = spinner.Dot
 
 	ti := textinput.New()
-	ti.Placeholder = "type a task…  (enter to send · /help · ctrl+c to quit)"
+	ti.Placeholder = "type a task…  (enter to send · /help · ↑↓ select · tab expand · ctrl+c quit)"
 	ti.Prompt = "› "
 	ti.Focus()
 
@@ -326,12 +453,13 @@ func Run(a *agent.Agent, initialTask string, history []llm.Message) (Result, err
 		ti:          ti,
 		session:     session,
 		ctx:         ctx,
+		sel:         -1,
 		state:       stInput,
 		initialTask: initialTask,
 	}
 	if len(history) > 0 {
 		renderHistory(m, history)
-		m.append(styleStatus.Render(fmt.Sprintf("— resumed %d messages —", len(history))) + "\n")
+		m.note(fmt.Sprintf("— resumed %d messages —", len(history)))
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -364,28 +492,33 @@ func compact(s string) string {
 	return s
 }
 
-func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i]
-	}
-	return compact(s)
-}
-
-// renderHistory pre-fills the transcript with a compact view of resumed
-// messages so the user sees the conversation being continued.
+// renderHistory pre-fills the transcript with resumed messages as blocks, so
+// the user sees the conversation being continued — thinking and tool blocks
+// start collapsed and can be expanded.
 func renderHistory(m *model, history []llm.Message) {
 	for _, msg := range history {
 		switch msg.Role {
 		case llm.RoleUser:
 			if msg.Text != "" {
-				m.append(styleUser.Render("» "+compact(msg.Text)) + "\n")
+				m.text("user", msg.Text)
 			}
 		case llm.RoleAssistant:
+			if msg.Reasoning != "" {
+				m.push(&block{kind: blockThinking, title: "thinking", collapsed: true, body: sb(msg.Reasoning)})
+			}
 			if msg.Text != "" {
-				m.append(compact(msg.Text) + "\n")
+				m.text("assistant", msg.Text)
 			}
 			for _, tc := range msg.ToolCalls {
-				m.append(styleTool.Render("▸ "+tc.Name) + "\n")
+				m.push(&block{kind: blockTool, title: tc.Name + " " + compact(string(tc.Arguments)), collapsed: true})
+			}
+		case llm.RoleTool:
+			for i := len(m.blocks) - 1; i >= 0; i-- {
+				if m.blocks[i].kind == blockTool && m.blocks[i].result == "" {
+					m.blocks[i].result = msg.Text
+					m.blocks[i].isErr = msg.ToolError
+					break
+				}
 			}
 		}
 	}
