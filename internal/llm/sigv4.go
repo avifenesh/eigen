@@ -100,16 +100,19 @@ func sha256hex(b []byte) string {
 func signV4(req *http.Request, body []byte, creds awsCreds, service, region string, now time.Time) {
 	amzDate := now.UTC().Format("20060102T150405Z")
 	dateStamp := now.UTC().Format("20060102")
+	payloadHash := sha256hex(body)
 
 	req.Header.Set("X-Amz-Date", amzDate)
+	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
 	if creds.SessionToken != "" {
 		req.Header.Set("X-Amz-Security-Token", creds.SessionToken)
 	}
 
 	headers := map[string]string{
-		"content-type": req.Header.Get("Content-Type"),
-		"host":         req.URL.Host,
-		"x-amz-date":   amzDate,
+		"content-type":         req.Header.Get("Content-Type"),
+		"host":                 req.URL.Host,
+		"x-amz-content-sha256": payloadHash,
+		"x-amz-date":           amzDate,
 	}
 	if creds.SessionToken != "" {
 		headers["x-amz-security-token"] = creds.SessionToken
@@ -125,7 +128,6 @@ func signV4(req *http.Request, body []byte, creds awsCreds, service, region stri
 		canonHeaders.WriteString(k + ":" + strings.TrimSpace(headers[k]) + "\n")
 	}
 	signedHeaders := strings.Join(names, ";")
-	payloadHash := sha256hex(body)
 
 	canonicalRequest := strings.Join([]string{
 		req.Method,

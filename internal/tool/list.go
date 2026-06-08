@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -48,6 +49,9 @@ func List(policy *Policy) Definition {
 			names := make([]string, 0, len(entries))
 			for _, e := range entries {
 				name := e.Name()
+				if IsDenied(filepath.Join(resolved, name)) {
+					continue // don't enumerate sensitive entries
+				}
 				if e.IsDir() {
 					name += "/"
 				}

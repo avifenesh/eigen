@@ -40,10 +40,14 @@ func Glob(policy *Policy) Definition {
 			if err != nil {
 				return "", err
 			}
-			out, _, err := runRipgrep(ctx, "--files", "-g", in.Pattern, "--", resolved)
+			rgArgs := []string{"--files", "-g", in.Pattern}
+			rgArgs = append(rgArgs, DenyGlobs()...)
+			rgArgs = append(rgArgs, "--", resolved)
+			out, _, err := runRipgrep(ctx, rgArgs...)
 			if err != nil {
 				return "", err
 			}
+			out = FilterDeniedLines(out, func(line string) string { return line })
 			if strings.TrimSpace(out) == "" {
 				return "(no files matched)", nil
 			}

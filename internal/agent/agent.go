@@ -103,6 +103,10 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 			ReasoningID: resp.ReasoningID,
 			ToolCalls:   resp.ToolCalls,
 		})
+		// Tool calls are dispatched strictly in order, one at a time. This
+		// in-order, non-concurrent execution is what makes write/edit (atomic
+		// rename) and bash safe without per-path locking; add per-path mutexes
+		// before ever parallelizing this loop.
 		for _, tc := range resp.ToolCalls {
 			result, isErr := a.dispatch(ctx, tc)
 			msgs = append(msgs, llm.Message{
@@ -143,7 +147,7 @@ func (a *Agent) dispatch(ctx context.Context, tc llm.ToolCall) (string, bool) {
 		return "Error: " + err.Error(), true
 	}
 	if len(out) > maxToolOutput {
-		out = out[:maxToolOutput] + "\n[output truncated]"
+		out = tool.TruncateUTF8(out, maxToolOutput) + "\n[output truncated]"
 	}
 	return out, false
 }

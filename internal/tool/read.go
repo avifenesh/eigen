@@ -50,7 +50,7 @@ func Read(policy *Policy) Definition {
 				return "", fmt.Errorf("file is not valid UTF-8 text (looks binary)")
 			}
 			if len(data) > maxReadBytes {
-				return string(data[:maxReadBytes]) + "\n[truncated]", nil
+				return TruncateUTF8(string(data), maxReadBytes) + "\n[truncated]", nil
 			}
 			return string(data), nil
 		},

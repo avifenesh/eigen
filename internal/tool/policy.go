@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 // Policy confines filesystem tools: a path must resolve to a location under one
@@ -118,6 +119,49 @@ func deniedReason(path string) string {
 		}
 	}
 	return ""
+}
+
+// IsDenied reports whether path matches a denied directory or filename pattern.
+func IsDenied(path string) bool { return deniedReason(path) != "" }
+
+// DenyGlobs returns ripgrep -g exclude args for every denied pattern, so search
+// and file-listing tools never read or enumerate sensitive files. Excludes are
+// placed last so they take precedence over a caller's include glob.
+func DenyGlobs() []string {
+	var args []string
+	for _, d := range deniedSegments {
+		args = append(args, "-g", "!"+d, "-g", "!"+d+"/**")
+	}
+	for _, g := range deniedBasenames {
+		args = append(args, "-g", "!"+g)
+	}
+	return args
+}
+
+// FilterDeniedLines drops any output line whose path (extracted by pathOf)
+// matches a denied pattern — defense in depth behind DenyGlobs.
+func FilterDeniedLines(out string, pathOf func(string) string) string {
+	lines := strings.Split(out, "\n")
+	kept := make([]string, 0, len(lines))
+	for _, ln := range lines {
+		if ln != "" && IsDenied(pathOf(ln)) {
+			continue
+		}
+		kept = append(kept, ln)
+	}
+	return strings.Join(kept, "\n")
+}
+
+// TruncateUTF8 truncates s to at most max bytes without splitting a UTF-8 rune.
+func TruncateUTF8(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }
 
 // DeniedError is returned when a path violates the policy.

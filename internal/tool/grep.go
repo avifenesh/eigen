@@ -40,10 +40,20 @@ func Grep(policy *Policy) Definition {
 			if err != nil {
 				return "", err
 			}
-			out, code, err := runRipgrep(ctx, "--line-number", "--no-heading", "--color", "never", "--", in.Pattern, resolved)
+			rgArgs := []string{"--line-number", "--no-heading", "--color", "never"}
+			rgArgs = append(rgArgs, DenyGlobs()...)
+			rgArgs = append(rgArgs, "--", in.Pattern, resolved)
+			out, code, err := runRipgrep(ctx, rgArgs...)
 			if err != nil {
 				return "", err
 			}
+			// Defense in depth: drop any line whose file is denied.
+			out = FilterDeniedLines(out, func(line string) string {
+				if i := strings.IndexByte(line, ':'); i >= 0 {
+					return line[:i]
+				}
+				return line
+			})
 			if code == 1 && strings.TrimSpace(out) == "" {
 				return "(no matches)", nil
 			}
