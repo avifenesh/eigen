@@ -16,6 +16,7 @@ import (
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/session"
 	"github.com/avifenesh/eigen/internal/transcript"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -75,6 +76,12 @@ type model struct {
 	rebuildBin  string
 	srcDir      string
 	sessionPath string
+
+	// session picker
+	store   *session.Store
+	picking bool
+	picks   []*session.Meta
+	pickIdx int
 }
 
 // Result reports why the TUI exited.
@@ -243,6 +250,27 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
+		// Session picker captures keys while open.
+		if m.picking {
+			switch msg.String() {
+			case "up", "ctrl+p", "k":
+				if m.pickIdx > 0 {
+					m.pickIdx--
+				}
+			case "down", "ctrl+n", "j":
+				if m.pickIdx < len(m.picks)-1 {
+					m.pickIdx++
+				}
+			case "enter":
+				sel := m.picks[m.pickIdx]
+				m.picking = false
+				m.loadSessionByID(sel.ID)
+			case "esc", "q":
+				m.picking = false
+				m.sync()
+			}
+			return m, nil
+		}
 		if m.pending != nil {
 			switch strings.ToLower(msg.String()) {
 			case "y":
@@ -390,6 +418,9 @@ func (m *model) View() string {
 	if !m.ready {
 		return "starting…"
 	}
+	if m.picking {
+		return m.pickerView()
+	}
 	var bottom string
 	switch {
 	case m.pending != nil:
@@ -400,6 +431,76 @@ func (m *model) View() string {
 		bottom = m.ti.View()
 	}
 	return m.vp.View() + "\n" + bottom
+}
+
+// pickerView renders the session chooser.
+func (m *model) pickerView() string {
+	var b strings.Builder
+	b.WriteString(styleUser.Render("resume a session") + dim("   ↑↓ move · enter open · esc cancel") + "\n\n")
+	rows := m.height - 4
+	if rows < 1 {
+		rows = 1
+	}
+	// window around the selection
+	start := 0
+	if m.pickIdx >= rows {
+		start = m.pickIdx - rows + 1
+	}
+	end := start + rows
+	if end > len(m.picks) {
+		end = len(m.picks)
+	}
+	for i := start; i < end; i++ {
+		p := m.picks[i]
+		title := p.Title
+		if title == "" {
+			title = dim("(untitled)")
+		}
+		when := time.Unix(0, p.Updated).Format("01-02 15:04")
+		line := fmt.Sprintf("%s  %-7s  %s", when, p.Source, title)
+		if i == m.pickIdx {
+			line = styleAsk.Render("› " + line)
+		} else {
+			line = "  " + line
+		}
+		b.WriteString(line + "\n")
+	}
+	return b.String()
+}
+
+// loadSessionByID loads a stored session and resumes it.
+func (m *model) loadSessionByID(id string) {
+	if m.store == nil {
+		return
+	}
+	msgs, err := m.store.Load(id)
+	if err != nil {
+		m.push(&block{kind: blockNote, isErr: true, body: sb("resume failed: " + err.Error())})
+		return
+	}
+	m.applyResumed(msgs)
+}
+
+// loadSession resumes from a store id or a transcript file path.
+func (m *model) loadSession(arg string) {
+	if m.store != nil && m.store.Get(arg) != nil {
+		m.loadSessionByID(arg)
+		return
+	}
+	msgs, err := transcript.Import(arg)
+	if err != nil {
+		m.push(&block{kind: blockNote, isErr: true, body: sb("resume failed: " + err.Error())})
+		return
+	}
+	m.applyResumed(msgs)
+}
+
+func (m *model) applyResumed(msgs []llm.Message) {
+	m.session = m.a.Resume(msgs)
+	m.blocks = nil
+	m.sel = -1
+	renderHistory(m, msgs)
+	m.note(fmt.Sprintf("— resumed %d messages —", len(msgs)))
 }
 
 func dim(s string) string { return styleReason.Render(s) }
@@ -430,19 +531,22 @@ func (m *model) command(line string) tea.Cmd {
 		}
 	case "/resume":
 		if arg == "" {
-			m.push(&block{kind: blockNote, isErr: true, body: sb("usage: /resume <path>")})
+			// open the picker
+			if m.store == nil {
+				m.push(&block{kind: blockNote, isErr: true, body: sb("no session store")})
+				break
+			}
+			m.picks = m.store.List()
+			if len(m.picks) == 0 {
+				m.note("no sessions found")
+				break
+			}
+			m.picking = true
+			m.pickIdx = 0
+			m.sync()
 			break
 		}
-		msgs, err := transcript.Import(arg)
-		if err != nil {
-			m.push(&block{kind: blockNote, isErr: true, body: sb("resume failed: " + err.Error())})
-			break
-		}
-		m.session = m.a.Resume(msgs)
-		m.blocks = nil
-		m.sel = -1
-		renderHistory(m, msgs)
-		m.note(fmt.Sprintf("— resumed %d messages —", len(msgs)))
+		m.loadSession(arg)
 	case "/rebuild":
 		if err := transcript.Save(m.sessionPath, m.session.Messages()); err != nil {
 			m.push(&block{kind: blockNote, isErr: true, body: sb("rebuild: save failed: " + err.Error())})
@@ -503,7 +607,7 @@ func eigenSrcDir() string {
 }
 
 // Run drives the agent under a multi-turn Bubble Tea REPL.
-func Run(a *agent.Agent, initialTask string, history []llm.Message) (Result, error) {
+func Run(a *agent.Agent, initialTask string, history []llm.Message, store *session.Store) (Result, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -530,6 +634,7 @@ func Run(a *agent.Agent, initialTask string, history []llm.Message) (Result, err
 		initialTask: initialTask,
 		srcDir:      eigenSrcDir(),
 		sessionPath: defaultSessionPath(),
+		store:       store,
 	}
 	if len(history) > 0 {
 		renderHistory(m, history)

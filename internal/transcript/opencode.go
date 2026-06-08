@@ -22,6 +22,37 @@ func openCodeDBPath(path string) string {
 	return path
 }
 
+// OpenCodeSession is lightweight metadata for one OpenCode session.
+type OpenCodeSession struct {
+	ID      string
+	Title   string
+	Updated int64 // time_updated (epoch ms)
+}
+
+// ListOpenCodeSessions returns session metadata (id, title, updated) directly
+// from the OpenCode DB without parsing any messages — cheap discovery.
+func ListOpenCodeSessions(path string) ([]OpenCodeSession, error) {
+	db, err := sql.Open("sqlite", "file:"+openCodeDBPath(path)+"?mode=ro")
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	rows, err := db.Query("SELECT id, COALESCE(title,''), COALESCE(time_updated,0) FROM session ORDER BY time_updated DESC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []OpenCodeSession
+	for rows.Next() {
+		var s OpenCodeSession
+		if err := rows.Scan(&s.ID, &s.Title, &s.Updated); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 // ImportOpenCode imports a conversation from the OpenCode SQLite DB. If
 // sessionID is empty, the most recently updated session is used. The DB is
 // opened read-only so it is safe to read while OpenCode is running.

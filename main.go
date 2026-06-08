@@ -19,10 +19,12 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/session"
 	"github.com/avifenesh/eigen/internal/tool"
 	"github.com/avifenesh/eigen/internal/transcript"
 	"github.com/avifenesh/eigen/internal/tui"
@@ -50,6 +52,7 @@ func main() {
 	sessionID := flag.String("session", "", "opencode session id for --resume opencode (default: latest)")
 	maxTokens := flag.Int("max-tokens", 0, "context budget before compaction (0 = auto by provider)")
 	showVersion := flag.Bool("version", false, "print version and exit")
+	listSessions := flag.Bool("list", false, "list resumable sessions (id, date, title) and exit")
 	flag.Parse()
 
 	if *showVersion {
@@ -97,25 +100,42 @@ func main() {
 		Compactor:        llm.NewCompactor(prov),
 	}
 
-	// Optionally resume a prior conversation from any supported transcript.
+	// Session store: discover all sources (lazy) and title untitled ones in the
+	// background with a small/local model.
+	store, _ := session.Open()
+	if store != nil {
+		_ = store.Discover()
+		store.TitleUntitled(context.Background(), session.ProviderTitler{P: titleProvider(prov)}, 40)
+	}
+	if *listSessions {
+		printSessions(store)
+		return
+	}
+
+	// Optionally resume a prior conversation: by store id, the 'eigen'/'opencode'
+	// keywords, or a transcript file path.
 	var history []llm.Message
 	if *resumeFile != "" {
-		src := transcript.Source(*from)
-		if src == "" {
-			src = transcript.Detect(*resumeFile)
-		}
 		var herr error
 		switch {
-		case *resumeFile == "eigen" || src == transcript.SourceEigen && *resumeFile == "eigen":
+		case store != nil && store.Get(*resumeFile) != nil:
+			history, herr = store.Load(*resumeFile)
+		case *resumeFile == "eigen":
 			path := latestEigenSession()
 			if path == "" {
 				fail(fmt.Errorf("resume: no saved eigen sessions in ~/.eigen/sessions"))
 			}
 			history, herr = transcript.Load(path)
-		case src == transcript.SourceOpenCode:
-			history, herr = transcript.ImportOpenCode(*resumeFile, *sessionID)
 		default:
-			history, herr = transcript.ImportFrom(src, *resumeFile)
+			src := transcript.Source(*from)
+			if src == "" {
+				src = transcript.Detect(*resumeFile)
+			}
+			if src == transcript.SourceOpenCode {
+				history, herr = transcript.ImportOpenCode(*resumeFile, *sessionID)
+			} else {
+				history, herr = transcript.ImportFrom(src, *resumeFile)
+			}
 		}
 		if herr != nil {
 			fail(fmt.Errorf("resume: %w", herr))
@@ -125,7 +145,7 @@ func main() {
 	// Interactive terminal with no -p → the full-screen REPL (the default UX).
 	interactive := isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd())
 	if !*printMode && interactive {
-		res, err := tui.Run(a, task, history)
+		res, err := tui.Run(a, task, history, store)
 		if err != nil {
 			fail(err)
 		}
@@ -239,6 +259,32 @@ func contextBudget(flagVal int, provider, model string) int {
 		return 180000
 	default: // mantle / gpt-5.5 (272k window)
 		return 200000
+	}
+}
+
+// titleProvider picks a small/cheap model for async session titling: a local
+// llama if configured (free), otherwise the main provider.
+func titleProvider(main llm.Provider) llm.Provider {
+	if os.Getenv("EIGEN_LLAMA_BASE_URL") != "" {
+		if lp, err := llm.New("llama", os.Getenv("EIGEN_TITLE_MODEL")); err == nil {
+			return lp
+		}
+	}
+	return main
+}
+
+// printSessions lists resumable sessions newest-first for the headless --list.
+func printSessions(store *session.Store) {
+	if store == nil {
+		return
+	}
+	for _, m := range store.List() {
+		title := m.Title
+		if title == "" {
+			title = "(untitled)"
+		}
+		when := time.Unix(0, m.Updated).Format("2006-01-02 15:04")
+		fmt.Printf("%s  %-16s  %-8s  %s\n", m.ID, when, m.Source, title)
 	}
 }
 
