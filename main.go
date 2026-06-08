@@ -22,6 +22,7 @@ import (
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/tool"
+	"github.com/avifenesh/eigen/internal/tui"
 )
 
 func main() {
@@ -36,6 +37,7 @@ func main() {
 	model := flag.String("model", "", "model id (default: openai.gpt-5.5 on bedrock mantle)")
 	provider := flag.String("provider", envOr("EIGEN_PROVIDER", "mantle"), "provider: mantle|llama")
 	perm := flag.String("perm", envOr("EIGEN_PERMISSION", "gated"), "permission posture: gated|auto")
+	useTUI := flag.Bool("tui", false, "run in the full-screen Bubble Tea UI")
 	flag.Parse()
 
 	switch agent.Permission(*perm) {
@@ -91,6 +93,15 @@ func main() {
 				}
 			}
 		},
+	}
+
+	if *useTUI {
+		out, err := tui.Run(a, task)
+		if err != nil {
+			fail(err)
+		}
+		fmt.Println(out)
+		return
 	}
 
 	fmt.Fprintf(os.Stderr, "eigen · %s · perm=%s\n", prov.Name(), *perm)
