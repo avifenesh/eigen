@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -105,26 +107,9 @@ func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, m.BaseURL+"/responses", bytes.NewReader(body))
+	raw, err := m.post(ctx, body)
 	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	httpReq.Header.Set("Authorization", "Bearer "+m.token)
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("User-Agent", "eigen/0.1.0")
-
-	resp, err := m.http.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("mantle request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("mantle HTTP %d: %s", resp.StatusCode, string(raw))
+		return nil, err
 	}
 
 	var reply responsesReply
@@ -155,6 +140,85 @@ func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
 	return out, nil
 }
 
+// maxAttempts bounds retries for transient provider failures.
+const maxAttempts = 4
+
+// maxResponseBytes caps how much of a response body we read into memory.
+const maxResponseBytes = 16 << 20 // 16 MiB
+
+// post sends the request body to the Responses endpoint, retrying transient
+// failures (network errors, HTTP 429, and 5xx) with jittered exponential
+// backoff that honors a server Retry-After. It returns the response body on
+// success, or the last error after maxAttempts.
+func (m *Mantle) post(ctx context.Context, body []byte) ([]byte, error) {
+	var lastErr error
+	var retryAfter time.Duration
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 {
+			if err := sleepBackoff(ctx, attempt, retryAfter); err != nil {
+				return nil, err
+			}
+			retryAfter = 0
+		}
+
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, m.BaseURL+"/responses", bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("build request: %w", err)
+		}
+		httpReq.Header.Set("Authorization", "Bearer "+m.token)
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("User-Agent", "eigen/0.1.0")
+
+		resp, err := m.http.Do(httpReq)
+		if err != nil {
+			lastErr = fmt.Errorf("mantle request: %w", err)
+			continue // network error: retry
+		}
+		raw, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+		retryAfter = parseRetryAfter(resp.Header.Get("Retry-After"))
+		resp.Body.Close()
+		if readErr != nil {
+			lastErr = fmt.Errorf("read response: %w", readErr)
+			continue
+		}
+
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return raw, nil
+		}
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			lastErr = fmt.Errorf("mantle HTTP %d: %s", resp.StatusCode, string(raw))
+			continue // transient: retry
+		}
+		// 4xx (other than 429): not retryable.
+		return nil, fmt.Errorf("mantle HTTP %d: %s", resp.StatusCode, string(raw))
+	}
+	return nil, fmt.Errorf("mantle failed after %d attempts: %w", maxAttempts, lastErr)
+}
+
+// sleepBackoff waits for an exponential backoff (honoring a server Retry-After
+// when larger) plus jitter, or returns early if the context is cancelled.
+func sleepBackoff(ctx context.Context, attempt int, retryAfter time.Duration) error {
+	delay := time.Duration(1<<(attempt-1)) * time.Second
+	if retryAfter > delay {
+		delay = retryAfter
+	}
+	delay += time.Duration(rand.Int63n(int64(500 * time.Millisecond)))
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(delay):
+		return nil
+	}
+}
+
+// parseRetryAfter parses a Retry-After header expressed in whole seconds.
+func parseRetryAfter(h string) time.Duration {
+	if secs, err := strconv.Atoi(strings.TrimSpace(h)); err == nil && secs >= 0 {
+		return time.Duration(secs) * time.Second
+	}
+	return 0
+}
+
 // buildInput serializes the normalized transcript into Responses input items.
 func buildInput(req Request) []responsesInputItem {
 	items := make([]responsesInputItem, 0, len(req.Messages)+1)
@@ -170,6 +234,9 @@ func buildInput(req Request) []responsesInputItem {
 				Output: msg.Text,
 			})
 		case RoleAssistant:
+			if msg.Text != "" {
+				items = append(items, responsesInputItem{Role: "assistant", Content: msg.Text})
+			}
 			for _, tc := range msg.ToolCalls {
 				items = append(items, responsesInputItem{
 					Type:      "function_call",
@@ -177,9 +244,6 @@ func buildInput(req Request) []responsesInputItem {
 					Name:      tc.Name,
 					Arguments: argString(tc.Arguments),
 				})
-			}
-			if len(msg.ToolCalls) == 0 && msg.Text != "" {
-				items = append(items, responsesInputItem{Role: "assistant", Content: msg.Text})
 			}
 		default: // system / user
 			role := string(msg.Role)

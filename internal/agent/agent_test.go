@@ -43,7 +43,11 @@ func TestRunExecutesToolThenFinishes(t *testing.T) {
 		{ToolCalls: []llm.ToolCall{{ID: "c1", Name: "ping", Arguments: json.RawMessage(`{}`)}}},
 		{Text: "done"},
 	}}
-	a := &Agent{Provider: prov, Tools: tool.NewRegistry(td), Perm: PermAuto}
+	reg, err := tool.NewRegistry(td)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto}
 
 	out, err := a.Run(context.Background(), "task")
 	if err != nil {
@@ -71,7 +75,11 @@ func TestGatedDeniesMutatingWithoutApprover(t *testing.T) {
 		{ToolCalls: []llm.ToolCall{{ID: "c1", Name: "mutate", Arguments: json.RawMessage(`{}`)}}},
 		{Text: "end"},
 	}}
-	a := &Agent{Provider: prov, Tools: tool.NewRegistry(td), Perm: PermGated} // Approve == nil
+	reg, err := tool.NewRegistry(td)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &Agent{Provider: prov, Tools: reg, Perm: PermGated} // Approve == nil
 
 	out, err := a.Run(context.Background(), "t")
 	if err != nil {
@@ -88,7 +96,11 @@ func TestGatedDeniesMutatingWithoutApprover(t *testing.T) {
 func TestRunStopsAtMaxSteps(t *testing.T) {
 	loop := &llm.Response{ToolCalls: []llm.ToolCall{{ID: "c", Name: "ping", Arguments: json.RawMessage(`{}`)}}}
 	prov := &mockProvider{replies: []*llm.Response{loop, loop, loop}}
-	a := &Agent{Provider: prov, Tools: tool.NewRegistry(callTool("ping")), Perm: PermAuto, MaxSteps: 2}
+	reg, err := tool.NewRegistry(callTool("ping"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto, MaxSteps: 2}
 
 	if _, err := a.Run(context.Background(), "t"); err == nil {
 		t.Fatal("expected MaxSteps error")

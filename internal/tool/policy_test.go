@@ -8,7 +8,7 @@ import (
 
 func TestPolicyResolveAllowsWithinRoot(t *testing.T) {
 	dir := t.TempDir()
-	p := &Policy{Roots: []string{dir}}
+	p := NewPolicy(dir)
 
 	f := filepath.Join(dir, "a.txt")
 	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
@@ -24,7 +24,7 @@ func TestPolicyResolveAllowsWithinRoot(t *testing.T) {
 }
 
 func TestPolicyResolveDeniesOutsideRoot(t *testing.T) {
-	p := &Policy{Roots: []string{t.TempDir()}}
+	p := NewPolicy(t.TempDir())
 	if _, err := p.Resolve("/etc/hosts"); err == nil {
 		t.Fatal("expected denial for path outside root")
 	}
@@ -32,9 +32,9 @@ func TestPolicyResolveDeniesOutsideRoot(t *testing.T) {
 
 func TestPolicyResolveDeniesSensitivePatterns(t *testing.T) {
 	dir := t.TempDir()
-	p := &Policy{Roots: []string{dir}}
+	p := NewPolicy(dir)
 
-	cases := []string{".env", "server.pem", "deploy.key", "id_rsa"}
+	cases := []string{".env", ".env.local", "server.pem", "deploy.key", "id_rsa", ".npmrc"}
 	for _, name := range cases {
 		if _, err := p.Resolve(filepath.Join(dir, name)); err == nil {
 			t.Errorf("expected denial for %q", name)
@@ -44,7 +44,7 @@ func TestPolicyResolveDeniesSensitivePatterns(t *testing.T) {
 
 func TestPolicyResolveDeniesSensitiveDir(t *testing.T) {
 	dir := t.TempDir()
-	p := &Policy{Roots: []string{dir}}
+	p := NewPolicy(dir)
 	if _, err := p.Resolve(filepath.Join(dir, ".ssh", "config")); err == nil {
 		t.Fatal("expected denial for .ssh directory")
 	}

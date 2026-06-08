@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"unicode/utf8"
 )
 
 const maxReadBytes = 256 * 1024
@@ -44,6 +45,9 @@ func Read(policy *Policy) Definition {
 			data, err := os.ReadFile(resolved)
 			if err != nil {
 				return "", err
+			}
+			if !utf8.Valid(data) {
+				return "", fmt.Errorf("file is not valid UTF-8 text (looks binary)")
 			}
 			if len(data) > maxReadBytes {
 				return string(data[:maxReadBytes]) + "\n[truncated]", nil

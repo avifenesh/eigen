@@ -41,8 +41,18 @@ type Agent struct {
 	OnStep func(step int, resp *llm.Response)
 }
 
+// maxToolOutput caps a single tool result fed back to the model, so a runaway
+// tool (huge file, verbose command) can't blow up memory or the next request.
+const maxToolOutput = 100_000
+
 // Run executes the loop until the model stops calling tools or MaxSteps is hit.
 func (a *Agent) Run(ctx context.Context, task string) (string, error) {
+	if a.Provider == nil {
+		return "", fmt.Errorf("agent: nil provider")
+	}
+	if a.Tools == nil {
+		return "", fmt.Errorf("agent: nil tools")
+	}
 	maxSteps := a.MaxSteps
 	if maxSteps <= 0 {
 		maxSteps = 20
@@ -90,14 +100,26 @@ func (a *Agent) dispatch(ctx context.Context, tc llm.ToolCall) string {
 	if !ok {
 		return fmt.Sprintf("Error: unknown tool %q", tc.Name)
 	}
-	if a.Perm == PermGated && !def.ReadOnly {
-		if a.Approve == nil || !a.Approve(tc.Name, tc.Arguments) {
-			return fmt.Sprintf("Denied: tool %q was not approved by the user.", tc.Name)
+	if !def.ReadOnly {
+		// Fail closed: a mutating tool runs only under an explicitly recognized
+		// posture. Any unknown posture denies.
+		switch a.Perm {
+		case PermAuto:
+			// allowed
+		case PermGated:
+			if a.Approve == nil || !a.Approve(tc.Name, tc.Arguments) {
+				return fmt.Sprintf("Denied: tool %q was not approved by the user.", tc.Name)
+			}
+		default:
+			return fmt.Sprintf("Denied: tool %q blocked under unknown permission posture %q.", tc.Name, a.Perm)
 		}
 	}
 	out, err := def.Run(ctx, tc.Arguments)
 	if err != nil {
 		return "Error: " + err.Error()
+	}
+	if len(out) > maxToolOutput {
+		out = out[:maxToolOutput] + "\n[output truncated]"
 	}
 	return out
 }

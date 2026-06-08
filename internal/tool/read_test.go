@@ -24,7 +24,7 @@ func TestReadReturnsContents(t *testing.T) {
 	if err := os.WriteFile(f, []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rd := Read(&Policy{Roots: []string{dir}})
+	rd := Read(NewPolicy(dir))
 	out, err := rd.Run(context.Background(), readArgs(t, f))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -37,10 +37,10 @@ func TestReadReturnsContents(t *testing.T) {
 func TestReadTruncates(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "big.txt")
-	if err := os.WriteFile(f, make([]byte, maxReadBytes+10), 0o644); err != nil {
+	if err := os.WriteFile(f, []byte(strings.Repeat("a", maxReadBytes+10)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rd := Read(&Policy{Roots: []string{dir}})
+	rd := Read(NewPolicy(dir))
 	out, err := rd.Run(context.Background(), readArgs(t, f))
 	if err != nil {
 		t.Fatal(err)
@@ -52,7 +52,7 @@ func TestReadTruncates(t *testing.T) {
 
 func TestReadErrors(t *testing.T) {
 	dir := t.TempDir()
-	rd := Read(&Policy{Roots: []string{dir}})
+	rd := Read(NewPolicy(dir))
 
 	if _, err := rd.Run(context.Background(), readArgs(t, "")); err == nil {
 		t.Error("expected error on empty path")

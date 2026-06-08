@@ -25,12 +25,23 @@ import (
 )
 
 func main() {
+	// Load credentials only from the trusted user config, never from a
+	// project-local .env (an untrusted repo must not be able to set the
+	// permission posture, provider creds, or model config).
 	home, _ := os.UserHomeDir()
-	config.LoadEnvFiles(".env", filepath.Join(home, ".eigen", ".env"))
+	if err := config.LoadEnvFiles(filepath.Join(home, ".eigen", ".env")); err != nil {
+		fmt.Fprintln(os.Stderr, "eigen: env:", err)
+	}
 
 	model := flag.String("model", "", "model id (default: openai.gpt-5.5 on bedrock mantle)")
 	perm := flag.String("perm", envOr("EIGEN_PERMISSION", "gated"), "permission posture: gated|auto")
 	flag.Parse()
+
+	switch agent.Permission(*perm) {
+	case agent.PermGated, agent.PermAuto:
+	default:
+		fail(fmt.Errorf("invalid --perm %q (want gated|auto)", *perm))
+	}
 
 	task := strings.TrimSpace(strings.Join(flag.Args(), " "))
 	if task == "" {
@@ -43,9 +54,14 @@ func main() {
 		fail(err)
 	}
 
+	registry, err := tool.NewRegistry(tool.Read(tool.DefaultPolicy()))
+	if err != nil {
+		fail(err)
+	}
+
 	a := &agent.Agent{
 		Provider: provider,
-		Tools:    tool.NewRegistry(tool.Read(tool.DefaultPolicy())),
+		Tools:    registry,
 		Perm:     agent.Permission(*perm),
 		Approve:  cliApprove,
 		OnStep: func(step int, resp *llm.Response) {
@@ -68,10 +84,23 @@ func main() {
 	fmt.Println(out)
 }
 
-// cliApprove prompts on stderr/stdin for gated mutating tool calls.
+// cliApprove prompts for a gated mutating tool call. It reads from the
+// controlling terminal (/dev/tty), not stdin, so piped input cannot auto-answer
+// it, and fails closed when there is no terminal. Arguments are truncated and
+// flattened so a tool's payload cannot spoof the prompt.
 func cliApprove(name string, args json.RawMessage) bool {
-	fmt.Fprintf(os.Stderr, "approve %s %s ? [y/N] ", name, string(args))
-	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return false // no terminal: fail closed
+	}
+	defer tty.Close()
+
+	shown := strings.ReplaceAll(string(args), "\n", " ")
+	if len(shown) > 200 {
+		shown = shown[:200] + "…"
+	}
+	fmt.Fprintf(tty, "approve %s %s ? [y/N] ", name, shown)
+	line, _ := bufio.NewReader(tty).ReadString('\n')
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(line)), "y")
 }
 

@@ -6,6 +6,7 @@ package tool
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/avifenesh/eigen/internal/llm"
 )
@@ -36,17 +37,24 @@ type Registry struct {
 	byName map[string]Definition
 }
 
-// NewRegistry builds a registry; later duplicates of a name are ignored.
-func NewRegistry(defs ...Definition) *Registry {
+// NewRegistry builds a registry, validating that every tool has a non-empty
+// unique name and a non-nil Run.
+func NewRegistry(defs ...Definition) (*Registry, error) {
 	r := &Registry{byName: make(map[string]Definition, len(defs))}
 	for _, d := range defs {
+		if d.Name == "" {
+			return nil, fmt.Errorf("tool with empty name")
+		}
+		if d.Run == nil {
+			return nil, fmt.Errorf("tool %q has nil Run", d.Name)
+		}
 		if _, dup := r.byName[d.Name]; dup {
-			continue
+			return nil, fmt.Errorf("duplicate tool %q", d.Name)
 		}
 		r.order = append(r.order, d.Name)
 		r.byName[d.Name] = d
 	}
-	return r
+	return r, nil
 }
 
 // Specs returns the provider-neutral specs in registration order.

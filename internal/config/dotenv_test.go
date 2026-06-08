@@ -30,7 +30,9 @@ func TestLoadEnvFiles(t *testing.T) {
 		}
 	})
 
-	LoadEnvFiles(primary)
+	if err := LoadEnvFiles(primary); err != nil {
+		t.Fatal(err)
+	}
 
 	cases := map[string]string{
 		"FOO":    "bar",
