@@ -27,8 +27,10 @@ const (
 // server Retry-After. It returns the response body and HTTP status; non-2xx
 // statuses other than the retried ones are returned to the caller (with the
 // body) so each provider can format its own error. Content-Type and User-Agent
-// are set automatically; pass any auth headers in headers.
-func httpJSON(ctx context.Context, client *http.Client, url string, headers map[string]string, body []byte) ([]byte, int, error) {
+// are set automatically; pass any auth headers in headers. If sign is non-nil
+// it is called per attempt after headers are set (e.g. for SigV4), so each
+// retry is freshly signed.
+func httpJSON(ctx context.Context, client *http.Client, url string, headers map[string]string, body []byte, sign func(*http.Request, []byte)) ([]byte, int, error) {
 	var lastErr error
 	var retryAfter time.Duration
 	for attempt := 0; attempt < maxAttempts; attempt++ {
@@ -48,6 +50,9 @@ func httpJSON(ctx context.Context, client *http.Client, url string, headers map[
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", "eigen/"+Version)
+		if sign != nil {
+			sign(req, body)
+		}
 
 		resp, err := client.Do(req)
 		if err != nil {

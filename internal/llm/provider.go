@@ -9,7 +9,9 @@ func New(provider, model string) (Provider, error) {
 		return NewMantle(model)
 	case "llama", "local":
 		return NewLlama(model)
+	case "converse", "bedrock-converse", "claude":
+		return NewConverse(model)
 	default:
-		return nil, fmt.Errorf("unknown provider %q (want: mantle | llama)", provider)
+		return nil, fmt.Errorf("unknown provider %q (want: mantle | llama | converse)", provider)
 	}
 }

@@ -104,7 +104,7 @@ func (l *Llama) Complete(ctx context.Context, req Request) (*Response, error) {
 	if l.apiKey != "" {
 		headers["Authorization"] = "Bearer " + l.apiKey
 	}
-	raw, status, err := httpJSON(ctx, l.http, l.BaseURL+"/chat/completions", headers, body)
+	raw, status, err := httpJSON(ctx, l.http, l.BaseURL+"/chat/completions", headers, body, nil)
 	if err != nil {
 		return nil, fmt.Errorf("llama: %w", err)
 	}

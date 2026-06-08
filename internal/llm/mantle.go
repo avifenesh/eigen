@@ -190,7 +190,7 @@ func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
 // transport (retry/backoff/Retry-After) and surfaces non-2xx as an error.
 func (m *Mantle) post(ctx context.Context, body []byte) ([]byte, error) {
 	raw, status, err := httpJSON(ctx, m.http, m.BaseURL+"/responses",
-		map[string]string{"Authorization": "Bearer " + m.token}, body)
+		map[string]string{"Authorization": "Bearer " + m.token}, body, nil)
 	if err != nil {
 		return nil, fmt.Errorf("mantle: %w", err)
 	}
