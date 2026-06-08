@@ -303,8 +303,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.state == stInput {
-			switch msg.String() {
-			case "enter":
+			if msg.String() == "enter" {
 				task := strings.TrimSpace(m.ti.Value())
 				if task == "" {
 					return m, nil
@@ -314,12 +313,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.command(task)
 				}
 				return m, m.submit(task)
-			case " ":
-				if m.sel >= 0 { // space toggles when a block is selected
-					m.toggleSel()
-					return m, nil
-				}
 			}
+			// Do not bind the spacebar while the input is focused: it must insert
+			// spaces in prompts even when a transcript block is selected. Use tab to
+			// expand/collapse blocks.
 			var cmd tea.Cmd
 			m.ti, cmd = m.ti.Update(msg)
 			return m, cmd
