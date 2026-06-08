@@ -1,11 +1,9 @@
 package llm
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -89,6 +87,9 @@ type chatReply struct {
 }
 
 func (l *Llama) Complete(ctx context.Context, req Request) (*Response, error) {
+	if len(req.Messages) == 0 {
+		return nil, fmt.Errorf("request has no messages")
+	}
 	payload := chatRequest{
 		Model:    l.Model,
 		Messages: llamaMessages(req),
@@ -99,27 +100,16 @@ func (l *Llama) Complete(ctx context.Context, req Request) (*Response, error) {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, l.BaseURL+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("User-Agent", "eigen/0.1.0")
+	headers := map[string]string{}
 	if l.apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+l.apiKey)
+		headers["Authorization"] = "Bearer " + l.apiKey
 	}
-
-	resp, err := l.http.Do(httpReq)
+	raw, status, err := httpJSON(ctx, l.http, l.BaseURL+"/chat/completions", headers, body)
 	if err != nil {
-		return nil, fmt.Errorf("llama request: %w", err)
+		return nil, fmt.Errorf("llama: %w", err)
 	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("llama HTTP %d: %s", resp.StatusCode, string(raw))
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf("llama HTTP %d: %s", status, string(raw))
 	}
 
 	var reply chatReply
