@@ -75,23 +75,21 @@ func main() {
 		Tools:    registry,
 		Perm:     agent.Permission(*perm),
 		Approve:  cliApprove,
-		OnChunk: func(c llm.StreamChunk) {
-			// Stream the model's output live to stderr as a progress view; the
-			// canonical final answer still prints to stdout after the loop.
-			fmt.Fprint(os.Stderr, c.Text)
-			if c.Kind == llm.ChunkText {
-				streamed = true
+		OnEvent: func(e agent.Event) {
+			switch e.Kind {
+			case agent.EventTextDelta, agent.EventReasoningDelta:
+				// Live progress on stderr; the final answer prints to stdout.
+				fmt.Fprint(os.Stderr, e.Text)
+				if e.Kind == agent.EventTextDelta {
+					streamed = true
+				}
+			case agent.EventToolStart:
+				fmt.Fprintf(os.Stderr, "\n  step %d → %s\n", e.Step+1, e.ToolName)
+			case agent.EventToolResult:
+				if e.IsError {
+					fmt.Fprintf(os.Stderr, "  ↳ %s: %s\n", e.ToolName, firstLine(e.Result))
+				}
 			}
-		},
-		OnStep: func(step int, resp *llm.Response) {
-			if len(resp.ToolCalls) == 0 {
-				return
-			}
-			names := make([]string, len(resp.ToolCalls))
-			for i, tc := range resp.ToolCalls {
-				names[i] = tc.Name
-			}
-			fmt.Fprintf(os.Stderr, "\n  step %d → %s\n", step+1, strings.Join(names, ", "))
 		},
 	}
 
@@ -106,14 +104,25 @@ func main() {
 	fmt.Println(out)
 }
 
+// firstLine returns the first line of s, truncated, for compact error display.
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	if len(s) > 160 {
+		s = s[:160] + "…"
+	}
+	return s
+}
+
 // cliApprove prompts for a gated mutating tool call. It reads from the
 // controlling terminal (/dev/tty), not stdin, so piped input cannot auto-answer
 // it, and fails closed when there is no terminal. Arguments are truncated and
 // flattened so a tool's payload cannot spoof the prompt.
-func cliApprove(name string, args json.RawMessage) bool {
+func cliApprove(ctx context.Context, name string, args json.RawMessage) (bool, error) {
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
-		return false // no terminal: fail closed
+		return false, nil // no terminal: fail closed
 	}
 	defer tty.Close()
 
@@ -123,7 +132,7 @@ func cliApprove(name string, args json.RawMessage) bool {
 	}
 	fmt.Fprintf(tty, "approve %s %s ? [y/N] ", name, shown)
 	line, _ := bufio.NewReader(tty).ReadString('\n')
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(line)), "y")
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(line)), "y"), nil
 }
 
 func envOr(key, def string) string {

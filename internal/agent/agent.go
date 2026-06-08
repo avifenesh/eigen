@@ -26,8 +26,37 @@ const systemPrompt = `You are eigen, a coding agent that works directly in the u
 Use the provided tools to inspect and modify files to accomplish the task.
 Call tools as needed; when the task is complete, reply with a short summary.`
 
-// Approver decides whether a mutating tool call may run in gated mode.
-type Approver func(name string, args json.RawMessage) bool
+// Approver decides whether a mutating tool call may run in gated mode. It is
+// context-aware so a UI can cancel a pending prompt, and returns an error
+// distinct from a plain "no".
+type Approver func(ctx context.Context, name string, args json.RawMessage) (bool, error)
+
+// EventKind classifies an agent event.
+type EventKind int
+
+const (
+	EventTextDelta      EventKind = iota // streamed assistant text
+	EventReasoningDelta                  // streamed reasoning summary
+	EventToolStart                       // a tool call is about to run
+	EventToolResult                      // a tool finished
+	EventDone                            // the loop produced its final answer
+)
+
+// Event is a structured observation emitted during a run. A CLI prints it; a
+// TUI renders it. It is the single seam between the loop and any front-end.
+type Event struct {
+	Kind     EventKind
+	Step     int
+	Text     string          // delta text, or final answer for EventDone
+	ToolName string          // EventToolStart / EventToolResult
+	ToolID   string          // EventToolStart / EventToolResult
+	ToolArgs json.RawMessage // EventToolStart
+	Result   string          // EventToolResult
+	IsError  bool            // EventToolResult
+}
+
+// EventSink receives agent events. It must not block for long.
+type EventSink func(Event)
 
 // Agent drives a provider through the tool-use loop.
 type Agent struct {
@@ -37,13 +66,10 @@ type Agent struct {
 	MaxSteps int
 	Approve  Approver
 
-	// OnStep, if set, is called once per loop step with the model's response,
-	// for observability (logging which tools were chosen, etc.).
-	OnStep func(step int, resp *llm.Response)
-
-	// OnChunk, if set and the provider supports streaming, receives incremental
-	// text/reasoning deltas as the model responds.
-	OnChunk llm.StreamSink
+	// OnEvent, if set, receives the structured event stream (deltas, tool
+	// lifecycle, final answer). Streaming deltas only appear if the provider
+	// implements llm.Streamer.
+	OnEvent EventSink
 }
 
 // maxToolOutput caps a single tool result fed back to the model, so a runaway
@@ -79,19 +105,24 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 		}
 		var resp *llm.Response
 		var err error
-		if s, ok := a.Provider.(llm.Streamer); ok && a.OnChunk != nil {
-			resp, err = s.Stream(ctx, req, a.OnChunk)
+		if s, ok := a.Provider.(llm.Streamer); ok && a.OnEvent != nil {
+			sink := func(c llm.StreamChunk) {
+				kind := EventTextDelta
+				if c.Kind == llm.ChunkReasoning {
+					kind = EventReasoningDelta
+				}
+				a.emit(Event{Kind: kind, Step: step, Text: c.Text})
+			}
+			resp, err = s.Stream(ctx, req, sink)
 		} else {
 			resp, err = a.Provider.Complete(ctx, req)
 		}
 		if err != nil {
 			return "", err
 		}
-		if a.OnStep != nil {
-			a.OnStep(step, resp)
-		}
 		if len(resp.ToolCalls) == 0 {
 			if strings.TrimSpace(resp.Text) != "" {
+				a.emit(Event{Kind: EventDone, Step: step, Text: resp.Text})
 				return resp.Text, nil // final answer
 			}
 			// Empty turn (e.g. reasoning-only): nudge to act, bounded.
@@ -119,7 +150,9 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 		// rename) and bash safe without per-path locking; add per-path mutexes
 		// before ever parallelizing this loop.
 		for _, tc := range resp.ToolCalls {
+			a.emit(Event{Kind: EventToolStart, Step: step, ToolName: tc.Name, ToolID: tc.ID, ToolArgs: tc.Arguments})
 			result, isErr := a.dispatch(ctx, tc)
+			a.emit(Event{Kind: EventToolResult, Step: step, ToolName: tc.Name, ToolID: tc.ID, Result: result, IsError: isErr})
 			msgs = append(msgs, llm.Message{
 				Role:       llm.RoleTool,
 				ToolCallID: tc.ID,
@@ -130,6 +163,13 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("reached MaxSteps (%d) without a final answer", maxSteps)
+}
+
+// emit delivers an event to the sink if one is set.
+func (a *Agent) emit(e Event) {
+	if a.OnEvent != nil {
+		a.OnEvent(e)
+	}
 }
 
 // dispatch runs one tool call, enforcing the permission posture, and returns the
@@ -146,7 +186,14 @@ func (a *Agent) dispatch(ctx context.Context, tc llm.ToolCall) (string, bool) {
 		case PermAuto:
 			// allowed
 		case PermGated:
-			if a.Approve == nil || !a.Approve(tc.Name, tc.Arguments) {
+			if a.Approve == nil {
+				return fmt.Sprintf("Denied: tool %q was not approved by the user.", tc.Name), true
+			}
+			ok, err := a.Approve(ctx, tc.Name, tc.Arguments)
+			if err != nil {
+				return fmt.Sprintf("Denied: approval failed for %q: %v", tc.Name, err), true
+			}
+			if !ok {
 				return fmt.Sprintf("Denied: tool %q was not approved by the user.", tc.Name), true
 			}
 		default:

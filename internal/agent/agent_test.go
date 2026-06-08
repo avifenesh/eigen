@@ -140,3 +140,40 @@ func TestRunErrorsOnPersistentEmptyTurns(t *testing.T) {
 		t.Fatal("expected error after persistent empty turns")
 	}
 }
+
+func TestRunEmitsEventSequence(t *testing.T) {
+	td := callTool("ping")
+	td.ReadOnly = true
+	prov := &mockProvider{replies: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "c1", Name: "ping", Arguments: json.RawMessage(`{}`)}}},
+		{Text: "all done"},
+	}}
+	reg, err := tool.NewRegistry(td)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var kinds []EventKind
+	a := &Agent{
+		Provider: prov,
+		Tools:    reg,
+		Perm:     PermAuto,
+		OnEvent:  func(e Event) { kinds = append(kinds, e.Kind) },
+	}
+	out, err := a.Run(context.Background(), "task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "all done" {
+		t.Fatalf("got %q", out)
+	}
+	want := []EventKind{EventToolStart, EventToolResult, EventDone}
+	if len(kinds) != len(want) {
+		t.Fatalf("events = %v, want %v", kinds, want)
+	}
+	for i := range want {
+		if kinds[i] != want[i] {
+			t.Fatalf("event %d = %v, want %v (all: %v)", i, kinds[i], want[i], kinds)
+		}
+	}
+}
