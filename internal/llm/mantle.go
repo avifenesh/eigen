@@ -52,17 +52,48 @@ func NewMantle(model string) (*Mantle, error) {
 
 func (m *Mantle) Name() string { return m.Model + " (bedrock mantle)" }
 
+// Reasoning configuration for GPT-5.5 on mantle.
+//
+// Effort is intentionally "high", not "xhigh": GPT-5.5 with xhigh stalls
+// mid-task on Bedrock mantle (Codex bedrock #26860), while high is stable. Step
+// back up toward xhigh only once that is confirmed fixed.
+//
+// Summary "concise" is requested so the reasoning trace can be carried across
+// turns to preserve the chain of thought (mitigates #26195). NOTE: as of
+// 2026-06, Bedrock mantle accepts the field but returns an empty summary for
+// GPT-5.5 (verified for concise/detailed/auto), so the carry-forward is
+// currently inert on mantle — it activates for providers that do return
+// summaries. The real mantle mechanism for reasoning continuity is
+// previous_response_id with store=true; defer until #26195 actually reproduces.
+const (
+	reasoningEffort  = "high"
+	reasoningSummary = "concise"
+)
+
 // responsesInputItem is one entry in the Responses API "input" array. The shape
-// is heterogeneous: plain messages carry role+content, while tool turns carry
-// type plus call_id/name/arguments or output. omitempty keeps each item valid.
+// is heterogeneous: plain messages carry role+content, tool turns carry type
+// plus call_id/name/arguments or output, and reasoning turns carry a summary.
+// omitempty keeps each item valid.
 type responsesInputItem struct {
-	Type      string `json:"type,omitempty"`
-	Role      string `json:"role,omitempty"`
-	Content   string `json:"content,omitempty"`
-	CallID    string `json:"call_id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	Arguments string `json:"arguments,omitempty"`
-	Output    string `json:"output,omitempty"`
+	Type      string        `json:"type,omitempty"`
+	Role      string        `json:"role,omitempty"`
+	Content   string        `json:"content,omitempty"`
+	CallID    string        `json:"call_id,omitempty"`
+	Name      string        `json:"name,omitempty"`
+	Arguments string        `json:"arguments,omitempty"`
+	Output    string        `json:"output,omitempty"`
+	ID        string        `json:"id,omitempty"`
+	Summary   []summaryPart `json:"summary,omitempty"`
+}
+
+type summaryPart struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type reasoningConfig struct {
+	Effort  string `json:"effort,omitempty"`
+	Summary string `json:"summary,omitempty"`
 }
 
 // responsesTool is a Responses API function-tool definition (flat, type=function).
@@ -74,9 +105,10 @@ type responsesTool struct {
 }
 
 type responsesRequest struct {
-	Model string               `json:"model"`
-	Input []responsesInputItem `json:"input"`
-	Tools []responsesTool      `json:"tools,omitempty"`
+	Model     string               `json:"model"`
+	Input     []responsesInputItem `json:"input"`
+	Tools     []responsesTool      `json:"tools,omitempty"`
+	Reasoning *reasoningConfig     `json:"reasoning,omitempty"`
 }
 
 type responsesReply struct {
@@ -87,10 +119,15 @@ type responsesReply struct {
 	Output []struct {
 		Type    string `json:"type"`
 		Role    string `json:"role"`
+		ID      string `json:"id"`
 		Content []struct {
 			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"content"`
+		Summary []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"summary"`
 		CallID    string `json:"call_id"`
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
@@ -107,9 +144,10 @@ const maxEmptyRetries = 2
 
 func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
 	payload := responsesRequest{
-		Model: m.Model,
-		Input: buildInput(req),
-		Tools: toResponsesTools(req.Tools),
+		Model:     m.Model,
+		Input:     buildInput(req),
+		Tools:     toResponsesTools(req.Tools),
+		Reasoning: &reasoningConfig{Effort: reasoningEffort, Summary: reasoningSummary},
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -163,6 +201,15 @@ func parseReply(raw []byte) (*Response, string, string, error) {
 				if part.Type == "output_text" {
 					out.Text += part.Text
 				}
+			}
+		case "reasoning":
+			for _, s := range item.Summary {
+				if s.Type == "summary_text" {
+					out.Reasoning += s.Text
+				}
+			}
+			if out.ReasoningID == "" {
+				out.ReasoningID = item.ID
 			}
 		case "function_call":
 			out.ToolCalls = append(out.ToolCalls, ToolCall{
@@ -269,6 +316,13 @@ func buildInput(req Request) []responsesInputItem {
 				Output: msg.Text,
 			})
 		case RoleAssistant:
+			if msg.Reasoning != "" {
+				items = append(items, responsesInputItem{
+					Type:    "reasoning",
+					ID:      msg.ReasoningID,
+					Summary: []summaryPart{{Type: "summary_text", Text: msg.Reasoning}},
+				})
+			}
 			if msg.Text != "" {
 				items = append(items, responsesInputItem{Role: "assistant", Content: msg.Text})
 			}

@@ -97,9 +97,11 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 		emptyTurns = 0
 
 		msgs = append(msgs, llm.Message{
-			Role:      llm.RoleAssistant,
-			Text:      resp.Text,
-			ToolCalls: resp.ToolCalls,
+			Role:        llm.RoleAssistant,
+			Text:        resp.Text,
+			Reasoning:   resp.Reasoning,
+			ReasoningID: resp.ReasoningID,
+			ToolCalls:   resp.ToolCalls,
 		})
 		for _, tc := range resp.ToolCalls {
 			msgs = append(msgs, llm.Message{

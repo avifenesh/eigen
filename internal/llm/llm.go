@@ -39,6 +39,12 @@ type Message struct {
 	Role Role
 	Text string
 
+	// Reasoning is the model's concise reasoning summary for this turn; it is
+	// carried back across turns to preserve the chain of thought through tool
+	// calls. ReasoningID is the provider's id for that reasoning item, if any.
+	Reasoning   string
+	ReasoningID string
+
 	// ToolCalls is set on an assistant turn that invokes tools.
 	ToolCalls []ToolCall
 
@@ -57,8 +63,10 @@ type Request struct {
 // Response is a normalized completion result. Either Text, ToolCalls, or both
 // may be set; an empty ToolCalls slice signals the model is done.
 type Response struct {
-	Text      string
-	ToolCalls []ToolCall
+	Text        string
+	Reasoning   string
+	ReasoningID string
+	ToolCalls   []ToolCall
 }
 
 // Provider is any model backend eigen can drive.
