@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -72,6 +73,7 @@ type chatRequest struct {
 	Model    string        `json:"model"`
 	Messages []chatMessage `json:"messages"`
 	Tools    []chatTool    `json:"tools,omitempty"`
+	Stream   bool          `json:"stream,omitempty"`
 }
 
 type chatReply struct {
@@ -130,6 +132,119 @@ func (l *Llama) Complete(ctx context.Context, req Request) (*Response, error) {
 			ID:        tc.ID,
 			Name:      tc.Function.Name,
 			Arguments: normalizeArgs(tc.Function.Arguments),
+		})
+	}
+	return out, nil
+}
+
+// Stream runs a chat-completions request with stream:true, forwarding content
+// deltas to sink and assembling streamed tool-call deltas (which arrive in
+// fragments keyed by index) into the final Response.
+func (l *Llama) Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error) {
+	if len(req.Messages) == 0 {
+		return nil, fmt.Errorf("request has no messages")
+	}
+	payload := chatRequest{
+		Model:    l.Model,
+		Messages: llamaMessages(req),
+		Tools:    llamaTools(req.Tools),
+		Stream:   true,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	headers := map[string]string{}
+	if l.apiKey != "" {
+		headers["Authorization"] = "Bearer " + l.apiKey
+	}
+	resp, err := httpStream(ctx, l.http, l.BaseURL+"/chat/completions", headers, body, nil)
+	if err != nil {
+		return nil, fmt.Errorf("llama: %w", err)
+	}
+	defer resp.Body.Close()
+
+	type partialCall struct {
+		id, name string
+		args     strings.Builder
+	}
+	byIndex := map[int]*partialCall{}
+	var order []int
+	var text strings.Builder
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(line[len("data:"):])
+		if data == "" || data == "[DONE]" {
+			continue
+		}
+		var ev struct {
+			Choices []struct {
+				Delta struct {
+					Content   string `json:"content"`
+					ToolCalls []struct {
+						Index    int    `json:"index"`
+						ID       string `json:"id"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
+				} `json:"delta"`
+			} `json:"choices"`
+			Error *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			continue
+		}
+		if ev.Error != nil {
+			return nil, fmt.Errorf("llama error: %s", ev.Error.Message)
+		}
+		if len(ev.Choices) == 0 {
+			continue
+		}
+		d := ev.Choices[0].Delta
+		if d.Content != "" {
+			text.WriteString(d.Content)
+			if sink != nil {
+				sink(StreamChunk{Kind: ChunkText, Text: d.Content})
+			}
+		}
+		for _, tc := range d.ToolCalls {
+			p := byIndex[tc.Index]
+			if p == nil {
+				p = &partialCall{}
+				byIndex[tc.Index] = p
+				order = append(order, tc.Index)
+			}
+			if tc.ID != "" {
+				p.id = tc.ID
+			}
+			if tc.Function.Name != "" {
+				p.name = tc.Function.Name
+			}
+			p.args.WriteString(tc.Function.Arguments)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read stream: %w", err)
+	}
+
+	out := &Response{Text: text.String()}
+	for _, idx := range order {
+		p := byIndex[idx]
+		out.ToolCalls = append(out.ToolCalls, ToolCall{
+			ID:        p.id,
+			Name:      p.name,
+			Arguments: normalizeArgs(p.args.String()),
 		})
 	}
 	return out, nil
