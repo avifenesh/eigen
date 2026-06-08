@@ -80,3 +80,27 @@ type Provider interface {
 	// Complete runs a non-streaming completion.
 	Complete(ctx context.Context, req Request) (*Response, error)
 }
+
+// ChunkKind classifies a streamed delta.
+type ChunkKind int
+
+const (
+	ChunkText ChunkKind = iota
+	ChunkReasoning
+)
+
+// StreamChunk is an incremental delta emitted while a response streams.
+type StreamChunk struct {
+	Kind ChunkKind
+	Text string
+}
+
+// StreamSink receives streamed deltas. It must not block for long.
+type StreamSink func(StreamChunk)
+
+// Streamer is an optional capability: providers that can stream implement it.
+// The final assembled Response is still returned, so callers that don't care
+// about deltas can ignore the sink. The agent uses it when a chunk sink is set.
+type Streamer interface {
+	Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error)
+}

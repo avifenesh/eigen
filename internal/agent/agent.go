@@ -40,6 +40,10 @@ type Agent struct {
 	// OnStep, if set, is called once per loop step with the model's response,
 	// for observability (logging which tools were chosen, etc.).
 	OnStep func(step int, resp *llm.Response)
+
+	// OnChunk, if set and the provider supports streaming, receives incremental
+	// text/reasoning deltas as the model responds.
+	OnChunk llm.StreamSink
 }
 
 // maxToolOutput caps a single tool result fed back to the model, so a runaway
@@ -68,11 +72,18 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 	emptyTurns := 0
 
 	for step := 0; step < maxSteps; step++ {
-		resp, err := a.Provider.Complete(ctx, llm.Request{
+		req := llm.Request{
 			System:   systemPrompt,
 			Messages: msgs,
 			Tools:    specs,
-		})
+		}
+		var resp *llm.Response
+		var err error
+		if s, ok := a.Provider.(llm.Streamer); ok && a.OnChunk != nil {
+			resp, err = s.Stream(ctx, req, a.OnChunk)
+		} else {
+			resp, err = a.Provider.Complete(ctx, req)
+		}
 		if err != nil {
 			return "", err
 		}

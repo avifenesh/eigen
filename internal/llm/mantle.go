@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -114,6 +115,7 @@ type responsesRequest struct {
 	Input     []responsesInputItem `json:"input"`
 	Tools     []responsesTool      `json:"tools,omitempty"`
 	Reasoning *reasoningConfig     `json:"reasoning,omitempty"`
+	Stream    bool                 `json:"stream,omitempty"`
 }
 
 type responsesReply struct {
@@ -184,6 +186,85 @@ func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
 		}
 		// Empty completed response: re-request (the mantle quirk).
 	}
+}
+
+// Stream runs a completion over SSE, forwarding text/reasoning deltas to sink
+// and returning the final assembled Response parsed from the completed event.
+func (m *Mantle) Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error) {
+	if len(req.Messages) == 0 {
+		return nil, fmt.Errorf("request has no messages")
+	}
+	payload := responsesRequest{
+		Model:     m.Model,
+		Input:     buildInput(req),
+		Tools:     toResponsesTools(req.Tools),
+		Reasoning: &reasoningConfig{Effort: m.effort, Summary: reasoningSummary},
+		Stream:    true,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	resp, err := httpStream(ctx, m.http, m.BaseURL+"/responses",
+		map[string]string{"Authorization": "Bearer " + m.token}, body, nil)
+	if err != nil {
+		return nil, fmt.Errorf("mantle: %w", err)
+	}
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
+	var final *Response
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(line[len("data:"):])
+		if data == "" || data == "[DONE]" {
+			continue
+		}
+		var ev struct {
+			Type     string          `json:"type"`
+			Delta    string          `json:"delta"`
+			Response json.RawMessage `json:"response"`
+		}
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			continue
+		}
+		switch ev.Type {
+		case "response.output_text.delta":
+			if sink != nil {
+				sink(StreamChunk{Kind: ChunkText, Text: ev.Delta})
+			}
+		case "response.reasoning_summary_text.delta":
+			if sink != nil {
+				sink(StreamChunk{Kind: ChunkReasoning, Text: ev.Delta})
+			}
+		case "response.completed", "response.incomplete":
+			out, status, reason, perr := parseReply(ev.Response)
+			if perr != nil {
+				return nil, perr
+			}
+			if status == "incomplete" {
+				if reason == "" {
+					reason = "unknown"
+				}
+				return nil, fmt.Errorf("mantle response incomplete (%s): refusing possibly-truncated output", reason)
+			}
+			final = out
+		case "response.failed":
+			return nil, fmt.Errorf("mantle stream failed")
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read stream: %w", err)
+	}
+	if final == nil {
+		return &Response{}, nil // empty; the agent's empty-turn nudge handles it
+	}
+	return final, nil
 }
 
 // post sends the request body to the Responses endpoint via the shared

@@ -109,3 +109,52 @@ func parseRetryAfter(h string) time.Duration {
 	}
 	return 0
 }
+
+// httpStream POSTs body and, on a 2xx, returns the open response for the caller
+// to stream (the caller must Close the body). The initial connect is retried on
+// transient failures (network, 429, 5xx); once streaming begins there is no
+// retry. Non-2xx responses are read and returned as an error.
+func httpStream(ctx context.Context, client *http.Client, url string, headers map[string]string, body []byte, sign func(*http.Request, []byte)) (*http.Response, error) {
+	var lastErr error
+	var retryAfter time.Duration
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 {
+			if err := sleepBackoff(ctx, attempt, retryAfter); err != nil {
+				return nil, err
+			}
+			retryAfter = 0
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("build request: %w", err)
+		}
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("User-Agent", "eigen/"+Version)
+		if sign != nil {
+			sign(req, body)
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("request: %w", err)
+			continue
+		}
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return resp, nil
+		}
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+		retryAfter = parseRetryAfter(resp.Header.Get("Retry-After"))
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(raw))
+			continue
+		}
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(raw))
+	}
+	return nil, fmt.Errorf("failed after %d attempts: %w", maxAttempts, lastErr)
+}

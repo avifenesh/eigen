@@ -69,11 +69,20 @@ func main() {
 		fail(err)
 	}
 
+	streamed := false
 	a := &agent.Agent{
 		Provider: prov,
 		Tools:    registry,
 		Perm:     agent.Permission(*perm),
 		Approve:  cliApprove,
+		OnChunk: func(c llm.StreamChunk) {
+			// Stream the model's output live to stderr as a progress view; the
+			// canonical final answer still prints to stdout after the loop.
+			fmt.Fprint(os.Stderr, c.Text)
+			if c.Kind == llm.ChunkText {
+				streamed = true
+			}
+		},
 		OnStep: func(step int, resp *llm.Response) {
 			if len(resp.ToolCalls) == 0 {
 				return
@@ -82,7 +91,7 @@ func main() {
 			for i, tc := range resp.ToolCalls {
 				names[i] = tc.Name
 			}
-			fmt.Fprintf(os.Stderr, "  step %d → %s\n", step+1, strings.Join(names, ", "))
+			fmt.Fprintf(os.Stderr, "\n  step %d → %s\n", step+1, strings.Join(names, ", "))
 		},
 	}
 
@@ -90,6 +99,9 @@ func main() {
 	out, err := a.Run(context.Background(), task)
 	if err != nil {
 		fail(err)
+	}
+	if streamed {
+		fmt.Fprintln(os.Stderr)
 	}
 	fmt.Println(out)
 }
