@@ -34,6 +34,7 @@ func main() {
 	}
 
 	model := flag.String("model", "", "model id (default: openai.gpt-5.5 on bedrock mantle)")
+	provider := flag.String("provider", envOr("EIGEN_PROVIDER", "mantle"), "provider: mantle|llama")
 	perm := flag.String("perm", envOr("EIGEN_PERMISSION", "gated"), "permission posture: gated|auto")
 	flag.Parse()
 
@@ -49,7 +50,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	provider, err := llm.NewMantle(*model)
+	prov, err := llm.New(*provider, *model)
 	if err != nil {
 		fail(err)
 	}
@@ -69,7 +70,7 @@ func main() {
 	}
 
 	a := &agent.Agent{
-		Provider: provider,
+		Provider: prov,
 		Tools:    registry,
 		Perm:     agent.Permission(*perm),
 		Approve:  cliApprove,
@@ -85,7 +86,7 @@ func main() {
 		},
 	}
 
-	fmt.Fprintf(os.Stderr, "eigen · %s · perm=%s\n", provider.Name(), *perm)
+	fmt.Fprintf(os.Stderr, "eigen · %s · perm=%s\n", prov.Name(), *perm)
 	out, err := a.Run(context.Background(), task)
 	if err != nil {
 		fail(err)
