@@ -72,6 +72,11 @@ type Agent struct {
 	// session.
 	MaxContextTokens int
 
+	// Compactor, if set, summarizes older history when MaxContextTokens is
+	// exceeded (model-generated structured summary). If nil, compaction falls
+	// back to the deterministic recency window.
+	Compactor llm.Compactor
+
 	// OnEvent, if set, receives the structured event stream (deltas, tool
 	// lifecycle, final answer). Streaming deltas only appear if the provider
 	// implements llm.Streamer.
@@ -133,7 +138,10 @@ func (s *Session) Send(ctx context.Context, task string) (string, error) {
 	}
 	s.msgs = append(s.msgs, llm.Message{Role: llm.RoleUser, Text: task})
 	if a.MaxContextTokens > 0 {
-		s.msgs = llm.Compact(s.msgs, a.MaxContextTokens)
+		compacted, err := llm.CompactWith(ctx, a.Compactor, s.msgs, a.MaxContextTokens)
+		if err == nil {
+			s.msgs = compacted
+		}
 	}
 	specs := a.Tools.Specs()
 	emptyTurns := 0

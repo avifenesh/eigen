@@ -82,6 +82,7 @@ func main() {
 		Tools:            registry,
 		Perm:             agent.Permission(*perm),
 		MaxContextTokens: contextBudget(*maxTokens, *provider, *model),
+		Compactor:        llm.NewCompactor(prov),
 	}
 
 	// Optionally resume a prior conversation from any supported transcript.
