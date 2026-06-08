@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -71,13 +72,22 @@ type model struct {
 	ready       bool
 
 	rebuild     bool
-	rebuildPath string
+	rebuildBin  string
+	srcDir      string
+	sessionPath string
 }
 
 // Result reports why the TUI exited.
 type Result struct {
 	Rebuild     bool
 	SessionPath string
+	BinPath     string
+}
+
+type buildDoneMsg struct {
+	bin string
+	out string
+	err error
 }
 
 func (m *model) Init() tea.Cmd {
@@ -300,7 +310,28 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = stInput
 		m.status = ""
 		m.ti.Focus()
+		// Autosave so the conversation survives a crash or failed rebuild.
+		if m.sessionPath != "" {
+			_ = transcript.Save(m.sessionPath, m.session.Messages())
+		}
 		return m, textinput.Blink
+
+	case buildDoneMsg:
+		if msg.err != nil {
+			m.push(&block{kind: blockNote, isErr: true, body: sb("rebuild failed — kept the current build:")})
+			detail := strings.TrimSpace(msg.out)
+			if detail == "" {
+				detail = msg.err.Error()
+			}
+			m.push(&block{kind: blockNote, isErr: true, body: sb(detail)})
+			m.state = stInput
+			m.status = ""
+			m.ti.Focus()
+			return m, textinput.Blink
+		}
+		m.rebuild = true
+		m.rebuildBin = msg.bin
+		return m, tea.Quit
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -406,14 +437,13 @@ func (m *model) command(line string) tea.Cmd {
 		renderHistory(m, msgs)
 		m.note(fmt.Sprintf("— resumed %d messages —", len(msgs)))
 	case "/rebuild":
-		path := filepath.Join(os.TempDir(), "eigen-rebuild.eigen.jsonl")
-		if err := transcript.Save(path, m.session.Messages()); err != nil {
+		if err := transcript.Save(m.sessionPath, m.session.Messages()); err != nil {
 			m.push(&block{kind: blockNote, isErr: true, body: sb("rebuild: save failed: " + err.Error())})
 			break
 		}
-		m.rebuild = true
-		m.rebuildPath = path
-		return tea.Quit
+		m.state = stRunning
+		m.status = "rebuilding…"
+		return tea.Batch(m.sp.Tick, m.buildCmd())
 	case "/quit", "/exit":
 		return tea.Quit
 	default:
@@ -427,6 +457,42 @@ func defaultSessionPath() string {
 	dir := filepath.Join(home, ".eigen", "sessions")
 	_ = os.MkdirAll(dir, 0o755)
 	return filepath.Join(dir, time.Now().Format("20060102-150405")+".eigen.jsonl")
+}
+
+// buildCmd rebuilds eigen to a staging binary, smoke-tests it, and only on
+// success atomically swaps it into place — so a broken build never replaces the
+// working binary or kills the session. Failures are reported back via buildDoneMsg.
+func (m *model) buildCmd() tea.Cmd {
+	src := m.srcDir
+	return func() tea.Msg {
+		bin := filepath.Join(src, "bin", "eigen")
+		staging := bin + ".new"
+
+		build := exec.Command("go", "build", "-o", staging, ".")
+		build.Dir = src
+		if out, err := build.CombinedOutput(); err != nil {
+			return buildDoneMsg{err: fmt.Errorf("build failed"), out: string(out)}
+		}
+		// Smoke test: the new binary must at least run --version cleanly.
+		smoke := exec.Command(staging, "--version")
+		if out, err := smoke.CombinedOutput(); err != nil {
+			os.Remove(staging)
+			return buildDoneMsg{err: fmt.Errorf("smoke test failed: %v", err), out: string(out)}
+		}
+		if err := os.Rename(staging, bin); err != nil {
+			os.Remove(staging)
+			return buildDoneMsg{err: fmt.Errorf("swap failed: %w", err)}
+		}
+		return buildDoneMsg{bin: bin}
+	}
+}
+
+func eigenSrcDir() string {
+	if s := os.Getenv("EIGEN_SRC"); s != "" {
+		return s
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, "projects", "eigen")
 }
 
 // Run drives the agent under a multi-turn Bubble Tea REPL.
@@ -453,9 +519,10 @@ func Run(a *agent.Agent, initialTask string, history []llm.Message) (Result, err
 		ti:          ti,
 		session:     session,
 		ctx:         ctx,
-		sel:         -1,
 		state:       stInput,
 		initialTask: initialTask,
+		srcDir:      eigenSrcDir(),
+		sessionPath: defaultSessionPath(),
 	}
 	if len(history) > 0 {
 		renderHistory(m, history)
@@ -481,7 +548,7 @@ func Run(a *agent.Agent, initialTask string, history []llm.Message) (Result, err
 		return Result{}, err
 	}
 	fm := final.(*model)
-	return Result{Rebuild: fm.rebuild, SessionPath: fm.rebuildPath}, nil
+	return Result{Rebuild: fm.rebuild, SessionPath: fm.sessionPath, BinPath: fm.rebuildBin}, nil
 }
 
 func compact(s string) string {

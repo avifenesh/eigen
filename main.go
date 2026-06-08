@@ -15,7 +15,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -48,7 +47,13 @@ func main() {
 	from := flag.String("from", "", "force the transcript source for --resume (claude|codex|pi|hermes|opencode|eigen)")
 	sessionID := flag.String("session", "", "opencode session id for --resume opencode (default: latest)")
 	maxTokens := flag.Int("max-tokens", 0, "context budget before compaction (0 = auto by provider)")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("eigen", llm.Version)
+		return
+	}
 
 	switch agent.Permission(*perm) {
 	case agent.PermGated, agent.PermAuto:
@@ -93,9 +98,16 @@ func main() {
 			src = transcript.Detect(*resumeFile)
 		}
 		var herr error
-		if src == transcript.SourceOpenCode {
+		switch {
+		case *resumeFile == "eigen" || src == transcript.SourceEigen && *resumeFile == "eigen":
+			path := latestEigenSession()
+			if path == "" {
+				fail(fmt.Errorf("resume: no saved eigen sessions in ~/.eigen/sessions"))
+			}
+			history, herr = transcript.Load(path)
+		case src == transcript.SourceOpenCode:
 			history, herr = transcript.ImportOpenCode(*resumeFile, *sessionID)
-		} else {
+		default:
 			history, herr = transcript.ImportFrom(src, *resumeFile)
 		}
 		if herr != nil {
@@ -111,7 +123,7 @@ func main() {
 			fail(err)
 		}
 		if res.Rebuild {
-			rebuildAndExec(res.SessionPath, *provider, *model, *perm)
+			execResume(res.BinPath, res.SessionPath, *provider, *model, *perm)
 		}
 		return
 	}
@@ -228,32 +240,30 @@ func fail(err error) {
 	os.Exit(1)
 }
 
-// rebuildAndExec rebuilds eigen from source and replaces the running process
-// with the new binary, resuming the saved conversation — live self-replace with
-// no lost context. EIGEN_SRC overrides the source dir (default ~/projects/eigen).
-func rebuildAndExec(sessionPath, provider, model, perm string) {
-	src := os.Getenv("EIGEN_SRC")
-	if src == "" {
-		home, _ := os.UserHomeDir()
-		src = filepath.Join(home, "projects", "eigen")
-	}
-	bin := filepath.Join(src, "bin", "eigen")
-
-	fmt.Fprintln(os.Stderr, "eigen: rebuilding…")
-	build := exec.Command("go", "build", "-o", bin, ".")
-	build.Dir = src
-	build.Stdout, build.Stderr = os.Stderr, os.Stderr
-	if err := build.Run(); err != nil {
-		fmt.Fprintln(os.Stderr, "eigen: rebuild failed; keeping current binary:", err)
-		os.Exit(1)
-	}
-
+// execResume replaces the running process with the already-built-and-validated
+// binary, resuming the saved conversation — the success half of live-replace.
+// (The build + smoke-test + fence happen in the TUI so a failed build never
+// kills the running session.)
+func execResume(bin, sessionPath, provider, model, perm string) {
 	argv := []string{bin, "--resume", sessionPath, "--provider", provider, "--perm", perm}
 	if model != "" {
 		argv = append(argv, "--model", model)
 	}
-	fmt.Fprintln(os.Stderr, "eigen: reloading new build…")
 	if err := syscall.Exec(bin, argv, os.Environ()); err != nil {
 		fail(fmt.Errorf("exec new build: %w", err))
 	}
+}
+
+// latestEigenSession returns the most recently modified eigen session file.
+func latestEigenSession() string {
+	home, _ := os.UserHomeDir()
+	matches, _ := filepath.Glob(filepath.Join(home, ".eigen", "sessions", "*.eigen.jsonl"))
+	var newest string
+	var newestMod int64
+	for _, m := range matches {
+		if fi, err := os.Stat(m); err == nil && fi.ModTime().UnixNano() > newestMod {
+			newestMod, newest = fi.ModTime().UnixNano(), m
+		}
+	}
+	return newest
 }
