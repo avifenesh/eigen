@@ -7,10 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/transcript"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -50,6 +54,7 @@ type model struct {
 	vp          viewport.Model
 	sp          spinner.Model
 	ti          textinput.Model
+	a           *agent.Agent
 	session     *agent.Session
 	ctx         context.Context
 	content     strings.Builder
@@ -60,6 +65,17 @@ type model struct {
 	width       int
 	height      int
 	ready       bool
+
+	// rebuild signals main to rebuild eigen and exec the new binary, resuming
+	// the conversation saved at rebuildPath.
+	rebuild     bool
+	rebuildPath string
+}
+
+// Result reports why the TUI exited.
+type Result struct {
+	Rebuild     bool
+	SessionPath string
 }
 
 func (m *model) Init() tea.Cmd {
@@ -74,9 +90,19 @@ func (m *model) Init() tea.Cmd {
 func (m *model) append(s string) {
 	m.content.WriteString(s)
 	if m.ready {
-		m.vp.SetContent(m.content.String())
-		m.vp.GotoBottom()
+		m.sync()
 	}
+}
+
+// sync wraps the transcript to the viewport width (the viewport does not
+// soft-wrap on its own) and scrolls to the bottom.
+func (m *model) sync() {
+	content := m.content.String()
+	if w := m.vp.Width; w > 0 {
+		content = lipgloss.NewStyle().Width(w).Render(content)
+	}
+	m.vp.SetContent(content)
+	m.vp.GotoBottom()
 }
 
 func (m *model) submit(task string) tea.Cmd {
@@ -106,8 +132,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.vp.Height = vpH
 		}
 		m.ti.Width = msg.Width - 4
-		m.vp.SetContent(m.content.String())
-		m.vp.GotoBottom()
+		m.sync()
 		return m, nil
 
 	case tea.KeyMsg:
@@ -134,6 +159,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.ti.Reset()
+				if strings.HasPrefix(task, "/") {
+					return m, m.command(task)
+				}
 				return m, m.submit(task)
 			}
 			var cmd tea.Cmd
@@ -172,6 +200,67 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	return m, nil
+}
+
+// command handles a /slash command typed at the input. It returns a tea.Cmd
+// (tea.Quit for /rebuild and /quit); most commands act in place.
+func (m *model) command(line string) tea.Cmd {
+	fields := strings.Fields(line)
+	name := fields[0]
+	arg := strings.TrimSpace(strings.TrimPrefix(line, name))
+	switch name {
+	case "/help":
+		m.append(styleStatus.Render("/help  /save [path]  /resume <path>  /clear  /rebuild  /quit") + "\n")
+	case "/clear":
+		m.session = m.a.NewSession()
+		m.content.Reset()
+		m.append(styleStatus.Render("— cleared —") + "\n")
+	case "/save":
+		path := arg
+		if path == "" {
+			path = defaultSessionPath()
+		}
+		if err := transcript.Save(path, m.session.Messages()); err != nil {
+			m.append(styleErr.Render("save failed: "+err.Error()) + "\n")
+		} else {
+			m.append(styleStatus.Render("saved → "+path) + "\n")
+		}
+	case "/resume":
+		if arg == "" {
+			m.append(styleErr.Render("usage: /resume <path>") + "\n")
+			break
+		}
+		msgs, err := transcript.Import(arg)
+		if err != nil {
+			m.append(styleErr.Render("resume failed: "+err.Error()) + "\n")
+			break
+		}
+		m.session = m.a.Resume(msgs)
+		m.content.Reset()
+		renderHistory(m, msgs)
+		m.append(styleStatus.Render(fmt.Sprintf("— resumed %d messages —", len(msgs))) + "\n")
+	case "/rebuild":
+		path := filepath.Join(os.TempDir(), "eigen-rebuild.eigen.jsonl")
+		if err := transcript.Save(path, m.session.Messages()); err != nil {
+			m.append(styleErr.Render("rebuild: save failed: "+err.Error()) + "\n")
+			break
+		}
+		m.rebuild = true
+		m.rebuildPath = path
+		return tea.Quit
+	case "/quit", "/exit":
+		return tea.Quit
+	default:
+		m.append(styleErr.Render("unknown command "+name+" (try /help)") + "\n")
+	}
+	return nil
+}
+
+func defaultSessionPath() string {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, ".eigen", "sessions")
+	_ = os.MkdirAll(dir, 0o755)
+	return filepath.Join(dir, time.Now().Format("20060102-150405")+".eigen.jsonl")
 }
 
 func (m *model) renderEvent(e agent.Event) {
@@ -214,7 +303,7 @@ func (m *model) View() string {
 // Run drives the agent under a multi-turn Bubble Tea REPL. If initialTask is
 // non-empty it is submitted automatically as the first turn. If history is
 // non-empty the session resumes that conversation.
-func Run(a *agent.Agent, initialTask string, history []llm.Message) error {
+func Run(a *agent.Agent, initialTask string, history []llm.Message) (Result, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -222,7 +311,7 @@ func Run(a *agent.Agent, initialTask string, history []llm.Message) error {
 	sp.Spinner = spinner.Dot
 
 	ti := textinput.New()
-	ti.Placeholder = "type a task…  (enter to send · ctrl+c to quit)"
+	ti.Placeholder = "type a task…  (enter to send · /help · ctrl+c to quit)"
 	ti.Prompt = "› "
 	ti.Focus()
 
@@ -232,6 +321,7 @@ func Run(a *agent.Agent, initialTask string, history []llm.Message) error {
 	}
 
 	m := &model{
+		a:           a,
 		sp:          sp,
 		ti:          ti,
 		session:     session,
@@ -258,8 +348,12 @@ func Run(a *agent.Agent, initialTask string, history []llm.Message) error {
 		}
 	}
 
-	_, err := p.Run()
-	return err
+	final, err := p.Run()
+	if err != nil {
+		return Result{}, err
+	}
+	fm := final.(*model)
+	return Result{Rebuild: fm.rebuild, SessionPath: fm.rebuildPath}, nil
 }
 
 func compact(s string) string {

@@ -15,8 +15,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/config"
@@ -95,8 +97,12 @@ func main() {
 	// Interactive terminal with no -p → the full-screen REPL (the default UX).
 	interactive := isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd())
 	if !*printMode && interactive {
-		if err := tui.Run(a, task, history); err != nil {
+		res, err := tui.Run(a, task, history)
+		if err != nil {
 			fail(err)
+		}
+		if res.Rebuild {
+			rebuildAndExec(res.SessionPath, *provider, *model, *perm)
 		}
 		return
 	}
@@ -187,4 +193,34 @@ func envOr(key, def string) string {
 func fail(err error) {
 	fmt.Fprintln(os.Stderr, "eigen: "+err.Error())
 	os.Exit(1)
+}
+
+// rebuildAndExec rebuilds eigen from source and replaces the running process
+// with the new binary, resuming the saved conversation — live self-replace with
+// no lost context. EIGEN_SRC overrides the source dir (default ~/projects/eigen).
+func rebuildAndExec(sessionPath, provider, model, perm string) {
+	src := os.Getenv("EIGEN_SRC")
+	if src == "" {
+		home, _ := os.UserHomeDir()
+		src = filepath.Join(home, "projects", "eigen")
+	}
+	bin := filepath.Join(src, "bin", "eigen")
+
+	fmt.Fprintln(os.Stderr, "eigen: rebuilding…")
+	build := exec.Command("go", "build", "-o", bin, ".")
+	build.Dir = src
+	build.Stdout, build.Stderr = os.Stderr, os.Stderr
+	if err := build.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "eigen: rebuild failed; keeping current binary:", err)
+		os.Exit(1)
+	}
+
+	argv := []string{bin, "--resume", sessionPath, "--provider", provider, "--perm", perm}
+	if model != "" {
+		argv = append(argv, "--model", model)
+	}
+	fmt.Fprintln(os.Stderr, "eigen: reloading new build…")
+	if err := syscall.Exec(bin, argv, os.Environ()); err != nil {
+		fail(fmt.Errorf("exec new build: %w", err))
+	}
 }
