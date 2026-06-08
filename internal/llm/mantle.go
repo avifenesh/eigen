@@ -24,6 +24,7 @@ const mantleDefaultRegion = "us-east-2"
 type Mantle struct {
 	BaseURL string
 	Model   string
+	effort  string
 	token   string
 	http    *http.Client
 }
@@ -42,9 +43,14 @@ func NewMantle(model string) (*Mantle, error) {
 	if model == "" {
 		model = "openai.gpt-5.5"
 	}
+	effort := os.Getenv("EIGEN_REASONING_EFFORT")
+	if effort == "" {
+		effort = reasoningEffort
+	}
 	return &Mantle{
 		BaseURL: fmt.Sprintf("https://bedrock-mantle.%s.api.aws/openai/v1", region),
 		Model:   model,
+		effort:  effort,
 		token:   token,
 		http:    &http.Client{Timeout: 5 * time.Minute},
 	}, nil
@@ -65,6 +71,9 @@ func (m *Mantle) Name() string { return m.Model + " (bedrock mantle)" }
 // currently inert on mantle — it activates for providers that do return
 // summaries. The real mantle mechanism for reasoning continuity is
 // previous_response_id with store=true; defer until #26195 actually reproduces.
+//
+// reasoningEffort is the default; override per run with EIGEN_REASONING_EFFORT
+// (e.g. medium if high still stalls, or xhigh once #26860 is fixed upstream).
 const (
 	reasoningEffort  = "high"
 	reasoningSummary = "concise"
@@ -147,7 +156,7 @@ func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
 		Model:     m.Model,
 		Input:     buildInput(req),
 		Tools:     toResponsesTools(req.Tools),
-		Reasoning: &reasoningConfig{Effort: reasoningEffort, Summary: reasoningSummary},
+		Reasoning: &reasoningConfig{Effort: m.effort, Summary: reasoningSummary},
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
