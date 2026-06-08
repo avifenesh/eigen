@@ -53,3 +53,30 @@ func TestMantlePostDoesNotRetry4xx(t *testing.T) {
 		t.Fatalf("expected exactly 1 call (no retry on 4xx), got %d", got)
 	}
 }
+
+func TestMantleRetriesEmptyCompletedResponse(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&calls, 1)
+		w.WriteHeader(http.StatusOK)
+		if n < 2 {
+			// Completed but empty: no message, no function_call (mantle quirk).
+			w.Write([]byte(`{"output":[{"type":"reasoning"}]}`))
+			return
+		}
+		w.Write([]byte(`{"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"recovered"}]}]}`))
+	}))
+	defer srv.Close()
+
+	m := &Mantle{BaseURL: srv.URL, Model: "test", token: "t", http: &http.Client{Timeout: 5 * time.Second}}
+	resp, err := m.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "x"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Text != "recovered" {
+		t.Fatalf("got %q, want %q", resp.Text, "recovered")
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Fatalf("expected 2 calls (1 empty + recovery), got %d", got)
+	}
+}

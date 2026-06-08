@@ -54,7 +54,16 @@ func main() {
 		fail(err)
 	}
 
-	registry, err := tool.NewRegistry(tool.Read(tool.DefaultPolicy()))
+	policy := tool.DefaultPolicy()
+	registry, err := tool.NewRegistry(
+		tool.Read(policy),
+		tool.List(policy),
+		tool.Glob(policy),
+		tool.Grep(policy),
+		tool.Write(policy),
+		tool.Edit(policy),
+		tool.Bash(),
+	)
 	if err != nil {
 		fail(err)
 	}

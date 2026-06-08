@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/tool"
@@ -45,6 +46,11 @@ type Agent struct {
 // tool (huge file, verbose command) can't blow up memory or the next request.
 const maxToolOutput = 100_000
 
+// maxEmptyTurns bounds how many times we nudge the model after it returns a
+// turn with neither tool calls nor text (e.g. a reasoning-only response),
+// preventing both a premature empty exit and an infinite spin.
+const maxEmptyTurns = 2
+
 // Run executes the loop until the model stops calling tools or MaxSteps is hit.
 func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 	if a.Provider == nil {
@@ -59,6 +65,7 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 	}
 	msgs := []llm.Message{{Role: llm.RoleUser, Text: task}}
 	specs := a.Tools.Specs()
+	emptyTurns := 0
 
 	for step := 0; step < maxSteps; step++ {
 		resp, err := a.Provider.Complete(ctx, llm.Request{
@@ -73,8 +80,21 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 			a.OnStep(step, resp)
 		}
 		if len(resp.ToolCalls) == 0 {
-			return resp.Text, nil
+			if strings.TrimSpace(resp.Text) != "" {
+				return resp.Text, nil // final answer
+			}
+			// Empty turn (e.g. reasoning-only): nudge to act, bounded.
+			emptyTurns++
+			if emptyTurns > maxEmptyTurns {
+				return "", fmt.Errorf("model returned no actionable output after %d empty turns", emptyTurns)
+			}
+			msgs = append(msgs, llm.Message{
+				Role: llm.RoleUser,
+				Text: "Continue: use a tool to make progress, or give your final answer.",
+			})
+			continue
 		}
+		emptyTurns = 0
 
 		msgs = append(msgs, llm.Message{
 			Role:      llm.RoleAssistant,

@@ -96,6 +96,11 @@ type responsesReply struct {
 	} `json:"error"`
 }
 
+// maxEmptyRetries bounds re-requests when Bedrock Mantle returns a completed
+// response with no message and no tool call — a known intermittent quirk (the
+// reason the standalone mantle proxy retried empty completions).
+const maxEmptyRetries = 2
+
 func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
 	payload := responsesRequest{
 		Model: m.Model,
@@ -107,11 +112,24 @@ func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	raw, err := m.post(ctx, body)
-	if err != nil {
-		return nil, err
+	for attempt := 0; ; attempt++ {
+		raw, err := m.post(ctx, body)
+		if err != nil {
+			return nil, err
+		}
+		out, err := parseReply(raw)
+		if err != nil {
+			return nil, err
+		}
+		if out.Text != "" || len(out.ToolCalls) > 0 || attempt >= maxEmptyRetries {
+			return out, nil
+		}
+		// Empty completed response: re-request (the mantle quirk).
 	}
+}
 
+// parseReply decodes a Responses API body into a normalized Response.
+func parseReply(raw []byte) (*Response, error) {
 	var reply responsesReply
 	if err := json.Unmarshal(raw, &reply); err != nil {
 		return nil, fmt.Errorf("decode response: %w", err)

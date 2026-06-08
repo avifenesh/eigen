@@ -106,3 +106,37 @@ func TestRunStopsAtMaxSteps(t *testing.T) {
 		t.Fatal("expected MaxSteps error")
 	}
 }
+
+func TestRunNudgesPastEmptyTurn(t *testing.T) {
+	// First turn is empty (reasoning-only); loop must nudge, not exit empty.
+	prov := &mockProvider{replies: []*llm.Response{
+		{}, // no tool calls, no text
+		{Text: "final"},
+	}}
+	reg, err := tool.NewRegistry(callTool("ping"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto}
+
+	out, err := a.Run(context.Background(), "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "final" {
+		t.Fatalf("got %q, want %q", out, "final")
+	}
+}
+
+func TestRunErrorsOnPersistentEmptyTurns(t *testing.T) {
+	prov := &mockProvider{replies: []*llm.Response{{}, {}, {}, {}}}
+	reg, err := tool.NewRegistry(callTool("ping"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto}
+
+	if _, err := a.Run(context.Background(), "t"); err == nil {
+		t.Fatal("expected error after persistent empty turns")
+	}
+}
