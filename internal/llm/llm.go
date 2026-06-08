@@ -51,6 +51,10 @@ type Message struct {
 	// ToolCallID and ToolName identify which call a RoleTool message answers.
 	ToolCallID string
 	ToolName   string
+
+	// ToolError marks a RoleTool result as a failure, so providers with a
+	// native tool-result status (e.g. Converse) can signal it to the model.
+	ToolError bool
 }
 
 // Request is a single completion request, normalized across providers.

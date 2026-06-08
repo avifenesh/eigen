@@ -190,10 +190,14 @@ func converseMessages(req Request) []converseMessage {
 	for _, m := range req.Messages {
 		switch m.Role {
 		case RoleTool:
+			status := "success"
+			if m.ToolError {
+				status = "error"
+			}
 			pendingResults = append(pendingResults, converseContent{ToolResult: &converseToolResult{
 				ToolUseID: m.ToolCallID,
 				Content:   []converseToolResultText{{Text: m.Text}},
-				Status:    "success",
+				Status:    status,
 			}})
 		case RoleUser:
 			flush()

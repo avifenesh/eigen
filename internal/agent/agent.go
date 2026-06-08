@@ -104,11 +104,13 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 			ToolCalls:   resp.ToolCalls,
 		})
 		for _, tc := range resp.ToolCalls {
+			result, isErr := a.dispatch(ctx, tc)
 			msgs = append(msgs, llm.Message{
 				Role:       llm.RoleTool,
 				ToolCallID: tc.ID,
 				ToolName:   tc.Name,
-				Text:       a.dispatch(ctx, tc),
+				Text:       result,
+				ToolError:  isErr,
 			})
 		}
 	}
@@ -116,11 +118,11 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 }
 
 // dispatch runs one tool call, enforcing the permission posture, and returns the
-// result (or an error string) to feed back to the model.
-func (a *Agent) dispatch(ctx context.Context, tc llm.ToolCall) string {
+// result (or an error string) to feed back to the model plus whether it failed.
+func (a *Agent) dispatch(ctx context.Context, tc llm.ToolCall) (string, bool) {
 	def, ok := a.Tools.Get(tc.Name)
 	if !ok {
-		return fmt.Sprintf("Error: unknown tool %q", tc.Name)
+		return fmt.Sprintf("Error: unknown tool %q", tc.Name), true
 	}
 	if !def.ReadOnly {
 		// Fail closed: a mutating tool runs only under an explicitly recognized
@@ -130,18 +132,18 @@ func (a *Agent) dispatch(ctx context.Context, tc llm.ToolCall) string {
 			// allowed
 		case PermGated:
 			if a.Approve == nil || !a.Approve(tc.Name, tc.Arguments) {
-				return fmt.Sprintf("Denied: tool %q was not approved by the user.", tc.Name)
+				return fmt.Sprintf("Denied: tool %q was not approved by the user.", tc.Name), true
 			}
 		default:
-			return fmt.Sprintf("Denied: tool %q blocked under unknown permission posture %q.", tc.Name, a.Perm)
+			return fmt.Sprintf("Denied: tool %q blocked under unknown permission posture %q.", tc.Name, a.Perm), true
 		}
 	}
 	out, err := def.Run(ctx, tc.Arguments)
 	if err != nil {
-		return "Error: " + err.Error()
+		return "Error: " + err.Error(), true
 	}
 	if len(out) > maxToolOutput {
 		out = out[:maxToolOutput] + "\n[output truncated]"
 	}
-	return out
+	return out, false
 }

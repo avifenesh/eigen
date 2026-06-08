@@ -59,3 +59,21 @@ func TestNormalizeArgsRaw(t *testing.T) {
 		t.Error("passthrough failed")
 	}
 }
+
+func TestConverseToolErrorStatus(t *testing.T) {
+	msgs := converseMessages(Request{
+		Messages: []Message{
+			{Role: RoleTool, ToolCallID: "t1", Text: "boom", ToolError: true},
+			{Role: RoleTool, ToolCallID: "t2", Text: "ok"},
+		},
+	})
+	if len(msgs) != 1 || len(msgs[0].Content) != 2 {
+		t.Fatalf("expected one user turn with two results: %+v", msgs)
+	}
+	if msgs[0].Content[0].ToolResult.Status != "error" {
+		t.Errorf("errored tool result should have status=error, got %q", msgs[0].Content[0].ToolResult.Status)
+	}
+	if msgs[0].Content[1].ToolResult.Status != "success" {
+		t.Errorf("ok tool result should have status=success, got %q", msgs[0].Content[1].ToolResult.Status)
+	}
+}
