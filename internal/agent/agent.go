@@ -81,8 +81,31 @@ const maxToolOutput = 100_000
 // preventing both a premature empty exit and an infinite spin.
 const maxEmptyTurns = 2
 
-// Run executes the loop until the model stops calling tools or MaxSteps is hit.
+// Session holds a running conversation so the agent can be driven turn by turn
+// (e.g. a REPL/TUI), preserving history across user inputs.
+type Session struct {
+	a    *Agent
+	msgs []llm.Message
+}
+
+// NewSession starts an empty conversation.
+func (a *Agent) NewSession() *Session { return &Session{a: a} }
+
+// Run executes a single task to completion (a one-shot Session.Send).
 func (a *Agent) Run(ctx context.Context, task string) (string, error) {
+	if a.Provider == nil {
+		return "", fmt.Errorf("agent: nil provider")
+	}
+	if a.Tools == nil {
+		return "", fmt.Errorf("agent: nil tools")
+	}
+	return a.NewSession().Send(ctx, task)
+}
+
+// Send appends a user message and drives the loop until the model produces a
+// final answer (or MaxSteps is hit), keeping the conversation in the Session.
+func (s *Session) Send(ctx context.Context, task string) (string, error) {
+	a := s.a
 	if a.Provider == nil {
 		return "", fmt.Errorf("agent: nil provider")
 	}
@@ -93,19 +116,19 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 	if maxSteps <= 0 {
 		maxSteps = 20
 	}
-	msgs := []llm.Message{{Role: llm.RoleUser, Text: task}}
+	s.msgs = append(s.msgs, llm.Message{Role: llm.RoleUser, Text: task})
 	specs := a.Tools.Specs()
 	emptyTurns := 0
 
 	for step := 0; step < maxSteps; step++ {
 		req := llm.Request{
 			System:   systemPrompt,
-			Messages: msgs,
+			Messages: s.msgs,
 			Tools:    specs,
 		}
 		var resp *llm.Response
 		var err error
-		if s, ok := a.Provider.(llm.Streamer); ok && a.OnEvent != nil {
+		if sm, ok := a.Provider.(llm.Streamer); ok && a.OnEvent != nil {
 			sink := func(c llm.StreamChunk) {
 				kind := EventTextDelta
 				if c.Kind == llm.ChunkReasoning {
@@ -113,7 +136,7 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 				}
 				a.emit(Event{Kind: kind, Step: step, Text: c.Text})
 			}
-			resp, err = s.Stream(ctx, req, sink)
+			resp, err = sm.Stream(ctx, req, sink)
 		} else {
 			resp, err = a.Provider.Complete(ctx, req)
 		}
@@ -122,6 +145,7 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 		}
 		if len(resp.ToolCalls) == 0 {
 			if strings.TrimSpace(resp.Text) != "" {
+				s.msgs = append(s.msgs, llm.Message{Role: llm.RoleAssistant, Text: resp.Text})
 				a.emit(Event{Kind: EventDone, Step: step, Text: resp.Text})
 				return resp.Text, nil // final answer
 			}
@@ -130,7 +154,7 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 			if emptyTurns > maxEmptyTurns {
 				return "", fmt.Errorf("model returned no actionable output after %d empty turns", emptyTurns)
 			}
-			msgs = append(msgs, llm.Message{
+			s.msgs = append(s.msgs, llm.Message{
 				Role: llm.RoleUser,
 				Text: "Continue: use a tool to make progress, or give your final answer.",
 			})
@@ -138,7 +162,7 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 		}
 		emptyTurns = 0
 
-		msgs = append(msgs, llm.Message{
+		s.msgs = append(s.msgs, llm.Message{
 			Role:        llm.RoleAssistant,
 			Text:        resp.Text,
 			Reasoning:   resp.Reasoning,
@@ -153,7 +177,7 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 			a.emit(Event{Kind: EventToolStart, Step: step, ToolName: tc.Name, ToolID: tc.ID, ToolArgs: tc.Arguments})
 			result, isErr := a.dispatch(ctx, tc)
 			a.emit(Event{Kind: EventToolResult, Step: step, ToolName: tc.Name, ToolID: tc.ID, Result: result, IsError: isErr})
-			msgs = append(msgs, llm.Message{
+			s.msgs = append(s.msgs, llm.Message{
 				Role:       llm.RoleTool,
 				ToolCallID: tc.ID,
 				ToolName:   tc.Name,

@@ -177,3 +177,33 @@ func TestRunEmitsEventSequence(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionPreservesHistory(t *testing.T) {
+	prov := &mockProvider{replies: []*llm.Response{
+		{Text: "first answer"},
+		{Text: "second answer"},
+	}}
+	reg, err := tool.NewRegistry(callTool("ping"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto}
+	s := a.NewSession()
+
+	if _, err := s.Send(context.Background(), "first task"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Send(context.Background(), "second task"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The second request must carry the full prior conversation:
+	// user(first task), assistant(first answer), user(second task).
+	second := prov.seen[1]
+	if len(second.Messages) != 3 {
+		t.Fatalf("second turn should see 3 prior messages, got %d: %+v", len(second.Messages), second.Messages)
+	}
+	if second.Messages[0].Text != "first task" || second.Messages[1].Text != "first answer" || second.Messages[2].Text != "second task" {
+		t.Fatalf("history not preserved: %+v", second.Messages)
+	}
+}

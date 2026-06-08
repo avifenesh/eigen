@@ -1,6 +1,6 @@
-// Package tui renders an eigen run with Bubble Tea: a scrolling transcript of
-// streamed model output, tool calls, and results, with inline gated approvals.
-// It is one consumer of the agent's event sink; the plain CLI is another.
+// Package tui renders an eigen session with Bubble Tea: a multi-turn REPL with
+// a scrolling transcript of streamed model output, tool calls, and results,
+// an input box, and inline gated approvals. It consumes the agent event sink.
 package tui
 
 import (
@@ -11,6 +11,7 @@ import (
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -25,37 +26,49 @@ var (
 	styleAsk    = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true)
 )
 
-// agentEvent wraps an agent.Event as a tea.Msg.
+type uiState int
+
+const (
+	stInput uiState = iota
+	stRunning
+)
+
 type agentEvent struct{ e agent.Event }
 
-// approvalMsg asks the UI to approve a mutating tool call.
 type approvalMsg struct {
 	name  string
 	args  json.RawMessage
 	reply chan bool
 }
 
-// doneMsg signals the run finished.
-type doneMsg struct {
-	out string
-	err error
-}
+type turnDoneMsg struct{ err error }
+
+type submitMsg struct{ task string }
 
 type model struct {
-	vp       viewport.Model
-	sp       spinner.Model
-	content  strings.Builder
-	status   string
-	pending  *approvalMsg // non-nil while awaiting a y/n answer
-	finished bool
-	out      string
-	err      error
-	width    int
-	height   int
-	ready    bool
+	vp          viewport.Model
+	sp          spinner.Model
+	ti          textinput.Model
+	session     *agent.Session
+	ctx         context.Context
+	content     strings.Builder
+	state       uiState
+	pending     *approvalMsg
+	status      string
+	initialTask string
+	width       int
+	height      int
+	ready       bool
 }
 
-func (m *model) Init() tea.Cmd { return m.sp.Tick }
+func (m *model) Init() tea.Cmd {
+	cmds := []tea.Cmd{textinput.Blink, m.sp.Tick}
+	if m.initialTask != "" {
+		task := m.initialTask
+		cmds = append(cmds, func() tea.Msg { return submitMsg{task} })
+	}
+	return tea.Batch(cmds...)
+}
 
 func (m *model) append(s string) {
 	m.content.WriteString(s)
@@ -65,22 +78,41 @@ func (m *model) append(s string) {
 	}
 }
 
+func (m *model) submit(task string) tea.Cmd {
+	m.append(styleUser.Render("» "+task) + "\n")
+	m.state = stRunning
+	m.status = "thinking"
+	m.ti.Blur()
+	return tea.Batch(m.sp.Tick, func() tea.Msg {
+		_, err := m.session.Send(m.ctx, task)
+		return turnDoneMsg{err: err}
+	})
+}
+
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		vpH := msg.Height - 2
+		if vpH < 1 {
+			vpH = 1
+		}
 		if !m.ready {
-			m.vp = viewport.New(msg.Width, msg.Height-1)
+			m.vp = viewport.New(msg.Width, vpH)
 			m.ready = true
 		} else {
 			m.vp.Width = msg.Width
-			m.vp.Height = msg.Height - 1
+			m.vp.Height = vpH
 		}
+		m.ti.Width = msg.Width - 4
 		m.vp.SetContent(m.content.String())
 		m.vp.GotoBottom()
 		return m, nil
 
 	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
 		if m.pending != nil {
 			switch strings.ToLower(msg.String()) {
 			case "y":
@@ -94,13 +126,26 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		switch msg.String() {
-		case "ctrl+c", "q":
-			return m, tea.Quit
+		if m.state == stInput {
+			if msg.String() == "enter" {
+				task := strings.TrimSpace(m.ti.Value())
+				if task == "" {
+					return m, nil
+				}
+				m.ti.Reset()
+				return m, m.submit(task)
+			}
+			var cmd tea.Cmd
+			m.ti, cmd = m.ti.Update(msg)
+			return m, cmd
 		}
+		// running: allow scrolling the transcript
 		var cmd tea.Cmd
 		m.vp, cmd = m.vp.Update(msg)
 		return m, cmd
+
+	case submitMsg:
+		return m, m.submit(msg.task)
 
 	case agentEvent:
 		m.renderEvent(msg.e)
@@ -111,10 +156,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.append(styleAsk.Render(fmt.Sprintf("  approve %s %s ? [y/N]", msg.name, compact(string(msg.args)))) + "\n")
 		return m, nil
 
-	case doneMsg:
-		m.finished = true
-		m.out, m.err = msg.out, msg.err
-		return m, tea.Quit
+	case turnDoneMsg:
+		if msg.err != nil {
+			m.append(styleErr.Render("error: "+msg.err.Error()) + "\n")
+		}
+		m.state = stInput
+		m.status = ""
+		m.ti.Focus()
+		return m, textinput.Blink
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -140,6 +189,7 @@ func (m *model) renderEvent(e agent.Event) {
 			m.append(styleStatus.Render("  ✓") + "\n")
 		}
 	case agent.EventDone:
+		m.append("\n")
 		m.status = "done"
 	}
 }
@@ -148,27 +198,44 @@ func (m *model) View() string {
 	if !m.ready {
 		return "starting…"
 	}
-	var bar string
-	if m.pending != nil {
-		bar = styleAsk.Render("press y to approve, n to deny")
-	} else if m.finished {
-		bar = styleStatus.Render("done — press q to quit")
-	} else {
-		bar = m.sp.View() + " " + m.status
+	var bottom string
+	switch {
+	case m.pending != nil:
+		bottom = styleAsk.Render("press y to approve, n to deny")
+	case m.state == stRunning:
+		bottom = m.sp.View() + " " + m.status
+	default:
+		bottom = m.ti.View()
 	}
-	return m.vp.View() + "\n" + bar
+	return m.vp.View() + "\n" + bottom
 }
 
-// Run drives the agent under a Bubble Tea UI. task is the initial request.
-func Run(a *agent.Agent, task string) (string, error) {
+// Run drives the agent under a multi-turn Bubble Tea REPL. If initialTask is
+// non-empty it is submitted automatically as the first turn.
+func Run(a *agent.Agent, initialTask string) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
-	m := &model{sp: sp, status: "thinking"}
-	m.append(styleUser.Render("» "+task) + "\n")
+
+	ti := textinput.New()
+	ti.Placeholder = "type a task…  (enter to send · ctrl+c to quit)"
+	ti.Prompt = "› "
+	ti.Focus()
+
+	m := &model{
+		sp:          sp,
+		ti:          ti,
+		session:     a.NewSession(),
+		ctx:         ctx,
+		state:       stInput,
+		initialTask: initialTask,
+	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 
-	// The UI's approve sends a request to the program and blocks on the reply.
+	a.OnEvent = func(e agent.Event) { p.Send(agentEvent{e}) }
 	a.Approve = func(ctx context.Context, name string, args json.RawMessage) (bool, error) {
 		reply := make(chan bool, 1)
 		p.Send(approvalMsg{name: name, args: args, reply: reply})
@@ -179,19 +246,9 @@ func Run(a *agent.Agent, task string) (string, error) {
 			return false, ctx.Err()
 		}
 	}
-	a.OnEvent = func(e agent.Event) { p.Send(agentEvent{e}) }
 
-	go func() {
-		out, err := a.Run(context.Background(), task)
-		p.Send(doneMsg{out: out, err: err})
-	}()
-
-	final, err := p.Run()
-	if err != nil {
-		return "", err
-	}
-	fm := final.(*model)
-	return fm.out, fm.err
+	_, err := p.Run()
+	return err
 }
 
 func compact(s string) string {

@@ -23,6 +23,7 @@ import (
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/tool"
 	"github.com/avifenesh/eigen/internal/tui"
+	"github.com/mattn/go-isatty"
 )
 
 func main() {
@@ -35,9 +36,10 @@ func main() {
 	}
 
 	model := flag.String("model", "", "model id (default: openai.gpt-5.5 on bedrock mantle)")
-	provider := flag.String("provider", envOr("EIGEN_PROVIDER", "mantle"), "provider: mantle|llama")
+	provider := flag.String("provider", envOr("EIGEN_PROVIDER", "mantle"), "provider: mantle|llama|converse")
 	perm := flag.String("perm", envOr("EIGEN_PERMISSION", "gated"), "permission posture: gated|auto")
-	useTUI := flag.Bool("tui", false, "run in the full-screen Bubble Tea UI")
+	printMode := flag.Bool("p", false, "print mode: run one task headless (no TUI) and exit")
+	flag.BoolVar(printMode, "print", false, "alias for -p")
 	flag.Parse()
 
 	switch agent.Permission(*perm) {
@@ -47,10 +49,6 @@ func main() {
 	}
 
 	task := strings.TrimSpace(strings.Join(flag.Args(), " "))
-	if task == "" {
-		fmt.Fprintln(os.Stderr, `usage: eigen [--model ID] [--perm gated|auto] "task"`)
-		os.Exit(2)
-	}
 
 	prov, err := llm.New(*provider, *model)
 	if err != nil {
@@ -71,37 +69,43 @@ func main() {
 		fail(err)
 	}
 
-	streamed := false
 	a := &agent.Agent{
 		Provider: prov,
 		Tools:    registry,
 		Perm:     agent.Permission(*perm),
-		Approve:  cliApprove,
-		OnEvent: func(e agent.Event) {
-			switch e.Kind {
-			case agent.EventTextDelta, agent.EventReasoningDelta:
-				// Live progress on stderr; the final answer prints to stdout.
-				fmt.Fprint(os.Stderr, e.Text)
-				if e.Kind == agent.EventTextDelta {
-					streamed = true
-				}
-			case agent.EventToolStart:
-				fmt.Fprintf(os.Stderr, "\n  step %d → %s\n", e.Step+1, e.ToolName)
-			case agent.EventToolResult:
-				if e.IsError {
-					fmt.Fprintf(os.Stderr, "  ↳ %s: %s\n", e.ToolName, firstLine(e.Result))
-				}
-			}
-		},
 	}
 
-	if *useTUI {
-		out, err := tui.Run(a, task)
-		if err != nil {
+	// Interactive terminal with no -p → the full-screen REPL (the default UX).
+	interactive := isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd())
+	if !*printMode && interactive {
+		if err := tui.Run(a, task); err != nil {
 			fail(err)
 		}
-		fmt.Println(out)
 		return
+	}
+
+	// Headless print mode (or piped/non-TTY): one task, stream to stderr,
+	// final answer to stdout — scriptable.
+	if task == "" {
+		fmt.Fprintln(os.Stderr, "usage: eigen [flags] \"task\"   (bare `eigen` opens the TUI)")
+		os.Exit(2)
+	}
+	a.Approve = cliApprove
+	streamed := false
+	a.OnEvent = func(e agent.Event) {
+		switch e.Kind {
+		case agent.EventTextDelta, agent.EventReasoningDelta:
+			fmt.Fprint(os.Stderr, e.Text)
+			if e.Kind == agent.EventTextDelta {
+				streamed = true
+			}
+		case agent.EventToolStart:
+			fmt.Fprintf(os.Stderr, "\n  step %d → %s\n", e.Step+1, e.ToolName)
+		case agent.EventToolResult:
+			if e.IsError {
+				fmt.Fprintf(os.Stderr, "  ↳ %s: %s\n", e.ToolName, firstLine(e.Result))
+			}
+		}
 	}
 
 	fmt.Fprintf(os.Stderr, "eigen · %s · perm=%s\n", prov.Name(), *perm)
