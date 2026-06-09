@@ -32,21 +32,31 @@ import (
 )
 
 var (
-	styleUser   = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
-	styleTool   = lipgloss.NewStyle().Foreground(lipgloss.Color("13"))
-	styleErr    = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	styleReason = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	styleStatus = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
-	styleAsk    = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true)
-	styleCode   = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
+	// Palette. 256-color indices chosen to be legible on both dark and light
+	// terminals and to read as a small, coherent set rather than a rainbow:
+	//   user = cyan, assistant prose = default fg, thinking = slate/grey,
+	//   tool = lavender/violet, ok = green, warn/active = amber, error = red,
+	//   accent (borders/rules) = soft blue.
+	styleUser   = lipgloss.NewStyle().Foreground(lipgloss.Color("44")).Bold(true)  // bright cyan
+	styleTool   = lipgloss.NewStyle().Foreground(lipgloss.Color("141"))            // soft violet
+	styleErr    = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))            // warm red
+	styleReason = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))            // mid grey
+	styleStatus = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))             // green
+	styleAsk    = lipgloss.NewStyle().Foreground(lipgloss.Color("215")).Bold(true) // amber
+	styleCode   = lipgloss.NewStyle().Foreground(lipgloss.Color("80"))             // teal
+
+	// accent is the calm structural color for borders, rules, and the prompt
+	// caret — present but not loud.
+	accent      = lipgloss.Color("67") // muted steel blue
+	styleAccent = lipgloss.NewStyle().Foreground(accent)
 
 	// Markdown prose styles for assistant answers.
-	styleHeading    = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
+	styleHeading    = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true) // blue
 	styleBold       = lipgloss.NewStyle().Bold(true)
 	styleItalic     = lipgloss.NewStyle().Italic(true)
-	styleInlineCode = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
-	styleQuote      = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
-	styleBullet     = lipgloss.NewStyle().Foreground(lipgloss.Color("13"))
+	styleInlineCode = lipgloss.NewStyle().Foreground(lipgloss.Color("80"))            // teal
+	styleQuote      = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
+	styleBullet     = lipgloss.NewStyle().Foreground(lipgloss.Color("141"))           // violet
 )
 
 type uiState int
@@ -403,13 +413,39 @@ func (m *model) sync() {
 	}
 }
 
-// inputRows returns how many terminal rows the input box currently occupies:
-// the textarea grows with its content up to inputMaxRows.
+// inputRows returns how many terminal rows the input box occupies including its
+// border (top+bottom): the textarea grows with its wrapped content up to
+// inputMaxRows, plus 2 for the rounded border frame.
 func (m *model) inputRows() int {
-	if m.ti.Height() > 0 {
-		return m.ti.Height()
+	h := m.ti.Height()
+	if h < 1 {
+		h = 1
 	}
-	return 1
+	return h + 2 // + top & bottom border rows
+}
+
+// visualInputRows counts the number of *visual* (soft-wrapped) rows the current
+// input text occupies, so a single long line that wraps grows the box. The
+// textarea's own Height tracks logical lines only, so we wrap each logical line
+// to the input's text width and sum the pieces.
+func (m *model) visualInputRows() int {
+	w := m.ti.Width()
+	if w < 1 {
+		return m.ti.LineCount()
+	}
+	total := 0
+	for _, line := range strings.Split(m.ti.Value(), "\n") {
+		rw := ansi.StringWidth(line)
+		rows := rw/w + 1 // at least 1 row; +1 per full width
+		if rw > 0 && rw%w == 0 {
+			rows = rw / w
+		}
+		total += rows
+	}
+	if total < 1 {
+		total = 1
+	}
+	return total
 }
 
 // bottomHeight is the number of terminal rows the bottom UI occupies: the input
@@ -431,9 +467,10 @@ func (m *model) bottomHeight() int {
 }
 
 // resizeInput grows/shrinks the input box to fit its content (1..inputMaxRows)
-// and relays out when the height changes.
+// and relays out when the height changes. It counts soft-wrapped visual rows,
+// so a long single line that wraps also grows the box.
 func (m *model) resizeInput() {
-	want := m.ti.LineCount()
+	want := m.visualInputRows()
 	if want < 1 {
 		want = 1
 	}
@@ -786,7 +823,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			m.vp = viewport.New(msg.Width, 1)
 			m.ready = true
 		}
-		m.ti.SetWidth(msg.Width - 4)
+		m.ti.SetWidth(msg.Width - 2)
 		m.relayout()
 		return m, nil
 
@@ -1881,15 +1918,26 @@ func Run(a *agent.Agent, o Options) (Result, error) {
 
 	ti := textarea.New()
 	ti.Placeholder = "type a task…  (enter send · ctrl+j newline · / commands · ↑↓ history · ctrl+c quit)"
-	ti.Prompt = "› "
+	ti.Prompt = "│ "
 	ti.ShowLineNumbers = false
 	ti.CharLimit = 0
 	ti.MaxHeight = inputMaxRows
 	ti.SetHeight(1)
-	// Flat look: no cursor-line background highlight (matches the old single-line
-	// input). The prompt keeps the "›" marker.
+	// Flat look inside the box: no cursor-line background highlight.
 	ti.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	ti.BlurredStyle.CursorLine = lipgloss.NewStyle()
+	// A rounded border draws the input as a box; the accent color when focused,
+	// dim when blurred. The prompt caret and placeholder pick up the palette.
+	ti.FocusedStyle.Base = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(accent)
+	ti.BlurredStyle.Base = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("238"))
+	ti.FocusedStyle.Prompt = styleAccent
+	ti.BlurredStyle.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	ti.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
+	ti.BlurredStyle.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	// Enter is reserved for submit; newlines are inserted with ctrl+j / alt+enter
 	// (handled in Update). Disabling the textarea's own newline binding stops it
 	// from inserting a line break on Enter.

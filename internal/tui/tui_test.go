@@ -92,14 +92,28 @@ func TestCtrlJInsertsNewline(t *testing.T) {
 	if got := m.ti.Value(); got != "line one\nline two" {
 		t.Fatalf("ctrl+j should insert a newline, got %q", got)
 	}
-	// The input grew to two rows.
-	if m.inputRows() < 2 {
-		t.Fatalf("multi-line input should grow to >=2 rows, got %d", m.inputRows())
+	// The input grew to two text rows (+2 border rows).
+	if m.ti.Height() < 2 {
+		t.Fatalf("multi-line input should grow to >=2 text rows, got %d", m.ti.Height())
 	}
 	// Enter still submits the whole multi-line value.
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if m.state != stRunning {
 		t.Fatal("enter should submit the multi-line prompt")
+	}
+}
+
+func TestLongLineWrapsGrowsInput(t *testing.T) {
+	m := testModel(t)
+	// Input text width ~ 80-2. A long single logical line (no newlines) must
+	// soft-wrap and grow the box, even though LineCount() stays 1.
+	long := strings.Repeat("word ", 60) // ~300 cols → several wrapped rows
+	typeRunes(m, long)
+	if m.ti.LineCount() != 1 {
+		t.Fatalf("a single logical line should stay LineCount 1, got %d", m.ti.LineCount())
+	}
+	if m.ti.Height() < 2 {
+		t.Fatalf("a long soft-wrapped line should grow the input box, got height %d", m.ti.Height())
 	}
 }
 
@@ -315,18 +329,18 @@ func TestEscInterruptsRunningTurn(t *testing.T) {
 
 func TestBottomHeightReflectsState(t *testing.T) {
 	m := testModel(t)
-	// 1 input line + 1 status bar (now at the bottom).
-	if m.bottomHeight() != 2 {
-		t.Fatalf("input bottomHeight=%d want 2", m.bottomHeight())
+	// 1 input line + 2 border rows + 1 status bar (now at the bottom).
+	if m.bottomHeight() != 4 {
+		t.Fatalf("input bottomHeight=%d want 4", m.bottomHeight())
 	}
 	m.state = stRunning
 	// + 1 spinner/status line while running.
-	if m.bottomHeight() != 3 {
-		t.Fatalf("running bottomHeight=%d want 3", m.bottomHeight())
+	if m.bottomHeight() != 5 {
+		t.Fatalf("running bottomHeight=%d want 5", m.bottomHeight())
 	}
 	m.state = stInput
 	typeRunes(m, "/")
-	if m.bottomHeight() <= 2 {
+	if m.bottomHeight() <= 4 {
 		t.Fatal("open slash menu should add rows to bottomHeight")
 	}
 }

@@ -84,12 +84,12 @@ func (m *model) statusBarView() string {
 		parts = append(parts, "read-aloud")
 	}
 	line := strings.Join(parts, " · ")
-	// Pad into a footer bar with a faint rule extending to the width.
+	// Pad into a footer bar with a faint accent rule extending to the width.
 	if m.width > 0 {
 		if len(line) > m.width {
 			line = line[:m.width]
 		} else if pad := m.width - len(line) - 1; pad > 0 {
-			line = line + " " + strings.Repeat("─", pad)
+			return dim(line) + " " + styleAccent.Render(strings.Repeat("─", pad))
 		}
 	}
 	return dim(line)
@@ -147,7 +147,7 @@ func (m *model) planView() string {
 		}
 	}
 	var b strings.Builder
-	b.WriteString(styleUser.Render(fmt.Sprintf("plan (%d/%d)", done, len(m.todos))) + "\n")
+	b.WriteString(styleAccent.Render("▸ ") + styleUser.Render(fmt.Sprintf("plan (%d/%d)", done, len(m.todos))) + "\n")
 	rows := len(m.todos)
 	if rows > maxTodoRows {
 		rows = maxTodoRows

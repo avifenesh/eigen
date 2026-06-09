@@ -261,7 +261,7 @@ func (b *block) render(selected bool) string {
 	switch b.kind {
 	case blockText:
 		if b.role == "user" {
-			s.WriteString(styleUser.Render("» " + b.body))
+			s.WriteString(styleUser.Render("❯ " + b.body))
 		} else {
 			s.WriteString(renderProse(b.body))
 		}
