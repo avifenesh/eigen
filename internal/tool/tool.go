@@ -71,3 +71,12 @@ func (r *Registry) Get(name string) (Definition, bool) {
 	d, ok := r.byName[name]
 	return d, ok
 }
+
+// Definitions returns all tools in registration order (for catalogs/listing).
+func (r *Registry) Definitions() []Definition {
+	out := make([]Definition, 0, len(r.order))
+	for _, name := range r.order {
+		out = append(out, r.byName[name])
+	}
+	return out
+}
