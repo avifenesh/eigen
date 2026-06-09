@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -70,72 +72,108 @@ func (m *model) statusBarView() string {
 // statusBarHeight is the number of rows the status bar occupies (1 or 2).
 func (m *model) statusBarHeight() int { return len(m.statusBarLines()) }
 
-// statusBarParts assembles the status segments.
-func (m *model) statusBarParts() []string {
-	parts := []string{"eigen"}
+// statusSeg is one status-bar segment: its plain text (for width math) and the
+// style used to render it.
+type statusSeg struct {
+	text  string
+	style lipgloss.Style
+}
+
+// statusBarParts assembles the colored status segments.
+func (m *model) statusBarParts() []statusSeg {
+	segs := []statusSeg{{"eigen", styleAccent.Bold(true)}}
 	if m.a != nil && m.a.Provider != nil {
-		parts = append(parts, modelShort(m.a.Provider.Name()))
+		segs = append(segs, statusSeg{modelShort(m.a.Provider.Name()), styleUser})
 	}
 	if m.a != nil {
-		parts = append(parts, "perm="+string(m.a.Perm))
+		// perm: green when gated (safe), amber when auto (runs tools freely).
+		permStyle := styleStatus
+		if m.a.Perm == agent.PermAuto {
+			permStyle = styleAsk
+		}
+		segs = append(segs, statusSeg{"perm=" + string(m.a.Perm), permStyle})
 		if es, ok := m.a.Provider.(llm.EffortSetter); ok {
-			parts = append(parts, "effort="+es.Effort())
+			segs = append(segs, statusSeg{"effort=" + es.Effort(), styleTool})
 		}
 		if sr, ok := m.a.Provider.(llm.Searcher); ok && sr.SearchMode() != "off" {
-			parts = append(parts, "search="+sr.SearchMode())
+			segs = append(segs, statusSeg{"search=" + sr.SearchMode(), styleCode})
 		}
 	}
 	if ind := m.ctxIndicator(); ind != "" {
-		parts = append(parts, ind)
+		segs = append(segs, statusSeg{ind, m.ctxStyle()})
 	}
 	if m.readAloud {
-		parts = append(parts, "read-aloud")
+		segs = append(segs, statusSeg{"read-aloud", styleStatus})
 	}
-	return parts
+	return segs
 }
 
-// statusBarLines packs the status parts into 1–2 width-respecting rows, the
-// last padded with a faint accent rule. Width is measured in display columns
-// (ansi.StringWidth), not bytes, so multi-byte glyphs never overflow.
-func (m *model) statusBarLines() []string {
-	parts := m.statusBarParts()
-	w := m.width
-	if w <= 0 {
-		return []string{dim(strings.Join(parts, " · "))}
+// ctxStyle colors the context indicator by how full the budget is: calm green
+// under ~75%, amber approaching the limit, red when nearly full (a nudge to
+// /compact before a 429).
+func (m *model) ctxStyle() lipgloss.Style {
+	if m.a == nil || m.a.MaxContextTokens <= 0 {
+		return styleReason
 	}
-	const sep = " · "
-	var rows []string
-	cur := ""
-	for _, p := range parts {
-		cand := p
+	frac := float64(m.ctxTokens) / float64(m.a.MaxContextTokens)
+	switch {
+	case frac >= 0.9:
+		return styleErr
+	case frac >= 0.75:
+		return styleAsk
+	default:
+		return styleStatus
+	}
+}
+
+// statusBarLines packs the colored status segments into 1–2 width-respecting
+// rows, the last padded with a faint accent rule. Width is measured in display
+// columns (plain text), not bytes; each segment keeps its own color and the
+// separators are dim.
+func (m *model) statusBarLines() []string {
+	segs := m.statusBarParts()
+	w := m.width
+	sep := dim(" · ")
+	plainSep := " · "
+	if w <= 0 {
+		var parts []string
+		for _, s := range segs {
+			parts = append(parts, s.style.Render(s.text))
+		}
+		return []string{strings.Join(parts, sep)}
+	}
+	// Pack into rows by plain display width, rendering styled segments.
+	var rows []string      // styled
+	var rowsPlainW []int   // plain width of each row
+	cur := ""              // styled accumulator
+	curW := 0              // plain width accumulator
+	for _, s := range segs {
+		addW := ansi.StringWidth(s.text)
 		if cur != "" {
-			cand = cur + sep + p
+			addW += ansi.StringWidth(plainSep)
 		}
-		if ansi.StringWidth(cand) > w && cur != "" && len(rows) < 1 {
-			// Overflow on the first row: wrap to a second row.
+		if curW+addW > w && cur != "" && len(rows) < 1 {
 			rows = append(rows, cur)
-			cur = p
-			continue
+			rowsPlainW = append(rowsPlainW, curW)
+			cur, curW = "", 0
+			addW = ansi.StringWidth(s.text)
 		}
-		cur = cand
+		if cur != "" {
+			cur += sep
+		}
+		cur += s.style.Render(s.text)
+		curW += addW
 	}
 	if cur != "" {
 		rows = append(rows, cur)
+		rowsPlainW = append(rowsPlainW, curW)
 	}
-	// Style each row; pad the final row with an accent rule to the width.
-	for i, r := range rows {
-		rw := ansi.StringWidth(r)
-		if rw > w {
-			r = ansi.Truncate(r, w, "")
-			rw = w
+	// Pad the final row with an accent rule to the width.
+	last := len(rows) - 1
+	if last >= 0 {
+		if pad := w - rowsPlainW[last] - 1; pad > 0 {
+			rows[last] += " " + styleAccent.Render(strings.Repeat("─", pad))
 		}
-		if i == len(rows)-1 {
-			if pad := w - rw - 1; pad > 0 {
-				rows[i] = dim(r) + " " + styleAccent.Render(strings.Repeat("─", pad))
-				continue
-			}
-		}
-		rows[i] = dim(r)
 	}
 	return rows
 }
