@@ -14,7 +14,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -258,6 +260,12 @@ func main() {
 	// `eigen dream`: reflect over recent sessions into project memory, then exit.
 	if flag.Arg(0) == "dream" {
 		runDream(titleProvider(prov), mem)
+		return
+	}
+
+	// `eigen memory <consolidate|show|backups>`: curate project memory, then exit.
+	if flag.Arg(0) == "memory" {
+		runMemoryCmd(flag.Args()[1:], prov, mem)
 		return
 	}
 
@@ -597,6 +605,100 @@ func lspConfigPath() string {
 
 // runDream reflects over the most recent eigen sessions and appends any distilled
 // learnings to the current project's memory.
+// runMemoryCmd implements `eigen memory <consolidate|show|backups>`: curating
+// the project memory file. Consolidation rewrites the append-only notes via the
+// model (dedup, supersession, contradiction resolution), shows the diff, and
+// asks for confirmation before writing; a timestamped backup is always taken.
+func runMemoryCmd(args []string, prov llm.Provider, mem *memory.Store) {
+	sub := ""
+	if len(args) > 0 {
+		sub = args[0]
+	}
+	switch sub {
+	case "show", "":
+		content := mem.Read()
+		if strings.TrimSpace(content) == "" {
+			fmt.Printf("no memory yet at %s\n", mem.Path())
+			return
+		}
+		fmt.Printf("%s (%d bytes)\n\n%s", mem.Path(), len(content), content)
+	case "backups":
+		baks := mem.Backups()
+		if len(baks) == 0 {
+			fmt.Println("no backups")
+			return
+		}
+		for _, b := range baks {
+			fmt.Println(b)
+		}
+	case "consolidate":
+		yes := false
+		for _, a := range args[1:] {
+			if a == "--yes" || a == "-y" {
+				yes = true
+			}
+		}
+		current := mem.Read()
+		if strings.TrimSpace(current) == "" {
+			fmt.Println("no memory to consolidate")
+			return
+		}
+		fmt.Fprintf(os.Stderr, "consolidating %s (%d bytes) with %s…\n", mem.Path(), len(current), prov.Name())
+		out, err := dream.Consolidate(context.Background(), prov, current)
+		if err != nil {
+			fail(fmt.Errorf("memory consolidate: %w", err))
+		}
+		// Show the proposed change as a unified diff (best-effort via git).
+		showMemoryDiff(current, out)
+		fmt.Fprintf(os.Stderr, "\n%d bytes → %d bytes. ", len(current), len(out))
+		if !yes {
+			fmt.Fprint(os.Stderr, "apply? [y/N] ")
+			var ans string
+			fmt.Scanln(&ans)
+			if a := strings.ToLower(strings.TrimSpace(ans)); a != "y" && a != "yes" {
+				fmt.Println("aborted; memory unchanged")
+				return
+			}
+		}
+		if err := mem.Rewrite(out); err != nil {
+			fail(fmt.Errorf("memory consolidate: %w", err))
+		}
+		fmt.Printf("consolidated %s (backup kept: %s)\n", mem.Path(), lastBackup(mem))
+	default:
+		fmt.Fprintln(os.Stderr, "usage: eigen memory [show|backups|consolidate [--yes]]")
+		os.Exit(2)
+	}
+}
+
+// showMemoryDiff prints a unified diff between old and new memory contents,
+// via `git diff --no-index` when available, else a crude before/after dump.
+func showMemoryDiff(oldC, newC string) {
+	dir, err := os.MkdirTemp("", "eigen-mem-diff")
+	if err == nil {
+		defer os.RemoveAll(dir)
+		oldP := filepath.Join(dir, "memory.old.md")
+		newP := filepath.Join(dir, "memory.new.md")
+		if os.WriteFile(oldP, []byte(oldC), 0o600) == nil && os.WriteFile(newP, []byte(newC), 0o600) == nil {
+			cmd := exec.Command("git", "diff", "--no-index", "--color", oldP, newP)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = io.Discard
+			_ = cmd.Run() // exit status 1 just means "files differ"
+			return
+		}
+	}
+	fmt.Println("--- proposed memory ---")
+	fmt.Println(newC)
+}
+
+// lastBackup returns the most recent backup path (or "none").
+func lastBackup(mem *memory.Store) string {
+	baks := mem.Backups()
+	if len(baks) == 0 {
+		return "none"
+	}
+	return baks[len(baks)-1]
+}
+
 func runDream(prov llm.Provider, mem *memory.Store) {
 	paths := recentEigenSessions(5)
 	if len(paths) == 0 {

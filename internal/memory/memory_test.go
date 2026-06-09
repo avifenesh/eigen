@@ -1,6 +1,8 @@
 package memory
 
 import (
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
@@ -79,5 +81,81 @@ func TestNilStoreSafe(t *testing.T) {
 	}
 	if err := s.Append("x"); err == nil {
 		t.Fatal("nil store append should error, not panic")
+	}
+}
+
+func TestSnapshotAndRewrite(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	s, _ := Open("/p")
+
+	// Snapshot of a missing file is a no-op.
+	if bak, err := s.Snapshot(); err != nil || bak != "" {
+		t.Fatalf("snapshot of missing file: bak=%q err=%v", bak, err)
+	}
+
+	if err := s.Append("first note"); err != nil {
+		t.Fatal(err)
+	}
+	before := s.Read()
+
+	// Rewrite snapshots the old content, then replaces it.
+	if err := s.Rewrite("- 2026-01-01 — consolidated\n"); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Read(); !strings.Contains(got, "consolidated") {
+		t.Fatalf("rewrite did not apply: %q", got)
+	}
+	baks := s.Backups()
+	if len(baks) != 1 {
+		t.Fatalf("want 1 backup, got %d", len(baks))
+	}
+	bak, _ := os.ReadFile(baks[0])
+	if string(bak) != before {
+		t.Fatalf("backup should hold the pre-rewrite content")
+	}
+}
+
+func TestBackupPruning(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	s, _ := Open("/p")
+	_ = s.Append("note")
+	// Create more than maxBackups snapshots with distinct names.
+	for i := 0; i < maxBackups+3; i++ {
+		bak := fmt.Sprintf("%s.2026010%d-00000%d.bak", s.Path(), i%9, i)
+		if err := os.WriteFile(bak, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.pruneBackups()
+	if got := len(s.Backups()); got > maxBackups {
+		t.Fatalf("pruning should cap backups at %d, got %d", maxBackups, got)
+	}
+}
+
+func TestAppendRedactsSecrets(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	s, _ := Open("/p")
+	if err := s.Append("the key is AKIA_REDACTED_EXAMPLE and api_key=redacted-example-secret works"); err != nil {
+		t.Fatal(err)
+	}
+	got := s.Read()
+	if strings.Contains(got, "AKIA_REDACTED_EXAMPLE") || strings.Contains(got, "redacted-example-secret") {
+		t.Fatalf("secrets must be redacted, got %q", got)
+	}
+	if !strings.Contains(got, Redacted) {
+		t.Fatalf("redaction placeholder missing: %q", got)
+	}
+	if !strings.Contains(got, "api_key=") {
+		t.Fatalf("key name should be preserved: %q", got)
+	}
+}
+
+func TestSectionStalenessFraming(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	s, _ := Open("/p")
+	_ = s.Append("a fact")
+	sec := s.Section()
+	if !strings.Contains(sec, "may be stale") || !strings.Contains(sec, "not instructions") {
+		t.Fatalf("section should frame notes as possibly stale data: %q", sec)
 	}
 }
