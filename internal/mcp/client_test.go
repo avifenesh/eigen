@@ -35,6 +35,10 @@ func fakeServer(r io.Reader, w io.Writer) {
 			resp["result"] = map[string]any{
 				"tools": []map[string]any{
 					{"name": "echo", "description": "echo text", "inputSchema": map[string]any{"type": "object"}},
+					{"name": "peek", "description": "read state", "inputSchema": map[string]any{"type": "object"},
+						"annotations": map[string]any{"readOnlyHint": true, "destructiveHint": false}},
+					{"name": "nuke", "description": "delete state", "inputSchema": map[string]any{"type": "object"},
+						"annotations": map[string]any{"readOnlyHint": true, "destructiveHint": true}},
 				},
 			}
 		case "tools/call":
@@ -75,8 +79,46 @@ func TestInitializeAndListTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tools) != 1 || tools[0].Name != "echo" {
+	if len(tools) != 3 || tools[0].Name != "echo" {
 		t.Fatalf("unexpected tools: %+v", tools)
+	}
+	// Annotations are parsed when present.
+	if tools[1].Name != "peek" || tools[1].Annotations == nil || !tools[1].Annotations.ReadOnlyHint {
+		t.Fatalf("peek should carry readOnlyHint: %+v", tools[1].Annotations)
+	}
+}
+
+func TestWrapMapsReadOnlyHint(t *testing.T) {
+	c := newTestClient(t)
+	defer c.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := c.initialize(ctx); err != nil {
+		t.Fatal(err)
+	}
+	tools, err := c.ListTools(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]ToolSpec{}
+	for _, sp := range tools {
+		byName[sp.Name] = sp
+	}
+	// No annotations → mutating (fail safe).
+	if d := wrap(c, "srv", byName["echo"]); d.ReadOnly {
+		t.Error("echo (no hint) should be mutating")
+	}
+	// readOnly + not destructive → read-only, auto-runs in gated mode.
+	if d := wrap(c, "srv", byName["peek"]); !d.ReadOnly {
+		t.Error("peek (readOnlyHint, non-destructive) should be read-only")
+	}
+	// readOnly BUT destructive → stay mutating (the destructive flag wins).
+	if d := wrap(c, "srv", byName["nuke"]); d.ReadOnly {
+		t.Error("nuke (destructiveHint) must stay mutating despite readOnlyHint")
+	}
+	// Name is server-prefixed and sanitized.
+	if d := wrap(c, "srv", byName["echo"]); d.Name != "srv_echo" {
+		t.Errorf("wrapped name = %q, want srv_echo", d.Name)
 	}
 }
 

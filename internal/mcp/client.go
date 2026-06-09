@@ -19,9 +19,21 @@ const protocolVersion = "2024-11-05"
 
 // ToolSpec describes one MCP tool.
 type ToolSpec struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"inputSchema"`
+	Name        string           `json:"name"`
+	Description string           `json:"description"`
+	InputSchema json.RawMessage  `json:"inputSchema"`
+	Annotations *ToolAnnotations `json:"annotations,omitempty"`
+}
+
+// ToolAnnotations are the optional MCP behavior hints a server may attach to a
+// tool (https://modelcontextprotocol.io). eigen uses readOnlyHint to let safe
+// tools auto-run instead of prompting for approval in gated mode.
+type ToolAnnotations struct {
+	Title           string `json:"title,omitempty"`
+	ReadOnlyHint    bool   `json:"readOnlyHint,omitempty"`
+	DestructiveHint bool   `json:"destructiveHint,omitempty"`
+	IdempotentHint  bool   `json:"idempotentHint,omitempty"`
+	OpenWorldHint   bool   `json:"openWorldHint,omitempty"`
 }
 
 type rpcRequest struct {

@@ -82,12 +82,16 @@ func wrap(client *Client, server string, sp ToolSpec) tool.Definition {
 		desc = "MCP tool " + sp.Name + " from server " + server
 	}
 	toolName := sp.Name
+	// Honor the MCP readOnlyHint: a tool the server declares read-only and
+	// non-destructive has no side effects, so it can auto-run in gated mode
+	// instead of prompting for approval on every call. Anything without an
+	// explicit safe hint stays mutating (fail safe).
+	readOnly := sp.Annotations != nil && sp.Annotations.ReadOnlyHint && !sp.Annotations.DestructiveHint
 	return tool.Definition{
 		Name:        name,
 		Description: desc,
 		Parameters:  params,
-		// MCP tools may have side effects; treat as mutating so gated mode asks.
-		ReadOnly: false,
+		ReadOnly:    readOnly,
 		Run: func(ctx context.Context, args json.RawMessage) (string, error) {
 			return client.CallTool(ctx, toolName, args)
 		},
