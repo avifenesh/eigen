@@ -176,6 +176,13 @@ type model struct {
 	// skills are the discovered SKILL.md skills, for /skills browse + preview.
 	skills *skill.Set
 
+	// overload failover: after a persistent provider overload (503 after all
+	// retries), the session is redirected to a known-good fallback model for
+	// failoverTurns turns, then switched back. failoverFrom remembers the
+	// original provider/model; failoverLeft counts down remaining turns.
+	failoverFrom *failoverOrigin
+	failoverLeft int
+
 	// ctxTokens caches the estimated context size; recomputed only at safe
 	// points (never while the agent goroutine is appending to the session) so
 	// the status bar render stays race-free and cheap.
@@ -272,6 +279,13 @@ func (m *model) saveMeta() {
 	meta := transcript.SessionMeta{
 		Provider: m.provName,
 		Model:    m.modelID,
+	}
+	// During an overload failover window, persist the ORIGINAL model: the
+	// fallback is temporary, and a restart should resume on the user's choice
+	// (failing over again if the model is still overloaded).
+	if m.failoverFrom != nil {
+		meta.Provider = m.failoverFrom.provider
+		meta.Model = m.failoverFrom.model
 	}
 	if m.a != nil {
 		meta.Perm = string(m.a.Perm)
@@ -574,8 +588,11 @@ func (m *model) cycleModel() {
 	m.a.Compactor = llm.NewCompactor(np)
 	m.provName, m.modelID = prov, next.ID
 	if w := llm.EffectiveContextWindow(next.ID); w > 0 {
-		m.a.MaxContextTokens = w * 85 / 100
+		m.a.MaxContextTokens = contextBudgetFor(w)
 	}
+	// A manual switch takes precedence over any overload failover window.
+	m.failoverFrom = nil
+	m.failoverLeft = 0
 	m.saveMeta()
 	m.note("model → " + np.Name())
 }
@@ -724,6 +741,27 @@ func (m *model) submit(task string) tea.Cmd {
 			}
 		}()
 		_, err := m.session.Send(tctx, task)
+		return turnDoneMsg{err: err}
+	})
+}
+
+// resend re-drives the current turn (history already holds the user message)
+// after a failover switched the provider — the turn resumes where it stopped.
+func (m *model) resend() tea.Cmd {
+	m.state = stRunning
+	m.status = "retrying on " + m.modelID
+	m.streamedText = false
+	m.idleGen++
+	m.relayout()
+	tctx, cancel := context.WithCancel(m.ctx)
+	m.cancel = cancel
+	return tea.Batch(m.sp.Tick, func() (msg tea.Msg) {
+		defer func() {
+			if r := recover(); r != nil {
+				msg = turnDoneMsg{err: fmt.Errorf("internal panic: %v", r)}
+			}
+		}()
+		_, err := m.session.Resend(tctx)
 		return turnDoneMsg{err: err}
 	})
 }
@@ -1051,8 +1089,19 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 	case turnDoneMsg:
 		if msg.err != nil {
 			m.push(&block{kind: blockNote, isErr: true, body: sb("error: " + msg.err.Error())})
-			// Actionable hint for token-rate throttling (Bedrock 429).
-			if isRateLimit(msg.err) {
+			switch {
+			case isOverloaded(msg.err) && m.ctx.Err() == nil:
+				// Persistent overload (503 after all retries): redirect the next
+				// turns to the known-good fallback model and retry this turn there.
+				if m.startFailover() {
+					m.cancel = nil
+					m.autosave() // history is intact; the retry continues it
+					m.note(fmt.Sprintf("model overloaded (Bedrock 503) — redirecting to %s for the next %d turns, then switching back", failoverModelID, failoverTurns))
+					return m, m.resend()
+				}
+				m.note("model overloaded (Bedrock 503: capacity on the provider side) — try /model to switch, or retry shortly")
+			case isRateLimit(msg.err):
+				// Actionable hint for token-rate throttling (Bedrock 429).
 				m.note("rate-limited (too many tokens/min). Try: /compact to shrink context, /effort low to reduce thinking tokens, or wait a moment and retry.")
 			}
 		}
@@ -1063,6 +1112,16 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		m.refreshCtx() // safe: the turn's goroutine has returned
 		// Autosave so the conversation survives a crash or failed rebuild.
 		m.autosave()
+		// Failover window bookkeeping: count down successful turns on the
+		// fallback model; when the window ends, switch back to the original.
+		if msg.err == nil && m.failoverFrom != nil {
+			m.failoverLeft--
+			if m.failoverLeft <= 0 {
+				m.endFailover()
+			} else {
+				m.note(fmt.Sprintf("on fallback %s — %d turn(s) until switching back", m.modelID, m.failoverLeft))
+			}
+		}
 		// Read the answer aloud if enabled.
 		if msg.err == nil && m.readAloud && m.speaker != nil {
 			if ans := m.lastAssistantText(); ans != "" {
@@ -1603,10 +1662,14 @@ func (m *model) command(line string) tea.Cmd {
 		m.a.Provider = np
 		m.a.Compactor = llm.NewCompactor(np)
 		m.provName, m.modelID = prov, id
-		// Auto-detect the new model's context budget from the catalog.
+		// Auto-detect the new model's context budget from the catalog (capped,
+		// like main's auto budget, so 1M windows don't exceed minute quotas).
 		if w := llm.EffectiveContextWindow(id); w > 0 {
-			m.a.MaxContextTokens = w * 85 / 100
+			m.a.MaxContextTokens = contextBudgetFor(w)
 		}
+		// A manual switch takes precedence over any overload failover window.
+		m.failoverFrom = nil
+		m.failoverLeft = 0
 		m.note("model → " + np.Name())
 	case "/skills":
 		if m.skills == nil || m.skills.Len() == 0 {
@@ -1955,6 +2018,90 @@ func isRateLimit(err error) bool {
 		strings.Contains(s, "too many tokens") ||
 		strings.Contains(s, "too many requests") ||
 		strings.Contains(s, "throttl")
+}
+
+// isOverloaded reports whether err looks like a persistent provider overload
+// (HTTP 503 / "unable to process" after all retries) — capacity on the model
+// side, where switching models helps and retrying the same one usually doesn't.
+func isOverloaded(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "503") ||
+		strings.Contains(s, "service unavailable") ||
+		strings.Contains(s, "unable to process") ||
+		strings.Contains(s, "overloaded")
+}
+
+// failoverOrigin remembers where to switch back to after an overload failover.
+type failoverOrigin struct {
+	provider, model string
+}
+
+// failoverTurns is how many turns run on the fallback model after a persistent
+// overload before switching back to the original model.
+const failoverTurns = 5
+
+// failoverModelID is the known-good model used while the primary is overloaded.
+const failoverModelID = "us.anthropic.claude-opus-4-8"
+
+// startFailover switches the live provider to the fallback model for
+// failoverTurns turns, remembering the origin. Returns false when failover is
+// not applicable (already on the fallback, no constructor, or switch failed).
+func (m *model) startFailover() bool {
+	if m.newProvider == nil || m.modelID == failoverModelID || m.failoverFrom != nil {
+		return false
+	}
+	prov := llm.ResolveProvider(m.provName, failoverModelID)
+	np, err := m.newProvider(prov, failoverModelID)
+	if err != nil {
+		return false
+	}
+	m.failoverFrom = &failoverOrigin{provider: m.provName, model: m.modelID}
+	m.failoverLeft = failoverTurns
+	m.a.Provider = np
+	m.a.Compactor = llm.NewCompactor(np)
+	m.provName, m.modelID = prov, failoverModelID
+	if w := llm.EffectiveContextWindow(failoverModelID); w > 0 {
+		m.a.MaxContextTokens = contextBudgetFor(w)
+	}
+	return true
+}
+
+// endFailover switches back to the original model after the failover window.
+// Best-effort: if the original cannot be constructed, stay on the fallback.
+func (m *model) endFailover() {
+	if m.failoverFrom == nil || m.newProvider == nil {
+		return
+	}
+	orig := *m.failoverFrom
+	np, err := m.newProvider(orig.provider, orig.model)
+	if err != nil {
+		m.note("failover: could not switch back to " + orig.model + " (" + err.Error() + ") — staying on " + m.modelID)
+		m.failoverFrom = nil
+		m.failoverLeft = 0
+		return
+	}
+	m.a.Provider = np
+	m.a.Compactor = llm.NewCompactor(np)
+	m.provName, m.modelID = orig.provider, orig.model
+	if w := llm.EffectiveContextWindow(orig.model); w > 0 {
+		m.a.MaxContextTokens = contextBudgetFor(w)
+	}
+	m.failoverFrom = nil
+	m.failoverLeft = 0
+	m.note("overload window over — switched back to " + orig.model)
+}
+
+// contextBudgetFor mirrors main's auto budget: 85% of the window, capped so a
+// huge (1M) window can't exceed per-minute token quotas.
+func contextBudgetFor(window int) int {
+	b := window * 85 / 100
+	if b > 200_000 {
+		b = 200_000
+	}
+	return b
 }
 
 // renderHistory pre-fills the transcript with resumed messages as blocks, so

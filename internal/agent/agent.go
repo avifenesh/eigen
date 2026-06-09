@@ -214,6 +214,30 @@ func (s *Session) Send(ctx context.Context, task string) (string, error) {
 		return "", fmt.Errorf("agent: nil tools")
 	}
 	s.msgs = append(s.msgs, llm.Message{Role: llm.RoleUser, Text: task})
+	return s.drive(ctx)
+}
+
+// Resend re-drives the loop on the existing history without appending a new
+// user message — used to retry a turn that failed mid-flight (e.g. after an
+// overload failover switched the provider). The history already contains the
+// user message (and any tool results that completed), so the loop simply
+// continues from where it stopped.
+func (s *Session) Resend(ctx context.Context) (string, error) {
+	if len(s.msgs) == 0 {
+		return "", fmt.Errorf("agent: nothing to resend")
+	}
+	return s.drive(ctx)
+}
+
+// drive runs the tool-use loop over the session's current history.
+func (s *Session) drive(ctx context.Context) (string, error) {
+	a := s.a
+	if a.Provider == nil {
+		return "", fmt.Errorf("agent: nil provider")
+	}
+	if a.Tools == nil {
+		return "", fmt.Errorf("agent: nil tools")
+	}
 	if a.MaxContextTokens > 0 {
 		compacted, err := llm.CompactWith(ctx, a.Compactor, s.msgs, a.MaxContextTokens)
 		if err == nil {

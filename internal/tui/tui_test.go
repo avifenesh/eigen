@@ -1629,3 +1629,117 @@ func TestReasoningCollapsesOnToolStart(t *testing.T) {
 		t.Fatal("thinking should collapse when a tool starts")
 	}
 }
+
+// --- overload failover ---------------------------------------------------
+
+func TestIsOverloaded(t *testing.T) {
+	cases := map[string]bool{
+		"converse: failed after 5 attempts: HTTP 503: Bedrock is unable to process your request": true,
+		"HTTP 503 Service Unavailable": true,
+		"model overloaded":             true,
+		"HTTP 429: too many tokens":    false,
+		"context canceled":             false,
+	}
+	for msg, want := range cases {
+		if got := isOverloaded(fmt.Errorf("%s", msg)); got != want {
+			t.Errorf("isOverloaded(%q) = %v, want %v", msg, got, want)
+		}
+	}
+}
+
+func TestOverloadFailoverRedirectsAndRetries(t *testing.T) {
+	m := testModel(t)
+	m.provName, m.modelID = "converse", "global.anthropic.claude-fable-5"
+	m.newProvider = func(provider, mdl string) (llm.Provider, error) {
+		return fakeProv{text: provider + "/" + mdl}, nil
+	}
+	// Seed history as a failed turn leaves it.
+	m.session = m.a.Resume([]llm.Message{{Role: llm.RoleUser, Text: "task"}})
+
+	_, cmd := m.Update(turnDoneMsg{err: fmt.Errorf("converse: failed after 5 attempts: HTTP 503: unable to process")})
+	if m.modelID != failoverModelID {
+		t.Fatalf("failover should switch to %s, got %s", failoverModelID, m.modelID)
+	}
+	if m.failoverFrom == nil || m.failoverFrom.model != "global.anthropic.claude-fable-5" {
+		t.Fatalf("failover should remember the origin, got %+v", m.failoverFrom)
+	}
+	if m.failoverLeft != failoverTurns {
+		t.Fatalf("failover window should be %d, got %d", failoverTurns, m.failoverLeft)
+	}
+	if cmd == nil {
+		t.Fatal("failover should auto-retry the failed turn (resend cmd)")
+	}
+	if m.state != stRunning {
+		t.Fatal("retry should put the UI back into running state")
+	}
+}
+
+func TestOverloadFailoverCountsDownAndSwitchesBack(t *testing.T) {
+	m := testModel(t)
+	m.provName, m.modelID = "converse", failoverModelID
+	m.failoverFrom = &failoverOrigin{provider: "converse", model: "global.anthropic.claude-fable-5"}
+	m.failoverLeft = 2
+	m.newProvider = func(provider, mdl string) (llm.Provider, error) {
+		return fakeProv{text: provider + "/" + mdl}, nil
+	}
+	// One successful turn: counts down, stays on fallback.
+	m.Update(turnDoneMsg{})
+	if m.failoverLeft != 1 || m.failoverFrom == nil {
+		t.Fatalf("after 1 ok turn: left=%d from=%v", m.failoverLeft, m.failoverFrom)
+	}
+	// Second successful turn: window over, switches back to the origin.
+	m.Update(turnDoneMsg{})
+	if m.failoverFrom != nil {
+		t.Fatal("failover window should be over")
+	}
+	if m.modelID != "global.anthropic.claude-fable-5" {
+		t.Fatalf("should switch back to the origin model, got %s", m.modelID)
+	}
+}
+
+func TestOverloadOnFallbackModelNoLoop(t *testing.T) {
+	m := testModel(t)
+	m.provName, m.modelID = "converse", failoverModelID // already on the fallback
+	m.newProvider = func(provider, mdl string) (llm.Provider, error) {
+		return fakeProv{}, nil
+	}
+	_, cmd := m.Update(turnDoneMsg{err: fmt.Errorf("HTTP 503: unable to process")})
+	if m.failoverFrom != nil {
+		t.Fatal("must not fail over when already on the fallback model")
+	}
+	if cmd != nil {
+		// cmd may be textarea.Blink etc; the important part is state is input,
+		// not a resend loop.
+		if m.state == stRunning {
+			t.Fatal("must not auto-retry in a loop on the fallback model")
+		}
+	}
+}
+
+func TestManualModelSwitchClearsFailover(t *testing.T) {
+	m := testModel(t)
+	m.provName, m.modelID = "converse", failoverModelID
+	m.failoverFrom = &failoverOrigin{provider: "converse", model: "global.anthropic.claude-fable-5"}
+	m.failoverLeft = 3
+	m.newProvider = func(provider, mdl string) (llm.Provider, error) {
+		return fakeProv{}, nil
+	}
+	m.command("/model glm-4.6")
+	if m.failoverFrom != nil || m.failoverLeft != 0 {
+		t.Fatal("a manual /model switch should clear the failover window")
+	}
+}
+
+func TestSaveMetaDuringFailoverKeepsOriginalModel(t *testing.T) {
+	m := testModel(t)
+	m.provName, m.modelID = "converse", failoverModelID
+	m.failoverFrom = &failoverOrigin{provider: "converse", model: "global.anthropic.claude-fable-5"}
+	m.saveMeta()
+	meta, ok := loadMetaForTest(t, m.sessionPath)
+	if !ok {
+		t.Fatal("meta not saved")
+	}
+	if meta.Model != "global.anthropic.claude-fable-5" {
+		t.Fatalf("meta during failover should keep the original model, got %s", meta.Model)
+	}
+}

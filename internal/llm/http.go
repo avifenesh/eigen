@@ -16,8 +16,9 @@ import (
 const Version = "0.1.0"
 
 const (
-	// maxAttempts bounds retries for transient provider failures.
-	maxAttempts = 4
+	// maxAttempts bounds retries for transient provider failures (network, 429,
+	// 5xx) — jittered exponential backoff between attempts, honoring Retry-After.
+	maxAttempts = 5
 	// maxResponseBytes caps how much of a response body we read into memory.
 	maxResponseBytes = 16 << 20 // 16 MiB
 )

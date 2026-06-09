@@ -442,3 +442,37 @@ func TestSessionCompactEmpty(t *testing.T) {
 		t.Fatalf("compacting an empty session should be a no-op, got before=%d after=%d err=%v", before, after, err)
 	}
 }
+
+func TestResendContinuesWithoutNewUserMessage(t *testing.T) {
+	prov := &mockProvider{replies: []*llm.Response{{Text: "recovered"}}}
+	reg, _ := tool.NewRegistry()
+	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto}
+	// History as left by a failed turn: the user message is already there.
+	s := a.Resume([]llm.Message{{Role: llm.RoleUser, Text: "do the thing"}})
+
+	out, err := s.Resend(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "recovered" {
+		t.Fatalf("resend answer = %q", out)
+	}
+	// No duplicate user message was appended.
+	users := 0
+	for _, m := range s.Messages() {
+		if m.Role == llm.RoleUser {
+			users++
+		}
+	}
+	if users != 1 {
+		t.Fatalf("resend must not append a new user message, got %d user messages", users)
+	}
+}
+
+func TestResendEmptySessionErrors(t *testing.T) {
+	reg, _ := tool.NewRegistry()
+	a := &Agent{Provider: &mockProvider{}, Tools: reg, Perm: PermAuto}
+	if _, err := a.NewSession().Resend(context.Background()); err == nil {
+		t.Fatal("resend on an empty session should error")
+	}
+}
