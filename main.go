@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -23,8 +24,13 @@ import (
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/config"
+	"github.com/avifenesh/eigen/internal/dream"
 	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/lsp"
+	"github.com/avifenesh/eigen/internal/mcp"
+	"github.com/avifenesh/eigen/internal/memory"
 	"github.com/avifenesh/eigen/internal/session"
+	"github.com/avifenesh/eigen/internal/skill"
 	"github.com/avifenesh/eigen/internal/tool"
 	"github.com/avifenesh/eigen/internal/transcript"
 	"github.com/avifenesh/eigen/internal/tui"
@@ -39,10 +45,21 @@ func main() {
 	if err := config.LoadEnvFiles(filepath.Join(home, ".eigen", ".env")); err != nil {
 		fmt.Fprintln(os.Stderr, "eigen: env:", err)
 	}
+	// Optional ~/.eigen/config.json supplies defaults; flags/env override it.
+	cfg := config.Load()
+	if cfg.TTSCmd != "" {
+		if _, set := os.LookupEnv("EIGEN_TTS_CMD"); !set {
+			os.Setenv("EIGEN_TTS_CMD", cfg.TTSCmd)
+		}
+	}
+	if len(cfg.SkillsDirs) > 0 {
+		merged := append(cfg.SkillsDirs, splitNonEmpty(os.Getenv("EIGEN_SKILLS_DIRS"))...)
+		os.Setenv("EIGEN_SKILLS_DIRS", strings.Join(merged, ":"))
+	}
 
-	model := flag.String("model", "", "model id (default: openai.gpt-5.5 on bedrock mantle)")
-	provider := flag.String("provider", envOr("EIGEN_PROVIDER", "mantle"), "provider: mantle|llama|converse")
-	perm := flag.String("perm", envOr("EIGEN_PERMISSION", "gated"), "permission posture: gated|auto")
+	model := flag.String("model", cfg.Model, "model id (default: openai.gpt-5.5 on bedrock mantle)")
+	provider := flag.String("provider", firstNonEmpty(os.Getenv("EIGEN_PROVIDER"), cfg.Provider, "mantle"), "provider: mantle|llama|converse|grok|glm")
+	perm := flag.String("perm", firstNonEmpty(os.Getenv("EIGEN_PERMISSION"), cfg.Perm, "gated"), "permission posture: gated|auto")
 	printMode := flag.Bool("p", false, "print mode: run one task headless (no TUI) and exit")
 	flag.BoolVar(printMode, "print", false, "alias for -p")
 	resumeFile := flag.String("resume", "", "resume a conversation from a transcript file or 'opencode' (auto-detected)")
@@ -50,13 +67,27 @@ func main() {
 	flag.BoolVar(continueLatest, "c", false, "alias for --continue")
 	from := flag.String("from", "", "force the transcript source for --resume (claude|codex|pi|hermes|opencode|eigen)")
 	sessionID := flag.String("session", "", "opencode session id for --resume opencode (default: latest)")
-	maxTokens := flag.Int("max-tokens", 0, "context budget before compaction (0 = auto by provider)")
+	maxTokens := flag.Int("max-tokens", cfg.MaxTokens, "context budget before compaction (0 = auto by provider)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	listSessions := flag.Bool("list", false, "list resumable sessions (id, date, title) and exit")
+	listSkills := flag.Bool("list-skills", false, "list discovered skills (name, description) and exit")
+	listTools := flag.Bool("list-tools", false, "list available tools (name, posture, description) and exit")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println("eigen", llm.Version)
+		return
+	}
+
+	skills := skill.Discover(skillDirs()...)
+	if *listSkills {
+		printSkills(skills)
+		return
+	}
+
+	// `eigen skill <add|list> ...`: manage skills from the CLI, then exit.
+	if flag.Arg(0) == "skill" {
+		runSkillCmd(flag.Args()[1:], *provider, *model)
 		return
 	}
 
@@ -73,31 +104,171 @@ func main() {
 		*resumeFile = "eigen"
 	}
 
-	prov, err := llm.New(*provider, *model)
-	if err != nil {
-		fail(err)
+	// Restore the live config from a resumed eigen session so the conversation
+	// continues exactly as it was (same provider/model/perm/effort/search),
+	// unless the user explicitly overrode a flag this run. Only eigen-native
+	// sessions carry a sidecar meta; foreign transcripts have none.
+	if *resumeFile != "" {
+		set := map[string]bool{}
+		flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
+		metaSrc := *resumeFile
+		if metaSrc == "eigen" {
+			metaSrc = latestEigenSession()
+		}
+		if metaSrc != "" && transcript.Detect(metaSrc) == transcript.SourceEigen {
+			if meta, ok := transcript.LoadMeta(metaSrc); ok {
+				if meta.Provider != "" && !set["provider"] {
+					*provider = meta.Provider
+				}
+				if meta.Model != "" && !set["model"] {
+					*model = meta.Model
+				}
+				if meta.Perm != "" && !set["perm"] {
+					*perm = meta.Perm
+				}
+				// Effort/search are applied via the env vars the providers read at
+				// construction (a non-empty env always wins, so an explicit env
+				// override still takes precedence over the sidecar).
+				if meta.Effort != "" && os.Getenv("EIGEN_REASONING_EFFORT") == "" {
+					os.Setenv("EIGEN_REASONING_EFFORT", meta.Effort)
+				}
+				if meta.Search != "" {
+					if os.Getenv("EIGEN_GROK_SEARCH") == "" {
+						os.Setenv("EIGEN_GROK_SEARCH", meta.Search)
+					}
+					if os.Getenv("EIGEN_GLM_SEARCH") == "" {
+						os.Setenv("EIGEN_GLM_SEARCH", meta.Search)
+					}
+				}
+			}
+		}
 	}
 
 	policy := tool.DefaultPolicy()
-	registry, err := tool.NewRegistry(
+	mem, _ := memory.Open("")
+	// Sub-agent delegation: the task tool runs a subtask on a fresh session of
+	// the same agent (events suppressed; recursion bounded).
+	var a *agent.Agent
+	taskRun := func(ctx context.Context, t string) (string, error) {
+		if a == nil {
+			return "", fmt.Errorf("subtasks unavailable")
+		}
+		return a.Subtask(ctx, t)
+	}
+	defs := []tool.Definition{
 		tool.Read(policy),
 		tool.List(policy),
 		tool.Glob(policy),
 		tool.Grep(policy),
+		tool.Symbols(policy),
+		tool.Tree(policy),
+		tool.Diff(policy),
 		tool.Write(policy),
 		tool.Edit(policy),
+		tool.MultiEdit(policy),
+		tool.Patch(policy),
+		tool.Move(policy),
 		tool.Bash(),
-	)
+		tool.Fetch(),
+		tool.Todo(),
+		tool.Skill(skills),
+		tool.Memory(mem),
+		tool.Task(taskRun),
+	}
+	// Web search: only registered when a backend is configured (TAVILY_API_KEY,
+	// BRAVE_API_KEY, or EIGEN_WEBSEARCH_URL), so the model never sees a tool it
+	// cannot run.
+	if ws, ok := tool.WebSearch(); ok {
+		defs = append(defs, ws)
+	}
+	// Plugins: external-command tools defined in plugins.json. A plugin whose
+	// name collides with a built-in is skipped (built-ins win).
+	builtin := map[string]bool{}
+	for _, d := range defs {
+		builtin[d.Name] = true
+	}
+	if plugins, perr := tool.LoadPlugins(pluginPaths()...); perr != nil {
+		fmt.Fprintln(os.Stderr, "eigen: plugins:", perr)
+	} else {
+		for _, p := range plugins {
+			if builtin[p.Name] {
+				fmt.Fprintf(os.Stderr, "eigen: plugin %q shadows a built-in tool; skipping\n", p.Name)
+				continue
+			}
+			defs = append(defs, p)
+			builtin[p.Name] = true
+		}
+	}
+	// MCP: connect to servers in mcp.json and expose their tools.
+	mcpDefs, mcpClients, mcpErrs := mcp.LoadTools(context.Background(), mcpConfigPath())
+	for _, e := range mcpErrs {
+		fmt.Fprintln(os.Stderr, "eigen: mcp:", e)
+	}
+	defer func() {
+		for _, c := range mcpClients {
+			_ = c.Close()
+		}
+	}()
+	for _, d := range mcpDefs {
+		if builtin[d.Name] {
+			fmt.Fprintf(os.Stderr, "eigen: mcp tool %q shadows an existing tool; skipping\n", d.Name)
+			continue
+		}
+		defs = append(defs, d)
+		builtin[d.Name] = true
+	}
+	// LSP: language servers from lsp.json provide go-to-definition, references,
+	// hover, document symbols, and diagnostics as native tools. Servers start
+	// lazily on first use; the manager is kept alive and closed on exit.
+	cwd, _ := os.Getwd()
+	lspDefs, lspMgr, lspErrs := lsp.LoadTools(cwd, lspConfigPath())
+	for _, e := range lspErrs {
+		fmt.Fprintln(os.Stderr, "eigen: lsp:", e)
+	}
+	if lspMgr != nil {
+		defer lspMgr.Close()
+	}
+	for _, d := range lspDefs {
+		if builtin[d.Name] {
+			fmt.Fprintf(os.Stderr, "eigen: lsp tool %q shadows an existing tool; skipping\n", d.Name)
+			continue
+		}
+		defs = append(defs, d)
+		builtin[d.Name] = true
+	}
+	registry, err := tool.NewRegistry(defs...)
 	if err != nil {
 		fail(err)
 	}
 
-	a := &agent.Agent{
+	if *listTools {
+		printTools(registry)
+		return
+	}
+
+	prov, err := llm.New(*provider, *model)
+	if err != nil {
+		fail(err)
+	}
+	// Keep *provider in sync with what New actually built (the catalog may have
+	// reconciled e.g. mantle+claude-model → converse), so the status bar, the
+	// context budget, the TUI's live provider, and rebuild-resume all agree.
+	*provider = llm.ResolveProvider(*provider, *model)
+
+	// `eigen dream`: reflect over recent sessions into project memory, then exit.
+	if flag.Arg(0) == "dream" {
+		runDream(titleProvider(prov), mem)
+		return
+	}
+
+	a = &agent.Agent{
 		Provider:         prov,
 		Tools:            registry,
 		Perm:             agent.Permission(*perm),
 		MaxContextTokens: contextBudget(*maxTokens, *provider, *model),
 		Compactor:        llm.NewCompactor(prov),
+		ExtraSystem:      skills.Catalog(),
+		Memory:           mem.Section(),
 	}
 
 	// Session store: discover all sources (lazy) and title untitled ones in the
@@ -145,12 +316,37 @@ func main() {
 	// Interactive terminal with no -p → the full-screen REPL (the default UX).
 	interactive := isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd())
 	if !*printMode && interactive {
-		res, err := tui.Run(a, task, history, store)
+		res, err := tui.Run(a, tui.Options{
+			InitialTask: task,
+			History:     history,
+			Store:       store,
+			Provider:    *provider,
+			Model:       *model,
+			Memory:      mem,
+			Skills:      skills,
+			DreamOnIdle: cfg.DreamOnIdle,
+			IdleMinutes: cfg.IdleMinutes,
+		})
 		if err != nil {
 			fail(err)
 		}
 		if res.Rebuild {
-			execResume(res.BinPath, res.SessionPath, *provider, *model, *perm)
+			// Resume exactly as the conversation was: the user may have switched
+			// model, permission, effort, or search live, so carry the LIVE config
+			// forward (falling back to the launch flags), not the original ones.
+			rp := firstNonEmpty(res.Provider, *provider)
+			rm := firstNonEmpty(res.Model, *model)
+			rperm := firstNonEmpty(res.Perm, *perm)
+			// Effort/search are reapplied via the env vars the providers read at
+			// construction, so the resumed process rebuilds the same provider state.
+			if res.Effort != "" {
+				os.Setenv("EIGEN_REASONING_EFFORT", res.Effort)
+			}
+			if res.Search != "" {
+				os.Setenv("EIGEN_GROK_SEARCH", res.Search)
+				os.Setenv("EIGEN_GLM_SEARCH", res.Search)
+			}
+			execResume(res.BinPath, res.SessionPath, rp, rm, rperm)
 		}
 		return
 	}
@@ -185,12 +381,27 @@ func main() {
 	}
 	fmt.Fprintln(os.Stderr)
 
-	var out string
-	if len(history) > 0 {
-		out, err = a.Resume(history).Send(context.Background(), task)
-	} else {
-		out, err = a.Run(context.Background(), task)
+	// Autosave headless runs too, so any `-p` session is resumable, and record
+	// the session meta so a later --resume continues with the same config.
+	savePath := newSessionPath()
+	saveMeta := func() {
+		_ = transcript.SaveMeta(savePath, transcript.SessionMeta{
+			Provider: *provider,
+			Model:    *model,
+			Perm:     *perm,
+			Effort:   os.Getenv("EIGEN_REASONING_EFFORT"),
+		})
 	}
+	a.Persist = func(msgs []llm.Message) {
+		_ = transcript.Save(savePath, msgs)
+		saveMeta()
+	}
+
+	sess := a.NewSession()
+	if len(history) > 0 {
+		sess = a.Resume(history)
+	}
+	out, err := sess.Send(context.Background(), task)
 	if err != nil {
 		fail(err)
 	}
@@ -198,6 +409,7 @@ func main() {
 		fmt.Fprintln(os.Stderr)
 	}
 	fmt.Println(out)
+	fmt.Fprintln(os.Stderr, "session saved →", savePath)
 }
 
 // firstLine returns the first line of s, truncated, for compact error display.
@@ -231,16 +443,34 @@ func cliApprove(ctx context.Context, name string, args json.RawMessage) (bool, e
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(line)), "y"), nil
 }
 
-func envOr(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+// firstNonEmpty returns the first non-empty string.
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
 	}
-	return def
+	return ""
+}
+
+// splitNonEmpty splits a colon-separated list, dropping empties.
+func splitNonEmpty(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var out []string
+	for _, p := range strings.Split(s, ":") {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // contextBudget returns the token budget before compaction. An explicit flag
-// wins; otherwise EIGEN_MAX_CONTEXT_TOKENS; otherwise a per-provider/model
-// default that leaves headroom under the model's true context window.
+// wins; otherwise EIGEN_MAX_CONTEXT_TOKENS; otherwise the model's context window
+// from the catalog (auto-detected) with headroom; otherwise a per-provider
+// default.
 func contextBudget(flagVal int, provider, model string) int {
 	if flagVal > 0 {
 		return flagVal
@@ -250,28 +480,58 @@ func contextBudget(flagVal int, provider, model string) int {
 			return n
 		}
 	}
+	// Auto-detect from the resolved model's context window, leaving headroom for
+	// the next response. We cap the budget well under huge (1M) windows: a
+	// single near-window request can blow a provider's tokens-per-minute quota
+	// (Bedrock HTTP 429 "Too many tokens"), and most coding context fits far
+	// less. Override with --max-tokens or EIGEN_MAX_CONTEXT_TOKENS.
+	effective := model
+	if effective == "" {
+		effective = llm.DefaultModel(provider)
+	}
+	if window := llm.EffectiveContextWindow(effective); window > 0 {
+		budget := window * 85 / 100
+		if budget > maxAutoContextTokens {
+			budget = maxAutoContextTokens
+		}
+		return budget
+	}
 	switch provider {
 	case "llama", "local":
 		return 40000
 	case "converse", "bedrock-converse", "claude":
-		// Opus supports up to 1M, but that needs the context-1m beta header
-		// (not sent yet — TODO); use the 200k-window budget for now.
 		return 180000
 	default: // mantle / gpt-5.5 (272k window)
 		return 200000
 	}
 }
 
-// titleProvider picks a small/cheap model for async session titling: a local
-// llama if configured (free), otherwise the main provider.
-func titleProvider(main llm.Provider) llm.Provider {
+// maxAutoContextTokens caps the auto-detected context budget. Large 1M windows
+// would otherwise let a single request exceed a provider's per-minute token
+// quota (Bedrock 429). 200k is plenty for coding context; raise it explicitly
+// with --max-tokens / EIGEN_MAX_CONTEXT_TOKENS when you have the quota.
+const maxAutoContextTokens = 200_000
+
+// smallProvider picks a small/fast/cheap model for background chores (session
+// titling, dreaming, skill vulnerability scans): a local llama if configured
+// (free), else Haiku on the same Bedrock account, else the main provider.
+func smallProvider(main llm.Provider) llm.Provider {
 	if os.Getenv("EIGEN_LLAMA_BASE_URL") != "" {
 		if lp, err := llm.New("llama", os.Getenv("EIGEN_TITLE_MODEL")); err == nil {
 			return lp
 		}
 	}
+	// Prefer an explicit small model, else Haiku on converse (Bedrock).
+	smallModel := firstNonEmpty(os.Getenv("EIGEN_SMALL_MODEL"), "us.anthropic.claude-haiku-4-5")
+	if hp, err := llm.New("converse", smallModel); err == nil {
+		return hp
+	}
 	return main
 }
+
+// titleProvider is retained as an alias for smallProvider (session titling uses
+// the same small model as the other background chores).
+func titleProvider(main llm.Provider) llm.Provider { return smallProvider(main) }
 
 // printSessions lists resumable sessions newest-first for the headless --list.
 func printSessions(store *session.Store) {
@@ -293,6 +553,235 @@ func fail(err error) {
 	os.Exit(1)
 }
 
+// skillDirs returns the directories scanned for SKILL.md skills: the per-user
+// store, the current project, and any colon-separated EIGEN_SKILLS_DIRS.
+func skillDirs() []string {
+	home, _ := os.UserHomeDir()
+	dirs := []string{
+		filepath.Join(home, ".eigen", "skills"),
+		filepath.Join(".eigen", "skills"),
+	}
+	if extra := os.Getenv("EIGEN_SKILLS_DIRS"); extra != "" {
+		dirs = append(dirs, strings.Split(extra, ":")...)
+	}
+	return dirs
+}
+
+// pluginPaths returns the plugins.json files scanned for external-command
+// tools: the per-user store and the current project.
+func pluginPaths() []string {
+	home, _ := os.UserHomeDir()
+	return []string{
+		filepath.Join(home, ".eigen", "plugins.json"),
+		filepath.Join(".eigen", "plugins.json"),
+	}
+}
+
+// mcpConfigPath returns the project mcp.json if present, else the per-user one.
+func mcpConfigPath() string {
+	if _, err := os.Stat(filepath.Join(".eigen", "mcp.json")); err == nil {
+		return filepath.Join(".eigen", "mcp.json")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".eigen", "mcp.json")
+}
+
+// lspConfigPath returns the project lsp.json if present, else the per-user one.
+func lspConfigPath() string {
+	if _, err := os.Stat(filepath.Join(".eigen", "lsp.json")); err == nil {
+		return filepath.Join(".eigen", "lsp.json")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".eigen", "lsp.json")
+}
+
+// runDream reflects over the most recent eigen sessions and appends any distilled
+// learnings to the current project's memory.
+func runDream(prov llm.Provider, mem *memory.Store) {
+	paths := recentEigenSessions(5)
+	if len(paths) == 0 {
+		fmt.Fprintln(os.Stderr, "eigen: dream: no eigen sessions to reflect on")
+		return
+	}
+	var transcripts []string
+	for _, p := range paths {
+		msgs, err := transcript.Load(p)
+		if err != nil {
+			continue
+		}
+		if t := dream.RenderSession(msgs); t != "" {
+			transcripts = append(transcripts, t)
+		}
+	}
+	notes, err := dream.Distill(context.Background(), prov, transcripts, mem.Read())
+	if err != nil {
+		fail(fmt.Errorf("dream: %w", err))
+	}
+	if len(notes) == 0 {
+		fmt.Fprintln(os.Stderr, "eigen: dream: nothing new worth remembering")
+		return
+	}
+	for _, n := range notes {
+		_ = mem.Append(n)
+	}
+	fmt.Printf("dreamed %d new note(s) into %s\n", len(notes), mem.Path())
+	for _, n := range notes {
+		fmt.Println("  - " + n)
+	}
+
+	// Skill synthesis: propose a reusable skill if the sessions reveal one.
+	if draft, ok, serr := dream.SynthesizeSkill(context.Background(), prov, transcripts); serr == nil && ok {
+		home, _ := os.UserHomeDir()
+		dir := filepath.Join(home, ".eigen", "skills")
+		if path, werr := skill.Save(dir, draft.Name, draft.Description, draft.Body); werr == nil {
+			fmt.Printf("synthesized skill %q → %s\n", draft.Name, path)
+		}
+	}
+}
+
+// recentEigenSessions returns up to n newest eigen session file paths.
+func recentEigenSessions(n int) []string {
+	home, _ := os.UserHomeDir()
+	matches, _ := filepath.Glob(filepath.Join(home, ".eigen", "sessions", "*.eigen.jsonl"))
+	sort.Slice(matches, func(i, j int) bool {
+		fi, e1 := os.Stat(matches[i])
+		fj, e2 := os.Stat(matches[j])
+		if e1 != nil || e2 != nil {
+			return false
+		}
+		return fi.ModTime().After(fj.ModTime())
+	})
+	if len(matches) > n {
+		matches = matches[:n]
+	}
+	return matches
+}
+
+// printSkills lists discovered skills for --list-skills.
+func printSkills(set *skill.Set) {
+	skills := set.List()
+	if len(skills) == 0 {
+		fmt.Fprintln(os.Stderr, "no skills found (looked in:", strings.Join(skillDirs(), ", ")+")")
+		return
+	}
+	for _, s := range skills {
+		fmt.Printf("%-24s %s\n", s.Name, s.Description)
+	}
+}
+
+// userSkillsDir is where `eigen skill add` installs by default: ~/.eigen/skills.
+func userSkillsDir() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".eigen", "skills")
+}
+
+// runSkillCmd implements `eigen skill <add|list> ...`.
+//
+//	eigen skill list
+//	eigen skill add <path | owner/repo[/subdir][@ref]> [--name X] [--force] [--overwrite] [--no-scan]
+//
+// A skill pulled from GitHub (or a path) is scanned by the small "haiku" model
+// for content that would be dangerous for the agent to follow; a RISKY verdict
+// aborts unless --force.
+func runSkillCmd(args []string, provider, model string) {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: eigen skill <add|list> …")
+		os.Exit(2)
+	}
+	switch args[0] {
+	case "list":
+		printSkills(skill.Discover(skillDirs()...))
+		return
+	case "add", "install":
+		// Accept flags in any position (Go's flag pkg stops at the first
+		// positional, so split the source out first).
+		src, rest := splitSource(args[1:])
+		fs := flag.NewFlagSet("skill add", flag.ExitOnError)
+		name := fs.String("name", "", "override the skill name")
+		force := fs.Bool("force", false, "install even if the security scan flags it")
+		overwrite := fs.Bool("overwrite", false, "replace an existing skill of the same name")
+		noScan := fs.Bool("no-scan", false, "skip the vulnerability scan (not recommended)")
+		_ = fs.Parse(rest)
+		if src == "" {
+			fmt.Fprintln(os.Stderr, "usage: eigen skill add <path | owner/repo[/subdir][@ref]> [--name X] [--force] [--overwrite] [--no-scan]")
+			os.Exit(2)
+		}
+
+		opts := skill.InstallOptions{
+			Dir:       userSkillsDir(),
+			Name:      *name,
+			Force:     *force,
+			Overwrite: *overwrite,
+		}
+		// The vulnerability scan uses the small model, unless disabled.
+		if !*noScan {
+			prov, err := llm.New(provider, model)
+			if err != nil {
+				fail(fmt.Errorf("skill add: %w", err))
+			}
+			opts.Scanner = skill.ProviderScanner{P: smallProvider(prov)}
+		}
+
+		res, err := installSkill(src, opts)
+		if err != nil {
+			fail(fmt.Errorf("skill add: %w", err))
+		}
+		if !res.Scan.Safe {
+			fmt.Printf("⚠ installed %q despite scan flags:\n", res.Name)
+			for _, r := range res.Scan.Reasons {
+				fmt.Println("  - " + r)
+			}
+		} else if opts.Scanner != nil {
+			fmt.Printf("✓ scan clean — installed %q → %s\n", res.Name, res.Path)
+		} else {
+			fmt.Printf("installed %q → %s (scan skipped)\n", res.Name, res.Path)
+		}
+		return
+	default:
+		fmt.Fprintf(os.Stderr, "unknown skill subcommand %q (want: add | list)\n", args[0])
+		os.Exit(2)
+	}
+}
+
+// installSkill dispatches to a path or GitHub install based on the source: a
+// source that exists on disk is treated as a path; otherwise it is parsed as a
+// GitHub owner/repo reference.
+func installSkill(src string, opts skill.InstallOptions) (skill.Installed, error) {
+	if _, err := os.Stat(src); err == nil {
+		return skill.InstallFromPath(context.Background(), src, opts)
+	}
+	ref, err := skill.ParseGitHubRef(src)
+	if err != nil {
+		return skill.Installed{}, err
+	}
+	return skill.InstallFromGitHub(context.Background(), ref, skill.DefaultFetcher, opts)
+}
+
+// splitSource separates the first non-flag argument (the skill source) from the
+// remaining flag arguments, so flags may appear before or after the source.
+func splitSource(args []string) (src string, rest []string) {
+	for i, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			src = a
+			rest = append(rest, args[:i]...)
+			rest = append(rest, args[i+1:]...)
+			return src, rest
+		}
+	}
+	return "", args
+}
+
+// printTools lists registered tools for --list-tools.
+func printTools(r *tool.Registry) {
+	for _, d := range r.Definitions() {
+		posture := "mutating"
+		if d.ReadOnly {
+			posture = "read-only"
+		}
+		fmt.Printf("%-12s %-10s %s\n", d.Name, posture, d.Description)
+	}
+}
+
 // execResume replaces the running process with the already-built-and-validated
 // binary, resuming the saved conversation — the success half of live-replace.
 // (The build + smoke-test + fence happen in the TUI so a failed build never
@@ -305,6 +794,14 @@ func execResume(bin, sessionPath, provider, model, perm string) {
 	if err := syscall.Exec(bin, argv, os.Environ()); err != nil {
 		fail(fmt.Errorf("exec new build: %w", err))
 	}
+}
+
+// newSessionPath returns a fresh timestamped eigen session file path.
+func newSessionPath() string {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, ".eigen", "sessions")
+	_ = os.MkdirAll(dir, 0o755)
+	return filepath.Join(dir, time.Now().Format("20060102-150405")+".eigen.jsonl")
 }
 
 // latestEigenSession returns the most recently modified eigen session file.
