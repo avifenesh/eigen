@@ -13,6 +13,9 @@ Primary web sources (all fetched this session):
 - Anthropic API docs: Context editing (`context-management-2025-06-27`)
 - Anthropic API docs: Compaction (`compact-2026-01-12`)
 - Anthropic API docs: Client-side SDK compaction (tool_runner)
+- Codex (OpenAI) open source `codex-rs`: `core/src/compact.rs`,
+  `core/src/session/turn.rs`, `core/src/state/auto_compact_window.rs`,
+  `protocol/src/config_types.rs`, `prompts/templates/compact/*.md`
 - Chroma "context rot" study (cited by the essay)
 
 ---
@@ -281,6 +284,128 @@ Nothing in the web sources contradicts §5; they *strengthen* it and add specifi
   (Claude Code keeps 5) — a coding-specific recall booster.
 - Keep eigen's richer 6-section summary schema; optionally borrow the explicit
   "do not call tools / text only" guard if we ever let the summarizer see tools.
+
+## 5c. Codex deep-dive (binary + open source `codex-rs`)
+
+Codex is open source and the binary leaks its source paths (`core/src/compact.rs`),
+so the authoritative implementation is readable directly. Far richer than the
+strings suggested. Files: `core/src/compact.rs`, `core/src/session/turn.rs`,
+`core/src/state/auto_compact_window.rs`, `protocol/src/config_types.rs`,
+`prompts/templates/compact/`.
+
+### The summarization prompt (verbatim, `prompts/templates/compact/prompt.md`)
+> You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary
+> for another LLM that will resume the task.
+> Include:
+> - Current progress and key decisions made
+> - Important context, constraints, or user preferences
+> - What remains to be done (clear next steps)
+> - Any critical data, examples, or references needed to continue
+> Be concise, structured, and focused on helping the next LLM seamlessly continue the work.
+
+Notably **shorter** than eigen's 6-section schema and Anthropic's 5-section one.
+Codex leans on a *framing* trick instead of a long schema (see prefix below).
+
+### The summary re-injection prefix (verbatim, `summary_prefix.md`)
+When the summary is fed back, it's prefixed with:
+> Another language model started to solve this problem and produced a summary of
+> its thinking process. You also have access to the state of the tools that were
+> used by that language model. Use this to build on the work that has already
+> been done and avoid duplicating work. Here is the summary produced by the other
+> language model…
+
+This "another model did this, build on it" third-person framing is a deliberate
+device — the summary becomes a `user` message with this prefix, not a fake
+assistant turn. eigen's injected text ("Original task: … Summary follows") is the
+same idea but first-person; Codex's third-person handoff framing is worth borrowing.
+
+### Architecture (the genuinely good parts)
+- **Three compaction call sites**, all funnel through `run_compact_task_inner_impl`:
+  1. **Pre-turn / pre-sampling** (`run_pre_sampling_compact`): before sending a
+     turn, if the budget is exhausted → compact with `DoNotInject` (next turn
+     re-adds full initial context).
+  2. **Mid-turn** (`turn.rs` loop): after a sampling step, if
+     `token_limit_reached && needs_follow_up` → compact with
+     `BeforeLastUserMessage` injection, then `continue` the loop.
+  3. **Manual** (`/compact`, `run_compact_task`).
+- **The compaction "turn" IS a model call**: it appends the compaction prompt as
+  a user message and *streams a normal completion* — the model writes the summary
+  as its assistant message (`get_last_assistant_message_from_turn`). Same as
+  eigen's `Compactor.Summarize`, but Codex reuses the **same turn/stream/retry
+  machinery** (one `client_session`, sticky routing survives retries).
+- **`build_compacted_history`** — the new history is NOT just "summary + recent":
+  it is `[initial_context?] + [most-recent USER messages up to
+  COMPACT_USER_MESSAGE_MAX_TOKENS=20_000] + [summary]`. So it preserves a
+  **token-bounded tail of recent *user* messages verbatim**, newest-first, then
+  the summary last. (eigen keeps recent *rounds*; Codex keeps recent *user
+  messages* + a 20k cap. The user-message focus is a cheap recall booster.)
+- **ContextWindowExceeded during compaction** is handled by
+  `history.remove_first_item()` and retrying — **trim from the front to preserve
+  the cache prefix**, never from the recent end. Direct confirmation of eigen
+  rec #4 (fixed prefix) and a concrete fallback for "even the summary request
+  overflows."
+- **Initial-context injection boundary** (`insert_initial_context_before_last_real_user_or_summary`):
+  on mid-turn compaction the canonical context (system/env/initial files) is
+  re-inserted *just above the last real user message*, so the summary stays last
+  (the model is trained to expect the summary as the final item). Precise
+  ordering rule worth copying if eigen ever does mid-turn compaction.
+
+### The token-limit / trigger logic (`auto_compact_token_status`, turn.rs)
+- Two **scopes** (`model_auto_compact_token_limit_scope`,
+  `AutoCompactTokenLimitScope`):
+  - **`Total`** (default): charge the *full active context* against the limit.
+  - **`BodyAfterPrefix`**: charge only *growth after the carried window prefix* —
+    i.e. subtract a baseline (`prefill_input_tokens`, the server-observed input
+    tokens of the first request in this compaction window) from current usage.
+    This is the clever bit: it measures "how much has this turn *grown*", not
+    total size, so a big stable cached prefix doesn't keep re-triggering.
+    (`state/auto_compact_window.rs` tracks the baseline; server-observed usage
+    replaces the estimate when available; `start_next()` bumps the window ordinal
+    after each compaction.)
+- **`effective_context_window_percent`**: the usable window =
+  `model_context_window * percent / 100` (a built-in safety buffer below the raw
+  window — Codex's equivalent of eigen's 200k cap / Claude Code's autocompact
+  buffer).
+- **Trigger** = `auto_compact_scope_tokens >= auto_compact_scope_limit ||
+  active_context_tokens >= full_context_window_limit`. Limit comes from config
+  `model_auto_compact_token_limit` else the model catalog's
+  `auto_compact_token_limit()`.
+- **Model-switch compaction** (`maybe_run_previous_model_inline_compact`): when
+  switching to a *smaller-context* model, it compacts *with the previous model*
+  first so the history fits the new window. (eigen has live `/model` switching +
+  failover → this is directly relevant: switching opus→a smaller model mid-session
+  should compact-to-fit, not 400.)
+- Loop-safety comment, verbatim: *"as long as compaction works well in getting us
+  way below the token limit, we shouldn't worry about being in an infinite loop."*
+  → Codex's anti-thrash defense is "compact aggressively enough that you drop far
+  below the limit" rather than Claude Code's explicit circuit breaker. eigen
+  should do **both**: compact to a *fraction* of budget (already does — budget/2)
+  AND keep the circuit breaker (rec #2) as a backstop.
+
+### Hooks & analytics (context, not for eigen now)
+- `PreCompact`/`PostCompact` hooks can stop compaction; rich analytics
+  (`CodexCompactionEvent`: before/after tokens, retained_image_count, summary
+  tokens, trigger/reason/phase, duration). `CompactionStrategy::Memento` is the
+  internal name. eigen doesn't need this, but the **before/after token + reason
+  telemetry** is a cheap thing to log for tuning the circuit breaker.
+
+### Net additions to the plan from Codex source
+- **Borrow the third-person handoff prefix** when re-injecting the summary
+  ("another model produced this summary, build on it, avoid duplicating work") —
+  cheap wording change, Codex-proven.
+- **Trim-from-front-on-overflow**: if the summary request itself overflows, drop
+  oldest items and retry (preserves cache prefix) — concrete impl of rec #4 +
+  the buffer caution.
+- **Keep a token-bounded tail of recent USER messages verbatim** (Codex: 20k)
+  alongside the summary — complements "keep N recent files" from Anthropic.
+- **Compact-to-fit on model downsize**: tie into eigen's `/model` + failover so a
+  switch to a smaller window compacts first instead of erroring.
+- **"Growth-after-prefix" trigger scope** is the most novel idea: trigger on how
+  much the context has *grown since the last compaction*, not total size — avoids
+  a large stable cached prefix constantly re-arming the trigger. Worth considering
+  for eigen's threshold once prompt caching dominates the prefix.
+- Confirms again: short prompt + strong framing can beat a long schema; both
+  vendors keep the *most recent* material verbatim and summarize only the old.
 
 ## 6. Cautions (from the sources)
 
