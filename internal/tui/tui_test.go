@@ -1876,3 +1876,53 @@ func TestClickInInputPositionsCursor(t *testing.T) {
 		t.Fatalf("cursor should stay on logical line 0, got %d", m.ti.Line())
 	}
 }
+
+// TestSlashCommandRunsWhileRunning verifies a settings slash command typed
+// mid-turn is executed immediately, not queued as a prompt to the model.
+func TestSlashCommandRunsWhileRunning(t *testing.T) {
+	m := testModel(t)
+	ep := &effortProv{effort: "low"}
+	m.a.Provider = ep
+	m.state = stRunning
+	typeRunes(m, "/effort high")
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if ep.Effort() != "high" {
+		t.Fatalf("/effort high mid-turn should set effort, got %q", ep.Effort())
+	}
+	if len(m.queued) != 0 {
+		t.Fatalf("a slash command must not be queued as a prompt, queued=%v", m.queued)
+	}
+}
+
+// TestUnsafeSlashCommandRefusedWhileRunning verifies session-mutating commands
+// are refused mid-turn rather than racing the agent goroutine.
+func TestUnsafeSlashCommandRefusedWhileRunning(t *testing.T) {
+	m := testModel(t)
+	m.push(&block{kind: blockText, role: "assistant", body: sb("hi")})
+	before := len(m.session.Messages())
+	m.state = stRunning
+	typeRunes(m, "/clear")
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if len(m.queued) != 0 {
+		t.Fatal("/clear should not be queued as a prompt")
+	}
+	// Session not cleared mid-turn.
+	if got := len(m.session.Messages()); got != before {
+		t.Fatalf("/clear must be refused mid-turn (session changed: %d→%d)", before, got)
+	}
+}
+
+func TestSafeWhileRunning(t *testing.T) {
+	safe := []string{"/effort", "/perm", "/model", "/search", "/find", "/read", "/copy", "/tools", "/skills", "/help"}
+	unsafe := []string{"/clear", "/compact", "/resume", "/rebuild", "/save", "/export", "/quit", "/exit"}
+	for _, c := range safe {
+		if !safeWhileRunning(c) {
+			t.Errorf("%s should be safe while running", c)
+		}
+	}
+	for _, c := range unsafe {
+		if safeWhileRunning(c) {
+			t.Errorf("%s should NOT be safe while running", c)
+		}
+	}
+}

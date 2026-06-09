@@ -1213,13 +1213,33 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			switch msg.String() {
 			case "enter":
 				task := strings.TrimSpace(m.ti.Value())
-				if task != "" {
+				if task == "" {
+					return m, nil
+				}
+				// Slash commands are control input, not conversation. Settings
+				// and read-only commands run immediately mid-turn (e.g. /effort,
+				// /perm, /model, /find). Commands that mutate or replace the
+				// session the agent goroutine is using (/clear, /compact,
+				// /resume, /rebuild, /quit, /save) are unsafe to race a running
+				// turn, so they are refused with a hint to interrupt first.
+				if strings.HasPrefix(task, "/") {
+					name := strings.Fields(task)[0]
+					if !safeWhileRunning(name) {
+						m.note(name + " can't run mid-turn — press esc to interrupt first")
+						return m, nil
+					}
 					m.recordHistory(task)
-					m.queued = append(m.queued, task)
 					m.ti.Reset()
 					m.ti.SetHeight(1)
-					m.note(fmt.Sprintf("queued (%d): %s", len(m.queued), compact(task)))
+					m.comp = completion{kind: compNone}
+					m.relayout()
+					return m, m.command(task)
 				}
+				m.recordHistory(task)
+				m.queued = append(m.queued, task)
+				m.ti.Reset()
+				m.ti.SetHeight(1)
+				m.note(fmt.Sprintf("queued (%d): %s", len(m.queued), compact(task)))
 				return m, nil
 			case "ctrl+j", "alt+enter":
 				m.ti.InsertString("\n")
@@ -1756,6 +1776,21 @@ func (m *model) modelCatalog() string {
 	return b.String()
 }
 
+// safeWhileRunning reports whether a slash command can run while a turn is in
+// flight. Settings and read-only commands are safe; commands that replace or
+// mutate the session the agent goroutine is using (or exit) are not — they must
+// wait until the turn finishes (press esc to interrupt).
+func safeWhileRunning(name string) bool {
+	switch name {
+	case "/effort", "/search", "/perm", "/model", "/help",
+		"/skills", "/tools", "/find", "/copy", "/read":
+		return true
+	default:
+		// /clear, /compact, /resume, /rebuild, /save, /export, /quit, /exit
+		return false
+	}
+}
+
 func (m *model) command(line string) tea.Cmd {
 	fields := strings.Fields(line)
 	name := fields[0]
@@ -1765,7 +1800,7 @@ func (m *model) command(line string) tea.Cmd {
 		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /skills  /tools  /find  /copy  /read  /rebuild  /quit")
 		m.note("keys: / commands · @ files · ↑↓ history · select ctrl+p/n (or alt+↑/↓) · tab expand · drag select+copy · copy ctrl+y/alt+y · perm ctrl+a/alt+a · effort ctrl+e/alt+r · model ctrl+o/alt+m · pgup/pgdn scroll")
 		m.note("multiplexer note: zellij/tmux capture ctrl+p/n/o — use the alt+… keys (alt+↑/↓ select, alt+m model, alt+r effort, alt+a perm, alt+y copy)")
-		m.note("while running: enter queues a message · esc interrupts the turn")
+		m.note("while running: enter queues a message · esc interrupts · settings commands (/effort /perm /model /search) run immediately")
 	case "/clear":
 		m.session = m.a.NewSession()
 		m.blocks = nil
