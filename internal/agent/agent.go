@@ -23,8 +23,17 @@ const (
 )
 
 const systemPrompt = `You are eigen, a coding agent that works directly in the user's project.
-Use the provided tools to inspect and modify files to accomplish the task.
-Call tools as needed; when the task is complete, reply with a short summary.`
+
+Working method:
+- Explore before editing: use grep, glob, symbols, and tree to locate relevant code.
+- For multi-step work, use the todo tool to lay out and update a short plan; keep one task in_progress.
+- Make focused edits with edit/multiedit/apply_patch; create files with write.
+- After changing code, use diff to review your changes before reporting.
+- When a task matches an available skill (listed below), load it with the skill tool first.
+- Record durable, project-specific facts (build/test commands, conventions, gotchas) with the memory tool.
+- For a large, separable chunk of work, delegate it with the task tool (a fresh, isolated subtask).
+
+Call tools as needed; when the task is complete, reply with a short, specific summary of what you did.`
 
 // Approver decides whether a mutating tool call may run in gated mode. It is
 // context-aware so a UI can cancel a pending prompt, and returns an error
@@ -63,6 +72,10 @@ type Agent struct {
 	Provider llm.Provider
 	Tools    *tool.Registry
 	Perm     Permission
+	// MaxSteps optionally caps tool-use iterations as a runaway guard. The
+	// default (0) means unlimited: the loop runs until the model produces a
+	// final answer, and is interrupted only by canceling the context (esc in
+	// the TUI). Set a positive value to bound a single task.
 	MaxSteps int
 	Approve  Approver
 
@@ -81,6 +94,19 @@ type Agent struct {
 	// lifecycle, final answer). Streaming deltas only appear if the provider
 	// implements llm.Streamer.
 	OnEvent EventSink
+
+	// ExtraSystem is appended to the base system prompt (e.g. the skills
+	// catalog), so the model knows about capabilities discovered at runtime.
+	ExtraSystem string
+
+	// Memory is durable per-project notes appended to the system prompt, so the
+	// agent recalls prior learnings across sessions.
+	Memory string
+
+	// Persist, if set, is called with the full conversation after every message
+	// is appended (from the same goroutine that owns the session), so a session
+	// can be autosaved continuously and race-free.
+	Persist func([]llm.Message)
 }
 
 // maxToolOutput caps a single tool result fed back to the model, so a runaway
@@ -108,8 +134,61 @@ func (a *Agent) Resume(msgs []llm.Message) *Session {
 	return &Session{a: a, msgs: msgs}
 }
 
+// subtaskDepthKey bounds Subtask recursion via the context.
+type subtaskDepthKey struct{}
+
+// maxSubtaskDepth caps how deeply subtasks may nest.
+const maxSubtaskDepth = 2
+
+// Subtask runs task on a fresh session of (a copy of) this agent, with event
+// emission suppressed so a delegated subtask does not clutter the caller's
+// transcript. Recursion is bounded so subtasks cannot spawn unboundedly.
+func (a *Agent) Subtask(ctx context.Context, task string) (string, error) {
+	depth, _ := ctx.Value(subtaskDepthKey{}).(int)
+	if depth >= maxSubtaskDepth {
+		return "", fmt.Errorf("subtask depth limit (%d) reached", maxSubtaskDepth)
+	}
+	sub := *a
+	sub.OnEvent = nil
+	ctx = context.WithValue(ctx, subtaskDepthKey{}, depth+1)
+	return sub.NewSession().Send(ctx, task)
+}
+
 // Messages returns the conversation so far (for saving / live-replace handoff).
 func (s *Session) Messages() []llm.Message { return s.msgs }
+
+// Compact summarizes the conversation now, on demand (e.g. the /compact
+// command), regardless of the token budget. It replaces older history with a
+// model-generated summary, keeping recent turns verbatim. targetTokens bounds
+// the result; when <= 0 it uses the agent's MaxContextTokens, or a conservative
+// default. Returns the message counts before/after so the caller can report it.
+func (s *Session) Compact(ctx context.Context, targetTokens int) (before, after int, err error) {
+	a := s.a
+	before = len(s.msgs)
+	if before == 0 {
+		return 0, 0, nil
+	}
+	budget := targetTokens
+	if budget <= 0 {
+		budget = a.MaxContextTokens
+	}
+	if budget <= 0 {
+		budget = 120_000
+	}
+	// Force a summarization even if we're under budget: aim the compactor at a
+	// fraction of the budget so /compact meaningfully shrinks the context.
+	target := budget / 2
+	compacted, cerr := llm.CompactWith(ctx, a.Compactor, s.msgs, target)
+	if cerr != nil {
+		return before, before, cerr
+	}
+	s.msgs = compacted
+	s.persist()
+	return before, len(s.msgs), nil
+}
+
+// Tokens returns the current estimated context size of the conversation.
+func (s *Session) Tokens() int { return llm.EstimateTokens(s.msgs) }
 
 // Run executes a single task to completion (a one-shot Session.Send).
 func (a *Agent) Run(ctx context.Context, task string) (string, error) {
@@ -123,7 +202,9 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 }
 
 // Send appends a user message and drives the loop until the model produces a
-// final answer (or MaxSteps is hit), keeping the conversation in the Session.
+// final answer, keeping the conversation in the Session. The loop is unbounded
+// by default (it ends when the model stops calling tools); a positive
+// a.MaxSteps imposes an optional runaway cap, and canceling ctx stops it.
 func (s *Session) Send(ctx context.Context, task string) (string, error) {
 	a := s.a
 	if a.Provider == nil {
@@ -132,10 +213,6 @@ func (s *Session) Send(ctx context.Context, task string) (string, error) {
 	if a.Tools == nil {
 		return "", fmt.Errorf("agent: nil tools")
 	}
-	maxSteps := a.MaxSteps
-	if maxSteps <= 0 {
-		maxSteps = 20
-	}
 	s.msgs = append(s.msgs, llm.Message{Role: llm.RoleUser, Text: task})
 	if a.MaxContextTokens > 0 {
 		compacted, err := llm.CompactWith(ctx, a.Compactor, s.msgs, a.MaxContextTokens)
@@ -143,12 +220,29 @@ func (s *Session) Send(ctx context.Context, task string) (string, error) {
 			s.msgs = compacted
 		}
 	}
+	s.persist()
 	specs := a.Tools.Specs()
 	emptyTurns := 0
 
-	for step := 0; step < maxSteps; step++ {
+	system := systemPrompt
+	if a.ExtraSystem != "" {
+		system += "\n\n" + a.ExtraSystem
+	}
+	if a.Memory != "" {
+		system += "\n\n" + a.Memory
+	}
+
+	for step := 0; ; step++ {
+		// Optional runaway guard: only when MaxSteps is explicitly positive.
+		if a.MaxSteps > 0 && step >= a.MaxSteps {
+			return "", fmt.Errorf("reached MaxSteps (%d) without a final answer", a.MaxSteps)
+		}
+		// Respect cancellation between steps (esc in the TUI cancels the turn).
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		req := llm.Request{
-			System:   systemPrompt,
+			System:   system,
 			Messages: s.msgs,
 			Tools:    specs,
 		}
@@ -172,6 +266,7 @@ func (s *Session) Send(ctx context.Context, task string) (string, error) {
 		if len(resp.ToolCalls) == 0 {
 			if strings.TrimSpace(resp.Text) != "" {
 				s.msgs = append(s.msgs, llm.Message{Role: llm.RoleAssistant, Text: resp.Text})
+				s.persist()
 				a.emit(Event{Kind: EventDone, Step: step, Text: resp.Text})
 				return resp.Text, nil // final answer
 			}
@@ -211,8 +306,16 @@ func (s *Session) Send(ctx context.Context, task string) (string, error) {
 				ToolError:  isErr,
 			})
 		}
+		s.persist()
 	}
-	return "", fmt.Errorf("reached MaxSteps (%d) without a final answer", maxSteps)
+}
+
+// persist autosaves the conversation via the agent's Persist hook (called from
+// the goroutine that owns the session, so reading s.msgs here never races).
+func (s *Session) persist() {
+	if s.a.Persist != nil {
+		s.a.Persist(s.msgs)
+	}
 }
 
 // emit delivers an event to the sink if one is set.
@@ -250,7 +353,7 @@ func (a *Agent) dispatch(ctx context.Context, tc llm.ToolCall) (string, bool) {
 			return fmt.Sprintf("Denied: tool %q blocked under unknown permission posture %q.", tc.Name, a.Perm), true
 		}
 	}
-	out, err := def.Run(ctx, tc.Arguments)
+	out, err := a.runTool(ctx, def, tc.Arguments)
 	if err != nil {
 		return "Error: " + err.Error(), true
 	}
@@ -258,4 +361,16 @@ func (a *Agent) dispatch(ctx context.Context, tc llm.ToolCall) (string, bool) {
 		out = tool.TruncateUTF8(out, maxToolOutput) + "\n[output truncated]"
 	}
 	return out, false
+}
+
+// runTool executes a tool's Run, recovering any panic into an error so a buggy
+// tool (including a plugin or MCP tool) becomes a recoverable tool failure
+// rather than crashing the agent — in every entry path (TUI and headless).
+func (a *Agent) runTool(ctx context.Context, def tool.Definition, args json.RawMessage) (out string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			out, err = "", fmt.Errorf("tool %q panicked: %v", def.Name, r)
+		}
+	}()
+	return def.Run(ctx, args)
 }
