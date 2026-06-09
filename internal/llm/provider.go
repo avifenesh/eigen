@@ -14,11 +14,13 @@ func New(provider, model string) (Provider, error) {
 		return NewLlama(model)
 	case "converse", "bedrock-converse", "claude":
 		return NewConverse(model)
+	case "anthropic", "claude-code", "claude-api":
+		return NewAnthropic(model)
 	case "grok", "xai":
 		return NewGrok(model)
 	case "glm", "zhipu", "z.ai":
 		return NewGLM(model)
 	default:
-		return nil, fmt.Errorf("unknown provider %q (want: mantle | llama | converse | grok | glm)", provider)
+		return nil, fmt.Errorf("unknown provider %q (want: mantle | llama | converse | anthropic | grok | glm)", provider)
 	}
 }

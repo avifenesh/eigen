@@ -65,6 +65,19 @@ var Catalog = []ModelInfo{
 	// (session titling, dreaming, skill vulnerability scans).
 	{ID: "us.anthropic.claude-haiku-4-5", Provider: "converse", ContextWindow: 200000, Cache: true},
 
+	// Native Anthropic API (api.anthropic.com), authenticated with a Claude
+	// Code OAuth login (~/.claude/.credentials.json) or ANTHROPIC_API_KEY.
+	// These are Anthropic's own model ids (not the Bedrock us.anthropic.* names)
+	// — the same catalog Claude Code drives. Adaptive thinking (Effort) like the
+	// Bedrock opus entries; 1M context via beta.
+	{ID: "claude-fable-5", Provider: "anthropic", ContextWindow: 200000,
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high"},
+	{ID: "claude-opus-4-1-20250805", Provider: "anthropic", ContextWindow: 200000,
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high"},
+	{ID: "claude-sonnet-4-5-20250929", Provider: "anthropic", ContextWindow: 200000,
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, ThinkingBudget: 8192},
+	{ID: "claude-opus-4-20250514", Provider: "anthropic", ContextWindow: 200000, Cache: true, Reasoning: true, Effort: "high"},
+
 	// Local llama (OpenAI-compatible server). Window is modest by default.
 	{ID: "local", Provider: "llama", ContextWindow: 40000},
 
@@ -138,6 +151,8 @@ func canonicalProvider(p string) string {
 		return "mantle"
 	case "converse", "bedrock-converse", "claude":
 		return "converse"
+	case "anthropic", "claude-code", "claude-api":
+		return "anthropic"
 	case "llama", "local":
 		return "llama"
 	case "grok", "xai":
