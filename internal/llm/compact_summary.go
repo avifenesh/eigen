@@ -27,6 +27,15 @@ const summaryPrompt = `You are compacting a long agent conversation so it can co
 
 Be specific and information-dense. Do not invent. Omit pleasantries. This summary REPLACES the omitted messages, so capture everything needed to continue correctly.`
 
+// summaryReinjectPrefix frames the compacted summary as a handoff from a prior
+// instance, so the model treats it as work already done to build on (and not
+// repeat). Borrowed from Codex's compaction prefix.
+const summaryReinjectPrefix = "[Context compacted to save space.] Another instance of you began this task and produced the summary below of its progress and findings. The earlier message history has been replaced by this summary. Build on the work already done — do not duplicate it — and continue the task from here."
+
+// shedKeepRounds is how many of the most recent user-led rounds keep their tool
+// results verbatim during microcompaction; older results are stubbed.
+const shedKeepRounds = 3
+
 // CompactWith compacts msgs to fit maxTokens. It preserves the most recent
 // whole rounds verbatim (cut only at user boundaries, so no tool call is ever
 // orphaned) and replaces older history with a single model-generated summary
@@ -36,6 +45,17 @@ func CompactWith(ctx context.Context, c Compactor, msgs []Message, maxTokens int
 	if maxTokens <= 0 || EstimateTokens(msgs) <= maxTokens {
 		return msgs, nil
 	}
+
+	// Microcompaction first: shed old tool-result payloads (keeping the calls)
+	// before the expensive model summary. Tool output dominates a coding
+	// agent's context, so stubbing results outside the recent window is the
+	// cheapest, most-targeted token saver. If that alone brings us under
+	// budget, we're done — no summary call needed.
+	msgs = ShedToolResults(msgs, shedKeepRounds)
+	if EstimateTokens(msgs) <= maxTokens {
+		return msgs, nil
+	}
+
 	if c == nil {
 		return Compact(msgs, maxTokens), nil
 	}
@@ -70,8 +90,11 @@ func CompactWith(ctx context.Context, c Compactor, msgs []Message, maxTokens int
 	}
 
 	// Preserve the original task verbatim alongside the summary so the model's
-	// north star is never paraphrased away by summarization.
-	injected := "[Context compacted. Summary of the earlier conversation follows; continue from it.]\n\n"
+	// north star is never paraphrased away by summarization. The framing is
+	// third-person ("another instance produced this summary, build on it") —
+	// borrowed from Codex's handoff prefix, which reads better to the model
+	// than a first-person "I summarized myself" and discourages re-doing work.
+	injected := summaryReinjectPrefix + "\n\n"
 	if orig := firstUserText(older); orig != "" {
 		injected += "Original task: " + orig + "\n\n"
 	}

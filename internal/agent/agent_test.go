@@ -476,3 +476,87 @@ func TestResendEmptySessionErrors(t *testing.T) {
 		t.Fatal("resend on an empty session should error")
 	}
 }
+
+// noShrinkCompactor returns a summary but the resulting context (as built by
+// CompactWith) still doesn't drop much, simulating an ineffective compaction.
+type noShrinkCompactor struct{ calls int }
+
+func (n *noShrinkCompactor) Summarize(_ context.Context, _ []llm.Message) (string, error) {
+	n.calls++
+	return "SUMMARY", nil
+}
+
+func TestMaybeCompactCircuitBreakerTrips(t *testing.T) {
+	cc := &noShrinkCompactor{}
+	var notes []string
+	a := &Agent{
+		Provider:         &mockProvider{},
+		Tools:            mustReg(t),
+		Perm:             PermAuto,
+		Compactor:        cc,
+		MaxContextTokens: 8000,
+		OnEvent: func(e Event) {
+			if e.Kind == EventNote {
+				notes = append(notes, e.Text)
+			}
+		},
+	}
+	// Over budget, and the most-recent round alone is ~7.4k tokens (close to the
+	// 8k budget) and cannot be shed (it's user/assistant text), so compaction
+	// must keep it verbatim and lands with little headroom.
+	huge := strings.Repeat("word ", 3700) // ~3.7k tokens each
+	msgs := []llm.Message{
+		{Role: llm.RoleUser, Text: strings.Repeat("old ", 3000)},
+		{Role: llm.RoleAssistant, Text: strings.Repeat("old ", 3000)},
+		{Role: llm.RoleUser, Text: huge},
+		{Role: llm.RoleAssistant, Text: huge},
+	}
+	s := a.Resume(msgs)
+
+	// First pass: compaction runs but leaves little headroom (recent round big).
+	s.maybeCompact(context.Background())
+	firstCalls := cc.calls
+	if firstCalls == 0 {
+		t.Fatal("first over-budget pass should attempt compaction")
+	}
+
+	// Second pass: still over budget after low-headroom compaction → breaker trips.
+	s.maybeCompact(context.Background())
+	if !s.compactStall {
+		t.Fatalf("breaker should trip after a low-headroom compaction (after=%d budget=%d)", s.lastCompactAfter, a.MaxContextTokens)
+	}
+	if len(notes) == 0 {
+		t.Fatal("breaker should emit a note")
+	}
+
+	// Third pass: breaker stays tripped; no further summary calls.
+	s.maybeCompact(context.Background())
+	if cc.calls > firstCalls {
+		t.Fatalf("breaker tripped: no further summary calls expected, got %d (was %d)", cc.calls, firstCalls)
+	}
+}
+
+func TestMaybeCompactResetsUnderBudget(t *testing.T) {
+	a := &Agent{
+		Provider:         &mockProvider{},
+		Tools:            mustReg(t),
+		Perm:             PermAuto,
+		Compactor:        &fakeCompactor{},
+		MaxContextTokens: 100000,
+	}
+	s := a.Resume([]llm.Message{{Role: llm.RoleUser, Text: "small"}})
+	s.compactStall = true // pretend it was tripped earlier
+	s.maybeCompact(context.Background())
+	if s.compactStall {
+		t.Fatal("breaker should reset when context is back under budget")
+	}
+}
+
+func mustReg(t *testing.T) *tool.Registry {
+	t.Helper()
+	reg, err := tool.NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return reg
+}

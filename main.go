@@ -381,6 +381,8 @@ func main() {
 			if e.IsError {
 				fmt.Fprintf(os.Stderr, "  ↳ %s: %s\n", e.ToolName, firstLine(e.Result))
 			}
+		case agent.EventNote:
+			fmt.Fprintf(os.Stderr, "\n  note: %s\n", e.Text)
 		}
 	}
 

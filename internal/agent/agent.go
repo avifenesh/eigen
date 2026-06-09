@@ -49,6 +49,7 @@ const (
 	EventToolStart                       // a tool call is about to run
 	EventToolResult                      // a tool finished
 	EventDone                            // the loop produced its final answer
+	EventNote                            // an out-of-band notice for the user (e.g. compaction stalled)
 )
 
 // Event is a structured observation emitted during a run. A CLI prints it; a
@@ -123,6 +124,14 @@ const maxEmptyTurns = 2
 type Session struct {
 	a    *Agent
 	msgs []llm.Message
+
+	// Circuit-breaker state for auto-compaction. compactStall is set when a
+	// compaction left too little headroom under budget to be worth repeating;
+	// while set, drive() skips auto-compaction (the user is nudged to /clear or
+	// refocus) until the context drops back under budget on its own.
+	lastCompactBefore int // estimated tokens before the last auto-compaction
+	lastCompactAfter  int // estimated tokens after it
+	compactStall      bool
 }
 
 // NewSession starts an empty conversation.
@@ -190,6 +199,49 @@ func (s *Session) Compact(ctx context.Context, targetTokens int) (before, after 
 // Tokens returns the current estimated context size of the conversation.
 func (s *Session) Tokens() int { return llm.EstimateTokens(s.msgs) }
 
+// compactStallHeadroomFrac is the minimum headroom (as a fraction of the
+// budget) a compaction must leave to be considered worthwhile. If compaction
+// lands within this margin of the budget, it will just re-trip next turn, so
+// the circuit breaker trips instead of summarizing every turn for no gain.
+const compactStallHeadroomFrac = 0.15
+
+// maybeCompact runs start-of-turn auto-compaction with a circuit breaker. It
+// only acts when the context is over budget. After a compaction it records how
+// much headroom remained; if a subsequent over-budget turn follows one that
+// left too little headroom, it stops auto-compacting and emits a one-time note
+// suggesting the user refocus or /clear, rather than spinning a summary call
+// every turn for negligible gain.
+func (s *Session) maybeCompact(ctx context.Context) {
+	a := s.a
+	before := llm.EstimateTokens(s.msgs)
+	if before <= a.MaxContextTokens {
+		// Under budget: reset the breaker so it can act again later.
+		s.compactStall = false
+		return
+	}
+	if s.compactStall {
+		// Already tripped and still over budget: don't keep summarizing.
+		return
+	}
+	// If the previous compaction left too little headroom and we're over budget
+	// again, trip the breaker instead of compacting once more — it can't help.
+	if s.lastCompactAfter > 0 {
+		headroom := a.MaxContextTokens - s.lastCompactAfter
+		if float64(headroom) < compactStallHeadroomFrac*float64(a.MaxContextTokens) {
+			s.compactStall = true
+			a.emit(Event{Kind: EventNote, Text: "Context keeps refilling and compaction is no longer freeing much space. Consider /clear for a fresh thread or a more focused task."})
+			return
+		}
+	}
+	compacted, err := llm.CompactWith(ctx, a.Compactor, s.msgs, a.MaxContextTokens)
+	if err != nil {
+		return
+	}
+	s.msgs = compacted
+	s.lastCompactBefore = before
+	s.lastCompactAfter = llm.EstimateTokens(s.msgs)
+}
+
 // Run executes a single task to completion (a one-shot Session.Send).
 func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 	if a.Provider == nil {
@@ -239,10 +291,7 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("agent: nil tools")
 	}
 	if a.MaxContextTokens > 0 {
-		compacted, err := llm.CompactWith(ctx, a.Compactor, s.msgs, a.MaxContextTokens)
-		if err == nil {
-			s.msgs = compacted
-		}
+		s.maybeCompact(ctx)
 	}
 	s.persist()
 	specs := a.Tools.Specs()

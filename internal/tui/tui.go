@@ -1523,6 +1523,9 @@ func (m *model) renderEvent(e agent.Event) {
 		if !m.streamedText && strings.TrimSpace(e.Text) != "" {
 			m.text("assistant", e.Text)
 		}
+	case agent.EventNote:
+		// Out-of-band notice from the loop (e.g. compaction circuit breaker).
+		m.note(e.Text)
 	}
 }
 
