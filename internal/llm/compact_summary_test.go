@@ -87,3 +87,21 @@ func TestCompactWithUnderBudgetIsNoop(t *testing.T) {
 		t.Fatal("under-budget conversation should be returned unchanged")
 	}
 }
+
+func TestCompactWithPreservesOriginalTask(t *testing.T) {
+	msgs := []Message{
+		{Role: RoleUser, Text: "ORIGINAL_TASK: build the parser"},
+		big(RoleAssistant, 4000),
+		big(RoleUser, 4000),
+		big(RoleAssistant, 4000),
+		big(RoleUser, 100),
+		big(RoleAssistant, 100),
+	}
+	out, err := CompactWith(context.Background(), &fakeCompactor{}, msgs, 6000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out[0].Text, "ORIGINAL_TASK: build the parser") {
+		t.Fatalf("compaction should preserve the original task verbatim:\n%s", out[0].Text)
+	}
+}

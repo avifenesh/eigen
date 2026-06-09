@@ -104,3 +104,34 @@ type StreamSink func(StreamChunk)
 type Streamer interface {
 	Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error)
 }
+
+// EffortLevels are the reasoning-effort settings eigen exposes, lowest to
+// highest. They map to a provider's native control (mantle reasoning effort;
+// Anthropic extended-thinking token budget).
+var EffortLevels = []string{"minimal", "low", "medium", "high", "xhigh"}
+
+// EffortSetter is an optional capability: providers whose reasoning effort can
+// be changed at runtime implement it, so the TUI can switch effort without
+// rebuilding the provider. Returns false if the level is unsupported.
+type EffortSetter interface {
+	SetEffort(level string) bool
+	Effort() string
+}
+
+// Searcher is an optional capability: providers with a server-side live-search
+// toggle (xAI Grok Live Search) implement it, so the TUI can turn web/X search
+// off|auto|on at runtime. Returns false for an unknown mode.
+type Searcher interface {
+	SetSearch(mode string) bool
+	SearchMode() string
+}
+
+// ValidEffort reports whether level is one of EffortLevels.
+func ValidEffort(level string) bool {
+	for _, l := range EffortLevels {
+		if l == level {
+			return true
+		}
+	}
+	return false
+}

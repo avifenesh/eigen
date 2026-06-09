@@ -42,7 +42,12 @@ func NewMantle(model string) (*Mantle, error) {
 	}
 	effort := os.Getenv("EIGEN_REASONING_EFFORT")
 	if effort == "" {
-		effort = reasoningEffort
+		// Per-model default from the catalog, falling back to the package default.
+		if info, ok := Lookup(model); ok && info.Effort != "" {
+			effort = info.Effort
+		} else {
+			effort = reasoningEffort
+		}
 	}
 	return &Mantle{
 		BaseURL: fmt.Sprintf("https://bedrock-mantle.%s.api.aws/openai/v1", region),
@@ -54,6 +59,19 @@ func NewMantle(model string) (*Mantle, error) {
 }
 
 func (m *Mantle) Name() string { return m.Model + " (bedrock mantle)" }
+
+// SetEffort changes the reasoning effort for subsequent requests. Returns false
+// for an unrecognized level.
+func (m *Mantle) SetEffort(level string) bool {
+	if !ValidEffort(level) {
+		return false
+	}
+	m.effort = level
+	return true
+}
+
+// Effort returns the current reasoning effort.
+func (m *Mantle) Effort() string { return m.effort }
 
 // Reasoning configuration for GPT-5.5 on mantle.
 //

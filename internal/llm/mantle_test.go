@@ -63,3 +63,16 @@ func TestToResponsesTools(t *testing.T) {
 		t.Error("expected nil tools for empty input")
 	}
 }
+
+func TestMantleSetEffort(t *testing.T) {
+	m := &Mantle{effort: "high"}
+	if !m.SetEffort("low") || m.Effort() != "low" {
+		t.Fatalf("SetEffort(low) failed: effort=%q", m.Effort())
+	}
+	if m.SetEffort("bogus") {
+		t.Fatal("invalid effort should return false")
+	}
+	if m.Effort() != "low" {
+		t.Fatal("invalid effort must not change the current setting")
+	}
+}

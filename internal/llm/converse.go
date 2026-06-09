@@ -6,11 +6,17 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
 // converseMaxTokens caps output; high enough for substantial file writes.
 const converseMaxTokens = 16384
+
+// context1mBeta is the Anthropic beta flag that unlocks the 1M-token context
+// window on Bedrock, passed through additionalModelRequestFields.anthropic_beta.
+const context1mBeta = "context-1m-2025-08-07"
 
 // Converse drives Anthropic Claude (and other Converse-capable models) on the
 // Bedrock Runtime Converse API, authenticated with SigV4 from an AWS profile.
@@ -21,34 +27,118 @@ type Converse struct {
 	region string
 	creds  awsCreds
 	http   *http.Client
+
+	// Capabilities resolved from the catalog (with env overrides), driving the
+	// extra wire features: prompt caching, 1M-context beta, extended thinking.
+	cache          bool
+	context1M      bool
+	thinkingBudget int    // 0 disables extended thinking (budget-style models)
+	effort         string // reasoning-effort label
+
+	// adaptive selects the newer Anthropic thinking API
+	// (thinking.type=adaptive + output_config.effort) used by opus-4-8+, vs the
+	// older budget API (thinking.type=enabled + budget_tokens) used by sonnet-4-6.
+	adaptive bool
+}
+
+// effortBudget maps an effort label to an Anthropic extended-thinking token
+// budget. "minimal" disables thinking; higher levels allocate more budget.
+var effortBudget = map[string]int{
+	"minimal": 0,
+	"low":     4096,
+	"medium":  8192,
+	"high":    16384,
+	"xhigh":   32768,
+}
+
+// budgetToEffort is the inverse used to report the current effort label.
+func budgetToEffort(budget int) string {
+	best := "minimal"
+	bestB := -1
+	for label, b := range effortBudget {
+		if b <= budget && b > bestB {
+			best, bestB = label, b
+		}
+	}
+	return best
 }
 
 // NewConverse builds a Converse provider. Region defaults to us-east-2, profile
 // to "aviary" (override with EIGEN_CONVERSE_REGION/PROFILE or AWS_REGION/PROFILE).
+//
+// Per-model capabilities come from the catalog; env vars override:
+//   - EIGEN_CONVERSE_CACHE=0/1       prompt caching
+//   - EIGEN_CONVERSE_1M=0/1          1M-context beta
+//   - EIGEN_THINKING_BUDGET=<tokens> extended-thinking budget (0 disables)
 func NewConverse(model string) (*Converse, error) {
 	region := firstNonEmpty(os.Getenv("EIGEN_CONVERSE_REGION"), os.Getenv("AWS_REGION"), "us-east-2")
 	profile := firstNonEmpty(os.Getenv("EIGEN_CONVERSE_PROFILE"), os.Getenv("AWS_PROFILE"), "aviary")
 	if model == "" {
-		model = "us.anthropic.claude-sonnet-4-6"
+		model = "global.anthropic.claude-fable-5"
 	}
 	creds, err := loadAWSCreds(profile)
 	if err != nil {
 		return nil, fmt.Errorf("converse credentials: %w", err)
 	}
-	return &Converse{
+	c := &Converse{
 		Model:  model,
 		region: region,
 		creds:  creds,
 		http:   &http.Client{Timeout: 5 * time.Minute},
-	}, nil
+	}
+	// Resolve capabilities from the catalog, then apply env overrides.
+	if info, ok := Lookup(model); ok {
+		c.cache = info.Cache
+		c.context1M = info.Context1M
+		c.thinkingBudget = info.ThinkingBudget
+		// A catalog Effort label means this model uses the adaptive thinking API
+		// (output_config.effort); a ThinkingBudget means the older budget API.
+		if info.Effort != "" {
+			c.adaptive = true
+			c.effort = info.Effort
+		}
+	}
+	c.cache = envBool("EIGEN_CONVERSE_CACHE", c.cache)
+	c.context1M = envBool("EIGEN_CONVERSE_1M", c.context1M)
+	c.thinkingBudget = envInt("EIGEN_THINKING_BUDGET", c.thinkingBudget)
+	if e := strings.TrimSpace(os.Getenv("EIGEN_REASONING_EFFORT")); e != "" {
+		c.SetEffort(e)
+	}
+	if c.effort == "" {
+		c.effort = budgetToEffort(c.thinkingBudget)
+	}
+	return c, nil
 }
 
 func (c *Converse) Name() string { return c.Model + " (bedrock converse)" }
+
+// SetEffort changes the reasoning effort. For adaptive-thinking models it sets
+// the effort level directly; for budget-style models it maps the level to a
+// thinking-token budget. Returns false for an unrecognized level.
+func (c *Converse) SetEffort(level string) bool {
+	b, ok := effortBudget[level]
+	if !ok {
+		return false
+	}
+	c.thinkingBudget = b
+	c.effort = level
+	return true
+}
+
+// Effort returns the current reasoning-effort label.
+func (c *Converse) Effort() string { return c.effort }
 
 type converseContent struct {
 	Text       string              `json:"text,omitempty"`
 	ToolUse    *converseToolUse    `json:"toolUse,omitempty"`
 	ToolResult *converseToolResult `json:"toolResult,omitempty"`
+	CachePoint *converseCachePoint `json:"cachePoint,omitempty"`
+}
+
+// converseCachePoint marks a prompt-caching breakpoint: everything before it in
+// the prompt is cached and reused across requests with the same prefix.
+type converseCachePoint struct {
+	Type string `json:"type"` // "default"
 }
 
 type converseToolUse struct {
@@ -72,25 +162,31 @@ type converseMessage struct {
 	Content []converseContent `json:"content"`
 }
 
-type converseToolSpec struct {
-	ToolSpec struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		InputSchema struct {
-			JSON json.RawMessage `json:"json"`
-		} `json:"inputSchema"`
-	} `json:"toolSpec"`
+type converseToolConfig struct {
+	Tools []converseToolEntry `json:"tools"`
+}
+
+// converseToolEntry is one entry in toolConfig.tools — either a tool spec or a
+// cachePoint marking the end of the (stable) tool-definition prefix.
+type converseToolEntry struct {
+	ToolSpec   *converseToolSpecInner `json:"toolSpec,omitempty"`
+	CachePoint *converseCachePoint    `json:"cachePoint,omitempty"`
+}
+
+type converseToolSpecInner struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	InputSchema struct {
+		JSON json.RawMessage `json:"json"`
+	} `json:"inputSchema"`
 }
 
 type converseRequest struct {
-	Messages        []converseMessage        `json:"messages"`
-	System          []converseToolResultText `json:"system,omitempty"`
-	ToolConfig      *converseToolConfig      `json:"toolConfig,omitempty"`
-	InferenceConfig *converseInference       `json:"inferenceConfig,omitempty"`
-}
-
-type converseToolConfig struct {
-	Tools []converseToolSpec `json:"tools"`
+	Messages                     []converseMessage   `json:"messages"`
+	System                       []converseContent   `json:"system,omitempty"`
+	ToolConfig                   *converseToolConfig `json:"toolConfig,omitempty"`
+	InferenceConfig              *converseInference  `json:"inferenceConfig,omitempty"`
+	AdditionalModelRequestFields json.RawMessage     `json:"additionalModelRequestFields,omitempty"`
 }
 
 type converseInference struct {
@@ -118,15 +214,28 @@ func (c *Converse) Complete(ctx context.Context, req Request) (*Response, error)
 	if len(req.Messages) == 0 {
 		return nil, fmt.Errorf("request has no messages")
 	}
+	// Extended thinking needs maxTokens > thinking budget; give the answer room
+	// on top of the reasoning budget.
+	maxTokens := converseMaxTokens
+	if c.thinkingBudget > 0 && maxTokens <= c.thinkingBudget {
+		maxTokens = c.thinkingBudget + converseMaxTokens
+	}
 	payload := converseRequest{
 		Messages:        converseMessages(req),
-		InferenceConfig: &converseInference{MaxTokens: converseMaxTokens},
+		InferenceConfig: &converseInference{MaxTokens: maxTokens},
 	}
 	if req.System != "" {
-		payload.System = []converseToolResultText{{Text: req.System}}
+		// Cache the (large, stable) system prompt prefix when caching is on.
+		payload.System = []converseContent{{Text: req.System}}
+		if c.cache {
+			payload.System = append(payload.System, converseContent{CachePoint: &converseCachePoint{Type: "default"}})
+		}
 	}
-	if tools := converseTools(req.Tools); len(tools) > 0 {
+	if tools := converseTools(req.Tools, c.cache); len(tools) > 0 {
 		payload.ToolConfig = &converseToolConfig{Tools: tools}
+	}
+	if extra := c.additionalFields(); extra != nil {
+		payload.AdditionalModelRequestFields = extra
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -173,6 +282,33 @@ func (c *Converse) Complete(ctx context.Context, req Request) (*Response, error)
 	return out, nil
 }
 
+// additionalFields builds the additionalModelRequestFields JSON carrying the
+// 1M-context beta flag and the extended-thinking config, or nil when none
+// apply. Adaptive-thinking models (opus-4-8+) use thinking.type=adaptive with
+// output_config.effort; budget-style models (sonnet-4-6) use
+// thinking.type=enabled with budget_tokens.
+func (c *Converse) additionalFields() json.RawMessage {
+	extra := map[string]any{}
+	if c.context1M {
+		extra["anthropic_beta"] = []string{context1mBeta}
+	}
+	switch {
+	case c.adaptive && c.effort != "" && c.effort != "minimal":
+		extra["thinking"] = map[string]any{"type": "adaptive"}
+		extra["output_config"] = map[string]any{"effort": c.effort}
+	case !c.adaptive && c.thinkingBudget > 0:
+		extra["thinking"] = map[string]any{"type": "enabled", "budget_tokens": c.thinkingBudget}
+	}
+	if len(extra) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(extra)
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
 // converseMessages maps the neutral transcript to Converse content blocks.
 // Critically, Converse expects strict user/assistant alternation with tool
 // results delivered as a user message of toolResult blocks, so consecutive
@@ -215,6 +351,15 @@ func converseMessages(req Request) []converseMessage {
 					Input:     normalizeArgsRaw(tc.Arguments),
 				}})
 			}
+			// Converse requires every message to carry at least one content
+			// block (a null/empty content array is rejected with HTTP 400). A
+			// reasoning-only assistant turn — which providers like GLM emit and
+			// persist with empty Text and no tool calls — would otherwise produce
+			// an empty array, so drop it: the dropped reasoning carries no state
+			// the model needs to continue.
+			if len(content) == 0 {
+				continue
+			}
 			out = append(out, converseMessage{Role: "assistant", Content: content})
 		}
 	}
@@ -222,17 +367,21 @@ func converseMessages(req Request) []converseMessage {
 	return out
 }
 
-func converseTools(specs []ToolSpec) []converseToolSpec {
+// converseTools maps neutral tool specs to Converse tool entries. When caching
+// is enabled, a cachePoint is appended after the (stable) tool definitions so
+// the system+tools prefix is cached across turns.
+func converseTools(specs []ToolSpec, cache bool) []converseToolEntry {
 	if len(specs) == 0 {
 		return nil
 	}
-	tools := make([]converseToolSpec, 0, len(specs))
+	tools := make([]converseToolEntry, 0, len(specs)+1)
 	for _, s := range specs {
-		var t converseToolSpec
-		t.ToolSpec.Name = s.Name
-		t.ToolSpec.Description = s.Description
-		t.ToolSpec.InputSchema.JSON = s.Parameters
-		tools = append(tools, t)
+		inner := &converseToolSpecInner{Name: s.Name, Description: s.Description}
+		inner.InputSchema.JSON = s.Parameters
+		tools = append(tools, converseToolEntry{ToolSpec: inner})
+	}
+	if cache {
+		tools = append(tools, converseToolEntry{CachePoint: &converseCachePoint{Type: "default"}})
 	}
 	return tools
 }
@@ -252,4 +401,27 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// envBool returns the boolean value of an env var (1/true/yes/on => true,
+// 0/false/no/off => false), or def when unset or unrecognized.
+func envBool(key string, def bool) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return def
+	}
+}
+
+// envInt returns the integer value of an env var, or def when unset/invalid.
+func envInt(key string, def int) int {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
 }

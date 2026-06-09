@@ -69,10 +69,18 @@ func CompactWith(ctx context.Context, c Compactor, msgs []Message, maxTokens int
 		return Compact(msgs, maxTokens), nil // degrade gracefully to v0
 	}
 
+	// Preserve the original task verbatim alongside the summary so the model's
+	// north star is never paraphrased away by summarization.
+	injected := "[Context compacted. Summary of the earlier conversation follows; continue from it.]\n\n"
+	if orig := firstUserText(older); orig != "" {
+		injected += "Original task: " + orig + "\n\n"
+	}
+	injected += summary
+
 	out := make([]Message, 0, len(recent)+1)
 	out = append(out, Message{
 		Role: RoleUser,
-		Text: "[Context compacted. Summary of the earlier conversation follows; continue from it.]\n\n" + summary,
+		Text: injected,
 	})
 	out = append(out, recent...)
 
@@ -94,6 +102,21 @@ func userStarts(msgs []Message) []int {
 		}
 	}
 	return s
+}
+
+// firstUserText returns the text of the first user message (the original task),
+// trimmed to a bound so it never dominates the budget.
+func firstUserText(msgs []Message) string {
+	for _, m := range msgs {
+		if m.Role == RoleUser && strings.TrimSpace(m.Text) != "" {
+			t := m.Text
+			if len(t) > 1000 {
+				t = t[:1000] + "…"
+			}
+			return t
+		}
+	}
+	return ""
 }
 
 // providerCompactor adapts a Provider into a Compactor via a summary call.
