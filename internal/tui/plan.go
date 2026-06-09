@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // todoItem mirrors one entry of the agent's todo tool call.
@@ -58,21 +59,28 @@ func todoGlyphStyled(status string) string {
 	}
 }
 
-// statusBarView renders the persistent status line: model · perm · context usage
-// · read-aloud. Shown at the bottom, below the input. Single line, no trailing
-// newline (it is the last row).
+// statusBarView renders the persistent status line: model · perm · context
+// usage · read-aloud. Shown at the bottom, below the input. It wraps onto a
+// second line when the parts don't fit the terminal width (so nothing runs off
+// the edge); statusBarHeight() reports how many rows it uses.
 func (m *model) statusBarView() string {
+	return strings.Join(m.statusBarLines(), "\n")
+}
+
+// statusBarHeight is the number of rows the status bar occupies (1 or 2).
+func (m *model) statusBarHeight() int { return len(m.statusBarLines()) }
+
+// statusBarParts assembles the status segments.
+func (m *model) statusBarParts() []string {
 	parts := []string{"eigen"}
 	if m.a != nil && m.a.Provider != nil {
 		parts = append(parts, modelShort(m.a.Provider.Name()))
 	}
 	if m.a != nil {
 		parts = append(parts, "perm="+string(m.a.Perm))
-		// Surface the reasoning effort when the model exposes it.
 		if es, ok := m.a.Provider.(llm.EffortSetter); ok {
 			parts = append(parts, "effort="+es.Effort())
 		}
-		// Surface live-search mode when the model supports it (grok).
 		if sr, ok := m.a.Provider.(llm.Searcher); ok && sr.SearchMode() != "off" {
 			parts = append(parts, "search="+sr.SearchMode())
 		}
@@ -83,16 +91,53 @@ func (m *model) statusBarView() string {
 	if m.readAloud {
 		parts = append(parts, "read-aloud")
 	}
-	line := strings.Join(parts, " · ")
-	// Pad into a footer bar with a faint accent rule extending to the width.
-	if m.width > 0 {
-		if len(line) > m.width {
-			line = line[:m.width]
-		} else if pad := m.width - len(line) - 1; pad > 0 {
-			return dim(line) + " " + styleAccent.Render(strings.Repeat("─", pad))
-		}
+	return parts
+}
+
+// statusBarLines packs the status parts into 1–2 width-respecting rows, the
+// last padded with a faint accent rule. Width is measured in display columns
+// (ansi.StringWidth), not bytes, so multi-byte glyphs never overflow.
+func (m *model) statusBarLines() []string {
+	parts := m.statusBarParts()
+	w := m.width
+	if w <= 0 {
+		return []string{dim(strings.Join(parts, " · "))}
 	}
-	return dim(line)
+	const sep = " · "
+	var rows []string
+	cur := ""
+	for _, p := range parts {
+		cand := p
+		if cur != "" {
+			cand = cur + sep + p
+		}
+		if ansi.StringWidth(cand) > w && cur != "" && len(rows) < 1 {
+			// Overflow on the first row: wrap to a second row.
+			rows = append(rows, cur)
+			cur = p
+			continue
+		}
+		cur = cand
+	}
+	if cur != "" {
+		rows = append(rows, cur)
+	}
+	// Style each row; pad the final row with an accent rule to the width.
+	for i, r := range rows {
+		rw := ansi.StringWidth(r)
+		if rw > w {
+			r = ansi.Truncate(r, w, "")
+			rw = w
+		}
+		if i == len(rows)-1 {
+			if pad := w - rw - 1; pad > 0 {
+				rows[i] = dim(r) + " " + styleAccent.Render(strings.Repeat("─", pad))
+				continue
+			}
+		}
+		rows[i] = dim(r)
+	}
+	return rows
 }
 
 // ctxIndicator is the approximate context usage vs the budget, e.g. "~12k/200k".

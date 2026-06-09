@@ -20,6 +20,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // fakeProv is a canned provider so the model can be driven without a network or
@@ -1292,12 +1293,16 @@ func TestFindUsageWhenEmpty(t *testing.T) {
 // --- /copy ------------------------------------------------------------------
 
 type fakeClip struct {
-	copied string
-	avail  bool
+	copied   string
+	pasted   string // text Paste() returns
+	avail    bool
+	canPaste bool
 }
 
 func (f *fakeClip) Copy(text string) error { f.copied = text; return nil }
 func (f *fakeClip) Available() bool        { return f.avail }
+func (f *fakeClip) CanPaste() bool         { return f.canPaste }
+func (f *fakeClip) Paste() (string, error) { return f.pasted, nil }
 
 func TestCopySelectedBlock(t *testing.T) {
 	m := testModel(t)
@@ -1755,5 +1760,81 @@ func TestSaveMetaDuringFailoverKeepsOriginalModel(t *testing.T) {
 	}
 	if meta.Model != "global.anthropic.claude-fable-5" {
 		t.Fatalf("meta during failover should keep the original model, got %s", meta.Model)
+	}
+}
+
+// --- status bar wrap, input wrap math, click-to-cursor, right-click paste ---
+
+func TestStatusBarWrapsWhenNarrow(t *testing.T) {
+	m := testModel(t)
+	m.width = 24 // force overflow with the usual parts
+	lines := m.statusBarLines()
+	if len(lines) != 2 {
+		t.Fatalf("narrow status bar should wrap to 2 lines, got %d: %v", len(lines), lines)
+	}
+	for i, ln := range lines {
+		if w := ansi.StringWidth(ln); w > m.width {
+			t.Fatalf("status line %d width %d exceeds %d", i, w, m.width)
+		}
+	}
+}
+
+func TestStatusBarSingleLineWhenWide(t *testing.T) {
+	m := testModel(t)
+	m.width = 200
+	if h := m.statusBarHeight(); h != 1 {
+		t.Fatalf("wide status bar should be 1 line, got %d", h)
+	}
+}
+
+func TestWrappedRowCountWordWrap(t *testing.T) {
+	// 10-wide: "aaaa bbbb cccc" → "aaaa bbbb"(9) then "cccc" → 2 rows.
+	if got := wrappedRowCount("aaaa bbbb cccc", 10); got != 2 {
+		t.Fatalf("word-wrap row count = %d, want 2", got)
+	}
+	// A single short line is 1 row.
+	if got := wrappedRowCount("hello", 10); got != 1 {
+		t.Fatalf("short line row count = %d, want 1", got)
+	}
+	// A word longer than the width hard-splits.
+	if got := wrappedRowCount("aaaaaaaaaaaaa", 5); got < 3 {
+		t.Fatalf("long word should hard-wrap to >=3 rows, got %d", got)
+	}
+}
+
+func TestRightClickPastes(t *testing.T) {
+	m := testModel(t)
+	m.clip = &fakeClip{avail: true, canPaste: true, pasted: "pasted text"}
+	m.Update(tea.MouseMsg{Button: tea.MouseButtonRight, Action: tea.MouseActionPress})
+	if got := m.ti.Value(); !strings.Contains(got, "pasted text") {
+		t.Fatalf("right-click should paste into input, got %q", got)
+	}
+}
+
+func TestRightClickPasteNoBackend(t *testing.T) {
+	m := testModel(t)
+	m.clip = &fakeClip{avail: true, canPaste: false}
+	before := len(m.blocks)
+	m.Update(tea.MouseMsg{Button: tea.MouseButtonRight, Action: tea.MouseActionPress})
+	if len(m.blocks) <= before {
+		t.Fatal("paste with no backend should note the missing command")
+	}
+}
+
+func TestClickInInputPositionsCursor(t *testing.T) {
+	m := testModel(t)
+	m.ti.Prompt = "│ "
+	typeRunes(m, "hello world")
+	// The input top row in this headless layout:
+	top := m.inputTopRow()
+	// Click on the first text row (top+1), column 3 (after prompt).
+	vrow, col, ok := m.clickInInput(5, top+1)
+	if !ok {
+		t.Fatalf("click on input text row should be detected (top=%d)", top)
+	}
+	m.positionCursorAt(vrow, col)
+	// Cursor should now be within the line (not at the very end necessarily).
+	if m.ti.Line() != 0 {
+		t.Fatalf("cursor should stay on logical line 0, got %d", m.ti.Line())
 	}
 }
