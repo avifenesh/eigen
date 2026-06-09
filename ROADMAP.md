@@ -28,8 +28,13 @@ Conventions:
 - [x] **`/skills` command + `--list-skills`** catalog
 - [x] **read-aloud**: `say` tool + `/read` toggle that speaks assistant answers via a
       configurable TTS command (default: espeak-ng/piper/`say`, reuse `readd` engines)
-- [x] **memory**: per-project notes at `~/.eigen/memory/<project>.md`, read at start,
-      appendable via a `memory` tool
+- [x] **memory**: two scopes — global (`~/.eigen/memory/global.md`: the user's
+      working style/rules, applies everywhere) + per-project
+      (`~/.eigen/memory/<project>.md`), both auto-injected at start, appendable via
+      the `memory` tool (`scope: project|global`). Hardened: secret redaction,
+      staleness framing, snapshot/backup + atomic rewrite, model-driven
+      consolidation (`eigen memory consolidate [--global]`, recency-wins,
+      fails-closed). See docs/research-codex-memory.md.
 
 ## Tier 2 — more tools + catalog
 - [x] **tree** tool (bounded directory tree)
@@ -83,6 +88,7 @@ Files (under `~/.eigen/`, plus project-local `./.eigen/`):
 - `skills/<name>/SKILL.md` — discovered skills (also `EIGEN_SKILLS_DIRS`, colon-sep)
 - `plugins.json` — external-command tools `[{name,description,parameters,command,readonly,timeout_seconds}]`
 - `mcp.json` — `{"servers":[{name,command,env}]}` (stdio MCP servers)
+- `memory/global.md` — cross-project durable notes (working style, global rules)
 - `memory/<project>.md` — per-project durable notes (auto-injected, appended by the memory tool / dreaming)
 - `sessions/*.eigen.jsonl` — autosaved sessions · `exports/*.md` — `/export`
 - `.env` — credentials
@@ -95,6 +101,7 @@ LSP: `.eigen/lsp.json` / `~/.eigen/lsp.json` — `{"servers":[{name,command,exte
 
 CLI: `eigen [task]` · `-p` print · `--resume/-c` · `--list` · `--list-skills` ·
 `--list-tools` · `eigen dream` (reflect into memory) ·
+`eigen memory <show|backups|consolidate> [--global]` ·
 `eigen skill add <path | owner/repo[/subdir][@ref]> [--name X] [--force] [--overwrite] [--no-scan]` ·
 `eigen skill list`. Installing a skill (from a path or GitHub) scans its content
 with the small "haiku" model for instructions dangerous for the agent to follow;

@@ -148,6 +148,7 @@ func main() {
 
 	policy := tool.DefaultPolicy()
 	mem, _ := memory.Open("")
+	gmem, _ := memory.OpenGlobal()
 	// Sub-agent delegation: the task tool runs a subtask on a fresh session of
 	// the same agent (events suppressed; recursion bounded).
 	var a *agent.Agent
@@ -174,7 +175,7 @@ func main() {
 		tool.Fetch(),
 		tool.Todo(),
 		tool.Skill(skills),
-		tool.Memory(mem),
+		tool.Memory(mem, gmem),
 		tool.Task(taskRun),
 	}
 	// Web search: only registered when a backend is configured (TAVILY_API_KEY,
@@ -263,9 +264,9 @@ func main() {
 		return
 	}
 
-	// `eigen memory <consolidate|show|backups>`: curate project memory, then exit.
+	// `eigen memory <consolidate|show|backups> [--global]`: curate memory.
 	if flag.Arg(0) == "memory" {
-		runMemoryCmd(flag.Args()[1:], prov, mem)
+		runMemoryCmd(flag.Args()[1:], prov, mem, gmem)
 		return
 	}
 
@@ -276,7 +277,7 @@ func main() {
 		MaxContextTokens: contextBudget(*maxTokens, *provider, *model),
 		Compactor:        llm.NewCompactor(prov),
 		ExtraSystem:      skills.Catalog(),
-		Memory:           mem.Section(),
+		Memory:           memory.Sections(gmem, mem),
 	}
 
 	// Session store: discover all sources (lazy) and title untitled ones in the
@@ -609,11 +610,28 @@ func lspConfigPath() string {
 // the project memory file. Consolidation rewrites the append-only notes via the
 // model (dedup, supersession, contradiction resolution), shows the diff, and
 // asks for confirmation before writing; a timestamped backup is always taken.
-func runMemoryCmd(args []string, prov llm.Provider, mem *memory.Store) {
+func runMemoryCmd(args []string, prov llm.Provider, mem, gmem *memory.Store) {
 	sub := ""
 	if len(args) > 0 {
 		sub = args[0]
 	}
+	// --global targets the cross-project store; default is the project store.
+	store := mem
+	rest := make([]string, 0, len(args))
+	for i, a := range args {
+		if i == 0 {
+			continue // the subcommand
+		}
+		if a == "--global" || a == "-g" {
+			if gmem != nil {
+				store = gmem
+			}
+			continue
+		}
+		rest = append(rest, a)
+	}
+	mem = store
+	args = append([]string{sub}, rest...)
 	switch sub {
 	case "show", "":
 		content := mem.Read()
@@ -665,7 +683,7 @@ func runMemoryCmd(args []string, prov llm.Provider, mem *memory.Store) {
 		}
 		fmt.Printf("consolidated %s (backup kept: %s)\n", mem.Path(), lastBackup(mem))
 	default:
-		fmt.Fprintln(os.Stderr, "usage: eigen memory [show|backups|consolidate [--yes]]")
+		fmt.Fprintln(os.Stderr, "usage: eigen memory [show|backups|consolidate [--yes]] [--global]")
 		os.Exit(2)
 	}
 }

@@ -159,3 +159,48 @@ func TestSectionStalenessFraming(t *testing.T) {
 		t.Fatalf("section should frame notes as possibly stale data: %q", sec)
 	}
 }
+
+func TestGlobalStoreSeparateFromProject(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	proj, _ := Open("/some/project")
+	glob, _ := OpenGlobal()
+	if !glob.IsGlobal() || proj.IsGlobal() {
+		t.Fatal("IsGlobal should distinguish the stores")
+	}
+	if proj.Path() == glob.Path() {
+		t.Fatal("global and project stores must be different files")
+	}
+	_ = proj.Append("project fact")
+	_ = glob.Append("global rule")
+	if strings.Contains(proj.Read(), "global rule") || strings.Contains(glob.Read(), "project fact") {
+		t.Fatal("global and project notes must not bleed into each other")
+	}
+}
+
+func TestGlobalSectionLabel(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	glob, _ := OpenGlobal()
+	_ = glob.Append("user commits often")
+	sec := glob.Section()
+	if !strings.Contains(sec, "Global memory") || !strings.Contains(sec, "cross-project") {
+		t.Fatalf("global section should be labeled as cross-project: %q", sec)
+	}
+}
+
+func TestSectionsCombinesGlobalThenProject(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	proj, _ := Open("/p")
+	glob, _ := OpenGlobal()
+	_ = proj.Append("PROJECTNOTE")
+	_ = glob.Append("GLOBALNOTE")
+	combined := Sections(glob, proj)
+	gi := strings.Index(combined, "GLOBALNOTE")
+	pi := strings.Index(combined, "PROJECTNOTE")
+	if gi < 0 || pi < 0 || gi > pi {
+		t.Fatalf("Sections should place global before project: %q", combined)
+	}
+	// Empty stores contribute nothing.
+	if Sections(nil, nil) != "" {
+		t.Fatal("Sections of nil stores should be empty")
+	}
+}
