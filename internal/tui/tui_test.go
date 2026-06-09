@@ -699,6 +699,44 @@ func TestCtrlATogglesPerm(t *testing.T) {
 	}
 }
 
+// TestMultiplexerSafeAltBindings verifies the alt+… alternatives work, since
+// zellij/tmux capture ctrl+p/n/o before they reach the app.
+func TestMultiplexerSafeAltBindings(t *testing.T) {
+	m := testModel(t)
+	m.a.Perm = agent.PermGated
+	// alt+a toggles perm.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}, Alt: true})
+	if m.a.Perm != agent.PermAuto {
+		t.Fatalf("alt+a should toggle perm, got %q", m.a.Perm)
+	}
+	// alt+r cycles effort.
+	ep := &effortProv{effort: "low"}
+	m.a.Provider = ep
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}, Alt: true})
+	if ep.Effort() == "low" {
+		t.Fatal("alt+r should cycle effort")
+	}
+	// alt+m cycles model.
+	m.newProvider = func(provider, mdl string) (llm.Provider, error) { return fakeProv{}, nil }
+	m.modelID = llm.Models()[0].ID
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}, Alt: true})
+	if m.modelID == llm.Models()[0].ID {
+		t.Fatal("alt+m should cycle to a different model")
+	}
+}
+
+func TestAltArrowsSelectBlocks(t *testing.T) {
+	m := testModel(t)
+	// Two collapsible blocks so selection has somewhere to move.
+	m.push(&block{kind: blockThinking, title: "t1", collapsed: true, body: sb("a")})
+	m.push(&block{kind: blockThinking, title: "t2", collapsed: true, body: sb("b")})
+	m.sel = -1
+	m.Update(tea.KeyMsg{Type: tea.KeyUp, Alt: true}) // alt+up selects (enters from tail)
+	if m.sel < 0 {
+		t.Fatal("alt+up should move block selection")
+	}
+}
+
 func TestCtrlECyclesEffort(t *testing.T) {
 	m := testModel(t)
 	ep := &effortProv{effort: "low"}

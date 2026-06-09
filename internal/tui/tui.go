@@ -1023,11 +1023,11 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		// Session picker captures keys while open.
 		if m.picking {
 			switch msg.String() {
-			case "up", "ctrl+p", "k":
+			case "up", "ctrl+p", "alt+up", "k":
 				if m.pickIdx > 0 {
 					m.pickIdx--
 				}
-			case "down", "ctrl+n", "j":
+			case "down", "ctrl+n", "alt+down", "j":
 				if m.pickIdx < len(m.picks)-1 {
 					m.pickIdx++
 				}
@@ -1044,11 +1044,11 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		// Model picker (bare /model) captures keys while open.
 		if m.modelPicking {
 			switch msg.String() {
-			case "up", "ctrl+p", "k":
+			case "up", "ctrl+p", "alt+up", "k":
 				if m.modelPickIdx > 0 {
 					m.modelPickIdx--
 				}
-			case "down", "ctrl+n", "j":
+			case "down", "ctrl+n", "alt+down", "j":
 				if m.modelPickIdx < len(m.modelPicks)-1 {
 					m.modelPickIdx++
 				}
@@ -1091,12 +1091,12 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		// Autocomplete menu (slash commands / @file) captures nav + select keys.
 		if m.comp.active() {
 			switch msg.String() {
-			case "up", "ctrl+p":
+			case "up", "ctrl+p", "alt+up":
 				if m.comp.idx > 0 {
 					m.comp.idx--
 				}
 				return m, nil
-			case "down", "ctrl+n":
+			case "down", "ctrl+n", "alt+down":
 				if m.comp.idx < len(m.comp.items)-1 {
 					m.comp.idx++
 				}
@@ -1129,6 +1129,9 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			// Other keys fall through to editing the input (to narrow the filter).
 		}
 		// Navigation/history works in any state (input box keeps focus for text).
+		// alt+… variants are provided alongside ctrl+… because terminal
+		// multiplexers (zellij, tmux) capture ctrl+p/ctrl+n/ctrl+o before they
+		// reach the app.
 		switch msg.String() {
 		case "up":
 			m.historyPrev()
@@ -1136,30 +1139,32 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		case "down":
 			m.historyNext()
 			return m, nil
-		case "ctrl+p":
+		case "ctrl+p", "alt+up", "alt+k":
 			m.moveSel(-1)
 			return m, nil
-		case "ctrl+n":
+		case "ctrl+n", "alt+down", "alt+j":
 			m.moveSel(1)
 			return m, nil
-		case "tab":
+		case "tab", "shift+tab":
 			m.toggleSel()
 			return m, nil
-		case "ctrl+y":
+		case "ctrl+y", "alt+y":
 			m.copySelected()
 			return m, nil
-		case "ctrl+a":
+		case "ctrl+a", "alt+a":
 			// Quick toggle of the permission posture (gated ↔ auto) without
 			// typing /perm. "a" = auto/approval mode.
 			m.togglePerm()
 			return m, nil
-		case "ctrl+e":
+		case "ctrl+e", "alt+r":
 			// Quick cycle of the reasoning effort (wraps) without typing /effort.
+			// alt+r ("reasoning") is the multiplexer-safe alternative.
 			m.cycleEffort()
 			return m, nil
-		case "ctrl+o":
+		case "ctrl+o", "alt+m":
 			// Quick cycle to the next model in the catalog (wraps), without
-			// typing /model. "o" for mOdel (ctrl+m is Enter in terminals).
+			// typing /model. "o" for mOdel (ctrl+m is Enter in terminals);
+			// alt+m is the multiplexer-safe alternative (ctrl+o is a zellij key).
 			m.cycleModel()
 			return m, nil
 		case "pgup":
@@ -1538,7 +1543,7 @@ func (m *model) View() string {
 	case m.state == stRunning:
 		// Status/spinner on its own line, with the input below so the user can
 		// type a message to queue (enter) or interrupt (esc) while it runs.
-		hint := dim("   enter queue · esc interrupt · ctrl+p/n select · tab expand")
+		hint := dim("   enter queue · esc interrupt · alt+↑/↓ select · tab expand")
 		bottom = m.sp.View() + " " + m.status + m.queuedHint() + hint + "\n" + m.ti.View()
 	default:
 		bottom = m.compMenuView() + m.ti.View()
@@ -1758,7 +1763,8 @@ func (m *model) command(line string) tea.Cmd {
 	switch name {
 	case "/help":
 		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /skills  /tools  /find  /copy  /read  /rebuild  /quit")
-		m.note("keys: / commands · @ files · ↑↓ history · ctrl+p/n select · tab/click expand · drag select+copy · ctrl+y copy · ctrl+a gated/auto · ctrl+e effort · ctrl+o model · pgup/pgdn scroll")
+		m.note("keys: / commands · @ files · ↑↓ history · select ctrl+p/n (or alt+↑/↓) · tab expand · drag select+copy · copy ctrl+y/alt+y · perm ctrl+a/alt+a · effort ctrl+e/alt+r · model ctrl+o/alt+m · pgup/pgdn scroll")
+		m.note("multiplexer note: zellij/tmux capture ctrl+p/n/o — use the alt+… keys (alt+↑/↓ select, alt+m model, alt+r effort, alt+a perm, alt+y copy)")
 		m.note("while running: enter queues a message · esc interrupts the turn")
 	case "/clear":
 		m.session = m.a.NewSession()
