@@ -69,7 +69,7 @@ func main() {
 	flag.BoolVar(continueLatest, "c", false, "alias for --continue")
 	from := flag.String("from", "", "force the transcript source for --resume (claude|codex|pi|hermes|opencode|eigen)")
 	sessionID := flag.String("session", "", "opencode session id for --resume opencode (default: latest)")
-	maxTokens := flag.Int("max-tokens", cfg.MaxTokens, "context budget before compaction (0 = auto by provider)")
+	maxTokens := flag.Int("max-tokens", cfg.MaxTokens, "context-budget ceiling before compaction (0 = auto from the model's window; capped by min(this, window−headroom))")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	listSessions := flag.Bool("list", false, "list resumable sessions (id, date, title) and exit")
 	listSkills := flag.Bool("list-skills", false, "list discovered skills (name, description) and exit")
@@ -335,6 +335,7 @@ func main() {
 			Skills:      skills,
 			DreamOnIdle: cfg.DreamOnIdle,
 			IdleMinutes: cfg.IdleMinutes,
+			MaxTokens:   resolveUserMaxTokens(*maxTokens),
 		})
 		if err != nil {
 			fail(err)
@@ -478,11 +479,27 @@ func splitNonEmpty(s string) []string {
 	return out
 }
 
-// contextBudget returns the token budget before compaction. An explicit flag
-// wins; otherwise EIGEN_MAX_CONTEXT_TOKENS; otherwise the model's context window
-// from the catalog (auto-detected) with headroom; otherwise a per-provider
-// default.
+// contextBudget returns the token budget before compaction. It is capped by
+// min(user setting, model's actual context window minus headroom): an explicit
+// --max-tokens flag, else EIGEN_MAX_CONTEXT_TOKENS, else the config's
+// max_tokens provide the user ceiling, and the catalog window (via
+// llm.ContextBudget) provides the model ceiling — the smaller wins. The user
+// ceiling can only ever lower the budget, never push it past what the model
+// accepts. With no user setting and an unknown model, a per-provider default
+// stands in for the window.
 func contextBudget(flagVal int, provider, model string) int {
+	userMax := resolveUserMaxTokens(flagVal)
+	effective := model
+	if effective == "" {
+		effective = llm.DefaultModel(provider)
+	}
+	return llm.ContextBudget(userMax, effective, providerContextDefault(provider))
+}
+
+// resolveUserMaxTokens returns the user's context-budget ceiling: the
+// --max-tokens flag (or config max_tokens, which seeds the flag default), else
+// EIGEN_MAX_CONTEXT_TOKENS. 0 means unset (auto from the model window).
+func resolveUserMaxTokens(flagVal int) int {
 	if flagVal > 0 {
 		return flagVal
 	}
@@ -491,22 +508,13 @@ func contextBudget(flagVal int, provider, model string) int {
 			return n
 		}
 	}
-	// Auto-detect from the resolved model's context window, leaving headroom for
-	// the next response. We cap the budget well under huge (1M) windows: a
-	// single near-window request can blow a provider's tokens-per-minute quota
-	// (Bedrock HTTP 429 "Too many tokens"), and most coding context fits far
-	// less. Override with --max-tokens or EIGEN_MAX_CONTEXT_TOKENS.
-	effective := model
-	if effective == "" {
-		effective = llm.DefaultModel(provider)
-	}
-	if window := llm.EffectiveContextWindow(effective); window > 0 {
-		budget := window * 85 / 100
-		if budget > maxAutoContextTokens {
-			budget = maxAutoContextTokens
-		}
-		return budget
-	}
+	return 0
+}
+
+// providerContextDefault is the fallback budget for a provider whose resolved
+// model is not in the catalog (no known window). These are already
+// headroom-adjusted conversation budgets, not raw windows.
+func providerContextDefault(provider string) int {
 	switch provider {
 	case "llama", "local":
 		return 40000
@@ -516,12 +524,6 @@ func contextBudget(flagVal int, provider, model string) int {
 		return 200000
 	}
 }
-
-// maxAutoContextTokens caps the auto-detected context budget. Large 1M windows
-// would otherwise let a single request exceed a provider's per-minute token
-// quota (Bedrock 429). 200k is plenty for coding context; raise it explicitly
-// with --max-tokens / EIGEN_MAX_CONTEXT_TOKENS when you have the quota.
-const maxAutoContextTokens = 200_000
 
 // smallProvider picks a small/fast/cheap model for background chores (session
 // titling, dreaming, skill vulnerability scans): a local llama if configured

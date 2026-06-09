@@ -181,6 +181,7 @@ type model struct {
 	mem         *memory.Store
 	dreamOnIdle bool
 	idleMinutes int
+	maxTokens   int // user context-budget ceiling (0 = auto from the model window)
 	idleGen     int // bumped on each turn; stale idle ticks are ignored
 
 	// skills are the discovered SKILL.md skills, for /skills browse + preview.
@@ -812,8 +813,8 @@ func (m *model) cycleModel() {
 	m.a.Provider = np
 	m.a.Compactor = llm.NewCompactor(np)
 	m.provName, m.modelID = prov, next.ID
-	if w := llm.EffectiveContextWindow(next.ID); w > 0 {
-		m.a.MaxContextTokens = contextBudgetFor(w)
+	if b := m.contextBudgetFor(next.ID); b > 0 {
+		m.a.MaxContextTokens = b
 	}
 	// A manual switch takes precedence over any overload failover window.
 	m.failoverFrom = nil
@@ -1942,8 +1943,8 @@ func (m *model) command(line string) tea.Cmd {
 		m.provName, m.modelID = prov, id
 		// Auto-detect the new model's context budget from the catalog (capped,
 		// like main's auto budget, so 1M windows don't exceed minute quotas).
-		if w := llm.EffectiveContextWindow(id); w > 0 {
-			m.a.MaxContextTokens = contextBudgetFor(w)
+		if b := m.contextBudgetFor(id); b > 0 {
+			m.a.MaxContextTokens = b
 		}
 		// A manual switch takes precedence over any overload failover window.
 		m.failoverFrom = nil
@@ -2143,6 +2144,7 @@ type Options struct {
 	Skills      *skill.Set // discovered skills (for /skills browse + preview)
 	DreamOnIdle bool // reflect into memory after the session goes idle
 	IdleMinutes int  // idle delay before dreaming (default 5)
+	MaxTokens   int  // user context-budget ceiling (0 = auto from the model window)
 }
 
 // Run drives the agent under a multi-turn Bubble Tea REPL.
@@ -2210,6 +2212,7 @@ func Run(a *agent.Agent, o Options) (Result, error) {
 		skills:      o.Skills,
 		dreamOnIdle: o.DreamOnIdle,
 		idleMinutes: o.IdleMinutes,
+		maxTokens:   o.MaxTokens,
 	}
 	if m.idleMinutes <= 0 {
 		m.idleMinutes = 5
@@ -2352,8 +2355,8 @@ func (m *model) startFailover() bool {
 	m.a.Provider = np
 	m.a.Compactor = llm.NewCompactor(np)
 	m.provName, m.modelID = prov, failoverModelID
-	if w := llm.EffectiveContextWindow(failoverModelID); w > 0 {
-		m.a.MaxContextTokens = contextBudgetFor(w)
+	if b := m.contextBudgetFor(failoverModelID); b > 0 {
+		m.a.MaxContextTokens = b
 	}
 	return true
 }
@@ -2375,22 +2378,19 @@ func (m *model) endFailover() {
 	m.a.Provider = np
 	m.a.Compactor = llm.NewCompactor(np)
 	m.provName, m.modelID = orig.provider, orig.model
-	if w := llm.EffectiveContextWindow(orig.model); w > 0 {
-		m.a.MaxContextTokens = contextBudgetFor(w)
+	if b := m.contextBudgetFor(orig.model); b > 0 {
+		m.a.MaxContextTokens = b
 	}
 	m.failoverFrom = nil
 	m.failoverLeft = 0
 	m.note("overload window over — switched back to " + orig.model)
 }
 
-// contextBudgetFor mirrors main's auto budget: 85% of the window, capped so a
-// huge (1M) window can't exceed per-minute token quotas.
-func contextBudgetFor(window int) int {
-	b := window * 85 / 100
-	if b > 200_000 {
-		b = 200_000
-	}
-	return b
+// contextBudgetFor returns the budget for a model id, capped by
+// min(user ceiling, model window minus headroom) via llm.ContextBudget — the
+// same rule as main's startup budget, so live /model switches stay consistent.
+func (m *model) contextBudgetFor(model string) int {
+	return llm.ContextBudget(m.maxTokens, model, 0)
 }
 
 // renderHistory pre-fills the transcript with resumed messages as blocks, so
