@@ -130,12 +130,12 @@ what it preserves cheaply, and avoiding repeated full re-summarization.
 |---|-----------|-------|-------|--------|
 | 1 | **Microcompaction**: shed/stub old tool results before summarizing | ✅ shipped | ★★★ | low–med |
 | 2 | **Circuit breaker**: stop re-compacting when it doesn't help; warn | ✅ shipped | ★★★ | low |
-| 3 | **Threshold + buffer + proactive nudge** (compact at ~85–90%, not at 100%) | partial (start-of-turn only) | ★★ | low |
-| 4 | **Fixed prefix** so compaction keeps the prompt cache valid | ❌ | ★★ | med |
-| 5 | **Error-driven compaction** on 413/"prompt too long" | ❌ | ★★ | low |
+| 3 | **Threshold + buffer + proactive nudge** (compact at ~85–90%, not at 100%) | ✅ shipped | ★★ | low |
+| 4 | **Fixed prefix** so compaction keeps the prompt cache valid | ✅ already satisfied (system-block cache) | ★★ | med |
+| 5 | **Error-driven compaction** on 413/"prompt too long" | ✅ shipped | ★★ | low |
 | 6 | **Per-tool output budgets** (not one 100k cap) | partial | ★ | low |
 | 7 | Real token usage from API `usage` (replace the chars/4 estimate) | ❌ | ★ | med |
-| 8 | Compaction-quality nudge ("consider /clear for a fresh thread") | ❌ | ★ | trivial |
+| 8 | Compaction-quality nudge ("consider /clear for a fresh thread") | ✅ shipped (circuit breaker) | ★ | trivial |
 
 Deliberately **not** adopting: server-side `context_management` (Anthropic-only,
 ties us to one provider — but #1 is the portable client-side equivalent);
@@ -145,9 +145,14 @@ per-goal budget scoping (eigen has no multi-goal threads yet).
 
 ## 5. Recommended build order (smallest, highest-value first)
 
-> **Status:** #1 (microcompaction) and #2 (circuit breaker) shipped — plus the
-> Codex third-person handoff prefix (§5c). Remaining: #3 proactive nudge, #4
-> fixed prefix, #5 error-driven compaction.
+> **Status:** #1 microcompaction, #2 circuit breaker, #3 proactive nudge, and
+> #5 error-driven compaction shipped — plus the Codex third-person handoff
+> prefix (§5c). #4 (fixed prefix) found to be **already satisfied**: caching is
+> applied only to the system-prompt block (`anthropic.systemBlocks` /
+> `converse`), which is sent separately from the message history and is never
+> rewritten by compaction, so the cache prefix already survives compaction.
+> Extending cache breakpoints into the message body is a larger, lower-payoff
+> change (compaction rewrites the head of the body anyway) and is deferred.
 
 1. **Microcompaction (client-side tool-result shedding).** Before doing a full
    model summary, walk the history oldest→newest and replace tool *results*

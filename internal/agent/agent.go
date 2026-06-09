@@ -242,6 +242,42 @@ func (s *Session) maybeCompact(ctx context.Context) {
 	s.lastCompactAfter = llm.EstimateTokens(s.msgs)
 }
 
+// forceCompactOnOverflow shrinks the conversation after the provider rejected
+// it as too large, regardless of MaxContextTokens (the model's hard window is
+// smaller than we estimated, or no budget was configured). It aims at a
+// fraction of the budget — or a conservative default when none is set — and
+// reports whether the history actually got smaller (so the caller only retries
+// when there is a real chance of success).
+func (s *Session) forceCompactOnOverflow(ctx context.Context) bool {
+	a := s.a
+	before := len(s.msgs)
+	if before <= 1 {
+		return false // nothing left to fold; a single turn over the window can't be helped here
+	}
+	budget := a.MaxContextTokens
+	if budget <= 0 {
+		budget = 120_000
+	}
+	// Aim well under the budget so the retry has headroom; the provider just
+	// told us our token estimate was optimistic, so also aim under HALF the
+	// current estimated size, guaranteeing the history actually folds even when
+	// our estimate already "fit" the configured budget.
+	target := budget / 2
+	if cur := llm.EstimateTokens(s.msgs); cur/2 < target {
+		target = cur / 2
+	}
+	compacted, err := llm.CompactWith(ctx, a.Compactor, s.msgs, target)
+	if err != nil {
+		return false
+	}
+	if len(compacted) >= before && llm.EstimateTokens(compacted) >= llm.EstimateTokens(s.msgs) {
+		return false // compaction couldn't shrink it; don't spin
+	}
+	s.msgs = compacted
+	s.persist()
+	return true
+}
+
 // Run executes a single task to completion (a one-shot Session.Send).
 func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 	if a.Provider == nil {
@@ -296,6 +332,7 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 	s.persist()
 	specs := a.Tools.Specs()
 	emptyTurns := 0
+	overflowRetried := false // guard: force-compact-and-retry at most once per step
 
 	system := systemPrompt
 	if a.ExtraSystem != "" {
@@ -334,8 +371,21 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 			resp, err = a.Provider.Complete(ctx, req)
 		}
 		if err != nil {
+			// Error-driven compaction: if the provider rejected the request as
+			// too large for its context window, shrink the conversation and
+			// retry this step once. This is the context-size sibling of the
+			// TUI's overload→failover path, and works for every provider.
+			if llm.IsContextOverflow(err) && !overflowRetried {
+				overflowRetried = true
+				if s.forceCompactOnOverflow(ctx) {
+					a.emit(Event{Kind: EventNote, Text: "Prompt exceeded the model's context window — compacted the conversation and retrying."})
+					step-- // retry the same step with the shrunk history
+					continue
+				}
+			}
 			return "", err
 		}
+		overflowRetried = false
 		if len(resp.ToolCalls) == 0 {
 			if strings.TrimSpace(resp.Text) != "" {
 				s.msgs = append(s.msgs, llm.Message{Role: llm.RoleAssistant, Text: resp.Text})

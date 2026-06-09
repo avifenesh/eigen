@@ -198,6 +198,11 @@ type model struct {
 	// the status bar render stays race-free and cheap.
 	ctxTokens int
 
+	// ctxNudged is set once usage crosses the proactive-compaction threshold so
+	// the "context is filling up" hint fires only once per fill cycle (it resets
+	// when usage falls back below the threshold, e.g. after /compact).
+	ctxNudged bool
+
 	// streamedText reports whether any assistant text delta arrived this turn,
 	// so EventDone only renders the final answer when nothing was streamed.
 	streamedText bool

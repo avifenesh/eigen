@@ -1926,3 +1926,44 @@ func TestSafeWhileRunning(t *testing.T) {
 		}
 	}
 }
+
+func TestRefreshCtxProactiveNudgeFiresOnce(t *testing.T) {
+	m := testModel(t)
+	m.a.MaxContextTokens = 10000
+	// Seed a session whose estimate is ~85% of the budget.
+	big := strings.Repeat("word ", 7000) // ~8750 tokens (>80% of 10k)
+	m.session = m.a.Resume([]llm.Message{{Role: llm.RoleUser, Text: big}})
+
+	m.refreshCtx()
+	if !m.ctxNudged {
+		t.Fatal("nudge flag should be set once over the threshold")
+	}
+	notes := 0
+	for _, b := range m.blocks {
+		if b.kind == blockNote && strings.Contains(b.body, "context ~") {
+			notes++
+		}
+	}
+	if notes != 1 {
+		t.Fatalf("want exactly 1 context nudge, got %d", notes)
+	}
+
+	// A second refresh while still over the threshold must NOT re-nudge.
+	m.refreshCtx()
+	notes = 0
+	for _, b := range m.blocks {
+		if b.kind == blockNote && strings.Contains(b.body, "context ~") {
+			notes++
+		}
+	}
+	if notes != 1 {
+		t.Fatalf("nudge should fire only once per fill cycle, got %d", notes)
+	}
+
+	// Falling back under the threshold re-arms it.
+	m.session = m.a.Resume([]llm.Message{{Role: llm.RoleUser, Text: "tiny"}})
+	m.refreshCtx()
+	if m.ctxNudged {
+		t.Fatal("nudge flag should re-arm when usage drops below the threshold")
+	}
+}

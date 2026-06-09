@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -559,4 +560,83 @@ func mustReg(t *testing.T) *tool.Registry {
 		t.Fatal(err)
 	}
 	return reg
+}
+
+// overflowOnceProvider returns a context-overflow error on its first call, then
+// a normal final answer — to verify error-driven compaction retries the step.
+type overflowOnceProvider struct {
+	calls   int
+	lastReq llm.Request
+}
+
+func (p *overflowOnceProvider) Name() string { return "overflow-once" }
+
+func (p *overflowOnceProvider) Complete(_ context.Context, req llm.Request) (*llm.Response, error) {
+	p.calls++
+	p.lastReq = req
+	if p.calls == 1 {
+		return nil, errors.New("prompt is too long: 300000 tokens > 200000 maximum")
+	}
+	return &llm.Response{Text: "done"}, nil
+}
+
+func TestErrorDrivenCompactionRetriesOnOverflow(t *testing.T) {
+	prov := &overflowOnceProvider{}
+	var notes []string
+	a := &Agent{
+		Provider:  prov,
+		Tools:     mustReg(t),
+		Perm:      PermAuto,
+		Compactor: &fakeCompactor{},
+		OnEvent: func(e Event) {
+			if e.Kind == EventNote {
+				notes = append(notes, e.Text)
+			}
+		},
+	}
+	// A multi-round history so there's something to fold on overflow.
+	var msgs []llm.Message
+	big := strings.Repeat("word ", 1000)
+	for i := 0; i < 8; i++ {
+		msgs = append(msgs,
+			llm.Message{Role: llm.RoleUser, Text: big},
+			llm.Message{Role: llm.RoleAssistant, Text: big},
+		)
+	}
+	s := a.Resume(msgs)
+	out, err := s.Send(context.Background(), "continue")
+	if err != nil {
+		t.Fatalf("expected recovery after overflow, got error: %v", err)
+	}
+	if out != "done" {
+		t.Fatalf("expected final answer 'done', got %q", out)
+	}
+	if prov.calls != 2 {
+		t.Fatalf("expected provider called twice (overflow then retry), got %d", prov.calls)
+	}
+	if len(notes) == 0 {
+		t.Fatal("expected an EventNote about compacting on overflow")
+	}
+}
+
+func TestErrorDrivenCompactionGivesUpWhenNothingToFold(t *testing.T) {
+	// A provider that always overflows; with a tiny history compaction can't
+	// shrink, so the loop must surface the error rather than spin forever.
+	prov := &alwaysOverflowProvider{}
+	a := &Agent{Provider: prov, Tools: mustReg(t), Perm: PermAuto, Compactor: &fakeCompactor{}}
+	s := a.NewSession()
+	_, err := s.Send(context.Background(), "hi")
+	if err == nil {
+		t.Fatal("expected the overflow error to surface when nothing can be folded")
+	}
+	if !llm.IsContextOverflow(err) {
+		t.Fatalf("expected a context-overflow error, got %v", err)
+	}
+}
+
+type alwaysOverflowProvider struct{}
+
+func (p *alwaysOverflowProvider) Name() string { return "always-overflow" }
+func (p *alwaysOverflowProvider) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
+	return nil, errors.New("prompt is too long")
 }
