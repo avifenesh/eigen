@@ -1,10 +1,19 @@
 # Research: Compaction & token-saving in coding-agent harnesses
 
 Reverse-engineered from the installed Claude Code 2.1.170 binary and the Codex
-binary (string + structure inspection — no `claude -p` quota burned), plus a
-read of eigen's own compaction code. Companion to `research-codex-memory.md`.
-Goal: learn the best harnesses' techniques, then build the worthwhile ones on
-top of eigen's existing machinery rather than redesigning.
+binary (string + structure inspection — no `claude -p` quota burned), the
+authoritative Anthropic web docs/essay (fetched via the `.md` doc endpoints),
+plus a read of eigen's own compaction code. Companion to
+`research-codex-memory.md`. Goal: learn the best harnesses' techniques, then
+build the worthwhile ones on top of eigen's existing machinery rather than
+redesigning.
+
+Primary web sources (all fetched this session):
+- Anthropic, "Effective context engineering for AI agents" (engineering blog, 2025-09-29)
+- Anthropic API docs: Context editing (`context-management-2025-06-27`)
+- Anthropic API docs: Compaction (`compact-2026-01-12`)
+- Anthropic API docs: Client-side SDK compaction (tool_runner)
+- Chroma "context rot" study (cited by the essay)
 
 ---
 
@@ -166,6 +175,112 @@ harness, and degrades safe. None requires a provider-specific API except the
 deliberately-skipped server-side context_management.
 
 ---
+
+## 5b. Web sources (authoritative) — cross-checked against the binaries
+
+Fetched the primary vendor materials (via the `.md` doc endpoints + the essay).
+These confirm the binary findings and pin down exact parameter names/defaults.
+
+### Anthropic — "Effective context engineering for AI agents" (2025-09-29)
+The *why*, and the canonical framework. Key claims, verbatim-sourced:
+- **Context rot**: "as the number of tokens in the context window increases, the
+  model's ability to accurately recall information from that context decreases"
+  (cites Chroma's context-rot study). Emerges across *all* models.
+- **Attention budget**: transformers have n² pairwise token relationships; long
+  context stretches attention thin. Context is "a finite resource with
+  diminishing marginal returns."
+- **The guiding principle** (worth quoting in eigen's own compaction prompt):
+  *"find the smallest possible set of high-signal tokens that maximize the
+  likelihood of your desired outcome."*
+- **Tools**: bloated tool sets are a top failure mode — "if a human engineer
+  can't definitively say which tool should be used, an AI agent can't be
+  expected to do better." Tools must be token-efficient.
+- **Just-in-time retrieval**: keep lightweight identifiers (file paths, queries,
+  links) and load data at runtime, vs dumping everything up front. Claude Code
+  uses a *hybrid*: CLAUDE.md up front + glob/grep just-in-time. (eigen already
+  does this — read/grep/glob, not a pre-indexed dump. ✓)
+- **Three long-horizon techniques**, in order of preference:
+  1. **Compaction** — summarize near the limit, reinitialize. Claude Code keeps
+     "the compressed context **plus the five most recently accessed files**."
+     Tuning recipe: *maximize recall first* (capture everything relevant), *then*
+     improve precision. "The art … lies in the selection of what to keep vs
+     discard."
+  2. **Structured note-taking** (agentic memory) — NOTES.md / to-do list
+     persisted outside context, pulled back later. (eigen has the memory tool. ✓)
+  3. **Sub-agent architectures** — clean context per sub-agent; each returns a
+     condensed 1-2k-token summary. (eigen has the `task` tool. ✓)
+- **Tool-result clearing is named the "safest, lightest-touch form of
+  compaction."** ← direct endorsement of recommendation #1.
+
+### Anthropic — Context editing API (beta `context-management-2025-06-27`)
+Server-side, applied before the prompt reaches the model; the client keeps the
+full history. Two strategies (exact params, for our client-side port):
+- **`clear_tool_uses_20250919`** (tool-result clearing):
+  - `trigger` default **100k input tokens** (or `tool_uses`)
+  - `keep` default **3** most-recent tool-use/result pairs
+  - `clear_at_least` — min tokens to clear so it's *worth* breaking the cache
+  - `exclude_tools` — never clear these (e.g. a pinned read)
+  - `clear_tool_inputs` default **false** → keeps the tool *call*, clears only
+    the *result*; replaces each with placeholder text. ← exactly eigen rec #1.
+- **`clear_thinking_20251015`** (thinking-block clearing): `keep` =
+  `{thinking_turns: N}` or `"all"`. Kept thinking ⇒ cache preserved; cleared ⇒
+  cache invalidated at the clear point. Opus 4.5+/Sonnet 4.6+ keep all by default.
+- **Cache note**: clearing invalidates the cached prefix → `clear_at_least`
+  exists precisely so you clear enough to make the re-cache worthwhile. Confirms
+  eigen rec #4 (fixed prefix) matters.
+- **Pairs with the memory tool**: when nearing the threshold the model gets an
+  automatic warning to persist anything important to memory before it's cleared.
+
+### Anthropic — Compaction API (beta `compact-2026-01-12`)
+A dedicated newer server-side compaction (distinct from context-editing):
+- Emits a `compaction` block; on later requests **all blocks before it are
+  dropped** automatically.
+- `trigger` default **150k** input tokens (min 50k).
+- `pause_after_compaction` → returns `stop_reason: "compaction"` so you can
+  splice verbatim-preserved recent turns *after* the summary (their example
+  keeps the last 3 messages). ← this is the clean way to do eigen rec #3+#4.
+- `instructions` replaces the summary prompt entirely.
+- **Gotcha**: with tools defined, the model sometimes *calls a tool* instead of
+  summarizing → `compaction` block with `content: null`; fix by instructing
+  "respond with text only, do not call tools." (eigen's summarizer renders to
+  plain text and doesn't expose tools, so we already dodge this. ✓)
+- **Token-budget enforcement** pattern: count compactions × trigger to estimate
+  cumulative spend and inject a "wrap up now" message past a budget. ← maps to
+  eigen's Codex-style per-goal budget idea.
+- The **real default compaction prompt** (shorter than eigen's): *"You have
+  written a partial transcript for the initial task above. Please write a
+  summary … to provide continuity so you can continue … Write down anything that
+  would be helpful, including the state, next steps, learnings etc. Wrap your
+  summary in `<summary></summary>`."* eigen's 6-section schema is *richer* — keep
+  it (the SDK's client-side default uses the same 5-section structure eigen has).
+
+### Anthropic — Client-side SDK compaction
+Anthropic **explicitly recommends server-side over client-side**, but the
+client-side design mirrors eigen's exactly and validates two choices:
+- Threshold = `input + cache_creation + cache_read + output` tokens.
+- Summary replaces the whole history, wrapped in `<summary>` tags, 5-section
+  structure (Task Overview / Current State / Important Discoveries incl. *failed
+  approaches* / Next Steps / Context to Preserve). eigen's prompt already has
+  all of this.
+- **A cheaper model can generate summaries** (`model: claude-haiku-4-5`). ←
+  eigen should point `Compactor` at `smallProvider()` (haiku), not the main
+  model. New, concrete, cheap win.
+- Documented **footgun**: server-side tools inflate `cache_read_input_tokens`,
+  triggering compaction prematurely → use token-counting, not the naive sum.
+
+### Net effect on the plan
+Nothing in the web sources contradicts §5; they *strengthen* it and add specifics:
+- Rec #1 (tool-result shedding) is Anthropic's own "safest, lightest-touch"
+  lever — build it first, with their param shape: `keep=3`, a `trigger`
+  threshold, an `exclude_tools`-style pin, and stub text in place of results.
+- Rec #4 (fixed prefix): cache the system prompt behind its own breakpoint
+  (eigen already sets cache points — verify the summary write doesn't invalidate
+  the system prefix).
+- **New cheap win**: summarize with the small/haiku provider, not the main model.
+- **New**: keep "the N most-recently-accessed files" verbatim through compaction
+  (Claude Code keeps 5) — a coding-specific recall booster.
+- Keep eigen's richer 6-section summary schema; optionally borrow the explicit
+  "do not call tools / text only" guard if we ever let the summarizer see tools.
 
 ## 6. Cautions (from the sources)
 
