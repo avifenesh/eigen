@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/config"
@@ -66,11 +67,21 @@ func runDaemon(cfg config.Config) {
 	fmt.Fprintf(os.Stderr, "eigen daemon listening on %s (pid %d)\n", daemon.SocketPath(), os.Getpid())
 
 	// Graceful shutdown on SIGINT/SIGTERM: interrupt every session and close.
+	// Resource teardown (MCP/LSP subprocesses) can hang, so a watchdog forces
+	// exit — a daemon that hangs on shutdown is an orphan with a deleted PID
+	// file, unfindable by `eigen daemon stop`.
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigs
 		fmt.Fprintln(os.Stderr, "eigen daemon shutting down")
+		go func() {
+			time.Sleep(5 * time.Second)
+			fmt.Fprintln(os.Stderr, "eigen daemon: shutdown timed out, forcing exit")
+			daemon.RemovePID(daemon.PIDPath())
+			_ = os.Remove(daemon.SocketPath())
+			os.Exit(1)
+		}()
 		for _, in := range host.List() {
 			host.Remove(in.ID) // interrupt turns + release resources
 		}

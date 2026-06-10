@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/skill"
 )
 
@@ -223,5 +224,52 @@ func TestFuzzyScore(t *testing.T) {
 	b, _ := fuzzyScore("go: providers", "sess")
 	if a <= b {
 		t.Errorf("contiguous word match should score higher: %d vs %d", a, b)
+	}
+}
+
+func TestLivePageNoDaemon(t *testing.T) {
+	m := New(testData())
+	m.width, m.height = 100, 30
+	m.active = PageLive
+	v := m.renderPage(80, 28)
+	if !strings.Contains(v, "no daemon running") {
+		t.Fatalf("live page without a daemon should explain, got %q", v)
+	}
+}
+
+func TestLiveRailGlyphs(t *testing.T) {
+	if !strings.Contains(liveGlyph(daemon.StatusWorking), "●") {
+		t.Error("working should be a filled dot")
+	}
+	if !strings.Contains(liveGlyph(daemon.StatusIdle), "○") {
+		t.Error("idle should be a hollow dot")
+	}
+	if !strings.Contains(liveGlyph(daemon.StatusApproval), "◆") {
+		t.Error("approval should be a diamond")
+	}
+}
+
+func TestLiveLabelFallsBackToDirThenID(t *testing.T) {
+	if got := liveLabel(daemon.SessionInfo{Title: "My Task", Dir: "/x/y"}); got != "My Task" {
+		t.Errorf("title preferred: %q", got)
+	}
+	if got := liveLabel(daemon.SessionInfo{Dir: "/home/u/proj"}); got != "proj" {
+		t.Errorf("dir base fallback: %q", got)
+	}
+	if got := liveLabel(daemon.SessionInfo{ID: "s7"}); got != "s7" {
+		t.Errorf("id fallback: %q", got)
+	}
+}
+
+func TestLivePageAttachResult(t *testing.T) {
+	d := testData()
+	d.Live = []daemon.SessionInfo{{ID: "s1", Title: "t", Dir: "/p", Status: daemon.StatusIdle}}
+	// Note: no real daemon client; enter still produces the attach result.
+	m := New(d)
+	m.width, m.height = 100, 30
+	m.active = PageLive
+	m.Update(key("enter"))
+	if m.result.Action != ActionAttach || m.result.SessionID != "s1" {
+		t.Fatalf("enter on a live session should request attach, got %+v", m.result)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/avifenesh/eigen/internal/config"
+	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/memory"
 	"github.com/avifenesh/eigen/internal/session"
@@ -41,6 +42,21 @@ type Data struct {
 	GlobalMem *memory.Store
 	Store     *session.Store
 	Titler    session.Titler // small-model background titler (nil = none)
+
+	// Daemon is the connection to a running eigen daemon (nil when none):
+	// its live sessions appear in the rail and can be attached as views.
+	Daemon *daemon.Client
+	Live   []daemon.SessionInfo // last-polled live sessions
+}
+
+// refreshLive re-polls the daemon's session list (no-op without a daemon).
+func (d *Data) refreshLive() {
+	if d.Daemon == nil {
+		return
+	}
+	if infos, err := d.Daemon.List(); err == nil {
+		d.Live = infos
+	}
 }
 
 // reloadSessions re-reads the session rows + projects from the store (titles
@@ -95,6 +111,11 @@ func Load() *Data {
 
 	d.Projects = groupProjects(d.Sessions)
 	d.Skills = skill.Discover(skillDirs()...)
+	// Connect to a running daemon (optional — the app works without one).
+	if c, err := daemon.Dial(daemon.SocketPath()); err == nil {
+		d.Daemon = c
+		d.refreshLive()
+	}
 	if gm, err := memory.OpenGlobal(); err == nil {
 		d.GlobalMem = gm
 	}

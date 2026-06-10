@@ -3,11 +3,14 @@ package app
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/avifenesh/eigen/internal/daemon"
 )
 
 // Page identifies one app surface.
@@ -15,6 +18,7 @@ type Page int
 
 const (
 	PageHome Page = iota
+	PageLive
 	PageProjects
 	PageSessions
 	PageConfig
@@ -31,6 +35,7 @@ var pages = []struct {
 	key  string // quick-jump key (from home / with g prefix)
 }{
 	{PageHome, "home", "h"},
+	{PageLive, "live", "l"},
 	{PageProjects, "projects", "p"},
 	{PageSessions, "sessions", "s"},
 	{PageConfig, "config", "c"},
@@ -47,6 +52,7 @@ const (
 	ActionQuit     Action = iota
 	ActionOpenChat        // open a new chat (CWD = Result.Dir)
 	ActionResume          // resume Result.SessionID
+	ActionAttach          // attach a view to daemon session Result.SessionID
 )
 
 // Result returns the user's exit intent to main.
@@ -65,6 +71,7 @@ type Model struct {
 
 	// page state
 	home      homeState
+	live      liveState
 	projects  projectsState
 	sessions  sessionsState
 	config    configState
@@ -95,11 +102,15 @@ func New(data *Data) *Model {
 func (m *Model) Init() tea.Cmd {
 	// Kick off background titling of untitled sessions with the small model,
 	// and poll to refresh the view as titles land.
+	var cmds []tea.Cmd
 	if m.data.Store != nil && m.data.Titler != nil {
 		m.data.Store.TitleUntitled(context.Background(), m.data.Titler, 60)
-		return titleTick()
+		cmds = append(cmds, titleTick())
 	}
-	return nil
+	if m.data.Daemon != nil {
+		cmds = append(cmds, livePoll())
+	}
+	return tea.Batch(cmds...)
 }
 
 // titleRefreshMsg triggers a session-row reload (titles filled in the store).
@@ -114,6 +125,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
+	case livePollMsg:
+		m.data.refreshLive()
+		return m, livePoll()
 	case titleRefreshMsg:
 		m.data.reloadSessions()
 		m.titledPolls++
@@ -195,6 +209,8 @@ func (m *Model) updatePage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.active {
 	case PageHome:
 		return m.home.update(m, msg)
+	case PageLive:
+		return m.live.update(m, msg)
 	case PageProjects:
 		return m.projects.update(m, msg)
 	case PageSessions:
@@ -269,6 +285,19 @@ func (m *Model) renderRail() string {
 		}
 		b.WriteString(marker + style.Render(p.name) + "\n")
 	}
+	// Live daemon sessions: the rail shows each with a status glyph so
+	// concurrent work is visible at a glance (attach from the live page).
+	if len(m.data.Live) > 0 {
+		b.WriteString(sFaint.Render(" ────────") + "\n")
+		b.WriteString(sFaint.Render(" live") + "\n")
+		for i, in := range m.data.Live {
+			if i >= 6 {
+				b.WriteString(sFaint.Render(fmt.Sprintf("  +%d more", len(m.data.Live)-i)) + "\n")
+				break
+			}
+			b.WriteString("  " + liveGlyph(in.Status) + " " + sRailIdle.Render(liveLabel(in)) + "\n")
+		}
+	}
 	lines := strings.Split(strings.TrimRight(b.String(), "\n"), "\n")
 	w := 0
 	for _, l := range lines {
@@ -283,10 +312,38 @@ func (m *Model) renderRail() string {
 	return col.Render(strings.Join(lines, "\n"))
 }
 
+// liveGlyph maps a daemon session status to a small colored indicator.
+func liveGlyph(s daemon.Status) string {
+	switch s {
+	case daemon.StatusWorking:
+		return sOk.Render("●") // green: actively working
+	case daemon.StatusApproval:
+		return sWarn.Render("◆") // amber: blocked on an approval
+	case daemon.StatusError:
+		return sErr.Render("✗")
+	default:
+		return sFaint.Render("○") // idle
+	}
+}
+
+// liveLabel is the short rail label for a live session.
+func liveLabel(in daemon.SessionInfo) string {
+	name := in.Title
+	if name == "" {
+		name = filepath.Base(in.Dir)
+	}
+	if name == "" || name == "." || name == "/" {
+		name = in.ID
+	}
+	return truncate(name, 14)
+}
+
 func (m *Model) renderPage(w, h int) string {
 	switch m.active {
 	case PageHome:
 		return m.home.view(m, w, h)
+	case PageLive:
+		return m.live.view(m, w, h)
 	case PageProjects:
 		return m.projects.view(m, w, h)
 	case PageSessions:

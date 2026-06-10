@@ -204,6 +204,11 @@ func main() {
 			if res.Dir != "" {
 				_ = os.Chdir(res.Dir)
 			}
+		case app.ActionAttach:
+			// Attach a view to a daemon session: the agent runs in the daemon;
+			// this window only mirrors + sends input.
+			runAttach(res.SessionID, cfg)
+			return
 		}
 	}
 
