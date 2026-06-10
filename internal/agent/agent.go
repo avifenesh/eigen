@@ -299,16 +299,19 @@ func (s *Session) Compact(ctx context.Context, targetTokens int) (before, after 
 	if before == 0 {
 		return 0, 0, nil
 	}
-	budget := targetTokens
-	if budget <= 0 {
-		budget = a.maxContextTokens()
+	var target int
+	if targetTokens > 0 {
+		// Explicit target (e.g. manual /compact): use it directly.
+		target = targetTokens
+	} else {
+		// Auto: aim at a fraction of the budget so compaction meaningfully
+		// shrinks the context even when under the limit.
+		budget := a.maxContextTokens()
+		if budget <= 0 {
+			budget = 120_000
+		}
+		target = budget / 2
 	}
-	if budget <= 0 {
-		budget = 120_000
-	}
-	// Force a summarization even if we're under budget: aim the compactor at a
-	// fraction of the budget so /compact meaningfully shrinks the context.
-	target := budget / 2
 	compacted, cerr := llm.CompactWith(ctx, a.compactor(), s.msgs, target)
 	if cerr != nil {
 		return before, before, cerr

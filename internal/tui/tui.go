@@ -405,11 +405,18 @@ func sb(s string) string { return s }
 
 // compactCmd summarizes the conversation on demand (the /compact command),
 // running the summarizer off the UI goroutine and reporting via compactDoneMsg.
+// An explicit /compact should shrink MEANINGFULLY regardless of how far the
+// conversation is from the budget (a 262k convo under a 500k ceiling should
+// still compact), so it targets a fraction of the CURRENT size, not the budget.
 func (m *model) compactCmd() tea.Cmd {
 	beforeTok := m.session.Tokens()
+	target := beforeTok * 45 / 100 // aim to roughly halve the live context
+	if target < 8000 {
+		target = 8000 // don't try to shrink an already-tiny conversation
+	}
 	sess := m.session
 	return func() tea.Msg {
-		before, after, err := sess.Compact(context.Background(), 0)
+		before, after, err := sess.Compact(context.Background(), target)
 		return compactDoneMsg{before: before, after: after, beforeTok: beforeTok, afterTok: sess.Tokens(), err: err}
 	}
 }
@@ -1032,7 +1039,10 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		m.ti.Focus()
 		if msg.err != nil {
 			m.push(&block{kind: blockNote, isErr: true, body: sb("compact failed: " + msg.err.Error())})
-		} else if msg.after >= msg.before {
+		} else if msg.afterTok >= msg.beforeTok {
+			// Judge by TOKENS, not message count: compaction can shed tool-
+			// result payloads (shrinking tokens) without removing messages, so
+			// a count-based check wrongly reports "nothing to compact".
 			m.note("nothing to compact (conversation already small)")
 		} else {
 			// Re-render the transcript from the compacted messages so the UI

@@ -713,3 +713,32 @@ func TestNonStreamingEmitsInBetweenCommentary(t *testing.T) {
 		t.Fatalf("in-between commentary not emitted before tool start: kinds=%v", kinds)
 	}
 }
+
+func TestCompactExplicitTargetShrinksTokensViaShedding(t *testing.T) {
+	// A conversation full of large TOOL RESULTS, under the message-count radar:
+	// compaction sheds the old tool-result payloads (shrinking TOKENS) without
+	// necessarily removing messages. The bug was reporting "nothing to compact"
+	// because only the message COUNT was checked.
+	reg, _ := tool.NewRegistry()
+	a := &Agent{Provider: &mockProvider{}, Tools: reg, Perm: PermAuto}
+	big := strings.Repeat("x ", 3000) // ~3k tokens of tool output
+	var msgs []llm.Message
+	for i := 0; i < 12; i++ {
+		msgs = append(msgs,
+			llm.Message{Role: llm.RoleUser, Text: "go"},
+			llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "c", Name: "bash"}}},
+			llm.Message{Role: llm.RoleTool, ToolCallID: "c", Text: big},
+		)
+	}
+	s := a.Resume(msgs)
+	beforeTok := s.Tokens()
+	// Explicit aggressive target (like manual /compact halving the live size).
+	_, _, err := s.Compact(context.Background(), beforeTok*45/100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterTok := s.Tokens()
+	if afterTok >= beforeTok {
+		t.Fatalf("explicit compact should shrink tokens: %d → %d", beforeTok, afterTok)
+	}
+}

@@ -996,9 +996,28 @@ func TestCompactCommandRunsAndReports(t *testing.T) {
 
 func TestCompactNoopNote(t *testing.T) {
 	m := testModel(t)
-	m.Update(compactDoneMsg{before: 2, after: 2})
+	// Same tokens before/after → genuinely nothing compacted.
+	m.Update(compactDoneMsg{before: 2, after: 2, beforeTok: 5000, afterTok: 5000})
 	if !strings.Contains(m.blocks[len(m.blocks)-1].body, "nothing to compact") {
 		t.Fatalf("no-op compact should note nothing to compact, got %q", m.blocks[len(m.blocks)-1].body)
+	}
+}
+
+func TestCompactReportsTokenShrinkEvenWithSameMessageCount(t *testing.T) {
+	m := testModel(t)
+	before := len(m.blocks)
+	// Tool-result shedding shrinks TOKENS without removing messages: same count
+	// (5→5) but fewer tokens (200k→120k) must report success, not "nothing".
+	m.Update(compactDoneMsg{before: 5, after: 5, beforeTok: 200000, afterTok: 120000})
+	if len(m.blocks) <= before {
+		t.Fatal("token-shrinking compact should push a result note")
+	}
+	last := m.blocks[len(m.blocks)-1].body
+	if strings.Contains(last, "nothing to compact") {
+		t.Fatalf("token shrink with equal message count must NOT report no-op, got %q", last)
+	}
+	if !strings.Contains(last, "compacted") {
+		t.Fatalf("should report the compaction, got %q", last)
 	}
 }
 
