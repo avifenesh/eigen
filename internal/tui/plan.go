@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/llm"
@@ -101,6 +102,9 @@ func (m *model) statusBarParts() []statusSeg {
 	}
 	if ind := m.ctxIndicator(); ind != "" {
 		segs = append(segs, statusSeg{ind, m.ctxStyle()})
+	}
+	if m.lastTokRate > 0 {
+		segs = append(segs, statusSeg{fmt.Sprintf("%.0f tok/s", m.lastTokRate), styleReason})
 	}
 	if m.readAloud {
 		segs = append(segs, statusSeg{"read-aloud", styleStatus})
@@ -263,4 +267,30 @@ func (m *model) planView() string {
 		b.WriteString(line + "\n")
 	}
 	return b.String()
+}
+
+// finishTurnStats records the completed turn's output tokens and rate for the
+// status bar. Estimate: chars/4, the same heuristic as the context budget.
+func (m *model) finishTurnStats() {
+	if m.turnStarted.IsZero() || m.turnOutChars == 0 {
+		return
+	}
+	secs := time.Since(m.turnStarted).Seconds()
+	m.lastOutToks = m.turnOutChars / 4
+	if secs > 0 {
+		m.lastTokRate = float64(m.lastOutToks) / secs
+	}
+}
+
+// liveTokRate returns the in-flight output rate for the running status line
+// ("" until enough has streamed to be meaningful).
+func (m *model) liveTokRate() string {
+	if m.turnStarted.IsZero() || m.turnOutChars < 200 {
+		return ""
+	}
+	secs := time.Since(m.turnStarted).Seconds()
+	if secs < 1 {
+		return ""
+	}
+	return fmt.Sprintf(" · %.0f tok/s", float64(m.turnOutChars/4)/secs)
 }

@@ -15,6 +15,7 @@ func (m *model) renderEvent(e agent.Event) {
 	switch e.Kind {
 	case agent.EventTextDelta:
 		m.streamedText = true
+		m.turnOutChars += len(e.Text)
 		// Real output started: collapse the live thinking block(s) for this turn.
 		m.collapseThinking()
 		if b := m.lastOpen(blockText); b != nil && b.role == "assistant" {
@@ -24,6 +25,7 @@ func (m *model) renderEvent(e agent.Event) {
 			m.text("assistant", e.Text)
 		}
 	case agent.EventReasoningDelta:
+		m.turnOutChars += len(e.Text)
 		// Stream reasoning into a live "thinking" block, shown expanded so the
 		// user sees the thoughts as they arrive; it is collapsed once the turn
 		// produces text or a tool call (collapseThinking).
@@ -122,7 +124,7 @@ func (m *model) View() string {
 		// Status/spinner on its own line, with the input below so the user can
 		// type a message to queue (enter) or interrupt (esc) while it runs.
 		hint := dim("   enter queue · esc interrupt · alt+↑/↓ select · tab expand")
-		bottom = m.sp.View() + " " + m.status + m.queuedHint() + hint + "\n" + m.ti.View()
+		bottom = m.sp.View() + " " + m.status + dim(m.liveTokRate()) + m.queuedHint() + hint + "\n" + m.ti.View()
 	default:
 		bottom = m.compMenuView() + m.ti.View()
 	}

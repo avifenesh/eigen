@@ -187,7 +187,13 @@ type model struct {
 	// ping: attention signals (terminal bell + optional notifier command).
 	notifyCmd   string    // external notifier (config notify_cmd / EIGEN_NOTIFY_CMD)
 	turnStarted time.Time // when the running turn began (zero when idle)
-	idleGen     int       // bumped on each turn; stale idle ticks are ignored
+
+	// throughput: streamed output chars this turn (text + reasoning deltas)
+	// and the last completed turn's tokens-out + tok/s for the status bar.
+	turnOutChars int
+	lastOutToks  int
+	lastTokRate  float64
+	idleGen      int // bumped on each turn; stale idle ticks are ignored
 
 	// skills are the discovered SKILL.md skills, for /skills browse + preview.
 	skills *skill.Set
@@ -434,6 +440,7 @@ func (m *model) submit(task string) tea.Cmd {
 	m.state = stRunning
 	m.status = "thinking"
 	m.turnStarted = time.Now()
+	m.turnOutChars = 0
 	m.comp = completion{kind: compNone}
 	m.streamedText = false
 	m.idleGen++ // invalidate any pending idle-dream timer
@@ -460,6 +467,7 @@ func (m *model) resend() tea.Cmd {
 	m.state = stRunning
 	m.status = "retrying on " + m.modelID
 	m.turnStarted = time.Now()
+	m.turnOutChars = 0
 	m.streamedText = false
 	m.idleGen++
 	m.relayout()
@@ -851,6 +859,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			}
 		}
 		m.pingOnTurnDone(msg.err)
+		m.finishTurnStats()
 		m.turnStarted = time.Time{}
 		m.cancel = nil
 		m.state = stInput

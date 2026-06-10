@@ -2041,3 +2041,53 @@ func TestPingOnTurnDoneOnlyAfterLongTurns(t *testing.T) {
 	m.turnStarted = time.Time{}
 	m.pingOnTurnDone(nil) // must not panic
 }
+
+func TestTurnStatsTrackThroughput(t *testing.T) {
+	m := testModel(t)
+	m.turnStarted = time.Now().Add(-10 * time.Second)
+	m.turnOutChars = 4000 // ~1000 tokens over 10s → ~100 tok/s
+	m.finishTurnStats()
+	if m.lastOutToks != 1000 {
+		t.Fatalf("lastOutToks = %d, want 1000", m.lastOutToks)
+	}
+	if m.lastTokRate < 80 || m.lastTokRate > 120 {
+		t.Fatalf("lastTokRate = %.1f, want ~100", m.lastTokRate)
+	}
+	// Status bar should include the rate.
+	found := false
+	for _, seg := range m.statusBarParts() {
+		if strings.Contains(seg.text, "tok/s") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("status bar should show tok/s after a turn")
+	}
+	// No output: no stats update.
+	m2 := testModel(t)
+	m2.turnStarted = time.Now()
+	m2.turnOutChars = 0
+	m2.finishTurnStats()
+	if m2.lastTokRate != 0 {
+		t.Fatal("no output should record no rate")
+	}
+}
+
+func TestLiveTokRateGating(t *testing.T) {
+	m := testModel(t)
+	// Idle: empty.
+	if m.liveTokRate() != "" {
+		t.Fatal("idle should have no live rate")
+	}
+	// Too little streamed: empty.
+	m.turnStarted = time.Now().Add(-5 * time.Second)
+	m.turnOutChars = 50
+	if m.liveTokRate() != "" {
+		t.Fatal("tiny output should have no live rate")
+	}
+	// Enough: shows.
+	m.turnOutChars = 4000
+	if got := m.liveTokRate(); !strings.Contains(got, "tok/s") {
+		t.Fatalf("live rate should render, got %q", got)
+	}
+}
