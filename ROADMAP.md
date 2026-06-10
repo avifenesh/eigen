@@ -80,8 +80,10 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
    compaction summaries via `CompactorChain`)*. Remaining ideas: retrieval
    instead of re-paste, prompt-cache-aware prefixing, per-turn cheap-model
    routing (→ auto-router).
-2. **Diff view of edits** — *(partially shipped: edit/multiedit LCS diff blocks; revisit for a richer/side-by-side view)*
-3. **"Goal" feature** — a persistent north-star goal the agent tracks across turns.
+2. **Diff view of edits** — *(shipped a0c1fe2: intra-line change highlighting,
+   context folding, ±N −M header stats, apply_patch/write diff rendering)*
+3. **"Goal" feature** — *(shipped 3d0cf4b: /goal set/show/clear, injected into
+   the system prompt every step, survives compaction, persisted in session meta)*
 4. **"Loop" feature** — agent iterates autonomously until a condition/goal is met.
 5. **Automation** — scheduled / triggered runs (cron-like, on-event).
 6. **Background scan for wide-reaching actions** — proactively flag risky/broad
@@ -96,9 +98,11 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
 11. **Hooks** — pre/post tool, pre/post turn, pre/post compaction user hooks.
 12. **Sub-agents** — *(partially shipped: depth-bounded `task` tool; expand: named roles, parallelism)*.
 13. **Ultraplan** — dozens of in-depth sub-agents driven by one big plan ahead.
-14. **Ping** — liveness/heartbeat / notify-when-done.
+14. **Ping** — *(shipped cf8d2de: terminal bell + optional notify_cmd on
+    approval-needed and long-turn-finished)*
 15. **AGENTS.md integration** — read/honor repo `AGENTS.md` *(v2 nice-to-have)*.
-16. **tok/s in & tok/s out measurement** — throughput metrics per turn.
+16. **tok/s in & tok/s out measurement** — *(shipped 84f13b1: output tok/s,
+    live + last-turn in status bar; input-side + real usage fields still open)*
 17. **Observability for long-term learning** — structured logs of errors, tool
     uses, outcomes; feed back into memory/dreaming.
 18. **`/` config for most things** — slash-driven config that doesn't require
