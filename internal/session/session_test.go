@@ -242,7 +242,7 @@ func TestDiscoverPeeksTitleAndCount(t *testing.T) {
 	if m.Messages != 2 {
 		t.Errorf("peeked messages = %d", m.Messages)
 	}
-	if !m.Peeked {
+	if m.PeekVer == 0 {
 		t.Error("meta should be marked peeked")
 	}
 

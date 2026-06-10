@@ -71,19 +71,19 @@ var routerScores = map[string]RouterScore{
 	"us.anthropic.claude-3-5-sonnet": {Tier: TierSimpleMed, Rank: 1, Speed: 74},
 
 	// Tier 1 — simple (cheap/fast; grok/composer/glm/haiku/local).
-	"us.anthropic.claude-haiku-4-5": {Tier: TierSimple, Speed: 92},
-	"local":                         {Tier: TierSimple, Speed: 60},
-	"grok-build":                    {Tier: TierSimple, Speed: 78},
-	"grok-composer-2.5-fast":        {Tier: TierSimple, Speed: 94},
-	"grok-4":                        {Tier: TierSimple, Speed: 62},
-	"grok-code-fast-1":              {Tier: TierSimple, Speed: 92},
-	"glm-5.1":                       {Tier: TierSimple, Speed: 76},
-	"glm-5":                         {Tier: TierSimple, Speed: 76},
-	"glm-5-turbo":                   {Tier: TierSimple, Speed: 90},
-	"glm-4.7":                       {Tier: TierSimple, Speed: 78},
-	"glm-4.6":                       {Tier: TierSimple, Speed: 80},
-	"glm-4.5":                       {Tier: TierSimple, Speed: 80},
-	"glm-4.5-air":                   {Tier: TierSimple, Speed: 88},
+	"us.anthropic.claude-haiku-4-5-20251001-v1:0": {Tier: TierSimple, Speed: 92},
+	"local":                  {Tier: TierSimple, Speed: 60},
+	"grok-build":             {Tier: TierSimple, Speed: 78},
+	"grok-composer-2.5-fast": {Tier: TierSimple, Speed: 94},
+	"grok-4":                 {Tier: TierSimple, Speed: 62},
+	"grok-code-fast-1":       {Tier: TierSimple, Speed: 92},
+	"glm-5.1":                {Tier: TierSimple, Speed: 76},
+	"glm-5":                  {Tier: TierSimple, Speed: 76},
+	"glm-5-turbo":            {Tier: TierSimple, Speed: 90},
+	"glm-4.7":                {Tier: TierSimple, Speed: 78},
+	"glm-4.6":                {Tier: TierSimple, Speed: 80},
+	"glm-4.5":                {Tier: TierSimple, Speed: 80},
+	"glm-4.5-air":            {Tier: TierSimple, Speed: 88},
 }
 
 // scoreFor returns a model's router score, or a neutral unknown profile. An

@@ -74,7 +74,7 @@ var Catalog = []ModelInfo{
 	{ID: "us.anthropic.claude-3-5-sonnet", Provider: "converse", ContextWindow: 200000, Cache: true, Vision: true},
 	// Haiku 4.5: the small/fast/cheap model eigen uses for background chores
 	// (session titling, dreaming, skill vulnerability scans).
-	{ID: "us.anthropic.claude-haiku-4-5", Provider: "converse", ContextWindow: 200000, Cache: true, Vision: true},
+	{ID: "us.anthropic.claude-haiku-4-5-20251001-v1:0", Provider: "converse", ContextWindow: 200000, Cache: true, Vision: true},
 
 	// Native Anthropic API (api.anthropic.com), authenticated with a Claude
 	// Code OAuth login (~/.claude/.credentials.json) or ANTHROPIC_API_KEY.

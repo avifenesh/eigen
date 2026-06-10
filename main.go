@@ -15,6 +15,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -161,7 +163,9 @@ func main() {
 	// --resume/-c all bypass it.
 	appInteractive := isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd())
 	if task == "" && *resumeFile == "" && !*printMode && appInteractive && !startedInDir {
-		res, err := app.Run(app.Load())
+		appData := app.Load()
+		appData.Titler = session.ProviderTitler{P: titleProvider(nil)}
+		res, err := app.Run(appData)
 		if err != nil {
 			fail(err)
 		}
@@ -715,17 +719,43 @@ func providerContextDefault(provider string) int {
 // titling, dreaming, skill vulnerability scans): a local llama if configured
 // (free), else Haiku on the same Bedrock account, else the main provider.
 func smallProvider(main llm.Provider) llm.Provider {
-	if os.Getenv("EIGEN_LLAMA_BASE_URL") != "" {
+	// Prefer a local llama endpoint ONLY when it is actually reachable — a
+	// configured-but-dead local server must not silently swallow every small-
+	// model job (titling, dream, skill-scan, compaction). Health-check first.
+	if base := os.Getenv("EIGEN_LLAMA_BASE_URL"); base != "" && llamaReachable(base) {
 		if lp, err := llm.New("llama", os.Getenv("EIGEN_TITLE_MODEL")); err == nil {
 			return lp
 		}
 	}
 	// Prefer an explicit small model, else Haiku on converse (Bedrock).
-	smallModel := firstNonEmpty(os.Getenv("EIGEN_SMALL_MODEL"), "us.anthropic.claude-haiku-4-5")
+	smallModel := firstNonEmpty(os.Getenv("EIGEN_SMALL_MODEL"), "us.anthropic.claude-haiku-4-5-20251001-v1:0")
 	if hp, err := llm.New("converse", smallModel); err == nil {
 		return hp
 	}
 	return main
+}
+
+// llamaReachable does a fast TCP dial to the llama endpoint's host:port, so a
+// configured-but-down local model is skipped instead of failing every job.
+func llamaReachable(base string) bool {
+	u, err := url.Parse(base)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	host := u.Host
+	if u.Port() == "" {
+		if u.Scheme == "https" {
+			host += ":443"
+		} else {
+			host += ":80"
+		}
+	}
+	conn, err := net.DialTimeout("tcp", host, 400*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
 }
 
 // titleProvider is retained as an alias for smallProvider (session titling uses

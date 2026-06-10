@@ -26,10 +26,10 @@ type Meta struct {
 	Title       string            `json:"title"`
 	Cwd         string            `json:"cwd,omitempty"` // working dir (project grouping)
 	Messages    int               `json:"messages"`
-	Updated     int64             `json:"updated"`     // for date ordering
-	Ingested    bool              `json:"ingested"`    // copied into our JSONL
-	Peeked      bool              `json:"peeked"`      // cheap preview (title/cwd/count) extracted
-	Fingerprint string            `json:"fingerprint"` // for dedupe (set on ingest)
+	Updated     int64             `json:"updated"`            // for date ordering
+	Ingested    bool              `json:"ingested"`           // copied into our JSONL
+	PeekVer     int               `json:"peek_ver,omitempty"` // peekVersion when the cheap preview was last derived
+	Fingerprint string            `json:"fingerprint"`        // for dedupe (set on ingest)
 }
 
 // Store is the on-disk session index + ingested copies under ~/.eigen.
@@ -105,6 +105,17 @@ func (s *Store) List() []*Meta {
 	return deduped
 }
 
+// peekVersion is bumped whenever the cheap-preview logic (title/cwd/turn-count
+// extraction in transcript.Peek) changes, so existing indexed sessions are
+// re-peeked once on the next discover. v2: turn counting (user+assistant
+// messages) replaced raw line counting.
+const peekVersion = 2
+
+// peekBudget bounds how many sessions are previewed per discover, so a large
+// backlog spreads its one-time scan over a few launches instead of a long
+// startup freeze. Recent sessions go first.
+const peekBudget = 400
+
 // id derives a stable id from source+origin so re-discovery maps to the same
 // session.
 func id(src transcript.Source, origin string) string {
@@ -146,14 +157,24 @@ func (s *Store) Discover() error {
 		}
 	}
 
-	// Cheap preview pass: for file-based sessions not yet peeked, extract the
-	// working dir (project grouping), a title from the first real user message,
-	// and a message count — without a full parse. OpenCode sessions have no
-	// file to peek (their title already comes from the DB).
+	// Cheap preview pass: for file-based sessions not yet peeked (at the current
+	// peekVersion), extract the working dir (project grouping), a title from the
+	// first real user message, and a TURN count — mechanically, no model. To
+	// keep startup snappy on a large backlog, this is bounded per discover and
+	// prioritizes the most recently updated sessions; the rest fill in over the
+	// next few launches. OpenCode has no file to peek (DB titles).
+	pending := make([]*Meta, 0)
 	for _, m := range s.metas {
-		if m.Peeked || m.Source == transcript.SourceOpenCode {
+		if m.PeekVer >= peekVersion || m.Source == transcript.SourceOpenCode {
 			continue
 		}
+		pending = append(pending, m)
+	}
+	sort.Slice(pending, func(i, j int) bool { return pending[i].Updated > pending[j].Updated })
+	if len(pending) > peekBudget {
+		pending = pending[:peekBudget]
+	}
+	for _, m := range pending {
 		pv := transcript.Peek(m.Source, m.Origin)
 		if pv.Cwd != "" {
 			m.Cwd = pv.Cwd
@@ -164,7 +185,7 @@ func (s *Store) Discover() error {
 		if pv.Messages > 0 {
 			m.Messages = pv.Messages
 		}
-		m.Peeked = true
+		m.PeekVer = peekVersion
 	}
 	return s.save()
 }
@@ -181,7 +202,7 @@ func (s *Store) upsert(src transcript.Source, origin string, mod int64, title st
 	if m.OriginMod != mod {
 		m.OriginMod = mod
 		m.Ingested = false
-		m.Peeked = false // content changed: re-derive the cheap preview
+		m.PeekVer = 0 // content changed: re-derive the cheap preview
 	}
 	if mod > m.Updated {
 		m.Updated = mod

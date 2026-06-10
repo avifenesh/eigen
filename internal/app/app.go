@@ -1,8 +1,10 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -71,7 +73,8 @@ type Model struct {
 	providers providersState
 	memory    memoryState
 
-	data *Data // loaded app data (sessions, projects, config…)
+	data        *Data // loaded app data (sessions, projects, config…)
+	titledPolls int
 }
 
 // New builds the app shell with loaded data.
@@ -88,12 +91,35 @@ func New(data *Data) *Model {
 	return m
 }
 
-func (m *Model) Init() tea.Cmd { return nil }
+func (m *Model) Init() tea.Cmd {
+	// Kick off background titling of untitled sessions with the small model,
+	// and poll to refresh the view as titles land.
+	if m.data.Store != nil && m.data.Titler != nil {
+		m.data.Store.TitleUntitled(context.Background(), m.data.Titler, 60)
+		return titleTick()
+	}
+	return nil
+}
+
+// titleRefreshMsg triggers a session-row reload (titles filled in the store).
+type titleRefreshMsg struct{}
+
+func titleTick() tea.Cmd {
+	return tea.Tick(1500*time.Millisecond, func(time.Time) tea.Msg { return titleRefreshMsg{} })
+}
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		return m, nil
+	case titleRefreshMsg:
+		m.data.reloadSessions()
+		m.titledPolls++
+		// Poll for a while after launch (titles arrive over seconds), then stop.
+		if m.titledPolls < 20 {
+			return m, titleTick()
+		}
 		return m, nil
 	case tea.KeyMsg:
 		key := msg.String()

@@ -40,6 +40,32 @@ type Data struct {
 	Skills    *skill.Set
 	GlobalMem *memory.Store
 	Store     *session.Store
+	Titler    session.Titler // small-model background titler (nil = none)
+}
+
+// reloadSessions re-reads the session rows + projects from the store (titles
+// fill in as the background titler persists them).
+func (d *Data) reloadSessions() {
+	if d.Store == nil {
+		return
+	}
+	var rows []SessionRow
+	for _, meta := range d.Store.List() {
+		row := SessionRow{
+			ID:      meta.ID,
+			Title:   meta.Title,
+			Source:  string(meta.Source),
+			Dir:     meta.Cwd,
+			Msgs:    meta.Messages,
+			Updated: meta.Updated,
+		}
+		if row.Title == "" {
+			row.Title = "(untitled)"
+		}
+		rows = append(rows, row)
+	}
+	d.Sessions = rows
+	d.Projects = groupProjects(rows)
 }
 
 // Load gathers the app's data. Failures degrade (a page shows "unavailable")

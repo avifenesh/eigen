@@ -131,7 +131,7 @@ func signV4(req *http.Request, body []byte, creds awsCreds, service, region stri
 
 	canonicalRequest := strings.Join([]string{
 		req.Method,
-		req.URL.EscapedPath(),
+		canonicalURI(req.URL.EscapedPath()),
 		req.URL.RawQuery,
 		canonHeaders.String(),
 		signedHeaders,
@@ -156,4 +156,39 @@ func signV4(req *http.Request, body []byte, creds awsCreds, service, region stri
 		"AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s",
 		creds.AccessKeyID, scope, signedHeaders, signature,
 	))
+}
+
+// canonicalURI produces the SigV4 canonical URI from an already-escaped request
+// path. AWS (for non-S3 services like Bedrock) double-encodes the path in the
+// canonical request: each path segment is URI-encoded AGAIN, so an already-
+// percent-encoded byte like "%3A" becomes "%253A". '/' separators are kept.
+// Plain paths (no reserved chars) are unaffected, so this is a no-op for the
+// common case.
+func canonicalURI(escapedPath string) string {
+	if escapedPath == "" {
+		return "/"
+	}
+	segs := strings.Split(escapedPath, "/")
+	for i, seg := range segs {
+		segs[i] = awsURIEncode(seg)
+	}
+	return strings.Join(segs, "/")
+}
+
+// awsURIEncode encodes a single path segment per AWS rules: unreserved chars
+// (A-Z a-z 0-9 - _ . ~) pass through; everything else is %XX. Applied to the
+// already-escaped segment, it re-encodes the '%' of existing escapes (→ %25)
+// plus any other reserved bytes, which is exactly AWS's double-encoding.
+func awsURIEncode(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+			c == '-' || c == '_' || c == '.' || c == '~' {
+			b.WriteByte(c)
+		} else {
+			fmt.Fprintf(&b, "%%%02X", c)
+		}
+	}
+	return b.String()
 }

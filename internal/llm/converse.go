@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -254,7 +255,7 @@ func (c *Converse) Complete(ctx context.Context, req Request) (*Response, error)
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("https://bedrock-runtime.%s.amazonaws.com/model/%s/converse", c.region, c.Model)
+	url := fmt.Sprintf("https://bedrock-runtime.%s.amazonaws.com/model/%s/converse", c.region, urlPathEscape(c.Model))
 	sign := func(r *http.Request, b []byte) {
 		signV4(r, b, c.creds, "bedrock", c.region, time.Now())
 	}
@@ -467,4 +468,12 @@ func envInt(key string, def int) int {
 		}
 	}
 	return def
+}
+
+// urlPathEscape escapes a Bedrock model id for use as a URL path segment.
+// url.PathEscape leaves ':' unescaped (it is legal in a path), but Bedrock's
+// SigV4 canonicalization for the model resource requires ':' encoded as %3A,
+// so a versioned profile id like "...-v1:0" signs correctly.
+func urlPathEscape(s string) string {
+	return strings.ReplaceAll(url.PathEscape(s), ":", "%3A")
 }

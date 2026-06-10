@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/avifenesh/eigen/internal/llm"
 )
 
 // Preview is the cheap, parse-free metadata for a session: the working
@@ -43,9 +45,12 @@ func Peek(src Source, origin string) Preview {
 	return Preview{}
 }
 
-// firstLines reads up to peekMaxBytes and returns whole lines, plus the total
-// newline count of the WHOLE file (a cheap proxy for message count).
-func firstLines(path string) (lines []string, totalLines int) {
+// scanPeek reads a transcript once: it keeps the head lines (up to peekMaxBytes)
+// for title/cwd extraction, and counts conversational TURNS over the WHOLE file
+// using a per-source line classifier (mechanical — turns have a known structure,
+// no model needed). countTurn returns true for a line that is one user or
+// assistant message.
+func scanPeek(path string, countTurn func(line []byte) bool) (lines []string, turns int) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, 0
@@ -53,17 +58,20 @@ func firstLines(path string) (lines []string, totalLines int) {
 	defer f.Close()
 
 	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	read := 0
 	for sc.Scan() {
-		totalLines++
+		b := sc.Bytes()
+		if countTurn != nil && countTurn(b) {
+			turns++
+		}
 		if read < peekMaxBytes {
-			ln := sc.Text()
+			ln := string(b)
 			read += len(ln) + 1
 			lines = append(lines, ln)
 		}
 	}
-	return lines, totalLines
+	return lines, turns
 }
 
 // titleFrom turns a user message into a concise title, rejecting injected
@@ -98,7 +106,7 @@ func titleFrom(s string) string {
 }
 
 func peekClaude(path string) Preview {
-	lines, total := firstLines(path)
+	lines, total := scanPeek(path, claudeTurn)
 	p := Preview{Messages: total}
 	// Fallback cwd from the folder name: -home-user-proj → /home/user/proj.
 	p.Cwd = claudeDirFromPath(path)
@@ -164,7 +172,7 @@ func claudeDirFromPath(path string) string {
 }
 
 func peekCodex(path string) Preview {
-	lines, total := firstLines(path)
+	lines, total := scanPeek(path, codexTurn)
 	p := Preview{Messages: total}
 	for _, ln := range lines {
 		var rec struct {
@@ -211,7 +219,7 @@ func codexText(blocks json.RawMessage, plain string) string {
 }
 
 func peekPi(path string) Preview {
-	lines, total := firstLines(path)
+	lines, total := scanPeek(path, piTurn)
 	p := Preview{Messages: total}
 	for _, ln := range lines {
 		var rec struct {
@@ -239,29 +247,93 @@ func peekPi(path string) Preview {
 }
 
 func peekHermes(path string) Preview {
-	_, total := firstLines(path)
+	_, total := scanPeek(path, hermesTurn)
 	return Preview{Messages: total}
 }
 
 func peekEigen(path string) Preview {
-	lines, total := firstLines(path)
+	lines, total := scanPeek(path, eigenTurn)
 	p := Preview{Messages: total}
 	// eigen records the cwd in the meta sidecar; prefer it.
 	if m, ok := LoadMeta(path); ok && m.Dir != "" {
 		p.Cwd = m.Dir
 	}
 	for _, ln := range lines {
-		var msg struct {
-			Role string `json:"role"`
-			Text string `json:"text"`
-		}
+		// eigen JSONL is a marshaled llm.Message (capitalized Role/Text).
+		var msg llm.Message
 		if json.Unmarshal([]byte(ln), &msg) != nil {
 			continue
 		}
-		if msg.Role == "user" && msg.Text != "" {
+		if msg.Role == llm.RoleUser && msg.Text != "" {
 			p.Title = titleFrom(msg.Text)
 			break
 		}
 	}
 	return p
+}
+
+// --- turn classifiers: is this line one conversational (user/assistant) turn?
+// Mechanical, per-source — turns have a known structure, no model needed.
+
+func claudeTurn(line []byte) bool {
+	var r struct {
+		Type    string `json:"type"`
+		Message struct {
+			Role string `json:"role"`
+		} `json:"message"`
+	}
+	if json.Unmarshal(line, &r) != nil {
+		return false
+	}
+	role := r.Message.Role
+	if role == "" {
+		role = r.Type
+	}
+	return role == "user" || role == "assistant"
+}
+
+func codexTurn(line []byte) bool {
+	var r struct {
+		Type    string `json:"type"`
+		Payload struct {
+			Type string `json:"type"`
+			Role string `json:"role"`
+		} `json:"payload"`
+	}
+	if json.Unmarshal(line, &r) != nil {
+		return false
+	}
+	return r.Type == "response_item" && r.Payload.Type == "message" &&
+		(r.Payload.Role == "user" || r.Payload.Role == "assistant")
+}
+
+func piTurn(line []byte) bool {
+	var r struct {
+		Type    string `json:"type"`
+		Message struct {
+			Role string `json:"role"`
+		} `json:"message"`
+	}
+	if json.Unmarshal(line, &r) != nil {
+		return false
+	}
+	return r.Type == "message" && (r.Message.Role == "user" || r.Message.Role == "assistant")
+}
+
+func hermesTurn(line []byte) bool {
+	var r struct {
+		Role string `json:"role"`
+	}
+	if json.Unmarshal(line, &r) != nil {
+		return false
+	}
+	return r.Role == "user" || r.Role == "assistant"
+}
+
+func eigenTurn(line []byte) bool {
+	var m llm.Message
+	if json.Unmarshal(line, &m) != nil {
+		return false
+	}
+	return m.Role == llm.RoleUser || m.Role == llm.RoleAssistant
 }
