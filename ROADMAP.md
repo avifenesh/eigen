@@ -152,6 +152,21 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
     limitation.)*
 23. **Integrate other model types efficiently** — embedders, diffusion, mamba, etc.,
     to offer non-LLM solutions where they fit.
+24. **Iterative planning (Anthropic × GPT, head-to-head)** — both vendors plan
+    TOGETHER and adversarially: one drafts a plan, the other critiques/counter-
+    proposes, iterate until convergence (or a bounded number of rounds), then
+    execution starts from the merged plan. Builds on the router's tier-3 pair
+    (gpt-5.5 strict vs opus design) — their disagreement is signal: strictness
+    catches handwaving, design sense catches over-rigidity. Likely surface:
+    /plan or an ultraplan (#13) phase; needs convergence criteria + a merge step.
+25. **Cross-vendor reviewer — GPT reviews Claude, Claude reviews GPT, always** —
+    every reviewed artifact is judged by the OTHER vendor's model: Claude-written
+    code/plans → gpt-5.5 reviews (strict correctness); GPT-written → opus reviews
+    (design/clarity). Never self-review (same-family models share blind spots;
+    the goal_achieved judge already encodes never-grade-your-own-homework — this
+    extends it across vendors). Surfaces: a `review` tool/step the orchestrator
+    can invoke, hooks into goal_achieved judging, and the iterative-planning
+    loop (#24) uses it as its critique step.
 
 ## Notes / grounding
 - read-aloud tool the user has: `readd` (espeak-ng/piper) at `~/projects/tfqol/readd`.
