@@ -74,3 +74,21 @@ func TestImageMediaType(t *testing.T) {
 		}
 	}
 }
+
+func TestPasteImageNonVisionModel(t *testing.T) {
+	m := testModel(t)
+	m.modelID = "local" // no vision
+	m.pasteImage()
+	if len(m.pendingImages) != 0 {
+		t.Fatal("non-vision model must not stage images")
+	}
+	found := false
+	for _, b := range m.blocks {
+		if strings.Contains(b.body, "no vision support") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("should note the model lacks vision")
+	}
+}

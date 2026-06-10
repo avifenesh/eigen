@@ -67,6 +67,7 @@ var slashCommands = []slashCmd{
 	{"/loop", "re-submit a prompt every interval while idle (/loop 10m <prompt>)"},
 	{"/config", "show or set persistent defaults (/config <key> <value>)"},
 	{"/route", "toggle the auto-router (per-task model selection)"},
+	{"/review", "cross-vendor review of recent work (GPT⇄Claude)"},
 	{"/skills", "list skills, or /skills <name> to preview one"},
 	{"/tools", "list available tools"},
 	{"/find", "search the transcript"},

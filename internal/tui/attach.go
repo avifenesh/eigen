@@ -7,10 +7,12 @@ package tui
 // model still sees what was attached by name.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/avifenesh/eigen/internal/clipboard"
 	"github.com/avifenesh/eigen/internal/llm"
 )
 
@@ -105,4 +107,29 @@ func expandHome(p string) string {
 		}
 	}
 	return p
+}
+
+// pasteImage grabs an image from the system clipboard and stages it for the
+// next message. Noted to the user; no-op with a hint when the clipboard has no
+// image or the model can't see images.
+func (m *model) pasteImage() {
+	if !llm.HasVision(m.modelID) {
+		m.note("image paste: the active model has no vision support (switch with /model)")
+		return
+	}
+	img, err := clipboard.PasteImage()
+	if err != nil {
+		m.note("image paste: " + err.Error())
+		return
+	}
+	if img == nil {
+		m.note("image paste: no image in the clipboard")
+		return
+	}
+	if len(img.Bytes) > maxImageBytes {
+		m.note("image paste: too large")
+		return
+	}
+	m.pendingImages = append(m.pendingImages, llm.Image{MediaType: img.MediaType, Data: img.Bytes})
+	m.note(fmt.Sprintf("staged %s image (%d KB) for your next message", img.MediaType, len(img.Bytes)/1024))
 }

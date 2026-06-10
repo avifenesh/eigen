@@ -2394,3 +2394,21 @@ func TestIsGPTRoutingError(t *testing.T) {
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+func TestReviewCommandSubmits(t *testing.T) {
+	m := testModel(t)
+	cmd := m.command("/review the router changes")
+	if cmd == nil || m.state != stRunning {
+		t.Fatal("/review should submit a turn")
+	}
+	// The submitted user text should instruct using the review tool.
+	var got string
+	for _, b := range m.blocks {
+		if b.kind == blockText && b.role == "user" {
+			got = b.body
+		}
+	}
+	if !strings.Contains(got, "review tool") || !strings.Contains(got, "router changes") {
+		t.Fatalf("review prompt wrong: %q", got)
+	}
+}

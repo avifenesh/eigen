@@ -171,6 +171,10 @@ type model struct {
 	// copy-to-clipboard support.
 	clip clipIface
 
+	// pendingImages are clipboard/paste-staged images attached to the next
+	// message (vision models only).
+	pendingImages []llm.Image
+
 	// live model switching (/model): the current provider/model and a
 	// constructor (injected; nil disables switching, e.g. in tests).
 	provName    string
@@ -467,7 +471,7 @@ func (m *model) submit(task string) tea.Cmd {
 	// window is active (failover's choice wins until it ends) — a manual /model
 	// switch is honored because it updates m.modelID, which routing overwrites
 	// only when enabled.
-	hasImageRef := referencesImage(task)
+	hasImageRef := referencesImage(task) || len(m.pendingImages) > 0
 	if m.router != nil && m.router.Enabled() && m.failoverFrom == nil {
 		if prov, model, label := m.router.Route(m.ctx, task, "", "", hasImageRef); prov != nil && model != m.modelID {
 			m.a.SetLive(prov, m.compactorFor(prov), m.contextBudgetFor(model))
@@ -487,6 +491,11 @@ func (m *model) submit(task string) tea.Cmd {
 		if len(images) > 0 {
 			m.note(fmt.Sprintf("attached %d image(s)", len(images)))
 		}
+	}
+	// Prepend any clipboard-staged images (independent of path references).
+	if len(m.pendingImages) > 0 {
+		images = append(append([]llm.Image(nil), m.pendingImages...), images...)
+		m.pendingImages = nil
 	}
 	// Keep the input focused so the user can steer/queue while the turn runs.
 	m.relayout()
@@ -692,6 +701,11 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			return m, nil
 		case "ctrl+y", "alt+y":
 			m.copySelected()
+			return m, nil
+		case "ctrl+v", "alt+v":
+			// Explicit image paste: grab an image from the clipboard and stage
+			// it for the next message (text paste is handled by the textarea).
+			m.pasteImage()
 			return m, nil
 		case "ctrl+a", "alt+a":
 			// Quick toggle of the permission posture (gated ↔ auto) without

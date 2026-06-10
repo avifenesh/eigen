@@ -146,10 +146,11 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
     bracketed paste of its path; eigen normalizes it (strips file://, unquotes,
     percent-decodes, handles multi-file drops) into clean path tokens the model
     reads like an @file mention. Plain pasted prose is untouched.)*
-22. **Image copy-paste** into the conversation — *(unblocked by #20+#21: a
-    pasted/dropped image PATH is now read and attached as a vision input on
-    vision-capable models. Raw-image-bytes paste (no path) remains a terminal
-    limitation.)*
+22. **Image copy-paste** into the conversation — *(shipped: ctrl+v/alt+v grabs
+    a raw image from the system clipboard (wl-paste/xclip/pngpaste, png/jpeg/
+    webp/gif) and stages it for the next message on vision models; clipboard.
+    PasteImage. Combined with #20/#21, both image PATHS and raw clipboard
+    images now attach.)*
 23. **Integrate other model types efficiently** — embedders, diffusion, mamba, etc.,
     to offer non-LLM solutions where they fit.
 24. **Iterative planning (Anthropic × GPT, head-to-head)** — both vendors plan
