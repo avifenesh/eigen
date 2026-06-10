@@ -169,11 +169,11 @@ func main() {
 	// Sub-agent delegation: the task tool runs a subtask on a fresh session of
 	// the same agent (events suppressed; recursion bounded).
 	var a *agent.Agent
-	taskRun := func(ctx context.Context, t string) (string, error) {
+	taskRun := func(ctx context.Context, t, kind, difficulty string) (string, error) {
 		if a == nil {
 			return "", fmt.Errorf("subtasks unavailable")
 		}
-		return a.Subtask(ctx, t)
+		return a.Subtask(ctx, t, kind, difficulty)
 	}
 	// goalJudge verifies goal-achievement claims and clears the goal on a
 	// confirmed verdict. The judge defaults to the MAIN model in a fresh

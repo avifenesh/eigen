@@ -13,16 +13,23 @@ import (
 // optional; flags and environment variables override it. It supplies defaults
 // so users don't repeat flags every run.
 type Config struct {
-	Provider    string   `json:"provider"`
-	Model       string   `json:"model"`
-	Perm        string   `json:"perm"`
-	MaxTokens   int      `json:"max_tokens"`
-	TTSCmd      string   `json:"tts_cmd"`
-	NotifyCmd   string   `json:"notify_cmd"`
-	JudgeModel  string   `json:"judge_model"`
-	SkillsDirs  []string `json:"skills_dirs"`
-	DreamOnIdle bool     `json:"dream_on_idle"`
-	IdleMinutes int      `json:"idle_minutes"`
+	Provider   string   `json:"provider"`
+	Model      string   `json:"model"`
+	Perm       string   `json:"perm"`
+	MaxTokens  int      `json:"max_tokens"`
+	TTSCmd     string   `json:"tts_cmd"`
+	NotifyCmd  string   `json:"notify_cmd"`
+	JudgeModel string   `json:"judge_model"`
+	SkillsDirs []string `json:"skills_dirs"`
+
+	// Route enables the opt-in auto-router: per task, pick the cheapest model
+	// that can do it well (ties → stronger → faster). RouteProviders is the
+	// provider allowlist for CROSS-provider routing (canonical names, e.g.
+	// "converse grok glm"); empty = route only within the current provider.
+	Route          bool     `json:"route"`
+	RouteProviders []string `json:"route_providers"`
+	DreamOnIdle    bool     `json:"dream_on_idle"`
+	IdleMinutes    int      `json:"idle_minutes"`
 }
 
 // Load reads ~/.eigen/config.json. A missing or malformed file yields a zero
@@ -114,6 +121,14 @@ func Set(c *Config, key, value string) error {
 			return fmt.Errorf("idle_minutes must be a non-negative integer")
 		}
 		c.IdleMinutes = n
+	case "route":
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("route must be true|false")
+		}
+		c.Route = b
+	case "route_providers":
+		c.RouteProviders = splitFields(value)
 	default:
 		return fmt.Errorf("unknown key %q (valid: %s)", key, strings.Join(Keys(), " "))
 	}
@@ -122,7 +137,16 @@ func Set(c *Config, key, value string) error {
 
 // Keys lists the /config-settable keys (skills_dirs stays file-only: a list).
 func Keys() []string {
-	return []string{"provider", "model", "perm", "max_tokens", "tts_cmd", "notify_cmd", "judge_model", "dream_on_idle", "idle_minutes"}
+	return []string{"provider", "model", "perm", "max_tokens", "tts_cmd", "notify_cmd", "judge_model", "dream_on_idle", "idle_minutes", "route", "route_providers"}
+}
+
+// splitFields splits a space/comma-separated value into non-empty fields.
+func splitFields(s string) []string {
+	f := strings.FieldsFunc(s, func(r rune) bool { return r == ' ' || r == ',' || r == '\t' })
+	if len(f) == 0 {
+		return nil
+	}
+	return f
 }
 
 // View renders the config as aligned "key = value" lines, marking zero values.
@@ -143,6 +167,12 @@ func View(c Config) string {
 	fmt.Fprintf(&b, "%-14s = %s\n", "judge_model", val(c.JudgeModel))
 	fmt.Fprintf(&b, "%-14s = %t\n", "dream_on_idle", c.DreamOnIdle)
 	fmt.Fprintf(&b, "%-14s = %d\n", "idle_minutes", c.IdleMinutes)
+	fmt.Fprintf(&b, "%-14s = %t\n", "route", c.Route)
+	rp := "(current provider only)"
+	if len(c.RouteProviders) > 0 {
+		rp = strings.Join(c.RouteProviders, " ")
+	}
+	fmt.Fprintf(&b, "%-14s = %s\n", "route_providers", rp)
 	if len(c.SkillsDirs) > 0 {
 		fmt.Fprintf(&b, "%-14s = %s (file-only)\n", "skills_dirs", strings.Join(c.SkillsDirs, ":"))
 	}

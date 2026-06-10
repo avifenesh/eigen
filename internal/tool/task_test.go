@@ -8,11 +8,13 @@ import (
 
 func TestTaskDelegatesToRunner(t *testing.T) {
 	var got string
-	def := Task(func(_ context.Context, task string) (string, error) {
+	var gotKind, gotDiff string
+	def := Task(func(_ context.Context, task, kind, difficulty string) (string, error) {
 		got = task
+		gotKind, gotDiff = kind, difficulty
 		return "subtask result", nil
 	})
-	args, _ := json.Marshal(map[string]string{"task": "do the thing"})
+	args, _ := json.Marshal(map[string]string{"task": "do the thing", "kind": "search", "difficulty": "hard"})
 	out, err := def.Run(context.Background(), args)
 	if err != nil {
 		t.Fatal(err)
@@ -23,10 +25,13 @@ func TestTaskDelegatesToRunner(t *testing.T) {
 	if out != "subtask result" {
 		t.Fatalf("result wrong: %q", out)
 	}
+	if gotKind != "search" || gotDiff != "hard" {
+		t.Fatalf("kind/difficulty not forwarded: %q %q", gotKind, gotDiff)
+	}
 }
 
 func TestTaskRequiresTask(t *testing.T) {
-	def := Task(func(context.Context, string) (string, error) { return "", nil })
+	def := Task(func(context.Context, string, string, string) (string, error) { return "", nil })
 	if _, err := def.Run(context.Background(), json.RawMessage(`{"task":""}`)); err == nil {
 		t.Fatal("empty task should error")
 	}

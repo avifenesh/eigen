@@ -216,7 +216,7 @@ func TestSubtaskRunsFreshSession(t *testing.T) {
 	events := 0
 	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto, OnEvent: func(Event) { events++ }}
 
-	out, err := a.Subtask(context.Background(), "do a thing")
+	out, err := a.Subtask(context.Background(), "do a thing", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestSubtaskDepthLimit(t *testing.T) {
 	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto}
 
 	ctx := context.WithValue(context.Background(), subtaskDepthKey{}, maxSubtaskDepth)
-	if _, err := a.Subtask(ctx, "too deep"); err == nil {
+	if _, err := a.Subtask(ctx, "too deep", "", ""); err == nil {
 		t.Fatal("subtask at the depth limit should be refused")
 	}
 }

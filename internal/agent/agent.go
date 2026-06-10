@@ -125,6 +125,13 @@ type Agent struct {
 	// is appended (from the same goroutine that owns the session), so a session
 	// can be autosaved continuously and race-free.
 	Persist func([]llm.Message)
+
+	// Router, if set, picks the provider+model for a subtask given its prompt,
+	// orchestrator-stated kind/difficulty, and whether it has images. It returns
+	// a ready Provider + the chosen model id + a human label (for notes), or
+	// nil to keep the current model. Injected by main (the agent package does
+	// not build providers). Used by Subtask when auto-routing is enabled.
+	Router func(ctx context.Context, prompt, kind, difficulty string, hasImage bool) (llm.Provider, string, string)
 }
 
 // maxToolOutput caps a single tool result fed back to the model, so a runaway
@@ -236,25 +243,39 @@ const maxSubtaskDepth = 2
 
 // Subtask runs task on a fresh session of (a copy of) this agent, with event
 // emission suppressed so a delegated subtask does not clutter the caller's
-// transcript. Recursion is bounded so subtasks cannot spawn unboundedly.
-func (a *Agent) Subtask(ctx context.Context, task string) (string, error) {
+// transcript. Recursion is bounded so subtasks cannot spawn unboundedly. When a
+// Router is set, the subtask is routed to the best-fit model for its
+// kind/difficulty; otherwise it inherits the caller's provider.
+func (a *Agent) Subtask(ctx context.Context, task, kind, difficulty string) (string, error) {
 	depth, _ := ctx.Value(subtaskDepthKey{}).(int)
 	if depth >= maxSubtaskDepth {
 		return "", fmt.Errorf("subtask depth limit (%d) reached", maxSubtaskDepth)
 	}
+	// Pick the provider/model/compactor: routed when a Router is set, else the
+	// caller's live provider.
+	prov := a.provider()
+	compactor := a.compactor()
+	if a.Router != nil {
+		if rp, _, _ := a.Router(ctx, task, kind, difficulty, false); rp != nil {
+			prov = rp
+			compactor = llm.NewCompactor(rp)
+		}
+	}
 	// Construct the sub-agent explicitly (not by struct copy: Agent embeds a
-	// mutex). It inherits the live provider/perm/budget snapshot but stays
-	// silent (no OnEvent) and does not persist (its session is ephemeral).
+	// mutex). It inherits the perm/budget snapshot but stays silent (no
+	// OnEvent) and does not persist (its session is ephemeral). The Router is
+	// carried so nested subtasks route too.
 	sub := &Agent{
-		Provider:         a.provider(),
+		Provider:         prov,
 		Tools:            a.Tools,
 		Perm:             a.perm(),
 		MaxSteps:         a.MaxSteps,
 		Approve:          a.Approve,
 		MaxContextTokens: a.maxContextTokens(),
-		Compactor:        a.compactor(),
+		Compactor:        compactor,
 		ExtraSystem:      a.ExtraSystem,
 		Memory:           a.Memory,
+		Router:           a.Router,
 	}
 	ctx = context.WithValue(ctx, subtaskDepthKey{}, depth+1)
 	return sub.NewSession().Send(ctx, task)

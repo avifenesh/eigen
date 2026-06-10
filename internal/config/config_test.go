@@ -104,3 +104,24 @@ func TestViewRendersAllKeys(t *testing.T) {
 		t.Fatal("zero string values should show (unset)")
 	}
 }
+
+func TestSetRouteKeys(t *testing.T) {
+	var c Config
+	if err := Set(&c, "route", "true"); err != nil || !c.Route {
+		t.Fatalf("route=true: %v %v", err, c.Route)
+	}
+	if err := Set(&c, "route_providers", "converse grok glm"); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.RouteProviders) != 3 || c.RouteProviders[0] != "converse" {
+		t.Fatalf("route_providers wrong: %v", c.RouteProviders)
+	}
+	// comma-separated also works.
+	Set(&c, "route_providers", "converse,glm")
+	if len(c.RouteProviders) != 2 {
+		t.Fatalf("comma split wrong: %v", c.RouteProviders)
+	}
+	if err := Set(&c, "route", "maybe"); err == nil {
+		t.Fatal("non-bool route should error")
+	}
+}
