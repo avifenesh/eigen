@@ -41,17 +41,20 @@ const connectTimeout = 15 * time.Second
 // config file yields no tools and no error; a server that fails to connect is
 // reported in errs but does not abort the others.
 func LoadTools(ctx context.Context, path string) (defs []tool.Definition, clients []*Client, errs []error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil, nil
-		}
-		return nil, nil, []error{err}
-	}
 	var cfg mcpConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
+	if data, err := os.ReadFile(path); err != nil {
+		if !os.IsNotExist(err) {
+			return nil, nil, []error{err}
+		}
+		// Missing config is fine — built-ins may still apply.
+	} else if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, nil, []error{fmt.Errorf("%s: %w", path, err)}
 	}
+
+	// Built-in servers (e.g. the agent workspace) are auto-registered as
+	// first-class capabilities when their binary is present, UNLESS the user
+	// already configured a server with the same name (their config wins).
+	cfg.Servers = withBuiltinServers(cfg.Servers)
 
 	for _, sc := range cfg.Servers {
 		if sc.Name == "" || len(sc.Command) == 0 {

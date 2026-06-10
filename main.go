@@ -91,6 +91,13 @@ func main() {
 		return
 	}
 
+	// `eigen workspace <status|build>`: manage the built-in agent-workspace
+	// capability (detect/build the binary), then exit.
+	if flag.Arg(0) == "workspace" {
+		runWorkspaceCmd(flag.Arg(1))
+		return
+	}
+
 	skills := skill.Discover(skillDirs()...)
 	if *listSkills {
 		printSkills(skills)
@@ -1128,4 +1135,70 @@ func hookConfigPath() string {
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".eigen", "hooks.json")
+}
+
+// runWorkspaceCmd implements `eigen workspace <status|build>`: the built-in
+// agent-workspace capability (isolated Linux desktop / computer-use). status
+// reports whether the binary is present; build compiles it from a local
+// agent-workspace-linux cargo checkout into ~/.local/bin.
+func runWorkspaceCmd(sub string) {
+	switch sub {
+	case "", "status":
+		if bin := mcp.WorkspaceBinary(); bin != "" {
+			fmt.Println("agent workspace: available →", bin)
+			fmt.Println("(auto-registered as the `workspace` MCP server; 27 curated tools)")
+		} else {
+			fmt.Println("agent workspace: not installed")
+			fmt.Println("install: `eigen workspace build` (from a cargo checkout) or drop the binary at ~/.local/bin/agent-workspace-linux")
+		}
+	case "build":
+		buildWorkspace()
+	default:
+		fmt.Fprintf(os.Stderr, "usage: eigen workspace <status|build>\n")
+		os.Exit(2)
+	}
+}
+
+// buildWorkspace compiles agent-workspace-linux from a local cargo checkout
+// (EIGEN_WORKSPACE_SRC or ~/projects/agent-workspace-linux) and installs the
+// binary to ~/.local/bin.
+func buildWorkspace() {
+	src := os.Getenv("EIGEN_WORKSPACE_SRC")
+	if src == "" {
+		home, _ := os.UserHomeDir()
+		src = filepath.Join(home, "projects", "agent-workspace-linux")
+	}
+	if _, err := os.Stat(filepath.Join(src, "Cargo.toml")); err != nil {
+		fail(fmt.Errorf("no cargo checkout at %s (set EIGEN_WORKSPACE_SRC)", src))
+	}
+	if _, err := exec.LookPath("cargo"); err != nil {
+		fail(fmt.Errorf("cargo not found — install Rust to build the workspace"))
+	}
+	fmt.Fprintln(os.Stderr, "building agent-workspace-linux (release) from", src, "…")
+	cmd := exec.Command("cargo", "build", "--release")
+	cmd.Dir = src
+	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
+	if err := cmd.Run(); err != nil {
+		fail(fmt.Errorf("cargo build: %w", err))
+	}
+	home, _ := os.UserHomeDir()
+	dst := filepath.Join(home, ".local", "bin", "agent-workspace-linux")
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		fail(err)
+	}
+	binSrc := filepath.Join(src, "target", "release", "agent-workspace-linux")
+	if err := copyExecutable(binSrc, dst); err != nil {
+		fail(fmt.Errorf("install %s → %s: %w", binSrc, dst, err))
+	}
+	fmt.Fprintln(os.Stderr, "installed →", dst)
+	fmt.Fprintln(os.Stderr, "the `workspace` server will auto-register on the next run.")
+}
+
+// copyExecutable copies src to dst with 0755.
+func copyExecutable(src, dst string) error {
+	in, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, in, 0o755)
 }

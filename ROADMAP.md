@@ -100,9 +100,16 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
    InactiveSec = "start when it closed, do something, go back") + shell loop.)*
 6. **Background scan for wide-reaching actions** — proactively flag risky/broad
    operations (mass deletes, wide refactors) before they run.
-7. **Computer use built in** — native screen/GUI control.
-8. **Agent workspace built in** — native isolated desktop/terminal workspace
-   *(today via the agent-workspace-linux MCP; make it first-class)*.
+7. **Computer use built in** — *(shipped via #8: the agent-workspace server is
+   auto-registered when its binary is present, giving screenshot/click/key/type
+   + browser control as first-class tools without mcp.json editing.)*
+8. **Agent workspace built in** — *(shipped: internal/mcp/builtin.go auto-
+   registers the agent-workspace-linux binary (EIGEN_WORKSPACE_BIN / PATH /
+   ~/.local/bin) as the `workspace` MCP server with the curated 27-tool
+   allowlist baked in — no mcp.json needed; a user-configured `workspace` server
+   still wins. `eigen workspace status|build` reports/installs it (cargo build
+   from EIGEN_WORKSPACE_SRC or ~/projects/agent-workspace-linux → ~/.local/bin).
+   It's a gpui Rust binary so it runs as a subprocess MCP, not linked in.)*
 9. **Conversation mode** — voice conversation over the chat: STT for spoken input
    + TTS for spoken replies (builds on the existing read-aloud/speech plumbing).
    Not small — a full audio in/out loop.
