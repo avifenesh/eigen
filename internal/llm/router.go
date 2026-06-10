@@ -24,19 +24,21 @@ const (
 	DiffHard                      // architecture, subtle bugs, long reasoning
 )
 
-// qualityFloor is the minimum Quality score for each difficulty.
-func qualityFloor(d Difficulty) int {
+// targetTier is the quality tier a difficulty demands, per the user's ladder:
+// simple→1 (grok/glm/composer ok), simple-med→2 (sonnet), med→3 (opus),
+// hard→4 (frontier; hard work also normally stays on the default model).
+func targetTier(d Difficulty) Tier {
 	switch d {
 	case DiffTrivial:
-		return 0
+		return TierSimple
 	case DiffEasy:
-		return 65
+		return TierSimple
 	case DiffMedium:
-		return 78
+		return TierMed
 	case DiffHard:
-		return 90
+		return TierFrontier
 	default:
-		return 78
+		return TierMed
 	}
 }
 
@@ -73,32 +75,53 @@ func Route(req RouteRequest) (string, bool) {
 		return "", false
 	}
 
-	floor := qualityFloor(req.Difficulty)
-	goodEnough := make([]string, 0, len(capable))
+	// Quality-tier ladder: the difficulty demands a target tier. Pick the
+	// LOWEST tier that is still >= the target (so a simple task is happily
+	// served by a tier-1 grok/glm, while a hard task demands frontier and never
+	// settles for less). If no capable model reaches the target, take the
+	// highest tier available — do the task as well as we can, never worse.
+	target := targetTier(req.Difficulty)
+	best := Tier(0)
 	for _, id := range capable {
-		if scoreFor(id).Quality >= floor {
-			goodEnough = append(goodEnough, id)
+		if t := scoreFor(id).Tier; t >= target && (best == 0 || t < best) {
+			best = t
+		}
+	}
+	if best == 0 {
+		// Nothing reaches the target: use the highest tier present.
+		for _, id := range capable {
+			if t := scoreFor(id).Tier; t > best {
+				best = t
+			}
 		}
 	}
 
-	if len(goodEnough) > 0 {
-		// Cheapest, then stronger, then faster.
-		sort.SliceStable(goodEnough, func(i, j int) bool {
-			return cheaperStrongerFaster(goodEnough[i], goodEnough[j])
-		})
-		return goodEnough[0], true
+	// Among models in the chosen tier, prefer non-Bedrock (spare the
+	// employer-paid account), then faster.
+	pool := capable[:0:0]
+	for _, id := range capable {
+		if scoreFor(id).Tier == best {
+			pool = append(pool, id)
+		}
 	}
-
-	// Nothing meets the floor: take the strongest capable model (quality first,
-	// then cheaper, then faster) — do the task as well as we can, never worse.
-	sort.SliceStable(capable, func(i, j int) bool {
-		return strongerCheaperFaster(capable[i], capable[j])
+	sort.SliceStable(pool, func(i, j int) bool {
+		return preferNonBedrockFaster(pool[i], pool[j])
 	})
-	return capable[0], true
+	return pool[0], true
+}
+
+// preferNonBedrockFaster orders models within a tier: non-Bedrock first (the
+// user's own pre-paid accounts, sparing the employer-paid Bedrock quota), then
+// faster (so composer beats haiku in tier 1).
+func preferNonBedrockFaster(a, b string) bool {
+	if ab, bb := isBedrock(a), isBedrock(b); ab != bb {
+		return !ab
+	}
+	return scoreFor(a).Speed > scoreFor(b).Speed
 }
 
 // isCapable reports whether a model can do the task at all: required capability
-// flags and a context window large enough for the conversation.
+// flags (search/vision) and a context window large enough for the conversation.
 func isCapable(id string, req RouteRequest) bool {
 	m, ok := Lookup(id)
 	if !ok {
@@ -120,29 +143,17 @@ func isCapable(id string, req RouteRequest) bool {
 	return true
 }
 
-// cheaperStrongerFaster orders a "good enough" pool: cheapest first; equal cost
-// → stronger; equal cost+quality → faster. This is the cost-minimizing-at-equal-
-// capability rule with speed as the final tiebreak.
-func cheaperStrongerFaster(a, b string) bool {
-	sa, sb := scoreFor(a), scoreFor(b)
-	if sa.Cost != sb.Cost {
-		return sa.Cost < sb.Cost
+// isBedrock reports whether a model is served by the employer-paid Bedrock
+// account (the mantle and converse providers). The router prefers non-Bedrock
+// models within a tier to spare the employer's quota.
+func isBedrock(id string) bool {
+	m, ok := Lookup(id)
+	if !ok {
+		return false
 	}
-	if sa.Quality != sb.Quality {
-		return sa.Quality > sb.Quality
+	switch canonicalProvider(m.Provider) {
+	case "mantle", "converse":
+		return true
 	}
-	return sa.Speed > sb.Speed
-}
-
-// strongerCheaperFaster orders the fallback pool (nothing met the floor):
-// strongest first, then cheaper, then faster.
-func strongerCheaperFaster(a, b string) bool {
-	sa, sb := scoreFor(a), scoreFor(b)
-	if sa.Quality != sb.Quality {
-		return sa.Quality > sb.Quality
-	}
-	if sa.Cost != sb.Cost {
-		return sa.Cost < sb.Cost
-	}
-	return sa.Speed > sb.Speed
+	return false
 }

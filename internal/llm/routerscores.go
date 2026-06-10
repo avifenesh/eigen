@@ -1,71 +1,82 @@
 package llm
 
-// Auto-router scoring. Each model carries a best-effort relative score so the
-// router can pick, per task, the cheapest model that is still good enough —
-// and, at equal cost, the stronger one; at equal cost and quality, the faster
-// one. These numbers are approximations meant to be TUNED: they encode rough
-// real-world positioning (frontier vs cheap, fast vs slow), not exact prices.
-// A model absent from this table is treated as unknown (mid quality, unknown
-// cost) and is only chosen when nothing scored fits.
+// Auto-router scoring — a QUALITY-TIER ladder, not a price search. The user's
+// accounts are flat pre-paid, so per-token dollars are irrelevant; what matters
+// is (a) quality is paramount — harder work gets a stronger model, never the
+// reverse — and (b) sparing the employer-paid Bedrock account when a model on
+// the user's own accounts is in the same tier.
+//
+// The cheap, fast models (grok / composer / glm) are trusted ONLY for simple
+// work, regardless of their nominal benchmark scores. Tiers, per the user:
+//
+//	Tier 1 (simple)     grok, composer, glm, haiku, local
+//	Tier 2 (simple-med) sonnet
+//	Tier 3 (med)        opus
+//	Tier 4 (hard)       frontier (fable, gpt-5.x) — but HARD tasks normally
+//	                    keep the user's default model (see Route).
 
-// RouterScore is a model's relative routing profile.
+// Tier is a model's quality class (1 simple … 4 frontier). Higher = stronger.
+type Tier int
+
+const (
+	TierSimple    Tier = 1 // grok/composer/glm/haiku/local — simple tasks
+	TierSimpleMed Tier = 2 // sonnet
+	TierMed       Tier = 3 // opus
+	TierFrontier  Tier = 4 // fable / gpt-5.x
+)
+
+// RouterScore is a model's routing profile: its quality tier and a relative
+// speed (the within-tier tiebreak — at equal tier and Bedrock-ness, faster
+// wins, e.g. composer over haiku).
 type RouterScore struct {
-	Quality int // 0–100 capability strength (higher = does harder tasks well)
-	Cost    int // 1–100 relative cost per token (LOWER = cheaper)
-	Speed   int // 0–100 relative throughput (higher = faster)
+	Tier  Tier
+	Speed int // 0–100 relative throughput (higher = faster)
 }
 
-// routerScores maps catalog model IDs to their routing profile. Cost is
-// calibrated from real published pricing (blended input+output $/Mtok scaled so
-// the priciest, legacy Opus, ≈ 100; source: OpenRouter models API, fetched
-// 2026-06). Quality/Speed are relative estimates. Tune freely; the router's
-// behavior is fully determined by the ordering these induce.
+// routerScores maps catalog model IDs to their tier + speed. Tiers reflect the
+// user's TRUST (grok/glm are "simple only" even at high benchmark scores), not
+// leaderboard numbers. Tune freely.
 var routerScores = map[string]RouterScore{
-	// OpenAI GPT (mantle). Real $/Mtok: 5.5=5/30, 5.4=2.5/15.
-	"openai.gpt-5.5": {Quality: 95, Cost: 39, Speed: 55},
-	"openai.gpt-5.4": {Quality: 92, Cost: 19, Speed: 58},
-	"openai.gpt-5":   {Quality: 88, Cost: 18, Speed: 60},
+	// Tier 4 — frontier (hard tasks; also the typical default).
+	"openai.gpt-5.5":                  {Tier: TierFrontier, Speed: 55},
+	"openai.gpt-5.4":                  {Tier: TierFrontier, Speed: 58},
+	"openai.gpt-5":                    {Tier: TierFrontier, Speed: 60},
+	"global.anthropic.claude-fable-5": {Tier: TierFrontier, Speed: 45},
+	"claude-fable-5":                  {Tier: TierFrontier, Speed: 45},
 
-	// Anthropic (Bedrock). Real $/Mtok: fable=10/50, opus4.8=5/25,
-	// sonnet=3/15, opus4.1=15/75 (legacy), haiku=1/5.
-	"global.anthropic.claude-fable-5": {Quality: 96, Cost: 67, Speed: 45},
-	"us.anthropic.claude-opus-4-8":    {Quality: 95, Cost: 33, Speed: 48},
-	"us.anthropic.claude-sonnet-4-6":  {Quality: 88, Cost: 20, Speed: 74},
-	"us.anthropic.claude-opus-4-1":    {Quality: 90, Cost: 100, Speed: 45},
-	"us.anthropic.claude-3-5-sonnet":  {Quality: 80, Cost: 20, Speed: 74},
-	"us.anthropic.claude-haiku-4-5":   {Quality: 70, Cost: 7, Speed: 92},
+	// Tier 3 — med (opus).
+	"us.anthropic.claude-opus-4-8": {Tier: TierMed, Speed: 48},
+	"us.anthropic.claude-opus-4-1": {Tier: TierMed, Speed: 45},
+	"claude-opus-4-1-20250805":     {Tier: TierMed, Speed: 45},
+	"claude-opus-4-20250514":       {Tier: TierMed, Speed: 45},
 
-	// Anthropic (native API) — same pricing as the Bedrock twins.
-	"claude-fable-5":             {Quality: 96, Cost: 67, Speed: 45},
-	"claude-opus-4-1-20250805":   {Quality: 90, Cost: 100, Speed: 45},
-	"claude-sonnet-4-5-20250929": {Quality: 88, Cost: 20, Speed: 74},
-	"claude-opus-4-20250514":     {Quality: 89, Cost: 100, Speed: 45},
+	// Tier 2 — simple-med (sonnet).
+	"us.anthropic.claude-sonnet-4-6": {Tier: TierSimpleMed, Speed: 74},
+	"us.anthropic.claude-3-5-sonnet": {Tier: TierSimpleMed, Speed: 74},
+	"claude-sonnet-4-5-20250929":     {Tier: TierSimpleMed, Speed: 74},
 
-	// Local (free; modest quality).
-	"local": {Quality: 50, Cost: 1, Speed: 60},
-
-	// xAI Grok — cheap + fast. Real $/Mtok: grok-build=1/2, grok-4=1.25/2.5.
-	"grok-build":             {Quality: 88, Cost: 3, Speed: 78},
-	"grok-composer-2.5-fast": {Quality: 78, Cost: 3, Speed: 94},
-	"grok-4":                 {Quality: 88, Cost: 4, Speed: 62},
-	"grok-code-fast-1":       {Quality: 75, Cost: 2, Speed: 92},
-
-	// Zhipu GLM — cheap. Real $/Mtok: glm-5.1=0.98/3.08, glm-5-turbo=1.2/4.
-	"glm-5.1":     {Quality: 85, Cost: 5, Speed: 76},
-	"glm-5":       {Quality: 83, Cost: 5, Speed: 76},
-	"glm-5-turbo": {Quality: 78, Cost: 6, Speed: 90},
-	"glm-4.7":     {Quality: 80, Cost: 4, Speed: 78},
-	"glm-4.6":     {Quality: 78, Cost: 4, Speed: 80},
-	"glm-4.5":     {Quality: 72, Cost: 3, Speed: 80},
-	"glm-4.5-air": {Quality: 65, Cost: 2, Speed: 88},
+	// Tier 1 — simple (cheap/fast; grok/composer/glm/haiku/local).
+	"us.anthropic.claude-haiku-4-5": {Tier: TierSimple, Speed: 92},
+	"local":                         {Tier: TierSimple, Speed: 60},
+	"grok-build":                    {Tier: TierSimple, Speed: 78},
+	"grok-composer-2.5-fast":        {Tier: TierSimple, Speed: 94},
+	"grok-4":                        {Tier: TierSimple, Speed: 62},
+	"grok-code-fast-1":              {Tier: TierSimple, Speed: 92},
+	"glm-5.1":                       {Tier: TierSimple, Speed: 76},
+	"glm-5":                         {Tier: TierSimple, Speed: 76},
+	"glm-5-turbo":                   {Tier: TierSimple, Speed: 90},
+	"glm-4.7":                       {Tier: TierSimple, Speed: 78},
+	"glm-4.6":                       {Tier: TierSimple, Speed: 80},
+	"glm-4.5":                       {Tier: TierSimple, Speed: 80},
+	"glm-4.5-air":                   {Tier: TierSimple, Speed: 88},
 }
 
-// scoreFor returns a model's router score, or a neutral unknown profile.
+// scoreFor returns a model's router score, or a neutral unknown profile. An
+// unknown model is treated as frontier (tier 4) so the router never silently
+// downgrades a model it doesn't recognize.
 func scoreFor(id string) RouterScore {
 	if s, ok := routerScores[id]; ok {
 		return s
 	}
-	// Unknown: mid quality, unknown (high) cost so it loses to scored peers,
-	// mid speed. It only wins when nothing scored is capable.
-	return RouterScore{Quality: 60, Cost: 100, Speed: 50}
+	return RouterScore{Tier: TierFrontier, Speed: 50}
 }

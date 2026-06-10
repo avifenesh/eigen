@@ -2,83 +2,87 @@ package llm
 
 import "testing"
 
-func TestRoutePicksCheapestGoodEnough(t *testing.T) {
-	// Medium task: floor 78. Among capable+good-enough, cheapest wins.
+func TestRouteSimpleUsesTier1NonBedrock(t *testing.T) {
+	// Simple task: a tier-1 model (grok/glm) is trusted and preferred over the
+	// Bedrock opus, even though opus is "stronger".
 	got, ok := Route(RouteRequest{
 		Kind:       TaskGeneral,
-		Difficulty: DiffMedium,
-		Candidates: []string{"us.anthropic.claude-opus-4-8", "glm-4.7", "us.anthropic.claude-haiku-4-5"},
+		Difficulty: DiffTrivial,
+		Candidates: []string{"us.anthropic.claude-opus-4-8", "glm-4.7", "grok-build"},
 	})
 	if !ok {
 		t.Fatal("expected a choice")
 	}
-	// opus(95,cost90) and glm-4.7(80,cost14) clear floor 78; haiku(70) does not.
-	// Cheapest good-enough = glm-4.7.
-	if got != "glm-4.7" {
-		t.Fatalf("want glm-4.7 (cheapest good-enough), got %s", got)
+	if scoreFor(got).Tier != TierSimple {
+		t.Fatalf("simple task should pick a tier-1 model, got %s (tier %d)", got, scoreFor(got).Tier)
+	}
+	if isBedrock(got) {
+		t.Fatalf("simple task should avoid Bedrock when tier-1 non-Bedrock exists, got %s", got)
 	}
 }
 
-func TestRouteTrivialPicksCheapest(t *testing.T) {
-	// Trivial: floor 0, everything qualifies → cheapest overall.
+func TestRouteMediumUsesOpus(t *testing.T) {
+	// Medium task → tier 3 (opus), not a tier-1 grok/glm.
 	got, _ := Route(RouteRequest{
 		Kind:       TaskGeneral,
-		Difficulty: DiffTrivial,
-		Candidates: []string{"us.anthropic.claude-opus-4-8", "us.anthropic.claude-haiku-4-5", "glm-4.5-air"},
+		Difficulty: DiffMedium,
+		Candidates: []string{"grok-build", "us.anthropic.claude-opus-4-8", "us.anthropic.claude-sonnet-4-6"},
 	})
-	if got != "glm-4.5-air" { // cost 8, the cheapest
-		t.Fatalf("trivial should pick the cheapest (glm-4.5-air), got %s", got)
+	if scoreFor(got).Tier != TierMed {
+		t.Fatalf("medium task should pick tier-3 (opus), got %s (tier %d)", got, scoreFor(got).Tier)
 	}
 }
 
-func TestRouteHardRequiresStrong(t *testing.T) {
-	// Hard: floor 90. Only opus(95) qualifies; haiku/glm don't.
+func TestRouteHardUsesFrontier(t *testing.T) {
 	got, _ := Route(RouteRequest{
 		Kind:       TaskGeneral,
 		Difficulty: DiffHard,
-		Candidates: []string{"us.anthropic.claude-haiku-4-5", "glm-4.7", "us.anthropic.claude-opus-4-8"},
+		Candidates: []string{"grok-build", "us.anthropic.claude-opus-4-8", "claude-fable-5"},
 	})
-	if got != "us.anthropic.claude-opus-4-8" {
-		t.Fatalf("hard task should pick opus, got %s", got)
+	if scoreFor(got).Tier != TierFrontier {
+		t.Fatalf("hard task should pick frontier, got %s (tier %d)", got, scoreFor(got).Tier)
 	}
 }
 
-func TestRouteEqualCostPrefersStronger(t *testing.T) {
-	// Two equal-cost models (opus-4-1 and opus-4-20250514 are both cost 100):
-	// at equal cost, the stronger quality wins. opus-4-1(90) vs the dated
-	// opus-4-20250514(89) — but they're different providers. Use the comparator
-	// directly on a crafted equal-cost pair to assert the rule cleanly.
-	routerScores["__hi"] = RouterScore{Quality: 90, Cost: 50, Speed: 50}
-	routerScores["__lo"] = RouterScore{Quality: 80, Cost: 50, Speed: 50}
-	defer func() { delete(routerScores, "__hi"); delete(routerScores, "__lo") }()
-	if !cheaperStrongerFaster("__hi", "__lo") {
-		t.Fatal("equal cost: stronger quality should sort first")
-	}
-	if cheaperStrongerFaster("__lo", "__hi") {
-		t.Fatal("weaker should not sort before stronger at equal cost")
+func TestRouteClimbsWhenTargetTierAbsent(t *testing.T) {
+	// Medium wants tier 3 (opus); none present → climb to the next tier up
+	// (frontier), never down to tier-1.
+	got, _ := Route(RouteRequest{
+		Kind:       TaskGeneral,
+		Difficulty: DiffMedium,
+		Candidates: []string{"grok-build", "claude-fable-5"},
+	})
+	if got != "claude-fable-5" {
+		t.Fatalf("with no opus, medium should climb to frontier, got %s", got)
 	}
 }
 
-func TestRouteSpeedTiebreak(t *testing.T) {
-	// The user's example: two models equal on cost AND quality → faster wins.
-	// Use the synthetic pair via scores: pick two we can make tie. grok-code-fast-1
-	// (q75,cost15,speed90) vs glm-5-turbo (q78,cost12,speed88): not a tie, glm wins
-	// on cost. To test the pure tiebreak, craft equal cost+quality directly.
-	routerScores["__a"] = RouterScore{Quality: 70, Cost: 20, Speed: 60}
-	routerScores["__b"] = RouterScore{Quality: 70, Cost: 20, Speed: 95}
-	defer func() { delete(routerScores, "__a"); delete(routerScores, "__b") }()
-	// Both unknown to the catalog Lookup, so isCapable would reject them.
-	// Exercise the comparator directly instead.
-	if !cheaperStrongerFaster("__b", "__a") {
-		t.Fatal("equal cost+quality: faster (__b) should sort first")
+func TestRouteFallsToHighestWhenBelowTarget(t *testing.T) {
+	// Hard wants frontier; only tier-1/2 available → take the highest present.
+	got, _ := Route(RouteRequest{
+		Kind:       TaskGeneral,
+		Difficulty: DiffHard,
+		Candidates: []string{"grok-build", "us.anthropic.claude-sonnet-4-6"},
+	})
+	if got != "us.anthropic.claude-sonnet-4-6" {
+		t.Fatalf("hard with no frontier should take the highest (sonnet), got %s", got)
 	}
-	if cheaperStrongerFaster("__a", "__b") {
-		t.Fatal("slower should not sort before faster at equal cost+quality")
+}
+
+func TestRouteWithinTierPrefersNonBedrockThenFaster(t *testing.T) {
+	// Tier 1: haiku is Bedrock; composer + glm-turbo are not. Non-Bedrock wins,
+	// and among those the faster (composer, speed 94) leads.
+	got, _ := Route(RouteRequest{
+		Kind:       TaskGeneral,
+		Difficulty: DiffTrivial,
+		Candidates: []string{"us.anthropic.claude-haiku-4-5", "glm-5-turbo", "grok-composer-2.5-fast"},
+	})
+	if got != "grok-composer-2.5-fast" {
+		t.Fatalf("tier-1: non-Bedrock + fastest should win (composer), got %s", got)
 	}
 }
 
 func TestRouteSearchRequiresSearchModel(t *testing.T) {
-	// Search task: only search-capable models are eligible.
 	got, ok := Route(RouteRequest{
 		Kind:       TaskSearch,
 		Difficulty: DiffMedium,
@@ -87,8 +91,6 @@ func TestRouteSearchRequiresSearchModel(t *testing.T) {
 	if !ok {
 		t.Fatal("expected a search-capable choice")
 	}
-	// opus has no Search; glm-4.6 (catalog Search? no — only grok marks Search).
-	// Verify the result is search-capable.
 	if m, _ := Lookup(got); !m.Search {
 		t.Fatalf("search task routed to a non-search model: %s", got)
 	}
@@ -109,21 +111,18 @@ func TestRouteVisionRequiresVisionModel(t *testing.T) {
 }
 
 func TestRouteNoCapableCandidate(t *testing.T) {
-	// Search task but no search model available → no choice.
 	if _, ok := Route(RouteRequest{
 		Kind:       TaskSearch,
 		Candidates: []string{"us.anthropic.claude-opus-4-8", "local"},
 	}); ok {
 		t.Fatal("no search-capable candidate should yield no choice")
 	}
-	// Empty candidate set.
 	if _, ok := Route(RouteRequest{Candidates: nil}); ok {
 		t.Fatal("empty candidates should yield no choice")
 	}
 }
 
 func TestRouteContextWindowGate(t *testing.T) {
-	// A task needing 300k tokens excludes 200k-window models; grok-build (512k) fits.
 	got, ok := Route(RouteRequest{
 		Kind:       TaskGeneral,
 		Difficulty: DiffEasy,

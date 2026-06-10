@@ -3,11 +3,11 @@ package llm
 import "testing"
 
 // TestRouterEval is a golden evaluation: realistic tasks routed over the full
-// catalog (as if all providers were credentialed), asserting the choice has the
-// right CAPABILITY and lands in the expected cost/quality band. It validates
-// the policy end-to-end rather than individual comparisons. If scores are
-// retuned, these assert the *intent* still holds (e.g. "a trivial task must not
-// pick a frontier model", "search must go to a search model").
+// catalog (as if all providers were credentialed), asserting the choice lands
+// in the right QUALITY TIER for the difficulty, has the right capability, and —
+// within a tier — avoids the employer-paid Bedrock account. It validates the
+// user's ladder end-to-end and survives tuning by asserting intent, not exact
+// model IDs.
 func TestRouterEval(t *testing.T) {
 	all := []string{}
 	for _, m := range Catalog {
@@ -15,43 +15,51 @@ func TestRouterEval(t *testing.T) {
 	}
 
 	cases := []struct {
-		name       string
-		req        RouteRequest
-		wantCostLE int  // chosen model's Cost must be <= this (cheapness check)
-		wantQualGE int  // chosen model's Quality must be >= this
-		wantSearch bool // chosen must be search-capable
-		wantVision bool // chosen must be vision-capable
+		name           string
+		req            RouteRequest
+		wantTier       Tier // chosen model's tier must equal this (0 = don't check)
+		wantNonBedrock bool
+		wantSearch     bool
+		wantVision     bool
 	}{
 		{
-			name:       "trivial rename → cheapest, never frontier",
-			req:        RouteRequest{Kind: TaskGeneral, Difficulty: DiffTrivial, Candidates: all},
-			wantCostLE: 5, // must pick something cheap, not opus/gpt-5.5
+			name:           "trivial → tier-1, non-Bedrock (grok/glm trusted for simple)",
+			req:            RouteRequest{Kind: TaskGeneral, Difficulty: DiffTrivial, Candidates: all},
+			wantTier:       TierSimple,
+			wantNonBedrock: true,
 		},
 		{
-			name:       "hard architecture → top-tier quality",
-			req:        RouteRequest{Kind: TaskGeneral, Difficulty: DiffHard, Candidates: all},
-			wantQualGE: 90,
+			name:           "easy → tier-1, non-Bedrock",
+			req:            RouteRequest{Kind: TaskGeneral, Difficulty: DiffEasy, Candidates: all},
+			wantTier:       TierSimple,
+			wantNonBedrock: true,
 		},
 		{
-			name:       "medium feature → good-enough but not wasteful",
-			req:        RouteRequest{Kind: TaskGeneral, Difficulty: DiffMedium, Candidates: all},
-			wantQualGE: 78,
-			wantCostLE: 40, // shouldn't reach for the priciest when a mid model does
+			name:     "medium → tier-3 (opus)",
+			req:      RouteRequest{Kind: TaskGeneral, Difficulty: DiffMedium, Candidates: all},
+			wantTier: TierMed,
 		},
 		{
-			name:       "search task → a search-capable model",
+			name:     "hard → tier-4 (frontier)",
+			req:      RouteRequest{Kind: TaskGeneral, Difficulty: DiffHard, Candidates: all},
+			wantTier: TierFrontier,
+		},
+		{
+			name:       "search → a search-capable model",
 			req:        RouteRequest{Kind: TaskSearch, Difficulty: DiffMedium, Candidates: all},
 			wantSearch: true,
 		},
 		{
-			name:       "vision task → a vision-capable model",
+			name:       "vision → a vision-capable model",
 			req:        RouteRequest{Kind: TaskVision, Difficulty: DiffMedium, Candidates: all},
 			wantVision: true,
 		},
 		{
-			name:       "easy task → cheap and fast tier",
-			req:        RouteRequest{Kind: TaskGeneral, Difficulty: DiffEasy, Candidates: all},
-			wantCostLE: 7,
+			name: "hard, only tier-1/2 available → take the highest present",
+			req: RouteRequest{Kind: TaskGeneral, Difficulty: DiffHard, Candidates: []string{
+				"grok-build", "us.anthropic.claude-sonnet-4-6",
+			}},
+			wantTier: TierSimpleMed,
 		},
 	}
 
@@ -63,11 +71,11 @@ func TestRouterEval(t *testing.T) {
 			}
 			s := scoreFor(got)
 			m, _ := Lookup(got)
-			if c.wantCostLE > 0 && s.Cost > c.wantCostLE {
-				t.Errorf("chose %s (cost %d) — want cost <= %d", got, s.Cost, c.wantCostLE)
+			if c.wantTier != 0 && s.Tier != c.wantTier {
+				t.Errorf("chose %s (tier %d) — want tier %d", got, s.Tier, c.wantTier)
 			}
-			if c.wantQualGE > 0 && s.Quality < c.wantQualGE {
-				t.Errorf("chose %s (quality %d) — want quality >= %d", got, s.Quality, c.wantQualGE)
+			if c.wantNonBedrock && isBedrock(got) {
+				t.Errorf("chose %s — Bedrock, but a non-Bedrock model should have served", got)
 			}
 			if c.wantSearch && !m.Search {
 				t.Errorf("chose %s — not search-capable", got)
@@ -75,7 +83,7 @@ func TestRouterEval(t *testing.T) {
 			if c.wantVision && !m.Vision {
 				t.Errorf("chose %s — not vision-capable", got)
 			}
-			t.Logf("%s → %s (q%d c%d s%d)", c.name, got, s.Quality, s.Cost, s.Speed)
+			t.Logf("%s → %s (tier %d, speed %d, bedrock=%v)", c.name, got, s.Tier, s.Speed, isBedrock(got))
 		})
 	}
 }
