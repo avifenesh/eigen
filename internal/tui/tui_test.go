@@ -2157,3 +2157,90 @@ func TestScheduleGoalNagOnlyWithGoal(t *testing.T) {
 		t.Fatal("goal set → nag timer expected")
 	}
 }
+
+func TestLoopCommandSetShowClear(t *testing.T) {
+	m := testModel(t)
+	m.command("/loop 5m read GOALS.md and do the next unchecked item")
+	if m.loopPrompt != "read GOALS.md and do the next unchecked item" {
+		t.Fatalf("loop prompt wrong: %q", m.loopPrompt)
+	}
+	if m.loopEvery != 5*time.Minute {
+		t.Fatalf("loop interval wrong: %v", m.loopEvery)
+	}
+	// Status bar shows it.
+	found := false
+	for _, seg := range m.statusBarParts() {
+		if strings.Contains(seg.text, "loop=5m") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("status bar should show the loop")
+	}
+	// No interval → default.
+	m.command("/loop just do the thing")
+	if m.loopEvery != defaultLoopInterval || m.loopPrompt != "just do the thing" {
+		t.Fatalf("default interval wrong: %v %q", m.loopEvery, m.loopPrompt)
+	}
+	// Too-short interval rejected.
+	m.command("/loop 5s too fast")
+	if m.loopPrompt == "too fast" {
+		t.Fatal("too-short interval must be rejected")
+	}
+	// Clear.
+	m.command("/loop clear")
+	if m.loopPrompt != "" || m.loopEvery != 0 {
+		t.Fatal("/loop clear should reset")
+	}
+}
+
+func TestLoopFiresOnlyWhenIdle(t *testing.T) {
+	m := testModel(t)
+	m.loopPrompt, m.loopEvery = "do it", time.Minute
+
+	// Idle + current gen → fires (submit puts the model into running state).
+	cmd := m.handleLoop(loopMsg{gen: m.idleGen})
+	if cmd == nil {
+		t.Fatal("idle loop should fire")
+	}
+	if m.state != stRunning {
+		t.Fatal("loop fire should start a turn")
+	}
+	if m.loopRuns != 1 {
+		t.Fatalf("loopRuns = %d, want 1", m.loopRuns)
+	}
+
+	// Running → defers (re-arms, does not submit again).
+	runsBefore := m.loopRuns
+	cmd = m.handleLoop(loopMsg{gen: m.idleGen})
+	if cmd == nil {
+		t.Fatal("running loop should re-arm for later")
+	}
+	if m.loopRuns != runsBefore {
+		t.Fatal("running loop must not fire a turn")
+	}
+
+	// Stale gen → no-op.
+	if cmd := m.handleLoop(loopMsg{gen: m.idleGen - 1}); cmd != nil {
+		t.Fatal("stale loop msg must be ignored")
+	}
+
+	// Cleared → no-op.
+	m.loopPrompt = ""
+	if cmd := m.handleLoop(loopMsg{gen: m.idleGen}); cmd != nil {
+		t.Fatal("cleared loop must not fire")
+	}
+}
+
+func TestParseLoopArgs(t *testing.T) {
+	every, prompt, err := parseLoopArgs("1h30m check the queue")
+	if err != nil || every != 90*time.Minute || prompt != "check the queue" {
+		t.Fatalf("got %v %q %v", every, prompt, err)
+	}
+	if _, _, err := parseLoopArgs("10m"); err == nil {
+		t.Fatal("interval without prompt should error")
+	}
+	if _, _, err := parseLoopArgs(""); err == nil {
+		t.Fatal("empty should error")
+	}
+}

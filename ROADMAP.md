@@ -87,7 +87,11 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
    session meta, idle nag pings until achieved, and the model can clear it by
    calling goal_achieved — an independent small-model judge verifies the
    evidence and only a confirmed verdict clears the goal)*
-4. **"Loop" feature** — agent iterates autonomously until a condition/goal is met.
+4. **"Loop" feature** — *(shipped: /loop [interval] <prompt> re-submits the
+   prompt every interval while the session is IDLE — never interrupts a running
+   turn — until /loop clear. Persists across restart/rebuild via session meta.
+   Pairs with /goal + a goal file: edit the file between iterations and the
+   model picks up the next item without re-prompting.)*
 5. **Automation** — scheduled / triggered runs (cron-like, on-event).
 6. **Background scan for wide-reaching actions** — proactively flag risky/broad
    operations (mass deletes, wide refactors) before they run.

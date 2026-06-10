@@ -56,7 +56,7 @@ func (m *model) applyResumed(msgs []llm.Message) {
 // wait until the turn finishes (press esc to interrupt).
 func safeWhileRunning(name string) bool {
 	switch name {
-	case "/effort", "/search", "/perm", "/model", "/help", "/goal",
+	case "/effort", "/search", "/perm", "/model", "/help", "/goal", "/loop",
 		"/skills", "/tools", "/find", "/copy", "/read":
 		return true
 	default:
@@ -71,7 +71,7 @@ func (m *model) command(line string) tea.Cmd {
 	arg := strings.TrimSpace(strings.TrimPrefix(line, name))
 	switch name {
 	case "/help":
-		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /skills  /tools  /find  /copy  /read  /rebuild  /quit")
+		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /loop  /skills  /tools  /find  /copy  /read  /rebuild  /quit")
 		m.note("keys: / commands · @ files · ↑↓ history · select ctrl+p/n (or alt+↑/↓) · tab expand · drag select+copy · copy ctrl+y/alt+y · perm ctrl+a/alt+a · effort ctrl+e/alt+r · model ctrl+o/alt+m · pgup/pgdn scroll")
 		m.note("multiplexer note: zellij/tmux capture ctrl+p/n/o — use the alt+… keys (alt+↑/↓ select, alt+m model, alt+r effort, alt+a perm, alt+y copy)")
 		m.note("while running: enter queues a message · esc interrupts · settings commands (/effort /perm /model /search) run immediately")
@@ -159,6 +159,29 @@ func (m *model) command(line string) tea.Cmd {
 			// until it is cleared or work starts.
 			m.idleGen++
 			return m.scheduleGoalNag()
+		}
+	case "/loop":
+		switch arg {
+		case "":
+			if m.loopPrompt != "" {
+				m.note(fmt.Sprintf("loop: every %s → %s   (fired %d time(s); /loop clear to stop)", m.loopEvery, m.loopPrompt, m.loopRuns))
+			} else {
+				m.note("no loop set  (/loop [interval] <prompt> — e.g. /loop 10m read GOALS.md and do the next item)")
+			}
+		case "clear", "none", "off", "stop":
+			m.loopPrompt, m.loopEvery, m.loopRuns = "", 0, 0
+			m.idleGen++ // invalidate pending fires
+			m.note("loop cleared")
+		default:
+			every, prompt, err := parseLoopArgs(arg)
+			if err != nil {
+				m.push(&block{kind: blockNote, isErr: true, body: sb("loop: " + err.Error() + "  (usage: /loop [interval] <prompt>)")})
+				break
+			}
+			m.loopPrompt, m.loopEvery, m.loopRuns = prompt, every, 0
+			m.idleGen++ // restart the schedule cleanly
+			m.note(fmt.Sprintf("loop set: every %s → %s   (first fire in %s; /loop clear to stop)", every, prompt, every))
+			return m.scheduleLoop()
 		}
 	case "/effort":
 		es, ok := m.a.Provider.(llm.EffortSetter)

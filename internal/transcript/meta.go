@@ -18,6 +18,10 @@ type SessionMeta struct {
 	Effort   string `json:"effort,omitempty"`
 	Search   string `json:"search,omitempty"`
 	Goal     string `json:"goal,omitempty"`
+
+	// Loop: a prompt re-submitted on an interval while idle (until cleared).
+	LoopPrompt string `json:"loop_prompt,omitempty"`
+	LoopEvery  string `json:"loop_every,omitempty"` // time.Duration string
 }
 
 // metaPath returns the sidecar meta path for a session JSONL file.

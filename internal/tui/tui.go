@@ -188,6 +188,11 @@ type model struct {
 	notifyCmd   string    // external notifier (config notify_cmd / EIGEN_NOTIFY_CMD)
 	turnStarted time.Time // when the running turn began (zero when idle)
 
+	// loop: a prompt re-submitted every loopEvery while idle, until cleared.
+	loopPrompt string
+	loopEvery  time.Duration
+	loopRuns   int
+
 	// throughput: streamed output chars this turn (text + reasoning deltas)
 	// and the last completed turn's tokens-out + tok/s for the status bar.
 	turnOutChars int
@@ -269,8 +274,12 @@ func (m *model) Init() tea.Cmd {
 		task := m.initialTask
 		cmds = append(cmds, func() tea.Msg { return submitMsg{task} })
 	}
-	// A resumed session may carry a goal: arm the idle nag from the start.
+	// A resumed session may carry a goal or loop: arm them from the start.
 	if c := m.scheduleGoalNag(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if c := m.scheduleLoop(); c != nil {
+		m.note(fmt.Sprintf("loop resumed: every %s → %s   (/loop clear to stop)", m.loopEvery, m.loopPrompt))
 		cmds = append(cmds, c)
 	}
 	return tea.Batch(cmds...)
@@ -325,6 +334,10 @@ func (m *model) saveMeta() {
 		meta.Effort = liveEffort(m.a.Provider)
 		meta.Search = liveSearch(m.a.Provider)
 		meta.Goal = m.a.CurrentGoal()
+	}
+	if m.loopPrompt != "" {
+		meta.LoopPrompt = m.loopPrompt
+		meta.LoopEvery = m.loopEvery.String()
 	}
 	_ = transcript.SaveMeta(m.sessionPath, meta)
 }
@@ -895,10 +908,13 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			return m, m.submit(next)
 		}
 		m.relayout()
-		return m, tea.Batch(textarea.Blink, m.scheduleIdleDream(), m.scheduleGoalNag())
+		return m, tea.Batch(textarea.Blink, m.scheduleIdleDream(), m.scheduleGoalNag(), m.scheduleLoop())
 
 	case goalNagMsg:
 		return m, m.handleGoalNag(msg)
+
+	case loopMsg:
+		return m, m.handleLoop(msg)
 
 	case idleTickMsg:
 		// Only dream if still idle on the same generation we scheduled for.
@@ -1021,6 +1037,9 @@ type Options struct {
 	// NotifyCmd is an external notifier command (e.g. "notify-send") run with
 	// the ping message appended; empty = bell only (EIGEN_NOTIFY_CMD also works).
 	NotifyCmd string
+	// LoopPrompt/LoopEvery restore a resumed session's idle loop (see /loop).
+	LoopPrompt string
+	LoopEvery  time.Duration
 }
 
 // Run drives the agent under a multi-turn Bubble Tea REPL.
@@ -1091,6 +1110,8 @@ func Run(a *agent.Agent, o Options) (Result, error) {
 		maxTokens:      o.MaxTokens,
 		smallCompactor: o.SmallCompactor,
 		notifyCmd:      o.NotifyCmd,
+		loopPrompt:     o.LoopPrompt,
+		loopEvery:      o.LoopEvery,
 	}
 	if m.idleMinutes <= 0 {
 		m.idleMinutes = 5

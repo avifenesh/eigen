@@ -106,6 +106,9 @@ func (m *model) statusBarParts() []statusSeg {
 	if m.lastTokRate > 0 {
 		segs = append(segs, statusSeg{fmt.Sprintf("%.0f tok/s", m.lastTokRate), styleReason})
 	}
+	if m.loopPrompt != "" {
+		segs = append(segs, statusSeg{"loop=" + m.loopEvery.String(), styleAsk})
+	}
 	if m.readAloud {
 		segs = append(segs, statusSeg{"read-aloud", styleStatus})
 	}

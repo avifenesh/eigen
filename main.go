@@ -111,6 +111,8 @@ func main() {
 	// unless the user explicitly overrode a flag this run. Only eigen-native
 	// sessions carry a sidecar meta; foreign transcripts have none.
 	resumedGoal := ""
+	resumedLoopPrompt := ""
+	var resumedLoopEvery time.Duration
 	if *resumeFile != "" {
 		set := map[string]bool{}
 		flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
@@ -144,6 +146,12 @@ func main() {
 					}
 				}
 				resumedGoal = meta.Goal
+				resumedLoopPrompt = meta.LoopPrompt
+				if meta.LoopEvery != "" {
+					if d, derr := time.ParseDuration(meta.LoopEvery); derr == nil {
+						resumedLoopEvery = d
+					}
+				}
 			}
 		}
 	}
@@ -375,6 +383,8 @@ func main() {
 			MaxTokens:      resolveUserMaxTokens(*maxTokens),
 			SmallCompactor: smallCompactor,
 			NotifyCmd:      cfg.NotifyCmd,
+			LoopPrompt:     resumedLoopPrompt,
+			LoopEvery:      resumedLoopEvery,
 		})
 		if err != nil {
 			fail(err)
