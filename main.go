@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
+	"github.com/avifenesh/eigen/internal/app"
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/dream"
 	"github.com/avifenesh/eigen/internal/hook"
@@ -140,6 +141,48 @@ func main() {
 	// --continue is shorthand for --resume eigen (the latest eigen session).
 	if *continueLatest && *resumeFile == "" {
 		*resumeFile = "eigen"
+	}
+
+	// `eigen <path>`: a directory argument roots the chat there (not a task).
+	startedInDir := false
+	if task != "" {
+		if st, err := os.Stat(task); err == nil && st.IsDir() {
+			if err := os.Chdir(task); err != nil {
+				fail(err)
+			}
+			task = ""
+			startedInDir = true
+		}
+	}
+
+	// Bare `eigen` in a terminal (no task, no resume, not print mode) opens
+	// the APP — the paged shell (home/projects/sessions/config/…) — instead of
+	// dropping straight into a chat. `eigen .`, `eigen <path>`, a task, or
+	// --resume/-c all bypass it.
+	appInteractive := isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd())
+	if task == "" && *resumeFile == "" && !*printMode && appInteractive && !startedInDir {
+		res, err := app.Run(app.Load())
+		if err != nil {
+			fail(err)
+		}
+		switch res.Action {
+		case app.ActionQuit:
+			return
+		case app.ActionOpenChat:
+			if res.Dir != "" {
+				if err := os.Chdir(res.Dir); err != nil {
+					fail(err)
+				}
+			}
+			// fall through to a fresh chat rooted here
+		case app.ActionResume:
+			*resumeFile = res.SessionID
+			// Root the chat in the session's project (the app may have been
+			// launched from anywhere).
+			if res.Dir != "" {
+				_ = os.Chdir(res.Dir)
+			}
+		}
 	}
 
 	// Restore the live config from a resumed eigen session so the conversation
@@ -538,7 +581,9 @@ func main() {
 	// the session meta so a later --resume continues with the same config.
 	savePath := newSessionPath()
 	saveMeta := func() {
+		wd, _ := os.Getwd()
 		_ = transcript.SaveMeta(savePath, transcript.SessionMeta{
+			Dir:      wd,
 			Provider: *provider,
 			Model:    *model,
 			Perm:     *perm,

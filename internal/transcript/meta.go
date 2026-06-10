@@ -12,6 +12,9 @@ import (
 // launch defaults. Every field is optional; empty fields are simply not
 // restored.
 type SessionMeta struct {
+	// Dir is the working directory (project root) the session ran in — the
+	// grouping key for the app's Projects page.
+	Dir      string `json:"dir,omitempty"`
 	Provider string `json:"provider,omitempty"`
 	Model    string `json:"model,omitempty"`
 	Perm     string `json:"perm,omitempty"`

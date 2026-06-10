@@ -337,6 +337,9 @@ func (m *model) saveMeta() {
 		Provider: m.provName,
 		Model:    m.modelID,
 	}
+	if wd, err := os.Getwd(); err == nil {
+		meta.Dir = wd
+	}
 	// During an overload failover window, persist the ORIGINAL model: the
 	// fallback is temporary, and a restart should resume on the user's choice
 	// (failing over again if the model is still overloaded).
