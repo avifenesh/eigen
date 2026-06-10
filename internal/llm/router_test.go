@@ -180,3 +180,37 @@ func TestRouteSocialRequiresGrok(t *testing.T) {
 		t.Fatal("no social-capable candidate should yield no choice")
 	}
 }
+
+func TestRouteMediumGeneralPrefersGPT(t *testing.T) {
+	// Medium general: gpt-5.5 is stricter/more correct than opus → it wins.
+	got, _ := Route(RouteRequest{
+		Kind:       TaskGeneral,
+		Difficulty: DiffMedium,
+		Candidates: []string{"us.anthropic.claude-opus-4-8", "openai.gpt-5.5"},
+	})
+	if got != "openai.gpt-5.5" {
+		t.Fatalf("medium general should prefer gpt-5.5 (stricter), got %s", got)
+	}
+}
+
+func TestRouteFrontendPrefersOpus(t *testing.T) {
+	// Frontend medium: opus is the better design model → it wins over gpt-5.5.
+	got, _ := Route(RouteRequest{
+		Kind:       TaskGeneral,
+		Difficulty: DiffMedium,
+		Frontend:   true,
+		Candidates: []string{"openai.gpt-5.5", "us.anthropic.claude-opus-4-8"},
+	})
+	if got != "us.anthropic.claude-opus-4-8" {
+		t.Fatalf("frontend task should prefer opus (design), got %s", got)
+	}
+}
+
+func TestGPTAndOpusShareMedTier(t *testing.T) {
+	if scoreFor("openai.gpt-5.5").Tier != TierMed {
+		t.Error("gpt-5.5 should be tier-3 (med), taking opus tasks")
+	}
+	if scoreFor("us.anthropic.claude-opus-4-8").Tier != TierMed {
+		t.Error("opus should be tier-3 (med)")
+	}
+}

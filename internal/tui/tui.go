@@ -898,6 +898,15 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		if msg.err != nil {
 			m.push(&block{kind: blockNote, isErr: true, body: sb("error: " + msg.err.Error())})
 			switch {
+			case isGPTRoutingError(m.modelID, msg.err) && m.ctx.Err() == nil:
+				// GPT routing/availability failure: fall back to opus (the
+				// user's rule — gpt takes opus's tasks unless gpt is failing).
+				if m.startFailover() {
+					m.cancel = nil
+					m.autosave()
+					m.note(fmt.Sprintf("%s routing error — falling back to %s", m.modelID, failoverModelID))
+					return m, m.resend()
+				}
 			case isOverloaded(msg.err) && m.ctx.Err() == nil:
 				// Persistent overload (503 after all retries): redirect the next
 				// turns to the known-good fallback model and retry this turn there.
@@ -1265,6 +1274,26 @@ func isRateLimit(err error) bool {
 // isOverloaded reports whether err looks like a persistent provider overload
 // (HTTP 503 / "unable to process" after all retries) — capacity on the model
 // side, where switching models helps and retrying the same one usually doesn't.
+// isGPTRoutingError reports a GPT-family model failing for routing/availability
+// reasons (not a normal task error): the model is a GPT and the error looks
+// like a routing/availability/transport failure. Per the user's rule such
+// failures fail over to opus.
+func isGPTRoutingError(model string, err error) bool {
+	if err == nil || !strings.HasPrefix(model, "openai.gpt") {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	for _, cue := range []string{
+		"no route", "routing", "not found", "does not exist", "unavailable",
+		"bad gateway", "502", "503", "504", "connection", "timeout", "eof",
+	} {
+		if strings.Contains(s, cue) {
+			return true
+		}
+	}
+	return false
+}
+
 func isOverloaded(err error) bool {
 	if err == nil {
 		return false

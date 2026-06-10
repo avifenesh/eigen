@@ -52,6 +52,12 @@ type RouteRequest struct {
 	Difficulty Difficulty
 	MinContext int // tokens the conversation needs to fit (0 = don't care)
 
+	// Frontend marks a frontend/design task (UI, CSS, components, visual
+	// design). Within a tier it prefers Design-affinity models (opus) over
+	// Strict ones (gpt-5.5), per the user's rule: gpt-5.5 takes opus's general
+	// tasks but frontend stays with opus.
+	Frontend bool
+
 	// Candidates are the model IDs the router may choose from — already filtered
 	// to providers the user has credentials for and has allowed. Empty means no
 	// choice is possible.
@@ -111,8 +117,9 @@ func Route(req RouteRequest) (string, bool) {
 		}
 	}
 
-	// Among models in the chosen tier, prefer non-Bedrock (spare the
-	// employer-paid account), then faster.
+	// Among models in the chosen tier: task affinity first (Strict for
+	// general work, Design for frontend — the user's gpt-5.5/opus split),
+	// then non-Bedrock, then faster.
 	pool := capable[:0:0]
 	for _, id := range capable {
 		if scoreFor(id).Tier == best {
@@ -120,19 +127,38 @@ func Route(req RouteRequest) (string, bool) {
 		}
 	}
 	sort.SliceStable(pool, func(i, j int) bool {
-		return preferNonBedrockFaster(pool[i], pool[j])
+		return tierOrder(pool[i], pool[j], req.Frontend)
 	})
 	return pool[0], true
 }
 
-// preferNonBedrockFaster orders models within a tier: non-Bedrock first (the
-// user's own pre-paid accounts, sparing the employer-paid Bedrock quota), then
-// faster (so composer beats haiku in tier 1).
-func preferNonBedrockFaster(a, b string) bool {
+// tierOrder ranks models within a tier: (1) task affinity — Design models for
+// frontend tasks, Strict models otherwise (gpt-5.5 is stricter/more correct
+// than opus so it takes opus's general tasks; opus is better at frontend) —
+// this outranks the Bedrock preference because it is a quality judgment;
+// (2) non-Bedrock (spare the employer-paid account); (3) faster.
+func tierOrder(a, b string, frontend bool) bool {
+	sa, sb := scoreFor(a), scoreFor(b)
+	af, bf := affinity(sa, frontend), affinity(sb, frontend)
+	if af != bf {
+		return af > bf
+	}
 	if ab, bb := isBedrock(a), isBedrock(b); ab != bb {
 		return !ab
 	}
-	return scoreFor(a).Speed > scoreFor(b).Speed
+	return sa.Speed > sb.Speed
+}
+
+// affinity scores a model's fit for the task flavor: 1 when its specialty
+// matches (Design for frontend, Strict for general), else 0.
+func affinity(s RouterScore, frontend bool) int {
+	if frontend && s.Design {
+		return 1
+	}
+	if !frontend && s.Strict {
+		return 1
+	}
+	return 0
 }
 
 // isCapable reports whether a model can do the task at all: required capability

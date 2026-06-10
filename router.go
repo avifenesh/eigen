@@ -72,7 +72,12 @@ func (r *autoRouter) Route(ctx context.Context, prompt, kind, difficulty string,
 	}
 
 	candidates := llm.RouteCandidates(current, providers)
-	chosen, ok := llm.Route(llm.RouteRequest{Kind: k, Difficulty: d, Candidates: candidates})
+	chosen, ok := llm.Route(llm.RouteRequest{
+		Kind:       k,
+		Difficulty: d,
+		Frontend:   llm.IsFrontend(prompt),
+		Candidates: candidates,
+	})
 	if !ok {
 		return nil, "", ""
 	}

@@ -73,3 +73,18 @@ func TestClassifySocial(t *testing.T) {
 		t.Error("x parse")
 	}
 }
+
+func TestIsFrontend(t *testing.T) {
+	yes := []string{"build the React component", "fix the CSS layout", "redesign the landing page", "make it responsive"}
+	no := []string{"refactor the parser", "fix the race condition", "add a database migration"}
+	for _, p := range yes {
+		if !IsFrontend(p) {
+			t.Errorf("should be frontend: %q", p)
+		}
+	}
+	for _, p := range no {
+		if IsFrontend(p) {
+			t.Errorf("should NOT be frontend: %q", p)
+		}
+	}
+}

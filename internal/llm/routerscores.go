@@ -25,30 +25,36 @@ const (
 	TierFrontier  Tier = 4 // fable / gpt-5.x
 )
 
-// RouterScore is a model's routing profile: its quality tier and a relative
-// speed (the within-tier tiebreak — at equal tier and Bedrock-ness, faster
-// wins, e.g. composer over haiku).
+// RouterScore is a model's routing profile: its quality tier, a relative speed
+// (within-tier tiebreak), and two affinity flags that order the tier-3 pool:
+// Strict marks the more-correct/disciplined model preferred for general work
+// (gpt-5.5 over opus); Design marks the better frontend/design model (opus
+// over gpt-5.5) preferred when the task is frontend.
 type RouterScore struct {
-	Tier  Tier
-	Speed int // 0–100 relative throughput (higher = faster)
+	Tier   Tier
+	Speed  int  // 0–100 relative throughput (higher = faster)
+	Strict bool // more strict/correct — wins general within its tier
+	Design bool // better at frontend/design — wins frontend within its tier
 }
 
 // routerScores maps catalog model IDs to their tier + speed. Tiers reflect the
 // user's TRUST (grok/glm are "simple only" even at high benchmark scores), not
 // leaderboard numbers. Tune freely.
 var routerScores = map[string]RouterScore{
-	// Tier 4 — frontier (hard tasks; also the typical default).
-	"openai.gpt-5.5":                  {Tier: TierFrontier, Speed: 55},
-	"openai.gpt-5.4":                  {Tier: TierFrontier, Speed: 58},
-	"openai.gpt-5":                    {Tier: TierFrontier, Speed: 60},
+	// Tier 4 — frontier (the typical default; hard tasks stay on the default).
 	"global.anthropic.claude-fable-5": {Tier: TierFrontier, Speed: 45},
 	"claude-fable-5":                  {Tier: TierFrontier, Speed: 45},
 
-	// Tier 3 — med (opus).
-	"us.anthropic.claude-opus-4-8": {Tier: TierMed, Speed: 48},
-	"us.anthropic.claude-opus-4-1": {Tier: TierMed, Speed: 45},
-	"claude-opus-4-1-20250805":     {Tier: TierMed, Speed: 45},
-	"claude-opus-4-20250514":       {Tier: TierMed, Speed: 45},
+	// Tier 3 — med (opus + the GPT family). gpt-5.5 is MORE strict/correct
+	// than opus → takes opus's general tasks; opus is better at frontend/
+	// design → takes frontend tasks (and remains the failover when GPT errors).
+	"openai.gpt-5.5":               {Tier: TierMed, Speed: 50, Strict: true},
+	"openai.gpt-5.4":               {Tier: TierMed, Speed: 58},
+	"openai.gpt-5":                 {Tier: TierMed, Speed: 60},
+	"us.anthropic.claude-opus-4-8": {Tier: TierMed, Speed: 48, Design: true},
+	"us.anthropic.claude-opus-4-1": {Tier: TierMed, Speed: 45, Design: true},
+	"claude-opus-4-1-20250805":     {Tier: TierMed, Speed: 45, Design: true},
+	"claude-opus-4-20250514":       {Tier: TierMed, Speed: 45, Design: true},
 
 	// Tier 2 — simple-med (sonnet).
 	"us.anthropic.claude-sonnet-4-6": {Tier: TierSimpleMed, Speed: 74},

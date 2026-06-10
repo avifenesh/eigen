@@ -2369,3 +2369,28 @@ func TestRouteCommandUnavailable(t *testing.T) {
 		t.Fatal("nil router should note unavailable")
 	}
 }
+
+func TestIsGPTRoutingError(t *testing.T) {
+	// GPT model + routing-ish error → true.
+	if !isGPTRoutingError("openai.gpt-5.5", errString("no route to model")) {
+		t.Error("gpt + routing error should be detected")
+	}
+	if !isGPTRoutingError("openai.gpt-5.4", errString("HTTP 503 unavailable")) {
+		t.Error("gpt + 503 should be detected")
+	}
+	// GPT model + ordinary task error → false (don't fail over normal errors).
+	if isGPTRoutingError("openai.gpt-5.5", errString("tool returned a bad result")) {
+		t.Error("gpt + ordinary error should not be a routing error")
+	}
+	// Non-GPT model → never a GPT routing error.
+	if isGPTRoutingError("us.anthropic.claude-opus-4-8", errString("no route")) {
+		t.Error("non-gpt model should not match")
+	}
+	if isGPTRoutingError("openai.gpt-5.5", nil) {
+		t.Error("nil error should be false")
+	}
+}
+
+type errString string
+
+func (e errString) Error() string { return string(e) }

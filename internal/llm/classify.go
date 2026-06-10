@@ -15,6 +15,26 @@ func Classify(prompt string, hasImage bool) (TaskKind, Difficulty) {
 	return classifyKind(prompt, hasImage), classifyDifficulty(prompt)
 }
 
+// frontendCues imply frontend/design work — where opus outranks the stricter
+// gpt-5.5 within the med tier.
+var frontendCues = []string{
+	"frontend", "front-end", "css", "tailwind", "stylesheet", "ui ", " ui",
+	"layout", "responsive", "component", "react", "vue", "svelte", "design the",
+	"redesign", "visual", "animation", "landing page", "web page", "webpage",
+	"html", "styling", "theme", "dark mode", "user interface", "ux",
+}
+
+// IsFrontend reports whether a prompt looks like frontend/design work.
+func IsFrontend(prompt string) bool {
+	p := strings.ToLower(prompt)
+	for _, cue := range frontendCues {
+		if strings.Contains(p, cue) {
+			return true
+		}
+	}
+	return false
+}
+
 func classifyKind(prompt string, hasImage bool) TaskKind {
 	if hasImage {
 		return TaskVision
