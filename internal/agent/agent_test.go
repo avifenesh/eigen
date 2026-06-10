@@ -669,3 +669,47 @@ func (p *systemCapturingProvider) Complete(_ context.Context, req llm.Request) (
 	p.system = req.System
 	return &llm.Response{Text: "ok"}, nil
 }
+
+func TestNonStreamingEmitsInBetweenCommentary(t *testing.T) {
+	// A NON-streaming provider (mockProvider has no Stream method) whose
+	// tool-call step carries text + reasoning must emit them as delta events,
+	// so the live view matches what resume renders from history.
+	td := callTool("ping")
+	td.ReadOnly = true
+	prov := &mockProvider{replies: []*llm.Response{
+		{
+			Text:      "let me check the file",
+			Reasoning: "I should look first",
+			ToolCalls: []llm.ToolCall{{ID: "c1", Name: "ping", Arguments: json.RawMessage(`{}`)}},
+		},
+		{Text: "final answer"},
+	}}
+	reg, _ := tool.NewRegistry(td)
+	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto}
+	var kinds []EventKind
+	var texts []string
+	a.OnEvent = func(e Event) {
+		kinds = append(kinds, e.Kind)
+		texts = append(texts, e.Text)
+	}
+	out, err := a.NewSession().Send(context.Background(), "go")
+	if err != nil || out != "final answer" {
+		t.Fatalf("send: %v %q", err, out)
+	}
+	// Expect reasoning + text deltas BEFORE the tool start.
+	var sawReasoning, sawText bool
+	for i, k := range kinds {
+		if k == EventToolStart {
+			break
+		}
+		if k == EventReasoningDelta && texts[i] == "I should look first" {
+			sawReasoning = true
+		}
+		if k == EventTextDelta && texts[i] == "let me check the file" {
+			sawText = true
+		}
+	}
+	if !sawReasoning || !sawText {
+		t.Fatalf("in-between commentary not emitted before tool start: kinds=%v", kinds)
+	}
+}

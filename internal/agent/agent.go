@@ -494,8 +494,10 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		}
 		var resp *llm.Response
 		var err error
+		streamed := false
 		prov := a.provider()
 		if sm, ok := prov.(llm.Streamer); ok && a.OnEvent != nil {
+			streamed = true
 			sink := func(c llm.StreamChunk) {
 				kind := EventTextDelta
 				if c.Kind == llm.ChunkReasoning {
@@ -553,6 +555,18 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 			ReasoningID: resp.ReasoningID,
 			ToolCalls:   resp.ToolCalls,
 		})
+		// Non-streaming providers deliver the in-between commentary (reasoning
+		// + text accompanying tool calls) only in the final response — emit it
+		// now so the live view matches what resume renders from history.
+		// Streaming providers already delivered these as deltas.
+		if !streamed {
+			if resp.Reasoning != "" {
+				a.emit(Event{Kind: EventReasoningDelta, Step: step, Text: resp.Reasoning})
+			}
+			if strings.TrimSpace(resp.Text) != "" {
+				a.emit(Event{Kind: EventTextDelta, Step: step, Text: resp.Text})
+			}
+		}
 		// Tool calls are dispatched strictly in order, one at a time. This
 		// in-order, non-concurrent execution is what makes write/edit (atomic
 		// rename) and bash safe without per-path locking; add per-path mutexes

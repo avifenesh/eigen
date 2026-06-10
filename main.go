@@ -101,6 +101,13 @@ func main() {
 		return
 	}
 
+	// `eigen daemon`: run the long-lived session host (the real app). Windows
+	// attach to it as views; sessions keep running with no window.
+	if flag.Arg(0) == "daemon" {
+		runDaemon(cfg)
+		return
+	}
+
 	skills := skill.Discover(skillDirs()...)
 	if *listSkills {
 		printSkills(skills)

@@ -38,6 +38,10 @@ func (m *model) renderEvent(e agent.Event) {
 	case agent.EventToolStart:
 		// Real action started: collapse the live thinking block(s) for this turn.
 		m.collapseThinking()
+		// A new step follows; whatever text streamed so far was in-between
+		// commentary, not the final answer. Reset so EventDone renders the
+		// final text unless deltas arrive AFTER the last tool call.
+		m.streamedText = false
 		// The todo tool drives the pinned plan panel instead of a tool block.
 		if e.ToolName == "todo" {
 			m.updateTodos(e.ToolArgs)

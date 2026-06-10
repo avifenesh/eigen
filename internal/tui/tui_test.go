@@ -189,15 +189,23 @@ func TestAgentEventRendering(t *testing.T) {
 	m.Update(agentEvent{e: agent.Event{Kind: agent.EventToolStart, ToolName: "bash", ToolArgs: json.RawMessage(`{}`)}})
 	m.Update(agentEvent{e: agent.Event{Kind: agent.EventToolResult, ToolName: "bash", Result: "ok"}})
 	m.Update(agentEvent{e: agent.Event{Kind: agent.EventDone, Text: "world"}})
-	// The two text deltas must coalesce into a single assistant block.
-	var asst *block
+	// The two text deltas must coalesce into a single assistant block. Text
+	// streamed BEFORE a tool call is in-between commentary; the EventDone text
+	// is the final answer and renders as its own block after the tool.
+	var blocks []*block
 	for _, b := range m.blocks {
 		if b.kind == blockText && b.role == "assistant" {
-			asst = b
+			blocks = append(blocks, b)
 		}
 	}
-	if asst == nil || asst.body != "hello world" {
-		t.Fatalf("text deltas did not coalesce: %+v", asst)
+	if len(blocks) != 2 {
+		t.Fatalf("want commentary + final answer blocks, got %d", len(blocks))
+	}
+	if blocks[0].body != "hello world" {
+		t.Fatalf("text deltas did not coalesce: %q", blocks[0].body)
+	}
+	if blocks[1].body != "world" {
+		t.Fatalf("final answer after a tool call should render: %q", blocks[1].body)
 	}
 }
 
