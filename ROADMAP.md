@@ -125,8 +125,13 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
     usable immediately via --model/-/model.)*
 20. **Image integration using other models** — vision/image understanding via
     auxiliary models when the main model lacks it.
-21. **Drag-and-drop of files** (and similar) into the TUI.
-22. **Image copy-paste** into the conversation.
+21. **Drag-and-drop of files** — *(shipped: a dropped file arrives as a
+    bracketed paste of its path; eigen normalizes it (strips file://, unquotes,
+    percent-decodes, handles multi-file drops) into clean path tokens the model
+    reads like an @file mention. Plain pasted prose is untouched.)*
+22. **Image copy-paste** into the conversation — blocked on #20 (vision support
+    in the provider wire formats); terminals only paste an image PATH, which
+    already works via #21, but the model can't yet receive image data.
 23. **Integrate other model types efficiently** — embedders, diffusion, mamba, etc.,
     to offer non-LLM solutions where they fit.
 

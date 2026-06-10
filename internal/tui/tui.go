@@ -713,6 +713,17 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				m.refreshCompletion()
 				return m, nil
 			}
+			// Bracketed paste / drag-drop: when the payload is dropped file
+			// path(s), normalize (strip file://, unquote, percent-decode) and
+			// insert as clean path tokens the model reads like an @file mention.
+			if msg.Paste && len(msg.Runes) > 0 {
+				if norm := normalizeDropped(string(msg.Runes)); norm != string(msg.Runes) {
+					m.ti.InsertString(norm)
+					m.resizeInput()
+					m.refreshCompletion()
+					return m, nil
+				}
+			}
 			// Do not bind the spacebar while the input is focused: it must insert
 			// spaces in prompts even when a transcript block is selected. Use tab to
 			// expand/collapse blocks.
