@@ -32,7 +32,7 @@ func runDaemon(cfg config.Config) {
 	gmem, _ := memory.OpenGlobal()
 	skills := skill.Discover(skillDirs()...)
 
-	host := daemon.NewHost()
+	host := daemon.NewPersistentHost(daemon.SessionsDir())
 	// The builder turns a (dir, model) request into a fully-wired agent +
 	// resource closer, reusing the same per-session construction as a chat.
 	build := func(dir, model string) (*agent.Agent, func(), error) {
@@ -55,6 +55,13 @@ func runDaemon(cfg config.Config) {
 			return nil, nil, err
 		}
 		return deps.Agent, deps.Close, nil
+	}
+
+	// Resurrect persisted sessions before accepting views: each one rebuilds
+	// its agent (rooted at its dir) and resumes its saved history under the
+	// same id, so a daemon restart loses nothing.
+	if n := host.Restore(build); n > 0 {
+		fmt.Fprintf(os.Stderr, "eigen daemon: restored %d session(s)\n", n)
 	}
 
 	srv, err := daemon.Listen(daemon.SocketPath(), host, build)

@@ -140,6 +140,7 @@ func (s *Server) handle(conn net.Conn) {
 				send(Response{Type: "error", Error: "set: nothing to set"})
 				continue
 			}
+			s.host.saveSessionMeta(sess) // durable: survives daemon restart
 			send(Response{Type: "ok"})
 		case "compact":
 			sess := s.host.Get(req.ID)
