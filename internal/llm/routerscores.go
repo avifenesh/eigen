@@ -15,43 +15,49 @@ type RouterScore struct {
 	Speed   int // 0–100 relative throughput (higher = faster)
 }
 
-// routerScores maps catalog model IDs to their routing profile. Tune freely;
-// the router's behavior is fully determined by the ordering these induce.
+// routerScores maps catalog model IDs to their routing profile. Cost is
+// calibrated from real published pricing (blended input+output $/Mtok scaled so
+// the priciest, legacy Opus, ≈ 100; source: OpenRouter models API, fetched
+// 2026-06). Quality/Speed are relative estimates. Tune freely; the router's
+// behavior is fully determined by the ordering these induce.
 var routerScores = map[string]RouterScore{
-	// Frontier (top quality, expensive, slower).
-	"openai.gpt-5.5": {Quality: 95, Cost: 80, Speed: 55},
-	"openai.gpt-5.4": {Quality: 92, Cost: 78, Speed: 55},
-	"openai.gpt-5":   {Quality: 88, Cost: 75, Speed: 58},
+	// OpenAI GPT (mantle). Real $/Mtok: 5.5=5/30, 5.4=2.5/15.
+	"openai.gpt-5.5": {Quality: 95, Cost: 39, Speed: 55},
+	"openai.gpt-5.4": {Quality: 92, Cost: 19, Speed: 58},
+	"openai.gpt-5":   {Quality: 88, Cost: 18, Speed: 60},
 
-	"global.anthropic.claude-fable-5": {Quality: 96, Cost: 90, Speed: 45},
-	"us.anthropic.claude-opus-4-8":    {Quality: 95, Cost: 90, Speed: 45},
-	"us.anthropic.claude-sonnet-4-6":  {Quality: 88, Cost: 50, Speed: 72},
-	"us.anthropic.claude-opus-4-1":    {Quality: 90, Cost: 70, Speed: 50},
-	"us.anthropic.claude-3-5-sonnet":  {Quality: 80, Cost: 45, Speed: 72},
-	"us.anthropic.claude-haiku-4-5":   {Quality: 70, Cost: 12, Speed: 90},
+	// Anthropic (Bedrock). Real $/Mtok: fable=10/50, opus4.8=5/25,
+	// sonnet=3/15, opus4.1=15/75 (legacy), haiku=1/5.
+	"global.anthropic.claude-fable-5": {Quality: 96, Cost: 67, Speed: 45},
+	"us.anthropic.claude-opus-4-8":    {Quality: 95, Cost: 33, Speed: 48},
+	"us.anthropic.claude-sonnet-4-6":  {Quality: 88, Cost: 20, Speed: 74},
+	"us.anthropic.claude-opus-4-1":    {Quality: 90, Cost: 100, Speed: 45},
+	"us.anthropic.claude-3-5-sonnet":  {Quality: 80, Cost: 20, Speed: 74},
+	"us.anthropic.claude-haiku-4-5":   {Quality: 70, Cost: 7, Speed: 92},
 
-	"claude-fable-5":             {Quality: 96, Cost: 90, Speed: 45},
-	"claude-opus-4-1-20250805":   {Quality: 90, Cost: 70, Speed: 50},
-	"claude-sonnet-4-5-20250929": {Quality: 88, Cost: 50, Speed: 72},
-	"claude-opus-4-20250514":     {Quality: 89, Cost: 72, Speed: 48},
+	// Anthropic (native API) — same pricing as the Bedrock twins.
+	"claude-fable-5":             {Quality: 96, Cost: 67, Speed: 45},
+	"claude-opus-4-1-20250805":   {Quality: 90, Cost: 100, Speed: 45},
+	"claude-sonnet-4-5-20250929": {Quality: 88, Cost: 20, Speed: 74},
+	"claude-opus-4-20250514":     {Quality: 89, Cost: 100, Speed: 45},
 
-	// Local (free-ish, modest quality, variable speed).
+	// Local (free; modest quality).
 	"local": {Quality: 50, Cost: 1, Speed: 60},
 
-	// xAI Grok (search-capable; composer/code are fast + cheap).
-	"grok-build":             {Quality: 88, Cost: 40, Speed: 70},
-	"grok-composer-2.5-fast": {Quality: 78, Cost: 20, Speed: 92},
-	"grok-4":                 {Quality: 88, Cost: 50, Speed: 60},
-	"grok-code-fast-1":       {Quality: 75, Cost: 15, Speed: 90},
+	// xAI Grok — cheap + fast. Real $/Mtok: grok-build=1/2, grok-4=1.25/2.5.
+	"grok-build":             {Quality: 88, Cost: 3, Speed: 78},
+	"grok-composer-2.5-fast": {Quality: 78, Cost: 3, Speed: 94},
+	"grok-4":                 {Quality: 88, Cost: 4, Speed: 62},
+	"grok-code-fast-1":       {Quality: 75, Cost: 2, Speed: 92},
 
-	// Zhipu GLM (search-capable; cheap; turbo is fast).
-	"glm-5.1":     {Quality: 85, Cost: 18, Speed: 75},
-	"glm-5":       {Quality: 83, Cost: 16, Speed: 75},
-	"glm-5-turbo": {Quality: 78, Cost: 12, Speed: 88},
-	"glm-4.7":     {Quality: 80, Cost: 14, Speed: 76},
-	"glm-4.6":     {Quality: 78, Cost: 12, Speed: 78},
-	"glm-4.5":     {Quality: 72, Cost: 10, Speed: 78},
-	"glm-4.5-air": {Quality: 65, Cost: 8, Speed: 85},
+	// Zhipu GLM — cheap. Real $/Mtok: glm-5.1=0.98/3.08, glm-5-turbo=1.2/4.
+	"glm-5.1":     {Quality: 85, Cost: 5, Speed: 76},
+	"glm-5":       {Quality: 83, Cost: 5, Speed: 76},
+	"glm-5-turbo": {Quality: 78, Cost: 6, Speed: 90},
+	"glm-4.7":     {Quality: 80, Cost: 4, Speed: 78},
+	"glm-4.6":     {Quality: 78, Cost: 4, Speed: 80},
+	"glm-4.5":     {Quality: 72, Cost: 3, Speed: 80},
+	"glm-4.5-air": {Quality: 65, Cost: 2, Speed: 88},
 }
 
 // scoreFor returns a model's router score, or a neutral unknown profile.

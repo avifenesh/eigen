@@ -44,15 +44,18 @@ func TestRouteHardRequiresStrong(t *testing.T) {
 }
 
 func TestRouteEqualCostPrefersStronger(t *testing.T) {
-	// Two synthetic-equal-cost models: at equal cost, stronger wins.
-	// opus-4-8 and fable-5 are both cost 90; fable(96) > opus(95).
-	got, _ := Route(RouteRequest{
-		Kind:       TaskGeneral,
-		Difficulty: DiffHard,
-		Candidates: []string{"us.anthropic.claude-opus-4-8", "global.anthropic.claude-fable-5"},
-	})
-	if got != "global.anthropic.claude-fable-5" {
-		t.Fatalf("equal cost should prefer the stronger (fable-5), got %s", got)
+	// Two equal-cost models (opus-4-1 and opus-4-20250514 are both cost 100):
+	// at equal cost, the stronger quality wins. opus-4-1(90) vs the dated
+	// opus-4-20250514(89) — but they're different providers. Use the comparator
+	// directly on a crafted equal-cost pair to assert the rule cleanly.
+	routerScores["__hi"] = RouterScore{Quality: 90, Cost: 50, Speed: 50}
+	routerScores["__lo"] = RouterScore{Quality: 80, Cost: 50, Speed: 50}
+	defer func() { delete(routerScores, "__hi"); delete(routerScores, "__lo") }()
+	if !cheaperStrongerFaster("__hi", "__lo") {
+		t.Fatal("equal cost: stronger quality should sort first")
+	}
+	if cheaperStrongerFaster("__lo", "__hi") {
+		t.Fatal("weaker should not sort before stronger at equal cost")
 	}
 }
 
