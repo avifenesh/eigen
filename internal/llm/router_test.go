@@ -214,3 +214,30 @@ func TestGPTAndOpusShareMedTier(t *testing.T) {
 		t.Error("opus should be tier-3 (med)")
 	}
 }
+
+func TestRouteBedrockAvoidedOnlyAtTrueTie(t *testing.T) {
+	// Same model on two accounts (fable native vs fable Bedrock): identical
+	// tier/affinity/rank — the true tie where avoiding Bedrock is free.
+	// (Use a search-incapable kind so capability doesn't interfere; both
+	// fables are vision-capable, so TaskVision exercises a real tie too.)
+	got, _ := Route(RouteRequest{
+		Kind:       TaskVision,
+		Difficulty: DiffHard, // hard vision routes (capability override)
+		Candidates: []string{"global.anthropic.claude-fable-5", "claude-fable-5"},
+	})
+	if got != "claude-fable-5" {
+		t.Fatalf("true tie should pick the non-Bedrock twin, got %s", got)
+	}
+
+	// NOT a true tie: opus-4-8 (Bedrock, rank 3) vs older native opus (rank 2):
+	// quality wins, Bedrock is NOT avoided.
+	got, _ = Route(RouteRequest{
+		Kind:       TaskGeneral,
+		Difficulty: DiffMedium,
+		Frontend:   true, // frontend → Design affinity, both opus → rank decides
+		Candidates: []string{"us.anthropic.claude-opus-4-8", "claude-opus-4-1-20250805"},
+	})
+	if got != "us.anthropic.claude-opus-4-8" {
+		t.Fatalf("quality must beat Bedrock-avoidance: want opus-4-8, got %s", got)
+	}
+}

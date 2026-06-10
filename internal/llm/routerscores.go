@@ -25,13 +25,19 @@ const (
 	TierFrontier  Tier = 4 // fable / gpt-5.x
 )
 
-// RouterScore is a model's routing profile: its quality tier, a relative speed
-// (within-tier tiebreak), and two affinity flags that order the tier-3 pool:
-// Strict marks the more-correct/disciplined model preferred for general work
-// (gpt-5.5 over opus); Design marks the better frontend/design model (opus
-// over gpt-5.5) preferred when the task is frontend.
+// RouterScore is a model's routing profile: its quality tier, a within-tier
+// quality Rank, a relative speed, and two affinity flags that order the tier-3
+// pool: Strict marks the more-correct/disciplined model preferred for general
+// work (gpt-5.5 over opus); Design marks the better frontend/design model
+// (opus over gpt-5.5) preferred when the task is frontend.
+//
+// Rank orders quality WITHIN a tier (higher = better, e.g. opus-4-8 over the
+// older opus-4-1). Bedrock-avoidance only ever breaks TRUE ties — equal tier,
+// affinity, and rank (the same-model-on-two-accounts case) — never at the cost
+// of quality.
 type RouterScore struct {
 	Tier   Tier
+	Rank   int  // within-tier quality (higher = better; 0 default)
 	Speed  int  // 0–100 relative throughput (higher = faster)
 	Strict bool // more strict/correct — wins general within its tier
 	Design bool // better at frontend/design — wins frontend within its tier
@@ -48,18 +54,21 @@ var routerScores = map[string]RouterScore{
 	// Tier 3 — med (opus + the GPT family). gpt-5.5 is MORE strict/correct
 	// than opus → takes opus's general tasks; opus is better at frontend/
 	// design → takes frontend tasks (and remains the failover when GPT errors).
-	"openai.gpt-5.5":               {Tier: TierMed, Speed: 50, Strict: true},
-	"openai.gpt-5.4":               {Tier: TierMed, Speed: 58},
-	"openai.gpt-5":                 {Tier: TierMed, Speed: 60},
-	"us.anthropic.claude-opus-4-8": {Tier: TierMed, Speed: 48, Design: true},
-	"us.anthropic.claude-opus-4-1": {Tier: TierMed, Speed: 45, Design: true},
-	"claude-opus-4-1-20250805":     {Tier: TierMed, Speed: 45, Design: true},
-	"claude-opus-4-20250514":       {Tier: TierMed, Speed: 45, Design: true},
+	// Rank: opus-4-8 is the newest/best opus — preferring an older opus to
+	// avoid Bedrock would trade quality, which the user explicitly rejects.
+	"openai.gpt-5.5":               {Tier: TierMed, Rank: 3, Speed: 50, Strict: true},
+	"openai.gpt-5.4":               {Tier: TierMed, Rank: 2, Speed: 58},
+	"openai.gpt-5":                 {Tier: TierMed, Rank: 1, Speed: 60},
+	"us.anthropic.claude-opus-4-8": {Tier: TierMed, Rank: 3, Speed: 48, Design: true},
+	"us.anthropic.claude-opus-4-1": {Tier: TierMed, Rank: 2, Speed: 45, Design: true},
+	"claude-opus-4-1-20250805":     {Tier: TierMed, Rank: 2, Speed: 45, Design: true},
+	"claude-opus-4-20250514":       {Tier: TierMed, Rank: 1, Speed: 45, Design: true},
 
-	// Tier 2 — simple-med (sonnet).
-	"us.anthropic.claude-sonnet-4-6": {Tier: TierSimpleMed, Speed: 74},
-	"us.anthropic.claude-3-5-sonnet": {Tier: TierSimpleMed, Speed: 74},
-	"claude-sonnet-4-5-20250929":     {Tier: TierSimpleMed, Speed: 74},
+	// Tier 2 — simple-med (sonnet). 4-6 is the newest sonnet; quality first,
+	// so it wins even on Bedrock.
+	"us.anthropic.claude-sonnet-4-6": {Tier: TierSimpleMed, Rank: 3, Speed: 74},
+	"claude-sonnet-4-5-20250929":     {Tier: TierSimpleMed, Rank: 2, Speed: 74},
+	"us.anthropic.claude-3-5-sonnet": {Tier: TierSimpleMed, Rank: 1, Speed: 74},
 
 	// Tier 1 — simple (cheap/fast; grok/composer/glm/haiku/local).
 	"us.anthropic.claude-haiku-4-5": {Tier: TierSimple, Speed: 92},

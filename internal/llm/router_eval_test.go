@@ -29,10 +29,12 @@ func TestRouterEval(t *testing.T) {
 			wantNonBedrock: true,
 		},
 		{
-			name:           "easy (well-scoped, iterative) → tier-2 sonnet, non-Bedrock",
-			req:            RouteRequest{Kind: TaskGeneral, Difficulty: DiffEasy, Candidates: all},
-			wantTier:       TierSimpleMed,
-			wantNonBedrock: true,
+			// Quality-first: the NEWEST sonnet (4-6, Bedrock) wins over the
+			// older native sonnet — Bedrock is avoided only at EQUAL quality,
+			// never at its cost.
+			name:     "easy (well-scoped, iterative) → tier-2, newest sonnet even on Bedrock",
+			req:      RouteRequest{Kind: TaskGeneral, Difficulty: DiffEasy, Candidates: all},
+			wantTier: TierSimpleMed,
 		},
 		{
 			name:     "medium → tier-3 (opus)",

@@ -132,16 +132,21 @@ func Route(req RouteRequest) (string, bool) {
 	return pool[0], true
 }
 
-// tierOrder ranks models within a tier: (1) task affinity — Design models for
-// frontend tasks, Strict models otherwise (gpt-5.5 is stricter/more correct
-// than opus so it takes opus's general tasks; opus is better at frontend) —
-// this outranks the Bedrock preference because it is a quality judgment;
-// (2) non-Bedrock (spare the employer-paid account); (3) faster.
+// tierOrder ranks models within a tier. Quality judgments come FIRST — the
+// user never trades quality to avoid Bedrock: (1) task affinity (Design for
+// frontend, Strict for general — the gpt-5.5/opus split); (2) within-tier
+// quality Rank (opus-4-8 beats an older opus even though it is on Bedrock);
+// (3) non-Bedrock — only as a TRUE tiebreak, i.e. the same quality on two
+// accounts (fable native vs fable Bedrock), where avoiding the employer-paid
+// account is free; (4) faster.
 func tierOrder(a, b string, frontend bool) bool {
 	sa, sb := scoreFor(a), scoreFor(b)
 	af, bf := affinity(sa, frontend), affinity(sb, frontend)
 	if af != bf {
 		return af > bf
+	}
+	if sa.Rank != sb.Rank {
+		return sa.Rank > sb.Rank
 	}
 	if ab, bb := isBedrock(a), isBedrock(b); ab != bb {
 		return !ab
