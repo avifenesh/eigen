@@ -11,6 +11,7 @@ import (
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/config"
+	"github.com/avifenesh/eigen/internal/hook"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/transcript"
 	tea "github.com/charmbracelet/bubbletea"
@@ -48,6 +49,7 @@ func (m *model) applyResumed(msgs []llm.Message) {
 	m.sel = -1
 	renderHistory(m, msgs)
 	m.refreshCtx()
+	m.hooks.Fire(hook.Payload{Event: hook.OnSessionResume})
 	m.note(fmt.Sprintf("— resumed %d messages —", len(msgs)))
 }
 

@@ -27,6 +27,7 @@ import (
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/dream"
+	"github.com/avifenesh/eigen/internal/hook"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/lsp"
 	"github.com/avifenesh/eigen/internal/mcp"
@@ -178,6 +179,15 @@ func main() {
 			obsLog = lg
 			defer obsLog.Close()
 		}
+	}
+	// Hooks: user commands triggered on lifecycle events (hooks.json).
+	hookRunner, herr := hook.Load(hookConfigPath())
+	if herr != nil {
+		fmt.Fprintln(os.Stderr, "eigen: hooks:", herr)
+	}
+	// eventChain composes observability + hooks under a front-end sink.
+	eventChain := func(next agent.EventSink) agent.EventSink {
+		return obsLog.Wrap(hookRunner.Wrap(next, ""))
 	}
 	// Auto-router (opt-in): per-task model selection, declared early so the
 	// review/task tools can capture it; configured below.
@@ -435,7 +445,8 @@ func main() {
 			LoopPrompt:     resumedLoopPrompt,
 			LoopEvery:      resumedLoopEvery,
 			Router:         router,
-			EventWrap:      obsLog.Wrap,
+			EventWrap:      eventChain,
+			HookRunner:     hookRunner,
 		})
 		if err != nil {
 			fail(err)
@@ -486,7 +497,9 @@ func main() {
 			fmt.Fprintf(os.Stderr, "\n  note: %s\n", e.Text)
 		}
 	}
-	a.OnEvent = obsLog.Wrap(headlessSink)
+	a.OnEvent = eventChain(headlessSink)
+	hookRunner.Fire(hook.Payload{Event: hook.OnSessionStart})
+	defer hookRunner.Fire(hook.Payload{Event: hook.OnSessionStop})
 
 	fmt.Fprintf(os.Stderr, "eigen · %s · perm=%s", prov.Name(), *perm)
 	if len(history) > 0 {
@@ -1086,4 +1099,13 @@ func effectiveModel(provider, model string) string {
 		return model
 	}
 	return llm.DefaultModel(provider)
+}
+
+// hookConfigPath returns the project hooks.json if present, else the per-user one.
+func hookConfigPath() string {
+	if _, err := os.Stat(filepath.Join(".eigen", "hooks.json")); err == nil {
+		return filepath.Join(".eigen", "hooks.json")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".eigen", "hooks.json")
 }

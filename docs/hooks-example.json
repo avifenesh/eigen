@@ -1,0 +1,20 @@
+{
+  "_comment": "Example ~/.eigen/hooks.json (or ./.eigen/hooks.json). Each hook runs a program on an event; eigen writes a small JSON payload to the program's stdin. Hooks are fire-and-forget and best-effort. Events: session_start, session_stop, session_resume, tool_start, tool_result, turn_done, note.",
+  "hooks": [
+    {
+      "_comment": "Reflect into project memory when a session ends (memory-as-a-hook).",
+      "event": "session_stop",
+      "command": ["sh", "-c", "eigen dream >/dev/null 2>&1 &"]
+    },
+    {
+      "_comment": "Desktop-notify on every error result.",
+      "event": "tool_result",
+      "command": ["sh", "-c", "jq -e .is_error >/dev/null && notify-send 'eigen: tool error' \"$(jq -r .tool)\" || true"]
+    },
+    {
+      "_comment": "Log every tool call to a file.",
+      "event": "tool_start",
+      "command": ["sh", "-c", "jq -r '\"\\(.event) \\(.tool)\"' >> /tmp/eigen-tools.log"]
+    }
+  ]
+}

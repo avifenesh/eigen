@@ -17,6 +17,7 @@ import (
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/clipboard"
 	"github.com/avifenesh/eigen/internal/dream"
+	"github.com/avifenesh/eigen/internal/hook"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/memory"
 	"github.com/avifenesh/eigen/internal/session"
@@ -189,6 +190,7 @@ type model struct {
 	smallCompactor llm.Compactor // cheap-model summarizer chained on live switches
 	router         Router        // opt-in auto-router (nil when unavailable)
 	eventWrap      func(agent.EventSink) agent.EventSink
+	hooks          *hook.Runner
 
 	// ping: attention signals (terminal bell + optional notifier command).
 	notifyCmd   string    // external notifier (config notify_cmd / EIGEN_NOTIFY_CMD)
@@ -1108,6 +1110,8 @@ type Options struct {
 	// EventWrap, if set, wraps the agent event sink (e.g. observability logging)
 	// before the TUI's own handler. Identity when nil.
 	EventWrap func(agent.EventSink) agent.EventSink
+	// HookRunner fires session-lifecycle hooks (start/stop/resume). Nil = none.
+	HookRunner *hook.Runner
 }
 
 // Router is the auto-router surface the TUI needs: toggle, status, and routing
@@ -1188,6 +1192,7 @@ func Run(a *agent.Agent, o Options) (Result, error) {
 		smallCompactor: o.SmallCompactor,
 		router:         o.Router,
 		eventWrap:      o.EventWrap,
+		hooks:          o.HookRunner,
 		notifyCmd:      o.NotifyCmd,
 		loopPrompt:     o.LoopPrompt,
 		loopEvery:      o.LoopEvery,
@@ -1225,7 +1230,9 @@ func Run(a *agent.Agent, o Options) (Result, error) {
 		}
 	}
 
+	m.hooks.Fire(hook.Payload{Event: hook.OnSessionStart})
 	final, err := p.Run()
+	m.hooks.Fire(hook.Payload{Event: hook.OnSessionStop})
 	if err != nil {
 		return Result{}, err
 	}

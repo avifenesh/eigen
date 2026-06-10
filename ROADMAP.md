@@ -113,7 +113,13 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
     each routed choice noted; respects the failover window; manual /model wins.
     REMAINING: routing the top-level turn currently leaves the model switched
     (per-task re-routes anyway); auxiliary-model routing for #20 image fusion.)*
-11. **Hooks** — pre/post tool, pre/post turn, pre/post compaction user hooks.
+11. **Hooks** — *(shipped (small/event-surface first, per the user): internal/
+    hook — user commands triggered on EXPOSED lifecycle events (session_start/
+    stop/resume, tool_start, tool_result, turn_done, note); each hook gets a
+    small JSON payload on stdin; fire-and-forget, 30s-bounded, best-effort.
+    Config hooks.json (array or {hooks:[…]}), project-or-user. Memory-as-a-hook
+    (eigen dream on session_stop) shown in docs/hooks-example.json. More hook
+    points added when a concrete need arises.)*
 12. **Sub-agents** — *(partially shipped: depth-bounded `task` tool; expand: named roles, parallelism)*.
 13. **Ultraplan** — dozens of in-depth sub-agents driven by one big plan ahead.
 14. **Ping** — *(shipped cf8d2de: terminal bell + optional notify_cmd on
