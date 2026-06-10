@@ -29,9 +29,9 @@ func TestRouterEval(t *testing.T) {
 			wantNonBedrock: true,
 		},
 		{
-			name:           "easy → tier-1, non-Bedrock",
+			name:           "easy (well-scoped, iterative) → tier-2 sonnet, non-Bedrock",
 			req:            RouteRequest{Kind: TaskGeneral, Difficulty: DiffEasy, Candidates: all},
-			wantTier:       TierSimple,
+			wantTier:       TierSimpleMed,
 			wantNonBedrock: true,
 		},
 		{
@@ -39,11 +39,8 @@ func TestRouterEval(t *testing.T) {
 			req:      RouteRequest{Kind: TaskGeneral, Difficulty: DiffMedium, Candidates: all},
 			wantTier: TierMed,
 		},
-		{
-			name:     "hard → tier-4 (frontier)",
-			req:      RouteRequest{Kind: TaskGeneral, Difficulty: DiffHard, Candidates: all},
-			wantTier: TierFrontier,
-		},
+		// NOTE: hard GENERAL tasks are asserted separately below — Route
+		// declines so the user's default model keeps them.
 		{
 			name:       "search → a search-capable model",
 			req:        RouteRequest{Kind: TaskSearch, Difficulty: DiffMedium, Candidates: all},
@@ -55,12 +52,15 @@ func TestRouterEval(t *testing.T) {
 			wantVision: true,
 		},
 		{
-			name: "hard, only tier-1/2 available → take the highest present",
-			req: RouteRequest{Kind: TaskGeneral, Difficulty: DiffHard, Candidates: []string{
-				"grok-build", "us.anthropic.claude-sonnet-4-6",
-			}},
-			wantTier: TierSimpleMed,
+			name:       "hard SEARCH still routes (default may lack the capability)",
+			req:        RouteRequest{Kind: TaskSearch, Difficulty: DiffHard, Candidates: all},
+			wantSearch: true,
 		},
+	}
+
+	// Hard general tasks keep the user's default model: Route must decline.
+	if got, ok := Route(RouteRequest{Kind: TaskGeneral, Difficulty: DiffHard, Candidates: all}); ok {
+		t.Errorf("hard general task must NOT be routed (keep the default model), got %s", got)
 	}
 
 	for _, c := range cases {

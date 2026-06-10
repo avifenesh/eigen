@@ -12,33 +12,36 @@ const (
 	TaskVision                  // includes image input
 )
 
-// Difficulty is the minimum quality a task demands. The router will not pick a
-// model below the matching quality floor unless nothing capable qualifies (then
-// it picks the strongest capable model — never silently worse than necessary).
+// Difficulty classifies how much scoping and reasoning a task needs — the
+// user's ladder, in their words:
+//
+//	trivial  "small, well-scoped tasks"                       → tier 1 (grok/glm/composer)
+//	easy     "well-scoped, needs iteration, little reasoning"  → tier 2 (sonnet)
+//	medium   "not fully scoped, reasoning, maybe long-running" → tier 3 (opus)
+//	hard     "not scoped, reasoning, long-running"             → the DEFAULT model
+//	         (whatever is currently set — fable today, opus if switched)
 type Difficulty int
 
 const (
-	DiffTrivial Difficulty = iota // boilerplate, formatting, tiny edits
-	DiffEasy                      // routine, well-specified
-	DiffMedium                    // normal feature work
-	DiffHard                      // architecture, subtle bugs, long reasoning
+	DiffTrivial Difficulty = iota // small, well-scoped (rename, format, tiny edit)
+	DiffEasy                      // well-scoped, iterative, little reasoning
+	DiffMedium                    // not fully scoped, needs reasoning, may run long
+	DiffHard                      // unscoped + reasoning + long-running → default model
 )
 
 // targetTier is the quality tier a difficulty demands, per the user's ladder:
-// simple→1 (grok/glm/composer ok), simple-med→2 (sonnet), med→3 (opus),
-// hard→4 (frontier; hard work also normally stays on the default model).
+// trivial→1 (grok/glm/composer), easy→2 (sonnet), medium→3 (opus). Hard is not
+// tier-mapped at all — it keeps the user's current DEFAULT model (see Route).
 func targetTier(d Difficulty) Tier {
 	switch d {
 	case DiffTrivial:
 		return TierSimple
 	case DiffEasy:
-		return TierSimple
+		return TierSimpleMed
 	case DiffMedium:
 		return TierMed
-	case DiffHard:
-		return TierFrontier
 	default:
-		return TierMed
+		return TierFrontier
 	}
 }
 
@@ -54,17 +57,28 @@ type RouteRequest struct {
 	Candidates []string
 }
 
-// Route picks the best model for req per the policy:
-//  1. Keep only CAPABLE candidates: have the required capability (search/vision)
-//     and a large enough context window.
-//  2. Among those that are GOOD ENOUGH (quality ≥ the difficulty floor), pick
-//     the CHEAPEST; break ties by higher quality, then by higher speed.
-//  3. If none clear the floor, pick the STRONGEST capable model (never refuse to
-//     do the task) — quality first, then cheaper, then faster.
+// Route picks the model for req per the user's quality-tier ladder:
+//  1. HARD general tasks are NOT routed: they keep the user's current default
+//     model (fable today, opus if that is what is set) — Route returns no
+//     choice and the caller stays put. Hard search/vision tasks still route,
+//     because the default may lack the capability.
+//  2. Keep only CAPABLE candidates (required search/vision flag, big-enough
+//     context window).
+//  3. Target tier = targetTier(difficulty). Pick the LOWEST tier >= target
+//     (simple work goes to tier-1, never wastefully up); if no capable model
+//     reaches the target, take the highest tier present (never refuse, do the
+//     task as well as possible).
+//  4. Within the chosen tier: prefer non-Bedrock (spare the employer-paid
+//     account), then faster.
 //
-// Returns the chosen model ID and true, or "" and false when no candidate is
-// even capable (caller keeps the current model).
+// Returns the chosen model ID and true, or "" and false when routing should
+// not change the model (hard general task, or no capable candidate).
 func Route(req RouteRequest) (string, bool) {
+	// Hard general work belongs to the user's default model — the strongest
+	// thing they configured. Only capability needs (search/vision) override.
+	if req.Difficulty == DiffHard && req.Kind == TaskGeneral {
+		return "", false
+	}
 	capable := make([]string, 0, len(req.Candidates))
 	for _, id := range req.Candidates {
 		if isCapable(id, req) {

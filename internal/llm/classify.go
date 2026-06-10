@@ -71,8 +71,9 @@ func classifyDifficulty(prompt string) Difficulty {
 			return DiffTrivial
 		}
 	}
-	// Length as a coarse proxy: a long, detailed prompt usually means a
-	// substantial task; a short one is usually routine.
+	// Length as a coarse proxy for scoping: a long, detailed prompt usually
+	// means an underscoped/substantial task (→ opus/default); a short one is
+	// usually well-scoped (→ sonnet; trivial cues above catch the grok tier).
 	switch {
 	case len(prompt) > 600:
 		return DiffHard

@@ -33,14 +33,30 @@ func TestRouteMediumUsesOpus(t *testing.T) {
 	}
 }
 
-func TestRouteHardUsesFrontier(t *testing.T) {
-	got, _ := Route(RouteRequest{
+func TestRouteHardGeneralKeepsDefault(t *testing.T) {
+	// Hard general work stays on the user's default model: Route declines.
+	if got, ok := Route(RouteRequest{
 		Kind:       TaskGeneral,
 		Difficulty: DiffHard,
 		Candidates: []string{"grok-build", "us.anthropic.claude-opus-4-8", "claude-fable-5"},
+	}); ok {
+		t.Fatalf("hard general task must not be routed, got %s", got)
+	}
+}
+
+func TestRouteHardSearchStillRoutes(t *testing.T) {
+	// Hard + search: the default may lack search, so routing still applies and
+	// picks the highest search-capable tier.
+	got, ok := Route(RouteRequest{
+		Kind:       TaskSearch,
+		Difficulty: DiffHard,
+		Candidates: []string{"grok-build", "glm-5.1", "us.anthropic.claude-opus-4-8"},
 	})
-	if scoreFor(got).Tier != TierFrontier {
-		t.Fatalf("hard task should pick frontier, got %s (tier %d)", got, scoreFor(got).Tier)
+	if !ok {
+		t.Fatal("hard search should still route")
+	}
+	if m, _ := Lookup(got); !m.Search {
+		t.Fatalf("hard search routed to non-search model %s", got)
 	}
 }
 
@@ -58,14 +74,15 @@ func TestRouteClimbsWhenTargetTierAbsent(t *testing.T) {
 }
 
 func TestRouteFallsToHighestWhenBelowTarget(t *testing.T) {
-	// Hard wants frontier; only tier-1/2 available → take the highest present.
+	// Medium wants tier 3 (opus); only tier-1/2 available → take the highest
+	// present (sonnet), never refuse and never drop to tier-1.
 	got, _ := Route(RouteRequest{
 		Kind:       TaskGeneral,
-		Difficulty: DiffHard,
+		Difficulty: DiffMedium,
 		Candidates: []string{"grok-build", "us.anthropic.claude-sonnet-4-6"},
 	})
 	if got != "us.anthropic.claude-sonnet-4-6" {
-		t.Fatalf("hard with no frontier should take the highest (sonnet), got %s", got)
+		t.Fatalf("medium with no opus should take the highest (sonnet), got %s", got)
 	}
 }
 
