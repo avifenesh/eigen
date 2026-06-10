@@ -10,6 +10,7 @@ import (
 
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/tool"
+	"sync"
 )
 
 // Permission is the loop's autonomy posture.
@@ -69,7 +70,17 @@ type Event struct {
 type EventSink func(Event)
 
 // Agent drives a provider through the tool-use loop.
+//
+// Concurrency: the TUI intentionally allows live config switches while a turn
+// is running (/model, /perm, ctrl+a/e/o, overload failover), which write
+// Provider/Perm/Compactor/MaxContextTokens from the UI goroutine while the
+// agent goroutine reads them. Those four fields are therefore guarded by mu:
+// the loop reads them via the private accessors and the TUI writes them via
+// SetLive/SetPerm/SetMaxContextTokens. The remaining fields are configured
+// before the first turn and never mutated live.
 type Agent struct {
+	mu sync.RWMutex
+
 	Provider llm.Provider
 	Tools    *tool.Registry
 	Perm     Permission
@@ -137,6 +148,60 @@ type Session struct {
 // NewSession starts an empty conversation.
 func (a *Agent) NewSession() *Session { return &Session{a: a} }
 
+// --- live-switchable config (guarded by mu) ---------------------------------
+// The TUI switches these mid-turn (live /model, ctrl+a perm toggle, overload
+// failover); the loop goroutine reads them per step via the accessors below.
+
+// SetLive atomically swaps the provider and its paired compactor, and (when
+// budget > 0) the context budget — everything a live model switch changes.
+func (a *Agent) SetLive(p llm.Provider, c llm.Compactor, budget int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.Provider = p
+	a.Compactor = c
+	if budget > 0 {
+		a.MaxContextTokens = budget
+	}
+}
+
+// SetPerm switches the permission posture live.
+func (a *Agent) SetPerm(p Permission) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.Perm = p
+}
+
+// SetMaxContextTokens adjusts the context budget live.
+func (a *Agent) SetMaxContextTokens(n int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.MaxContextTokens = n
+}
+
+func (a *Agent) provider() llm.Provider {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.Provider
+}
+
+func (a *Agent) compactor() llm.Compactor {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.Compactor
+}
+
+func (a *Agent) perm() Permission {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.Perm
+}
+
+func (a *Agent) maxContextTokens() int {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.MaxContextTokens
+}
+
 // Resume starts a session pre-seeded with prior messages (e.g. an imported or
 // saved transcript), so the next Send continues that conversation.
 func (a *Agent) Resume(msgs []llm.Message) *Session {
@@ -157,13 +222,29 @@ func (a *Agent) Subtask(ctx context.Context, task string) (string, error) {
 	if depth >= maxSubtaskDepth {
 		return "", fmt.Errorf("subtask depth limit (%d) reached", maxSubtaskDepth)
 	}
-	sub := *a
-	sub.OnEvent = nil
+	// Construct the sub-agent explicitly (not by struct copy: Agent embeds a
+	// mutex). It inherits the live provider/perm/budget snapshot but stays
+	// silent (no OnEvent) and does not persist (its session is ephemeral).
+	sub := &Agent{
+		Provider:         a.provider(),
+		Tools:            a.Tools,
+		Perm:             a.perm(),
+		MaxSteps:         a.MaxSteps,
+		Approve:          a.Approve,
+		MaxContextTokens: a.maxContextTokens(),
+		Compactor:        a.compactor(),
+		ExtraSystem:      a.ExtraSystem,
+		Memory:           a.Memory,
+	}
 	ctx = context.WithValue(ctx, subtaskDepthKey{}, depth+1)
 	return sub.NewSession().Send(ctx, task)
 }
 
 // Messages returns the conversation so far (for saving / live-replace handoff).
+// It returns the session's live slice, NOT a copy: callers must only read it,
+// and only from the goroutine that owns the session (the TUI calls it at safe
+// points — turn finished or not started). Use the Persist hook for continuous
+// race-free saving during a turn.
 func (s *Session) Messages() []llm.Message { return s.msgs }
 
 // Compact summarizes the conversation now, on demand (e.g. the /compact
@@ -179,7 +260,7 @@ func (s *Session) Compact(ctx context.Context, targetTokens int) (before, after 
 	}
 	budget := targetTokens
 	if budget <= 0 {
-		budget = a.MaxContextTokens
+		budget = a.maxContextTokens()
 	}
 	if budget <= 0 {
 		budget = 120_000
@@ -187,7 +268,7 @@ func (s *Session) Compact(ctx context.Context, targetTokens int) (before, after 
 	// Force a summarization even if we're under budget: aim the compactor at a
 	// fraction of the budget so /compact meaningfully shrinks the context.
 	target := budget / 2
-	compacted, cerr := llm.CompactWith(ctx, a.Compactor, s.msgs, target)
+	compacted, cerr := llm.CompactWith(ctx, a.compactor(), s.msgs, target)
 	if cerr != nil {
 		return before, before, cerr
 	}
@@ -214,7 +295,8 @@ const compactStallHeadroomFrac = 0.15
 func (s *Session) maybeCompact(ctx context.Context) {
 	a := s.a
 	before := llm.EstimateTokens(s.msgs)
-	if before <= a.MaxContextTokens {
+	budget := a.maxContextTokens()
+	if before <= budget {
 		// Under budget: reset the breaker so it can act again later.
 		s.compactStall = false
 		return
@@ -226,14 +308,14 @@ func (s *Session) maybeCompact(ctx context.Context) {
 	// If the previous compaction left too little headroom and we're over budget
 	// again, trip the breaker instead of compacting once more — it can't help.
 	if s.lastCompactAfter > 0 {
-		headroom := a.MaxContextTokens - s.lastCompactAfter
-		if float64(headroom) < compactStallHeadroomFrac*float64(a.MaxContextTokens) {
+		headroom := budget - s.lastCompactAfter
+		if float64(headroom) < compactStallHeadroomFrac*float64(budget) {
 			s.compactStall = true
 			a.emit(Event{Kind: EventNote, Text: "Context keeps refilling and compaction is no longer freeing much space. Consider /clear for a fresh thread or a more focused task."})
 			return
 		}
 	}
-	compacted, err := llm.CompactWith(ctx, a.Compactor, s.msgs, a.MaxContextTokens)
+	compacted, err := llm.CompactWith(ctx, a.compactor(), s.msgs, budget)
 	if err != nil {
 		return
 	}
@@ -254,7 +336,7 @@ func (s *Session) forceCompactOnOverflow(ctx context.Context) bool {
 	if before <= 1 {
 		return false // nothing left to fold; a single turn over the window can't be helped here
 	}
-	budget := a.MaxContextTokens
+	budget := a.maxContextTokens()
 	if budget <= 0 {
 		budget = 120_000
 	}
@@ -266,7 +348,7 @@ func (s *Session) forceCompactOnOverflow(ctx context.Context) bool {
 	if cur := llm.EstimateTokens(s.msgs); cur/2 < target {
 		target = cur / 2
 	}
-	compacted, err := llm.CompactWith(ctx, a.Compactor, s.msgs, target)
+	compacted, err := llm.CompactWith(ctx, a.compactor(), s.msgs, target)
 	if err != nil {
 		return false
 	}
@@ -280,7 +362,7 @@ func (s *Session) forceCompactOnOverflow(ctx context.Context) bool {
 
 // Run executes a single task to completion (a one-shot Session.Send).
 func (a *Agent) Run(ctx context.Context, task string) (string, error) {
-	if a.Provider == nil {
+	if a.provider() == nil {
 		return "", fmt.Errorf("agent: nil provider")
 	}
 	if a.Tools == nil {
@@ -295,7 +377,7 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 // a.MaxSteps imposes an optional runaway cap, and canceling ctx stops it.
 func (s *Session) Send(ctx context.Context, task string) (string, error) {
 	a := s.a
-	if a.Provider == nil {
+	if a.provider() == nil {
 		return "", fmt.Errorf("agent: nil provider")
 	}
 	if a.Tools == nil {
@@ -320,13 +402,13 @@ func (s *Session) Resend(ctx context.Context) (string, error) {
 // drive runs the tool-use loop over the session's current history.
 func (s *Session) drive(ctx context.Context) (string, error) {
 	a := s.a
-	if a.Provider == nil {
+	if a.provider() == nil {
 		return "", fmt.Errorf("agent: nil provider")
 	}
 	if a.Tools == nil {
 		return "", fmt.Errorf("agent: nil tools")
 	}
-	if a.MaxContextTokens > 0 {
+	if a.maxContextTokens() > 0 {
 		s.maybeCompact(ctx)
 	}
 	s.persist()
@@ -358,7 +440,8 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		}
 		var resp *llm.Response
 		var err error
-		if sm, ok := a.Provider.(llm.Streamer); ok && a.OnEvent != nil {
+		prov := a.provider()
+		if sm, ok := prov.(llm.Streamer); ok && a.OnEvent != nil {
 			sink := func(c llm.StreamChunk) {
 				kind := EventTextDelta
 				if c.Kind == llm.ChunkReasoning {
@@ -368,7 +451,7 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 			}
 			resp, err = sm.Stream(ctx, req, sink)
 		} else {
-			resp, err = a.Provider.Complete(ctx, req)
+			resp, err = prov.Complete(ctx, req)
 		}
 		if err != nil {
 			// Error-driven compaction: if the provider rejected the request as
@@ -379,7 +462,10 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 				overflowRetried = true
 				if s.forceCompactOnOverflow(ctx) {
 					a.emit(Event{Kind: EventNote, Text: "Prompt exceeded the model's context window — compacted the conversation and retrying."})
-					step-- // retry the same step with the shrunk history
+					// Retry the same step with the shrunk history. Decrementing
+					// the loop variable (re-incremented by the for post) keeps
+					// MaxSteps semantics: a retry does not consume a step.
+					step--
 					continue
 				}
 			}
@@ -458,7 +544,7 @@ func (a *Agent) dispatch(ctx context.Context, tc llm.ToolCall) (string, bool) {
 	if !def.ReadOnly {
 		// Fail closed: a mutating tool runs only under an explicitly recognized
 		// posture. Any unknown posture denies.
-		switch a.Perm {
+		switch a.perm() {
 		case PermAuto:
 			// allowed
 		case PermGated:
@@ -473,7 +559,7 @@ func (a *Agent) dispatch(ctx context.Context, tc llm.ToolCall) (string, bool) {
 				return fmt.Sprintf("Denied: tool %q was not approved by the user.", tc.Name), true
 			}
 		default:
-			return fmt.Sprintf("Denied: tool %q blocked under unknown permission posture %q.", tc.Name, a.Perm), true
+			return fmt.Sprintf("Denied: tool %q blocked under unknown permission posture %q.", tc.Name, a.perm()), true
 		}
 	}
 	out, err := a.runTool(ctx, def, tc.Arguments)

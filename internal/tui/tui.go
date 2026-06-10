@@ -745,9 +745,9 @@ func (m *model) togglePerm() {
 		return
 	}
 	if m.a.Perm == agent.PermAuto {
-		m.a.Perm = agent.PermGated
+		m.a.SetPerm(agent.PermGated)
 	} else {
-		m.a.Perm = agent.PermAuto
+		m.a.SetPerm(agent.PermAuto)
 	}
 	m.saveMeta()
 	m.note("permission posture → " + string(m.a.Perm))
@@ -810,12 +810,8 @@ func (m *model) cycleModel() {
 		m.push(&block{kind: blockNote, isErr: true, body: sb("switch failed: " + err.Error())})
 		return
 	}
-	m.a.Provider = np
-	m.a.Compactor = llm.NewCompactor(np)
+	m.a.SetLive(np, llm.NewCompactor(np), m.contextBudgetFor(next.ID))
 	m.provName, m.modelID = prov, next.ID
-	if b := m.contextBudgetFor(next.ID); b > 0 {
-		m.a.MaxContextTokens = b
-	}
 	// A manual switch takes precedence over any overload failover window.
 	m.failoverFrom = nil
 	m.failoverLeft = 0
@@ -1812,7 +1808,7 @@ func (m *model) command(line string) tea.Cmd {
 	case "/perm":
 		switch agent.Permission(arg) {
 		case agent.PermGated, agent.PermAuto:
-			m.a.Perm = agent.Permission(arg)
+			m.a.SetPerm(agent.Permission(arg))
 			m.note("permission posture → " + arg)
 		case "":
 			m.note(fmt.Sprintf("permission posture: %s  (use /perm gated|auto to change)", m.a.Perm))
@@ -1884,14 +1880,8 @@ func (m *model) command(line string) tea.Cmd {
 			m.push(&block{kind: blockNote, isErr: true, body: sb("switch failed: " + perr.Error())})
 			break
 		}
-		m.a.Provider = np
-		m.a.Compactor = llm.NewCompactor(np)
+		m.a.SetLive(np, llm.NewCompactor(np), m.contextBudgetFor(id))
 		m.provName, m.modelID = prov, id
-		// Auto-detect the new model's context budget from the catalog (capped,
-		// like main's auto budget, so 1M windows don't exceed minute quotas).
-		if b := m.contextBudgetFor(id); b > 0 {
-			m.a.MaxContextTokens = b
-		}
 		// A manual switch takes precedence over any overload failover window.
 		m.failoverFrom = nil
 		m.failoverLeft = 0
@@ -2298,12 +2288,8 @@ func (m *model) startFailover() bool {
 	}
 	m.failoverFrom = &failoverOrigin{provider: m.provName, model: m.modelID}
 	m.failoverLeft = failoverTurns
-	m.a.Provider = np
-	m.a.Compactor = llm.NewCompactor(np)
+	m.a.SetLive(np, llm.NewCompactor(np), m.contextBudgetFor(failoverModelID))
 	m.provName, m.modelID = prov, failoverModelID
-	if b := m.contextBudgetFor(failoverModelID); b > 0 {
-		m.a.MaxContextTokens = b
-	}
 	return true
 }
 
@@ -2321,12 +2307,8 @@ func (m *model) endFailover() {
 		m.failoverLeft = 0
 		return
 	}
-	m.a.Provider = np
-	m.a.Compactor = llm.NewCompactor(np)
+	m.a.SetLive(np, llm.NewCompactor(np), m.contextBudgetFor(orig.model))
 	m.provName, m.modelID = orig.provider, orig.model
-	if b := m.contextBudgetFor(orig.model); b > 0 {
-		m.a.MaxContextTokens = b
-	}
 	m.failoverFrom = nil
 	m.failoverLeft = 0
 	m.note("overload window over — switched back to " + orig.model)
