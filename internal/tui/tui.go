@@ -6,7 +6,6 @@ package tui
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
+	"github.com/avifenesh/eigen/internal/chat"
 	"github.com/avifenesh/eigen/internal/clipboard"
 	"github.com/avifenesh/eigen/internal/dream"
 	"github.com/avifenesh/eigen/internal/hook"
@@ -74,10 +74,13 @@ const inputMaxRows = 8
 
 type agentEvent struct{ e agent.Event }
 
-type approvalMsg struct {
-	name  string
-	args  json.RawMessage
-	reply chan bool
+// pendingApproval is a gated tool call awaiting the user's verdict, surfaced
+// as an EventApproval through the backend's event stream and answered by id
+// via backend.Answer (one path for local and daemon-hosted sessions).
+type pendingApproval struct {
+	id   string
+	name string
+	args string
 }
 
 type turnDoneMsg struct{ err error }
@@ -101,14 +104,13 @@ type model struct {
 	vp      viewport.Model
 	sp      spinner.Model
 	ti      textarea.Model
-	a       *agent.Agent
-	session *agent.Session
+	backend chat.Backend
 	ctx     context.Context
 
 	blocks  []*block
 	sel     int // index of the selected block (-1 = none / following tail)
 	state   uiState
-	pending *approvalMsg
+	pending *pendingApproval
 	status  string
 
 	// approvedTools are tool names the user chose to always allow this session.
@@ -320,11 +322,11 @@ func (m *model) text(role, s string) *block {
 // model, perm, effort, search) so a plain restart/--resume continues exactly as
 // the conversation was.
 func (m *model) autosave() {
-	if m == nil || m.sessionPath == "" || m.session == nil {
+	if m == nil || m.sessionPath == "" || m.backend == nil {
 		return
 	}
 	defer func() { _ = recover() }()
-	_ = transcript.Save(m.sessionPath, m.session.Messages())
+	_ = transcript.Save(m.sessionPath, m.backend.Messages())
 	m.saveMeta()
 }
 
@@ -347,11 +349,11 @@ func (m *model) saveMeta() {
 		meta.Provider = m.failoverFrom.provider
 		meta.Model = m.failoverFrom.model
 	}
-	if m.a != nil {
-		meta.Perm = string(m.a.Perm)
-		meta.Effort = liveEffort(m.a.Provider)
-		meta.Search = liveSearch(m.a.Provider)
-		meta.Goal = m.a.CurrentGoal()
+	if m.backend != nil {
+		meta.Perm = string(m.backend.Perm())
+		meta.Effort = liveEffort(m.backend.Provider())
+		meta.Search = liveSearch(m.backend.Provider())
+		meta.Goal = m.backend.Goal()
 	}
 	if m.loopPrompt != "" {
 		meta.LoopPrompt = m.loopPrompt
@@ -386,11 +388,11 @@ func (m *model) scheduleIdleDream() tea.Cmd {
 // dreamCmd reflects over the current session into project memory in the
 // background, returning the distilled notes via dreamDoneMsg.
 func (m *model) dreamCmd() tea.Cmd {
-	if m.mem == nil || m.a == nil || m.a.Provider == nil || m.session == nil {
+	if m.mem == nil || m.backend == nil || m.backend.Provider() == nil {
 		return nil
 	}
-	prov := m.a.Provider
-	convo := dream.RenderSession(m.session.Messages())
+	prov := m.backend.Provider()
+	convo := dream.RenderSession(m.backend.Messages())
 	existing := m.mem.Read()
 	return func() tea.Msg {
 		notes, err := dream.Distill(context.Background(), prov, []string{convo}, existing)
@@ -409,12 +411,12 @@ func sb(s string) string { return s }
 // conversation is from the budget (a 262k convo under a 500k ceiling should
 // still compact), so it targets a fraction of the CURRENT size, not the budget.
 func (m *model) compactCmd() tea.Cmd {
-	beforeTok := m.session.Tokens()
+	beforeTok := m.backend.Tokens()
 	target := beforeTok * 45 / 100 // aim to roughly halve the live context
 	if target < 8000 {
 		target = 8000 // don't try to shrink an already-tiny conversation
 	}
-	sess := m.session
+	sess := m.backend
 	return func() tea.Msg {
 		before, after, err := sess.Compact(context.Background(), target)
 		return compactDoneMsg{before: before, after: after, beforeTok: beforeTok, afterTok: sess.Tokens(), err: err}
@@ -494,7 +496,7 @@ func (m *model) submit(task string) tea.Cmd {
 	hasImageRef := referencesImage(task) || len(m.pendingImages) > 0
 	if m.router != nil && m.router.Enabled() && m.failoverFrom == nil {
 		if prov, model, label := m.router.Route(m.ctx, task, "", "", hasImageRef); prov != nil && model != m.modelID {
-			m.a.SetLive(prov, m.compactorFor(prov), m.contextBudgetFor(model))
+			m.backend.SetModel(prov, m.compactorFor(prov), m.contextBudgetFor(model))
 			m.provName, m.modelID = prov.Name(), model
 			m.note(label)
 		}
@@ -502,7 +504,7 @@ func (m *model) submit(task string) tea.Cmd {
 
 	// Vision: attach referenced image files when the active model supports it.
 	var images []llm.Image
-	if m.a != nil && m.a.Provider != nil && llm.HasVision(m.modelID) {
+	if m.backend != nil && m.backend.Provider() != nil && llm.HasVision(m.modelID) {
 		imgs, notes := extractImages(task)
 		images = imgs
 		for _, n := range notes {
@@ -529,7 +531,7 @@ func (m *model) submit(task string) tea.Cmd {
 				msg = turnDoneMsg{err: fmt.Errorf("internal panic: %v", r)}
 			}
 		}()
-		_, err := m.session.SendWith(tctx, task, images)
+		_, err := m.backend.Send(tctx, task, images)
 		return turnDoneMsg{err: err}
 	})
 }
@@ -552,7 +554,7 @@ func (m *model) resend() tea.Cmd {
 				msg = turnDoneMsg{err: fmt.Errorf("internal panic: %v", r)}
 			}
 		}()
-		_, err := m.session.Resend(tctx)
+		_, err := m.backend.Resend(tctx)
 		return turnDoneMsg{err: err}
 	})
 }
@@ -637,7 +639,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		if m.pending != nil {
 			switch strings.ToLower(msg.String()) {
 			case "y":
-				m.pending.reply <- true
+				m.backend.Answer(m.pending.id, true)
 				m.note("approved")
 				m.pending = nil
 				m.relayout()
@@ -647,12 +649,12 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 					m.approvedTools = map[string]bool{}
 				}
 				m.approvedTools[m.pending.name] = true
-				m.pending.reply <- true
+				m.backend.Answer(m.pending.id, true)
 				m.note("always allowing " + m.pending.name + " this session")
 				m.pending = nil
 				m.relayout()
 			case "n", "esc":
-				m.pending.reply <- false
+				m.backend.Answer(m.pending.id, false)
 				m.note("denied")
 				m.pending = nil
 				m.relayout()
@@ -919,19 +921,20 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		return m, m.submit(msg.task)
 
 	case agentEvent:
-		m.renderEvent(msg.e)
-		return m, nil
-
-	case approvalMsg:
-		// Auto-approve tools the user marked "always allow" this session.
-		if m.approvedTools[msg.name] {
-			msg.reply <- true
+		if msg.e.Kind == agent.EventApproval {
+			// Auto-approve tools the user marked "always allow" this session.
+			if m.approvedTools[msg.e.ToolName] {
+				m.backend.Answer(msg.e.Result, true)
+				return m, nil
+			}
+			args := strings.TrimSpace(strings.TrimPrefix(msg.e.Text, msg.e.ToolName))
+			m.pending = &pendingApproval{id: msg.e.Result, name: msg.e.ToolName, args: args}
+			m.note(fmt.Sprintf("approve %s %s ? [y]es / [n]o / [a]lways", msg.e.ToolName, compact(args)))
+			m.ping("approval needed: " + msg.e.ToolName)
+			m.relayout()
 			return m, nil
 		}
-		m.pending = &msg
-		m.note(fmt.Sprintf("approve %s %s ? [y]es / [n]o / [a]lways", msg.name, compact(string(msg.args))))
-		m.ping("approval needed: " + msg.name)
-		m.relayout()
+		m.renderEvent(msg.e)
 		return m, nil
 
 	case voiceSpokenMsg:
@@ -1049,7 +1052,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			// matches what will be sent to the model.
 			m.blocks = nil
 			m.sel = -1
-			renderHistory(m, m.session.Messages())
+			renderHistory(m, m.backend.Messages())
 			m.refreshCtx()
 			m.note(fmt.Sprintf("compacted: %d→%d messages, ~%s→~%s tokens",
 				msg.before, msg.after, kfmt(msg.beforeTok), kfmt(msg.afterTok)))
@@ -1163,7 +1166,7 @@ type Router interface {
 }
 
 // Run drives the agent under a multi-turn Bubble Tea REPL.
-func Run(a *agent.Agent, o Options) (Result, error) {
+func Run(backend chat.Backend, o Options) (Result, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1202,16 +1205,14 @@ func Run(a *agent.Agent, o Options) (Result, error) {
 	ti.KeyMap.InsertNewline.SetEnabled(false)
 	ti.Focus()
 
-	session := a.NewSession()
 	if len(history) > 0 {
-		session = a.Resume(history)
+		backend.Reset(history)
 	}
 
 	m := &model{
-		a:              a,
+		backend:        backend,
 		sp:             sp,
 		ti:             ti,
-		session:        session,
 		ctx:            ctx,
 		state:          stInput,
 		initialTask:    initialTask,
@@ -1253,23 +1254,14 @@ func Run(a *agent.Agent, o Options) (Result, error) {
 	if m.eventWrap != nil {
 		sink = m.eventWrap(sink)
 	}
-	a.OnEvent = sink
 	// Continuous, race-free autosave: persist runs in the agent goroutine after
 	// every message, so a crash or kill mid-turn still leaves a complete JSONL.
-	a.Persist = func(msgs []llm.Message) {
+	// Approvals arrive through the SAME event stream (EventApproval) for local
+	// and remote backends alike; the TUI answers via backend.Answer.
+	backend.Wire(sink, func(msgs []llm.Message) {
 		_ = transcript.Save(m.sessionPath, msgs)
 		m.saveMeta()
-	}
-	a.Approve = func(ctx context.Context, name string, args json.RawMessage) (bool, error) {
-		reply := make(chan bool, 1)
-		p.Send(approvalMsg{name: name, args: args, reply: reply})
-		select {
-		case ok := <-reply:
-			return ok, nil
-		case <-ctx.Done():
-			return false, ctx.Err()
-		}
-	}
+	})
 
 	m.hooks.Fire(hook.Payload{Event: hook.OnSessionStart})
 	final, err := p.Run()
@@ -1284,9 +1276,9 @@ func Run(a *agent.Agent, o Options) (Result, error) {
 		BinPath:     fm.rebuildBin,
 		Provider:    fm.provName,
 		Model:       fm.modelID,
-		Perm:        string(fm.a.Perm),
-		Effort:      liveEffort(fm.a.Provider),
-		Search:      liveSearch(fm.a.Provider),
+		Perm:        string(fm.backend.Perm()),
+		Effort:      liveEffort(fm.backend.Provider()),
+		Search:      liveSearch(fm.backend.Provider()),
 	}, nil
 }
 

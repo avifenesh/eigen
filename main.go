@@ -28,6 +28,7 @@ import (
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/app"
+	"github.com/avifenesh/eigen/internal/chat"
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/dream"
 	"github.com/avifenesh/eigen/internal/hook"
@@ -526,7 +527,7 @@ func main() {
 	// Interactive terminal with no -p → the full-screen REPL (the default UX).
 	interactive := isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd())
 	if !*printMode && interactive {
-		res, err := tui.Run(a, tui.Options{
+		res, err := tui.Run(chat.NewLocal(a, nil, *model), tui.Options{
 			InitialTask:    task,
 			History:        history,
 			Store:          store,

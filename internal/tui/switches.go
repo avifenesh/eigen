@@ -12,26 +12,26 @@ import (
 // shortcut (ctrl+a) for fast mode changes, equivalent to /perm gated|auto. It
 // persists the new posture to the session meta so it survives rebuild/resume.
 func (m *model) togglePerm() {
-	if m.a == nil {
+	if m.backend == nil {
 		return
 	}
-	if m.a.Perm == agent.PermAuto {
-		m.a.SetPerm(agent.PermGated)
+	if m.backend.Perm() == agent.PermAuto {
+		m.backend.SetPerm(agent.PermGated)
 	} else {
-		m.a.SetPerm(agent.PermAuto)
+		m.backend.SetPerm(agent.PermAuto)
 	}
 	m.saveMeta()
-	m.note("permission posture → " + string(m.a.Perm))
+	m.note("permission posture → " + string(m.backend.Perm()))
 }
 
 // cycleEffort steps the reasoning effort to the next level (wrapping) — the
 // keyboard shortcut (ctrl+e) for fast effort changes, equivalent to /effort. It
 // is a no-op (with a note) when the current model has no effort setting.
 func (m *model) cycleEffort() {
-	if m.a == nil {
+	if m.backend == nil {
 		return
 	}
-	es, ok := m.a.Provider.(llm.EffortSetter)
+	es, ok := m.backend.Provider().(llm.EffortSetter)
 	if !ok {
 		m.note("the current model does not support a reasoning-effort setting")
 		return
@@ -81,7 +81,7 @@ func (m *model) cycleModel() {
 		m.push(&block{kind: blockNote, isErr: true, body: sb("switch failed: " + err.Error())})
 		return
 	}
-	m.a.SetLive(np, m.compactorFor(np), m.contextBudgetFor(next.ID))
+	m.backend.SetModel(np, m.compactorFor(np), m.contextBudgetFor(next.ID))
 	m.provName, m.modelID = prov, next.ID
 	// A manual switch takes precedence over any overload failover window.
 	m.failoverFrom = nil
@@ -104,7 +104,7 @@ func (m *model) startFailover() bool {
 	}
 	m.failoverFrom = &failoverOrigin{provider: m.provName, model: m.modelID}
 	m.failoverLeft = failoverTurns
-	m.a.SetLive(np, m.compactorFor(np), m.contextBudgetFor(failoverModelID))
+	m.backend.SetModel(np, m.compactorFor(np), m.contextBudgetFor(failoverModelID))
 	m.provName, m.modelID = prov, failoverModelID
 	return true
 }
@@ -123,7 +123,7 @@ func (m *model) endFailover() {
 		m.failoverLeft = 0
 		return
 	}
-	m.a.SetLive(np, m.compactorFor(np), m.contextBudgetFor(orig.model))
+	m.backend.SetModel(np, m.compactorFor(np), m.contextBudgetFor(orig.model))
 	m.provName, m.modelID = orig.provider, orig.model
 	m.failoverFrom = nil
 	m.failoverLeft = 0

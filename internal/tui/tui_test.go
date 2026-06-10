@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
+	"github.com/avifenesh/eigen/internal/chat"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/memory"
 	"github.com/avifenesh/eigen/internal/session"
@@ -49,10 +50,9 @@ func testModel(t *testing.T) *model {
 	ti.KeyMap.InsertNewline.SetEnabled(false)
 	ti.Focus()
 	m := &model{
-		a:           a,
+		backend:     chat.NewLocal(a, nil, ""),
 		sp:          sp,
 		ti:          ti,
-		session:     a.NewSession(),
 		ctx:         context.Background(),
 		state:       stInput,
 		srcDir:      t.TempDir(),
@@ -138,7 +138,7 @@ func TestNavigationKeysNoPanic(t *testing.T) {
 
 func TestTurnDoneAutosaves(t *testing.T) {
 	m := testModel(t)
-	m.session = m.a.Resume([]llm.Message{{Role: llm.RoleUser, Text: "hi"}})
+	m.backend.Reset([]llm.Message{{Role: llm.RoleUser, Text: "hi"}})
 	m.Update(turnDoneMsg{})
 	if m.state != stInput {
 		t.Fatal("turnDone should return to input state")
@@ -164,15 +164,19 @@ func TestTurnDoneWithErrorShowsErrorBlock(t *testing.T) {
 func TestApprovalFlow(t *testing.T) {
 	m := testModel(t)
 	reply := make(chan bool, 1)
-	m.Update(approvalMsg{name: "write", args: json.RawMessage(`{"path":"x"}`), reply: reply})
+	answers := captureAnswers(m, reply)
+	m.Update(agentEvent{agent.Event{Kind: agent.EventApproval, ToolName: "write", Text: `write {"path":"x"}`, Result: "a1"}})
 	if m.pending == nil {
-		t.Fatal("approvalMsg should set pending")
+		t.Fatal("approval event should set pending")
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	select {
 	case ok := <-reply:
 		if !ok {
 			t.Fatal("y should approve")
+		}
+		if answers["a1"] != true {
+			t.Fatal("answer should target the approval id")
 		}
 	default:
 		t.Fatal("approval reply not sent")
@@ -664,11 +668,11 @@ func TestIndexFilesSkipsVCSAndBuildDirs(t *testing.T) {
 func TestPermCommand(t *testing.T) {
 	m := testModel(t)
 	m.command("/perm gated")
-	if m.a.Perm != agent.PermGated {
+	if m.backend.Perm() != agent.PermGated {
 		t.Fatal("/perm gated should switch posture to gated")
 	}
 	m.command("/perm auto")
-	if m.a.Perm != agent.PermAuto {
+	if m.backend.Perm() != agent.PermAuto {
 		t.Fatal("/perm auto should switch posture to auto")
 	}
 	before := len(m.blocks)
@@ -690,16 +694,16 @@ func loadMetaForTest(t *testing.T, sessionPath string) (transcript.SessionMeta, 
 
 func TestCtrlATogglesPerm(t *testing.T) {
 	m := testModel(t)
-	m.a.Perm = agent.PermGated
+	m.backend.(*chat.Local).Agent().Perm = agent.PermGated
 	// ctrl+a flips gated → auto.
 	m.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
-	if m.a.Perm != agent.PermAuto {
-		t.Fatalf("ctrl+a should flip gated→auto, got %q", m.a.Perm)
+	if m.backend.Perm() != agent.PermAuto {
+		t.Fatalf("ctrl+a should flip gated→auto, got %q", m.backend.Perm())
 	}
 	// And back auto → gated.
 	m.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
-	if m.a.Perm != agent.PermGated {
-		t.Fatalf("ctrl+a should flip auto→gated, got %q", m.a.Perm)
+	if m.backend.Perm() != agent.PermGated {
+		t.Fatalf("ctrl+a should flip auto→gated, got %q", m.backend.Perm())
 	}
 	// It persists the posture to the session meta sidecar.
 	if meta, ok := loadMetaForTest(t, m.sessionPath); !ok || meta.Perm != "gated" {
@@ -711,15 +715,15 @@ func TestCtrlATogglesPerm(t *testing.T) {
 // zellij/tmux capture ctrl+p/n/o before they reach the app.
 func TestMultiplexerSafeAltBindings(t *testing.T) {
 	m := testModel(t)
-	m.a.Perm = agent.PermGated
+	m.backend.(*chat.Local).Agent().Perm = agent.PermGated
 	// alt+a toggles perm.
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}, Alt: true})
-	if m.a.Perm != agent.PermAuto {
-		t.Fatalf("alt+a should toggle perm, got %q", m.a.Perm)
+	if m.backend.Perm() != agent.PermAuto {
+		t.Fatalf("alt+a should toggle perm, got %q", m.backend.Perm())
 	}
 	// alt+r cycles effort.
 	ep := &effortProv{effort: "low"}
-	m.a.Provider = ep
+	m.backend.(*chat.Local).Agent().Provider = ep
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}, Alt: true})
 	if ep.Effort() == "low" {
 		t.Fatal("alt+r should cycle effort")
@@ -748,7 +752,7 @@ func TestAltArrowsSelectBlocks(t *testing.T) {
 func TestCtrlECyclesEffort(t *testing.T) {
 	m := testModel(t)
 	ep := &effortProv{effort: "low"}
-	m.a.Provider = ep
+	m.backend.(*chat.Local).Agent().Provider = ep
 	// ctrl+e advances low → medium.
 	m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
 	if ep.Effort() != "medium" {
@@ -763,7 +767,7 @@ func TestCtrlECyclesEffort(t *testing.T) {
 func TestCtrlECyclesEffortWraps(t *testing.T) {
 	m := testModel(t)
 	ep := &effortProv{effort: llm.EffortLevels[len(llm.EffortLevels)-1]} // highest
-	m.a.Provider = ep
+	m.backend.(*chat.Local).Agent().Provider = ep
 	m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
 	if ep.Effort() != llm.EffortLevels[0] {
 		t.Fatalf("ctrl+e at the top level should wrap to %q, got %q", llm.EffortLevels[0], ep.Effort())
@@ -1154,10 +1158,10 @@ func TestModelSwitchReplacesProvider(t *testing.T) {
 	if m.modelID != "new-model-id" {
 		t.Fatalf("modelID should update, got %q", m.modelID)
 	}
-	if m.a.Provider.Name() != "fake" {
+	if m.backend.Provider().Name() != "fake" {
 		t.Fatal("provider should be swapped")
 	}
-	if m.a.Compactor == nil {
+	if m.backend.(*chat.Local).Agent().Compactor == nil {
 		t.Fatal("compactor should be recreated for the new provider")
 	}
 }
@@ -1202,12 +1206,12 @@ func TestModelSwitchInfersProviderFromCatalog(t *testing.T) {
 
 func TestModelSwitchErrorKeepsProvider(t *testing.T) {
 	m := testModel(t)
-	orig := m.a.Provider
+	orig := m.backend.Provider()
 	m.newProvider = func(provider, model string) (llm.Provider, error) {
 		return nil, context.DeadlineExceeded
 	}
 	m.command("/model bad")
-	if m.a.Provider != orig {
+	if m.backend.Provider() != orig {
 		t.Fatal("a failed switch must keep the existing provider")
 	}
 	last := m.blocks[len(m.blocks)-1]
@@ -1245,7 +1249,7 @@ func (p *effortProv) Effort() string { return p.effort }
 func TestEffortCommand(t *testing.T) {
 	m := testModel(t)
 	ep := &effortProv{effort: "high"}
-	m.a.Provider = ep
+	m.backend.(*chat.Local).Agent().Provider = ep
 
 	// Bare /effort reports the current level.
 	before := len(m.blocks)
@@ -1296,7 +1300,7 @@ func (p *searchProv) SearchMode() string { return p.mode }
 func TestSearchCommand(t *testing.T) {
 	m := testModel(t)
 	sp := &searchProv{mode: "off"}
-	m.a.Provider = sp
+	m.backend.(*chat.Local).Agent().Provider = sp
 
 	before := len(m.blocks)
 	m.command("/search")
@@ -1467,7 +1471,8 @@ func TestScheduleIdleDreamNilWhenDisabled(t *testing.T) {
 func TestApprovalAlwaysAllow(t *testing.T) {
 	m := testModel(t)
 	reply := make(chan bool, 1)
-	m.Update(approvalMsg{name: "bash", args: json.RawMessage(`{"command":"ls"}`), reply: reply})
+	answers := captureAnswers(m, reply)
+	m.Update(agentEvent{agent.Event{Kind: agent.EventApproval, ToolName: "bash", Text: `bash {"command":"ls"}`, Result: "a1"}})
 	if m.pending == nil {
 		t.Fatal("first bash call should prompt")
 	}
@@ -1480,27 +1485,25 @@ func TestApprovalAlwaysAllow(t *testing.T) {
 		t.Fatal("'a' should remember the tool for the session")
 	}
 	// A second bash call must auto-approve without prompting.
-	reply2 := make(chan bool, 1)
-	m.Update(approvalMsg{name: "bash", args: json.RawMessage(`{"command":"pwd"}`), reply: reply2})
+	m.Update(agentEvent{agent.Event{Kind: agent.EventApproval, ToolName: "bash", Text: `bash {"command":"pwd"}`, Result: "a2"}})
 	if m.pending != nil {
 		t.Fatal("an always-allowed tool should not prompt again")
 	}
 	select {
-	case got := <-reply2:
-		if !got {
-			t.Fatal("auto-approval should reply true")
+	case got := <-reply:
+		if !got || answers["a2"] != true {
+			t.Fatal("auto-approval should answer true")
 		}
 	default:
-		t.Fatal("auto-approval should have replied immediately")
+		t.Fatal("auto-approval should have answered immediately")
 	}
 }
 
 func TestApprovalAlwaysAllowIsPerTool(t *testing.T) {
 	m := testModel(t)
 	m.approvedTools = map[string]bool{"bash": true}
-	reply := make(chan bool, 1)
 	// A different tool must still prompt.
-	m.Update(approvalMsg{name: "write", args: json.RawMessage(`{}`), reply: reply})
+	m.Update(agentEvent{agent.Event{Kind: agent.EventApproval, ToolName: "write", Text: "write {}", Result: "a1"}})
 	if m.pending == nil {
 		t.Fatal("a tool that was not always-allowed should still prompt")
 	}
@@ -1510,7 +1513,7 @@ func TestApprovalAlwaysAllowIsPerTool(t *testing.T) {
 
 func TestExportWritesMarkdown(t *testing.T) {
 	m := testModel(t)
-	m.session = m.a.Resume([]llm.Message{
+	m.backend.Reset([]llm.Message{
 		{Role: llm.RoleUser, Text: "add a feature"},
 		{Role: llm.RoleAssistant, Text: "here is the plan"},
 	})
@@ -1555,12 +1558,11 @@ func (p slowProv) Complete(ctx context.Context, _ llm.Request) (*llm.Response, e
 func TestNoRaceRenderingDuringTurn(t *testing.T) {
 	m := testModel(t)
 	reg, _ := tool.NewRegistry()
-	m.a = &agent.Agent{Provider: slowProv{delay: 30 * time.Millisecond}, Tools: reg, Perm: agent.PermAuto}
-	m.session = m.a.NewSession()
+	m.backend = chat.NewLocal(&agent.Agent{Provider: slowProv{delay: 30 * time.Millisecond}, Tools: reg, Perm: agent.PermAuto}, nil, "")
 
 	done := make(chan struct{})
 	go func() {
-		_, _ = m.session.Send(context.Background(), "do work")
+		_, _ = m.backend.Send(context.Background(), "do work", nil)
 		close(done)
 	}()
 	for {
@@ -1738,7 +1740,7 @@ func TestOverloadFailoverRedirectsAndRetries(t *testing.T) {
 		return fakeProv{text: provider + "/" + mdl}, nil
 	}
 	// Seed history as a failed turn leaves it.
-	m.session = m.a.Resume([]llm.Message{{Role: llm.RoleUser, Text: "task"}})
+	m.backend.Reset([]llm.Message{{Role: llm.RoleUser, Text: "task"}})
 
 	_, cmd := m.Update(turnDoneMsg{err: fmt.Errorf("converse: failed after 5 attempts: HTTP 503: unable to process")})
 	if m.modelID != failoverModelID {
@@ -1909,7 +1911,7 @@ func TestClickInInputPositionsCursor(t *testing.T) {
 func TestSlashCommandRunsWhileRunning(t *testing.T) {
 	m := testModel(t)
 	ep := &effortProv{effort: "low"}
-	m.a.Provider = ep
+	m.backend.(*chat.Local).Agent().Provider = ep
 	m.state = stRunning
 	typeRunes(m, "/effort high")
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -1926,7 +1928,7 @@ func TestSlashCommandRunsWhileRunning(t *testing.T) {
 func TestUnsafeSlashCommandRefusedWhileRunning(t *testing.T) {
 	m := testModel(t)
 	m.push(&block{kind: blockText, role: "assistant", body: sb("hi")})
-	before := len(m.session.Messages())
+	before := len(m.backend.Messages())
 	m.state = stRunning
 	typeRunes(m, "/clear")
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -1934,7 +1936,7 @@ func TestUnsafeSlashCommandRefusedWhileRunning(t *testing.T) {
 		t.Fatal("/clear should not be queued as a prompt")
 	}
 	// Session not cleared mid-turn.
-	if got := len(m.session.Messages()); got != before {
+	if got := len(m.backend.Messages()); got != before {
 		t.Fatalf("/clear must be refused mid-turn (session changed: %d→%d)", before, got)
 	}
 }
@@ -1956,10 +1958,10 @@ func TestSafeWhileRunning(t *testing.T) {
 
 func TestRefreshCtxProactiveNudgeFiresOnce(t *testing.T) {
 	m := testModel(t)
-	m.a.MaxContextTokens = 10000
+	m.backend.(*chat.Local).Agent().MaxContextTokens = 10000
 	// Seed a session whose estimate is ~85% of the budget.
 	big := strings.Repeat("word ", 7000) // ~8750 tokens (>80% of 10k)
-	m.session = m.a.Resume([]llm.Message{{Role: llm.RoleUser, Text: big}})
+	m.backend.Reset([]llm.Message{{Role: llm.RoleUser, Text: big}})
 
 	m.refreshCtx()
 	if !m.ctxNudged {
@@ -1988,7 +1990,7 @@ func TestRefreshCtxProactiveNudgeFiresOnce(t *testing.T) {
 	}
 
 	// Falling back under the threshold re-arms it.
-	m.session = m.a.Resume([]llm.Message{{Role: llm.RoleUser, Text: "tiny"}})
+	m.backend.Reset([]llm.Message{{Role: llm.RoleUser, Text: "tiny"}})
 	m.refreshCtx()
 	if m.ctxNudged {
 		t.Fatal("nudge flag should re-arm when usage drops below the threshold")
@@ -1998,7 +2000,7 @@ func TestRefreshCtxProactiveNudgeFiresOnce(t *testing.T) {
 func TestGoalCommand(t *testing.T) {
 	m := testModel(t)
 	m.command("/goal ship the v2 API")
-	if got := m.a.CurrentGoal(); got != "ship the v2 API" {
+	if got := m.backend.Goal(); got != "ship the v2 API" {
 		t.Fatalf("goal not set, got %q", got)
 	}
 	found := false
@@ -2025,7 +2027,7 @@ func TestGoalCommand(t *testing.T) {
 
 	// Clear.
 	m.command("/goal clear")
-	if m.a.CurrentGoal() != "" {
+	if m.backend.Goal() != "" {
 		t.Fatal("/goal clear should unset the goal")
 	}
 }
@@ -2128,7 +2130,7 @@ func TestGoalNagPingsWhileIdle(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.notifyCmd = script
-	m.a.SetGoal("finish the migration")
+	m.backend.SetGoal("finish the migration")
 
 	// A nag for the current generation while idle: pings, notes, re-arms.
 	cmd := m.handleGoalNag(goalNagMsg{gen: m.idleGen})
@@ -2161,13 +2163,13 @@ func TestGoalNagPingsWhileIdle(t *testing.T) {
 	}
 
 	// Goal cleared: no-op, no re-arm.
-	m.a.SetGoal("")
+	m.backend.SetGoal("")
 	if cmd := m.handleGoalNag(goalNagMsg{gen: m.idleGen}); cmd != nil {
 		t.Fatal("cleared goal must stop the nag")
 	}
 
 	// Running turn: no-op (re-armed on turn done instead).
-	m.a.SetGoal("still going")
+	m.backend.SetGoal("still going")
 	m.state = stRunning
 	if cmd := m.handleGoalNag(goalNagMsg{gen: m.idleGen}); cmd != nil {
 		t.Fatal("running turn must not nag")
@@ -2179,7 +2181,7 @@ func TestScheduleGoalNagOnlyWithGoal(t *testing.T) {
 	if m.scheduleGoalNag() != nil {
 		t.Fatal("no goal → no nag timer")
 	}
-	m.a.SetGoal("x")
+	m.backend.SetGoal("x")
 	if m.scheduleGoalNag() == nil {
 		t.Fatal("goal set → nag timer expected")
 	}
@@ -2281,8 +2283,8 @@ func TestGoalSetStartsWorkingImmediately(t *testing.T) {
 	if m.state != stRunning {
 		t.Fatal("setting a goal while idle should start a turn")
 	}
-	if m.a.CurrentGoal() != "ship the importer" {
-		t.Fatalf("goal not set: %q", m.a.CurrentGoal())
+	if m.backend.Goal() != "ship the importer" {
+		t.Fatalf("goal not set: %q", m.backend.Goal())
 	}
 }
 
@@ -2290,7 +2292,7 @@ func TestGoalSetWhileRunningDefers(t *testing.T) {
 	m := testModel(t)
 	m.state = stRunning // a turn is in flight
 	cmd := m.command("/goal refactor the cache")
-	if m.a.CurrentGoal() != "refactor the cache" {
+	if m.backend.Goal() != "refactor the cache" {
 		t.Fatal("goal should be set even while running")
 	}
 	// It must NOT have replaced the running turn with a new submit; the
@@ -2471,5 +2473,28 @@ func TestTokRateNotDuplicatedWhileRunning(t *testing.T) {
 	m.state = stRunning
 	if strings.Contains(m.statusBarView(), "tok/s") {
 		t.Fatal("status bar must not show tok/s while running (live one is above)")
+	}
+}
+
+// captureAnswers swaps the model's backend for one that records Answer calls
+// (signalling reply on each) while delegating everything else to the original.
+func captureAnswers(m *model, reply chan bool) map[string]bool {
+	answers := map[string]bool{}
+	orig := m.backend
+	m.backend = &answerRecorder{Backend: orig, answers: answers, reply: reply}
+	return answers
+}
+
+type answerRecorder struct {
+	chat.Backend
+	answers map[string]bool
+	reply   chan bool
+}
+
+func (a *answerRecorder) Answer(id string, allow bool) {
+	a.answers[id] = allow
+	select {
+	case a.reply <- allow:
+	default:
 	}
 }

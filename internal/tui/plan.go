@@ -83,20 +83,20 @@ type statusSeg struct {
 // statusBarParts assembles the colored status segments.
 func (m *model) statusBarParts() []statusSeg {
 	segs := []statusSeg{{"eigen", styleAccent.Bold(true)}}
-	if m.a != nil && m.a.Provider != nil {
-		segs = append(segs, statusSeg{modelShort(m.a.Provider.Name()), styleUser})
+	if m.backend != nil && m.backend.Provider() != nil {
+		segs = append(segs, statusSeg{modelShort(m.backend.Provider().Name()), styleUser})
 	}
-	if m.a != nil {
+	if m.backend != nil {
 		// perm: green when gated (safe), amber when auto (runs tools freely).
 		permStyle := styleStatus
-		if m.a.Perm == agent.PermAuto {
+		if m.backend.Perm() == agent.PermAuto {
 			permStyle = styleAsk
 		}
-		segs = append(segs, statusSeg{"perm=" + string(m.a.Perm), permStyle})
-		if es, ok := m.a.Provider.(llm.EffortSetter); ok {
+		segs = append(segs, statusSeg{"perm=" + string(m.backend.Perm()), permStyle})
+		if es, ok := m.backend.Provider().(llm.EffortSetter); ok {
 			segs = append(segs, statusSeg{"effort=" + es.Effort(), styleTool})
 		}
-		if sr, ok := m.a.Provider.(llm.Searcher); ok && sr.SearchMode() != "off" {
+		if sr, ok := m.backend.Provider().(llm.Searcher); ok && sr.SearchMode() != "off" {
 			segs = append(segs, statusSeg{"search=" + sr.SearchMode(), styleCode})
 		}
 	}
@@ -127,10 +127,10 @@ func (m *model) statusBarParts() []statusSeg {
 // under ~75%, amber approaching the limit, red when nearly full (a nudge to
 // /compact before a 429).
 func (m *model) ctxStyle() lipgloss.Style {
-	if m.a == nil || m.a.MaxContextTokens <= 0 {
+	if m.backend == nil || m.backend.MaxContextTokens() <= 0 {
 		return styleReason
 	}
-	frac := float64(m.ctxTokens) / float64(m.a.MaxContextTokens)
+	frac := float64(m.ctxTokens) / float64(m.backend.MaxContextTokens())
 	switch {
 	case frac >= 0.9:
 		return styleErr
@@ -198,8 +198,8 @@ func (m *model) statusBarLines() []string {
 // render never races the agent goroutine appending to the session.
 func (m *model) ctxIndicator() string {
 	used := m.ctxTokens
-	if m.a != nil && m.a.MaxContextTokens > 0 {
-		return fmt.Sprintf("~%s/%s", kfmt(used), kfmt(m.a.MaxContextTokens))
+	if m.backend != nil && m.backend.MaxContextTokens() > 0 {
+		return fmt.Sprintf("~%s/%s", kfmt(used), kfmt(m.backend.MaxContextTokens()))
 	}
 	return "~" + kfmt(used)
 }
@@ -210,16 +210,16 @@ func (m *model) ctxIndicator() string {
 // approaches the budget, so the user can /compact deliberately before
 // auto-compaction (or a 429) kicks in.
 func (m *model) refreshCtx() {
-	if m.session == nil {
+	if m.backend == nil {
 		m.ctxTokens = 0
 		m.ctxNudged = false
 		return
 	}
-	m.ctxTokens = llm.EstimateTokens(m.session.Messages())
-	if m.a == nil || m.a.MaxContextTokens <= 0 {
+	m.ctxTokens = m.backend.Tokens()
+	if m.backend.MaxContextTokens() <= 0 {
 		return
 	}
-	frac := float64(m.ctxTokens) / float64(m.a.MaxContextTokens)
+	frac := float64(m.ctxTokens) / float64(m.backend.MaxContextTokens())
 	switch {
 	case frac >= ctxNudgeFrac && !m.ctxNudged:
 		m.ctxNudged = true

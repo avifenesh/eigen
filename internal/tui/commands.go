@@ -44,7 +44,7 @@ func (m *model) loadSession(arg string) {
 }
 
 func (m *model) applyResumed(msgs []llm.Message) {
-	m.session = m.a.Resume(msgs)
+	m.backend.Reset(msgs)
 	m.blocks = nil
 	m.sel = -1
 	renderHistory(m, msgs)
@@ -79,13 +79,13 @@ func (m *model) command(line string) tea.Cmd {
 		m.note("multiplexer note: zellij/tmux capture ctrl+p/n/o — use the alt+… keys (alt+↑/↓ select, alt+m model, alt+r effort, alt+a perm, alt+y copy)")
 		m.note("while running: enter queues a message · esc interrupts · settings commands (/effort /perm /model /search) run immediately")
 	case "/clear":
-		m.session = m.a.NewSession()
+		m.backend.Reset(nil)
 		m.blocks = nil
 		m.sel = -1
 		m.refreshCtx()
 		m.note("— cleared —")
 	case "/compact":
-		if m.session == nil {
+		if m.backend == nil {
 			break
 		}
 		m.state = stRunning
@@ -97,7 +97,7 @@ func (m *model) command(line string) tea.Cmd {
 		if path == "" {
 			path = defaultSessionPath()
 		}
-		if err := transcript.Save(path, m.session.Messages()); err != nil {
+		if err := transcript.Save(path, m.backend.Messages()); err != nil {
 			m.push(&block{kind: blockNote, isErr: true, body: sb("save failed: " + err.Error())})
 		} else {
 			m.note("saved → " + path)
@@ -121,7 +121,7 @@ func (m *model) command(line string) tea.Cmd {
 		}
 		m.loadSession(arg)
 	case "/rebuild":
-		if err := transcript.Save(m.sessionPath, m.session.Messages()); err != nil {
+		if err := transcript.Save(m.sessionPath, m.backend.Messages()); err != nil {
 			m.push(&block{kind: blockNote, isErr: true, body: sb("rebuild: save failed: " + err.Error())})
 			break
 		}
@@ -134,10 +134,10 @@ func (m *model) command(line string) tea.Cmd {
 	case "/perm":
 		switch agent.Permission(arg) {
 		case agent.PermGated, agent.PermAuto:
-			m.a.SetPerm(agent.Permission(arg))
+			m.backend.SetPerm(agent.Permission(arg))
 			m.note("permission posture → " + arg)
 		case "":
-			m.note(fmt.Sprintf("permission posture: %s  (use /perm gated|auto to change)", m.a.Perm))
+			m.note(fmt.Sprintf("permission posture: %s  (use /perm gated|auto to change)", m.backend.Perm()))
 		default:
 			m.push(&block{kind: blockNote, isErr: true, body: sb("unknown posture " + arg + " (want gated|auto)")})
 		}
@@ -156,18 +156,18 @@ func (m *model) command(line string) tea.Cmd {
 	case "/goal":
 		switch arg {
 		case "":
-			if g := m.a.CurrentGoal(); g != "" {
+			if g := m.backend.Goal(); g != "" {
 				m.note("goal: " + g + "   (/goal clear to unset)")
 			} else {
 				m.note("no goal set  (/goal <text> to set a persistent north star)")
 			}
 		case "clear", "none", "off":
-			m.a.SetGoal("")
+			m.backend.SetGoal("")
 			m.saveMeta()
 			m.idleGen++ // invalidate any pending goal nag
 			m.note("goal cleared")
 		default:
-			m.a.SetGoal(arg)
+			m.backend.SetGoal(arg)
 			m.saveMeta()
 			m.note("goal → " + arg)
 			// Setting a goal IS the work order: when idle, start working
@@ -251,7 +251,7 @@ func (m *model) command(line string) tea.Cmd {
 			return m.scheduleLoop()
 		}
 	case "/effort":
-		es, ok := m.a.Provider.(llm.EffortSetter)
+		es, ok := m.backend.Provider().(llm.EffortSetter)
 		if !ok {
 			m.note("the current model does not support a reasoning-effort setting")
 			break
@@ -266,7 +266,7 @@ func (m *model) command(line string) tea.Cmd {
 		}
 		m.note("reasoning effort → " + es.Effort())
 	case "/search":
-		sr, ok := m.a.Provider.(llm.Searcher)
+		sr, ok := m.backend.Provider().(llm.Searcher)
 		if !ok {
 			m.note("the current model does not support live search (grok only)")
 			break
@@ -315,7 +315,7 @@ func (m *model) command(line string) tea.Cmd {
 			m.push(&block{kind: blockNote, isErr: true, body: sb("switch failed: " + perr.Error())})
 			break
 		}
-		m.a.SetLive(np, m.compactorFor(np), m.contextBudgetFor(id))
+		m.backend.SetModel(np, m.compactorFor(np), m.contextBudgetFor(id))
 		m.provName, m.modelID = prov, id
 		// A manual switch takes precedence over any overload failover window.
 		m.failoverFrom = nil
@@ -352,13 +352,14 @@ func (m *model) command(line string) tea.Cmd {
 		}
 		m.note(b.String())
 	case "/tools":
-		if m.a.Tools == nil {
+		tools := m.backend.Tools()
+		if len(tools) == 0 {
 			m.note("no tools")
 			break
 		}
 		var b strings.Builder
 		b.WriteString("tools:")
-		for _, d := range m.a.Tools.Definitions() {
+		for _, d := range tools {
 			posture := "·"
 			if !d.ReadOnly {
 				posture = "✎"
@@ -398,7 +399,7 @@ func (m *model) command(line string) tea.Cmd {
 		if path == "" {
 			path = defaultExportPath()
 		}
-		if err := os.WriteFile(path, []byte(sessionMarkdown(m.session.Messages())), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(sessionMarkdown(m.backend.Messages())), 0o644); err != nil {
 			m.push(&block{kind: blockNote, isErr: true, body: sb("export failed: " + err.Error())})
 		} else {
 			m.note("exported → " + path)

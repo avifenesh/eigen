@@ -83,7 +83,7 @@ type goalNagMsg struct{ gen int }
 // scheduleGoalNag arms the next goal nag if a goal is set. Uses the same
 // generation counter as idle dreaming so any activity cancels pending nags.
 func (m *model) scheduleGoalNag() tea.Cmd {
-	if m.a == nil || m.a.CurrentGoal() == "" {
+	if m.backend == nil || m.backend.Goal() == "" {
 		return nil
 	}
 	gen := m.idleGen
@@ -98,8 +98,8 @@ func (m *model) handleGoalNag(msg goalNagMsg) tea.Cmd {
 		return nil // stale, or a turn is running
 	}
 	goal := ""
-	if m.a != nil {
-		goal = m.a.CurrentGoal()
+	if m.backend != nil {
+		goal = m.backend.Goal()
 	}
 	if goal == "" {
 		return nil // goal achieved/cleared: stop nagging
