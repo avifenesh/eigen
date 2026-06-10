@@ -103,7 +103,9 @@ func (m *model) statusBarParts() []statusSeg {
 	if ind := m.ctxIndicator(); ind != "" {
 		segs = append(segs, statusSeg{ind, m.ctxStyle()})
 	}
-	if m.lastTokRate > 0 {
+	if m.lastTokRate > 0 && m.state != stRunning {
+		// Only on the idle status bar — while running, the live tok/s shows on
+		// the spinner line above the input, so this would be a stale duplicate.
 		segs = append(segs, statusSeg{fmt.Sprintf("%.0f tok/s", m.lastTokRate), styleReason})
 	}
 	if m.loopPrompt != "" {

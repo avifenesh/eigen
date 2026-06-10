@@ -2438,3 +2438,19 @@ func TestVoiceToggleUnavailable(t *testing.T) {
 		t.Fatal("should explain why voice is unavailable")
 	}
 }
+
+func TestTokRateNotDuplicatedWhileRunning(t *testing.T) {
+	m := testModel(t)
+	m.lastTokRate = 42
+	// Idle: the status bar shows the last turn's tok/s.
+	m.state = stInput
+	if !strings.Contains(m.statusBarView(), "tok/s") {
+		t.Fatal("idle status bar should show last tok/s")
+	}
+	// Running: the live tok/s shows above the input, so the status bar must NOT
+	// also show a (stale) tok/s — otherwise it appears twice.
+	m.state = stRunning
+	if strings.Contains(m.statusBarView(), "tok/s") {
+		t.Fatal("status bar must not show tok/s while running (live one is above)")
+	}
+}
