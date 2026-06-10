@@ -24,9 +24,11 @@ type Meta struct {
 	Origin      string            `json:"origin"`     // file path, or opencode session id
 	OriginMod   int64             `json:"origin_mod"` // mtime (cursor: re-ingest when it changes)
 	Title       string            `json:"title"`
+	Cwd         string            `json:"cwd,omitempty"` // working dir (project grouping)
 	Messages    int               `json:"messages"`
 	Updated     int64             `json:"updated"`     // for date ordering
 	Ingested    bool              `json:"ingested"`    // copied into our JSONL
+	Peeked      bool              `json:"peeked"`      // cheap preview (title/cwd/count) extracted
 	Fingerprint string            `json:"fingerprint"` // for dedupe (set on ingest)
 }
 
@@ -143,6 +145,27 @@ func (s *Store) Discover() error {
 			s.upsert(transcript.SourceOpenCode, oc.ID, oc.Updated*int64(1e6), oc.Title)
 		}
 	}
+
+	// Cheap preview pass: for file-based sessions not yet peeked, extract the
+	// working dir (project grouping), a title from the first real user message,
+	// and a message count — without a full parse. OpenCode sessions have no
+	// file to peek (their title already comes from the DB).
+	for _, m := range s.metas {
+		if m.Peeked || m.Source == transcript.SourceOpenCode {
+			continue
+		}
+		pv := transcript.Peek(m.Source, m.Origin)
+		if pv.Cwd != "" {
+			m.Cwd = pv.Cwd
+		}
+		if m.Title == "" && pv.Title != "" {
+			m.Title = pv.Title
+		}
+		if pv.Messages > 0 {
+			m.Messages = pv.Messages
+		}
+		m.Peeked = true
+	}
 	return s.save()
 }
 
@@ -158,6 +181,7 @@ func (s *Store) upsert(src transcript.Source, origin string, mod int64, title st
 	if m.OriginMod != mod {
 		m.OriginMod = mod
 		m.Ingested = false
+		m.Peeked = false // content changed: re-derive the cheap preview
 	}
 	if mod > m.Updated {
 		m.Updated = mod

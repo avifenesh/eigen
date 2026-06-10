@@ -220,3 +220,36 @@ func TestReingestWhenSourceChanges(t *testing.T) {
 		t.Fatalf("re-ingest did not pick up new content: %q", msgs[0].Text)
 	}
 }
+
+func TestDiscoverPeeksTitleAndCount(t *testing.T) {
+	home := isolate(t)
+	// A claude session with a cwd line so peek can extract the project dir.
+	dir := filepath.Join(home, ".claude", "projects", "proj")
+	os.MkdirAll(dir, 0o755)
+	body := `{"type":"user","cwd":"/home/u/myproj","message":{"role":"user","content":"fix the parser"}}` + "\n" +
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"ok"}]}}` + "\n"
+	os.WriteFile(filepath.Join(dir, "s.jsonl"), []byte(body), 0o644)
+
+	s, _ := Open()
+	s.Discover()
+	m := s.List()[0]
+	if m.Title != "fix the parser" {
+		t.Errorf("peeked title = %q", m.Title)
+	}
+	if m.Cwd != "/home/u/myproj" {
+		t.Errorf("peeked cwd = %q", m.Cwd)
+	}
+	if m.Messages != 2 {
+		t.Errorf("peeked messages = %d", m.Messages)
+	}
+	if !m.Peeked {
+		t.Error("meta should be marked peeked")
+	}
+
+	// Second discover must NOT re-peek (Peeked persisted) — title stays.
+	s2, _ := Open()
+	s2.Discover()
+	if s2.List()[0].Title != "fix the parser" {
+		t.Error("peeked data should persist across discovers")
+	}
+}

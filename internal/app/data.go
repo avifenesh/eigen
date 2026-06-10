@@ -11,7 +11,6 @@ import (
 	"github.com/avifenesh/eigen/internal/memory"
 	"github.com/avifenesh/eigen/internal/session"
 	"github.com/avifenesh/eigen/internal/skill"
-	"github.com/avifenesh/eigen/internal/transcript"
 )
 
 // SessionRow is one session as the app shows it.
@@ -56,15 +55,9 @@ func Load() *Data {
 				ID:      meta.ID,
 				Title:   meta.Title,
 				Source:  string(meta.Source),
+				Dir:     meta.Cwd,
 				Msgs:    meta.Messages,
 				Updated: meta.Updated,
-			}
-			// Project dir from the eigen meta sidecar when the session is
-			// eigen-native (origin is the JSONL path).
-			if strings.HasSuffix(meta.Origin, ".jsonl") {
-				if sm, ok := transcript.LoadMeta(meta.Origin); ok && sm.Dir != "" {
-					row.Dir = sm.Dir
-				}
 			}
 			if row.Title == "" {
 				row.Title = "(untitled)"
