@@ -2244,3 +2244,32 @@ func TestParseLoopArgs(t *testing.T) {
 		t.Fatal("empty should error")
 	}
 }
+
+func TestGoalSetStartsWorkingImmediately(t *testing.T) {
+	m := testModel(t)
+	cmd := m.command("/goal ship the importer")
+	if cmd == nil {
+		t.Fatal("setting a goal while idle should return a submit command")
+	}
+	if m.state != stRunning {
+		t.Fatal("setting a goal while idle should start a turn")
+	}
+	if m.a.CurrentGoal() != "ship the importer" {
+		t.Fatalf("goal not set: %q", m.a.CurrentGoal())
+	}
+}
+
+func TestGoalSetWhileRunningDefers(t *testing.T) {
+	m := testModel(t)
+	m.state = stRunning // a turn is in flight
+	cmd := m.command("/goal refactor the cache")
+	if m.a.CurrentGoal() != "refactor the cache" {
+		t.Fatal("goal should be set even while running")
+	}
+	// It must NOT have replaced the running turn with a new submit; the
+	// returned command (if any) is just the nag timer.
+	if m.state != stRunning {
+		t.Fatal("running turn must not be disturbed")
+	}
+	_ = cmd
+}

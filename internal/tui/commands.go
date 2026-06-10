@@ -155,8 +155,13 @@ func (m *model) command(line string) tea.Cmd {
 			m.a.SetGoal(arg)
 			m.saveMeta()
 			m.note("goal → " + arg)
-			// Arm the idle nag now: a goal on an idle session should ping
-			// until it is cleared or work starts.
+			// Setting a goal IS the work order: when idle, start working
+			// toward it right now (the goal rides in the system prompt). When
+			// a turn is running, the goal takes effect from its next step.
+			if m.state == stInput {
+				return m.submit("A goal was just set (see CURRENT GOAL in your instructions). Start working toward it now: assess the current state, plan briefly, then take the first concrete actions. When it is fully achieved, call goal_achieved with evidence.")
+			}
+			// Arm the idle nag for when the running turn ends.
 			m.idleGen++
 			return m.scheduleGoalNag()
 		}
