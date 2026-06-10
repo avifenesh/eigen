@@ -160,13 +160,13 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
     catches handwaving, design sense catches over-rigidity. Likely surface:
     /plan or an ultraplan (#13) phase; needs convergence criteria + a merge step.
 25. **Cross-vendor reviewer — GPT reviews Claude, Claude reviews GPT, always** —
-    every reviewed artifact is judged by the OTHER vendor's model: Claude-written
-    code/plans → gpt-5.5 reviews (strict correctness); GPT-written → opus reviews
-    (design/clarity). Never self-review (same-family models share blind spots;
-    the goal_achieved judge already encodes never-grade-your-own-homework — this
-    extends it across vendors). Surfaces: a `review` tool/step the orchestrator
-    can invoke, hooks into goal_achieved judging, and the iterative-planning
-    loop (#24) uses it as its critique step.
+    *(shipped: llm.VendorOf + CrossReviewer (always the OTHER vendor; grok/glm
+    get the strict GPT reviewer; picks the strongest available), llm.Review-
+    Artifact (critique prompt framing the author's vendor + focus), the `review`
+    tool the model invokes with an artifact, and goal_achieved judging now
+    defaults to a CROSS-VENDOR judge (GPT judges Claude's claims and vice
+    versa). EIGEN_JUDGE_MODEL still pins a specific judge. The iterative-planning
+    loop (#24) will reuse this as its critique step.)*
 
 ## Notes / grounding
 - read-aloud tool the user has: `readd` (espeak-ng/piper) at `~/projects/tfqol/readd`.

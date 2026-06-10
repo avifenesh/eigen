@@ -169,6 +169,9 @@ func main() {
 	// Sub-agent delegation: the task tool runs a subtask on a fresh session of
 	// the same agent (events suppressed; recursion bounded).
 	var a *agent.Agent
+	// Auto-router (opt-in): per-task model selection, declared early so the
+	// review/task tools can capture it; configured below.
+	router := newAutoRouter(cfg.Route, cfg.RouteProviders, *provider)
 	taskRun := func(ctx context.Context, t, kind, difficulty string) (string, error) {
 		if a == nil {
 			return "", fmt.Errorf("subtasks unavailable")
@@ -176,10 +179,11 @@ func main() {
 		return a.Subtask(ctx, t, kind, difficulty)
 	}
 	// goalJudge verifies goal-achievement claims and clears the goal on a
-	// confirmed verdict. The judge defaults to the MAIN model in a fresh
-	// context (judging completion is a hard reasoning task — independence
-	// comes from the clean context + strict prompt, not from weaker weights);
-	// EIGEN_JUDGE_MODEL / config judge_model select a dedicated judge instead.
+	// confirmed verdict. The judge is an INDEPENDENT model: by default the
+	// other vendor (GPT judges Claude's claims, Claude judges GPT's — never
+	// self-judge, same as review), falling back to the main model if no
+	// cross-vendor model is credentialed. EIGEN_JUDGE_MODEL / config judge_model
+	// pin a specific judge.
 	var judgeProv llm.Provider
 	if jm := firstNonEmpty(os.Getenv("EIGEN_JUDGE_MODEL"), cfg.JudgeModel); jm != "" {
 		if jp, err := llm.New("", jm); err == nil {
@@ -192,9 +196,25 @@ func main() {
 		if a == nil {
 			return false, "", fmt.Errorf("goal judging unavailable")
 		}
-		// nil judge → JudgeGoal uses the agent's live provider (race-safe).
-		return a.JudgeGoal(ctx, judgeProv, evidence)
+		judge := judgeProv
+		if judge == nil {
+			// Cross-vendor by default: judge with the other vendor's model.
+			author := effectiveModel(*provider, *model)
+			cands := llm.AllCredentialedModels()
+			if rev := llm.CrossReviewer(author, cands); rev != "" {
+				if jp, err := router.providerFor(rev); err == nil {
+					judge = jp
+				}
+			}
+		}
+		// nil judge → JudgeGoal falls back to the agent's live provider.
+		return a.JudgeGoal(ctx, judge, evidence)
 	}
+	// Cross-vendor reviewer: GPT reviews Claude, Claude reviews GPT (never
+	// self-review). Reads the live model id so it tracks /model + routing.
+	reviewRun := router.crossReviewer(func() string {
+		return effectiveModel(*provider, *model)
+	})
 	defs := []tool.Definition{
 		tool.Read(policy),
 		tool.List(policy),
@@ -215,6 +235,7 @@ func main() {
 		tool.Memory(mem, gmem),
 		tool.Task(taskRun),
 		tool.GoalAchieved(goalJudge),
+		tool.Review(reviewRun),
 	}
 	// Web search: only registered when a backend is configured (TAVILY_API_KEY,
 	// BRAVE_API_KEY, or EIGEN_WEBSEARCH_URL), so the model never sees a tool it
@@ -330,11 +351,6 @@ func main() {
 		}
 		extraSystem += g
 	}
-
-	// Auto-router (opt-in): per-task model selection. Provider is the resolved
-	// base provider name; routing across other providers is gated by the
-	// route_providers allowlist.
-	router := newAutoRouter(cfg.Route, cfg.RouteProviders, *provider)
 
 	a = &agent.Agent{
 		Provider:         prov,
@@ -1049,4 +1065,13 @@ func runModelsCmd() {
 		fmt.Println("\nnew models can be used directly (--model <id> or /model <id>);")
 		fmt.Println("add catalog entries (internal/llm/catalog.go) for window/caching/thinking metadata.")
 	}
+}
+
+// effectiveModel resolves the model id for a (provider, model) pair, filling in
+// the provider's default when model is empty.
+func effectiveModel(provider, model string) string {
+	if model != "" {
+		return model
+	}
+	return llm.DefaultModel(provider)
 }

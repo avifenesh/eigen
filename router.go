@@ -137,3 +137,30 @@ func (r *autoRouter) Providers() []string {
 	defer r.mu.Unlock()
 	return append([]string(nil), r.providers...)
 }
+
+// crossReviewer builds the cross-vendor review function: it picks a reviewer
+// model from the OTHER vendor (GPT reviews Claude, Claude reviews GPT — never
+// self-review), constructs it, and asks for a critique of the artifact. The
+// reviewer is chosen over the router's candidate set (credentialed + allowed
+// providers); falls back to any credentialed cross-vendor model when routing
+// is restricted. authorModel is read live so it tracks the active model.
+func (r *autoRouter) crossReviewer(authorModel func() string) func(context.Context, string, string) (string, error) {
+	return func(ctx context.Context, artifact, focus string) (string, error) {
+		author := authorModel()
+		// Candidates: cross-provider when allowed, else every credentialed
+		// provider (review correctness matters more than sparing Bedrock).
+		cands := llm.RouteCandidates(r.current, r.Providers())
+		if len(cands) == 0 {
+			cands = llm.AllCredentialedModels()
+		}
+		reviewer := llm.CrossReviewer(author, cands)
+		if reviewer == "" {
+			return "", fmt.Errorf("no cross-vendor reviewer available (need a model from the other vendor)")
+		}
+		prov, err := r.providerFor(reviewer)
+		if err != nil {
+			return "", err
+		}
+		return llm.ReviewArtifact(ctx, prov, reviewer, author, artifact, focus)
+	}
+}

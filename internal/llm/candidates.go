@@ -75,3 +75,24 @@ func RouteCandidates(currentProvider string, allowed []string) []string {
 	}
 	return out
 }
+
+// AllCredentialedModels returns every catalog model on a provider that has
+// reachable credentials, ignoring the route allowlist. Used where capability
+// matters more than the route policy (e.g. cross-vendor review needs the other
+// vendor even if it isn't in the routing allowlist).
+func AllCredentialedModels() []string {
+	avail := map[string]bool{}
+	var out []string
+	for _, m := range Catalog {
+		cp := canonicalProvider(m.Provider)
+		v, seen := avail[cp]
+		if !seen {
+			v = ProviderAvailable(cp)
+			avail[cp] = v
+		}
+		if v {
+			out = append(out, m.ID)
+		}
+	}
+	return out
+}
