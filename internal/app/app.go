@@ -75,6 +75,7 @@ type Model struct {
 
 	data        *Data // loaded app data (sessions, projects, config…)
 	titledPolls int
+	palette     palette
 }
 
 // New builds the app shell with loaded data.
@@ -123,8 +124,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		key := msg.String()
+		// Command palette intercepts all keys while open.
+		if m.palette.open {
+			consumed, cmd := m.palette.update(m, key, msg.Runes)
+			if consumed {
+				return m, cmd
+			}
+		}
 		switch key {
-		case "ctrl+c", "q":
+		case "ctrl+c":
+			m.result = Result{Action: ActionQuit}
+			m.quitting = true
+			return m, tea.Quit
+		case ":", "ctrl+k":
+			m.palette.openPalette(m)
+			return m, nil
+		case "q":
 			m.result = Result{Action: ActionQuit}
 			m.quitting = true
 			return m, tea.Quit
@@ -213,9 +228,31 @@ func (m *Model) View() string {
 		contentW = 20
 	}
 	content := m.renderPage(contentW, m.height-1)
+	if m.palette.open {
+		content = overlay(content, m.palette.view(contentW), contentW, m.height-1)
+	}
 	body := lipgloss.JoinHorizontal(lipgloss.Top, rail, " ", content)
 	help := m.helpLine()
 	return body + "\n" + help
+}
+
+// overlay places box over the top region of content (the palette focus), so the
+// page stays visible beneath it for context.
+func overlay(content, box string, w, h int) string {
+	cl := strings.Split(content, "\n")
+	bl := strings.Split(box, "\n")
+	// Pad content to h lines so the box sits at a stable position.
+	for len(cl) < h {
+		cl = append(cl, "")
+	}
+	start := 1
+	for i, line := range bl {
+		row := start + i
+		if row < len(cl) {
+			cl[row] = line
+		}
+	}
+	return strings.Join(cl, "\n")
 }
 
 // renderRail draws the left rail: pages, the active one highlighted.
@@ -269,7 +306,7 @@ func (m *Model) renderPage(w, h int) string {
 }
 
 func (m *Model) helpLine() string {
-	base := " tab/[ ] pages · j/k move · enter open · n new session · q quit"
+	base := " tab pages · j/k move · enter open · n new · : palette · q quit"
 	return sFaint.Render(base)
 }
 

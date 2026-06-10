@@ -171,3 +171,57 @@ func TestSessionsDeleteConfirmFlow(t *testing.T) {
 		t.Fatal("n should cancel the confirm")
 	}
 }
+
+func TestPaletteOpenFilterRun(t *testing.T) {
+	m := New(testData())
+	m.width, m.height = 100, 30
+	// ':' opens the palette.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
+	if !m.palette.open {
+		t.Fatal(": should open the palette")
+	}
+	// Type "models" → the models page command should match + be selectable.
+	for _, r := range "models" {
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if len(m.palette.matches) == 0 {
+		t.Fatal("typing 'models' should match")
+	}
+	top := m.palette.cmds[m.palette.matches[0]].name
+	if !strings.Contains(top, "models") {
+		t.Fatalf("top match should be the models page, got %q", top)
+	}
+	// Enter runs it → active page becomes models, palette closes.
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.palette.open {
+		t.Fatal("enter should close the palette")
+	}
+	if m.active != PageModels {
+		t.Fatalf("palette should have navigated to models, on %v", m.active)
+	}
+}
+
+func TestPaletteEsc(t *testing.T) {
+	m := New(testData())
+	m.width, m.height = 100, 30
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.palette.open {
+		t.Fatal("esc should close the palette")
+	}
+}
+
+func TestFuzzyScore(t *testing.T) {
+	if _, ok := fuzzyScore("go: models", "mdl"); !ok {
+		t.Error("subsequence should match")
+	}
+	if _, ok := fuzzyScore("go: models", "xyz"); ok {
+		t.Error("non-subsequence should not match")
+	}
+	// Word-boundary match scores higher than scattered.
+	a, _ := fuzzyScore("go: sessions", "sess")
+	b, _ := fuzzyScore("go: providers", "sess")
+	if a <= b {
+		t.Errorf("contiguous word match should score higher: %d vs %d", a, b)
+	}
+}
