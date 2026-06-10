@@ -2,13 +2,18 @@ package app
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // sessionsState: the flat all-sessions list (newest first), resume on enter.
 type sessionsState struct {
-	list list
+	list       list
+	confirmDel bool   // awaiting y/n to delete the selected session
+	notice     string // transient status (export path, delete result)
 }
 
 func (s *sessionsState) init(d *Data) { s.list.count = len(d.Sessions) }
@@ -16,13 +21,37 @@ func (s *sessionsState) init(d *Data) { s.list.count = len(d.Sessions) }
 func (s *sessionsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	visible := m.height - 6
+	d := m.data
+	cur := func() *SessionRow {
+		if s.list.cursor >= 0 && s.list.cursor < len(d.Sessions) {
+			return &d.Sessions[s.list.cursor]
+		}
+		return nil
+	}
+	// Delete confirmation gate.
+	if s.confirmDel {
+		switch key {
+		case "y", "Y":
+			if r := cur(); r != nil && d.Store != nil && d.Store.Delete(r.ID) {
+				s.notice = "deleted: " + r.Title
+				d.reloadSessions()
+				s.list.count = len(d.Sessions)
+				s.list.clamp()
+			}
+			s.confirmDel = false
+		default:
+			s.confirmDel = false
+			s.notice = "delete cancelled"
+		}
+		return m, nil
+	}
 	if s.list.key(key, visible) {
+		s.notice = ""
 		return m, nil
 	}
 	switch key {
 	case "enter":
-		if s.list.cursor < len(m.data.Sessions) {
-			r := m.data.Sessions[s.list.cursor]
+		if r := cur(); r != nil {
 			m.result = Result{Action: ActionResume, SessionID: r.ID, Dir: r.Dir}
 			m.quitting = true
 			return m, tea.Quit
@@ -31,6 +60,19 @@ func (s *sessionsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.result = Result{Action: ActionOpenChat}
 		m.quitting = true
 		return m, tea.Quit
+	case "d":
+		if cur() != nil {
+			s.confirmDel = true
+		}
+	case "e":
+		if r := cur(); r != nil && d.Store != nil {
+			dest := exportPath(r)
+			if err := d.Store.Export(r.ID, dest); err != nil {
+				s.notice = "export failed: " + err.Error()
+			} else {
+				s.notice = "exported → " + dest
+			}
+		}
 	}
 	return m, nil
 }
@@ -60,7 +102,47 @@ func (s *sessionsState) view(m *Model, w, h int) string {
 	if to < len(d.Sessions) {
 		out += sFaint.Render(fmt.Sprintf("  … %d more", len(d.Sessions)-to)) + "\n"
 	}
+	out += "\n"
+	switch {
+	case s.confirmDel:
+		r := d.Sessions[s.list.cursor]
+		out += sWarn.Render("  delete \"" + truncate(r.Title, 40) + "\"? y/n")
+	case s.notice != "":
+		out += sDim.Render("  " + s.notice)
+	default:
+		out += sFaint.Render("  enter resume · n new · e export · d delete")
+	}
 	return out
+}
+
+// exportPath is the default destination for an exported session.
+func exportPath(r *SessionRow) string {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, ".eigen", "exports")
+	_ = os.MkdirAll(dir, 0o755)
+	name := slug(r.Title)
+	if name == "" {
+		name = r.ID
+	}
+	return filepath.Join(dir, name+".eigen.jsonl")
+}
+
+// slug makes a filesystem-safe short name from a title.
+func slug(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == ' ' || r == '-' || r == '_':
+			b.WriteByte('-')
+		}
+		if b.Len() >= 48 {
+			break
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 // projectsState: projects (sessions grouped by dir); drill into one with enter.

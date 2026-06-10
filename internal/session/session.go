@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/avifenesh/eigen/internal/llm"
@@ -261,4 +262,39 @@ func fingerprint(msgs []llm.Message) string {
 	}
 	h := sha256.Sum256([]byte(first + "\x00" + last))
 	return hex.EncodeToString(h[:])[:12]
+}
+
+// Delete removes a session from the index and deletes our ingested JSONL copy
+// (and, for eigen-native sessions, the original eigen file + meta sidecar). It
+// never deletes a FOREIGN source file (claude/codex/pi/hermes/opencode) — only
+// eigen's own copies — so dropping such a session just forgets it from the
+// index; it will be re-discovered unless the source file is gone. Returns
+// whether anything was removed.
+func (s *Store) Delete(mid string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m := s.metas[mid]
+	if m == nil {
+		return false
+	}
+	// Remove our ingested copy.
+	_ = os.Remove(s.eigenPath(mid))
+	// For eigen-native sessions, the origin IS our file — remove it + sidecar.
+	if m.Source == transcript.SourceEigen && strings.HasSuffix(m.Origin, ".jsonl") {
+		_ = os.Remove(m.Origin)
+		_ = os.Remove(m.Origin + ".meta.json")
+	}
+	delete(s.metas, mid)
+	_ = s.save()
+	return true
+}
+
+// Export writes a session's full transcript to destPath as eigen-native JSONL
+// (loading/ingesting it first if needed). The caller chooses the path.
+func (s *Store) Export(mid, destPath string) error {
+	msgs, err := s.Load(mid)
+	if err != nil {
+		return err
+	}
+	return transcript.Save(destPath, msgs)
 }

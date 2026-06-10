@@ -253,3 +253,37 @@ func TestDiscoverPeeksTitleAndCount(t *testing.T) {
 		t.Error("peeked data should persist across discovers")
 	}
 }
+
+func TestDeleteForeignKeepsSourceFile(t *testing.T) {
+	home := isolate(t)
+	src := writeClaude(t, home, "s.jsonl", "hello", "hi")
+	s, _ := Open()
+	s.Discover()
+	id := s.List()[0].ID
+	if !s.Delete(id) {
+		t.Fatal("delete should report removal")
+	}
+	if s.Get(id) != nil {
+		t.Fatal("meta should be gone from the index")
+	}
+	// The FOREIGN source file must survive (we only forget our index/copy).
+	if _, err := os.Stat(src); err != nil {
+		t.Fatalf("claude source file must not be deleted: %v", err)
+	}
+}
+
+func TestExportWritesEigenJSONL(t *testing.T) {
+	home := isolate(t)
+	writeClaude(t, home, "s.jsonl", "hello world", "hi there")
+	s, _ := Open()
+	s.Discover()
+	id := s.List()[0].ID
+	dest := filepath.Join(home, "out.eigen.jsonl")
+	if err := s.Export(id, dest); err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := transcript.Load(dest)
+	if err != nil || len(msgs) == 0 {
+		t.Fatalf("export should be loadable eigen JSONL: %v (%d msgs)", err, len(msgs))
+	}
+}

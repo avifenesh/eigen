@@ -20,6 +20,7 @@ var (
 	cFaint  = lipgloss.Color("238") // chrome, separators
 	cTitle  = lipgloss.Color("44")  // bright cyan — titles, the active thing
 	cOk     = lipgloss.Color("78")  // green — healthy/available
+	cWarn   = lipgloss.Color("215") // amber — attention/confirm
 	cErr    = lipgloss.Color("203") // warm red — broken/missing
 	cViolet = lipgloss.Color("141") // soft violet — counts, meta
 )
@@ -31,6 +32,7 @@ var (
 	sTitle  = lipgloss.NewStyle().Foreground(cTitle).Bold(true)
 	sAccent = lipgloss.NewStyle().Foreground(cAccent)
 	sOk     = lipgloss.NewStyle().Foreground(cOk)
+	sWarn   = lipgloss.NewStyle().Foreground(cWarn)
 	sErr    = lipgloss.NewStyle().Foreground(cErr)
 	sViolet = lipgloss.NewStyle().Foreground(cViolet)
 

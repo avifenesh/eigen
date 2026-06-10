@@ -142,3 +142,32 @@ func TestRelTime(t *testing.T) {
 		t.Error("zero time should be empty")
 	}
 }
+
+func TestSlugAndExportPath(t *testing.T) {
+	if slug("Fix the Parser Bug!") != "fix-the-parser-bug" {
+		t.Errorf("slug = %q", slug("Fix the Parser Bug!"))
+	}
+	if slug("") != "" {
+		t.Error("empty slug")
+	}
+	r := &SessionRow{ID: "x", Title: "My Session"}
+	p := exportPath(r)
+	if !strings.HasSuffix(p, "my-session.eigen.jsonl") {
+		t.Errorf("export path = %q", p)
+	}
+}
+
+func TestSessionsDeleteConfirmFlow(t *testing.T) {
+	m := New(testData())
+	m.width, m.height = 100, 30
+	m.active = PageSessions
+	// d arms the confirm; a non-y cancels (no store, so nothing deleted).
+	m.Update(key("d"))
+	if !m.sessions.confirmDel {
+		t.Fatal("d should arm delete confirm")
+	}
+	m.Update(key("n"))
+	if m.sessions.confirmDel {
+		t.Fatal("n should cancel the confirm")
+	}
+}
