@@ -31,6 +31,7 @@ import (
 	"github.com/avifenesh/eigen/internal/lsp"
 	"github.com/avifenesh/eigen/internal/mcp"
 	"github.com/avifenesh/eigen/internal/memory"
+	"github.com/avifenesh/eigen/internal/observe"
 	"github.com/avifenesh/eigen/internal/session"
 	"github.com/avifenesh/eigen/internal/skill"
 	"github.com/avifenesh/eigen/internal/tool"
@@ -169,6 +170,15 @@ func main() {
 	// Sub-agent delegation: the task tool runs a subtask on a fresh session of
 	// the same agent (events suppressed; recursion bounded).
 	var a *agent.Agent
+	// Observability: structured activity log (metadata only) for long-term
+	// learning + debugging. Best-effort — a log failure never blocks a run.
+	var obsLog *observe.Logger
+	if cfg.ObserveEnabled() {
+		if lg, err := observe.Open(observe.DefaultPath(), ""); err == nil {
+			obsLog = lg
+			defer obsLog.Close()
+		}
+	}
 	// Auto-router (opt-in): per-task model selection, declared early so the
 	// review/task tools can capture it; configured below.
 	router := newAutoRouter(cfg.Route, cfg.RouteProviders, *provider)
@@ -425,6 +435,7 @@ func main() {
 			LoopPrompt:     resumedLoopPrompt,
 			LoopEvery:      resumedLoopEvery,
 			Router:         router,
+			EventWrap:      obsLog.Wrap,
 		})
 		if err != nil {
 			fail(err)
@@ -458,7 +469,7 @@ func main() {
 	}
 	a.Approve = cliApprove
 	streamed := false
-	a.OnEvent = func(e agent.Event) {
+	headlessSink := func(e agent.Event) {
 		switch e.Kind {
 		case agent.EventTextDelta, agent.EventReasoningDelta:
 			fmt.Fprint(os.Stderr, e.Text)
@@ -475,6 +486,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "\n  note: %s\n", e.Text)
 		}
 	}
+	a.OnEvent = obsLog.Wrap(headlessSink)
 
 	fmt.Fprintf(os.Stderr, "eigen · %s · perm=%s", prov.Name(), *perm)
 	if len(history) > 0 {

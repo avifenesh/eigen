@@ -188,6 +188,7 @@ type model struct {
 	maxTokens      int           // user context-budget ceiling (0 = auto from the model window)
 	smallCompactor llm.Compactor // cheap-model summarizer chained on live switches
 	router         Router        // opt-in auto-router (nil when unavailable)
+	eventWrap      func(agent.EventSink) agent.EventSink
 
 	// ping: attention signals (terminal bell + optional notifier command).
 	notifyCmd   string    // external notifier (config notify_cmd / EIGEN_NOTIFY_CMD)
@@ -1104,6 +1105,9 @@ type Options struct {
 	// Router is the opt-in auto-router; /route toggles it and the top-level turn
 	// routes through it. Nil disables the /route command.
 	Router Router
+	// EventWrap, if set, wraps the agent event sink (e.g. observability logging)
+	// before the TUI's own handler. Identity when nil.
+	EventWrap func(agent.EventSink) agent.EventSink
 }
 
 // Router is the auto-router surface the TUI needs: toggle, status, and routing
@@ -1183,6 +1187,7 @@ func Run(a *agent.Agent, o Options) (Result, error) {
 		maxTokens:      o.MaxTokens,
 		smallCompactor: o.SmallCompactor,
 		router:         o.Router,
+		eventWrap:      o.EventWrap,
 		notifyCmd:      o.NotifyCmd,
 		loopPrompt:     o.LoopPrompt,
 		loopEvery:      o.LoopEvery,
@@ -1198,7 +1203,11 @@ func Run(a *agent.Agent, o Options) (Result, error) {
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
-	a.OnEvent = func(e agent.Event) { p.Send(agentEvent{e}) }
+	sink := func(e agent.Event) { p.Send(agentEvent{e}) }
+	if m.eventWrap != nil {
+		sink = m.eventWrap(sink)
+	}
+	a.OnEvent = sink
 	// Continuous, race-free autosave: persist runs in the agent goroutine after
 	// every message, so a crash or kill mid-turn still leaves a complete JSONL.
 	a.Persist = func(msgs []llm.Message) {

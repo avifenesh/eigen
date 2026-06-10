@@ -124,8 +124,11 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
     learned memory; capped per file.)*
 16. **tok/s in & tok/s out measurement** — *(shipped 84f13b1: output tok/s,
     live + last-turn in status bar; input-side + real usage fields still open)*
-17. **Observability for long-term learning** — structured logs of errors, tool
-    uses, outcomes; feed back into memory/dreaming.
+17. **Observability for long-term learning** — *(shipped: internal/observe —
+    structured JSONL activity log at ~/.eigen/observe/events.jsonl (metadata
+    only: kind/step/tool/is_error/text+result lengths, not content). Logger.Wrap
+    composes onto the agent EventSink in both headless and TUI paths; config
+    `observe` (default on). Feeds future dreaming/learning + debugging.)*
 18. **`/` config for most things** — *(shipped: /config shows the settings
     table; /config <key> <value> validates + persists to ~/.eigen/config.json.
     Live-session knobs stay /model /perm /effort /search /goal /loop.)*

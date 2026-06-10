@@ -28,8 +28,12 @@ type Config struct {
 	// "converse grok glm"); empty = route only within the current provider.
 	Route          bool     `json:"route"`
 	RouteProviders []string `json:"route_providers"`
-	DreamOnIdle    bool     `json:"dream_on_idle"`
-	IdleMinutes    int      `json:"idle_minutes"`
+
+	// Observe enables the structured activity log (~/.eigen/observe/events.jsonl,
+	// metadata only) for long-term learning + debugging. Default on.
+	Observe     *bool `json:"observe,omitempty"`
+	DreamOnIdle bool  `json:"dream_on_idle"`
+	IdleMinutes int   `json:"idle_minutes"`
 }
 
 // Load reads ~/.eigen/config.json. A missing or malformed file yields a zero
@@ -129,6 +133,12 @@ func Set(c *Config, key, value string) error {
 		c.Route = b
 	case "route_providers":
 		c.RouteProviders = splitFields(value)
+	case "observe":
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("observe must be true|false")
+		}
+		c.Observe = &b
 	default:
 		return fmt.Errorf("unknown key %q (valid: %s)", key, strings.Join(Keys(), " "))
 	}
@@ -137,7 +147,7 @@ func Set(c *Config, key, value string) error {
 
 // Keys lists the /config-settable keys (skills_dirs stays file-only: a list).
 func Keys() []string {
-	return []string{"provider", "model", "perm", "max_tokens", "tts_cmd", "notify_cmd", "judge_model", "dream_on_idle", "idle_minutes", "route", "route_providers"}
+	return []string{"provider", "model", "perm", "max_tokens", "tts_cmd", "notify_cmd", "judge_model", "dream_on_idle", "idle_minutes", "route", "route_providers", "observe"}
 }
 
 // splitFields splits a space/comma-separated value into non-empty fields.
@@ -173,8 +183,15 @@ func View(c Config) string {
 		rp = strings.Join(c.RouteProviders, " ")
 	}
 	fmt.Fprintf(&b, "%-14s = %s\n", "route_providers", rp)
+	fmt.Fprintf(&b, "%-14s = %t\n", "observe", c.ObserveEnabled())
 	if len(c.SkillsDirs) > 0 {
 		fmt.Fprintf(&b, "%-14s = %s (file-only)\n", "skills_dirs", strings.Join(c.SkillsDirs, ":"))
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// ObserveEnabled reports whether the activity log is on (default true when
+// unset).
+func (c Config) ObserveEnabled() bool {
+	return c.Observe == nil || *c.Observe
 }
