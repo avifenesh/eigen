@@ -160,18 +160,24 @@ func main() {
 		}
 		return a.Subtask(ctx, t)
 	}
-	// goalJudge verifies goal-achievement claims with the small model (an
-	// independent judge, not the model making the claim) and clears the goal
-	// on a confirmed verdict. The judge provider is constructed lazily once —
-	// never read from a.Provider here (live-switchable; would race).
+	// goalJudge verifies goal-achievement claims and clears the goal on a
+	// confirmed verdict. The judge defaults to the MAIN model in a fresh
+	// context (judging completion is a hard reasoning task — independence
+	// comes from the clean context + strict prompt, not from weaker weights);
+	// EIGEN_JUDGE_MODEL / config judge_model select a dedicated judge instead.
 	var judgeProv llm.Provider
+	if jm := firstNonEmpty(os.Getenv("EIGEN_JUDGE_MODEL"), cfg.JudgeModel); jm != "" {
+		if jp, err := llm.New("", jm); err == nil {
+			judgeProv = jp
+		} else {
+			fmt.Fprintf(os.Stderr, "eigen: judge model %q: %v (falling back to the main model)\n", jm, err)
+		}
+	}
 	goalJudge := func(ctx context.Context, evidence string) (bool, string, error) {
 		if a == nil {
 			return false, "", fmt.Errorf("goal judging unavailable")
 		}
-		if judgeProv == nil {
-			judgeProv = smallProvider(nil)
-		}
+		// nil judge → JudgeGoal uses the agent's live provider (race-safe).
 		return a.JudgeGoal(ctx, judgeProv, evidence)
 	}
 	defs := []tool.Definition{

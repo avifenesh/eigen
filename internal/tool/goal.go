@@ -11,14 +11,15 @@ import (
 type GoalJudge func(ctx context.Context, evidence string) (achieved bool, reason string, err error)
 
 // GoalAchieved returns the tool the model calls when it believes the current
-// goal is achieved. An independent judge model verifies the claim against the
-// goal; only a confirmed verdict clears it (and stops the idle goal nag). The
-// tool is read-only: it never mutates the project, only the goal state, and a
-// rejected claim simply tells the model what is missing.
+// goal is achieved. A judge — a strong model in a fresh context that sees only
+// the goal and the evidence, none of the working conversation — verifies the
+// claim; only a confirmed verdict clears the goal (and stops the idle goal
+// nag). The tool is read-only: it never mutates the project, only the goal
+// state, and a rejected claim simply tells the model what is missing.
 func GoalAchieved(judge GoalJudge) Definition {
 	return Definition{
 		Name:        "goal_achieved",
-		Description: "Claim the CURRENT GOAL is achieved. An independent judge model reviews your evidence against the goal; if confirmed, the goal is cleared. Call this when you believe the goal is fully done — include concrete evidence (what was built/changed/verified, test results, observed behavior).",
+		Description: "Claim the CURRENT GOAL is achieved. A judge model reviews your evidence against the goal in a fresh context; if confirmed, the goal is cleared. Call this when you believe the goal is fully done — include concrete evidence (what was built/changed/verified, test results, observed behavior).",
 		ReadOnly:    true,
 		Parameters: json.RawMessage(`{
   "type": "object",

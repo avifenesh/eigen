@@ -37,8 +37,12 @@ func (a *Agent) JudgeGoal(ctx context.Context, judge llm.Provider, evidence stri
 		return false, "", fmt.Errorf("no goal is set")
 	}
 	if judge == nil {
-		// Fall back to the agent's own provider (race-safe read) — a
-		// self-judge is weaker than an independent one but better than none.
+		// Default: the agent's own provider (race-safe read) in a FRESH
+		// context. Judging completion is a hard reasoning task, so it gets
+		// the strongest available model; independence comes from the clean
+		// context and the strict verdict prompt — the judge sees only the
+		// goal and the claimed evidence, none of the working conversation's
+		// momentum or self-justification.
 		judge = a.provider()
 	}
 	if judge == nil {
