@@ -51,6 +51,7 @@ const (
 	EventToolResult                      // a tool finished
 	EventDone                            // the loop produced its final answer
 	EventNote                            // an out-of-band notice for the user (e.g. compaction stalled)
+	EventApproval                        // a gated tool call awaits a user verdict (daemon mode)
 )
 
 // Event is a structured observation emitted during a run. A CLI prints it; a

@@ -14,11 +14,13 @@ type Builder func(dir, model string) (*agent.Agent, func(), error)
 
 // Request is a view→daemon command (line-delimited JSON over the socket).
 type Request struct {
-	Op    string `json:"op"`              // list | new | attach | input | interrupt | remove | ping
-	ID    string `json:"id,omitempty"`    // session id (attach/input/interrupt/remove)
-	Dir   string `json:"dir,omitempty"`   // new: working directory
-	Model string `json:"model,omitempty"` // new: model
-	Text  string `json:"text,omitempty"`  // input: the message
+	Op       string `json:"op"`                 // list | new | attach | input | interrupt | remove | approve | ping
+	ID       string `json:"id,omitempty"`       // session id (attach/input/interrupt/remove/approve)
+	Dir      string `json:"dir,omitempty"`      // new: working directory
+	Model    string `json:"model,omitempty"`    // new: model
+	Text     string `json:"text,omitempty"`     // input: the message
+	Approval string `json:"approval,omitempty"` // approve: pending approval id
+	Allow    bool   `json:"allow,omitempty"`    // approve: the verdict
 }
 
 // Response is a daemon→view message. Type discriminates the payload.
@@ -66,6 +68,8 @@ func eventKindName(k agent.EventKind) string {
 		return "done"
 	case agent.EventNote:
 		return "note"
+	case agent.EventApproval:
+		return "approval"
 	}
 	return "unknown"
 }

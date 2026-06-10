@@ -52,6 +52,10 @@ type Model struct {
 	curAsst string   // accumulating assistant text for the current step
 	status  string
 	closed  bool
+
+	// pending approval (daemon broadcast): answer with y/n from any view.
+	approvalID   string
+	approvalTool string
 }
 
 // New builds a view attached to session id (already attached on the client).
@@ -101,6 +105,12 @@ func (m *Model) onEvent(e daemon.WireEvent) {
 			m.lines = append(m.lines, e.Text)
 		}
 		m.status = "idle"
+	case "approval":
+		m.flushAsst()
+		m.approvalID = e.Result
+		m.approvalTool = e.ToolName
+		m.lines = append(m.lines, cErr.Render("  ◆ approval needed: ")+cTool.Render(firstLine(e.Text)))
+		m.status = "awaiting approval"
 	case "note":
 		m.flushAsst()
 		m.lines = append(m.lines, cDim.Render("  "+e.Text))
@@ -138,6 +148,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg { _ = c.Interrupt(id); return nil }
 			}
 			return m, tea.Quit
+		case "y", "n":
+			if m.approvalID != "" && strings.TrimSpace(m.ti.Value()) == "" {
+				allow := msg.String() == "y"
+				id, aid, c := m.id, m.approvalID, m.client
+				m.approvalID, m.approvalTool = "", ""
+				verdict := "denied"
+				if allow {
+					verdict = "approved"
+				}
+				m.lines = append(m.lines, cDim.Render("  ◆ "+verdict))
+				m.status = "thinking"
+				m.refresh()
+				return m, func() tea.Msg { _ = c.Approve(id, aid, allow); return nil }
+			}
+			var cmd tea.Cmd
+			m.ti, cmd = m.ti.Update(msg)
+			return m, cmd
 		case "enter":
 			text := strings.TrimSpace(m.ti.Value())
 			if text == "" || m.closed {

@@ -253,3 +253,135 @@ func (blockingProvider) Complete(ctx context.Context, _ llm.Request) (*llm.Respo
 	<-ctx.Done()
 	return nil, ctx.Err()
 }
+
+// toolCallProvider calls a mutating tool once, then finishes.
+type toolCallProvider struct{ step int }
+
+func (p *toolCallProvider) Name() string { return "tc" }
+func (p *toolCallProvider) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
+	p.step++
+	if p.step == 1 {
+		return &llm.Response{ToolCalls: []llm.ToolCall{{ID: "c1", Name: "mutate", Arguments: json.RawMessage(`{}`)}}}, nil
+	}
+	return &llm.Response{Text: "finished"}, nil
+}
+
+func TestApprovalRoundTripOverSocket(t *testing.T) {
+	// A GATED daemon session must broadcast a blocked tool call as an approval
+	// event; a view answering y over the socket lets it run.
+	ran := false
+	mut := tool.Definition{
+		Name:       "mutate",
+		Parameters: json.RawMessage(`{"type":"object"}`),
+		Run:        func(context.Context, json.RawMessage) (string, error) { ran = true; return "did it", nil },
+	}
+	build := func(_, _ string) (*agent.Agent, func(), error) {
+		reg, _ := tool.NewRegistry(mut)
+		a := &agent.Agent{Provider: &toolCallProvider{}, Tools: reg, Perm: agent.PermGated}
+		return a, func() {}, nil
+	}
+	sock := filepath.Join(t.TempDir(), "d.sock")
+	srv, err := Listen(sock, NewHost(), build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve()
+	defer srv.Close()
+
+	c, err := Dial(sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	id, err := c.New("/tmp", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	approvals := make(chan WireEvent, 4)
+	dones := make(chan WireEvent, 4)
+	if err := c.Attach(id, func(e WireEvent, _ bool) {
+		switch e.Kind {
+		case "approval":
+			approvals <- e
+		case "done":
+			dones <- e
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Input(id, "do the thing"); err != nil {
+		t.Fatal(err)
+	}
+	// The blocked tool call must surface as an approval event.
+	var ap WireEvent
+	select {
+	case ap = <-approvals:
+	case <-time.After(3 * time.Second):
+		t.Fatal("no approval event broadcast")
+	}
+	if ap.ToolName != "mutate" || ap.Result == "" {
+		t.Fatalf("approval event malformed: %+v", ap)
+	}
+	// Answer y over the socket → the tool runs → the turn finishes.
+	if err := c.Approve(id, ap.Result, true); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case d := <-dones:
+		if d.Text != "finished" {
+			t.Fatalf("done text: %q", d.Text)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("turn did not finish after approval")
+	}
+	if !ran {
+		t.Fatal("approved tool should have run")
+	}
+}
+
+func TestApprovalDenied(t *testing.T) {
+	ran := false
+	mut := tool.Definition{
+		Name:       "mutate",
+		Parameters: json.RawMessage(`{"type":"object"}`),
+		Run:        func(context.Context, json.RawMessage) (string, error) { ran = true; return "did it", nil },
+	}
+	build := func(_, _ string) (*agent.Agent, func(), error) {
+		reg, _ := tool.NewRegistry(mut)
+		a := &agent.Agent{Provider: &toolCallProvider{}, Tools: reg, Perm: agent.PermGated}
+		return a, func() {}, nil
+	}
+	sock := filepath.Join(t.TempDir(), "d.sock")
+	srv, _ := Listen(sock, NewHost(), build)
+	go srv.Serve()
+	defer srv.Close()
+	c, _ := Dial(sock)
+	defer c.Close()
+	id, _ := c.New("/tmp", "")
+	approvals := make(chan WireEvent, 4)
+	dones := make(chan WireEvent, 4)
+	c.Attach(id, func(e WireEvent, _ bool) {
+		switch e.Kind {
+		case "approval":
+			approvals <- e
+		case "done":
+			dones <- e
+		}
+	})
+	c.Input(id, "go")
+	var ap WireEvent
+	select {
+	case ap = <-approvals:
+	case <-time.After(3 * time.Second):
+		t.Fatal("no approval event")
+	}
+	c.Approve(id, ap.Result, false) // deny
+	select {
+	case <-dones:
+	case <-time.After(3 * time.Second):
+		t.Fatal("turn did not finish after denial")
+	}
+	if ran {
+		t.Fatal("denied tool must NOT run")
+	}
+}

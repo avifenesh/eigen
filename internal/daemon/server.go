@@ -117,6 +117,17 @@ func (s *Server) handle(conn net.Conn) {
 			} else {
 				send(Response{Type: "error", Error: "no such session"})
 			}
+		case "approve":
+			sess := s.host.Get(req.ID)
+			if sess == nil {
+				send(Response{Type: "error", Error: "no such session"})
+				continue
+			}
+			if sess.answer(req.Approval, req.Allow) {
+				send(Response{Type: "ok"})
+			} else {
+				send(Response{Type: "error", Error: "no such pending approval"})
+			}
 		case "interrupt":
 			if sess := s.host.Get(req.ID); sess != nil {
 				sess.interrupt()
@@ -149,6 +160,11 @@ func (s *Server) handle(conn net.Conn) {
 			send(Response{Type: "attached", ID: sess.ID})
 			for _, e := range replay {
 				send(Response{Type: "event", Event: wireEvent(e), Replay: true})
+			}
+			// A view attaching mid-wait must still see outstanding approvals
+			// (their broadcast happened before this attach).
+			for _, p := range sess.pendingList() {
+				send(Response{Type: "event", Event: &WireEvent{Kind: "approval", ToolName: p.Tool, Text: p.Tool + " " + p.Args, Result: p.ID}})
 			}
 			// Stream live events for this session on a goroutine; the read loop
 			// continues so the view can still send input/interrupt.

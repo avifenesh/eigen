@@ -151,3 +151,9 @@ func (c *Client) Remove(id string) error {
 	_, err := c.request(Request{Op: "remove", ID: id})
 	return err
 }
+
+// Approve answers a pending approval on a session.
+func (c *Client) Approve(sessionID, approvalID string, allow bool) error {
+	_, err := c.request(Request{Op: "approve", ID: sessionID, Approval: approvalID, Allow: allow})
+	return err
+}

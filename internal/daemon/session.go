@@ -11,6 +11,8 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -62,6 +64,10 @@ type Session struct {
 	cancel  context.CancelFunc // cancels the in-flight turn (interrupt)
 	running bool
 	onClose func() // releases the session's external resources (MCP/LSP/observe)
+
+	// gated-permission approvals awaiting a view's verdict
+	approvals   map[string]*pendingApproval
+	approvalSeq int
 }
 
 // newSession wraps a built agent as a hosted session.
@@ -78,6 +84,7 @@ func newSession(id, dir, model string, a *agent.Agent) *Session {
 	}
 	// Fan out agent events to all attached views + record for replay.
 	a.OnEvent = s.dispatch
+	s.installApprover()
 	return s
 }
 
@@ -196,3 +203,84 @@ func (s *Session) SetTitle(t string) {
 }
 
 var _ = llm.RoleUser // keep llm imported for future message-typed protocol
+
+// --- gated-permission approvals over the socket ---
+//
+// When the daemon hosts a gated session, a mutating tool call blocks in
+// a.Approve until an attached view answers (any view may answer — approvals
+// broadcast like every other event). With no answer within approvalTimeout
+// the call is DENIED (fail closed): a session with no window attached cannot
+// mutate anything silently.
+
+const approvalTimeout = 10 * time.Minute
+
+// pendingApproval is one blocked tool call awaiting a verdict.
+type pendingApproval struct {
+	ID   string `json:"id"`
+	Tool string `json:"tool"`
+	Args string `json:"args"`
+	ch   chan bool
+}
+
+// installApprover wires the session's agent to broadcast approval requests to
+// views and block until answered (or timeout).
+func (s *Session) installApprover() {
+	s.agent.Approve = func(ctx context.Context, name string, args json.RawMessage) (bool, error) {
+		s.mu.Lock()
+		s.approvalSeq++
+		id := fmt.Sprintf("a%d", s.approvalSeq)
+		p := &pendingApproval{ID: id, Tool: name, Args: string(args), ch: make(chan bool, 1)}
+		if s.approvals == nil {
+			s.approvals = map[string]*pendingApproval{}
+		}
+		s.approvals[id] = p
+		s.status = StatusApproval
+		s.mu.Unlock()
+
+		// Broadcast as an event so every attached view can prompt.
+		s.dispatch(agent.Event{Kind: agent.EventApproval, Text: name + " " + p.Args, ToolName: name, Result: id})
+
+		defer func() {
+			s.mu.Lock()
+			delete(s.approvals, id)
+			if s.status == StatusApproval {
+				s.status = StatusWorking
+			}
+			s.mu.Unlock()
+		}()
+		select {
+		case ok := <-p.ch:
+			return ok, nil
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case <-time.After(approvalTimeout):
+			return false, fmt.Errorf("approval timed out (no attached view answered)")
+		}
+	}
+}
+
+// answer resolves a pending approval by id. Returns false if no such pending.
+func (s *Session) answer(approvalID string, ok bool) bool {
+	s.mu.Lock()
+	p := s.approvals[approvalID]
+	s.mu.Unlock()
+	if p == nil {
+		return false
+	}
+	select {
+	case p.ch <- ok:
+	default:
+	}
+	return true
+}
+
+// pendingList snapshots outstanding approvals (for views attaching mid-wait).
+func (s *Session) pendingList() []pendingApproval {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]pendingApproval, 0, len(s.approvals))
+	for _, p := range s.approvals {
+		out = append(out, pendingApproval{ID: p.ID, Tool: p.Tool, Args: p.Args})
+	}
+	return out
+}
