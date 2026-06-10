@@ -18,6 +18,56 @@ import (
 // label is the provider's human label (used in Name and error messages).
 // extra, if non-nil, returns provider-specific top-level request fields to merge
 // into the JSON body (e.g. Grok's search_parameters); it is called per request.
+// Wire types for the chat-completions dialect, shared by every provider built
+// on chatClient (llama, grok, glm).
+
+type chatFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+type chatToolCall struct {
+	ID       string       `json:"id"`
+	Type     string       `json:"type"`
+	Function chatFunction `json:"function"`
+}
+
+type chatMessage struct {
+	Role       string         `json:"role"`
+	Content    string         `json:"content,omitempty"`
+	ToolCalls  []chatToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+}
+
+type chatTool struct {
+	Type     string `json:"type"`
+	Function struct {
+		Name        string          `json:"name"`
+		Description string          `json:"description"`
+		Parameters  json.RawMessage `json:"parameters"`
+	} `json:"function"`
+}
+
+type chatRequest struct {
+	Model    string        `json:"model"`
+	Messages []chatMessage `json:"messages"`
+	Tools    []chatTool    `json:"tools,omitempty"`
+	Stream   bool          `json:"stream,omitempty"`
+}
+
+type chatReply struct {
+	Choices []struct {
+		Message struct {
+			Content          string         `json:"content"`
+			ReasoningContent string         `json:"reasoning_content"`
+			ToolCalls        []chatToolCall `json:"tool_calls"`
+		} `json:"message"`
+	} `json:"choices"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
 type chatClient struct {
 	baseURL string
 	model   string

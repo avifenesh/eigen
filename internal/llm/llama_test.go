@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestLlamaRequestShapeAndParsing(t *testing.T) {
@@ -19,7 +18,7 @@ func TestLlamaRequestShapeAndParsing(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	l := &Llama{BaseURL: srv.URL, Model: "local", http: &http.Client{Timeout: 5 * time.Second}}
+	l := &Llama{c: newChatClient(srv.URL, "local", "", "llama")}
 	resp, err := l.Complete(context.Background(), Request{
 		System:   "sys",
 		Messages: []Message{{Role: RoleUser, Text: "go"}},
@@ -55,7 +54,7 @@ func TestLlamaRequestShapeAndParsing(t *testing.T) {
 }
 
 func TestLlamaSerializesToolTurn(t *testing.T) {
-	msgs := llamaMessages(Request{
+	msgs := chatMessagesFrom(Request{
 		Messages: []Message{
 			{Role: RoleAssistant, ToolCalls: []ToolCall{{ID: "c1", Name: "read", Arguments: json.RawMessage(`{"path":"x"}`)}}},
 			{Role: RoleTool, ToolCallID: "c1", Text: "filebody"},
