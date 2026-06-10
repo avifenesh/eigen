@@ -86,7 +86,9 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
 7. **Computer use built in** — native screen/GUI control.
 8. **Agent workspace built in** — native isolated desktop/terminal workspace
    *(today via the agent-workspace-linux MCP; make it first-class)*.
-9. **Conversation mode** — lighter chat/dialog mode vs full agentic loop.
+9. **Conversation mode** — voice conversation over the chat: STT for spoken input
+   + TTS for spoken replies (builds on the existing read-aloud/speech plumbing).
+   Not small — a full audio in/out loop.
 10. **Auto-router** — pick the model/provider per task automatically (cost/latency/capability).
 11. **Hooks** — pre/post tool, pre/post turn, pre/post compaction user hooks.
 12. **Sub-agents** — *(partially shipped: depth-bounded `task` tool; expand: named roles, parallelism)*.

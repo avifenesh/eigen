@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strings"
 	"testing"
 	"time"
 )
@@ -164,5 +165,62 @@ func TestCallContextCancel(t *testing.T) {
 func TestSanitize(t *testing.T) {
 	if got := sanitize("weird name/v1.2"); got != "weird_name_v1_2" {
 		t.Fatalf("sanitize wrong: %q", got)
+	}
+}
+
+func TestToolAllowed(t *testing.T) {
+	cases := []struct {
+		tools, exclude []string
+		name           string
+		want           bool
+	}{
+		// no filters: everything allowed
+		{nil, nil, "anything", true},
+		// allowlist exact
+		{[]string{"workspace_start"}, nil, "workspace_start", true},
+		{[]string{"workspace_start"}, nil, "workspace_stop", false},
+		// allowlist prefix
+		{[]string{"workspace_terminal_*"}, nil, "workspace_terminal_read", true},
+		{[]string{"workspace_terminal_*"}, nil, "workspace_click", false},
+		// exclude wins over allow
+		{[]string{"workspace_*"}, []string{"workspace_cleanup_stale"}, "workspace_cleanup_stale", false},
+		{[]string{"workspace_*"}, []string{"workspace_cleanup_stale"}, "workspace_start", true},
+		// exclude alone
+		{nil, []string{"profile_*"}, "profile_put", false},
+		{nil, []string{"profile_*"}, "workspace_start", true},
+	}
+	for _, c := range cases {
+		sc := serverConfig{Tools: c.tools, ExcludeTools: c.exclude}
+		if got := toolAllowed(sc, c.name); got != c.want {
+			t.Errorf("toolAllowed(tools=%v exclude=%v, %q) = %v, want %v", c.tools, c.exclude, c.name, got, c.want)
+		}
+	}
+}
+
+func TestSlimSchema(t *testing.T) {
+	in := json.RawMessage(`{
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"title": "BigParams",
+		"type": "object",
+		"properties": {
+			"x": {"title": "X", "type": "integer", "description": "keep me"},
+			"nested": {"type": "object", "properties": {"y": {"$schema": "x", "type": "string"}}}
+		},
+		"required": ["x"]
+	}`)
+	out := slimSchema(in)
+	s := string(out)
+	if strings.Contains(s, "$schema") || strings.Contains(s, "title") {
+		t.Fatalf("noise keys not stripped: %s", s)
+	}
+	if !strings.Contains(s, "keep me") || !strings.Contains(s, `"required":["x"]`) {
+		t.Fatalf("schema content damaged: %s", s)
+	}
+	// Non-object input passes through unchanged.
+	if got := slimSchema(json.RawMessage(`not json`)); string(got) != "not json" {
+		t.Fatalf("invalid input should pass through, got %s", got)
+	}
+	if got := slimSchema(nil); got != nil {
+		t.Fatalf("nil should pass through, got %s", got)
 	}
 }

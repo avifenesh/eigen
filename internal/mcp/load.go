@@ -16,6 +16,17 @@ type serverConfig struct {
 	Name    string            `json:"name"`
 	Command []string          `json:"command"`
 	Env     map[string]string `json:"env"`
+
+	// Tools, when non-empty, is an allowlist: only the named server tools are
+	// exposed to the model (names as the server declares them, without the
+	// "<server>_" prefix; "*" suffix allowed for prefix matches). Tool schemas
+	// ride along on EVERY model request, so a server with dozens of tools can
+	// quietly cost thousands of tokens per call — allowlist what you use.
+	Tools []string `json:"tools"`
+
+	// ExcludeTools removes specific server tools (same name syntax). Applied
+	// after Tools.
+	ExcludeTools []string `json:"exclude_tools"`
 }
 
 type mcpConfig struct {
@@ -63,16 +74,53 @@ func LoadTools(ctx context.Context, path string) (defs []tool.Definition, client
 			continue
 		}
 		clients = append(clients, client)
+		kept := 0
 		for _, sp := range specs {
+			if !toolAllowed(sc, sp.Name) {
+				continue
+			}
 			defs = append(defs, wrap(client, sc.Name, sp))
+			kept++
+		}
+		if len(sc.Tools) > 0 || len(sc.ExcludeTools) > 0 {
+			fmt.Fprintf(os.Stderr, "eigen: mcp %q: %d/%d tools exposed (filtered by mcp.json)\n", sc.Name, kept, len(specs))
 		}
 	}
 	return defs, clients, errs
 }
 
+// toolAllowed applies the per-server allowlist/excludelist to a server-declared
+// tool name. Patterns match exactly, or as a prefix when ending in "*".
+func toolAllowed(sc serverConfig, name string) bool {
+	match := func(pat string) bool {
+		if strings.HasSuffix(pat, "*") {
+			return strings.HasPrefix(name, strings.TrimSuffix(pat, "*"))
+		}
+		return name == pat
+	}
+	if len(sc.Tools) > 0 {
+		ok := false
+		for _, pat := range sc.Tools {
+			if match(pat) {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return false
+		}
+	}
+	for _, pat := range sc.ExcludeTools {
+		if match(pat) {
+			return false
+		}
+	}
+	return true
+}
+
 // wrap turns an MCP ToolSpec into an eigen tool.Definition backed by the client.
 func wrap(client *Client, server string, sp ToolSpec) tool.Definition {
-	params := sp.InputSchema
+	params := slimSchema(sp.InputSchema)
 	if len(params) == 0 {
 		params = json.RawMessage(`{"type":"object","additionalProperties":true}`)
 	}
@@ -95,6 +143,47 @@ func wrap(client *Client, server string, sp ToolSpec) tool.Definition {
 		Run: func(ctx context.Context, args json.RawMessage) (string, error) {
 			return client.CallTool(ctx, toolName, args)
 		},
+	}
+}
+
+// slimSchema strips JSON-Schema metadata that costs tokens on every request
+// without helping the model pick arguments: "$schema" and "title" keys (at any
+// nesting level). The schema's structure, types, descriptions, enums, and
+// defaults are preserved. Returns the input unchanged if it isn't a JSON object.
+func slimSchema(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return raw
+	}
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return raw
+	}
+	stripped := stripSchemaNoise(v)
+	out, err := json.Marshal(stripped)
+	if err != nil {
+		return raw
+	}
+	return out
+}
+
+// stripSchemaNoise removes "$schema" and "title" keys recursively.
+func stripSchemaNoise(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		for _, k := range []string{"$schema", "title"} {
+			delete(t, k)
+		}
+		for k, val := range t {
+			t[k] = stripSchemaNoise(val)
+		}
+		return t
+	case []any:
+		for i, val := range t {
+			t[i] = stripSchemaNoise(val)
+		}
+		return t
+	default:
+		return v
 	}
 }
 

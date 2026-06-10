@@ -212,6 +212,7 @@ func main() {
 			_ = c.Close()
 		}
 	}()
+	mcpTokens := 0
 	for _, d := range mcpDefs {
 		if builtin[d.Name] {
 			fmt.Fprintf(os.Stderr, "eigen: mcp tool %q shadows an existing tool; skipping\n", d.Name)
@@ -219,6 +220,13 @@ func main() {
 		}
 		defs = append(defs, d)
 		builtin[d.Name] = true
+		mcpTokens += (len(d.Description) + len(d.Parameters)) / 4
+	}
+	// Tool schemas ride along on every model request; make a heavy MCP setup
+	// visible so the user can allowlist (mcp.json "tools") what they use.
+	if mcpTokens > 6000 {
+		fmt.Fprintf(os.Stderr, "eigen: mcp: %d tools add ~%dk tokens of schema to every request — consider a \"tools\" allowlist in mcp.json\n",
+			len(mcpDefs), mcpTokens/1000)
 	}
 	// LSP: language servers from lsp.json provide go-to-definition, references,
 	// hover, document symbols, and diagnostics as native tools. Servers start
