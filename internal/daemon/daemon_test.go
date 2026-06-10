@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -130,4 +131,125 @@ func TestDaemonSecondListenFails(t *testing.T) {
 	if _, err := Listen(sock, NewHost(), testBuilder); err == nil {
 		t.Fatal("second Listen should fail while the first is live")
 	}
+}
+
+func TestClientEndToEnd(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "d.sock")
+	srv, err := Listen(sock, NewHost(), testBuilder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve()
+	defer srv.Close()
+
+	c, err := Dial(sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if err := c.Ping(); err != nil {
+		t.Fatal(err)
+	}
+	id, err := c.New("/tmp/p", "")
+	if err != nil || id == "" {
+		t.Fatalf("new: %v %q", err, id)
+	}
+	infos, err := c.List()
+	if err != nil || len(infos) != 1 {
+		t.Fatalf("list: %v %d", err, len(infos))
+	}
+
+	events := make(chan WireEvent, 64)
+	if err := c.Attach(id, func(e WireEvent, replay bool) { events <- e }); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Input(id, "hi"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case e := <-events:
+			if e.Kind == "done" {
+				if e.Text != "hello from echo" {
+					t.Fatalf("done text: %q", e.Text)
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("no done event via client")
+		}
+	}
+}
+
+func TestListenRemovesStaleSocket(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "d.sock")
+	// Create a stale socket file (a plain file at the path, nothing listening).
+	if err := os.WriteFile(sock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := Listen(sock, NewHost(), testBuilder)
+	if err != nil {
+		t.Fatalf("Listen should remove a stale socket and bind, got %v", err)
+	}
+	srv.Close()
+}
+
+func TestPIDLifecycle(t *testing.T) {
+	pid := filepath.Join(t.TempDir(), "daemon.pid")
+	if RunningPID(pid) != 0 {
+		t.Fatal("no pid file → not running")
+	}
+	if err := WritePID(pid); err != nil {
+		t.Fatal(err)
+	}
+	if RunningPID(pid) != os.Getpid() {
+		t.Fatalf("should report this process as running")
+	}
+	// A pid file pointing at a dead process is treated as not-running.
+	if err := os.WriteFile(pid, []byte("999999"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if RunningPID(pid) != 0 {
+		t.Fatal("dead pid should be reported as not running")
+	}
+	RemovePID(pid)
+	if RunningPID(pid) != 0 {
+		t.Fatal("removed pid file → not running")
+	}
+}
+
+func TestInterruptEmitsTerminalNote(t *testing.T) {
+	// A session whose turn is interrupted must emit a terminal note so views
+	// leave the "working" state (the freeze bug).
+	reg, _ := tool.NewRegistry()
+	a := &agent.Agent{Provider: blockingProvider{}, Tools: reg}
+	s := newSession("x", "/tmp", "m", a)
+	_, live, detach := s.attach()
+	defer detach()
+	if !s.send("go") {
+		t.Fatal("send should start")
+	}
+	time.Sleep(50 * time.Millisecond)
+	s.interrupt()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case e := <-live:
+			if e.Kind == agent.EventNote && e.Text == "interrupted" {
+				return
+			}
+		case <-deadline:
+			t.Fatal("no terminal note after interrupt")
+		}
+	}
+}
+
+// blockingProvider hangs until ctx is cancelled (to test interrupt).
+type blockingProvider struct{}
+
+func (blockingProvider) Name() string { return "block" }
+func (blockingProvider) Complete(ctx context.Context, _ llm.Request) (*llm.Response, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
 }

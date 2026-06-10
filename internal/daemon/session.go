@@ -144,12 +144,22 @@ func (s *Session) send(task string) bool {
 		s.mu.Lock()
 		s.running = false
 		s.cancel = nil
-		if err != nil && ctx.Err() == nil {
+		interrupted := ctx.Err() != nil
+		if err != nil && !interrupted {
 			s.status = StatusError
 		} else {
 			s.status = StatusIdle
 		}
 		s.mu.Unlock()
+		// Always emit a terminal event so attached views leave the "working"
+		// state — the agent loop emits EventDone on a normal finish, but an
+		// interrupt or error returns without one.
+		switch {
+		case interrupted:
+			s.dispatch(agent.Event{Kind: agent.EventNote, Text: "interrupted"})
+		case err != nil:
+			s.dispatch(agent.Event{Kind: agent.EventNote, Text: "error: " + err.Error()})
+		}
 	}()
 	return true
 }

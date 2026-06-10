@@ -101,10 +101,21 @@ func main() {
 		return
 	}
 
-	// `eigen daemon`: run the long-lived session host (the real app). Windows
-	// attach to it as views; sessions keep running with no window.
+	// `eigen daemon [status|stop]`: run / inspect / stop the long-lived session
+	// host (the real app). Windows attach to it as views; sessions keep running
+	// with no window.
 	if flag.Arg(0) == "daemon" {
+		if daemonControl(flag.Arg(1)) {
+			return
+		}
 		runDaemon(cfg)
+		return
+	}
+
+	// `eigen attach [session-id]`: attach a view to a daemon session (the
+	// session runs in the daemon; this window just mirrors + sends input).
+	if flag.Arg(0) == "attach" {
+		runAttach(flag.Arg(1), cfg)
 		return
 	}
 
