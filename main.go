@@ -727,9 +727,19 @@ func smallProvider(main llm.Provider) llm.Provider {
 			return lp
 		}
 	}
-	// Prefer an explicit small model, else Haiku on converse (Bedrock).
-	smallModel := firstNonEmpty(os.Getenv("EIGEN_SMALL_MODEL"), "us.anthropic.claude-haiku-4-5-20251001-v1:0")
-	if hp, err := llm.New("converse", smallModel); err == nil {
+	// Prefer an explicit small model; else grok composer when credentialed
+	// (faster + cheaper + the user's own account, not Bedrock); else Haiku.
+	if sm := os.Getenv("EIGEN_SMALL_MODEL"); sm != "" {
+		if p, err := llm.New("", sm); err == nil {
+			return p
+		}
+	}
+	if llm.ProviderAvailable("grok") {
+		if gp, err := llm.New("grok", "grok-composer-2.5-fast"); err == nil {
+			return gp
+		}
+	}
+	if hp, err := llm.New("converse", "us.anthropic.claude-haiku-4-5-20251001-v1:0"); err == nil {
 		return hp
 	}
 	return main
