@@ -42,7 +42,7 @@ func imageMediaType(path string) string {
 // single-quoted forms are unwrapped. The prompt text is NOT modified.
 func extractImages(prompt string) (imgs []llm.Image, notes []string) {
 	seen := map[string]bool{}
-	for _, tok := range strings.Fields(prompt) {
+	for _, tok := range promptTokens(prompt) {
 		p := unwrapToken(tok)
 		mt := imageMediaType(p)
 		if mt == "" {
@@ -75,7 +75,7 @@ func extractImages(prompt string) (imgs []llm.Image, notes []string) {
 // file — used to bias routing toward a vision model before the images are
 // actually loaded.
 func referencesImage(prompt string) bool {
-	for _, tok := range strings.Fields(prompt) {
+	for _, tok := range promptTokens(prompt) {
 		p := expandHome(unwrapToken(tok))
 		if imageMediaType(p) == "" {
 			continue
@@ -85,6 +85,40 @@ func referencesImage(prompt string) bool {
 		}
 	}
 	return false
+}
+
+// promptTokens splits a prompt into tokens, keeping single- or double-quoted
+// spans together (so a quoted path with spaces — what normalizeDropped emits
+// for a dropped "My Screenshot.png" — stays one token instead of being split
+// on the space by strings.Fields).
+func promptTokens(s string) []string {
+	var out []string
+	var cur strings.Builder
+	var quote rune
+	flush := func() {
+		if cur.Len() > 0 {
+			out = append(out, cur.String())
+			cur.Reset()
+		}
+	}
+	for _, r := range s {
+		switch {
+		case quote != 0:
+			cur.WriteRune(r)
+			if r == quote {
+				quote = 0
+			}
+		case (r == '\'' || r == '"') && cur.Len() == 0:
+			quote = r
+			cur.WriteRune(r)
+		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
+			flush()
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	flush()
+	return out
 }
 
 // unwrapToken strips a leading @ and surrounding single/double quotes from a

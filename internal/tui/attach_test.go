@@ -92,3 +92,47 @@ func TestPasteImageNonVisionModel(t *testing.T) {
 		t.Fatal("should note the model lacks vision")
 	}
 }
+
+func TestPromptTokensQuoteAware(t *testing.T) {
+	// A quoted path with spaces stays one token (the drag-drop case).
+	got := promptTokens("'/home/u/my pics/a.png'")
+	if len(got) != 1 || got[0] != "'/home/u/my pics/a.png'" {
+		t.Fatalf("quoted spaced path should be one token, got %#v", got)
+	}
+	// Ordinary words split normally.
+	got = promptTokens("look at /tmp/a.png please")
+	if len(got) != 4 {
+		t.Fatalf("plain words should split, got %#v", got)
+	}
+	// A mid-word apostrophe does not start a quote span.
+	got = promptTokens("don't break this")
+	if len(got) != 3 || got[0] != "don't" {
+		t.Fatalf("mid-word apostrophe should not quote, got %#v", got)
+	}
+	// Double quotes too.
+	got = promptTokens(`read "/tmp/My File.png" now`)
+	if len(got) != 3 || got[1] != `"/tmp/My File.png"` {
+		t.Fatalf("double-quoted span should stay together, got %#v", got)
+	}
+}
+
+func TestDroppedSpacedImageAttaches(t *testing.T) {
+	dir := t.TempDir() + "/my pics"
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := dir + "/shot.png"
+	if err := os.WriteFile(p, append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A dropped path with spaces is quoted by normalizeDropped; it must still
+	// be detected and attached (regression: strings.Fields split it apart).
+	dropped := normalizeDropped(p)
+	if !referencesImage(dropped) {
+		t.Fatalf("spaced dropped image not detected from %q", dropped)
+	}
+	imgs, notes := extractImages(dropped)
+	if len(imgs) != 1 {
+		t.Fatalf("want 1 attached image, got %d (notes=%v)", len(imgs), notes)
+	}
+}
