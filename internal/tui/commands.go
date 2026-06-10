@@ -57,7 +57,7 @@ func (m *model) applyResumed(msgs []llm.Message) {
 // wait until the turn finishes (press esc to interrupt).
 func safeWhileRunning(name string) bool {
 	switch name {
-	case "/effort", "/search", "/perm", "/model", "/help", "/goal", "/loop", "/config",
+	case "/effort", "/search", "/perm", "/model", "/help", "/goal", "/loop", "/config", "/route",
 		"/skills", "/tools", "/find", "/copy", "/read":
 		return true
 	default:
@@ -72,7 +72,7 @@ func (m *model) command(line string) tea.Cmd {
 	arg := strings.TrimSpace(strings.TrimPrefix(line, name))
 	switch name {
 	case "/help":
-		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /loop  /config  /skills  /tools  /find  /copy  /read  /rebuild  /quit")
+		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /loop  /route  /config  /skills  /tools  /find  /copy  /read  /rebuild  /quit")
 		m.note("keys: / commands · @ files · ↑↓ history · select ctrl+p/n (or alt+↑/↓) · tab expand · drag select+copy · copy ctrl+y/alt+y · perm ctrl+a/alt+a · effort ctrl+e/alt+r · model ctrl+o/alt+m · pgup/pgdn scroll")
 		m.note("multiplexer note: zellij/tmux capture ctrl+p/n/o — use the alt+… keys (alt+↑/↓ select, alt+m model, alt+r effort, alt+a perm, alt+y copy)")
 		m.note("while running: enter queues a message · esc interrupts · settings commands (/effort /perm /model /search) run immediately")
@@ -165,6 +165,31 @@ func (m *model) command(line string) tea.Cmd {
 			// Arm the idle nag for when the running turn ends.
 			m.idleGen++
 			return m.scheduleGoalNag()
+		}
+	case "/route":
+		if m.router == nil {
+			m.note("auto-router unavailable")
+			break
+		}
+		switch arg {
+		case "":
+			status := "off"
+			if m.router.Enabled() {
+				status = "on"
+			}
+			scope := "current provider only"
+			if p := m.router.Providers(); len(p) > 0 {
+				scope = "across " + strings.Join(p, " ")
+			}
+			m.note(fmt.Sprintf("auto-router: %s (%s)   (/route on|off — set route_providers via /config for cross-provider)", status, scope))
+		case "on":
+			m.router.SetEnabled(true)
+			m.note("auto-router ON — each task routes to the cheapest model that does it well")
+		case "off":
+			m.router.SetEnabled(false)
+			m.note("auto-router OFF")
+		default:
+			m.push(&block{kind: blockNote, isErr: true, body: sb("usage: /route on|off  (cross-provider scope: /config route_providers <list>)")})
 		}
 	case "/config":
 		fields := strings.Fields(arg)

@@ -331,6 +331,11 @@ func main() {
 		extraSystem += g
 	}
 
+	// Auto-router (opt-in): per-task model selection. Provider is the resolved
+	// base provider name; routing across other providers is gated by the
+	// route_providers allowlist.
+	router := newAutoRouter(cfg.Route, cfg.RouteProviders, *provider)
+
 	a = &agent.Agent{
 		Provider:         prov,
 		Tools:            registry,
@@ -340,6 +345,7 @@ func main() {
 		ExtraSystem:      extraSystem,
 		Memory:           memory.Sections(gmem, mem),
 		Goal:             resumedGoal,
+		Router:           router.Route,
 	}
 
 	// Session store: discover all sources (lazy) and title untitled ones in the
@@ -402,6 +408,7 @@ func main() {
 			NotifyCmd:      cfg.NotifyCmd,
 			LoopPrompt:     resumedLoopPrompt,
 			LoopEvery:      resumedLoopEvery,
+			Router:         router,
 		})
 		if err != nil {
 			fail(err)

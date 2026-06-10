@@ -112,6 +112,9 @@ func (m *model) statusBarParts() []statusSeg {
 	if llm.HasVision(m.modelID) {
 		segs = append(segs, statusSeg{"vision", styleCode})
 	}
+	if m.router != nil && m.router.Enabled() {
+		segs = append(segs, statusSeg{"route", styleStatus})
+	}
 	if m.readAloud {
 		segs = append(segs, statusSeg{"read-aloud", styleStatus})
 	}

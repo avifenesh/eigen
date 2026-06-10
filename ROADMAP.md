@@ -101,7 +101,18 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
 9. **Conversation mode** — voice conversation over the chat: STT for spoken input
    + TTS for spoken replies (builds on the existing read-aloud/speech plumbing).
    Not small — a full audio in/out loop.
-10. **Auto-router** — pick the model/provider per task automatically (cost/latency/capability).
+10. **Auto-router** — *(shipped: opt-in per-task model selection. Policy
+    (internal/llm/router.go): among CAPABLE candidates (required search/vision
+    + context window) that are GOOD ENOUGH (quality ≥ difficulty floor), pick
+    the CHEAPEST → tie stronger → tie faster; else the strongest capable. Per-
+    model RouterScore (Quality/Cost/Speed, tunable). kind/difficulty come from
+    the orchestrator (task tool args, authoritative) or a heuristic classifier
+    (fallback); vision forced when an image is attached; search via cue phrases.
+    Candidates = catalog models on credentialed + allowed providers (cross-
+    provider opt-in via route_providers). /route on|off, 'route' status tag,
+    each routed choice noted; respects the failover window; manual /model wins.
+    REMAINING: routing the top-level turn currently leaves the model switched
+    (per-task re-routes anyway); auxiliary-model routing for #20 image fusion.)*
 11. **Hooks** — pre/post tool, pre/post turn, pre/post compaction user hooks.
 12. **Sub-agents** — *(partially shipped: depth-bounded `task` tool; expand: named roles, parallelism)*.
 13. **Ultraplan** — dozens of in-depth sub-agents driven by one big plan ahead.

@@ -183,6 +183,7 @@ type model struct {
 	idleMinutes    int
 	maxTokens      int           // user context-budget ceiling (0 = auto from the model window)
 	smallCompactor llm.Compactor // cheap-model summarizer chained on live switches
+	router         Router        // opt-in auto-router (nil when unavailable)
 
 	// ping: attention signals (terminal bell + optional notifier command).
 	notifyCmd   string    // external notifier (config notify_cmd / EIGEN_NOTIFY_CMD)
@@ -461,6 +462,20 @@ func (m *model) submit(task string) tea.Cmd {
 	m.comp = completion{kind: compNone}
 	m.streamedText = false
 	m.idleGen++ // invalidate any pending idle-dream timer
+
+	// Auto-router: route this turn to the best-fit model, unless a failover
+	// window is active (failover's choice wins until it ends) — a manual /model
+	// switch is honored because it updates m.modelID, which routing overwrites
+	// only when enabled.
+	hasImageRef := referencesImage(task)
+	if m.router != nil && m.router.Enabled() && m.failoverFrom == nil {
+		if prov, model, label := m.router.Route(m.ctx, task, "", "", hasImageRef); prov != nil && model != m.modelID {
+			m.a.SetLive(prov, m.compactorFor(prov), m.contextBudgetFor(model))
+			m.provName, m.modelID = prov.Name(), model
+			m.note(label)
+		}
+	}
+
 	// Vision: attach referenced image files when the active model supports it.
 	var images []llm.Image
 	if m.a != nil && m.a.Provider != nil && llm.HasVision(m.modelID) {
@@ -1063,6 +1078,18 @@ type Options struct {
 	// LoopPrompt/LoopEvery restore a resumed session's idle loop (see /loop).
 	LoopPrompt string
 	LoopEvery  time.Duration
+	// Router is the opt-in auto-router; /route toggles it and the top-level turn
+	// routes through it. Nil disables the /route command.
+	Router Router
+}
+
+// Router is the auto-router surface the TUI needs: toggle, status, and routing
+// a top-level prompt to a provider+model. Implemented by main's autoRouter.
+type Router interface {
+	Enabled() bool
+	SetEnabled(bool)
+	Providers() []string
+	Route(ctx context.Context, prompt, kind, difficulty string, hasImage bool) (llm.Provider, string, string)
 }
 
 // Run drives the agent under a multi-turn Bubble Tea REPL.
@@ -1132,6 +1159,7 @@ func Run(a *agent.Agent, o Options) (Result, error) {
 		idleMinutes:    o.IdleMinutes,
 		maxTokens:      o.MaxTokens,
 		smallCompactor: o.SmallCompactor,
+		router:         o.Router,
 		notifyCmd:      o.NotifyCmd,
 		loopPrompt:     o.LoopPrompt,
 		loopEvery:      o.LoopEvery,

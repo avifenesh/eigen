@@ -69,6 +69,22 @@ func extractImages(prompt string) (imgs []llm.Image, notes []string) {
 	return imgs, notes
 }
 
+// referencesImage reports whether the prompt names at least one readable image
+// file — used to bias routing toward a vision model before the images are
+// actually loaded.
+func referencesImage(prompt string) bool {
+	for _, tok := range strings.Fields(prompt) {
+		p := expandHome(unwrapToken(tok))
+		if imageMediaType(p) == "" {
+			continue
+		}
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
 // unwrapToken strips a leading @ and surrounding single/double quotes from a
 // path token.
 func unwrapToken(tok string) string {

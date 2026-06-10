@@ -2310,3 +2310,62 @@ func TestConfigCommandShowsAndRejects(t *testing.T) {
 		t.Fatal("missing value should show usage")
 	}
 }
+
+// fakeRouter is a test Router.
+type fakeRouter struct {
+	on        bool
+	providers []string
+	prov      llm.Provider
+	model     string
+}
+
+func (f *fakeRouter) Enabled() bool       { return f.on }
+func (f *fakeRouter) SetEnabled(b bool)   { f.on = b }
+func (f *fakeRouter) Providers() []string { return f.providers }
+func (f *fakeRouter) Route(_ context.Context, _, _, _ string, _ bool) (llm.Provider, string, string) {
+	if !f.on || f.prov == nil {
+		return nil, "", ""
+	}
+	return f.prov, f.model, "routed → " + f.model + " (general/medium)"
+}
+
+func TestRouteCommandToggles(t *testing.T) {
+	m := testModel(t)
+	fr := &fakeRouter{}
+	m.router = fr
+
+	m.command("/route on")
+	if !fr.on {
+		t.Fatal("/route on should enable")
+	}
+	m.command("/route off")
+	if fr.on {
+		t.Fatal("/route off should disable")
+	}
+	// Bare /route shows status.
+	m.command("/route")
+	found := false
+	for _, b := range m.blocks {
+		if b.kind == blockNote && strings.Contains(b.body, "auto-router:") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("bare /route should show status")
+	}
+}
+
+func TestRouteCommandUnavailable(t *testing.T) {
+	m := testModel(t)
+	m.router = nil
+	m.command("/route on")
+	found := false
+	for _, b := range m.blocks {
+		if b.kind == blockNote && strings.Contains(b.body, "unavailable") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("nil router should note unavailable")
+	}
+}
