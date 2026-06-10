@@ -192,15 +192,6 @@ func Lookup(model string) (ModelInfo, bool) {
 	return ModelInfo{}, false
 }
 
-// ContextWindow returns the known context window for a model id (exact match,
-// then a prefix match for versioned ids), or 0 if unknown.
-func ContextWindow(model string) int {
-	if m, ok := Lookup(model); ok {
-		return m.ContextWindow
-	}
-	return 0
-}
-
 // EffectiveContextWindow returns the window eigen should budget against for a
 // model: the 1M window when the model supports it and the 1M beta is enabled
 // (default on for Context1M models; force off with EIGEN_CONVERSE_1M=0). Falls

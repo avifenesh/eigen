@@ -143,10 +143,10 @@ func (m *model) statusBarLines() []string {
 		return []string{strings.Join(parts, sep)}
 	}
 	// Pack into rows by plain display width, rendering styled segments.
-	var rows []string      // styled
-	var rowsPlainW []int   // plain width of each row
-	cur := ""              // styled accumulator
-	curW := 0              // plain width accumulator
+	var rows []string    // styled
+	var rowsPlainW []int // plain width of each row
+	cur := ""            // styled accumulator
+	curW := 0            // plain width accumulator
 	for _, s := range segs {
 		addW := ansi.StringWidth(s.text)
 		if cur != "" {

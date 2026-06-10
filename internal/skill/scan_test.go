@@ -10,7 +10,7 @@ import (
 
 // scanProv is a fake provider returning a canned scan verdict.
 type scanProv struct {
-	reply string
+	reply     string
 	gotSystem string
 	gotUser   string
 }

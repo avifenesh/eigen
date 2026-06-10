@@ -40,7 +40,7 @@ type searchBackend interface {
 //   - Tavily:  TAVILY_API_KEY            (POST https://api.tavily.com/search)
 //   - Brave:   BRAVE_API_KEY             (GET  https://api.search.brave.com/...)
 //   - Generic: EIGEN_WEBSEARCH_URL       (a URL template with %s or {query};
-//              must return JSON; parsed leniently for title/url/snippet)
+//     must return JSON; parsed leniently for title/url/snippet)
 //
 // Endpoint base URLs are overridable via EIGEN_TAVILY_URL / EIGEN_BRAVE_URL so
 // the tool is testable against a local server.

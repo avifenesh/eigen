@@ -48,15 +48,6 @@ type Scanner interface {
 	Scan(ctx context.Context, name, content string) (ScanResult, error)
 }
 
-// ScanFunc adapts a function to the Scanner interface (used to inject scanning
-// into the installer without a hard llm dependency).
-type ScanFunc func(ctx context.Context, name, content string) (ScanResult, error)
-
-// Scan implements Scanner.
-func (f ScanFunc) Scan(ctx context.Context, name, content string) (ScanResult, error) {
-	return f(ctx, name, content)
-}
-
 // ProviderScanner scans using a (preferably small/cheap) model — the same
 // "haiku" eigen uses for session titling and dreaming.
 type ProviderScanner struct{ P llm.Provider }

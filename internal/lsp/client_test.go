@@ -11,16 +11,9 @@ import (
 	"time"
 )
 
-// fakeServer is an in-process LSP server over io.Pipe: it reads framed requests
-// and replies with canned results based on the method. It lets the client be
-// tested without spawning a real language server.
-type fakeServer struct {
-	in  *io.PipeReader // server reads client requests here
-	out *io.PipeWriter // server writes responses here
-}
-
-// pipePair wires a client (newClient) to a fake server. Returns the client and
-// the server, which the test drives by registering handlers.
+// newFakeClient wires a client (newClient) to an in-process fake LSP server
+// over io.Pipe, so the client can be tested without spawning a real language
+// server. The test drives the server by registering a method handler.
 func newFakeClient(t *testing.T, handle func(method string, params json.RawMessage) (any, bool)) *Client {
 	t.Helper()
 	// client writes → server reads

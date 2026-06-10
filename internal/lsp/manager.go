@@ -48,15 +48,6 @@ func NewManager(root string, configs []ServerConfig) *Manager {
 	}
 }
 
-// ServerNames returns the configured server names (for listings).
-func (m *Manager) ServerNames() []string {
-	out := make([]string, 0, len(m.configs))
-	for _, c := range m.configs {
-		out = append(out, c.Name)
-	}
-	return out
-}
-
 // configFor returns the server config that handles a file's extension.
 func (m *Manager) configFor(path string) (ServerConfig, bool) {
 	ext := strings.ToLower(filepath.Ext(path))

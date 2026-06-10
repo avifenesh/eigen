@@ -6,26 +6,26 @@ import (
 )
 
 func TestContextWindowExact(t *testing.T) {
-	if got := ContextWindow("openai.gpt-5.5"); got != 272000 {
+	if got := lookupWindow("openai.gpt-5.5"); got != 272000 {
 		t.Fatalf("gpt-5.5 window = %d", got)
 	}
-	if got := ContextWindow("us.anthropic.claude-sonnet-4-6"); got != 200000 {
+	if got := lookupWindow("us.anthropic.claude-sonnet-4-6"); got != 200000 {
 		t.Fatalf("sonnet window = %d", got)
 	}
 }
 
 func TestContextWindowPrefix(t *testing.T) {
 	// A more specific versioned id should still resolve via prefix match.
-	if got := ContextWindow("us.anthropic.claude-opus-4-1-20250101"); got != 200000 {
+	if got := lookupWindow("us.anthropic.claude-opus-4-1-20250101"); got != 200000 {
 		t.Fatalf("opus prefix window = %d", got)
 	}
 }
 
 func TestContextWindowUnknown(t *testing.T) {
-	if got := ContextWindow("some-unknown-model"); got != 0 {
+	if got := lookupWindow("some-unknown-model"); got != 0 {
 		t.Fatalf("unknown window = %d, want 0", got)
 	}
-	if got := ContextWindow(""); got != 0 {
+	if got := lookupWindow(""); got != 0 {
 		t.Fatalf("empty window = %d, want 0", got)
 	}
 }
@@ -195,3 +195,12 @@ func TestNewReconcilesProviderModel(t *testing.T) {
 }
 
 func contains(s, sub string) bool { return strings.Contains(s, sub) }
+
+// lookupWindow is the test shim for the removed ContextWindow accessor: the
+// catalog's standard window for a model id, 0 when unknown.
+func lookupWindow(model string) int {
+	if m, ok := Lookup(model); ok {
+		return m.ContextWindow
+	}
+	return 0
+}

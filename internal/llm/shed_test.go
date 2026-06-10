@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -104,7 +105,7 @@ func TestCompactWithShedsBeforeSummarizing(t *testing.T) {
 		)
 	}
 	fc := &fakeCompactor{}
-	out, err := CompactWith(nil, fc, msgs, 8000)
+	out, err := CompactWith(context.Background(), fc, msgs, 8000)
 	if err != nil {
 		t.Fatal(err)
 	}

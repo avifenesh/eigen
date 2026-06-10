@@ -135,7 +135,7 @@ func TestInstallOverwrite(t *testing.T) {
 
 func TestParseGitHubRef(t *testing.T) {
 	cases := []struct {
-		in                       string
+		in                     string
 		owner, repo, path, ref string
 	}{
 		{"owner/repo", "owner", "repo", "", ""},

@@ -107,10 +107,10 @@ func (c *Client) initialize(ctx context.Context, rootDir string) error {
 		},
 		"capabilities": map[string]any{
 			"textDocument": map[string]any{
-				"definition":      map[string]any{},
-				"references":      map[string]any{},
-				"hover":           map[string]any{"contentFormat": []string{"plaintext", "markdown"}},
-				"documentSymbol":  map[string]any{"hierarchicalDocumentSymbolSupport": true},
+				"definition":         map[string]any{},
+				"references":         map[string]any{},
+				"hover":              map[string]any{"contentFormat": []string{"plaintext", "markdown"}},
+				"documentSymbol":     map[string]any{"hierarchicalDocumentSymbolSupport": true},
 				"publishDiagnostics": map[string]any{},
 			},
 		},

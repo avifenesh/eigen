@@ -54,9 +54,9 @@ var (
 	styleHeading    = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true) // blue
 	styleBold       = lipgloss.NewStyle().Bold(true)
 	styleItalic     = lipgloss.NewStyle().Italic(true)
-	styleInlineCode = lipgloss.NewStyle().Foreground(lipgloss.Color("80"))            // teal
+	styleInlineCode = lipgloss.NewStyle().Foreground(lipgloss.Color("80")) // teal
 	styleQuote      = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
-	styleBullet     = lipgloss.NewStyle().Foreground(lipgloss.Color("141"))           // violet
+	styleBullet     = lipgloss.NewStyle().Foreground(lipgloss.Color("141")) // violet
 )
 
 type uiState int
@@ -1174,10 +1174,10 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			m.cycleModel()
 			return m, nil
 		case "pgup":
-			m.vp.HalfViewUp()
+			m.vp.HalfPageUp()
 			return m, nil
 		case "pgdown":
-			m.vp.HalfViewDown()
+			m.vp.HalfPageDown()
 			return m, nil
 		}
 		switch m.state {
@@ -1672,22 +1672,20 @@ func (m *model) modelPickerView() string {
 		if len(tags) > 0 {
 			tagStr = "  [" + strings.Join(tags, " ") + "]"
 		}
+		// One render path: selection marker first, then active marker, then the
+		// row — styled once at the end.
 		active := mi.ID == m.modelID
-		line := fmt.Sprintf("%-34s %-9s %-5s%s", mi.ID, mi.Provider, winStr, tagStr)
-		if active {
-			line = styleStatus.Render("● " + line)
-		} else {
-			line = "  " + line
-		}
-		if i == m.modelPickIdx {
-			line = styleAsk.Render("› ") + strings.TrimPrefix(strings.TrimPrefix(line, "  "), styleStatus.Render("● ")[:len("● ")])
-			// Re-render the whole line highlighted.
-			raw := fmt.Sprintf("%-34s %-9s %-5s%s", mi.ID, mi.Provider, winStr, tagStr)
-			if active {
-				line = styleAsk.Render("›●" + raw)
-			} else {
-				line = styleAsk.Render("› " + raw)
-			}
+		raw := fmt.Sprintf("%-34s %-9s %-5s%s", mi.ID, mi.Provider, winStr, tagStr)
+		var line string
+		switch {
+		case i == m.modelPickIdx && active:
+			line = styleAsk.Render("›● " + raw)
+		case i == m.modelPickIdx:
+			line = styleAsk.Render("›  " + raw)
+		case active:
+			line = styleStatus.Render(" ● " + raw)
+		default:
+			line = "   " + raw
 		}
 		b.WriteString(line + "\n")
 	}
@@ -1732,58 +1730,6 @@ func (m *model) applyResumed(msgs []llm.Message) {
 func dim(s string) string { return styleReason.Render(s) }
 
 // --- commands --------------------------------------------------------------
-
-// modelCatalog renders the current model plus the catalog of models the user
-// can switch to, marking the active one. It powers bare `/model`.
-func (m *model) modelCatalog() string {
-	current := ""
-	if m.a != nil && m.a.Provider != nil {
-		current = m.a.Provider.Name()
-	}
-	var b strings.Builder
-	if current != "" {
-		b.WriteString("model: " + current)
-	} else {
-		b.WriteString("no model configured")
-	}
-	b.WriteString("\navailable models (/model <id> or /model <provider> <id> to switch):")
-	for _, mi := range llm.Models() {
-		marker := "  "
-		if mi.ID == m.modelID {
-			marker = "› "
-		}
-		line := fmt.Sprintf("\n  %s%-32s %-9s", marker, mi.ID, mi.Provider)
-		win := mi.ContextWindow
-		if mi.Context1M && mi.ContextWindow1M > 0 {
-			win = mi.ContextWindow1M
-		}
-		if win > 0 {
-			line += fmt.Sprintf(" %dk", win/1000)
-		}
-		// Capability tags.
-		var tags []string
-		if mi.Cache {
-			tags = append(tags, "cache")
-		}
-		if mi.Context1M {
-			tags = append(tags, "1M")
-		}
-		if mi.Reasoning {
-			if mi.Effort != "" {
-				tags = append(tags, "effort:"+mi.Effort)
-			} else if mi.ThinkingBudget > 0 {
-				tags = append(tags, "thinking")
-			} else {
-				tags = append(tags, "reasoning")
-			}
-		}
-		if len(tags) > 0 {
-			line += "  [" + strings.Join(tags, " ") + "]"
-		}
-		b.WriteString(line)
-	}
-	return b.String()
-}
 
 // safeWhileRunning reports whether a slash command can run while a turn is in
 // flight. Settings and read-only commands are safe; commands that replace or
@@ -2142,9 +2088,9 @@ type Options struct {
 	Model       string // model id
 	Memory      *memory.Store
 	Skills      *skill.Set // discovered skills (for /skills browse + preview)
-	DreamOnIdle bool // reflect into memory after the session goes idle
-	IdleMinutes int  // idle delay before dreaming (default 5)
-	MaxTokens   int  // user context-budget ceiling (0 = auto from the model window)
+	DreamOnIdle bool       // reflect into memory after the session goes idle
+	IdleMinutes int        // idle delay before dreaming (default 5)
+	MaxTokens   int        // user context-budget ceiling (0 = auto from the model window)
 }
 
 // Run drives the agent under a multi-turn Bubble Tea REPL.

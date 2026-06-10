@@ -118,8 +118,8 @@ func (a *Anthropic) Effort() string { return a.effort }
 // --- wire types (native Messages API) ---
 
 type anthropicTextBlock struct {
-	Type         string            `json:"type"`
-	Text         string            `json:"text"`
+	Type         string             `json:"type"`
+	Text         string             `json:"text"`
 	CacheControl *anthropicCacheCtl `json:"cache_control,omitempty"`
 }
 
@@ -138,12 +138,12 @@ type anthropicTool struct {
 type anthropicContent struct {
 	Type      string          `json:"type"`
 	Text      string          `json:"text,omitempty"`
-	ID        string          `json:"id,omitempty"`        // tool_use
-	Name      string          `json:"name,omitempty"`      // tool_use
-	Input     json.RawMessage `json:"input,omitempty"`     // tool_use
+	ID        string          `json:"id,omitempty"`          // tool_use
+	Name      string          `json:"name,omitempty"`        // tool_use
+	Input     json.RawMessage `json:"input,omitempty"`       // tool_use
 	ToolUseID string          `json:"tool_use_id,omitempty"` // tool_result
-	Content   string          `json:"content,omitempty"`   // tool_result (text)
-	IsError   bool            `json:"is_error,omitempty"`  // tool_result
+	Content   string          `json:"content,omitempty"`     // tool_result (text)
+	IsError   bool            `json:"is_error,omitempty"`    // tool_result
 }
 
 type anthropicMessage struct {
@@ -383,7 +383,7 @@ func claudeOAuthToken(path string) (string, error) {
 		return "", fmt.Errorf("no claudeAiOauth.accessToken in %s", path)
 	}
 	if creds.ClaudeAiOauth.ExpiresAt > 0 && time.Now().UnixMilli() >= creds.ClaudeAiOauth.ExpiresAt {
-		return "", fmt.Errorf("Claude Code token expired; run `claude` to refresh it")
+		return "", fmt.Errorf("claude code token expired; run `claude` to refresh it")
 	}
 	return tok, nil
 }

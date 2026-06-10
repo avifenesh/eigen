@@ -22,7 +22,7 @@ type MemoryStore interface {
 // project).
 func Memory(project, global MemoryStore) Definition {
 	return Definition{
-		Name: "memory",
+		Name:        "memory",
 		Description: "Record a durable note for future sessions. scope=\"project\" (default) for facts about THIS repo (build/test commands, conventions, architecture, gotchas); scope=\"global\" for cross-project facts that apply everywhere (the user's working style, durable preferences, global rules). Use sparingly, for facts worth remembering long-term.",
 		ReadOnly:    true,
 		Parameters: json.RawMessage(`{
