@@ -321,13 +321,23 @@ func main() {
 	// is at its largest/most expensive), falling back to the main provider.
 	smallCompactor := llm.NewCompactor(smallProvider(prov))
 
+	// Compose ExtraSystem: skills catalog + the repo's AGENTS.md guidance.
+	extraSystem := skills.Catalog()
+	guideDir, _ := os.Getwd()
+	if g := agentsGuidance(guideDir); g != "" {
+		if extraSystem != "" {
+			extraSystem += "\n\n"
+		}
+		extraSystem += g
+	}
+
 	a = &agent.Agent{
 		Provider:         prov,
 		Tools:            registry,
 		Perm:             agent.Permission(*perm),
 		MaxContextTokens: contextBudget(*maxTokens, *provider, *model),
 		Compactor:        llm.CompactorChain(smallCompactor, llm.NewCompactor(prov)),
-		ExtraSystem:      skills.Catalog(),
+		ExtraSystem:      extraSystem,
 		Memory:           memory.Sections(gmem, mem),
 		Goal:             resumedGoal,
 	}

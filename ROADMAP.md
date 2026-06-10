@@ -107,7 +107,10 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
 13. **Ultraplan** — dozens of in-depth sub-agents driven by one big plan ahead.
 14. **Ping** — *(shipped cf8d2de: terminal bell + optional notify_cmd on
     approval-needed and long-turn-finished)*
-15. **AGENTS.md integration** — read/honor repo `AGENTS.md` *(v2 nice-to-have)*.
+15. **AGENTS.md integration** — *(shipped: the repo's AGENTS.md (also
+    .eigen/AGENTS.md, CLAUDE.md), nearest-first walking up to the .git root, is
+    injected into the system prompt as repository guidance — distinct from
+    learned memory; capped per file.)*
 16. **tok/s in & tok/s out measurement** — *(shipped 84f13b1: output tok/s,
     live + last-turn in status bar; input-side + real usage fields still open)*
 17. **Observability for long-term learning** — structured logs of errors, tool
