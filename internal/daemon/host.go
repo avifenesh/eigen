@@ -133,7 +133,27 @@ func (h *Host) Get(id string) *Session {
 	return h.sessions[id]
 }
 
-// Remove stops hosting a session (interrupting any in-flight turn).
+// Shutdown releases every session's resources (interrupting in-flight turns,
+// closing MCP/LSP) WITHOUT touching persisted state — the next daemon start
+// restores them. This is daemon shutdown; Remove is user deletion.
+func (h *Host) Shutdown() {
+	h.mu.Lock()
+	sessions := make([]*Session, 0, len(h.sessions))
+	for _, s := range h.sessions {
+		sessions = append(sessions, s)
+	}
+	h.sessions = map[string]*Session{}
+	h.mu.Unlock()
+	for _, s := range sessions {
+		s.interrupt()
+		if s.onClose != nil {
+			s.onClose()
+		}
+	}
+}
+
+// Remove stops hosting a session (interrupting any in-flight turn) and
+// DELETES its persisted state — this is the user-facing "delete session".
 func (h *Host) Remove(id string) bool {
 	h.mu.Lock()
 	s := h.sessions[id]

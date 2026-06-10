@@ -142,3 +142,24 @@ func TestRestoreSkipsBrokenBuilds(t *testing.T) {
 		t.Fatal("failed restore must keep the persisted files")
 	}
 }
+
+func TestShutdownKeepsPersistedState(t *testing.T) {
+	// Daemon shutdown must NOT delete persisted sessions (that's Remove, the
+	// user-facing delete). Regression: shutdown used Remove and wiped disk.
+	persistDir := t.TempDir()
+	h := NewPersistentHost(persistDir)
+	reg, _ := tool.NewRegistry()
+	s := h.Add("/tmp", "m", &agent.Agent{Provider: echoProvider{}, Tools: reg})
+	h.Shutdown()
+	if _, err := os.Stat(metaPath(persistDir, s.ID)); err != nil {
+		t.Fatal("shutdown must keep meta on disk")
+	}
+	if h.Get(s.ID) != nil {
+		t.Fatal("shutdown should drop live sessions")
+	}
+	// And a fresh host restores it.
+	h2 := NewPersistentHost(persistDir)
+	if n := h2.Restore(persistentBuilder()); n != 1 {
+		t.Fatalf("restore after shutdown: %d, want 1", n)
+	}
+}

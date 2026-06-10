@@ -103,9 +103,9 @@ func runDaemon(cfg config.Config) {
 			_ = os.Remove(daemon.SocketPath())
 			os.Exit(1)
 		}()
-		for _, in := range host.List() {
-			host.Remove(in.ID) // interrupt turns + release resources
-		}
+		// Shutdown ≠ Remove: release resources but KEEP persisted state so
+		// the next start restores every session.
+		host.Shutdown()
 		srv.Close()
 		daemon.RemovePID(daemon.PIDPath())
 	}()
@@ -157,7 +157,7 @@ func isClosedErr(err error) bool {
 // socket). With no id it attaches to the most recently updated session, or
 // creates one rooted at the current directory when the daemon has none.
 func runAttach(id string, cfg config.Config) {
-	c, err := daemon.Dial(daemon.SocketPath())
+	c, err := ensureDaemon() // auto-start: persisted sessions restore
 	if err != nil {
 		fail(err)
 	}
@@ -199,14 +199,44 @@ func runAttach(id string, cfg config.Config) {
 	}
 	skills := skill.Discover(skillDirs()...)
 	mem, _ := memory.Open(dir)
-	if _, err := tui.Run(backend, tui.Options{
+	res, err := tui.Run(backend, tui.Options{
 		Provider:      backend.ProviderName(),
 		Model:         backend.ModelID(),
 		Memory:        mem,
 		Skills:        skills,
 		NoSessionFile: true,
-	}); err != nil {
+	})
+	if err != nil {
 		fail(err)
+	}
+	if res.Rebuild {
+		c.Close()
+		daemonRebuildResume(res.BinPath, id)
+	}
+}
+
+// daemonRebuildResume is /rebuild for daemon-hosted sessions: the new binary
+// is already built, smoke-tested, and swapped into place (the TUI did that).
+// Sessions are durable, so the move is: stop the old daemon (state persists),
+// then exec `bin attach <id>` — attach auto-starts a daemon ON THE NEW BINARY,
+// which restores every session and reattaches to this one. One honest
+// limitation: live effort/search switches die with the old provider instance;
+// model/perm/goal/history all survive (they're in the session meta).
+func daemonRebuildResume(bin, sessionID string) {
+	if pid, err := daemon.Stop(daemon.PIDPath()); err == nil && pid != 0 {
+		// Wait for the old daemon to exit (its 5s shutdown watchdog forces
+		// the issue if MCP teardown hangs). A forced exit skips its cleanup
+		// defers, so clear the pid/socket files ourselves.
+		deadline := time.Now().Add(8 * time.Second)
+		for time.Now().Before(deadline) && daemon.RunningPID(daemon.PIDPath()) != 0 {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+	daemon.RemovePID(daemon.PIDPath())
+	_ = os.Remove(daemon.SocketPath())
+	argv := []string{bin, "attach", sessionID}
+	if err := syscall.Exec(bin, argv, os.Environ()); err != nil {
+		fail(fmt.Errorf("exec new build: %w", err))
 	}
 }
 

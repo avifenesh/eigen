@@ -285,7 +285,7 @@ func main() {
 				fail(berr)
 			}
 			mem, _ := memory.Open("")
-			_, err := tui.Run(backend, tui.Options{
+			res, err := tui.Run(backend, tui.Options{
 				InitialTask:   task,
 				Provider:      backend.ProviderName(),
 				Model:         backend.ModelID(),
@@ -297,6 +297,11 @@ func main() {
 			dc.Close()
 			if err != nil {
 				fail(err)
+			}
+			if res.Rebuild {
+				// Sessions are durable: restart the daemon on the new binary
+				// and reattach to this same session.
+				daemonRebuildResume(res.BinPath, sid)
 			}
 			return
 		} else {

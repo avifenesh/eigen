@@ -121,11 +121,16 @@ func (m *model) command(line string) tea.Cmd {
 		}
 		m.loadSession(arg)
 	case "/rebuild":
-		if err := transcript.Save(m.sessionPath, m.backend.Messages()); err != nil {
-			m.push(&block{kind: blockNote, isErr: true, body: sb("rebuild: save failed: " + err.Error())})
-			break
+		// Local sessions save a transcript for the exec-resume; daemon-hosted
+		// sessions (sessionPath == "") need nothing — the daemon persists, and
+		// the caller restarts it and reattaches to the same session id.
+		if m.sessionPath != "" {
+			if err := transcript.Save(m.sessionPath, m.backend.Messages()); err != nil {
+				m.push(&block{kind: blockNote, isErr: true, body: sb("rebuild: save failed: " + err.Error())})
+				break
+			}
+			m.saveMeta()
 		}
-		m.saveMeta()
 		m.state = stRunning
 		m.status = "rebuilding…"
 		return tea.Batch(m.sp.Tick, m.buildCmd())
