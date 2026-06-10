@@ -98,8 +98,12 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
    -p. Exit 0/non-zero lets the host back off. Pairs with --continue for one
    evolving session. docs/automation-example.md has the systemd timer (OnUnit-
    InactiveSec = "start when it closed, do something, go back") + shell loop.)*
-6. **Background scan for wide-reaching actions** — proactively flag risky/broad
-   operations (mass deletes, wide refactors) before they run.
+6. **Background scan → proactive action feed** — *(redefined; lives inside the
+   app shell, Tier 8)* a background worker that scans memory, the project,
+   GitHub (issues/PRs/upstream drift) and similar fast sources, and offers
+   one-keystroke session starters: "solve this issue", "clean the code you
+   said you wanted cleaned", "open the PR against upstream". Surfaces as a
+   feed on the home page / project pages.
 7. **Computer use built in** — *(shipped via #8: the agent-workspace server is
    auto-registered when its binary is present, giving screenshot/click/key/type
    + browser control as first-class tools without mcp.json editing.)*
@@ -194,6 +198,57 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
     defaults to a CROSS-VENDOR judge (GPT judges Claude's claims and vice
     versa). EIGEN_JUDGE_MODEL still pins a specific judge. The iterative-planning
     loop (#24) will reuse this as its critique step.)*
+
+
+## Tier 8 — eigen the app (the TUI you live in)
+
+Eigen upgrades from "a chat you open in a directory" to a full TUI **app** —
+what nvim is to editing, eigen is to working with agents. Not just for code:
+the thing you use for everything.
+
+**Entry modes:**
+- `eigen` (bare, no path) → opens the APP: a home dashboard, not a chat.
+- `eigen .` / `eigen <path>` → opens a chat session rooted at that project
+  (today's behavior, preserved).
+- `eigen --resume/-c` → straight into the resumed session.
+
+**The app is paged** (like nvim dashboards / lazygit panels). Pages, each a
+first-class surface, reachable by keys and a command palette:
+- **Home** — greeting, quick actions, the proactive feed (#6: offered actions
+  from memory + project + GitHub scanning), recent sessions/projects.
+- **Projects** — every project eigen knows (discovered from sessions, config);
+  each project gets ITS OWN page: its sessions, its memory, its feed, quick
+  "new session here".
+- **Sessions** — all sessions across projects; resume/inspect/delete/export.
+- **Crons** — scheduled/automation runs (#5): list, status, last result, edit.
+- **Config** — the /config surface as a page (view + edit defaults).
+- **Plugins** — plugins.json + MCP servers: status, tools, enable/disable.
+- **Skills** — installed skills, preview, add/remove (the /skills surface).
+- **Models** — catalog + discovery (eigen models), router tiers, availability.
+- **Providers** — credential status per provider, default model, budgets.
+- **Memory** — global + project memory: view, edit, consolidate, backups.
+
+**Layout & UX:**
+- Side tabs (left rail): running sessions + pages — switch instantly; running
+  sessions show live status (working/idle/needs-approval) at a glance.
+- Multiple concurrent sessions, each in a tab; background sessions keep
+  running (the existing agent loop already supports it; the UI catches up).
+- A command palette (fuzzy) for everything; consistent keybindings.
+- DESIGN BAR: highly informative, subtle, "a perfect touch of a designer" —
+  restrained color, clear hierarchy, no clutter; every effect informative,
+  nothing decorative for its own sake.
+
+**Build order (iterate, ship each slice):**
+1. App shell: page router + side rail + home page skeleton; `eigen` (bare)
+   opens it; chat becomes a page you can open/return from.
+2. Sessions page (list/resume/delete across projects) + Projects page
+   (grouping + per-project sessions).
+3. Config / Skills / Models / Providers / Memory pages (read first, edit next).
+4. Multi-session tabs: concurrent running sessions in the rail.
+5. Crons page (manage #5 automation units).
+6. Proactive feed (#6): background scanner (memory + project + gh) offering
+   one-keystroke session starters, on Home + project pages.
+7. Plugins page.
 
 ## Notes / grounding
 - read-aloud tool the user has: `readd` (espeak-ng/piper) at `~/projects/tfqol/readd`.
