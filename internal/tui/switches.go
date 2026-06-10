@@ -1,0 +1,138 @@
+package tui
+
+// Live config switches: perm toggle, effort/model cycling, the overload
+// failover window, and the context-budget rule they all share.
+
+import (
+	"github.com/avifenesh/eigen/internal/agent"
+	"github.com/avifenesh/eigen/internal/llm"
+)
+
+// togglePerm flips the permission posture between gated and auto — the keyboard
+// shortcut (ctrl+a) for fast mode changes, equivalent to /perm gated|auto. It
+// persists the new posture to the session meta so it survives rebuild/resume.
+func (m *model) togglePerm() {
+	if m.a == nil {
+		return
+	}
+	if m.a.Perm == agent.PermAuto {
+		m.a.SetPerm(agent.PermGated)
+	} else {
+		m.a.SetPerm(agent.PermAuto)
+	}
+	m.saveMeta()
+	m.note("permission posture → " + string(m.a.Perm))
+}
+
+// cycleEffort steps the reasoning effort to the next level (wrapping) — the
+// keyboard shortcut (ctrl+e) for fast effort changes, equivalent to /effort. It
+// is a no-op (with a note) when the current model has no effort setting.
+func (m *model) cycleEffort() {
+	if m.a == nil {
+		return
+	}
+	es, ok := m.a.Provider.(llm.EffortSetter)
+	if !ok {
+		m.note("the current model does not support a reasoning-effort setting")
+		return
+	}
+	cur := es.Effort()
+	next := cur
+	for i, l := range llm.EffortLevels {
+		if l == cur {
+			next = llm.EffortLevels[(i+1)%len(llm.EffortLevels)]
+			break
+		}
+	}
+	if next == cur || !es.SetEffort(next) {
+		// Current level not found in the list, or set failed: start at the first.
+		if len(llm.EffortLevels) > 0 {
+			_ = es.SetEffort(llm.EffortLevels[0])
+		}
+	}
+	m.saveMeta()
+	m.note("reasoning effort → " + es.Effort())
+}
+
+// cycleModel switches to the next model in the catalog (wrapping) — the
+// keyboard shortcut (ctrl+o) for fast model changes, equivalent to /model. The
+// provider is reconciled from the catalog so it never desyncs.
+func (m *model) cycleModel() {
+	if m.newProvider == nil {
+		m.push(&block{kind: blockNote, isErr: true, body: sb("model switching unavailable")})
+		return
+	}
+	models := llm.Models()
+	if len(models) == 0 {
+		return
+	}
+	// Find the current model, then advance to the next entry (wrapping).
+	idx := -1
+	for i, mi := range models {
+		if mi.ID == m.modelID {
+			idx = i
+			break
+		}
+	}
+	next := models[(idx+1)%len(models)]
+	prov := llm.ResolveProvider(next.Provider, next.ID)
+	np, err := m.newProvider(prov, next.ID)
+	if err != nil {
+		m.push(&block{kind: blockNote, isErr: true, body: sb("switch failed: " + err.Error())})
+		return
+	}
+	m.a.SetLive(np, llm.NewCompactor(np), m.contextBudgetFor(next.ID))
+	m.provName, m.modelID = prov, next.ID
+	// A manual switch takes precedence over any overload failover window.
+	m.failoverFrom = nil
+	m.failoverLeft = 0
+	m.saveMeta()
+	m.note("model → " + np.Name())
+}
+
+// startFailover switches the live provider to the fallback model for
+// failoverTurns turns, remembering the origin. Returns false when failover is
+// not applicable (already on the fallback, no constructor, or switch failed).
+func (m *model) startFailover() bool {
+	if m.newProvider == nil || m.modelID == failoverModelID || m.failoverFrom != nil {
+		return false
+	}
+	prov := llm.ResolveProvider(m.provName, failoverModelID)
+	np, err := m.newProvider(prov, failoverModelID)
+	if err != nil {
+		return false
+	}
+	m.failoverFrom = &failoverOrigin{provider: m.provName, model: m.modelID}
+	m.failoverLeft = failoverTurns
+	m.a.SetLive(np, llm.NewCompactor(np), m.contextBudgetFor(failoverModelID))
+	m.provName, m.modelID = prov, failoverModelID
+	return true
+}
+
+// endFailover switches back to the original model after the failover window.
+// Best-effort: if the original cannot be constructed, stay on the fallback.
+func (m *model) endFailover() {
+	if m.failoverFrom == nil || m.newProvider == nil {
+		return
+	}
+	orig := *m.failoverFrom
+	np, err := m.newProvider(orig.provider, orig.model)
+	if err != nil {
+		m.note("failover: could not switch back to " + orig.model + " (" + err.Error() + ") — staying on " + m.modelID)
+		m.failoverFrom = nil
+		m.failoverLeft = 0
+		return
+	}
+	m.a.SetLive(np, llm.NewCompactor(np), m.contextBudgetFor(orig.model))
+	m.provName, m.modelID = orig.provider, orig.model
+	m.failoverFrom = nil
+	m.failoverLeft = 0
+	m.note("overload window over — switched back to " + orig.model)
+}
+
+// contextBudgetFor returns the budget for a model id, capped by
+// min(user ceiling, model window minus headroom) via llm.ContextBudget — the
+// same rule as main's startup budget, so live /model switches stay consistent.
+func (m *model) contextBudgetFor(model string) int {
+	return llm.ContextBudget(m.maxTokens, model, 0)
+}
