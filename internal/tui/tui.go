@@ -178,11 +178,12 @@ type model struct {
 	newProvider func(provider, model string) (llm.Provider, error)
 
 	// idle dreaming: after the session is idle, reflect into project memory.
-	mem         *memory.Store
-	dreamOnIdle bool
-	idleMinutes int
-	maxTokens   int // user context-budget ceiling (0 = auto from the model window)
-	idleGen     int // bumped on each turn; stale idle ticks are ignored
+	mem            *memory.Store
+	dreamOnIdle    bool
+	idleMinutes    int
+	maxTokens      int           // user context-budget ceiling (0 = auto from the model window)
+	smallCompactor llm.Compactor // cheap-model summarizer chained on live switches
+	idleGen        int           // bumped on each turn; stale idle ticks are ignored
 
 	// skills are the discovered SKILL.md skills, for /skills browse + preview.
 	skills *skill.Set
@@ -988,6 +989,9 @@ type Options struct {
 	DreamOnIdle bool       // reflect into memory after the session goes idle
 	IdleMinutes int        // idle delay before dreaming (default 5)
 	MaxTokens   int        // user context-budget ceiling (0 = auto from the model window)
+	// SmallCompactor, when set, summarizes compactions on a cheap small model;
+	// live model switches chain it before the new main provider's compactor.
+	SmallCompactor llm.Compactor
 }
 
 // Run drives the agent under a multi-turn Bubble Tea REPL.
@@ -1036,26 +1040,27 @@ func Run(a *agent.Agent, o Options) (Result, error) {
 	}
 
 	m := &model{
-		a:           a,
-		sp:          sp,
-		ti:          ti,
-		session:     session,
-		ctx:         ctx,
-		state:       stInput,
-		initialTask: initialTask,
-		srcDir:      eigenSrcDir(),
-		sessionPath: defaultSessionPath(),
-		store:       store,
-		speaker:     speech.Detect(),
-		clip:        clipboard.Detect(),
-		provName:    o.Provider,
-		modelID:     o.Model,
-		newProvider: llm.New,
-		mem:         o.Memory,
-		skills:      o.Skills,
-		dreamOnIdle: o.DreamOnIdle,
-		idleMinutes: o.IdleMinutes,
-		maxTokens:   o.MaxTokens,
+		a:              a,
+		sp:             sp,
+		ti:             ti,
+		session:        session,
+		ctx:            ctx,
+		state:          stInput,
+		initialTask:    initialTask,
+		srcDir:         eigenSrcDir(),
+		sessionPath:    defaultSessionPath(),
+		store:          store,
+		speaker:        speech.Detect(),
+		clip:           clipboard.Detect(),
+		provName:       o.Provider,
+		modelID:        o.Model,
+		newProvider:    llm.New,
+		mem:            o.Memory,
+		skills:         o.Skills,
+		dreamOnIdle:    o.DreamOnIdle,
+		idleMinutes:    o.IdleMinutes,
+		maxTokens:      o.MaxTokens,
+		smallCompactor: o.SmallCompactor,
 	}
 	if m.idleMinutes <= 0 {
 		m.idleMinutes = 5

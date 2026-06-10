@@ -278,12 +278,17 @@ func main() {
 		return
 	}
 
+	// Compaction summaries go to the small model first (summarization is a
+	// task small models do well, and the summary call happens when the context
+	// is at its largest/most expensive), falling back to the main provider.
+	smallCompactor := llm.NewCompactor(smallProvider(prov))
+
 	a = &agent.Agent{
 		Provider:         prov,
 		Tools:            registry,
 		Perm:             agent.Permission(*perm),
 		MaxContextTokens: contextBudget(*maxTokens, *provider, *model),
-		Compactor:        llm.NewCompactor(prov),
+		Compactor:        llm.CompactorChain(smallCompactor, llm.NewCompactor(prov)),
 		ExtraSystem:      skills.Catalog(),
 		Memory:           memory.Sections(gmem, mem),
 	}
@@ -334,16 +339,17 @@ func main() {
 	interactive := isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd())
 	if !*printMode && interactive {
 		res, err := tui.Run(a, tui.Options{
-			InitialTask: task,
-			History:     history,
-			Store:       store,
-			Provider:    *provider,
-			Model:       *model,
-			Memory:      mem,
-			Skills:      skills,
-			DreamOnIdle: cfg.DreamOnIdle,
-			IdleMinutes: cfg.IdleMinutes,
-			MaxTokens:   resolveUserMaxTokens(*maxTokens),
+			InitialTask:    task,
+			History:        history,
+			Store:          store,
+			Provider:       *provider,
+			Model:          *model,
+			Memory:         mem,
+			Skills:         skills,
+			DreamOnIdle:    cfg.DreamOnIdle,
+			IdleMinutes:    cfg.IdleMinutes,
+			MaxTokens:      resolveUserMaxTokens(*maxTokens),
+			SmallCompactor: smallCompactor,
 		})
 		if err != nil {
 			fail(err)

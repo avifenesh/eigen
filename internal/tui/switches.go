@@ -81,7 +81,7 @@ func (m *model) cycleModel() {
 		m.push(&block{kind: blockNote, isErr: true, body: sb("switch failed: " + err.Error())})
 		return
 	}
-	m.a.SetLive(np, llm.NewCompactor(np), m.contextBudgetFor(next.ID))
+	m.a.SetLive(np, m.compactorFor(np), m.contextBudgetFor(next.ID))
 	m.provName, m.modelID = prov, next.ID
 	// A manual switch takes precedence over any overload failover window.
 	m.failoverFrom = nil
@@ -104,7 +104,7 @@ func (m *model) startFailover() bool {
 	}
 	m.failoverFrom = &failoverOrigin{provider: m.provName, model: m.modelID}
 	m.failoverLeft = failoverTurns
-	m.a.SetLive(np, llm.NewCompactor(np), m.contextBudgetFor(failoverModelID))
+	m.a.SetLive(np, m.compactorFor(np), m.contextBudgetFor(failoverModelID))
 	m.provName, m.modelID = prov, failoverModelID
 	return true
 }
@@ -123,7 +123,7 @@ func (m *model) endFailover() {
 		m.failoverLeft = 0
 		return
 	}
-	m.a.SetLive(np, llm.NewCompactor(np), m.contextBudgetFor(orig.model))
+	m.a.SetLive(np, m.compactorFor(np), m.contextBudgetFor(orig.model))
 	m.provName, m.modelID = orig.provider, orig.model
 	m.failoverFrom = nil
 	m.failoverLeft = 0
@@ -135,4 +135,10 @@ func (m *model) endFailover() {
 // same rule as main's startup budget, so live /model switches stay consistent.
 func (m *model) contextBudgetFor(model string) int {
 	return llm.ContextBudget(m.maxTokens, model, 0)
+}
+
+// compactorFor builds the compactor for a freshly switched provider, chaining
+// the cheap small-model summarizer (when configured) before the main one.
+func (m *model) compactorFor(np llm.Provider) llm.Compactor {
+	return llm.CompactorChain(m.smallCompactor, llm.NewCompactor(np))
 }

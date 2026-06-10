@@ -148,6 +148,44 @@ type providerCompactor struct{ p Provider }
 // NewCompactor builds a Compactor that summarizes using the given provider.
 func NewCompactor(p Provider) Compactor { return &providerCompactor{p: p} }
 
+// CompactorChain tries each compactor in order, returning the first successful
+// summary. Use it to aim compaction at a cheap small model with the main
+// provider as runtime fallback (summarization is a task small models do well —
+// per Anthropic's guidance — and the summary call happens at the worst moment,
+// when the context is at its largest and most expensive).
+func CompactorChain(cs ...Compactor) Compactor {
+	var nonNil []Compactor
+	for _, c := range cs {
+		if c != nil {
+			nonNil = append(nonNil, c)
+		}
+	}
+	switch len(nonNil) {
+	case 0:
+		return nil
+	case 1:
+		return nonNil[0]
+	}
+	return chainCompactor(nonNil)
+}
+
+type chainCompactor []Compactor
+
+func (cc chainCompactor) Summarize(ctx context.Context, msgs []Message) (string, error) {
+	var lastErr error
+	for _, c := range cc {
+		out, err := c.Summarize(ctx, msgs)
+		if err == nil {
+			return out, nil
+		}
+		lastErr = err
+		if ctx != nil && ctx.Err() != nil {
+			break // canceled: don't burn the fallback on a dead context
+		}
+	}
+	return "", lastErr
+}
+
 func (pc *providerCompactor) Summarize(ctx context.Context, msgs []Message) (string, error) {
 	// Render the older conversation as plain text for the summarizer, so we
 	// don't re-send tool schemas or risk provider-specific replay issues.

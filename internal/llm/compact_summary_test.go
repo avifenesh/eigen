@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -103,5 +104,50 @@ func TestCompactWithPreservesOriginalTask(t *testing.T) {
 	}
 	if !strings.Contains(out[0].Text, "ORIGINAL_TASK: build the parser") {
 		t.Fatalf("compaction should preserve the original task verbatim:\n%s", out[0].Text)
+	}
+}
+
+type errCompactor struct{ calls int }
+
+func (e *errCompactor) Summarize(context.Context, []Message) (string, error) {
+	e.calls++
+	return "", errors.New("small model unavailable")
+}
+
+func TestCompactorChainFallsBack(t *testing.T) {
+	bad := &errCompactor{}
+	good := &fakeCompactor{}
+	c := CompactorChain(bad, good)
+	out, err := c.Summarize(context.Background(), []Message{{Role: RoleUser, Text: "x"}})
+	if err != nil {
+		t.Fatalf("chain should fall back to the good compactor: %v", err)
+	}
+	if out == "" {
+		t.Fatal("expected the fallback summary")
+	}
+	if bad.calls != 1 || good.calls != 1 {
+		t.Fatalf("want bad=1 good=1, got bad=%d good=%d", bad.calls, good.calls)
+	}
+}
+
+func TestCompactorChainSkipsNilAndCollapses(t *testing.T) {
+	good := &fakeCompactor{}
+	if c := CompactorChain(nil, good, nil); c != Compactor(good) {
+		t.Fatal("single non-nil compactor should collapse to itself")
+	}
+	if c := CompactorChain(nil, nil); c != nil {
+		t.Fatal("all-nil chain should be nil")
+	}
+}
+
+func TestCompactorChainAllFail(t *testing.T) {
+	bad1, bad2 := &errCompactor{}, &errCompactor{}
+	c := CompactorChain(bad1, bad2)
+	_, err := c.Summarize(context.Background(), nil)
+	if err == nil {
+		t.Fatal("want the last error when every compactor fails")
+	}
+	if bad1.calls != 1 || bad2.calls != 1 {
+		t.Fatalf("both should be tried, got %d/%d", bad1.calls, bad2.calls)
 	}
 }

@@ -74,9 +74,12 @@ Conventions:
 
 ## Tier 7 — vision / big bets (captured backlog, unordered)
 Raw capture from the user — refine/prioritize later. Numbered for reference only.
-1. **Token efficiency in a wider scope than compaction** — beyond compaction:
-   trim tool schemas/system prompt, dedupe repeated context, retrieval instead of
-   re-paste, cheaper models for cheap turns, prompt-cache-aware prefixing.
+1. **Token efficiency in a wider scope than compaction** — *(in progress; shipped:
+   MCP per-server `tools` allowlist + schema slimming (~70% off workspace-server
+   schema cost), in-conversation dedupe of repeated tool outputs, small-model
+   compaction summaries via `CompactorChain`)*. Remaining ideas: retrieval
+   instead of re-paste, prompt-cache-aware prefixing, per-turn cheap-model
+   routing (→ auto-router).
 2. **Diff view of edits** — *(partially shipped: edit/multiedit LCS diff blocks; revisit for a richer/side-by-side view)*
 3. **"Goal" feature** — a persistent north-star goal the agent tracks across turns.
 4. **"Loop" feature** — agent iterates autonomously until a condition/goal is met.

@@ -203,7 +203,7 @@ func (m *model) command(line string) tea.Cmd {
 			m.push(&block{kind: blockNote, isErr: true, body: sb("switch failed: " + perr.Error())})
 			break
 		}
-		m.a.SetLive(np, llm.NewCompactor(np), m.contextBudgetFor(id))
+		m.a.SetLive(np, m.compactorFor(np), m.contextBudgetFor(id))
 		m.provName, m.modelID = prov, id
 		// A manual switch takes precedence over any overload failover window.
 		m.failoverFrom = nil
