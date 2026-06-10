@@ -66,6 +66,7 @@ func main() {
 	perm := flag.String("perm", firstNonEmpty(os.Getenv("EIGEN_PERMISSION"), cfg.Perm, "gated"), "permission posture: gated|auto")
 	printMode := flag.Bool("p", false, "print mode: run one task headless (no TUI) and exit")
 	flag.BoolVar(printMode, "print", false, "alias for -p")
+	promptFile := flag.String("prompt-file", "", "read the task from this file (re-read each run; for cron/systemd automation loops)")
 	resumeFile := flag.String("resume", "", "resume a conversation from a transcript file or 'opencode' (auto-detected)")
 	continueLatest := flag.Bool("continue", false, "continue the latest eigen session")
 	flag.BoolVar(continueLatest, "c", false, "alias for --continue")
@@ -109,6 +110,25 @@ func main() {
 	}
 
 	task := strings.TrimSpace(strings.Join(flag.Args(), " "))
+
+	// Task sources for automation: --prompt-file (re-read each run, so a
+	// cron/systemd loop picks up edited work), else piped stdin when no
+	// positional task was given. Both imply headless print mode.
+	if *promptFile != "" {
+		data, perr := os.ReadFile(*promptFile)
+		if perr != nil {
+			fail(fmt.Errorf("prompt-file: %w", perr))
+		}
+		task = strings.TrimSpace(string(data))
+		*printMode = true
+	} else if task == "" && !isatty.IsTerminal(os.Stdin.Fd()) {
+		if data, rerr := io.ReadAll(os.Stdin); rerr == nil {
+			if piped := strings.TrimSpace(string(data)); piped != "" {
+				task = piped
+				*printMode = true
+			}
+		}
+	}
 
 	// --continue is shorthand for --resume eigen (the latest eigen session).
 	if *continueLatest && *resumeFile == "" {

@@ -92,7 +92,12 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
    turn — until /loop clear. Persists across restart/rebuild via session meta.
    Pairs with /goal + a goal file: edit the file between iterations and the
    model picks up the next item without re-prompting.)*
-5. **Automation** — scheduled / triggered runs (cron-like, on-event).
+5. **Automation** — *(shipped (the eigen side, per the user's model: eigen runs
+   one task headless and exits; the HOST re-launches it — cron/systemd/shell):
+   --prompt-file re-reads its task each run; piped stdin also works; both imply
+   -p. Exit 0/non-zero lets the host back off. Pairs with --continue for one
+   evolving session. docs/automation-example.md has the systemd timer (OnUnit-
+   InactiveSec = "start when it closed, do something, go back") + shell loop.)*
 6. **Background scan for wide-reaching actions** — proactively flag risky/broad
    operations (mass deletes, wide refactors) before they run.
 7. **Computer use built in** — native screen/GUI control.
