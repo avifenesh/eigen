@@ -604,11 +604,11 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		// Session picker captures keys while open.
 		if m.picking {
 			switch msg.String() {
-			case "up", "ctrl+p", "alt+up", "k":
+			case "up", "ctrl+p", "alt+up", "shift+up", "k":
 				if m.pickIdx > 0 {
 					m.pickIdx--
 				}
-			case "down", "ctrl+n", "alt+down", "j":
+			case "down", "ctrl+n", "alt+down", "shift+down", "j":
 				if m.pickIdx < len(m.picks)-1 {
 					m.pickIdx++
 				}
@@ -625,11 +625,11 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		// Model picker (bare /model) captures keys while open.
 		if m.modelPicking {
 			switch msg.String() {
-			case "up", "ctrl+p", "alt+up", "k":
+			case "up", "ctrl+p", "alt+up", "shift+up", "k":
 				if m.modelPickIdx > 0 {
 					m.modelPickIdx--
 				}
-			case "down", "ctrl+n", "alt+down", "j":
+			case "down", "ctrl+n", "alt+down", "shift+down", "j":
 				if m.modelPickIdx < len(m.modelPicks)-1 {
 					m.modelPickIdx++
 				}
@@ -672,12 +672,12 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		// Autocomplete menu (slash commands / @file) captures nav + select keys.
 		if m.comp.active() {
 			switch msg.String() {
-			case "up", "ctrl+p", "alt+up":
+			case "up", "ctrl+p", "alt+up", "shift+up":
 				if m.comp.idx > 0 {
 					m.comp.idx--
 				}
 				return m, nil
-			case "down", "ctrl+n", "alt+down":
+			case "down", "ctrl+n", "alt+down", "shift+down":
 				if m.comp.idx < len(m.comp.items)-1 {
 					m.comp.idx++
 				}
@@ -720,10 +720,10 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		case "down":
 			m.historyNext()
 			return m, nil
-		case "ctrl+p", "alt+up", "alt+k":
+		case "ctrl+p", "alt+up", "alt+k", "shift+up":
 			m.moveSel(-1)
 			return m, nil
-		case "ctrl+n", "alt+down", "alt+j":
+		case "ctrl+n", "alt+down", "alt+j", "shift+down":
 			m.moveSel(1)
 			return m, nil
 		case "tab", "shift+tab":
