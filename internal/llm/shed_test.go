@@ -116,3 +116,55 @@ func TestCompactWithShedsBeforeSummarizing(t *testing.T) {
 		t.Fatalf("shedding did not bring context under budget: %d", EstimateTokens(out))
 	}
 }
+
+func TestDedupeToolResultsStubsOlderCopies(t *testing.T) {
+	big := strings.Repeat("same content ", 200) // > dedupeMinChars
+	msgs := []Message{
+		{Role: RoleUser, Text: "read it"},
+		{Role: RoleTool, ToolName: "read", Text: big},
+		{Role: RoleUser, Text: "read it again"},
+		{Role: RoleTool, ToolName: "read", Text: big},
+	}
+	n := DedupeToolResults(msgs, 3)
+	if n != 1 {
+		t.Fatalf("want 1 older copy stubbed, got %d", n)
+	}
+	if msgs[1].Text != duplicateResultStub {
+		t.Fatalf("older copy should be stubbed, got %q", msgs[1].Text[:40])
+	}
+	if msgs[3].Text != big {
+		t.Fatal("newest occurrence must stay verbatim")
+	}
+}
+
+func TestDedupeToolResultsRespectsGuards(t *testing.T) {
+	big := strings.Repeat("x", 3000)
+	msgs := []Message{
+		{Role: RoleTool, ToolName: "read", Text: "small"},              // too small
+		{Role: RoleTool, ToolName: "bash", Text: big},                  // different tool
+		{Role: RoleTool, ToolName: "read", Text: big, ToolError: true}, // error result
+		{Role: RoleTool, ToolName: "read", Text: big},                  // genuine older copy
+		{Role: RoleTool, ToolName: "read", Text: big},                  // newest
+	}
+	if n := DedupeToolResults(msgs, 4); n != 1 {
+		t.Fatalf("only the same-tool non-error copy should be stubbed, got %d", n)
+	}
+	if msgs[1].Text != big || msgs[2].Text != big {
+		t.Fatal("different-tool and error results must not be touched")
+	}
+	if msgs[3].Text != duplicateResultStub {
+		t.Fatal("older same-tool copy should be stubbed")
+	}
+	// small current result: no-op
+	small := []Message{
+		{Role: RoleTool, ToolName: "read", Text: "tiny"},
+		{Role: RoleTool, ToolName: "read", Text: "tiny"},
+	}
+	if n := DedupeToolResults(small, 1); n != 0 {
+		t.Fatalf("small results should not dedupe, got %d", n)
+	}
+	// out-of-range index: no-op
+	if n := DedupeToolResults(small, 99); n != 0 {
+		t.Fatal("out-of-range index must be a no-op")
+	}
+}

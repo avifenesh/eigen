@@ -514,6 +514,10 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 				Text:       result,
 				ToolError:  isErr,
 			})
+			// Dedupe: if this exact output already appears earlier (same tool,
+			// e.g. an unchanged file re-read), stub the older copies — the
+			// newest occurrence is the one the model will use.
+			llm.DedupeToolResults(s.msgs, len(s.msgs)-1)
 		}
 		s.persist()
 	}

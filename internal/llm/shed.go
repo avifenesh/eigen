@@ -5,6 +5,44 @@ package llm
 // only the (usually large) result payload is dropped.
 const toolResultStub = "[earlier tool result elided to save context]"
 
+// duplicateResultStub replaces an older tool result whose exact output appears
+// again later in the conversation (e.g. the same file re-read unchanged). The
+// newest occurrence is kept; older copies are pure token waste.
+const duplicateResultStub = "[identical output re-returned by a later call; see the most recent occurrence]"
+
+// dedupeMinChars is the minimum result size worth deduplicating. Stubbing an
+// old message invalidates the prompt-cache prefix from that point, so tiny
+// duplicates are not worth the cache hit.
+const dedupeMinChars = 2000
+
+// DedupeToolResults stubs older tool results whose (tool, output) exactly
+// matches the result at index last in msgs, keeping the newest occurrence
+// verbatim. It mutates msgs in place and returns how many older copies were
+// stubbed. Call it right after appending a tool result, with last = its index.
+// Results smaller than dedupeMinChars, error results, and different tools are
+// left alone.
+func DedupeToolResults(msgs []Message, last int) int {
+	if last < 0 || last >= len(msgs) {
+		return 0
+	}
+	cur := msgs[last]
+	if cur.Role != RoleTool || cur.ToolError || len(cur.Text) < dedupeMinChars {
+		return 0
+	}
+	n := 0
+	for i := 0; i < last; i++ {
+		m := &msgs[i]
+		if m.Role != RoleTool || m.ToolError {
+			continue
+		}
+		if m.ToolName == cur.ToolName && m.Text == cur.Text {
+			m.Text = duplicateResultStub
+			n++
+		}
+	}
+	return n
+}
+
 // ShedToolResults is the cheapest, lossiest-in-the-right-place form of
 // compaction: it walks the history oldest→newest and replaces tool *results*
 // that fall outside the most recent keepRounds rounds with a short stub,
