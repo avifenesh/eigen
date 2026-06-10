@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -44,5 +45,62 @@ func TestLoadFromMalformedIsZero(t *testing.T) {
 	c := LoadFrom(path)
 	if c.Provider != "" {
 		t.Fatal("malformed config must not crash and yields zero value")
+	}
+}
+
+func TestSetAndSaveRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.json")
+
+	var c Config
+	for _, kv := range [][2]string{
+		{"provider", "converse"},
+		{"model", "us.anthropic.claude-opus-4-8"},
+		{"perm", "auto"},
+		{"max_tokens", "500000"},
+		{"notify_cmd", "notify-send"},
+		{"judge_model", "claude-fable-5"},
+		{"dream_on_idle", "true"},
+		{"idle_minutes", "7"},
+	} {
+		if err := Set(&c, kv[0], kv[1]); err != nil {
+			t.Fatalf("Set(%s): %v", kv[0], err)
+		}
+	}
+	if err := SaveTo(p, c); err != nil {
+		t.Fatal(err)
+	}
+	got := LoadFrom(p)
+	if got.Provider != "converse" || got.MaxTokens != 500000 || !got.DreamOnIdle || got.IdleMinutes != 7 || got.JudgeModel != "claude-fable-5" {
+		t.Fatalf("round-trip mismatch: %+v", got)
+	}
+}
+
+func TestSetValidation(t *testing.T) {
+	var c Config
+	if err := Set(&c, "perm", "yolo"); err == nil {
+		t.Fatal("bad perm should error")
+	}
+	if err := Set(&c, "max_tokens", "lots"); err == nil {
+		t.Fatal("non-integer max_tokens should error")
+	}
+	if err := Set(&c, "dream_on_idle", "sometimes"); err == nil {
+		t.Fatal("non-bool dream_on_idle should error")
+	}
+	if err := Set(&c, "no_such_key", "x"); err == nil {
+		t.Fatal("unknown key should error")
+	}
+}
+
+func TestViewRendersAllKeys(t *testing.T) {
+	c := Config{Provider: "glm", MaxTokens: 1234}
+	v := View(c)
+	for _, k := range Keys() {
+		if !strings.Contains(v, k) {
+			t.Fatalf("View missing key %s:\n%s", k, v)
+		}
+	}
+	if !strings.Contains(v, "(unset)") {
+		t.Fatal("zero string values should show (unset)")
 	}
 }

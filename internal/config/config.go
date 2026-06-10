@@ -2,8 +2,11 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 // Config is eigen's optional JSON config (~/.eigen/config.json). Every field is
@@ -41,4 +44,107 @@ func LoadFrom(path string) Config {
 	}
 	_ = json.Unmarshal(data, &c)
 	return c
+}
+
+// Path returns the canonical config file location (~/.eigen/config.json).
+func Path() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".eigen", "config.json")
+}
+
+// Save writes the config to the canonical path, creating ~/.eigen if needed.
+func Save(c Config) error {
+	p := Path()
+	if p == "" {
+		return os.ErrNotExist
+	}
+	return SaveTo(p, c)
+}
+
+// SaveTo writes the config to an explicit path (used by tests).
+func SaveTo(path string, c Config) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	b, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(b, '\n'), 0o644)
+}
+
+// Set applies a named key to the config, parsing the value as that key's type.
+// Returns an error naming valid keys when the key is unknown or the value
+// malformed. Keys match the JSON field names.
+func Set(c *Config, key, value string) error {
+	switch key {
+	case "provider":
+		c.Provider = value
+	case "model":
+		c.Model = value
+	case "perm":
+		if value != "gated" && value != "auto" {
+			return fmt.Errorf("perm must be gated|auto")
+		}
+		c.Perm = value
+	case "max_tokens":
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 0 {
+			return fmt.Errorf("max_tokens must be a non-negative integer")
+		}
+		c.MaxTokens = n
+	case "tts_cmd":
+		c.TTSCmd = value
+	case "notify_cmd":
+		c.NotifyCmd = value
+	case "judge_model":
+		c.JudgeModel = value
+	case "dream_on_idle":
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("dream_on_idle must be true|false")
+		}
+		c.DreamOnIdle = b
+	case "idle_minutes":
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 0 {
+			return fmt.Errorf("idle_minutes must be a non-negative integer")
+		}
+		c.IdleMinutes = n
+	default:
+		return fmt.Errorf("unknown key %q (valid: %s)", key, strings.Join(Keys(), " "))
+	}
+	return nil
+}
+
+// Keys lists the /config-settable keys (skills_dirs stays file-only: a list).
+func Keys() []string {
+	return []string{"provider", "model", "perm", "max_tokens", "tts_cmd", "notify_cmd", "judge_model", "dream_on_idle", "idle_minutes"}
+}
+
+// View renders the config as aligned "key = value" lines, marking zero values.
+func View(c Config) string {
+	val := func(s string) string {
+		if s == "" {
+			return "(unset)"
+		}
+		return s
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%-14s = %s\n", "provider", val(c.Provider))
+	fmt.Fprintf(&b, "%-14s = %s\n", "model", val(c.Model))
+	fmt.Fprintf(&b, "%-14s = %s\n", "perm", val(c.Perm))
+	fmt.Fprintf(&b, "%-14s = %d\n", "max_tokens", c.MaxTokens)
+	fmt.Fprintf(&b, "%-14s = %s\n", "tts_cmd", val(c.TTSCmd))
+	fmt.Fprintf(&b, "%-14s = %s\n", "notify_cmd", val(c.NotifyCmd))
+	fmt.Fprintf(&b, "%-14s = %s\n", "judge_model", val(c.JudgeModel))
+	fmt.Fprintf(&b, "%-14s = %t\n", "dream_on_idle", c.DreamOnIdle)
+	fmt.Fprintf(&b, "%-14s = %d\n", "idle_minutes", c.IdleMinutes)
+	if len(c.SkillsDirs) > 0 {
+		fmt.Fprintf(&b, "%-14s = %s (file-only)\n", "skills_dirs", strings.Join(c.SkillsDirs, ":"))
+	}
+	return strings.TrimRight(b.String(), "\n")
 }

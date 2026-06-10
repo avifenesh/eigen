@@ -65,6 +65,7 @@ var slashCommands = []slashCmd{
 	{"/perm", "show or set the permission posture"},
 	{"/goal", "show, set, or clear a persistent goal (north star)"},
 	{"/loop", "re-submit a prompt every interval while idle (/loop 10m <prompt>)"},
+	{"/config", "show or set persistent defaults (/config <key> <value>)"},
 	{"/skills", "list skills, or /skills <name> to preview one"},
 	{"/tools", "list available tools"},
 	{"/find", "search the transcript"},

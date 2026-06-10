@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
+	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/transcript"
 	tea "github.com/charmbracelet/bubbletea"
@@ -56,7 +57,7 @@ func (m *model) applyResumed(msgs []llm.Message) {
 // wait until the turn finishes (press esc to interrupt).
 func safeWhileRunning(name string) bool {
 	switch name {
-	case "/effort", "/search", "/perm", "/model", "/help", "/goal", "/loop",
+	case "/effort", "/search", "/perm", "/model", "/help", "/goal", "/loop", "/config",
 		"/skills", "/tools", "/find", "/copy", "/read":
 		return true
 	default:
@@ -71,7 +72,7 @@ func (m *model) command(line string) tea.Cmd {
 	arg := strings.TrimSpace(strings.TrimPrefix(line, name))
 	switch name {
 	case "/help":
-		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /loop  /skills  /tools  /find  /copy  /read  /rebuild  /quit")
+		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /loop  /config  /skills  /tools  /find  /copy  /read  /rebuild  /quit")
 		m.note("keys: / commands · @ files · ↑↓ history · select ctrl+p/n (or alt+↑/↓) · tab expand · drag select+copy · copy ctrl+y/alt+y · perm ctrl+a/alt+a · effort ctrl+e/alt+r · model ctrl+o/alt+m · pgup/pgdn scroll")
 		m.note("multiplexer note: zellij/tmux capture ctrl+p/n/o — use the alt+… keys (alt+↑/↓ select, alt+m model, alt+r effort, alt+a perm, alt+y copy)")
 		m.note("while running: enter queues a message · esc interrupts · settings commands (/effort /perm /model /search) run immediately")
@@ -164,6 +165,28 @@ func (m *model) command(line string) tea.Cmd {
 			// Arm the idle nag for when the running turn ends.
 			m.idleGen++
 			return m.scheduleGoalNag()
+		}
+	case "/config":
+		fields := strings.Fields(arg)
+		switch {
+		case arg == "":
+			m.note("config (" + config.Path() + "):\n" + config.View(config.Load()))
+			m.note("set with /config <key> <value> — keys: " + strings.Join(config.Keys(), " ") + "  (defaults for NEW sessions; /model /perm /effort change the LIVE session)")
+		case len(fields) >= 2:
+			key := fields[0]
+			value := strings.TrimSpace(strings.TrimPrefix(arg, key))
+			c := config.Load()
+			if err := config.Set(&c, key, value); err != nil {
+				m.push(&block{kind: blockNote, isErr: true, body: sb("config: " + err.Error())})
+				break
+			}
+			if err := config.Save(c); err != nil {
+				m.push(&block{kind: blockNote, isErr: true, body: sb("config: save: " + err.Error())})
+				break
+			}
+			m.note("config: " + key + " = " + value + "   (applies to new sessions)")
+		default:
+			m.push(&block{kind: blockNote, isErr: true, body: sb("usage: /config            (show)\n       /config <key> <value>  (set)")})
 		}
 	case "/loop":
 		switch arg {

@@ -112,8 +112,9 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
     live + last-turn in status bar; input-side + real usage fields still open)*
 17. **Observability for long-term learning** — structured logs of errors, tool
     uses, outcomes; feed back into memory/dreaming.
-18. **`/` config for most things** — slash-driven config that doesn't require
-    editing files (settings UI via commands).
+18. **`/` config for most things** — *(shipped: /config shows the settings
+    table; /config <key> <value> validates + persists to ~/.eigen/config.json.
+    Live-session knobs stay /model /perm /effort /search /goal /loop.)*
 19. **Auto-discovery of newly available models** — probe providers, refresh the catalog.
 20. **Image integration using other models** — vision/image understanding via
     auxiliary models when the main model lacks it.

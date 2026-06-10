@@ -2273,3 +2273,40 @@ func TestGoalSetWhileRunningDefers(t *testing.T) {
 	}
 	_ = cmd
 }
+
+func TestConfigCommandShowsAndRejects(t *testing.T) {
+	m := testModel(t)
+	// Bare /config shows the table (against the real path; read-only).
+	m.command("/config")
+	found := false
+	for _, b := range m.blocks {
+		if b.kind == blockNote && strings.Contains(b.body, "provider") && strings.Contains(b.body, "max_tokens") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("bare /config should show the settings table")
+	}
+	// Unknown key errors without saving.
+	m.command("/config bogus_key on")
+	foundErr := false
+	for _, b := range m.blocks {
+		if b.isErr && strings.Contains(b.body, "unknown key") {
+			foundErr = true
+		}
+	}
+	if !foundErr {
+		t.Fatal("unknown key should produce an error note")
+	}
+	// Single arg: usage.
+	m.command("/config provider")
+	foundUsage := false
+	for _, b := range m.blocks {
+		if b.isErr && strings.Contains(b.body, "usage:") {
+			foundUsage = true
+		}
+	}
+	if !foundUsage {
+		t.Fatal("missing value should show usage")
+	}
+}
