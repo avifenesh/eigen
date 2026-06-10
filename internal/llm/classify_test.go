@@ -49,3 +49,27 @@ func TestParseTaskKindAndDifficulty(t *testing.T) {
 		t.Error("empty difficulty: medium, not explicit")
 	}
 }
+
+func TestClassifySocial(t *testing.T) {
+	for _, p := range []string{
+		"what are people saying about the launch",
+		"summarize this x thread",
+		"check public sentiment on the new release",
+		"find the tweet announcing it",
+	} {
+		if k, _ := Classify(p, false); k != TaskSocial {
+			t.Errorf("%q should classify as social", p)
+		}
+	}
+	// Web search without social context stays search.
+	if k, _ := Classify("search the web for the API docs", false); k != TaskSearch {
+		t.Error("plain web search should not be social")
+	}
+	// Parse: explicit kinds.
+	if k, ok := ParseTaskKind("social"); k != TaskSocial || !ok {
+		t.Error("social parse")
+	}
+	if k, ok := ParseTaskKind("x"); k != TaskSocial || !ok {
+		t.Error("x parse")
+	}
+}

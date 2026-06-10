@@ -8,8 +8,9 @@ type TaskKind int
 
 const (
 	TaskGeneral TaskKind = iota // ordinary coding/reasoning
-	TaskSearch                  // needs live web/X search
+	TaskSearch                  // needs live web search
 	TaskVision                  // includes image input
+	TaskSocial                  // needs X/Twitter reach (social understanding)
 )
 
 // Difficulty classifies how much scoping and reasoning a task needs — the
@@ -148,6 +149,10 @@ func isCapable(id string, req RouteRequest) bool {
 		}
 	case TaskVision:
 		if !m.Vision {
+			return false
+		}
+	case TaskSocial:
+		if !m.Social {
 			return false
 		}
 	}

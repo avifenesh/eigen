@@ -27,7 +27,7 @@ func Task(run TaskRunner) Definition {
   "type": "object",
   "properties": {
     "task": { "type": "string", "description": "Complete, self-contained instructions for the subtask." },
-    "kind": { "type": "string", "enum": ["general","search","vision"], "description": "What the subtask needs: general reasoning/coding, live web search, or image understanding. Optional." },
+    "kind": { "type": "string", "enum": ["general","search","vision","social"], "description": "What the subtask needs: general reasoning/coding, live web search, image understanding, or social (X/Twitter reach — sentiment, what people are saying). Optional." },
     "difficulty": { "type": "string", "enum": ["trivial","easy","medium","hard"], "description": "Routing ladder: trivial = small + well-scoped (mechanical edits); easy = well-scoped, iterative, little reasoning; medium = not fully scoped, needs reasoning, may run long; hard = unscoped + heavy reasoning + long-running (stays on the main model). Optional." }
   },
   "required": ["task"],

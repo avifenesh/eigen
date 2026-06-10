@@ -19,10 +19,31 @@ func classifyKind(prompt string, hasImage bool) TaskKind {
 	if hasImage {
 		return TaskVision
 	}
+	if needsSocial(prompt) {
+		return TaskSocial
+	}
 	if needsSearch(prompt) {
 		return TaskSearch
 	}
 	return TaskGeneral
+}
+
+// socialCues imply the task needs X/Twitter reach — social-platform
+// understanding only Grok's Live Search (x source) provides.
+var socialCues = []string{
+	"on x ", "on x,", "on x.", "on x?", "twitter", "tweet", "x thread",
+	"x post", "what are people saying", "public sentiment", "social sentiment",
+	"trending on", "viral", "x.com/",
+}
+
+func needsSocial(prompt string) bool {
+	p := strings.ToLower(prompt)
+	for _, cue := range socialCues {
+		if strings.Contains(p, cue) {
+			return true
+		}
+	}
+	return false
 }
 
 // searchCues are phrases that strongly imply the task needs live, current
@@ -95,6 +116,8 @@ func ParseTaskKind(s string) (TaskKind, bool) {
 		return TaskSearch, true
 	case "vision", "image":
 		return TaskVision, true
+	case "social", "x", "twitter":
+		return TaskSocial, true
 	}
 	return TaskGeneral, false
 }

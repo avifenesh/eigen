@@ -106,6 +106,8 @@ func kindName(k llm.TaskKind) string {
 		return "search"
 	case llm.TaskVision:
 		return "vision"
+	case llm.TaskSocial:
+		return "social"
 	default:
 		return "general"
 	}

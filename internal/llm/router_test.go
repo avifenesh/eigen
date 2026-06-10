@@ -150,3 +150,33 @@ func TestRouteContextWindowGate(t *testing.T) {
 		t.Fatalf("large-context task should pick the 512k model, got %s (ok=%v)", got, ok)
 	}
 }
+
+func TestRouteSocialRequiresGrok(t *testing.T) {
+	// Social (X reach) is grok-only: GLM searches the web but cannot reach X.
+	got, ok := Route(RouteRequest{
+		Kind:       TaskSocial,
+		Difficulty: DiffMedium,
+		Candidates: []string{"glm-5.1", "us.anthropic.claude-opus-4-8", "grok-4", "grok-build"},
+	})
+	if !ok {
+		t.Fatal("expected a social-capable choice")
+	}
+	if m, _ := Lookup(got); !m.Social {
+		t.Fatalf("social task routed to a non-social model: %s", got)
+	}
+	// And hard social still routes (the default model can't reach X).
+	if _, ok := Route(RouteRequest{
+		Kind:       TaskSocial,
+		Difficulty: DiffHard,
+		Candidates: []string{"grok-build", "glm-5.1"},
+	}); !ok {
+		t.Fatal("hard social should still route")
+	}
+	// No grok available → no choice (don't pretend GLM can read X).
+	if _, ok := Route(RouteRequest{
+		Kind:       TaskSocial,
+		Candidates: []string{"glm-5.1", "us.anthropic.claude-opus-4-8"},
+	}); ok {
+		t.Fatal("no social-capable candidate should yield no choice")
+	}
+}

@@ -38,6 +38,12 @@ type ModelInfo struct {
 	// the TUI attaches dropped/referenced image files and the provider
 	// serializes them as native image blocks.
 	Vision bool
+
+	// Social reports the model can reach X/Twitter content (xAI Live Search
+	// with the x source) — required for tasks needing social-platform
+	// understanding (sentiment, what people are saying, X threads). Only Grok
+	// models with Live Search have this; GLM's web_search does not reach X.
+	Social bool
 }
 
 // Catalog is the set of models eigen knows about. It is additive: an unknown
@@ -89,9 +95,9 @@ var Catalog = []ModelInfo{
 	// xAI Grok (OpenAI-compatible API + Live Search). grok-build is the advanced
 	// coding model with server-side web/X search; composer is Cursor's coding
 	// model (no backend search).
-	{ID: "grok-build", Provider: "grok", ContextWindow: 512000, Search: true},
+	{ID: "grok-build", Provider: "grok", ContextWindow: 512000, Search: true, Social: true},
 	{ID: "grok-composer-2.5-fast", Provider: "grok", ContextWindow: 200000},
-	{ID: "grok-4", Provider: "grok", ContextWindow: 256000, Search: true},
+	{ID: "grok-4", Provider: "grok", ContextWindow: 256000, Search: true, Social: true},
 	{ID: "grok-code-fast-1", Provider: "grok", ContextWindow: 256000},
 
 	// Zhipu GLM coding models (OpenAI-compatible coding API). GLM-5.1 is the
