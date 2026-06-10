@@ -96,13 +96,13 @@ var Catalog = []ModelInfo{
 
 	// Zhipu GLM coding models (OpenAI-compatible coding API). GLM-5.1 is the
 	// current flagship; 200K context across the 5.x/4.6/4.7 line.
-	{ID: "glm-5.1", Provider: "glm", ContextWindow: 200000},
-	{ID: "glm-5", Provider: "glm", ContextWindow: 200000},
-	{ID: "glm-5-turbo", Provider: "glm", ContextWindow: 200000},
-	{ID: "glm-4.7", Provider: "glm", ContextWindow: 200000},
-	{ID: "glm-4.6", Provider: "glm", ContextWindow: 200000},
-	{ID: "glm-4.5", Provider: "glm", ContextWindow: 128000},
-	{ID: "glm-4.5-air", Provider: "glm", ContextWindow: 128000},
+	{ID: "glm-5.1", Provider: "glm", ContextWindow: 200000, Search: true},
+	{ID: "glm-5", Provider: "glm", ContextWindow: 200000, Search: true},
+	{ID: "glm-5-turbo", Provider: "glm", ContextWindow: 200000, Search: true},
+	{ID: "glm-4.7", Provider: "glm", ContextWindow: 200000, Search: true},
+	{ID: "glm-4.6", Provider: "glm", ContextWindow: 200000, Search: true},
+	{ID: "glm-4.5", Provider: "glm", ContextWindow: 128000, Search: true},
+	{ID: "glm-4.5-air", Provider: "glm", ContextWindow: 128000, Search: true},
 }
 
 // defaultModelByProvider mirrors each provider's built-in default, so callers
