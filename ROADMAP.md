@@ -243,11 +243,16 @@ first-class surface, reachable by keys and a command palette:
     project memory, goal/loop, approvals — sharing only the truly global
     things (global memory, config, session store, small-model jobs).
   - Approvals broadcast to attached views; any view can answer.
-  - Build order: (1) extract agent+tool construction from main into a reusable
-    per-directory builder; (2) internal/daemon — session host + Unix-socket
-    protocol (list/new/attach/input/events/approve, event replay on attach);
-    (3) `eigen daemon` + view attach in the chat TUI; (4) app rail shows the
-    daemon's running sessions w/ live status; (5) tray presence + autostart.
+  - Build order: ✅(1) buildSession per-directory builder; ✅(2) internal/daemon
+    — host + Unix-socket protocol (list/new/attach/input/events/approve, event
+    replay on attach, PID lifecycle, `eigen daemon status|stop`, shutdown
+    watchdog); ✅(3) `eigen attach` thin view (internal/view) — mirroring,
+    replay, esc=interrupt-then-detach; ✅(4) app live page + rail glyphs
+    (●○◆✗), attach/new/interrupt/stop from the app; ✅(5) approval broadcast —
+    gated sessions block, any view answers y/n, 10-min timeout denies (fail
+    closed). REMAINING: tray presence + autostart; daemon sessions persisting
+    into the session store (survive daemon restart); richer view rendering
+    (markdown, tool detail).
 - A command palette (fuzzy) for everything; consistent keybindings.
 - DESIGN BAR: highly informative, subtle, "a perfect touch of a designer" —
   restrained color, clear hierarchy, no clutter; every effect informative,
