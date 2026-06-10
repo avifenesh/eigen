@@ -149,11 +149,16 @@ func (m *model) command(line string) tea.Cmd {
 		case "clear", "none", "off":
 			m.a.SetGoal("")
 			m.saveMeta()
+			m.idleGen++ // invalidate any pending goal nag
 			m.note("goal cleared")
 		default:
 			m.a.SetGoal(arg)
 			m.saveMeta()
 			m.note("goal → " + arg)
+			// Arm the idle nag now: a goal on an idle session should ping
+			// until it is cleared or work starts.
+			m.idleGen++
+			return m.scheduleGoalNag()
 		}
 	case "/effort":
 		es, ok := m.a.Provider.(llm.EffortSetter)

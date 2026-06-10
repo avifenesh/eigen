@@ -2091,3 +2091,69 @@ func TestLiveTokRateGating(t *testing.T) {
 		t.Fatalf("live rate should render, got %q", got)
 	}
 }
+
+func TestGoalNagPingsWhileIdle(t *testing.T) {
+	m := testModel(t)
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "nagged")
+	script := filepath.Join(dir, "notify.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ntouch "+marker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m.notifyCmd = script
+	m.a.SetGoal("finish the migration")
+
+	// A nag for the current generation while idle: pings, notes, re-arms.
+	cmd := m.handleGoalNag(goalNagMsg{gen: m.idleGen})
+	if cmd == nil {
+		t.Fatal("nag should re-arm while the goal is open")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("goal nag should ping the notifier")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	found := false
+	for _, b := range m.blocks {
+		if b.kind == blockNote && strings.Contains(b.body, "goal still open") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("goal nag should add a note")
+	}
+
+	// Stale generation: no-op.
+	if cmd := m.handleGoalNag(goalNagMsg{gen: m.idleGen - 1}); cmd != nil {
+		t.Fatal("stale nag must not re-arm")
+	}
+
+	// Goal cleared: no-op, no re-arm.
+	m.a.SetGoal("")
+	if cmd := m.handleGoalNag(goalNagMsg{gen: m.idleGen}); cmd != nil {
+		t.Fatal("cleared goal must stop the nag")
+	}
+
+	// Running turn: no-op (re-armed on turn done instead).
+	m.a.SetGoal("still going")
+	m.state = stRunning
+	if cmd := m.handleGoalNag(goalNagMsg{gen: m.idleGen}); cmd != nil {
+		t.Fatal("running turn must not nag")
+	}
+}
+
+func TestScheduleGoalNagOnlyWithGoal(t *testing.T) {
+	m := testModel(t)
+	if m.scheduleGoalNag() != nil {
+		t.Fatal("no goal → no nag timer")
+	}
+	m.a.SetGoal("x")
+	if m.scheduleGoalNag() == nil {
+		t.Fatal("goal set → nag timer expected")
+	}
+}

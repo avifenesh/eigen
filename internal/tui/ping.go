@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // pingMinTurn is the minimum turn duration that triggers a finished-turn ping:
@@ -67,4 +69,42 @@ func (m *model) pingOnTurnDone(err error) {
 		label = "failed"
 	}
 	m.ping("turn " + label + " after " + dur.Round(time.Second).String())
+}
+
+// goalNagInterval is how often eigen pings while a goal is set and the session
+// sits idle: the goal is the user's declared north star, so an idle session
+// with an unachieved goal is a stall worth surfacing. Cleared goals stop it.
+const goalNagInterval = 5 * time.Minute
+
+// goalNagMsg fires on the goal-nag schedule; gen guards stale timers (any new
+// turn or goal change bumps idleGen, invalidating pending nags).
+type goalNagMsg struct{ gen int }
+
+// scheduleGoalNag arms the next goal nag if a goal is set. Uses the same
+// generation counter as idle dreaming so any activity cancels pending nags.
+func (m *model) scheduleGoalNag() tea.Cmd {
+	if m.a == nil || m.a.CurrentGoal() == "" {
+		return nil
+	}
+	gen := m.idleGen
+	return tea.Tick(goalNagInterval, func(time.Time) tea.Msg { return goalNagMsg{gen: gen} })
+}
+
+// handleGoalNag pings if the session is still idle with the same goal, and
+// re-arms the timer so the nag repeats until the goal is cleared or work
+// resumes.
+func (m *model) handleGoalNag(msg goalNagMsg) tea.Cmd {
+	if msg.gen != m.idleGen || m.state != stInput {
+		return nil // stale, or a turn is running
+	}
+	goal := ""
+	if m.a != nil {
+		goal = m.a.CurrentGoal()
+	}
+	if goal == "" {
+		return nil // goal achieved/cleared: stop nagging
+	}
+	m.ping("goal not yet achieved: " + goal)
+	m.note("goal still open: " + goal + "   (/goal clear when done — idle pings repeat every " + goalNagInterval.String() + ")")
+	return m.scheduleGoalNag()
 }

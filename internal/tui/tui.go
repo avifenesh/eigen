@@ -269,6 +269,10 @@ func (m *model) Init() tea.Cmd {
 		task := m.initialTask
 		cmds = append(cmds, func() tea.Msg { return submitMsg{task} })
 	}
+	// A resumed session may carry a goal: arm the idle nag from the start.
+	if c := m.scheduleGoalNag(); c != nil {
+		cmds = append(cmds, c)
+	}
 	return tea.Batch(cmds...)
 }
 
@@ -891,7 +895,10 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			return m, m.submit(next)
 		}
 		m.relayout()
-		return m, tea.Batch(textarea.Blink, m.scheduleIdleDream())
+		return m, tea.Batch(textarea.Blink, m.scheduleIdleDream(), m.scheduleGoalNag())
+
+	case goalNagMsg:
+		return m, m.handleGoalNag(msg)
 
 	case idleTickMsg:
 		// Only dream if still idle on the same generation we scheduled for.
