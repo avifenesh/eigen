@@ -81,6 +81,13 @@ func main() {
 		return
 	}
 
+	// `eigen models`: probe providers with credentials and report models the
+	// catalog doesn't know yet (read-only; runs before any provider/MCP init).
+	if flag.Arg(0) == "models" {
+		runModelsCmd()
+		return
+	}
+
 	skills := skill.Discover(skillDirs()...)
 	if *listSkills {
 		printSkills(skills)
@@ -989,4 +996,40 @@ func latestEigenSession() string {
 		}
 	}
 	return newest
+}
+
+// runModelsCmd lists the curated catalog, then probes each credentialed
+// provider for models the catalog doesn't know yet ("eigen models").
+func runModelsCmd() {
+	fmt.Println("catalog (curated; /model <id> to use):")
+	for _, mi := range llm.Models() {
+		win := ""
+		if mi.ContextWindow > 0 {
+			win = fmt.Sprintf("%dk", mi.ContextWindow/1000)
+		}
+		fmt.Printf("  %-44s %-10s %s\n", mi.ID, mi.Provider, win)
+	}
+	fmt.Println("\nprobing providers for new models…")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	found := false
+	for _, d := range llm.Discover(ctx) {
+		if d.Err != nil {
+			fmt.Printf("  %s: error: %v\n", d.Provider, d.Err)
+			continue
+		}
+		if len(d.New) == 0 {
+			fmt.Printf("  %s: no new models (%d known)\n", d.Provider, len(d.Known))
+			continue
+		}
+		found = true
+		fmt.Printf("  %s: %d new model(s) not in the catalog:\n", d.Provider, len(d.New))
+		for _, id := range d.New {
+			fmt.Printf("    %s\n", id)
+		}
+	}
+	if found {
+		fmt.Println("\nnew models can be used directly (--model <id> or /model <id>);")
+		fmt.Println("add catalog entries (internal/llm/catalog.go) for window/caching/thinking metadata.")
+	}
 }

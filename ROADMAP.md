@@ -115,7 +115,11 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
 18. **`/` config for most things** — *(shipped: /config shows the settings
     table; /config <key> <value> validates + persists to ~/.eigen/config.json.
     Live-session knobs stay /model /perm /effort /search /goal /loop.)*
-19. **Auto-discovery of newly available models** — probe providers, refresh the catalog.
+19. **Auto-discovery of newly available models** — *(shipped: `eigen models`
+    lists the catalog, then probes every credentialed provider's listing
+    endpoint (Anthropic /v1/models, Bedrock inference-profiles, grok/glm/llama
+    /models) and reports models not yet in the catalog. Read-only; new ids are
+    usable immediately via --model/-/model.)*
 20. **Image integration using other models** — vision/image understanding via
     auxiliary models when the main model lacks it.
 21. **Drag-and-drop of files** (and similar) into the TUI.
@@ -151,7 +155,7 @@ Web search (enables the `websearch` tool): `TAVILY_API_KEY`, `BRAVE_API_KEY`, or
 LSP: `.eigen/lsp.json` / `~/.eigen/lsp.json` — `{"servers":[{name,command,extensions,env,language_id}]}`.
 
 CLI: `eigen [task]` · `-p` print · `--resume/-c` · `--list` · `--list-skills` ·
-`--list-tools` · `eigen dream` (reflect into memory) ·
+`--list-tools` · `eigen dream` (reflect into memory) · `eigen models` (discover) ·
 `eigen memory <show|backups|consolidate> [--global]` ·
 `eigen skill add <path | owner/repo[/subdir][@ref]> [--name X] [--force] [--overwrite] [--no-scan]` ·
 `eigen skill list`. Installing a skill (from a path or GitHub) scans its content
