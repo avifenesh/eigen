@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/avifenesh/eigen/internal/agent"
 )
 
 // Server exposes a Host over a Unix socket. One connection = one view; a view
@@ -109,8 +111,15 @@ func (s *Server) handle(conn net.Conn) {
 				send(Response{Type: "error", Error: err.Error()})
 				continue
 			}
+			if req.Perm != "" {
+				a.SetPerm(agent.Permission(req.Perm))
+			}
 			sess := s.host.Add(req.Dir, req.Model, a)
 			sess.onClose = closeFn
+			if len(req.History) > 0 {
+				sess.resume(req.History)
+				s.host.saveSessionMeta(sess)
+			}
 			send(Response{Type: "ok", ID: sess.ID})
 		case "remove":
 			if s.host.Remove(req.ID) {

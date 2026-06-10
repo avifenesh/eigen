@@ -325,6 +325,19 @@ func (s *Session) compact(ctx context.Context, target int) (int, int, error) {
 	return s.sess.Compact(ctx, target)
 }
 
+// resume replaces the session's conversation with imported history (the
+// --resume path: the view imports a transcript and hands it to the daemon).
+func (s *Session) resume(history []llm.Message) {
+	s.mu.Lock()
+	s.sess = s.agent.Resume(history)
+	s.mu.Unlock()
+	// Persist immediately so the resumed history survives a restart even
+	// before the first turn runs.
+	if s.agent.Persist != nil {
+		s.agent.Persist(history)
+	}
+}
+
 // clear resets the conversation to empty (the /clear command).
 func (s *Session) clear() {
 	s.mu.Lock()

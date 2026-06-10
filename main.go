@@ -263,6 +263,47 @@ func main() {
 		}
 	}
 
+	// THE DEFAULT: every interactive chat is a daemon session — "a chat like
+	// any other chat". This branch runs BEFORE the in-process agent is built,
+	// so no duplicate MCP/LSP servers spin up just to be ignored. The daemon
+	// auto-starts if needed; closing the window leaves the session running.
+	// EIGEN_NO_DAEMON=1 keeps the in-process agent (needed by /rebuild's
+	// exec-replace flow and when hacking on the daemon itself).
+	subcommand := flag.Arg(0) == "dream" || flag.Arg(0) == "memory"
+	if !*printMode && !subcommand && os.Getenv("EIGEN_NO_DAEMON") == "" &&
+		isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd()) {
+		if dc, derr := ensureDaemon(); derr == nil {
+			store, _ := session.Open()
+			history := importResume(store, *resumeFile, *from, *sessionID)
+			cwd, _ := os.Getwd()
+			sid, nerr := dc.NewSession(cwd, *model, *perm, history)
+			if nerr != nil {
+				fail(fmt.Errorf("daemon session: %w", nerr))
+			}
+			backend, berr := chat.NewRemote(dc, sid)
+			if berr != nil {
+				fail(berr)
+			}
+			mem, _ := memory.Open("")
+			_, err := tui.Run(backend, tui.Options{
+				InitialTask:   task,
+				Provider:      backend.ProviderName(),
+				Model:         backend.ModelID(),
+				Memory:        mem,
+				Skills:        skills,
+				NotifyCmd:     cfg.NotifyCmd,
+				NoSessionFile: true, // the daemon persists
+			})
+			dc.Close()
+			if err != nil {
+				fail(err)
+			}
+			return
+		} else {
+			fmt.Fprintf(os.Stderr, "eigen: daemon unavailable (%v) — running in-process\n", derr)
+		}
+	}
+
 	policy := tool.DefaultPolicy()
 	mem, _ := memory.Open("")
 	gmem, _ := memory.OpenGlobal()
@@ -496,35 +537,10 @@ func main() {
 
 	// Optionally resume a prior conversation: by store id, the 'eigen'/'opencode'
 	// keywords, or a transcript file path.
-	var history []llm.Message
-	if *resumeFile != "" {
-		var herr error
-		switch {
-		case store != nil && store.Get(*resumeFile) != nil:
-			history, herr = store.Load(*resumeFile)
-		case *resumeFile == "eigen":
-			path := latestEigenSession()
-			if path == "" {
-				fail(fmt.Errorf("resume: no saved eigen sessions in ~/.eigen/sessions"))
-			}
-			history, herr = transcript.Load(path)
-		default:
-			src := transcript.Source(*from)
-			if src == "" {
-				src = transcript.Detect(*resumeFile)
-			}
-			if src == transcript.SourceOpenCode {
-				history, herr = transcript.ImportOpenCode(*resumeFile, *sessionID)
-			} else {
-				history, herr = transcript.ImportFrom(src, *resumeFile)
-			}
-		}
-		if herr != nil {
-			fail(fmt.Errorf("resume: %w", herr))
-		}
-	}
+	history := importResume(store, *resumeFile, *from, *sessionID)
 
-	// Interactive terminal with no -p → the full-screen REPL (the default UX).
+	// Interactive terminal with no -p → the in-process REPL (EIGEN_NO_DAEMON,
+	// or the daemon was unavailable).
 	interactive := isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd())
 	if !*printMode && interactive {
 		res, err := tui.Run(chat.NewLocal(a, nil, *model), tui.Options{
@@ -1310,4 +1326,38 @@ func copyExecutable(src, dst string) error {
 		return err
 	}
 	return os.WriteFile(dst, in, 0o755)
+}
+
+// importResume loads a resumed conversation: by store id, the 'eigen'
+// keyword, or a transcript file path (any supported source).
+func importResume(store *session.Store, resumeFile, from, sessionID string) []llm.Message {
+	if resumeFile == "" {
+		return nil
+	}
+	var history []llm.Message
+	var herr error
+	switch {
+	case store != nil && store.Get(resumeFile) != nil:
+		history, herr = store.Load(resumeFile)
+	case resumeFile == "eigen":
+		path := latestEigenSession()
+		if path == "" {
+			fail(fmt.Errorf("resume: no saved eigen sessions in ~/.eigen/sessions"))
+		}
+		history, herr = transcript.Load(path)
+	default:
+		src := transcript.Source(from)
+		if src == "" {
+			src = transcript.Detect(resumeFile)
+		}
+		if src == transcript.SourceOpenCode {
+			history, herr = transcript.ImportOpenCode(resumeFile, sessionID)
+		} else {
+			history, herr = transcript.ImportFrom(src, resumeFile)
+		}
+	}
+	if herr != nil {
+		fail(fmt.Errorf("resume: %w", herr))
+	}
+	return history
 }

@@ -226,3 +226,14 @@ func (c *Client) SetModel(sessionID, modelID string) error {
 	_, err := c.request(Request{Op: "set", ID: sessionID, Model: modelID})
 	return err
 }
+
+// NewSession creates a daemon session with full options: rooted at dir, an
+// optional model, an optional permission posture, and optional resumed
+// history (the --resume path).
+func (c *Client) NewSession(dir, model, perm string, history []llm.Message) (string, error) {
+	r, err := c.request(Request{Op: "new", Dir: dir, Model: model, Perm: perm, History: history})
+	if err != nil {
+		return "", err
+	}
+	return r.ID, nil
+}

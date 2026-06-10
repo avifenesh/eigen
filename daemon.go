@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -214,4 +216,43 @@ func mustList(c *daemon.Client) []daemon.SessionInfo {
 		return nil
 	}
 	return infos
+}
+
+// ensureDaemon returns a client to a running daemon, starting one if needed.
+// The daemon is spawned detached (its own process group, no controlling tty)
+// so it outlives this process — the app keeps living when windows close.
+func ensureDaemon() (*daemon.Client, error) {
+	if c, err := daemon.Dial(daemon.SocketPath()); err == nil {
+		return c, nil
+	}
+	// Not running: spawn `eigen daemon` detached, logging to a file.
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	home, _ := os.UserHomeDir()
+	logPath := filepath.Join(home, ".eigen", "daemon.log")
+	logf, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(exe, "daemon")
+	cmd.Stdout = logf
+	cmd.Stderr = logf
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // detach: survive this process
+	if err := cmd.Start(); err != nil {
+		logf.Close()
+		return nil, fmt.Errorf("start daemon: %w", err)
+	}
+	logf.Close()
+	_ = cmd.Process.Release()
+	// Wait for the socket (restore of persisted sessions can take a moment).
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if c, err := daemon.Dial(daemon.SocketPath()); err == nil {
+			return c, nil
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	return nil, fmt.Errorf("daemon did not come up (see %s)", logPath)
 }

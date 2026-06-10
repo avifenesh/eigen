@@ -29,6 +29,8 @@ type Request struct {
 	Target int `json:"target,omitempty"`
 	// input: optional image attachments
 	Images []llm.Image `json:"images,omitempty"`
+	// new: optional resumed history + initial goal
+	History []llm.Message `json:"history,omitempty"`
 }
 
 // Response is a daemon→view message. Type discriminates the payload.
