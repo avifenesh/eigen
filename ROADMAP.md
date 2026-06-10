@@ -72,6 +72,40 @@ Conventions:
 - [ ] real token usage from provider responses (vs. estimate) — deferred: needs
       live API verification of each provider's usage fields; the `~estimate` is honest
 
+## Tier 7 — vision / big bets (captured backlog, unordered)
+Raw capture from the user — refine/prioritize later. Numbered for reference only.
+1. **Token efficiency in a wider scope than compaction** — beyond compaction:
+   trim tool schemas/system prompt, dedupe repeated context, retrieval instead of
+   re-paste, cheaper models for cheap turns, prompt-cache-aware prefixing.
+2. **Diff view of edits** — *(partially shipped: edit/multiedit LCS diff blocks; revisit for a richer/side-by-side view)*
+3. **"Goal" feature** — a persistent north-star goal the agent tracks across turns.
+4. **"Loop" feature** — agent iterates autonomously until a condition/goal is met.
+5. **Automation** — scheduled / triggered runs (cron-like, on-event).
+6. **Background scan for wide-reaching actions** — proactively flag risky/broad
+   operations (mass deletes, wide refactors) before they run.
+7. **Computer use built in** — native screen/GUI control.
+8. **Agent workspace built in** — native isolated desktop/terminal workspace
+   *(today via the agent-workspace-linux MCP; make it first-class)*.
+9. **Conversation mode** — lighter chat/dialog mode vs full agentic loop.
+10. **Auto-router** — pick the model/provider per task automatically (cost/latency/capability).
+11. **Hooks** — pre/post tool, pre/post turn, pre/post compaction user hooks.
+12. **Sub-agents** — *(partially shipped: depth-bounded `task` tool; expand: named roles, parallelism)*.
+13. **Ultraplan** — dozens of in-depth sub-agents driven by one big plan ahead.
+14. **Ping** — liveness/heartbeat / notify-when-done.
+15. **AGENTS.md integration** — read/honor repo `AGENTS.md` *(v2 nice-to-have)*.
+16. **tok/s in & tok/s out measurement** — throughput metrics per turn.
+17. **Observability for long-term learning** — structured logs of errors, tool
+    uses, outcomes; feed back into memory/dreaming.
+18. **`/` config for most things** — slash-driven config that doesn't require
+    editing files (settings UI via commands).
+19. **Auto-discovery of newly available models** — probe providers, refresh the catalog.
+20. **Image integration using other models** — vision/image understanding via
+    auxiliary models when the main model lacks it.
+21. **Drag-and-drop of files** (and similar) into the TUI.
+22. **Image copy-paste** into the conversation.
+23. **Integrate other model types efficiently** — embedders, diffusion, mamba, etc.,
+    to offer non-LLM solutions where they fit.
+
 ## Notes / grounding
 - read-aloud tool the user has: `readd` (espeak-ng/piper) at `~/projects/tfqol/readd`.
 - skills format = Claude Code SKILL.md (YAML frontmatter `name`,`description`[,`allowed-tools`] + markdown body).
