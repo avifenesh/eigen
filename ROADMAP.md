@@ -231,8 +231,23 @@ first-class surface, reachable by keys and a command palette:
 **Layout & UX:**
 - Side tabs (left rail): running sessions + pages — switch instantly; running
   sessions show live status (working/idle/needs-approval) at a glance.
-- Multiple concurrent sessions, each in a tab; background sessions keep
-  running (the existing agent loop already supports it; the UI catches up).
+- **Daemon/view architecture (the real shape of the app):** the REAL app is a
+  long-lived background process (eventually with a tray presence) that OWNS the
+  sessions — each agent loop, its checkpoints, its small-model triggers, its
+  per-session state, all live in the daemon. Terminal windows are VIEWS: they
+  attach to the daemon, render, and interact — nothing more.
+  - A session keeps running whether or not any window shows it.
+  - Two windows can attach to the SAME chat (mirrored, both live) or to
+    different chats.
+  - Each chat is a whole, as today — its own tools rooted in its project dir,
+    project memory, goal/loop, approvals — sharing only the truly global
+    things (global memory, config, session store, small-model jobs).
+  - Approvals broadcast to attached views; any view can answer.
+  - Build order: (1) extract agent+tool construction from main into a reusable
+    per-directory builder; (2) internal/daemon — session host + Unix-socket
+    protocol (list/new/attach/input/events/approve, event replay on attach);
+    (3) `eigen daemon` + view attach in the chat TUI; (4) app rail shows the
+    daemon's running sessions w/ live status; (5) tray presence + autostart.
 - A command palette (fuzzy) for everything; consistent keybindings.
 - DESIGN BAR: highly informative, subtle, "a perfect touch of a designer" —
   restrained color, clear hierarchy, no clutter; every effect informative,
