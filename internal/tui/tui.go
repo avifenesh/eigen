@@ -183,7 +183,11 @@ type model struct {
 	idleMinutes    int
 	maxTokens      int           // user context-budget ceiling (0 = auto from the model window)
 	smallCompactor llm.Compactor // cheap-model summarizer chained on live switches
-	idleGen        int           // bumped on each turn; stale idle ticks are ignored
+
+	// ping: attention signals (terminal bell + optional notifier command).
+	notifyCmd   string    // external notifier (config notify_cmd / EIGEN_NOTIFY_CMD)
+	turnStarted time.Time // when the running turn began (zero when idle)
+	idleGen     int       // bumped on each turn; stale idle ticks are ignored
 
 	// skills are the discovered SKILL.md skills, for /skills browse + preview.
 	skills *skill.Set
@@ -429,6 +433,7 @@ func (m *model) submit(task string) tea.Cmd {
 	m.text("user", task)
 	m.state = stRunning
 	m.status = "thinking"
+	m.turnStarted = time.Now()
 	m.comp = completion{kind: compNone}
 	m.streamedText = false
 	m.idleGen++ // invalidate any pending idle-dream timer
@@ -454,6 +459,7 @@ func (m *model) submit(task string) tea.Cmd {
 func (m *model) resend() tea.Cmd {
 	m.state = stRunning
 	m.status = "retrying on " + m.modelID
+	m.turnStarted = time.Now()
 	m.streamedText = false
 	m.idleGen++
 	m.relayout()
@@ -821,6 +827,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		}
 		m.pending = &msg
 		m.note(fmt.Sprintf("approve %s %s ? [y]es / [n]o / [a]lways", msg.name, compact(string(msg.args))))
+		m.ping("approval needed: " + msg.name)
 		m.relayout()
 		return m, nil
 
@@ -843,6 +850,8 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				m.note("rate-limited (too many tokens/min). Try: /compact to shrink context, /effort low to reduce thinking tokens, or wait a moment and retry.")
 			}
 		}
+		m.pingOnTurnDone(msg.err)
+		m.turnStarted = time.Time{}
 		m.cancel = nil
 		m.state = stInput
 		m.status = ""
@@ -993,6 +1002,9 @@ type Options struct {
 	// SmallCompactor, when set, summarizes compactions on a cheap small model;
 	// live model switches chain it before the new main provider's compactor.
 	SmallCompactor llm.Compactor
+	// NotifyCmd is an external notifier command (e.g. "notify-send") run with
+	// the ping message appended; empty = bell only (EIGEN_NOTIFY_CMD also works).
+	NotifyCmd string
 }
 
 // Run drives the agent under a multi-turn Bubble Tea REPL.
@@ -1062,6 +1074,7 @@ func Run(a *agent.Agent, o Options) (Result, error) {
 		idleMinutes:    o.IdleMinutes,
 		maxTokens:      o.MaxTokens,
 		smallCompactor: o.SmallCompactor,
+		notifyCmd:      o.NotifyCmd,
 	}
 	if m.idleMinutes <= 0 {
 		m.idleMinutes = 5

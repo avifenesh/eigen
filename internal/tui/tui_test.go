@@ -2002,3 +2002,42 @@ func TestGoalCommand(t *testing.T) {
 		t.Fatal("/goal clear should unset the goal")
 	}
 }
+
+func TestPingOnTurnDoneOnlyAfterLongTurns(t *testing.T) {
+	m := testModel(t)
+	// Short turn: no ping. We can't capture the bell easily, but we can verify
+	// the notifier command path via a script that records its invocation.
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "pinged")
+	script := filepath.Join(dir, "notify.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ntouch "+marker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m.notifyCmd = script
+
+	// Short turn: started just now → no notifier.
+	m.turnStarted = time.Now()
+	m.pingOnTurnDone(nil)
+	time.Sleep(50 * time.Millisecond)
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("short turn must not ping")
+	}
+
+	// Long turn: started long ago → notifier fires.
+	m.turnStarted = time.Now().Add(-2 * pingMinTurn)
+	m.pingOnTurnDone(nil)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("long turn should ping the notifier")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Zero start time (no turn): no-op.
+	m.turnStarted = time.Time{}
+	m.pingOnTurnDone(nil) // must not panic
+}

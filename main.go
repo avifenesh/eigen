@@ -353,6 +353,7 @@ func main() {
 			IdleMinutes:    cfg.IdleMinutes,
 			MaxTokens:      resolveUserMaxTokens(*maxTokens),
 			SmallCompactor: smallCompactor,
+			NotifyCmd:      cfg.NotifyCmd,
 		})
 		if err != nil {
 			fail(err)

@@ -15,6 +15,7 @@ type Config struct {
 	Perm        string   `json:"perm"`
 	MaxTokens   int      `json:"max_tokens"`
 	TTSCmd      string   `json:"tts_cmd"`
+	NotifyCmd   string   `json:"notify_cmd"`
 	SkillsDirs  []string `json:"skills_dirs"`
 	DreamOnIdle bool     `json:"dream_on_idle"`
 	IdleMinutes int      `json:"idle_minutes"`
