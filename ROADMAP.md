@@ -82,8 +82,11 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
    routing (→ auto-router).
 2. **Diff view of edits** — *(shipped a0c1fe2: intra-line change highlighting,
    context folding, ±N −M header stats, apply_patch/write diff rendering)*
-3. **"Goal" feature** — *(shipped 3d0cf4b: /goal set/show/clear, injected into
-   the system prompt every step, survives compaction, persisted in session meta)*
+3. **"Goal" feature** — *(shipped 3d0cf4b + 011da68 + judge: /goal set/show/clear,
+   injected into the system prompt every step, survives compaction, persisted in
+   session meta, idle nag pings until achieved, and the model can clear it by
+   calling goal_achieved — an independent small-model judge verifies the
+   evidence and only a confirmed verdict clears the goal)*
 4. **"Loop" feature** — agent iterates autonomously until a condition/goal is met.
 5. **Automation** — scheduled / triggered runs (cron-like, on-event).
 6. **Background scan for wide-reaching actions** — proactively flag risky/broad
@@ -121,9 +124,9 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
 - permission postures: `gated` (asks for mutating tools) / `auto`.
 
 ## Configuration & extension reference (as shipped)
-Tools (19): read, list, glob, grep, symbols, tree, diff, write, edit, multiedit,
-apply_patch, move, bash, fetch, todo, skill, memory, task, websearch (when a
-backend is configured) (+ plugins + MCP + LSP).
+Tools (20): read, list, glob, grep, symbols, tree, diff, write, edit, multiedit,
+apply_patch, move, bash, fetch, todo, skill, memory, task, goal_achieved,
+websearch (when a backend is configured) (+ plugins + MCP + LSP).
 
 Files (under `~/.eigen/`, plus project-local `./.eigen/`):
 - `config.json` — defaults: `provider`,`model`,`perm`,`max_tokens`,`tts_cmd`,

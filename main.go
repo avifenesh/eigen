@@ -160,6 +160,20 @@ func main() {
 		}
 		return a.Subtask(ctx, t)
 	}
+	// goalJudge verifies goal-achievement claims with the small model (an
+	// independent judge, not the model making the claim) and clears the goal
+	// on a confirmed verdict. The judge provider is constructed lazily once —
+	// never read from a.Provider here (live-switchable; would race).
+	var judgeProv llm.Provider
+	goalJudge := func(ctx context.Context, evidence string) (bool, string, error) {
+		if a == nil {
+			return false, "", fmt.Errorf("goal judging unavailable")
+		}
+		if judgeProv == nil {
+			judgeProv = smallProvider(nil)
+		}
+		return a.JudgeGoal(ctx, judgeProv, evidence)
+	}
 	defs := []tool.Definition{
 		tool.Read(policy),
 		tool.List(policy),
@@ -179,6 +193,7 @@ func main() {
 		tool.Skill(skills),
 		tool.Memory(mem, gmem),
 		tool.Task(taskRun),
+		tool.GoalAchieved(goalJudge),
 	}
 	// Web search: only registered when a backend is configured (TAVILY_API_KEY,
 	// BRAVE_API_KEY, or EIGEN_WEBSEARCH_URL), so the model never sees a tool it

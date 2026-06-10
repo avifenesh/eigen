@@ -457,7 +457,7 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		// last so it stays the freshest instruction in the system prompt.
 		sys := system
 		if g := a.CurrentGoal(); g != "" {
-			sys += "\n\nCURRENT GOAL (persistent; the user set this as the north star — keep every action aligned with it until it changes):\n" + g
+			sys += "\n\nCURRENT GOAL (persistent; the user set this as the north star — keep every action aligned with it until it changes):\n" + g + "\nWhen you believe the goal is FULLY achieved, call the goal_achieved tool with concrete evidence; an independent judge verifies and clears it."
 		}
 		req := llm.Request{
 			System:   sys,
