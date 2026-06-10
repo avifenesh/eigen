@@ -134,7 +134,7 @@ func (s *Session) attach() (replay []agent.Event, live <-chan agent.Event, detac
 
 // send runs a turn on the session (one at a time). It returns immediately;
 // progress arrives via events. A turn already running is rejected.
-func (s *Session) send(task string) bool {
+func (s *Session) send(task string, images []llm.Image) bool {
 	s.mu.Lock()
 	if s.running {
 		s.mu.Unlock()
@@ -146,29 +146,34 @@ func (s *Session) send(task string) bool {
 	s.cancel = cancel
 	s.mu.Unlock()
 
+	sess := s.sess
 	go func() {
-		_, err := s.sess.Send(ctx, task)
-		s.mu.Lock()
-		s.running = false
-		s.cancel = nil
-		interrupted := ctx.Err() != nil
-		if err != nil && !interrupted {
-			s.status = StatusError
-		} else {
-			s.status = StatusIdle
-		}
-		s.mu.Unlock()
-		// Always emit a terminal event so attached views leave the "working"
-		// state — the agent loop emits EventDone on a normal finish, but an
-		// interrupt or error returns without one.
-		switch {
-		case interrupted:
-			s.dispatch(agent.Event{Kind: agent.EventNote, Text: "interrupted"})
-		case err != nil:
-			s.dispatch(agent.Event{Kind: agent.EventNote, Text: "error: " + err.Error()})
-		}
+		_, err := sess.SendWith(ctx, task, images)
+		s.finishTurn(ctx, err)
 	}()
 	return true
+}
+
+// finishTurn clears running state and emits a terminal event so attached views
+// leave the "working" state — the agent loop emits EventDone on a normal
+// finish, but an interrupt or error returns without one.
+func (s *Session) finishTurn(ctx context.Context, err error) {
+	s.mu.Lock()
+	s.running = false
+	s.cancel = nil
+	interrupted := ctx.Err() != nil
+	if err != nil && !interrupted {
+		s.status = StatusError
+	} else {
+		s.status = StatusIdle
+	}
+	s.mu.Unlock()
+	switch {
+	case interrupted:
+		s.dispatch(agent.Event{Kind: agent.EventNote, Text: "interrupted"})
+	case err != nil:
+		s.dispatch(agent.Event{Kind: agent.EventNote, Text: "error: " + err.Error()})
+	}
 }
 
 // interrupt cancels the in-flight turn, if any.
@@ -318,4 +323,43 @@ func (s *Session) setGoal(g string) { s.agent.SetGoal(g) }
 // compact summarizes toward target tokens (0 = the agent's default policy).
 func (s *Session) compact(ctx context.Context, target int) (int, int, error) {
 	return s.sess.Compact(ctx, target)
+}
+
+// clear resets the conversation to empty (the /clear command).
+func (s *Session) clear() {
+	s.mu.Lock()
+	s.sess = s.agent.NewSession()
+	s.events = nil // a fresh attach replays nothing
+	s.mu.Unlock()
+}
+
+// resend retries the last user turn (the /resend command) — runs like send.
+func (s *Session) resend() bool {
+	s.mu.Lock()
+	if s.running {
+		s.mu.Unlock()
+		return false
+	}
+	s.running = true
+	s.status = StatusWorking
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
+	sess := s.sess
+	s.mu.Unlock()
+
+	go func() {
+		_, err := sess.Resend(ctx)
+		s.finishTurn(ctx, err)
+	}()
+	return true
+}
+
+// setModel performs a live provider switch for the session. The caller passes
+// the rebuilt provider + compactor + budget (package main owns provider
+// construction). modelID updates the session's listed model.
+func (s *Session) setModel(modelID string, p llm.Provider, c llm.Compactor, budget int) {
+	s.agent.SetLive(p, c, budget)
+	s.mu.Lock()
+	s.Model = modelID
+	s.mu.Unlock()
 }

@@ -19,7 +19,16 @@ type Host struct {
 	sessions   map[string]*Session
 	seq        int
 	persistDir string
+	// switchModel rebuilds a provider+compactor+budget for a live /model
+	// switch, injected by package main (which owns provider construction).
+	switchModel ModelSwitcher
 }
+
+// ModelSwitcher builds the live-switch inputs for a model id rooted at dir.
+type ModelSwitcher func(dir, modelID string) (provider llm.Provider, compactor llm.Compactor, budget int, err error)
+
+// SetModelSwitcher installs the live-model-switch builder.
+func (h *Host) SetModelSwitcher(s ModelSwitcher) { h.switchModel = s }
 
 // NewHost creates an empty session host (no persistence — tests).
 func NewHost() *Host {

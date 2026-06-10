@@ -136,11 +136,42 @@ func (s *Server) handle(conn net.Conn) {
 				sess.setPerm(req.Perm)
 			case req.Goal != nil:
 				sess.setGoal(*req.Goal)
+			case req.Model != "":
+				if s.host.switchModel == nil {
+					send(Response{Type: "error", Error: "model switching unavailable"})
+					continue
+				}
+				p, c, budget, err := s.host.switchModel(sess.Dir, req.Model)
+				if err != nil {
+					send(Response{Type: "error", Error: err.Error()})
+					continue
+				}
+				sess.setModel(req.Model, p, c, budget)
 			default:
 				send(Response{Type: "error", Error: "set: nothing to set"})
 				continue
 			}
 			s.host.saveSessionMeta(sess) // durable: survives daemon restart
+			send(Response{Type: "ok"})
+		case "clear":
+			sess := s.host.Get(req.ID)
+			if sess == nil {
+				send(Response{Type: "error", Error: "no such session"})
+				continue
+			}
+			sess.clear()
+			s.host.saveSessionMeta(sess)
+			send(Response{Type: "ok"})
+		case "resend":
+			sess := s.host.Get(req.ID)
+			if sess == nil {
+				send(Response{Type: "error", Error: "no such session"})
+				continue
+			}
+			if !sess.resend() {
+				send(Response{Type: "error", Error: "session busy"})
+				continue
+			}
 			send(Response{Type: "ok"})
 		case "compact":
 			sess := s.host.Get(req.ID)
@@ -178,7 +209,7 @@ func (s *Server) handle(conn net.Conn) {
 				send(Response{Type: "error", Error: "no such session"})
 				continue
 			}
-			if !sess.send(req.Text) {
+			if !sess.send(req.Text, req.Images) {
 				send(Response{Type: "error", Error: "session busy"})
 				continue
 			}

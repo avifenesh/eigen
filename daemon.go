@@ -12,6 +12,7 @@ import (
 	"github.com/avifenesh/eigen/internal/chat"
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/daemon"
+	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/memory"
 	"github.com/avifenesh/eigen/internal/skill"
 	"github.com/avifenesh/eigen/internal/tui"
@@ -56,6 +57,16 @@ func runDaemon(cfg config.Config) {
 		}
 		return deps.Agent, deps.Close, nil
 	}
+
+	// Live model switching for daemon sessions: rebuild a provider for the new
+	// model id (the same construction the local chat uses).
+	host.SetModelSwitcher(func(dir, modelID string) (llm.Provider, llm.Compactor, int, error) {
+		p, err := llm.New("", modelID)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		return p, llm.CompactorChain(llm.NewCompactor(smallProvider(p)), llm.NewCompactor(p)), contextBudget(cfg.MaxTokens, "", modelID), nil
+	})
 
 	// Resurrect persisted sessions before accepting views: each one rebuilds
 	// its agent (rooted at its dir) and resumes its saved history under the

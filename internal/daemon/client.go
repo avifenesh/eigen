@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"sync"
+
+	"github.com/avifenesh/eigen/internal/llm"
 )
 
 // Client is a view's connection to the daemon. One client = one socket
@@ -150,9 +152,9 @@ func (c *Client) Attach(id string, handler func(e WireEvent, replay bool)) error
 	return err
 }
 
-// Input sends a user message to a session (its turn runs in the daemon).
-func (c *Client) Input(id, text string) error {
-	_, err := c.request(Request{Op: "input", ID: id, Text: text})
+// Input sends a user message (with optional images) to a session.
+func (c *Client) Input(id, text string, images []llm.Image) error {
+	_, err := c.request(Request{Op: "input", ID: id, Text: text, Images: images})
 	return err
 }
 
@@ -205,4 +207,22 @@ func (c *Client) Compact(sessionID string, target int) (before, after int, err e
 		return 0, 0, err
 	}
 	return r.Before, r.After, nil
+}
+
+// Clear resets a session's conversation to empty.
+func (c *Client) Clear(sessionID string) error {
+	_, err := c.request(Request{Op: "clear", ID: sessionID})
+	return err
+}
+
+// Resend retries a session's last user turn (runs in the daemon).
+func (c *Client) Resend(sessionID string) error {
+	_, err := c.request(Request{Op: "resend", ID: sessionID})
+	return err
+}
+
+// SetModel switches a session's model live (the daemon rebuilds the provider).
+func (c *Client) SetModel(sessionID, modelID string) error {
+	_, err := c.request(Request{Op: "set", ID: sessionID, Model: modelID})
+	return err
 }

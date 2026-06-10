@@ -15,7 +15,7 @@ type Builder func(dir, model string) (*agent.Agent, func(), error)
 
 // Request is a view→daemon command (line-delimited JSON over the socket).
 type Request struct {
-	Op       string `json:"op"`                 // list | new | attach | input | interrupt | remove | approve | state | set | compact | ping
+	Op       string `json:"op"`                 // list|new|attach|input|interrupt|remove|approve|state|set|compact|clear|resend|ping
 	ID       string `json:"id,omitempty"`       // session id
 	Dir      string `json:"dir,omitempty"`      // new: working directory
 	Model    string `json:"model,omitempty"`    // new / set: model id
@@ -27,6 +27,8 @@ type Request struct {
 	Goal *string `json:"goal,omitempty"` // pointer: empty string clears the goal
 	// compact: target tokens (0 = backend default)
 	Target int `json:"target,omitempty"`
+	// input: optional image attachments
+	Images []llm.Image `json:"images,omitempty"`
 }
 
 // Response is a daemon→view message. Type discriminates the payload.

@@ -163,7 +163,7 @@ func TestClientEndToEnd(t *testing.T) {
 	if err := c.Attach(id, func(e WireEvent, replay bool) { events <- e }); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Input(id, "hi"); err != nil {
+	if err := c.Input(id, "hi", nil); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.After(3 * time.Second)
@@ -227,7 +227,7 @@ func TestInterruptEmitsTerminalNote(t *testing.T) {
 	s := newSession("x", "/tmp", "m", a)
 	_, live, detach := s.attach()
 	defer detach()
-	if !s.send("go") {
+	if !s.send("go", nil) {
 		t.Fatal("send should start")
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -309,7 +309,7 @@ func TestApprovalRoundTripOverSocket(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Input(id, "do the thing"); err != nil {
+	if err := c.Input(id, "do the thing", nil); err != nil {
 		t.Fatal(err)
 	}
 	// The blocked tool call must surface as an approval event.
@@ -368,7 +368,7 @@ func TestApprovalDenied(t *testing.T) {
 			dones <- e
 		}
 	})
-	c.Input(id, "go")
+	c.Input(id, "go", nil)
 	var ap WireEvent
 	select {
 	case ap = <-approvals:

@@ -135,3 +135,85 @@ func TestRemoteApprovalRoundTrip(t *testing.T) {
 		t.Fatal("approved tool should have run in the daemon")
 	}
 }
+
+func TestRemoteClearAndResend(t *testing.T) {
+	build := func(_, _ string) (*agent.Agent, func(), error) {
+		reg, _ := tool.NewRegistry()
+		return &agent.Agent{Provider: echoProv{}, Tools: reg, Perm: agent.PermAuto, MaxContextTokens: 9000}, func() {}, nil
+	}
+	c, id := startDaemon(t, build)
+	r, err := NewRemote(c, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Wire(func(agent.Event) {}, nil)
+	ctx := context.Background()
+
+	if _, err := r.Send(ctx, "first", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Messages()) < 2 {
+		t.Fatal("turn should add messages")
+	}
+	// /clear empties the daemon session.
+	r.Reset(nil)
+	if len(r.Messages()) != 0 {
+		t.Fatalf("clear should empty history, got %d", len(r.Messages()))
+	}
+	// /resend after a fresh turn retries the last user message.
+	if _, err := r.Send(ctx, "again", nil); err != nil {
+		t.Fatal(err)
+	}
+	n := len(r.Messages())
+	if _, err := r.Resend(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Messages()) <= n-2 {
+		t.Fatalf("resend should re-run the last turn, msgs=%d (was %d)", len(r.Messages()), n)
+	}
+}
+
+// namedProv reports a fixed name (used to verify model switching).
+type namedProv struct{ name string }
+
+func (p namedProv) Name() string { return p.name }
+func (p namedProv) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
+	return &llm.Response{Text: "ok"}, nil
+}
+
+func TestRemoteModelSwitch(t *testing.T) {
+	reg, _ := tool.NewRegistry()
+	build := func(_, _ string) (*agent.Agent, func(), error) {
+		return &agent.Agent{Provider: namedProv{"model-a"}, Tools: reg, Perm: agent.PermAuto}, func() {}, nil
+	}
+	sock := filepath.Join(t.TempDir(), "d.sock")
+	host := daemon.NewHost()
+	// The daemon rebuilds the provider for a switch — name it after the id.
+	host.SetModelSwitcher(func(_, modelID string) (llm.Provider, llm.Compactor, int, error) {
+		return namedProv{modelID}, nil, 0, nil
+	})
+	srv, err := daemon.Listen(sock, host, build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve()
+	t.Cleanup(func() { srv.Close() })
+	c, err := daemon.Dial(sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+	id, _ := c.New("/tmp", "model-a")
+
+	r, err := NewRemote(c, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.ModelID() != "model-a" {
+		t.Fatalf("initial model: %q", r.ModelID())
+	}
+	r.SetModel(namedProv{"model-b"}, nil, 0)
+	if r.ModelID() != "model-b" {
+		t.Fatalf("after switch: %q", r.ModelID())
+	}
+}

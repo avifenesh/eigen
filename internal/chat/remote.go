@@ -103,14 +103,11 @@ func wireToEvent(e daemon.WireEvent) agent.Event {
 // mirroring the local backend's contract (progress streams via events).
 // Images are not yet carried over the socket.
 func (r *Remote) Send(ctx context.Context, task string, images []llm.Image) (string, error) {
-	if len(images) > 0 {
-		return "", fmt.Errorf("image attachments are not yet supported on daemon sessions")
-	}
 	ch := make(chan struct{})
 	r.mu.Lock()
 	r.turnDone = ch
 	r.mu.Unlock()
-	if err := r.c.Input(r.id, task); err != nil {
+	if err := r.c.Input(r.id, task, images); err != nil {
 		r.mu.Lock()
 		r.turnDone = nil
 		r.mu.Unlock()
@@ -128,9 +125,28 @@ func (r *Remote) Send(ctx context.Context, task string, images []llm.Image) (str
 	return r.lastText, nil
 }
 
-// Resend asks the daemon to retry; not yet supported remotely.
+// Resend asks the daemon to retry the last turn, blocking until it ends.
 func (r *Remote) Resend(ctx context.Context) (string, error) {
-	return "", fmt.Errorf("resend is not yet supported on daemon sessions")
+	ch := make(chan struct{})
+	r.mu.Lock()
+	r.turnDone = ch
+	r.mu.Unlock()
+	if err := r.c.Resend(r.id); err != nil {
+		r.mu.Lock()
+		r.turnDone = nil
+		r.mu.Unlock()
+		return "", err
+	}
+	select {
+	case <-ch:
+	case <-ctx.Done():
+		_ = r.c.Interrupt(r.id)
+		<-ch
+	}
+	r.refresh()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lastText, nil
 }
 
 // refresh re-syncs the cached state snapshot (called after turns/mutations).
@@ -160,9 +176,16 @@ func (r *Remote) Compact(ctx context.Context, target int) (int, int, error) {
 func (r *Remote) ModelID() string      { return r.snap().Model }
 func (r *Remote) ProviderName() string { return r.snap().Provider }
 
-// SetModel is not yet supported remotely (the daemon owns provider wiring);
-// it is a no-op with the limitation surfaced via ModelID staying unchanged.
-func (r *Remote) SetModel(p llm.Provider, c llm.Compactor, maxTokens int) {}
+// SetModel switches the daemon session's model. The provider cannot cross the
+// socket, so its Name() (the model id) is sent and the daemon rebuilds the
+// provider server-side; compactor/budget are derived there too.
+func (r *Remote) SetModel(p llm.Provider, c llm.Compactor, maxTokens int) {
+	if p == nil {
+		return
+	}
+	_ = r.c.SetModel(r.id, p.Name())
+	r.refresh()
+}
 
 func (r *Remote) MaxContextTokens() int { return r.snap().MaxTokens }
 
@@ -191,8 +214,15 @@ func (r *Remote) Tools() []ToolInfo {
 // provider (vision, effort, search) degrade gracefully in the TUI.
 func (r *Remote) Provider() llm.Provider { return nil }
 
-// Reset is not yet supported remotely (history lives in the daemon).
-func (r *Remote) Reset(history []llm.Message) {}
+// Reset clears the daemon session's conversation (the /clear command). A
+// non-empty history (the /resume path) is not supported remotely — the daemon
+// owns history — so only the clear case is honored.
+func (r *Remote) Reset(history []llm.Message) {
+	if len(history) == 0 {
+		_ = r.c.Clear(r.id)
+		r.refresh()
+	}
+}
 
 // Answer resolves a pending approval on the daemon session.
 func (r *Remote) Answer(approvalID string, allow bool) {
