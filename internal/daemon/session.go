@@ -284,3 +284,38 @@ func (s *Session) pendingList() []pendingApproval {
 	}
 	return out
 }
+
+// state snapshots everything a remote chat UI needs (history + status).
+func (s *Session) state() *SessionState {
+	s.mu.Lock()
+	a := s.agent
+	sess := s.sess
+	model := s.Model
+	s.mu.Unlock()
+	st := &SessionState{
+		Messages:  sess.Messages(),
+		Tokens:    sess.Tokens(),
+		Model:     model,
+		MaxTokens: a.MaxContextTokens,
+		Perm:      string(a.Perm),
+		Goal:      a.CurrentGoal(),
+	}
+	if a.Provider != nil {
+		st.Provider = a.Provider.Name()
+	}
+	if a.Tools != nil {
+		for _, d := range a.Tools.Definitions() {
+			st.Tools = append(st.Tools, ToolInfo{Name: d.Name, ReadOnly: d.ReadOnly})
+		}
+	}
+	return st
+}
+
+// setPerm/setGoal mutate session state (the agent's setters are mutex-guarded).
+func (s *Session) setPerm(p string) { s.agent.SetPerm(agent.Permission(p)) }
+func (s *Session) setGoal(g string) { s.agent.SetGoal(g) }
+
+// compact summarizes toward target tokens (0 = the agent's default policy).
+func (s *Session) compact(ctx context.Context, target int) (int, int, error) {
+	return s.sess.Compact(ctx, target)
+}

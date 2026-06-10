@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"net"
@@ -117,6 +118,41 @@ func (s *Server) handle(conn net.Conn) {
 			} else {
 				send(Response{Type: "error", Error: "no such session"})
 			}
+		case "state":
+			sess := s.host.Get(req.ID)
+			if sess == nil {
+				send(Response{Type: "error", Error: "no such session"})
+				continue
+			}
+			send(Response{Type: "state", ID: sess.ID, State: sess.state()})
+		case "set":
+			sess := s.host.Get(req.ID)
+			if sess == nil {
+				send(Response{Type: "error", Error: "no such session"})
+				continue
+			}
+			switch {
+			case req.Perm != "":
+				sess.setPerm(req.Perm)
+			case req.Goal != nil:
+				sess.setGoal(*req.Goal)
+			default:
+				send(Response{Type: "error", Error: "set: nothing to set"})
+				continue
+			}
+			send(Response{Type: "ok"})
+		case "compact":
+			sess := s.host.Get(req.ID)
+			if sess == nil {
+				send(Response{Type: "error", Error: "no such session"})
+				continue
+			}
+			before, after, err := sess.compact(context.Background(), req.Target)
+			if err != nil {
+				send(Response{Type: "error", Error: err.Error()})
+				continue
+			}
+			send(Response{Type: "compacted", Before: before, After: after})
 		case "approve":
 			sess := s.host.Get(req.ID)
 			if sess == nil {

@@ -9,11 +9,12 @@ import (
 	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
+	"github.com/avifenesh/eigen/internal/chat"
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/memory"
 	"github.com/avifenesh/eigen/internal/skill"
-	"github.com/avifenesh/eigen/internal/view"
+	"github.com/avifenesh/eigen/internal/tui"
 )
 
 // runDaemon starts the long-lived session host: the real eigen app. It owns
@@ -131,9 +132,10 @@ func isClosedErr(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "closed")
 }
 
-// runAttach connects to the daemon and attaches a view to a session. With no
-// id, it attaches to the most recently updated session, or creates one rooted
-// at the current directory when the daemon has none.
+// runAttach connects to the daemon and attaches the RICH chat TUI to a session
+// (the same UI as a local chat — the backend seam routes everything over the
+// socket). With no id it attaches to the most recently updated session, or
+// creates one rooted at the current directory when the daemon has none.
 func runAttach(id string, cfg config.Config) {
 	c, err := daemon.Dial(daemon.SocketPath())
 	if err != nil {
@@ -141,7 +143,7 @@ func runAttach(id string, cfg config.Config) {
 	}
 	defer c.Close()
 
-	var title, dir string
+	var dir string
 	if id == "" {
 		infos, lerr := c.List()
 		if lerr != nil {
@@ -157,16 +159,33 @@ func runAttach(id string, cfg config.Config) {
 			id, dir = nid, cwd
 		} else {
 			id = infos[0].ID // most recent
-			title, dir = infos[0].Title, infos[0].Dir
+			dir = infos[0].Dir
 		}
 	} else {
 		for _, in := range mustList(c) {
 			if in.ID == id {
-				title, dir = in.Title, in.Dir
+				dir = in.Dir
 			}
 		}
 	}
-	if err := view.Run(c, id, title, dir); err != nil {
+	// Root the view in the session's project dir so @file completion and the
+	// transcript's relative paths make sense.
+	if dir != "" {
+		_ = os.Chdir(dir)
+	}
+	backend, err := chat.NewRemote(c, id)
+	if err != nil {
+		fail(err)
+	}
+	skills := skill.Discover(skillDirs()...)
+	mem, _ := memory.Open(dir)
+	if _, err := tui.Run(backend, tui.Options{
+		Provider:      backend.ProviderName(),
+		Model:         backend.ModelID(),
+		Memory:        mem,
+		Skills:        skills,
+		NoSessionFile: true,
+	}); err != nil {
 		fail(err)
 	}
 }

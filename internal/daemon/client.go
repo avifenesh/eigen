@@ -18,8 +18,9 @@ type Client struct {
 	scanner *bufio.Scanner
 
 	// replies receives non-event responses (ok/error/sessions/attached) in
-	// request order; events fan out to the attached handler.
+	// request order; events queue to eventLoop for the attached handler.
 	replies chan Response
+	events  chan Response
 	onEvent func(WireEvent, bool) // bool = replay
 	done    chan struct{}
 }
@@ -37,30 +38,45 @@ func Dial(sockPath string) (*Client, error) {
 	c := &Client{
 		conn:    conn,
 		replies: make(chan Response, 16),
+		events:  make(chan Response, 1024),
 		done:    make(chan struct{}),
 	}
 	sc := bufio.NewScanner(conn)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	c.scanner = sc
 	go c.readLoop()
+	go c.eventLoop()
 	return c, nil
+}
+
+// eventLoop delivers events to the handler OFF the read loop, so a handler
+// that issues requests (e.g. answering an approval) cannot deadlock the
+// connection (the read loop must stay free to route the reply).
+func (c *Client) eventLoop() {
+	for r := range c.events {
+		c.mu.Lock()
+		h := c.onEvent
+		c.mu.Unlock()
+		if h != nil && r.Event != nil {
+			h(*r.Event, r.Replay)
+		}
+	}
 }
 
 // readLoop routes incoming lines: events to the handler, everything else to
 // the replies channel.
 func (c *Client) readLoop() {
 	defer close(c.done)
+	defer close(c.events)
 	for c.scanner.Scan() {
 		var r Response
 		if err := json.Unmarshal(c.scanner.Bytes(), &r); err != nil {
 			continue
 		}
 		if r.Type == "event" {
-			c.mu.Lock()
-			h := c.onEvent
-			c.mu.Unlock()
-			if h != nil && r.Event != nil {
-				h(*r.Event, r.Replay)
+			select {
+			case c.events <- r:
+			default: // a slow handler must not stall the connection
 			}
 			continue
 		}
@@ -156,4 +172,37 @@ func (c *Client) Remove(id string) error {
 func (c *Client) Approve(sessionID, approvalID string, allow bool) error {
 	_, err := c.request(Request{Op: "approve", ID: sessionID, Approval: approvalID, Allow: allow})
 	return err
+}
+
+// State fetches a session's full snapshot (history + model/perm/goal/tools).
+func (c *Client) State(sessionID string) (*SessionState, error) {
+	r, err := c.request(Request{Op: "state", ID: sessionID})
+	if err != nil {
+		return nil, err
+	}
+	if r.State == nil {
+		return nil, fmt.Errorf("empty state")
+	}
+	return r.State, nil
+}
+
+// SetPerm changes a session's permission posture.
+func (c *Client) SetPerm(sessionID, perm string) error {
+	_, err := c.request(Request{Op: "set", ID: sessionID, Perm: perm})
+	return err
+}
+
+// SetGoal sets (or clears, with "") a session's goal.
+func (c *Client) SetGoal(sessionID, goal string) error {
+	_, err := c.request(Request{Op: "set", ID: sessionID, Goal: &goal})
+	return err
+}
+
+// Compact summarizes a session's conversation toward target tokens.
+func (c *Client) Compact(sessionID string, target int) (before, after int, err error) {
+	r, err := c.request(Request{Op: "compact", ID: sessionID, Target: target})
+	if err != nil {
+		return 0, 0, err
+	}
+	return r.Before, r.After, nil
 }

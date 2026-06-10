@@ -83,8 +83,13 @@ type statusSeg struct {
 // statusBarParts assembles the colored status segments.
 func (m *model) statusBarParts() []statusSeg {
 	segs := []statusSeg{{"eigen", styleAccent.Bold(true)}}
-	if m.backend != nil && m.backend.Provider() != nil {
-		segs = append(segs, statusSeg{modelShort(m.backend.Provider().Name()), styleUser})
+	if m.backend != nil {
+		// ModelID covers remote backends too (no live provider handle there).
+		if id := m.backend.ModelID(); id != "" {
+			segs = append(segs, statusSeg{modelShort(id), styleUser})
+		} else if p := m.backend.Provider(); p != nil {
+			segs = append(segs, statusSeg{modelShort(p.Name()), styleUser})
+		}
 	}
 	if m.backend != nil {
 		// perm: green when gated (safe), amber when auto (runs tools freely).

@@ -316,6 +316,14 @@ func (m *model) text(role, s string) *block {
 	return m.push(&block{kind: blockText, role: role, body: sb(s)})
 }
 
+// sessionPathFor picks the local transcript path ("" = no local autosave).
+func sessionPathFor(o Options) string {
+	if o.NoSessionFile {
+		return ""
+	}
+	return defaultSessionPath()
+}
+
 // autosave persists the current conversation to the session file. It is safe
 // to call repeatedly and never panics: a save failure must not crash the UI.
 // It also writes a sidecar meta file recording the live config (provider,
@@ -1154,6 +1162,9 @@ type Options struct {
 	EventWrap func(agent.EventSink) agent.EventSink
 	// HookRunner fires session-lifecycle hooks (start/stop/resume). Nil = none.
 	HookRunner *hook.Runner
+	// NoSessionFile disables the local transcript autosave (daemon-hosted
+	// sessions: the daemon owns persistence; a local copy would duplicate it).
+	NoSessionFile bool
 }
 
 // Router is the auto-router surface the TUI needs: toggle, status, and routing
@@ -1217,7 +1228,7 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 		state:          stInput,
 		initialTask:    initialTask,
 		srcDir:         eigenSrcDir(),
-		sessionPath:    defaultSessionPath(),
+		sessionPath:    sessionPathFor(o),
 		store:          store,
 		speaker:        speech.Detect(),
 		clip:           clipboard.Detect(),
@@ -1241,6 +1252,11 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 	}
 	if m.idleMinutes <= 0 {
 		m.idleMinutes = 5
+	}
+	if len(history) == 0 {
+		// Attaching to a backend with existing history (a daemon session):
+		// render what's already there.
+		history = backend.Messages()
 	}
 	if len(history) > 0 {
 		renderHistory(m, history)

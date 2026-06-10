@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/avifenesh/eigen/internal/agent"
+	"github.com/avifenesh/eigen/internal/llm"
 )
 
 // Builder constructs an agent rooted at dir with the given model (empty = the
@@ -14,23 +15,50 @@ type Builder func(dir, model string) (*agent.Agent, func(), error)
 
 // Request is a view→daemon command (line-delimited JSON over the socket).
 type Request struct {
-	Op       string `json:"op"`                 // list | new | attach | input | interrupt | remove | approve | ping
-	ID       string `json:"id,omitempty"`       // session id (attach/input/interrupt/remove/approve)
+	Op       string `json:"op"`                 // list | new | attach | input | interrupt | remove | approve | state | set | compact | ping
+	ID       string `json:"id,omitempty"`       // session id
 	Dir      string `json:"dir,omitempty"`      // new: working directory
-	Model    string `json:"model,omitempty"`    // new: model
+	Model    string `json:"model,omitempty"`    // new / set: model id
 	Text     string `json:"text,omitempty"`     // input: the message
 	Approval string `json:"approval,omitempty"` // approve: pending approval id
 	Allow    bool   `json:"allow,omitempty"`    // approve: the verdict
+	// set: exactly one of these mutates session state
+	Perm string  `json:"perm,omitempty"`
+	Goal *string `json:"goal,omitempty"` // pointer: empty string clears the goal
+	// compact: target tokens (0 = backend default)
+	Target int `json:"target,omitempty"`
 }
 
 // Response is a daemon→view message. Type discriminates the payload.
 type Response struct {
-	Type     string        `json:"type"` // ok | error | sessions | attached | event
+	Type     string        `json:"type"` // ok | error | sessions | attached | event | state | compacted
 	Error    string        `json:"error,omitempty"`
 	ID       string        `json:"id,omitempty"`       // session id (new/attached)
 	Sessions []SessionInfo `json:"sessions,omitempty"` // list
 	Event    *WireEvent    `json:"event,omitempty"`    // streamed agent event
 	Replay   bool          `json:"replay,omitempty"`   // event is from the replay buffer
+	State    *SessionState `json:"state,omitempty"`    // state op result
+	Before   int           `json:"before,omitempty"`   // compact result (message counts)
+	After    int           `json:"after,omitempty"`
+}
+
+// SessionState is the snapshot a remote chat UI needs to render history and
+// status: the conversation plus model/perm/goal/budget/tools.
+type SessionState struct {
+	Messages  []llm.Message `json:"messages"`
+	Tokens    int           `json:"tokens"`
+	Model     string        `json:"model"`
+	Provider  string        `json:"provider"`
+	MaxTokens int           `json:"max_tokens"`
+	Perm      string        `json:"perm"`
+	Goal      string        `json:"goal"`
+	Tools     []ToolInfo    `json:"tools,omitempty"`
+}
+
+// ToolInfo mirrors chat.ToolInfo over the wire.
+type ToolInfo struct {
+	Name     string `json:"name"`
+	ReadOnly bool   `json:"read_only"`
 }
 
 // WireEvent is agent.Event flattened for the socket (kind as a string).
