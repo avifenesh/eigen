@@ -2412,3 +2412,21 @@ func TestReviewCommandSubmits(t *testing.T) {
 		t.Fatalf("review prompt wrong: %q", got)
 	}
 }
+
+func TestVoiceToggleUnavailable(t *testing.T) {
+	m := testModel(t)
+	m.stt = nil // no STT
+	m.toggleVoice()
+	if m.voiceOn {
+		t.Fatal("voice must not turn on without STT")
+	}
+	found := false
+	for _, b := range m.blocks {
+		if strings.Contains(b.body, "voice input unavailable") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("should explain why voice is unavailable")
+	}
+}

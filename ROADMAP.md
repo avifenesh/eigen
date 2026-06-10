@@ -110,9 +110,14 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
    still wins. `eigen workspace status|build` reports/installs it (cargo build
    from EIGEN_WORKSPACE_SRC or ~/projects/agent-workspace-linux → ~/.local/bin).
    It's a gpui Rust binary so it runs as a subprocess MCP, not linked in.)*
-9. **Conversation mode** — voice conversation over the chat: STT for spoken input
-   + TTS for spoken replies (builds on the existing read-aloud/speech plumbing).
-   Not small — a full audio in/out loop.
+9. **Conversation mode** — *(shipped: internal/voice — STT (arecord/parecord →
+   whisper.cpp, auto-detected; EIGEN_WHISPER_BIN/MODEL, EIGEN_VOICE_RECORD_CMD)
+   + TTS (readd/espeak-ng/say; EIGEN_VOICE_TTS_CMD). /voice toggles conversation
+   mode, ctrl+t/alt+t push-to-talk records→transcribes→submits a turn, and each
+   assistant answer is spoken (cancelable — a new utterance interrupts). Verified
+   live on this host (whisper + readd both detected). Reuses the codex-desktop-
+   linux conversation-mode design (VAD/interrupt logic) adapted to the TUI;
+   continuous auto-listen could replace push-to-talk later.)*
 10. **Auto-router** — *(shipped: opt-in per-task model selection. Policy
     (internal/llm/router.go): among CAPABLE candidates (required search/vision
     + context window) that are GOOD ENOUGH (quality ≥ difficulty floor), pick

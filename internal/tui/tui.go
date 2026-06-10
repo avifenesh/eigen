@@ -24,6 +24,7 @@ import (
 	"github.com/avifenesh/eigen/internal/skill"
 	"github.com/avifenesh/eigen/internal/speech"
 	"github.com/avifenesh/eigen/internal/transcript"
+	"github.com/avifenesh/eigen/internal/voice"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -171,6 +172,12 @@ type model struct {
 
 	// copy-to-clipboard support.
 	clip clipIface
+
+	// voice conversation mode: STT for spoken input, TTS for spoken replies.
+	stt         voice.STT
+	tts         voice.TTS
+	voiceOn     bool               // conversation mode active
+	voiceCancel context.CancelFunc // cancels in-flight TTS (interrupt)
 
 	// pendingImages are clipboard/paste-staged images attached to the next
 	// message (vision models only).
@@ -710,6 +717,12 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			// it for the next message (text paste is handled by the textarea).
 			m.pasteImage()
 			return m, nil
+		case "ctrl+t", "alt+t":
+			// Push-to-talk: record a spoken utterance and submit it.
+			if m.voiceOn && m.state == stInput {
+				return m, m.listen()
+			}
+			return m, nil
 		case "ctrl+a", "alt+a":
 			// Quick toggle of the permission posture (gated ↔ auto) without
 			// typing /perm. "a" = auto/approval mode.
@@ -910,6 +923,19 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		m.ping("approval needed: " + msg.name)
 		m.relayout()
 		return m, nil
+
+	case voiceSpokenMsg:
+		m.status = ""
+		if msg.err != nil {
+			m.note("voice: " + msg.err.Error())
+			return m, nil
+		}
+		if msg.text == "" {
+			m.note("voice: nothing heard")
+			return m, nil
+		}
+		// Submit the transcript as a normal turn (spoken input → message).
+		return m, m.submit(msg.text)
 
 	case turnDoneMsg:
 		if msg.err != nil {
@@ -1181,6 +1207,8 @@ func Run(a *agent.Agent, o Options) (Result, error) {
 		store:          store,
 		speaker:        speech.Detect(),
 		clip:           clipboard.Detect(),
+		stt:            voice.DetectSTT(),
+		tts:            voice.DetectTTS(),
 		provName:       o.Provider,
 		modelID:        o.Model,
 		newProvider:    llm.New,

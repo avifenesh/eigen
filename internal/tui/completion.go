@@ -68,6 +68,7 @@ var slashCommands = []slashCmd{
 	{"/config", "show or set persistent defaults (/config <key> <value>)"},
 	{"/route", "toggle the auto-router (per-task model selection)"},
 	{"/review", "cross-vendor review of recent work (GPT⇄Claude)"},
+	{"/voice", "toggle conversation mode (speak input ctrl+t, hear replies)"},
 	{"/skills", "list skills, or /skills <name> to preview one"},
 	{"/tools", "list available tools"},
 	{"/find", "search the transcript"},
