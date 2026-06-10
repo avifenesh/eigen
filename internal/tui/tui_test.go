@@ -1967,3 +1967,38 @@ func TestRefreshCtxProactiveNudgeFiresOnce(t *testing.T) {
 		t.Fatal("nudge flag should re-arm when usage drops below the threshold")
 	}
 }
+
+func TestGoalCommand(t *testing.T) {
+	m := testModel(t)
+	m.command("/goal ship the v2 API")
+	if got := m.a.CurrentGoal(); got != "ship the v2 API" {
+		t.Fatalf("goal not set, got %q", got)
+	}
+	found := false
+	for _, b := range m.blocks {
+		if b.kind == blockNote && strings.Contains(b.body, "goal → ship the v2 API") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("setting a goal should note it")
+	}
+
+	// Bare /goal shows it.
+	m.command("/goal")
+	found = false
+	for _, b := range m.blocks {
+		if b.kind == blockNote && strings.Contains(b.body, "goal: ship the v2 API") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("bare /goal should show the current goal")
+	}
+
+	// Clear.
+	m.command("/goal clear")
+	if m.a.CurrentGoal() != "" {
+		t.Fatal("/goal clear should unset the goal")
+	}
+}

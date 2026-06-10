@@ -640,3 +640,32 @@ func (p *alwaysOverflowProvider) Name() string { return "always-overflow" }
 func (p *alwaysOverflowProvider) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
 	return nil, errors.New("prompt is too long")
 }
+
+func TestGoalInjectedIntoSystemPerStep(t *testing.T) {
+	cap := &systemCapturingProvider{}
+	a := &Agent{Provider: cap, Tools: mustReg(t), Perm: PermAuto}
+	a.SetGoal("ship the parser rewrite")
+	s := a.NewSession()
+	if _, err := s.Send(context.Background(), "hi"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(cap.system, "CURRENT GOAL") || !strings.Contains(cap.system, "ship the parser rewrite") {
+		t.Fatalf("goal should be injected into the system prompt:\n%s", cap.system)
+	}
+	// Clearing the goal removes it next turn.
+	a.SetGoal("")
+	if _, err := s.Send(context.Background(), "again"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(cap.system, "CURRENT GOAL") {
+		t.Fatal("cleared goal must not appear in the system prompt")
+	}
+}
+
+type systemCapturingProvider struct{ system string }
+
+func (p *systemCapturingProvider) Name() string { return "syscap" }
+func (p *systemCapturingProvider) Complete(_ context.Context, req llm.Request) (*llm.Response, error) {
+	p.system = req.System
+	return &llm.Response{Text: "ok"}, nil
+}

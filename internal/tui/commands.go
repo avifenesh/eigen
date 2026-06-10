@@ -56,7 +56,7 @@ func (m *model) applyResumed(msgs []llm.Message) {
 // wait until the turn finishes (press esc to interrupt).
 func safeWhileRunning(name string) bool {
 	switch name {
-	case "/effort", "/search", "/perm", "/model", "/help",
+	case "/effort", "/search", "/perm", "/model", "/help", "/goal",
 		"/skills", "/tools", "/find", "/copy", "/read":
 		return true
 	default:
@@ -71,7 +71,7 @@ func (m *model) command(line string) tea.Cmd {
 	arg := strings.TrimSpace(strings.TrimPrefix(line, name))
 	switch name {
 	case "/help":
-		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /skills  /tools  /find  /copy  /read  /rebuild  /quit")
+		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /skills  /tools  /find  /copy  /read  /rebuild  /quit")
 		m.note("keys: / commands · @ files · ↑↓ history · select ctrl+p/n (or alt+↑/↓) · tab expand · drag select+copy · copy ctrl+y/alt+y · perm ctrl+a/alt+a · effort ctrl+e/alt+r · model ctrl+o/alt+m · pgup/pgdn scroll")
 		m.note("multiplexer note: zellij/tmux capture ctrl+p/n/o — use the alt+… keys (alt+↑/↓ select, alt+m model, alt+r effort, alt+a perm, alt+y copy)")
 		m.note("while running: enter queues a message · esc interrupts · settings commands (/effort /perm /model /search) run immediately")
@@ -137,6 +137,23 @@ func (m *model) command(line string) tea.Cmd {
 			m.note(fmt.Sprintf("permission posture: %s  (use /perm gated|auto to change)", m.a.Perm))
 		default:
 			m.push(&block{kind: blockNote, isErr: true, body: sb("unknown posture " + arg + " (want gated|auto)")})
+		}
+	case "/goal":
+		switch arg {
+		case "":
+			if g := m.a.CurrentGoal(); g != "" {
+				m.note("goal: " + g + "   (/goal clear to unset)")
+			} else {
+				m.note("no goal set  (/goal <text> to set a persistent north star)")
+			}
+		case "clear", "none", "off":
+			m.a.SetGoal("")
+			m.saveMeta()
+			m.note("goal cleared")
+		default:
+			m.a.SetGoal(arg)
+			m.saveMeta()
+			m.note("goal → " + arg)
 		}
 	case "/effort":
 		es, ok := m.a.Provider.(llm.EffortSetter)

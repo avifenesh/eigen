@@ -310,6 +310,7 @@ func (m *model) saveMeta() {
 		meta.Perm = string(m.a.Perm)
 		meta.Effort = liveEffort(m.a.Provider)
 		meta.Search = liveSearch(m.a.Provider)
+		meta.Goal = m.a.CurrentGoal()
 	}
 	_ = transcript.SaveMeta(m.sessionPath, meta)
 }

@@ -17,6 +17,7 @@ type SessionMeta struct {
 	Perm     string `json:"perm,omitempty"`
 	Effort   string `json:"effort,omitempty"`
 	Search   string `json:"search,omitempty"`
+	Goal     string `json:"goal,omitempty"`
 }
 
 // metaPath returns the sidecar meta path for a session JSONL file.

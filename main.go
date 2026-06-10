@@ -110,6 +110,7 @@ func main() {
 	// continues exactly as it was (same provider/model/perm/effort/search),
 	// unless the user explicitly overrode a flag this run. Only eigen-native
 	// sessions carry a sidecar meta; foreign transcripts have none.
+	resumedGoal := ""
 	if *resumeFile != "" {
 		set := map[string]bool{}
 		flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
@@ -142,6 +143,7 @@ func main() {
 						os.Setenv("EIGEN_GLM_SEARCH", meta.Search)
 					}
 				}
+				resumedGoal = meta.Goal
 			}
 		}
 	}
@@ -291,6 +293,7 @@ func main() {
 		Compactor:        llm.CompactorChain(smallCompactor, llm.NewCompactor(prov)),
 		ExtraSystem:      skills.Catalog(),
 		Memory:           memory.Sections(gmem, mem),
+		Goal:             resumedGoal,
 	}
 
 	// Session store: discover all sources (lazy) and title untitled ones in the

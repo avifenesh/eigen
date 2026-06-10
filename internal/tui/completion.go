@@ -63,6 +63,7 @@ var slashCommands = []slashCmd{
 	{"/effort", "show or set reasoning effort (minimal|low|medium|high|xhigh)"},
 	{"/search", "show or set grok live search (off|auto|on)"},
 	{"/perm", "show or set the permission posture"},
+	{"/goal", "show, set, or clear a persistent goal (north star)"},
 	{"/skills", "list skills, or /skills <name> to preview one"},
 	{"/tools", "list available tools"},
 	{"/find", "search the transcript"},

@@ -115,6 +115,12 @@ type Agent struct {
 	// agent recalls prior learnings across sessions.
 	Memory string
 
+	// Goal, when set, is a persistent north-star injected into the system
+	// prompt every step. Unlike a user message it can never be paraphrased away
+	// by compaction or buried under tool output — the agent re-reads it each
+	// turn. Guarded by mu (live-settable via /goal).
+	Goal string
+
 	// Persist, if set, is called with the full conversation after every message
 	// is appended (from the same goroutine that owns the session), so a session
 	// can be autosaved continuously and race-free.
@@ -169,6 +175,20 @@ func (a *Agent) SetPerm(p Permission) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.Perm = p
+}
+
+// SetGoal sets or clears (empty string) the persistent goal live.
+func (a *Agent) SetGoal(g string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.Goal = g
+}
+
+// CurrentGoal returns the goal (live-safe read).
+func (a *Agent) CurrentGoal() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.Goal
 }
 
 // SetMaxContextTokens adjusts the context budget live.
@@ -433,8 +453,14 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
+		// The goal is read per step (live-settable via /goal) and appended
+		// last so it stays the freshest instruction in the system prompt.
+		sys := system
+		if g := a.CurrentGoal(); g != "" {
+			sys += "\n\nCURRENT GOAL (persistent; the user set this as the north star — keep every action aligned with it until it changes):\n" + g
+		}
 		req := llm.Request{
-			System:   system,
+			System:   sys,
 			Messages: s.msgs,
 			Tools:    specs,
 		}

@@ -10,7 +10,7 @@ func TestSessionMetaRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	sess := filepath.Join(dir, "s.eigen.jsonl")
 
-	want := SessionMeta{Provider: "glm", Model: "glm-4.6", Perm: "auto", Effort: "high", Search: "on"}
+	want := SessionMeta{Provider: "glm", Model: "glm-4.6", Perm: "auto", Effort: "high", Search: "on", Goal: "ship v2"}
 	if err := SaveMeta(sess, want); err != nil {
 		t.Fatalf("SaveMeta: %v", err)
 	}
