@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -133,17 +134,25 @@ type anthropicTool struct {
 	InputSchema json.RawMessage `json:"input_schema"`
 }
 
-// anthropicContent is one block in a message's content array (text / tool_use /
-// tool_result). Only the fields for the active type are set.
+// anthropicContent is one block in a message's content array (text / image /
+// tool_use / tool_result). Only the fields for the active type are set.
 type anthropicContent struct {
-	Type      string          `json:"type"`
-	Text      string          `json:"text,omitempty"`
-	ID        string          `json:"id,omitempty"`          // tool_use
-	Name      string          `json:"name,omitempty"`        // tool_use
-	Input     json.RawMessage `json:"input,omitempty"`       // tool_use
-	ToolUseID string          `json:"tool_use_id,omitempty"` // tool_result
-	Content   string          `json:"content,omitempty"`     // tool_result (text)
-	IsError   bool            `json:"is_error,omitempty"`    // tool_result
+	Type      string             `json:"type"`
+	Text      string             `json:"text,omitempty"`
+	Source    *anthropicImageSrc `json:"source,omitempty"`      // image
+	ID        string             `json:"id,omitempty"`          // tool_use
+	Name      string             `json:"name,omitempty"`        // tool_use
+	Input     json.RawMessage    `json:"input,omitempty"`       // tool_use
+	ToolUseID string             `json:"tool_use_id,omitempty"` // tool_result
+	Content   string             `json:"content,omitempty"`     // tool_result (text)
+	IsError   bool               `json:"is_error,omitempty"`    // tool_result
+}
+
+// anthropicImageSrc is the base64 image source for an "image" content block.
+type anthropicImageSrc struct {
+	Type      string `json:"type"`       // "base64"
+	MediaType string `json:"media_type"` // image/png, image/jpeg, image/webp, image/gif
+	Data      string `json:"data"`       // base64-encoded image bytes
 }
 
 type anthropicMessage struct {
@@ -297,7 +306,26 @@ func anthropicMessages(req Request) []anthropicMessage {
 		switch m.Role {
 		case RoleUser:
 			flush()
-			out = append(out, anthropicMessage{Role: "user", Content: []anthropicContent{{Type: "text", Text: m.Text}}})
+			content := []anthropicContent{}
+			if m.Text != "" {
+				content = append(content, anthropicContent{Type: "text", Text: m.Text})
+			}
+			for _, img := range m.Images {
+				if isAnthropicImageType(img.MediaType) {
+					content = append(content, anthropicContent{
+						Type: "image",
+						Source: &anthropicImageSrc{
+							Type:      "base64",
+							MediaType: img.MediaType,
+							Data:      base64.StdEncoding.EncodeToString(img.Data),
+						},
+					})
+				}
+			}
+			if len(content) == 0 {
+				content = append(content, anthropicContent{Type: "text", Text: ""})
+			}
+			out = append(out, anthropicMessage{Role: "user", Content: content})
 		case RoleAssistant:
 			flush()
 			var content []anthropicContent
@@ -331,6 +359,15 @@ func anthropicMessages(req Request) []anthropicMessage {
 	}
 	flush()
 	return out
+}
+
+// isAnthropicImageType reports whether a media type is one Anthropic accepts.
+func isAnthropicImageType(mt string) bool {
+	switch mt {
+	case "image/png", "image/jpeg", "image/webp", "image/gif":
+		return true
+	}
+	return false
 }
 
 // anthropicTools maps neutral tool specs to native tool definitions.

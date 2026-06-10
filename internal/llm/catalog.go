@@ -33,6 +33,11 @@ type ModelInfo struct {
 	// Search reports the model supports server-side live search (xAI Grok Live
 	// Search over web + X). When set, the Grok provider enables search by default.
 	Search bool
+
+	// Vision reports the model accepts image inputs (Message.Images). When set,
+	// the TUI attaches dropped/referenced image files and the provider
+	// serializes them as native image blocks.
+	Vision bool
 }
 
 // Catalog is the set of models eigen knows about. It is additive: an unknown
@@ -54,16 +59,16 @@ var Catalog = []ModelInfo{
 	// opus-4-8, prompt caching, and the 1M-context beta (on by default; force
 	// off with EIGEN_CONVERSE_1M=0).
 	{ID: "global.anthropic.claude-fable-5", Provider: "converse", ContextWindow: 200000,
-		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high"},
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", Vision: true},
 	{ID: "us.anthropic.claude-opus-4-8", Provider: "converse", ContextWindow: 200000,
-		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high"},
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", Vision: true},
 	{ID: "us.anthropic.claude-sonnet-4-6", Provider: "converse", ContextWindow: 200000,
-		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, ThinkingBudget: 8192},
-	{ID: "us.anthropic.claude-opus-4-1", Provider: "converse", ContextWindow: 200000, Cache: true},
-	{ID: "us.anthropic.claude-3-5-sonnet", Provider: "converse", ContextWindow: 200000, Cache: true},
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, ThinkingBudget: 8192, Vision: true},
+	{ID: "us.anthropic.claude-opus-4-1", Provider: "converse", ContextWindow: 200000, Cache: true, Vision: true},
+	{ID: "us.anthropic.claude-3-5-sonnet", Provider: "converse", ContextWindow: 200000, Cache: true, Vision: true},
 	// Haiku 4.5: the small/fast/cheap model eigen uses for background chores
 	// (session titling, dreaming, skill vulnerability scans).
-	{ID: "us.anthropic.claude-haiku-4-5", Provider: "converse", ContextWindow: 200000, Cache: true},
+	{ID: "us.anthropic.claude-haiku-4-5", Provider: "converse", ContextWindow: 200000, Cache: true, Vision: true},
 
 	// Native Anthropic API (api.anthropic.com), authenticated with a Claude
 	// Code OAuth login (~/.claude/.credentials.json) or ANTHROPIC_API_KEY.
@@ -71,12 +76,12 @@ var Catalog = []ModelInfo{
 	// — the same catalog Claude Code drives. Adaptive thinking (Effort) like the
 	// Bedrock opus entries; 1M context via beta.
 	{ID: "claude-fable-5", Provider: "anthropic", ContextWindow: 200000,
-		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high"},
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", Vision: true},
 	{ID: "claude-opus-4-1-20250805", Provider: "anthropic", ContextWindow: 200000,
-		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high"},
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", Vision: true},
 	{ID: "claude-sonnet-4-5-20250929", Provider: "anthropic", ContextWindow: 200000,
-		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, ThinkingBudget: 8192},
-	{ID: "claude-opus-4-20250514", Provider: "anthropic", ContextWindow: 200000, Cache: true, Reasoning: true, Effort: "high"},
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, ThinkingBudget: 8192, Vision: true},
+	{ID: "claude-opus-4-20250514", Provider: "anthropic", ContextWindow: 200000, Cache: true, Reasoning: true, Effort: "high", Vision: true},
 
 	// Local llama (OpenAI-compatible server). Window is modest by default.
 	{ID: "local", Provider: "llama", ContextWindow: 40000},
@@ -190,6 +195,14 @@ func Lookup(model string) (ModelInfo, bool) {
 		}
 	}
 	return ModelInfo{}, false
+}
+
+// HasVision reports whether a model accepts image inputs.
+func HasVision(model string) bool {
+	if m, ok := Lookup(model); ok {
+		return m.Vision
+	}
+	return false
 }
 
 // EffectiveContextWindow returns the window eigen should budget against for a

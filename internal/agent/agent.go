@@ -396,6 +396,13 @@ func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 // by default (it ends when the model stops calling tools); a positive
 // a.MaxSteps imposes an optional runaway cap, and canceling ctx stops it.
 func (s *Session) Send(ctx context.Context, task string) (string, error) {
+	return s.SendWith(ctx, task, nil)
+}
+
+// SendWith is Send with attached images (vision models). Images are dropped
+// from the message when the active model has no vision support, so a non-vision
+// model never receives a block it can't handle.
+func (s *Session) SendWith(ctx context.Context, task string, images []llm.Image) (string, error) {
 	a := s.a
 	if a.provider() == nil {
 		return "", fmt.Errorf("agent: nil provider")
@@ -403,7 +410,7 @@ func (s *Session) Send(ctx context.Context, task string) (string, error) {
 	if a.Tools == nil {
 		return "", fmt.Errorf("agent: nil tools")
 	}
-	s.msgs = append(s.msgs, llm.Message{Role: llm.RoleUser, Text: task})
+	s.msgs = append(s.msgs, llm.Message{Role: llm.RoleUser, Text: task, Images: images})
 	return s.drive(ctx)
 }
 

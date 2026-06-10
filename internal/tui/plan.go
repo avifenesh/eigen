@@ -109,6 +109,9 @@ func (m *model) statusBarParts() []statusSeg {
 	if m.loopPrompt != "" {
 		segs = append(segs, statusSeg{"loop=" + m.loopEvery.String(), styleAsk})
 	}
+	if llm.HasVision(m.modelID) {
+		segs = append(segs, statusSeg{"vision", styleCode})
+	}
 	if m.readAloud {
 		segs = append(segs, statusSeg{"read-aloud", styleStatus})
 	}

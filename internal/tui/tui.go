@@ -461,6 +461,18 @@ func (m *model) submit(task string) tea.Cmd {
 	m.comp = completion{kind: compNone}
 	m.streamedText = false
 	m.idleGen++ // invalidate any pending idle-dream timer
+	// Vision: attach referenced image files when the active model supports it.
+	var images []llm.Image
+	if m.a != nil && m.a.Provider != nil && llm.HasVision(m.modelID) {
+		imgs, notes := extractImages(task)
+		images = imgs
+		for _, n := range notes {
+			m.note(n)
+		}
+		if len(images) > 0 {
+			m.note(fmt.Sprintf("attached %d image(s)", len(images)))
+		}
+	}
 	// Keep the input focused so the user can steer/queue while the turn runs.
 	m.relayout()
 	tctx, cancel := context.WithCancel(m.ctx)
@@ -473,7 +485,7 @@ func (m *model) submit(task string) tea.Cmd {
 				msg = turnDoneMsg{err: fmt.Errorf("internal panic: %v", r)}
 			}
 		}()
-		_, err := m.session.Send(tctx, task)
+		_, err := m.session.SendWith(tctx, task, images)
 		return turnDoneMsg{err: err}
 	})
 }

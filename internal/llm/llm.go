@@ -39,6 +39,11 @@ type Message struct {
 	Role Role
 	Text string
 
+	// Images are visual inputs attached to a user message (vision models only).
+	// Providers that support vision serialize them as native image blocks;
+	// others ignore them. Only meaningful on RoleUser.
+	Images []Image
+
 	// Reasoning is the model's concise reasoning summary for this turn; it is
 	// carried back across turns to preserve the chain of thought through tool
 	// calls. ReasoningID is the provider's id for that reasoning item, if any.
@@ -55,6 +60,13 @@ type Message struct {
 	// ToolError marks a RoleTool result as a failure, so providers with a
 	// native tool-result status (e.g. Converse) can signal it to the model.
 	ToolError bool
+}
+
+// Image is a visual input: raw bytes plus the IANA media type. Providers
+// base64-encode Data into their native image-block format.
+type Image struct {
+	MediaType string // e.g. "image/png", "image/jpeg", "image/webp", "image/gif"
+	Data      []byte // raw (un-encoded) image bytes
 }
 
 // Request is a single completion request, normalized across providers.

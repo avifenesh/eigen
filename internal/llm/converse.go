@@ -130,9 +130,21 @@ func (c *Converse) Effort() string { return c.effort }
 
 type converseContent struct {
 	Text       string              `json:"text,omitempty"`
+	Image      *converseImage      `json:"image,omitempty"`
 	ToolUse    *converseToolUse    `json:"toolUse,omitempty"`
 	ToolResult *converseToolResult `json:"toolResult,omitempty"`
 	CachePoint *converseCachePoint `json:"cachePoint,omitempty"`
+}
+
+// converseImage is a Bedrock Converse image block: a format plus raw bytes
+// (the AWS JSON marshals []byte as base64, which is exactly the wire shape).
+type converseImage struct {
+	Format string              `json:"format"` // png | jpeg | gif | webp
+	Source converseImageSource `json:"source"`
+}
+
+type converseImageSource struct {
+	Bytes []byte `json:"bytes"`
 }
 
 // converseCachePoint marks a prompt-caching breakpoint: everything before it in
@@ -337,7 +349,22 @@ func converseMessages(req Request) []converseMessage {
 			}})
 		case RoleUser:
 			flush()
-			out = append(out, converseMessage{Role: "user", Content: []converseContent{{Text: m.Text}}})
+			content := []converseContent{}
+			if m.Text != "" {
+				content = append(content, converseContent{Text: m.Text})
+			}
+			for _, img := range m.Images {
+				if f := converseImageFormat(img.MediaType); f != "" {
+					content = append(content, converseContent{Image: &converseImage{
+						Format: f,
+						Source: converseImageSource{Bytes: img.Data},
+					}})
+				}
+			}
+			if len(content) == 0 {
+				content = append(content, converseContent{Text: ""})
+			}
+			out = append(out, converseMessage{Role: "user", Content: content})
 		case RoleAssistant:
 			flush()
 			var content []converseContent
@@ -365,6 +392,22 @@ func converseMessages(req Request) []converseMessage {
 	}
 	flush()
 	return out
+}
+
+// converseImageFormat maps an IANA media type to a Bedrock image format token,
+// or "" if unsupported.
+func converseImageFormat(mediaType string) string {
+	switch mediaType {
+	case "image/png":
+		return "png"
+	case "image/jpeg", "image/jpg":
+		return "jpeg"
+	case "image/gif":
+		return "gif"
+	case "image/webp":
+		return "webp"
+	}
+	return ""
 }
 
 // converseTools maps neutral tool specs to Converse tool entries. When caching

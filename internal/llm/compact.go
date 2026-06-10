@@ -5,14 +5,19 @@ import "fmt"
 // EstimateTokens is a rough token count (~4 chars/token) for budget decisions.
 func EstimateTokens(msgs []Message) int {
 	chars := 0
+	tokens := 0
 	for _, m := range msgs {
 		chars += len(m.Text) + len(m.Reasoning)
 		for _, tc := range m.ToolCalls {
 			chars += len(tc.Name) + len(tc.Arguments)
 		}
 		chars += 16 // per-message overhead
+		// Images are billed by area, not bytes; without decoding dimensions we
+		// use a flat ~1.2k-token estimate per image (a typical screenshot is
+		// ~1–1.6k), enough to keep the budget honest.
+		tokens += len(m.Images) * 1200
 	}
-	return chars / 4
+	return chars/4 + tokens
 }
 
 // Compact trims a conversation to fit maxTokens by keeping the most recent
