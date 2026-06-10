@@ -94,6 +94,12 @@ func (b *block) header() string {
 	if summary == "" {
 		summary = b.title
 	}
+	// Edit-family tools get +N −M stats in the header so the change size reads
+	// at a glance even when collapsed.
+	switch b.toolName {
+	case "edit", "multiedit", "apply_patch", "write":
+		summary += statsSuffix(b.toolDetail())
+	}
 	return b.statusGlyph() + " " + summary
 }
 
@@ -138,12 +144,10 @@ func toolSummary(name string, args json.RawMessage) string {
 	}
 }
 
-// maxDiffLines bounds how many diff lines an edit block renders.
-const maxDiffLines = 200
-
 // toolDetail returns tool-specific expanded content (plain text). For edit /
-// multiedit it returns a +/- diff derived from the arguments; otherwise "" so
-// the generic result text is used.
+// multiedit it returns a +/- diff derived from the arguments; for apply_patch
+// the patch text with collapsed context; for write an all-added preview.
+// Otherwise "" so the generic result text is used.
 func (b *block) toolDetail() string {
 	if b.kind != blockTool {
 		return ""
@@ -169,88 +173,70 @@ func (b *block) toolDetail() string {
 			return ""
 		}
 		var parts []string
-		for _, e := range a.Edits {
+		for i, e := range a.Edits {
+			if len(a.Edits) > 1 {
+				parts = append(parts, fmt.Sprintf("edit %d/%d:", i+1, len(a.Edits)))
+			}
 			parts = append(parts, diffText(e.Old, e.New))
 		}
 		return strings.Join(parts, "\n")
+	case "apply_patch":
+		var a struct {
+			Patch string `json:"patch"`
+		}
+		if json.Unmarshal(b.toolArgs, &a) != nil || a.Patch == "" {
+			return ""
+		}
+		return normalizePatch(a.Patch)
+	case "write":
+		var a struct {
+			Content string `json:"content"`
+		}
+		if json.Unmarshal(b.toolArgs, &a) != nil || a.Content == "" {
+			return ""
+		}
+		// A write is all additions: render the new content as + lines so it
+		// gets the same diff styling and stats as edits.
+		lines := strings.Split(strings.TrimRight(a.Content, "\n"), "\n")
+		out := make([]string, 0, len(lines)+1)
+		for i, ln := range lines {
+			if i >= maxDiffLines {
+				out = append(out, fmt.Sprintf("⋯ %d more lines ⋯", len(lines)-maxDiffLines))
+				break
+			}
+			out = append(out, "+ "+ln)
+		}
+		return strings.Join(out, "\n")
 	}
 	return ""
 }
 
-// diffText renders old→new as plain +/- prefixed lines (no ANSI, so it is safe
-// to truncate for a collapsed preview). Unchanged lines are kept as context via
-// a line-level LCS. Color is applied later by colorizeDiff.
-func diffText(old, new string) string {
-	o := strings.Split(old, "\n")
-	n := strings.Split(new, "\n")
-	ops := lcsDiff(o, n)
-	var b strings.Builder
-	count := 0
-	for _, op := range ops {
-		if count++; count > maxDiffLines {
+// normalizePatch reformats unified-diff text to the block diff dialect:
+// file headers and hunk markers render as dim context; +/- lines get the
+// standard two-character prefixes so renderDiff styles them.
+func normalizePatch(patch string) string {
+	lines := strings.Split(strings.TrimRight(patch, "\n"), "\n")
+	out := make([]string, 0, len(lines))
+	for i, ln := range lines {
+		if i >= maxDiffLines {
+			out = append(out, fmt.Sprintf("⋯ %d more lines ⋯", len(lines)-maxDiffLines))
 			break
 		}
-		b.WriteString(op + "\n")
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-// lcsDiff returns unified-style lines ("  ctx" / "- removed" / "+ added") using
-// a longest-common-subsequence over lines.
-func lcsDiff(a, b []string) []string {
-	// DP table of LCS lengths.
-	m, n := len(a), len(b)
-	dp := make([][]int, m+1)
-	for i := range dp {
-		dp[i] = make([]int, n+1)
-	}
-	for i := m - 1; i >= 0; i-- {
-		for j := n - 1; j >= 0; j-- {
-			if a[i] == b[j] {
-				dp[i][j] = dp[i+1][j+1] + 1
-			} else if dp[i+1][j] >= dp[i][j+1] {
-				dp[i][j] = dp[i+1][j]
-			} else {
-				dp[i][j] = dp[i][j+1]
-			}
-		}
-	}
-	var out []string
-	i, j := 0, 0
-	for i < m && j < n {
 		switch {
-		case a[i] == b[j]:
-			out = append(out, "  "+a[i])
-			i, j = i+1, j+1
-		case dp[i+1][j] >= dp[i][j+1]:
-			out = append(out, "- "+a[i])
-			i++
+		case strings.HasPrefix(ln, "--- ") || strings.HasPrefix(ln, "+++ ") ||
+			strings.HasPrefix(ln, "@@") || strings.HasPrefix(ln, "diff "):
+			out = append(out, "⋯ "+ln)
+		case strings.HasPrefix(ln, "+"):
+			out = append(out, "+ "+ln[1:])
+		case strings.HasPrefix(ln, "-"):
+			out = append(out, "- "+ln[1:])
+		case strings.HasPrefix(ln, " "):
+			out = append(out, " "+ln)
 		default:
-			out = append(out, "+ "+b[j])
-			j++
+			out = append(out, ln)
 		}
 	}
-	for ; i < m; i++ {
-		out = append(out, "- "+a[i])
-	}
-	for ; j < n; j++ {
-		out = append(out, "+ "+b[j])
-	}
-	return out
-}
-
-// colorizeDiff applies per-line color to +/- prefixed diff text.
-func colorizeDiff(s string) string {
-	lines := strings.Split(s, "\n")
-	for i, ln := range lines {
-		switch {
-		case strings.HasPrefix(ln, "- "):
-			lines[i] = styleErr.Render(ln)
-		case strings.HasPrefix(ln, "+ "):
-			lines[i] = styleStatus.Render(ln)
-		}
-	}
-	return strings.Join(lines, "\n")
+	return strings.Join(out, "\n")
 }
 
 // render returns the block's display text given whether it is the selected
@@ -309,7 +295,7 @@ func (b *block) render(selected bool) string {
 			}
 		} else if full != "" {
 			if isDiff {
-				s.WriteString("\n" + indent(colorizeDiff(full)))
+				s.WriteString("\n" + indent(renderDiff(full)))
 			} else {
 				s.WriteString("\n" + indent(style.Render(full)))
 			}

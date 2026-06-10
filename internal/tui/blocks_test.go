@@ -1,8 +1,13 @@
 package tui
 
 import (
+	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 func TestThinkingBlockCollapsedShowsPreviewOnly(t *testing.T) {
@@ -182,5 +187,122 @@ func TestHeadingLevel(t *testing.T) {
 	}
 	if headingLevel("#no space") != 0 {
 		t.Fatal("heading requires a space after #")
+	}
+}
+
+func TestCollapseContextFoldsLongRuns(t *testing.T) {
+	old := "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nCHANGE\nk"
+	new := "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nCHANGED\nk"
+	out := diffText(old, new)
+	if !strings.Contains(out, "unchanged lines ⋯") {
+		t.Fatalf("long unchanged run should collapse:\n%s", out)
+	}
+	// The two context lines just before the change must survive.
+	if !strings.Contains(out, "  i") || !strings.Contains(out, "  j") {
+		t.Fatalf("context near the change should be kept:\n%s", out)
+	}
+	// The first lines should be folded away.
+	if strings.Contains(out, "  c\n") {
+		t.Fatalf("distant context should be folded:\n%s", out)
+	}
+	if !strings.Contains(out, "- CHANGE") || !strings.Contains(out, "+ CHANGED") {
+		t.Fatalf("the change itself must render:\n%s", out)
+	}
+}
+
+func TestDiffStatsAndHeaderSuffix(t *testing.T) {
+	detail := diffText("a\nb", "a\nB\nc")
+	add, del := diffStats(detail)
+	if add != 2 || del != 1 {
+		t.Fatalf("want +2 −1, got +%d −%d (detail:\n%s)", add, del, detail)
+	}
+	if got := statsSuffix(detail); got != " (+2 −1)" {
+		t.Fatalf("statsSuffix = %q", got)
+	}
+	if got := statsSuffix("  unchanged"); got != "" {
+		t.Fatalf("no-change suffix should be empty, got %q", got)
+	}
+}
+
+func TestEditHeaderShowsStats(t *testing.T) {
+	b := &block{
+		kind: blockTool, toolName: "edit", title: "edit",
+		toolArgs: json.RawMessage(`{"path":"f.go","old_string":"x = 1","new_string":"x = 2"}`),
+	}
+	h := b.header()
+	if !strings.Contains(h, "(+1 −1)") {
+		t.Fatalf("edit header should include stats: %q", h)
+	}
+}
+
+func TestWriteDetailRendersAllAdded(t *testing.T) {
+	b := &block{
+		kind: blockTool, toolName: "write", title: "write",
+		toolArgs: json.RawMessage(`{"path":"f.go","content":"line1\nline2"}`),
+	}
+	d := b.toolDetail()
+	if !strings.Contains(d, "+ line1") || !strings.Contains(d, "+ line2") {
+		t.Fatalf("write detail should show all-added lines:\n%s", d)
+	}
+	if !strings.Contains(b.header(), "(+2 −0)") {
+		t.Fatalf("write header should show +2: %q", b.header())
+	}
+}
+
+func TestApplyPatchDetailNormalizes(t *testing.T) {
+	patch := "--- a/f.go\n+++ b/f.go\n@@ -1,2 +1,2 @@\n context\n-old line\n+new line"
+	b := &block{
+		kind: blockTool, toolName: "apply_patch", title: "apply_patch",
+		toolArgs: json.RawMessage(`{"patch":` + strconv.Quote(patch) + `}`),
+	}
+	d := b.toolDetail()
+	if !strings.Contains(d, "- old line") || !strings.Contains(d, "+ new line") {
+		t.Fatalf("patch +/- lines should normalize:\n%s", d)
+	}
+	if !strings.Contains(d, "⋯ @@") {
+		t.Fatalf("hunk markers should render as dim context:\n%s", d)
+	}
+}
+
+func TestRenderDiffHighlightsChangedSpan(t *testing.T) {
+	// Force a color profile: tests run without a TTY, where lipgloss strips
+	// all styling and the underline assertion would be vacuous.
+	old := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(old)
+
+	// A modified pair with a clear common prefix/suffix should use the
+	// underline span styles.
+	out := renderDiff("- x := compute(a, b)\n+ x := compute(a, c)")
+	if !strings.Contains(out, "\x1b[4") { // underline SGR from the span styles
+		t.Fatalf("changed span should be underlined:\n%q", out)
+	}
+	// Dissimilar pair: no underline (similarity gate).
+	out = renderDiff("- completely different\n+ zzz qqq vvv")
+	if strings.Contains(out, "\x1b[4;") || strings.Contains(out, "\x1b[4m") {
+		t.Fatalf("dissimilar lines should not underline:\n%q", out)
+	}
+}
+
+func TestSplitCommon(t *testing.T) {
+	pre, aMid, bMid, suf := splitCommon("foo(bar)", "foo(baz)")
+	if pre != "foo(ba" || suf != ")" || aMid != "r" || bMid != "z" {
+		t.Fatalf("splitCommon wrong: pre=%q aMid=%q bMid=%q suf=%q", pre, aMid, bMid, suf)
+	}
+	// Identical strings: middles empty.
+	_, aMid, bMid, _ = splitCommon("same", "same")
+	if aMid != "" || bMid != "" {
+		t.Fatalf("identical strings should have empty middles: %q %q", aMid, bMid)
+	}
+}
+
+func TestMultieditDetailNumbersEdits(t *testing.T) {
+	b := &block{
+		kind: blockTool, toolName: "multiedit", title: "multiedit",
+		toolArgs: json.RawMessage(`{"edits":[{"old_string":"a","new_string":"b"},{"old_string":"c","new_string":"d"}]}`),
+	}
+	d := b.toolDetail()
+	if !strings.Contains(d, "edit 1/2:") || !strings.Contains(d, "edit 2/2:") {
+		t.Fatalf("multiedit edits should be numbered:\n%s", d)
 	}
 }
