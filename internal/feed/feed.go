@@ -111,6 +111,9 @@ func score(it Item) int {
 		if strings.Contains(it.Title, "uncommitted") {
 			return 60
 		}
+		if strings.Contains(it.Title, "behind upstream") {
+			return 45
+		}
 		return 50 // unpushed
 	case "memory":
 		return 40

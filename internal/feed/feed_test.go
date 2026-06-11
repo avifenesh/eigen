@@ -208,3 +208,42 @@ func TestTopLimit(t *testing.T) {
 		t.Fatal("nil in, nil out")
 	}
 }
+
+func TestScanGitBehindUpstream(t *testing.T) {
+	// upstream repo with two commits; clone at the first.
+	up := gitRepo(t)
+	os.WriteFile(filepath.Join(up, "f.txt"), []byte("1"), 0o644)
+	run := func(dir string, args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	run(up, "add", ".")
+	run(up, "commit", "-qm", "c1")
+	clone := t.TempDir()
+	run(up, "worktree", "list") // ensure repo valid
+	cmd := exec.Command("git", "clone", "-q", up, clone)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("clone: %v %s", err, out)
+	}
+	os.WriteFile(filepath.Join(up, "f.txt"), []byte("2"), 0o644)
+	run(up, "add", ".")
+	run(up, "commit", "-qm", "c2")
+	run(clone, "fetch", "-q")
+
+	items := scanGit([]string{clone})
+	var found bool
+	for _, it := range items {
+		if strings.Contains(it.Title, "behind upstream by 1") {
+			found = true
+			if it.Task == "" || it.Dir != clone {
+				t.Fatalf("bad item: %+v", it)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("no behind-upstream item: %+v", items)
+	}
+}

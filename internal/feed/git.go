@@ -48,6 +48,17 @@ func scanGit(dirs []string) []Item {
 					"Show me `git log @{u}..HEAD --oneline`, summarize what they contain, and ask whether to push.", n),
 			})
 		}
+		if n := behind(dir); n > 0 {
+			items = append(items, Item{
+				Kind:   "git",
+				Title:  fmt.Sprintf("%s: behind upstream by %d commit(s)", name, n),
+				Detail: "the remote moved — review + integrate",
+				Dir:    dir,
+				Task: fmt.Sprintf("This checkout is %d commits behind its upstream. "+
+					"Run `git fetch` then `git log --oneline HEAD..@{u}` and summarize what changed upstream. "+
+					"If my working tree is clean and the changes look safe, rebase/pull; otherwise tell me what conflicts to expect.", n),
+			})
+		}
 	}
 	return items
 }
@@ -64,6 +75,20 @@ func dirtyFiles(dir string) int {
 		return 0
 	}
 	return len(strings.Split(strings.TrimRight(out, "\n"), "\n"))
+}
+
+// behind returns the count of upstream commits not in HEAD (0 when no
+// upstream). Reads only local refs — the feed scan must stay fast and
+// offline; a stale remote-tracking ref just means the count lags until the
+// next fetch (cron, IDE, or any pull updates it).
+func behind(dir string) int {
+	out, err := gitIn(dir, "rev-list", "--count", "HEAD..@{u}")
+	if err != nil {
+		return 0
+	}
+	n := 0
+	fmt.Sscanf(strings.TrimSpace(out), "%d", &n)
+	return n
 }
 
 // unpushed returns the count of commits ahead of upstream (0 when no upstream).
