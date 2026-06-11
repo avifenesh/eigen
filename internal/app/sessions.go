@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/avifenesh/eigen/internal/daemon"
+	"github.com/avifenesh/eigen/internal/transcript"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -32,8 +34,19 @@ func (s *sessionsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if s.confirmDel {
 		switch key {
 		case "y", "Y":
-			if r := cur(); r != nil && d.Store != nil && d.Store.Delete(r.ID) {
-				s.notice = "deleted: " + r.Title
+			if r := cur(); r != nil {
+				if r.Source == "daemon" {
+					// Durable daemon session: remove via the daemon when one
+					// is up (interrupts turns, releases resources) and always
+					// clear the disk files.
+					if d.Daemon != nil {
+						_ = d.Daemon.Remove(r.ID)
+					}
+					daemon.DeletePersisted(r.ID)
+					s.notice = "deleted: " + r.Title
+				} else if d.Store != nil && d.Store.Delete(r.ID) {
+					s.notice = "deleted: " + r.Title
+				}
 				d.reloadSessions()
 				s.list.count = len(d.Sessions)
 				s.list.clamp()
@@ -52,7 +65,7 @@ func (s *sessionsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key {
 	case "enter":
 		if r := cur(); r != nil {
-			m.result = Result{Action: ActionResume, SessionID: r.ID, Dir: r.Dir}
+			m.result = openAction(*r)
 			m.quitting = true
 			return m, tea.Quit
 		}
@@ -65,12 +78,23 @@ func (s *sessionsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			s.confirmDel = true
 		}
 	case "e":
-		if r := cur(); r != nil && d.Store != nil {
+		if r := cur(); r != nil {
 			dest := exportPath(r)
-			if err := d.Store.Export(r.ID, dest); err != nil {
-				s.notice = "export failed: " + err.Error()
-			} else {
-				s.notice = "exported → " + dest
+			if r.Source == "daemon" {
+				// The durable transcript is already eigen-native JSONL.
+				if msgs, err := transcript.Load(daemon.PersistedTranscriptPath(r.ID)); err != nil {
+					s.notice = "export failed: " + err.Error()
+				} else if err := transcript.Save(dest, msgs); err != nil {
+					s.notice = "export failed: " + err.Error()
+				} else {
+					s.notice = "exported → " + dest
+				}
+			} else if d.Store != nil {
+				if err := d.Store.Export(r.ID, dest); err != nil {
+					s.notice = "export failed: " + err.Error()
+				} else {
+					s.notice = "exported → " + dest
+				}
 			}
 		}
 	}
@@ -170,7 +194,7 @@ func (p *projectsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if p.inner.cursor < len(proj.Sessions) {
 				r := proj.Sessions[p.inner.cursor]
-				m.result = Result{Action: ActionResume, SessionID: r.ID, Dir: r.Dir}
+				m.result = openAction(r)
 				m.quitting = true
 				return m, tea.Quit
 			}

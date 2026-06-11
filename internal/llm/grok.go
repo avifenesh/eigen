@@ -96,7 +96,8 @@ func NewGrok(model string) (*Grok, error) {
 	return g, nil
 }
 
-func (g *Grok) Name() string { return g.c.model + " (xai grok)" }
+func (g *Grok) Name() string    { return g.c.model + " (xai grok)" }
+func (g *Grok) ModelID() string { return g.c.model }
 
 func (g *Grok) Complete(ctx context.Context, req Request) (*Response, error) {
 	return g.c.complete(ctx, g.prepare(req))

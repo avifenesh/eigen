@@ -69,20 +69,34 @@ func Detect(path string) Source {
 }
 
 // Save writes messages as eigen-native JSONL (one llm.Message per line).
+// The write is atomic (temp file + rename) so a crash, force-exit, or
+// concurrent reader never sees a truncated transcript — this file is the
+// durable record of the conversation.
 func Save(path string, msgs []llm.Message) error {
-	f, err := os.Create(path)
+	tmp := path + ".tmp"
+	f, err := os.Create(tmp)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 	w := bufio.NewWriter(f)
 	enc := json.NewEncoder(w)
 	for _, m := range msgs {
 		if err := enc.Encode(m); err != nil {
+			f.Close()
+			os.Remove(tmp)
 			return err
 		}
 	}
-	return w.Flush()
+	if err := w.Flush(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // Load reads an eigen-native JSONL session file.

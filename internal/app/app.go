@@ -59,7 +59,7 @@ const (
 type Result struct {
 	Action    Action
 	Dir       string // ActionOpenChat: project directory ("" = current)
-	SessionID string // ActionResume: session store id
+	SessionID string // ActionResume: session store id; ActionAttach: daemon id
 }
 
 // Model is the app shell: a side rail of pages + the active page's content.

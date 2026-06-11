@@ -14,7 +14,8 @@ type fakeProv struct {
 	gotUser   string
 }
 
-func (f *fakeProv) Name() string { return "fake" }
+func (f *fakeProv) Name() string    { return "fake" }
+func (f *fakeProv) ModelID() string { return "fake" }
 func (f *fakeProv) Complete(_ context.Context, req llm.Request) (*llm.Response, error) {
 	f.gotSystem = req.System
 	if len(req.Messages) > 0 {

@@ -19,7 +19,8 @@ import (
 // session produces a deterministic EventDone.
 type echoProvider struct{}
 
-func (echoProvider) Name() string { return "echo" }
+func (echoProvider) Name() string    { return "echo" }
+func (echoProvider) ModelID() string { return "echo" }
 func (echoProvider) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
 	return &llm.Response{Text: "hello from echo"}, nil
 }
@@ -248,7 +249,8 @@ func TestInterruptEmitsTerminalNote(t *testing.T) {
 // blockingProvider hangs until ctx is cancelled (to test interrupt).
 type blockingProvider struct{}
 
-func (blockingProvider) Name() string { return "block" }
+func (blockingProvider) Name() string    { return "block" }
+func (blockingProvider) ModelID() string { return "block" }
 func (blockingProvider) Complete(ctx context.Context, _ llm.Request) (*llm.Response, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
@@ -257,7 +259,8 @@ func (blockingProvider) Complete(ctx context.Context, _ llm.Request) (*llm.Respo
 // toolCallProvider calls a mutating tool once, then finishes.
 type toolCallProvider struct{ step int }
 
-func (p *toolCallProvider) Name() string { return "tc" }
+func (p *toolCallProvider) Name() string    { return "tc" }
+func (p *toolCallProvider) ModelID() string { return "tc" }
 func (p *toolCallProvider) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
 	p.step++
 	if p.step == 1 {

@@ -14,7 +14,8 @@ type scriptedJudge struct {
 	asked string
 }
 
-func (j *scriptedJudge) Name() string { return "judge" }
+func (j *scriptedJudge) Name() string    { return "judge" }
+func (j *scriptedJudge) ModelID() string { return "judge" }
 func (j *scriptedJudge) Complete(_ context.Context, req llm.Request) (*llm.Response, error) {
 	j.asked = req.Messages[0].Text
 	return &llm.Response{Text: j.reply}, nil

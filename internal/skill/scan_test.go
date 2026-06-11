@@ -15,7 +15,8 @@ type scanProv struct {
 	gotUser   string
 }
 
-func (scanProv) Name() string { return "scan-prov" }
+func (scanProv) Name() string    { return "scan-prov" }
+func (scanProv) ModelID() string { return "scan-prov" }
 func (p *scanProv) Complete(_ context.Context, req llm.Request) (*llm.Response, error) {
 	p.gotSystem = req.System
 	if len(req.Messages) > 0 {

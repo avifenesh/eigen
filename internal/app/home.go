@@ -26,7 +26,7 @@ func (h *homeState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if h.list.count > 0 && h.list.cursor < len(m.data.Sessions) {
 			r := m.data.Sessions[h.list.cursor]
-			m.result = Result{Action: ActionResume, SessionID: r.ID, Dir: r.Dir}
+			m.result = openAction(r)
 			m.quitting = true
 			return m, tea.Quit
 		}

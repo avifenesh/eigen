@@ -20,6 +20,7 @@ type mockProvider struct {
 
 func (m *mockProvider) Name() string { return "mock" }
 
+func (m *mockProvider) ModelID() string { return "mock" }
 func (m *mockProvider) Complete(_ context.Context, req llm.Request) (*llm.Response, error) {
 	m.seen = append(m.seen, req)
 	r := m.replies[m.i]
@@ -312,7 +313,8 @@ func TestPersistCalledPerMessage(t *testing.T) {
 // on its own — used to exercise the optional MaxSteps runaway cap.
 type loopProvider struct{ calls int }
 
-func (p *loopProvider) Name() string { return "loop" }
+func (p *loopProvider) Name() string    { return "loop" }
+func (p *loopProvider) ModelID() string { return "loop" }
 func (p *loopProvider) Complete(context.Context, llm.Request) (*llm.Response, error) {
 	p.calls++
 	return &llm.Response{ToolCalls: []llm.ToolCall{
@@ -571,6 +573,7 @@ type overflowOnceProvider struct {
 
 func (p *overflowOnceProvider) Name() string { return "overflow-once" }
 
+func (p *overflowOnceProvider) ModelID() string { return "overflow-once" }
 func (p *overflowOnceProvider) Complete(_ context.Context, req llm.Request) (*llm.Response, error) {
 	p.calls++
 	p.lastReq = req
@@ -636,7 +639,8 @@ func TestErrorDrivenCompactionGivesUpWhenNothingToFold(t *testing.T) {
 
 type alwaysOverflowProvider struct{}
 
-func (p *alwaysOverflowProvider) Name() string { return "always-overflow" }
+func (p *alwaysOverflowProvider) Name() string    { return "always-overflow" }
+func (p *alwaysOverflowProvider) ModelID() string { return "always-overflow" }
 func (p *alwaysOverflowProvider) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
 	return nil, errors.New("prompt is too long")
 }
@@ -664,7 +668,8 @@ func TestGoalInjectedIntoSystemPerStep(t *testing.T) {
 
 type systemCapturingProvider struct{ system string }
 
-func (p *systemCapturingProvider) Name() string { return "syscap" }
+func (p *systemCapturingProvider) Name() string    { return "syscap" }
+func (p *systemCapturingProvider) ModelID() string { return "syscap" }
 func (p *systemCapturingProvider) Complete(_ context.Context, req llm.Request) (*llm.Response, error) {
 	p.system = req.System
 	return &llm.Response{Text: "ok"}, nil

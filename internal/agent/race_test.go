@@ -17,7 +17,8 @@ import (
 // other goroutine swaps it.
 type slowProvider struct{ n int }
 
-func (p *slowProvider) Name() string { return "slow" }
+func (p *slowProvider) Name() string    { return "slow" }
+func (p *slowProvider) ModelID() string { return "slow" }
 func (p *slowProvider) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
 	p.n++
 	if p.n > 3 {

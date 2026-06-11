@@ -59,7 +59,8 @@ func NewGLM(model string) (*GLM, error) {
 	return g, nil
 }
 
-func (g *GLM) Name() string { return g.c.model + " (zhipu glm)" }
+func (g *GLM) Name() string    { return g.c.model + " (zhipu glm)" }
+func (g *GLM) ModelID() string { return g.c.model }
 
 func (g *GLM) Complete(ctx context.Context, req Request) (*Response, error) {
 	return g.c.complete(ctx, g.prepare(req))

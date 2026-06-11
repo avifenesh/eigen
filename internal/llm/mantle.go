@@ -58,7 +58,8 @@ func NewMantle(model string) (*Mantle, error) {
 	}, nil
 }
 
-func (m *Mantle) Name() string { return m.Model + " (bedrock mantle)" }
+func (m *Mantle) Name() string    { return m.Model + " (bedrock mantle)" }
+func (m *Mantle) ModelID() string { return m.Model }
 
 // SetEffort changes the reasoning effort for subsequent requests. Returns false
 // for an unrecognized level.

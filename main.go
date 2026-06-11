@@ -273,6 +273,17 @@ func main() {
 	if !*printMode && !subcommand && os.Getenv("EIGEN_NO_DAEMON") == "" &&
 		isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd()) {
 		if dc, derr := ensureDaemon(); derr == nil {
+			// `--resume <daemon id>` (s1, s2, …) attaches to the durable
+			// session itself — never forks a copy.
+			if *resumeFile != "" {
+				for _, in := range mustList(dc) {
+					if in.ID == *resumeFile {
+						dc.Close()
+						runAttach(*resumeFile, cfg)
+						return
+					}
+				}
+			}
 			store, _ := session.Open()
 			history := importResume(store, *resumeFile, *from, *sessionID)
 			cwd, _ := os.Getwd()

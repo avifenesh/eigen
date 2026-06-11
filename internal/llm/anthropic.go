@@ -102,6 +102,9 @@ func (a *Anthropic) Name() string {
 	return a.Model + " (anthropic " + mode + ")"
 }
 
+// ModelID is the raw model id (no suffix), what llm.New accepts.
+func (a *Anthropic) ModelID() string { return a.Model }
+
 // SetEffort changes the reasoning effort (adaptive models) / thinking budget.
 func (a *Anthropic) SetEffort(level string) bool {
 	b, ok := effortBudget[level]

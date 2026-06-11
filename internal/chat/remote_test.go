@@ -16,7 +16,8 @@ import (
 // echoProv answers one line per turn.
 type echoProv struct{}
 
-func (echoProv) Name() string { return "echo-model" }
+func (echoProv) Name() string    { return "echo-model" }
+func (echoProv) ModelID() string { return "echo-model" }
 func (echoProv) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
 	return &llm.Response{Text: "echo says hi"}, nil
 }
@@ -93,7 +94,8 @@ func TestRemoteSendAndState(t *testing.T) {
 // gateRemoteProv triggers one gated tool call then finishes.
 type gateRemoteProv struct{ step int }
 
-func (p *gateRemoteProv) Name() string { return "gate" }
+func (p *gateRemoteProv) Name() string    { return "gate" }
+func (p *gateRemoteProv) ModelID() string { return "gate" }
 func (p *gateRemoteProv) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
 	p.step++
 	if p.step == 1 {
@@ -176,7 +178,8 @@ func TestRemoteClearAndResend(t *testing.T) {
 // namedProv reports a fixed name (used to verify model switching).
 type namedProv struct{ name string }
 
-func (p namedProv) Name() string { return p.name }
+func (p namedProv) Name() string    { return p.name + " (test backend)" } // decorated, like real providers
+func (p namedProv) ModelID() string { return p.name }
 func (p namedProv) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
 	return &llm.Response{Text: "ok"}, nil
 }
@@ -189,7 +192,9 @@ func TestRemoteModelSwitch(t *testing.T) {
 	sock := filepath.Join(t.TempDir(), "d.sock")
 	host := daemon.NewHost()
 	// The daemon rebuilds the provider for a switch — name it after the id.
+	var gotSwitchID string
 	host.SetModelSwitcher(func(_, modelID string) (llm.Provider, llm.Compactor, int, error) {
+		gotSwitchID = modelID // must be the clean id, not "model-b (test backend)"
 		return namedProv{modelID}, nil, 0, nil
 	})
 	srv, err := daemon.Listen(sock, host, build)
@@ -213,6 +218,9 @@ func TestRemoteModelSwitch(t *testing.T) {
 		t.Fatalf("initial model: %q", r.ModelID())
 	}
 	r.SetModel(namedProv{"model-b"}, nil, 0)
+	if gotSwitchID != "model-b" {
+		t.Fatalf("daemon got switch id %q, want clean \"model-b\" (Remote.SetModel must send ModelID, not Name)", gotSwitchID)
+	}
 	if r.ModelID() != "model-b" {
 		t.Fatalf("after switch: %q", r.ModelID())
 	}

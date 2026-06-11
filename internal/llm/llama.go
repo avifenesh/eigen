@@ -29,7 +29,8 @@ func NewLlama(model string) (*Llama, error) {
 	}, nil
 }
 
-func (l *Llama) Name() string { return l.c.model + " (llama /v1)" }
+func (l *Llama) Name() string    { return l.c.model + " (llama /v1)" }
+func (l *Llama) ModelID() string { return l.c.model }
 
 func (l *Llama) Complete(ctx context.Context, req Request) (*Response, error) {
 	return l.c.complete(ctx, req)

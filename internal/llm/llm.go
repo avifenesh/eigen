@@ -87,8 +87,14 @@ type Response struct {
 
 // Provider is any model backend eigen can drive.
 type Provider interface {
-	// Name is a human-readable label for logs and the model picker.
+	// Name is a human-readable label for logs and the model picker, e.g.
+	// "claude-opus-4-8 (bedrock converse)".
 	Name() string
+	// ModelID is the raw, resolvable model id (no provider suffix), e.g.
+	// "us.anthropic.claude-opus-4-8". This is what llm.New accepts — so a
+	// live /model switch carried across the daemon socket round-trips
+	// correctly (Name() does NOT, its suffix breaks reconstruction).
+	ModelID() string
 	// Complete runs a non-streaming completion.
 	Complete(ctx context.Context, req Request) (*Response, error)
 }

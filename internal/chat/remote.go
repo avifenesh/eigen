@@ -177,13 +177,14 @@ func (r *Remote) ModelID() string      { return r.snap().Model }
 func (r *Remote) ProviderName() string { return r.snap().Provider }
 
 // SetModel switches the daemon session's model. The provider cannot cross the
-// socket, so its Name() (the model id) is sent and the daemon rebuilds the
-// provider server-side; compactor/budget are derived there too.
+// socket, so its ModelID() (the raw, resolvable id — NOT Name(), whose
+// "(bedrock converse)" suffix would break llm.New) is sent and the daemon
+// rebuilds the provider server-side; compactor/budget are derived there too.
 func (r *Remote) SetModel(p llm.Provider, c llm.Compactor, maxTokens int) {
 	if p == nil {
 		return
 	}
-	_ = r.c.SetModel(r.id, p.Name())
+	_ = r.c.SetModel(r.id, p.ModelID())
 	r.refresh()
 }
 

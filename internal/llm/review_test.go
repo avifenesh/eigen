@@ -8,7 +8,8 @@ import (
 
 type capProvider struct{ sys, user string }
 
-func (p *capProvider) Name() string { return "cap" }
+func (p *capProvider) Name() string    { return "cap" }
+func (p *capProvider) ModelID() string { return "cap" }
 func (p *capProvider) Complete(_ context.Context, req Request) (*Response, error) {
 	p.sys = req.System
 	if len(req.Messages) > 0 {

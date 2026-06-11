@@ -13,7 +13,8 @@ import (
 // gateProv calls a mutating tool once, then finishes.
 type gateProv struct{ step int }
 
-func (p *gateProv) Name() string { return "gate" }
+func (p *gateProv) Name() string    { return "gate" }
+func (p *gateProv) ModelID() string { return "gate" }
 func (p *gateProv) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
 	p.step++
 	if p.step == 1 {

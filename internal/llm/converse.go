@@ -24,10 +24,11 @@ const context1mBeta = "context-1m-2025-08-07"
 // Its wire format is content blocks (text / toolUse / toolResult), distinct
 // from both mantle's Responses items and llama's chat messages.
 type Converse struct {
-	Model  string
-	region string
-	creds  awsCreds
-	http   *http.Client
+	Model   string
+	region  string
+	profile string
+	creds   awsCreds
+	http    *http.Client
 
 	// Capabilities resolved from the catalog (with env overrides), driving the
 	// extra wire features: prompt caching, 1M-context beta, extended thinking.
@@ -82,10 +83,11 @@ func NewConverse(model string) (*Converse, error) {
 		return nil, fmt.Errorf("converse credentials: %w", err)
 	}
 	c := &Converse{
-		Model:  model,
-		region: region,
-		creds:  creds,
-		http:   &http.Client{Timeout: 5 * time.Minute},
+		Model:   model,
+		region:  region,
+		profile: profile,
+		creds:   creds,
+		http:    &http.Client{Timeout: 5 * time.Minute},
 	}
 	// Resolve capabilities from the catalog, then apply env overrides.
 	if info, ok := Lookup(model); ok {
@@ -111,7 +113,8 @@ func NewConverse(model string) (*Converse, error) {
 	return c, nil
 }
 
-func (c *Converse) Name() string { return c.Model + " (bedrock converse)" }
+func (c *Converse) Name() string    { return c.Model + " (bedrock converse)" }
+func (c *Converse) ModelID() string { return c.Model }
 
 // SetEffort changes the reasoning effort. For adaptive-thinking models it sets
 // the effort level directly; for budget-style models it maps the level to a
@@ -256,8 +259,17 @@ func (c *Converse) Complete(ctx context.Context, req Request) (*Response, error)
 	}
 
 	url := fmt.Sprintf("https://bedrock-runtime.%s.amazonaws.com/model/%s/converse", c.region, urlPathEscape(c.Model))
+	// Re-resolve credentials per request: the daemon is long-lived, so an AWS
+	// profile's session token can rotate/expire while a session stays open.
+	// Re-reading picks up refreshed creds without restarting the daemon (the
+	// pre-daemon process exited after each run, masking this). Fall back to the
+	// creds loaded at construction if the re-read fails.
+	creds := c.creds
+	if fresh, err := loadAWSCreds(c.profile); err == nil {
+		creds = fresh
+	}
 	sign := func(r *http.Request, b []byte) {
-		signV4(r, b, c.creds, "bedrock", c.region, time.Now())
+		signV4(r, b, creds, "bedrock", c.region, time.Now())
 	}
 	raw, status, err := httpJSON(ctx, c.http, url, nil, body, sign)
 	if err != nil {

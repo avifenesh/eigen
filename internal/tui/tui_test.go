@@ -28,7 +28,8 @@ import (
 // real backend. It returns a final answer with no tool calls.
 type fakeProv struct{ text string }
 
-func (fakeProv) Name() string { return "fake" }
+func (fakeProv) Name() string    { return "fake" }
+func (fakeProv) ModelID() string { return "fake" }
 func (p fakeProv) Complete(context.Context, llm.Request) (*llm.Response, error) {
 	return &llm.Response{Text: p.text}, nil
 }
@@ -1233,7 +1234,8 @@ func TestModelSwitchUnavailableWithoutConstructor(t *testing.T) {
 // effortProv is a provider that supports the EffortSetter interface.
 type effortProv struct{ effort string }
 
-func (effortProv) Name() string { return "effort-prov" }
+func (effortProv) Name() string    { return "effort-prov" }
+func (effortProv) ModelID() string { return "effort-prov" }
 func (effortProv) Complete(context.Context, llm.Request) (*llm.Response, error) {
 	return &llm.Response{Text: "ok"}, nil
 }
@@ -1282,7 +1284,8 @@ func TestEffortUnsupportedModel(t *testing.T) {
 // searchProv supports the Searcher interface (grok-style live search).
 type searchProv struct{ mode string }
 
-func (searchProv) Name() string { return "search-prov" }
+func (searchProv) Name() string    { return "search-prov" }
+func (searchProv) ModelID() string { return "search-prov" }
 func (searchProv) Complete(context.Context, llm.Request) (*llm.Response, error) {
 	return &llm.Response{Text: "ok"}, nil
 }
@@ -1543,7 +1546,8 @@ func TestSessionMarkdownRendersToolCalls(t *testing.T) {
 
 type slowProv struct{ delay time.Duration }
 
-func (slowProv) Name() string { return "slow" }
+func (slowProv) Name() string    { return "slow" }
+func (slowProv) ModelID() string { return "slow" }
 func (p slowProv) Complete(ctx context.Context, _ llm.Request) (*llm.Response, error) {
 	select {
 	case <-time.After(p.delay):

@@ -24,6 +24,16 @@ type SessionRow struct {
 	Updated int64
 }
 
+// openAction maps a session row to the right open action: daemon-backed
+// sessions ATTACH to the durable session (never fork a new local copy);
+// store sessions resume a fresh local chat from the transcript.
+func openAction(r SessionRow) Result {
+	if r.Source == "daemon" {
+		return Result{Action: ActionAttach, SessionID: r.ID, Dir: r.Dir}
+	}
+	return Result{Action: ActionResume, SessionID: r.ID, Dir: r.Dir}
+}
+
 // ProjectRow is one project (sessions grouped by Dir).
 type ProjectRow struct {
 	Dir      string
@@ -60,7 +70,10 @@ func (d *Data) refreshLive() {
 }
 
 // reloadSessions re-reads the session rows + projects from the store (titles
-// fill in as the background titler persists them).
+// fill in as the background titler persists them), then overlays durable
+// daemon sessions — THE app sessions — listed straight from disk so they
+// appear whether or not the daemon is up. Daemon rows attach; store rows
+// resume (a daemon session must never be forked into a new local copy).
 func (d *Data) reloadSessions() {
 	if d.Store == nil {
 		return
@@ -80,6 +93,21 @@ func (d *Data) reloadSessions() {
 		}
 		rows = append(rows, row)
 	}
+	for _, p := range daemon.ListPersisted() {
+		title := p.Title
+		if title == "" {
+			title = "(untitled)"
+		}
+		rows = append(rows, SessionRow{
+			ID:      p.ID,
+			Title:   title,
+			Source:  "daemon",
+			Dir:     p.Dir,
+			Msgs:    p.Msgs,
+			Updated: p.Updated * 1_000_000_000, // store metas are unix-nano
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Updated > rows[j].Updated })
 	d.Sessions = rows
 	d.Projects = groupProjects(rows)
 }
@@ -92,24 +120,8 @@ func Load() *Data {
 	if store, err := session.Open(); err == nil {
 		_ = store.Discover()
 		d.Store = store
-		for _, meta := range store.List() {
-			row := SessionRow{
-				ID:      meta.ID,
-				Title:   meta.Title,
-				Source:  string(meta.Source),
-				Dir:     meta.Cwd,
-				Msgs:    meta.Messages,
-				Updated: meta.Updated,
-			}
-			if row.Title == "" {
-				row.Title = "(untitled)"
-			}
-			d.Sessions = append(d.Sessions, row)
-		}
-		sort.Slice(d.Sessions, func(i, j int) bool { return d.Sessions[i].Updated > d.Sessions[j].Updated })
 	}
-
-	d.Projects = groupProjects(d.Sessions)
+	d.reloadSessions()
 	d.Skills = skill.Discover(skillDirs()...)
 	// Connect to a running daemon (optional — the app works without one).
 	if c, err := daemon.Dial(daemon.SocketPath()); err == nil {

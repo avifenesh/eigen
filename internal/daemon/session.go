@@ -72,6 +72,12 @@ type Session struct {
 
 // newSession wraps a built agent as a hosted session.
 func newSession(id, dir, model string, a *agent.Agent) *Session {
+	// When no explicit model was requested, report the provider's actual model
+	// id so the status bar isn't blank and a persisted+restored session
+	// reconstructs the same model.
+	if model == "" && a != nil && a.Provider != nil {
+		model = a.Provider.ModelID()
+	}
 	s := &Session{
 		ID:      id,
 		Dir:     dir,

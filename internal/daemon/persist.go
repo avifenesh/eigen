@@ -97,3 +97,57 @@ func removePersisted(dir, id string) {
 	_ = os.Remove(transcriptPath(dir, id))
 	_ = os.Remove(metaPath(dir, id))
 }
+
+// PersistedInfo is a durable session as listed from disk (works whether or
+// not the daemon is running — the files are the source of truth).
+type PersistedInfo struct {
+	ID      string
+	Dir     string
+	Model   string
+	Title   string
+	Msgs    int
+	Updated int64 // unix seconds (transcript mtime)
+}
+
+// ListPersisted lists durable daemon sessions from the default sessions dir.
+// Title falls back to a snippet of the first user message when meta has none.
+func ListPersisted() []PersistedInfo {
+	dir := SessionsDir()
+	var out []PersistedInfo
+	for _, p := range loadPersisted(dir) {
+		info := PersistedInfo{ID: p.meta.ID, Dir: p.meta.Dir, Model: p.meta.Model, Title: p.meta.Title, Msgs: len(p.history)}
+		if fi, err := os.Stat(transcriptPath(dir, p.meta.ID)); err == nil {
+			info.Updated = fi.ModTime().Unix()
+		}
+		if info.Title == "" {
+			for _, m := range p.history {
+				if m.Role == llm.RoleUser && strings.TrimSpace(m.Text) != "" {
+					info.Title = snippet(m.Text, 64)
+					break
+				}
+			}
+		}
+		out = append(out, info)
+	}
+	return out
+}
+
+// snippet returns the first line of s, truncated to n runes.
+func snippet(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n]) + "…"
+	}
+	return s
+}
+
+// DeletePersisted removes a durable daemon session's files from the default
+// dir (used when no daemon is running; with one running, use the remove op).
+func DeletePersisted(id string) { removePersisted(SessionsDir(), id) }
+
+// PersistedTranscriptPath returns the durable transcript path for a session id.
+func PersistedTranscriptPath(id string) string { return transcriptPath(SessionsDir(), id) }
