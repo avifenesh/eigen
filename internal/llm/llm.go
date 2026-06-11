@@ -83,6 +83,17 @@ type Response struct {
 	Reasoning   string
 	ReasoningID string
 	ToolCalls   []ToolCall
+
+	// Usage is the provider-reported token accounting for THIS request
+	// (zero when the provider doesn't return it — callers fall back to the
+	// ~chars/4 estimate).
+	Usage Usage
+}
+
+// Usage is real token accounting from a provider response.
+type Usage struct {
+	InputTokens  int
+	OutputTokens int
 }
 
 // Provider is any model backend eigen can drive.

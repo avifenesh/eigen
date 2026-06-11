@@ -63,9 +63,16 @@ type chatReply struct {
 			ToolCalls        []chatToolCall `json:"tool_calls"`
 		} `json:"message"`
 	} `json:"choices"`
+	Usage chatUsage `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+// chatUsage is the OpenAI-compatible usage block.
+type chatUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
 }
 
 type chatClient struct {
@@ -174,7 +181,8 @@ func (c *chatClient) complete(ctx context.Context, req Request) (*Response, erro
 	}
 
 	msg := reply.Choices[0].Message
-	out := &Response{Text: msg.Content, Reasoning: msg.ReasoningContent}
+	out := &Response{Text: msg.Content, Reasoning: msg.ReasoningContent,
+		Usage: Usage{InputTokens: reply.Usage.PromptTokens, OutputTokens: reply.Usage.CompletionTokens}}
 	for _, tc := range msg.ToolCalls {
 		out.ToolCalls = append(out.ToolCalls, ToolCall{
 			ID:        tc.ID,
@@ -207,6 +215,7 @@ func (c *chatClient) stream(ctx context.Context, req Request, sink StreamSink) (
 	}
 	byIndex := map[int]*partialCall{}
 	var order []int
+	var usage Usage
 	var text strings.Builder
 	var reasoning strings.Builder
 
@@ -236,6 +245,7 @@ func (c *chatClient) stream(ctx context.Context, req Request, sink StreamSink) (
 					} `json:"tool_calls"`
 				} `json:"delta"`
 			} `json:"choices"`
+			Usage *chatUsage `json:"usage"`
 			Error *struct {
 				Message string `json:"message"`
 			} `json:"error"`
@@ -245,6 +255,9 @@ func (c *chatClient) stream(ctx context.Context, req Request, sink StreamSink) (
 		}
 		if ev.Error != nil {
 			return nil, fmt.Errorf("%s error: %s", c.label, ev.Error.Message)
+		}
+		if ev.Usage != nil {
+			usage = Usage{InputTokens: ev.Usage.PromptTokens, OutputTokens: ev.Usage.CompletionTokens}
 		}
 		if len(ev.Choices) == 0 {
 			continue
@@ -283,7 +296,7 @@ func (c *chatClient) stream(ctx context.Context, req Request, sink StreamSink) (
 		return nil, fmt.Errorf("read stream: %w", err)
 	}
 
-	out := &Response{Text: text.String(), Reasoning: reasoning.String()}
+	out := &Response{Text: text.String(), Reasoning: reasoning.String(), Usage: usage}
 	for _, idx := range order {
 		p := byIndex[idx]
 		out.ToolCalls = append(out.ToolCalls, ToolCall{

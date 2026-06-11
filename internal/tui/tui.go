@@ -224,6 +224,9 @@ type model struct {
 	// and the last completed turn's tokens-out + tok/s for the status bar.
 	turnOutChars int
 	lastOutToks  int
+	lastInToks   int // provider-reported input tokens (last turn; 0 = unknown)
+	turnInToks   int // provider-reported usage for the CURRENT turn (EventDone)
+	turnOutToks  int
 	lastTokRate  float64
 	idleGen      int // bumped on each turn; stale idle ticks are ignored
 
@@ -525,12 +528,18 @@ func (m *model) submit(task string) tea.Cmd {
 	// Auto-router: route this turn to the best-fit model, unless a failover
 	// window is active (failover's choice wins until it ends) — a manual /model
 	// switch is honored because it updates m.modelID, which routing overwrites
-	// only when enabled.
+	// only when enabled. Exception: an image attached while the active model
+	// lacks vision forces a route to a vision-capable model even when routing
+	// is off — the alternative is silently dropping the image.
 	hasImageRef := referencesImage(task) || len(m.pendingImages) > 0
-	if m.router != nil && m.router.Enabled() && m.failoverFrom == nil {
+	needVision := hasImageRef && !llm.HasVision(m.modelID)
+	if m.router != nil && (m.router.Enabled() || needVision) && m.failoverFrom == nil {
 		if prov, model, label := m.router.Route(m.ctx, task, "", "", hasImageRef); prov != nil && model != m.modelID {
 			m.backend.SetModel(prov, m.compactorFor(prov), m.contextBudgetFor(model))
 			m.provName, m.modelID = prov.Name(), model
+			if needVision {
+				label += " (vision needed)"
+			}
 			m.note(label)
 		}
 	}

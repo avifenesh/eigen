@@ -1,12 +1,15 @@
 package tui
 
 import (
+	"context"
+	"os"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/avifenesh/eigen/internal/chat"
+	"github.com/avifenesh/eigen/internal/llm"
 )
 
 // switchBackend wraps the local test backend with a fake daemon session list,
@@ -119,5 +122,63 @@ func TestStatusGlyphs(t *testing.T) {
 		if g := statusGlyph(status); !strings.Contains(g, want) {
 			t.Fatalf("statusGlyph(%q) = %q, want %q", status, g, want)
 		}
+	}
+}
+
+// visionRouter routes ONLY when an image is attached (mimicking the real
+// router's image-forces-vision gate even while disabled).
+type visionRouter struct {
+	on     bool
+	called bool
+	prov   llmProvStub
+}
+
+type llmProvStub struct{ id string }
+
+func (p llmProvStub) Name() string    { return p.id }
+func (p llmProvStub) ModelID() string { return p.id }
+func (p llmProvStub) Complete(context.Context, llm.Request) (*llm.Response, error) {
+	return &llm.Response{Text: "ok"}, nil
+}
+
+func (v *visionRouter) Enabled() bool       { return v.on }
+func (v *visionRouter) SetEnabled(b bool)   { v.on = b }
+func (v *visionRouter) Providers() []string { return nil }
+func (v *visionRouter) Route(_ context.Context, _, _, _ string, hasImage bool) (llm.Provider, string, string) {
+	v.called = true
+	if !v.on && !hasImage {
+		return nil, "", ""
+	}
+	return v.prov, "claude-fable-5", "routed → claude-fable-5 (vision/medium)"
+}
+
+func TestImageForcesVisionRouteWhenRouterOff(t *testing.T) {
+	m := testModel(t)
+	vr := &visionRouter{on: false, prov: llmProvStub{id: "claude-fable-5"}}
+	m.router = vr
+	m.modelID = "openai.gpt-5.5" // no vision in catalog
+
+	// Write a real (tiny) png so the image reference resolves.
+	dir := t.TempDir()
+	png := dir + "/shot.png"
+	os.WriteFile(png, []byte("\x89PNG\r\n\x1a\nfakedata"), 0o644)
+
+	m.submit("describe " + png)
+	if !vr.called {
+		t.Fatal("router must be consulted when an image needs vision")
+	}
+	if m.modelID != "claude-fable-5" {
+		t.Fatalf("model = %q, want vision model", m.modelID)
+	}
+}
+
+func TestPlainPromptRespectsRouterOff(t *testing.T) {
+	m := testModel(t)
+	vr := &visionRouter{on: false, prov: llmProvStub{id: "claude-fable-5"}}
+	m.router = vr
+	m.modelID = "openai.gpt-5.5"
+	m.submit("just text, no image")
+	if m.modelID != "openai.gpt-5.5" {
+		t.Fatal("plain prompt must not route while disabled")
 	}
 }

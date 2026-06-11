@@ -79,6 +79,11 @@ func (m *model) renderEvent(e agent.Event) {
 	case agent.EventDone:
 		m.status = "done"
 		m.collapseThinking()
+		// Provider-reported usage (summed over the turn): real numbers beat
+		// the chars/4 estimate when available.
+		if e.InTokens > 0 || e.OutTokens > 0 {
+			m.turnInToks, m.turnOutToks = e.InTokens, e.OutTokens
+		}
 		// Show the final answer when the provider didn't stream any text this
 		// turn (non-streaming, or a reasoning-only stream) — otherwise the
 		// streamed assistant block already holds it.

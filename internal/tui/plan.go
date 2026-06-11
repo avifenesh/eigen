@@ -111,7 +111,12 @@ func (m *model) statusBarParts() []statusSeg {
 	if m.lastTokRate > 0 && m.state != stRunning {
 		// Only on the idle status bar — while running, the live tok/s shows on
 		// the spinner line above the input, so this would be a stale duplicate.
-		segs = append(segs, statusSeg{fmt.Sprintf("%.0f tok/s", m.lastTokRate), styleReason})
+		// With provider-reported usage, show real in/out for the last turn.
+		seg := fmt.Sprintf("%.0f tok/s", m.lastTokRate)
+		if m.lastInToks > 0 {
+			seg = fmt.Sprintf("%s·%s %.0f tok/s", humanToks(m.lastInToks), humanToks(m.lastOutToks), m.lastTokRate)
+		}
+		segs = append(segs, statusSeg{seg, styleReason})
 	}
 	if m.loopPrompt != "" {
 		segs = append(segs, statusSeg{"loop=" + m.loopEvery.String(), styleAsk})
@@ -285,17 +290,35 @@ func (m *model) planView() string {
 	return b.String()
 }
 
-// finishTurnStats records the completed turn's output tokens and rate for the
-// status bar. Estimate: chars/4, the same heuristic as the context budget.
+// finishTurnStats records the completed turn's tokens and rate for the
+// status bar. Provider-reported usage (EventDone) wins; the chars/4 estimate
+// is the fallback (same heuristic as the context budget).
 func (m *model) finishTurnStats() {
-	if m.turnStarted.IsZero() || m.turnOutChars == 0 {
+	if m.turnStarted.IsZero() {
+		return
+	}
+	out := m.turnOutChars / 4
+	if m.turnOutToks > 0 {
+		out = m.turnOutToks
+	}
+	m.lastInToks = m.turnInToks
+	m.turnInToks, m.turnOutToks = 0, 0
+	if out == 0 {
 		return
 	}
 	secs := time.Since(m.turnStarted).Seconds()
-	m.lastOutToks = m.turnOutChars / 4
+	m.lastOutToks = out
 	if secs > 0 {
-		m.lastTokRate = float64(m.lastOutToks) / secs
+		m.lastTokRate = float64(out) / secs
 	}
+}
+
+// humanToks renders a token count compactly ("843", "12k").
+func humanToks(n int) string {
+	if n >= 10000 {
+		return fmt.Sprintf("%dk", n/1000)
+	}
+	return fmt.Sprintf("%d", n)
 }
 
 // liveTokRate returns the in-flight output rate for the running status line

@@ -158,6 +158,10 @@ type responsesReply struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
 	} `json:"output"`
+	Usage struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
@@ -321,7 +325,7 @@ func parseReply(raw []byte) (*Response, string, string, error) {
 		reason = reply.IncompleteDetails.Reason
 	}
 
-	out := &Response{}
+	out := &Response{Usage: Usage{InputTokens: reply.Usage.InputTokens, OutputTokens: reply.Usage.OutputTokens}}
 	for _, item := range reply.Output {
 		switch item.Type {
 		case "message":

@@ -182,7 +182,11 @@ type anthropicReply struct {
 		Input json.RawMessage `json:"input"`
 	} `json:"content"`
 	StopReason string `json:"stop_reason"`
-	Error      *struct {
+	Usage      struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage"`
+	Error *struct {
 		Type    string `json:"type"`
 		Message string `json:"message"`
 	} `json:"error"`
@@ -240,7 +244,7 @@ func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error
 		return nil, fmt.Errorf("anthropic response truncated (max_tokens): refusing possibly-truncated output")
 	}
 
-	out := &Response{}
+	out := &Response{Usage: Usage{InputTokens: reply.Usage.InputTokens, OutputTokens: reply.Usage.OutputTokens}}
 	for _, blk := range reply.Content {
 		switch blk.Type {
 		case "text":

@@ -65,6 +65,11 @@ type Event struct {
 	ToolArgs json.RawMessage // EventToolStart
 	Result   string          // EventToolResult
 	IsError  bool            // EventToolResult
+
+	// InTokens/OutTokens: provider-reported usage summed over the turn
+	// (EventDone only; zero when the provider reports none).
+	InTokens  int
+	OutTokens int
 }
 
 // EventSink receives agent events. It must not block for long.
@@ -472,6 +477,7 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 	specs := a.Tools.Specs()
 	emptyTurns := 0
 	overflowRetried := false // guard: force-compact-and-retry at most once per step
+	var usedIn, usedOut int  // provider-reported usage, summed over the turn
 
 	system := systemPrompt
 	if a.ExtraSystem != "" {
@@ -537,11 +543,13 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 			return "", err
 		}
 		overflowRetried = false
+		usedIn += resp.Usage.InputTokens
+		usedOut += resp.Usage.OutputTokens
 		if len(resp.ToolCalls) == 0 {
 			if strings.TrimSpace(resp.Text) != "" {
 				s.msgs = append(s.msgs, llm.Message{Role: llm.RoleAssistant, Text: resp.Text})
 				s.persist()
-				a.emit(Event{Kind: EventDone, Step: step, Text: resp.Text})
+				a.emit(Event{Kind: EventDone, Step: step, Text: resp.Text, InTokens: usedIn, OutTokens: usedOut})
 				return resp.Text, nil // final answer
 			}
 			// Empty turn (e.g. reasoning-only): nudge to act, bounded.

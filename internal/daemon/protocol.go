@@ -72,26 +72,30 @@ type ToolInfo struct {
 
 // WireEvent is agent.Event flattened for the socket (kind as a string).
 type WireEvent struct {
-	Kind     string          `json:"kind"`
-	Step     int             `json:"step,omitempty"`
-	Text     string          `json:"text,omitempty"`
-	ToolName string          `json:"tool,omitempty"`
-	ToolID   string          `json:"tool_id,omitempty"`
-	ToolArgs json.RawMessage `json:"tool_args,omitempty"`
-	Result   string          `json:"result,omitempty"`
-	IsError  bool            `json:"is_error,omitempty"`
+	Kind      string          `json:"kind"`
+	Step      int             `json:"step,omitempty"`
+	Text      string          `json:"text,omitempty"`
+	ToolName  string          `json:"tool,omitempty"`
+	ToolID    string          `json:"tool_id,omitempty"`
+	ToolArgs  json.RawMessage `json:"tool_args,omitempty"`
+	Result    string          `json:"result,omitempty"`
+	IsError   bool            `json:"is_error,omitempty"`
+	InTokens  int             `json:"in_toks,omitempty"`
+	OutTokens int             `json:"out_toks,omitempty"`
 }
 
 func wireEvent(e agent.Event) *WireEvent {
 	return &WireEvent{
-		Kind:     eventKindName(e.Kind),
-		Step:     e.Step,
-		Text:     e.Text,
-		ToolName: e.ToolName,
-		ToolID:   e.ToolID,
-		ToolArgs: e.ToolArgs,
-		Result:   e.Result,
-		IsError:  e.IsError,
+		Kind:      eventKindName(e.Kind),
+		Step:      e.Step,
+		Text:      e.Text,
+		ToolName:  e.ToolName,
+		ToolID:    e.ToolID,
+		ToolArgs:  e.ToolArgs,
+		Result:    e.Result,
+		IsError:   e.IsError,
+		InTokens:  e.InTokens,
+		OutTokens: e.OutTokens,
 	}
 }
 
