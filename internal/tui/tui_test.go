@@ -12,6 +12,7 @@ import (
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/chat"
+	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/memory"
 	"github.com/avifenesh/eigen/internal/session"
@@ -2315,16 +2316,14 @@ func TestGoalSetWhileRunningDefers(t *testing.T) {
 
 func TestConfigCommandShowsAndRejects(t *testing.T) {
 	m := testModel(t)
-	// Bare /config shows the table (against the real path; read-only).
+	// Bare /config opens the live settings panel.
 	m.command("/config")
-	found := false
-	for _, b := range m.blocks {
-		if b.kind == blockNote && strings.Contains(b.body, "provider") && strings.Contains(b.body, "max_tokens") {
-			found = true
-		}
+	if !m.conf.active {
+		t.Fatal("bare /config should open the settings panel")
 	}
-	if !found {
-		t.Fatal("bare /config should show the settings table")
+	m.confPanelKey("esc")
+	if m.conf.active {
+		t.Fatal("esc should close the panel")
 	}
 	// Unknown key errors without saving.
 	m.command("/config bogus_key on")
@@ -2506,5 +2505,64 @@ func (a *answerRecorder) Answer(id string, allow bool) {
 	select {
 	case a.reply <- allow:
 	default:
+	}
+}
+
+func TestConfigPanelEditsAndSaves(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m := testModel(t)
+	m.command("/config")
+	if !m.conf.active {
+		t.Fatal("panel should open")
+	}
+	// Move to perm (closed set), space-cycle it: gated (default "") → first
+	// option... cycle from unset lands on the first option "gated".
+	fields := config.Fields()
+	for i, f := range fields {
+		if f.Key == "perm" {
+			m.conf.idx = i
+			break
+		}
+	}
+	m.confPanelKey(" ")
+	if got := config.Load().Perm; got != "gated" && got != "auto" {
+		t.Fatalf("space should cycle perm to a valid value, got %q", got)
+	}
+	first := config.Load().Perm
+	m.confPanelKey(" ")
+	if got := config.Load().Perm; got == first {
+		t.Fatalf("second space should advance the enum, still %q", got)
+	}
+	// Dropdown on perm: preselects current, enter saves.
+	m.confPanelKey("enter")
+	if !m.conf.picking {
+		t.Fatal("enter on a closed-set field should open the dropdown")
+	}
+	m.confPanelKey("esc")
+	if m.conf.picking {
+		t.Fatal("esc should close the dropdown")
+	}
+	// Free-text field: inline editor.
+	for i, f := range fields {
+		if f.Key == "tts_cmd" {
+			m.conf.idx = i
+			break
+		}
+	}
+	m.confPanelKey("enter")
+	if !m.conf.editing {
+		t.Fatal("enter on a free-text field should open the inline editor")
+	}
+	for _, r := range "espeak" {
+		m.confPanelKey(string(r))
+	}
+	m.confPanelKey("enter")
+	if got := config.Load().TTSCmd; got != "espeak" {
+		t.Fatalf("tts_cmd = %q", got)
+	}
+	// q closes the panel (only when not editing).
+	m.confPanelKey("q")
+	if m.conf.active {
+		t.Fatal("q should close the panel")
 	}
 }

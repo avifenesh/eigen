@@ -137,6 +137,9 @@ type model struct {
 	modelPicks   []llm.ModelInfo
 	modelPickIdx int
 
+	// in-session config panel (bare /config) — live editable settings
+	conf confPanel
+
 	// session switcher (alt+s / /sessions): hop this window to another daemon
 	// session, or back to the app. Quits the program with Result.SwitchTo /
 	// Result.OpenApp set; main re-runs the TUI on the target — the window is a
@@ -608,6 +611,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		if r := recover(); r != nil {
 			m.picking = false
 			m.modelPicking = false
+			m.conf = confPanel{}
 			m.state = stInput
 			m.push(&block{kind: blockNote, isErr: true, body: sb(fmt.Sprintf("internal error (recovered): %v", r))})
 			m.ti.Focus()
@@ -684,6 +688,11 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				m.picking = false
 				m.sync()
 			}
+			return m, nil
+		}
+		// Config panel (bare /config) captures keys while open.
+		if m.conf.active {
+			m.confPanelKey(msg.String())
 			return m, nil
 		}
 		// Model picker (bare /model) captures keys while open.

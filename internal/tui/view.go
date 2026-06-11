@@ -137,6 +137,9 @@ func (m *model) View() string {
 	if m.modelPicking {
 		return m.modelPickerView()
 	}
+	if m.conf.active {
+		return m.configPanelView()
+	}
 	var bottom string
 	switch {
 	case m.pending != nil:

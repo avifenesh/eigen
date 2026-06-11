@@ -231,8 +231,9 @@ func (m *model) command(line string) tea.Cmd {
 		fields := strings.Fields(arg)
 		switch {
 		case arg == "":
-			m.note("config (" + config.Path() + "):\n" + config.View(config.Load()))
-			m.note("set: /config <key> <value> · describe: /config <key> — keys: " + strings.Join(config.Keys(), " ") + "  (defaults for NEW sessions; /model /perm /effort change the LIVE session)")
+			// Live editable panel — same interaction language as the app
+			// shell's config page (cursor, space-cycle, dropdowns).
+			m.openConfigPanel()
 		case len(fields) == 1:
 			// /config <key> — describe the field: what it means + valid values.
 			fld := config.FieldFor(fields[0])

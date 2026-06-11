@@ -68,7 +68,7 @@ var slashCommands = []slashCmd{
 	{"/perm", "show or set the permission posture"},
 	{"/goal", "show, set, or clear a persistent goal (north star)"},
 	{"/loop", "re-submit a prompt every interval while idle (/loop 10m <prompt>)"},
-	{"/config", "show or set persistent defaults (/config <key> <value>)"},
+	{"/config", "open the live settings panel (or /config <key> <value> to set)"},
 	{"/route", "toggle the auto-router (per-task model selection)"},
 	{"/review", "cross-vendor review of recent work (GPT⇄Claude)"},
 	{"/voice", "toggle conversation mode (speak input ctrl+t, hear replies)"},
