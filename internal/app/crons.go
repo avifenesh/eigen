@@ -121,6 +121,7 @@ type cronsState struct {
 	list   list
 	rows   []CronRow
 	loaded bool
+	status string // last action feedback
 }
 
 func (c *cronsState) init(*Data) {}
@@ -140,13 +141,57 @@ func (c *cronsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	c.load()
 	key := msg.String()
 	if c.list.key(key, m.height-6) {
+		c.status = ""
 		return m, nil
 	}
-	if key == "R" { // manual refresh (capital: bare letters are page-jumps)
+	switch key {
+	case "R": // manual refresh (capital: bare letters are page-jumps)
 		c.loaded = false
 		c.load()
+		c.status = ""
+	case " ", "enter":
+		// Toggle a systemd user timer on/off (stop also disables future
+		// runs until started again; crontab rows are file-managed).
+		if c.list.cursor < len(c.rows) {
+			r := c.rows[c.list.cursor]
+			if r.Kind != "timer" {
+				c.status = "crontab entries are edited with `crontab -e`"
+				break
+			}
+			verb := "start"
+			if r.Active {
+				verb = "stop"
+			}
+			if out, err := timerCtl(verb, r.Name+".timer"); err != nil {
+				c.status = strings.TrimSpace(verb + " failed: " + out)
+			} else {
+				c.status = verb + "ed " + r.Name
+				c.loaded = false
+				c.load()
+			}
+		}
+	case "t":
+		// Trigger the unit the timer activates, right now.
+		if c.list.cursor < len(c.rows) {
+			r := c.rows[c.list.cursor]
+			if r.Kind != "timer" || r.Command == "" {
+				c.status = "trigger works on systemd timers only"
+				break
+			}
+			if out, err := timerCtl("start", r.Command); err != nil {
+				c.status = strings.TrimSpace("trigger failed: " + out)
+			} else {
+				c.status = "triggered " + r.Command
+			}
+		}
 	}
 	return m, nil
+}
+
+// timerCtl runs systemctl --user <verb> <unit>, returning combined output.
+func timerCtl(verb, unit string) (string, error) {
+	out, err := exec.Command("systemctl", "--user", verb, unit).CombinedOutput()
+	return string(out), err
 }
 
 func (c *cronsState) view(m *Model, w, h int) string {
@@ -179,6 +224,9 @@ func (c *cronsState) view(m *Model, w, h int) string {
 	if i := c.list.cursor; i < len(c.rows) {
 		out += "\n" + sFaint.Render("  runs: "+truncate(c.rows[i].Command, w-10)) + "\n"
 	}
-	out += sFaint.Render("  R refresh · read-only (manage via systemctl --user / crontab -e)")
+	if c.status != "" {
+		out += sWarn.Render("  "+truncate(c.status, w-4)) + "\n"
+	}
+	out += sFaint.Render("  space stop/start timer · t trigger now · R refresh")
 	return out
 }
