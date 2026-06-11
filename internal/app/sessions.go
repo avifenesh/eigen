@@ -174,7 +174,8 @@ type projectsState struct {
 	list   list
 	inside bool // viewing one project's sessions
 	proj   int  // index into data.Projects
-	inner  list // session list inside a project
+	inner  list // feed items + sessions inside a project
+	feedN  int  // feed items shown inside (cursor 0..feedN-1)
 }
 
 func (p *projectsState) init(d *Data) { p.list.count = len(d.Projects) }
@@ -184,7 +185,9 @@ func (p *projectsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	visible := m.height - 6
 	if p.inside {
 		proj := m.data.Projects[p.proj]
-		p.inner.count = len(proj.Sessions)
+		pf := m.data.feedFor(proj.Dir)
+		p.feedN = len(pf)
+		p.inner.count = p.feedN + len(proj.Sessions)
 		if p.inner.key(key, visible) {
 			return m, nil
 		}
@@ -192,8 +195,15 @@ func (p *projectsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc", "backspace":
 			p.inside = false
 		case "enter":
-			if p.inner.cursor < len(proj.Sessions) {
-				r := proj.Sessions[p.inner.cursor]
+			c := p.inner.cursor
+			switch {
+			case c < p.feedN:
+				it := pf[c]
+				m.result = Result{Action: ActionOpenChat, Dir: it.Dir, Task: it.Task}
+				m.quitting = true
+				return m, tea.Quit
+			case c-p.feedN < len(proj.Sessions):
+				r := proj.Sessions[c-p.feedN]
 				m.result = openAction(r)
 				m.quitting = true
 				return m, tea.Quit

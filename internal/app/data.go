@@ -8,6 +8,7 @@ import (
 
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/daemon"
+	"github.com/avifenesh/eigen/internal/feed"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/memory"
 	"github.com/avifenesh/eigen/internal/session"
@@ -57,6 +58,20 @@ type Data struct {
 	// its live sessions appear in the rail and can be attached as views.
 	Daemon *daemon.Client
 	Live   []daemon.SessionInfo // last-polled live sessions
+
+	// Feed is the proactive action feed (loaded from cache instantly;
+	// refreshed in the background when stale).
+	Feed      feed.Feed
+	FeedFresh bool
+}
+
+// projectDirs returns the known project directories, most recent first.
+func (d *Data) projectDirs() []string {
+	var dirs []string
+	for _, p := range d.Projects {
+		dirs = append(dirs, p.Dir)
+	}
+	return dirs
 }
 
 // refreshLive re-polls the daemon's session list (no-op without a daemon).
@@ -131,6 +146,7 @@ func Load() *Data {
 	if gm, err := memory.OpenGlobal(); err == nil {
 		d.GlobalMem = gm
 	}
+	d.Feed, d.FeedFresh = feed.Load() // instant (cache); app refreshes async
 	return d
 }
 
@@ -243,6 +259,18 @@ func Providers() []ProviderRow {
 			Default:   llm.DefaultModel(p),
 			Models:    counts[p],
 		})
+	}
+	return out
+}
+
+// feedFor returns the feed items scoped to a project dir (its loose ends),
+// in feed order.
+func (d *Data) feedFor(dir string) []feed.Item {
+	var out []feed.Item
+	for _, it := range d.Feed.Items {
+		if it.Dir == dir {
+			out = append(out, it)
+		}
 	}
 	return out
 }

@@ -197,6 +197,11 @@ func main() {
 					fail(err)
 				}
 			}
+			// A feed item carries a ready-made task: start the chat with it
+			// pre-submitted (the one-keystroke session starter).
+			if res.Task != "" {
+				task = res.Task
+			}
 			// fall through to a fresh chat rooted here
 		case app.ActionResume:
 			*resumeFile = res.SessionID

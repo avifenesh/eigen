@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/avifenesh/eigen/internal/daemon"
+	"github.com/avifenesh/eigen/internal/feed"
 )
 
 // Page identifies one app surface.
@@ -64,6 +65,7 @@ type Result struct {
 	Action    Action
 	Dir       string // ActionOpenChat: project directory ("" = current)
 	SessionID string // ActionResume: session store id; ActionAttach: daemon id
+	Task      string // ActionOpenChat: initial task (feed starters); "" = blank chat
 }
 
 // Model is the app shell: a side rail of pages + the active page's content.
@@ -118,8 +120,17 @@ func (m *Model) Init() tea.Cmd {
 	if m.data.Daemon != nil {
 		cmds = append(cmds, livePoll())
 	}
+	// Refresh the proactive feed in the background when the cache is stale
+	// (instant render from cache either way).
+	if !m.data.FeedFresh {
+		dirs := m.data.projectDirs()
+		cmds = append(cmds, func() tea.Msg { return feedMsg{feed.Scan(dirs)} })
+	}
 	return tea.Batch(cmds...)
 }
+
+// feedMsg delivers a fresh feed scan.
+type feedMsg struct{ f feed.Feed }
 
 // titleRefreshMsg triggers a session-row reload (titles filled in the store).
 type titleRefreshMsg struct{}
@@ -136,6 +147,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case livePollMsg:
 		m.data.refreshLive()
 		return m, livePoll()
+	case feedMsg:
+		m.data.Feed, m.data.FeedFresh = msg.f, true
+		m.home.syncFeed(m.data)
+		return m, nil
 	case titleRefreshMsg:
 		m.data.reloadSessions()
 		m.titledPolls++
