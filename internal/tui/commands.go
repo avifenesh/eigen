@@ -290,11 +290,11 @@ func (m *model) command(line string) tea.Cmd {
 			break
 		}
 		if arg == "" {
-			m.note(fmt.Sprintf("reasoning effort: %s   (/effort %s)", m.backend.Effort(), strings.Join(llm.EffortLevels, "|")))
+			m.note(fmt.Sprintf("reasoning effort: %s   (/effort %s)", m.backend.Effort(), strings.Join(m.effortLevels(), "|")))
 			break
 		}
 		if !m.backend.SetEffort(arg) {
-			m.push(&block{kind: blockNote, isErr: true, body: sb("unknown effort " + arg + " (want " + strings.Join(llm.EffortLevels, "|") + ")")})
+			m.push(&block{kind: blockNote, isErr: true, body: sb("unknown effort " + arg + " for " + m.modelID + " (want " + strings.Join(m.effortLevels(), "|") + ")")})
 			break
 		}
 		m.note("reasoning effort → " + m.backend.Effort())

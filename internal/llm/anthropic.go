@@ -106,10 +106,31 @@ func (a *Anthropic) Name() string {
 func (a *Anthropic) ModelID() string { return a.Model }
 
 // SetEffort changes the reasoning effort (adaptive models) / thinking budget.
+// Validates against the per-model level set from the catalog when available.
 func (a *Anthropic) SetEffort(level string) bool {
+	// Validate against the per-model level set; fall back to the global list
+	// (so tests with no catalog entry still reject truly unknown levels).
+	levels := ModelEffortLevels(a.Model)
+	if len(levels) == 0 {
+		levels = EffortLevels
+	}
+	valid := false
+	for _, l := range levels {
+		if l == level {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return false
+	}
 	b, ok := effortBudget[level]
 	if !ok {
-		return false
+		// Adaptive effort (auto/low/medium/high): not in the budget map.
+		// For adaptive models the effort string is sent directly; set budget=0.
+		a.thinkingBudget = 0
+		a.effort = level
+		return true
 	}
 	a.thinkingBudget = b
 	a.effort = level
@@ -210,7 +231,7 @@ func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error
 	// Thinking: adaptive models use thinking.type=adaptive + output_config.effort;
 	// budget models use thinking.type=enabled + budget_tokens.
 	switch {
-	case a.adaptive && a.effort != "" && a.effort != "minimal":
+	case a.adaptive && a.effort != "" && a.effort != "minimal" && a.effort != "off":
 		payload.Thinking = json.RawMessage(`{"type":"adaptive"}`)
 		payload.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":%q}`, a.effort))
 	case !a.adaptive && a.thinkingBudget > 0:

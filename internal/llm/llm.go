@@ -134,10 +134,13 @@ type Streamer interface {
 	Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error)
 }
 
-// EffortLevels are the reasoning-effort settings eigen exposes, lowest to
-// highest. They map to a provider's native control (mantle reasoning effort;
-// Anthropic extended-thinking token budget).
-var EffortLevels = []string{"minimal", "low", "medium", "high", "xhigh"}
+// EffortLevels is the global fallback set of reasoning-effort labels, lowest
+// to highest, for models without a per-model catalog set. Catalog entries
+// (ModelInfo.EffortLevels) take precedence — they list exactly what each model
+// accepts (verified live: mantle GPT = none|low..xhigh, adaptive Claude =
+// low..xhigh|max, budget Claude = off|low..xhigh). "off"/"minimal"/"none"
+// disable or minimize thinking depending on the backend.
+var EffortLevels = []string{"off", "minimal", "none", "low", "medium", "high", "xhigh", "max"}
 
 // EffortSetter is an optional capability: providers whose reasoning effort can
 // be changed at runtime implement it, so the TUI can switch effort without
@@ -163,4 +166,21 @@ func ValidEffort(level string) bool {
 		}
 	}
 	return false
+}
+
+// ModelEffortLevels returns the closed set of valid effort values for a model.
+// For reasoning models with a catalog entry it returns the per-model set;
+// for unknown or non-reasoning models it returns nil (effort not supported).
+func ModelEffortLevels(modelID string) []string {
+	if info, ok := Lookup(modelID); ok {
+		if len(info.EffortLevels) > 0 {
+			return info.EffortLevels
+		}
+		if info.Reasoning {
+			// Reasoning model but no per-model set: return the global list as
+			// a safe fallback (old entries not yet annotated).
+			return EffortLevels
+		}
+	}
+	return nil
 }

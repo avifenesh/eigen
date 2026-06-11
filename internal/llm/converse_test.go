@@ -166,16 +166,16 @@ func TestConverseEffortMapsToBudget(t *testing.T) {
 	if c.SetEffort("nonsense") {
 		t.Fatal("invalid effort should return false")
 	}
-	// minimal disables thinking.
-	c.SetEffort("minimal")
+	// "off" disables thinking (budget=0); "minimal" remains a back-compat alias.
+	c.SetEffort("off")
 	if c.thinkingBudget != 0 || c.additionalFields() != nil {
-		t.Fatalf("minimal should disable thinking: budget=%d", c.thinkingBudget)
+		t.Fatalf("off should disable thinking: budget=%d", c.thinkingBudget)
 	}
 }
 
 func TestBudgetToEffort(t *testing.T) {
-	if got := budgetToEffort(0); got != "minimal" {
-		t.Fatalf("budget 0 => %q, want minimal", got)
+	if got := budgetToEffort(0); got != "off" {
+		t.Fatalf("budget 0 => %q, want off", got)
 	}
 	if got := budgetToEffort(8192); got != "medium" {
 		t.Fatalf("budget 8192 => %q, want medium", got)

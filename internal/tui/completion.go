@@ -63,7 +63,7 @@ var slashCommands = []slashCmd{
 	{"/rename", "rename this session (/rename <name>; empty reverts to derived)"},
 	{"/compact", "summarize older context to shrink the token count"},
 	{"/model", "show or switch the model/provider"},
-	{"/effort", "show or set reasoning effort (minimal|low|medium|high|xhigh)"},
+	{"/effort", "show or set reasoning effort (levels are per-model)"},
 	{"/search", "show or set grok live search (off|auto|on)"},
 	{"/perm", "show or set the permission posture"},
 	{"/goal", "show, set, or clear a persistent goal (north star)"},

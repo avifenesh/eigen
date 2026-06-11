@@ -26,8 +26,12 @@ type ModelInfo struct {
 	// control. Effort is the default reasoning effort for effort-style models
 	// (mantle GPT: minimal|low|medium|high|xhigh). ThinkingBudget is the default
 	// extended-thinking token budget for thinking-style models (Anthropic).
-	Reasoning      bool
-	Effort         string
+	Reasoning bool
+	Effort    string
+	// EffortLevels is the closed set of valid effort values this model accepts.
+	// Empty means the global EffortLevels applies (or no effort control at all
+	// when Reasoning is false).
+	EffortLevels   []string
 	ThinkingBudget int
 
 	// Search reports the model supports server-side live search (xAI Grok Live
@@ -51,9 +55,9 @@ type ModelInfo struct {
 var Catalog = []ModelInfo{
 	// Bedrock "mantle" (OpenAI-family). Effort-style reasoning (high is stable;
 	// xhigh stalls mid-task on mantle — see mantle.go).
-	{ID: "openai.gpt-5.5", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high"},
-	{ID: "openai.gpt-5.4", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high"},
-	{ID: "openai.gpt-5", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high"},
+	{ID: "openai.gpt-5.5", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}},
+	{ID: "openai.gpt-5.4", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}},
+	{ID: "openai.gpt-5", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}},
 
 	// Bedrock Converse (Anthropic Claude). Prompt caching + 1M context (beta) +
 	// extended thinking. Default 200k window; 1M when the beta is enabled.
@@ -65,11 +69,11 @@ var Catalog = []ModelInfo{
 	// opus-4-8, prompt caching, and the 1M-context beta (on by default; force
 	// off with EIGEN_CONVERSE_1M=0).
 	{ID: "global.anthropic.claude-fable-5", Provider: "converse", ContextWindow: 200000,
-		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", Vision: true},
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
 	{ID: "us.anthropic.claude-opus-4-8", Provider: "converse", ContextWindow: 200000,
-		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", Vision: true},
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
 	{ID: "us.anthropic.claude-sonnet-4-6", Provider: "converse", ContextWindow: 200000,
-		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, ThinkingBudget: 8192, Vision: true},
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, ThinkingBudget: 8192, EffortLevels: []string{"off", "low", "medium", "high", "xhigh"}, Vision: true},
 	{ID: "us.anthropic.claude-opus-4-1", Provider: "converse", ContextWindow: 200000, Cache: true, Vision: true},
 	{ID: "us.anthropic.claude-3-5-sonnet", Provider: "converse", ContextWindow: 200000, Cache: true, Vision: true},
 	// Haiku 4.5: the small/fast/cheap model eigen uses for background chores
@@ -82,12 +86,12 @@ var Catalog = []ModelInfo{
 	// — the same catalog Claude Code drives. Adaptive thinking (Effort) like the
 	// Bedrock opus entries; 1M context via beta.
 	{ID: "claude-fable-5", Provider: "anthropic", ContextWindow: 200000,
-		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", Vision: true},
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
 	{ID: "claude-opus-4-1-20250805", Provider: "anthropic", ContextWindow: 200000,
-		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", Vision: true},
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
 	{ID: "claude-sonnet-4-5-20250929", Provider: "anthropic", ContextWindow: 200000,
-		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, ThinkingBudget: 8192, Vision: true},
-	{ID: "claude-opus-4-20250514", Provider: "anthropic", ContextWindow: 200000, Cache: true, Reasoning: true, Effort: "high", Vision: true},
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, ThinkingBudget: 8192, EffortLevels: []string{"off", "low", "medium", "high", "xhigh"}, Vision: true},
+	{ID: "claude-opus-4-20250514", Provider: "anthropic", ContextWindow: 200000, Cache: true, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
 
 	// Local llama (OpenAI-compatible server). Window is modest by default.
 	{ID: "local", Provider: "llama", ContextWindow: 40000},

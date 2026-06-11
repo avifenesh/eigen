@@ -62,13 +62,19 @@ func (m *Mantle) Name() string    { return m.Model + " (bedrock mantle)" }
 func (m *Mantle) ModelID() string { return m.Model }
 
 // SetEffort changes the reasoning effort for subsequent requests. Returns false
-// for an unrecognized level.
+// for an unrecognized level (validated against the per-model set when known).
 func (m *Mantle) SetEffort(level string) bool {
-	if !ValidEffort(level) {
-		return false
+	levels := ModelEffortLevels(m.Model)
+	if len(levels) == 0 {
+		levels = EffortLevels
 	}
-	m.effort = level
-	return true
+	for _, l := range levels {
+		if l == level {
+			m.effort = level
+			return true
+		}
+	}
+	return false
 }
 
 // Effort returns the current reasoning effort.

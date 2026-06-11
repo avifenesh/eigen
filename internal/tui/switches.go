@@ -36,17 +36,20 @@ func (m *model) cycleEffort() {
 		m.note("the current model does not support a reasoning-effort setting")
 		return
 	}
+	// Cycle within the CURRENT MODEL's level set (per-catalog: fable/opus are
+	// adaptive auto|low|medium|high, mantle GPT low..xhigh, sonnet off..high).
+	levels := m.effortLevels()
 	next := cur
-	for i, l := range llm.EffortLevels {
+	for i, l := range levels {
 		if l == cur {
-			next = llm.EffortLevels[(i+1)%len(llm.EffortLevels)]
+			next = levels[(i+1)%len(levels)]
 			break
 		}
 	}
 	if next == cur || !m.backend.SetEffort(next) {
 		// Current level not found in the list, or set failed: start at the first.
-		if len(llm.EffortLevels) > 0 {
-			_ = m.backend.SetEffort(llm.EffortLevels[0])
+		if len(levels) > 0 {
+			_ = m.backend.SetEffort(levels[0])
 		}
 	}
 	m.saveMeta()
@@ -140,4 +143,13 @@ func (m *model) contextBudgetFor(model string) int {
 // the cheap small-model summarizer (when configured) before the main one.
 func (m *model) compactorFor(np llm.Provider) llm.Compactor {
 	return llm.CompactorChain(m.smallCompactor, llm.NewCompactor(np))
+}
+
+// effortLevels returns the effort set valid for the CURRENT model (per-model
+// catalog set when known, the global list otherwise).
+func (m *model) effortLevels() []string {
+	if levels := llm.ModelEffortLevels(m.modelID); len(levels) > 0 {
+		return levels
+	}
+	return llm.EffortLevels
 }

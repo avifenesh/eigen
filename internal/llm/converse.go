@@ -46,21 +46,30 @@ type Converse struct {
 // effortBudget maps an effort label to an Anthropic extended-thinking token
 // budget. "minimal" disables thinking; higher levels allocate more budget.
 var effortBudget = map[string]int{
-	"minimal": 0,
+	"off":     0, // budget-style only: disables extended thinking
+	"minimal": 0, // back-compat alias
 	"low":     4096,
 	"medium":  8192,
 	"high":    16384,
-	"xhigh":   32768,
+	"xhigh":   32768, // accepted but no adaptive model uses it
 }
 
 // budgetToEffort is the inverse used to report the current effort label.
 func budgetToEffort(budget int) string {
-	best := "minimal"
-	bestB := -1
+	if budget == 0 {
+		return "off"
+	}
+	best, bestB := "", -1
 	for label, b := range effortBudget {
+		if b == 0 {
+			continue // skip off/minimal when budget > 0
+		}
 		if b <= budget && b > bestB {
 			best, bestB = label, b
 		}
+	}
+	if best == "" {
+		return "off"
 	}
 	return best
 }
@@ -118,11 +127,31 @@ func (c *Converse) ModelID() string { return c.Model }
 
 // SetEffort changes the reasoning effort. For adaptive-thinking models it sets
 // the effort level directly; for budget-style models it maps the level to a
-// thinking-token budget. Returns false for an unrecognized level.
+// thinking-token budget. Validates against the per-model level set when known.
 func (c *Converse) SetEffort(level string) bool {
+	// Validate against the per-model level set; fall back to the global list
+	// (so tests with no catalog entry still reject truly unknown levels).
+	levels := ModelEffortLevels(c.Model)
+	if len(levels) == 0 {
+		levels = EffortLevels
+	}
+	valid := false
+	for _, l := range levels {
+		if l == level {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return false
+	}
 	b, ok := effortBudget[level]
 	if !ok {
-		return false
+		// Adaptive effort (auto/low/medium/high): not in the budget map.
+		// For adaptive models the effort string is sent directly; set budget=0.
+		c.thinkingBudget = 0
+		c.effort = level
+		return true
 	}
 	c.thinkingBudget = b
 	c.effort = level
@@ -322,7 +351,7 @@ func (c *Converse) additionalFields() json.RawMessage {
 		extra["anthropic_beta"] = []string{context1mBeta}
 	}
 	switch {
-	case c.adaptive && c.effort != "" && c.effort != "minimal":
+	case c.adaptive && c.effort != "" && c.effort != "minimal" && c.effort != "off":
 		extra["thinking"] = map[string]any{"type": "adaptive"}
 		extra["output_config"] = map[string]any{"effort": c.effort}
 	case !c.adaptive && c.thinkingBudget > 0:
