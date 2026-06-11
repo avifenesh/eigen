@@ -1,9 +1,12 @@
 package daemon
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/llm"
@@ -22,6 +25,46 @@ type Host struct {
 	// switchModel rebuilds a provider+compactor+budget for a live /model
 	// switch, injected by package main (which owns provider construction).
 	switchModel ModelSwitcher
+	// titler names untitled sessions from their first user message on a
+	// small model (injected by main; nil = no auto-titles).
+	titler func(ctx context.Context, head string) (string, error)
+}
+
+// SetTitler installs the small-model session titler.
+func (h *Host) SetTitler(t func(ctx context.Context, head string) (string, error)) { h.titler = t }
+
+// maybeTitle titles an untitled session from its first user message, in the
+// background, persisting the result. Cheap no-ops: already titled, no titler.
+func (h *Host) maybeTitle(s *Session, msgs []llm.Message) {
+	if h.titler == nil {
+		return
+	}
+	s.mu.Lock()
+	titled := s.title != ""
+	s.mu.Unlock()
+	if titled {
+		return
+	}
+	var head string
+	for _, m := range msgs {
+		if m.Role == llm.RoleUser && strings.TrimSpace(m.Text) != "" {
+			head = m.Text
+			break
+		}
+	}
+	if head == "" {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		title, err := h.titler(ctx, head)
+		if err != nil || strings.TrimSpace(title) == "" {
+			return
+		}
+		s.SetTitle(title)
+		h.saveSessionMeta(s)
+	}()
 }
 
 // ModelSwitcher builds the live-switch inputs for a model id rooted at dir.
@@ -64,6 +107,7 @@ func (h *Host) enablePersist(s *Session) {
 	// appended message — the same continuous autosave as the local chat.
 	s.agent.Persist = func(msgs []llm.Message) {
 		_ = transcript.Save(transcriptPath(dir, s.ID), msgs)
+		h.maybeTitle(s, msgs)
 	}
 	h.saveSessionMeta(s)
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
+	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/tool"
 )
 
@@ -161,5 +162,65 @@ func TestShutdownKeepsPersistedState(t *testing.T) {
 	h2 := NewPersistentHost(persistDir)
 	if n := h2.Restore(persistentBuilder()); n != 1 {
 		t.Fatalf("restore after shutdown: %d, want 1", n)
+	}
+}
+
+func TestAutoTitleOnFirstMessage(t *testing.T) {
+	persistDir := t.TempDir()
+	h := NewPersistentHost(persistDir)
+	titled := make(chan string, 1)
+	h.SetTitler(func(_ context.Context, head string) (string, error) {
+		titled <- head
+		return "Test Title", nil
+	})
+	reg, _ := tool.NewRegistry()
+	s := h.Add("/tmp", "m", &agent.Agent{Provider: echoProvider{}, Tools: reg})
+	// Simulate the agent's persist hook after the first user message.
+	s.agent.Persist([]llm.Message{{Role: llm.RoleUser, Text: "make me a parser"}})
+	select {
+	case head := <-titled:
+		if head != "make me a parser" {
+			t.Fatalf("titler got %q", head)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("titler not invoked")
+	}
+	// Title lands asynchronously; wait for it.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if s.info().Title == "Test Title" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if s.info().Title != "Test Title" {
+		t.Fatalf("title = %q", s.info().Title)
+	}
+	// And it persisted to meta (survives restart).
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		ps := loadPersisted(persistDir)
+		if len(ps) == 1 && ps[0].meta.Title == "Test Title" {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("title not persisted to meta")
+}
+
+func TestNoRetitleOnceTitled(t *testing.T) {
+	h := NewPersistentHost(t.TempDir())
+	calls := 0
+	h.SetTitler(func(_ context.Context, _ string) (string, error) {
+		calls++
+		return "T", nil
+	})
+	reg, _ := tool.NewRegistry()
+	s := h.Add("/tmp", "m", &agent.Agent{Provider: echoProvider{}, Tools: reg})
+	s.SetTitle("already named")
+	s.agent.Persist([]llm.Message{{Role: llm.RoleUser, Text: "hello"}})
+	time.Sleep(100 * time.Millisecond)
+	if calls != 0 {
+		t.Fatal("titled session must not be re-titled")
 	}
 }

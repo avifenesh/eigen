@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -70,6 +71,14 @@ func runDaemon(cfg config.Config) {
 			return nil, nil, 0, err
 		}
 		return p, llm.CompactorChain(llm.NewCompactor(smallProvider(p)), llm.NewCompactor(p)), contextBudget(cfg.MaxTokens, "", modelID), nil
+	})
+
+	// Auto-title daemon sessions on the small model (same titler as the app's
+	// session pages) — names show up in the rail/home shortly after the first
+	// message. smallProvider health-checks local endpoints itself.
+	titler := session.ProviderTitler{P: titleProvider(nil)}
+	host.SetTitler(func(ctx context.Context, head string) (string, error) {
+		return titler.Title(ctx, head)
 	})
 
 	// Resurrect persisted sessions before accepting views: each one rebuilds
