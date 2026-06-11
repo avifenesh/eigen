@@ -263,8 +263,7 @@ first-class surface, reachable by keys and a command palette:
     (multi-project daemon correctness); `eigen daemon install|uninstall` =
     systemd user-unit autostart + credential snapshot.
   - REMAINING: tray presence (maybe drop: terminal-first + live rail covers
-    it); chat-as-a-page / instant session switching inside ONE window (today
-    a window execs into one chat; the rail lists, attach replaces).
+    it). Chat-as-a-page SHIPPED (3fb907f): alt+s in-window session switcher.
 - A command palette (fuzzy) for everything; consistent keybindings.
 - DESIGN BAR: highly informative, subtle, "a perfect touch of a designer" —
   restrained color, clear hierarchy, no clutter; every effect informative,
@@ -277,8 +276,9 @@ first-class surface, reachable by keys and a command palette:
 3. ✅ Config / Skills / Models / Providers / Memory pages (read-only v1 —
    EDIT affordances still open: config edit, plugins enable/disable, memory
    edit/consolidate from the page, crons edit).
-4. ~ Multi-session: live page + rail glyphs shipped; true in-window session
-   tabs (chat-as-a-page) still open — today attach replaces the window.
+4. ✅ Multi-session: live page + rail glyphs, and in-window switching
+   (3fb907f): alt+s hops between daemon sessions, h returns to the app — one
+   window, sessions keep running (Detach never interrupts a daemon turn).
 5. ✅ Crons page (read-only: systemd user timers via --output=json + crontab).
 6. ✅ Proactive feed (#6): internal/feed scans git (uncommitted/unpushed per
    project), project memory (stated intents), and GitHub (gh review-requests +
