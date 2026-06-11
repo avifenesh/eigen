@@ -2331,16 +2331,16 @@ func TestConfigCommandShowsAndRejects(t *testing.T) {
 	if !foundErr {
 		t.Fatal("unknown key should produce an error note")
 	}
-	// Single arg: usage.
-	m.command("/config provider")
-	foundUsage := false
+	// Single arg: describe the field (meaning + accepted values).
+	m.command("/config perm")
+	foundDesc := false
 	for _, b := range m.blocks {
-		if b.isErr && strings.Contains(b.body, "usage:") {
-			foundUsage = true
+		if strings.Contains(b.body, "gated") && strings.Contains(b.body, "values:") {
+			foundDesc = true
 		}
 	}
-	if !foundUsage {
-		t.Fatal("missing value should show usage")
+	if !foundDesc {
+		t.Fatal("/config <key> should describe the field with its values")
 	}
 }
 

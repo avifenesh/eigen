@@ -220,7 +220,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) capturingInput() bool {
 	switch m.active {
 	case PageConfig:
-		return m.config.editing
+		return m.config.editing || m.config.picking
 	case PageMemory:
 		return m.memory.confirm
 	}

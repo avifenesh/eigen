@@ -9,43 +9,123 @@ import (
 
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/dream"
+	"github.com/avifenesh/eigen/internal/llm"
 )
 
-// configState shows AND edits the persistent defaults: cursor over keys,
-// enter opens an inline value editor, config.Set validates, Save persists.
+// configState shows AND edits the persistent defaults. Fields with a CLOSED
+// option set (perm, booleans, provider/model catalogs) get a dropdown picker
+// (enter) and in-place cycling (space); free-text fields (commands, numbers)
+// get the inline editor.
 type configState struct {
-	list    list
+	list  list
+	err   string // last validation error
+	saved string // last saved key (flash feedback)
+
+	// inline editor (free-text fields)
 	editing bool
-	input   string // value being typed
-	err     string // last validation error
-	saved   string // last saved key (flash feedback)
+	input   string
+
+	// dropdown picker (closed-set fields)
+	picking  bool
+	choices  []string
+	pickIdx  int
+	multiSel map[string]bool // multi-select state (route_providers)
 }
 
 func (c *configState) init(*Data) { c.list.count = len(config.Keys()) }
 
+// optionsFor resolves a field's option set (static or dynamic).
+func optionsFor(f config.Field) []string {
+	if len(f.Options) > 0 {
+		return f.Options
+	}
+	switch f.Dynamic {
+	case "providers":
+		var out []string
+		for _, p := range Providers() {
+			out = append(out, p.Name)
+		}
+		return out
+	case "models":
+		var out []string
+		for _, m := range llm.Models() {
+			out = append(out, m.ID)
+		}
+		return out
+	}
+	return nil
+}
+
+// setAndSave validates + persists one key, updating page feedback.
+func (c *configState) setAndSave(m *Model, key, value string) bool {
+	cfg := m.data.Config
+	if err := config.Set(&cfg, key, value); err != nil {
+		c.err = err.Error()
+		return false
+	}
+	if err := config.Save(cfg); err != nil {
+		c.err = err.Error()
+		return false
+	}
+	m.data.Config = cfg
+	c.err = ""
+	c.saved = key
+	return true
+}
+
 func (c *configState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	keys := config.Keys()
-	c.list.count = len(keys)
+	fields := config.Fields()
+	c.list.count = len(fields)
 	key := msg.String()
 
+	// Dropdown picker captures keys while open.
+	if c.picking {
+		fld := fields[c.list.cursor]
+		switch key {
+		case "esc", "q":
+			c.picking = false
+		case "up", "k", "ctrl+p":
+			if c.pickIdx > 0 {
+				c.pickIdx--
+			}
+		case "down", "j", "ctrl+n":
+			if c.pickIdx < len(c.choices)-1 {
+				c.pickIdx++
+			}
+		case " ", "space":
+			if fld.Multi { // toggle membership, stay open
+				v := c.choices[c.pickIdx]
+				c.multiSel[v] = !c.multiSel[v]
+			}
+		case "enter":
+			if fld.Multi {
+				var sel []string
+				for _, v := range c.choices { // option order, not map order
+					if c.multiSel[v] {
+						sel = append(sel, v)
+					}
+				}
+				if c.setAndSave(m, fld.Key, strings.Join(sel, " ")) {
+					c.picking = false
+				}
+			} else {
+				if c.setAndSave(m, fld.Key, c.choices[c.pickIdx]) {
+					c.picking = false
+				}
+			}
+		}
+		return m, nil
+	}
+
+	// Inline editor (free-text fields) captures keys while open.
 	if c.editing {
 		switch key {
 		case "esc":
 			c.editing, c.input, c.err = false, "", ""
 		case "enter":
-			k := keys[c.list.cursor]
-			cfg := m.data.Config
-			if err := config.Set(&cfg, k, strings.TrimSpace(c.input)); err != nil {
-				c.err = err.Error()
-				return m, nil
+			if c.setAndSave(m, fields[c.list.cursor].Key, strings.TrimSpace(c.input)) {
+				c.editing, c.input = false, ""
 			}
-			if err := config.Save(cfg); err != nil {
-				c.err = err.Error()
-				return m, nil
-			}
-			m.data.Config = cfg
-			c.editing, c.input, c.err = false, "", ""
-			c.saved = k
 		case "backspace":
 			if len(c.input) > 0 {
 				c.input = c.input[:len(c.input)-1]
@@ -60,46 +140,159 @@ func (c *configState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if c.list.key(key, m.height-6) {
-		c.saved = ""
+	if c.list.key(key, m.height-8) {
+		c.saved, c.err = "", ""
 		return m, nil
 	}
-	if key == "enter" {
-		c.editing = true
-		c.input = config.Get(m.data.Config, keys[c.list.cursor])
+	fld := fields[c.list.cursor]
+	switch key {
+	case "enter":
+		opts := optionsFor(fld)
+		if len(opts) == 0 { // free text → inline editor
+			c.editing = true
+			c.input = config.Get(m.data.Config, fld.Key)
+			c.err, c.saved = "", ""
+			return m, nil
+		}
+		// Closed set → dropdown, preselected on the current value.
+		c.choices = opts
+		c.pickIdx = 0
+		cur := config.Get(m.data.Config, fld.Key)
+		if fld.Multi {
+			c.multiSel = map[string]bool{}
+			for _, v := range strings.Fields(cur) {
+				c.multiSel[v] = true
+			}
+		} else {
+			for i, v := range opts {
+				if v == cur {
+					c.pickIdx = i
+					break
+				}
+			}
+		}
+		c.picking = true
 		c.err, c.saved = "", ""
+	case " ", "space":
+		// Cycle small static enums in place (gated→auto, true→false).
+		if len(fld.Options) > 0 && !fld.Multi {
+			cur := config.Get(m.data.Config, fld.Key)
+			next := fld.Options[0]
+			for i, v := range fld.Options {
+				if v == cur {
+					next = fld.Options[(i+1)%len(fld.Options)]
+					break
+				}
+			}
+			c.setAndSave(m, fld.Key, next)
+		}
 	}
 	return m, nil
 }
 
-func (c *configState) view(m *Model, w, _ int) string {
+func (c *configState) view(m *Model, w, h int) string {
 	out := pageTitle("config", config.Path(), w)
-	keys := config.Keys()
-	for i, k := range keys {
-		v := config.Get(m.data.Config, k)
-		if v == "" {
-			v = sFaint.Render("(unset)")
+	fields := config.Fields()
+
+	if c.picking {
+		fld := fields[c.list.cursor]
+		out += "  " + sText.Render(fld.Key) + "  " + sDim.Render(truncate(fld.Desc, w-len(fld.Key)-6)) + "\n\n"
+		visible := h - 8
+		if visible < 3 {
+			visible = 3
+		}
+		start := 0
+		if c.pickIdx >= visible {
+			start = c.pickIdx - visible + 1
+		}
+		end := min(start+visible, len(c.choices))
+		for i := start; i < end; i++ {
+			v := c.choices[i]
+			mark := "  "
+			if fld.Multi {
+				mark = sFaint.Render("○ ")
+				if c.multiSel[v] {
+					mark = sOk.Render("● ")
+				}
+			} else if v == config.Get(m.data.Config, fld.Key) {
+				mark = sAccent.Render("· ")
+			}
+			out += row(i == c.pickIdx, mark+sText.Render(v)) + "\n"
+		}
+		if c.err != "" {
+			out += "\n" + sErr.Render("  "+truncate(c.err, w-4)) + "\n"
+		}
+		if fld.Multi {
+			out += "\n" + sFaint.Render("  space toggle · enter save selection · esc cancel")
 		} else {
-			v = sText.Render(v)
+			out += "\n" + sFaint.Render("  enter choose · esc cancel")
+		}
+		return out
+	}
+
+	for i, f := range fields {
+		v := config.Get(m.data.Config, f.Key)
+		val := sText.Render(v)
+		if v == "" {
+			val = sFaint.Render("(unset)")
 		}
 		if c.editing && i == c.list.cursor {
-			v = sAccent.Render(c.input + "▏")
+			val = sAccent.Render(c.input + "▏")
 		}
-		line := sDim.Render(pad(k, 16)) + v
-		if i == c.list.cursor && c.saved == k {
+		line := sDim.Render(pad(f.Key, 16)) + val
+		if i == c.list.cursor && c.saved == f.Key {
 			line += sOk.Render("  ✓ saved")
 		}
 		out += row(i == c.list.cursor, line) + "\n"
 	}
-	if c.err != "" {
-		out += "\n" + sErr.Render("  "+truncate(c.err, w-4)) + "\n"
+	// Description pane for the selected field — what it means, what it takes.
+	if c.list.cursor < len(fields) {
+		f := fields[c.list.cursor]
+		out += "\n" + sDim.Render("  "+wrapTo(f.Desc, w-4, "  ")) + "\n"
 	}
-	if c.editing {
-		out += "\n" + sFaint.Render("  enter save · esc cancel")
-	} else {
-		out += "\n" + sFaint.Render("  enter edit · defaults for NEW sessions (live: /model /perm /effort)")
+	if c.err != "" {
+		out += sErr.Render("  "+truncate(c.err, w-4)) + "\n"
+	}
+	switch {
+	case c.editing:
+		out += sFaint.Render("  enter save · esc cancel")
+	default:
+		f := fields[c.list.cursor]
+		if len(optionsFor(f)) > 0 {
+			if f.Multi {
+				out += sFaint.Render("  enter pick providers · defaults for NEW sessions")
+			} else if len(f.Options) > 0 {
+				out += sFaint.Render("  space next value · enter dropdown · defaults for NEW sessions")
+			} else {
+				out += sFaint.Render("  enter dropdown · defaults for NEW sessions")
+			}
+		} else {
+			out += sFaint.Render("  enter edit (free text) · defaults for NEW sessions")
+		}
 	}
 	return out
+}
+
+// wrapTo wraps text to a width with a continuation indent (simple greedy wrap).
+func wrapTo(s string, w int, indent string) string {
+	if w < 20 {
+		return truncate(s, w)
+	}
+	words := strings.Fields(s)
+	var b strings.Builder
+	line := 0
+	for _, word := range words {
+		if line > 0 && line+1+len(word) > w {
+			b.WriteString("\n" + indent)
+			line = 0
+		} else if line > 0 {
+			b.WriteString(" ")
+			line++
+		}
+		b.WriteString(word)
+		line += len(word)
+	}
+	return b.String()
 }
 
 // skillsState lists discovered skills with preview on enter.

@@ -145,9 +145,15 @@ func Set(c *Config, key, value string) error {
 	return nil
 }
 
-// Keys lists the /config-settable keys (skills_dirs stays file-only: a list).
+// Keys lists the /config-settable keys (skills_dirs stays file-only: a list),
+// derived from Fields() so order and membership have one source of truth.
 func Keys() []string {
-	return []string{"provider", "model", "perm", "max_tokens", "tts_cmd", "notify_cmd", "judge_model", "dream_on_idle", "idle_minutes", "route", "route_providers", "observe"}
+	fs := Fields()
+	out := make([]string, len(fs))
+	for i, f := range fs {
+		out[i] = f.Key
+	}
+	return out
 }
 
 // splitFields splits a space/comma-separated value into non-empty fields.

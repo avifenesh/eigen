@@ -229,7 +229,19 @@ func (m *model) command(line string) tea.Cmd {
 		switch {
 		case arg == "":
 			m.note("config (" + config.Path() + "):\n" + config.View(config.Load()))
-			m.note("set with /config <key> <value> — keys: " + strings.Join(config.Keys(), " ") + "  (defaults for NEW sessions; /model /perm /effort change the LIVE session)")
+			m.note("set: /config <key> <value> · describe: /config <key> — keys: " + strings.Join(config.Keys(), " ") + "  (defaults for NEW sessions; /model /perm /effort change the LIVE session)")
+		case len(fields) == 1:
+			// /config <key> — describe the field: what it means + valid values.
+			fld := config.FieldFor(fields[0])
+			if fld.Key == "" {
+				m.push(&block{kind: blockNote, isErr: true, body: sb("config: unknown key " + fields[0] + " (keys: " + strings.Join(config.Keys(), " ") + ")")})
+				break
+			}
+			body := fld.Key + " = " + valueOrUnset(config.Get(config.Load(), fld.Key)) + "\n" + fld.Desc
+			if opts := configOptionsHint(fld); opts != "" {
+				body += "\nvalues: " + opts
+			}
+			m.note(body)
 		case len(fields) >= 2:
 			key := fields[0]
 			value := strings.TrimSpace(strings.TrimPrefix(arg, key))
@@ -244,7 +256,7 @@ func (m *model) command(line string) tea.Cmd {
 			}
 			m.note("config: " + key + " = " + value + "   (applies to new sessions)")
 		default:
-			m.push(&block{kind: blockNote, isErr: true, body: sb("usage: /config            (show)\n       /config <key> <value>  (set)")})
+			m.push(&block{kind: blockNote, isErr: true, body: sb("usage: /config            (show)\n       /config <key>          (describe)\n       /config <key> <value>  (set)")})
 		}
 	case "/loop":
 		switch arg {
@@ -484,4 +496,44 @@ func sessionMarkdown(msgs []llm.Message) string {
 		}
 	}
 	return b.String()
+}
+
+// valueOrUnset renders a config value or "(unset)" for the empty string.
+func valueOrUnset(v string) string {
+	if v == "" {
+		return "(unset)"
+	}
+	return v
+}
+
+// configOptionsHint describes a config field's accepted values for /config
+// <key>: the static enum, or the dynamic catalog source. "" = free text.
+func configOptionsHint(f config.Field) string {
+	if len(f.Options) > 0 {
+		return strings.Join(f.Options, " | ")
+	}
+	switch f.Dynamic {
+	case "providers":
+		var names []string
+		for _, p := range llm.Catalog {
+			seen := false
+			for _, n := range names {
+				if n == p.Provider {
+					seen = true
+					break
+				}
+			}
+			if !seen {
+				names = append(names, p.Provider)
+			}
+		}
+		hint := "any provider — " + strings.Join(names, " ")
+		if f.Multi {
+			hint = "space-separated; " + hint
+		}
+		return hint
+	case "models":
+		return "any catalog model id (see the models page or `eigen models`)"
+	}
+	return ""
 }

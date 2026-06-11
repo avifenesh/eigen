@@ -108,70 +108,128 @@ func configModel(t *testing.T) *Model {
 	return m
 }
 
-func TestConfigEditSaves(t *testing.T) {
+// cursorTo moves the config cursor to a given key.
+func cursorTo(m *Model, target string) {
+	for i, k := range config.Keys() {
+		if k == target {
+			m.config.list.cursor = i
+			return
+		}
+	}
+}
+
+func TestConfigEditFreeText(t *testing.T) {
 	m := configModel(t)
-	// cursor starts at "provider"; move to "perm" (index 2)
-	m.Update(key("j"))
-	m.Update(key("j"))
-	m.Update(key("enter")) // edit perm (prefilled "gated")
+	cursorTo(m, "tts_cmd") // free-text field
+	m.Update(key("enter"))
 	if !m.config.editing {
-		t.Fatal("should be editing")
+		t.Fatal("free-text field should open the inline editor")
 	}
-	// clear prefill, type "auto"
-	for range "gated" {
-		m.Update(key("backspace"))
-	}
-	for _, r := range "auto" {
+	for _, r := range "espeak-ng" {
 		m.Update(key(string(r)))
 	}
 	m.Update(key("enter"))
 	if m.config.editing {
 		t.Fatalf("edit should close on save (err=%q)", m.config.err)
 	}
-	if m.data.Config.Perm != "auto" {
-		t.Fatalf("perm = %q", m.data.Config.Perm)
+	if m.data.Config.TTSCmd != "espeak-ng" {
+		t.Fatalf("tts_cmd = %q", m.data.Config.TTSCmd)
 	}
-	// persisted to disk
-	saved := config.Load()
-	if saved.Perm != "auto" {
-		t.Fatalf("not persisted: %q", saved.Perm)
+	if config.Load().TTSCmd != "espeak-ng" {
+		t.Fatal("not persisted")
 	}
 }
 
-func TestConfigEditValidates(t *testing.T) {
+func TestConfigCycleEnum(t *testing.T) {
+	m := configModel(t) // perm starts "gated"
+	cursorTo(m, "perm")
+	m.Update(key("space")) // cycle gated → auto
+	if m.data.Config.Perm != "auto" {
+		t.Fatalf("space should cycle perm to auto, got %q", m.data.Config.Perm)
+	}
+	if config.Load().Perm != "auto" {
+		t.Fatal("cycle must persist")
+	}
+	m.Update(key("space")) // auto → gated (wraps)
+	if m.data.Config.Perm != "gated" {
+		t.Fatalf("space should wrap perm to gated, got %q", m.data.Config.Perm)
+	}
+}
+
+func TestConfigDropdownPicksValue(t *testing.T) {
 	m := configModel(t)
-	m.Update(key("j"))
-	m.Update(key("j"))
+	cursorTo(m, "perm")
+	m.Update(key("enter")) // open dropdown (preselected on gated)
+	if !m.config.picking {
+		t.Fatal("closed-set field should open a dropdown")
+	}
+	if m.config.choices[m.config.pickIdx] != "gated" {
+		t.Fatalf("dropdown should preselect current value, got %q", m.config.choices[m.config.pickIdx])
+	}
+	m.Update(key("j"))     // move to "auto"
+	m.Update(key("enter")) // choose
+	if m.config.picking {
+		t.Fatal("enter should close the dropdown")
+	}
+	if m.data.Config.Perm != "auto" {
+		t.Fatalf("perm = %q", m.data.Config.Perm)
+	}
+}
+
+func TestConfigDropdownEscCancels(t *testing.T) {
+	m := configModel(t)
+	cursorTo(m, "perm")
 	m.Update(key("enter"))
-	for range "gated" {
-		m.Update(key("backspace"))
-	}
-	for _, r := range "bogus" {
-		m.Update(key(string(r)))
-	}
-	m.Update(key("enter"))
-	if !m.config.editing || m.config.err == "" {
-		t.Fatalf("invalid value must keep editing with an error: editing=%v err=%q",
-			m.config.editing, m.config.err)
-	}
+	m.Update(key("j"))
 	m.Update(key("esc"))
-	if m.config.editing {
-		t.Fatal("esc must cancel")
+	if m.config.picking {
+		t.Fatal("esc must close the dropdown")
 	}
 	if m.data.Config.Perm != "gated" {
-		t.Fatal("cancel must not mutate config")
+		t.Fatal("esc must not mutate")
+	}
+}
+
+func TestConfigMultiSelectRouteProviders(t *testing.T) {
+	m := configModel(t)
+	cursorTo(m, "route_providers")
+	m.Update(key("enter")) // open multi-select dropdown
+	if !m.config.picking {
+		t.Fatal("route_providers should open a dropdown")
+	}
+	// Toggle the first two providers on, save.
+	m.Update(key("space"))
+	m.Update(key("j"))
+	m.Update(key("space"))
+	m.Update(key("enter"))
+	if m.config.picking {
+		t.Fatal("enter should close after multi-select")
+	}
+	if len(m.data.Config.RouteProviders) != 2 {
+		t.Fatalf("expected 2 providers, got %v", m.data.Config.RouteProviders)
 	}
 }
 
 func TestConfigEditingCapturesJumpKeys(t *testing.T) {
 	m := configModel(t)
-	m.Update(key("enter")) // edit "provider"
+	cursorTo(m, "tts_cmd")
+	m.Update(key("enter")) // edit free-text field
 	m.Update(key("q"))     // must TYPE q, not quit
 	if m.quitting {
 		t.Fatal("q while editing must not quit")
 	}
 	if !strings.Contains(m.config.input, "q") {
 		t.Fatalf("q should be typed: %q", m.config.input)
+	}
+}
+
+func TestConfigPickingCapturesKeys(t *testing.T) {
+	m := configModel(t)
+	cursorTo(m, "perm")
+	m.Update(key("enter")) // dropdown open
+	m.Update(key("q"))     // must NOT quit while picking
+	if m.quitting {
+		t.Fatal("q while picking must not quit")
 	}
 }
 
