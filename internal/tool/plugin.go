@@ -20,6 +20,8 @@ type pluginSpec struct {
 	Command     []string        `json:"command"`
 	ReadOnly    bool            `json:"readonly"`
 	TimeoutSec  int             `json:"timeout_seconds"`
+	Disabled    bool            `json:"disabled,omitempty"` // kept in config, not loaded
+
 }
 
 const defaultPluginTimeout = 60 * time.Second
@@ -42,6 +44,9 @@ func LoadPlugins(paths ...string) ([]Definition, error) {
 			return nil, fmt.Errorf("%s: %w", path, err)
 		}
 		for _, sp := range specs {
+			if sp.Disabled {
+				continue
+			}
 			d, err := pluginDefinition(sp)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", path, err)

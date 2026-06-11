@@ -184,6 +184,7 @@ func main() {
 	if task == "" && *resumeFile == "" && !*printMode && appInteractive && !startedInDir {
 		appData := app.Load()
 		appData.Titler = session.ProviderTitler{P: titleProvider(nil)}
+		appData.Small = titleProvider(nil)
 		res, err := app.Run(appData)
 		if err != nil {
 			fail(err)

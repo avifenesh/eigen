@@ -30,8 +30,9 @@ const (
 // Spec is one configured hook: run Command when Event fires. Command is argv
 // (no shell); the payload JSON is written to the process's stdin.
 type Spec struct {
-	Event   string   `json:"event"`
-	Command []string `json:"command"`
+	Event    string   `json:"event"`
+	Command  []string `json:"command"`
+	Disabled bool     `json:"disabled,omitempty"` // kept in config, not fired
 }
 
 // Payload is the JSON handed to a hook on stdin.
@@ -57,7 +58,7 @@ type Runner struct {
 func New(specs []Spec) *Runner {
 	m := map[string][]Spec{}
 	for _, s := range specs {
-		if s.Event == "" || len(s.Command) == 0 {
+		if s.Event == "" || len(s.Command) == 0 || s.Disabled {
 			continue
 		}
 		m[s.Event] = append(m[s.Event], s)

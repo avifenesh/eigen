@@ -275,6 +275,7 @@ func continueNav(c *daemon.Client, res tui.Result, cfg config.Config) {
 func appNav(c *daemon.Client, cfg config.Config) (id, task string, ok bool) {
 	data := app.Load()
 	data.Titler = session.ProviderTitler{P: titleProvider(nil)}
+	data.Small = titleProvider(nil)
 	res, err := app.Run(data)
 	if data.Daemon != nil {
 		data.Daemon.Close()

@@ -27,6 +27,10 @@ type serverConfig struct {
 	// ExcludeTools removes specific server tools (same name syntax). Applied
 	// after Tools.
 	ExcludeTools []string `json:"exclude_tools"`
+
+	// Disabled skips this server entirely (kept in config, not connected) —
+	// toggled from the app's plugins page.
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 type mcpConfig struct {
@@ -57,6 +61,9 @@ func LoadTools(ctx context.Context, path string) (defs []tool.Definition, client
 	cfg.Servers = withBuiltinServers(cfg.Servers)
 
 	for _, sc := range cfg.Servers {
+		if sc.Disabled {
+			continue
+		}
 		if sc.Name == "" || len(sc.Command) == 0 {
 			errs = append(errs, fmt.Errorf("mcp server with empty name or command"))
 			continue

@@ -1,32 +1,104 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/avifenesh/eigen/internal/config"
+	"github.com/avifenesh/eigen/internal/dream"
 )
 
-// configState shows the persistent defaults (read-only v1; edit via /config).
-type configState struct{}
+// configState shows AND edits the persistent defaults: cursor over keys,
+// enter opens an inline value editor, config.Set validates, Save persists.
+type configState struct {
+	list    list
+	editing bool
+	input   string // value being typed
+	err     string // last validation error
+	saved   string // last saved key (flash feedback)
+}
 
-func (c *configState) init(*Data) {}
-func (c *configState) update(m *Model, _ tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (c *configState) init(*Data) { c.list.count = len(config.Keys()) }
+
+func (c *configState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	keys := config.Keys()
+	c.list.count = len(keys)
+	key := msg.String()
+
+	if c.editing {
+		switch key {
+		case "esc":
+			c.editing, c.input, c.err = false, "", ""
+		case "enter":
+			k := keys[c.list.cursor]
+			cfg := m.data.Config
+			if err := config.Set(&cfg, k, strings.TrimSpace(c.input)); err != nil {
+				c.err = err.Error()
+				return m, nil
+			}
+			if err := config.Save(cfg); err != nil {
+				c.err = err.Error()
+				return m, nil
+			}
+			m.data.Config = cfg
+			c.editing, c.input, c.err = false, "", ""
+			c.saved = k
+		case "backspace":
+			if len(c.input) > 0 {
+				c.input = c.input[:len(c.input)-1]
+			}
+		default:
+			if len(msg.Runes) > 0 {
+				c.input += string(msg.Runes)
+			} else if key == "space" || key == " " {
+				c.input += " "
+			}
+		}
+		return m, nil
+	}
+
+	if c.list.key(key, m.height-6) {
+		c.saved = ""
+		return m, nil
+	}
+	if key == "enter" {
+		c.editing = true
+		c.input = config.Get(m.data.Config, keys[c.list.cursor])
+		c.err, c.saved = "", ""
+	}
 	return m, nil
 }
+
 func (c *configState) view(m *Model, w, _ int) string {
 	out := pageTitle("config", config.Path(), w)
-	for _, line := range strings.Split(strings.TrimRight(config.View(m.data.Config), "\n"), "\n") {
-		k, v, ok := strings.Cut(line, "=")
-		if !ok {
-			out += "  " + sText.Render(line) + "\n"
-			continue
+	keys := config.Keys()
+	for i, k := range keys {
+		v := config.Get(m.data.Config, k)
+		if v == "" {
+			v = sFaint.Render("(unset)")
+		} else {
+			v = sText.Render(v)
 		}
-		out += "  " + sDim.Render(pad(strings.TrimSpace(k), 16)) + sText.Render(strings.TrimSpace(v)) + "\n"
+		if c.editing && i == c.list.cursor {
+			v = sAccent.Render(c.input + "▏")
+		}
+		line := sDim.Render(pad(k, 16)) + v
+		if i == c.list.cursor && c.saved == k {
+			line += sOk.Render("  ✓ saved")
+		}
+		out += row(i == c.list.cursor, line) + "\n"
 	}
-	out += "\n" + sFaint.Render("  edit: /config <key> <value> in a chat, or edit the file")
+	if c.err != "" {
+		out += "\n" + sErr.Render("  "+truncate(c.err, w-4)) + "\n"
+	}
+	if c.editing {
+		out += "\n" + sFaint.Render("  enter save · esc cancel")
+	} else {
+		out += "\n" + sFaint.Render("  enter edit · defaults for NEW sessions (live: /model /perm /effort)")
+	}
 	return out
 }
 
@@ -166,48 +238,175 @@ func (s *providersState) view(m *Model, w, h int) string {
 	return out
 }
 
-// memoryState shows global memory (project memory lives with each project).
+// memoryState shows global memory as selectable bullets: d deletes one
+// (with confirm), c consolidates via the small model (async), j/k move.
+// Project memory lives with each project.
 type memoryState struct {
-	scroll int
+	list      list
+	bullets   []string
+	loaded    bool
+	confirm   bool   // pending delete confirmation for the selected bullet
+	status    string // transient feedback ("consolidating…", errors)
+	consoling bool   // consolidation running in the background
 }
 
 func (s *memoryState) init(*Data) {}
 
-func (s *memoryState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "j", "down":
-		s.scroll++
-	case "k", "up":
-		if s.scroll > 0 {
-			s.scroll--
+func (s *memoryState) load(d *Data) {
+	if s.loaded {
+		return
+	}
+	s.bullets = nil
+	if d.GlobalMem != nil {
+		s.bullets = memoryBullets(d.GlobalMem.Read())
+	}
+	s.list.count = len(s.bullets)
+	s.list.clamp()
+	s.loaded = true
+}
+
+// memoryBullets splits a memory file into its top-level "- " bullets
+// (continuation lines belong to the bullet above).
+func memoryBullets(content string) []string {
+	var bullets []string
+	var cur strings.Builder
+	flush := func() {
+		if b := strings.TrimRight(cur.String(), "\n"); strings.TrimSpace(b) != "" {
+			bullets = append(bullets, b)
 		}
-	case "g", "home":
-		s.scroll = 0
+		cur.Reset()
+	}
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(line, "- ") {
+			flush()
+		}
+		if cur.Len() > 0 {
+			cur.WriteByte('\n')
+		}
+		cur.WriteString(line)
+	}
+	flush()
+	return bullets
+}
+
+// consolidateDoneMsg reports the background consolidation result.
+type consolidateDoneMsg struct{ err error }
+
+func (s *memoryState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	s.load(m.data)
+	key := msg.String()
+
+	if s.confirm {
+		switch key {
+		case "y", "enter":
+			s.confirm = false
+			if err := s.deleteSelected(m.data); err != nil {
+				s.status = "delete failed: " + err.Error()
+			} else {
+				s.status = "deleted (backup kept)"
+				s.loaded = false
+				s.load(m.data)
+			}
+		default:
+			s.confirm = false
+			s.status = ""
+		}
+		return m, nil
+	}
+
+	if s.list.key(key, m.height-7) {
+		s.status = ""
+		return m, nil
+	}
+	switch key {
+	case "d":
+		if len(s.bullets) > 0 {
+			s.confirm = true
+		}
+	case "C":
+		// Consolidate via the small model (capital: c is the config page jump).
+		if s.consoling {
+			break
+		}
+		if m.data.Small == nil || m.data.GlobalMem == nil {
+			s.status = "consolidation needs the small model (credentials missing?)"
+			break
+		}
+		s.consoling = true
+		s.status = "consolidating…"
+		gm, small := m.data.GlobalMem, m.data.Small
+		return m, func() tea.Msg {
+			cur := gm.Read()
+			out, err := dream.Consolidate(context.Background(), small, cur)
+			if err != nil {
+				return consolidateDoneMsg{err: err}
+			}
+			if _, err := gm.Snapshot(); err != nil {
+				return consolidateDoneMsg{err: err}
+			}
+			return consolidateDoneMsg{err: gm.Rewrite(out)}
+		}
+	case "R":
+		s.loaded = false
+		s.load(m.data)
+		s.status = ""
 	}
 	return m, nil
 }
 
+// deleteSelected removes the selected bullet, snapshots first, rewrites.
+func (s *memoryState) deleteSelected(d *Data) error {
+	if d.GlobalMem == nil || s.list.cursor >= len(s.bullets) {
+		return fmt.Errorf("nothing selected")
+	}
+	if _, err := d.GlobalMem.Snapshot(); err != nil {
+		return err
+	}
+	kept := make([]string, 0, len(s.bullets)-1)
+	for i, b := range s.bullets {
+		if i != s.list.cursor {
+			kept = append(kept, b)
+		}
+	}
+	return d.GlobalMem.Rewrite(strings.Join(kept, "\n") + "\n")
+}
+
 func (s *memoryState) view(m *Model, w, h int) string {
+	s.load(m.data)
 	out := pageTitle("memory", "global (cross-project)", w)
 	if m.data.GlobalMem == nil {
 		return out + sFaint.Render("  unavailable")
 	}
-	content := m.data.GlobalMem.Read()
-	if strings.TrimSpace(content) == "" {
+	if len(s.bullets) == 0 {
 		return out + sFaint.Render("  empty — global notes accumulate from sessions (scope=global)")
 	}
-	lines := strings.Split(content, "\n")
-	if s.scroll >= len(lines) {
-		s.scroll = len(lines) - 1
+	visible := h - 7
+	from, to := s.list.window(visible)
+	for i := from; i < to; i++ {
+		// One line per bullet: first line, truncated.
+		first := strings.TrimPrefix(strings.SplitN(s.bullets[i], "\n", 2)[0], "- ")
+		out += row(i == s.list.cursor, sText.Render(truncate(first, w-6))) + "\n"
 	}
-	visible := h - 5
-	end := min(s.scroll+visible, len(lines))
-	for _, l := range lines[s.scroll:end] {
-		out += "  " + sText.Render(truncate(l, w-4)) + "\n"
+	if s.list.cursor < len(s.bullets) {
+		// Detail pane: the selected bullet, wrapped, a few lines.
+		out += "\n"
+		detail := s.bullets[s.list.cursor]
+		lines := strings.Split(detail, "\n")
+		for i, l := range lines {
+			if i >= 3 {
+				out += sFaint.Render(fmt.Sprintf("  … %d more lines", len(lines)-i)) + "\n"
+				break
+			}
+			out += "  " + sDim.Render(truncate(l, w-4)) + "\n"
+		}
 	}
-	if end < len(lines) {
-		out += sFaint.Render(fmt.Sprintf("  … %d more (j to scroll)", len(lines)-end)) + "\n"
+	switch {
+	case s.confirm:
+		out += "\n" + sErr.Render("  delete this note? y confirm · any other key cancels")
+	case s.status != "":
+		out += "\n" + sWarn.Render("  "+s.status)
+	default:
+		out += "\n" + sFaint.Render("  d delete note · C consolidate (small model) · R refresh")
 	}
-	out += "\n" + sFaint.Render("  curate: eigen memory show|consolidate [--global]")
 	return out
 }

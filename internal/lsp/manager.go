@@ -20,7 +20,8 @@ type ServerConfig struct {
 	Command    []string          `json:"command"`
 	Extensions []string          `json:"extensions"`
 	Env        map[string]string `json:"env"`
-	LanguageID string            `json:"language_id"` // optional; sent on didOpen
+	LanguageID string            `json:"language_id"`        // optional; sent on didOpen
+	Disabled   bool              `json:"disabled,omitempty"` // kept in config, not started
 }
 
 // connectTimeout bounds the initialize handshake and each request.

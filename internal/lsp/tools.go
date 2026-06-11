@@ -38,6 +38,9 @@ func LoadTools(root, path string) (defs []tool.Definition, mgr *Manager, errs []
 	}
 	var valid []ServerConfig
 	for _, s := range cfg.Servers {
+		if s.Disabled {
+			continue
+		}
 		if s.Name == "" || len(s.Command) == 0 || len(s.Extensions) == 0 {
 			errs = append(errs, fmt.Errorf("lsp server with empty name, command, or extensions"))
 			continue

@@ -151,6 +151,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.data.Feed, m.data.FeedFresh = msg.f, true
 		m.home.syncFeed(m.data)
 		return m, nil
+	case consolidateDoneMsg:
+		m.memory.consoling = false
+		m.memory.loaded = false
+		m.memory.load(m.data)
+		if msg.err != nil {
+			m.memory.status = "consolidate failed: " + msg.err.Error()
+		} else {
+			m.memory.status = "consolidated ✓ (backup kept)"
+		}
+		return m, nil
 	case titleRefreshMsg:
 		m.data.reloadSessions()
 		m.titledPolls++
@@ -168,11 +178,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 		}
-		switch key {
-		case "ctrl+c":
+		if key == "ctrl+c" {
 			m.result = Result{Action: ActionQuit}
 			m.quitting = true
 			return m, tea.Quit
+		}
+		// A page in text-entry mode (config editor) gets every key except
+		// ctrl+c — q/:/tab/letters must type, not quit/jump.
+		if m.capturingInput() {
+			return m.updatePage(msg)
+		}
+		switch key {
 		case ":", "ctrl+k":
 			m.palette.openPalette(m)
 			return m, nil
@@ -197,6 +213,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updatePage(msg)
 	}
 	return m, nil
+}
+
+// capturingInput reports whether the active page is in a text-entry or
+// confirmation mode (so bare letters must reach it rather than jump pages).
+func (m *Model) capturingInput() bool {
+	switch m.active {
+	case PageConfig:
+		return m.config.editing
+	case PageMemory:
+		return m.memory.confirm
+	}
+	return false
 }
 
 // cycle moves to the next/previous page in rail order.

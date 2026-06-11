@@ -53,6 +53,7 @@ type Data struct {
 	GlobalMem *memory.Store
 	Store     *session.Store
 	Titler    session.Titler // small-model background titler (nil = none)
+	Small     llm.Provider   // small model for page jobs (consolidate); nil = unavailable
 
 	// Daemon is the connection to a running eigen daemon (nil when none):
 	// its live sessions appear in the rail and can be attached as views.

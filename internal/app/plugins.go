@@ -14,10 +14,13 @@ import (
 // ExtRow is one extension as the plugins page shows it: an MCP server, a
 // plugin tool, an LSP server, or a hook.
 type ExtRow struct {
-	Kind   string // "mcp" | "plugin" | "lsp" | "hook"
-	Name   string
-	Detail string // command / event / etc.
-	Source string // which config file declared it
+	Kind     string // "mcp" | "plugin" | "lsp" | "hook"
+	Name     string
+	Detail   string // command / event / etc.
+	Source   string // which config file declared it
+	Path     string // config file path (for toggling)
+	Index    int    // entry index within that file's list
+	Disabled bool
 }
 
 // loadExtensions reads every extension config (user + project): mcp.json
@@ -48,21 +51,23 @@ func loadMCPRows(path, src string) []ExtRow {
 	}
 	var cfg struct {
 		Servers []struct {
-			Name    string   `json:"name"`
-			Command []string `json:"command"`
-			Tools   []string `json:"tools"`
+			Name     string   `json:"name"`
+			Command  []string `json:"command"`
+			Tools    []string `json:"tools"`
+			Disabled bool     `json:"disabled"`
 		} `json:"servers"`
 	}
 	if json.Unmarshal(data, &cfg) != nil {
 		return nil
 	}
 	var rows []ExtRow
-	for _, s := range cfg.Servers {
+	for i, s := range cfg.Servers {
 		detail := strings.Join(s.Command, " ")
 		if n := len(s.Tools); n > 0 {
 			detail += fmt.Sprintf(" · %d tools allowlisted", n)
 		}
-		rows = append(rows, ExtRow{Kind: "mcp", Name: s.Name, Detail: detail, Source: src})
+		rows = append(rows, ExtRow{Kind: "mcp", Name: s.Name, Detail: detail, Source: src,
+			Path: path, Index: i, Disabled: s.Disabled})
 	}
 	return rows
 }
@@ -76,17 +81,19 @@ func loadPluginRows(path, src string) []ExtRow {
 		Name     string   `json:"name"`
 		Command  []string `json:"command"`
 		ReadOnly bool     `json:"readonly"`
+		Disabled bool     `json:"disabled"`
 	}
 	if json.Unmarshal(data, &specs) != nil {
 		return nil
 	}
 	var rows []ExtRow
-	for _, p := range specs {
+	for i, p := range specs {
 		detail := strings.Join(p.Command, " ")
 		if p.ReadOnly {
 			detail += " · read-only"
 		}
-		rows = append(rows, ExtRow{Kind: "plugin", Name: p.Name, Detail: detail, Source: src})
+		rows = append(rows, ExtRow{Kind: "plugin", Name: p.Name, Detail: detail, Source: src,
+			Path: path, Index: i, Disabled: p.Disabled})
 	}
 	return rows
 }
@@ -101,18 +108,20 @@ func loadLSPRows(path, src string) []ExtRow {
 			Name      string   `json:"name"`
 			Command   []string `json:"command"`
 			Languages []string `json:"languages"`
+			Disabled  bool     `json:"disabled"`
 		} `json:"servers"`
 	}
 	if json.Unmarshal(data, &cfg) != nil {
 		return nil
 	}
 	var rows []ExtRow
-	for _, s := range cfg.Servers {
+	for i, s := range cfg.Servers {
 		detail := strings.Join(s.Command, " ")
 		if len(s.Languages) > 0 {
 			detail += " · " + strings.Join(s.Languages, ",")
 		}
-		rows = append(rows, ExtRow{Kind: "lsp", Name: s.Name, Detail: detail, Source: src})
+		rows = append(rows, ExtRow{Kind: "lsp", Name: s.Name, Detail: detail, Source: src,
+			Path: path, Index: i, Disabled: s.Disabled})
 	}
 	return rows
 }
@@ -122,18 +131,16 @@ func loadHookRows(path, src string) []ExtRow {
 	if err != nil {
 		return nil
 	}
-	var specs []struct {
-		Event   string   `json:"event"`
-		Command []string `json:"command"`
-		Tool    string   `json:"tool"`
+	type hookSpec struct {
+		Event    string   `json:"event"`
+		Command  []string `json:"command"`
+		Tool     string   `json:"tool"`
+		Disabled bool     `json:"disabled"`
 	}
+	var specs []hookSpec
 	if json.Unmarshal(data, &specs) != nil {
 		var wrap struct {
-			Hooks []struct {
-				Event   string   `json:"event"`
-				Command []string `json:"command"`
-				Tool    string   `json:"tool"`
-			} `json:"hooks"`
+			Hooks []hookSpec `json:"hooks"`
 		}
 		if json.Unmarshal(data, &wrap) != nil {
 			return nil
@@ -141,12 +148,13 @@ func loadHookRows(path, src string) []ExtRow {
 		specs = wrap.Hooks
 	}
 	var rows []ExtRow
-	for _, h := range specs {
+	for i, h := range specs {
 		name := h.Event
 		if h.Tool != "" {
 			name += ":" + h.Tool
 		}
-		rows = append(rows, ExtRow{Kind: "hook", Name: name, Detail: strings.Join(h.Command, " "), Source: src})
+		rows = append(rows, ExtRow{Kind: "hook", Name: name, Detail: strings.Join(h.Command, " "), Source: src,
+			Path: path, Index: i, Disabled: h.Disabled})
 	}
 	return rows
 }
@@ -156,6 +164,7 @@ type pluginsState struct {
 	list   list
 	rows   []ExtRow
 	loaded bool
+	err    string // last toggle error ("" = none)
 }
 
 func (p *pluginsState) init(*Data) {}
@@ -175,9 +184,24 @@ func (p *pluginsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if p.list.key(key, m.height-6) {
 		return m, nil
 	}
-	if key == "R" { // manual refresh (capital: bare letters are page-jumps)
+	switch key {
+	case "R": // manual refresh (capital: bare letters are page-jumps)
 		p.loaded = false
 		p.load()
+	case " ", "enter":
+		// Toggle the selected extension on/off (persists "disabled": true in
+		// its config file; applies to NEW sessions — running ones keep their
+		// already-connected servers).
+		if p.list.cursor < len(p.rows) {
+			r := p.rows[p.list.cursor]
+			if _, err := toggleDisabled(r.Path, r.Kind, r.Index); err != nil {
+				p.err = err.Error()
+			} else {
+				p.err = ""
+				p.loaded = false
+				p.load()
+			}
+		}
 	}
 	return m, nil
 }
@@ -201,15 +225,24 @@ func (p *pluginsState) view(m *Model, w, h int) string {
 		if i == p.list.cursor {
 			cursor = sAccent.Render("▎ ")
 		}
-		kind := kindStyle(r.Kind).Render(pad(r.Kind, 8))
-		name := sText.Render(pad(truncate(r.Name, 28), 30))
+		dot := sOk.Render("●")
+		nameStyle, kstyle := sText, kindStyle(r.Kind)
+		if r.Disabled {
+			dot = sFaint.Render("○")
+			nameStyle, kstyle = sFaint, sFaint
+		}
+		kind := kstyle.Render(pad(r.Kind, 8))
+		name := nameStyle.Render(pad(truncate(r.Name, 28), 30))
 		srcCol := sDim.Render(pad(r.Source, 9))
-		out += cursor + kind + name + srcCol + "\n"
+		out += cursor + dot + " " + kind + name + srcCol + "\n"
 	}
 	if i := p.list.cursor; i < len(p.rows) {
 		out += "\n" + sFaint.Render("  "+truncate(p.rows[i].Detail, w-6)) + "\n"
 	}
-	out += sFaint.Render("  R refresh · read-only (edit the json configs)")
+	if p.err != "" {
+		out += sErr.Render("  "+truncate(p.err, w-4)) + "\n"
+	}
+	out += sFaint.Render("  space toggle on/off (new sessions) · R refresh")
 	return out
 }
 

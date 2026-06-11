@@ -195,3 +195,34 @@ func View(c Config) string {
 func (c Config) ObserveEnabled() bool {
 	return c.Observe == nil || *c.Observe
 }
+
+// Get returns the current value of a settable key, formatted as Set accepts.
+func Get(c Config, key string) string {
+	switch key {
+	case "provider":
+		return c.Provider
+	case "model":
+		return c.Model
+	case "perm":
+		return c.Perm
+	case "max_tokens":
+		return strconv.Itoa(c.MaxTokens)
+	case "tts_cmd":
+		return c.TTSCmd
+	case "notify_cmd":
+		return c.NotifyCmd
+	case "judge_model":
+		return c.JudgeModel
+	case "dream_on_idle":
+		return strconv.FormatBool(c.DreamOnIdle)
+	case "idle_minutes":
+		return strconv.Itoa(c.IdleMinutes)
+	case "route":
+		return strconv.FormatBool(c.Route)
+	case "route_providers":
+		return strings.Join(c.RouteProviders, " ")
+	case "observe":
+		return strconv.FormatBool(c.ObserveEnabled())
+	}
+	return ""
+}
