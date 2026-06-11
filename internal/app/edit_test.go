@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/avifenesh/eigen/internal/config"
+	"github.com/avifenesh/eigen/internal/feed"
 	"github.com/avifenesh/eigen/internal/memory"
 	"github.com/avifenesh/eigen/internal/skill"
 )
@@ -238,5 +239,34 @@ func TestMemoryConsolidateNeedsSmall(t *testing.T) {
 	}
 	if !strings.Contains(m.memory.status, "small model") {
 		t.Fatalf("status: %q", m.memory.status)
+	}
+}
+
+// --- home feed dismiss ----------------------------------------------------
+
+func TestHomeFeedDismiss(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	d := &Data{
+		Config: config.Config{},
+		Skills: skill.Discover(),
+		Feed: feed.Feed{Items: []feed.Item{
+			{Kind: "git", Title: "p: 2 uncommitted file(s)", Dir: "/p", Task: "commit"},
+			{Kind: "memory", Title: "p: old intent", Dir: "/p", Task: "do"},
+		}},
+		FeedFresh: true,
+	}
+	m := New(d)
+	m.active = PageHome
+	m.width, m.height = 100, 30
+	if m.home.feedN != 2 {
+		t.Fatalf("feedN = %d", m.home.feedN)
+	}
+	m.Update(key("d")) // dismiss the selected (first) item
+	if m.home.feedN != 1 || m.home.feed[0].Kind != "memory" {
+		t.Fatalf("dismiss failed: feedN=%d feed=%+v", m.home.feedN, m.home.feed)
+	}
+	// Persisted: a fresh filter still drops it.
+	if got := feed.FilterDismissed(d.Feed.Items); len(got) != 1 {
+		t.Fatalf("not persisted: %+v", got)
 	}
 }

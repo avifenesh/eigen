@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -113,5 +114,97 @@ func TestFirstSentenceAround(t *testing.T) {
 	got := firstSentenceAround(b, intentRe)
 	if !strings.HasPrefix(got, "REMAINING") {
 		t.Fatalf("sentence: %q", got)
+	}
+}
+
+func TestRankOrdersByActionability(t *testing.T) {
+	items := []Item{
+		{Kind: "memory", Title: "m1"},
+		{Kind: "git", Title: "x: 3 unpushed commit(s)"},
+		{Kind: "github", Title: "assigned issue: do thing"},
+		{Kind: "git", Title: "x: 2 uncommitted file(s)"},
+		{Kind: "github", Title: "review requested: fix bug"},
+	}
+	got := rank(items)
+	want := []string{
+		"review requested: fix bug",
+		"assigned issue: do thing",
+		"x: 2 uncommitted file(s)",
+		"x: 3 unpushed commit(s)",
+		"m1",
+	}
+	for i, w := range want {
+		if got[i].Title != w {
+			t.Fatalf("rank[%d] = %q, want %q", i, got[i].Title, w)
+		}
+	}
+}
+
+func TestRankStableWithinScore(t *testing.T) {
+	items := []Item{
+		{Kind: "memory", Title: "first"},
+		{Kind: "memory", Title: "second"},
+	}
+	got := rank(items)
+	if got[0].Title != "first" || got[1].Title != "second" {
+		t.Fatalf("rank must be stable: %+v", got)
+	}
+}
+
+func TestDismissRoundTrip(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	a := Item{Kind: "git", Title: "x: 2 uncommitted file(s)", Dir: "/p"}
+	b := Item{Kind: "git", Title: "x: 5 uncommitted file(s)", Dir: "/p"}
+	Dismiss(a)
+	out := FilterDismissed([]Item{a, b})
+	if len(out) != 1 || out[0].Title != b.Title {
+		t.Fatalf("filter: %+v", out)
+	}
+	// Content change = new identity = resurfaces (b was never dismissed).
+	if a.Key() == b.Key() {
+		t.Fatal("changed content must change the key")
+	}
+}
+
+func TestDismissExpires(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	it := Item{Kind: "memory", Title: "old intent", Dir: "/p"}
+	// Write an expired dismissal directly.
+	d := map[string]time.Time{it.Key(): time.Now().Add(-15 * 24 * time.Hour)}
+	b, _ := json.Marshal(d)
+	os.MkdirAll(filepath.Dir(dismissedPath()), 0o755)
+	os.WriteFile(dismissedPath(), b, 0o644)
+	out := FilterDismissed([]Item{it})
+	if len(out) != 1 {
+		t.Fatal("expired dismissal must resurface the item")
+	}
+}
+
+func TestTopDiversity(t *testing.T) {
+	items := []Item{
+		{Kind: "github", Title: "g1"}, {Kind: "github", Title: "g2"},
+		{Kind: "github", Title: "g3"}, {Kind: "github", Title: "g4"},
+		{Kind: "git", Title: "w1"}, {Kind: "memory", Title: "m1"},
+	}
+	got := Top(items, 6, 3)
+	if len(got) != 6 {
+		t.Fatalf("len = %d", len(got))
+	}
+	// First 5: g1 g2 g3 (cap) then w1 m1; g4 backfills last.
+	want := []string{"g1", "g2", "g3", "w1", "m1", "g4"}
+	for i, w := range want {
+		if got[i].Title != w {
+			t.Fatalf("top[%d] = %q, want %q (%+v)", i, got[i].Title, w, got)
+		}
+	}
+}
+
+func TestTopLimit(t *testing.T) {
+	items := []Item{{Kind: "git", Title: "a"}, {Kind: "git", Title: "b"}}
+	if got := Top(items, 1, 3); len(got) != 1 || got[0].Title != "a" {
+		t.Fatalf("top: %+v", got)
+	}
+	if got := Top(nil, 5, 3); got != nil {
+		t.Fatal("nil in, nil out")
 	}
 }

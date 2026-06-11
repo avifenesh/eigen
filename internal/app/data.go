@@ -264,11 +264,16 @@ func Providers() []ProviderRow {
 	return out
 }
 
+// feedItems returns the renderable feed: dismissed items filtered out.
+func (d *Data) feedItems() []feed.Item {
+	return feed.FilterDismissed(d.Feed.Items)
+}
+
 // feedFor returns the feed items scoped to a project dir (its loose ends),
-// in feed order.
+// in feed order, dismissed filtered.
 func (d *Data) feedFor(dir string) []feed.Item {
 	var out []feed.Item
-	for _, it := range d.Feed.Items {
+	for _, it := range d.feedItems() {
 		if it.Dir == dir {
 			out = append(out, it)
 		}

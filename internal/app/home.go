@@ -5,6 +5,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/avifenesh/eigen/internal/feed"
 )
 
 // homeState is the landing page: identity, quick stats, the proactive action
@@ -12,8 +14,9 @@ import (
 // recent sessions. One cursor walks feed items then sessions.
 type homeState struct {
 	list     list
-	feedN    int // feed items shown (cursor 0..feedN-1 = feed)
-	sessionN int // sessions shown   (cursor feedN.. = sessions)
+	feed     []feed.Item // filtered (dismissals applied), capped
+	feedN    int         // feed items shown (cursor 0..feedN-1 = feed)
+	sessionN int         // sessions shown   (cursor feedN.. = sessions)
 }
 
 // homeFeedLimit / homeRecentLimit bound the two home sections.
@@ -26,9 +29,13 @@ func (h *homeState) init(d *Data) {
 	h.syncFeed(d)
 }
 
-// syncFeed recomputes section sizes (called when the feed or sessions change).
+// syncFeed recomputes the filtered feed + section sizes (called when the
+// feed, dismissals, or sessions change).
 func (h *homeState) syncFeed(d *Data) {
-	h.feedN = min(len(d.Feed.Items), homeFeedLimit)
+	// Top-ranked with per-kind diversity: a busy GitHub week can't crowd
+	// your own uncommitted work off the page.
+	h.feed = feed.Top(d.feedItems(), homeFeedLimit, 3)
+	h.feedN = len(h.feed)
 	h.sessionN = min(len(d.Sessions), homeRecentLimit)
 	h.list.count = h.feedN + h.sessionN
 	h.list.clamp()
@@ -47,7 +54,7 @@ func (h *homeState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case c < h.feedN:
 			// A feed item: open a chat rooted at its project with the task
 			// pre-submitted — the one-keystroke session starter.
-			it := m.data.Feed.Items[c]
+			it := h.feed[c]
 			m.result = Result{Action: ActionOpenChat, Dir: it.Dir, Task: it.Task}
 			m.quitting = true
 			return m, tea.Quit
@@ -61,6 +68,13 @@ func (h *homeState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.result = Result{Action: ActionOpenChat}
 		m.quitting = true
 		return m, tea.Quit
+	case "d":
+		// Dismiss the selected feed item (stops appearing for 2 weeks, or
+		// until its content changes — e.g. the dirty-file count moves).
+		if c := h.list.cursor; c < h.feedN {
+			feed.Dismiss(h.feed[c])
+			h.syncFeed(m.data)
+		}
 	}
 	return m, nil
 }
@@ -80,7 +94,7 @@ func (h *homeState) view(m *Model, w, _ int) string {
 	if h.feedN > 0 {
 		s += sDim.Render("  act on") + "\n"
 		for i := 0; i < h.feedN; i++ {
-			it := d.Feed.Items[i]
+			it := h.feed[i]
 			line := fmt.Sprintf("%s %s %s",
 				kindGlyph(it.Kind),
 				pad(truncate(it.Title, w-26), w-26),
@@ -105,7 +119,7 @@ func (h *homeState) view(m *Model, w, _ int) string {
 			sDim.Render(relTime(r.Updated)))
 		s += row(h.feedN+i == h.list.cursor, line) + "\n"
 	}
-	s += "\n" + sFaint.Render("  enter act/open · n new session · s all sessions · p projects")
+	s += "\n" + sFaint.Render("  enter act/open · d dismiss · n new session · s sessions · p projects")
 	return s
 }
 
