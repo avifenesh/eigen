@@ -500,7 +500,7 @@ func TestSlashMenuTabCompletes(t *testing.T) {
 
 func TestSlashMenuEnterRunsCommand(t *testing.T) {
 	m := testModel(t)
-	typeRunes(m, "/h")
+	typeRunes(m, "/he")
 	if len(m.comp.items) != 1 || m.comp.items[0].label != "/help" {
 		t.Fatalf("expected only /help, got %v", m.comp.items)
 	}

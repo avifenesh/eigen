@@ -114,6 +114,9 @@ func (m *model) command(line string) tea.Cmd {
 		} else {
 			m.note("saved → " + path)
 		}
+	case "/home":
+		m.openApp = true
+		return tea.Quit
 	case "/sessions":
 		m.openSwitcher()
 	case "/resume":
