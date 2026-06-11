@@ -31,6 +31,9 @@ type Request struct {
 	Images []llm.Image `json:"images,omitempty"`
 	// new: optional resumed history + initial goal
 	History []llm.Message `json:"history,omitempty"`
+	// set: effort / search ("" = not in this request)
+	Effort string `json:"effort,omitempty"`
+	Search string `json:"search,omitempty"`
 }
 
 // Response is a daemon→view message. Type discriminates the payload.
@@ -56,6 +59,8 @@ type SessionState struct {
 	MaxTokens int           `json:"max_tokens"`
 	Perm      string        `json:"perm"`
 	Goal      string        `json:"goal"`
+	Effort    string        `json:"effort,omitempty"` // "" = unsupported
+	Search    string        `json:"search,omitempty"` // "" = unsupported
 	Tools     []ToolInfo    `json:"tools,omitempty"`
 }
 

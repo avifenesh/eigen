@@ -31,12 +31,11 @@ func (m *model) cycleEffort() {
 	if m.backend == nil {
 		return
 	}
-	es, ok := m.backend.Provider().(llm.EffortSetter)
-	if !ok {
+	cur := m.backend.Effort()
+	if cur == "" {
 		m.note("the current model does not support a reasoning-effort setting")
 		return
 	}
-	cur := es.Effort()
 	next := cur
 	for i, l := range llm.EffortLevels {
 		if l == cur {
@@ -44,14 +43,14 @@ func (m *model) cycleEffort() {
 			break
 		}
 	}
-	if next == cur || !es.SetEffort(next) {
+	if next == cur || !m.backend.SetEffort(next) {
 		// Current level not found in the list, or set failed: start at the first.
 		if len(llm.EffortLevels) > 0 {
-			_ = es.SetEffort(llm.EffortLevels[0])
+			_ = m.backend.SetEffort(llm.EffortLevels[0])
 		}
 	}
 	m.saveMeta()
-	m.note("reasoning effort → " + es.Effort())
+	m.note("reasoning effort → " + m.backend.Effort())
 }
 
 // cycleModel switches to the next model in the catalog (wrapping) — the

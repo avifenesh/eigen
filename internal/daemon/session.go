@@ -313,6 +313,12 @@ func (s *Session) state() *SessionState {
 	}
 	if a.Provider != nil {
 		st.Provider = a.Provider.Name()
+		if es, ok := a.Provider.(llm.EffortSetter); ok {
+			st.Effort = es.Effort()
+		}
+		if sr, ok := a.Provider.(llm.Searcher); ok {
+			st.Search = sr.SearchMode()
+		}
 	}
 	if a.Tools != nil {
 		for _, d := range a.Tools.Definitions() {
@@ -325,6 +331,22 @@ func (s *Session) state() *SessionState {
 // setPerm/setGoal mutate session state (the agent's setters are mutex-guarded).
 func (s *Session) setPerm(p string) { s.agent.SetPerm(agent.Permission(p)) }
 func (s *Session) setGoal(g string) { s.agent.SetGoal(g) }
+
+// setEffort/setSearch forward to the provider's optional capability; false =
+// the model has no such setting or rejected the value.
+func (s *Session) setEffort(level string) bool {
+	if es, ok := s.agent.Provider.(llm.EffortSetter); ok {
+		return es.SetEffort(level)
+	}
+	return false
+}
+
+func (s *Session) setSearch(mode string) bool {
+	if sr, ok := s.agent.Provider.(llm.Searcher); ok {
+		return sr.SetSearch(mode)
+	}
+	return false
+}
 
 // compact summarizes toward target tokens (0 = the agent's default policy).
 func (s *Session) compact(ctx context.Context, target int) (int, int, error) {

@@ -237,3 +237,15 @@ func (c *Client) NewSession(dir, model, perm string, history []llm.Message) (str
 	}
 	return r.ID, nil
 }
+
+// SetEffort sets the session's reasoning effort; error = unsupported.
+func (c *Client) SetEffort(sessionID, level string) error {
+	_, err := c.request(Request{Op: "set", ID: sessionID, Effort: level})
+	return err
+}
+
+// SetSearch sets the session's live-search mode; error = unsupported.
+func (c *Client) SetSearch(sessionID, mode string) error {
+	_, err := c.request(Request{Op: "set", ID: sessionID, Search: mode})
+	return err
+}

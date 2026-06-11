@@ -225,3 +225,45 @@ func TestRemoteModelSwitch(t *testing.T) {
 		t.Fatalf("after switch: %q", r.ModelID())
 	}
 }
+
+// effortProv supports reasoning effort (used to verify effort over the socket).
+type effortProv struct{ effort string }
+
+func (p *effortProv) Name() string    { return "effort-model" }
+func (p *effortProv) ModelID() string { return "effort-model" }
+func (p *effortProv) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
+	return &llm.Response{Text: "ok"}, nil
+}
+func (p *effortProv) SetEffort(l string) bool { p.effort = l; return l == "low" || l == "high" }
+func (p *effortProv) Effort() string          { return p.effort }
+
+func TestRemoteEffortOverSocket(t *testing.T) {
+	prov := &effortProv{effort: "high"}
+	build := func(_, _ string) (*agent.Agent, func(), error) {
+		reg, _ := tool.NewRegistry()
+		return &agent.Agent{Provider: prov, Tools: reg, Perm: agent.PermAuto}, func() {}, nil
+	}
+	c, id := startDaemon(t, build)
+	r, err := NewRemote(c, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Effort travels in the state snapshot — the status bar shows it without
+	// a provider handle.
+	if r.Effort() != "high" {
+		t.Fatalf("effort = %q, want high", r.Effort())
+	}
+	if !r.SetEffort("low") {
+		t.Fatal("SetEffort(low) should succeed")
+	}
+	if r.Effort() != "low" {
+		t.Fatalf("after set: %q", r.Effort())
+	}
+	if r.SetEffort("bogus") {
+		t.Fatal("SetEffort(bogus) should fail")
+	}
+	// A provider with no search setting reports "" (segment hidden).
+	if r.SearchMode() != "" {
+		t.Fatalf("search should be unsupported, got %q", r.SearchMode())
+	}
+}

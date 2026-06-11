@@ -149,3 +149,35 @@ func (l *Local) Answer(approvalID string, allow bool) {
 		}
 	}
 }
+
+// Effort returns the provider's reasoning-effort level ("" = unsupported).
+func (l *Local) Effort() string {
+	if es, ok := l.a.Provider.(llm.EffortSetter); ok {
+		return es.Effort()
+	}
+	return ""
+}
+
+// SetEffort sets the reasoning effort; false = unsupported or unknown level.
+func (l *Local) SetEffort(level string) bool {
+	if es, ok := l.a.Provider.(llm.EffortSetter); ok {
+		return es.SetEffort(level)
+	}
+	return false
+}
+
+// SearchMode returns the provider's live-search mode ("" = unsupported).
+func (l *Local) SearchMode() string {
+	if sr, ok := l.a.Provider.(llm.Searcher); ok {
+		return sr.SearchMode()
+	}
+	return ""
+}
+
+// SetSearch sets the live-search mode; false = unsupported or unknown mode.
+func (l *Local) SetSearch(mode string) bool {
+	if sr, ok := l.a.Provider.(llm.Searcher); ok {
+		return sr.SetSearch(mode)
+	}
+	return false
+}

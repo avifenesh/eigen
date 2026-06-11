@@ -256,35 +256,33 @@ func (m *model) command(line string) tea.Cmd {
 			return m.scheduleLoop()
 		}
 	case "/effort":
-		es, ok := m.backend.Provider().(llm.EffortSetter)
-		if !ok {
+		if m.backend.Effort() == "" {
 			m.note("the current model does not support a reasoning-effort setting")
 			break
 		}
 		if arg == "" {
-			m.note(fmt.Sprintf("reasoning effort: %s   (/effort %s)", es.Effort(), strings.Join(llm.EffortLevels, "|")))
+			m.note(fmt.Sprintf("reasoning effort: %s   (/effort %s)", m.backend.Effort(), strings.Join(llm.EffortLevels, "|")))
 			break
 		}
-		if !es.SetEffort(arg) {
+		if !m.backend.SetEffort(arg) {
 			m.push(&block{kind: blockNote, isErr: true, body: sb("unknown effort " + arg + " (want " + strings.Join(llm.EffortLevels, "|") + ")")})
 			break
 		}
-		m.note("reasoning effort → " + es.Effort())
+		m.note("reasoning effort → " + m.backend.Effort())
 	case "/search":
-		sr, ok := m.backend.Provider().(llm.Searcher)
-		if !ok {
+		if m.backend.SearchMode() == "" {
 			m.note("the current model does not support live search (grok only)")
 			break
 		}
 		if arg == "" {
-			m.note(fmt.Sprintf("live search: %s   (/search off|auto|on)", sr.SearchMode()))
+			m.note(fmt.Sprintf("live search: %s   (/search off|auto|on)", m.backend.SearchMode()))
 			break
 		}
-		if !sr.SetSearch(arg) {
+		if !m.backend.SetSearch(arg) {
 			m.push(&block{kind: blockNote, isErr: true, body: sb("unknown search mode " + arg + " (want off|auto|on)")})
 			break
 		}
-		m.note("live search → " + sr.SearchMode())
+		m.note("live search → " + m.backend.SearchMode())
 	case "/model":
 		if arg == "" {
 			m.modelPicks = llm.Models()

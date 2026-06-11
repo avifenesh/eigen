@@ -98,11 +98,11 @@ func (m *model) statusBarParts() []statusSeg {
 			permStyle = styleAsk
 		}
 		segs = append(segs, statusSeg{"perm=" + string(m.backend.Perm()), permStyle})
-		if es, ok := m.backend.Provider().(llm.EffortSetter); ok {
-			segs = append(segs, statusSeg{"effort=" + es.Effort(), styleTool})
+		if e := m.backend.Effort(); e != "" {
+			segs = append(segs, statusSeg{"effort=" + e, styleTool})
 		}
-		if sr, ok := m.backend.Provider().(llm.Searcher); ok && sr.SearchMode() != "off" {
-			segs = append(segs, statusSeg{"search=" + sr.SearchMode(), styleCode})
+		if sm := m.backend.SearchMode(); sm != "" && sm != "off" {
+			segs = append(segs, statusSeg{"search=" + sm, styleCode})
 		}
 	}
 	if ind := m.ctxIndicator(); ind != "" {

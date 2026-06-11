@@ -82,6 +82,10 @@ func (m *model) renderEvent(e agent.Event) {
 		// turn (non-streaming, or a reasoning-only stream) — otherwise the
 		// streamed assistant block already holds it.
 		if !m.streamedText && strings.TrimSpace(e.Text) != "" {
+			// Count the final answer into the turn's output stats: a
+			// non-streaming turn with no tool steps emits no deltas, so this
+			// is the only place its tokens are seen (tok/s would vanish).
+			m.turnOutChars += len(e.Text)
 			m.text("assistant", e.Text)
 		}
 		// Conversation mode: speak the answer, then listen for the next turn.

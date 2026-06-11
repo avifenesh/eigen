@@ -229,3 +229,27 @@ func (r *Remote) Reset(history []llm.Message) {
 func (r *Remote) Answer(approvalID string, allow bool) {
 	_ = r.c.Approve(r.id, approvalID, allow)
 }
+
+// Effort returns the daemon session's reasoning-effort level ("" = none).
+func (r *Remote) Effort() string { return r.snap().Effort }
+
+// SetEffort switches reasoning effort on the daemon's provider.
+func (r *Remote) SetEffort(level string) bool {
+	if err := r.c.SetEffort(r.id, level); err != nil {
+		return false
+	}
+	r.refresh()
+	return true
+}
+
+// SearchMode returns the daemon session's live-search mode ("" = none).
+func (r *Remote) SearchMode() string { return r.snap().Search }
+
+// SetSearch switches live search on the daemon's provider.
+func (r *Remote) SetSearch(mode string) bool {
+	if err := r.c.SetSearch(r.id, mode); err != nil {
+		return false
+	}
+	r.refresh()
+	return true
+}

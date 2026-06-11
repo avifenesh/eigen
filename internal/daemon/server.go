@@ -145,6 +145,16 @@ func (s *Server) handle(conn net.Conn) {
 				sess.setPerm(req.Perm)
 			case req.Goal != nil:
 				sess.setGoal(*req.Goal)
+			case req.Effort != "":
+				if !sess.setEffort(req.Effort) {
+					send(Response{Type: "error", Error: "effort not supported (or unknown level)"})
+					continue
+				}
+			case req.Search != "":
+				if !sess.setSearch(req.Search) {
+					send(Response{Type: "error", Error: "search not supported (or unknown mode)"})
+					continue
+				}
 			case req.Model != "":
 				if s.host.switchModel == nil {
 					send(Response{Type: "error", Error: "model switching unavailable"})

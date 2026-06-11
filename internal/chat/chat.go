@@ -49,6 +49,15 @@ type Backend interface {
 	Goal() string
 	SetGoal(string)
 
+	// Effort/Search expose the provider's reasoning-effort and live-search
+	// settings as chat state ("" = the model has no such setting), so the UI
+	// never needs the provider handle — remote backends carry these over the
+	// socket. SetEffort/SetSearch return false for an unknown level/mode.
+	Effort() string
+	SetEffort(string) bool
+	SearchMode() string
+	SetSearch(string) bool
+
 	// Tools lists registered tools (for /tools). Empty when unknown.
 	Tools() []ToolInfo
 

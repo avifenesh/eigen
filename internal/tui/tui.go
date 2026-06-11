@@ -359,8 +359,8 @@ func (m *model) saveMeta() {
 	}
 	if m.backend != nil {
 		meta.Perm = string(m.backend.Perm())
-		meta.Effort = liveEffort(m.backend.Provider())
-		meta.Search = liveSearch(m.backend.Provider())
+		meta.Effort = m.backend.Effort()
+		meta.Search = m.backend.SearchMode()
 		meta.Goal = m.backend.Goal()
 	}
 	if m.loopPrompt != "" {
@@ -1293,27 +1293,9 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 		Provider:    fm.provName,
 		Model:       fm.modelID,
 		Perm:        string(fm.backend.Perm()),
-		Effort:      liveEffort(fm.backend.Provider()),
-		Search:      liveSearch(fm.backend.Provider()),
+		Effort:      fm.backend.Effort(),
+		Search:      fm.backend.SearchMode(),
 	}, nil
-}
-
-// liveEffort returns the provider's current reasoning-effort label, or "" when
-// the provider has no effort setting.
-func liveEffort(p llm.Provider) string {
-	if es, ok := p.(llm.EffortSetter); ok {
-		return es.Effort()
-	}
-	return ""
-}
-
-// liveSearch returns the provider's current live-search mode, or "" when the
-// provider has no search setting.
-func liveSearch(p llm.Provider) string {
-	if sr, ok := p.(llm.Searcher); ok {
-		return sr.SearchMode()
-	}
-	return ""
 }
 
 func compact(s string) string {
