@@ -388,3 +388,36 @@ func TestApprovalDenied(t *testing.T) {
 		t.Fatal("denied tool must NOT run")
 	}
 }
+
+// TestWireEventCarriesEverything pins wire fidelity: every agent.Event field
+// the TUI renders must survive the socket round-trip. Regression: ToolArgs
+// were dropped, so daemon-attached views showed bare "bash" tool blocks with
+// no command and no expandable body.
+func TestWireEventCarriesEverything(t *testing.T) {
+	in := agent.Event{
+		Kind:     agent.EventToolStart,
+		Step:     3,
+		Text:     "txt",
+		ToolName: "bash",
+		ToolID:   "tc_1",
+		ToolArgs: json.RawMessage(`{"command":"echo hello"}`),
+		Result:   "res",
+		IsError:  true,
+	}
+	w := wireEvent(in)
+	b, err := json.Marshal(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back WireEvent
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.ToolName != "bash" || back.ToolID != "tc_1" || back.Step != 3 ||
+		back.Text != "txt" || back.Result != "res" || !back.IsError {
+		t.Fatalf("lost fields: %+v", back)
+	}
+	if string(back.ToolArgs) != `{"command":"echo hello"}` {
+		t.Fatalf("ToolArgs lost: %q", back.ToolArgs)
+	}
+}

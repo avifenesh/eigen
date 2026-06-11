@@ -262,6 +262,7 @@ func ensureDaemon() (*daemon.Client, error) {
 	}
 	home, _ := os.UserHomeDir()
 	logPath := filepath.Join(home, ".eigen", "daemon.log")
+	_ = os.MkdirAll(filepath.Dir(logPath), 0o755) // fresh install: ~/.eigen may not exist yet
 	logf, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return nil, err
