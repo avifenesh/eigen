@@ -396,10 +396,19 @@ func (m *model) scheduleIdleDream() tea.Cmd {
 // dreamCmd reflects over the current session into project memory in the
 // background, returning the distilled notes via dreamDoneMsg.
 func (m *model) dreamCmd() tea.Cmd {
-	if m.mem == nil || m.backend == nil || m.backend.Provider() == nil {
+	if m.mem == nil || m.backend == nil {
 		return nil
 	}
 	prov := m.backend.Provider()
+	if prov == nil {
+		// Daemon session: the provider lives in the daemon. Dreaming is a
+		// read-only distillation, so build a throwaway provider here.
+		p, err := llm.New("", m.modelID)
+		if err != nil {
+			return nil
+		}
+		prov = p
+	}
 	convo := dream.RenderSession(m.backend.Messages())
 	existing := m.mem.Read()
 	return func() tea.Msg {
@@ -510,9 +519,11 @@ func (m *model) submit(task string) tea.Cmd {
 		}
 	}
 
-	// Vision: attach referenced image files when the active model supports it.
+	// Vision: attach referenced image files when the active model supports it
+	// (model-id capability check — works for daemon sessions too, where no
+	// live provider handle exists in the view).
 	var images []llm.Image
-	if m.backend != nil && m.backend.Provider() != nil && llm.HasVision(m.modelID) {
+	if m.backend != nil && llm.HasVision(m.modelID) {
 		imgs, notes := extractImages(task)
 		images = imgs
 		for _, n := range notes {

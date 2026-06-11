@@ -178,7 +178,14 @@ func (s *Server) handle(conn net.Conn) {
 				send(Response{Type: "error", Error: "no such session"})
 				continue
 			}
-			sess.clear()
+			if len(req.History) > 0 {
+				// Reset-to-history: the /resume command loads a transcript
+				// into this session (replaces the conversation).
+				sess.clear()
+				sess.resume(req.History)
+			} else {
+				sess.clear()
+			}
 			s.host.saveSessionMeta(sess)
 			send(Response{Type: "ok"})
 		case "resend":

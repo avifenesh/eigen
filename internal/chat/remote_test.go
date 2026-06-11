@@ -3,7 +3,9 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -265,5 +267,61 @@ func TestRemoteEffortOverSocket(t *testing.T) {
 	// A provider with no search setting reports "" (segment hidden).
 	if r.SearchMode() != "" {
 		t.Fatalf("search should be unsupported, got %q", r.SearchMode())
+	}
+}
+
+func TestRemoteResetToHistory(t *testing.T) {
+	build := func(_, _ string) (*agent.Agent, func(), error) {
+		reg, _ := tool.NewRegistry()
+		return &agent.Agent{Provider: echoProv{}, Tools: reg, Perm: agent.PermAuto}, func() {}, nil
+	}
+	c, id := startDaemon(t, build)
+	r, err := NewRemote(c, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// /resume: import a transcript into the daemon session.
+	hist := []llm.Message{
+		{Role: llm.RoleUser, Text: "imported question"},
+		{Role: llm.RoleAssistant, Text: "imported answer"},
+	}
+	r.Reset(hist)
+	msgs := r.Messages()
+	if len(msgs) != 2 || msgs[0].Text != "imported question" {
+		t.Fatalf("resume over socket failed: %d msgs", len(msgs))
+	}
+	// And the resumed conversation continues.
+	r.Wire(func(agent.Event) {}, nil)
+	if _, err := r.Send(context.Background(), "follow-up", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Messages()) < 4 {
+		t.Fatalf("resumed session should continue, got %d msgs", len(r.Messages()))
+	}
+}
+
+// failingProv always errors (to verify daemon-side errors surface in Send).
+type failingProv struct{}
+
+func (failingProv) Name() string    { return "fail" }
+func (failingProv) ModelID() string { return "fail" }
+func (failingProv) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
+	return nil, errors.New("ThrottlingException: too many tokens")
+}
+
+func TestRemoteSendSurfacesDaemonError(t *testing.T) {
+	build := func(_, _ string) (*agent.Agent, func(), error) {
+		reg, _ := tool.NewRegistry()
+		return &agent.Agent{Provider: failingProv{}, Tools: reg, Perm: agent.PermAuto}, func() {}, nil
+	}
+	c, id := startDaemon(t, build)
+	r, err := NewRemote(c, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Wire(func(agent.Event) {}, nil)
+	_, serr := r.Send(context.Background(), "hi", nil)
+	if serr == nil || !strings.Contains(serr.Error(), "ThrottlingException") {
+		t.Fatalf("daemon-side error should surface from Send, got %v", serr)
 	}
 }

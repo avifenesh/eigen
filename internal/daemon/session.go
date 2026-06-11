@@ -88,8 +88,14 @@ func newSession(id, dir, model string, a *agent.Agent) *Session {
 		updated: time.Now(),
 		subs:    map[int]chan agent.Event{},
 	}
-	// Fan out agent events to all attached views + record for replay.
-	a.OnEvent = s.dispatch
+	// Fan out agent events to all attached views + record for replay,
+	// composing the agent's host wrap (observability + hooks) so those run
+	// in the daemon — sessions are observable with zero or many views.
+	if a.EventWrap != nil {
+		a.OnEvent = a.EventWrap(s.dispatch)
+	} else {
+		a.OnEvent = s.dispatch
+	}
 	s.installApprover()
 	return s
 }

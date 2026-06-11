@@ -14,8 +14,10 @@ import (
 	"github.com/avifenesh/eigen/internal/chat"
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/daemon"
+	"github.com/avifenesh/eigen/internal/hook"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/memory"
+	"github.com/avifenesh/eigen/internal/session"
 	"github.com/avifenesh/eigen/internal/skill"
 	"github.com/avifenesh/eigen/internal/tui"
 )
@@ -199,11 +201,20 @@ func runAttach(id string, cfg config.Config) {
 	}
 	skills := skill.Discover(skillDirs()...)
 	mem, _ := memory.Open(dir)
+	store, _ := session.Open()
+	hookRunner, _ := hook.Load(hookConfigPath())
 	res, err := tui.Run(backend, tui.Options{
 		Provider:      backend.ProviderName(),
 		Model:         backend.ModelID(),
 		Memory:        mem,
+		Store:         store,
 		Skills:        skills,
+		DreamOnIdle:   cfg.DreamOnIdle,
+		IdleMinutes:   cfg.IdleMinutes,
+		MaxTokens:     cfg.MaxTokens,
+		NotifyCmd:     cfg.NotifyCmd,
+		Router:        newAutoRouter(cfg.Route, cfg.RouteProviders, firstNonEmpty(cfg.Provider, "converse")),
+		HookRunner:    hookRunner,
 		NoSessionFile: true,
 	})
 	if err != nil {

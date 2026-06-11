@@ -108,6 +108,11 @@ type Agent struct {
 	// implements llm.Streamer.
 	OnEvent EventSink
 
+	// EventWrap, if set, wraps any sink installed as OnEvent by a session
+	// host (observability logging, hooks). The daemon applies it when wiring
+	// its dispatch so obs/hooks run daemon-side regardless of views.
+	EventWrap func(EventSink) EventSink
+
 	// ExtraSystem is appended to the base system prompt (e.g. the skills
 	// catalog), so the model knows about capabilities discovered at runtime.
 	ExtraSystem string

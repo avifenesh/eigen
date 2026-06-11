@@ -215,6 +215,12 @@ func (c *Client) Clear(sessionID string) error {
 	return err
 }
 
+// ResetTo replaces a session's conversation with imported history (/resume).
+func (c *Client) ResetTo(sessionID string, history []llm.Message) error {
+	_, err := c.request(Request{Op: "clear", ID: sessionID, History: history})
+	return err
+}
+
 // Resend retries a session's last user turn (runs in the daemon).
 func (c *Client) Resend(sessionID string) error {
 	_, err := c.request(Request{Op: "resend", ID: sessionID})

@@ -207,6 +207,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 	deps.eventWrap = func(next agent.EventSink) agent.EventSink {
 		return deps.obsLog.Wrap(hookRunner.Wrap(next, ""))
 	}
+	a.EventWrap = deps.eventWrap
 	deps.hooks = hookRunner
 	return deps, nil
 }

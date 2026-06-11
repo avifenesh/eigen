@@ -296,13 +296,20 @@ func main() {
 				fail(berr)
 			}
 			mem, _ := memory.Open("")
+			hookRunner, _ := hook.Load(hookConfigPath())
 			res, err := tui.Run(backend, tui.Options{
 				InitialTask:   task,
 				Provider:      backend.ProviderName(),
 				Model:         backend.ModelID(),
 				Memory:        mem,
+				Store:         store,
 				Skills:        skills,
+				DreamOnIdle:   cfg.DreamOnIdle,
+				IdleMinutes:   cfg.IdleMinutes,
+				MaxTokens:     resolveUserMaxTokens(*maxTokens),
 				NotifyCmd:     cfg.NotifyCmd,
+				Router:        newAutoRouter(cfg.Route, cfg.RouteProviders, firstNonEmpty(cfg.Provider, "converse")),
+				HookRunner:    hookRunner,
 				NoSessionFile: true, // the daemon persists
 			})
 			dc.Close()

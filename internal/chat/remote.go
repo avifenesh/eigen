@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -27,6 +28,7 @@ type Remote struct {
 	// (done event, or a terminal note for interrupt/error).
 	turnDone chan struct{}
 	lastText string
+	lastErr  error // daemon-side turn error (from the terminal note)
 }
 
 // NewRemote attaches to a daemon session as a chat backend. The returned
@@ -51,10 +53,16 @@ func (r *Remote) Wire(sink agent.EventSink, _ func([]llm.Message)) {
 			return
 		}
 		ev := wireToEvent(e)
-		// Track turn completion for the blocking Send.
+		// Track turn completion for the blocking Send. An error terminal note
+		// carries the daemon-side turn error — surface it as Send's error so
+		// the TUI's failover/rate-limit handling works on daemon sessions.
 		if e.Kind == "done" || (e.Kind == "note" && isTerminalNote(e.Text)) {
 			r.mu.Lock()
 			r.lastText = e.Text
+			r.lastErr = nil
+			if e.Kind == "note" && strings.HasPrefix(e.Text, "error: ") {
+				r.lastErr = errors.New(strings.TrimPrefix(e.Text, "error: "))
+			}
 			ch := r.turnDone
 			r.turnDone = nil
 			r.mu.Unlock()
@@ -122,7 +130,7 @@ func (r *Remote) Send(ctx context.Context, task string, images []llm.Image) (str
 	r.refresh()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.lastText, nil
+	return r.lastText, r.lastErr
 }
 
 // Resend asks the daemon to retry the last turn, blocking until it ends.
@@ -146,7 +154,7 @@ func (r *Remote) Resend(ctx context.Context) (string, error) {
 	r.refresh()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.lastText, nil
+	return r.lastText, r.lastErr
 }
 
 // refresh re-syncs the cached state snapshot (called after turns/mutations).
@@ -215,14 +223,15 @@ func (r *Remote) Tools() []ToolInfo {
 // provider (vision, effort, search) degrade gracefully in the TUI.
 func (r *Remote) Provider() llm.Provider { return nil }
 
-// Reset clears the daemon session's conversation (the /clear command). A
-// non-empty history (the /resume path) is not supported remotely — the daemon
-// owns history — so only the clear case is honored.
+// Reset replaces the daemon session's conversation: empty history is /clear,
+// non-empty is /resume (the daemon imports the transcript and persists it).
 func (r *Remote) Reset(history []llm.Message) {
 	if len(history) == 0 {
 		_ = r.c.Clear(r.id)
-		r.refresh()
+	} else {
+		_ = r.c.ResetTo(r.id, history)
 	}
+	r.refresh()
 }
 
 // Answer resolves a pending approval on the daemon session.
