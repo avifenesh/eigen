@@ -27,9 +27,10 @@ const (
 	PageProviders
 	PageMemory
 	PageCrons
+	PagePlugins
 )
 
-// pageNames in rail order. Plugins joins as it's built.
+// pageNames in rail order.
 var pages = []struct {
 	page Page
 	name string
@@ -45,6 +46,7 @@ var pages = []struct {
 	{PageProviders, "providers", "v"},
 	{PageMemory, "memory", "y"},
 	{PageCrons, "crons", "r"},
+	{PagePlugins, "plugins", "x"},
 }
 
 // Action is what the app asks main to do after it exits.
@@ -82,6 +84,7 @@ type Model struct {
 	providers providersState
 	memory    memoryState
 	crons     cronsState
+	plugins   pluginsState
 
 	data        *Data // loaded app data (sessions, projects, config…)
 	titledPolls int
@@ -100,6 +103,7 @@ func New(data *Data) *Model {
 	m.providers.init(data)
 	m.memory.init(data)
 	m.crons.init(data)
+	m.plugins.init(data)
 	return m
 }
 
@@ -231,6 +235,8 @@ func (m *Model) updatePage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.memory.update(m, msg)
 	case PageCrons:
 		return m.crons.update(m, msg)
+	case PagePlugins:
+		return m.plugins.update(m, msg)
 	}
 	return m, nil
 }
@@ -366,6 +372,8 @@ func (m *Model) renderPage(w, h int) string {
 		return m.memory.view(m, w, h)
 	case PageCrons:
 		return m.crons.view(m, w, h)
+	case PagePlugins:
+		return m.plugins.view(m, w, h)
 	}
 	return ""
 }

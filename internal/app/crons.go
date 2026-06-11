@@ -142,7 +142,7 @@ func (c *cronsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if c.list.key(key, m.height-6) {
 		return m, nil
 	}
-	if key == "r" { // manual refresh
+	if key == "R" { // manual refresh (capital: bare letters are page-jumps)
 		c.loaded = false
 		c.load()
 	}
@@ -179,6 +179,6 @@ func (c *cronsState) view(m *Model, w, h int) string {
 	if i := c.list.cursor; i < len(c.rows) {
 		out += "\n" + sFaint.Render("  runs: "+truncate(c.rows[i].Command, w-10)) + "\n"
 	}
-	out += sFaint.Render("  r refresh · read-only (manage via systemctl --user / crontab -e)")
+	out += sFaint.Render("  R refresh · read-only (manage via systemctl --user / crontab -e)")
 	return out
 }
