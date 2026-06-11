@@ -129,8 +129,8 @@ func runDaemon(cfg config.Config) {
 	}
 }
 
-// daemonControl handles `eigen daemon <status|stop>`; returns true if it
-// handled a control subcommand (caller should return).
+// daemonControl handles `eigen daemon <status|stop|install|uninstall>`;
+// returns true if it handled a control subcommand (caller should return).
 func daemonControl(sub string) bool {
 	switch sub {
 	case "status":
@@ -139,6 +139,12 @@ func daemonControl(sub string) bool {
 		} else {
 			fmt.Println("eigen daemon not running")
 		}
+		return true
+	case "install":
+		daemonInstall()
+		return true
+	case "uninstall":
+		daemonUninstall()
 		return true
 	case "stop":
 		pid, err := daemon.Stop(daemon.PIDPath())
@@ -306,4 +312,92 @@ func ensureDaemon() (*daemon.Client, error) {
 		time.Sleep(150 * time.Millisecond)
 	}
 	return nil, fmt.Errorf("daemon did not come up (see %s)", logPath)
+}
+
+// credentialEnvKeys are the environment variables the daemon needs that a
+// systemd user session won't have (provider credentials + eigen tuning).
+var credentialEnvKeys = []string{
+	"AWS_BEARER_TOKEN_BEDROCK", "AWS_REGION", "AWS_PROFILE",
+	"XAI_API_KEY", "EIGEN_GROK_API_KEY", "GLM_API_KEY", "ANTHROPIC_API_KEY",
+	"EIGEN_SMALL_MODEL", "EIGEN_TITLE_MODEL", "EIGEN_LLAMA_BASE_URL",
+	"EIGEN_MANTLE_REGION", "EIGEN_REASONING_EFFORT", "EIGEN_NOTIFY_CMD",
+}
+
+// daemonInstall writes + enables a systemd user unit so the daemon starts at
+// login and restarts on failure. Credentials are snapshotted from the CURRENT
+// environment into ~/.eigen/daemon.env (chmod 600) — rerun install after
+// rotating keys. daemonUninstall reverses it.
+func daemonInstall() {
+	home, _ := os.UserHomeDir()
+	exe, err := os.Executable()
+	if err != nil {
+		fail(err)
+	}
+	exe, _ = filepath.EvalSymlinks(exe)
+
+	// Snapshot credentials the unit will need.
+	envPath := filepath.Join(home, ".eigen", "daemon.env")
+	_ = os.MkdirAll(filepath.Dir(envPath), 0o755)
+	var envLines []string
+	for _, k := range credentialEnvKeys {
+		if v := os.Getenv(k); v != "" {
+			envLines = append(envLines, k+"="+v)
+		}
+	}
+	if err := os.WriteFile(envPath, []byte(strings.Join(envLines, "\n")+"\n"), 0o600); err != nil {
+		fail(fmt.Errorf("write %s: %w", envPath, err))
+	}
+
+	unitDir := filepath.Join(home, ".config", "systemd", "user")
+	_ = os.MkdirAll(unitDir, 0o755)
+	unit := fmt.Sprintf(`[Unit]
+Description=eigen daemon (session host)
+
+[Service]
+# rendered by 'eigen daemon install' — rerun after moving the binary
+ExecStart=%s daemon
+Restart=on-failure
+RestartSec=3
+EnvironmentFile=-%s
+Environment=PATH=%%h/.local/bin:%%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target
+`, exe, envPath)
+	unitPath := filepath.Join(unitDir, "eigen-daemon.service")
+	if err := os.WriteFile(unitPath, []byte(unit), 0o644); err != nil {
+		fail(err)
+	}
+	for _, args := range [][]string{
+		{"daemon-reload"},
+		{"enable", "eigen-daemon.service"},
+	} {
+		cmd := exec.Command("systemctl", append([]string{"--user"}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			fail(fmt.Errorf("systemctl %v: %v\n%s", args, err, out))
+		}
+	}
+	fmt.Printf("installed %s (enabled at login)\n", unitPath)
+	fmt.Printf("credentials snapshot: %s (rerun install after rotating keys)\n", envPath)
+	if daemon.RunningPID(daemon.PIDPath()) != 0 {
+		fmt.Println("note: a daemon is already running — it stays; systemd takes over from next login")
+		fmt.Println("      (or: eigen daemon stop && systemctl --user start eigen-daemon)")
+	} else {
+		cmd := exec.Command("systemctl", "--user", "start", "eigen-daemon.service")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			fmt.Printf("start failed (%v): %s\n", err, out)
+		} else {
+			fmt.Println("started eigen-daemon.service")
+		}
+	}
+}
+
+// daemonUninstall disables and removes the systemd user unit.
+func daemonUninstall() {
+	home, _ := os.UserHomeDir()
+	unitPath := filepath.Join(home, ".config", "systemd", "user", "eigen-daemon.service")
+	_ = exec.Command("systemctl", "--user", "disable", "--now", "eigen-daemon.service").Run()
+	_ = os.Remove(unitPath)
+	_ = exec.Command("systemctl", "--user", "daemon-reload").Run()
+	fmt.Println("removed eigen-daemon.service (daemon.env kept; delete ~/.eigen/daemon.env to purge credentials)")
 }
