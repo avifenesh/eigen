@@ -69,8 +69,11 @@ Conventions:
 - [x] `/export` session to a markdown file
 - [x] LCS-based diff rendering for edit blocks
 - [x] `move` tool (rename/move files), sub-agent **`task`** tool (depth-bounded delegation)
-- [ ] real token usage from provider responses (vs. estimate) — deferred: needs
-      live API verification of each provider's usage fields; the `~estimate` is honest
+- [x] real token usage from provider responses (vs. estimate) — shipped 9bc7001:
+      every provider parses the usage block its API returns (Converse,
+      Anthropic, Mantle, OpenAI-compatible non-stream + final stream frame);
+      llm.Response.Usage flows agent EventDone → daemon wire → TUI status bar
+      ('<in>·<out> <rate> tok/s'), falling back to ~chars/4 when unreported
 
 ## Tier 7 — vision / big bets (captured backlog, unordered)
 Raw capture from the user — refine/prioritize later. Numbered for reference only.
@@ -103,8 +106,9 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
    stated intents + GitHub (gh review-requests + assigned issues); each item
    carries a ready Task prompt + project Dir; home 'act on' section + per-
    project feed; enter opens a chat rooted there with the task pre-submitted;
-   cached ~/.eigen/feed.json 10-min TTL, async refresh. REMAINING ideas:
-   upstream-drift detection, small-model ranking/dedupe of items.)*
+   cached ~/.eigen/feed.json 10-min TTL, async refresh. Ranking + per-kind
+   diversity + dismissals shipped 82d6041; upstream-drift ('behind upstream
+   by N') shipped 9cc3a38.)*
 7. **Computer use built in** — *(shipped via #8: the agent-workspace server is
    auto-registered when its binary is present, giving screenshot/click/key/type
    + browser control as first-class tools without mcp.json editing.)*
@@ -133,8 +137,9 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
     Candidates = catalog models on credentialed + allowed providers (cross-
     provider opt-in via route_providers). /route on|off, 'route' status tag,
     each routed choice noted; respects the failover window; manual /model wins.
-    REMAINING: routing the top-level turn currently leaves the model switched
-    (per-task re-routes anyway); auxiliary-model routing for #20 image fusion.)*
+    Auxiliary vision routing shipped (d14e50a): an image attached on a
+    non-vision model routes to a vision-capable one even with the router OFF
+    (capability need overrides the toggle).)*
 11. **Hooks** — *(shipped (small/event-surface first, per the user): internal/
     hook — user commands triggered on EXPOSED lifecycle events (session_start/
     stop/resume, tool_start, tool_result, turn_done, note); each hook gets a
@@ -150,8 +155,10 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
     .eigen/AGENTS.md, CLAUDE.md), nearest-first walking up to the .git root, is
     injected into the system prompt as repository guidance — distinct from
     learned memory; capped per file.)*
-16. **tok/s in & tok/s out measurement** — *(shipped 84f13b1: output tok/s,
-    live + last-turn in status bar; input-side + real usage fields still open)*
+16. **tok/s in & tok/s out measurement** — *(shipped 84f13b1 + 9bc7001:
+    output tok/s live + last-turn; input-side tok/s now from REAL provider
+    usage (Usage{InputTokens,OutputTokens} on every backend) shown as
+    '<in>·<out> <rate> tok/s', estimate fallback when unreported)*
 17. **Observability for long-term learning** — *(shipped: internal/observe —
     structured JSONL activity log at ~/.eigen/observe/events.jsonl (metadata
     only: kind/step/tool/is_error/text+result lengths, not content). Logger.Wrap
@@ -171,8 +178,8 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
     referenced/dropped image files (png/jpeg/webp/gif, ≤8MB) when the active
     model supports vision, with a 'vision' status-bar tag. Note: this attaches
     images to the MAIN model when it is vision-capable; routing images to an
-    AUXILIARY vision model when the main one lacks it is the remaining piece,
-    tied to #10 auto-router.)*
+    AUXILIARY vision model when the main one lacks it shipped (d14e50a): an
+    image on a non-vision model forces a route to a vision-capable model.)*
 21. **Drag-and-drop of files** — *(shipped: a dropped file arrives as a
     bracketed paste of its path; eigen normalizes it (strips file://, unquotes,
     percent-decodes, handles multi-file drops) into clean path tokens the model
@@ -279,7 +286,8 @@ first-class surface, reachable by keys and a command palette:
 4. ✅ Multi-session: live page + rail glyphs, and in-window switching
    (3fb907f): alt+s hops between daemon sessions, h returns to the app — one
    window, sessions keep running (Detach never interrupts a daemon turn).
-5. ✅ Crons page (read-only: systemd user timers via --output=json + crontab).
+5. ✅ Crons page (systemd user timers via --output=json + crontab; ACTIONS:
+   space stop/start a timer, t trigger now — 53209c4).
 6. ✅ Proactive feed (#6): internal/feed scans git (uncommitted/unpushed per
    project), project memory (stated intents), and GitHub (gh review-requests +
    assigned issues); each item carries a ready Task + project Dir. Home 'act
