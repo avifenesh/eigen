@@ -144,6 +144,10 @@ func ResolveProvider(provider, model string) string {
 	if model == "" {
 		return provider
 	}
+	// Ref form: an explicit tag IS the provider.
+	if tag, _ := ParseRef(model); tag != "" {
+		return tag
+	}
 	if info, ok := Lookup(model); ok && info.Provider != "" && info.Provider != provider {
 		// Only override when the requested provider is a different *real* provider
 		// (or empty). Aliases that map to the same backend should not flip.
@@ -162,7 +166,7 @@ func canonicalProvider(p string) string {
 		return "mantle"
 	case "converse", "bedrock-converse", "claude":
 		return "converse"
-	case "anthropic", "claude-code", "claude-api":
+	case "anthropic", "ant", "claude-code", "claude-api":
 		return "anthropic"
 	case "llama", "local":
 		return "llama"
@@ -190,6 +194,7 @@ func Lookup(model string) (ModelInfo, bool) {
 	if model == "" {
 		return ModelInfo{}, false
 	}
+	_, model = ParseRef(model) // tag-blind: capability lookup is about the id
 	for _, m := range Catalog {
 		if m.ID == model {
 			return m, true

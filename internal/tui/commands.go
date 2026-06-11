@@ -329,6 +329,7 @@ func (m *model) command(line string) tea.Cmd {
 			break
 		}
 		// Resolve provider + model. Forms:
+		//   /model <provider>:<id>   ref form — explicit tag forces the backend
 		//   /model <provider> <id>   explicit provider
 		//   /model <id>              provider inferred from the catalog, else
 		//                            the current provider.
@@ -336,9 +337,14 @@ func (m *model) command(line string) tea.Cmd {
 		if fs := strings.Fields(arg); len(fs) >= 2 {
 			prov, id = fs[0], fs[1]
 		}
-		// Reconcile against the catalog so a known model never goes to the wrong
-		// backend (e.g. /model us.anthropic.claude-opus-4-8 while on mantle).
-		prov = llm.ResolveProvider(prov, id)
+		if tag, bare := llm.ParseRef(id); tag != "" {
+			// An explicit tag wins outright — no catalog second-guessing.
+			prov, id = tag, bare
+		} else {
+			// Reconcile against the catalog so a known model never goes to the
+			// wrong backend (e.g. /model us.anthropic.claude-opus-4-8 on mantle).
+			prov = llm.ResolveProvider(prov, id)
+		}
 		np, perr := m.newProvider(prov, id)
 		if perr != nil {
 			m.push(&block{kind: blockNote, isErr: true, body: sb("switch failed: " + perr.Error())})

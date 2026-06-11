@@ -65,8 +65,8 @@ func main() {
 		os.Setenv("EIGEN_SKILLS_DIRS", strings.Join(merged, ":"))
 	}
 
-	model := flag.String("model", cfg.Model, "model id (default: openai.gpt-5.5 on bedrock mantle)")
-	provider := flag.String("provider", firstNonEmpty(os.Getenv("EIGEN_PROVIDER"), cfg.Provider, "mantle"), "provider: mantle|llama|converse|grok|glm")
+	model := flag.String("model", cfg.Model, "model id, or provider:id ref (e.g. mantle:us.openai.gpt-5.5; default: openai.gpt-5.5)")
+	provider := flag.String("provider", firstNonEmpty(os.Getenv("EIGEN_PROVIDER"), cfg.Provider, "mantle"), "provider: mantle|llama|converse|anthropic|grok|glm (usually inferred from the model)")
 	perm := flag.String("perm", firstNonEmpty(os.Getenv("EIGEN_PERMISSION"), cfg.Perm, "gated"), "permission posture: gated|auto")
 	printMode := flag.Bool("p", false, "print mode: run one task headless (no TUI) and exit")
 	flag.BoolVar(printMode, "print", false, "alias for -p")
@@ -82,6 +82,12 @@ func main() {
 	listSkills := flag.Bool("list-skills", false, "list discovered skills (name, description) and exit")
 	listTools := flag.Bool("list-tools", false, "list available tools (name, posture, description) and exit")
 	flag.Parse()
+
+	// Ref form: --model mantle:us.openai.gpt-5.5 names both in one flag; an
+	// explicit tag beats --provider (one field is the source of truth).
+	if tag, id := llm.ParseRef(*model); tag != "" {
+		*provider, *model = tag, id
+	}
 
 	if *showVersion {
 		fmt.Println("eigen", llm.Version)

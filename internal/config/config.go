@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/avifenesh/eigen/internal/llm"
 )
 
 // Config is eigen's optional JSON config (~/.eigen/config.json). Every field is
@@ -54,6 +56,11 @@ func LoadFrom(path string) Config {
 		return c
 	}
 	_ = json.Unmarshal(data, &c)
+	// A hand-edited ref in model ("mantle:us.openai.gpt-5.5") splits into the
+	// shadow provider field — ONE user-facing field, provider is metadata.
+	if tag, id := llm.ParseRef(c.Model); tag != "" {
+		c.Provider, c.Model = tag, id
+	}
 	return c
 }
 
@@ -93,9 +100,22 @@ func SaveTo(path string, c Config) error {
 func Set(c *Config, key, value string) error {
 	switch key {
 	case "provider":
+		// Back-compat: still settable, but the canonical way is a model ref
+		// ("mantle:us.openai.gpt-5.5") — provider is derived metadata now.
 		c.Provider = value
 	case "model":
-		c.Model = value
+		// ONE field names both. Keep the shadow provider field honest:
+		//  - explicit "provider:" tag → that provider
+		//  - untagged id the catalog knows → the catalog's provider
+		//  - untagged unknown id → leave provider (the only case it carries info)
+		if tag, id := llm.ParseRef(value); tag != "" {
+			c.Provider, c.Model = tag, id
+		} else {
+			c.Model = value
+			if info, ok := llm.Lookup(value); ok && info.Provider != "" {
+				c.Provider = info.Provider
+			}
+		}
 	case "perm":
 		if value != "gated" && value != "auto" {
 			return fmt.Errorf("perm must be gated|auto")
@@ -174,8 +194,13 @@ func View(c Config) string {
 		return s
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-14s = %s\n", "provider", val(c.Provider))
-	fmt.Fprintf(&b, "%-14s = %s\n", "model", val(c.Model))
+	// ONE field names both: model renders as a ref (tagged only when the id
+	// doesn't self-tag via the catalog). provider is shadow metadata — shown
+	// only when model is unset and it alone carries the default.
+	fmt.Fprintf(&b, "%-14s = %s\n", "model", val(Get(c, "model")))
+	if c.Model == "" && c.Provider != "" {
+		fmt.Fprintf(&b, "%-14s = %s (provider default; set a model to supersede)\n", "provider", c.Provider)
+	}
 	fmt.Fprintf(&b, "%-14s = %s\n", "perm", val(c.Perm))
 	fmt.Fprintf(&b, "%-14s = %d\n", "max_tokens", c.MaxTokens)
 	fmt.Fprintf(&b, "%-14s = %s\n", "tts_cmd", val(c.TTSCmd))
@@ -208,7 +233,9 @@ func Get(c Config, key string) string {
 	case "provider":
 		return c.Provider
 	case "model":
-		return c.Model
+		// Render the one-field form: bare id when it self-tags, provider:id
+		// when the provider carries information the id alone wouldn't.
+		return llm.Ref(c.Provider, c.Model)
 	case "perm":
 		return c.Perm
 	case "max_tokens":

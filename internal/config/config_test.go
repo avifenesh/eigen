@@ -125,3 +125,35 @@ func TestSetRouteKeys(t *testing.T) {
 		t.Fatal("non-bool route should error")
 	}
 }
+
+func TestSetModelRefSplitsProvider(t *testing.T) {
+	var c Config
+	if err := Set(&c, "model", "mantle:us.openai.gpt-5.5"); err != nil {
+		t.Fatal(err)
+	}
+	if c.Provider != "mantle" || c.Model != "us.openai.gpt-5.5" {
+		t.Fatalf("ref should split: %+v", c)
+	}
+	// Untagged catalog id: model set, provider derived from the catalog
+	// (keeps the shadow field honest).
+	if err := Set(&c, "model", "glm-5.1"); err != nil {
+		t.Fatal(err)
+	}
+	if c.Model != "glm-5.1" || c.Provider != "glm" {
+		t.Fatalf("untagged catalog id should derive provider: %+v", c)
+	}
+	// Get renders the one-field form (catalog ids bare).
+	if got := Get(c, "model"); got != "glm-5.1" {
+		t.Fatalf("Get(model) = %q", got)
+	}
+}
+
+func TestLoadFromNormalizesRef(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/config.json"
+	os.WriteFile(path, []byte(`{"model":"ant:claude-opus-4-1-20250805"}`), 0o644)
+	c := LoadFrom(path)
+	if c.Provider != "ant" || c.Model != "claude-opus-4-1-20250805" {
+		t.Fatalf("hand-edited ref should normalize: %+v", c)
+	}
+}

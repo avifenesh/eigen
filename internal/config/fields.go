@@ -20,8 +20,7 @@ type Field struct {
 // Keys() derives from this — one source of truth.
 func Fields() []Field {
 	return []Field{
-		{Key: "provider", Desc: "default provider for new sessions (live switch: /model)", Dynamic: "providers"},
-		{Key: "model", Desc: "default model for new sessions — any catalog model", Dynamic: "models"},
+		{Key: "model", Desc: "default model for new sessions — catalog ids self-tag their backend; force one with provider:id (e.g. mantle:us.openai.gpt-5.5, ant:claude-opus-4-1); live switch: /model", Dynamic: "models"},
 		{Key: "perm", Desc: "tool permission: gated asks before mutating tools · auto runs them freely", Options: []string{"gated", "auto"}},
 		{Key: "max_tokens", Desc: "context-budget ceiling in tokens; 0 = auto (85% of the model window)"},
 		{Key: "tts_cmd", Desc: "text-to-speech command for /read and voice mode, e.g. espeak-ng or readd — the text is passed as the last argument"},
