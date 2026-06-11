@@ -147,7 +147,8 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
     Config hooks.json (array or {hooks:[…]}), project-or-user. Memory-as-a-hook
     (eigen dream on session_stop) shown in docs/hooks-example.json. More hook
     points added when a concrete need arises.)*
-12. **Sub-agents** — *(partially shipped: depth-bounded `task` tool; expand: named roles, parallelism)*.
+12. **Sub-agents** — *(partially shipped: depth-bounded `task` tool; foreground routing/model override/background handles landed in task-v2; expand: named roles, parallelism, and escalation)*.
+    - [ ] Background task escalation: if a background task fails/stalls/declares it is underpowered, automatically re-run or hand off to a bigger model (not necessarily back to the orchestrator) and merge the final report back through `task_status`.
 13. **Ultraplan** — dozens of in-depth sub-agents driven by one big plan ahead.
 14. **Ping** — *(shipped cf8d2de: terminal bell + optional notify_cmd on
     approval-needed and long-turn-finished)*

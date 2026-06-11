@@ -93,11 +93,21 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 	router := newAutoRouter(p.Cfg.Route, p.Cfg.RouteProviders, p.Provider)
 	deps.Router = router
 
-	taskRun := func(ctx context.Context, t, kind, difficulty string) (string, error) {
+	taskRun := func(ctx context.Context, t string, opts tool.TaskOpts, background bool) (string, error) {
 		if deps.Agent == nil {
 			return "", fmt.Errorf("subtasks unavailable")
 		}
-		return deps.Agent.Subtask(ctx, t, kind, difficulty)
+		aopts := agent.SubtaskOpts{Kind: opts.Kind, Difficulty: opts.Difficulty, Model: opts.Model}
+		if background {
+			return deps.Agent.SubtaskBackground(ctx, t, aopts)
+		}
+		return deps.Agent.SubtaskWith(ctx, t, aopts)
+	}
+	taskStatus := func(ctx context.Context, id string, all bool) (string, error) {
+		if deps.Agent == nil || deps.Agent.Bg == nil {
+			return "", fmt.Errorf("background tasks unavailable")
+		}
+		return formatTaskStatus(deps.Agent.Bg, id, all), nil
 	}
 	goalJudge := func(ctx context.Context, evidence string) (bool, string, error) {
 		if deps.Agent == nil {
@@ -126,7 +136,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		tool.Symbols(policy), tool.Tree(policy), tool.Diff(policy), tool.Write(policy),
 		tool.Edit(policy), tool.MultiEdit(policy), tool.Patch(policy), tool.Move(policy),
 		tool.Bash(policy), tool.Fetch(), tool.Todo(), tool.Skill(p.Skills),
-		tool.Memory(mem, p.GlobalMem), tool.Task(taskRun),
+		tool.Memory(mem, p.GlobalMem), tool.Task(taskRun), tool.TaskStatus(taskStatus),
 		tool.GoalAchieved(goalJudge), tool.Review(reviewRun),
 	}
 	if ws, ok := tool.WebSearch(); ok {
@@ -205,6 +215,8 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		Memory:           memory.Sections(p.GlobalMem, mem),
 		Goal:             p.Goal,
 		Router:           router.Route,
+		ModelProvider:    router.providerFor,
+		Bg:               agent.NewBgRegistry(agent.TasksDir()),
 	}
 	deps.Agent = a
 	deps.eventWrap = func(next agent.EventSink) agent.EventSink {

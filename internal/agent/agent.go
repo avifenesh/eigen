@@ -144,6 +144,15 @@ type Agent struct {
 	// nil to keep the current model. Injected by main (the agent package does
 	// not build providers). Used by Subtask when auto-routing is enabled.
 	Router func(ctx context.Context, prompt, kind, difficulty string, hasImage bool) (llm.Provider, string, string)
+
+	// ModelProvider, if set, builds a Provider for an explicit model id/ref —
+	// the orchestrator's per-delegation override ("run this on grok-4"), and
+	// the escalation hook for background tasks. Injected by main.
+	ModelProvider func(model string) (llm.Provider, error)
+
+	// Bg, if set, enables background subtasks (task tool background:true):
+	// detached delegations persisted under ~/.eigen/tasks. Injected by main.
+	Bg *BgRegistry
 }
 
 // maxToolOutput caps a single tool result fed back to the model, so a runaway
@@ -253,30 +262,77 @@ type subtaskDepthKey struct{}
 // maxSubtaskDepth caps how deeply subtasks may nest.
 const maxSubtaskDepth = 2
 
+// SubtaskOpts shapes one delegation: routing hints (kind/difficulty), an
+// explicit Model override (the orchestrator names a specific model — beats
+// routing entirely), and ModelProvider, the injected constructor that turns a
+// model id into a ready Provider (set by main; the agent package does not
+// build providers).
+type SubtaskOpts struct {
+	Kind       string
+	Difficulty string
+	Model      string // explicit model id/ref — overrides routing when set
+}
+
 // Subtask runs task on a fresh session of (a copy of) this agent, with event
 // emission suppressed so a delegated subtask does not clutter the caller's
-// transcript. Recursion is bounded so subtasks cannot spawn unboundedly. When a
-// Router is set, the subtask is routed to the best-fit model for its
-// kind/difficulty; otherwise it inherits the caller's provider.
+// transcript — except a single EventNote reflecting WHERE the subtask ran
+// (routed model or explicit override), so every delegation is auditable.
+// Recursion is bounded so subtasks cannot spawn unboundedly.
 func (a *Agent) Subtask(ctx context.Context, task, kind, difficulty string) (string, error) {
+	return a.SubtaskWith(ctx, task, SubtaskOpts{Kind: kind, Difficulty: difficulty})
+}
+
+// SubtaskWith is Subtask with full options (explicit model override).
+func (a *Agent) SubtaskWith(ctx context.Context, task string, opts SubtaskOpts) (string, error) {
 	depth, _ := ctx.Value(subtaskDepthKey{}).(int)
 	if depth >= maxSubtaskDepth {
 		return "", fmt.Errorf("subtask depth limit (%d) reached", maxSubtaskDepth)
 	}
-	// Pick the provider/model/compactor: routed when a Router is set, else the
-	// caller's live provider.
+	sub, where := a.subAgent(ctx, task, opts)
+	if where != "" {
+		a.emit(Event{Kind: EventNote, Text: "task → " + where})
+	}
+	ctx = context.WithValue(ctx, subtaskDepthKey{}, depth+1)
+	return sub.NewSession().Send(ctx, task)
+}
+
+// subAgent constructs the sub-agent for one delegation and reports where it
+// runs ("" = inherited the caller's model, nothing noteworthy). Order of
+// precedence: explicit opts.Model (the orchestrator named a model — beats
+// routing), then the Router's choice, then the caller's live provider.
+func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*Agent, string) {
 	prov := a.provider()
 	compactor := a.compactor()
-	if a.Router != nil {
-		if rp, _, _ := a.Router(ctx, task, kind, difficulty, false); rp != nil {
+	where := ""
+	switch {
+	case opts.Model != "" && a.ModelProvider != nil:
+		p, err := a.ModelProvider(opts.Model)
+		if err != nil {
+			// The named model can't be built (bad id, missing creds): fall
+			// back to routing/inherit, but SAY so — silent fallback would
+			// defeat the override's purpose.
+			where = "explicit model " + opts.Model + " unavailable (" + err.Error() + ") — falling back"
+		} else {
+			prov = p
+			compactor = llm.NewCompactor(p)
+			where = "running on " + opts.Model + " (explicit)"
+		}
+	}
+	if prov == a.provider() && a.Router != nil { // no explicit override took effect
+		if rp, _, label := a.Router(ctx, task, opts.Kind, opts.Difficulty, false); rp != nil {
 			prov = rp
 			compactor = llm.NewCompactor(rp)
+			if where != "" {
+				where += "; " + label
+			} else {
+				where = label
+			}
 		}
 	}
 	// Construct the sub-agent explicitly (not by struct copy: Agent embeds a
 	// mutex). It inherits the perm/budget snapshot but stays silent (no
-	// OnEvent) and does not persist (its session is ephemeral). The Router is
-	// carried so nested subtasks route too.
+	// OnEvent) and does not persist (its session is ephemeral). The Router and
+	// ModelProvider are carried so nested subtasks route/override too.
 	sub := &Agent{
 		Provider:         prov,
 		Tools:            a.Tools,
@@ -288,9 +344,10 @@ func (a *Agent) Subtask(ctx context.Context, task, kind, difficulty string) (str
 		ExtraSystem:      a.ExtraSystem,
 		Memory:           a.Memory,
 		Router:           a.Router,
+		ModelProvider:    a.ModelProvider,
+		Bg:               a.Bg,
 	}
-	ctx = context.WithValue(ctx, subtaskDepthKey{}, depth+1)
-	return sub.NewSession().Send(ctx, task)
+	return sub, where
 }
 
 // Messages returns the conversation so far (for saving / live-replace handoff).

@@ -372,11 +372,21 @@ func main() {
 	// Auto-router (opt-in): per-task model selection, declared early so the
 	// review/task tools can capture it; configured below.
 	router := newAutoRouter(cfg.Route, cfg.RouteProviders, *provider)
-	taskRun := func(ctx context.Context, t, kind, difficulty string) (string, error) {
+	taskRun := func(ctx context.Context, t string, opts tool.TaskOpts, background bool) (string, error) {
 		if a == nil {
 			return "", fmt.Errorf("subtasks unavailable")
 		}
-		return a.Subtask(ctx, t, kind, difficulty)
+		aopts := agent.SubtaskOpts{Kind: opts.Kind, Difficulty: opts.Difficulty, Model: opts.Model}
+		if background {
+			return a.SubtaskBackground(ctx, t, aopts)
+		}
+		return a.SubtaskWith(ctx, t, aopts)
+	}
+	taskStatus := func(ctx context.Context, id string, all bool) (string, error) {
+		if a == nil || a.Bg == nil {
+			return "", fmt.Errorf("background tasks unavailable")
+		}
+		return formatTaskStatus(a.Bg, id, all), nil
 	}
 	// goalJudge verifies goal-achievement claims and clears the goal on a
 	// confirmed verdict. The judge is an INDEPENDENT model: by default the
@@ -434,6 +444,7 @@ func main() {
 		tool.Skill(skills),
 		tool.Memory(mem, gmem),
 		tool.Task(taskRun),
+		tool.TaskStatus(taskStatus),
 		tool.GoalAchieved(goalJudge),
 		tool.Review(reviewRun),
 	}
@@ -562,6 +573,8 @@ func main() {
 		Memory:           memory.Sections(gmem, mem),
 		Goal:             resumedGoal,
 		Router:           router.Route,
+		ModelProvider:    router.providerFor,
+		Bg:               agent.NewBgRegistry(agent.TasksDir()),
 	}
 
 	// Session store: discover all sources (lazy) and title untitled ones in the
