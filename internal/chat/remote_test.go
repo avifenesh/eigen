@@ -325,3 +325,98 @@ func TestRemoteSendSurfacesDaemonError(t *testing.T) {
 		t.Fatalf("daemon-side error should surface from Send, got %v", serr)
 	}
 }
+
+// slowProv blocks until released, simulating a long-running daemon turn.
+type slowProv struct{ release chan struct{} }
+
+func (p *slowProv) Name() string    { return "slow" }
+func (p *slowProv) ModelID() string { return "slow" }
+func (p *slowProv) Complete(ctx context.Context, _ llm.Request) (*llm.Response, error) {
+	select {
+	case <-p.release:
+		return &llm.Response{Text: "finally done"}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func TestRemoteDetachLeavesTurnRunning(t *testing.T) {
+	prov := &slowProv{release: make(chan struct{})}
+	build := func(_, _ string) (*agent.Agent, func(), error) {
+		reg, _ := tool.NewRegistry()
+		return &agent.Agent{Provider: prov, Tools: reg, Perm: agent.PermAuto}, func() {}, nil
+	}
+	c, id := startDaemon(t, build)
+	r, err := NewRemote(c, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Wire(func(agent.Event) {}, nil)
+
+	// Send blocks (provider is held); cancel the ctx AFTER detaching — the
+	// view leaving must NOT interrupt the daemon-side turn.
+	ctx, cancel := context.WithCancel(context.Background())
+	sendDone := make(chan error, 1)
+	go func() {
+		_, err := r.Send(ctx, "long task", nil)
+		sendDone <- err
+	}()
+	time.Sleep(100 * time.Millisecond) // let the input land
+	r.Detach()
+	cancel()
+	select {
+	case <-sendDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Send must return promptly after Detach")
+	}
+
+	// The daemon turn is still RUNNING (status working, not interrupted).
+	infos, _ := c.List()
+	if len(infos) != 1 || string(infos[0].Status) != "working" {
+		t.Fatalf("detach interrupted the turn: %+v", infos)
+	}
+
+	// Release the provider; the turn completes daemon-side.
+	close(prov.release)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		infos, _ = c.List()
+		if len(infos) == 1 && string(infos[0].Status) == "idle" {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("turn never finished after release: %+v", infos)
+}
+
+func TestRemoteSessionsList(t *testing.T) {
+	build := func(_, _ string) (*agent.Agent, func(), error) {
+		reg, _ := tool.NewRegistry()
+		return &agent.Agent{Provider: echoProv{}, Tools: reg, Perm: agent.PermAuto}, func() {}, nil
+	}
+	c, id := startDaemon(t, build)
+	if _, err := c.New("/tmp/other", "echo-model"); err != nil {
+		t.Fatal(err)
+	}
+	r, err := NewRemote(c, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SessionID() != id {
+		t.Fatalf("SessionID = %q, want %q", r.SessionID(), id)
+	}
+	entries := r.Sessions()
+	if len(entries) != 2 {
+		t.Fatalf("want 2 sessions, got %+v", entries)
+	}
+	dirs := map[string]bool{}
+	for _, e := range entries {
+		dirs[e.Dir] = true
+		if e.Status == "" {
+			t.Fatalf("entry missing status: %+v", e)
+		}
+	}
+	if !dirs["/tmp/proj"] || !dirs["/tmp/other"] {
+		t.Fatalf("dirs: %+v", dirs)
+	}
+}

@@ -3,7 +3,11 @@ package tui
 // Transcript navigation: block selection, expand/collapse, input history,
 // find, and copy.
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/avifenesh/eigen/internal/chat"
+)
 
 // collapsibleIdx returns block indices that can be selected/toggled.
 func (m *model) collapsibleIdx() []int {
@@ -175,4 +179,35 @@ func (m *model) toggleAtRow(y int) {
 			return
 		}
 	}
+}
+
+// openSwitcher opens the in-window session switcher (alt+s / /sessions):
+// every daemon session listed, enter hops this WINDOW there — the session
+// being shown keeps running in the daemon. Local (non-daemon) chats have no
+// siblings to switch to.
+func (m *model) openSwitcher() {
+	sl, ok := m.backend.(interface {
+		Sessions() []chat.SessionEntry
+		SessionID() string
+	})
+	if !ok {
+		m.note("session switching needs a daemon-hosted chat")
+		return
+	}
+	entries := sl.Sessions()
+	if len(entries) == 0 {
+		m.note("no daemon sessions")
+		return
+	}
+	m.switchEntries = entries
+	m.switchIdx = 0
+	// Preselect the current session so the list opens oriented.
+	for i, e := range entries {
+		if e.ID == sl.SessionID() {
+			m.switchIdx = i
+			break
+		}
+	}
+	m.switching = true
+	m.sync()
 }

@@ -137,6 +137,16 @@ type model struct {
 	modelPicks   []llm.ModelInfo
 	modelPickIdx int
 
+	// session switcher (alt+s / /sessions): hop this window to another daemon
+	// session, or back to the app. Quits the program with Result.SwitchTo /
+	// Result.OpenApp set; main re-runs the TUI on the target — the window is a
+	// VIEW, the sessions keep running in the daemon.
+	switching     bool
+	switchEntries []chat.SessionEntry
+	switchIdx     int
+	switchTo      string
+	openApp       bool
+
 	// steer + queue: messages typed while a turn runs are queued and sent when
 	// it finishes; esc interrupts the running turn via cancel.
 	queued []string
@@ -267,6 +277,12 @@ type Result struct {
 	Rebuild     bool
 	SessionPath string
 	BinPath     string
+	// SwitchTo / OpenApp: in-window navigation. SwitchTo names a daemon
+	// session to hop this window to; OpenApp returns to the app shell. The
+	// session that was showing keeps running in the daemon (detached, not
+	// interrupted).
+	SwitchTo string
+	OpenApp  bool
 	// Provider/Model/Perm/Effort/Search are the live session config at exit
 	// (possibly changed via /model, /perm, /effort, /search), so a
 	// rebuild-resume continues exactly as the conversation was — not reset to
@@ -612,6 +628,36 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			}
 			return m, tea.Quit
 		}
+		// Session switcher captures keys while open.
+		if m.switching {
+			switch msg.String() {
+			case "up", "ctrl+p", "alt+up", "shift+up", "k":
+				if m.switchIdx > 0 {
+					m.switchIdx--
+				}
+			case "down", "ctrl+n", "alt+down", "shift+down", "j":
+				if m.switchIdx < len(m.switchEntries)-1 {
+					m.switchIdx++
+				}
+			case "enter":
+				sel := m.switchEntries[m.switchIdx]
+				m.switching = false
+				if sl, ok := m.backend.(chat.SessionLister); ok && sel.ID == sl.SessionID() {
+					m.sync() // already here
+					return m, nil
+				}
+				m.switchTo = sel.ID
+				return m, tea.Quit
+			case "h":
+				m.switching = false
+				m.openApp = true
+				return m, tea.Quit
+			case "esc", "q":
+				m.switching = false
+				m.sync()
+			}
+			return m, nil
+		}
 		// Session picker captures keys while open.
 		if m.picking {
 			switch msg.String() {
@@ -742,6 +788,11 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			return m, nil
 		case "ctrl+y", "alt+y":
 			m.copySelected()
+			return m, nil
+		case "alt+s":
+			// In-window session switcher: hop this window to another daemon
+			// session (or home to the app) without touching running turns.
+			m.openSwitcher()
 			return m, nil
 		case "ctrl+v", "alt+v":
 			// Explicit image paste: grab an image from the clipboard and stage
@@ -1297,10 +1348,19 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 		return Result{}, err
 	}
 	fm := final.(*model)
+	// A daemon-backed view leaving must NOT interrupt the session's running
+	// turn: detach first, so the deferred ctx cancel (which unblocks the turn
+	// goroutine's Send) is just the view leaving — the daemon keeps working.
+	// esc remains the way to interrupt; quitting/hopping never is.
+	if d, ok := backend.(chat.Detacher); ok {
+		d.Detach()
+	}
 	return Result{
 		Rebuild:     fm.rebuild,
 		SessionPath: fm.sessionPath,
 		BinPath:     fm.rebuildBin,
+		SwitchTo:    fm.switchTo,
+		OpenApp:     fm.openApp,
 		Provider:    fm.provName,
 		Model:       fm.modelID,
 		Perm:        string(fm.backend.Perm()),

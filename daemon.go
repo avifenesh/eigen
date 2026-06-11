@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
+	"github.com/avifenesh/eigen/internal/app"
 	"github.com/avifenesh/eigen/internal/chat"
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/daemon"
@@ -173,6 +174,8 @@ func isClosedErr(err error) bool {
 // (the same UI as a local chat — the backend seam routes everything over the
 // socket). With no id it attaches to the most recently updated session, or
 // creates one rooted at the current directory when the daemon has none.
+// The window then lives in the view loop: alt+s hops between sessions, h goes
+// home to the app — all in this one window, sessions running throughout.
 func runAttach(id string, cfg config.Config) {
 	c, err := ensureDaemon() // auto-start: persisted sessions restore
 	if err != nil {
@@ -180,7 +183,6 @@ func runAttach(id string, cfg config.Config) {
 	}
 	defer c.Close()
 
-	var dir string
 	if id == "" {
 		infos, lerr := c.List()
 		if lerr != nil {
@@ -193,21 +195,22 @@ func runAttach(id string, cfg config.Config) {
 			if nerr != nil {
 				fail(nerr)
 			}
-			id, dir = nid, cwd
+			id = nid
 		} else {
 			id = infos[0].ID // most recent
-			dir = infos[0].Dir
-		}
-	} else {
-		for _, in := range mustList(c) {
-			if in.ID == id {
-				dir = in.Dir
-			}
 		}
 	}
+	res := attachTUI(c, id, cfg, "")
+	continueNav(c, res, cfg)
+}
+
+// attachTUI runs one leg of the view loop: attach the rich chat TUI to a
+// daemon session, rooted at the session's project dir. /rebuild is handled
+// here (it execs onto the new binary and never returns).
+func attachTUI(c *daemon.Client, id string, cfg config.Config, task string) tui.Result {
 	// Root the view in the session's project dir so @file completion and the
 	// transcript's relative paths make sense.
-	if dir != "" {
+	if dir := sessionDir(c, id); dir != "" {
 		_ = os.Chdir(dir)
 	}
 	backend, err := chat.NewRemote(c, id)
@@ -215,10 +218,12 @@ func runAttach(id string, cfg config.Config) {
 		fail(err)
 	}
 	skills := skill.Discover(skillDirs()...)
-	mem, _ := memory.Open(dir)
+	cwd, _ := os.Getwd()
+	mem, _ := memory.Open(cwd)
 	store, _ := session.Open()
 	hookRunner, _ := hook.Load(hookConfigPath())
 	res, err := tui.Run(backend, tui.Options{
+		InitialTask:   task,
 		Provider:      backend.ProviderName(),
 		Model:         backend.ModelID(),
 		Memory:        mem,
@@ -237,8 +242,87 @@ func runAttach(id string, cfg config.Config) {
 	}
 	if res.Rebuild {
 		c.Close()
-		daemonRebuildResume(res.BinPath, id)
+		daemonRebuildResume(res.BinPath, id) // execs; no return
 	}
+	return res
+}
+
+// continueNav keeps ONE WINDOW navigating after a chat exits with an intent:
+// alt+s hop → attach the next session; h home → the app shell, whose choice
+// (attach / new chat / resume) feeds back into another chat leg. Sessions
+// keep running in the daemon across every hop; only quit ends the loop.
+func continueNav(c *daemon.Client, res tui.Result, cfg config.Config) {
+	for {
+		switch {
+		case res.SwitchTo != "":
+			res = attachTUI(c, res.SwitchTo, cfg, "")
+		case res.OpenApp:
+			id, task, ok := appNav(c, cfg)
+			if !ok {
+				return
+			}
+			res = attachTUI(c, id, cfg, task)
+		default:
+			return
+		}
+	}
+}
+
+// appNav opens the app shell from inside the view loop and translates its
+// result into the next chat leg: which session to show (creating one for
+// "new chat" / store resumes) and an optional initial task (feed starters).
+// ok=false means the user quit from the app.
+func appNav(c *daemon.Client, cfg config.Config) (id, task string, ok bool) {
+	data := app.Load()
+	data.Titler = session.ProviderTitler{P: titleProvider(nil)}
+	res, err := app.Run(data)
+	if data.Daemon != nil {
+		data.Daemon.Close()
+	}
+	if err != nil {
+		fail(err)
+	}
+	switch res.Action {
+	case app.ActionAttach:
+		return res.SessionID, "", true
+	case app.ActionOpenChat:
+		dir := res.Dir
+		if dir == "" {
+			dir, _ = os.Getwd()
+		}
+		nid, nerr := c.NewSession(dir, "", "", nil)
+		if nerr != nil {
+			fail(nerr)
+		}
+		return nid, res.Task, true
+	case app.ActionResume:
+		// A store session (imported/foreign): seed a NEW daemon session with
+		// its history, rooted at its project. Daemon rows attach instead.
+		var history []llm.Message
+		if store, serr := session.Open(); serr == nil && store.Get(res.SessionID) != nil {
+			history, _ = store.Load(res.SessionID)
+		}
+		dir := res.Dir
+		if dir == "" {
+			dir, _ = os.Getwd()
+		}
+		nid, nerr := c.NewSession(dir, "", "", history)
+		if nerr != nil {
+			fail(nerr)
+		}
+		return nid, "", true
+	}
+	return "", "", false // quit
+}
+
+// sessionDir returns the project dir a daemon session is rooted at.
+func sessionDir(c *daemon.Client, id string) string {
+	for _, in := range mustList(c) {
+		if in.ID == id {
+			return in.Dir
+		}
+	}
+	return ""
 }
 
 // daemonRebuildResume is /rebuild for daemon-hosted sessions: the new binary

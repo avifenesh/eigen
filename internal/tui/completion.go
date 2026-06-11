@@ -55,6 +55,7 @@ type slashCmd struct {
 // slashCommands is the full, ordered set of slash commands offered by the menu.
 var slashCommands = []slashCmd{
 	{"/help", "show commands and keybindings"},
+	{"/sessions", "switch this window to another session (alt+s)"},
 	{"/resume", "resume a saved session (picker, or path/id)"},
 	{"/save", "save this conversation to a file"},
 	{"/clear", "start a fresh conversation"},

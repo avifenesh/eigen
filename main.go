@@ -317,15 +317,19 @@ func main() {
 				HookRunner:    hookRunner,
 				NoSessionFile: true, // the daemon persists
 			})
-			dc.Close()
 			if err != nil {
+				dc.Close()
 				fail(err)
 			}
 			if res.Rebuild {
 				// Sessions are durable: restart the daemon on the new binary
 				// and reattach to this same session.
+				dc.Close()
 				daemonRebuildResume(res.BinPath, sid)
 			}
+			// alt+s hop / h home: keep navigating in THIS window.
+			continueNav(dc, res, cfg)
+			dc.Close()
 			return
 		} else {
 			fmt.Fprintf(os.Stderr, "eigen: daemon unavailable (%v) — running in-process\n", derr)

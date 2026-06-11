@@ -29,6 +29,11 @@ type Remote struct {
 	turnDone chan struct{}
 	lastText string
 	lastErr  error // daemon-side turn error (from the terminal note)
+
+	// detached: the view left (session hop / window close). Blocked Sends
+	// return, events are dropped, and ctx cancellation must NOT interrupt the
+	// daemon-side turn (it keeps running without us).
+	detached bool
 }
 
 // NewRemote attaches to a daemon session as a chat backend. The returned
@@ -124,7 +129,11 @@ func (r *Remote) Send(ctx context.Context, task string, images []llm.Image) (str
 	select {
 	case <-ch:
 	case <-ctx.Done():
-		_ = r.c.Interrupt(r.id)
+		// A detached view's context cancel is just the view leaving — the
+		// daemon keeps running the turn. Only a live view's esc interrupts.
+		if !r.isDetached() {
+			_ = r.c.Interrupt(r.id)
+		}
 		<-ch // the daemon emits a terminal note after the interrupt lands
 	}
 	r.refresh()
@@ -148,13 +157,21 @@ func (r *Remote) Resend(ctx context.Context) (string, error) {
 	select {
 	case <-ch:
 	case <-ctx.Done():
-		_ = r.c.Interrupt(r.id)
+		if !r.isDetached() {
+			_ = r.c.Interrupt(r.id)
+		}
 		<-ch
 	}
 	r.refresh()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.lastText, r.lastErr
+}
+
+func (r *Remote) isDetached() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.detached
 }
 
 // refresh re-syncs the cached state snapshot (called after turns/mutations).
@@ -261,4 +278,44 @@ func (r *Remote) SetSearch(mode string) bool {
 	}
 	r.refresh()
 	return true
+}
+
+// SessionID returns the daemon session id this backend drives.
+func (r *Remote) SessionID() string { return r.id }
+
+// Sessions lists the daemon's sessions for the in-window switcher.
+func (r *Remote) Sessions() []SessionEntry {
+	infos, err := r.c.List()
+	if err != nil {
+		return nil
+	}
+	out := make([]SessionEntry, 0, len(infos))
+	for _, in := range infos {
+		out = append(out, SessionEntry{
+			ID:      in.ID,
+			Title:   in.Title,
+			Dir:     in.Dir,
+			Model:   in.Model,
+			Status:  string(in.Status),
+			Turns:   in.Turns,
+			Updated: in.Updated,
+		})
+	}
+	return out
+}
+
+// Detach releases the view from the session WITHOUT touching the running
+// turn: a blocked Send returns immediately (the daemon keeps working), and
+// later events are ignored. The TUI calls this before hopping to another
+// session or back to the app.
+func (r *Remote) Detach() {
+	r.mu.Lock()
+	r.detached = true
+	r.sink = nil
+	ch := r.turnDone
+	r.turnDone = nil
+	r.mu.Unlock()
+	if ch != nil {
+		close(ch)
+	}
 }

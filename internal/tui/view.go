@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
+	"github.com/avifenesh/eigen/internal/chat"
 )
 
 func (m *model) renderEvent(e agent.Event) {
@@ -125,6 +126,9 @@ func (m *model) View() string {
 	if m.picking {
 		return m.pickerView()
 	}
+	if m.switching {
+		return m.switcherView()
+	}
 	if m.modelPicking {
 		return m.modelPickerView()
 	}
@@ -184,6 +188,63 @@ func (m *model) pickerView() string {
 		b.WriteString(line + "\n")
 	}
 	return b.String()
+}
+
+// switcherView renders the in-window session switcher (alt+s): the daemon's
+// sessions with live status glyphs; enter hops the window, h goes home to
+// the app, the running session keeps running either way.
+func (m *model) switcherView() string {
+	var b strings.Builder
+	b.WriteString(styleUser.Render("switch session") + dim("   ↑↓ move · enter switch · h home · esc cancel") + "\n\n")
+	rows := m.height - 4
+	if rows < 1 {
+		rows = 1
+	}
+	start := 0
+	if m.switchIdx >= rows {
+		start = m.switchIdx - rows + 1
+	}
+	end := start + rows
+	if end > len(m.switchEntries) {
+		end = len(m.switchEntries)
+	}
+	cur := ""
+	if sl, ok := m.backend.(chat.SessionLister); ok {
+		cur = sl.SessionID()
+	}
+	for i := start; i < end; i++ {
+		e := m.switchEntries[i]
+		title := e.Title
+		if title == "" {
+			title = dim("(untitled)")
+		}
+		mark := " "
+		if e.ID == cur {
+			mark = styleAccent.Render("·") // you are here
+		}
+		line := fmt.Sprintf("%s %s %-4s %s  %s", statusGlyph(e.Status), mark, e.ID, title, dim(e.Dir))
+		if i == m.switchIdx {
+			line = styleAsk.Render("› " + line)
+		} else {
+			line = "  " + line
+		}
+		b.WriteString(line + "\n")
+	}
+	return b.String()
+}
+
+// statusGlyph maps a daemon session status to the rail glyph language:
+// ● working · ○ idle · ◆ waiting on approval · ✗ error.
+func statusGlyph(s string) string {
+	switch s {
+	case "working":
+		return styleAccent.Render("●")
+	case "approval":
+		return styleAsk.Render("◆")
+	case "error":
+		return styleErr.Render("✗")
+	}
+	return dim("○")
 }
 
 // modelPickerView renders the interactive model chooser (bare /model).
