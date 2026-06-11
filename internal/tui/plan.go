@@ -112,9 +112,9 @@ func (m *model) statusBarParts() []statusSeg {
 		// Only on the idle status bar — while running, the live tok/s shows on
 		// the spinner line above the input, so this would be a stale duplicate.
 		// With provider-reported usage, show real in/out for the last turn.
-		seg := fmt.Sprintf("%.0f tok/s", m.lastTokRate)
+		seg := fmt.Sprintf("↓%s %.0f tok/s", humanToks(m.lastOutToks), m.lastTokRate)
 		if m.lastInToks > 0 {
-			seg = fmt.Sprintf("%s·%s %.0f tok/s", humanToks(m.lastInToks), humanToks(m.lastOutToks), m.lastTokRate)
+			seg = fmt.Sprintf("↑%s ↓%s %.0f tok/s", humanToks(m.lastInToks), humanToks(m.lastOutToks), m.lastTokRate)
 		}
 		segs = append(segs, statusSeg{seg, styleReason})
 	}
@@ -331,5 +331,5 @@ func (m *model) liveTokRate() string {
 	if secs < 1 {
 		return ""
 	}
-	return fmt.Sprintf(" · %.0f tok/s", float64(m.turnOutChars/4)/secs)
+	return fmt.Sprintf(" · ↓%.0f tok/s", float64(m.turnOutChars/4)/secs)
 }
