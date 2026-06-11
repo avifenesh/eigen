@@ -246,29 +246,42 @@ first-class surface, reachable by keys and a command palette:
   - Build order: ✅(1) buildSession per-directory builder; ✅(2) internal/daemon
     — host + Unix-socket protocol (list/new/attach/input/events/approve, event
     replay on attach, PID lifecycle, `eigen daemon status|stop`, shutdown
-    watchdog); ✅(3) `eigen attach` thin view (internal/view) — mirroring,
-    replay, esc=interrupt-then-detach; ✅(4) app live page + rail glyphs
-    (●○◆✗), attach/new/interrupt/stop from the app; ✅(5) approval broadcast —
-    gated sessions block, any view answers y/n, 10-min timeout denies (fail
-    closed). REMAINING: tray presence + autostart; daemon sessions persisting
-    into the session store (survive daemon restart); richer view rendering
-    (markdown, tool detail).
+    watchdog); ✅(3) attach view; ✅(4) app live page + rail glyphs (●○◆✗),
+    attach/new/interrupt/stop from the app; ✅(5) approval broadcast — gated
+    sessions block, any view answers y/n, 10-min timeout denies (fail closed).
+  - ✅ **SHIPPED BEYOND THE PLAN (the flip + parity):** interactive `eigen` IS
+    a daemon session by default (auto-start daemon, EIGEN_NO_DAEMON escape);
+    `eigen attach` runs the RICH chat TUI over a Backend seam (chat.Local /
+    chat.Remote; internal/view deleted); sessions are DURABLE
+    (~/.eigen/daemon/sessions/*.jsonl + meta, Host.Restore on start, verified
+    kill -9); /rebuild restarts the daemon on the new binary and reattaches
+    (sessions survive); full remote parity (/clear /resend /model images
+    effort/search tool-args /resume-to-history, daemon errors → failover);
+    app lists daemon sessions (enter = attach, never fork); small-model
+    auto-titles; obs+hooks run daemon-side; tools root at the SESSION dir
+    (multi-project daemon correctness); `eigen daemon install|uninstall` =
+    systemd user-unit autostart + credential snapshot.
+  - REMAINING: tray presence (maybe drop: terminal-first + live rail covers
+    it); chat-as-a-page / instant session switching inside ONE window (today
+    a window execs into one chat; the rail lists, attach replaces).
 - A command palette (fuzzy) for everything; consistent keybindings.
 - DESIGN BAR: highly informative, subtle, "a perfect touch of a designer" —
   restrained color, clear hierarchy, no clutter; every effect informative,
   nothing decorative for its own sake.
 
 **Build order (iterate, ship each slice):**
-1. App shell: page router + side rail + home page skeleton; `eigen` (bare)
-   opens it; chat becomes a page you can open/return from.
-2. Sessions page (list/resume/delete across projects) + Projects page
-   (grouping + per-project sessions).
-3. Config / Skills / Models / Providers / Memory pages (read first, edit next).
-4. Multi-session tabs: concurrent running sessions in the rail.
-5. Crons page (manage #5 automation units).
-6. Proactive feed (#6): background scanner (memory + project + gh) offering
-   one-keystroke session starters, on Home + project pages.
-7. Plugins page.
+1. ✅ App shell: page router + side rail + home page; `eigen` (bare) opens it.
+2. ✅ Sessions page (resume/attach/delete/export across projects; daemon
+   sessions first-class) + Projects page (grouping + per-project sessions).
+3. ✅ Config / Skills / Models / Providers / Memory pages (read-only v1 —
+   EDIT affordances still open: config edit, plugins enable/disable, memory
+   edit/consolidate from the page, crons edit).
+4. ~ Multi-session: live page + rail glyphs shipped; true in-window session
+   tabs (chat-as-a-page) still open — today attach replaces the window.
+5. ✅ Crons page (read-only: systemd user timers via --output=json + crontab).
+6. ❌ Proactive feed (#6): background scanner (memory + project + gh) offering
+   one-keystroke session starters, on Home + project pages. ← NEXT BIG PIECE
+7. ✅ Plugins page (mcp/plugins/lsp/hooks, both scopes, read-only).
 
 ## Notes / grounding
 - read-aloud tool the user has: `readd` (espeak-ng/piper) at `~/projects/tfqol/readd`.
