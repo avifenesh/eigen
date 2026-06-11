@@ -52,7 +52,10 @@ func (r *autoRouter) Route(ctx context.Context, prompt, kind, difficulty string,
 	providers := append([]string(nil), r.providers...)
 	current := r.current
 	r.mu.Unlock()
-	if !enabled {
+	// An attached image is a capability NEED: even with routing off, a
+	// non-vision model can't see it — the TUI calls Route in that case and we
+	// honor it. Plain prompts respect the toggle.
+	if !enabled && !hasImage {
 		return nil, "", ""
 	}
 
