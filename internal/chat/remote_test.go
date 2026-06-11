@@ -91,6 +91,20 @@ func TestRemoteSendAndState(t *testing.T) {
 	if r.Perm() != agent.PermAuto {
 		t.Fatalf("perm: %q", r.Perm())
 	}
+	// Rename round-trips and does not disturb the goal (both are *string in
+	// the set op — the switch must pick the right one).
+	r.SetTitle("my session")
+	if r.Title() != "my session" {
+		t.Fatalf("title: %q", r.Title())
+	}
+	if r.Goal() != "finish the thing" {
+		t.Fatalf("rename clobbered the goal: %q", r.Goal())
+	}
+	// Clearing reverts to empty (the app falls back to a derived preview).
+	r.SetTitle("")
+	if r.Title() != "" {
+		t.Fatalf("title not cleared: %q", r.Title())
+	}
 }
 
 // gateRemoteProv triggers one gated tool call then finishes.

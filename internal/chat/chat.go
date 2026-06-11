@@ -49,6 +49,11 @@ type Backend interface {
 	Goal() string
 	SetGoal(string)
 
+	// Title is the session's display name (status bar, switcher, app). "" =
+	// derived from the first user message. SetTitle renames it (persisted).
+	Title() string
+	SetTitle(string)
+
 	// Effort/Search expose the provider's reasoning-effort and live-search
 	// settings as chat state ("" = the model has no such setting), so the UI
 	// never needs the provider handle — remote backends carry these over the

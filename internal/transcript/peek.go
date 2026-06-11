@@ -254,9 +254,15 @@ func peekHermes(path string) Preview {
 func peekEigen(path string) Preview {
 	lines, total := scanPeek(path, eigenTurn)
 	p := Preview{Messages: total}
-	// eigen records the cwd in the meta sidecar; prefer it.
-	if m, ok := LoadMeta(path); ok && m.Dir != "" {
-		p.Cwd = m.Dir
+	// eigen records the cwd + an optional user-set title in the meta sidecar;
+	// prefer them.
+	if m, ok := LoadMeta(path); ok {
+		if m.Dir != "" {
+			p.Cwd = m.Dir
+		}
+		if m.Title != "" {
+			p.Title = m.Title
+		}
 	}
 	for _, ln := range lines {
 		// eigen JSONL is a marshaled llm.Message (capitalized Role/Text).
@@ -265,7 +271,9 @@ func peekEigen(path string) Preview {
 			continue
 		}
 		if msg.Role == llm.RoleUser && msg.Text != "" {
-			p.Title = titleFrom(msg.Text)
+			if p.Title == "" { // a user-set title from the sidecar wins
+				p.Title = titleFrom(msg.Text)
+			}
 			break
 		}
 	}

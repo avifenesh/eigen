@@ -227,6 +227,12 @@ func (r *Remote) SetGoal(g string) {
 	r.refresh()
 }
 
+func (r *Remote) Title() string { return r.snap().Title }
+func (r *Remote) SetTitle(t string) {
+	_ = r.c.SetTitle(r.id, t)
+	r.refresh()
+}
+
 func (r *Remote) Tools() []ToolInfo {
 	st := r.snap()
 	out := make([]ToolInfo, 0, len(st.Tools))

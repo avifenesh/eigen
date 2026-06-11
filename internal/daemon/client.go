@@ -200,6 +200,12 @@ func (c *Client) SetGoal(sessionID, goal string) error {
 	return err
 }
 
+// SetTitle renames a session (or clears, with "" → revert to derived).
+func (c *Client) SetTitle(sessionID, title string) error {
+	_, err := c.request(Request{Op: "set", ID: sessionID, Title: &title})
+	return err
+}
+
 // Compact summarizes a session's conversation toward target tokens.
 func (c *Client) Compact(sessionID string, target int) (before, after int, err error) {
 	r, err := c.request(Request{Op: "compact", ID: sessionID, Target: target})

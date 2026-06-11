@@ -182,3 +182,16 @@ func TestPlainPromptRespectsRouterOff(t *testing.T) {
 		t.Fatal("plain prompt must not route while disabled")
 	}
 }
+
+func TestRenameCommand(t *testing.T) {
+	m := testModel(t)
+	m.command("/rename my project work")
+	if got := m.backend.Title(); got != "my project work" {
+		t.Fatalf("title = %q", got)
+	}
+	// Empty arg clears (reverts to the derived preview).
+	m.command("/rename")
+	if got := m.backend.Title(); got != "" {
+		t.Fatalf("clear: title = %q", got)
+	}
+}

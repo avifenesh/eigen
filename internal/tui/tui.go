@@ -381,6 +381,7 @@ func (m *model) saveMeta() {
 		meta.Effort = m.backend.Effort()
 		meta.Search = m.backend.SearchMode()
 		meta.Goal = m.backend.Goal()
+		meta.Title = m.backend.Title()
 	}
 	if m.loopPrompt != "" {
 		meta.LoopPrompt = m.loopPrompt
@@ -1236,6 +1237,9 @@ type Options struct {
 	// NoSessionFile disables the local transcript autosave (daemon-hosted
 	// sessions: the daemon owns persistence; a local copy would duplicate it).
 	NoSessionFile bool
+	// Title restores a resumed session's user-set name so a later saveMeta
+	// doesn't blank it (local sessions); daemon sessions carry it in State.
+	Title string
 }
 
 // Router is the auto-router surface the TUI needs: toggle, status, and routing
@@ -1289,6 +1293,12 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 
 	if len(history) > 0 {
 		backend.Reset(history)
+	}
+	// Restore a resumed session's user-set title (local backends keep it only
+	// in the sidecar; daemon backends already carry it in their State, but
+	// re-applying an empty string would be a harmless no-op there).
+	if o.Title != "" {
+		backend.SetTitle(o.Title)
 	}
 
 	m := &model{

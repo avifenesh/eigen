@@ -19,6 +19,7 @@ type Local struct {
 
 	mu      sync.Mutex
 	modelID string // current model id (live switches update it)
+	title   string // user-set session title (/rename); "" = derived
 
 	// pending gated-tool approvals (surfaced as EventApproval, answered by id)
 	approvals   map[string]chan bool
@@ -76,6 +77,17 @@ func (l *Local) Perm() agent.Permission     { return l.a.Perm }
 func (l *Local) SetPerm(p agent.Permission) { l.a.SetPerm(p) }
 func (l *Local) Goal() string               { return l.a.CurrentGoal() }
 func (l *Local) SetGoal(g string)           { l.a.SetGoal(g) }
+
+func (l *Local) Title() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.title
+}
+func (l *Local) SetTitle(t string) {
+	l.mu.Lock()
+	l.title = t
+	l.mu.Unlock()
+}
 
 func (l *Local) Tools() []ToolInfo {
 	if l.a.Tools == nil {

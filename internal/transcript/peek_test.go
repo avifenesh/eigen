@@ -96,3 +96,13 @@ func TestPeekEigenUsesMetaDir(t *testing.T) {
 		t.Errorf("eigen title = %q", pv.Title)
 	}
 }
+
+func TestPeekEigenUsesMetaTitle(t *testing.T) {
+	dir := t.TempDir()
+	p := writeFile(t, dir, "s.eigen.jsonl", `{"role":"user","text":"do the thing"}`+"\n")
+	_ = SaveMeta(p, SessionMeta{Dir: "/home/u/p", Title: "Renamed Session"})
+	pv := Peek(SourceEigen, p)
+	if pv.Title != "Renamed Session" {
+		t.Errorf("user-set title should win over the derived one, got %q", pv.Title)
+	}
+}

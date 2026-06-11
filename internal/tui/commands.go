@@ -84,6 +84,18 @@ func (m *model) command(line string) tea.Cmd {
 		m.sel = -1
 		m.refreshCtx()
 		m.note("— cleared —")
+	case "/rename":
+		if m.backend == nil {
+			break
+		}
+		name := strings.TrimSpace(arg)
+		m.backend.SetTitle(name)
+		m.saveMeta() // persist for local sessions (daemon persists its own)
+		if name == "" {
+			m.note("title cleared (reverts to the first-message preview)")
+		} else {
+			m.note("renamed → " + name)
+		}
 	case "/compact":
 		if m.backend == nil {
 			break

@@ -308,10 +308,12 @@ func (s *Session) state() *SessionState {
 	a := s.agent
 	sess := s.sess
 	model := s.Model
+	title := s.title
 	s.mu.Unlock()
 	st := &SessionState{
 		Messages:  sess.Messages(),
 		Tokens:    sess.Tokens(),
+		Title:     title,
 		Model:     model,
 		MaxTokens: a.MaxContextTokens,
 		Perm:      string(a.Perm),

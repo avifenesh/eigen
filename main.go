@@ -224,6 +224,7 @@ func main() {
 	// unless the user explicitly overrode a flag this run. Only eigen-native
 	// sessions carry a sidecar meta; foreign transcripts have none.
 	resumedGoal := ""
+	resumedTitle := ""
 	resumedLoopPrompt := ""
 	var resumedLoopEvery time.Duration
 	if *resumeFile != "" {
@@ -259,6 +260,7 @@ func main() {
 					}
 				}
 				resumedGoal = meta.Goal
+				resumedTitle = meta.Title
 				resumedLoopPrompt = meta.LoopPrompt
 				if meta.LoopEvery != "" {
 					if d, derr := time.ParseDuration(meta.LoopEvery); derr == nil {
@@ -591,6 +593,7 @@ func main() {
 			NotifyCmd:      cfg.NotifyCmd,
 			LoopPrompt:     resumedLoopPrompt,
 			LoopEvery:      resumedLoopEvery,
+			Title:          resumedTitle,
 			Router:         router,
 			EventWrap:      eventChain,
 			HookRunner:     hookRunner,

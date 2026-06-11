@@ -145,6 +145,8 @@ func (s *Server) handle(conn net.Conn) {
 				sess.setPerm(req.Perm)
 			case req.Goal != nil:
 				sess.setGoal(*req.Goal)
+			case req.Title != nil:
+				sess.SetTitle(*req.Title)
 			case req.Effort != "":
 				if !sess.setEffort(req.Effort) {
 					send(Response{Type: "error", Error: "effort not supported (or unknown level)"})

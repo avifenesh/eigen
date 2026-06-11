@@ -333,7 +333,7 @@ a RISKY verdict aborts unless `--force`. Small-model selection: a local llama if
 `us.anthropic.claude-haiku-4-5` on converse). Used for session titling, dreaming,
 and skill scans.
 
-TUI commands: /help /resume /save /export /clear /model /perm /skills /tools
+TUI commands: /help /resume /save /export /clear /rename /sessions /model /perm /skills /tools
 /find /copy /read /rebuild /quit · keys: `/` commands · `@` files · ↑↓ select ·
 tab/click expand · while running: enter queues · esc interrupts.
 

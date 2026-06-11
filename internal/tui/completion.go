@@ -59,6 +59,7 @@ var slashCommands = []slashCmd{
 	{"/resume", "resume a saved session (picker, or path/id)"},
 	{"/save", "save this conversation to a file"},
 	{"/clear", "start a fresh conversation"},
+	{"/rename", "rename this session (/rename <name>; empty reverts to derived)"},
 	{"/compact", "summarize older context to shrink the token count"},
 	{"/model", "show or switch the model/provider"},
 	{"/effort", "show or set reasoning effort (minimal|low|medium|high|xhigh)"},

@@ -14,7 +14,10 @@ import (
 type SessionMeta struct {
 	// Dir is the working directory (project root) the session ran in — the
 	// grouping key for the app's Projects page.
-	Dir      string `json:"dir,omitempty"`
+	Dir string `json:"dir,omitempty"`
+	// Title is a user-set session name (/rename); empty = derived from the
+	// first user message.
+	Title    string `json:"title,omitempty"`
 	Provider string `json:"provider,omitempty"`
 	Model    string `json:"model,omitempty"`
 	Perm     string `json:"perm,omitempty"`

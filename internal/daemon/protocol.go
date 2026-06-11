@@ -23,8 +23,9 @@ type Request struct {
 	Approval string `json:"approval,omitempty"` // approve: pending approval id
 	Allow    bool   `json:"allow,omitempty"`    // approve: the verdict
 	// set: exactly one of these mutates session state
-	Perm string  `json:"perm,omitempty"`
-	Goal *string `json:"goal,omitempty"` // pointer: empty string clears the goal
+	Perm  string  `json:"perm,omitempty"`
+	Goal  *string `json:"goal,omitempty"`  // pointer: empty string clears the goal
+	Title *string `json:"title,omitempty"` // pointer: empty string clears (revert to derived)
 	// compact: target tokens (0 = backend default)
 	Target int `json:"target,omitempty"`
 	// input: optional image attachments
@@ -54,6 +55,7 @@ type Response struct {
 type SessionState struct {
 	Messages  []llm.Message `json:"messages"`
 	Tokens    int           `json:"tokens"`
+	Title     string        `json:"title,omitempty"`
 	Model     string        `json:"model"`
 	Provider  string        `json:"provider"`
 	MaxTokens int           `json:"max_tokens"`
