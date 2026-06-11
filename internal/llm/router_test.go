@@ -33,14 +33,21 @@ func TestRouteMediumUsesOpus(t *testing.T) {
 	}
 }
 
-func TestRouteHardGeneralKeepsDefault(t *testing.T) {
-	// Hard general work stays on the user's default model: Route declines.
-	if got, ok := Route(RouteRequest{
+func TestRouteHardGeneralRoutesToBestModel(t *testing.T) {
+	// Hard general: route to the best available model (tier 3 fable/opus).
+	// The caller compares the result to the active model and skips the switch
+	// when they already match — no redundant churn.
+	got, ok := Route(RouteRequest{
 		Kind:       TaskGeneral,
 		Difficulty: DiffHard,
 		Candidates: []string{"grok-build", "us.anthropic.claude-opus-4-8", "claude-fable-5"},
-	}); ok {
-		t.Fatalf("hard general task must not be routed, got %s", got)
+	})
+	if !ok {
+		t.Fatal("hard general must route to the best model")
+	}
+	// Should pick fable or opus (tier 3) over grok (tier 1).
+	if got == "grok-build" {
+		t.Fatalf("hard general must not route to tier-1 grok, got %s", got)
 	}
 }
 

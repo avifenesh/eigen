@@ -60,9 +60,11 @@ func TestRouterEval(t *testing.T) {
 		},
 	}
 
-	// Hard general tasks keep the user's default model: Route must decline.
-	if got, ok := Route(RouteRequest{Kind: TaskGeneral, Difficulty: DiffHard, Candidates: all}); ok {
-		t.Errorf("hard general task must NOT be routed (keep the default model), got %s", got)
+	// Hard general tasks now route to the best available tier-3 model.
+	if got, ok := Route(RouteRequest{Kind: TaskGeneral, Difficulty: DiffHard, Candidates: all}); !ok {
+		t.Error("hard general task must route to the best model")
+	} else if scoreFor(got).Tier < TierMed {
+		t.Errorf("hard general task routed to low-tier model %s", got)
 	}
 
 	for _, c := range cases {

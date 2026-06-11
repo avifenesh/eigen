@@ -81,11 +81,6 @@ type RouteRequest struct {
 // Returns the chosen model ID and true, or "" and false when routing should
 // not change the model (hard general task, or no capable candidate).
 func Route(req RouteRequest) (string, bool) {
-	// Hard general work belongs to the user's default model — the strongest
-	// thing they configured. Only capability needs (search/vision) override.
-	if req.Difficulty == DiffHard && req.Kind == TaskGeneral {
-		return "", false
-	}
 	capable := make([]string, 0, len(req.Candidates))
 	for _, id := range req.Candidates {
 		if isCapable(id, req) {
@@ -96,11 +91,9 @@ func Route(req RouteRequest) (string, bool) {
 		return "", false
 	}
 
-	// Quality-tier ladder: the difficulty demands a target tier. Pick the
-	// LOWEST tier that is still >= the target (so a simple task is happily
-	// served by a tier-1 grok/glm, while a hard task demands frontier and never
-	// settles for less). If no capable model reaches the target, take the
-	// highest tier available — do the task as well as we can, never worse.
+	// Quality-tier ladder: pick the LOWEST tier that is still >= the target so
+	// simple work goes to a fast cheap model and hard work gets the best one.
+	// If nothing reaches the target, take the highest tier present.
 	target := targetTier(req.Difficulty)
 	best := Tier(0)
 	for _, id := range capable {
@@ -109,7 +102,6 @@ func Route(req RouteRequest) (string, bool) {
 		}
 	}
 	if best == 0 {
-		// Nothing reaches the target: use the highest tier present.
 		for _, id := range capable {
 			if t := scoreFor(id).Tier; t > best {
 				best = t
@@ -118,8 +110,8 @@ func Route(req RouteRequest) (string, bool) {
 	}
 
 	// Among models in the chosen tier: task affinity first (Strict for
-	// general work, Design for frontend — the user's gpt-5.5/opus split),
-	// then non-Bedrock, then faster.
+	// general work, Design for frontend), then within-tier Rank, then
+	// non-Bedrock as a true tiebreak, then faster.
 	pool := capable[:0:0]
 	for _, id := range capable {
 		if scoreFor(id).Tier == best {
@@ -132,13 +124,6 @@ func Route(req RouteRequest) (string, bool) {
 	return pool[0], true
 }
 
-// tierOrder ranks models within a tier. Quality judgments come FIRST — the
-// user never trades quality to avoid Bedrock: (1) task affinity (Design for
-// frontend, Strict for general — the gpt-5.5/opus split); (2) within-tier
-// quality Rank (opus-4-8 beats an older opus even though it is on Bedrock);
-// (3) non-Bedrock — only as a TRUE tiebreak, i.e. the same quality on two
-// accounts (fable native vs fable Bedrock), where avoiding the employer-paid
-// account is free; (4) faster.
 func tierOrder(a, b string, frontend bool) bool {
 	sa, sb := scoreFor(a), scoreFor(b)
 	af, bf := affinity(sa, frontend), affinity(sb, frontend)

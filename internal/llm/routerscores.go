@@ -11,9 +11,7 @@ package llm
 //
 //	Tier 1 (simple)     grok, composer, glm, haiku, local
 //	Tier 2 (simple-med) sonnet
-//	Tier 3 (med)        opus
-//	Tier 4 (hard)       frontier (fable, gpt-5.x) — but HARD tasks normally
-//	                    keep the user's default model (see Route).
+//	Tier 3 (med)        fable, opus, gpt-5.x — all hard/frontier work lands here
 
 // Tier is a model's quality class (1 simple … 4 frontier). Higher = stronger.
 type Tier int
@@ -47,22 +45,20 @@ type RouterScore struct {
 // user's TRUST (grok/glm are "simple only" even at high benchmark scores), not
 // leaderboard numbers. Tune freely.
 var routerScores = map[string]RouterScore{
-	// Tier 4 — frontier (the typical default; hard tasks stay on the default).
-	"global.anthropic.claude-fable-5": {Tier: TierFrontier, Speed: 45},
-	"claude-fable-5":                  {Tier: TierFrontier, Speed: 45},
-
-	// Tier 3 — med (opus + the GPT family). gpt-5.5 is MORE strict/correct
-	// than opus → takes opus's general tasks; opus is better at frontend/
-	// design → takes frontend tasks (and remains the failover when GPT errors).
-	// Rank: opus-4-8 is the newest/best opus — preferring an older opus to
-	// avoid Bedrock would trade quality, which the user explicitly rejects.
-	"openai.gpt-5.5":               {Tier: TierMed, Rank: 3, Speed: 50, Strict: true},
-	"openai.gpt-5.4":               {Tier: TierMed, Rank: 2, Speed: 58},
-	"openai.gpt-5":                 {Tier: TierMed, Rank: 1, Speed: 60},
-	"us.anthropic.claude-opus-4-8": {Tier: TierMed, Rank: 3, Speed: 48, Design: true},
-	"us.anthropic.claude-opus-4-1": {Tier: TierMed, Rank: 2, Speed: 45, Design: true},
-	"claude-opus-4-1-20250805":     {Tier: TierMed, Rank: 2, Speed: 45, Design: true},
-	"claude-opus-4-20250514":       {Tier: TierMed, Rank: 1, Speed: 45, Design: true},
+	// Tier 3 — med (fable + opus + GPT family). This is the tier for hard work.
+	// fable-5 is the strongest model here (Rank:4). gpt-5.5 is more strict/
+	// correct than opus for general tasks (Strict); opus is better for frontend/
+	// design (Design). Rank orders quality within the tier so a newer model
+	// always beats an older one regardless of which account it lives on.
+	"global.anthropic.claude-fable-5": {Tier: TierMed, Rank: 4, Speed: 45, Design: true},
+	"claude-fable-5":                  {Tier: TierMed, Rank: 4, Speed: 45, Design: true},
+	"openai.gpt-5.5":                  {Tier: TierMed, Rank: 3, Speed: 50, Strict: true},
+	"openai.gpt-5.4":                  {Tier: TierMed, Rank: 2, Speed: 58},
+	"openai.gpt-5":                    {Tier: TierMed, Rank: 1, Speed: 60},
+	"us.anthropic.claude-opus-4-8":    {Tier: TierMed, Rank: 3, Speed: 48, Design: true},
+	"us.anthropic.claude-opus-4-1":    {Tier: TierMed, Rank: 2, Speed: 45, Design: true},
+	"claude-opus-4-1-20250805":        {Tier: TierMed, Rank: 2, Speed: 45, Design: true},
+	"claude-opus-4-20250514":          {Tier: TierMed, Rank: 1, Speed: 45, Design: true},
 
 	// Tier 2 — simple-med (sonnet). 4-6 is the newest sonnet; quality first,
 	// so it wins even on Bedrock.

@@ -87,17 +87,24 @@ func needsSearch(prompt string) bool {
 
 // hardCues imply deep reasoning / architecture / subtle work.
 var hardCues = []string{
-	"architect", "design the", "refactor the", "debug", "root cause",
-	"why does", "why is", "race condition", "deadlock", "optimize",
-	"performance", "security", "vulnerab", "prove", "algorithm",
+	"architect", "design the", "refactor", "debug", "root cause",
+	"why does", "why is", "why isn't", "why aren't", "race condition", "deadlock",
+	"optimize", "performance", "security", "vulnerab", "prove", "algorithm",
 	"concurren", "distributed", "trade-off", "tradeoff", "migrate",
+	"implement a ", "implement the ", "build a system", "build a service",
+	"add support for",
+	"how does the ", "explain why", "explain how", "understand the",
+	"make it ", "fix this ", "figure out", "investigate", "analyse", "analyze",
+	"plan ", "strategy", "approach", "best way to", "should i", "what's the",
 }
 
 // trivialCues imply rote, well-specified, low-judgment work.
 var trivialCues = []string{
 	"rename", "format", "gofmt", "fix the typo", "typo", "add a comment",
 	"comment out", "bump the version", "update the version", "lint",
-	"reword", "rephrase", "capitalize", "indent",
+	"reword", "rephrase", "capitalize", "indent", "delete the", "remove the",
+	"move the file", "move this file", "add a newline", "add a blank line",
+	"fix whitespace", "sort imports", "update copyright", "update license",
 }
 
 func classifyDifficulty(prompt string) Difficulty {
@@ -112,13 +119,14 @@ func classifyDifficulty(prompt string) Difficulty {
 			return DiffTrivial
 		}
 	}
-	// Length as a coarse proxy for scoping: a long, detailed prompt usually
-	// means an underscoped/substantial task (→ opus/default); a short one is
-	// usually well-scoped (→ sonnet; trivial cues above catch the grok tier).
+	// Length as a coarse proxy: a long prompt is usually under-scoped or
+	// multi-step (→ medium/hard); a short one is well-scoped (→ easy/trivial).
+	// Threshold is conservative — unknown prompts default to medium, which
+	// routes to sonnet, not to the trivial grok tier.
 	switch {
-	case len(prompt) > 600:
+	case len(prompt) > 400:
 		return DiffHard
-	case len(prompt) > 200:
+	case len(prompt) > 80:
 		return DiffMedium
 	default:
 		return DiffEasy
