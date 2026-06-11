@@ -92,22 +92,22 @@ func (m *model) cycleModel() {
 	m.note("model → " + np.Name())
 }
 
-// startFailover switches the live provider to the fallback model for
-// failoverTurns turns, remembering the origin. Returns false when failover is
-// not applicable (already on the fallback, no constructor, or switch failed).
-func (m *model) startFailover() bool {
-	if m.newProvider == nil || m.modelID == failoverModelID || m.failoverFrom != nil {
+// startFailover switches the live provider to fallback for failoverTurns
+// turns, remembering the origin. Returns false when failover is not applicable
+// (no target, already failed over, no constructor, or switch failed).
+func (m *model) startFailover(fallback string) bool {
+	if m.newProvider == nil || fallback == "" || m.modelID == fallback || m.failoverFrom != nil {
 		return false
 	}
-	prov := llm.ResolveProvider(m.provName, failoverModelID)
-	np, err := m.newProvider(prov, failoverModelID)
+	prov := llm.ResolveProvider(m.provName, fallback)
+	np, err := m.newProvider(prov, fallback)
 	if err != nil {
 		return false
 	}
 	m.failoverFrom = &failoverOrigin{provider: m.provName, model: m.modelID}
 	m.failoverLeft = failoverTurns
-	m.backend.SetModel(np, m.compactorFor(np), m.contextBudgetFor(failoverModelID))
-	m.provName, m.modelID = prov, failoverModelID
+	m.backend.SetModel(np, m.compactorFor(np), m.contextBudgetFor(fallback))
+	m.provName, m.modelID = prov, fallback
 	return true
 }
 

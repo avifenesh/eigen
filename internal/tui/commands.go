@@ -217,13 +217,13 @@ func (m *model) command(line string) tea.Cmd {
 			if p := m.router.Providers(); len(p) > 0 {
 				scope = "across " + strings.Join(p, " ")
 			}
-			m.note(fmt.Sprintf("auto-router: %s (%s)   (/route on|off — set route_providers via /config for cross-provider)", status, scope))
+			m.note(fmt.Sprintf("routing: %s (%s) — your model orchestrates: task-tool delegations with stated kind/difficulty always route; heuristic routing of unstated subtasks is %s (/route on|off)", status, scope, status))
 		case "on":
 			m.router.SetEnabled(true)
-			m.note("auto-router ON — each task routes to the cheapest model that does it well")
+			m.note("heuristic routing ON — unstated subtasks also route by prompt classification (orchestrator-stated kind/difficulty always routes)")
 		case "off":
 			m.router.SetEnabled(false)
-			m.note("auto-router OFF")
+			m.note("heuristic routing OFF — routing still happens when YOU state kind/difficulty on a task delegation (and for vision needs)")
 		default:
 			m.push(&block{kind: blockNote, isErr: true, body: sb("usage: /route on|off  (cross-provider scope: /config route_providers <list>)")})
 		}

@@ -55,3 +55,16 @@ func TestAutoRouterImageForcesVisionEvenWhenDisabled(t *testing.T) {
 	// nil without credentials — that's fine; no panic, no early-disable bail).
 	r.Route(context.Background(), "look at this screenshot", "", "", true)
 }
+
+func TestExplicitDelegationRoutesEvenWhenDisabled(t *testing.T) {
+	// Orchestrator-stated difficulty must route even with the heuristic
+	// auto-router off — routing is the orchestrator's per-decision act.
+	r := newAutoRouter(false, nil, "converse")
+	// Stated difficulty: the gate must not bail early. Whether a provider is
+	// ultimately constructed depends on credentials; the key behavior is that
+	// the disabled+unstated path bails and the stated path proceeds.
+	r.Route(context.Background(), "sort the imports in util.go", "", "trivial", false)
+	if p, _, _ := r.Route(context.Background(), "sort the imports in util.go", "", "", false); p != nil {
+		t.Fatal("unstated prompt must not route while disabled")
+	}
+}

@@ -526,22 +526,19 @@ func (m *model) submit(task string) tea.Cmd {
 	m.streamedText = false
 	m.idleGen++ // invalidate any pending idle-dream timer
 
-	// Auto-router: route this turn to the best-fit model, unless a failover
-	// window is active (failover's choice wins until it ends) — a manual /model
-	// switch is honored because it updates m.modelID, which routing overwrites
-	// only when enabled. Exception: an image attached while the active model
-	// lacks vision forces a route to a vision-capable model even when routing
-	// is off — the alternative is silently dropping the image.
+	// Routing is ORCHESTRATOR-DRIVEN, not static: the top-level turn always
+	// stays on the user's chosen model (fable by default), which acts as the
+	// orchestrator — it decides per delegation (task tool kind/difficulty)
+	// what routes where. The ONE top-level exception is a capability need: an
+	// image attached while the active model lacks vision forces a route to a
+	// vision-capable model — the alternative is silently dropping the image.
 	hasImageRef := referencesImage(task) || len(m.pendingImages) > 0
 	needVision := hasImageRef && !llm.HasVision(m.modelID)
-	if m.router != nil && (m.router.Enabled() || needVision) && m.failoverFrom == nil {
+	if m.router != nil && needVision && m.failoverFrom == nil {
 		if prov, model, label := m.router.Route(m.ctx, task, "", "", hasImageRef); prov != nil && model != m.modelID {
 			m.backend.SetModel(prov, m.compactorFor(prov), m.contextBudgetFor(model))
 			m.provName, m.modelID = prov.Name(), model
-			if needVision {
-				label += " (vision needed)"
-			}
-			m.note(label)
+			m.note(label + " (vision needed)")
 		}
 	}
 
@@ -1035,21 +1032,22 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			m.push(&block{kind: blockNote, isErr: true, body: sb("error: " + msg.err.Error())})
 			switch {
 			case isGPTRoutingError(m.modelID, msg.err) && m.ctx.Err() == nil:
-				// GPT routing/availability failure: fall back to opus (the
-				// user's rule — gpt takes opus's tasks unless gpt is failing).
-				if m.startFailover() {
+				// GPT routing/availability failure: walk the failover chain
+				// (fable default → gpt-5.5 → opus); never land on the failing
+				// model itself.
+				if fb := nextFailover(m.modelID); m.startFailover(fb) {
 					m.cancel = nil
 					m.autosave()
-					m.note(fmt.Sprintf("%s routing error — falling back to %s", m.modelID, failoverModelID))
+					m.note(fmt.Sprintf("%s routing error — falling back to %s", m.failoverFrom.model, fb))
 					return m, m.resend()
 				}
 			case isOverloaded(msg.err) && m.ctx.Err() == nil:
 				// Persistent overload (503 after all retries): redirect the next
-				// turns to the known-good fallback model and retry this turn there.
-				if m.startFailover() {
+				// turns to the next model in the failover chain and retry there.
+				if fb := nextFailover(m.modelID); m.startFailover(fb) {
 					m.cancel = nil
 					m.autosave() // history is intact; the retry continues it
-					m.note(fmt.Sprintf("model overloaded (Bedrock 503) — redirecting to %s for the next %d turns, then switching back", failoverModelID, failoverTurns))
+					m.note(fmt.Sprintf("model overloaded (Bedrock 503) — redirecting to %s for the next %d turns, then switching back", fb, failoverTurns))
 					return m, m.resend()
 				}
 				m.note("model overloaded (Bedrock 503: capacity on the provider side) — try /model to switch, or retry shortly")
@@ -1465,8 +1463,25 @@ type failoverOrigin struct {
 // overload before switching back to the original model.
 const failoverTurns = 5
 
-// failoverModelID is the known-good model used while the primary is overloaded.
-const failoverModelID = "us.anthropic.claude-opus-4-8"
+// failoverChain is the ordered fallback ladder (the user's rule): fable-5 is
+// the default, gpt-5.5 is the first failover, opus third. nextFailover picks
+// the first entry that isn't the failing model so a failover never lands on
+// the model that just failed.
+var failoverChain = []string{
+	"openai.gpt-5.5",
+	"us.anthropic.claude-opus-4-8",
+}
+
+// nextFailover returns the first chain model different from the failing one,
+// or "" when the chain is exhausted (the failing model IS the last resort).
+func nextFailover(failing string) string {
+	for _, id := range failoverChain {
+		if id != failing {
+			return id
+		}
+	}
+	return ""
+}
 
 // renderHistory pre-fills the transcript with resumed messages as blocks, so
 // the user sees the conversation being continued — thinking and tool blocks

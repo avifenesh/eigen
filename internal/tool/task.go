@@ -21,14 +21,14 @@ type TaskRunner func(ctx context.Context, task, kind, difficulty string) (string
 func Task(run TaskRunner) Definition {
 	return Definition{
 		Name:        "task",
-		Description: "Delegate a self-contained subtask to a fresh agent context and get back only its final result. Use for large, separable chunks of work to keep the main context focused. Give complete instructions; the subtask cannot see this conversation. Optionally set kind (general|search|vision) and difficulty (trivial|easy|medium|hard) to route the subtask to the best-fit model.",
+		Description: "Delegate a self-contained subtask to a fresh agent context and get back only its final result. Use for large, separable chunks of work to keep the main context focused. Give complete instructions; the subtask cannot see this conversation. YOU are the orchestrator: state kind (general|search|vision|social) and difficulty (trivial|easy|medium|hard) when delegating so the subtask runs on the best-fit model — trivial/easy work on a fast cheap model, search/vision/social on a capable one. Omit them only when the subtask genuinely needs your own model.",
 		ReadOnly:    true,
 		Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
     "task": { "type": "string", "description": "Complete, self-contained instructions for the subtask." },
     "kind": { "type": "string", "enum": ["general","search","vision","social"], "description": "What the subtask needs: general reasoning/coding, live web search, image understanding, or social (X/Twitter reach — sentiment, what people are saying). Optional." },
-    "difficulty": { "type": "string", "enum": ["trivial","easy","medium","hard"], "description": "Routing ladder: trivial = small + well-scoped (mechanical edits); easy = well-scoped, iterative, little reasoning; medium = not fully scoped, needs reasoning, may run long; hard = unscoped + heavy reasoning + long-running (stays on the main model). Optional." }
+    "difficulty": { "type": "string", "enum": ["trivial","easy","medium","hard"], "description": "Routing ladder: trivial = small + well-scoped (mechanical edits → fast cheap model); easy = well-scoped, iterative, little reasoning; medium = not fully scoped, needs reasoning, may run long; hard = unscoped + heavy reasoning (→ strongest available model). Stating this routes the subtask; omitting it keeps your model." }
   },
   "required": ["task"],
   "additionalProperties": false

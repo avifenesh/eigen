@@ -43,25 +43,26 @@ func (r *autoRouter) Enabled() bool {
 }
 
 // route picks a provider+model for a task. Returns (provider, modelID, label)
-// or (nil, "", "") to keep the current model — when routing is off, no
-// candidate is capable, or the chosen model can't be built. The label is a
-// short reason for the UI ("routed → glm-4.7: medium").
+// or (nil, "", "") to keep the current model. Routing is ORCHESTRATOR-DRIVEN:
+// an explicitly stated kind/difficulty (the main model's delegation decision)
+// always routes, as does an attached image (capability need). Unstated tasks
+// route only when the heuristic auto-router is enabled (/route on) — by
+// default the orchestrator model keeps unscoped work itself, so routing is
+// a per-decision act, never an always-on static classifier.
 func (r *autoRouter) Route(ctx context.Context, prompt, kind, difficulty string, hasImage bool) (llm.Provider, string, string) {
 	r.mu.Lock()
 	enabled := r.enabled
 	providers := append([]string(nil), r.providers...)
 	current := r.current
 	r.mu.Unlock()
-	// An attached image is a capability NEED: even with routing off, a
-	// non-vision model can't see it — the TUI calls Route in that case and we
-	// honor it. Plain prompts respect the toggle.
-	if !enabled && !hasImage {
-		return nil, "", ""
-	}
 
 	// Kind/difficulty: orchestrator-stated wins; else classify the prompt.
 	k, kExplicit := llm.ParseTaskKind(kind)
 	d, dExplicit := llm.ParseDifficulty(difficulty)
+	explicit := kExplicit || dExplicit
+	if !enabled && !hasImage && !explicit {
+		return nil, "", ""
+	}
 	ck, cd := llm.Classify(prompt, hasImage)
 	if !kExplicit {
 		k = ck
