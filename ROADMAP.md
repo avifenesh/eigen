@@ -98,12 +98,13 @@ Raw capture from the user — refine/prioritize later. Numbered for reference on
    -p. Exit 0/non-zero lets the host back off. Pairs with --continue for one
    evolving session. docs/automation-example.md has the systemd timer (OnUnit-
    InactiveSec = "start when it closed, do something, go back") + shell loop.)*
-6. **Background scan → proactive action feed** — *(redefined; lives inside the
-   app shell, Tier 8)* a background worker that scans memory, the project,
-   GitHub (issues/PRs/upstream drift) and similar fast sources, and offers
-   one-keystroke session starters: "solve this issue", "clean the code you
-   said you wanted cleaned", "open the PR against upstream". Surfaces as a
-   feed on the home page / project pages.
+6. **Background scan → proactive action feed** — *(shipped c7500c9:
+   internal/feed — git (uncommitted/unpushed per project) + project-memory
+   stated intents + GitHub (gh review-requests + assigned issues); each item
+   carries a ready Task prompt + project Dir; home 'act on' section + per-
+   project feed; enter opens a chat rooted there with the task pre-submitted;
+   cached ~/.eigen/feed.json 10-min TTL, async refresh. REMAINING ideas:
+   upstream-drift detection, small-model ranking/dedupe of items.)*
 7. **Computer use built in** — *(shipped via #8: the agent-workspace server is
    auto-registered when its binary is present, giving screenshot/click/key/type
    + browser control as first-class tools without mcp.json editing.)*
@@ -279,8 +280,11 @@ first-class surface, reachable by keys and a command palette:
 4. ~ Multi-session: live page + rail glyphs shipped; true in-window session
    tabs (chat-as-a-page) still open — today attach replaces the window.
 5. ✅ Crons page (read-only: systemd user timers via --output=json + crontab).
-6. ❌ Proactive feed (#6): background scanner (memory + project + gh) offering
-   one-keystroke session starters, on Home + project pages. ← NEXT BIG PIECE
+6. ✅ Proactive feed (#6): internal/feed scans git (uncommitted/unpushed per
+   project), project memory (stated intents), and GitHub (gh review-requests +
+   assigned issues); each item carries a ready Task + project Dir. Home 'act
+   on' section + per-project feed; enter = open a chat rooted there with the
+   task pre-submitted. Cached (~/.eigen/feed.json, 10-min TTL), async refresh.
 7. ✅ Plugins page (mcp/plugins/lsp/hooks, both scopes, read-only).
 
 ## Notes / grounding
