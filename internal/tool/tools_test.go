@@ -91,7 +91,7 @@ func TestEditMissingString(t *testing.T) {
 }
 
 func TestBashRunsAndIsMutating(t *testing.T) {
-	b := Bash()
+	b := Bash(nil)
 	if b.ReadOnly {
 		t.Fatal("bash must not be read-only")
 	}

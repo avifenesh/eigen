@@ -410,7 +410,7 @@ func main() {
 		tool.MultiEdit(policy),
 		tool.Patch(policy),
 		tool.Move(policy),
-		tool.Bash(),
+		tool.Bash(policy),
 		tool.Fetch(),
 		tool.Todo(),
 		tool.Skill(skills),

@@ -73,7 +73,10 @@ type buildParams struct {
 func buildSession(p buildParams) (*sessionDeps, error) {
 	deps := &sessionDeps{GlobalMem: p.GlobalMem}
 
-	policy := tool.DefaultPolicy()
+	// Tools are rooted at the SESSION's dir, not the daemon's cwd. Relative
+	// paths in tool args (and bash's working dir) must resolve against the
+	// project the chat lives in.
+	policy := tool.NewPolicy(p.Dir)
 	mem, _ := memory.Open(p.Dir) // project memory rooted at this chat's dir
 	deps.Mem = mem
 
@@ -122,7 +125,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		tool.Read(policy), tool.List(policy), tool.Glob(policy), tool.Grep(policy),
 		tool.Symbols(policy), tool.Tree(policy), tool.Diff(policy), tool.Write(policy),
 		tool.Edit(policy), tool.MultiEdit(policy), tool.Patch(policy), tool.Move(policy),
-		tool.Bash(), tool.Fetch(), tool.Todo(), tool.Skill(p.Skills),
+		tool.Bash(policy), tool.Fetch(), tool.Todo(), tool.Skill(p.Skills),
 		tool.Memory(mem, p.GlobalMem), tool.Task(taskRun),
 		tool.GoalAchieved(goalJudge), tool.Review(reviewRun),
 	}

@@ -1,8 +1,10 @@
 package tool
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -47,5 +49,48 @@ func TestPolicyResolveDeniesSensitiveDir(t *testing.T) {
 	p := NewPolicy(dir)
 	if _, err := p.Resolve(filepath.Join(dir, ".ssh", "config")); err == nil {
 		t.Fatal("expected denial for .ssh directory")
+	}
+}
+
+func TestRelativePathsResolveAgainstRoot(t *testing.T) {
+	// A daemon hosts sessions rooted at different projects in ONE process, so
+	// relative tool paths must resolve against the session's root, never the
+	// process cwd. Regression: a daemon-session write of "hello.txt" landed in
+	// the daemon's cwd, not the project.
+	root := t.TempDir()
+	p := NewPolicy(root)
+	got, err := p.Resolve("hello.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(realPath(t, root), "hello.txt")
+	if got != want {
+		t.Fatalf("relative path resolved to %q, want %q", got, want)
+	}
+	// Escapes via relative .. still denied.
+	if _, err := p.Resolve("../escape.txt"); err == nil {
+		t.Fatal("relative escape should be denied")
+	}
+}
+
+// realPath resolves symlinks the same way NewPolicy does (macOS /tmp etc).
+func realPath(t *testing.T, p string) string {
+	t.Helper()
+	r, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return p
+	}
+	return r
+}
+
+func TestBashRunsInPolicyDir(t *testing.T) {
+	root := t.TempDir()
+	b := Bash(NewPolicy(root))
+	out, err := b.Run(context.Background(), []byte(`{"command":"pwd"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != realPath(t, root) {
+		t.Fatalf("bash ran in %q, want %q", strings.TrimSpace(out), root)
 	}
 }

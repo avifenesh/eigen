@@ -52,9 +52,23 @@ func DefaultPolicy() *Policy {
 	return NewPolicy(cwd)
 }
 
+// Dir returns the policy's primary root (the project dir tools operate in).
+func (p *Policy) Dir() string {
+	if len(p.roots) > 0 {
+		return p.roots[0]
+	}
+	return "."
+}
+
 // Resolve validates path against the policy and returns the absolute, symlink-
-// resolved path to operate on, or an error explaining the denial.
+// resolved path to operate on, or an error explaining the denial. Relative
+// paths resolve against the PRIMARY ROOT, not the process cwd — a daemon
+// hosts many sessions rooted at different projects in one process, so the
+// process cwd is meaningless.
 func (p *Policy) Resolve(path string) (string, error) {
+	if !filepath.IsAbs(path) && len(p.roots) > 0 {
+		path = filepath.Join(p.roots[0], path)
+	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return "", err

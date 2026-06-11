@@ -17,7 +17,7 @@ const (
 // Bash returns the command-execution tool. It is mutating (Exec): in gated mode
 // it requires approval. The path fence does not constrain arbitrary commands —
 // that is what the approval gate is for.
-func Bash() Definition {
+func Bash(policy *Policy) Definition {
 	return Definition{
 		Name:        "bash",
 		Description: "Run a shell command with bash -c and return its combined stdout+stderr. Mutating: requires approval in gated mode.",
@@ -51,7 +51,11 @@ func Bash() Definition {
 			ctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 
-			out, err := exec.CommandContext(ctx, "bash", "-c", in.Command).CombinedOutput()
+			cmd := exec.CommandContext(ctx, "bash", "-c", in.Command)
+			if policy != nil {
+				cmd.Dir = policy.Dir() // run in the session's project dir
+			}
+			out, err := cmd.CombinedOutput()
 			result := string(out)
 			if ctx.Err() == context.DeadlineExceeded {
 				return result + fmt.Sprintf("\n[timed out after %s]", timeout), nil
