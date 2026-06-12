@@ -63,7 +63,7 @@ func TestViewFitsWhileRunningWithPlan(t *testing.T) {
 
 func TestHeaderDropsBorderOnShortTerminals(t *testing.T) {
 	m := testModel(t)
-	m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+	m.Update(tea.WindowSizeMsg{Width: 79, Height: 10}) // classic chrome (narrow)
 	if m.headerHeight() != 1 {
 		t.Fatalf("short terminal should use the 1-row header, got %d", m.headerHeight())
 	}
@@ -74,9 +74,9 @@ func TestHeaderDropsBorderOnShortTerminals(t *testing.T) {
 	if a := m.headerActionAt(2, 0); a != actRename {
 		t.Fatalf("title click on the borderless header should rename, got %v", a)
 	}
-	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.Update(tea.WindowSizeMsg{Width: 79, Height: 24})
 	if m.headerHeight() != 3 {
-		t.Fatalf("normal terminal keeps the bordered header, got %d", m.headerHeight())
+		t.Fatalf("normal-height narrow terminal keeps the bordered header, got %d", m.headerHeight())
 	}
 }
 
@@ -101,8 +101,8 @@ func TestHeaderButtonsDropWhenNarrow(t *testing.T) {
 }
 
 func TestHeaderPanelToggleButtons(t *testing.T) {
-	m := switcherModel(t) // daemon-hosted: rail available
-	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m := switcherModel(t)                              // daemon-hosted: rail available
+	m.Update(tea.WindowSizeMsg{Width: 79, Height: 24}) // classic chrome (narrow)
 	m.refreshRail()
 	m.text("user", "edit")
 	m.push(editBlock("f.go", "a", "b"))
@@ -143,15 +143,13 @@ func TestHeaderPanelToggleButtons(t *testing.T) {
 }
 
 func TestHeaderToggleStateStyling(t *testing.T) {
+	// The classic header (narrow-only now) renders toggles dim when their
+	// panel can't show at this width — honest styling.
 	m := switcherModel(t)
-	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.Update(tea.WindowSizeMsg{Width: 79, Height: 24})
 	m.refreshRail()
-	if on, isT := m.headerToggleOn(actRailToggle); !isT || !on {
-		t.Fatal("rail toggle should read shown on a wide daemon chat")
-	}
-	m.railOn = false
-	if on, _ := m.headerToggleOn(actRailToggle); on {
-		t.Fatal("rail toggle should read hidden after closing")
+	if on, isT := m.headerToggleOn(actRailToggle); !isT || on {
+		t.Fatal("rail toggle should read hidden on a narrow terminal (rail can't fit)")
 	}
 	if _, isT := m.headerToggleOn(actHome); isT {
 		t.Fatal("home is not a toggle")

@@ -75,6 +75,7 @@ func TestLayoutMatchesViewportSizing(t *testing.T) {
 
 func TestHitTestRegions(t *testing.T) {
 	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 24}) // classic chrome (narrow)
 	l := m.computeLayout()
 	// A point in the status rect resolves to regStatus.
 	if h := m.hitTest(0, l.status.y); h.region != regStatus {
@@ -96,7 +97,8 @@ func TestHitTestRegions(t *testing.T) {
 
 func TestStatusActionMapsToSegment(t *testing.T) {
 	m := testModel(t)
-	m.width = 200 // single line so every segment is on row 0
+	m.Update(tea.WindowSizeMsg{Width: 79, Height: 24}) // classic chrome (narrow)
+	m.width = 79
 	boxes := m.statusBarLayout()
 	// Find the perm segment and click its midpoint.
 	var permBox *statusSegBox
@@ -223,8 +225,7 @@ func TestOverlayTextAcceptsPastedRun(t *testing.T) {
 
 func TestClickStatusSegmentDispatches(t *testing.T) {
 	m := testModel(t)
-	m.width = 200
-	m.Update(tea.WindowSizeMsg{Width: 200, Height: 24})
+	m.Update(tea.WindowSizeMsg{Width: 79, Height: 24}) // classic chrome (narrow)
 	// Find the effort... no effort on fakeProv. Use the perm segment which is
 	// always present, and verify a left-click press on it opens the confirm.
 	boxes := m.statusBarLayout()
@@ -262,6 +263,7 @@ func TestRectContains(t *testing.T) {
 
 func TestHeaderRectAtTop(t *testing.T) {
 	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 24}) // classic chrome (narrow)
 	l := m.computeLayout()
 	if l.header.y != 0 || l.header.h != 3 {
 		t.Fatalf("bordered header should occupy the first 3 rows, got %+v", l.header)
@@ -276,6 +278,7 @@ func TestHeaderRectAtTop(t *testing.T) {
 
 func TestHeaderViewShowsTitleAndButtons(t *testing.T) {
 	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 79, Height: 24}) // classic chrome (narrow)
 	m.backend.SetTitle("my session")
 	v := m.headerView()
 	for _, want := range []string{"╭", "╰", "my session", "[home]", "[sessions]", "[+new]", "[config]"} {
@@ -290,8 +293,9 @@ func TestHeaderViewShowsTitleAndButtons(t *testing.T) {
 
 func TestHeaderActionAtButtons(t *testing.T) {
 	m := testModel(t)
-	m.width = 100
-	_, btnStart := m.headerButtonsText(100)
+	m.Update(tea.WindowSizeMsg{Width: 79, Height: 24}) // classic chrome (narrow)
+	m.width = 79
+	_, btnStart := m.headerButtonsText(79)
 	if act := m.headerActionAt(btnStart+2, 1); act != actHome {
 		t.Fatalf("first button on content row should be home, got %v", act)
 	}
@@ -308,8 +312,8 @@ func TestHeaderActionAtButtons(t *testing.T) {
 
 func TestHeaderClickDispatches(t *testing.T) {
 	m := testModel(t)
-	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
-	_, btnStart := m.headerButtonsText(100)
+	m.Update(tea.WindowSizeMsg{Width: 79, Height: 24}) // classic chrome (narrow)
+	_, btnStart := m.headerButtonsText(79)
 	col := btnStart
 	var configCol int
 	for _, b := range m.headerButtons() {
@@ -327,7 +331,7 @@ func TestHeaderClickDispatches(t *testing.T) {
 
 func TestHeaderTitleClickOpensRename(t *testing.T) {
 	m := testModel(t)
-	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.Update(tea.WindowSizeMsg{Width: 79, Height: 24}) // classic chrome (narrow)
 	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 1})
 	if !m.ov.active || m.ov.kind != promptText {
 		t.Fatal("clicking the header title should open the rename prompt")
@@ -351,12 +355,22 @@ func TestAnsiTrunc(t *testing.T) {
 func TestRailHiddenForLocalBackend(t *testing.T) {
 	m := testModel(t) // plain local backend: no SessionLister
 	if m.railVisible() {
-		t.Fatal("local chats have no siblings — the rail must stay hidden")
+		t.Fatal("local chats have no siblings — the session rail list stays hidden")
 	}
+	// Sidebar mode still owns the left column (nav without sessions).
+	if m.railWidth() == 0 {
+		t.Fatal("sidebar keeps the left column for local chats (nav rows)")
+	}
+	for _, r := range m.sidebarRows() {
+		if r.kind == sbRail || r.kind == sbSessionsHeader {
+			t.Fatal("local chat sidebar must not render session rows")
+		}
+	}
+	// Narrow terminals: no sidebar, no rail, plain viewport.
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
 	if m.railWidth() != 0 {
-		t.Fatal("hidden rail has zero width")
+		t.Fatal("narrow local chat has no left column")
 	}
-	// The transcript band falls back to the plain viewport.
 	if m.transcriptBand() != m.vp.View() {
 		t.Fatal("with no rail the band is just the viewport")
 	}
@@ -434,19 +448,24 @@ func TestPanelTitleLineHasClose(t *testing.T) {
 	}
 }
 
-func TestPanelCloseClickTogglesRail(t *testing.T) {
+func TestRailSectionToggleParity(t *testing.T) {
+	// In sidebar mode the sessions section folds via /rail (ctrl+b) — the
+	// sidebar itself has no [x] (it IS the chrome, not a closable panel).
 	m := switcherModel(t)
-	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m.refreshRail()
-	l := m.computeLayout()
-	if l.leftRail.empty() {
-		t.Fatal("rail should be visible")
-	}
-	// The rail close [x] is right-aligned in the panel title row before the
-	// separator column, so click the x cell.
-	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.leftRail.x + l.leftRail.w - 2, Y: l.leftRail.y})
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlB})
 	if m.railOn {
-		t.Fatal("clicking rail [x] should toggle the rail off")
+		t.Fatal("ctrl+b should fold the sessions section")
+	}
+	for _, r := range m.sidebarRows() {
+		if r.kind == sbRail || r.kind == sbSessionsHeader {
+			t.Fatal("folded sessions section should not render rail rows")
+		}
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlB})
+	if !m.railOn {
+		t.Fatal("ctrl+b should unfold the sessions section")
 	}
 }
 
@@ -481,12 +500,21 @@ func TestPanelToggleKeys(t *testing.T) {
 
 func TestRailRowClickHops(t *testing.T) {
 	m := switcherModel(t) // current is s2; entries s1,s2,s3 across 3 projects
-	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m.refreshRail()
 	l := m.computeLayout()
-	// Grouped rail: row 0 = panel header, row 1 = project header (/tmp/a),
-	// row 2 = s1.
-	_, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + 2})
+	// Sidebar mode: find s1's row in the sidebar row model.
+	row := -1
+	for i, r := range m.sidebarRows() {
+		if r.kind == sbRail && !r.rail.header && m.railEntries[r.rail.entry].ID == "s1" {
+			row = i
+			break
+		}
+	}
+	if row < 0 {
+		t.Fatal("s1 row not found in the sidebar")
+	}
+	_, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + row})
 	if m.switchTo != "s1" {
 		t.Fatalf("clicking the first session row should hop to s1, got %q", m.switchTo)
 	}
@@ -590,11 +618,21 @@ func TestRailSingleProjectUngrouped(t *testing.T) {
 
 func TestRailHeaderClickCollapses(t *testing.T) {
 	m := switcherModel(t)
-	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m.refreshRail()
 	l := m.computeLayout()
-	// Row 1 is the /tmp/a project header.
-	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + 1})
+	// Sidebar mode: find the /tmp/a project header row.
+	row := -1
+	for i, r := range m.sidebarRows() {
+		if r.kind == sbRail && r.rail.header && r.rail.dir == "/tmp/a" {
+			row = i
+			break
+		}
+	}
+	if row < 0 {
+		t.Fatal("/tmp/a header row not found in the sidebar")
+	}
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + row})
 	if !m.railCollapsed["/tmp/a"] {
 		t.Fatal("clicking a project header should collapse it")
 	}
@@ -607,8 +645,15 @@ func TestRailHeaderClickCollapses(t *testing.T) {
 	if !strings.Contains(band, "(1)") {
 		t.Fatalf("collapsed header should show the session count:\n%s", band)
 	}
-	// Click again expands.
-	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + 1})
+	// Click again expands (recompute: collapsing shifted rows).
+	row2 := -1
+	for i, r := range m.sidebarRows() {
+		if r.kind == sbRail && r.rail.header && r.rail.dir == "/tmp/a" {
+			row2 = i
+			break
+		}
+	}
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + row2})
 	if m.railCollapsed["/tmp/a"] {
 		t.Fatal("clicking the header again should expand it")
 	}
@@ -616,19 +661,27 @@ func TestRailHeaderClickCollapses(t *testing.T) {
 
 func TestRailClickAfterCollapseHitsShiftedRow(t *testing.T) {
 	m := switcherModel(t)
-	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m.refreshRail()
 	l := m.computeLayout()
-	// Collapse /tmp/a (row 1): s1 hides, so row 2 becomes the /tmp/b header
-	// and row 3 its session s2 (the current one).
+	// Collapse /tmp/a: rows shift; the row model must stay click-accurate.
 	m.toggleRailProject("/tmp/a")
-	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + 4})
-	// Row 4 is now the /tmp/c header — a header click must not hop.
+	row := -1
+	for i, r := range m.sidebarRows() {
+		if r.kind == sbRail && r.rail.header && r.rail.dir == "/tmp/c" {
+			row = i
+			break
+		}
+	}
+	if row < 0 {
+		t.Fatal("/tmp/c header row not found after collapse")
+	}
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + row})
 	if m.switchTo != "" {
 		t.Fatalf("header click after collapse must not hop, got %q", m.switchTo)
 	}
 	if !m.railCollapsed["/tmp/c"] {
-		t.Fatal("row 4 should be the /tmp/c header and toggle it")
+		t.Fatal("the shifted /tmp/c header click should toggle it")
 	}
 }
 
@@ -1427,18 +1480,14 @@ func TestChangesPanelWrapsLongDiffLines(t *testing.T) {
 	}
 }
 
-// --- Tier 11.5: headerless command sidebar (/chrome) ---
+// --- Tier 11.5: headerless command sidebar (THE design, always-on ≥80 cols) ---
 
-func TestSidebarToggleSwapsHeader(t *testing.T) {
+func TestSidebarIsTheDefaultOnWideTerminals(t *testing.T) {
 	m := switcherModel(t)
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m.refreshRail()
-	if m.headerHeight() == 0 {
-		t.Fatal("classic chrome should render a header")
-	}
-	m.toggleSidebar()
 	if !m.sidebarVisible() {
-		t.Fatal("sidebar should be visible at 120 cols")
+		t.Fatal("sidebar should be THE chrome at 120 cols")
 	}
 	if m.headerHeight() != 0 {
 		t.Fatal("sidebar mode must remove the header")
@@ -1450,69 +1499,97 @@ func TestSidebarToggleSwapsHeader(t *testing.T) {
 	if strings.Contains(v, "[home] [sessions]") {
 		t.Fatal("classic header buttons must not render in sidebar mode")
 	}
-	// Sessions fold in below the nav.
 	if !strings.Contains(v, "sessions") {
 		t.Fatalf("sidebar should show the sessions section:\n%s", v)
 	}
-	m.toggleSidebar()
-	if m.headerHeight() == 0 {
-		t.Fatal("toggle back must restore the header")
+	// Status setters live in the sidebar now; no bottom status bar.
+	if !strings.Contains(v, "perm=auto") {
+		t.Fatalf("sidebar should show the perm status row:\n%s", v)
+	}
+	if strings.Contains(v, "eigen · ") {
+		t.Fatalf("bottom status bar must not render in sidebar mode:\n%s", v)
 	}
 }
 
-func TestSidebarNarrowKeepsHeader(t *testing.T) {
-	t.Setenv("TMUX", "")
-	t.Setenv("ZELLIJ", "")
+func TestSidebarNarrowFallsBackToHeader(t *testing.T) {
 	m := testModel(t)
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
-	cmd := m.toggleSidebar()
 	if m.sidebarVisible() {
 		t.Fatal("sidebar can't fit at 60 cols")
 	}
 	if m.headerHeight() == 0 {
-		t.Fatal("too-narrow sidebar must keep the classic header")
+		t.Fatal("narrow terminals must keep the classic header")
 	}
-	if cmd == nil {
-		t.Fatal("too-narrow toggle should attempt a pane stretch")
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "[home]") {
+		t.Fatalf("narrow fallback should render the classic header:\n%s", v)
 	}
 }
 
-func TestSidebarClickNavAndRailRows(t *testing.T) {
+func TestSidebarClickNavStatusAndRailRows(t *testing.T) {
 	m := switcherModel(t)
-	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m.refreshRail()
-	m.toggleSidebar()
 	l := m.computeLayout()
 	if l.header.h != 0 {
 		t.Fatalf("sidebar layout must have no header rect, got h=%d", l.header.h)
 	}
-	if l.leftRail.empty() || l.leftRail.y != l.transcript.y {
-		t.Fatalf("sidebar occupies the left rail rect from the top: %+v", l.leftRail)
+	if l.leftRail.empty() || l.leftRail.y != 0 {
+		t.Fatalf("sidebar occupies the left column from row 0: %+v", l.leftRail)
 	}
-	// Row model: find the nav row for config and click it.
 	rows := m.sidebarRows()
-	cfgRow := -1
-	railSessionRow := -1
+	cfgRow, permRow, railSessionRow := -1, -1, -1
 	for i, r := range rows {
 		if r.kind == sbNav && r.action == actConfigPanel {
 			cfgRow = i
+		}
+		if r.kind == sbStatus && strings.HasPrefix(r.label, "perm=") {
+			permRow = i
 		}
 		if r.kind == sbRail && !r.rail.header && railSessionRow == -1 {
 			railSessionRow = i
 		}
 	}
-	if cfgRow < 0 || railSessionRow < 0 {
-		t.Fatalf("expected nav + rail rows, got %+v", rows)
+	if cfgRow < 0 || permRow < 0 || railSessionRow < 0 {
+		t.Fatalf("expected nav+status+rail rows, got %+v", rows)
 	}
-	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + cfgRow})
+	// Click '⚙ config' opens the config panel.
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: cfgRow})
 	if !m.conf.active {
 		t.Fatal("clicking '⚙ config' should open the config panel")
 	}
 	m.conf = confPanel{}
-	// Clicking a session row hops (switcherModel: s1 ≠ current s2).
-	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + railSessionRow})
+	// Click the perm status row opens the perm confirm (same as status bar).
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: permRow})
+	if !m.ov.active {
+		t.Fatal("clicking the perm row should open the perm confirm overlay")
+	}
+	m.ov = overlay{}
+	// Click a session row hops.
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: railSessionRow})
 	if m.switchTo == "" {
 		t.Fatal("clicking a sidebar session row should hop")
+	}
+}
+
+func TestSidebarShowsTodosAsSection(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m.todos = []todoItem{
+		{Content: "first task", Status: "in_progress"},
+		{Content: "second task", Status: "pending"},
+	}
+	m.relayout()
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "plan (0/2)") {
+		t.Fatalf("sidebar should show the plan header:\n%s", v)
+	}
+	if !strings.Contains(v, "first task") {
+		t.Fatalf("sidebar should show todo rows:\n%s", v)
+	}
+	// No top plan panel: the transcript band starts at row 0.
+	if m.topHeight() != 0 {
+		t.Fatalf("topHeight must be 0 in sidebar mode, got %d", m.topHeight())
 	}
 }
 
@@ -1522,7 +1599,7 @@ func TestSidebarViewFitsAllSizes(t *testing.T) {
 			m := switcherModel(t)
 			m.Update(tea.WindowSizeMsg{Width: w, Height: h})
 			m.refreshRail()
-			m.sidebarOn = true
+			m.todos = []todoItem{{Content: "a task", Status: "pending"}}
 			m.relayout()
 			m.text("user", "use the edit tool to change beta")
 			m.push(editBlock("note.txt", "beta", "beta two"))

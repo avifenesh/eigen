@@ -165,9 +165,10 @@ func (m *model) View() string {
 		bottom = m.overlayView() + "\n" + bottom
 	}
 	if m.sidebarVisible() {
-		// Headerless sidebar mode: no header row at all — the transcript band
-		// (with the command sidebar as its left column) starts at the top.
-		return m.planView() + m.transcriptBand() + "\n" + bottom + "\n" + m.statusBarView()
+		// Headerless sidebar mode — THE design: no header, no top plan panel,
+		// no bottom status bar. The sidebar owns all three; the band starts
+		// at the top and the input sits clean at the bottom.
+		return m.transcriptBand() + "\n" + bottom
 	}
 	return m.headerView() + "\n" + m.planView() + m.transcriptBand() + "\n" + bottom + "\n" + m.statusBarView()
 }

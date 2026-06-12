@@ -611,13 +611,21 @@ Implementation waves:
    rows, ◨ right-panel toggle (lit when open), session rail folded in below
    a "sessions" mini-header (project headers collapse, session rows hop).
    Narrow terminals keep the classic header (honest note + pane stretch).
-3. **Status relocation:** move model/perm/effort/search/route/context from the
-   bottom status bar into sidebar rows with click/popover setters. Bottom bar
-   shrinks to turn-specific ephemeral info only (or disappears when idle).
-4. **Dropdown unification:** implement shared dropdown component for todos,
-   sessions, config/settings, and later subagents. No separate one-off pickers.
-5. **Remove old header path** after size-sweep + live verification proves the
-   sidebar chrome at narrow/short sizes.
+3. [x] **Status relocation** — SHIPPED: statusBarParts render as sbStatus
+   sidebar rows (same styles, same click actions — model picker/perm/effort/
+   search/route/compact); statusBarHeight()=0 in sidebar mode so the bottom
+   bar is gone and the input sits clean at the bottom. The running spinner
+   line stays (turn-specific ephemeral info).
+4. [x] **Todos folded in** — the plan panel renders as a sidebar section
+   (sbTodoHeader "plan (n/m)" + sbTodo rows, maxTodoRows cap); topHeight()=0
+   in sidebar mode so the transcript starts at row 0. (Shared dropdown
+   component deferred — sections proved enough; revisit if a surface needs
+   real dropdowns.)
+5. [x] **Default flipped** — sidebar IS the design (user-approved after live
+   trial). sidebarVisible() = width ≥ 80 cols; /chrome toggle and sidebarOn
+   state REMOVED; the classic header+status-bar survive only as the narrow
+   (<80 col) fallback. All legacy chrome tests repointed at narrow widths;
+   sidebar size sweep covers 60..160 × 6..40 including todos.
 
 Constraints: geometry-owned-first; one action registry; every mouse surface has
 keyboard/palette parity; sidebars must degrade gracefully under 80 cols; size

@@ -277,11 +277,6 @@ type model struct {
 	railCollapsed map[string]bool
 	railSpin      int
 
-	// Headerless command sidebar (Tier 11.5): sidebarOn swaps the top header
-	// for a left command column owning title/cwd/nav/panel toggles with the
-	// session rail folded in below. Behind /chrome while it proves out.
-	sidebarOn bool
-
 	// Right changes panel (Tier 9 Wave 4): changesOn toggles the column of
 	// files touched in the last edit-producing run (click a file = jump to its
 	// tool block). Hidden when the last run made no edits or the terminal is

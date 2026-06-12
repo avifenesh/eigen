@@ -346,6 +346,7 @@ func TestEscInterruptsRunningTurn(t *testing.T) {
 
 func TestBottomHeightReflectsState(t *testing.T) {
 	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 24}) // classic chrome (narrow)
 	// 1 input line + 2 border rows + 1 status bar (now at the bottom).
 	if m.bottomHeight() != 4 {
 		t.Fatalf("input bottomHeight=%d want 4", m.bottomHeight())
@@ -366,6 +367,7 @@ func TestBottomHeightReflectsState(t *testing.T) {
 
 func TestMouseClickTogglesBlock(t *testing.T) {
 	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 24}) // classic chrome: x=0 hits the transcript
 	m.note("a note before it")
 	tb := m.push(&block{kind: blockThinking, title: "thinking", collapsed: true, body: sb("line a\nline b")})
 	idx := len(m.blocks) - 1
@@ -387,6 +389,7 @@ func TestMouseClickTogglesBlock(t *testing.T) {
 
 func TestMouseClickAccountsForPlanPanel(t *testing.T) {
 	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 24}) // classic chrome: top plan panel
 	// A plan panel pushes the viewport down by topHeight() rows.
 	m.Update(agentEvent{e: agent.Event{Kind: agent.EventToolStart, ToolName: "todo",
 		ToolArgs: json.RawMessage(`{"todos":[{"content":"a","status":"pending"}]}`)}})
@@ -425,6 +428,7 @@ func TestMouseWheelDoesNotPanic(t *testing.T) {
 
 func TestMouseDragAutoCopies(t *testing.T) {
 	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 24}) // classic chrome: x=0 is in the transcript
 	fc := &fakeClip{avail: true}
 	m.clip = fc
 	m.text("assistant", "copy this text")
@@ -444,6 +448,7 @@ func TestMouseDragAutoCopies(t *testing.T) {
 
 func TestMouseDragMultiLineCopies(t *testing.T) {
 	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 24}) // classic chrome: x=0 is in the transcript
 	fc := &fakeClip{avail: true}
 	m.clip = fc
 	m.text("assistant", "first line")
@@ -939,6 +944,7 @@ func TestEditBlockCollapsedPreviewIsPlain(t *testing.T) {
 
 func TestTodoToolDrivesPlanPanel(t *testing.T) {
 	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 24}) // classic chrome: top plan panel
 	args := json.RawMessage(`{"todos":[
 		{"content":"design","status":"completed"},
 		{"content":"build","status":"in_progress"},
@@ -969,6 +975,7 @@ func TestTodoToolDrivesPlanPanel(t *testing.T) {
 
 func TestEmptyPlanHasNoPanel(t *testing.T) {
 	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 24}) // classic chrome
 	if m.planView() != "" {
 		t.Fatal("no todos should mean no plan panel")
 	}
@@ -1861,10 +1868,16 @@ func TestStatusBarWrapsWhenNarrow(t *testing.T) {
 }
 
 func TestStatusBarSingleLineWhenWide(t *testing.T) {
+	// The bottom status bar renders only in classic (narrow) chrome; in
+	// sidebar mode its segments are sidebar rows and the bar is gone.
 	m := testModel(t)
-	m.width = 200
-	if h := m.statusBarHeight(); h != 1 {
-		t.Fatalf("wide status bar should be 1 line, got %d", h)
+	m.Update(tea.WindowSizeMsg{Width: 79, Height: 24})
+	if h := m.statusBarHeight(); h < 1 {
+		t.Fatalf("classic status bar should render, got %d rows", h)
+	}
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	if h := m.statusBarHeight(); h != 0 {
+		t.Fatalf("sidebar mode must drop the bottom status bar, got %d", h)
 	}
 }
 

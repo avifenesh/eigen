@@ -39,6 +39,9 @@ func (m *model) updateTodos(args json.RawMessage) {
 // the bottom, so it is not counted here. screenToContent/toggleAtRow rebase by
 // topHeight, so the transcript click mapping follows the header automatically.
 func (m *model) topHeight() int {
+	if m.sidebarVisible() {
+		return 0 // the sidebar owns the header AND the plan rows
+	}
 	h := m.headerHeight()
 	if len(m.todos) > 0 {
 		rows := len(m.todos)
@@ -72,8 +75,15 @@ func (m *model) statusBarView() string {
 	return strings.Join(m.statusBarLines(), "\n")
 }
 
-// statusBarHeight is the number of rows the status bar occupies (1 or 2).
-func (m *model) statusBarHeight() int { return len(m.statusBarLines()) }
+// statusBarHeight is the number of rows the status bar occupies (1 or 2). In
+// sidebar mode the segments render as sidebar rows instead — the bottom bar
+// is gone and the input area stays clean.
+func (m *model) statusBarHeight() int {
+	if m.sidebarVisible() {
+		return 0
+	}
+	return len(m.statusBarLines())
+}
 
 // statusSeg is one status-bar segment: its plain text (for width math), the
 // style used to render it, and the action a click on it dispatches (actNone =

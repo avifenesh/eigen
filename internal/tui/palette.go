@@ -54,7 +54,6 @@ func (m *model) paletteCatalog() []paletteCmd {
 		{label: "widen session rail", id: actRailWiden},
 		{label: "narrow session rail", id: actRailNarrow},
 		{label: "toggle right panel", id: actChangesToggle, slash: "/changes"},
-		{label: "toggle sidebar chrome", id: actSidebarToggle, slash: "/chrome"},
 		{label: "widen right panel", id: actPanelWiden},
 		{label: "narrow right panel", id: actPanelNarrow},
 		{label: "next right panel tab", id: actRightTabNext},

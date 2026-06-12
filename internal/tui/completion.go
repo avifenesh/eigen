@@ -58,7 +58,6 @@ var slashCommands = []slashCmd{
 	{"/home", "return to the app shell (home page)"},
 	{"/sessions", "switch this window to another session (alt+s)"},
 	{"/rail", "toggle the left session rail (running sessions)"},
-	{"/chrome", "toggle the headerless command sidebar"},
 	{"/changes", "toggle the right panel (changes/git/term)"},
 	{"/term", "open a real shell terminal in the right panel"},
 	{"/resume", "resume a saved session (picker, or path/id)"},
