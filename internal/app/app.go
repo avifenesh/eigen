@@ -121,12 +121,32 @@ func (m *Model) Init() tea.Cmd {
 		cmds = append(cmds, livePoll())
 	}
 	// Refresh the proactive feed in the background when the cache is stale
-	// (instant render from cache either way).
+	// (instant render from cache either way), and keep it fresh while the app
+	// stays open (periodic tick → rescan).
 	if !m.data.FeedFresh {
-		dirs := m.data.projectDirs()
-		cmds = append(cmds, func() tea.Msg { return feedMsg{feed.Scan(dirs)} })
+		cmds = append(cmds, m.scanFeed())
 	}
+	cmds = append(cmds, feedTick())
 	return tea.Batch(cmds...)
+}
+
+// scanFeed rescans the feed in the background (with the small-model suggester
+// when available) and delivers a feedMsg.
+func (m *Model) scanFeed() tea.Cmd {
+	dirs := m.data.projectDirs()
+	suggest := m.data.suggester()
+	return func() tea.Msg { return feedMsg{feed.Scan(dirs, suggest)} }
+}
+
+// feedRefreshEvery is how often an open app rescans the feed (matches the
+// cache TTL: fresh enough to be useful, cheap enough to never matter).
+const feedRefreshEvery = 10 * time.Minute
+
+// feedTickMsg triggers a periodic feed rescan while the app is open.
+type feedTickMsg struct{}
+
+func feedTick() tea.Cmd {
+	return tea.Tick(feedRefreshEvery, func(time.Time) tea.Msg { return feedTickMsg{} })
 }
 
 // feedMsg delivers a fresh feed scan.
@@ -151,6 +171,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.data.Feed, m.data.FeedFresh = msg.f, true
 		m.home.syncFeed(m.data)
 		return m, nil
+	case feedTickMsg:
+		// Periodic refresh while the app is open: rescan in the background and
+		// re-arm the tick.
+		return m, tea.Batch(m.scanFeed(), feedTick())
 	case consolidateDoneMsg:
 		m.memory.consoling = false
 		m.memory.loaded = false
@@ -203,6 +227,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.cycle(d)
 			return m, nil
+		}
+		// Home's feed consumes x (remove) when the cursor is on a feed item —
+		// it must not jump to the plugins page from there (g+x still jumps).
+		if m.active == PageHome && key == "x" && m.home.list.cursor < m.home.feedN {
+			return m.updatePage(msg)
 		}
 		// Page quick-jump: g then the page key (or the key alone from home).
 		if p, ok := jumpKey(key, m.active); ok {

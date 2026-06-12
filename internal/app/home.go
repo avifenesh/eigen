@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -10,13 +11,15 @@ import (
 )
 
 // homeState is the landing page: identity, quick stats, the proactive action
-// feed (one-keystroke session starters scanned from git/memory/GitHub), and
-// recent sessions. One cursor walks feed items then sessions.
+// feed (one-keystroke session starters scanned from git/memory/GitHub plus
+// small-model suggestions), and recent sessions. One cursor walks feed items
+// then sessions; space expands the selected feed item to show the full task.
 type homeState struct {
 	list     list
 	feed     []feed.Item // filtered (dismissals applied), capped
 	feedN    int         // feed items shown (cursor 0..feedN-1 = feed)
 	sessionN int         // sessions shown   (cursor feedN.. = sessions)
+	expanded int         // index of the expanded feed item (-1 = none)
 }
 
 // homeFeedLimit / homeRecentLimit bound the two home sections.
@@ -26,6 +29,7 @@ const (
 )
 
 func (h *homeState) init(d *Data) {
+	h.expanded = -1
 	h.syncFeed(d)
 }
 
@@ -36,6 +40,9 @@ func (h *homeState) syncFeed(d *Data) {
 	// your own uncommitted work off the page.
 	h.feed = feed.Top(d.feedItems(), homeFeedLimit, 3)
 	h.feedN = len(h.feed)
+	if h.expanded >= h.feedN {
+		h.expanded = -1
+	}
 	h.sessionN = min(len(d.Sessions), homeRecentLimit)
 	h.list.count = h.feedN + h.sessionN
 	h.list.clamp()
@@ -68,12 +75,25 @@ func (h *homeState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.result = Result{Action: ActionOpenChat}
 		m.quitting = true
 		return m, tea.Quit
-	case "d":
-		// Dismiss the selected feed item (stops appearing for 2 weeks, or
-		// until its content changes — e.g. the dirty-file count moves).
+	case "d", "x":
+		// Remove the selected feed item (dismiss: stops appearing for 2 weeks,
+		// or until its content changes — e.g. the dirty-file count moves).
 		if c := h.list.cursor; c < h.feedN {
 			feed.Dismiss(h.feed[c])
+			if h.expanded == c {
+				h.expanded = -1
+			}
 			h.syncFeed(m.data)
+		}
+	case " ", "space":
+		// Expand/collapse the selected feed item: shows the FULL offered task
+		// (what a new session would actually be told to do).
+		if c := h.list.cursor; c < h.feedN {
+			if h.expanded == c {
+				h.expanded = -1
+			} else {
+				h.expanded = c
+			}
 		}
 	}
 	return m, nil
@@ -100,6 +120,9 @@ func (h *homeState) view(m *Model, w, _ int) string {
 				pad(truncate(it.Title, w-26), w-26),
 				sDim.Render(truncate(it.Detail, 18)))
 			s += row(i == h.list.cursor, line) + "\n"
+			if h.expanded == i {
+				s += renderTask(it, w) // the full offered task under the row
+			}
 		}
 		s += "\n"
 	} else if !d.FeedFresh {
@@ -119,13 +142,30 @@ func (h *homeState) view(m *Model, w, _ int) string {
 			sDim.Render(relTime(r.Updated)))
 		s += row(h.feedN+i == h.list.cursor, line) + "\n"
 	}
-	s += "\n" + sFaint.Render("  enter act/open · d dismiss · n new session · s sessions · p projects")
+	s += "\n" + sFaint.Render("  enter act · space details · x remove · n new · s sessions · p projects")
 	return s
 }
 
+// renderTask renders the full task text of an expanded feed item, wrapped and
+// indented under its row, with the project dir for orientation.
+func renderTask(it feed.Item, w int) string {
+	out := ""
+	if it.Dir != "" {
+		out += sFaint.Render("    ↳ "+it.Dir) + "\n"
+	}
+	for _, para := range strings.Split(strings.TrimSpace(it.Task), "\n") {
+		para = strings.TrimSpace(para)
+		if para == "" {
+			continue
+		}
+		out += sDim.Render("    "+wrapTo(para, w-6, "    ")) + "\n"
+	}
+	return out
+}
+
 // kindGlyph marks a feed item's source: git loose ends, GitHub asks, memory
-// intents — colored to match their nature (warn = your mess, violet = the
-// world, accent = your own promises).
+// intents, model suggestions — colored to match their nature (warn = your
+// mess, violet = the world, accent = your own promises, ok = a step forward).
 func kindGlyph(kind string) string {
 	switch kind {
 	case "git":
@@ -134,6 +174,8 @@ func kindGlyph(kind string) string {
 		return sViolet.Render("◉")
 	case "memory":
 		return sAccent.Render("↺")
+	case "suggest":
+		return sOk.Render("✧")
 	}
 	return sDim.Render("·")
 }

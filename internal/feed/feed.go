@@ -71,12 +71,15 @@ func save(f Feed) {
 
 // Scan runs every scanner over the given project dirs and returns the fresh
 // feed (also cached). Order: git (actionable now) → memory (your own intent)
-// → github (the world's asks). Each scanner is bounded and failure-isolated.
-func Scan(projectDirs []string) Feed {
+// → github (the world's asks) → model suggestions (what you probably want or
+// missed). Each scanner is bounded and failure-isolated; suggest is nil-safe
+// (no small model = no suggestions).
+func Scan(projectDirs []string, suggest Suggester) Feed {
 	var items []Item
 	items = append(items, scanGit(projectDirs)...)
 	items = append(items, scanMemory(projectDirs)...)
 	items = append(items, scanGitHub()...)
+	items = append(items, scanSuggest(projectDirs, suggest)...)
 	f := Feed{Items: rank(items), Scanned: time.Now()}
 	save(f)
 	return f
@@ -117,6 +120,8 @@ func score(it Item) int {
 		return 50 // unpushed
 	case "memory":
 		return 40
+	case "suggest":
+		return 35 // helpful, but below concrete state-derived items
 	}
 	return 0
 }

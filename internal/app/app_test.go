@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/avifenesh/eigen/internal/daemon"
+	"github.com/avifenesh/eigen/internal/feed"
 	"github.com/avifenesh/eigen/internal/skill"
 )
 
@@ -273,5 +274,92 @@ func TestLivePageAttachResult(t *testing.T) {
 	m.Update(key("enter"))
 	if m.result.Action != ActionAttach || m.result.SessionID != "s1" {
 		t.Fatalf("enter on a live session should request attach, got %+v", m.result)
+	}
+}
+
+func feedData() *Data {
+	d := testData()
+	d.Feed = feed.Feed{Items: []feed.Item{
+		{Kind: "git", Title: "proj-a: 3 uncommitted file(s)", Detail: "commit them", Dir: "/home/u/proj-a", Task: "Run git status and commit in coherent chunks."},
+		{Kind: "suggest", Title: "proj-a: add regression test", Detail: "bug fixed, no test", Dir: "/home/u/proj-a", Task: "Write the regression test for the parser fix.\n\nRun it and show the diff."},
+	}}
+	d.FeedFresh = true
+	return d
+}
+
+func TestHomeSpaceExpandsFeedTask(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // isolate dismissals
+	m := New(feedData())
+	m.width, m.height = 100, 30
+	m.home.syncFeed(m.data)
+	if m.home.feedN != 2 {
+		t.Fatalf("feedN = %d, want 2", m.home.feedN)
+	}
+	// Collapsed: the full task text is not on screen.
+	if v := m.home.view(m, 100, 30); strings.Contains(v, "coherent chunks") {
+		t.Fatal("task text should be hidden before expanding")
+	}
+	// Space expands the selected (first) item.
+	m.Update(key(" "))
+	v := m.home.view(m, 100, 30)
+	if !strings.Contains(v, "coherent chunks") {
+		t.Fatalf("space should reveal the full task:\n%s", v)
+	}
+	if !strings.Contains(v, "/home/u/proj-a") {
+		t.Fatal("expanded item should show the project dir")
+	}
+	// Space again collapses.
+	m.Update(key(" "))
+	if v := m.home.view(m, 100, 30); strings.Contains(v, "coherent chunks") {
+		t.Fatal("second space should collapse")
+	}
+}
+
+func TestHomeXRemovesFeedItem(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // isolate dismissals
+	m := New(feedData())
+	m.width, m.height = 100, 30
+	m.home.syncFeed(m.data)
+	before := m.home.feedN
+	if before != 2 {
+		t.Fatalf("feedN = %d, want 2", before)
+	}
+	// x removes (dismisses) the selected feed item — and must NOT jump to the
+	// plugins page (x is also a page-jump key).
+	m.Update(key("x"))
+	if m.active != PageHome {
+		t.Fatal("x on a feed item must not jump pages")
+	}
+	if m.home.feedN != before-1 {
+		t.Fatalf("x should remove the item: feedN %d → %d", before, m.home.feedN)
+	}
+	// With the cursor past the feed (on a session), x jumps to plugins as before.
+	m.home.list.cursor = m.home.feedN // first session row
+	m.Update(key("x"))
+	if m.active != PagePlugins {
+		t.Fatal("x off the feed should still jump to plugins")
+	}
+}
+
+func TestHomeExpandedFollowsRemoval(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m := New(feedData())
+	m.width, m.height = 100, 30
+	m.home.syncFeed(m.data)
+	// Expand item 1, then remove it: expansion must clear, not leak to another row.
+	m.home.list.cursor = 1
+	m.Update(key(" "))
+	if m.home.expanded != 1 {
+		t.Fatalf("expanded = %d, want 1", m.home.expanded)
+	}
+	m.Update(key("x"))
+	if m.home.expanded != -1 {
+		t.Fatalf("removing the expanded item should collapse, expanded = %d", m.home.expanded)
+	}
+}
+
+func TestSuggestKindGlyph(t *testing.T) {
+	if g := kindGlyph("suggest"); g == kindGlyph("unknown-kind") {
+		t.Fatal("suggest should have its own glyph")
 	}
 }

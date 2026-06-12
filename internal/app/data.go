@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
@@ -267,6 +268,25 @@ func Providers() []ProviderRow {
 // feedItems returns the renderable feed: dismissed items filtered out.
 func (d *Data) feedItems() []feed.Item {
 	return feed.FilterDismissed(d.Feed.Items)
+}
+
+// suggester adapts the app's small model into the feed's Suggester (nil when
+// no small model is available — the suggest source just stays off).
+func (d *Data) suggester() feed.Suggester {
+	if d.Small == nil {
+		return nil
+	}
+	prov := d.Small
+	return func(ctx context.Context, system, prompt string) (string, error) {
+		resp, err := prov.Complete(ctx, llm.Request{
+			System:   system,
+			Messages: []llm.Message{{Role: llm.RoleUser, Text: prompt}},
+		})
+		if err != nil {
+			return "", err
+		}
+		return resp.Text, nil
+	}
 }
 
 // feedFor returns the feed items scoped to a project dir (its loose ends),
