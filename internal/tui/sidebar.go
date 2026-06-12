@@ -10,7 +10,10 @@ package tui
 // threshold the classic header returns, so chrome stays reachable on narrow
 // terminals.
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type sidebarRowKind int
 
@@ -56,13 +59,16 @@ func (m *model) sidebarRows() []sidebarRow {
 		{kind: sbNav, label: "+ new", action: actNewSession},
 		{kind: sbNav, label: "⚙ config", action: actConfigPanel},
 		{kind: sbNav, label: "◨ right panel", action: actChangesToggle},
-		{kind: sbBlank},
 	}
+	// Background-tasks badge (Tier 12): only when tasks exist — running count
+	// keeps delegated work visible without opening the tab; click opens it.
+	if lbl := m.tasksBadge(); lbl != "" {
+		rows = append(rows, sidebarRow{kind: sbNav, label: lbl, action: actTasksTab})
+	}
+	rows = append(rows, sidebarRow{kind: sbBlank})
 	// Status setters (Wave 3): the bottom status bar's segments as rows —
 	// click = the same actions; everything stays keyboard-reachable too.
-	for _, s := range m.sidebarStatusRows() {
-		rows = append(rows, s)
-	}
+	rows = append(rows, m.sidebarStatusRows()...)
 	// Todo plan (Wave 4): folded in as a section instead of a top panel.
 	if len(m.todos) > 0 {
 		rows = append(rows, sidebarRow{kind: sbBlank}, sidebarRow{kind: sbTodoHeader})
@@ -81,6 +87,35 @@ func (m *model) sidebarRows() []sidebarRow {
 		}
 	}
 	return rows
+}
+
+// tasksBadge is the sidebar's background-tasks row label: "" when no tasks
+// exist (no noise), a running count while work is in flight, or the latest
+// terminal state so a finish stays noticeable until viewed.
+func (m *model) tasksBadge() string {
+	if !m.tasks.loaded {
+		m.refreshTasks()
+	}
+	running, done, failed := 0, 0, 0
+	for _, t := range m.tasks.tasks {
+		switch t.Status {
+		case "running":
+			running++
+		case "done":
+			done++
+		case "error", "lost":
+			failed++
+		}
+	}
+	switch {
+	case running > 0:
+		return fmt.Sprintf("⚒ tasks %d●", running)
+	case failed > 0:
+		return fmt.Sprintf("⚒ tasks %d✗", failed)
+	case done > 0:
+		return fmt.Sprintf("⚒ tasks %d✓", done)
+	}
+	return ""
 }
 
 // sidebarStatusRows converts the status-bar segments into sidebar rows. The
@@ -132,10 +167,14 @@ func (m *model) sidebarLines(h int) []string {
 		case sbNav:
 			label := r.label
 			// The right-panel toggle reflects its open/closed state, the same
-			// lit/dim language as the header's ◨ button.
-			if r.action == actChangesToggle && m.changesOn {
+			// lit/dim language as the header's ◨ button. The tasks badge is
+			// lit while delegated work is running.
+			switch {
+			case r.action == actChangesToggle && m.changesOn:
 				label = styleAccent.Render(ansiTrunc(label, contentW))
-			} else {
+			case r.action == actTasksTab && strings.Contains(label, "●"):
+				label = styleAccent.Render(ansiTrunc(label, contentW))
+			default:
 				label = dim(ansiTrunc(label, contentW))
 			}
 			lines = append(lines, railPad(label, rw))

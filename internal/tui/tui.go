@@ -284,6 +284,8 @@ type model struct {
 	changesOn       bool
 	rightTab        rightPanelTab // selected right panel tab (changes/git/terminal)
 	term            termState     // embedded PTY terminal tab state
+	tasks           tasksState    // background-tasks tab state (Tier 12)
+	tasksDir        string        // background-task store dir (tests isolate it)
 	changesCache    []fileChange  // memoized last-run change index
 	changesCacheSig string        // transcript signature the cache was built for
 	changesVw       changesView   // memoized inline-diff view (lines + file map)
@@ -351,6 +353,11 @@ func (m *model) Init() tea.Cmd {
 	// Seed + start the left session rail (daemon-hosted backends only; nil for
 	// local chats, so it costs nothing there).
 	m.refreshRail()
+	// Seed the background-tasks state (sidebar badge) up front so renders
+	// never lazily hit the disk store mid-View.
+	if !m.tasks.loaded {
+		m.refreshTasks()
+	}
 	if c := m.railTick(); c != nil {
 		cmds = append(cmds, c)
 	}
@@ -1103,6 +1110,10 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 						return m, m.jumpToChange(idx)
 					}
 				}
+				// A click on a task row expands it; [cancel] confirms a cancel.
+				if m.rightTab == rightTabTasks {
+					return m, m.tasksClick(h.localY)
+				}
 				return m, nil
 			}
 			// A click inside the input box positions the text cursor there.
@@ -1391,6 +1402,14 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 	case railTickMsg:
 		m.refreshRail()
 		return m, m.railTick()
+
+	case tasksTickMsg:
+		// Stale generations (tab hidden and reshown) die silently.
+		if msg.gen != m.tasks.gen {
+			return m, nil
+		}
+		m.refreshTasks()
+		return m, m.tasksTick()
 	}
 	return m, nil
 }

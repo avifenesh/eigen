@@ -37,6 +37,7 @@ const (
 	actPanelNarrow
 	actRightTabNext
 	actTerminalTab
+	actTasksTab
 )
 
 // action is a registry entry: what it's called, whether it's currently allowed,
@@ -203,6 +204,13 @@ var actionRegistry = map[actionID]action{
 		enabled: always,
 		run: func(m *model) tea.Cmd {
 			return m.setRightTab(rightTabTerminal)
+		},
+	},
+	actTasksTab: {
+		id: actTasksTab, label: "background tasks panel",
+		enabled: always,
+		run: func(m *model) tea.Cmd {
+			return m.setRightTab(rightTabTasks)
 		},
 	},
 }

@@ -58,6 +58,7 @@ func (m *model) paletteCatalog() []paletteCmd {
 		{label: "narrow right panel", id: actPanelNarrow},
 		{label: "next right panel tab", id: actRightTabNext},
 		{label: "terminal command panel", id: actTerminalTab},
+		{label: "background tasks panel", id: actTasksTab, slash: "/tasks"},
 		{label: "find in transcript", slash: "/find "},
 		{label: "copy last answer", slash: "/copy"},
 		{label: "compact (skip confirm)", slash: "/compact"},

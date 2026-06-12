@@ -150,6 +150,13 @@ func (m *model) refreshRail() {
 		m.railEntries = sl.Sessions()
 		m.railSpin++
 	}
+	// Piggyback the background-task badge refresh: the rail poll is the one
+	// steady heartbeat the chat has, and the store read is a cheap dir scan.
+	// Throttled to the tasks cadence (the rail spins at 300ms while a sibling
+	// works — no point rescanning disk that fast).
+	if time.Since(m.tasks.refreshed) >= tasksRefresh {
+		m.refreshTasks()
+	}
 }
 
 // railRow is one rendered rail line below the "sessions" panel header: either

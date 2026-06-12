@@ -18,6 +18,7 @@ const (
 	rightTabChanges rightPanelTab = iota
 	rightTabGit
 	rightTabTerminal
+	rightTabTasks
 )
 
 func (t rightPanelTab) label() string {
@@ -26,13 +27,24 @@ func (t rightPanelTab) label() string {
 		return "git"
 	case rightTabTerminal:
 		return "term"
+	case rightTabTasks:
+		return "tasks"
 	default:
 		return "changes"
 	}
 }
 
+// shortLabel is the compressed tab label used when the full set no longer
+// fits the panel header (4 tabs × default width).
+func (t rightPanelTab) shortLabel() string {
+	if t == rightTabChanges {
+		return "chg"
+	}
+	return t.label()
+}
+
 func (m *model) rightTabs() []rightPanelTab {
-	return []rightPanelTab{rightTabChanges, rightTabGit, rightTabTerminal}
+	return []rightPanelTab{rightTabChanges, rightTabGit, rightTabTerminal, rightTabTasks}
 }
 
 // nextRightTab cycles the right panel tab and returns any command needed to
@@ -63,6 +75,11 @@ func (m *model) setRightTab(t rightPanelTab) tea.Cmd {
 		m.term.focused = true
 		return m.startTerm(m.termRows())
 	}
+	if t == rightTabTasks {
+		m.refreshTasks()
+		m.tasks.gen++ // retire any previous tick chain; start a fresh one
+		return m.tasksTick()
+	}
 	return nil
 }
 
@@ -76,37 +93,57 @@ func (m *model) termRows() int {
 	return r
 }
 
+// tabsFit reports whether the tab bar fits width with the given label mode
+// (renderer and hit-test share this decision so click math can't drift).
+func (m *model) tabsFit(width int, short bool) bool {
+	w := 0
+	for i, t := range m.rightTabs() {
+		if i > 0 {
+			w++
+		}
+		w += ansi.StringWidth("[" + m.tabLabel(t, short) + "]")
+	}
+	return width-w-ansi.StringWidth(panelCloseGlyph) >= 1
+}
+
 // rightPanelTitleLine renders the tab bar + close control inside the right
-// panel header. The active tab is accent/bold; inactive tabs are dim.
+// panel header. The active tab is accent/bold; inactive tabs are dim. When the
+// full labels overflow the width, compressed labels are tried before falling
+// back to a single-title header.
 func (m *model) rightPanelTitleLine(width int) string {
 	if width <= 0 {
 		return ""
 	}
-	var b strings.Builder
-	for i, t := range m.rightTabs() {
-		if i > 0 {
-			b.WriteString(" ")
+	for _, short := range []bool{false, true} {
+		if !m.tabsFit(width, short) {
+			continue // doesn't fit — try compressed labels, then the fallback
 		}
-		label := "[" + t.label() + "]"
-		if t == m.rightTab {
-			b.WriteString(styleAccent.Bold(true).Render(label))
-		} else {
-			b.WriteString(dim(label))
+		var b strings.Builder
+		for i, t := range m.rightTabs() {
+			if i > 0 {
+				b.WriteString(" ")
+			}
+			label := "[" + m.tabLabel(t, short) + "]"
+			if t == m.rightTab {
+				b.WriteString(styleAccent.Bold(true).Render(label))
+			} else {
+				b.WriteString(dim(label))
+			}
 		}
+		left := b.String()
+		right := dim(panelCloseGlyph)
+		gap := width - ansi.StringWidth(ansi.Strip(left)) - ansi.StringWidth(panelCloseGlyph)
+		return left + strings.Repeat(" ", gap) + right
 	}
-	left := b.String()
-	right := dim(panelCloseGlyph)
-	lw := ansi.StringWidth(ansi.Strip(left))
-	rw := ansi.StringWidth(panelCloseGlyph)
-	gap := width - lw - rw
-	if gap < 1 {
-		gap = 1
+	return panelTitleLine(m.rightTab.label(), width, true)
+}
+
+// tabLabel picks the full or compressed label for one tab.
+func (m *model) tabLabel(t rightPanelTab, short bool) string {
+	if short {
+		return t.shortLabel()
 	}
-	line := left + strings.Repeat(" ", gap) + right
-	if ansi.StringWidth(ansi.Strip(line)) > width {
-		return panelTitleLine(m.rightTab.label(), width, true)
-	}
-	return line
+	return t.label()
 }
 
 // rightPanelTabAt maps a content-local click on the panel header (after the
@@ -117,9 +154,17 @@ func (m *model) rightPanelTabAt(localX, localY, width int) (tea.Cmd, bool) {
 	if localY != 0 || width <= 0 {
 		return nil, false
 	}
+	// Mirror the renderer's label choice exactly (full → short → none).
+	short := false
+	if !m.tabsFit(width, false) {
+		if !m.tabsFit(width, true) {
+			return nil, false // single-title fallback: no tab targets
+		}
+		short = true
+	}
 	col := 0
 	for _, t := range m.rightTabs() {
-		label := "[" + t.label() + "]"
+		label := "[" + m.tabLabel(t, short) + "]"
 		lw := ansi.StringWidth(label)
 		if localX >= col && localX < col+lw {
 			return m.setRightTab(t), true

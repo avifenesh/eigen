@@ -70,6 +70,12 @@ var Catalog = []ModelInfo{
 	// off with EIGEN_CONVERSE_1M=0).
 	{ID: "global.anthropic.claude-fable-5", Provider: "converse", ContextWindow: 200000,
 		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
+	// us. inference profile for fable-5: requests route (the model answers —
+	// it 400s on the WRONG thinking API), so it must carry the same adaptive
+	// capabilities or effort falls back to thinking.type=enabled and the
+	// model rejects every call.
+	{ID: "us.anthropic.claude-fable-5", Provider: "converse", ContextWindow: 200000,
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
 	{ID: "us.anthropic.claude-opus-4-8", Provider: "converse", ContextWindow: 200000,
 		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
 	{ID: "us.anthropic.claude-sonnet-4-6", Provider: "converse", ContextWindow: 200000,

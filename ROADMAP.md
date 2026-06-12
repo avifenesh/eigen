@@ -648,27 +648,45 @@ Goal: make delegated work visible, not just a final `task_status` result. The
 orchestrator should be able to see *what subagents are doing now* and recover
 context without guessing.
 
-- [ ] **Subagent activity surface.** A live `agents`/`tasks` pane (or right-panel
-  tab) showing active foreground/background task-tool runs: id, routed/override
-  model, kind/difficulty, status (queued/running/done/error), current tool,
-  last note/output excerpt, elapsed time, token use, and parent session.
-- [ ] **Streaming child events.** Subtasks currently suppress most child events
-  except the route note/result; add a sanitized event bridge so parent TUI can
-  tail child progress without dumping the whole child transcript into the main
-  chat. Background tasks should append the same progress to `~/.eigen/tasks`.
-- [ ] **Controls.** Open child transcript, collect result, cancel/kill, promote a
-  child into a full session, retry/escalate failed/stalled work on a larger
-  model. All controls must go through the action registry + command palette.
-- [ ] **Notifications.** Parent session gets concise state-change notes (started,
+- [x] **Subagent activity surface.** SHIPPED as the `[tasks]` right-panel tab
+  (`/tasks`, ctrl+r cycle, palette): background tasks with status glyph
+  (● running / ✓ done / ✗ error / ⊘ canceled / ? lost), short id, elapsed,
+  live tool + tool-elapsed, route/model, token use; click expands result/
+  progress detail. v1 scope decision (cross-vendor review): background tasks
+  only — foreground subtasks finish into the parent transcript anyway and
+  records for them created collect/cancel semantics debt. Sidebar shows a
+  `⚒ tasks N●` badge while delegations run (clicking opens the tab),
+  refreshed by piggybacking the rail poll.
+- [x] **Streaming child events.** SHIPPED as the sanitized event bridge: the
+  background sub-agent's OnEvent updates the durable record (steps, last tool
+  start/clear, sanitized note, done usage) — bounded by step count, never text
+  deltas. The disk store IS the stream surface: the TUI (separate process)
+  polls `~/.eigen/tasks` on a 2s tab tick; no daemon wire-protocol changes.
+- [~] **Controls.** v1: expand/view result (click/enter on a done task), cancel
+  (click `[cancel]` on an expanded running task → confirm overlay →
+  `agent.RequestCancel` marker file the hosting daemon polls; cross-process).
+  All through the action registry + palette (`actTasksTab`). Deferred: open
+  child transcript in a viewer (path shown for lost tasks), promote to full
+  session, retry/escalate on a larger model.
+- [~] **Notifications.** Existing finish/FAILED note (the immediate completion
+  event) + new `canceled` note; the tasks badge + tab make state visible
+  without notes spam. Deferred: started/approval-wait notes (started is
+  already echoed by the task tool's return value). Original intent (kept for
+  the deferred slice): parent session gets concise state-change notes (started,
   waiting on approval, tool error, done) with a clickable/task_status handle; no
   spam for every token. Important clarification from live use: a note like
   `background task bg-… finished — task_status bg-… to collect` is already the
   immediate completion event; `task_status` is the result-collection/open action,
   not polling for whether it is done. UI should render this as `done → collect`
   (click/enter), not as a passive instruction to manually poll.
-- [ ] **Persistence/restart.** Background tasks survive daemon/view restart well
-  enough to inspect/collect; stale running tasks are marked `lost` with the last
-  known transcript snapshot.
+- [x] **Persistence/restart.** SHIPPED: BgRegistry.Get/List fall back to/merge
+  disk records, so task_status finds tasks from previous processes;
+  NewBgRegistry adopts stale state on start (durable `lost` line for records
+  whose pid is gone — pid+host recorded at start; age beyond
+  bgMaxRuntime+grace decides for old/foreign records) and prunes terminal
+  tasks older than 7 days (state+transcript+marker; running tasks never
+  pruned). Readers parse the LAST COMPLETE jsonl line (mid-append tolerant)
+  and exclude `*.transcript.jsonl`.
 
 ## Debt / bugs
 - [x] **Untitled daemon sessions still appear.** FIXED: (1) `Host.Restore` now

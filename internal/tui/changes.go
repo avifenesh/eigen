@@ -20,7 +20,7 @@ import (
 // rightPanelWidthCols is the changes panel's default total width (content +
 // gutter). The user can resize it by dragging the panel's left edge; the live
 // width lives in model.rightW (0 = this default).
-const rightPanelWidthCols = 34
+const rightPanelWidthCols = 38
 
 // rightMinW / rightMaxW clamp user resizing of the right panel.
 const (
@@ -384,6 +384,9 @@ func (m *model) changesLines(h int) []string {
 	}
 	if m.rightTab == rightTabTerminal {
 		return m.termLines(h)
+	}
+	if m.rightTab == rightTabTasks {
+		return m.tasksLines(h)
 	}
 	pw := m.rightCols()
 	v := m.buildChangesView()
