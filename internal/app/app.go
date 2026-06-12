@@ -313,7 +313,9 @@ func (m *Model) updatePage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// View renders rail + active page.
+// View renders the framed shell: title bar, bordered rail + content (+ optional
+// right inspector), and a status bar — all positioned by computeLayout so
+// rendering and (Wave 2) hit-testing share one geometry.
 func (m *Model) View() string {
 	if m.quitting {
 		return ""
@@ -321,45 +323,136 @@ func (m *Model) View() string {
 	if m.width == 0 {
 		return "loading…"
 	}
-	rail := m.renderRail()
-	railW := lipgloss.Width(rail)
-	contentW := m.width - railW - 1
-	if contentW < 20 {
-		contentW = 20
+	l := m.computeLayout()
+
+	title := m.renderTitleBar(l)
+	rail := m.renderRailBox(l)
+	content := m.renderContentBox(l)
+	status := m.renderStatusBar(l)
+
+	// Compose the body row: rail | gutter | content | gutter | inspector.
+	gut := ""
+	if l.bp != bpNarrow {
+		gut = " "
 	}
-	content := m.renderPage(contentW, m.height-1)
+	cols := []string{rail}
+	if gut != "" {
+		cols = append(cols, gut)
+	}
+	cols = append(cols, content)
+	if !l.inspector.empty() {
+		if gut != "" {
+			cols = append(cols, gut)
+		}
+		cols = append(cols, m.renderInspectorBox(l))
+	}
+	body := lipgloss.JoinHorizontal(lipgloss.Top, cols...)
+
+	out := title + "\n" + body
 	if m.palette.open {
-		content = overlay(content, m.palette.view(contentW), contentW, m.height-1)
+		out = m.overlayPalette(out, l)
 	}
-	body := lipgloss.JoinHorizontal(lipgloss.Top, rail, " ", content)
-	help := m.helpLine()
-	return body + "\n" + help
+	return out + "\n" + status
 }
 
-// overlay places box over the top region of content (the palette focus), so the
-// page stays visible beneath it for context.
-func overlay(content, box string, w, h int) string {
-	cl := strings.Split(content, "\n")
+// overlayPalette draws the command palette over the composed view (near the
+// top of the content panel) so the shell stays visible beneath it.
+func (m *Model) overlayPalette(view string, l appLayout) string {
+	box := m.palette.view(l.inner.w)
+	lines := strings.Split(view, "\n")
 	bl := strings.Split(box, "\n")
-	// Pad content to h lines so the box sits at a stable position.
-	for len(cl) < h {
-		cl = append(cl, "")
-	}
-	start := 1
-	for i, line := range bl {
+	start := l.title.h + 1
+	for i, bln := range bl {
 		row := start + i
-		if row < len(cl) {
-			cl[row] = line
+		if row >= 0 && row < len(lines) {
+			// Overlay at the content's x so it sits inside the panel.
+			lines[row] = padLeft(bln, l.content.x+1)
 		}
 	}
-	return strings.Join(cl, "\n")
+	return strings.Join(lines, "\n")
 }
 
-// renderRail draws the left rail: pages, the active one highlighted.
-func (m *Model) renderRail() string {
+// padLeft left-pads s with n spaces (for placing an overlay at a column).
+func padLeft(s string, n int) string {
+	if n <= 0 {
+		return s
+	}
+	return strings.Repeat(" ", n) + s
+}
+
+// renderTitleBar draws the top bar: product mark + the active page breadcrumb
+// on the left, quick context on the right.
+func (m *Model) renderTitleBar(l appLayout) string {
+	left := sTitle.Render(" eigen ") + sFaint.Render("›") + " " + sText.Render(m.activeName())
+	right := sFaint.Render(m.titleStats() + " ")
+	gap := l.title.w - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 1 {
+		gap = 1
+	}
+	return left + strings.Repeat(" ", gap) + right
+}
+
+// activeName is the active page's display name.
+func (m *Model) activeName() string {
+	for _, p := range pages {
+		if p.page == m.active {
+			return p.name
+		}
+	}
+	return ""
+}
+
+// titleStats is a compact right-aligned context line for the title bar.
+func (m *Model) titleStats() string {
+	d := m.data
+	live := ""
+	if n := len(d.Live); n > 0 {
+		live = fmt.Sprintf("%d live · ", n)
+	}
+	return fmt.Sprintf("%s%d sessions", live, len(d.Sessions))
+}
+
+// renderRailBox renders the bordered rail into its outer rect.
+func (m *Model) renderRailBox(l appLayout) string {
+	inner := m.railContent(l.railInner)
+	style := sRailBox.Width(l.railInner.w).Height(l.railInner.h)
+	if l.bp == bpNarrow {
+		// Compact: drop the border, keep the column.
+		return lipgloss.NewStyle().Width(l.rail.w).Height(l.rail.h).Render(inner)
+	}
+	return style.Render(inner)
+}
+
+// renderContentBox renders the active page into the bordered content rect.
+func (m *Model) renderContentBox(l appLayout) string {
+	page := m.renderPage(l.inner.w, l.inner.h)
+	style := sContentBox.Width(l.inner.w).Height(l.inner.h)
+	if l.bp == bpNarrow {
+		return lipgloss.NewStyle().Width(l.content.w).Height(l.content.h).Render(page)
+	}
+	return style.Render(page)
+}
+
+// renderInspectorBox renders the right inspector (wide breakpoint).
+func (m *Model) renderInspectorBox(l appLayout) string {
+	inner := m.inspectorContent(l.inspInner)
+	return sContentBox.Width(l.inspInner.w).Height(l.inspInner.h).Render(inner)
+}
+
+// renderStatusBar draws the bottom help/status bar.
+func (m *Model) renderStatusBar(l appLayout) string {
+	help := m.helpLine()
+	w := lipgloss.Width(help)
+	if w < l.status.w {
+		help += sFaint.Render(strings.Repeat(" ", l.status.w-w))
+	}
+	return help
+}
+
+// railContent builds the rail's inner text (page list + live sessions),
+// trimmed to the inner rect. Rows align with railRowAt for hit-testing.
+func (m *Model) railContent(r rect) string {
 	var b strings.Builder
-	b.WriteString(sTitle.Render(" eigen") + "\n")
-	b.WriteString(sFaint.Render(" ────────") + "\n")
 	for _, p := range pages {
 		marker := "  "
 		style := sRailIdle
@@ -367,36 +460,56 @@ func (m *Model) renderRail() string {
 			marker = sAccent.Render("▎") + " "
 			style = sRailActive
 		}
-		b.WriteString(marker + style.Render(p.name) + "\n")
+		b.WriteString(marker + style.Render(truncate(p.name, r.w-2)) + "\n")
 	}
-	// Live daemon sessions: the rail shows each with a status glyph so
-	// concurrent work is visible at a glance (attach from the live page).
 	if len(m.data.Live) > 0 {
-		b.WriteString(sFaint.Render(" ────────") + "\n")
-		b.WriteString(sFaint.Render(" live") + "\n")
+		b.WriteString(sFaint.Render("─── live") + "\n")
 		for i, in := range m.data.Live {
-			if i >= 6 {
+			if i >= railLiveMax {
 				b.WriteString(sFaint.Render(fmt.Sprintf("  +%d more", len(m.data.Live)-i)) + "\n")
 				break
 			}
 			b.WriteString("  " + liveGlyph(in.Status) + " " + sRailIdle.Render(liveLabel(in)) + "\n")
 		}
 	}
-	lines := strings.Split(strings.TrimRight(b.String(), "\n"), "\n")
-	w := 0
-	for _, l := range lines {
-		if lw := lipgloss.Width(l); lw > w {
-			w = lw
-		}
-	}
-	if w < 12 {
-		w = 12
-	}
-	col := lipgloss.NewStyle().Width(w).Height(m.height - 1)
-	return col.Render(strings.Join(lines, "\n"))
+	return strings.TrimRight(b.String(), "\n")
 }
 
-// liveGlyph maps a daemon session status to a small colored indicator.
+// railLiveMax caps how many live sessions the rail lists.
+const railLiveMax = 6
+
+// inspectorContent renders the right inspector (wide breakpoint): a contextual
+// detail of the active page's selection. v1 is a calm placeholder; Wave 4 fills
+// it with real per-selection detail.
+func (m *Model) inspectorContent(r rect) string {
+	return sFaint.Render("details") + "\n" + sFaint.Render(strings.Repeat("─", min(r.w, 20))) + "\n" +
+		sDim.Render(wrapText("select an item to inspect it here", r.w))
+}
+
+// wrapText wraps s to width w (greedy, space-separated).
+func wrapText(s string, w int) string {
+	if w <= 0 {
+		return s
+	}
+	var out, line strings.Builder
+	col := 0
+	for _, word := range strings.Fields(s) {
+		wl := lipgloss.Width(word)
+		if col > 0 && col+1+wl > w {
+			out.WriteString(line.String() + "\n")
+			line.Reset()
+			col = 0
+		}
+		if col > 0 {
+			line.WriteString(" ")
+			col++
+		}
+		line.WriteString(word)
+		col += wl
+	}
+	out.WriteString(line.String())
+	return out.String()
+}
 func liveGlyph(s daemon.Status) string {
 	switch s {
 	case daemon.StatusWorking:
