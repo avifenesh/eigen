@@ -18,6 +18,9 @@ func (m *model) renderEvent(e agent.Event) {
 	case agent.EventTextDelta:
 		m.streamedText = true
 		m.turnOutChars += len(e.Text)
+		// Streamed speech: complete sentences start speaking NOW, not at
+		// turn end (voice mode / read-aloud).
+		m.speechFeed(e.Text)
 		// Real output started: collapse the live thinking block(s) for this turn.
 		m.collapseThinking()
 		if b := m.lastOpen(blockText); b != nil && b.role == "assistant" {

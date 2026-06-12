@@ -196,6 +196,8 @@ type model struct {
 	voiceMic    voiceState         // what the mic is doing (sidebar glyph)
 	voiceStop   context.CancelFunc // cancels the in-flight recording
 	voiceGen    int                // epoch guard: stale recordings/timers die
+	speech      *speechQueue       // streamed sentence-by-sentence speech
+	speechBuf   string             // incomplete sentence tail awaiting boundary
 
 	// pendingImages are clipboard/paste-staged images attached to the next
 	// message (vision models only).
@@ -1038,6 +1040,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			case "esc":
 				if m.cancel != nil {
 					m.cancel()
+					m.dropSpeech() // don't keep narrating an interrupted turn
 					m.status = "interrupting…"
 				}
 				return m, nil
@@ -1248,6 +1251,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 
 	case turnDoneMsg:
 		if msg.err != nil {
+			m.dropSpeech() // a failed/interrupted turn must not keep talking
 			m.push(&block{kind: blockNote, isErr: true, body: sb("error: " + msg.err.Error())})
 			switch {
 			case isGPTRoutingError(m.modelID, msg.err) && m.ctx.Err() == nil:
@@ -1296,10 +1300,14 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			}
 		}
 		// Read the answer aloud if the persistent /read toggle is on (voice
-		// mode handles its own speech + relisten below).
-		if msg.err == nil && !m.voiceOn && m.readAloud && m.speaker != nil {
-			if ans := m.lastAssistantText(); ans != "" {
-				m.speaker.Speak(ans)
+		// mode handles its own speech + relisten below). When streamed speech
+		// already spoke the answer mid-turn, just flush its tail — re-speaking
+		// the whole thing would repeat it.
+		if msg.err == nil && !m.voiceOn && m.readAloud {
+			if q := m.flushSpeech(); q == nil && m.speaker != nil {
+				if ans := m.lastAssistantText(); ans != "" {
+					m.speaker.Speak(ans)
+				}
 			}
 		}
 		// Drain a queued message (steer/queue): send the next one immediately.

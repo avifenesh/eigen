@@ -203,6 +203,28 @@ func (m *model) voiceTurnDone(err error) tea.Cmd {
 	if !m.voiceOn {
 		return nil
 	}
+	gen := m.voiceGen
+	// Streamed speech already started mid-turn: flush the sentence tail and
+	// WAIT for the queue to drain — then relisten. Do NOT start a second
+	// full-answer Speak (it would talk over the stream / repeat the answer).
+	if q := m.flushSpeech(); q != nil {
+		m.voiceMic = voiceSpeaking
+		m.voiceCancel = q.cancel
+		wait := func() tea.Msg {
+			<-q.done
+			return voiceSpeechDoneMsg{gen: gen}
+		}
+		if mon, ok := m.stt.(voice.InterruptMonitor); ok {
+			monitor := func() tea.Msg {
+				if mon.MonitorInterrupt(q.ctx) {
+					q.Stop() // cut the stream; wait() returns → relisten
+				}
+				return nil
+			}
+			return tea.Batch(wait, monitor)
+		}
+		return wait
+	}
 	ans := ""
 	if err == nil {
 		ans = m.lastAssistantText()
@@ -214,7 +236,6 @@ func (m *model) voiceTurnDone(err error) tea.Cmd {
 	ctx, cancel := context.WithCancel(m.ctx)
 	m.voiceCancel = cancel
 	m.voiceMic = voiceSpeaking
-	gen := m.voiceGen
 	tts := m.tts
 	speak := func() tea.Msg {
 		_ = tts.Speak(ctx, ans)
@@ -257,6 +278,7 @@ func (m *model) speakLastAnswer() {
 
 // stopSpeaking cancels in-flight TTS (used on interrupt / new utterance / exit).
 func (m *model) stopSpeaking() {
+	m.dropSpeech()
 	if m.voiceCancel != nil {
 		m.voiceCancel()
 		m.voiceCancel = nil

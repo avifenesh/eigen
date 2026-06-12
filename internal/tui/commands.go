@@ -432,6 +432,7 @@ func (m *model) command(line string) tea.Cmd {
 		if m.readAloud {
 			m.note("read-aloud on — assistant answers will be spoken")
 		} else {
+			m.dropSpeech()
 			m.speaker.Stop()
 			m.note("read-aloud off")
 		}

@@ -815,9 +815,11 @@ only `for-tests-*` fixtures) so `/voice` reports unavailable.
   speak-leg interrupt proves trustworthy in daily use.
 - [~] **TTS quality: Kokoro, reuse don't rewrite.** Kokoro detection SHIPPED
   (aa82b2e): speech.Detect prefers kokoro_stdin.py via the readd venv (NOT
-  'readd speak' — that reads transcripts). REMAINING: sentence-chunked
-  streaming speech (speak as paragraphs complete instead of waiting for the
-  full answer); mute control. Original text: The user's stack already
+  'readd speak' — that reads transcripts). Sentence-chunked streaming SHIPPED:
+  speechQueue speaks complete sentences as deltas stream in (speech starts
+  at the first sentence boundary mid-turn); voiceTurnDone drains the queue
+  then relistens; read-aloud toggle streams too without re-speaking.
+  REMAINING: mute control. Original text: The user's stack already
   has `kokoro_stdin.py` (Kokoro ONNX → aplay, reads stdin — exactly eigen's
   cmdTTS contract) and the readd daemon (espeak-ng/piper). Default tts_cmd
   detection should prefer kokoro_stdin.py / readd over bare espeak-ng;
