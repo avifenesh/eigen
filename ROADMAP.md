@@ -414,35 +414,37 @@ than a normal terminal** (the user accepts + wants the wide layout).
   never waste the width by centering a narrow dashboard.
 
 **Wave 1 — central layout + structural framing.**
-- [ ] app layout pass: terminal rect → {titleBar, rail(outer/inner),
-      content(outer/inner), statusBar, rightInspector?} + breakpoint; render
-      from it. Tests assert rects at 60/80/120/160/220 cols (no negative dims;
-      rendered line width ≤ panel width).
-- [ ] bordered chrome: a bordered left rail (min ~20 / normal ~24 cols), a
-      bordered content panel, a top title/breadcrumb bar, a bottom status/help
-      bar — restrained palette, major panels only (no border soup). Pages get
-      the inner content rect (fix their list windows for the new h).
+✅ SHIPPED (bd0f8c6). internal/app/layout.go: computeLayout() → named rects
+(title/rail/content/status + optional right inspector) by breakpoint
+(narrow/normal/wide≥130), 1-col gutters, frame math via GetH/VFrameSize; pages
+receive the INNER content rect. app.go View framed: title breadcrumb bar,
+bordered rail + content (+ inspector), status bar; narrow drops borders.
+layout_test.go asserts rects at 60/80/120/160/220 cols + line-width-≤-terminal.
+Live-verified.
 
 **Wave 2 — mouse foundation + top-level chrome hits.**
-- [ ] tea.WithMouseCellMotion; an app hitTest(x,y)→{region, target} over the
-      layout rects (title/rail/content/status + right inspector), z-ordered,
-      border cells are no-ops. Click a rail page → switch; click title/footer
-      actions → run; wheel routed by region. Validates origin/offsets before
-      any content-row clicks. Keyboard unchanged.
+✅ SHIPPED (9232095). internal/app/hit.go: hitTest(x,y)→{region,target}
+z-ordered over the layout rects; rail row math mirrors railContent; STABLE
+targets (Page / live session ID). tea.WithMouseCellMotion; handleMouse — click
+a rail page switches, a live entry attaches, wheel over content scrolls the
+list; motion/right-click ignored; no-op while the palette is open. hit_test.go
+covers it. Live-verified (clicked rail → skills → home).
 
 **Wave 3 — page-local hit maps + clickable content.**
-- [ ] shared list/viewport helper emits visible-row HitRegions (window offset,
-      selected, item ID, local rect); pages emit their own regions (home
-      feed+recent sections, sessions rows, config key list + detail pane, …).
-      Shell translates absolute→page-local coords and dispatches the region's
-      action. Click a row = select; click selected / enter = open; click a live
-      rail session = attach; wheel scrolls the region under the cursor. Stale
-      item IDs are safe.
+✅ SHIPPED (4063669). internal/app/list.go clickMap: the renderer records each
+selectable item's content-local line during view() (clicks.mark(lineCount(out),
+idx)) — robust across sectioned/variable-height pages, no analytic row math.
+Per-page clickAt (home/sessions/projects/live/config): single click selects,
+click-again activates (open chat / resume / attach / drill / open field); Enter
+unchanged; bounds-checked (stale click = safe no-op). click_test.go covers it.
+Live-verified the FULL loop: rail click → session-row click opened the framed
+chat → [home] returns — mouse round-trip, no keyboard.
 
 **Wave 4 — wide-terminal richness (after the spine proves out).**
-- [ ] right inspector panel at the wide breakpoint (selected session/project/
-      config detail), wider rail with live-session labels, more table columns
-      where width allows. Persisted? (later).
+The wide breakpoint already reserves a right inspector rect (Wave 1) with a
+placeholder. Remaining: fill it with real per-selection detail (session/
+project/config), wider rail labels, more table columns where width allows.
+- [ ] right inspector content (selected item detail) + wider-breakpoint density.
 
 ## Notes / grounding
 - read-aloud tool the user has: `readd` (espeak-ng/piper) at `~/projects/tfqol/readd`.
