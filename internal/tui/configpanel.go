@@ -149,7 +149,7 @@ func (m *model) confPanelKey(key string) bool {
 	}
 
 	switch key {
-	case "esc", "q":
+	case "esc", "q", "backspace", "alt+left":
 		m.conf = confPanel{}
 		m.sync()
 	case "up", "k", "ctrl+p":
@@ -254,7 +254,7 @@ func (m *model) configPanelView() string {
 		return b.String()
 	}
 
-	b.WriteString(styleUser.Render("config") + dim("  "+config.Path()+"   ↑↓ move · enter edit · esc close") + "\n\n")
+	b.WriteString(styleAccent.Render("‹ back") + "  " + styleUser.Render("config") + dim("  "+config.Path()+"   ↑↓ move · enter edit · esc/backspace close") + "\n\n")
 	for i, f := range fields {
 		v := config.Get(cfg, f.Key)
 		if v == "" {

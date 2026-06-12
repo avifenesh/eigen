@@ -681,6 +681,24 @@ func TestFilesInPatch(t *testing.T) {
 
 // --- Wave 5: command palette ------------------------------------------------
 
+func TestConfigPanelBackAffordance(t *testing.T) {
+	m := testModel(t)
+	m.openConfigPanel()
+	v := m.View()
+	if !strings.Contains(v, "‹ back") {
+		t.Fatalf("config panel should show a visible back affordance:\n%s", v)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	if m.conf.active {
+		t.Fatal("backspace should close the config panel")
+	}
+	m.openConfigPanel()
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 0})
+	if m.conf.active {
+		t.Fatal("clicking ‹ back should close the config panel")
+	}
+}
+
 func TestPaletteOpensWithCtrlK(t *testing.T) {
 	m := testModel(t)
 	m.Update(tea.KeyMsg{Type: tea.KeyCtrlK})

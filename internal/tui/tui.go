@@ -997,6 +997,15 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		return m, nil
 
 	case tea.MouseMsg:
+		// Full-screen config panel has a visible clickable back affordance.
+		if m.conf.active {
+			if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == 0 && msg.X >= 0 && msg.X < len("‹ back") {
+				m.conf = confPanel{}
+				m.sync()
+				return m, nil
+			}
+			return m, nil
+		}
 		switch {
 		case msg.Button == tea.MouseButtonRight && msg.Action == tea.MouseActionPress:
 			// Right-click pastes the clipboard into the input.
