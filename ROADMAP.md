@@ -762,48 +762,67 @@ orchestrator — today an image while on gpt-5.5 needlessly hops models).
   fixtures assume gpt is blind); update fixtures to use explicit fake catalogs
   rather than real ids so flag corrections don't silently flip test meaning.
 
-## Tier 15 — voice for real: TTS + STT set up, keybinds that just work
-Goal: the voice plumbing EXISTS (`internal/voice` cmdTTS/whisperSTT, `/voice`
-conversation mode, ctrl+t/alt+t push-to-talk, `/read` read-aloud toggle) but it
-is not actually usable end to end: on the real machine `DetectSTT` finds no
-whisper CLI (the checkout at `~/projects/whisper.cpp/build/bin` has the old
-`main` binary, not `whisper-cli`) and no real model (only `for-tests-ggml-*`
-fixtures), so `/voice` reports unavailable; and the push-to-talk key is dead
-unless conversation mode was toggled first. Make voice a set-up-once,
-keybind-first feature.
+## Tier 15 — voice for real: conversation mode, button-first
+Goal: bring the user's ALREADY-BUILT conversation mode to eigen, better. The
+reference implementation is `~/projects/codex-desktop-linux/linux-features/
+conversation-mode/patch.js` (+ `read-aloud` Kokoro backend) — a complete,
+battle-tested design: RMS VAD with trailing-quiet auto-submit (~1.8s quiet,
+capped 2s, softer continuation threshold so low-energy words aren't mistaken
+for silence), an interrupt monitor while the assistant is speaking/working
+(user starts talking → stop speech, interrupt the old turn, return to
+listening, discard stale assistant output via a speech cursor), epoch/serial
+guards so stale timers can't restart old output, conversation-scoped loop,
+mute + stop controls anchored at the composer, and typing stays available
+throughout. Port the SEMANTICS to the TUI; don't redesign from scratch.
 
-- [ ] **Setup path / doctor.** A `/voice setup` (or `eigen doctor voice`)
-  flow that reports exactly what's missing and fixes what it can: detect
-  recorder (arecord ✓ here), TTS (readd ✓, espeak-ng ✓), whisper binary +
-  model; offer to download a real model (ggml-base.en.bin) into the
-  conventional dir and build/symlink whisper-cli. Honest status lines, not
-  silent unavailability — the toggleVoice error today names env vars but
-  nothing guides the fix.
-- [ ] **Broaden detection.** `lookWhisper` should also accept the legacy
-  `main` binary in the whisper.cpp checkout; `lookWhisperModel` must skip
-  `for-tests-*` fixtures (it lists exact names today, but the dir has only
-  fixtures — so detection fails late and confusingly). Config keys for STT
-  alongside the existing `tts_cmd`: `stt_cmd`/`whisper_bin`/`whisper_model`
-  (env vars exist — EIGEN_WHISPER_BIN/MODEL, EIGEN_VOICE_RECORD_CMD — but
-  config.json is the discoverable surface; fields.go gets descriptions).
-- [ ] **Keybinds that just work.** ctrl+t should be PUSH-TO-TALK always:
-  one-shot dictation into the input line even when conversation mode is off
-  (record → transcribe → insert text, user reviews and hits enter), not
-  gated on `m.voiceOn`. A second chord (or ctrl+t while a fresh answer
-  exists) speaks the last answer once without enabling persistent read-aloud.
-  `/voice` keeps full conversation mode (auto-submit + spoken replies).
-  All through the action registry + palette ("dictate", "speak last answer",
-  "conversation mode") with sidebar/status affordances (mic glyph while
-  recording — the "listening…" status exists, surface it in the sidebar).
-- [ ] **Recording UX.** Today recording is a fixed-window `arecord -d {secs}`
-  (30s cap, no stop key). Push-to-talk needs stop-on-keypress (start on
-  ctrl+t, stop on ctrl+t again or enter; esc cancels) — kill the recorder
-  process group on stop, transcribe what was captured. Show elapsed while
-  recording; never block the UI loop (existing tea.Cmd pattern is right).
-- [ ] **Verify live.** The workspace harness has no mic; verify recording on
-  the real machine (the gotcha list: seccomp blocks fork in some test paths,
-  arecord needs a real ALSA/Pulse device). TTS path is verifiable headless
-  (readd/espeak-ng exist) — pipe to a file sink in tests.
+eigen's plumbing exists but is weaker on every axis: `internal/voice`
+whisperSTT records a FIXED 30s arecord window (no endpointing, no interrupt),
+ctrl+t is the only trigger, and on the real machine detection fails
+(whisper.cpp checkout has legacy `main` not `whisper-cli`; models dir has
+only `for-tests-*` fixtures) so `/voice` reports unavailable.
+
+- [ ] **BUTTON, not chord.** ctrl+t is zellij's tab-mode chord — dead in the
+  user's stack (zellij-in-ghostty), and alt+t is luck. The PRIMARY affordance
+  must be clickable: a mic button in the sidebar (and/or beside the input
+  line) — idle ⏺ / listening ● pulsing / transcribing ◌ / muted ⊘ — same
+  states the codex version surfaces via its composer aura + mute/stop
+  buttons. Click toggles conversation mode; while active, a stop and a mute
+  control render next to it. Keybind stays as a secondary path through the
+  action registry (and the palette: "conversation mode", "dictate once",
+  "speak last answer") for terminals where it survives.
+- [ ] **VAD endpointing, not a fixed window.** Replace `arecord -d 30` with
+  streaming capture (arecord to stdout) + RMS computation in Go — the same
+  endpoint logic as patch.js `endpoint()`: speech starts after ~220ms above
+  threshold, submit after ~1.8s of trailing quiet, a softer
+  possible-speech threshold extends the tail. Tunables via config like the
+  codex version's localStorage knobs (silence-ms, vad-threshold).
+- [ ] **Interrupt-on-speech.** While the reply is being spoken (or the turn
+  is still running), keep a mic monitor with a HIGHER threshold + grace
+  period (patch.js `makeMonitor`: ~420ms sustained voice, 180ms grace);
+  on detection: stop TTS, interrupt the eigen turn (esc semantics), go back
+  to listening. Epoch-guard everything — eigen already has the gen-guard
+  pattern (term/tasks ticks) for stale-timer safety.
+- [ ] **TTS quality: Kokoro, reuse don't rewrite.** The user's stack already
+  has `kokoro_stdin.py` (Kokoro ONNX → aplay, reads stdin — exactly eigen's
+  cmdTTS contract) and the readd daemon (espeak-ng/piper). Default tts_cmd
+  detection should prefer kokoro_stdin.py / readd over bare espeak-ng;
+  sentence-chunked streaming speech (speak as paragraphs complete, the
+  read-aloud queue semantics) instead of waiting for the full answer.
+- [ ] **STT setup + detection fixes.** `lookWhisper` accepts the legacy
+  `main` binary; `lookWhisperModel` skips `for-tests-*` fixtures; a
+  `/voice setup` doctor reports what's missing and offers the fix (download
+  ggml-base.en.bin, build/symlink whisper-cli). Config keys beside tts_cmd:
+  stt_cmd/whisper_bin/whisper_model (env vars exist; config.json is the
+  discoverable surface).
+- [ ] **Better than the original.** What the TUI can do that the webview
+  couldn't: works over ssh/zellij everywhere eigen runs; whisper.cpp local
+  STT (no composer dictation dependency); per-session voice state visible in
+  the sidebar; transcripts land in the normal session history/persistence.
+  Keep the codex version's discipline: typed turns keep working, explicit
+  exit discards pending dictation, switching sessions stops the loop.
+- [ ] **Verify live.** The workspace harness has no mic; verify
+  record/VAD/interrupt on the real machine. TTS + state machine are
+  verifiable headless (fake STT/TTS backends; pipe TTS to a file sink).
 
 ## Debt / bugs
 - [x] **Untitled daemon sessions still appear.** FIXED: (1) `Host.Restore` now
