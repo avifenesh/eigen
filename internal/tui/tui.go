@@ -1597,6 +1597,7 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 		backend.SetTitle(o.Title)
 	}
 
+	spk := speech.Detect()
 	m := &model{
 		backend:        backend,
 		sp:             sp,
@@ -1607,10 +1608,10 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 		srcDir:         eigenSrcDir(),
 		sessionPath:    sessionPathFor(o),
 		store:          store,
-		speaker:        speech.Detect(),
+		speaker:        spk,
 		clip:           clipboard.Detect(),
 		stt:            voice.DetectSTT(),
-		tts:            voice.DetectTTS(),
+		tts:            voiceTTS(spk),
 		provName:       o.Provider,
 		modelID:        o.Model,
 		newProvider:    llm.New,

@@ -17,10 +17,12 @@ package tui
 
 import (
 	"context"
+	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/avifenesh/eigen/internal/speech"
 	"github.com/avifenesh/eigen/internal/voice"
 )
 
@@ -32,6 +34,19 @@ type voiceSpokenMsg struct {
 	err  error
 	conv bool
 	gen  int
+}
+
+// voiceTTS picks conversation mode's TTS: the SAME stack the read-aloud
+// speaker resolved (Kokoro when present — one voice everywhere), wrapped as a
+// cancelable voice.TTS; espeak-style fallback only when the speaker found
+// nothing. EIGEN_VOICE_TTS_CMD still overrides via DetectTTS.
+func voiceTTS(spk *speech.Speaker) voice.TTS {
+	if os.Getenv("EIGEN_VOICE_TTS_CMD") == "" && spk != nil {
+		if t := voice.TTSFromArgv(spk.Argv()); t != nil {
+			return t
+		}
+	}
+	return voice.DetectTTS()
 }
 
 // voiceState: what the mic is doing right now (composer glyph + routing).

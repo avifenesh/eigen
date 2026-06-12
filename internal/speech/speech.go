@@ -43,6 +43,16 @@ func Detect() *Speaker {
 // Available reports whether a TTS command was resolved.
 func (s *Speaker) Available() bool { return s != nil && len(s.argv) > 0 }
 
+// Argv exposes the resolved TTS command (empty when unavailable) so other
+// speech paths (voice mode's cancelable TTS) use the SAME detection — one
+// voice everywhere, not Kokoro for read-aloud and espeak for conversation.
+func (s *Speaker) Argv() []string {
+	if s == nil {
+		return nil
+	}
+	return s.argv
+}
+
 // detectKokoro finds the local Kokoro ONNX stack: the kokoro_stdin.py script
 // (codex-desktop-linux read-aloud backend — reads stdin, streams to aplay), a
 // python that can import kokoro_onnx (the readd venv has it), and the model +
