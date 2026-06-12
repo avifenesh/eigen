@@ -367,8 +367,12 @@ apply_patch splits per +++ header. Memoized by a cheap transcript signature
 (not recomputed per View()). Degrades right-FIRST (hides before the rail when
 the transcript would drop below 40 cols). /changes toggles. Live-verified
 (an edit turn showed 'note.txt +1 −1').
-- [ ] v2 = inline diff rendering in the panel (reuse renderDiff) once the data
-      model + anchors + scrolling + width behavior are solid.
+- [x] v2 = inline diff rendering in the panel — SHIPPED: each file row is
+      followed by its colored diff (the SAME renderDiff path as transcript
+      inline diffs; apply_patch details filtered per file via patchSection).
+      View memoized by transcript-sig + panel width (changesView lines +
+      per-line file map); wheel over the panel scrolls it (clamped); a click
+      on ANY diff row jumps to that file's tool block.
 
 **Wave 5 — and more (captured; build after the foundation proves out).**
 - [x] command palette (fuzzy, ctrl+k) over the action registry — SHIPPED
@@ -376,8 +380,14 @@ the transcript would drop below 40 cols). /changes toggles. Live-verified
       (validated via dispatch) + chrome toggles + common slash commands; fuzzy
       filter (substring > subsequence), arg-slash entries prefill the input,
       disabled actions dim. Live-verified (ctrl+k → 'config' → config panel).
-- [ ] notifications/approvals tray; resizable + persisted panel layout;
-      multi-pane (two transcripts side by side); per-region wheel routing.
+- [x] resizable panel layout — SHIPPED: the rail's separator column and the
+      right panel's gutter column are grabbable edges (press→drag→release);
+      widths clamp per-panel (rail 14–44, right 24–100) AND to the
+      transcript's 40-col minimum; the embedded terminal PTY reshapes on
+      resize. Keyboard parity: widen/narrow palette actions (4-col steps).
+      Widths are per-window (not yet persisted).
+- [ ] notifications/approvals tray; persisted panel widths; multi-pane (two
+      transcripts side by side).
 
 ## Tier 10 — the app shell, clickable + structural (mouse parity + framing)
 

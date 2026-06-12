@@ -30,7 +30,11 @@ const (
 	actRename
 	actRailToggle
 	actRailCollapse
+	actRailWiden
+	actRailNarrow
 	actChangesToggle
+	actPanelWiden
+	actPanelNarrow
 	actRightTabNext
 	actTerminalTab
 )
@@ -149,11 +153,43 @@ var actionRegistry = map[actionID]action{
 			return nil
 		},
 	},
+	actRailWiden: {
+		id: actRailWiden, label: "widen session rail",
+		enabled: func(m *model) bool { return m.railVisible() },
+		run: func(m *model) tea.Cmd {
+			m.setRailW(m.railCols() + panelResizeStep)
+			return nil
+		},
+	},
+	actRailNarrow: {
+		id: actRailNarrow, label: "narrow session rail",
+		enabled: func(m *model) bool { return m.railVisible() },
+		run: func(m *model) tea.Cmd {
+			m.setRailW(m.railCols() - panelResizeStep)
+			return nil
+		},
+	},
 	actChangesToggle: {
 		id: actChangesToggle, label: "right panel",
 		enabled: always,
 		run: func(m *model) tea.Cmd {
 			m.toggleChanges()
+			return nil
+		},
+	},
+	actPanelWiden: {
+		id: actPanelWiden, label: "widen right panel",
+		enabled: func(m *model) bool { return m.changesVisible() },
+		run: func(m *model) tea.Cmd {
+			m.setRightW(m.rightCols() + panelResizeStep)
+			return nil
+		},
+	},
+	actPanelNarrow: {
+		id: actPanelNarrow, label: "narrow right panel",
+		enabled: func(m *model) bool { return m.changesVisible() },
+		run: func(m *model) tea.Cmd {
+			m.setRightW(m.rightCols() - panelResizeStep)
 			return nil
 		},
 	},

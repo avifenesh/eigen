@@ -29,14 +29,15 @@ type gitSummary struct {
 
 func (m *model) gitLines(h int) []string {
 	s := gitSummaryFor(m.sessionDir())
+	pw := m.rightCols()
 	lines := make([]string, 0, h)
-	lines = append(lines, changesPad(m.rightPanelTitleLine(rightPanelWidthCols-2), rightPanelWidthCols))
-	contentW := rightPanelWidthCols - 4
+	lines = append(lines, changesPad(m.rightPanelTitleLine(pw-2), pw))
+	contentW := pw - 4
 	add := func(s string) {
 		if len(lines) >= h {
 			return
 		}
-		lines = append(lines, changesPad(ansiTrunc(s, contentW), rightPanelWidthCols))
+		lines = append(lines, changesPad(ansiTrunc(s, contentW), pw))
 	}
 	if !s.Repo {
 		add("not a git repo")
@@ -44,7 +45,7 @@ func (m *model) gitLines(h int) []string {
 			add(s.Dir)
 		}
 		for len(lines) < h {
-			lines = append(lines, changesPad("", rightPanelWidthCols))
+			lines = append(lines, changesPad("", pw))
 		}
 		return lines
 	}
@@ -66,7 +67,7 @@ func (m *model) gitLines(h int) []string {
 		add("diff    clean")
 	}
 	for len(lines) < h {
-		lines = append(lines, changesPad("", rightPanelWidthCols))
+		lines = append(lines, changesPad("", pw))
 	}
 	return lines
 }

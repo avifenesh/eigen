@@ -80,7 +80,7 @@ func (m *model) startTerm(rows int) tea.Cmd {
 	// (Re)start: tear down any previous shell first (e.g. restart after exit).
 	m.killShell()
 
-	cols := termCols()
+	cols := m.termCols()
 	if rows < 1 {
 		rows = 1
 	}
@@ -142,8 +142,8 @@ func drainPTY(f *os.File, emu *vt.SafeEmulator) {
 }
 
 // termCols is the emulator's column count inside the panel's "│ " gutter.
-func termCols() int {
-	c := rightPanelWidthCols - 2
+func (m *model) termCols() int {
+	c := m.rightCols() - 2
 	if c < 1 {
 		c = 1
 	}
@@ -164,7 +164,7 @@ func (m *model) ensureTermSize(rows int) {
 	if m.term.pty == nil || m.term.exited {
 		return
 	}
-	cols := termCols()
+	cols := m.termCols()
 	if rows < 1 {
 		rows = 1
 	}
@@ -218,16 +218,17 @@ func (m *model) stopTerm() {
 // termLines renders the emulator screen as exactly h panel lines (header + the
 // VT grid). Pure: it only reads the current emulator snapshot.
 func (m *model) termLines(h int) []string {
+	pw := m.rightCols()
 	lines := make([]string, 0, h)
-	lines = append(lines, changesPad(m.rightPanelTitleLine(rightPanelWidthCols-2), rightPanelWidthCols))
+	lines = append(lines, changesPad(m.rightPanelTitleLine(pw-2), pw))
 	gridRows := h - 1 // header takes one row
 	if gridRows < 1 {
 		gridRows = 1
 	}
 	if !m.term.started {
-		lines = append(lines, changesPad(dim("starting "+termShellName()+"…"), rightPanelWidthCols))
+		lines = append(lines, changesPad(dim("starting "+termShellName()+"…"), pw))
 		for len(lines) < h {
-			lines = append(lines, changesPad("", rightPanelWidthCols))
+			lines = append(lines, changesPad("", pw))
 		}
 		return lines
 	}
@@ -235,7 +236,7 @@ func (m *model) termLines(h int) []string {
 	if m.term.emu != nil {
 		grid = strings.Split(m.term.emu.Render(), "\n")
 	}
-	contentW := rightPanelWidthCols - 2
+	contentW := pw - 2
 	for i := 0; i < gridRows; i++ {
 		var row string
 		if i < len(grid) {
@@ -244,10 +245,10 @@ func (m *model) termLines(h int) []string {
 		if m.term.exited && i == 0 {
 			row = dim("[exited — enter restarts]")
 		}
-		lines = append(lines, changesPad(row, rightPanelWidthCols))
+		lines = append(lines, changesPad(row, pw))
 	}
 	for len(lines) < h {
-		lines = append(lines, changesPad("", rightPanelWidthCols))
+		lines = append(lines, changesPad("", pw))
 	}
 	return lines
 }

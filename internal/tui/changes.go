@@ -17,8 +17,16 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// rightPanelWidthCols is the changes panel's total width (content + gutter).
+// rightPanelWidthCols is the changes panel's default total width (content +
+// gutter). The user can resize it by dragging the panel's left edge; the live
+// width lives in model.rightW (0 = this default).
 const rightPanelWidthCols = 34
+
+// rightMinW / rightMaxW clamp user resizing of the right panel.
+const (
+	rightMinW = 24
+	rightMaxW = 100
+)
 
 // minTranscriptCols is the transcript's minimum width; chrome panels degrade
 // (right panel first, then the rail) to preserve it.
@@ -46,10 +54,32 @@ func (m *model) changesVisible() bool {
 	}
 	// Room check: width minus the rail minus this panel must leave the
 	// transcript its minimum. The rail (already shown) keeps priority.
-	if m.width-m.railWidth()-rightPanelWidthCols < minTranscriptCols {
+	if m.width-m.railWidth()-rightMinW < minTranscriptCols {
 		return false
 	}
 	return true
+}
+
+// rightCols is the right panel's effective column width: the user-set width
+// (or the default), clamped to its bounds and to never starve the transcript.
+func (m *model) rightCols() int {
+	w := m.rightW
+	if w == 0 {
+		w = rightPanelWidthCols
+	}
+	if w < rightMinW {
+		w = rightMinW
+	}
+	if w > rightMaxW {
+		w = rightMaxW
+	}
+	if max := m.width - m.railWidth() - minTranscriptCols; w > max {
+		w = max
+	}
+	if w < 1 {
+		w = 1
+	}
+	return w
 }
 
 // rightPanelWidth is the changes panel's column width (0 when hidden).
@@ -57,7 +87,21 @@ func (m *model) rightPanelWidth() int {
 	if !m.changesVisible() {
 		return 0
 	}
-	return rightPanelWidthCols
+	return m.rightCols()
+}
+
+// setRightW applies a user resize of the right panel: clamp, store, reflow,
+// and reshape the embedded terminal to the new column count.
+func (m *model) setRightW(w int) {
+	if w < rightMinW {
+		w = rightMinW
+	}
+	if w > rightMaxW {
+		w = rightMaxW
+	}
+	m.rightW = w
+	m.relayout()
+	m.ensureTermSize(m.termRows())
 }
 
 // lastRunChanges returns the files touched by the most recent run that produced
@@ -210,22 +254,34 @@ func filesInPatch(patch string, blockIdx int) []fileChange {
 	return out
 }
 
-// changesLines renders the changes panel as exactly h lines, each padded to the
-// panel width with a left gutter separator.
-func (m *model) changesLines(h int) []string {
-	if m.rightTab == rightTabGit {
-		return m.gitLines(h)
-	}
-	if m.rightTab == rightTabTerminal {
-		return m.termLines(h)
-	}
+// changesView is the memoized inline-diff rendering of the changes tab: a flat
+// list of panel content lines (file headers + their colored diff lines), with
+// a parallel file-index map so a click on any row knows which file to jump to.
+type changesView struct {
+	lines []string // content lines (un-padded, styled)
+	file  []int    // per-line index into lastRunChanges() (-1 = blank)
+	sig   string   // changesSig + width the view was built for
+}
+
+// buildChangesView (re)builds the inline-diff view when the transcript or the
+// panel width changed. Each file gets a header row (name + +/− stats) followed
+// by its diff rendered through the same renderDiff path as the transcript's
+// inline diffs — one source of truth for diff styling.
+func (m *model) buildChangesView() *changesView {
 	changes := m.lastRunChanges()
-	contentW := rightPanelWidthCols - 2 // leading "│ " gutter
-	lines := make([]string, 0, h)
-	lines = append(lines, changesPad(m.rightPanelTitleLine(rightPanelWidthCols-2), rightPanelWidthCols))
-	for _, fc := range changes {
-		if len(lines) >= h {
-			break
+	contentW := m.rightCols() - 2 // leading "│ " gutter
+	sig := m.changesCacheSig + "@" + itoa(contentW)
+	if m.changesVw.sig == sig {
+		return &m.changesVw
+	}
+	v := changesView{sig: sig}
+	add := func(ln string, fi int) {
+		v.lines = append(v.lines, ln)
+		v.file = append(v.file, fi)
+	}
+	for i, fc := range changes {
+		if i > 0 {
+			add("", -1)
 		}
 		name := filepath.Base(fc.path)
 		stats := ""
@@ -240,15 +296,98 @@ func (m *model) changesLines(h int) []string {
 		}
 		statsW := ansi.StringWidth(ansi.Strip(stats))
 		nameW := contentW - statsW - 1
-		label := ansiTrunc(name, nameW)
-		gap := contentW - ansi.StringWidth(label) - statsW
+		label := styleAccent.Render(ansiTrunc(name, nameW))
+		gap := contentW - ansi.StringWidth(ansi.Strip(label)) - statsW
 		if gap < 1 {
 			gap = 1
 		}
-		lines = append(lines, changesPad(label+strings.Repeat(" ", gap)+stats, rightPanelWidthCols))
+		add(label+strings.Repeat(" ", gap)+stats, i)
+		// The file's diff, from the block(s) that touched it in the run.
+		// Diff lines are styled — truncate ANSI-aware.
+		for _, ln := range strings.Split(m.diffForChange(fc), "\n") {
+			if ln == "" {
+				continue
+			}
+			add(ansi.Truncate(ln, contentW, "…"), i)
+		}
+	}
+	m.changesVw = v
+	return &m.changesVw
+}
+
+// diffForChange returns the rendered (colored) diff text for one file change:
+// the toolDetail of its block, filtered to this file for multi-file patches.
+func (m *model) diffForChange(fc fileChange) string {
+	if fc.blockIdx < 0 || fc.blockIdx >= len(m.blocks) {
+		return ""
+	}
+	b := m.blocks[fc.blockIdx]
+	detail := b.toolDetail()
+	if detail == "" {
+		return ""
+	}
+	if b.toolName == "apply_patch" {
+		detail = patchSection(detail, fc.path)
+	}
+	return renderDiff(detail)
+}
+
+// patchSection extracts the normalized-patch lines belonging to one file from
+// a (possibly multi-file) patch detail. Sections start at "⋯ +++ " headers.
+func patchSection(detail, path string) string {
+	lines := strings.Split(detail, "\n")
+	var out []string
+	in := false
+	for _, ln := range lines {
+		if strings.HasPrefix(ln, "⋯ +++ ") {
+			p := strings.TrimSpace(strings.TrimPrefix(ln, "⋯ +++ "))
+			p = strings.TrimPrefix(p, "b/")
+			in = p == path || strings.HasSuffix(p, "/"+path)
+			continue
+		}
+		if strings.HasPrefix(ln, "⋯ --- ") || strings.HasPrefix(ln, "⋯ diff ") {
+			continue
+		}
+		if in {
+			out = append(out, ln)
+		}
+	}
+	if len(out) == 0 {
+		return detail // single-file or unparseable: show everything
+	}
+	return strings.Join(out, "\n")
+}
+
+// changesLines renders the changes panel as exactly h lines, each padded to the
+// panel width with a left gutter separator: the tab header, then the inline
+// diff view windowed by the scroll offset.
+func (m *model) changesLines(h int) []string {
+	if m.rightTab == rightTabGit {
+		return m.gitLines(h)
+	}
+	if m.rightTab == rightTabTerminal {
+		return m.termLines(h)
+	}
+	pw := m.rightCols()
+	v := m.buildChangesView()
+	lines := make([]string, 0, h)
+	lines = append(lines, changesPad(m.rightPanelTitleLine(pw-2), pw))
+	// Clamp the scroll so the last page stays full when content shrinks.
+	maxScroll := len(v.lines) - (h - 1)
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if m.changesScroll > maxScroll {
+		m.changesScroll = maxScroll
+	}
+	if m.changesScroll < 0 {
+		m.changesScroll = 0
+	}
+	for i := m.changesScroll; i < len(v.lines) && len(lines) < h; i++ {
+		lines = append(lines, changesPad(v.lines[i], pw))
 	}
 	for len(lines) < h {
-		lines = append(lines, changesPad("", rightPanelWidthCols))
+		lines = append(lines, changesPad("", pw))
 	}
 	return lines
 }
@@ -266,14 +405,18 @@ func changesPad(label string, w int) string {
 }
 
 // changesRowAt maps a changes-panel-local y to a file-change index, or -1.
-// Row 0 is the panel header; files start at row 1.
+// Row 0 is the panel header; content rows map through the inline-diff view
+// (any row of a file's diff jumps to that file) honoring the scroll offset.
 func (m *model) changesRowAt(localY int) int {
-	idx := localY - 1
-	changes := m.lastRunChanges()
-	if idx < 0 || idx >= len(changes) {
+	if localY < 1 {
 		return -1
 	}
-	return idx
+	v := m.buildChangesView()
+	idx := m.changesScroll + localY - 1
+	if idx < 0 || idx >= len(v.file) {
+		return -1
+	}
+	return v.file[idx]
 }
 
 // jumpToChange selects + scrolls to the tool block that changed file index i.

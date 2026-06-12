@@ -894,12 +894,25 @@ func TestChangesRowClickJumps(t *testing.T) {
 
 func TestChangesHidesWhenTooNarrow(t *testing.T) {
 	m := testModel(t)
-	// Width that fits the transcript minimum but not the panel too.
-	m.Update(tea.WindowSizeMsg{Width: minTranscriptCols + rightPanelWidthCols - 5, Height: 24})
+	// Even the panel's MINIMUM width can't fit beside the transcript minimum:
+	// the panel hides entirely (degrade right-first).
+	m.Update(tea.WindowSizeMsg{Width: minTranscriptCols + rightMinW - 1, Height: 24})
 	m.text("user", "edit")
 	m.push(editBlock("f.go", "a", "b"))
 	if m.changesVisible() {
 		t.Fatal("changes panel must hide when it would squeeze the transcript below its minimum")
+	}
+	// A bit wider: the panel shrinks to fit instead of hiding, and the
+	// transcript keeps its minimum.
+	m.Update(tea.WindowSizeMsg{Width: minTranscriptCols + rightPanelWidthCols - 5, Height: 24})
+	if !m.changesVisible() {
+		t.Fatal("changes panel should shrink-to-fit when at least its minimum width fits")
+	}
+	if got := m.rightPanelWidth(); got >= rightPanelWidthCols {
+		t.Fatalf("panel should be narrower than its default here, got %d", got)
+	}
+	if m.width-m.railWidth()-m.rightPanelWidth() < minTranscriptCols {
+		t.Fatal("transcript must keep its minimum width")
 	}
 }
 
@@ -1176,5 +1189,186 @@ func TestPaletteNavigation(t *testing.T) {
 	m.paletteKey("up")
 	if m.pal.idx != 0 {
 		t.Fatalf("up should move back to 0, got %d", m.pal.idx)
+	}
+}
+
+// --- Tier 11: inline diff in changes panel + resizable side panels ----------
+
+func TestChangesPanelShowsInlineDiff(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.text("user", "edit")
+	m.push(editBlock("src/main.go", "old line", "new line"))
+	m.relayout()
+	lines := m.changesLines(m.vp.Height)
+	joined := strings.Join(lines, "\n")
+	plain := ansi.Strip(joined)
+	if !strings.Contains(plain, "main.go") {
+		t.Fatalf("panel should show the file name:\n%s", plain)
+	}
+	if !strings.Contains(plain, "- old line") || !strings.Contains(plain, "+ new line") {
+		t.Fatalf("panel should show the inline diff lines:\n%s", plain)
+	}
+}
+
+func TestChangesDiffRowClickJumpsToFile(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.text("user", "edit")
+	m.push(editBlock("src/main.go", "foo", "bar"))
+	editIdx := len(m.blocks) - 1
+	m.relayout()
+	l := m.computeLayout()
+	// Panel row 2 is the first DIFF line under the file header — clicking a
+	// diff row must jump to the same file's tool block.
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: m.width - 2, Y: l.rightPanel.y + 2})
+	if m.sel != editIdx {
+		t.Fatalf("clicking a diff row should select its file's tool block, got sel=%d want %d", m.sel, editIdx)
+	}
+}
+
+func TestChangesScrollClampsAndShifts(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.text("user", "edit")
+	// A many-line edit so the diff overflows the panel height.
+	var oldB, newB strings.Builder
+	for i := 0; i < 40; i++ {
+		oldB.WriteString("old " + itoa(i) + "\n")
+		newB.WriteString("new " + itoa(i) + "\n")
+	}
+	m.push(editBlock("big.go", oldB.String(), newB.String()))
+	m.relayout()
+	top := func() string { return ansi.Strip(m.changesLines(m.vp.Height)[1]) }
+	first := top()
+	m.changesScroll = 5
+	if shifted := top(); shifted == first {
+		t.Fatal("scrolling should shift the panel's first content row")
+	}
+	// Clamp: a huge scroll is pulled back to the last full page.
+	m.changesScroll = 10000
+	m.changesLines(m.vp.Height)
+	v := m.buildChangesView()
+	if max := len(v.lines) - (m.vp.Height - 1); m.changesScroll > max {
+		t.Fatalf("scroll should clamp to %d, got %d", max, m.changesScroll)
+	}
+	m.changesScroll = -3
+	m.changesLines(m.vp.Height)
+	if m.changesScroll != 0 {
+		t.Fatal("negative scroll should clamp to 0")
+	}
+}
+
+func TestPatchSectionFiltersMultiFilePatch(t *testing.T) {
+	detail := "⋯ +++ b/a.go\n+ in a\n⋯ +++ b/b.go\n+ in b"
+	got := patchSection(detail, "a.go")
+	if !strings.Contains(got, "in a") || strings.Contains(got, "in b") {
+		t.Fatalf("patchSection should keep only a.go's lines, got %q", got)
+	}
+	// Unmatched path: fall back to the full detail (never hide everything).
+	if got := patchSection(detail, "zzz.go"); got != detail {
+		t.Fatalf("unmatched path should return the full detail, got %q", got)
+	}
+}
+
+func TestRailEdgeDragResizes(t *testing.T) {
+	m := switcherModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.refreshRail()
+	l := m.computeLayout()
+	edgeX := l.leftRail.x + l.leftRail.w - 1 // the separator column
+	// Press on the edge starts the drag (and must NOT hop sessions).
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: edgeX, Y: l.leftRail.y + 2})
+	if m.resizing != regLeftRail {
+		t.Fatalf("press on the rail edge should start resizing, got %v", m.resizing)
+	}
+	if m.switchTo != "" {
+		t.Fatal("an edge press must not trigger a session hop")
+	}
+	// Drag right: rail widens.
+	m.Update(tea.MouseMsg{Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft, X: edgeX + 6, Y: l.leftRail.y + 5})
+	if m.railWidth() != railWidthCols+6 {
+		t.Fatalf("rail should widen to %d, got %d", railWidthCols+6, m.railWidth())
+	}
+	// Release ends the drag.
+	m.Update(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: edgeX + 6, Y: l.leftRail.y + 5})
+	if m.resizing != regNone {
+		t.Fatal("release should end the resize drag")
+	}
+	// The transcript reflows around the new width.
+	if m.vp.Width != 120-m.railWidth() {
+		t.Fatalf("viewport should reflow, got %d", m.vp.Width)
+	}
+}
+
+func TestRightPanelEdgeDragResizesAndClamps(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.text("user", "edit")
+	m.push(editBlock("f.go", "a", "b"))
+	m.relayout()
+	l := m.computeLayout()
+	edgeX := l.rightPanel.x // the panel's left gutter column
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: edgeX, Y: l.rightPanel.y + 3})
+	if m.resizing != regRightPanel {
+		t.Fatalf("press on the panel edge should start resizing, got %v", m.resizing)
+	}
+	// Drag left widens the panel.
+	m.Update(tea.MouseMsg{Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft, X: edgeX - 10, Y: l.rightPanel.y + 3})
+	if m.rightPanelWidth() != rightPanelWidthCols+10 {
+		t.Fatalf("panel should widen to %d, got %d", rightPanelWidthCols+10, m.rightPanelWidth())
+	}
+	// Drag absurdly far left: clamped so the transcript keeps its minimum.
+	m.Update(tea.MouseMsg{Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft, X: 2, Y: l.rightPanel.y + 3})
+	if m.width-m.railWidth()-m.rightPanelWidth() < minTranscriptCols {
+		t.Fatal("resize must never squeeze the transcript below its minimum")
+	}
+	// Drag right below the minimum: clamped to rightMinW.
+	m.Update(tea.MouseMsg{Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft, X: 119, Y: l.rightPanel.y + 3})
+	if m.rightPanelWidth() < rightMinW {
+		t.Fatalf("panel width should clamp to its minimum %d, got %d", rightMinW, m.rightPanelWidth())
+	}
+	m.Update(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 119, Y: l.rightPanel.y + 3})
+	if m.resizing != regNone {
+		t.Fatal("release should end the resize drag")
+	}
+}
+
+func TestPanelResizeActions(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.text("user", "edit")
+	m.push(editBlock("f.go", "a", "b"))
+	m.relayout()
+	w0 := m.rightPanelWidth()
+	m.dispatch(actPanelWiden)
+	if m.rightPanelWidth() != w0+panelResizeStep {
+		t.Fatalf("widen action should add %d cols, got %d", panelResizeStep, m.rightPanelWidth())
+	}
+	m.dispatch(actPanelNarrow)
+	if m.rightPanelWidth() != w0 {
+		t.Fatalf("narrow action should restore %d, got %d", w0, m.rightPanelWidth())
+	}
+}
+
+func TestWheelOverChangesScrollsPanel(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.text("user", "edit")
+	var oldB, newB strings.Builder
+	for i := 0; i < 40; i++ {
+		oldB.WriteString("old " + itoa(i) + "\n")
+		newB.WriteString("new " + itoa(i) + "\n")
+	}
+	m.push(editBlock("big.go", oldB.String(), newB.String()))
+	m.relayout()
+	l := m.computeLayout()
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown, X: l.rightPanel.x + 3, Y: l.rightPanel.y + 3})
+	if m.changesScroll == 0 {
+		t.Fatal("wheel down over the changes panel should scroll it")
+	}
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp, X: l.rightPanel.x + 3, Y: l.rightPanel.y + 3})
+	if m.changesScroll != 0 {
+		t.Fatalf("wheel up should scroll back to 0, got %d", m.changesScroll)
 	}
 }

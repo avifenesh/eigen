@@ -21,8 +21,16 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// railWidthCols is the rail's total width (content + a one-column gutter).
+// railWidthCols is the rail's default total width (content + a one-column
+// gutter). The user can resize it by dragging the separator edge; the live
+// width lives in model.railW (0 = this default).
 const railWidthCols = 22
+
+// railMinW / railMaxW clamp user resizing to keep the rail usable.
+const (
+	railMinW = 14
+	railMaxW = 44
+)
 
 // railMinTerminalWidth is the narrowest terminal that still shows the rail —
 // below this the transcript needs the whole width, so the rail hides (it stays
@@ -65,12 +73,48 @@ func (m *model) railVisible() bool {
 	return m.railLister() != nil
 }
 
+// railCols is the rail's effective column width: the user-set width (or the
+// default), clamped to its bounds and to never starve the transcript.
+func (m *model) railCols() int {
+	w := m.railW
+	if w == 0 {
+		w = railWidthCols
+	}
+	if w < railMinW {
+		w = railMinW
+	}
+	if w > railMaxW {
+		w = railMaxW
+	}
+	if max := m.width - minTranscriptCols; w > max {
+		w = max
+	}
+	return w
+}
+
 // railWidth is the rail's column width (0 when hidden).
 func (m *model) railWidth() int {
 	if !m.railVisible() {
 		return 0
 	}
-	return railWidthCols
+	return m.railCols()
+}
+
+// setRailW applies a user resize (drag or palette action): clamp, store, and
+// reflow the transcript around the new width.
+func (m *model) setRailW(w int) {
+	if w < railMinW {
+		w = railMinW
+	}
+	if w > railMaxW {
+		w = railMaxW
+	}
+	if w == m.railCols() {
+		m.railW = w
+		return
+	}
+	m.railW = w
+	m.relayout()
 }
 
 // railTickMsg drives the periodic rail refresh.
@@ -245,17 +289,18 @@ func (m *model) railLines(h int) []string {
 	if sl := m.railLister(); sl != nil {
 		cur = sl.SessionID()
 	}
-	contentW := railWidthCols - 2 // leave a 2-col gutter (" │")
+	rw := m.railCols()
+	contentW := rw - 2 // leave a 2-col gutter (" │")
 	grouped := m.railGrouped()
 	lines := make([]string, 0, h)
 	// Header row for the rail, with a visible close affordance.
-	lines = append(lines, railPad(panelTitleLine("sessions", railWidthCols-1, true), railWidthCols))
+	lines = append(lines, railPad(panelTitleLine("sessions", rw-1, true), rw))
 	for _, r := range m.railRows() {
 		if len(lines) >= h {
 			break
 		}
 		if r.header {
-			lines = append(lines, railPad(m.railHeaderLabel(r.dir, contentW), railWidthCols))
+			lines = append(lines, railPad(m.railHeaderLabel(r.dir, contentW), rw))
 			continue
 		}
 		e := m.railEntries[r.entry]
@@ -273,11 +318,11 @@ func (m *model) railLines(h int) []string {
 		}
 		// indent + glyph + mark + title, truncated to the content width.
 		label := indent + m.railGlyph(e.Status) + mark + ansiTrunc(title, contentW-3-len(indent))
-		lines = append(lines, railPad(label, railWidthCols))
+		lines = append(lines, railPad(label, rw))
 	}
 	// Pad the rest of the column with empty gutters.
 	for len(lines) < h {
-		lines = append(lines, railPad("", railWidthCols))
+		lines = append(lines, railPad("", rw))
 	}
 	return lines
 }

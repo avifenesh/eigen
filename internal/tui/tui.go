@@ -286,6 +286,15 @@ type model struct {
 	term            termState     // embedded PTY terminal tab state
 	changesCache    []fileChange  // memoized last-run change index
 	changesCacheSig string        // transcript signature the cache was built for
+	changesVw       changesView   // memoized inline-diff view (lines + file map)
+	changesScroll   int           // changes tab scroll offset (wheel)
+
+	// Panel resizing (drag the rail's separator / the right panel's left
+	// edge). railW/rightW are the user-set widths (0 = the defaults);
+	// resizing names the panel currently being dragged (regNone = none).
+	railW    int
+	rightW   int
+	resizing region
 
 	// input history: previously entered lines, recalled with ↑/↓ (shell-style).
 	history   []string
@@ -1033,6 +1042,13 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			m.pasteIntoInput()
 			return m, nil
 		case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress:
+			// Panel edges are grabbable: press on the rail's separator column or
+			// the right panel's gutter column starts a resize drag (checked
+			// before chrome actions so the edge always wins its one column).
+			if reg, ok := m.resizeEdgeAt(msg.X, msg.Y); ok {
+				m.resizing = reg
+				return m, nil
+			}
 			// Chrome (status bar / header) is clickable: dispatch the segment's
 			// action through the same validated path as keys. Chrome rows are
 			// not draggable, so acting on press is safe.
@@ -1090,6 +1106,14 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				m.selCursor = p
 			}
 			return m, nil
+		case msg.Action == tea.MouseActionMotion && m.resizing != regNone:
+			// Dragging a panel edge resizes the panel live.
+			m.applyResizeDrag(msg.X)
+			return m, nil
+		case msg.Action == tea.MouseActionRelease && m.resizing != regNone:
+			m.applyResizeDrag(msg.X)
+			m.resizing = regNone
+			return m, nil
 		case msg.Action == tea.MouseActionMotion && m.selecting:
 			// Drag: extend the selection to the current cell and show it.
 			if p, ok := m.screenToContent(msg.X, msg.Y); ok {
@@ -1126,6 +1150,19 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			return m, nil
 		}
 		if tea.MouseEvent(msg).IsWheel() {
+			// Wheel over the changes tab scrolls the inline diff view.
+			if h := m.hitTest(msg.X, msg.Y); h.region == regRightPanel && m.rightTab == rightTabChanges {
+				switch msg.Button {
+				case tea.MouseButtonWheelUp:
+					m.changesScroll -= 3
+				case tea.MouseButtonWheelDown:
+					m.changesScroll += 3
+				}
+				if m.changesScroll < 0 {
+					m.changesScroll = 0
+				}
+				return m, nil
+			}
 			var cmd tea.Cmd
 			m.vp, cmd = m.vp.Update(msg)
 			return m, cmd
