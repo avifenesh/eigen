@@ -688,6 +688,46 @@ context without guessing.
   pruned). Readers parse the LAST COMPLETE jsonl line (mid-append tolerant)
   and exclude `*.transcript.jsonl`.
 
+## Tier 13 — session-list ergonomics (last-used, filter, search)
+Goal: the session list is endless now (daemon sessions are durable and
+accumulate forever) — finding "the session I was just in" or "that revuto
+session from Tuesday" must be instant. Three surfaces show sessions and all
+three need the same ergonomics: the app shell sessions page
+(`internal/app/sessions.go`, flat list), the in-chat switcher (alt+s /
+`/sessions`, `internal/tui/nav.go` + switcher view), and the project drill-in
+page. The sidebar rail is exempt (grouped-by-project + collapse already serves
+its purpose).
+
+- [ ] **Last-used first, verified.** Lists are nominally newest-first already,
+  but audit what `Updated` actually means per source before trusting it:
+  daemon rows use transcript-file mtime in unix SECONDS (`persist.go`)
+  converted with `* 1_000_000_000` against store rows' unix-nano — subtle
+  unit/skew bugs here surface as "wrong session on top". The session being
+  viewed/last attached should rank above sessions merely touched by
+  background persistence; consider a `LastAttached` timestamp in the daemon
+  meta sidecar (set on attach, survives restart) so "last used by ME" beats
+  "last written by the titler".
+- [ ] **Type-to-search.** `/` (or just typing) in the sessions page and the
+  alt+s switcher starts an incremental filter over title + project dir +
+  session id; reuse the palette's `fuzzyScore` (substring < subsequence)
+  rather than a new matcher. Esc clears, enter opens the top hit. App-shell
+  side must go through the `capturingInput()` gate (typing "q" must type q,
+  not quit — the config-page editing pattern). Search narrows the SAME list
+  the cursor walks (one row model; no parallel filtered copy drifting from
+  clicks).
+- [ ] **Filters.** One keystroke cycles/toggles structured filters alongside
+  free-text search: by project (current dir first — the switcher should
+  default to "this project" when the list is long), by source
+  (daemon/store/imported), by status (working/idle/approval — switcher
+  already has the glyphs), and a recency cutoff ("last 7 days" default view
+  with an explicit "show all N" tail row instead of an endless scroll).
+  Filter state is per-surface and resets on close (no sticky invisible
+  filters that make sessions "disappear").
+- [ ] **Row affordances at scale.** With hundreds of rows: show relative age
+  ("2h", "3d") right-aligned, dim sessions older than the cutoff, and keep
+  delete/export working on the filtered view (operate on the row's ID, never
+  the visual index — the Tier 8 lesson: every listing surface must agree).
+
 ## Debt / bugs
 - [x] **Untitled daemon sessions still appear.** FIXED: (1) `Host.Restore` now
   calls `maybeTitle` per restored session, so sessions whose title never landed
