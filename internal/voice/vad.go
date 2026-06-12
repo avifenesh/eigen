@@ -164,6 +164,78 @@ func recordVAD(ctx context.Context, argv []string, p vadParams) ([]byte, error) 
 	}
 }
 
+// monitorInterrupt watches the mic WHILE the assistant's reply is being
+// spoken: sustained voice above a HIGHER threshold (so the speaker playback
+// itself doesn't trigger) means the user wants to interrupt. Ported from the
+// codex conversation-mode makeMonitor: ~180ms grace after start (speaker
+// onset transients), then ~420ms of sustained voice. Timing is FRAME-based
+// (each frame is 30ms of audio) so behavior is identical for live mics and
+// recorded test input. Returns true when speech was detected, false when ctx
+// was canceled or the recorder ended.
+func monitorInterrupt(ctx context.Context, argv []string) bool {
+	threshold := envFloat("EIGEN_VOICE_INTERRUPT_THRESHOLD", 0.035)
+	const frameMs = 30
+	graceFrames := 180 / frameMs
+	needFrames := 420 / frameMs
+
+	rctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	cmd := exec.CommandContext(rctx, argv[0], argv[1:]...)
+	cmd.Stderr = nil
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return false
+	}
+	if err := cmd.Start(); err != nil {
+		return false
+	}
+	defer func() {
+		cancel()
+		cmd.Wait()
+	}()
+
+	const frameBytes = 16000 * 2 * frameMs / 1000
+	frames := make(chan []byte, 4)
+	go func() {
+		for {
+			buf := make([]byte, frameBytes)
+			if _, err := io.ReadFull(out, buf); err != nil {
+				close(frames)
+				return
+			}
+			select {
+			case frames <- buf:
+			case <-rctx.Done():
+				return
+			}
+		}
+	}()
+
+	seen, voiced := 0, 0
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case frame, ok := <-frames:
+			if !ok {
+				return false // recorder gone
+			}
+			seen++
+			if seen <= graceFrames {
+				continue
+			}
+			if rmsLevel(frame) > threshold {
+				voiced++
+				if voiced >= needFrames {
+					return true
+				}
+			} else {
+				voiced = 0
+			}
+		}
+	}
+}
+
 // rmsLevel computes the normalized RMS (0..1) of S16_LE PCM.
 func rmsLevel(pcm []byte) float64 {
 	n := len(pcm) / 2

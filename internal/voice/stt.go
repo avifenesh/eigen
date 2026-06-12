@@ -49,6 +49,15 @@ func (s *whisperSTT) Available() bool {
 	return rec && s.whisperBin != "" && have(s.whisperBin) && s.model != ""
 }
 
+// MonitorInterrupt implements InterruptMonitor when the streaming recorder is
+// available (the VAD path); the legacy fixed-window recorder can't monitor.
+func (s *whisperSTT) MonitorInterrupt(ctx context.Context) bool {
+	if len(s.streamArgv) == 0 {
+		return false
+	}
+	return monitorInterrupt(ctx, s.streamArgv)
+}
+
 // Listen records (VAD-endpointed when streaming; fixed window for a custom
 // recordCmd) then transcribes. ctx cancel stops the recording and transcribes
 // what was captured.

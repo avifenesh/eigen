@@ -45,3 +45,34 @@ func TestRecordVADCancelStops(t *testing.T) {
 		t.Fatal("recordVAD did not stop on cancel")
 	}
 }
+
+func TestMonitorInterruptDetectsSpeech(t *testing.T) {
+	// /dev/urandom ≈ loud audio (uniform S16 RMS ~0.58 ≫ 0.035 threshold):
+	// after the grace + sustain windows the monitor must report speech.
+	done := make(chan bool, 1)
+	go func() { done <- monitorInterrupt(context.Background(), []string{"cat", "/dev/urandom"}) }()
+	select {
+	case got := <-done:
+		if !got {
+			t.Fatal("sustained loud input should report an interrupt")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("monitor hung on loud input")
+	}
+}
+
+func TestMonitorInterruptSilenceCancels(t *testing.T) {
+	// Endless silence: only the ctx ends the monitor, and it reports false.
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	done := make(chan bool, 1)
+	go func() { done <- monitorInterrupt(ctx, []string{"cat", "/dev/zero"}) }()
+	select {
+	case got := <-done:
+		if got {
+			t.Fatal("silence must not report an interrupt")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("monitor did not stop on ctx cancel")
+	}
+}

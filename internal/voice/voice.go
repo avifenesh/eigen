@@ -26,6 +26,14 @@ type TTS interface {
 	Available() bool
 }
 
+// InterruptMonitor is an optional STT capability: watch the mic for sustained
+// speech (a HIGHER bar than normal listening) while the assistant's reply is
+// being spoken, so the user talking over it interrupts. Returns true when
+// speech was detected; false when ctx ends first.
+type InterruptMonitor interface {
+	MonitorInterrupt(ctx context.Context) bool
+}
+
 // firstField returns the first whitespace-separated token of s (a command may
 // be configured as "cmd arg1 arg2").
 func firstField(s string) string {

@@ -20,6 +20,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/avifenesh/eigen/internal/voice"
 )
 
 // voiceSpokenMsg carries a transcribed utterance back to the UI loop.
@@ -199,10 +201,26 @@ func (m *model) voiceTurnDone(err error) tea.Cmd {
 	m.voiceMic = voiceSpeaking
 	gen := m.voiceGen
 	tts := m.tts
-	return func() tea.Msg {
+	speak := func() tea.Msg {
 		_ = tts.Speak(ctx, ans)
 		return voiceSpeechDoneMsg{gen: gen}
 	}
+	// Interrupt-on-speech (the codex conversation-mode monitor): while the
+	// reply plays, watch the mic with a HIGHER threshold; the user talking
+	// over it cuts the speech. The monitor shares the speech ctx, so it dies
+	// with the speech (done, skipped, or mode exit) — and cancel() makes
+	// Speak return, which delivers the SAME voiceSpeechDoneMsg that starts
+	// the next listen. No extra message type needed.
+	if mon, ok := m.stt.(voice.InterruptMonitor); ok {
+		monitor := func() tea.Msg {
+			if mon.MonitorInterrupt(ctx) {
+				cancel() // cut the speech; its speechDoneMsg relistens
+			}
+			return nil
+		}
+		return tea.Batch(speak, monitor)
+	}
+	return speak
 }
 
 // speakLastAnswer speaks the most recent assistant answer once (the read-aloud

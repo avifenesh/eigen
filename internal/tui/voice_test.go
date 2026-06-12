@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -184,31 +185,40 @@ func TestVoiceModeSpeaksAndRelistens(t *testing.T) {
 }
 
 // drainForMsg runs a (possibly batched) command tree until a message of type T
-// surfaces, failing the test if none does.
+// surfaces, failing the test if none does. Batched commands run CONCURRENTLY,
+// matching bubbletea's runtime semantics — a batch may pair a blocking command
+// with the one that unblocks it (speak + interrupt monitor).
 func drainForMsg[T tea.Msg](t *testing.T, cmd tea.Cmd) T {
 	t.Helper()
-	var queue []tea.Cmd
-	if cmd != nil {
-		queue = append(queue, cmd)
-	}
-	for i := 0; i < 50 && len(queue) > 0; i++ {
-		c := queue[0]
-		queue = queue[1:]
-		msg := c()
-		if got, ok := msg.(T); ok {
-			return got
+	msgs := make(chan tea.Msg, 32)
+	var run func(c tea.Cmd)
+	run = func(c tea.Cmd) {
+		if c == nil {
+			return
 		}
+		msg := c()
 		if batch, ok := msg.(tea.BatchMsg); ok {
 			for _, bc := range batch {
-				if bc != nil {
-					queue = append(queue, bc)
-				}
+				go run(bc)
 			}
+			return
+		}
+		msgs <- msg
+	}
+	go run(cmd)
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case msg := <-msgs:
+			if got, ok := msg.(T); ok {
+				return got
+			}
+		case <-deadline:
+			var zero T
+			t.Fatalf("no %T surfaced from the command tree", zero)
+			return zero
 		}
 	}
-	var zero T
-	t.Fatalf("no %T surfaced from the command tree", zero)
-	return zero
 }
 
 func TestVoiceModeExitDiscardsStaleRecording(t *testing.T) {
@@ -336,5 +346,56 @@ func TestVoiceClickWhileSpeakingSkipsToListening(t *testing.T) {
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if m.voiceOn {
 		t.Fatal("esc should exit voice mode")
+	}
+}
+
+// monSTT is a fakeSTT that also implements voice.InterruptMonitor: it reports
+// "the user spoke over the reply" immediately.
+type monSTT struct {
+	fakeSTT
+	fired chan struct{}
+}
+
+func (f *monSTT) MonitorInterrupt(ctx context.Context) bool {
+	defer close(f.fired)
+	return true
+}
+
+// blockingTTS speaks until its context is canceled (a long reply mid-read).
+type blockingTTS struct{}
+
+func (blockingTTS) Available() bool { return true }
+func (blockingTTS) Speak(ctx context.Context, _ string) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestVoiceInterruptOnSpeechCutsReplyAndRelistens(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	stt := &monSTT{fired: make(chan struct{})}
+	m.stt = stt
+	m.tts = blockingTTS{}
+	m.voiceOn = true
+	m.state = stInput
+	m.text("assistant", "a very long answer being read aloud")
+	_, cmd := m.Update(turnDoneMsg{})
+	if m.voiceMic != voiceSpeaking {
+		t.Fatalf("reply should be speaking, mic=%v", m.voiceMic)
+	}
+	// The batch holds [speak, monitor]; the monitor fires → cancel → the
+	// blocked Speak returns → voiceSpeechDoneMsg surfaces from the SAME tree.
+	done := drainForMsg[voiceSpeechDoneMsg](t, cmd)
+	select {
+	case <-stt.fired:
+	default:
+		t.Fatal("interrupt monitor should have run")
+	}
+	m.Update(done)
+	if m.voiceMic != voiceListening {
+		t.Fatalf("after the interrupt the mic should listen, mic=%v", m.voiceMic)
+	}
+	if !m.voiceOn {
+		t.Fatal("interrupt must not exit voice mode")
 	}
 }
