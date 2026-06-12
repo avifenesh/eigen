@@ -164,6 +164,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 	case livePollMsg:
 		m.data.refreshLive()
 		return m, livePoll()
@@ -283,6 +285,49 @@ func jumpKey(key string, _ Page) (Page, bool) {
 		}
 	}
 	return 0, false
+}
+
+// handleMouse routes a mouse event through the shell hit map. Wave 2 handles
+// global chrome (rail pages, live entries); content/inspector clicks delegate
+// to the active page (page-local row hits land in Wave 3). Wheel is routed by
+// region. Only left-button press and wheel are acted on; motion is ignored.
+func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// While the palette is open, ignore stray clicks (it's a modal overlay).
+	if m.palette.open {
+		return m, nil
+	}
+	h := m.hitTest(msg.X, msg.Y)
+	// Wheel: scroll the page list when over the content, ignored elsewhere.
+	if tea.MouseEvent(msg).IsWheel() {
+		if h.region == hitContent {
+			return m.contentWheel(msg)
+		}
+		return m, nil
+	}
+	if msg.Button != tea.MouseButtonLeft || msg.Action != tea.MouseActionPress {
+		return m, nil
+	}
+	switch h.region {
+	case hitRail:
+		m.active = h.page
+		return m, nil
+	case hitRailLive:
+		// Click a live session in the rail → attach a view to it.
+		m.result = Result{Action: ActionAttach, SessionID: h.liveID}
+		m.quitting = true
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+// contentWheel translates a wheel event over the content panel into list
+// movement on the active page (so scrolling the content scrolls its list).
+func (m *Model) contentWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	key := "j"
+	if msg.Button == tea.MouseButtonWheelUp {
+		key = "k"
+	}
+	return m.updatePage(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 }
 
 func (m *Model) updatePage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -571,7 +616,7 @@ func (m *Model) helpLine() string {
 // Run opens the app shell and returns the exit intent.
 func Run(data *Data) (Result, error) {
 	m := New(data)
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	final, err := p.Run()
 	if err != nil {
 		return Result{Action: ActionQuit}, err

@@ -15,6 +15,10 @@ type rect struct{ x, y, w, h int }
 
 func (r rect) empty() bool { return r.w <= 0 || r.h <= 0 }
 
+func (r rect) contains(x, y int) bool {
+	return r.w > 0 && r.h > 0 && x >= r.x && x < r.x+r.w && y >= r.y && y < r.y+r.h
+}
+
 // breakpoint classifies the terminal width so the shell can adapt density.
 type breakpoint int
 
@@ -27,9 +31,9 @@ const (
 // Layout constants. Widths are OUTER (including borders); inner width is
 // derived via the frame size so border math is never hardcoded as "minus 2".
 const (
-	railWidthNormal = 18 // outer rail width at the normal breakpoint
-	railWidthWide   = 22 // a touch wider when there's room
-	inspectorWidth  = 34 // right inspector panel (wide breakpoint)
+	railWidthNormal = 18  // outer rail width at the normal breakpoint
+	railWidthWide   = 22  // a touch wider when there's room
+	inspectorWidth  = 34  // right inspector panel (wide breakpoint)
 	bpWideMin       = 130 // ≥ this many cols → show the right inspector
 	bpNarrowMax     = 72  // ≤ this many cols → compact (rail loses its border)
 )
