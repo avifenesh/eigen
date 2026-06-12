@@ -796,12 +796,15 @@ only `for-tests-*` fixtures) so `/voice` reports unavailable.
   threshold, submit after ~1.8s of trailing quiet, a softer
   possible-speech threshold extends the tail. Tunables via config like the
   codex version's localStorage knobs (silence-ms, vad-threshold).
-- [ ] **Interrupt-on-speech.** While the reply is being spoken (or the turn
-  is still running), keep a mic monitor with a HIGHER threshold + grace
-  period (patch.js `makeMonitor`: ~420ms sustained voice, 180ms grace);
-  on detection: stop TTS, interrupt the eigen turn (esc semantics), go back
-  to listening. Epoch-guard everything — eigen already has the gen-guard
-  pattern (term/tasks ticks) for stale-timer safety.
+- [x] **Interrupt-on-speech.** While the reply is being spoken, a mic
+  monitor with a HIGHER threshold + grace period (ported patch.js
+  `makeMonitor`: 420ms sustained voice above 0.035 RMS, 180ms grace) cuts
+  the TTS and returns to listening — `monitorInterrupt` in
+  internal/voice/vad.go, batched [speak, monitor] on one ctx in
+  voiceTurnDone, epoch-guarded. Frame-based timing so tests pipe audio.
+  Mid-TURN interrupt (speech while the model is still working) not built —
+  the mic would hear keyboard/fan noise during long turns; revisit if the
+  speak-leg interrupt proves trustworthy in daily use.
 - [ ] **TTS quality: Kokoro, reuse don't rewrite.** The user's stack already
   has `kokoro_stdin.py` (Kokoro ONNX → aplay, reads stdin — exactly eigen's
   cmdTTS contract) and the readd daemon (espeak-ng/piper). Default tts_cmd
