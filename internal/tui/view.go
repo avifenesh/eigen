@@ -10,6 +10,7 @@ import (
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/chat"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func (m *model) renderEvent(e agent.Event) {
@@ -150,8 +151,13 @@ func (m *model) View() string {
 	case m.state == stRunning:
 		// Status/spinner on its own line, with the input below so the user can
 		// type a message to queue (enter) or interrupt (esc) while it runs.
+		// Truncated to the width — a too-long line wraps and breaks the layout.
 		hint := dim("   enter queue · esc interrupt · alt+↑/↓ select · tab expand")
-		bottom = m.sp.View() + " " + m.status + dim(m.liveTokRate()) + m.queuedHint() + hint + "\n" + m.ti.View()
+		run := m.sp.View() + " " + m.status + dim(m.liveTokRate()) + m.queuedHint() + hint
+		if m.width > 0 {
+			run = ansi.Truncate(run, m.width, "")
+		}
+		bottom = run + "\n" + m.ti.View()
 	default:
 		bottom = m.compMenuView() + m.ti.View()
 	}

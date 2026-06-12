@@ -16,10 +16,20 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// headerHeight is the rows the bordered header occupies. It is a real chrome
-// frame now (top border, content row, bottom border), so computeLayout/topHeight
-// shift the transcript down by 3 rows.
-func (m *model) headerHeight() int { return 3 }
+// headerHeight is the rows the bordered header occupies: a real chrome frame
+// (top border, content row, bottom border). On very short terminals the
+// border is dropped (1 content row) so the chrome never starves the
+// transcript+input of rows.
+func (m *model) headerHeight() int {
+	if m.height < headerBorderMinRows {
+		return 1
+	}
+	return 3
+}
+
+// headerBorderMinRows is the terminal height below which the header drops its
+// border frame and renders as a single line.
+const headerBorderMinRows = 14
 
 // headerButton is one right-aligned action affordance with its action id and
 // the plain label drawn (in brackets).
@@ -73,15 +83,38 @@ func (m *model) sessionDir() string {
 	return ""
 }
 
+// visibleHeaderButtons is the subset of header buttons that fits the content
+// width: buttons drop from the right when the terminal is too narrow (a
+// truncated button row would be an unclickable lie). Render and hit-test both
+// use this, so geometry can't drift.
+func (m *model) visibleHeaderButtons(innerW int) []headerButton {
+	btns := m.headerButtons()
+	for len(btns) > 0 {
+		w := 0
+		for i, b := range btns {
+			if i > 0 {
+				w++ // separating space
+			}
+			w += len(b.label) + 2 // [label]
+		}
+		if w <= innerW-2 { // leave a couple of columns for the title
+			return btns
+		}
+		btns = btns[:len(btns)-1]
+	}
+	return nil
+}
+
 // headerButtonsText builds the right-aligned "[home] [sessions] …" string and
 // the plain column where it begins (for hit-testing), given the total width.
 func (m *model) headerButtonsText(w int) (plain string, startCol int) {
-	// Buttons live on the header CONTENT row inside the left/right borders.
-	if w >= 2 {
+	// Buttons live on the header CONTENT row inside the left/right borders
+	// (when bordered).
+	if m.headerHeight() == 3 && w >= 2 {
 		w -= 2
 	}
 	var parts []string
-	for _, b := range m.headerButtons() {
+	for _, b := range m.visibleHeaderButtons(w) {
 		parts = append(parts, "["+b.label+"]")
 	}
 	plain = strings.Join(parts, " ")
@@ -92,23 +125,32 @@ func (m *model) headerButtonsText(w int) (plain string, startCol int) {
 	return plain, startCol
 }
 
-// headerView renders the header line: title · breadcrumb on the left, action
-// buttons right-aligned, padded to the width.
+// headerView renders the header: title · breadcrumb on the left, action
+// buttons right-aligned, padded to the width. Bordered (3 rows) normally;
+// a single line on very short terminals.
 func (m *model) headerView() string {
 	w := m.width
 	if w <= 0 {
 		return ""
 	}
-	innerW := w - 2
+	bordered := m.headerHeight() == 3
+	innerW := w
+	if bordered {
+		innerW = w - 2
+	}
 	if innerW < 0 {
 		innerW = 0
 	}
-	btnPlain, btnStart := m.headerButtonsText(w)
+	_, btnStart := m.headerButtonsText(w)
+	btns := m.visibleHeaderButtons(innerW)
 	// Left side: title + dim breadcrumb, truncated so it never collides with
 	// the right-aligned buttons.
 	title := m.headerTitle()
 	crumb := m.headerBreadcrumb()
 	leftMax := btnStart - 1
+	if len(btns) == 0 {
+		leftMax = innerW
+	}
 	if leftMax < 0 {
 		leftMax = 0
 	}
@@ -122,7 +164,7 @@ func (m *model) headerView() string {
 	}
 	// Styled buttons: enabled ones in the accent palette, disabled ones dim.
 	var rb strings.Builder
-	for i, b := range m.headerButtons() {
+	for i, b := range btns {
 		if i > 0 {
 			rb.WriteString(" ")
 		}
@@ -133,16 +175,22 @@ func (m *model) headerView() string {
 			rb.WriteString(styleAccent.Render(lbl))
 		}
 	}
-	// Pad the gap between the left text and the right buttons.
-	gap := btnStart - used
-	if gap < 1 {
-		gap = 1
+	content := left
+	if len(btns) > 0 {
+		gap := btnStart - used
+		if gap < 1 {
+			gap = 1
+		}
+		content += strings.Repeat(" ", gap) + rb.String()
 	}
-	_ = btnPlain
-	content := left + strings.Repeat(" ", gap) + rb.String()
 	contentW := ansi.StringWidth(ansi.Strip(content))
 	if contentW < innerW {
 		content += strings.Repeat(" ", innerW-contentW)
+	} else if contentW > innerW {
+		content = ansi.Truncate(content, innerW, "")
+	}
+	if !bordered {
+		return content
 	}
 	top := styleAccent.Render("╭" + strings.Repeat("─", innerW) + "╮")
 	mid := styleAccent.Render("│") + content + styleAccent.Render("│")
@@ -153,21 +201,27 @@ func (m *model) headerView() string {
 // headerActionAt resolves a click within the header rect (local coords) to an
 // action: the title region opens rename, a right-aligned button its action.
 func (m *model) headerActionAt(localX, localY int) actionID {
-	// Only the content row is interactive; top/bottom borders are no-op.
-	if localY != 1 {
+	bordered := m.headerHeight() == 3
+	innerW := m.width
+	if bordered {
+		// Only the content row is interactive; top/bottom borders are no-op.
+		if localY != 1 {
+			return actNone
+		}
+		// localX includes the left border; shift to content-local columns.
+		localX--
+		innerW = m.width - 2
+	} else if localY != 0 {
 		return actNone
 	}
-	// localX includes the left border; shift to content-local columns.
-	localX--
-	if localX < 0 || localX >= m.width-2 {
+	if localX < 0 || localX >= innerW {
 		return actNone
 	}
-	w := m.width
-	btnPlain, btnStart := m.headerButtonsText(w)
+	btnPlain, btnStart := m.headerButtonsText(m.width)
 	// Inside the buttons span: find which button by walking the labels.
 	if localX >= btnStart && localX < btnStart+ansi.StringWidth(btnPlain) {
 		col := btnStart
-		for _, b := range m.headerButtons() {
+		for _, b := range m.visibleHeaderButtons(innerW) {
 			lbl := "[" + b.label + "]"
 			lw := ansi.StringWidth(lbl)
 			if localX >= col && localX < col+lw {
