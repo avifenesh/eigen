@@ -573,6 +573,41 @@ shipped it — creack/pty + a VT emulator, the standard recipe; we don't reinven
 solved problems) running in the per-window VIEW process so it's torn down on
 window close.
 
+
+
+## Tier 12 — subagent observability
+Goal: make delegated work visible, not just a final `task_status` result. The
+orchestrator should be able to see *what subagents are doing now* and recover
+context without guessing.
+
+- [ ] **Subagent activity surface.** A live `agents`/`tasks` pane (or right-panel
+  tab) showing active foreground/background task-tool runs: id, routed/override
+  model, kind/difficulty, status (queued/running/done/error), current tool,
+  last note/output excerpt, elapsed time, token use, and parent session.
+- [ ] **Streaming child events.** Subtasks currently suppress most child events
+  except the route note/result; add a sanitized event bridge so parent TUI can
+  tail child progress without dumping the whole child transcript into the main
+  chat. Background tasks should append the same progress to `~/.eigen/tasks`.
+- [ ] **Controls.** Open child transcript, collect result, cancel/kill, promote a
+  child into a full session, retry/escalate failed/stalled work on a larger
+  model. All controls must go through the action registry + command palette.
+- [ ] **Notifications.** Parent session gets concise state-change notes (started,
+  waiting on approval, tool error, done) with a clickable/task_status handle; no
+  spam for every token.
+- [ ] **Persistence/restart.** Background tasks survive daemon/view restart well
+  enough to inspect/collect; stale running tasks are marked `lost` with the last
+  known transcript snapshot.
+
+## Debt / bugs
+- [ ] **Untitled daemon sessions still appear.** Several persisted daemon meta files
+  have empty `title` even when the transcript has a user message (`s4/s5/s7/s9`
+  observed). Likely title generation only runs on the agent Persist hook for
+  newly appended messages, so restored/imported/command-only/failed-title
+  sessions can remain nameless forever. Fix direction: daemon/app listing should
+  backfill titles for untitled sessions from transcript head (cheap heuristic
+  immediately; async small-model title when available), persist the meta, and
+  expose title-failure logs/status so this is diagnosable.
+
 ## Notes / grounding
 - read-aloud tool the user has: `readd` (espeak-ng/piper) at `~/projects/tfqol/readd`.
 - skills format = Claude Code SKILL.md (YAML frontmatter `name`,`description`[,`allowed-tools`] + markdown body).
