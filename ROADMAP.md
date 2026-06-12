@@ -371,8 +371,11 @@ the transcript would drop below 40 cols). /changes toggles. Live-verified
       model + anchors + scrolling + width behavior are solid.
 
 **Wave 5 — and more (captured; build after the foundation proves out).**
-- [ ] command palette (fuzzy, ctrl+k) over the action registry — pull EARLY-ish:
-      it solves keyboard parity + the tmux/alt-key problem in one surface.
+- [x] command palette (fuzzy, ctrl+k) over the action registry — SHIPPED
+      (67dcf5f, internal/tui/palette.go): launches every registry action
+      (validated via dispatch) + chrome toggles + common slash commands; fuzzy
+      filter (substring > subsequence), arg-slash entries prefill the input,
+      disabled actions dim. Live-verified (ctrl+k → 'config' → config panel).
 - [ ] notifications/approvals tray; resizable + persisted panel layout;
       multi-pane (two transcripts side by side); per-region wheel routing.
 
