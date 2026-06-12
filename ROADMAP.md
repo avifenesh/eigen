@@ -563,6 +563,50 @@ astronautics):**
   effort/search/route/perm; consistent close/reopen controls; palette entries
   for every new surface.
 
+## Tier 11.5 — chrome consolidation: no top header, left command sidebar
+User proposal: the current top header duplicates controls and consumes vertical
+space. Move chrome into a consistent left-side command/sidebar surface and keep
+the transcript/input cleaner.
+
+Target layout:
+- **No separate top header** in the normal chat view. The transcript starts at
+  the top of the content area (or under only transient overlays/todos when
+  expanded).
+- **Top-left opener / command rail** owns navigation and metadata:
+  - session title (rename affordance)
+  - cwd / project breadcrumb
+  - dropdown sections for: todo list, sessions, config/settings, maybe tools
+    and subagents
+  - left-sidebar open/close state and project/session list (current rail folded
+    into this instead of a separate top header + rail)
+- **Status line moves up** into the left sidebar/top-left chrome: model,
+  provider, perm, effort, search, route, token budget, current turn tok/s.
+  These become in-place setters/dropdowns from the same action registry.
+- **Right-sidebar opener** is part of the same chrome language (not hidden in a
+  slash command): visible toggle for changes/git/term/subagents panel.
+- **Cleaner input area:** input stays focused on composition only; fewer global
+  hints/status fragments below it. Hints should be contextual and brief.
+- **Consistent dropdown model:** todo dropdown, sessions dropdown, config
+  dropdown share one overlay/list component and keyboard/mouse behavior.
+
+Implementation waves:
+1. **Layout experiment behind a toggle** (`/chrome` or config flag): render a
+   compact left command sidebar while keeping current header path available.
+   Do this with computeLayout rectangles first; never special-case coordinates.
+2. **Move header actions into sidebar:** home/sessions/+new/config, title click,
+   cwd, left/right panel toggles. Preserve keyboard shortcuts and palette.
+3. **Status relocation:** move model/perm/effort/search/route/context from the
+   bottom status bar into sidebar rows with click/popover setters. Bottom bar
+   shrinks to turn-specific ephemeral info only (or disappears when idle).
+4. **Dropdown unification:** implement shared dropdown component for todos,
+   sessions, config/settings, and later subagents. No separate one-off pickers.
+5. **Remove old header path** after size-sweep + live verification proves the
+   sidebar chrome at narrow/short sizes.
+
+Constraints: geometry-owned-first; one action registry; every mouse surface has
+keyboard/palette parity; sidebars must degrade gracefully under 80 cols; size
+sweep must include headerless+sidebar mode before defaulting it.
+
 **Constraints (unchanged):** geometry-owned-first (computeLayout rects, render
 + hit-test share them), one action layer (no click bypasses a key's gate),
 mouse additive + full keyboard parity, restrained design, degrade on narrow
