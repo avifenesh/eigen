@@ -262,6 +262,10 @@ type model struct {
 	// compact, rename). Inactive when ov.active is false.
 	ov overlay
 
+	// pal is the fuzzy command palette (ctrl+k) over the action registry +
+	// chrome toggles + common slash commands. Inactive when pal.active false.
+	pal palette
+
 	// Left session rail (Tier 9 Wave 3): railOn toggles the persistent column
 	// of daemon sibling sessions down the left of the transcript; railEntries
 	// is the last polled snapshot. Only shown for daemon-hosted backends on a
@@ -639,6 +643,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			m.modelPicking = false
 			m.conf = confPanel{}
 			m.ov = overlay{}
+			m.pal = palette{}
 			m.state = stInput
 			m.push(&block{kind: blockNote, isErr: true, body: sb(fmt.Sprintf("internal error (recovered): %v", r))})
 			m.ti.Focus()
@@ -669,6 +674,12 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		// Lightweight overlay (confirm / rename prompt) captures keys first.
 		if m.ov.active {
 			if cmd, handled := m.overlayKey(msg.String()); handled {
+				return m, cmd
+			}
+		}
+		// Command palette captures keys while open.
+		if m.pal.active {
+			if cmd, handled := m.paletteKey(msg.String()); handled {
 				return m, cmd
 			}
 		}
@@ -842,6 +853,10 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			// In-window session switcher: hop this window to another daemon
 			// session (or home to the app) without touching running turns.
 			m.openSwitcher()
+			return m, nil
+		case "ctrl+k":
+			// Command palette: fuzzy launcher over every action + chrome toggle.
+			m.openPalette()
 			return m, nil
 		case "ctrl+v", "alt+v":
 			// Explicit image paste: grab an image from the clipboard and stage

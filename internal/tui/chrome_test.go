@@ -616,3 +616,99 @@ func TestFilesInPatch(t *testing.T) {
 		t.Fatalf("y.go expected, got %+v", files[1])
 	}
 }
+
+// --- Wave 5: command palette ------------------------------------------------
+
+func TestPaletteOpensWithCtrlK(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlK})
+	if !m.pal.active {
+		t.Fatal("ctrl+k should open the palette")
+	}
+	if len(m.pal.matches) != len(m.paletteCatalog()) {
+		t.Fatalf("empty query should show all entries, got %d", len(m.pal.matches))
+	}
+	if !strings.Contains(m.View(), "command") {
+		t.Fatal("palette view should render")
+	}
+}
+
+func TestPaletteFuzzyFilters(t *testing.T) {
+	m := testModel(t)
+	m.openPalette()
+	for _, r := range "rename" {
+		m.paletteKey(string(r))
+	}
+	if len(m.pal.matches) == 0 {
+		t.Fatal("'rename' should match at least one entry")
+	}
+	if !strings.Contains(strings.ToLower(m.pal.matches[0].label), "rename") {
+		t.Fatalf("top match for 'rename' should be the rename entry, got %q", m.pal.matches[0].label)
+	}
+}
+
+func TestPaletteSubsequenceMatch(t *testing.T) {
+	if fuzzyScore("config panel", "cfg") < 0 {
+		t.Fatal("cfg should subsequence-match 'config panel'")
+	}
+	sub := fuzzyScore("config panel", "config")
+	seq := fuzzyScore("config panel", "cfg")
+	if !(sub < seq) {
+		t.Fatalf("substring (%d) should rank better than subsequence (%d)", sub, seq)
+	}
+	if fuzzyScore("config", "xyz") >= 0 {
+		t.Fatal("non-matching query should score -1")
+	}
+}
+
+func TestPaletteEnterRunsAction(t *testing.T) {
+	m := testModel(t)
+	m.openPalette()
+	for _, r := range "rename" {
+		m.paletteKey(string(r))
+	}
+	m.paletteKey("enter")
+	if m.pal.active {
+		t.Fatal("enter should close the palette")
+	}
+	if !m.ov.active || m.ov.kind != promptText {
+		t.Fatal("running 'rename session' should open the rename prompt")
+	}
+}
+
+func TestPaletteEnterPrefillsArgSlash(t *testing.T) {
+	m := testModel(t)
+	m.openPalette()
+	for _, r := range "find in" {
+		m.paletteKey(string(r))
+	}
+	if len(m.pal.matches) == 0 {
+		t.Fatal("expected a match for 'find in'")
+	}
+	m.paletteKey("enter")
+	if m.ti.Value() != "/find " {
+		t.Fatalf("an arg-taking slash entry should prefill the input, got %q", m.ti.Value())
+	}
+}
+
+func TestPaletteEscCancels(t *testing.T) {
+	m := testModel(t)
+	m.openPalette()
+	m.paletteKey("esc")
+	if m.pal.active {
+		t.Fatal("esc should close the palette")
+	}
+}
+
+func TestPaletteNavigation(t *testing.T) {
+	m := testModel(t)
+	m.openPalette()
+	m.paletteKey("down")
+	if m.pal.idx != 1 {
+		t.Fatalf("down should move to idx 1, got %d", m.pal.idx)
+	}
+	m.paletteKey("up")
+	if m.pal.idx != 0 {
+		t.Fatalf("up should move back to 0, got %d", m.pal.idx)
+	}
+}

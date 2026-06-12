@@ -140,6 +140,9 @@ func (m *model) View() string {
 	if m.conf.active {
 		return m.configPanelView()
 	}
+	if m.pal.active {
+		return m.paletteView()
+	}
 	var bottom string
 	switch {
 	case m.pending != nil:
