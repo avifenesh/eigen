@@ -39,13 +39,29 @@ type headerButton struct {
 }
 
 // headerButtons are the right-aligned actions, in draw order (left to right).
+// The trailing ◧/◨ are the side-panel layout toggles (lit = shown), the
+// usual "side panel" affordance — one click opens or closes.
 func (m *model) headerButtons() []headerButton {
 	return []headerButton{
 		{actHome, "home"},
 		{actSwitcher, "sessions"},
 		{actNewSession, "+new"},
 		{actConfigPanel, "config"},
+		{actRailToggle, "◧"},
+		{actChangesToggle, "◨"},
 	}
+}
+
+// headerToggleOn reports whether a header button is a panel toggle whose panel
+// is currently SHOWN (rendered lit instead of action-colored).
+func (m *model) headerToggleOn(a actionID) (on, isToggle bool) {
+	switch a {
+	case actRailToggle:
+		return m.railOn && m.railVisible(), true
+	case actChangesToggle:
+		return m.changesOn && m.changesVisible(), true
+	}
+	return false, false
 }
 
 // headerTitle is the session's display name (or a calm placeholder), used as
@@ -95,7 +111,7 @@ func (m *model) visibleHeaderButtons(innerW int) []headerButton {
 			if i > 0 {
 				w++ // separating space
 			}
-			w += len(b.label) + 2 // [label]
+			w += ansi.StringWidth(b.label) + 2 // [label]
 		}
 		if w <= innerW-2 { // leave a couple of columns for the title
 			return btns
@@ -163,12 +179,22 @@ func (m *model) headerView() string {
 		used += ansi.StringWidth(seg)
 	}
 	// Styled buttons: enabled ones in the accent palette, disabled ones dim.
+	// Panel toggles show their state: lit (accent) when the panel is shown,
+	// dim when hidden — so the header always says how to reopen a panel.
 	var rb strings.Builder
 	for i, b := range btns {
 		if i > 0 {
 			rb.WriteString(" ")
 		}
 		lbl := "[" + b.label + "]"
+		if on, isToggle := m.headerToggleOn(b.action); isToggle {
+			if on {
+				rb.WriteString(styleAccent.Render(lbl))
+			} else {
+				rb.WriteString(dim(lbl))
+			}
+			continue
+		}
 		if a, ok := actionRegistry[b.action]; ok && a.enabled != nil && !a.enabled(m) {
 			rb.WriteString(dim(lbl))
 		} else {

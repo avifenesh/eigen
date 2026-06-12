@@ -13,11 +13,11 @@ func (m *model) toggleRail() {
 	m.relayout()
 	switch {
 	case !m.railOn:
-		m.note("session rail hidden  (/rail, palette, or header [sessions] to show)")
+		m.note("session rail hidden  (header [◧], /rail, or ctrl+b to show)")
 	case m.width < railMinTerminalWidth:
 		m.note("session rail on — but hidden on this narrow terminal (needs ≥80 cols)")
 	default:
-		m.note("session rail shown  ([x] or /rail to hide)")
+		m.note("session rail shown  ([x], [◧], or /rail to hide)")
 	}
 }
 
@@ -26,10 +26,10 @@ func (m *model) toggleChanges() {
 	m.relayout()
 	switch {
 	case !m.changesOn:
-		m.note("right panel hidden  (/changes or palette to show)")
+		m.note("right panel hidden  (header [◨], /changes, or ctrl+g to show)")
 	case m.rightTab == rightTabChanges && len(m.lastRunChanges()) == 0:
 		m.note("right panel on — changes tab shows files edited in the last turn (none yet)")
 	default:
-		m.note("right panel shown  ([x] or /changes to hide)")
+		m.note("right panel shown  ([x], [◨], or /changes to hide)")
 	}
 }

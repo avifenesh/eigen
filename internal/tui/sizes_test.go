@@ -99,3 +99,61 @@ func TestHeaderButtonsDropWhenNarrow(t *testing.T) {
 		t.Fatal("wide header shows all buttons")
 	}
 }
+
+func TestHeaderPanelToggleButtons(t *testing.T) {
+	m := switcherModel(t) // daemon-hosted: rail available
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.refreshRail()
+	m.text("user", "edit")
+	m.push(editBlock("f.go", "a", "b"))
+	m.relayout()
+	v := m.headerView()
+	if !strings.Contains(v, "[◧]") || !strings.Contains(v, "[◨]") {
+		t.Fatalf("header should show the panel toggle buttons:\n%s", ansi.Strip(v))
+	}
+	// Click the rail toggle: panel closes; click again: reopens.
+	l := m.computeLayout()
+	clickButton := func(label string) {
+		t.Helper()
+		btnPlain, btnStart := m.headerButtonsText(m.width)
+		idx := strings.Index(btnPlain, label)
+		if idx < 0 {
+			t.Fatalf("button %q not in header %q", label, btnPlain)
+		}
+		col := ansi.StringWidth(btnPlain[:idx]) // display cols, not bytes
+		// +1 for the left border column on the bordered header.
+		m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: btnStart + col + 1 + 1, Y: l.header.y + 1})
+	}
+	clickButton("[◧]")
+	if m.railOn {
+		t.Fatal("clicking [◧] should close the rail")
+	}
+	clickButton("[◧]")
+	if !m.railOn {
+		t.Fatal("clicking [◧] again should reopen the rail")
+	}
+	clickButton("[◨]")
+	if m.changesOn {
+		t.Fatal("clicking [◨] should close the right panel")
+	}
+	clickButton("[◨]")
+	if !m.changesOn {
+		t.Fatal("clicking [◨] again should reopen the right panel")
+	}
+}
+
+func TestHeaderToggleStateStyling(t *testing.T) {
+	m := switcherModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.refreshRail()
+	if on, isT := m.headerToggleOn(actRailToggle); !isT || !on {
+		t.Fatal("rail toggle should read shown on a wide daemon chat")
+	}
+	m.railOn = false
+	if on, _ := m.headerToggleOn(actRailToggle); on {
+		t.Fatal("rail toggle should read hidden after closing")
+	}
+	if _, isT := m.headerToggleOn(actHome); isT {
+		t.Fatal("home is not a toggle")
+	}
+}
