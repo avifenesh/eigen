@@ -699,6 +699,20 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				return m, cmd
 			}
 		}
+		// A live recording owns esc: discard it (bump the epoch so the
+		// in-flight transcript is dropped as stale). The button (⏺/◉) is the
+		// "done talking" stop; esc is the "never mind".
+		if m.voiceMic != voiceIdle && msg.String() == "esc" {
+			m.voiceGen++ // anything in flight is now stale
+			m.stopListening("")
+			m.voiceMic = voiceIdle
+			if m.voiceOn {
+				m.exitVoiceMode("conversation mode off")
+			} else {
+				m.note("dictation cancelled")
+			}
+			return m, nil
+		}
 		if msg.String() == "ctrl+c" {
 			// Autosave already happens continuously via the agent's Persist hook;
 			// only save here when idle (no turn running) to avoid racing the

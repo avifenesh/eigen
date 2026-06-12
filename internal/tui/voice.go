@@ -42,9 +42,13 @@ const (
 )
 
 // dictateOnce records one utterance and submits it as a normal turn. The
-// reply stays text. No-op (with a hint) when STT is missing or while a turn
-// is running.
+// reply stays text. Clicking again WHILE listening stops the recording
+// (transcribing what was heard so far). No-op while a turn is running.
 func (m *model) dictateOnce() tea.Cmd {
+	if m.voiceMic == voiceListening {
+		m.stopListening("⏺ stopped — transcribing what was heard")
+		return nil
+	}
 	if m.state != stInput {
 		m.note("dictation: wait for the current turn to finish")
 		return nil
@@ -73,6 +77,22 @@ func (m *model) toggleVoice() tea.Cmd {
 		return m.startListening(true)
 	}
 	return nil // mid-turn: the turn-done path starts the listen loop
+}
+
+// stopListening cancels the in-flight recording. The VAD recorder returns
+// whatever speech it captured, so "stop" means "I'm done talking" — the
+// transcript still arrives via voiceSpokenMsg (same generation: NOT stale).
+func (m *model) stopListening(note string) {
+	if m.voiceStop != nil {
+		m.voiceStop()
+		m.voiceStop = nil
+	}
+	if m.voiceMic == voiceListening {
+		m.voiceMic = voiceTranscribing
+	}
+	if note != "" {
+		m.note(note)
+	}
 }
 
 // exitVoiceMode stops conversation mode: cancels listening/speech, bumps the

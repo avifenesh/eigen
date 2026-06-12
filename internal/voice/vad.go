@@ -58,33 +58,80 @@ func recordVAD(ctx context.Context, argv []string, p vadParams) ([]byte, error) 
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	defer cmd.Wait() // reap after cancel kills it
+	// Defers run LIFO: kill the recorder BEFORE reaping it, or Wait blocks
+	// until the recorder exits on its own (a sleeping/hung recorder = forever).
+	defer func() {
+		cancel()
+		cmd.Wait()
+	}()
 
 	const sampleRate = 16000
 	const frameMs = 30
 	frameBytes := sampleRate * 2 * frameMs / 1000 // S16_LE mono
 
+	// Frames arrive on a channel so the deadline checks below fire even when
+	// the recorder produces NOTHING (mic missing/busy, pulse suspended): a
+	// blocked io.ReadFull would otherwise hang the listen forever.
+	type frameMsg struct {
+		data []byte
+		err  error
+	}
+	frames := make(chan frameMsg, 4)
+	go func() {
+		for {
+			buf := make([]byte, frameBytes)
+			_, err := io.ReadFull(out, buf)
+			if err != nil {
+				select {
+				case frames <- frameMsg{err: err}:
+				case <-rctx.Done():
+				}
+				return
+			}
+			select {
+			case frames <- frameMsg{data: buf}:
+			case <-rctx.Done():
+				return
+			}
+		}
+	}()
+
 	var pcm []byte
-	frame := make([]byte, frameBytes)
 	start := time.Now()
 	var voicedSince, lastSpeech time.Time
 	sawSpeech := false
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
 
 	for {
-		if ctx.Err() != nil {
+		var fm frameMsg
+		select {
+		case <-ctx.Done():
 			// Caller canceled (stop button / mode exit): keep what we heard.
 			if sawSpeech {
 				return pcm, nil
 			}
 			return nil, ctx.Err()
+		case <-tick.C:
+			// Deadline heartbeat: fires even when no frames arrive.
+			now := time.Now()
+			if !sawSpeech && now.Sub(start) >= p.maxWait {
+				return nil, nil // nobody spoke (or no mic data at all)
+			}
+			if now.Sub(start) >= p.maxTotal {
+				return pcm, nil
+			}
+			continue
+		case fm = <-frames:
 		}
-		if _, err := io.ReadFull(out, frame); err != nil {
+		if fm.err != nil {
 			// Recorder died/EOF: return what was captured.
 			if sawSpeech {
 				return pcm, nil
 			}
 			return nil, nil
 		}
+		frame := fm.data
 		pcm = append(pcm, frame...)
 		now := time.Now()
 		level := rmsLevel(frame)

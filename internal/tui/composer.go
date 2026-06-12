@@ -20,10 +20,21 @@ type composerSeg struct {
 	action actionID
 }
 
-// composerParts assembles the bar's segments with live state.
+// composerParts assembles the bar's segments with live state. While a
+// dictation recording is live the ⏺ button BECOMES the stop control — the
+// label says so (nothing should ever look stuck on "listening" with no exit).
 func (m *model) composerParts() []composerSeg {
+	speak := composerSeg{text: "⏺ speak", action: actDictate}
+	if !m.voiceOn {
+		switch m.voiceMic {
+		case voiceListening:
+			speak = composerSeg{text: "⏺ stop · listening…", action: actDictate, lit: true}
+		case voiceTranscribing:
+			speak = composerSeg{text: "◌ transcribing…", action: actDictate, lit: true}
+		}
+	}
 	segs := []composerSeg{
-		{text: "⏺ speak", action: actDictate, lit: !m.voiceOn && m.voiceMic != voiceIdle},
+		speak,
 		{text: "▶ read", action: actSpeakAnswer},
 		{text: m.micGlyph(), action: actVoiceToggle, lit: m.voiceOn},
 	}

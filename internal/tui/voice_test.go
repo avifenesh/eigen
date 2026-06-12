@@ -225,3 +225,61 @@ func TestVoiceModeEmptyHearingRelistens(t *testing.T) {
 // (turn driving is owned by the submit tests; voice tests simulate turn ends
 // with m.text("assistant", …) + Update(turnDoneMsg{}) like the read-aloud
 // tests.)
+
+func TestDictateClickAgainStopsListening(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m.stt = &fakeSTT{texts: []string{"stopped speech"}}
+	m.tts = &fakeTTS{}
+	cmd := m.dictateOnce()
+	if cmd == nil || m.voiceMic != voiceListening {
+		t.Fatal("first click should start listening")
+	}
+	gen := m.voiceGen
+	// Second click: stop (NOT a new recording, NOT a no-op).
+	if c := m.dictateOnce(); c != nil {
+		t.Fatal("second click must stop, not start another recording")
+	}
+	if m.voiceMic != voiceTranscribing {
+		t.Fatalf("after stop the mic should be transcribing, got %v", m.voiceMic)
+	}
+	if m.voiceStop != nil {
+		t.Fatal("stop must cancel the recording context")
+	}
+	// The in-flight transcript is NOT stale (same gen): it still submits.
+	_, submit := m.handleSpoken(voiceSpokenMsg{text: "stopped speech", gen: gen})
+	if submit == nil {
+		t.Fatal("stop means 'done talking' — the transcript must still submit")
+	}
+}
+
+func TestEscDiscardsDictation(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m.stt = &fakeSTT{texts: []string{"never mind"}}
+	cmd := m.dictateOnce()
+	if cmd == nil {
+		t.Fatal("expected recording")
+	}
+	gen := m.voiceGen
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.voiceMic != voiceIdle {
+		t.Fatalf("esc should reset the mic, got %v", m.voiceMic)
+	}
+	// The in-flight transcript is stale (gen bumped): discarded.
+	_, submit := m.handleSpoken(voiceSpokenMsg{text: "never mind", gen: gen})
+	if submit != nil {
+		t.Fatal("esc means discard — the transcript must NOT submit")
+	}
+}
+
+func TestComposerShowsStopWhileListening(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m.stt = &fakeSTT{}
+	m.dictateOnce()
+	bar := ansi.Strip(m.composerBarView())
+	if !strings.Contains(bar, "stop") {
+		t.Fatalf("bar should show a stop affordance while listening: %q", bar)
+	}
+}

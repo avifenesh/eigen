@@ -88,11 +88,13 @@ func (s *whisperSTT) Listen(ctx context.Context) (string, error) {
 		}
 	}
 
-	// Transcribe.
+	// Transcribe. Deliberately DETACHED from the recording ctx: "stop" means
+	// the user is done talking — canceling the recording must not kill the
+	// transcription of what was captured.
 	out := path + ".txt"
 	defer os.Remove(out)
 	args := []string{"-m", s.model, "-f", path, "-otxt", "-of", strings.TrimSuffix(out, ".txt"), "-nt"}
-	tctx, tcancel := context.WithTimeout(ctx, 60*time.Second)
+	tctx, tcancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer tcancel()
 	wcmd := exec.CommandContext(tctx, s.whisperBin, args...)
 	if err := wcmd.Run(); err != nil {
