@@ -59,8 +59,10 @@ func (m *model) computeLayout() layout {
 	var l layout
 	w := m.width
 	top := m.topHeight()
-	// Plan panel occupies the top rows (height 0 when there are no todos).
-	l.plan = rect{x: 0, y: 0, w: w, h: top}
+	hh := m.headerHeight()
+	// Header occupies the first row(s); the plan panel follows it.
+	l.header = rect{x: 0, y: 0, w: w, h: hh}
+	l.plan = rect{x: 0, y: hh, w: w, h: top - hh}
 	// Transcript viewport.
 	l.transcript = rect{x: 0, y: top, w: w, h: m.vp.Height}
 	y := top + m.vp.Height
@@ -145,7 +147,3 @@ func (m *model) hitTest(x, y int) hit {
 	}
 	return hit{region: regNone}
 }
-
-// headerActionAt resolves a click within the header rect to an action (Wave 2).
-// Returns actNone until the header lands.
-func (m *model) headerActionAt(localX, localY int) actionID { return actNone }

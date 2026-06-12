@@ -228,3 +228,85 @@ func TestRectContains(t *testing.T) {
 		t.Fatal("empty rect contains nothing")
 	}
 }
+
+// --- Wave 2: header bar -----------------------------------------------------
+
+func TestHeaderRectAtTop(t *testing.T) {
+	m := testModel(t)
+	l := m.computeLayout()
+	if l.header.y != 0 || l.header.h != 1 {
+		t.Fatalf("header should be the first row, got %+v", l.header)
+	}
+	if l.plan.y != l.header.h {
+		t.Fatalf("plan should follow the header, got plan=%+v", l.plan)
+	}
+	if l.transcript.y != m.topHeight() {
+		t.Fatalf("transcript should start at topHeight=%d, got %d", m.topHeight(), l.transcript.y)
+	}
+}
+
+func TestHeaderViewShowsTitleAndButtons(t *testing.T) {
+	m := testModel(t)
+	m.backend.SetTitle("my session")
+	v := m.headerView()
+	for _, want := range []string{"my session", "[home]", "[sessions]", "[+new]", "[config]"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("header view missing %q:\n%s", want, v)
+		}
+	}
+}
+
+func TestHeaderActionAtButtons(t *testing.T) {
+	m := testModel(t)
+	m.width = 100
+	_, btnStart := m.headerButtonsText(100)
+	if act := m.headerActionAt(btnStart+1, 0); act != actHome {
+		t.Fatalf("first button should be home, got %v", act)
+	}
+	if act := m.headerActionAt(1, 0); act != actRename {
+		t.Fatalf("title region should map to rename, got %v", act)
+	}
+	if act := m.headerActionAt(1, 1); act != actNone {
+		t.Fatalf("non-zero localY should be actNone, got %v", act)
+	}
+}
+
+func TestHeaderClickDispatches(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	_, btnStart := m.headerButtonsText(100)
+	col := btnStart
+	var configCol int
+	for _, b := range m.headerButtons() {
+		lbl := "[" + b.label + "]"
+		if b.action == actConfigPanel {
+			configCol = col + 1
+		}
+		col += len(lbl) + 1
+	}
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: configCol, Y: 0})
+	if !m.conf.active {
+		t.Fatal("clicking [config] in the header should open the config panel")
+	}
+}
+
+func TestHeaderTitleClickOpensRename(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: 0})
+	if !m.ov.active || m.ov.kind != promptText {
+		t.Fatal("clicking the header title should open the rename prompt")
+	}
+}
+
+func TestAnsiTrunc(t *testing.T) {
+	if got := ansiTrunc("hello world", 5); got != "hell…" {
+		t.Fatalf("truncate to 5 = %q", got)
+	}
+	if got := ansiTrunc("hi", 10); got != "hi" {
+		t.Fatalf("no truncation needed = %q", got)
+	}
+	if got := ansiTrunc("anything", 0); got != "" {
+		t.Fatalf("zero width = %q", got)
+	}
+}

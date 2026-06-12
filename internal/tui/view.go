@@ -155,7 +155,7 @@ func (m *model) View() string {
 	if m.ov.active {
 		bottom = m.overlayView() + "\n" + bottom
 	}
-	return m.planView() + m.vp.View() + "\n" + bottom + "\n" + m.statusBarView()
+	return m.headerView() + "\n" + m.planView() + m.vp.View() + "\n" + bottom + "\n" + m.statusBarView()
 }
 
 // queuedHint summarizes how many messages are waiting to be sent.

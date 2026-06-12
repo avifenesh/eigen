@@ -949,8 +949,8 @@ func TestTodoToolDrivesPlanPanel(t *testing.T) {
 	if len(m.blocks) != before {
 		t.Fatal("todo tool should NOT create a transcript block (it drives the panel)")
 	}
-	if m.topHeight() != 1+3 {
-		t.Fatalf("topHeight should be plan header+3 tasks, got %d", m.topHeight())
+	if m.topHeight() != 1+1+3 {
+		t.Fatalf("topHeight should be header+plan header+3 tasks, got %d", m.topHeight())
 	}
 	view := m.planView()
 	for _, want := range []string{"plan (1/3)", "design", "build", "test"} {
@@ -970,9 +970,10 @@ func TestEmptyPlanHasNoPanel(t *testing.T) {
 	if m.planView() != "" {
 		t.Fatal("no todos should mean no plan panel")
 	}
-	// The status bar now lives at the bottom; with no todos the top is empty.
-	if m.topHeight() != 0 {
-		t.Fatalf("topHeight with no todos should be 0 (status bar moved to bottom), got %d", m.topHeight())
+	// The status bar lives at the bottom; with no todos the top is just the
+	// always-present header row (Wave 2).
+	if m.topHeight() != 1 {
+		t.Fatalf("topHeight with no todos should be 1 (header only), got %d", m.topHeight())
 	}
 }
 

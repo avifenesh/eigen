@@ -34,10 +34,12 @@ func (m *model) updateTodos(args json.RawMessage) {
 	m.relayout()
 }
 
-// topHeight is the number of rows the top panels occupy: the plan panel (0 when
-// empty). The status bar now lives at the bottom, so it is not counted here.
+// topHeight is the number of rows the top panels occupy: the header bar (1,
+// always present) plus the plan panel (0 when empty). The status bar lives at
+// the bottom, so it is not counted here. screenToContent/toggleAtRow rebase by
+// topHeight, so the transcript click mapping follows the header automatically.
 func (m *model) topHeight() int {
-	h := 0
+	h := m.headerHeight()
 	if len(m.todos) > 0 {
 		rows := len(m.todos)
 		if rows > maxTodoRows {
