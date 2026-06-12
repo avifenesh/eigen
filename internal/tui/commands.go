@@ -60,7 +60,7 @@ func (m *model) applyResumed(msgs []llm.Message) {
 func safeWhileRunning(name string) bool {
 	switch name {
 	case "/effort", "/search", "/perm", "/model", "/help", "/goal", "/loop", "/config", "/route",
-		"/skills", "/tools", "/find", "/copy", "/read", "/voice", "/rail", "/rename":
+		"/skills", "/tools", "/find", "/copy", "/read", "/voice", "/rail", "/changes", "/rename":
 		return true
 	default:
 		// /clear, /compact, /resume, /rebuild, /save, /export, /quit, /exit
@@ -76,7 +76,7 @@ func (m *model) command(line string) tea.Cmd {
 	case "/help":
 		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /loop  /route  /review  /voice  /config  /skills  /tools  /find  /copy  /read  /rebuild  /quit")
 		m.note("keys: / commands · @ files · ↑↓ history · select ctrl+p/n (or alt+↑/↓) · tab expand · drag select+copy · copy ctrl+y/alt+y · sessions alt+s · perm ctrl+a/alt+a · effort ctrl+e/alt+r · model ctrl+o/alt+m · paste image ctrl+v/alt+v · talk ctrl+t/alt+t (voice mode) · pgup/pgdn scroll")
-		m.note("clickable: the status-bar segments are buttons — click model/perm/effort/search/route/context to change them (perm + compact confirm first); /rename (or a future title click) renames the session")
+		m.note("clickable: the status-bar segments are buttons — click model/perm/effort/search/route/context to change them (perm + compact confirm first); /rename (or the header title) renames; header [home][sessions][+new][config]; left rail = running sessions (click to hop, /rail); right panel = files edited last turn (click to jump, /changes)")
 		m.note("multiplexer note: zellij/tmux capture ctrl+p/n/o, and zellij ALSO takes alt+arrows/alt+j/k (pane focus) — use shift+↑/↓ to select blocks there; alt+m model, alt+r effort, alt+a perm, alt+y copy still work")
 		m.note("while running: enter queues a message · esc interrupts · settings commands (/effort /perm /model /search) run immediately")
 	case "/clear":
@@ -136,6 +136,17 @@ func (m *model) command(line string) tea.Cmd {
 			m.note("session rail on — but hidden on this narrow terminal (needs ≥80 cols)")
 		default:
 			m.note("session rail shown  (/rail to hide)")
+		}
+	case "/changes":
+		m.changesOn = !m.changesOn
+		m.relayout()
+		switch {
+		case !m.changesOn:
+			m.note("changes panel hidden  (/changes to show)")
+		case len(m.lastRunChanges()) == 0:
+			m.note("changes panel on — it shows the files edited in the last turn (none yet)")
+		default:
+			m.note("changes panel shown  (/changes to hide)")
 		}
 	case "/resume":
 		if arg == "" {

@@ -130,28 +130,37 @@ func railPad(label string, w int) string {
 }
 
 // transcriptBand renders the transcript viewport, prefixed with the rail column
-// when visible. Returns exactly vp.Height rows joined by newlines (no trailing
-// newline), so it slots into View where m.vp.View() used to.
+// (left) and suffixed with the changes panel (right) when each is visible.
+// Returns exactly vp.Height rows joined by newlines (no trailing newline), so
+// it slots into View where m.vp.View() used to.
 func (m *model) transcriptBand() string {
-	if m.railWidth() == 0 {
+	railOn := m.railWidth() > 0
+	chgOn := m.rightPanelWidth() > 0
+	if !railOn && !chgOn {
 		return m.vp.View()
 	}
 	vpLines := strings.Split(m.vp.View(), "\n")
-	railLines := m.railLines(m.vp.Height)
+	var railLines, chgLines []string
+	if railOn {
+		railLines = m.railLines(m.vp.Height)
+	}
+	if chgOn {
+		chgLines = m.changesLines(m.vp.Height)
+	}
 	var b strings.Builder
 	for i := 0; i < m.vp.Height; i++ {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		rail := ""
-		if i < len(railLines) {
-			rail = railLines[i]
+		if railOn && i < len(railLines) {
+			b.WriteString(railLines[i])
 		}
-		tl := ""
 		if i < len(vpLines) {
-			tl = vpLines[i]
+			b.WriteString(vpLines[i])
 		}
-		b.WriteString(rail + tl)
+		if chgOn && i < len(chgLines) {
+			b.WriteString(chgLines[i])
+		}
 	}
 	return b.String()
 }

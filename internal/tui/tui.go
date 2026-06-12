@@ -269,6 +269,14 @@ type model struct {
 	railOn      bool
 	railEntries []chat.SessionEntry
 
+	// Right changes panel (Tier 9 Wave 4): changesOn toggles the column of
+	// files touched in the last edit-producing run (click a file = jump to its
+	// tool block). Hidden when the last run made no edits or the terminal is
+	// too narrow (degrades before the rail).
+	changesOn       bool
+	changesCache    []fileChange // memoized last-run change index
+	changesCacheSig string       // transcript signature the cache was built for
+
 	// input history: previously entered lines, recalled with ↑/↓ (shell-style).
 	history   []string
 	histIdx   int    // browse cursor; len(history) == live draft (not browsing)
@@ -984,6 +992,12 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 					return m, m.hopToSession(m.railEntries[idx].ID)
 				}
 				return m, nil
+			} else if h.region == regRightPanel {
+				// A click on a changes-panel file jumps to its tool block.
+				if idx := m.changesRowAt(h.localY); idx >= 0 {
+					return m, m.jumpToChange(idx)
+				}
+				return m, nil
 			}
 			// A click inside the input box positions the text cursor there.
 			if vrow, col, ok := m.clickInInput(msg.X, msg.Y); ok {
@@ -1378,6 +1392,7 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 		loopPrompt:     o.LoopPrompt,
 		loopEvery:      o.LoopEvery,
 		railOn:         true, // shown only for daemon-hosted backends on wide terminals
+		changesOn:      true, // shown only when the last run touched files
 	}
 	if m.idleMinutes <= 0 {
 		m.idleMinutes = 5

@@ -4,6 +4,7 @@ package tui
 // action registry, the confirm/text overlay, and clickable status segments.
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -437,5 +438,181 @@ func TestRailScreenToContentRebased(t *testing.T) {
 	// A click right of the rail maps to content (rebased by the rail width).
 	if _, ok := m.screenToContent(railWidthCols+2, m.topHeight()); !ok {
 		t.Fatal("a point right of the rail should be transcript content")
+	}
+}
+
+// --- Wave 4: right changes panel -------------------------------------------
+
+// editBlock builds a tool block representing an edit to path with the given
+// old→new strings (so toolDetail produces a diff with stats).
+func editBlock(path, old, neu string) *block {
+	args, _ := json.Marshal(map[string]string{"path": path, "old_string": old, "new_string": neu})
+	return &block{kind: blockTool, toolName: "edit", toolArgs: args, state: toolDone}
+}
+
+func TestChangesHiddenWithNoEdits(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.text("user", "hi")
+	m.text("assistant", "no edits here")
+	if m.changesVisible() {
+		t.Fatal("changes panel must hide when the last run made no edits")
+	}
+	if m.rightPanelWidth() != 0 {
+		t.Fatal("hidden panel has zero width")
+	}
+}
+
+func TestChangesShowsLastRunFiles(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.text("user", "edit some files")
+	m.push(editBlock("src/main.go", "foo", "bar"))
+	m.push(editBlock("README.md", "old line", "new line\nextra"))
+	if !m.changesVisible() {
+		t.Fatal("changes panel should show after an edit-producing run")
+	}
+	if m.rightPanelWidth() != rightPanelWidthCols {
+		t.Fatalf("panel width = %d", m.rightPanelWidth())
+	}
+	changes := m.lastRunChanges()
+	if len(changes) != 2 {
+		t.Fatalf("want 2 changed files, got %d: %+v", len(changes), changes)
+	}
+	if changes[0].path != "src/main.go" || changes[1].path != "README.md" {
+		t.Fatalf("files in first-touched order expected, got %+v", changes)
+	}
+	band := m.transcriptBand()
+	for _, want := range []string{"changes (last turn)", "main.go", "README.md"} {
+		if !strings.Contains(band, want) {
+			t.Fatalf("changes band missing %q:\n%s", want, band)
+		}
+	}
+}
+
+func TestChangesAggregatesSameFile(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.text("user", "edit twice")
+	m.push(editBlock("a.go", "x", "y"))
+	m.push(editBlock("a.go", "p", "q"))
+	changes := m.lastRunChanges()
+	if len(changes) != 1 {
+		t.Fatalf("same file should aggregate to one row, got %d", len(changes))
+	}
+	if changes[0].adds < 2 || changes[0].dels < 2 {
+		t.Fatalf("stats should sum across both edits, got +%d -%d", changes[0].adds, changes[0].dels)
+	}
+}
+
+func TestChangesOnlyLastRun(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	// Run 1 edits old.go.
+	m.text("user", "first task")
+	m.push(editBlock("old.go", "a", "b"))
+	// Run 2 edits new.go — the panel should show only run 2.
+	m.text("user", "second task")
+	m.push(editBlock("new.go", "c", "d"))
+	changes := m.lastRunChanges()
+	if len(changes) != 1 || changes[0].path != "new.go" {
+		t.Fatalf("only the last run's edits should show, got %+v", changes)
+	}
+}
+
+func TestChangesFallsBackToEarlierRunWhenLastHasNoEdits(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.text("user", "edit task")
+	m.push(editBlock("edited.go", "a", "b"))
+	// A later run with no edits (just a question) must not blank the panel —
+	// it shows the most recent run that DID produce edits.
+	m.text("user", "just a question")
+	m.text("assistant", "an answer, no edits")
+	changes := m.lastRunChanges()
+	if len(changes) != 1 || changes[0].path != "edited.go" {
+		t.Fatalf("should fall back to the last edit-producing run, got %+v", changes)
+	}
+}
+
+func TestChangesLayoutNarrowsTranscript(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.text("user", "edit")
+	m.push(editBlock("f.go", "a", "b"))
+	m.relayout()
+	l := m.computeLayout()
+	if l.rightPanel.empty() {
+		t.Fatal("right panel rect should be present")
+	}
+	if l.rightPanel.x != m.width-rightPanelWidthCols {
+		t.Fatalf("right panel should be flush right, got x=%d", l.rightPanel.x)
+	}
+	// Transcript ends where the panel begins.
+	if l.transcript.x+l.transcript.w != l.rightPanel.x {
+		t.Fatalf("transcript should abut the panel: tr=%+v panel=%+v", l.transcript, l.rightPanel)
+	}
+	if h := m.hitTest(m.width-1, l.rightPanel.y); h.region != regRightPanel {
+		t.Fatalf("far-right column should be the changes panel, got %v", h.region)
+	}
+}
+
+func TestChangesRowClickJumps(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.text("user", "edit")
+	m.push(editBlock("src/main.go", "foo", "bar"))
+	editIdx := len(m.blocks) - 1
+	m.relayout()
+	l := m.computeLayout()
+	// Row 0 of the panel is the header; the first file is at panel row 1.
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: m.width - 2, Y: l.rightPanel.y + 1})
+	if m.sel != editIdx {
+		t.Fatalf("clicking a changes file should select its tool block, got sel=%d want %d", m.sel, editIdx)
+	}
+	if m.blocks[editIdx].collapsed {
+		t.Fatal("jumped-to block should be expanded")
+	}
+}
+
+func TestChangesHidesWhenTooNarrow(t *testing.T) {
+	m := testModel(t)
+	// Width that fits the transcript minimum but not the panel too.
+	m.Update(tea.WindowSizeMsg{Width: minTranscriptCols + rightPanelWidthCols - 5, Height: 24})
+	m.text("user", "edit")
+	m.push(editBlock("f.go", "a", "b"))
+	if m.changesVisible() {
+		t.Fatal("changes panel must hide when it would squeeze the transcript below its minimum")
+	}
+}
+
+func TestChangesToggleCommand(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.text("user", "edit")
+	m.push(editBlock("f.go", "a", "b"))
+	if !m.changesOn {
+		t.Fatal("changes panel is on by default")
+	}
+	m.command("/changes")
+	if m.changesOn {
+		t.Fatal("/changes should toggle it off")
+	}
+	if m.changesVisible() {
+		t.Fatal("toggled-off panel must not be visible")
+	}
+}
+
+func TestFilesInPatch(t *testing.T) {
+	patch := "diff --git a/x.go b/x.go\n--- a/x.go\n+++ b/x.go\n@@ -1 +1,2 @@\n-old\n+new\n+more\ndiff --git a/y.go b/y.go\n--- a/y.go\n+++ b/y.go\n@@ -1 +1 @@\n-a\n+b\n"
+	files := filesInPatch(patch, 7)
+	if len(files) != 2 {
+		t.Fatalf("patch touches 2 files, got %d: %+v", len(files), files)
+	}
+	if files[0].path != "x.go" || files[0].adds != 2 || files[0].dels != 1 {
+		t.Fatalf("x.go stats wrong: %+v", files[0])
+	}
+	if files[1].path != "y.go" {
+		t.Fatalf("y.go expected, got %+v", files[1])
 	}
 }

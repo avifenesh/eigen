@@ -58,6 +58,7 @@ var slashCommands = []slashCmd{
 	{"/home", "return to the app shell (home page)"},
 	{"/sessions", "switch this window to another session (alt+s)"},
 	{"/rail", "toggle the left session rail (running sessions)"},
+	{"/changes", "toggle the right changes panel (files edited last turn)"},
 	{"/resume", "resume a saved session (picker, or path/id)"},
 	{"/save", "save this conversation to a file"},
 	{"/clear", "start a fresh conversation"},

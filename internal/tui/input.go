@@ -273,7 +273,7 @@ func (m *model) relayout() {
 	if h < 1 {
 		h = 1
 	}
-	m.vp.Width = m.width - m.railWidth()
+	m.vp.Width = m.width - m.railWidth() - m.rightPanelWidth()
 	if m.vp.Width < 1 {
 		m.vp.Width = 1
 	}
