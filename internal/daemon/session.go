@@ -38,6 +38,7 @@ type SessionInfo struct {
 	Model   string `json:"model"`
 	Status  Status `json:"status"`
 	Turns   int    `json:"turns"`
+	Views   int    `json:"views"`   // attached views (windows) right now
 	Updated int64  `json:"updated"` // unix nano
 }
 
@@ -208,6 +209,7 @@ func (s *Session) info() SessionInfo {
 		Model:   s.Model,
 		Status:  s.status,
 		Turns:   len(s.sess.Messages()),
+		Views:   len(s.subs),
 		Updated: s.updated.UnixNano(),
 	}
 }

@@ -480,14 +480,15 @@ func TestPanelToggleKeys(t *testing.T) {
 }
 
 func TestRailRowClickHops(t *testing.T) {
-	m := switcherModel(t) // current is s2; entries s1,s2,s3
+	m := switcherModel(t) // current is s2; entries s1,s2,s3 across 3 projects
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m.refreshRail()
 	l := m.computeLayout()
-	// Row 0 is the "sessions" header; entry 0 (s1) is at rail row 1.
-	_, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + 1})
+	// Grouped rail: row 0 = panel header, row 1 = project header (/tmp/a),
+	// row 2 = s1.
+	_, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + 2})
 	if m.switchTo != "s1" {
-		t.Fatalf("clicking the first rail row should hop to s1, got %q", m.switchTo)
+		t.Fatalf("clicking the first session row should hop to s1, got %q", m.switchTo)
 	}
 	if cmd == nil {
 		t.Fatal("a hop should quit (to switch)")
@@ -495,11 +496,11 @@ func TestRailRowClickHops(t *testing.T) {
 }
 
 func TestRailClickCurrentSessionNoop(t *testing.T) {
-	m := switcherModel(t) // current is s2 → rail row 2
+	m := switcherModel(t) // current is s2 → grouped rail row 4
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m.refreshRail()
 	l := m.computeLayout()
-	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + 2})
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + 4})
 	if m.switchTo != "" {
 		t.Fatal("clicking the current session must be a no-op")
 	}
@@ -533,6 +534,147 @@ func TestRailScreenToContentRebased(t *testing.T) {
 	// A click right of the rail maps to content (rebased by the rail width).
 	if _, ok := m.screenToContent(railWidthCols+2, m.topHeight()); !ok {
 		t.Fatal("a point right of the rail should be transcript content")
+	}
+}
+
+// --- Tier 11 Wave 4: project-grouped rail -----------------------------------
+
+func TestRailGroupsByProject(t *testing.T) {
+	m := switcherModel(t) // 3 sessions across /tmp/a, /tmp/b, /tmp/c
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.refreshRail()
+	if !m.railGrouped() {
+		t.Fatal("sessions across distinct dirs should group")
+	}
+	rows := m.railRows()
+	// header a, s1, header b, s2, header c, s3
+	if len(rows) != 6 {
+		t.Fatalf("want 6 rows (3 headers + 3 sessions), got %d", len(rows))
+	}
+	if !rows[0].header || rows[0].dir != "/tmp/a" {
+		t.Fatalf("row 0 should be /tmp/a header, got %+v", rows[0])
+	}
+	if rows[1].header || rows[1].entry != 0 {
+		t.Fatalf("row 1 should be session s1, got %+v", rows[1])
+	}
+	// Rendered band includes project names.
+	band := m.transcriptBand()
+	for _, want := range []string{"a", "first", "b", "current", "c", "third"} {
+		if !strings.Contains(band, want) {
+			t.Fatalf("grouped rail missing %q:\n%s", want, band)
+		}
+	}
+}
+
+func TestRailSingleProjectUngrouped(t *testing.T) {
+	m := switcherModel(t)
+	sb := m.backend.(*switchBackend)
+	for i := range sb.entries {
+		sb.entries[i].Dir = "/tmp/only"
+	}
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.refreshRail()
+	if m.railGrouped() {
+		t.Fatal("a single project must not grow headers")
+	}
+	rows := m.railRows()
+	if len(rows) != 3 {
+		t.Fatalf("ungrouped rail should be 3 plain session rows, got %d", len(rows))
+	}
+	for _, r := range rows {
+		if r.header {
+			t.Fatal("no header rows for a single project")
+		}
+	}
+}
+
+func TestRailHeaderClickCollapses(t *testing.T) {
+	m := switcherModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.refreshRail()
+	l := m.computeLayout()
+	// Row 1 is the /tmp/a project header.
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + 1})
+	if !m.railCollapsed["/tmp/a"] {
+		t.Fatal("clicking a project header should collapse it")
+	}
+	rows := m.railRows()
+	if len(rows) != 5 {
+		t.Fatalf("collapsed project hides its session: want 5 rows, got %d", len(rows))
+	}
+	// Collapsed header shows the count.
+	band := m.transcriptBand()
+	if !strings.Contains(band, "(1)") {
+		t.Fatalf("collapsed header should show the session count:\n%s", band)
+	}
+	// Click again expands.
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + 1})
+	if m.railCollapsed["/tmp/a"] {
+		t.Fatal("clicking the header again should expand it")
+	}
+}
+
+func TestRailClickAfterCollapseHitsShiftedRow(t *testing.T) {
+	m := switcherModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.refreshRail()
+	l := m.computeLayout()
+	// Collapse /tmp/a (row 1): s1 hides, so row 2 becomes the /tmp/b header
+	// and row 3 its session s2 (the current one).
+	m.toggleRailProject("/tmp/a")
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + 4})
+	// Row 4 is now the /tmp/c header — a header click must not hop.
+	if m.switchTo != "" {
+		t.Fatalf("header click after collapse must not hop, got %q", m.switchTo)
+	}
+	if !m.railCollapsed["/tmp/c"] {
+		t.Fatal("row 4 should be the /tmp/c header and toggle it")
+	}
+}
+
+func TestRailCollapseAllAction(t *testing.T) {
+	m := switcherModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.refreshRail()
+	m.dispatch(actRailCollapse)
+	if len(m.railRows()) != 3 {
+		t.Fatalf("collapse-all should leave only headers, got %d rows", len(m.railRows()))
+	}
+	m.dispatch(actRailCollapse)
+	if len(m.railRows()) != 6 {
+		t.Fatalf("dispatch again should expand all, got %d rows", len(m.railRows()))
+	}
+}
+
+func TestRailWorkingSpinnerAnimates(t *testing.T) {
+	m := switcherModel(t) // s2 is "working"
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.refreshRail()
+	g0 := m.railGlyph("working")
+	m.refreshRail() // tick advances the spinner
+	g1 := m.railGlyph("working")
+	if g0 == g1 {
+		t.Fatal("working glyph should animate across refreshes")
+	}
+	if m.railGlyph("idle") != statusGlyph("idle") {
+		t.Fatal("idle glyph stays the static ○")
+	}
+	// With a working sibling the poll cadence speeds up (spinner cadence).
+	if m.railTick() == nil {
+		t.Fatal("rail tick should be armed")
+	}
+}
+
+func TestRailViewsMarksOpenProject(t *testing.T) {
+	m := switcherModel(t)
+	sb := m.backend.(*switchBackend)
+	sb.entries[0].Views = 1 // s1 (/tmp/a) has a window attached
+	m.refreshRail()
+	if !m.railProjectOpen("/tmp/a") {
+		t.Fatal("project with an attached view should read as open")
+	}
+	if m.railProjectOpen("/tmp/c") {
+		t.Fatal("project with no attached views is not open")
 	}
 }
 

@@ -269,9 +269,13 @@ type model struct {
 	// Left session rail (Tier 9 Wave 3): railOn toggles the persistent column
 	// of daemon sibling sessions down the left of the transcript; railEntries
 	// is the last polled snapshot. Only shown for daemon-hosted backends on a
-	// wide-enough terminal.
-	railOn      bool
-	railEntries []chat.SessionEntry
+	// wide-enough terminal. Sessions group under collapsible project headers
+	// (Tier 11 Wave 4); railCollapsed is UI-local state keyed by project dir,
+	// railSpin animates the working-session glyph.
+	railOn        bool
+	railEntries   []chat.SessionEntry
+	railCollapsed map[string]bool
+	railSpin      int
 
 	// Right changes panel (Tier 9 Wave 4): changesOn toggles the column of
 	// files touched in the last edit-producing run (click a file = jump to its
@@ -1035,10 +1039,17 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			if h := m.hitTest(msg.X, msg.Y); h.action != actNone {
 				return m, m.dispatch(h.action)
 			} else if h.region == regLeftRail {
-				// A click on a session rail row hops the window there (same path
-				// as the switcher's enter — Detach keeps the daemon turn alive).
-				if idx := m.railRowAt(h.localY); idx >= 0 && idx < len(m.railEntries) {
-					return m, m.hopToSession(m.railEntries[idx].ID)
+				// A click on a project header toggles its collapse; a click on
+				// a session row hops the window there (same path as the
+				// switcher's enter — Detach keeps the daemon turn alive).
+				if r, ok := m.railRowAt(h.localY); ok {
+					if r.header {
+						m.toggleRailProject(r.dir)
+						return m, nil
+					}
+					if r.entry >= 0 && r.entry < len(m.railEntries) {
+						return m, m.hopToSession(m.railEntries[r.entry].ID)
+					}
 				}
 				return m, nil
 			} else if h.region == regRightPanel {

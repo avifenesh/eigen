@@ -537,11 +537,18 @@ astronautics):**
   pipeline (`printf … | wc -l` → emulator renders `3`), all `-race` clean.
   - [ ] later: scrollback view, copy-from-terminal, per-terminal resource caps,
         graceful daemon-side terminals if windows ever share one.
-- **Wave 4 — left rail grouped by project + liveness.** Reuse current
-  SessionInfo for grouping first; extend daemon protocol only for missing
-  runtime metadata (project root/session run state), keep collapsed/open UI
-  state local. Project headers collapsible, active/open projects highlighted,
-  working/looping sessions show a spinner distinct from idle ○.
+- **Wave 4 — left rail grouped by project + liveness.** SHIPPED. Sessions
+  group under collapsible project headers (only when they span >1 project dir
+  — a single project stays flat). Header click toggles collapse; collapsed
+  headers show `▸ name (n)` plus the most-urgent status glyph so hidden
+  activity stays visible. Working sessions animate a braille spinner (the
+  rail poll speeds to 300ms while anything is working, back to 1.2s idle).
+  Projects with a window attached anywhere highlight (SessionInfo gained
+  `views` — attached view count — over the wire). Renderer and click hit-test
+  share ONE railRows() row model so geometry can't drift. Keyboard parity:
+  actRailCollapse (palette: "collapse/expand rail projects") collapses or
+  expands all.
+  - [ ] later: per-header keyboard cursor in the rail, drag to reorder.
 - **Wave 5 — status-line in-place setters + polish.** Segment popovers for
   effort/search/route/perm; consistent close/reopen controls; palette entries
   for every new surface.

@@ -50,6 +50,7 @@ func (m *model) paletteCatalog() []paletteCmd {
 		{label: "read answers aloud", id: actReadAloudToggle},
 		{label: "voice conversation mode", id: actVoiceToggle},
 		{label: "toggle session rail", id: actRailToggle, slash: "/rail"},
+		{label: "collapse/expand rail projects", id: actRailCollapse},
 		{label: "toggle right panel", id: actChangesToggle, slash: "/changes"},
 		{label: "next right panel tab", id: actRightTabNext},
 		{label: "terminal command panel", id: actTerminalTab},

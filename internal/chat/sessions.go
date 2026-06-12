@@ -9,6 +9,7 @@ type SessionEntry struct {
 	Model   string
 	Status  string // "idle" | "working" | "approval" | "error"
 	Turns   int
+	Views   int   // attached views (windows) right now
 	Updated int64 // unix nano
 }
 

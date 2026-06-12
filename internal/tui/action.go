@@ -29,6 +29,7 @@ const (
 	actConfigPanel
 	actRename
 	actRailToggle
+	actRailCollapse
 	actChangesToggle
 	actRightTabNext
 	actTerminalTab
@@ -137,6 +138,14 @@ var actionRegistry = map[actionID]action{
 		enabled: func(m *model) bool { return m.railLister() != nil },
 		run: func(m *model) tea.Cmd {
 			m.toggleRail()
+			return nil
+		},
+	},
+	actRailCollapse: {
+		id: actRailCollapse, label: "collapse rail projects",
+		enabled: func(m *model) bool { return m.railLister() != nil && m.railGrouped() },
+		run: func(m *model) tea.Cmd {
+			m.toggleRailProjects()
 			return nil
 		},
 	},

@@ -304,6 +304,7 @@ func (r *Remote) Sessions() []SessionEntry {
 			Model:   in.Model,
 			Status:  string(in.Status),
 			Turns:   in.Turns,
+			Views:   in.Views,
 			Updated: in.Updated,
 		})
 	}
