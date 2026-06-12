@@ -1368,16 +1368,42 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 // buildCmd rebuilds eigen to a staging binary, smoke-tests it, and only on
 // success atomically swaps it into place — so a broken build never replaces the
 // working binary or kills the session. Failures are reported back via buildDoneMsg.
+// findGo resolves the go toolchain: PATH first, then the usual install
+// locations — windows spawned from minimal environments (systemd, daemons,
+// app launchers) often lack the login shell's PATH additions.
+func findGo() string {
+	if p, err := exec.LookPath("go"); err == nil {
+		return p
+	}
+	home, _ := os.UserHomeDir()
+	for _, c := range []string{
+		filepath.Join(home, ".local", "bin", "go"),
+		filepath.Join(home, ".local", "go", "bin", "go"),
+		filepath.Join(home, "go", "bin", "go"),
+		"/usr/local/go/bin/go",
+		"/usr/lib/go/bin/go",
+	} {
+		if st, err := os.Stat(c); err == nil && !st.IsDir() {
+			return c
+		}
+	}
+	return ""
+}
+
 func (m *model) buildCmd() tea.Cmd {
 	src := m.srcDir
 	return func() tea.Msg {
+		gobin := findGo()
+		if gobin == "" {
+			return buildDoneMsg{err: fmt.Errorf("go toolchain not found (PATH=%s)", os.Getenv("PATH"))}
+		}
 		bin := filepath.Join(src, "bin", "eigen")
 		staging := bin + ".new"
 
-		build := exec.Command("go", "build", "-o", staging, ".")
+		build := exec.Command(gobin, "build", "-o", staging, ".")
 		build.Dir = src
 		if out, err := build.CombinedOutput(); err != nil {
-			return buildDoneMsg{err: fmt.Errorf("build failed"), out: string(out)}
+			return buildDoneMsg{err: fmt.Errorf("build failed: %v", err), out: string(out)}
 		}
 		// Smoke test: the new binary must at least run --version cleanly.
 		smoke := exec.Command(staging, "--version")

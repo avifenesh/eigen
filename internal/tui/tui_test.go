@@ -2569,3 +2569,26 @@ func TestConfigPanelEditsAndSaves(t *testing.T) {
 		t.Fatal("q should close the panel")
 	}
 }
+
+func TestFindGoFallsBackWhenPathLacksGo(t *testing.T) {
+	// With a PATH that has no go, findGo must still locate a toolchain from
+	// the conventional install locations (or return "" without panicking).
+	t.Setenv("PATH", "/nonexistent")
+	if got := findGo(); got != "" {
+		// Whatever it found must be executable-ish (a file, not a dir).
+		st, err := os.Stat(got)
+		if err != nil || st.IsDir() {
+			t.Fatalf("findGo returned a non-file: %q", got)
+		}
+	}
+	// And with go on PATH it prefers PATH.
+	dir := t.TempDir()
+	fake := dir + "/go"
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	if got := findGo(); got != fake {
+		t.Fatalf("findGo should prefer PATH, got %q want %q", got, fake)
+	}
+}
