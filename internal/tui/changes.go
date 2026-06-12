@@ -303,14 +303,20 @@ func (m *model) buildChangesView() *changesView {
 		}
 		add(label+strings.Repeat(" ", gap)+stats, i)
 		// The file's diff, from the block(s) that touched it in the run.
-		// Diff lines are styled — truncate ANSI-aware. Tabs must be expanded
-		// BEFORE measuring/truncating (the terminal would expand them past
-		// the panel's padded width and scramble the band).
+		// Long lines WRAP (hard, ANSI-aware — color carries into the
+		// continuation rows) instead of truncating: a narrow panel must not
+		// hide the tail of every long line, and a resize re-wraps via the
+		// width-keyed memo sig. Tabs must be expanded BEFORE measuring (the
+		// terminal would expand them past the panel's padded width and
+		// scramble the band).
 		for _, ln := range strings.Split(m.diffForChange(fc), "\n") {
 			if ln == "" {
 				continue
 			}
-			add(ansi.Truncate(expandTabs(ln), contentW, "…"), i)
+			wrapped := ansi.Hardwrap(expandTabs(ln), contentW, true)
+			for _, wl := range strings.Split(wrapped, "\n") {
+				add(wl, i)
+			}
 		}
 	}
 	m.changesVw = v

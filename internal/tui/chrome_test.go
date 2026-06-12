@@ -1372,3 +1372,57 @@ func TestWheelOverChangesScrollsPanel(t *testing.T) {
 		t.Fatalf("wheel up should scroll back to 0, got %d", m.changesScroll)
 	}
 }
+
+// Diff lines in the changes panel WRAP instead of truncating: every cell of a
+// long changed line stays reachable, continuation rows keep the file map for
+// click-to-jump, and a panel resize re-wraps to the new width.
+func TestChangesPanelWrapsLongDiffLines(t *testing.T) {
+	long := "x := compute(alpha, beta, gamma, delta) // " + strings.Repeat("verylongtail ", 12)
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	m.text("user", "edit")
+	m.push(editBlock("long.go", "old line", long))
+	m.relayout()
+	v := m.buildChangesView()
+	if len(v.lines) < 3 {
+		t.Fatalf("expected wrapped continuation rows, got %d lines", len(v.lines))
+	}
+	contentW := m.rightCols() - 2
+	joined := ""
+	for i, ln := range v.lines {
+		plain := ansi.Strip(ln)
+		if w := ansi.StringWidth(plain); w > contentW {
+			t.Fatalf("line %d is %d cols > content width %d: %q", i, w, contentW, plain)
+		}
+		if strings.Contains(plain, "…") {
+			t.Fatalf("line %d still truncates: %q", i, plain)
+		}
+		joined += plain
+	}
+	// No content lost: the wrapped rows must contain the whole tail.
+	if !strings.Contains(strings.ReplaceAll(joined, "\n", ""), "verylongtail") ||
+		strings.Count(joined, "verylongtail") != 12 {
+		t.Fatalf("wrapped panel lost content: %d/12 tail words", strings.Count(joined, "verylongtail"))
+	}
+	// Continuation rows keep the file mapping (click anywhere → jump works).
+	for i := range v.lines {
+		if v.file[i] != 0 && v.file[i] != -1 {
+			t.Fatalf("row %d maps to file %d, want 0 or -1", i, v.file[i])
+		}
+	}
+	// Resize the panel narrower: the memo key includes width, so the view
+	// re-wraps (more lines at a narrower width).
+	before := len(v.lines)
+	m.rightW = m.rightCols() - 8
+	m.relayout()
+	v2 := m.buildChangesView()
+	if len(v2.lines) <= before {
+		t.Fatalf("narrower panel should re-wrap to MORE lines: %d -> %d", before, len(v2.lines))
+	}
+	cw2 := m.rightCols() - 2
+	for i, ln := range v2.lines {
+		if w := ansi.StringWidth(ansi.Strip(ln)); w > cw2 {
+			t.Fatalf("after resize, line %d is %d cols > %d", i, w, cw2)
+		}
+	}
+}

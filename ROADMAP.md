@@ -373,7 +373,7 @@ the transcript would drop below 40 cols). /changes toggles. Live-verified
       View memoized by transcript-sig + panel width (changesView lines +
       per-line file map); wheel over the panel scrolls it (clamped); a click
       on ANY diff row jumps to that file's tool block.
-- [ ] v3 = diff lines should WRAP, not truncate. Today panel diff lines are
+- [x] v3 = diff lines WRAP, not truncate — SHIPPED. Today panel diff lines are
       hard-truncated at the panel width (ansi.Truncate + "…"), so resizing or
       a narrow panel hides the tail of every long line. Wrap long diff lines
       within the panel (continuation rows, preserving the +/− gutter color and
