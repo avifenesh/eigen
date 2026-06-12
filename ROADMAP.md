@@ -322,55 +322,51 @@ side view of the diff of files edited in the last turn; "and more".
   then the header compacts) — never clutter.
 
 **Wave 0 — geometry + action foundation (prerequisite, no visible chrome).**
-The current scalar `topHeight`/`bottomHeight` + `screenToContent` (rebases by
-topHeight only) cannot survive side rails that shift the transcript origin
-horizontally. Build the substrate first:
-- [ ] `layout` pass: named rects (header/plan/transcript/input/status/leftRail/
-      rightPanel) computed from model state once per render input, not as a
-      side effect of `View()`.
-- [ ] hit-testing: `Point → {region, localX, localY, actionID}` with explicit
-      z-order (modal overlays > chrome > rails/panels > input > transcript) so
-      clicks never fall through to the transcript behind a panel. Widths in
-      terminal cells (ansi.StringWidth), ANSI-stripped.
-- [ ] action registry: `ActionID` → {label, enabled(state), key/slash binding,
-      handler}; keys/slash/clicks all dispatch through it. Disabled actions are
-      visibly disabled and refuse (e.g. mutate-while-running).
-- [ ] migrate existing mouse features (block toggle, drag-copy, wheel, input
-      cursor) onto the new region mapper; tests for coordinate mapping at
-      widths 40/80/120/180 with rails/panels on/off, and boundary clicks.
+✅ SHIPPED (e28f552). internal/tui/layout.go = named rects (header/plan/
+transcript/spinner/comp/input/status/leftRail/rightPanel) via computeLayout()
+mirroring relayout's sizing; hitTest(x,y)→{region,action,localX,localY} with
+explicit z-order (chrome > rails/panels > input > comp > transcript > plan),
+widths in cells (ansi.StringWidth), ANSI-stripped. internal/tui/action.go =
+ONE actionRegistry (actionID→{label,enabled,run}); keys/slash/clicks all go
+through m.dispatch, which gates disabled/idle-only actions identically and
+notes why a blocked action did nothing. internal/tui/overlay.go = a reusable
+confirm/text prompt for actions that must not fire silently. Existing mouse
+features rebase through the region mapper; chrome_test.go covers layout
+stacking + hit regions + the gate.
 
 **Wave 1 — clickable status line (pilot of the foundation).**
-- [ ] each bottom status segment is a hit target dispatching its action id:
-      model→model picker, perm→permission picker (not a blind toggle —
-      security-sensitive), effort→cycle, search→cycle, route→toggle,
-      ctx→compact PROMPT (confirm, never an accidental mutate), vision/read-
-      aloud/loop→their toggles. Keyboard/slash equivalents unchanged.
-- [ ] running-turn semantics per segment made explicit (effort/model/perm take
-      effect next step; compact refused mid-turn with a hint).
+✅ SHIPPED (e28f552). Each status segment carries an action: model→picker,
+perm→confirm (not a blind toggle), effort→cycle, search→cycle, route→toggle,
+context→compact-confirm, read-aloud→toggle. statusBarLayout() packs segments
+with cell-width column ranges; statusActionAt maps a click to its segment.
+Compact/config are idle-only (refused mid-turn with a hint). Live-verified.
 
 **Wave 2 — header bar (one line, above the plan).**
-- [ ] session title + project breadcrumb on the left; right-aligned action
-      affordances `[home] [sessions] [+new] [config]` dispatching openApp /
-      openSwitcher / new-session / openConfigPanel. Title is the SINGLE rename
-      surface (click title = inline rename); status bar does NOT also rename.
-      Strict truncation; reuses topHeight accounting.
+✅ SHIPPED (707e1e6). internal/tui/header.go: title + dim project breadcrumb
+left (truncated), `[home] [sessions] [+new] [config]` right (accent when
+enabled / dim when disabled). Clicking the title opens the rename prompt (the
+SINGLE rename surface). topHeight includes the header so screenToContent/
+toggleAtRow rebase for free. Live-verified.
 
 **Wave 3 — left session rail (high value; before the diff panel).**
-- [ ] persistent narrow left column: daemon sessions with live status glyphs
-      (●working ○idle ◆approval ✗error), current marked; click row = hop the
-      window there via the EXACT switcher attach/detach path (no second
-      switching path — Detach never interrupts a running daemon turn). Visible
-      only when width allows; centralized cancellable ~1.2s poll that
-      re-renders only on list/status change; `alt+s` + palette remain the
-      keyboard path. Transcript/input/status shift right by the rail width
-      (all mouse mapping goes through Wave 0's region mapper).
+✅ SHIPPED (9198e97). internal/tui/rail.go: a 22-col column of daemon sibling
+sessions with status glyphs (●○◆✗), current marked ·; click a row hops the
+window via the EXACT switcher path (hopToSession → switchTo + quit → Run's
+Detach keeps the daemon turn alive; no second switching path). Daemon-hosted
+backends only, terminals ≥80 cols (else hidden, reachable via alt+s /
+[sessions]); ~1.2s railTick poll. The transcript origin shifts right by the
+rail; screenToContent rebases x. /rail toggles. Live-verified (a 2nd window's
+session appeared in the rail within seconds).
 
 **Wave 4 — right changes panel (reduced first cut, then deepen).**
-- [ ] v1 = a CHANGE INDEX: files touched by the last completed edit-producing
-      run (real run id, not visible-block order — survives streaming/resume/
-      retries/collapsed blocks), with +N/−M counts; click/key a file = jump to
-      its tool block. Caps (max files/lines/bytes, truncation marker). Cached
-      by run id, recomputed on transcript/run/width change, never per `View()`.
+✅ v1 SHIPPED (d384557). internal/tui/changes.go: a CHANGE INDEX of files
+touched by the last edit-producing run (runs split at user messages — latest
+segment with edits wins; survives streaming/resume/retries), +adds/−dels per
+file, click/key jumps to the tool block. Same-file edits aggregate;
+apply_patch splits per +++ header. Memoized by a cheap transcript signature
+(not recomputed per View()). Degrades right-FIRST (hides before the rail when
+the transcript would drop below 40 cols). /changes toggles. Live-verified
+(an edit turn showed 'note.txt +1 −1').
 - [ ] v2 = inline diff rendering in the panel (reuse renderDiff) once the data
       model + anchors + scrolling + width behavior are solid.
 
