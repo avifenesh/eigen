@@ -74,6 +74,38 @@ func (l *list) window(visible int) (int, int) {
 	return from, to
 }
 
+// clickMap records, during a page's view() render, which content-local line
+// each selectable item occupies — so a click maps to an item robustly across
+// sectioned/variable-height layouts (home's feed+recent, expansion, wrapping)
+// instead of fragile analytic row math. It mirrors the chat TUI's blockStart
+// approach: the renderer is the authority on geometry.
+type clickMap struct {
+	line2idx map[int]int // content-local line → item index
+}
+
+func (c *clickMap) reset() { c.line2idx = map[int]int{} }
+
+// mark records that the item with index idx renders at content-local line.
+func (c *clickMap) mark(line, idx int) {
+	if c.line2idx == nil {
+		c.line2idx = map[int]int{}
+	}
+	c.line2idx[line] = idx
+}
+
+// at returns the item index at content-local line, or (-1,false).
+func (c *clickMap) at(line int) (int, bool) {
+	if c.line2idx == nil {
+		return -1, false
+	}
+	idx, ok := c.line2idx[line]
+	return idx, ok
+}
+
+// lineCount counts the content-local lines an accumulated render string spans
+// so far (used while building a view to know where the next row lands).
+func lineCount(s string) int { return strings.Count(s, "\n") }
+
 // pageTitle renders a page heading with a subtle underline rule.
 func pageTitle(title, sub string, w int) string {
 	t := sTitle.Render(title)

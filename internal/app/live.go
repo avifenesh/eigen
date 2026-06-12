@@ -19,6 +19,7 @@ type liveState struct {
 	list        list
 	confirmStop bool
 	notice      string
+	clicks      clickMap
 }
 
 // livePollMsg refreshes the daemon session list while the page is visible.
@@ -95,6 +96,28 @@ func (s *liveState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// clickAt handles a content-local click on the live page: select a session, or
+// attach to it if already selected.
+func (s *liveState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
+	idx, ok := s.clicks.at(localY)
+	if !ok {
+		return nil, false
+	}
+	d := m.data
+	if idx < 0 || idx >= len(d.Live) {
+		return nil, false
+	}
+	if s.list.cursor == idx {
+		in := d.Live[idx]
+		m.result = Result{Action: ActionAttach, SessionID: in.ID, Dir: in.Dir}
+		m.quitting = true
+		return tea.Quit, true
+	}
+	s.list.cursor = idx
+	s.notice = ""
+	return nil, true
+}
+
 func (s *liveState) view(m *Model, w, h int) string {
 	d := m.data
 	out := sTitle.Render(" live sessions") + "\n"
@@ -114,6 +137,7 @@ func (s *liveState) view(m *Model, w, h int) string {
 	if visible < 3 {
 		visible = 3
 	}
+	s.clicks.reset()
 	s.list.count = len(d.Live)
 	from, to := s.list.window(visible)
 	for i := from; i < to; i++ {
@@ -130,6 +154,7 @@ func (s *liveState) view(m *Model, w, h int) string {
 			pad(label, 16),
 			sFaint.Render(pad(string(in.Status), 9)),
 			sFaint.Render(truncate(in.Dir, w-36)))
+		s.clicks.mark(lineCount(out), i)
 		out += marker + style.Render(line) + "\n"
 	}
 	out += "\n"

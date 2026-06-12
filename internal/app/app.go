@@ -316,8 +316,34 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		m.result = Result{Action: ActionAttach, SessionID: h.liveID}
 		m.quitting = true
 		return m, tea.Quit
+	case hitContent:
+		// Page-local row click: the active page maps content-local coords to
+		// an item (select, or open if already selected).
+		if cmd, handled := m.contentClick(h.localX, h.localY); handled {
+			return m, cmd
+		}
+		return m, nil
 	}
 	return m, nil
+}
+
+// contentClick dispatches a content-local click to the active page's click
+// handler (pages own their row geometry via the clickMap recorded in view()).
+// Returns (cmd, handled); handled=false when the page has no click target there.
+func (m *Model) contentClick(localX, localY int) (tea.Cmd, bool) {
+	switch m.active {
+	case PageHome:
+		return m.home.clickAt(m, localY)
+	case PageSessions:
+		return m.sessions.clickAt(m, localY)
+	case PageProjects:
+		return m.projects.clickAt(m, localY)
+	case PageLive:
+		return m.live.clickAt(m, localY)
+	case PageConfig:
+		return m.config.clickAt(m, localY)
+	}
+	return nil, false
 }
 
 // contentWheel translates a wheel event over the content panel into list

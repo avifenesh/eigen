@@ -20,6 +20,7 @@ type homeState struct {
 	feedN    int         // feed items shown (cursor 0..feedN-1 = feed)
 	sessionN int         // sessions shown   (cursor feedN.. = sessions)
 	expanded int         // index of the expanded feed item (-1 = none)
+	clicks   clickMap
 }
 
 // homeFeedLimit / homeRecentLimit bound the two home sections.
@@ -102,6 +103,7 @@ func (h *homeState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (h *homeState) view(m *Model, w, _ int) string {
 	d := m.data
 	h.syncFeed(d)
+	h.clicks.reset()
 	s := pageTitle("eigen", "your agent, everywhere", w)
 
 	// Quick stats line: informative at a glance.
@@ -119,6 +121,7 @@ func (h *homeState) view(m *Model, w, _ int) string {
 				kindGlyph(it.Kind),
 				pad(truncate(it.Title, w-26), w-26),
 				sDim.Render(truncate(it.Detail, 18)))
+			h.clicks.mark(lineCount(s), i) // feed item i at this line
 			s += row(i == h.list.cursor, line) + "\n"
 			if h.expanded == i {
 				s += renderTask(it, w) // the full offered task under the row
@@ -140,10 +143,39 @@ func (h *homeState) view(m *Model, w, _ int) string {
 			pad(truncate(r.Title, w-30), w-30),
 			sViolet.Render(pad(fmt.Sprintf("%d msg", r.Msgs), 8)),
 			sDim.Render(relTime(r.Updated)))
+		h.clicks.mark(lineCount(s), h.feedN+i) // recent session at unified index
 		s += row(h.feedN+i == h.list.cursor, line) + "\n"
 	}
 	s += "\n" + sFaint.Render("  enter act · space details · x remove · n new · s sessions · p projects")
 	return s
+}
+
+// clickAt handles a content-local click on the home page: select the row, or
+// activate it (open the feed item / resume the session) if already selected.
+func (h *homeState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
+	idx, ok := h.clicks.at(localY)
+	if !ok {
+		return nil, false
+	}
+	if idx < 0 || idx >= h.list.count {
+		return nil, false
+	}
+	if h.list.cursor != idx {
+		h.list.cursor = idx
+		return nil, true
+	}
+	// Second click on the selected row → activate.
+	switch {
+	case idx < h.feedN:
+		it := h.feed[idx]
+		m.result = Result{Action: ActionOpenChat, Dir: it.Dir, Task: it.Task}
+	case idx-h.feedN < h.sessionN:
+		m.result = openAction(m.data.Sessions[idx-h.feedN])
+	default:
+		return nil, true
+	}
+	m.quitting = true
+	return tea.Quit, true
 }
 
 // renderTask renders the full task text of an expanded feed item, wrapped and

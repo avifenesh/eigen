@@ -16,6 +16,7 @@ type sessionsState struct {
 	list       list
 	confirmDel bool   // awaiting y/n to delete the selected session
 	notice     string // transient status (export path, delete result)
+	clicks     clickMap
 }
 
 func (s *sessionsState) init(d *Data) { s.list.count = len(d.Sessions) }
@@ -103,6 +104,7 @@ func (s *sessionsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (s *sessionsState) view(m *Model, w, h int) string {
 	d := m.data
+	s.clicks.reset()
 	out := pageTitle("sessions", fmt.Sprintf("%d across all sources", len(d.Sessions)), w)
 	if len(d.Sessions) == 0 {
 		return out + sFaint.Render("  none yet — press n to start one")
@@ -121,6 +123,7 @@ func (s *sessionsState) view(m *Model, w, h int) string {
 			src,
 			sViolet.Render(pad(fmt.Sprintf("%d", r.Msgs), 5)),
 			sDim.Render(relTime(r.Updated)))
+		s.clicks.mark(lineCount(out), i) // this row's content-local line
 		out += row(i == s.list.cursor, line) + "\n"
 	}
 	if to < len(d.Sessions) {
@@ -137,6 +140,29 @@ func (s *sessionsState) view(m *Model, w, h int) string {
 		out += sFaint.Render("  enter resume · n new · e export · d delete")
 	}
 	return out
+}
+
+// clickAt handles a content-local click: select the row under the cursor, and
+// open it if it was already selected (single click selects, click-again opens;
+// enter also opens). Returns (cmd, handled).
+func (s *sessionsState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
+	idx, ok := s.clicks.at(localY)
+	if !ok {
+		return nil, false
+	}
+	d := m.data
+	if idx < 0 || idx >= len(d.Sessions) {
+		return nil, false
+	}
+	if s.list.cursor == idx {
+		// Second click on the selected row → open it.
+		m.result = openAction(d.Sessions[idx])
+		m.quitting = true
+		return tea.Quit, true
+	}
+	s.list.cursor = idx
+	s.notice = ""
+	return nil, true
 }
 
 // exportPath is the default destination for an exported session.
@@ -176,6 +202,7 @@ type projectsState struct {
 	proj   int  // index into data.Projects
 	inner  list // feed items + sessions inside a project
 	feedN  int  // feed items shown inside (cursor 0..feedN-1)
+	clicks clickMap
 }
 
 func (p *projectsState) init(d *Data) { p.list.count = len(d.Projects) }
@@ -237,6 +264,7 @@ func (p *projectsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (p *projectsState) view(m *Model, w, h int) string {
 	d := m.data
+	p.clicks.reset()
 	if p.inside && p.proj < len(d.Projects) {
 		proj := d.Projects[p.proj]
 		out := pageTitle(proj.Name, proj.Dir, w)
@@ -252,6 +280,7 @@ func (p *projectsState) view(m *Model, w, h int) string {
 				pad(truncate(r.Title, titleW), titleW),
 				sViolet.Render(pad(fmt.Sprintf("%d", r.Msgs), 5)),
 				sDim.Render(relTime(r.Updated)))
+			p.clicks.mark(lineCount(out), i)
 			out += row(i == p.inner.cursor, line) + "\n"
 		}
 		out += "\n" + sFaint.Render("  enter resume · n new session here · esc back")
@@ -271,8 +300,44 @@ func (p *projectsState) view(m *Model, w, h int) string {
 			sViolet.Render(pad(fmt.Sprintf("%d", len(pr.Sessions)), 4)),
 			sDim.Render(pad(relTime(pr.Updated), 5)),
 			sFaint.Render(truncate(pr.Dir, w-40)))
+		p.clicks.mark(lineCount(out), i)
 		out += row(i == p.list.cursor, line) + "\n"
 	}
 	out += "\n" + sFaint.Render("  enter open project · n new session in project")
 	return out
+}
+
+// clickAt handles a content-local click on the projects page. Outside a
+// project: select a project, or drill in if already selected. Inside: select a
+// session, or resume it if already selected.
+func (p *projectsState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
+	idx, ok := p.clicks.at(localY)
+	if !ok {
+		return nil, false
+	}
+	d := m.data
+	if p.inside && p.proj < len(d.Projects) {
+		proj := d.Projects[p.proj]
+		if idx < 0 || idx >= len(proj.Sessions) {
+			return nil, false
+		}
+		if p.inner.cursor == idx {
+			m.result = openAction(proj.Sessions[idx])
+			m.quitting = true
+			return tea.Quit, true
+		}
+		p.inner.cursor = idx
+		return nil, true
+	}
+	if idx < 0 || idx >= len(d.Projects) {
+		return nil, false
+	}
+	if p.list.cursor == idx {
+		p.proj = idx
+		p.inside = true
+		p.inner = list{}
+		return nil, true
+	}
+	p.list.cursor = idx
+	return nil, true
 }

@@ -30,6 +30,7 @@ type configState struct {
 	choices  []string
 	pickIdx  int
 	multiSel map[string]bool // multi-select state (route_providers)
+	clicks   clickMap
 }
 
 func (c *configState) init(*Data) { c.list.count = len(config.Keys()) }
@@ -190,6 +191,30 @@ func (c *configState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// clickAt handles a content-local click on the config page: select a field
+// row, or open it (dropdown/editor — same as enter) if already selected.
+// While editing/picking, clicks are ignored (those modes own the keyboard).
+func (c *configState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
+	if c.editing || c.picking {
+		return nil, false
+	}
+	idx, ok := c.clicks.at(localY)
+	if !ok {
+		return nil, false
+	}
+	if idx < 0 || idx >= len(config.Fields()) {
+		return nil, false
+	}
+	if c.list.cursor == idx {
+		// Second click on the selected field → activate it (reuse the enter path).
+		_, cmd := c.update(m, tea.KeyMsg{Type: tea.KeyEnter})
+		return cmd, true
+	}
+	c.list.cursor = idx
+	c.err, c.saved = "", ""
+	return nil, true
+}
+
 func (c *configState) view(m *Model, w, h int) string {
 	out := pageTitle("config", config.Path(), w)
 	fields := config.Fields()
@@ -243,6 +268,10 @@ func (c *configState) view(m *Model, w, h int) string {
 		if i == c.list.cursor && c.saved == f.Key {
 			line += sOk.Render("  ✓ saved")
 		}
+		if i == 0 {
+			c.clicks.reset()
+		}
+		c.clicks.mark(lineCount(out), i)
 		out += row(i == c.list.cursor, line) + "\n"
 	}
 	// Description pane for the selected field — what it means, what it takes.
