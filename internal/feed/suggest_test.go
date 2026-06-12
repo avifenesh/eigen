@@ -2,12 +2,14 @@ package feed
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseSuggestionsLenientAndValidated(t *testing.T) {
@@ -55,12 +57,14 @@ func TestParseSuggestionsCaps(t *testing.T) {
 }
 
 func TestScanSuggestNilSuggester(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	if items := scanSuggest([]string{t.TempDir()}, nil); items != nil {
 		t.Fatal("nil suggester must disable the source")
 	}
 }
 
 func TestScanSuggestEndToEnd(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	dir := gitRepo(t)
 	// One commit so the context has something to show.
 	writeAndCommit(t, dir, "a.txt", "hello")
@@ -97,6 +101,7 @@ func writeAndCommit(t *testing.T, dir, name, content string) {
 }
 
 func TestScanSuggestModelErrorIsolated(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	dir := gitRepo(t)
 	writeAndCommit(t, dir, "a.txt", "hello")
 	s := func(context.Context, string, string) (string, error) { return "", fmt.Errorf("boom") }
@@ -106,6 +111,7 @@ func TestScanSuggestModelErrorIsolated(t *testing.T) {
 }
 
 func TestScanSuggestNoContextSkipsModel(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	called := false
 	s := func(context.Context, string, string) (string, error) { called = true; return "[]", nil }
 	// No git repos → no context → the model is never bothered.
@@ -117,5 +123,56 @@ func TestScanSuggestNoContextSkipsModel(t *testing.T) {
 func TestSuggestScore(t *testing.T) {
 	if s := score(Item{Kind: "suggest"}); s <= 0 || s >= score(Item{Kind: "memory"}) {
 		t.Fatalf("suggest should rank below memory but above nothing, got %d", s)
+	}
+}
+
+func TestSuggestCacheReusedWhileFresh(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := gitRepo(t)
+	writeAndCommit(t, dir, "a.txt", "hello")
+	calls := 0
+	s := func(context.Context, string, string) (string, error) {
+		calls++
+		return `[{"title":"x: idea","detail":"d","dir":"` + dir + `","task":"do it"}]`, nil
+	}
+	// First scan: model called, cached.
+	if items := scanSuggest([]string{dir}, s); len(items) != 1 || calls != 1 {
+		t.Fatalf("first scan: items=%d calls=%d", len(items), calls)
+	}
+	// Second scan within the TTL: cache served, model NOT called again.
+	if items := scanSuggest([]string{dir}, s); len(items) != 1 || calls != 1 {
+		t.Fatalf("fresh cache should skip the model: items=%d calls=%d", len(items), calls)
+	}
+}
+
+func TestSuggestStaleCacheBeatsFailure(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := gitRepo(t)
+	writeAndCommit(t, dir, "a.txt", "hello")
+	// Seed an EXPIRED cache directly.
+	saveSuggestCache([]Item{{Kind: "suggest", Title: "old idea", Task: "t"}})
+	var c suggestCache
+	b, _ := os.ReadFile(suggestCachePath())
+	_ = json.Unmarshal(b, &c)
+	c.Scanned = time.Now().Add(-2 * suggestTTL)
+	b, _ = json.Marshal(c)
+	os.WriteFile(suggestCachePath(), b, 0o644)
+	// The model fails → the stale cache is served rather than nothing.
+	s := func(context.Context, string, string) (string, error) { return "", fmt.Errorf("model down") }
+	items := scanSuggest([]string{dir}, s)
+	if len(items) != 1 || items[0].Title != "old idea" {
+		t.Fatalf("stale cache should be served on model failure: %+v", items)
+	}
+}
+
+func TestReadmeIntro(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "README.md"), []byte("# revuto\n\n[![badge](x)](y)\n\nA PR review bot for GitHub.\nIt watches repos and reviews diffs.\n"), 0o644)
+	got := readmeIntro(dir)
+	if !strings.Contains(got, "review bot") || strings.Contains(got, "badge") {
+		t.Fatalf("readmeIntro = %q", got)
+	}
+	if readmeIntro(t.TempDir()) != "" {
+		t.Fatal("no README should yield empty")
 	}
 }

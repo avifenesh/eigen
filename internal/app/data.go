@@ -270,13 +270,18 @@ func (d *Data) feedItems() []feed.Item {
 	return feed.FilterDismissed(d.Feed.Items)
 }
 
-// suggester adapts the app's small model into the feed's Suggester (nil when
-// no small model is available — the suggest source just stays off).
+// suggester adapts a model into the feed's Suggester (nil when no model is
+// available — the suggest source just stays off). Suggestion quality scales
+// with the model, so it prefers a mid-tier model that's usually idle
+// (glm-5.1) over the tiny titling model; EIGEN_SUGGEST_MODEL pins one.
 func (d *Data) suggester() feed.Suggester {
-	if d.Small == nil {
+	prov := suggestProvider()
+	if prov == nil {
+		prov = d.Small
+	}
+	if prov == nil {
 		return nil
 	}
-	prov := d.Small
 	return func(ctx context.Context, system, prompt string) (string, error) {
 		resp, err := prov.Complete(ctx, llm.Request{
 			System:   system,
@@ -287,6 +292,23 @@ func (d *Data) suggester() feed.Suggester {
 		}
 		return resp.Text, nil
 	}
+}
+
+// suggestProvider picks the dedicated suggestion model: EIGEN_SUGGEST_MODEL
+// when set, else glm-5.1 when its credentials exist (mid-tier quality, mostly
+// idle quota). nil = fall back to the caller's small model.
+func suggestProvider() llm.Provider {
+	if id := os.Getenv("EIGEN_SUGGEST_MODEL"); id != "" {
+		if p, err := llm.New("", id); err == nil {
+			return p
+		}
+	}
+	if llm.ProviderAvailable("glm") {
+		if p, err := llm.New("glm", "glm-5.1"); err == nil {
+			return p
+		}
+	}
+	return nil
 }
 
 // feedFor returns the feed items scoped to a project dir (its loose ends),
