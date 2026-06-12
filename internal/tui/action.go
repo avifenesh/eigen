@@ -23,6 +23,8 @@ const (
 	actCompactPrompt
 	actReadAloudToggle
 	actVoiceToggle
+	actDictate
+	actSpeakAnswer
 	actHome
 	actSwitcher
 	actNewSession
@@ -109,9 +111,19 @@ var actionRegistry = map[actionID]action{
 		run:     func(m *model) tea.Cmd { return m.command("/read") },
 	},
 	actVoiceToggle: {
-		id: actVoiceToggle, label: "voice",
+		id: actVoiceToggle, label: "voice conversation mode",
 		enabled: always,
-		run:     func(m *model) tea.Cmd { m.toggleVoice(); return nil },
+		run:     func(m *model) tea.Cmd { return m.toggleVoice() },
+	},
+	actDictate: {
+		id: actDictate, label: "dictate (speak one message)",
+		enabled: idleOnly,
+		run:     func(m *model) tea.Cmd { return m.dictateOnce() },
+	},
+	actSpeakAnswer: {
+		id: actSpeakAnswer, label: "read last answer aloud",
+		enabled: always,
+		run:     func(m *model) tea.Cmd { m.speakLastAnswer(); return nil },
 	},
 	actHome: {
 		id: actHome, label: "home",

@@ -65,6 +65,14 @@ func (m *model) sidebarRows() []sidebarRow {
 	if lbl := m.tasksBadge(); lbl != "" {
 		rows = append(rows, sidebarRow{kind: sbNav, label: lbl, action: actTasksTab})
 	}
+	// Voice buttons (Tier 15): three features, three buttons — dictate one
+	// message (answer stays text), read the last answer aloud, and full
+	// conversation mode. Buttons are primary (ctrl+t is dead under zellij).
+	rows = append(rows,
+		sidebarRow{kind: sbNav, label: "⏺ speak", action: actDictate},
+		sidebarRow{kind: sbNav, label: "▶ read answer", action: actSpeakAnswer},
+		sidebarRow{kind: sbNav, label: m.micGlyph(), action: actVoiceToggle},
+	)
 	rows = append(rows, sidebarRow{kind: sbBlank})
 	// Status setters (Wave 3): the bottom status bar's segments as rows —
 	// click = the same actions; everything stays keyboard-reachable too.
@@ -173,6 +181,10 @@ func (m *model) sidebarLines(h int) []string {
 			case r.action == actChangesToggle && m.changesOn:
 				label = styleAccent.Render(ansiTrunc(label, contentW))
 			case r.action == actTasksTab && strings.Contains(label, "●"):
+				label = styleAccent.Render(ansiTrunc(label, contentW))
+			case r.action == actVoiceToggle && m.voiceOn:
+				// Conversation mode lit while on; listening pulses via the
+				// label text (● listening) from micGlyph.
 				label = styleAccent.Render(ansiTrunc(label, contentW))
 			default:
 				label = dim(ansiTrunc(label, contentW))

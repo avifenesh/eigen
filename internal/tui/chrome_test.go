@@ -378,7 +378,7 @@ func TestRailHiddenForLocalBackend(t *testing.T) {
 
 func TestRailVisibleForDaemonBackend(t *testing.T) {
 	m := switcherModel(t) // has a SessionLister with 3 entries
-	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	m.refreshRail()
 	if !m.railVisible() {
 		t.Fatal("daemon-hosted backend on a wide terminal should show the rail")
@@ -569,7 +569,7 @@ func TestRailScreenToContentRebased(t *testing.T) {
 
 func TestRailGroupsByProject(t *testing.T) {
 	m := switcherModel(t) // 3 sessions across /tmp/a, /tmp/b, /tmp/c
-	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	m.refreshRail()
 	if !m.railGrouped() {
 		t.Fatal("sessions across distinct dirs should group")

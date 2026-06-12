@@ -193,6 +193,9 @@ type model struct {
 	tts         voice.TTS
 	voiceOn     bool               // conversation mode active
 	voiceCancel context.CancelFunc // cancels in-flight TTS (interrupt)
+	voiceMic    voiceState         // what the mic is doing (sidebar glyph)
+	voiceStop   context.CancelFunc // cancels the in-flight recording
+	voiceGen    int                // epoch guard: stale recordings/timers die
 
 	// pendingImages are clipboard/paste-staged images attached to the next
 	// message (vision models only).
@@ -907,11 +910,12 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			m.pasteImage()
 			return m, nil
 		case "ctrl+t", "alt+t":
-			// Push-to-talk: record a spoken utterance and submit it.
+			// Dictate once (secondary path — the sidebar ⏺ button is primary;
+			// ctrl+t is dead under zellij). In voice mode it (re)starts a listen.
 			if m.voiceOn && m.state == stInput {
-				return m, m.listen()
+				return m, m.startListening(true)
 			}
-			return m, nil
+			return m, m.dictateOnce()
 		case "ctrl+a", "alt+a":
 			// Quick toggle of the permission posture (gated ↔ auto) without
 			// typing /perm. "a" = auto/approval mode.
@@ -1215,16 +1219,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 
 	case voiceSpokenMsg:
 		m.status = ""
-		if msg.err != nil {
-			m.note("voice: " + msg.err.Error())
-			return m, nil
-		}
-		if msg.text == "" {
-			m.note("voice: nothing heard")
-			return m, nil
-		}
-		// Submit the transcript as a normal turn (spoken input → message).
-		return m, m.submit(msg.text)
+		return m.handleSpoken(msg)
 
 	case turnDoneMsg:
 		if msg.err != nil {
@@ -1275,8 +1270,9 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				m.note(fmt.Sprintf("on fallback %s — %d turn(s) until switching back", m.modelID, m.failoverLeft))
 			}
 		}
-		// Read the answer aloud if enabled.
-		if msg.err == nil && m.readAloud && m.speaker != nil {
+		// Read the answer aloud if the persistent /read toggle is on (voice
+		// mode handles its own speech + relisten below).
+		if msg.err == nil && !m.voiceOn && m.readAloud && m.speaker != nil {
 			if ans := m.lastAssistantText(); ans != "" {
 				m.speaker.Speak(ans)
 			}
@@ -1288,6 +1284,10 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			return m, m.submit(next)
 		}
 		m.relayout()
+		// Conversation mode: speak the answer, then listen for the next turn.
+		if vc := m.voiceTurnDone(msg.err); vc != nil {
+			return m, tea.Batch(vc, textarea.Blink, m.scheduleIdleDream(), m.scheduleGoalNag(), m.scheduleLoop())
+		}
 		return m, tea.Batch(textarea.Blink, m.scheduleIdleDream(), m.scheduleGoalNag(), m.scheduleLoop())
 
 	case goalNagMsg:
