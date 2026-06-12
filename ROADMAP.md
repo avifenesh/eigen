@@ -781,7 +781,12 @@ ctrl+t is the only trigger, and on the real machine detection fails
 (whisper.cpp checkout has legacy `main` not `whisper-cli`; models dir has
 only `for-tests-*` fixtures) so `/voice` reports unavailable.
 
-- [ ] **BUTTON, not chord.** ctrl+t is zellij's tab-mode chord — dead in the
+- [x] **BUTTON, not chord.** SHIPPED (composer bar, e28318d + 5d056ef): mic
+  controls anchored at the input — '⏺ speak · ▶ read · ◉ voice' right-aligned
+  under the input box, live states (⏺ stop · listening… / ◌ transcribing… /
+  ● listening / ◌ thinking / ▷ speaking), click-again stops, esc discards.
+  Keybind + palette stay as secondary paths. Original text follows:
+  ctrl+t is zellij's tab-mode chord — dead in the
   user's stack (zellij-in-ghostty), and alt+t is luck. The PRIMARY affordance
   must be clickable: a mic button in the sidebar (and/or beside the input
   line) — idle ⏺ / listening ● pulsing / transcribing ◌ / muted ⊘ — same
@@ -790,7 +795,10 @@ only `for-tests-*` fixtures) so `/voice` reports unavailable.
   control render next to it. Keybind stays as a secondary path through the
   action registry (and the palette: "conversation mode", "dictate once",
   "speak last answer") for terminals where it survives.
-- [ ] **VAD endpointing, not a fixed window.** Replace `arecord -d 30` with
+- [x] **VAD endpointing, not a fixed window.** SHIPPED (aa82b2e, hardened
+  5d056ef: heartbeat deadlines fire with zero mic data, cancel-then-Wait
+  teardown). recordVAD streams arecord→RMS endpointing. Original text:
+  Replace `arecord -d 30` with
   streaming capture (arecord to stdout) + RMS computation in Go — the same
   endpoint logic as patch.js `endpoint()`: speech starts after ~220ms above
   threshold, submit after ~1.8s of trailing quiet, a softer
@@ -805,13 +813,21 @@ only `for-tests-*` fixtures) so `/voice` reports unavailable.
   Mid-TURN interrupt (speech while the model is still working) not built —
   the mic would hear keyboard/fan noise during long turns; revisit if the
   speak-leg interrupt proves trustworthy in daily use.
-- [ ] **TTS quality: Kokoro, reuse don't rewrite.** The user's stack already
+- [~] **TTS quality: Kokoro, reuse don't rewrite.** Kokoro detection SHIPPED
+  (aa82b2e): speech.Detect prefers kokoro_stdin.py via the readd venv (NOT
+  'readd speak' — that reads transcripts). REMAINING: sentence-chunked
+  streaming speech (speak as paragraphs complete instead of waiting for the
+  full answer); mute control. Original text: The user's stack already
   has `kokoro_stdin.py` (Kokoro ONNX → aplay, reads stdin — exactly eigen's
   cmdTTS contract) and the readd daemon (espeak-ng/piper). Default tts_cmd
   detection should prefer kokoro_stdin.py / readd over bare espeak-ng;
   sentence-chunked streaming speech (speak as paragraphs complete, the
   read-aloud queue semantics) instead of waiting for the full answer.
-- [ ] **STT setup + detection fixes.** `lookWhisper` accepts the legacy
+- [~] **STT setup + detection fixes.** Detection SHIPPED (aa82b2e):
+  `lookWhisper` accepts legacy `main`, `lookWhisperModel` skips fixtures —
+  real machine resolves whisper-cli + ggml-base.en.bin. REMAINING: `/voice
+  setup` doctor + config keys (stt_cmd/whisper_bin/whisper_model in
+  config.json; env vars exist). Original text: `lookWhisper` accepts the legacy
   `main` binary; `lookWhisperModel` skips `for-tests-*` fixtures; a
   `/voice setup` doctor reports what's missing and offers the fix (download
   ggml-base.en.bin, build/symlink whisper-cli). Config keys beside tts_cmd:
@@ -823,7 +839,10 @@ only `for-tests-*` fixtures) so `/voice` reports unavailable.
   the sidebar; transcripts land in the normal session history/persistence.
   Keep the codex version's discipline: typed turns keep working, explicit
   exit discards pending dictation, switching sessions stops the loop.
-- [ ] **Verify live.** The workspace harness has no mic; verify
+- [x] **Verify live.** DONE — user confirmed the full conversation loop
+  works on the real machine (listen → submit → reply spoken → interrupt by
+  talking over it → relisten). Original text: The workspace harness has no
+  mic; verify
   record/VAD/interrupt on the real machine. TTS + state machine are
   verifiable headless (fake STT/TTS backends; pipe TTS to a file sink).
 
