@@ -33,15 +33,15 @@ type fileChange struct {
 	blockIdx int
 }
 
-// changesVisible reports whether the changes panel should render: enabled, the
-// last run touched files, and there is room (degrade right-first — the panel
-// hides before the rail when the terminal is too narrow to keep the transcript
-// usable).
+// changesVisible reports whether the right panel should render: enabled, real
+// content for the active tab (changes needs edits; git can show no-repo/status),
+// and there is room (degrade right-first — the panel hides before the rail when
+// the terminal is too narrow to keep the transcript usable).
 func (m *model) changesVisible() bool {
 	if !m.changesOn {
 		return false
 	}
-	if len(m.lastRunChanges()) == 0 {
+	if m.rightTab == rightTabChanges && len(m.lastRunChanges()) == 0 {
 		return false
 	}
 	// Room check: width minus the rail minus this panel must leave the
@@ -213,10 +213,13 @@ func filesInPatch(patch string, blockIdx int) []fileChange {
 // changesLines renders the changes panel as exactly h lines, each padded to the
 // panel width with a left gutter separator.
 func (m *model) changesLines(h int) []string {
+	if m.rightTab == rightTabGit {
+		return m.gitLines(h)
+	}
 	changes := m.lastRunChanges()
 	contentW := rightPanelWidthCols - 2 // leading "│ " gutter
 	lines := make([]string, 0, h)
-	lines = append(lines, changesPad(panelTitleLine("changes", rightPanelWidthCols-2, true), rightPanelWidthCols))
+	lines = append(lines, changesPad(m.rightPanelTitleLine(rightPanelWidthCols-2), rightPanelWidthCols))
 	for _, fc := range changes {
 		if len(lines) >= h {
 			break

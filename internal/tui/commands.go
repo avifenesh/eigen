@@ -75,7 +75,7 @@ func (m *model) command(line string) tea.Cmd {
 	switch name {
 	case "/help":
 		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /loop  /route  /review  /voice  /config  /skills  /tools  /find  /copy  /read  /rebuild  /quit")
-		m.note("keys: / commands · ctrl+k command palette · @ files · ↑↓ history · select ctrl+p/n (or alt+↑/↓) · tab expand · drag select+copy · copy ctrl+y/alt+y · sessions alt+s · rail ctrl+b/alt+b · panel ctrl+g/alt+g · perm ctrl+a/alt+a · effort ctrl+e/alt+r · model ctrl+o/alt+m · paste image ctrl+v/alt+v · talk ctrl+t/alt+t · pgup/pgdn scroll")
+		m.note("keys: / commands · ctrl+k palette · @ files · ↑↓ history · select ctrl+p/n (or alt+↑/↓) · tab expand · drag select+copy · copy ctrl+y/alt+y · sessions alt+s · rail ctrl+b/alt+b · panel ctrl+g/alt+g · right-tab ctrl+r · perm ctrl+a/alt+a · effort ctrl+e/alt+r · model ctrl+o/alt+m · paste image ctrl+v/alt+v · talk ctrl+t/alt+t · pgup/pgdn scroll")
 		m.note("clickable: status-bar segments are buttons; header [home][sessions][+new][config]; side panel [x] closes rail/changes; click rail session to hop; click changes file to jump")
 		m.note("multiplexer note: zellij/tmux capture ctrl+p/n/o, and zellij ALSO takes alt+arrows/alt+j/k (pane focus) — use shift+↑/↓ to select blocks there; alt+m model, alt+r effort, alt+a perm, alt+y copy still work")
 		m.note("while running: enter queues a message · esc interrupts · settings commands (/effort /perm /model /search) run immediately")

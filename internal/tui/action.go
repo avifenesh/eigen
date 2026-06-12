@@ -30,6 +30,7 @@ const (
 	actRename
 	actRailToggle
 	actChangesToggle
+	actRightTabNext
 )
 
 // action is a registry entry: what it's called, whether it's currently allowed,
@@ -139,10 +140,18 @@ var actionRegistry = map[actionID]action{
 		},
 	},
 	actChangesToggle: {
-		id: actChangesToggle, label: "changes panel",
+		id: actChangesToggle, label: "right panel",
 		enabled: always,
 		run: func(m *model) tea.Cmd {
 			m.toggleChanges()
+			return nil
+		},
+	},
+	actRightTabNext: {
+		id: actRightTabNext, label: "right panel tab",
+		enabled: always,
+		run: func(m *model) tea.Cmd {
+			m.nextRightTab()
 			return nil
 		},
 	},

@@ -278,8 +278,9 @@ type model struct {
 	// tool block). Hidden when the last run made no edits or the terminal is
 	// too narrow (degrades before the rail).
 	changesOn       bool
-	changesCache    []fileChange // memoized last-run change index
-	changesCacheSig string       // transcript signature the cache was built for
+	rightTab        rightPanelTab // selected right panel tab (changes/git/terminal later)
+	changesCache    []fileChange  // memoized last-run change index
+	changesCacheSig string        // transcript signature the cache was built for
 
 	// input history: previously entered lines, recalled with ↑/↓ (shell-style).
 	history   []string
@@ -859,8 +860,12 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			m.toggleRail()
 			return m, nil
 		case "ctrl+g", "alt+g":
-			// Toggle the right changes panel (g = git/changes, soon tabbed).
+			// Toggle the right panel.
 			m.toggleChanges()
+			return m, nil
+		case "alt+tab", "ctrl+r":
+			// Cycle right panel tabs (changes/git).
+			m.nextRightTab()
 			return m, nil
 		case "ctrl+k":
 			// Command palette: fuzzy launcher over every action + chrome toggle.
@@ -1025,9 +1030,17 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				}
 				return m, nil
 			} else if h.region == regRightPanel {
+				// Header tab click (after the leading gutter) switches the tab.
+				if h.localY == 0 {
+					if m.rightPanelTabAt(h.localX-2, h.localY, m.rightPanelWidth()-2) == actNone {
+						return m, nil
+					}
+				}
 				// A click on a changes-panel file jumps to its tool block.
-				if idx := m.changesRowAt(h.localY); idx >= 0 {
-					return m, m.jumpToChange(idx)
+				if m.rightTab == rightTabChanges {
+					if idx := m.changesRowAt(h.localY); idx >= 0 {
+						return m, m.jumpToChange(idx)
+					}
 				}
 				return m, nil
 			}
@@ -1424,7 +1437,8 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 		loopPrompt:     o.LoopPrompt,
 		loopEvery:      o.LoopEvery,
 		railOn:         true, // shown only for daemon-hosted backends on wide terminals
-		changesOn:      true, // shown only when the last run touched files
+		changesOn:      true, // right panel (changes/git/terminal) visibility
+		rightTab:       rightTabChanges,
 	}
 	if m.idleMinutes <= 0 {
 		m.idleMinutes = 5

@@ -26,10 +26,10 @@ func (m *model) toggleChanges() {
 	m.relayout()
 	switch {
 	case !m.changesOn:
-		m.note("changes panel hidden  (/changes or palette to show)")
-	case len(m.lastRunChanges()) == 0:
-		m.note("changes panel on — it shows the files edited in the last turn (none yet)")
+		m.note("right panel hidden  (/changes or palette to show)")
+	case m.rightTab == rightTabChanges && len(m.lastRunChanges()) == 0:
+		m.note("right panel on — changes tab shows files edited in the last turn (none yet)")
 	default:
-		m.note("changes panel shown  ([x] or /changes to hide)")
+		m.note("right panel shown  ([x] or /changes to hide)")
 	}
 }

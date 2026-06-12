@@ -5,6 +5,9 @@ package tui
 
 import (
 	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -528,6 +531,86 @@ func TestChangesHiddenWithNoEdits(t *testing.T) {
 	}
 	if m.rightPanelWidth() != 0 {
 		t.Fatal("hidden panel has zero width")
+	}
+}
+
+func TestRightPanelTabHeaderAndSwitch(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.text("user", "edit")
+	m.push(editBlock("f.go", "a", "b"))
+	band := m.transcriptBand()
+	for _, want := range []string{"[changes]", "[git]", "[x]"} {
+		if !strings.Contains(band, want) {
+			t.Fatalf("right panel tab header missing %q:\n%s", want, band)
+		}
+	}
+	m.nextRightTab()
+	if m.rightTab != rightTabGit {
+		t.Fatalf("nextRightTab should switch to git, got %v", m.rightTab)
+	}
+	band = m.transcriptBand()
+	if !strings.Contains(band, "branch") && !strings.Contains(band, "not a git repo") {
+		t.Fatalf("git tab should render git content or no-repo state:\n%s", band)
+	}
+}
+
+func TestRightPanelTabClickSwitches(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.text("user", "edit")
+	m.push(editBlock("f.go", "a", "b"))
+	m.relayout()
+	l := m.computeLayout()
+	if m.rightTab != rightTabChanges {
+		t.Fatal("default right tab should be changes")
+	}
+	// Right panel has leading "│ " gutter; [changes] is 9 cols, space, then [git].
+	gitX := l.rightPanel.x + 2 + len("[changes] ") + 1
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: gitX, Y: l.rightPanel.y})
+	if m.rightTab != rightTabGit {
+		t.Fatalf("clicking [git] should switch right tab to git, got %v", m.rightTab)
+	}
+}
+
+func TestGitSummaryForRepo(t *testing.T) {
+	dir := t.TempDir()
+	runGit(t, dir, "init")
+	runGit(t, dir, "config", "user.email", "a@example.com")
+	runGit(t, dir, "config", "user.name", "A")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "a.txt")
+	runGit(t, dir, "commit", "-m", "init")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\ntwo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "new.txt"), []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := gitSummaryFor(dir)
+	if !s.Repo {
+		t.Fatalf("expected repo summary, got %+v", s)
+	}
+	if s.Branch == "" || s.Unstaged == 0 || s.Untracked == 0 || !strings.Contains(s.DiffStat, "a.txt") {
+		t.Fatalf("unexpected git summary: %+v", s)
+	}
+}
+
+func TestGitSummaryNoRepo(t *testing.T) {
+	s := gitSummaryFor(t.TempDir())
+	if s.Repo {
+		t.Fatalf("plain tempdir should not be a git repo: %+v", s)
+	}
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
 }
 
