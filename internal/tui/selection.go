@@ -27,6 +27,10 @@ func (m *model) screenToContent(x, y int) (point, bool) {
 	if y < 0 || y >= m.vp.Height {
 		return point{}, false
 	}
+	x -= m.railWidth() // transcript origin shifts right by the rail column
+	if x < 0 {
+		return point{}, false
+	}
 	cl := m.vp.YOffset + y
 	if cl < 0 {
 		cl = 0

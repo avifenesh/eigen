@@ -262,6 +262,13 @@ type model struct {
 	// compact, rename). Inactive when ov.active is false.
 	ov overlay
 
+	// Left session rail (Tier 9 Wave 3): railOn toggles the persistent column
+	// of daemon sibling sessions down the left of the transcript; railEntries
+	// is the last polled snapshot. Only shown for daemon-hosted backends on a
+	// wide-enough terminal.
+	railOn      bool
+	railEntries []chat.SessionEntry
+
 	// input history: previously entered lines, recalled with ↑/↓ (shell-style).
 	history   []string
 	histIdx   int    // browse cursor; len(history) == live draft (not browsing)
@@ -314,6 +321,12 @@ type buildDoneMsg struct {
 
 func (m *model) Init() tea.Cmd {
 	cmds := []tea.Cmd{textarea.Blink, m.sp.Tick}
+	// Seed + start the left session rail (daemon-hosted backends only; nil for
+	// local chats, so it costs nothing there).
+	m.refreshRail()
+	if c := m.railTick(); c != nil {
+		cmds = append(cmds, c)
+	}
 	if m.initialTask != "" {
 		task := m.initialTask
 		cmds = append(cmds, func() tea.Msg { return submitMsg{task} })
@@ -964,6 +977,13 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			// not draggable, so acting on press is safe.
 			if h := m.hitTest(msg.X, msg.Y); h.action != actNone {
 				return m, m.dispatch(h.action)
+			} else if h.region == regLeftRail {
+				// A click on a session rail row hops the window there (same path
+				// as the switcher's enter — Detach keeps the daemon turn alive).
+				if idx := m.railRowAt(h.localY); idx >= 0 && idx < len(m.railEntries) {
+					return m, m.hopToSession(m.railEntries[idx].ID)
+				}
+				return m, nil
 			}
 			// A click inside the input box positions the text cursor there.
 			if vrow, col, ok := m.clickInInput(msg.X, msg.Y); ok {
@@ -1188,11 +1208,13 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		var cmd tea.Cmd
 		m.sp, cmd = m.sp.Update(msg)
 		return m, cmd
+
+	case railTickMsg:
+		m.refreshRail()
+		return m, m.railTick()
 	}
 	return m, nil
 }
-
-// --- commands --------------------------------------------------------------
 
 // buildCmd rebuilds eigen to a staging binary, smoke-tests it, and only on
 // success atomically swaps it into place — so a broken build never replaces the
@@ -1355,6 +1377,7 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 		notifyCmd:      o.NotifyCmd,
 		loopPrompt:     o.LoopPrompt,
 		loopEvery:      o.LoopEvery,
+		railOn:         true, // shown only for daemon-hosted backends on wide terminals
 	}
 	if m.idleMinutes <= 0 {
 		m.idleMinutes = 5

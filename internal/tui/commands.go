@@ -60,7 +60,7 @@ func (m *model) applyResumed(msgs []llm.Message) {
 func safeWhileRunning(name string) bool {
 	switch name {
 	case "/effort", "/search", "/perm", "/model", "/help", "/goal", "/loop", "/config", "/route",
-		"/skills", "/tools", "/find", "/copy", "/read", "/voice":
+		"/skills", "/tools", "/find", "/copy", "/read", "/voice", "/rail", "/rename":
 		return true
 	default:
 		// /clear, /compact, /resume, /rebuild, /save, /export, /quit, /exit
@@ -122,6 +122,21 @@ func (m *model) command(line string) tea.Cmd {
 		return tea.Quit
 	case "/sessions":
 		m.openSwitcher()
+	case "/rail":
+		if m.railLister() == nil {
+			m.note("the session rail needs a daemon-hosted chat (no siblings in a local chat)")
+			break
+		}
+		m.railOn = !m.railOn
+		m.relayout()
+		switch {
+		case !m.railOn:
+			m.note("session rail hidden  (/rail to show)")
+		case m.width < railMinTerminalWidth:
+			m.note("session rail on — but hidden on this narrow terminal (needs ≥80 cols)")
+		default:
+			m.note("session rail shown  (/rail to hide)")
+		}
 	case "/resume":
 		if arg == "" {
 			// open the picker

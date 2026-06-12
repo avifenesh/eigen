@@ -59,6 +59,7 @@ func testModel(t *testing.T) *model {
 		state:       stInput,
 		srcDir:      t.TempDir(),
 		sessionPath: t.TempDir() + "/s.eigen.jsonl",
+		railOn:      true, // mirror Run's default (rail shown for daemon backends)
 		// store intentionally nil: resume paths must guard against it.
 	}
 	// Give it a viewport so View() and sync() are exercised.

@@ -273,7 +273,10 @@ func (m *model) relayout() {
 	if h < 1 {
 		h = 1
 	}
-	m.vp.Width = m.width
+	m.vp.Width = m.width - m.railWidth()
+	if m.vp.Width < 1 {
+		m.vp.Width = 1
+	}
 	m.vp.Height = h
 	m.sync()
 }

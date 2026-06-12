@@ -310,3 +310,132 @@ func TestAnsiTrunc(t *testing.T) {
 		t.Fatalf("zero width = %q", got)
 	}
 }
+
+// --- Wave 3: left session rail ---------------------------------------------
+
+func TestRailHiddenForLocalBackend(t *testing.T) {
+	m := testModel(t) // plain local backend: no SessionLister
+	if m.railVisible() {
+		t.Fatal("local chats have no siblings — the rail must stay hidden")
+	}
+	if m.railWidth() != 0 {
+		t.Fatal("hidden rail has zero width")
+	}
+	// The transcript band falls back to the plain viewport.
+	if m.transcriptBand() != m.vp.View() {
+		t.Fatal("with no rail the band is just the viewport")
+	}
+}
+
+func TestRailVisibleForDaemonBackend(t *testing.T) {
+	m := switcherModel(t) // has a SessionLister with 3 entries
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.refreshRail()
+	if !m.railVisible() {
+		t.Fatal("daemon-hosted backend on a wide terminal should show the rail")
+	}
+	if m.railWidth() != railWidthCols {
+		t.Fatalf("rail width = %d, want %d", m.railWidth(), railWidthCols)
+	}
+	// The viewport shrank by the rail width.
+	if m.vp.Width != 100-railWidthCols {
+		t.Fatalf("viewport width should shrink by the rail, got %d", m.vp.Width)
+	}
+	// The rail renders the session titles.
+	band := m.transcriptBand()
+	for _, want := range []string{"sessions", "first", "current", "third"} {
+		if !strings.Contains(band, want) {
+			t.Fatalf("rail band missing %q:\n%s", want, band)
+		}
+	}
+}
+
+func TestRailHidesOnNarrowTerminal(t *testing.T) {
+	m := switcherModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 24}) // < railMinTerminalWidth
+	m.refreshRail()
+	if m.railVisible() {
+		t.Fatal("rail must hide on a narrow terminal (transcript needs the width)")
+	}
+	if m.vp.Width != 70 {
+		t.Fatalf("narrow viewport should use the full width, got %d", m.vp.Width)
+	}
+}
+
+func TestRailLayoutShiftsTranscript(t *testing.T) {
+	m := switcherModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.refreshRail()
+	l := m.computeLayout()
+	if l.leftRail.empty() {
+		t.Fatal("rail rect should be present")
+	}
+	if l.transcript.x != railWidthCols {
+		t.Fatalf("transcript origin should shift right by the rail, got x=%d", l.transcript.x)
+	}
+	// A click on the transcript (right of the rail) hits regTranscript.
+	if h := m.hitTest(railWidthCols+1, l.transcript.y); h.region != regTranscript {
+		t.Fatalf("right of the rail should be transcript, got %v", h.region)
+	}
+	// A click in the rail column hits regLeftRail.
+	if h := m.hitTest(1, l.transcript.y); h.region != regLeftRail {
+		t.Fatalf("left column should be the rail, got %v", h.region)
+	}
+}
+
+func TestRailRowClickHops(t *testing.T) {
+	m := switcherModel(t) // current is s2; entries s1,s2,s3
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.refreshRail()
+	l := m.computeLayout()
+	// Row 0 is the "sessions" header; entry 0 (s1) is at rail row 1.
+	_, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + 1})
+	if m.switchTo != "s1" {
+		t.Fatalf("clicking the first rail row should hop to s1, got %q", m.switchTo)
+	}
+	if cmd == nil {
+		t.Fatal("a hop should quit (to switch)")
+	}
+}
+
+func TestRailClickCurrentSessionNoop(t *testing.T) {
+	m := switcherModel(t) // current is s2 → rail row 2
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.refreshRail()
+	l := m.computeLayout()
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + 2})
+	if m.switchTo != "" {
+		t.Fatal("clicking the current session must be a no-op")
+	}
+}
+
+func TestRailToggleCommand(t *testing.T) {
+	m := switcherModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	if !m.railOn {
+		t.Fatal("rail is on by default")
+	}
+	m.command("/rail")
+	if m.railOn {
+		t.Fatal("/rail should toggle the rail off")
+	}
+	m.command("/rail")
+	if !m.railOn {
+		t.Fatal("/rail should toggle it back on")
+	}
+}
+
+func TestRailScreenToContentRebased(t *testing.T) {
+	m := switcherModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.refreshRail()
+	m.text("assistant", "hello transcript")
+	// A click inside the rail column must NOT map to transcript content.
+	if _, ok := m.screenToContent(1, m.topHeight()); ok {
+		t.Fatal("a point in the rail column should not be transcript content")
+	}
+	// A click right of the rail maps to content (rebased by the rail width).
+	if _, ok := m.screenToContent(railWidthCols+2, m.topHeight()); !ok {
+		t.Fatal("a point right of the rail should be transcript content")
+	}
+}

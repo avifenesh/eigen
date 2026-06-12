@@ -63,8 +63,12 @@ func (m *model) computeLayout() layout {
 	// Header occupies the first row(s); the plan panel follows it.
 	l.header = rect{x: 0, y: 0, w: w, h: hh}
 	l.plan = rect{x: 0, y: hh, w: w, h: top - hh}
-	// Transcript viewport.
-	l.transcript = rect{x: 0, y: top, w: w, h: m.vp.Height}
+	// Transcript viewport (shifted right by the rail column when shown).
+	rw := m.railWidth()
+	if rw > 0 {
+		l.leftRail = rect{x: 0, y: top, w: rw, h: m.vp.Height}
+	}
+	l.transcript = rect{x: rw, y: top, w: m.width - rw, h: m.vp.Height}
 	y := top + m.vp.Height
 	if m.pending != nil {
 		// Approval prompt replaces the spinner+input with a single line.
