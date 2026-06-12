@@ -189,8 +189,14 @@ func TestRenameCommand(t *testing.T) {
 	if got := m.backend.Title(); got != "my project work" {
 		t.Fatalf("title = %q", got)
 	}
-	// Empty arg clears (reverts to the derived preview).
+	// Bare /rename opens the interactive prompt (the single rename surface).
 	m.command("/rename")
+	if !m.ov.active || m.ov.kind != promptText {
+		t.Fatal("bare /rename should open the rename prompt")
+	}
+	// Accepting an empty value clears the title (reverts to the derived preview).
+	m.ov.value = ""
+	m.overlayKey("enter")
 	if got := m.backend.Title(); got != "" {
 		t.Fatalf("clear: title = %q", got)
 	}

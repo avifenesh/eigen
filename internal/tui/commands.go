@@ -76,6 +76,7 @@ func (m *model) command(line string) tea.Cmd {
 	case "/help":
 		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /loop  /route  /review  /voice  /config  /skills  /tools  /find  /copy  /read  /rebuild  /quit")
 		m.note("keys: / commands · @ files · ↑↓ history · select ctrl+p/n (or alt+↑/↓) · tab expand · drag select+copy · copy ctrl+y/alt+y · sessions alt+s · perm ctrl+a/alt+a · effort ctrl+e/alt+r · model ctrl+o/alt+m · paste image ctrl+v/alt+v · talk ctrl+t/alt+t (voice mode) · pgup/pgdn scroll")
+		m.note("clickable: the status-bar segments are buttons — click model/perm/effort/search/route/context to change them (perm + compact confirm first); /rename (or a future title click) renames the session")
 		m.note("multiplexer note: zellij/tmux capture ctrl+p/n/o, and zellij ALSO takes alt+arrows/alt+j/k (pane focus) — use shift+↑/↓ to select blocks there; alt+m model, alt+r effort, alt+a perm, alt+y copy still work")
 		m.note("while running: enter queues a message · esc interrupts · settings commands (/effort /perm /model /search) run immediately")
 	case "/clear":
@@ -89,13 +90,15 @@ func (m *model) command(line string) tea.Cmd {
 			break
 		}
 		name := strings.TrimSpace(arg)
+		if name == "" {
+			// Bare /rename opens the interactive prompt (the single rename
+			// surface, shared with the header title click).
+			m.openRename()
+			break
+		}
 		m.backend.SetTitle(name)
 		m.saveMeta() // persist for local sessions (daemon persists its own)
-		if name == "" {
-			m.note("title cleared (reverts to the first-message preview)")
-		} else {
-			m.note("renamed → " + name)
-		}
+		m.note("renamed → " + name)
 	case "/compact":
 		if m.backend == nil {
 			break

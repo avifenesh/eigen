@@ -152,6 +152,9 @@ func (m *model) View() string {
 	default:
 		bottom = m.compMenuView() + m.ti.View()
 	}
+	if m.ov.active {
+		bottom = m.overlayView() + "\n" + bottom
+	}
 	return m.planView() + m.vp.View() + "\n" + bottom + "\n" + m.statusBarView()
 }
 

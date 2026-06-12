@@ -240,6 +240,9 @@ func (m *model) bottomHeight() int {
 	if m.comp.active() {
 		h += m.comp.rows()
 	}
+	if m.ov.active {
+		h++ // overlay confirm/text line above the input
+	}
 	return h
 }
 

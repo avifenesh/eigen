@@ -257,6 +257,11 @@ type model struct {
 	// so EventDone only renders the final answer when nothing was streamed.
 	streamedText bool
 
+	// ov is a lightweight bottom-line overlay (confirm / text prompt) used by
+	// clickable chrome actions that must not fire silently (perm change,
+	// compact, rename). Inactive when ov.active is false.
+	ov overlay
+
 	// input history: previously entered lines, recalled with ↑/↓ (shell-style).
 	history   []string
 	histIdx   int    // browse cursor; len(history) == live draft (not browsing)
@@ -612,6 +617,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			m.picking = false
 			m.modelPicking = false
 			m.conf = confPanel{}
+			m.ov = overlay{}
 			m.state = stInput
 			m.push(&block{kind: blockNote, isErr: true, body: sb(fmt.Sprintf("internal error (recovered): %v", r))})
 			m.ti.Focus()
@@ -638,6 +644,12 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				m.autosave()
 			}
 			return m, tea.Quit
+		}
+		// Lightweight overlay (confirm / rename prompt) captures keys first.
+		if m.ov.active {
+			if cmd, handled := m.overlayKey(msg.String()); handled {
+				return m, cmd
+			}
 		}
 		// Session switcher captures keys while open.
 		if m.switching {
@@ -947,6 +959,12 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			m.pasteIntoInput()
 			return m, nil
 		case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress:
+			// Chrome (status bar / header) is clickable: dispatch the segment's
+			// action through the same validated path as keys. Chrome rows are
+			// not draggable, so acting on press is safe.
+			if h := m.hitTest(msg.X, msg.Y); h.action != actNone {
+				return m, m.dispatch(h.action)
+			}
 			// A click inside the input box positions the text cursor there.
 			if vrow, col, ok := m.clickInInput(msg.X, msg.Y); ok {
 				m.positionCursorAt(vrow, col)

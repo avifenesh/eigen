@@ -132,6 +132,32 @@ func (m *model) endFailover() {
 	m.note("overload window over — switched back to " + orig.model)
 }
 
+// cycleSearch steps live search off→auto→on→off (wrapping). No-op (with a
+// note) when the current model has no live-search setting.
+func (m *model) cycleSearch() {
+	if m.backend == nil {
+		return
+	}
+	cur := m.backend.SearchMode()
+	if cur == "" {
+		m.note("the current model does not support live search (grok only)")
+		return
+	}
+	order := []string{"off", "auto", "on"}
+	next := order[0]
+	for i, s := range order {
+		if s == cur {
+			next = order[(i+1)%len(order)]
+			break
+		}
+	}
+	if !m.backend.SetSearch(next) {
+		_ = m.backend.SetSearch(order[0])
+	}
+	m.saveMeta()
+	m.note("live search → " + m.backend.SearchMode())
+}
+
 // contextBudgetFor returns the budget for a model id, capped by
 // min(user ceiling, model window minus headroom) via llm.ContextBudget — the
 // same rule as main's startup budget, so live /model switches stay consistent.

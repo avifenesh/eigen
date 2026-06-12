@@ -73,22 +73,24 @@ func (m *model) statusBarView() string {
 // statusBarHeight is the number of rows the status bar occupies (1 or 2).
 func (m *model) statusBarHeight() int { return len(m.statusBarLines()) }
 
-// statusSeg is one status-bar segment: its plain text (for width math) and the
-// style used to render it.
+// statusSeg is one status-bar segment: its plain text (for width math), the
+// style used to render it, and the action a click on it dispatches (actNone =
+// not clickable, e.g. the "eigen" brand or the tok/s readout).
 type statusSeg struct {
-	text  string
-	style lipgloss.Style
+	text   string
+	style  lipgloss.Style
+	action actionID
 }
 
 // statusBarParts assembles the colored status segments.
 func (m *model) statusBarParts() []statusSeg {
-	segs := []statusSeg{{"eigen", styleAccent.Bold(true)}}
+	segs := []statusSeg{{text: "eigen", style: styleAccent.Bold(true)}}
 	if m.backend != nil {
 		// ModelID covers remote backends too (no live provider handle there).
 		if id := m.backend.ModelID(); id != "" {
-			segs = append(segs, statusSeg{modelShort(id), styleUser})
+			segs = append(segs, statusSeg{text: modelShort(id), style: styleUser, action: actModelPicker})
 		} else if p := m.backend.Provider(); p != nil {
-			segs = append(segs, statusSeg{modelShort(p.Name()), styleUser})
+			segs = append(segs, statusSeg{text: modelShort(p.Name()), style: styleUser, action: actModelPicker})
 		}
 	}
 	if m.backend != nil {
@@ -97,16 +99,16 @@ func (m *model) statusBarParts() []statusSeg {
 		if m.backend.Perm() == agent.PermAuto {
 			permStyle = styleAsk
 		}
-		segs = append(segs, statusSeg{"perm=" + string(m.backend.Perm()), permStyle})
+		segs = append(segs, statusSeg{text: "perm=" + string(m.backend.Perm()), style: permStyle, action: actPermPicker})
 		if e := m.backend.Effort(); e != "" {
-			segs = append(segs, statusSeg{"effort=" + e, styleTool})
+			segs = append(segs, statusSeg{text: "effort=" + e, style: styleTool, action: actEffortCycle})
 		}
 		if sm := m.backend.SearchMode(); sm != "" && sm != "off" {
-			segs = append(segs, statusSeg{"search=" + sm, styleCode})
+			segs = append(segs, statusSeg{text: "search=" + sm, style: styleCode, action: actSearchCycle})
 		}
 	}
 	if ind := m.ctxIndicator(); ind != "" {
-		segs = append(segs, statusSeg{ind, m.ctxStyle()})
+		segs = append(segs, statusSeg{text: ind, style: m.ctxStyle(), action: actCompactPrompt})
 	}
 	if m.lastTokRate > 0 && m.state != stRunning {
 		// Only on the idle status bar — while running, the live tok/s shows on
@@ -116,19 +118,19 @@ func (m *model) statusBarParts() []statusSeg {
 		if m.lastInToks > 0 {
 			seg = fmt.Sprintf("↑%s ↓%s %.0f tok/s", humanToks(m.lastInToks), humanToks(m.lastOutToks), m.lastTokRate)
 		}
-		segs = append(segs, statusSeg{seg, styleReason})
+		segs = append(segs, statusSeg{text: seg, style: styleReason})
 	}
 	if m.loopPrompt != "" {
-		segs = append(segs, statusSeg{"loop=" + m.loopEvery.String(), styleAsk})
+		segs = append(segs, statusSeg{text: "loop=" + m.loopEvery.String(), style: styleAsk})
 	}
 	if llm.HasVision(m.modelID) {
-		segs = append(segs, statusSeg{"vision", styleCode})
+		segs = append(segs, statusSeg{text: "vision", style: styleCode})
 	}
 	if m.router != nil && m.router.Enabled() {
-		segs = append(segs, statusSeg{"route", styleStatus})
+		segs = append(segs, statusSeg{text: "route", style: styleStatus, action: actRouteToggle})
 	}
 	if m.readAloud {
-		segs = append(segs, statusSeg{"read-aloud", styleStatus})
+		segs = append(segs, statusSeg{text: "read-aloud", style: styleStatus, action: actReadAloudToggle})
 	}
 	return segs
 }
@@ -149,6 +151,65 @@ func (m *model) ctxStyle() lipgloss.Style {
 	default:
 		return styleStatus
 	}
+}
+
+// statusSegBox is a packed segment with its row and plain-text column range
+// (start inclusive, end exclusive) — the geometry a click maps against.
+type statusSegBox struct {
+	seg      statusSeg
+	row      int
+	startCol int
+	endCol   int
+}
+
+// statusBarLayout packs the segments into rows by display width (the SAME
+// greedy packing statusBarLines renders), recording each segment's row and
+// column range so a click can be mapped to its action. plainSepW is the width
+// of the " · " separator drawn between segments.
+func (m *model) statusBarLayout() []statusSegBox {
+	segs := m.statusBarParts()
+	w := m.width
+	plainSepW := ansi.StringWidth(" · ")
+	var boxes []statusSegBox
+	row, col := 0, 0
+	for _, s := range segs {
+		segW := ansi.StringWidth(s.text)
+		addW := segW
+		if col > 0 {
+			addW += plainSepW
+		}
+		// Wrap to a second row when the segment won't fit (mirrors
+		// statusBarLines, which only ever uses up to 2 rows).
+		if w > 0 && col+addW > w && col > 0 && row < 1 {
+			row++
+			col = 0
+			addW = segW
+		}
+		start := col
+		if col > 0 {
+			start = col + plainSepW
+		}
+		boxes = append(boxes, statusSegBox{seg: s, row: row, startCol: start, endCol: start + segW})
+		col = start + segW
+	}
+	return boxes
+}
+
+// statusActionAt maps an absolute screen (x,y) on the status bar to the action
+// of the segment under it (actNone when between segments or on a non-clickable
+// one). The status bar's top screen row is layout.status.y.
+func (m *model) statusActionAt(x, y int) actionID {
+	l := m.computeLayout()
+	if l.status.empty() {
+		return actNone
+	}
+	relRow := y - l.status.y
+	for _, b := range m.statusBarLayout() {
+		if b.row == relRow && x >= b.startCol && x < b.endCol {
+			return b.seg.action
+		}
+	}
+	return actNone
 }
 
 // statusBarLines packs the colored status segments into 1–2 width-respecting
