@@ -883,12 +883,10 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			return m, nil
 		case "ctrl+b", "alt+b":
 			// Toggle the left session rail (b = bar/sidebar).
-			m.toggleRail()
-			return m, nil
+			return m, m.toggleRail()
 		case "ctrl+g", "alt+g":
 			// Toggle the right panel.
-			m.toggleChanges()
-			return m, nil
+			return m, m.toggleChanges()
 		case "alt+tab", "ctrl+r":
 			// Cycle right panel tabs (changes/git/term).
 			return m, m.nextRightTab()
@@ -1357,6 +1355,18 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		var cmd tea.Cmd
 		m.sp, cmd = m.sp.Update(msg)
 		return m, cmd
+
+	case growDoneMsg:
+		switch {
+		case msg.unsupported:
+			m.note(fmt.Sprintf("can't stretch this terminal from inside (no zellij/tmux) — widen the window to ≥%d cols", msg.want))
+		case msg.ok:
+			// The WindowSizeMsg that follows the resize relayouts and shows the
+			// panel; nothing more to do.
+		default:
+			m.note(fmt.Sprintf("pane stretched to %d cols but the panel needs ≥%d — give this pane more room (zellij: alt+= or close a neighbor)", msg.got, msg.want))
+		}
+		return m, nil
 
 	case railTickMsg:
 		m.refreshRail()

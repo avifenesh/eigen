@@ -157,3 +157,71 @@ func TestHeaderToggleStateStyling(t *testing.T) {
 		t.Fatal("home is not a toggle")
 	}
 }
+
+func TestToggleNotesAreHonestWhenTooNarrow(t *testing.T) {
+	t.Setenv("TMUX", "")
+	t.Setenv("ZELLIJ", "")
+	m := switcherModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 20}) // < railMinTerminalWidth
+	m.railOn = false
+	cmd := m.toggleRail() // on, but cannot fit
+	if m.railVisible() {
+		t.Fatal("rail can't be visible at 60 cols")
+	}
+	v := ansi.Strip(m.View())
+	if strings.Contains(v, "session rail shown") {
+		t.Fatalf("toggle must not claim 'shown' when the panel doesn't fit:\n%s", v)
+	}
+	if !strings.Contains(v, "needs ≥80 cols") {
+		t.Fatalf("toggle should state the width deficit:\n%s", v)
+	}
+	if cmd == nil {
+		t.Fatal("too-narrow toggle should return the grow attempt command")
+	}
+	// Outside any multiplexer the grow attempt reports honestly.
+	msg := cmd()
+	gd, ok := msg.(growDoneMsg)
+	if !ok || !gd.unsupported {
+		t.Fatalf("expected unsupported growDoneMsg outside zellij/tmux, got %#v", msg)
+	}
+	m.Update(gd)
+	v = ansi.Strip(m.View())
+	if !strings.Contains(v, "can't stretch this terminal") {
+		t.Fatalf("unsupported grow should explain itself:\n%s", v)
+	}
+}
+
+func TestToggleRightPanelTooNarrowTriesGrow(t *testing.T) {
+	t.Setenv("TMUX", "")
+	t.Setenv("ZELLIJ", "")
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 50, Height: 20})
+	m.text("user", "edit")
+	m.push(editBlock("f.go", "a", "b"))
+	m.changesOn = false
+	cmd := m.toggleChanges()
+	if m.changesVisible() {
+		t.Fatal("right panel can't fit at 50 cols")
+	}
+	v := ansi.Strip(m.View())
+	if strings.Contains(v, "right panel shown") {
+		t.Fatalf("toggle must not claim 'shown' when it doesn't fit:\n%s", v)
+	}
+	if cmd == nil {
+		t.Fatal("should attempt a pane stretch")
+	}
+}
+
+func TestToggleNotesWhenFitting(t *testing.T) {
+	m := switcherModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.refreshRail()
+	m.railOn = false
+	if cmd := m.toggleRail(); cmd != nil {
+		t.Fatal("a fitting toggle needs no grow command")
+	}
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "session rail shown") {
+		t.Fatalf("fitting toggle should confirm shown:\n%s", v)
+	}
+}

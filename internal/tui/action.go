@@ -141,8 +141,7 @@ var actionRegistry = map[actionID]action{
 		id: actRailToggle, label: "session rail",
 		enabled: func(m *model) bool { return m.railLister() != nil },
 		run: func(m *model) tea.Cmd {
-			m.toggleRail()
-			return nil
+			return m.toggleRail()
 		},
 	},
 	actRailCollapse: {
@@ -173,8 +172,7 @@ var actionRegistry = map[actionID]action{
 		id: actChangesToggle, label: "right panel",
 		enabled: always,
 		run: func(m *model) tea.Cmd {
-			m.toggleChanges()
-			return nil
+			return m.toggleChanges()
 		},
 	},
 	actPanelWiden: {

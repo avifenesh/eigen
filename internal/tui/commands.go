@@ -124,9 +124,9 @@ func (m *model) command(line string) tea.Cmd {
 	case "/sessions":
 		m.openSwitcher()
 	case "/rail":
-		m.toggleRail()
+		return m.toggleRail()
 	case "/changes":
-		m.toggleChanges()
+		return m.toggleChanges()
 	case "/term":
 		return m.setRightTab(rightTabTerminal)
 	case "/resume":
