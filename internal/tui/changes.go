@@ -216,6 +216,9 @@ func (m *model) changesLines(h int) []string {
 	if m.rightTab == rightTabGit {
 		return m.gitLines(h)
 	}
+	if m.rightTab == rightTabTerminal {
+		return m.termLines(h)
+	}
 	changes := m.lastRunChanges()
 	contentW := rightPanelWidthCols - 2 // leading "│ " gutter
 	lines := make([]string, 0, h)

@@ -788,6 +788,85 @@ func TestConfigPanelBackAffordance(t *testing.T) {
 	}
 }
 
+func TestParseArgv(t *testing.T) {
+	got, err := parseArgv("echo 'hello world' plain\\ arg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"echo", "hello world", "plain arg"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("argv = %#v, want %#v", got, want)
+	}
+	if _, err := parseArgv("echo hi | wc"); err == nil {
+		t.Fatal("pipes should be rejected in non-shell v1")
+	}
+	if _, err := parseArgv("echo 'unterminated"); err == nil {
+		t.Fatal("unterminated quote should error")
+	}
+}
+
+func TestTermTabRendersAndRunsCommand(t *testing.T) {
+	m := testModel(t)
+	m.setRightTab(rightTabTerminal)
+	if !strings.Contains(m.transcriptBand(), "type command") {
+		t.Fatal("empty terminal tab should show prompt help")
+	}
+	m.term.input = "printf hi"
+	cmd, handled := m.termKey("enter")
+	if !handled || cmd == nil || !m.term.running {
+		t.Fatal("enter should start a terminal command")
+	}
+	msg := cmd()
+	done, ok := msg.(termDoneMsg)
+	if !ok {
+		t.Fatalf("terminal cmd returned %T", msg)
+	}
+	m.Update(done)
+	if m.term.running || m.term.exit != "exit 0" || strings.TrimSpace(m.term.out) != "hi" {
+		t.Fatalf("terminal result not recorded: %+v", m.term)
+	}
+	if !strings.Contains(m.termLines(8)[0], "term") {
+		t.Fatal("terminal tab header should mention term")
+	}
+}
+
+func TestTermTabStaleResultIgnored(t *testing.T) {
+	m := testModel(t)
+	m.setRightTab(rightTabTerminal)
+	m.term.seq = 2
+	m.term.running = true
+	m.Update(termDoneMsg{seq: 1, out: "old", exit: "exit 0"})
+	if !m.term.running || m.term.out != "" {
+		t.Fatal("stale terminal result should be ignored")
+	}
+}
+
+func TestTermKeyEditing(t *testing.T) {
+	m := testModel(t)
+	m.setRightTab(rightTabTerminal)
+	m.termKey("echo")
+	m.termKey("space")
+	m.termKey("hi")
+	if m.term.input != "echo hi" {
+		t.Fatalf("term input = %q", m.term.input)
+	}
+	m.termKey("backspace")
+	if m.term.input != "echo h" {
+		t.Fatalf("backspace term input = %q", m.term.input)
+	}
+	m.termKey("ctrl+u")
+	if m.term.input != "" {
+		t.Fatal("ctrl+u should clear term input")
+	}
+}
+
+func TestTermOutputCapAndSanitize(t *testing.T) {
+	text, truncated := capBytes([]byte("abc\x1bdef"), 4)
+	if !truncated || strings.ContainsRune(text, 0x1b) || !strings.Contains(text, "truncated") {
+		t.Fatalf("cap/sanitize failed: %q truncated=%v", text, truncated)
+	}
+}
+
 func TestPaletteOpensWithCtrlK(t *testing.T) {
 	m := testModel(t)
 	m.Update(tea.KeyMsg{Type: tea.KeyCtrlK})

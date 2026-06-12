@@ -16,18 +16,23 @@ type rightPanelTab int
 const (
 	rightTabChanges rightPanelTab = iota
 	rightTabGit
+	rightTabTerminal
 )
 
 func (t rightPanelTab) label() string {
 	switch t {
 	case rightTabGit:
 		return "git"
+	case rightTabTerminal:
+		return "term"
 	default:
 		return "changes"
 	}
 }
 
-func (m *model) rightTabs() []rightPanelTab { return []rightPanelTab{rightTabChanges, rightTabGit} }
+func (m *model) rightTabs() []rightPanelTab {
+	return []rightPanelTab{rightTabChanges, rightTabGit, rightTabTerminal}
+}
 
 func (m *model) nextRightTab() {
 	tabs := m.rightTabs()

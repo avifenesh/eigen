@@ -278,7 +278,8 @@ type model struct {
 	// tool block). Hidden when the last run made no edits or the terminal is
 	// too narrow (degrades before the rail).
 	changesOn       bool
-	rightTab        rightPanelTab // selected right panel tab (changes/git/terminal later)
+	rightTab        rightPanelTab // selected right panel tab (changes/git/terminal)
+	term            termState     // non-PTY command runner tab state
 	changesCache    []fileChange  // memoized last-run change index
 	changesCacheSig string        // transcript signature the cache was built for
 
@@ -683,6 +684,10 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			if cmd, handled := m.paletteKey(msg.String()); handled {
 				return m, cmd
 			}
+		}
+		// Terminal tab captures typed commands while focused.
+		if cmd, handled := m.termKey(msg.String()); handled {
+			return m, cmd
 		}
 		// Session switcher captures keys while open.
 		if m.switching {
@@ -1243,6 +1248,20 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		}
 		m.relayout()
 		return m, textarea.Blink
+
+	case termDoneMsg:
+		// Stale-safe: ignore a result from an older command after a newer one ran.
+		if msg.seq == m.term.seq {
+			m.term.running = false
+			m.term.cancel = nil
+			m.term.cmd = msg.cmd
+			m.term.out = msg.out
+			m.term.err = msg.err
+			m.term.exit = msg.exit
+			m.term.dur = msg.dur
+			m.relayout()
+		}
+		return m, nil
 
 	case buildDoneMsg:
 		if msg.err != nil {

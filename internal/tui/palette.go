@@ -52,6 +52,7 @@ func (m *model) paletteCatalog() []paletteCmd {
 		{label: "toggle session rail", id: actRailToggle, slash: "/rail"},
 		{label: "toggle right panel", id: actChangesToggle, slash: "/changes"},
 		{label: "next right panel tab", id: actRightTabNext},
+		{label: "terminal command panel", id: actTerminalTab},
 		{label: "find in transcript", slash: "/find "},
 		{label: "copy last answer", slash: "/copy"},
 		{label: "compact (skip confirm)", slash: "/compact"},
