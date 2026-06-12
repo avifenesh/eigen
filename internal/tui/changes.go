@@ -303,16 +303,27 @@ func (m *model) buildChangesView() *changesView {
 		}
 		add(label+strings.Repeat(" ", gap)+stats, i)
 		// The file's diff, from the block(s) that touched it in the run.
-		// Diff lines are styled — truncate ANSI-aware.
+		// Diff lines are styled — truncate ANSI-aware. Tabs must be expanded
+		// BEFORE measuring/truncating (the terminal would expand them past
+		// the panel's padded width and scramble the band).
 		for _, ln := range strings.Split(m.diffForChange(fc), "\n") {
 			if ln == "" {
 				continue
 			}
-			add(ansi.Truncate(ln, contentW, "…"), i)
+			add(ansi.Truncate(expandTabs(ln), contentW, "…"), i)
 		}
 	}
 	m.changesVw = v
 	return &m.changesVw
+}
+
+// expandTabs replaces tabs with spaces for panel content: the panel pads each
+// line to an exact column width, and a raw \t makes the terminal expand it
+// past that width at render time — wrapping the line and scrambling the whole
+// transcript band. Width math (ansi.StringWidth) counts \t as 1 col, so the
+// drift is invisible to the renderer; normalize before measuring.
+func expandTabs(s string) string {
+	return strings.ReplaceAll(s, "\t", "    ")
 }
 
 // diffForChange returns the rendered (colored) diff text for one file change:

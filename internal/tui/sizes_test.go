@@ -225,3 +225,44 @@ func TestToggleNotesWhenFitting(t *testing.T) {
 		t.Fatalf("fitting toggle should confirm shown:\n%s", v)
 	}
 }
+
+func TestBandHasNoTabsAndAlignedPanel(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.text("user", "edit")
+	// Tab-indented Go content — the real-world case that scrambled the band.
+	m.push(editBlock("main.go", "\tif err != nil {\n\t\treturn err\n\t}", "\tif err != nil {\n\t\treturn fmt.Errorf(\"wrap: %w\", err)\n\t}"))
+	m.blocks[len(m.blocks)-1].collapsed = false
+	m.relayout()
+	band := m.transcriptBand()
+	rows := strings.Split(band, "\n")
+	if len(rows) == 0 {
+		t.Fatal("empty band")
+	}
+	// No raw tabs anywhere (terminals expand them past the padded width).
+	for i, ln := range rows {
+		if strings.Contains(ln, "\t") {
+			t.Fatalf("band row %d contains a raw tab: %q", i, ansi.Strip(ln))
+		}
+	}
+	// The right panel's gutter "│ " must sit at the SAME display column on
+	// every row (byte offsets shift with multibyte runes like ✓/−).
+	gutterCol := func(p string) int {
+		i := strings.LastIndex(p, "│")
+		if i < 0 {
+			return -1
+		}
+		return ansi.StringWidth(p[:i])
+	}
+	plain0 := ansi.Strip(rows[0])
+	wantCol := gutterCol(plain0)
+	if wantCol < 0 {
+		t.Fatalf("no panel gutter in row 0: %q", plain0)
+	}
+	for i, ln := range rows {
+		p := ansi.Strip(ln)
+		if got := gutterCol(p); got != wantCol {
+			t.Fatalf("row %d panel gutter at col %d, want %d (misaligned band):\nrow0: %q\nrow%d: %q", i, got, wantCol, plain0, i, p)
+		}
+	}
+}

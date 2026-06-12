@@ -1359,10 +1359,15 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 	case growDoneMsg:
 		switch {
 		case msg.unsupported:
-			m.note(fmt.Sprintf("can't stretch this terminal from inside (no zellij/tmux) — widen the window to ≥%d cols", msg.want))
+			m.note(fmt.Sprintf("can't stretch this terminal from inside — widen the window to ≥%d cols", msg.want))
 		case msg.ok:
 			// The WindowSizeMsg that follows the resize relayouts and shows the
 			// panel; nothing more to do.
+		case msg.triedWindow:
+			// We asked the terminal window itself (XTWINOPS) and it refused or
+			// fell short — common policy in some terminals (e.g. ghostty
+			// ignores resize escapes by default; tiling WMs fix the size).
+			m.note(fmt.Sprintf("asked the terminal to widen to %d cols but it stayed at %d — this terminal ignores resize requests; widen the window (or run inside zellij/tmux and I can stretch the pane)", msg.want, msg.got))
 		default:
 			m.note(fmt.Sprintf("pane stretched to %d cols but the panel needs ≥%d — give this pane more room (zellij: alt+= or close a neighbor)", msg.got, msg.want))
 		}

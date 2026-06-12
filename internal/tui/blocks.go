@@ -64,6 +64,13 @@ func (b *block) renderWrapped(selected bool, width int) string {
 		return b.rcache
 	}
 	s := b.render(selected)
+	// Expand tabs BEFORE width-wrapping: the wrap (and the side panels'
+	// padding math) counts \t as one column, but the terminal expands it to
+	// the next 8-col stop at render time — so a tab-bearing line drawn next
+	// to a side panel drifts and scrambles the whole row.
+	if strings.ContainsRune(s, '\t') {
+		s = strings.ReplaceAll(s, "\t", "    ")
+	}
 	if width > 0 {
 		s = lipgloss.NewStyle().Width(width).Render(s)
 	}
