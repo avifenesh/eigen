@@ -647,14 +647,16 @@ context without guessing.
   known transcript snapshot.
 
 ## Debt / bugs
-- [ ] **Untitled daemon sessions still appear.** Several persisted daemon meta files
-  have empty `title` even when the transcript has a user message (`s4/s5/s7/s9`
-  observed). Likely title generation only runs on the agent Persist hook for
-  newly appended messages, so restored/imported/command-only/failed-title
-  sessions can remain nameless forever. Fix direction: daemon/app listing should
-  backfill titles for untitled sessions from transcript head (cheap heuristic
-  immediately; async small-model title when available), persist the meta, and
-  expose title-failure logs/status so this is diagnosable.
+- [x] **Untitled daemon sessions still appear.** FIXED: (1) `Host.Restore` now
+  calls `maybeTitle` per restored session, so sessions whose title never landed
+  (titler failed, daemon died mid-flight, pre-titler sessions) get backfilled on
+  the next daemon start; (2) `Session.info()` falls back to a snippet of the
+  first user message while no model title exists, so listings never show
+  "(untitled)" for sessions with content; (3) titler errors now log to stderr
+  (`eigen daemon: title sN: …`) instead of failing silently, and the next
+  Persist retries; (4) an in-flight guard stops duplicate title calls (Persist
+  fires after every message). Live-verified: fabricated untitled persisted
+  session + daemon restart → meta backfilled with a real small-model title.
 
 ## Notes / grounding
 - read-aloud tool the user has: `readd` (espeak-ng/piper) at `~/projects/tfqol/readd`.

@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -64,6 +65,7 @@ type Session struct {
 
 	cancel  context.CancelFunc // cancels the in-flight turn (interrupt)
 	running bool
+	titling bool   // a title request is already in flight
 	onClose func() // releases the session's external resources (MCP/LSP/observe)
 
 	// gated-permission approvals awaiting a view's verdict
@@ -202,9 +204,20 @@ func (s *Session) interrupt() {
 func (s *Session) info() SessionInfo {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	title := s.title
+	if title == "" {
+		// Display fallback while the model title hasn't landed (or failed):
+		// a snippet of the first user message beats "(untitled)".
+		for _, m := range s.sess.Messages() {
+			if m.Role == llm.RoleUser && strings.TrimSpace(m.Text) != "" {
+				title = snippet(m.Text, 48)
+				break
+			}
+		}
+	}
 	return SessionInfo{
 		ID:      s.ID,
-		Title:   s.title,
+		Title:   title,
 		Dir:     s.Dir,
 		Model:   s.Model,
 		Status:  s.status,

@@ -34,16 +34,26 @@ type Host struct {
 func (h *Host) SetTitler(t func(ctx context.Context, head string) (string, error)) { h.titler = t }
 
 // maybeTitle titles an untitled session from its first user message, in the
-// background, persisting the result. Cheap no-ops: already titled, no titler.
+// background, persisting the result. Cheap no-ops: already titled, no titler,
+// or a title request already in flight (Persist fires after every message —
+// without the guard a slow titler stacks duplicate calls).
 func (h *Host) maybeTitle(s *Session, msgs []llm.Message) {
 	if h.titler == nil {
 		return
 	}
 	s.mu.Lock()
-	titled := s.title != ""
+	busy := s.title != "" || s.titling
+	if !busy {
+		s.titling = true
+	}
 	s.mu.Unlock()
-	if titled {
+	if busy {
 		return
+	}
+	done := func() {
+		s.mu.Lock()
+		s.titling = false
+		s.mu.Unlock()
 	}
 	var head string
 	for _, m := range msgs {
@@ -53,13 +63,20 @@ func (h *Host) maybeTitle(s *Session, msgs []llm.Message) {
 		}
 	}
 	if head == "" {
+		done()
 		return
 	}
 	go func() {
+		defer done()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		title, err := h.titler(ctx, head)
 		if err != nil || strings.TrimSpace(title) == "" {
+			// Stay diagnosable: silent failures left sessions untitled forever
+			// with no trace. The next Persist (or daemon restart) retries.
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "eigen daemon: title %s: %v\n", s.ID, err)
+			}
 			return
 		}
 		s.SetTitle(title)
@@ -165,6 +182,10 @@ func (h *Host) Restore(build Builder) int {
 		}
 		h.mu.Unlock()
 		h.enablePersist(s)
+		// Backfill titles for sessions that never got one (titler failed or
+		// the daemon died before the async title landed): maybeTitle no-ops
+		// when already titled, so this is cheap for the rest.
+		h.maybeTitle(s, p.history)
 		restored++
 	}
 	return restored

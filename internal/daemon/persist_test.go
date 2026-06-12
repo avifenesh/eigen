@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -223,4 +224,87 @@ func TestNoRetitleOnceTitled(t *testing.T) {
 	if calls != 0 {
 		t.Fatal("titled session must not be re-titled")
 	}
+}
+
+// TestRestoreBackfillsTitle: a session persisted WITHOUT a title (the titler
+// failed or the daemon died before the async title landed) gets titled on
+// restore — the bug was untitled sessions staying nameless forever.
+func TestRestoreBackfillsTitle(t *testing.T) {
+	persistDir := t.TempDir()
+	h := NewPersistentHost(persistDir) // no titler: session persists untitled
+	reg, _ := tool.NewRegistry()
+	s := h.Add("/tmp", "m", &agent.Agent{Provider: echoProvider{}, Tools: reg})
+	s.agent.Persist([]llm.Message{{Role: llm.RoleUser, Text: "fix the parser bug"}})
+	if got := loadPersisted(persistDir); len(got) != 1 || got[0].meta.Title != "" {
+		t.Fatalf("precondition: want one untitled persisted session, got %+v", got)
+	}
+
+	h2 := NewPersistentHost(persistDir)
+	titled := make(chan string, 1)
+	h2.SetTitler(func(_ context.Context, head string) (string, error) {
+		titled <- head
+		return "Parser Bug", nil
+	})
+	if n := h2.Restore(persistentBuilder()); n != 1 {
+		t.Fatalf("restore: %d, want 1", n)
+	}
+	select {
+	case head := <-titled:
+		if head != "fix the parser bug" {
+			t.Fatalf("titler got %q", head)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("restore did not backfill the title")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		ps := loadPersisted(persistDir)
+		if len(ps) == 1 && ps[0].meta.Title == "Parser Bug" {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("backfilled title not persisted to meta")
+}
+
+// TestInfoTitleFallsBackToSnippet: while no model title exists, listings show
+// a snippet of the first user message instead of "(untitled)".
+func TestInfoTitleFallsBackToSnippet(t *testing.T) {
+	h := NewHost()
+	reg, _ := tool.NewRegistry()
+	s := h.Add("/tmp", "m", &agent.Agent{Provider: echoProvider{}, Tools: reg})
+	s.mu.Lock()
+	s.sess = s.agent.Resume([]llm.Message{{Role: llm.RoleUser, Text: "refactor the layout engine\nand more"}})
+	s.mu.Unlock()
+	if got := s.info().Title; got != "refactor the layout engine" {
+		t.Fatalf("info title fallback = %q", got)
+	}
+	s.SetTitle("Real Title")
+	if got := s.info().Title; got != "Real Title" {
+		t.Fatalf("explicit title wins: %q", got)
+	}
+}
+
+// TestTitleInFlightGuard: Persist fires after every message; a slow titler
+// must not stack duplicate title calls.
+func TestTitleInFlightGuard(t *testing.T) {
+	h := NewPersistentHost(t.TempDir())
+	var calls atomic.Int32
+	release := make(chan struct{})
+	h.SetTitler(func(ctx context.Context, _ string) (string, error) {
+		calls.Add(1)
+		<-release
+		return "T", nil
+	})
+	reg, _ := tool.NewRegistry()
+	s := h.Add("/tmp", "m", &agent.Agent{Provider: echoProvider{}, Tools: reg})
+	msgs := []llm.Message{{Role: llm.RoleUser, Text: "hello"}}
+	for i := 0; i < 5; i++ {
+		s.agent.Persist(msgs)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("titler called %d times while one call was in flight, want 1", n)
+	}
+	close(release)
 }
