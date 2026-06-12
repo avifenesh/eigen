@@ -196,6 +196,7 @@ type model struct {
 	voiceMic    voiceState         // what the mic is doing (sidebar glyph)
 	voiceStop   context.CancelFunc // cancels the in-flight recording
 	voiceGen    int                // epoch guard: stale recordings/timers die
+	voiceMuted  bool               // conv mode: replies speak, mic doesn't record
 	speech      *speechQueue       // streamed sentence-by-sentence speech
 	speechBuf   string             // incomplete sentence tail awaiting boundary
 

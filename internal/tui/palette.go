@@ -49,6 +49,7 @@ func (m *model) paletteCatalog() []paletteCmd {
 		{label: "config panel", id: actConfigPanel},
 		{label: "read answers aloud", id: actReadAloudToggle},
 		{label: "voice conversation mode", id: actVoiceToggle, slash: "/voice"},
+		{label: "mute mic (conversation mode)", id: actVoiceMute, slash: "/mute"},
 		{label: "dictate (speak one message)", id: actDictate, slash: "/dictate"},
 		{label: "read last answer aloud", id: actSpeakAnswer, slash: "/speak"},
 		{label: "toggle session rail", id: actRailToggle, slash: "/rail"},

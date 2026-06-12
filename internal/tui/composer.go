@@ -23,6 +23,8 @@ type composerSeg struct {
 // composerParts assembles the bar's segments with live state. While a
 // dictation recording is live the ⏺ button BECOMES the stop control — the
 // label says so (nothing should ever look stuck on "listening" with no exit).
+// In conversation mode a ⊘ mute segment appears: muted = stay in the
+// conversation, replies speak, mic parked.
 func (m *model) composerParts() []composerSeg {
 	speak := composerSeg{text: "⏺ speak", action: actDictate}
 	if !m.voiceOn {
@@ -37,6 +39,13 @@ func (m *model) composerParts() []composerSeg {
 		speak,
 		{text: "▶ read", action: actSpeakAnswer},
 		{text: m.micGlyph(), action: actVoiceToggle, lit: m.voiceOn},
+	}
+	if m.voiceOn {
+		mute := composerSeg{text: "⊘ mute", action: actVoiceMute}
+		if m.voiceMuted {
+			mute = composerSeg{text: "⊘ muted", action: actVoiceMute, lit: true}
+		}
+		segs = append(segs, mute)
 	}
 	return segs
 }

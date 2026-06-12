@@ -399,3 +399,85 @@ func TestVoiceInterruptOnSpeechCutsReplyAndRelistens(t *testing.T) {
 		t.Fatal("interrupt must not exit voice mode")
 	}
 }
+
+func TestMuteParksConversationLoop(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m.stt = &fakeSTT{}
+	m.tts = &fakeTTS{}
+	m.toggleVoice()
+	if m.voiceMic != voiceListening {
+		t.Fatal("voice mode should be listening")
+	}
+	// Mute mid-listen: recording discarded, mic parked, mode stays ON.
+	m.toggleMute()
+	if !m.voiceMuted || m.voiceMic != voiceIdle || !m.voiceOn {
+		t.Fatalf("mute should park the mic in-mode: muted=%v mic=%v on=%v", m.voiceMuted, m.voiceMic, m.voiceOn)
+	}
+	// Replies still speak while muted: turn done → speaking leg runs…
+	m.state = stInput
+	m.text("assistant", "spoken while muted")
+	_, cmd := m.Update(turnDoneMsg{})
+	if m.voiceMic != voiceSpeaking {
+		t.Fatalf("muted conversation should still SPEAK replies, mic=%v", m.voiceMic)
+	}
+	done := drainForMsg[voiceSpeechDoneMsg](t, cmd)
+	// …but speech-done does NOT reopen the mic while muted.
+	m.Update(done)
+	if m.voiceMic != voiceIdle {
+		t.Fatalf("muted loop must park after speaking, mic=%v", m.voiceMic)
+	}
+	// Unmute resumes listening immediately.
+	cmd = m.toggleMute()
+	if m.voiceMuted || cmd == nil || m.voiceMic != voiceListening {
+		t.Fatalf("unmute should resume listening: muted=%v mic=%v", m.voiceMuted, m.voiceMic)
+	}
+}
+
+func TestMuteOutsideVoiceModeIsHint(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	if cmd := m.toggleMute(); cmd != nil || m.voiceMuted {
+		t.Fatal("mute outside conversation mode should only hint")
+	}
+}
+
+func TestExitVoiceModeClearsMute(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m.stt = &fakeSTT{}
+	m.tts = &fakeTTS{}
+	m.toggleVoice()
+	m.toggleMute()
+	m.exitVoiceMode("off")
+	if m.voiceMuted {
+		t.Fatal("exiting voice mode must clear mute (next session starts live)")
+	}
+}
+
+func TestComposerShowsMuteInVoiceMode(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	bar := ansi.Strip(m.composerBarView())
+	if strings.Contains(bar, "mute") {
+		t.Fatal("mute segment should not render outside voice mode")
+	}
+	m.stt = &fakeSTT{}
+	m.tts = &fakeTTS{}
+	m.toggleVoice()
+	bar = ansi.Strip(m.composerBarView())
+	if !strings.Contains(bar, "⊘ mute") {
+		t.Fatalf("voice mode should show the mute button: %q", bar)
+	}
+	// Click maps to the action via the shared column math.
+	col := strings.Index(bar, "⊘ mute")
+	x := ansi.StringWidth(bar[:col])
+	if got := m.composerActionAt(x); got != actVoiceMute {
+		t.Fatalf("click on mute → %v", got)
+	}
+	m.toggleMute()
+	bar = ansi.Strip(m.composerBarView())
+	if !strings.Contains(bar, "⊘ muted") {
+		t.Fatalf("muted state should render: %q", bar)
+	}
+}

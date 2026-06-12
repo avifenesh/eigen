@@ -76,6 +76,7 @@ var slashCommands = []slashCmd{
 	{"/route", "toggle the auto-router (per-task model selection)"},
 	{"/review", "cross-vendor review of recent work (GPT⇄Claude)"},
 	{"/voice", "conversation mode — talk hands-free, replies spoken (◉ button)"},
+	{"/mute", "mute the mic in conversation mode — replies still speak (⊘ button)"},
 	{"/dictate", "speak ONE message; the answer stays text (⏺ button)"},
 	{"/speak", "read the last answer aloud once (▶ button)"},
 	{"/skills", "list skills, or /skills <name> to preview one"},

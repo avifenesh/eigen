@@ -128,6 +128,7 @@ func (m *model) stopListening(note string) {
 // guard), and discards any pending dictation.
 func (m *model) exitVoiceMode(note string) {
 	m.voiceOn = false
+	m.voiceMuted = false
 	m.voiceGen++
 	m.stopSpeaking()
 	if m.voiceStop != nil {
@@ -140,9 +141,41 @@ func (m *model) exitVoiceMode(note string) {
 	}
 }
 
+// toggleMute flips the conversation-mode mic mute. Muted means: stay in the
+// conversation, replies still speak — but the mic does NOT record (and does
+// not watch for interrupts). Muting mid-recording discards that recording;
+// unmuting while idle resumes listening immediately.
+func (m *model) toggleMute() tea.Cmd {
+	if !m.voiceOn {
+		m.note("mute is for conversation mode — ◉ voice first")
+		return nil
+	}
+	m.voiceMuted = !m.voiceMuted
+	if m.voiceMuted {
+		if m.voiceMic == voiceListening || m.voiceMic == voiceTranscribing {
+			m.voiceGen++ // discard the in-flight recording/transcript
+			if m.voiceStop != nil {
+				m.voiceStop()
+				m.voiceStop = nil
+			}
+			m.voiceMic = voiceIdle
+		}
+		m.note("mic muted — replies still speak; ⊘ again to resume listening")
+		return nil
+	}
+	m.note("mic live")
+	if m.voiceMic == voiceIdle && m.state == stInput {
+		return m.startListening(true)
+	}
+	return nil
+}
+
 // startListening kicks off one VAD-endpointed recording off the UI loop.
 // conv marks it as a conversation-mode leg (reply spoken, then listen again).
 func (m *model) startListening(conv bool) tea.Cmd {
+	if conv && m.voiceMuted {
+		return nil // muted: the conversation loop parks until unmute
+	}
 	if m.stt == nil || !m.stt.Available() {
 		m.note("voice input unavailable — need a recorder (arecord) + whisper.cpp + a model (see EIGEN_WHISPER_BIN/MODEL)")
 		return nil
@@ -214,7 +247,7 @@ func (m *model) voiceTurnDone(err error) tea.Cmd {
 			<-q.done
 			return voiceSpeechDoneMsg{gen: gen}
 		}
-		if mon, ok := m.stt.(voice.InterruptMonitor); ok {
+		if mon, ok := m.stt.(voice.InterruptMonitor); ok && !m.voiceMuted {
 			monitor := func() tea.Msg {
 				if mon.MonitorInterrupt(q.ctx) {
 					q.Stop() // cut the stream; wait() returns → relisten
@@ -247,7 +280,7 @@ func (m *model) voiceTurnDone(err error) tea.Cmd {
 	// with the speech (done, skipped, or mode exit) — and cancel() makes
 	// Speak return, which delivers the SAME voiceSpeechDoneMsg that starts
 	// the next listen. No extra message type needed.
-	if mon, ok := m.stt.(voice.InterruptMonitor); ok {
+	if mon, ok := m.stt.(voice.InterruptMonitor); ok && !m.voiceMuted {
 		monitor := func() tea.Msg {
 			if mon.MonitorInterrupt(ctx) {
 				cancel() // cut the speech; its speechDoneMsg relistens
@@ -291,6 +324,8 @@ func (m *model) stopSpeaking() {
 // micGlyph renders the conversation-mode button state.
 func (m *model) micGlyph() string {
 	switch {
+	case m.voiceOn && m.voiceMuted:
+		return "◉ voice on" // the ⊘ segment carries the muted state
 	case m.voiceOn && m.voiceMic == voiceListening:
 		return "● listening"
 	case m.voiceOn && m.voiceMic == voiceTranscribing:

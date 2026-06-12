@@ -819,7 +819,9 @@ only `for-tests-*` fixtures) so `/voice` reports unavailable.
   speechQueue speaks complete sentences as deltas stream in (speech starts
   at the first sentence boundary mid-turn); voiceTurnDone drains the queue
   then relistens; read-aloud toggle streams too without re-speaking.
-  REMAINING: mute control. Original text: The user's stack already
+  Mute SHIPPED: ⊘ on the composer bar in voice mode — stay in the
+  conversation, replies still speak, mic parked (no recording, no
+  interrupt monitor); unmute resumes listening; exit clears mute. Original text: The user's stack already
   has `kokoro_stdin.py` (Kokoro ONNX → aplay, reads stdin — exactly eigen's
   cmdTTS contract) and the readd daemon (espeak-ng/piper). Default tts_cmd
   detection should prefer kokoro_stdin.py / readd over bare espeak-ng;

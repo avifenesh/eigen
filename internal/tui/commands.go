@@ -60,7 +60,7 @@ func (m *model) applyResumed(msgs []llm.Message) {
 func safeWhileRunning(name string) bool {
 	switch name {
 	case "/effort", "/search", "/perm", "/model", "/help", "/goal", "/loop", "/config", "/route",
-		"/skills", "/tools", "/find", "/copy", "/read", "/voice", "/dictate", "/talk", "/speak", "/rail", "/changes", "/term", "/tasks", "/rename":
+		"/skills", "/tools", "/find", "/copy", "/read", "/voice", "/mute", "/dictate", "/talk", "/speak", "/rail", "/changes", "/term", "/tasks", "/rename":
 		return true
 	default:
 		// /clear, /compact, /resume, /rebuild, /save, /export, /quit, /exit
@@ -188,6 +188,8 @@ func (m *model) command(line string) tea.Cmd {
 		return m.submit("Use the review tool to get a cross-vendor critique of " + target + ". Package the relevant artifact (the plan, diff, or code) into the tool's `artifact` argument with enough context to judge it, set an appropriate `focus`, then act on the critique — fix real issues it raises and note anything you disagree with and why.")
 	case "/voice":
 		return m.toggleVoice()
+	case "/mute":
+		return m.toggleMute()
 	case "/dictate", "/talk":
 		return m.dictateOnce()
 	case "/speak":
