@@ -637,7 +637,11 @@ context without guessing.
   model. All controls must go through the action registry + command palette.
 - [ ] **Notifications.** Parent session gets concise state-change notes (started,
   waiting on approval, tool error, done) with a clickable/task_status handle; no
-  spam for every token.
+  spam for every token. Important clarification from live use: a note like
+  `background task bg-… finished — task_status bg-… to collect` is already the
+  immediate completion event; `task_status` is the result-collection/open action,
+  not polling for whether it is done. UI should render this as `done → collect`
+  (click/enter), not as a passive instruction to manually poll.
 - [ ] **Persistence/restart.** Background tasks survive daemon/view restart well
   enough to inspect/collect; stale running tasks are marked `lost` with the last
   known transcript snapshot.
