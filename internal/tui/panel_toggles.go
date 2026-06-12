@@ -51,3 +51,22 @@ func (m *model) toggleChanges() tea.Cmd {
 	}
 	return nil
 }
+
+// toggleSidebar flips the headerless command-sidebar chrome (Tier 11.5,
+// /chrome). Too-narrow terminals keep the classic header; like the panels,
+// the toggle is honest and asks the multiplexer for room when it can't fit.
+func (m *model) toggleSidebar() tea.Cmd {
+	m.sidebarOn = !m.sidebarOn
+	m.relayout()
+	switch {
+	case !m.sidebarOn:
+		m.note("sidebar chrome off — classic header restored  (/chrome to switch back)")
+	case m.sidebarVisible():
+		m.note("sidebar chrome on — header folded into the left column  (/chrome to revert)")
+	default:
+		need := railMinTerminalWidth
+		m.note(fmt.Sprintf("sidebar chrome needs ≥%d cols (terminal is %d) — trying to stretch the pane…", need, m.width))
+		return growToWidth(need)
+	}
+	return nil
+}

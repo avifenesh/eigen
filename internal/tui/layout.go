@@ -130,7 +130,14 @@ func (m *model) hitTest(x, y int) hit {
 	if l.leftRail.contains(x, y) {
 		lx, ly := local(l.leftRail)
 		a := actNone
-		if panelCloseAt(lx, ly, l.leftRail.w-1) { // rail's last col is the separator
+		if m.sidebarVisible() {
+			// Sidebar rows resolve in the click handler via sidebarRowAt
+			// (nav rows carry their own action; no [x] close affordance —
+			// the sidebar IS the chrome).
+			if r, ok := m.sidebarRowAt(ly); ok {
+				a = r.action
+			}
+		} else if panelCloseAt(lx, ly, l.leftRail.w-1) { // rail's last col is the separator
 			a = actRailToggle
 		}
 		return hit{region: regLeftRail, action: a, localX: lx, localY: ly}

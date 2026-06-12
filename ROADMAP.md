@@ -599,11 +599,18 @@ Target layout:
   dropdown share one overlay/list component and keyboard/mouse behavior.
 
 Implementation waves:
-1. **Layout experiment behind a toggle** (`/chrome` or config flag): render a
-   compact left command sidebar while keeping current header path available.
-   Do this with computeLayout rectangles first; never special-case coordinates.
-2. **Move header actions into sidebar:** home/sessions/+new/config, title click,
-   cwd, left/right panel toggles. Preserve keyboard shortcuts and palette.
+1. [x] **Layout experiment behind a toggle** — SHIPPED: `/chrome` (+palette
+   "toggle sidebar chrome", actSidebarToggle). sidebarVisible() gates on the
+   rail width threshold; headerHeight()=0 in sidebar mode so every consumer
+   (computeLayout, topHeight, hit-test) rebases for free; railWidth() reuses
+   the rail column for the sidebar (works for local chats too); the band
+   renders sidebarLines instead of railLines. ONE row model (sidebarRows)
+   shared by renderer + click hit-test (same convention as railRows).
+2. [x] **Move header actions into sidebar** — SHIPPED in the same slice: title
+   (click=rename), cwd breadcrumb, ⌂ home / ⇆ sessions / + new / ⚙ config nav
+   rows, ◨ right-panel toggle (lit when open), session rail folded in below
+   a "sessions" mini-header (project headers collapse, session rows hop).
+   Narrow terminals keep the classic header (honest note + pane stretch).
 3. **Status relocation:** move model/perm/effort/search/route/context from the
    bottom status bar into sidebar rows with click/popover setters. Bottom bar
    shrinks to turn-specific ephemeral info only (or disappears when idle).

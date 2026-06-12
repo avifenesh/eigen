@@ -277,6 +277,11 @@ type model struct {
 	railCollapsed map[string]bool
 	railSpin      int
 
+	// Headerless command sidebar (Tier 11.5): sidebarOn swaps the top header
+	// for a left command column owning title/cwd/nav/panel toggles with the
+	// session rail folded in below. Behind /chrome while it proves out.
+	sidebarOn bool
+
 	// Right changes panel (Tier 9 Wave 4): changesOn toggles the column of
 	// files touched in the last edit-producing run (click a file = jump to its
 	// tool block). Hidden when the last run made no edits or the terminal is
@@ -1053,6 +1058,21 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			if h := m.hitTest(msg.X, msg.Y); h.action != actNone {
 				return m, m.dispatch(h.action)
 			} else if h.region == regLeftRail {
+				if m.sidebarVisible() {
+					// Sidebar rows: nav actions resolved in hitTest (handled
+					// above); here handle the embedded rail rows — project
+					// headers collapse, session rows hop.
+					if r, ok := m.sidebarRowAt(h.localY); ok && r.kind == sbRail {
+						if r.rail.header {
+							m.toggleRailProject(r.rail.dir)
+							return m, nil
+						}
+						if r.rail.entry >= 0 && r.rail.entry < len(m.railEntries) {
+							return m, m.hopToSession(m.railEntries[r.rail.entry].ID)
+						}
+					}
+					return m, nil
+				}
 				// A click on a project header toggles its collapse; a click on
 				// a session row hops the window there (same path as the
 				// switcher's enter — Detach keeps the daemon turn alive).

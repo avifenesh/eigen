@@ -164,6 +164,11 @@ func (m *model) View() string {
 	if m.ov.active {
 		bottom = m.overlayView() + "\n" + bottom
 	}
+	if m.sidebarVisible() {
+		// Headerless sidebar mode: no header row at all — the transcript band
+		// (with the command sidebar as its left column) starts at the top.
+		return m.planView() + m.transcriptBand() + "\n" + bottom + "\n" + m.statusBarView()
+	}
 	return m.headerView() + "\n" + m.planView() + m.transcriptBand() + "\n" + bottom + "\n" + m.statusBarView()
 }
 

@@ -1426,3 +1426,109 @@ func TestChangesPanelWrapsLongDiffLines(t *testing.T) {
 		}
 	}
 }
+
+// --- Tier 11.5: headerless command sidebar (/chrome) ---
+
+func TestSidebarToggleSwapsHeader(t *testing.T) {
+	m := switcherModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m.refreshRail()
+	if m.headerHeight() == 0 {
+		t.Fatal("classic chrome should render a header")
+	}
+	m.toggleSidebar()
+	if !m.sidebarVisible() {
+		t.Fatal("sidebar should be visible at 120 cols")
+	}
+	if m.headerHeight() != 0 {
+		t.Fatal("sidebar mode must remove the header")
+	}
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "⌂ home") || !strings.Contains(v, "⚙ config") {
+		t.Fatalf("sidebar should render nav rows:\n%s", v)
+	}
+	if strings.Contains(v, "[home] [sessions]") {
+		t.Fatal("classic header buttons must not render in sidebar mode")
+	}
+	// Sessions fold in below the nav.
+	if !strings.Contains(v, "sessions") {
+		t.Fatalf("sidebar should show the sessions section:\n%s", v)
+	}
+	m.toggleSidebar()
+	if m.headerHeight() == 0 {
+		t.Fatal("toggle back must restore the header")
+	}
+}
+
+func TestSidebarNarrowKeepsHeader(t *testing.T) {
+	t.Setenv("TMUX", "")
+	t.Setenv("ZELLIJ", "")
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
+	cmd := m.toggleSidebar()
+	if m.sidebarVisible() {
+		t.Fatal("sidebar can't fit at 60 cols")
+	}
+	if m.headerHeight() == 0 {
+		t.Fatal("too-narrow sidebar must keep the classic header")
+	}
+	if cmd == nil {
+		t.Fatal("too-narrow toggle should attempt a pane stretch")
+	}
+}
+
+func TestSidebarClickNavAndRailRows(t *testing.T) {
+	m := switcherModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m.refreshRail()
+	m.toggleSidebar()
+	l := m.computeLayout()
+	if l.header.h != 0 {
+		t.Fatalf("sidebar layout must have no header rect, got h=%d", l.header.h)
+	}
+	if l.leftRail.empty() || l.leftRail.y != l.transcript.y {
+		t.Fatalf("sidebar occupies the left rail rect from the top: %+v", l.leftRail)
+	}
+	// Row model: find the nav row for config and click it.
+	rows := m.sidebarRows()
+	cfgRow := -1
+	railSessionRow := -1
+	for i, r := range rows {
+		if r.kind == sbNav && r.action == actConfigPanel {
+			cfgRow = i
+		}
+		if r.kind == sbRail && !r.rail.header && railSessionRow == -1 {
+			railSessionRow = i
+		}
+	}
+	if cfgRow < 0 || railSessionRow < 0 {
+		t.Fatalf("expected nav + rail rows, got %+v", rows)
+	}
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + cfgRow})
+	if !m.conf.active {
+		t.Fatal("clicking '⚙ config' should open the config panel")
+	}
+	m.conf = confPanel{}
+	// Clicking a session row hops (switcherModel: s1 ≠ current s2).
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + railSessionRow})
+	if m.switchTo == "" {
+		t.Fatal("clicking a sidebar session row should hop")
+	}
+}
+
+func TestSidebarViewFitsAllSizes(t *testing.T) {
+	for _, w := range []int{60, 79, 80, 100, 120, 160} {
+		for _, h := range []int{6, 10, 14, 24, 40} {
+			m := switcherModel(t)
+			m.Update(tea.WindowSizeMsg{Width: w, Height: h})
+			m.refreshRail()
+			m.sidebarOn = true
+			m.relayout()
+			m.text("user", "use the edit tool to change beta")
+			m.push(editBlock("note.txt", "beta", "beta two"))
+			m.text("assistant", "Done — replaced beta with beta two")
+			m.relayout()
+			checkViewFits(t, m, w, h)
+		}
+	}
+}

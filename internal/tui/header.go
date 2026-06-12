@@ -19,8 +19,12 @@ import (
 // headerHeight is the rows the bordered header occupies: a real chrome frame
 // (top border, content row, bottom border). On very short terminals the
 // border is dropped (1 content row) so the chrome never starves the
-// transcript+input of rows.
+// transcript+input of rows. In sidebar mode (Tier 11.5) there is no header at
+// all — the left command sidebar owns the chrome.
 func (m *model) headerHeight() int {
+	if m.sidebarVisible() {
+		return 0
+	}
 	if m.height < headerBorderMinRows {
 		return 1
 	}

@@ -94,6 +94,12 @@ func (m *model) railCols() int {
 
 // railWidth is the rail's column width (0 when hidden).
 func (m *model) railWidth() int {
+	// Sidebar mode reuses the rail column for the command sidebar (which
+	// embeds the rail rows below the nav) — same width, even for local chats
+	// (no sibling sessions, still title/nav).
+	if m.sidebarVisible() {
+		return m.railCols()
+	}
 	if !m.railVisible() {
 		return 0
 	}
@@ -352,7 +358,11 @@ func (m *model) transcriptBand() string {
 	vpLines := strings.Split(m.vp.View(), "\n")
 	var railLines, chgLines []string
 	if railOn {
-		railLines = m.railLines(m.vp.Height)
+		if m.sidebarVisible() {
+			railLines = m.sidebarLines(m.vp.Height)
+		} else {
+			railLines = m.railLines(m.vp.Height)
+		}
 	}
 	if chgOn {
 		chgLines = m.changesLines(m.vp.Height)
