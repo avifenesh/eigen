@@ -446,6 +446,77 @@ placeholder. Remaining: fill it with real per-selection detail (session/
 project/config), wider rail labels, more table columns where width allows.
 - [ ] right inspector content (selected item detail) + wider-breakpoint density.
 
+## Tier 11 — superapp panels: closable, tabbed, real content, navigable
+
+Tiers 9/10 made both windows clickable + framed. This tier makes the chrome a
+real **workbench**: panels you open/close, panels with TABS showing live
+content (git status, an in-session terminal), a left rail that organizes
+sessions BY PROJECT with liveness, and consistent sub-page back-navigation —
+every bit driven by BOTH keyboard and mouse. (User's words, captured verbatim
+below so nothing is lost.)
+
+**The asks (verbatim → spec):**
+1. **Sub-page back-navigation everywhere.** "i click config, i want to go back
+   from config." Today the chat's `/config` panel and the app's drill-ins
+   (config dropdown, skills preview, project sessions) have ad-hoc esc handling
+   and NO click affordance. Spec: every sub-view has a visible back control
+   (a framed `‹ back` / breadcrumb segment) that is clickable AND `esc`/
+   `backspace`; a nav STACK so nested drill-ins pop one level at a time.
+2. **Header inside a border.** The chat header is a bare line; frame it (a
+   bordered top bar matching the app shell's title bar) so the window reads as
+   structured chrome, not floating text.
+3. **Status-line config items clickable to set in place.** Extend Tier 9 Wave 1:
+   clicking effort/search/route/perm doesn't just cycle — where it makes sense
+   it opens an in-place picker right at the segment (a small popover above the
+   status bar) so you SET the value, not blind-cycle. Keyboard parity via the
+   existing pickers.
+4. **Both side panels closable.** Each panel (left rail, right panel) gets a
+   clickable `[x]` in its header + a key; closing reflows the transcript.
+   Reopen via header buttons / palette / key. (Tier 9 has /rail /changes
+   toggles — make them a visible, clickable close control.)
+5. **All panels show real content** (no placeholders) — see 6 & 7.
+6. **Right side = two OPTIONAL TABS** (pick what's shown, or close):
+   - **git** — branch, ahead/behind, staged/unstaged/untracked counts, the
+     working-tree diff (reuse internal/feed/git.go helpers + the diff tool /
+     renderDiff). Read-only v1; actions (stage/commit) later.
+   - **terminal** — "dead simple to run a command in session": a one-line input
+     that runs a command in the session's dir and shows output in the panel.
+     Bounded, non-interactive v1 (run → capture stdout/stderr → show); rooted
+     at the session dir. (Not a full PTY — that's a later, bigger bet.)
+   - (the existing "changes (last turn)" panel becomes a third tab or folds
+     into git — decide during design.)
+7. **Left rail = sessions grouped per PROJECT**, with liveness:
+   - group rows by project dir; a project header is collapsible.
+   - **light up projects that are open somewhere** (a window/view attached).
+   - **loading/working mark** for sessions mid-work (agent looping or a turn
+     running) — a spinner glyph, distinct from idle ○.
+   - click a project header to collapse/expand; click a session to hop; all
+     keyboard-navigable too.
+8. **Keyboard + click parity for ALL of it.** "its a superapp."
+
+**Decomposition (waves — refine with a cross-vendor review FIRST):**
+- **Wave 0 — nav stack + closable-panel framing (foundation).** A small nav
+  stack (push/pop sub-views) shared by chat + app; a panel header component
+  with a title + clickable `[x]`; back/esc/breadcrumb wired through the action
+  layer. No new content yet — just the skeleton both windows hang panels on.
+- **Wave 1 — header in a border + sub-page back (chat & app).** Frame the chat
+  header; give `/config`, skills preview, project drill-in a `‹ back` control
+  (click + esc) via the nav stack.
+- **Wave 2 — right panel as TABS (git | terminal | changes).** Tab bar in the
+  panel header (clickable + key to cycle); git tab (status + diff, read-only);
+  terminal tab (one-line command runner, session-dir-rooted, bounded).
+- **Wave 3 — left rail grouped by project + liveness.** Per-project grouping,
+  collapsible headers, "open somewhere" highlight, working/looping spinner.
+- **Wave 4 — status-line in-place setters + polish.** Segment popovers for
+  effort/search/route/perm; consistent close/reopen controls; palette entries
+  for every new surface.
+
+**Constraints (unchanged):** geometry-owned-first (computeLayout rects, render
++ hit-test share them), one action layer (no click bypasses a key's gate),
+mouse additive + full keyboard parity, restrained design, degrade on narrow
+terminals, each wave ships with tests + live verification + a commit; keep
+build/vet/test/staticcheck green.
+
 ## Notes / grounding
 - read-aloud tool the user has: `readd` (espeak-ng/piper) at `~/projects/tfqol/readd`.
 - skills format = Claude Code SKILL.md (YAML frontmatter `name`,`description`[,`allowed-tools`] + markdown body).
