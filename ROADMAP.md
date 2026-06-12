@@ -728,6 +728,40 @@ its purpose).
   delete/export working on the filtered view (operate on the row's ID, never
   the visual index — the Tier 8 lesson: every listing surface must agree).
 
+## Tier 14 — catalog capability correctness
+Goal: the model catalog (`internal/llm/catalog.go`) is the single source of
+truth for capability gating, and it is WRONG in places — most visibly Vision:
+only Claude entries carry `Vision: true`, while in reality GPT-5.x is
+multimodal and several grok/glm models accept images too. Wrong flags are not
+cosmetic, they drive behavior: `HasVision` gates image paste (refuses with
+"the active model has no vision support"), image attachment (extractImages is
+skipped — images silently dropped), and the ONE top-level auto-route exception
+(an image on a "blind" model forces a route AWAY from the user's chosen
+orchestrator — today an image while on gpt-5.5 needlessly hops models).
+`Search`/`Social` gate the router's kind targeting the same way.
+
+- [ ] **Probe, don't trust folklore.** Same methodology as the per-model
+  effort-levels work (d33f7e3): each flag confirmed by a REAL call against the
+  real endpoint (send a tiny image → does the backend accept the content
+  block?) or a real 4xx. The serving gateway matters more than the model
+  family — mantle/bedrock may reject image blocks even where openai.com
+  accepts them, GLM's coding API may differ from their chat API. Record
+  per-entry findings in catalog comments like the effort probes did.
+- [ ] **Audit every capability axis, not just Vision:** Vision (gpt-5.x,
+  grok-4, grok-build, glm-5.x — likely; verify), Search/Social (currently
+  grok+glm only — correct?), Reasoning/EffortLevels (probed already, keep),
+  ContextWindow (several look like defaults rather than measured truth),
+  Cache (mantle GPT has no Cache flag — does the gateway support it?).
+- [ ] **Fail open on uncertainty for vision-attach, fail closed for routing.**
+  If a model's vision support is unknown (uncataloged id), prefer attempting
+  the attach and surfacing the backend's error over silently dropping the
+  image — silent drops are the worst failure mode. Routing can stay
+  conservative (only route-away when the catalog POSITIVELY says blind).
+- [ ] **Keep capability tests honest.** Router tests and tui vision-gate tests
+  encode today's wrong flags as expectations (e.g. "image forces vision route"
+  fixtures assume gpt is blind); update fixtures to use explicit fake catalogs
+  rather than real ids so flag corrections don't silently flip test meaning.
+
 ## Debt / bugs
 - [x] **Untitled daemon sessions still appear.** FIXED: (1) `Host.Restore` now
   calls `maybeTitle` per restored session, so sessions whose title never landed
