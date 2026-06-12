@@ -296,6 +296,90 @@ first-class surface, reachable by keys and a command palette:
    task pre-submitted. Cached (~/.eigen/feed.json, 10-min TTL), async refresh.
 7. ✅ Plugins page (mcp/plugins/lsp/hooks, both scopes, read-only).
 
+## Tier 9 — the chat IS the app (chat-window chrome)
+
+The chat window is still a "chat"; the app shell got all the super-app
+treatment. This tier makes the **chat window itself an arm of the app**:
+chrome (header + rails + panels) wrapped around the transcript, everything
+**keyboard-first AND clickable**, so a session is a workstation, not a REPL.
+
+The user's words: a side list of running sessions to jump to; a header with
+general actions; clickable config params on the status line and the title; a
+side view of the diff of files edited in the last turn; "and more".
+
+**Enlarged vision (what he'll want, built ahead):**
+- Direct manipulation: status segments, title, header actions, rail rows, and
+  changes-panel files are all click targets — but every click has a keyboard
+  AND palette equivalent (mouse is additive, never required; tmux/zellij eat
+  some ctrl/alt keys, so a non-modifier path always exists).
+- Spatial awareness: you see the OTHER running sessions (rail) and what THIS
+  turn changed (changes panel) without leaving the conversation.
+- One action layer: keys, slash commands, clicks, and the (future) palette all
+  dispatch the SAME action ids through one validated handler — no second code
+  path, no click that bypasses "can't run mid-turn" checks.
+- Designerly restraint: chrome is subtle, single-purpose, collapsible, and
+  degrades cleanly on narrow terminals (panels drop right-first, then the rail,
+  then the header compacts) — never clutter.
+
+**Wave 0 — geometry + action foundation (prerequisite, no visible chrome).**
+The current scalar `topHeight`/`bottomHeight` + `screenToContent` (rebases by
+topHeight only) cannot survive side rails that shift the transcript origin
+horizontally. Build the substrate first:
+- [ ] `layout` pass: named rects (header/plan/transcript/input/status/leftRail/
+      rightPanel) computed from model state once per render input, not as a
+      side effect of `View()`.
+- [ ] hit-testing: `Point → {region, localX, localY, actionID}` with explicit
+      z-order (modal overlays > chrome > rails/panels > input > transcript) so
+      clicks never fall through to the transcript behind a panel. Widths in
+      terminal cells (ansi.StringWidth), ANSI-stripped.
+- [ ] action registry: `ActionID` → {label, enabled(state), key/slash binding,
+      handler}; keys/slash/clicks all dispatch through it. Disabled actions are
+      visibly disabled and refuse (e.g. mutate-while-running).
+- [ ] migrate existing mouse features (block toggle, drag-copy, wheel, input
+      cursor) onto the new region mapper; tests for coordinate mapping at
+      widths 40/80/120/180 with rails/panels on/off, and boundary clicks.
+
+**Wave 1 — clickable status line (pilot of the foundation).**
+- [ ] each bottom status segment is a hit target dispatching its action id:
+      model→model picker, perm→permission picker (not a blind toggle —
+      security-sensitive), effort→cycle, search→cycle, route→toggle,
+      ctx→compact PROMPT (confirm, never an accidental mutate), vision/read-
+      aloud/loop→their toggles. Keyboard/slash equivalents unchanged.
+- [ ] running-turn semantics per segment made explicit (effort/model/perm take
+      effect next step; compact refused mid-turn with a hint).
+
+**Wave 2 — header bar (one line, above the plan).**
+- [ ] session title + project breadcrumb on the left; right-aligned action
+      affordances `[home] [sessions] [+new] [config]` dispatching openApp /
+      openSwitcher / new-session / openConfigPanel. Title is the SINGLE rename
+      surface (click title = inline rename); status bar does NOT also rename.
+      Strict truncation; reuses topHeight accounting.
+
+**Wave 3 — left session rail (high value; before the diff panel).**
+- [ ] persistent narrow left column: daemon sessions with live status glyphs
+      (●working ○idle ◆approval ✗error), current marked; click row = hop the
+      window there via the EXACT switcher attach/detach path (no second
+      switching path — Detach never interrupts a running daemon turn). Visible
+      only when width allows; centralized cancellable ~1.2s poll that
+      re-renders only on list/status change; `alt+s` + palette remain the
+      keyboard path. Transcript/input/status shift right by the rail width
+      (all mouse mapping goes through Wave 0's region mapper).
+
+**Wave 4 — right changes panel (reduced first cut, then deepen).**
+- [ ] v1 = a CHANGE INDEX: files touched by the last completed edit-producing
+      run (real run id, not visible-block order — survives streaming/resume/
+      retries/collapsed blocks), with +N/−M counts; click/key a file = jump to
+      its tool block. Caps (max files/lines/bytes, truncation marker). Cached
+      by run id, recomputed on transcript/run/width change, never per `View()`.
+- [ ] v2 = inline diff rendering in the panel (reuse renderDiff) once the data
+      model + anchors + scrolling + width behavior are solid.
+
+**Wave 5 — and more (captured; build after the foundation proves out).**
+- [ ] command palette (fuzzy, ctrl+k) over the action registry — pull EARLY-ish:
+      it solves keyboard parity + the tmux/alt-key problem in one surface.
+- [ ] notifications/approvals tray; resizable + persisted panel layout;
+      multi-pane (two transcripts side by side); per-region wheel routing.
+
 ## Notes / grounding
 - read-aloud tool the user has: `readd` (espeak-ng/piper) at `~/projects/tfqol/readd`.
 - skills format = Claude Code SKILL.md (YAML frontmatter `name`,`description`[,`allowed-tools`] + markdown body).
