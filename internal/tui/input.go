@@ -234,6 +234,9 @@ func (m *model) bottomHeight() int {
 	}
 	h := m.inputRows() // input box (grows with content, incl. border)
 	h += m.statusBarHeight()
+	if m.composerBarVisible() {
+		h++ // composer bar (voice controls) under the input
+	}
 	if m.state == stRunning {
 		h++ // status/spinner line above the input
 	}

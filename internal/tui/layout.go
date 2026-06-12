@@ -28,6 +28,7 @@ const (
 	regSpinner
 	regComp
 	regInput
+	regComposer // voice controls bar under the input (Tier 15)
 	regStatus
 	regHeader     // Wave 2
 	regLeftRail   // Wave 3
@@ -44,6 +45,7 @@ type layout struct {
 	spinner    rect
 	comp       rect
 	input      rect
+	composer   rect // voice controls bar under the input
 	status     rect
 	header     rect
 	leftRail   rect
@@ -97,6 +99,10 @@ func (m *model) computeLayout() layout {
 	ih := m.inputRows()
 	l.input = rect{x: 0, y: y, w: w, h: ih}
 	y += ih
+	if m.composerBarVisible() {
+		l.composer = rect{x: 0, y: y, w: w, h: 1}
+		y++
+	}
 	l.status = rect{x: 0, y: y, w: w, h: m.statusBarHeight()}
 	return l
 }
@@ -149,6 +155,11 @@ func (m *model) hitTest(x, y int) hit {
 			a = actChangesToggle
 		}
 		return hit{region: regRightPanel, action: a, localX: lx, localY: ly}
+	}
+	// Composer bar (voice controls under the input).
+	if l.composer.contains(x, y) {
+		lx, ly := local(l.composer)
+		return hit{region: regComposer, action: m.composerActionAt(lx), localX: lx, localY: ly}
 	}
 	// Input box.
 	if l.input.contains(x, y) {

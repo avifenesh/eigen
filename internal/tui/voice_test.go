@@ -53,32 +53,44 @@ func (f *fakeTTS) count() int {
 	return len(f.spoken)
 }
 
-func TestSidebarShowsVoiceButtons(t *testing.T) {
+func TestComposerBarShowsVoiceButtons(t *testing.T) {
 	m := testModel(t)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	band := ansi.Strip(m.transcriptBand())
-	for _, want := range []string{"⏺ speak", "▶ read answer", "◉ voice"} {
-		if !strings.Contains(band, want) {
-			t.Fatalf("sidebar missing voice button %q:\n%s", want, band)
+	view := ansi.Strip(m.View())
+	for _, want := range []string{"⏺ speak", "▶ read", "◉ voice"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("composer bar missing voice button %q:\n%s", want, view)
 		}
 	}
-	// The buttons resolve to their actions via the shared row model.
-	var got []actionID
-	for _, r := range m.sidebarRows() {
-		if r.kind == sbNav {
-			got = append(got, r.action)
+	// Click each control via the shared layout: composer rect + segment math.
+	l := m.computeLayout()
+	if l.composer.empty() {
+		t.Fatal("composer rect should exist")
+	}
+	// Find each segment's start column and resolve its action.
+	for _, want := range []struct {
+		text string
+		act  actionID
+	}{
+		{"⏺ speak", actDictate},
+		{"▶ read", actSpeakAnswer},
+		{"◉ voice", actVoiceToggle},
+	} {
+		bar := ansi.Strip(m.composerBarView())
+		col := strings.Index(bar, want.text)
+		if col < 0 {
+			t.Fatalf("segment %q not rendered", want.text)
+		}
+		// Index is a byte offset; convert to display col via prefix width.
+		x := ansi.StringWidth(bar[:col])
+		if got := m.composerActionAt(x); got != want.act {
+			t.Fatalf("click on %q → action %v, want %v", want.text, got, want.act)
 		}
 	}
-	for _, want := range []actionID{actDictate, actSpeakAnswer, actVoiceToggle} {
-		found := false
-		for _, a := range got {
-			if a == want {
-				found = true
-			}
-		}
-		if !found {
-			t.Fatalf("sidebar rows missing action %v", want)
-		}
+	// The hit-test routes composer clicks to the action.
+	h := m.hitTest(2, l.composer.y)
+	if h.region != regComposer {
+		t.Fatalf("composer row should hit regComposer, got %v", h.region)
 	}
 }
 

@@ -157,6 +157,9 @@ func (m *model) View() string {
 	default:
 		bottom = m.compMenuView() + m.ti.View()
 	}
+	if m.pending == nil && m.composerBarVisible() {
+		bottom += "\n" + m.composerBarView()
+	}
 	if m.ov.active {
 		bottom = m.overlayView() + "\n" + bottom
 	}

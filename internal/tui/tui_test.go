@@ -348,18 +348,18 @@ func TestEscInterruptsRunningTurn(t *testing.T) {
 func TestBottomHeightReflectsState(t *testing.T) {
 	m := testModel(t)
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 24}) // classic chrome (narrow)
-	// 1 input line + 2 border rows + 1 status bar (now at the bottom).
-	if m.bottomHeight() != 4 {
-		t.Fatalf("input bottomHeight=%d want 4", m.bottomHeight())
+	// 1 input line + 2 border rows + 1 composer bar + 1 status bar.
+	if m.bottomHeight() != 5 {
+		t.Fatalf("input bottomHeight=%d want 5", m.bottomHeight())
 	}
 	m.state = stRunning
 	// + 1 spinner/status line while running.
-	if m.bottomHeight() != 5 {
-		t.Fatalf("running bottomHeight=%d want 5", m.bottomHeight())
+	if m.bottomHeight() != 6 {
+		t.Fatalf("running bottomHeight=%d want 6", m.bottomHeight())
 	}
 	m.state = stInput
 	typeRunes(m, "/")
-	if m.bottomHeight() <= 4 {
+	if m.bottomHeight() <= 5 {
 		t.Fatal("open slash menu should add rows to bottomHeight")
 	}
 }
