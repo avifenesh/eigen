@@ -762,6 +762,49 @@ orchestrator — today an image while on gpt-5.5 needlessly hops models).
   fixtures assume gpt is blind); update fixtures to use explicit fake catalogs
   rather than real ids so flag corrections don't silently flip test meaning.
 
+## Tier 15 — voice for real: TTS + STT set up, keybinds that just work
+Goal: the voice plumbing EXISTS (`internal/voice` cmdTTS/whisperSTT, `/voice`
+conversation mode, ctrl+t/alt+t push-to-talk, `/read` read-aloud toggle) but it
+is not actually usable end to end: on the real machine `DetectSTT` finds no
+whisper CLI (the checkout at `~/projects/whisper.cpp/build/bin` has the old
+`main` binary, not `whisper-cli`) and no real model (only `for-tests-ggml-*`
+fixtures), so `/voice` reports unavailable; and the push-to-talk key is dead
+unless conversation mode was toggled first. Make voice a set-up-once,
+keybind-first feature.
+
+- [ ] **Setup path / doctor.** A `/voice setup` (or `eigen doctor voice`)
+  flow that reports exactly what's missing and fixes what it can: detect
+  recorder (arecord ✓ here), TTS (readd ✓, espeak-ng ✓), whisper binary +
+  model; offer to download a real model (ggml-base.en.bin) into the
+  conventional dir and build/symlink whisper-cli. Honest status lines, not
+  silent unavailability — the toggleVoice error today names env vars but
+  nothing guides the fix.
+- [ ] **Broaden detection.** `lookWhisper` should also accept the legacy
+  `main` binary in the whisper.cpp checkout; `lookWhisperModel` must skip
+  `for-tests-*` fixtures (it lists exact names today, but the dir has only
+  fixtures — so detection fails late and confusingly). Config keys for STT
+  alongside the existing `tts_cmd`: `stt_cmd`/`whisper_bin`/`whisper_model`
+  (env vars exist — EIGEN_WHISPER_BIN/MODEL, EIGEN_VOICE_RECORD_CMD — but
+  config.json is the discoverable surface; fields.go gets descriptions).
+- [ ] **Keybinds that just work.** ctrl+t should be PUSH-TO-TALK always:
+  one-shot dictation into the input line even when conversation mode is off
+  (record → transcribe → insert text, user reviews and hits enter), not
+  gated on `m.voiceOn`. A second chord (or ctrl+t while a fresh answer
+  exists) speaks the last answer once without enabling persistent read-aloud.
+  `/voice` keeps full conversation mode (auto-submit + spoken replies).
+  All through the action registry + palette ("dictate", "speak last answer",
+  "conversation mode") with sidebar/status affordances (mic glyph while
+  recording — the "listening…" status exists, surface it in the sidebar).
+- [ ] **Recording UX.** Today recording is a fixed-window `arecord -d {secs}`
+  (30s cap, no stop key). Push-to-talk needs stop-on-keypress (start on
+  ctrl+t, stop on ctrl+t again or enter; esc cancels) — kill the recorder
+  process group on stop, transcribe what was captured. Show elapsed while
+  recording; never block the UI loop (existing tea.Cmd pattern is right).
+- [ ] **Verify live.** The workspace harness has no mic; verify recording on
+  the real machine (the gotcha list: seccomp blocks fork in some test paths,
+  arecord needs a real ALSA/Pulse device). TTS path is verifiable headless
+  (readd/espeak-ng exist) — pipe to a file sink in tests.
+
 ## Debt / bugs
 - [x] **Untitled daemon sessions still appear.** FIXED: (1) `Host.Restore` now
   calls `maybeTitle` per restored session, so sessions whose title never landed
