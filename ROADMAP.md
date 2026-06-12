@@ -494,20 +494,39 @@ below so nothing is lost.)
      keyboard-navigable too.
 8. **Keyboard + click parity for ALL of it.** "its a superapp."
 
-**Decomposition (waves — refine with a cross-vendor review FIRST):**
-- **Wave 0 — nav stack + closable-panel framing (foundation).** A small nav
-  stack (push/pop sub-views) shared by chat + app; a panel header component
-  with a title + clickable `[x]`; back/esc/breadcrumb wired through the action
-  layer. No new content yet — just the skeleton both windows hang panels on.
-- **Wave 1 — header in a border + sub-page back (chat & app).** Frame the chat
-  header; give `/config`, skills preview, project drill-in a `‹ back` control
-  (click + esc) via the nav stack.
-- **Wave 2 — right panel as TABS (git | terminal | changes).** Tab bar in the
-  panel header (clickable + key to cycle); git tab (status + diff, read-only);
-  terminal tab (one-line command runner, session-dir-rooted, bounded).
-- **Wave 3 — left rail grouped by project + liveness.** Per-project grouping,
-  collapsible headers, "open somewhere" highlight, working/looping spinner.
-- **Wave 4 — status-line in-place setters + polish.** Segment popovers for
+**Decomposition (review-adjusted — minimal foundations first, no framework
+astronautics):**
+- **Wave 0 — panel frame + close controls + one-level back.** Do NOT build a
+  browser-like nav stack yet. Build the minimal shared primitives:
+  - reusable panel header (`title`, optional tabs later, clickable `[x]`), hit
+    rects match rendered labels, close action has keyboard + palette parity;
+  - one-level back affordance (`‹ back`, esc/backspace/alt-left + click) for
+    subviews; focus moves deterministically when a panel closes;
+  - layout tests at 60/80/100/120/160 cols and short heights.
+  Apply first to the existing right changes panel and left session rail (close
+  visibly; reopen via /rail, /changes, header/palette), plus the chat config
+  panel's visible back control.
+- **Wave 1 — bordered chat header + consistent sub-page back.** Frame the chat
+  header (account for the extra height in computeLayout/hitTest) and apply the
+  back affordance to app subviews (project drill-in, skills preview, config
+  dropdown/editor) without overbuilding a global stack.
+- **Wave 2 — right panel TABS skeleton + git tab (read-only, cheap first).**
+  Tab bar in the panel header (clickable + key cycle), selected tab scoped to
+  the session/project. Start with real but cheap git content: repo root/current
+  branch, ahead/behind, staged/unstaged/untracked counts, short diff stat (not
+  full diff first). Handle no repo / detached head / deleted cwd.
+- **Wave 3 — terminal command runner tab (safe, non-interactive).** A command
+  runner, NOT a PTY: parse argv by shellwords by default (no shell expansion),
+  rooted at the session dir, async via context, one running command per panel,
+  timeout (30–60s), cancel, process-group kill on timeout/cancel, output ring
+  buffer + byte/line caps, ANSI/OSC sanitization, exit code + duration, stale
+  result keyed by session+tab instance. Shell mode only explicit later.
+- **Wave 4 — left rail grouped by project + liveness.** Reuse current
+  SessionInfo for grouping first; extend daemon protocol only for missing
+  runtime metadata (project root/session run state), keep collapsed/open UI
+  state local. Project headers collapsible, active/open projects highlighted,
+  working/looping sessions show a spinner distinct from idle ○.
+- **Wave 5 — status-line in-place setters + polish.** Segment popovers for
   effort/search/route/perm; consistent close/reopen controls; palette entries
   for every new surface.
 
@@ -515,7 +534,9 @@ below so nothing is lost.)
 + hit-test share them), one action layer (no click bypasses a key's gate),
 mouse additive + full keyboard parity, restrained design, degrade on narrow
 terminals, each wave ships with tests + live verification + a commit; keep
-build/vet/test/staticcheck green.
+build/vet/test/staticcheck green. Async panel data (git/terminal) must be
+keyed by session/project and stale-safe; terminal command output is never a
+full PTY in v1.
 
 ## Notes / grounding
 - read-aloud tool the user has: `readd` (espeak-ng/piper) at `~/projects/tfqol/readd`.
