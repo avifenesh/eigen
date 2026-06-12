@@ -1,0 +1,270 @@
+package agent
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/tool"
+)
+
+// writeTaskLines fabricates a task state file from a sequence of records.
+func writeTaskLines(t *testing.T, dir, id string, recs ...BgTask) {
+	t.Helper()
+	var data []byte
+	for _, r := range recs {
+		line, err := json.Marshal(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data = append(data, line...)
+		data = append(data, '\n')
+	}
+	if err := os.WriteFile(filepath.Join(dir, id+".jsonl"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoadBgTasksSkipsTranscriptsAndPartialLines(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	writeTaskLines(t, dir, "bg-1-1",
+		BgTask{ID: "bg-1-1", Status: "running", Started: now},
+		BgTask{ID: "bg-1-1", Status: "done", Result: "ok", Started: now})
+	// Transcript file must NOT be parsed as a task.
+	os.WriteFile(filepath.Join(dir, "bg-1-1.transcript.jsonl"), []byte(`{"role":"user"}`+"\n"), 0o644)
+	// A partial final line (writer mid-append) must fall back to the last
+	// complete line, not lose the task.
+	f, _ := os.OpenFile(filepath.Join(dir, "bg-1-1.jsonl"), os.O_APPEND|os.O_WRONLY, 0o644)
+	f.WriteString(`{"id":"bg-1-1","status":"trunc`)
+	f.Close()
+	// Garbage file: skipped, not fatal.
+	os.WriteFile(filepath.Join(dir, "bg-9-9.jsonl"), []byte("not json\n"), 0o644)
+
+	tasks := LoadBgTasks(dir)
+	if len(tasks) != 1 {
+		t.Fatalf("want 1 task, got %d: %+v", len(tasks), tasks)
+	}
+	if tasks[0].Status != "done" || tasks[0].Result != "ok" {
+		t.Fatalf("want last complete state done/ok, got %+v", tasks[0])
+	}
+}
+
+func TestLoadBgTasksMarksLost(t *testing.T) {
+	dir := t.TempDir()
+	host, _ := os.Hostname()
+	// Dead pid on this host → lost.
+	writeTaskLines(t, dir, "bg-1-1",
+		BgTask{ID: "bg-1-1", Status: "running", Started: time.Now(), Pid: 999999, Host: host})
+	// Our own pid → still running.
+	writeTaskLines(t, dir, "bg-2-2",
+		BgTask{ID: "bg-2-2", Status: "running", Started: time.Now(), Pid: os.Getpid(), Host: host})
+	// No pid but ancient → lost by age.
+	writeTaskLines(t, dir, "bg-3-3",
+		BgTask{ID: "bg-3-3", Status: "running", Started: time.Now().Add(-2 * time.Hour)})
+
+	got := map[string]string{}
+	for _, task := range LoadBgTasks(dir) {
+		got[task.ID] = task.Status
+	}
+	if got["bg-1-1"] != "lost" {
+		t.Errorf("dead pid: want lost, got %s", got["bg-1-1"])
+	}
+	if got["bg-2-2"] != "running" {
+		t.Errorf("live pid: want running, got %s", got["bg-2-2"])
+	}
+	if got["bg-3-3"] != "lost" {
+		t.Errorf("ancient: want lost, got %s", got["bg-3-3"])
+	}
+}
+
+func TestRequestCancelValidation(t *testing.T) {
+	dir := t.TempDir()
+	if err := RequestCancel(dir, "../evil"); err == nil {
+		t.Fatal("path-traversal id must be rejected")
+	}
+	if err := RequestCancel(dir, "bg-1-1"); err == nil {
+		t.Fatal("unknown task must be rejected")
+	}
+	writeTaskLines(t, dir, "bg-1-1", BgTask{ID: "bg-1-1", Status: "done", Started: time.Now()})
+	if err := RequestCancel(dir, "bg-1-1"); err == nil {
+		t.Fatal("finished task must be rejected (no stale markers)")
+	}
+	writeTaskLines(t, dir, "bg-2-2",
+		BgTask{ID: "bg-2-2", Status: "running", Started: time.Now(), Pid: os.Getpid()})
+	if err := RequestCancel(dir, "bg-2-2"); err != nil {
+		t.Fatalf("running task cancel: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "bg-2-2.cancel")); err != nil {
+		t.Fatal("marker file missing")
+	}
+	// Reader surfaces the pending cancel.
+	for _, task := range LoadBgTasks(dir) {
+		if task.ID == "bg-2-2" && !task.Canceling {
+			t.Fatal("want Canceling=true with marker present")
+		}
+	}
+}
+
+func TestAdoptStaleMarksLostAndPrunes(t *testing.T) {
+	dir := t.TempDir()
+	host, _ := os.Hostname()
+	// Lost running task: adopted durably.
+	writeTaskLines(t, dir, "bg-1-1",
+		BgTask{ID: "bg-1-1", Status: "running", Started: time.Now(), Pid: 999999, Host: host})
+	// Old terminal task: pruned (with transcript + marker).
+	writeTaskLines(t, dir, "bg-2-2", BgTask{ID: "bg-2-2", Status: "done", Started: time.Now().Add(-30 * 24 * time.Hour)})
+	old := time.Now().Add(-8 * 24 * time.Hour)
+	os.Chtimes(filepath.Join(dir, "bg-2-2.jsonl"), old, old)
+	os.WriteFile(filepath.Join(dir, "bg-2-2.transcript.jsonl"), []byte("{}\n"), 0o644)
+
+	NewBgRegistry(dir) // adoptStale runs in the constructor
+
+	got, ok := readTaskFile(filepath.Join(dir, "bg-1-1.jsonl"))
+	if !ok || got.Status != "lost" {
+		t.Fatalf("want durable lost mark, got %+v ok=%v", got, ok)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "bg-2-2.jsonl")); !os.IsNotExist(err) {
+		t.Fatal("old terminal task not pruned")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "bg-2-2.transcript.jsonl")); !os.IsNotExist(err) {
+		t.Fatal("old transcript not pruned")
+	}
+}
+
+func TestRegistryDiskFallback(t *testing.T) {
+	dir := t.TempDir()
+	writeTaskLines(t, dir, "bg-1-1", BgTask{ID: "bg-1-1", Status: "done", Result: "from disk", Started: time.Now()})
+	r := NewBgRegistry(dir)
+	if got := r.Get("bg-1-1"); got == nil || got.Result != "from disk" {
+		t.Fatalf("Get must fall back to disk, got %+v", got)
+	}
+	list := r.List()
+	if len(list) != 1 || list[0].ID != "bg-1-1" {
+		t.Fatalf("List must merge disk records, got %+v", list)
+	}
+}
+
+// bgToolProv drives one tool call then finishes, so the event bridge sees
+// tool start/result and done.
+type bgToolProv struct{ step int }
+
+func (p *bgToolProv) ModelID() string { return "test" }
+func (p *bgToolProv) Name() string    { return "test" }
+func (p *bgToolProv) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
+	p.step++
+	if p.step == 1 {
+		return &llm.Response{ToolCalls: []llm.ToolCall{{ID: "t1", Name: "probe", Arguments: json.RawMessage(`{}`)}}}, nil
+	}
+	return &llm.Response{Text: "BGDONE", Usage: llm.Usage{InputTokens: 7, OutputTokens: 3}}, nil
+}
+
+func TestBackgroundProgressBridge(t *testing.T) {
+	dir := t.TempDir()
+	reg := newTestRegistry(t, dir)
+	a := &Agent{
+		Provider: &bgToolProv{},
+		Tools:    proberRegistry(t),
+		Perm:     PermAuto,
+		Bg:       reg,
+	}
+	if _, err := a.SubtaskBackground(context.Background(), "probe it", SubtaskOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	id := waitForStatus(t, reg, "done")
+	got := reg.Get(id)
+	if got.Steps != 1 {
+		t.Errorf("want 1 step recorded, got %d", got.Steps)
+	}
+	if got.LastTool != "" {
+		t.Errorf("LastTool must clear after the tool result, got %q", got.LastTool)
+	}
+	if got.InTokens != 7 || got.OutTokens != 3 {
+		t.Errorf("usage not bridged: in=%d out=%d", got.InTokens, got.OutTokens)
+	}
+	if got.Pid != os.Getpid() {
+		t.Errorf("pid not recorded: %d", got.Pid)
+	}
+	if got.Result != "BGDONE" {
+		t.Errorf("result: %q", got.Result)
+	}
+}
+
+// slowBgProv blocks until its context dies (cancel-marker test).
+type slowBgProv struct{}
+
+func (slowBgProv) ModelID() string { return "test" }
+func (slowBgProv) Name() string    { return "test" }
+func (slowBgProv) Complete(ctx context.Context, _ llm.Request) (*llm.Response, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestBackgroundCancelMarker(t *testing.T) {
+	dir := t.TempDir()
+	reg := newTestRegistry(t, dir)
+	a := &Agent{Provider: slowBgProv{}, Tools: proberRegistry(t), Perm: PermAuto, Bg: reg}
+	if _, err := a.SubtaskBackground(context.Background(), "spin forever", SubtaskOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	id := waitForStatus(t, reg, "running")
+	if err := RequestCancel(dir, id); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if got := reg.Get(id); got != nil && got.Status == "canceled" {
+			if _, err := os.Stat(filepath.Join(dir, id+".cancel")); !os.IsNotExist(err) {
+				t.Fatal("marker must be cleaned up after cancellation")
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("task never canceled: %+v", reg.Get(id))
+}
+
+// --- helpers ---
+
+func newTestRegistry(t *testing.T, dir string) *BgRegistry {
+	t.Helper()
+	return NewBgRegistry(dir)
+}
+
+func proberRegistry(t *testing.T) *tool.Registry {
+	t.Helper()
+	reg, err := tool.NewRegistry(tool.Definition{
+		Name:       "probe",
+		ReadOnly:   true,
+		Parameters: json.RawMessage(`{"type":"object"}`),
+		Run:        func(context.Context, json.RawMessage) (string, error) { return "probed", nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return reg
+}
+
+func waitForStatus(t *testing.T, reg *BgRegistry, status string) string {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, task := range reg.List() {
+			if task.Status == status {
+				return task.ID
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	var dump string
+	for _, task := range reg.List() {
+		dump += fmt.Sprintf("%s=%s ", task.ID, task.Status)
+	}
+	t.Fatalf("no task reached %q (have: %s)", status, dump)
+	return ""
+}

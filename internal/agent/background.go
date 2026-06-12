@@ -12,8 +12,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/avifenesh/eigen/internal/llm"
@@ -33,11 +34,29 @@ type BgTask struct {
 	Kind       string    `json:"kind,omitempty"`
 	Difficulty string    `json:"difficulty,omitempty"`
 	Model      string    `json:"model,omitempty"` // explicit override, if any
-	Status     string    `json:"status"`          // running | done | error
+	Status     string    `json:"status"`          // running | done | error | canceled | lost
 	Result     string    `json:"result,omitempty"`
 	Error      string    `json:"error,omitempty"`
 	Started    time.Time `json:"started"`
 	Finished   time.Time `json:"finished,omitempty"`
+
+	// Observability (Tier 12): which process hosts the goroutine (lost
+	// detection), live progress from the sanitized event bridge, and when the
+	// record last changed (staleness display). LastTool is the most recent
+	// tool the subtask STARTED — "running <tool> for 40s" while in flight,
+	// cleared on the tool's result.
+	Pid         int       `json:"pid,omitempty"`
+	Host        string    `json:"host,omitempty"`
+	Steps       int       `json:"steps,omitempty"`
+	LastTool    string    `json:"last_tool,omitempty"`
+	ToolStarted time.Time `json:"tool_started,omitempty"`
+	LastNote    string    `json:"last_note,omitempty"`
+	InTokens    int       `json:"in_tokens,omitempty"`
+	OutTokens   int       `json:"out_tokens,omitempty"`
+	Updated     time.Time `json:"updated,omitempty"`
+	// Canceling is derived read-side from the presence of a cancel marker
+	// (and persisted once the host observes it): "stop requested, not yet stopped".
+	Canceling bool `json:"canceling,omitempty"`
 }
 
 // Format returns a human-readable status/result string for a background task.
@@ -54,8 +73,22 @@ func (t BgTask) Format() string {
 		return base + "\n\n" + t.Result
 	case "error":
 		return base + "\n\nERROR: " + t.Error
+	case "canceled":
+		return base + "  canceled after " + t.Finished.Sub(t.Started).Round(time.Second).String()
+	case "lost":
+		return base + "  (host process gone; transcript snapshot may remain: " + t.ID + ".transcript.jsonl)"
 	default:
-		return base + "  started " + t.Started.Format(time.RFC3339)
+		base += "  started " + t.Started.Format(time.RFC3339)
+		if t.Steps > 0 {
+			base += fmt.Sprintf("  step %d", t.Steps)
+		}
+		if t.LastTool != "" {
+			base += "  tool: " + t.LastTool
+		}
+		if t.Canceling {
+			base += "  (cancel requested)"
+		}
+		return base
 	}
 }
 
@@ -69,7 +102,14 @@ type BgRegistry struct {
 
 // NewBgRegistry creates a registry persisting under dir (created on demand).
 func NewBgRegistry(dir string) *BgRegistry {
-	return &BgRegistry{dir: dir, tasks: map[string]*BgTask{}}
+	r := &BgRegistry{dir: dir, tasks: map[string]*BgTask{}}
+	if dir != "" {
+		// Adopt persisted state: durably mark lost tasks (their host died
+		// without writing a terminal line) and prune old terminal ones, so
+		// every reader of the dir agrees from here on.
+		r.adoptStale()
+	}
+	return r
 }
 
 // TasksDir returns the default background-task directory (~/.eigen/tasks).
@@ -92,6 +132,7 @@ func (r *BgRegistry) next() string {
 // put records (and persists) a task state.
 func (r *BgRegistry) put(t *BgTask) {
 	r.mu.Lock()
+	t.Updated = time.Now()
 	cp := *t
 	r.tasks[t.ID] = &cp
 	dir := r.dir
@@ -116,31 +157,64 @@ func (r *BgRegistry) put(t *BgTask) {
 	f.Write(append(line, '\n'))
 }
 
+// update applies fn to a live task record under the registry lock, then
+// persists the new state. This is the single mutation path for the event
+// bridge + lifecycle transitions, so concurrent updates (tool events vs
+// completion vs cancel) serialize instead of racing.
+func (r *BgRegistry) update(id string, fn func(*BgTask)) {
+	r.mu.Lock()
+	t, ok := r.tasks[id]
+	if !ok {
+		r.mu.Unlock()
+		return
+	}
+	fn(t)
+	cp := *t
+	r.mu.Unlock()
+	r.put(&cp)
+}
+
 // Get returns a task by id (nil when unknown).
 func (r *BgRegistry) Get(id string) *BgTask {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if t, ok := r.tasks[id]; ok {
 		cp := *t
+		r.mu.Unlock()
 		return &cp
+	}
+	dir := r.dir
+	r.mu.Unlock()
+	// Disk fallback: tasks from a previous process live on as files (the
+	// whole point of the durable store) — task_status must find them after a
+	// restart too.
+	if dir != "" && bgIDRe.MatchString(id) {
+		if t, ok := readTaskFile(filepath.Join(dir, id+".jsonl")); ok {
+			return &t
+		}
 	}
 	return nil
 }
 
 // List returns all tasks, running first, then most recently started.
+// Disk records (previous processes) are merged in; in-memory wins on overlap.
 func (r *BgRegistry) List() []BgTask {
 	r.mu.Lock()
 	out := make([]BgTask, 0, len(r.tasks))
+	seen := make(map[string]bool, len(r.tasks))
 	for _, t := range r.tasks {
 		out = append(out, *t)
+		seen[t.ID] = true
 	}
+	dir := r.dir
 	r.mu.Unlock()
-	sort.Slice(out, func(i, j int) bool {
-		if (out[i].Status == "running") != (out[j].Status == "running") {
-			return out[i].Status == "running"
+	if dir != "" {
+		for _, t := range LoadBgTasks(dir) {
+			if !seen[t.ID] {
+				out = append(out, t)
+			}
 		}
-		return out[i].Started.After(out[j].Started)
-	})
+	}
+	sortBgTasks(out)
 	return out
 }
 
@@ -160,10 +234,19 @@ func (a *Agent) SubtaskBackground(ctx context.Context, task string, opts Subtask
 	}
 	sub, where := a.subAgent(ctx, task, opts)
 	id := a.Bg.next()
+	host, _ := os.Hostname()
 	rec := &BgTask{
 		ID: id, Task: task, Where: where,
 		Kind: opts.Kind, Difficulty: opts.Difficulty, Model: opts.Model,
 		Status: "running", Started: time.Now(),
+		Pid: os.Getpid(), Host: host,
+	}
+	if dir := a.Bg.dir; dir != "" {
+		// A stale <id>.cancel must never kill a fresh task: clear it BEFORE
+		// the task becomes visible as running. RequestCancel only writes
+		// markers for tasks the disk says are running, so any marker dropped
+		// after this point is a genuine request for THIS task.
+		os.Remove(filepath.Join(dir, id+".cancel"))
 	}
 	a.Bg.put(rec)
 
@@ -176,6 +259,36 @@ func (a *Agent) SubtaskBackground(ctx context.Context, task string, opts Subtask
 		sub.Persist = func(msgs []llm.Message) { writeTranscript(tpath, msgs) }
 	}
 
+	// Sanitized event bridge (Tier 12): the subtask stays silent in the
+	// parent transcript, but its tool starts/results, notes, and final usage
+	// update the durable record — bounded by step count (never text deltas),
+	// so the tasks panel can show "step 4 · bash · 40s" live.
+	bg := a.Bg
+	sub.OnEvent = func(e Event) {
+		switch e.Kind {
+		case EventToolStart:
+			bg.update(id, func(t *BgTask) {
+				t.Steps++
+				t.LastTool = e.ToolName
+				t.ToolStarted = time.Now()
+			})
+		case EventToolResult:
+			bg.update(id, func(t *BgTask) {
+				t.LastTool = ""
+				t.ToolStarted = time.Time{}
+			})
+		case EventNote:
+			bg.update(id, func(t *BgTask) { t.LastNote = sanitizeNote(e.Text) })
+		case EventDone:
+			if e.InTokens > 0 || e.OutTokens > 0 {
+				bg.update(id, func(t *BgTask) {
+					t.InTokens += e.InTokens
+					t.OutTokens += e.OutTokens
+				})
+			}
+		}
+	}
+
 	go func() {
 		// This is deliberately detached from the caller's context: interrupting the
 		// foreground turn does not cancel it. It still shares the daemon process;
@@ -184,17 +297,30 @@ func (a *Agent) SubtaskBackground(ctx context.Context, task string, opts Subtask
 		bgCtx, cancel := context.WithTimeout(context.Background(), bgMaxRuntime)
 		defer cancel()
 		bgCtx = context.WithValue(bgCtx, subtaskDepthKey{}, depth+1)
+		canceled := watchCancelMarker(bgCtx, cancel, a.Bg, id)
 		res, err := sub.NewSession().Send(bgCtx, task)
-		rec.Finished = time.Now()
-		if err != nil {
-			rec.Status, rec.Error = "error", err.Error()
-		} else {
-			rec.Status, rec.Result = "done", res
+		status := "done"
+		a.Bg.update(id, func(t *BgTask) {
+			t.Finished = time.Now()
+			switch {
+			case err != nil && canceled():
+				t.Status, t.Error = "canceled", ""
+			case err != nil:
+				t.Status, t.Error = "error", err.Error()
+			default:
+				t.Status, t.Result = "done", res
+			}
+			status = t.Status
+		})
+		if dir := a.Bg.dir; dir != "" {
+			os.Remove(filepath.Join(dir, id+".cancel")) // never leave stale markers
 		}
-		a.Bg.put(rec)
 		note := "background task " + id + " finished"
-		if rec.Status == "error" {
-			note = "background task " + id + " FAILED: " + truncateForNote(rec.Error)
+		switch status {
+		case "error":
+			note = "background task " + id + " FAILED: " + truncateForNote(err.Error())
+		case "canceled":
+			note = "background task " + id + " canceled"
 		}
 		a.emit(Event{Kind: EventNote, Text: note + " — task_status " + id + " to collect"})
 	}()
@@ -204,6 +330,48 @@ func (a *Agent) SubtaskBackground(ctx context.Context, task string, opts Subtask
 		label += " (" + where + ")"
 	}
 	return label + " — continue working; check with task_status, or collect when the finish note arrives", nil
+}
+
+// watchCancelMarker polls for <id>.cancel while the task runs (the
+// cross-process cancel protocol: any process may drop the marker; the hosting
+// goroutine honors it). On observing the marker it persists Canceling (so
+// readers see "stop requested" immediately) and cancels the task context.
+// The returned func reports whether cancellation was requested — the
+// completion path uses it to distinguish "canceled" from a plain error
+// (context cancellation surfaces as an error from Send).
+func watchCancelMarker(ctx context.Context, cancel context.CancelFunc, r *BgRegistry, id string) func() bool {
+	if r.dir == "" {
+		return func() bool { return false }
+	}
+	marker := filepath.Join(r.dir, id+".cancel")
+	var hit atomic.Bool
+	go func() {
+		tick := time.NewTicker(500 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+				if _, err := os.Stat(marker); err == nil {
+					hit.Store(true)
+					r.update(id, func(t *BgTask) { t.Canceling = true })
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	return hit.Load
+}
+
+// sanitizeNote bounds and flattens a note for the durable record.
+func sanitizeNote(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) > 200 {
+		s = s[:200] + "…"
+	}
+	return s
 }
 
 // writeTranscript atomically rewrites a background task's transcript file

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
 )
@@ -28,6 +29,18 @@ func formatTaskStatus(bg *agent.BgRegistry, id string, all bool) string {
 		line := fmt.Sprintf("%s  %-7s", t.ID, t.Status)
 		if t.Where != "" {
 			line += "  " + t.Where
+		}
+		if t.Status == "running" {
+			if t.Steps > 0 {
+				line += fmt.Sprintf("  step %d", t.Steps)
+			}
+			if t.LastTool != "" {
+				line += "  tool: " + t.LastTool
+			}
+			line += "  " + time.Since(t.Started).Round(time.Second).String()
+			if t.Canceling {
+				line += "  (cancel requested)"
+			}
 		}
 		if t.Status == "done" && t.Result != "" {
 			line += "  — " + oneLine(t.Result)
