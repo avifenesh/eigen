@@ -92,8 +92,8 @@ func (m *model) railLines(h int) []string {
 	}
 	contentW := railWidthCols - 2 // leave a 2-col gutter (" │")
 	lines := make([]string, 0, h)
-	// Header row for the rail.
-	lines = append(lines, railPad(styleAccent.Render("sessions"), railWidthCols))
+	// Header row for the rail, with a visible close affordance.
+	lines = append(lines, railPad(panelTitleLine("sessions", railWidthCols-1, true), railWidthCols))
 	for _, e := range m.railEntries {
 		if len(lines) >= h {
 			break

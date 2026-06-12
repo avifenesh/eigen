@@ -216,7 +216,7 @@ func (m *model) changesLines(h int) []string {
 	changes := m.lastRunChanges()
 	contentW := rightPanelWidthCols - 2 // leading "│ " gutter
 	lines := make([]string, 0, h)
-	lines = append(lines, changesPad(styleAccent.Render("changes (last turn)"), rightPanelWidthCols))
+	lines = append(lines, changesPad(panelTitleLine("changes", rightPanelWidthCols-2, true), rightPanelWidthCols))
 	for _, fc := range changes {
 		if len(lines) >= h {
 			break

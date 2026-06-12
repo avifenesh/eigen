@@ -854,6 +854,14 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			// session (or home to the app) without touching running turns.
 			m.openSwitcher()
 			return m, nil
+		case "ctrl+b", "alt+b":
+			// Toggle the left session rail (b = bar/sidebar).
+			m.toggleRail()
+			return m, nil
+		case "ctrl+g", "alt+g":
+			// Toggle the right changes panel (g = git/changes, soon tabbed).
+			m.toggleChanges()
+			return m, nil
 		case "ctrl+k":
 			// Command palette: fuzzy launcher over every action + chrome toggle.
 			m.openPalette()

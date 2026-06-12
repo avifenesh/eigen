@@ -129,11 +129,19 @@ func (m *model) hitTest(x, y int) hit {
 	// Side rails / panels.
 	if l.leftRail.contains(x, y) {
 		lx, ly := local(l.leftRail)
-		return hit{region: regLeftRail, localX: lx, localY: ly}
+		a := actNone
+		if panelCloseAt(lx, ly, l.leftRail.w-1) { // rail's last col is the separator
+			a = actRailToggle
+		}
+		return hit{region: regLeftRail, action: a, localX: lx, localY: ly}
 	}
 	if l.rightPanel.contains(x, y) {
 		lx, ly := local(l.rightPanel)
-		return hit{region: regRightPanel, localX: lx, localY: ly}
+		a := actNone
+		if panelCloseAt(lx-2, ly, l.rightPanel.w-2) { // panel starts with "│ " gutter
+			a = actChangesToggle
+		}
+		return hit{region: regRightPanel, action: a, localX: lx, localY: ly}
 	}
 	// Input box.
 	if l.input.contains(x, y) {

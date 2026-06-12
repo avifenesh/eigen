@@ -11,6 +11,7 @@ import (
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/chat"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestLayoutRectsStackVertically(t *testing.T) {
@@ -384,6 +385,67 @@ func TestRailLayoutShiftsTranscript(t *testing.T) {
 	}
 }
 
+func TestPanelTitleLineHasClose(t *testing.T) {
+	line := panelTitleLine("changes", 20, true)
+	if !strings.Contains(line, "changes") || !strings.Contains(line, "[x]") {
+		t.Fatalf("panel title should include title + close affordance: %q", line)
+	}
+	if got := ansi.StringWidth(ansi.Strip(line)); got != 20 {
+		t.Fatalf("panel title width = %d, want 20 (%q)", got, line)
+	}
+	if !panelCloseAt(18, 0, 20) || !panelCloseAt(19, 0, 20) {
+		t.Fatal("right-aligned [x] should be clickable")
+	}
+	if panelCloseAt(1, 0, 20) || panelCloseAt(18, 1, 20) {
+		t.Fatal("outside close rect should not be clickable")
+	}
+}
+
+func TestPanelCloseClickTogglesRail(t *testing.T) {
+	m := switcherModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.refreshRail()
+	l := m.computeLayout()
+	if l.leftRail.empty() {
+		t.Fatal("rail should be visible")
+	}
+	// The rail close [x] is right-aligned in the panel title row before the
+	// separator column, so click the x cell.
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.leftRail.x + l.leftRail.w - 2, Y: l.leftRail.y})
+	if m.railOn {
+		t.Fatal("clicking rail [x] should toggle the rail off")
+	}
+}
+
+func TestPanelCloseClickTogglesChanges(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.text("user", "edit")
+	m.push(editBlock("f.go", "a", "b"))
+	m.relayout()
+	l := m.computeLayout()
+	if l.rightPanel.empty() {
+		t.Fatal("changes panel should be visible")
+	}
+	// Right panel has a leading "│ " gutter; [x] is inside the remaining width.
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.rightPanel.x + l.rightPanel.w - 1, Y: l.rightPanel.y})
+	if m.changesOn {
+		t.Fatal("clicking changes [x] should toggle the panel off")
+	}
+}
+
+func TestPanelToggleKeys(t *testing.T) {
+	m := switcherModel(t)
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlB})
+	if m.railOn {
+		t.Fatal("ctrl+b should toggle rail off")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
+	if m.changesOn {
+		t.Fatal("ctrl+g should toggle changes off")
+	}
+}
+
 func TestRailRowClickHops(t *testing.T) {
 	m := switcherModel(t) // current is s2; entries s1,s2,s3
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
@@ -483,7 +545,7 @@ func TestChangesShowsLastRunFiles(t *testing.T) {
 		t.Fatalf("files in first-touched order expected, got %+v", changes)
 	}
 	band := m.transcriptBand()
-	for _, want := range []string{"changes (last turn)", "main.go", "README.md"} {
+	for _, want := range []string{"changes", "[x]", "main.go", "README.md"} {
 		if !strings.Contains(band, want) {
 			t.Fatalf("changes band missing %q:\n%s", want, band)
 		}

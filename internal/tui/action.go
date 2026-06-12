@@ -28,6 +28,8 @@ const (
 	actNewSession
 	actConfigPanel
 	actRename
+	actRailToggle
+	actChangesToggle
 )
 
 // action is a registry entry: what it's called, whether it's currently allowed,
@@ -127,6 +129,22 @@ var actionRegistry = map[actionID]action{
 		id: actRename, label: "rename",
 		enabled: hasBackend,
 		run:     func(m *model) tea.Cmd { m.openRename(); return nil },
+	},
+	actRailToggle: {
+		id: actRailToggle, label: "session rail",
+		enabled: func(m *model) bool { return m.railLister() != nil },
+		run: func(m *model) tea.Cmd {
+			m.toggleRail()
+			return nil
+		},
+	},
+	actChangesToggle: {
+		id: actChangesToggle, label: "changes panel",
+		enabled: always,
+		run: func(m *model) tea.Cmd {
+			m.toggleChanges()
+			return nil
+		},
 	},
 }
 
