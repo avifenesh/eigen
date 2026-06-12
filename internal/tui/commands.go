@@ -75,7 +75,8 @@ func (m *model) command(line string) tea.Cmd {
 	switch name {
 	case "/help":
 		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /loop  /route  /review  /voice  /config  /skills  /tools  /find  /copy  /read  /rebuild  /quit")
-		m.note("keys: / commands · ctrl+k palette · @ files · ↑↓ history · select ctrl+p/n (or alt+↑/↓) · tab expand · drag select+copy · copy ctrl+y/alt+y · sessions alt+s · rail ctrl+b/alt+b · panel ctrl+g/alt+g · right-tab ctrl+r · perm ctrl+a/alt+a · effort ctrl+e/alt+r · model ctrl+o/alt+m · paste image ctrl+v/alt+v · talk ctrl+t/alt+t · pgup/pgdn scroll")
+		m.note("keys: / commands · ctrl+k palette · @ files · ↑↓ history · select ctrl+p/n (or alt+↑/↓) · tab expand · drag select+copy · copy ctrl+y/alt+y · sessions alt+s · rail ctrl+b/alt+b · panel ctrl+g/alt+g · right-tab ctrl+r (changes/git/term) · perm ctrl+a/alt+a · effort ctrl+e/alt+r · model ctrl+o/alt+m · paste image ctrl+v/alt+v · talk ctrl+t/alt+t · pgup/pgdn scroll")
+		m.note("terminal tab: /term (or ctrl+r to the term tab) opens a REAL shell in the right panel — click it or it's focused on open; your keystrokes (incl. esc/ctrl+c) go to the shell so vim/less/top work; ctrl+g returns keys to the chat, the shell keeps running")
 		m.note("clickable: status-bar segments are buttons; header [home][sessions][+new][config]; side panel [x] closes rail/changes; click rail session to hop; click changes file to jump")
 		m.note("multiplexer note: zellij/tmux capture ctrl+p/n/o, and zellij ALSO takes alt+arrows/alt+j/k (pane focus) — use shift+↑/↓ to select blocks there; alt+m model, alt+r effort, alt+a perm, alt+y copy still work")
 		m.note("while running: enter queues a message · esc interrupts · settings commands (/effort /perm /model /search) run immediately")
@@ -127,7 +128,7 @@ func (m *model) command(line string) tea.Cmd {
 	case "/changes":
 		m.toggleChanges()
 	case "/term":
-		m.setRightTab(rightTabTerminal)
+		return m.setRightTab(rightTabTerminal)
 	case "/resume":
 		if arg == "" {
 			// open the picker

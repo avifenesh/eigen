@@ -152,16 +152,14 @@ var actionRegistry = map[actionID]action{
 		id: actRightTabNext, label: "right panel tab",
 		enabled: always,
 		run: func(m *model) tea.Cmd {
-			m.nextRightTab()
-			return nil
+			return m.nextRightTab()
 		},
 	},
 	actTerminalTab: {
 		id: actTerminalTab, label: "terminal panel",
 		enabled: always,
 		run: func(m *model) tea.Cmd {
-			m.setRightTab(rightTabTerminal)
-			return nil
+			return m.setRightTab(rightTabTerminal)
 		},
 	},
 }

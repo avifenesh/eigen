@@ -279,7 +279,7 @@ type model struct {
 	// too narrow (degrades before the rail).
 	changesOn       bool
 	rightTab        rightPanelTab // selected right panel tab (changes/git/terminal)
-	term            termState     // non-PTY command runner tab state
+	term            termState     // embedded PTY terminal tab state
 	changesCache    []fileChange  // memoized last-run change index
 	changesCacheSig string        // transcript signature the cache was built for
 
@@ -661,9 +661,21 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		}
 		m.ti.SetWidth(msg.Width - 2)
 		m.relayout()
+		// Reshape the embedded terminal to the new panel height (Update-owned).
+		if m.term.started && !m.term.exited {
+			m.ensureTermSize(m.termRows())
+		}
 		return m, nil
 
 	case tea.KeyMsg:
+		// When the embedded terminal owns input, it gets keys FIRST — including
+		// ctrl+c (interrupt the shell's foreground job, not quit eigen). ctrl+g
+		// is the one chord that releases focus back to the TUI.
+		if m.termFocused() {
+			if cmd, handled := m.termKey(msg.String(), msg); handled {
+				return m, cmd
+			}
+		}
 		if msg.String() == "ctrl+c" {
 			// Autosave already happens continuously via the agent's Persist hook;
 			// only save here when idle (no turn running) to avoid racing the
@@ -684,10 +696,6 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			if cmd, handled := m.paletteKey(msg.String()); handled {
 				return m, cmd
 			}
-		}
-		// Terminal tab captures typed commands while focused.
-		if cmd, handled := m.termKey(msg.String()); handled {
-			return m, cmd
 		}
 		// Session switcher captures keys while open.
 		if m.switching {
@@ -869,9 +877,8 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			m.toggleChanges()
 			return m, nil
 		case "alt+tab", "ctrl+r":
-			// Cycle right panel tabs (changes/git).
-			m.nextRightTab()
-			return m, nil
+			// Cycle right panel tabs (changes/git/term).
+			return m, m.nextRightTab()
 		case "ctrl+k":
 			// Command palette: fuzzy launcher over every action + chrome toggle.
 			m.openPalette()
@@ -1035,11 +1042,20 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				}
 				return m, nil
 			} else if h.region == regRightPanel {
-				// Header tab click (after the leading gutter) switches the tab.
+				// Header tab click (after the leading gutter) switches the tab
+				// (and may start the embedded terminal). A click on the term
+				// grid focuses it so keystrokes go to the shell.
 				if h.localY == 0 {
-					if m.rightPanelTabAt(h.localX-2, h.localY, m.rightPanelWidth()-2) == actNone {
-						return m, nil
+					if cmd, hit := m.rightPanelTabAt(h.localX-2, h.localY, m.rightPanelWidth()-2); hit {
+						return m, cmd
 					}
+				}
+				if m.rightTab == rightTabTerminal {
+					m.term.focused = true
+					if !m.term.started {
+						return m, m.startTerm(m.termRows())
+					}
+					return m, nil
 				}
 				// A click on a changes-panel file jumps to its tool block.
 				if m.rightTab == rightTabChanges {
@@ -1249,19 +1265,26 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		m.relayout()
 		return m, textarea.Blink
 
-	case termDoneMsg:
-		// Stale-safe: ignore a result from an older command after a newer one ran.
-		if msg.seq == m.term.seq {
-			m.term.running = false
-			m.term.cancel = nil
-			m.term.cmd = msg.cmd
-			m.term.out = msg.out
-			m.term.err = msg.err
-			m.term.exit = msg.exit
-			m.term.dur = msg.dur
-			m.relayout()
+	case termExitedMsg:
+		// The shell process exited (reaped by the waiter). Mark it so the panel
+		// shows the restart hint; gen guard drops a stale exit from an old shell.
+		if msg.gen == m.term.gen {
+			m.term.exited = true
+			m.term.ticking = false
 		}
 		return m, nil
+
+	case termTickMsg:
+		// Paced repaint while the terminal tab is visible. Stop the loop (don't
+		// re-arm) when the tab is hidden, the shell is gone, or this is a stale
+		// generation. Resize happens HERE (Update), never in View.
+		if msg.gen != m.term.gen || !m.term.started || m.term.exited ||
+			m.rightTab != rightTabTerminal || !m.changesOn {
+			m.term.ticking = false
+			return m, nil
+		}
+		m.ensureTermSize(m.termRows())
+		return m, m.termTick()
 
 	case buildDoneMsg:
 		if msg.err != nil {
@@ -1491,6 +1514,7 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 	m.hooks.Fire(hook.Payload{Event: hook.OnSessionStart})
 	final, err := p.Run()
 	m.hooks.Fire(hook.Payload{Event: hook.OnSessionStop})
+	m.stopTerm() // kill the embedded terminal's shell process group, if any
 	if err != nil {
 		return Result{}, err
 	}

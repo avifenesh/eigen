@@ -515,12 +515,28 @@ astronautics):**
   the session/project. Start with real but cheap git content: repo root/current
   branch, ahead/behind, staged/unstaged/untracked counts, short diff stat (not
   full diff first). Handle no repo / detached head / deleted cwd.
-- **Wave 3 — terminal command runner tab (safe, non-interactive).** A command
-  runner, NOT a PTY: parse argv by shellwords by default (no shell expansion),
-  rooted at the session dir, async via context, one running command per panel,
-  timeout (30–60s), cancel, process-group kill on timeout/cancel, output ring
-  buffer + byte/line caps, ANSI/OSC sanitization, exit code + duration, stale
-  result keyed by session+tab instance. Shell mode only explicit later.
+- **Wave 3 — REAL embedded terminal tab (PTY + VT emulator).** ✅ SHIPPED. Not
+  a command-runner — a genuine terminal, the standard recipe everyone uses
+  (creack/pty + charmbracelet/x/vt SafeEmulator), so interactive programs
+  (vim/less/top/htop) work because they get a real TTY. internal/tui/termpanel.go:
+  lazy `$SHELL -i` on a PTY sized to the panel (creack/pty starts it in its own
+  session via Setsid → killable process group), a fresh emulator per generation,
+  a reader goroutine (PTY→emulator, never touches model state) + a waiter
+  (cmd.Wait reaps the child → termExitedMsg), a single gen-guarded repaint tick
+  (70ms; never multiplies; stops when hidden/exited), resize ONLY from Update
+  (ensureTermSize on window-resize/tab-switch/tick, never View). Keys: when the
+  term tab is focused it grabs ALL keystrokes incl. esc/ctrl+c (encoded to PTY
+  bytes — arrows/ctrl-chords/runes/alt) so vim and job control work; ctrl+g
+  RELEASES focus back to the chat (shell keeps running); click focuses. Teardown
+  closes the PTY (SIGHUP) then SIGTERM→SIGKILL the group; the shell lives in the
+  VIEW process (one per window), torn down on window close — never accumulates
+  in the daemon. /term opens it, ctrl+r cycles changes→git→term. Cross-vendor
+  reviewed (caught: needed cmd.Wait, fresh-emulator-per-gen, single tick chain,
+  resize-out-of-View, pid>0 guard, gentle-then-hard kill, no redundant Setpgid)
+  — all fixed. Tests cover encodeKey/focus-routing/lifecycle + a REAL forked-zsh
+  pipeline (`printf … | wc -l` → emulator renders `3`), all `-race` clean.
+  - [ ] later: scrollback view, copy-from-terminal, per-terminal resource caps,
+        graceful daemon-side terminals if windows ever share one.
 - **Wave 4 — left rail grouped by project + liveness.** Reuse current
   SessionInfo for grouping first; extend daemon protocol only for missing
   runtime metadata (project root/session run state), keep collapsed/open UI
@@ -535,8 +551,10 @@ astronautics):**
 mouse additive + full keyboard parity, restrained design, degrade on narrow
 terminals, each wave ships with tests + live verification + a commit; keep
 build/vet/test/staticcheck green. Async panel data (git/terminal) must be
-keyed by session/project and stale-safe; terminal command output is never a
-full PTY in v1.
+keyed by session/project and stale-safe. The terminal IS a real PTY (Wave 3
+shipped it — creack/pty + a VT emulator, the standard recipe; we don't reinvent
+solved problems) running in the per-window VIEW process so it's torn down on
+window close.
 
 ## Notes / grounding
 - read-aloud tool the user has: `readd` (espeak-ng/piper) at `~/projects/tfqol/readd`.

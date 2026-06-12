@@ -10,12 +10,36 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/chat"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
+
+// termKeyType sends each rune of s to the focused terminal as a key event.
+func (m *model) termKeyType(t *testing.T, s string) {
+	t.Helper()
+	for _, r := range s {
+		if r == ' ' {
+			m.termKey("space", tea.KeyMsg{Type: tea.KeySpace})
+			continue
+		}
+		m.termKey(string(r), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+}
+
+// waitFor polls cond for up to ~2s (PTY output is async).
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	for i := 0; i < 200; i++ {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
 
 func TestLayoutRectsStackVertically(t *testing.T) {
 	m := testModel(t) // 80x24
@@ -788,82 +812,134 @@ func TestConfigPanelBackAffordance(t *testing.T) {
 	}
 }
 
-func TestParseArgv(t *testing.T) {
-	got, err := parseArgv("echo 'hello world' plain\\ arg")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"echo", "hello world", "plain arg"}
-	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Fatalf("argv = %#v, want %#v", got, want)
-	}
-	if _, err := parseArgv("echo hi | wc"); err == nil {
-		t.Fatal("pipes should be rejected in non-shell v1")
-	}
-	if _, err := parseArgv("echo 'unterminated"); err == nil {
-		t.Fatal("unterminated quote should error")
-	}
-}
-
-func TestTermTabRendersAndRunsCommand(t *testing.T) {
+func TestTermTabStartsShellAndRenders(t *testing.T) {
 	m := testModel(t)
-	m.setRightTab(rightTabTerminal)
-	if !strings.Contains(m.transcriptBand(), "type command") {
-		t.Fatal("empty terminal tab should show prompt help")
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	cmd := m.setRightTab(rightTabTerminal)
+	if m.rightTab != rightTabTerminal {
+		t.Fatal("setRightTab should select the terminal tab")
 	}
-	m.term.input = "printf hi"
-	cmd, handled := m.termKey("enter")
-	if !handled || cmd == nil || !m.term.running {
-		t.Fatal("enter should start a terminal command")
+	if !m.term.started || m.term.pty == nil {
+		t.Skip("shell could not fork in this sandbox (fork/exec not permitted)")
 	}
-	msg := cmd()
-	done, ok := msg.(termDoneMsg)
-	if !ok {
-		t.Fatalf("terminal cmd returned %T", msg)
+	defer m.stopTerm()
+	if !m.term.focused {
+		t.Fatal("the terminal should be focused on open")
 	}
-	m.Update(done)
-	if m.term.running || m.term.exit != "exit 0" || strings.TrimSpace(m.term.out) != "hi" {
-		t.Fatalf("terminal result not recorded: %+v", m.term)
+	if cmd == nil {
+		t.Fatal("starting the terminal should return the reader command")
 	}
+	// Header still shows the tab bar with [term].
 	if !strings.Contains(m.termLines(8)[0], "term") {
 		t.Fatal("terminal tab header should mention term")
 	}
 }
 
-func TestTermTabStaleResultIgnored(t *testing.T) {
+func TestTermTabRunsRealShellCommand(t *testing.T) {
 	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
 	m.setRightTab(rightTabTerminal)
-	m.term.seq = 2
-	m.term.running = true
-	m.Update(termDoneMsg{seq: 1, out: "old", exit: "exit 0"})
-	if !m.term.running || m.term.out != "" {
-		t.Fatal("stale terminal result should be ignored")
+	if m.term.pty == nil {
+		t.Skip("shell could not fork in this sandbox")
+	}
+	defer m.stopTerm()
+	// Run the reader (drainPTY) so PTY output flows into the emulator, exactly
+	// as the bubbletea runtime would run the reader Cmd as a goroutine.
+	go drainPTY(m.term.pty, m.term.emu)
+	// Drive the PTY like the key handler does: a real shell, so pipes/quoting
+	// work (this panel is user-driven).
+	m.termKeyType(t, "printf 'a\\nb\\nc\\n' | wc -l")
+	m.termKey("enter", tea.KeyMsg{Type: tea.KeyEnter})
+	waitFor(t, func() bool {
+		return strings.Contains(m.term.emu.Render(), "3")
+	})
+	if !strings.Contains(m.term.emu.Render(), "3") {
+		t.Fatalf("expected pipeline output '3' in the terminal:\n%s", m.term.emu.Render())
 	}
 }
 
-func TestTermKeyEditing(t *testing.T) {
+func TestTermFocusRoutingAndRelease(t *testing.T) {
 	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
 	m.setRightTab(rightTabTerminal)
-	m.termKey("echo")
-	m.termKey("space")
-	m.termKey("hi")
-	if m.term.input != "echo hi" {
-		t.Fatalf("term input = %q", m.term.input)
+	if m.term.pty == nil {
+		t.Skip("shell could not fork in this sandbox")
 	}
-	m.termKey("backspace")
-	if m.term.input != "echo h" {
-		t.Fatalf("backspace term input = %q", m.term.input)
+	defer m.stopTerm()
+	// While focused, the term grabs keys (handled=true) so they don't reach the
+	// transcript/input — INCLUDING esc and ctrl+c (forwarded to the shell).
+	for _, k := range []string{"a", "esc", "ctrl+c"} {
+		if _, handled := m.termKey(k, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}); !handled {
+			t.Fatalf("a focused terminal should capture %q", k)
+		}
 	}
-	m.termKey("ctrl+u")
-	if m.term.input != "" {
-		t.Fatal("ctrl+u should clear term input")
+	// ctrl+g RELEASES focus (keeps the shell running) so the TUI gets keys back.
+	if _, handled := m.termKey("ctrl+g", tea.KeyMsg{Type: tea.KeyCtrlG}); !handled {
+		t.Fatal("ctrl+g should be handled by the focused terminal")
+	}
+	if m.term.focused {
+		t.Fatal("ctrl+g should release focus")
+	}
+	if !m.term.started {
+		t.Fatal("ctrl+g must not kill the shell")
+	}
+	// Released: keys are NOT captured (fall through to the TUI).
+	if _, handled := m.termKey("a", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}); handled {
+		t.Fatal("a released terminal must not capture keys")
 	}
 }
 
-func TestTermOutputCapAndSanitize(t *testing.T) {
-	text, truncated := capBytes([]byte("abc\x1bdef"), 4)
-	if !truncated || strings.ContainsRune(text, 0x1b) || !strings.Contains(text, "truncated") {
-		t.Fatalf("cap/sanitize failed: %q truncated=%v", text, truncated)
+func TestTermStopKillsShell(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.setRightTab(rightTabTerminal)
+	if m.term.cmd == nil || m.term.cmd.Process == nil {
+		t.Skip("shell could not fork in this sandbox")
+	}
+	m.stopTerm()
+	if m.term.started || m.term.pty != nil {
+		t.Fatalf("stopTerm should release the terminal: started=%v pty=%v", m.term.started, m.term.pty != nil)
+	}
+}
+
+func TestTermTabSwitchAndUnfocus(t *testing.T) {
+	// Tab/focus state transitions must work WITHOUT a shell fork (sandbox-safe).
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.setRightTab(rightTabTerminal)
+	m.term.focused = true
+	// Switching away from the terminal tab drops focus (so the TUI gets keys).
+	m.setRightTab(rightTabChanges)
+	if m.term.focused {
+		t.Fatal("leaving the terminal tab should unfocus it")
+	}
+	if m.rightTab != rightTabChanges {
+		t.Fatal("should be on the changes tab")
+	}
+}
+
+func TestEncodeKey(t *testing.T) {
+	cases := map[string]string{
+		"enter":     "\r",
+		"tab":       "\t",
+		"backspace": "\x7f",
+		"up":        "\x1b[A",
+		"ctrl+c":    "\x03",
+		"ctrl+a":    "\x01",
+		"space":     " ",
+	}
+	for key, want := range cases {
+		if got := encodeKey(key, tea.KeyMsg{}); got != want {
+			t.Fatalf("encodeKey(%q) = %q, want %q", key, got, want)
+		}
+	}
+	// Printable runes come from the event.
+	if got := encodeKey("x", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}}); got != "x" {
+		t.Fatalf("rune encode = %q", got)
+	}
+	// Alt+rune is ESC-prefixed.
+	if got := encodeKey("alt+x", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}, Alt: true}); got != "\x1bx" {
+		t.Fatalf("alt rune encode = %q", got)
 	}
 }
 

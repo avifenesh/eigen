@@ -8,6 +8,7 @@ package tui
 import (
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -34,26 +35,45 @@ func (m *model) rightTabs() []rightPanelTab {
 	return []rightPanelTab{rightTabChanges, rightTabGit, rightTabTerminal}
 }
 
-func (m *model) nextRightTab() {
+// nextRightTab cycles the right panel tab and returns any command needed to
+// activate the new tab (e.g. starting the embedded terminal's PTY reader).
+func (m *model) nextRightTab() tea.Cmd {
 	tabs := m.rightTabs()
 	for i, t := range tabs {
 		if t == m.rightTab {
-			m.rightTab = tabs[(i+1)%len(tabs)]
-			m.changesOn = true
-			m.relayout()
-			m.note("right panel → " + m.rightTab.label())
-			return
+			next := tabs[(i+1)%len(tabs)]
+			return m.setRightTab(next)
 		}
 	}
-	m.rightTab = rightTabChanges
-	m.changesOn = true
-	m.relayout()
+	return m.setRightTab(rightTabChanges)
 }
 
-func (m *model) setRightTab(t rightPanelTab) {
+// setRightTab selects a tab. Switching to the terminal tab lazily starts the
+// shell (and returns the reader goroutine command); switching away unfocuses
+// the terminal so the TUI gets its keys back, but leaves the shell running.
+func (m *model) setRightTab(t rightPanelTab) tea.Cmd {
+	prev := m.rightTab
 	m.rightTab = t
 	m.changesOn = true
+	if prev == rightTabTerminal && t != rightTabTerminal {
+		m.term.focused = false
+	}
 	m.relayout()
+	if t == rightTabTerminal {
+		m.term.focused = true
+		return m.startTerm(m.termRows())
+	}
+	return nil
+}
+
+// termRows is the emulator's row count given the current transcript height
+// (panel header takes one row).
+func (m *model) termRows() int {
+	r := m.vp.Height - 1
+	if r < 1 {
+		r = 1
+	}
+	return r
 }
 
 // rightPanelTitleLine renders the tab bar + close control inside the right
@@ -90,21 +110,21 @@ func (m *model) rightPanelTitleLine(width int) string {
 }
 
 // rightPanelTabAt maps a content-local click on the panel header (after the
-// leading "│ " gutter) to a tab action, or actNone. The close [x] is handled by
-// panelCloseAt in layout.hitTest before this runs.
-func (m *model) rightPanelTabAt(localX, localY, width int) actionID {
+// leading "│ " gutter) to a tab switch, returning any activation command (e.g.
+// starting the terminal). The close [x] is handled by panelCloseAt in
+// layout.hitTest before this runs. The bool reports whether a tab was hit.
+func (m *model) rightPanelTabAt(localX, localY, width int) (tea.Cmd, bool) {
 	if localY != 0 || width <= 0 {
-		return actNone
+		return nil, false
 	}
 	col := 0
 	for _, t := range m.rightTabs() {
 		label := "[" + t.label() + "]"
 		lw := ansi.StringWidth(label)
 		if localX >= col && localX < col+lw {
-			m.setRightTab(t)
-			return actNone // state already updated; no dispatch needed
+			return m.setRightTab(t), true
 		}
 		col += lw + 1
 	}
-	return actNone
+	return nil, false
 }

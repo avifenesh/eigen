@@ -59,7 +59,7 @@ var slashCommands = []slashCmd{
 	{"/sessions", "switch this window to another session (alt+s)"},
 	{"/rail", "toggle the left session rail (running sessions)"},
 	{"/changes", "toggle the right panel (changes/git/term)"},
-	{"/term", "open the right panel terminal command runner"},
+	{"/term", "open a real shell terminal in the right panel"},
 	{"/resume", "resume a saved session (picker, or path/id)"},
 	{"/save", "save this conversation to a file"},
 	{"/clear", "start a fresh conversation"},
