@@ -379,6 +379,71 @@ the transcript would drop below 40 cols). /changes toggles. Live-verified
 - [ ] notifications/approvals tray; resizable + persisted panel layout;
       multi-pane (two transcripts side by side); per-region wheel routing.
 
+## Tier 10 — the app shell, clickable + structural (mouse parity + framing)
+
+The chat window became a clickable, framed workstation (Tier 9). The APP SHELL
+(internal/app — the home dashboard: rail of pages + live sessions, per-page
+content) is still **keyboard-only and FLAT** (no mouse, no borders). So clicking
+the chat's `[home]` button drops you into a surface you can only drive by
+keyboard — an odd seam. This tier closes it: the shell gets **mouse parity** and
+**structural UI** (edges, frames, bars, side bars), and **embraces being wider
+than a normal terminal** (the user accepts + wants the wide layout).
+
+**Principles (carried from Tier 9 + the cross-vendor review):**
+- Geometry ownership FIRST: one app layout pass computes named rects
+  (title/rail/content/status, optional right inspector) at every breakpoint;
+  render AND hit-testing read the same rects so they never drift. Pages receive
+  the INNER content rect (post border/padding), not the outer panel size.
+- Heterogeneous pages → page/component-EMITTED hit regions, not a shell-side
+  `rowAt()`. The shell owns global chrome hits (rail page, live entry, title,
+  footer); each page owns its internal hits (feed rows, session rows, config
+  keys, detail panes). A shared list/viewport helper emits visible-row regions
+  so pages don't hand-roll y-offset math.
+- Hit regions carry STABLE targets ({page/component/itemID/action}), not raw
+  indices (lists change between renders; a stale click must never panic).
+- Mouse is additive: every click has a keyboard equivalent. Single click
+  selects/focuses; Enter (or click on the already-selected row) opens; explicit
+  buttons activate immediately. Ignore motion; dispatch on press; route the
+  wheel by the region under the cursor.
+- Lipgloss frame math is explicit (GetHorizontal/VerticalFrameSize; the
+  JoinHorizontal spacer is a real column); rendered lines never exceed their
+  panel width (tested) or terminal wrapping breaks hit-testing. Display width,
+  not len().
+- Wide-terminal UX uses breakpoints: narrow = compact/no rail; normal = rail +
+  content; wide = rail + content + right inspector panel; cap only prose/forms,
+  never waste the width by centering a narrow dashboard.
+
+**Wave 1 — central layout + structural framing.**
+- [ ] app layout pass: terminal rect → {titleBar, rail(outer/inner),
+      content(outer/inner), statusBar, rightInspector?} + breakpoint; render
+      from it. Tests assert rects at 60/80/120/160/220 cols (no negative dims;
+      rendered line width ≤ panel width).
+- [ ] bordered chrome: a bordered left rail (min ~20 / normal ~24 cols), a
+      bordered content panel, a top title/breadcrumb bar, a bottom status/help
+      bar — restrained palette, major panels only (no border soup). Pages get
+      the inner content rect (fix their list windows for the new h).
+
+**Wave 2 — mouse foundation + top-level chrome hits.**
+- [ ] tea.WithMouseCellMotion; an app hitTest(x,y)→{region, target} over the
+      layout rects (title/rail/content/status + right inspector), z-ordered,
+      border cells are no-ops. Click a rail page → switch; click title/footer
+      actions → run; wheel routed by region. Validates origin/offsets before
+      any content-row clicks. Keyboard unchanged.
+
+**Wave 3 — page-local hit maps + clickable content.**
+- [ ] shared list/viewport helper emits visible-row HitRegions (window offset,
+      selected, item ID, local rect); pages emit their own regions (home
+      feed+recent sections, sessions rows, config key list + detail pane, …).
+      Shell translates absolute→page-local coords and dispatches the region's
+      action. Click a row = select; click selected / enter = open; click a live
+      rail session = attach; wheel scrolls the region under the cursor. Stale
+      item IDs are safe.
+
+**Wave 4 — wide-terminal richness (after the spine proves out).**
+- [ ] right inspector panel at the wide breakpoint (selected session/project/
+      config detail), wider rail with live-session labels, more table columns
+      where width allows. Persisted? (later).
+
 ## Notes / grounding
 - read-aloud tool the user has: `readd` (espeak-ng/piper) at `~/projects/tfqol/readd`.
 - skills format = Claude Code SKILL.md (YAML frontmatter `name`,`description`[,`allowed-tools`] + markdown body).
