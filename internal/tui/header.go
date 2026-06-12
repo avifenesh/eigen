@@ -16,8 +16,10 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// headerHeight is the rows the header occupies (always 1).
-func (m *model) headerHeight() int { return 1 }
+// headerHeight is the rows the bordered header occupies. It is a real chrome
+// frame now (top border, content row, bottom border), so computeLayout/topHeight
+// shift the transcript down by 3 rows.
+func (m *model) headerHeight() int { return 3 }
 
 // headerButton is one right-aligned action affordance with its action id and
 // the plain label drawn (in brackets).
@@ -74,6 +76,10 @@ func (m *model) sessionDir() string {
 // headerButtonsText builds the right-aligned "[home] [sessions] …" string and
 // the plain column where it begins (for hit-testing), given the total width.
 func (m *model) headerButtonsText(w int) (plain string, startCol int) {
+	// Buttons live on the header CONTENT row inside the left/right borders.
+	if w >= 2 {
+		w -= 2
+	}
 	var parts []string
 	for _, b := range m.headerButtons() {
 		parts = append(parts, "["+b.label+"]")
@@ -92,6 +98,10 @@ func (m *model) headerView() string {
 	w := m.width
 	if w <= 0 {
 		return ""
+	}
+	innerW := w - 2
+	if innerW < 0 {
+		innerW = 0
 	}
 	btnPlain, btnStart := m.headerButtonsText(w)
 	// Left side: title + dim breadcrumb, truncated so it never collides with
@@ -129,13 +139,27 @@ func (m *model) headerView() string {
 		gap = 1
 	}
 	_ = btnPlain
-	return left + strings.Repeat(" ", gap) + rb.String()
+	content := left + strings.Repeat(" ", gap) + rb.String()
+	contentW := ansi.StringWidth(ansi.Strip(content))
+	if contentW < innerW {
+		content += strings.Repeat(" ", innerW-contentW)
+	}
+	top := styleAccent.Render("╭" + strings.Repeat("─", innerW) + "╮")
+	mid := styleAccent.Render("│") + content + styleAccent.Render("│")
+	bot := styleAccent.Render("╰" + strings.Repeat("─", innerW) + "╯")
+	return top + "\n" + mid + "\n" + bot
 }
 
 // headerActionAt resolves a click within the header rect (local coords) to an
 // action: the title region opens rename, a right-aligned button its action.
 func (m *model) headerActionAt(localX, localY int) actionID {
-	if localY != 0 {
+	// Only the content row is interactive; top/bottom borders are no-op.
+	if localY != 1 {
+		return actNone
+	}
+	// localX includes the left border; shift to content-local columns.
+	localX--
+	if localX < 0 || localX >= m.width-2 {
 		return actNone
 	}
 	w := m.width

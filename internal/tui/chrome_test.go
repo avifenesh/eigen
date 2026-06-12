@@ -236,8 +236,8 @@ func TestRectContains(t *testing.T) {
 func TestHeaderRectAtTop(t *testing.T) {
 	m := testModel(t)
 	l := m.computeLayout()
-	if l.header.y != 0 || l.header.h != 1 {
-		t.Fatalf("header should be the first row, got %+v", l.header)
+	if l.header.y != 0 || l.header.h != 3 {
+		t.Fatalf("bordered header should occupy the first 3 rows, got %+v", l.header)
 	}
 	if l.plan.y != l.header.h {
 		t.Fatalf("plan should follow the header, got plan=%+v", l.plan)
@@ -251,10 +251,13 @@ func TestHeaderViewShowsTitleAndButtons(t *testing.T) {
 	m := testModel(t)
 	m.backend.SetTitle("my session")
 	v := m.headerView()
-	for _, want := range []string{"my session", "[home]", "[sessions]", "[+new]", "[config]"} {
+	for _, want := range []string{"╭", "╰", "my session", "[home]", "[sessions]", "[+new]", "[config]"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("header view missing %q:\n%s", want, v)
 		}
+	}
+	if lines := strings.Split(v, "\n"); len(lines) != 3 {
+		t.Fatalf("bordered header should render 3 lines, got %d:\n%s", len(lines), v)
 	}
 }
 
@@ -262,14 +265,17 @@ func TestHeaderActionAtButtons(t *testing.T) {
 	m := testModel(t)
 	m.width = 100
 	_, btnStart := m.headerButtonsText(100)
-	if act := m.headerActionAt(btnStart+1, 0); act != actHome {
-		t.Fatalf("first button should be home, got %v", act)
+	if act := m.headerActionAt(btnStart+2, 1); act != actHome {
+		t.Fatalf("first button on content row should be home, got %v", act)
 	}
-	if act := m.headerActionAt(1, 0); act != actRename {
-		t.Fatalf("title region should map to rename, got %v", act)
+	if act := m.headerActionAt(2, 1); act != actRename {
+		t.Fatalf("title region on content row should map to rename, got %v", act)
 	}
-	if act := m.headerActionAt(1, 1); act != actNone {
-		t.Fatalf("non-zero localY should be actNone, got %v", act)
+	if act := m.headerActionAt(btnStart+2, 0); act != actNone {
+		t.Fatalf("top border should be actNone, got %v", act)
+	}
+	if act := m.headerActionAt(btnStart+2, 2); act != actNone {
+		t.Fatalf("bottom border should be actNone, got %v", act)
 	}
 }
 
@@ -286,7 +292,7 @@ func TestHeaderClickDispatches(t *testing.T) {
 		}
 		col += len(lbl) + 1
 	}
-	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: configCol, Y: 0})
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: configCol + 1, Y: 1})
 	if !m.conf.active {
 		t.Fatal("clicking [config] in the header should open the config panel")
 	}
@@ -295,7 +301,7 @@ func TestHeaderClickDispatches(t *testing.T) {
 func TestHeaderTitleClickOpensRename(t *testing.T) {
 	m := testModel(t)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
-	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: 0})
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 1})
 	if !m.ov.active || m.ov.kind != promptText {
 		t.Fatal("clicking the header title should open the rename prompt")
 	}
