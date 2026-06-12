@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -166,19 +165,50 @@ func TestVoiceModeSpeaksAndRelistens(t *testing.T) {
 	// real provider turn is owned by submit tests).
 	m.state = stInput
 	m.text("assistant", "it is noon")
-	m.Update(turnDoneMsg{})
-	// Turn done in voice mode → spoke the answer (async goroutine — poll) and
-	// armed a new listen.
-	deadline := time.Now().Add(2 * time.Second)
-	for tts.count() == 0 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
+	_, doneCmd := m.Update(turnDoneMsg{})
+	// SEQUENCED: first the reply is SPOKEN (mic shows speaking, not listening
+	// — starting the mic immediately killed the speech: the "never reads
+	// back" bug)…
+	if m.voiceMic != voiceSpeaking {
+		t.Fatalf("voice mode should speak first, mic=%v", m.voiceMic)
 	}
+	speech := drainForMsg[voiceSpeechDoneMsg](t, doneCmd)
 	if tts.count() == 0 {
 		t.Fatal("voice mode should speak the answer")
 	}
+	// …then speech-done returns to the mic.
+	m.Update(speech)
 	if m.voiceMic != voiceListening {
-		t.Fatalf("voice mode should relisten after the turn, mic=%v", m.voiceMic)
+		t.Fatalf("after the reply is spoken the mic should listen again, mic=%v", m.voiceMic)
 	}
+}
+
+// drainForMsg runs a (possibly batched) command tree until a message of type T
+// surfaces, failing the test if none does.
+func drainForMsg[T tea.Msg](t *testing.T, cmd tea.Cmd) T {
+	t.Helper()
+	var queue []tea.Cmd
+	if cmd != nil {
+		queue = append(queue, cmd)
+	}
+	for i := 0; i < 50 && len(queue) > 0; i++ {
+		c := queue[0]
+		queue = queue[1:]
+		msg := c()
+		if got, ok := msg.(T); ok {
+			return got
+		}
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			for _, bc := range batch {
+				if bc != nil {
+					queue = append(queue, bc)
+				}
+			}
+		}
+	}
+	var zero T
+	t.Fatalf("no %T surfaced from the command tree", zero)
+	return zero
 }
 
 func TestVoiceModeExitDiscardsStaleRecording(t *testing.T) {
@@ -281,5 +311,30 @@ func TestComposerShowsStopWhileListening(t *testing.T) {
 	bar := ansi.Strip(m.composerBarView())
 	if !strings.Contains(bar, "stop") {
 		t.Fatalf("bar should show a stop affordance while listening: %q", bar)
+	}
+}
+
+func TestVoiceClickWhileSpeakingSkipsToListening(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m.stt = &fakeSTT{}
+	m.tts = &fakeTTS{}
+	m.toggleVoice()
+	m.voiceMic = voiceSpeaking // reply being read aloud
+	gen := m.voiceGen
+	// Click ◉ while speaking: skip the speech, stay IN voice mode.
+	m.toggleVoice()
+	if !m.voiceOn {
+		t.Fatal("click during speech must not exit voice mode")
+	}
+	// Speech-done (same gen) then returns to the mic.
+	_, lc := m.Update(voiceSpeechDoneMsg{gen: gen})
+	if lc == nil || m.voiceMic != voiceListening {
+		t.Fatalf("after skipped speech the mic should listen, mic=%v", m.voiceMic)
+	}
+	// Esc while listening exits for real.
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.voiceOn {
+		t.Fatal("esc should exit voice mode")
 	}
 }

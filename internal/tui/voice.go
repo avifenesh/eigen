@@ -32,14 +32,19 @@ type voiceSpokenMsg struct {
 	gen  int
 }
 
-// voiceState: what the mic is doing right now (sidebar glyph + routing).
+// voiceState: what the mic is doing right now (composer glyph + routing).
 type voiceState int
 
 const (
 	voiceIdle voiceState = iota
 	voiceListening
 	voiceTranscribing
+	voiceSpeaking // voice mode: the reply is being read aloud
 )
+
+// voiceSpeechDoneMsg signals the spoken reply finished (or was cut off);
+// conversation mode then returns to listening.
+type voiceSpeechDoneMsg struct{ gen int }
 
 // dictateOnce records one utterance and submits it as a normal turn. The
 // reply stays text. Clicking again WHILE listening stops the recording
@@ -57,9 +62,15 @@ func (m *model) dictateOnce() tea.Cmd {
 }
 
 // toggleVoice turns conversation mode on/off, reporting why if unavailable.
-// On: starts listening immediately (that IS the mode). Off: stops everything.
+// On: starts listening immediately (that IS the mode). While the reply is
+// being SPOKEN, a click skips the speech and returns to the mic ("got it,
+// let me talk") — only a click in the listening/idle states exits the mode.
 func (m *model) toggleVoice() tea.Cmd {
 	if m.voiceOn {
+		if m.voiceMic == voiceSpeaking {
+			m.stopSpeaking() // Speak returns → voiceSpeechDoneMsg → relisten
+			return nil
+		}
 		m.exitVoiceMode("conversation mode off")
 		return nil
 	}
@@ -119,8 +130,8 @@ func (m *model) startListening(conv bool) tea.Cmd {
 		m.note("voice input unavailable — need a recorder (arecord) + whisper.cpp + a model (see EIGEN_WHISPER_BIN/MODEL)")
 		return nil
 	}
-	if m.voiceMic != voiceIdle {
-		return nil // already listening/transcribing
+	if m.voiceMic == voiceListening || m.voiceMic == voiceTranscribing {
+		return nil // already capturing speech
 	}
 	m.stopSpeaking()
 	m.voiceMic = voiceListening
@@ -165,21 +176,33 @@ func (m *model) handleSpoken(msg voiceSpokenMsg) (tea.Model, tea.Cmd) {
 }
 
 // voiceTurnDone hooks the end of a turn: in conversation mode, speak the
-// answer then listen again. Returns false when voice mode is off (callers
-// fall through to the normal read-aloud toggle path).
+// answer, THEN listen again. Speaking and listening are SEQUENCED — the
+// returned command blocks on the speech (cancelable: esc / button / a new
+// recording) and reports voiceSpeechDoneMsg, which starts the next listen.
+// Starting the mic immediately would kill the speech via stopSpeaking — the
+// "never reads back" bug. Returns nil when voice mode is off (callers fall
+// through to the normal read-aloud toggle path).
 func (m *model) voiceTurnDone(err error) tea.Cmd {
 	if !m.voiceOn {
 		return nil
 	}
+	ans := ""
 	if err == nil {
-		if ans := m.lastAssistantText(); ans != "" {
-			m.speakAnswer(ans)
-		}
+		ans = m.lastAssistantText()
 	}
-	// Listen for the next utterance while/after the reply speaks; the VAD
-	// threshold keeps quiet playback from triggering, and speaking again
-	// interrupts via startListening's stopSpeaking.
-	return m.startListening(true)
+	if ans == "" || m.tts == nil || !m.tts.Available() {
+		return m.startListening(true) // nothing to speak — straight back to the mic
+	}
+	m.stopSpeaking()
+	ctx, cancel := context.WithCancel(m.ctx)
+	m.voiceCancel = cancel
+	m.voiceMic = voiceSpeaking
+	gen := m.voiceGen
+	tts := m.tts
+	return func() tea.Msg {
+		_ = tts.Speak(ctx, ans)
+		return voiceSpeechDoneMsg{gen: gen}
+	}
 }
 
 // speakLastAnswer speaks the most recent assistant answer once (the read-aloud
@@ -197,20 +220,6 @@ func (m *model) speakLastAnswer() {
 	m.speaker.Stop()
 	m.speaker.Speak(ans)
 	m.note("reading answer aloud")
-}
-
-// speakAnswer speaks text via the voice-mode TTS off the UI loop, cancelable.
-func (m *model) speakAnswer(text string) {
-	if m.tts == nil || !m.tts.Available() || text == "" {
-		return
-	}
-	m.stopSpeaking()
-	ctx, cancel := context.WithCancel(m.ctx)
-	m.voiceCancel = cancel
-	tts := m.tts
-	go func() {
-		_ = tts.Speak(ctx, text)
-	}()
 }
 
 // stopSpeaking cancels in-flight TTS (used on interrupt / new utterance / exit).
@@ -231,6 +240,8 @@ func (m *model) micGlyph() string {
 		return "● listening"
 	case m.voiceOn && m.voiceMic == voiceTranscribing:
 		return "◌ thinking"
+	case m.voiceOn && m.voiceMic == voiceSpeaking:
+		return "▷ speaking"
 	case m.voiceOn:
 		return "◉ voice on"
 	default:

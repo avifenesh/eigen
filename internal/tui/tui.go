@@ -1235,6 +1235,17 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		m.status = ""
 		return m.handleSpoken(msg)
 
+	case voiceSpeechDoneMsg:
+		// The spoken reply finished (or was cut). Same epoch + still in voice
+		// mode → back to the mic; anything else is stale (mode exited, a new
+		// utterance already started).
+		if msg.gen != m.voiceGen || !m.voiceOn {
+			return m, nil
+		}
+		m.voiceCancel = nil
+		m.voiceMic = voiceIdle
+		return m, m.startListening(true)
+
 	case turnDoneMsg:
 		if msg.err != nil {
 			m.push(&block{kind: blockNote, isErr: true, body: sb("error: " + msg.err.Error())})
