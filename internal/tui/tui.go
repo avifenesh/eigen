@@ -1369,7 +1369,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			// ignores resize escapes by default; tiling WMs fix the size).
 			m.note(fmt.Sprintf("asked the terminal to widen to %d cols but it stayed at %d — this terminal ignores resize requests; widen the window (or run inside zellij/tmux and I can stretch the pane)", msg.want, msg.got))
 		default:
-			m.note(fmt.Sprintf("pane stretched to %d cols but the panel needs ≥%d — give this pane more room (zellij: alt+= or close a neighbor)", msg.got, msg.want))
+			m.note(fmt.Sprintf("pane stretched to %d cols but the panel needs ≥%d — the zellij pane may already fill the window: enlarge the terminal window itself (ghostty ignores resize requests from apps), or close/shrink a neighbor pane", msg.got, msg.want))
 		}
 		return m, nil
 
