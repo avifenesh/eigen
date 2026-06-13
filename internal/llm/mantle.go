@@ -41,13 +41,18 @@ func NewMantle(model string) (*Mantle, error) {
 	if model == "" {
 		model = "openai.gpt-5.5"
 	}
-	effort := os.Getenv("EIGEN_REASONING_EFFORT")
-	if effort == "" {
-		// Per-model default from the catalog, falling back to the package default.
-		if info, ok := Lookup(model); ok && info.Effort != "" {
-			effort = info.Effort
-		} else {
-			effort = reasoningEffort
+	// Per-model default from the catalog, falling back to the package default.
+	effort := reasoningEffort
+	if info, ok := Lookup(model); ok && info.Effort != "" {
+		effort = info.Effort
+	}
+	// An explicit EIGEN_REASONING_EFFORT applies ONLY if this model supports it
+	// (e.g. "max" is Anthropic-only — GPT caps at xhigh and 400s on max). An
+	// unsupported value is ignored, keeping the model's valid default, so a
+	// global effort setting never breaks a cross-model/cross-vendor call.
+	if env := strings.TrimSpace(os.Getenv("EIGEN_REASONING_EFFORT")); env != "" {
+		if levels := ModelEffortLevels(model); effortSupported(env, levels) {
+			effort = env
 		}
 	}
 	return &Mantle{

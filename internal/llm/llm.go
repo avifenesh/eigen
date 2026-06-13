@@ -184,3 +184,16 @@ func ModelEffortLevels(modelID string) []string {
 	}
 	return nil
 }
+
+// effortSupported reports whether level is in a model's accepted set. An empty
+// set (non-reasoning / uncataloged) accepts nothing — the caller keeps its
+// default. Used to ignore a global EIGEN_REASONING_EFFORT a given model can't
+// honor (e.g. "max" on a GPT model, which is Anthropic-only).
+func effortSupported(level string, levels []string) bool {
+	for _, l := range levels {
+		if l == level {
+			return true
+		}
+	}
+	return false
+}

@@ -76,3 +76,23 @@ func TestMantleSetEffort(t *testing.T) {
 		t.Fatal("invalid effort must not change the current setting")
 	}
 }
+
+func TestMantleIgnoresUnsupportedEnvEffort(t *testing.T) {
+	// "max" is Anthropic-only; a GPT model must ignore it (keep its valid
+	// default) rather than send it and 400. Regression for the cross-vendor
+	// review/route breaking under the opus-default user's EIGEN_REASONING_EFFORT=max.
+	t.Setenv("EIGEN_REASONING_EFFORT", "max")
+	m, err := NewMantle("openai.gpt-5.5")
+	if err != nil {
+		t.Skip("no mantle creds:", err)
+	}
+	if m.effort == "max" {
+		t.Fatalf("gpt model must not accept 'max'; got %q", m.effort)
+	}
+	// A SUPPORTED env value is applied.
+	t.Setenv("EIGEN_REASONING_EFFORT", "low")
+	m2, _ := NewMantle("openai.gpt-5.5")
+	if m2.effort != "low" {
+		t.Fatalf("supported env effort should apply; got %q", m2.effort)
+	}
+}
