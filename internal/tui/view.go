@@ -136,6 +136,9 @@ func (m *model) View() string {
 	if m.switching {
 		return m.switcherView()
 	}
+	if m.tray {
+		return m.trayView()
+	}
 	if m.modelPicking {
 		return m.modelPickerView()
 	}

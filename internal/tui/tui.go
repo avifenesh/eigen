@@ -162,6 +162,15 @@ type model struct {
 	switchTo      string
 	openApp       bool
 
+	// notifications/approvals tray (alt+t / actTray): an at-a-glance "what
+	// needs me" surface — sibling daemon sessions blocked on an approval or
+	// errored, plus a ring of recent notes. trayItems is rebuilt when opened;
+	// notif is the rolling notification history (newest last, capped).
+	tray      bool
+	trayIdx   int
+	trayItems []trayItem
+	notif     []string
+
 	// steer + queue: messages typed while a turn runs are queued and sent when
 	// it finishes; esc interrupts the running turn via cancel.
 	queued []string
@@ -403,7 +412,17 @@ func (m *model) push(b *block) *block {
 	return b
 }
 
-func (m *model) note(s string) { m.push(&block{kind: blockNote, body: sb(s)}) }
+func (m *model) note(s string) {
+	m.push(&block{kind: blockNote, body: sb(s)})
+	// Keep a rolling history for the notifications tray (newest last, capped).
+	m.notif = append(m.notif, s)
+	if len(m.notif) > maxNotif {
+		m.notif = m.notif[len(m.notif)-maxNotif:]
+	}
+}
+
+// maxNotif caps the notifications ring shown in the tray.
+const maxNotif = 50
 
 // flashClearMsg clears a transient banner if it's still the current one.
 type flashClearMsg struct{ gen int }
@@ -850,6 +869,27 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			}
 			return m, nil
 		}
+		// Notifications/approvals tray captures keys while open.
+		if m.tray {
+			switch msg.String() {
+			case "up", "ctrl+p", "alt+up", "shift+up", "k":
+				if m.trayIdx > 0 {
+					m.trayIdx--
+				}
+			case "down", "ctrl+n", "alt+down", "shift+down", "j":
+				if m.trayIdx < len(m.trayItems)-1 {
+					m.trayIdx++
+				}
+			case "enter":
+				if _, quit := m.trayActivate(); quit {
+					return m, tea.Quit
+				}
+			case "esc", "q":
+				m.tray = false
+				m.sync()
+			}
+			return m, nil
+		}
 		// Session picker captures keys while open.
 		if m.picking {
 			switch msg.String() {
@@ -989,6 +1029,10 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			// In-window session switcher: hop this window to another daemon
 			// session (or home to the app) without touching running turns.
 			m.openSwitcher()
+			return m, nil
+		case "alt+n":
+			// Notifications/approvals tray: what needs me across sessions.
+			m.openTray()
 			return m, nil
 		case "ctrl+b", "alt+b":
 			// Toggle the left session rail (b = bar/sidebar).

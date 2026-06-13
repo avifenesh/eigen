@@ -41,6 +41,7 @@ const (
 	actRightTabNext
 	actTerminalTab
 	actTasksTab
+	actTray
 )
 
 // action is a registry entry: what it's called, whether it's currently allowed,
@@ -233,6 +234,14 @@ var actionRegistry = map[actionID]action{
 		enabled: always,
 		run: func(m *model) tea.Cmd {
 			return m.setRightTab(rightTabTasks)
+		},
+	},
+	actTray: {
+		id: actTray, label: "notifications / approvals tray",
+		enabled: always,
+		run: func(m *model) tea.Cmd {
+			m.openTray()
+			return nil
 		},
 	},
 }

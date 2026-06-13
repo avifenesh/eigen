@@ -61,7 +61,7 @@ func (m *model) applyResumed(msgs []llm.Message) {
 func safeWhileRunning(name string) bool {
 	switch name {
 	case "/effort", "/search", "/perm", "/model", "/help", "/goal", "/loop", "/config", "/route",
-		"/skills", "/tools", "/find", "/copy", "/read", "/voice", "/mute", "/dictate", "/talk", "/speak", "/rail", "/changes", "/term", "/tasks", "/rename":
+		"/skills", "/tools", "/find", "/copy", "/read", "/voice", "/mute", "/dictate", "/talk", "/speak", "/rail", "/changes", "/term", "/tasks", "/tray", "/rename":
 		return true
 	default:
 		// /clear, /compact, /resume, /rebuild, /save, /export, /quit, /exit
@@ -76,7 +76,7 @@ func (m *model) command(line string) tea.Cmd {
 	switch name {
 	case "/help":
 		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /loop  /route  /review  /voice  /config  /skills  /tools  /find  /copy  /read  /rebuild  /quit")
-		m.note("keys: / commands · ctrl+k palette · @ files · ↑↓ history · select ctrl+p/n (or alt+↑/↓) · tab expand · drag select+copy · copy ctrl+y/alt+y · sessions alt+s · rail ctrl+b/alt+b · panel ctrl+g/alt+g · right-tab ctrl+r (changes/git/term/tasks) · perm ctrl+a/alt+a · effort ctrl+e/alt+r · model ctrl+o/alt+m · paste image ctrl+v/alt+v · talk ctrl+t/alt+t · pgup/pgdn scroll")
+		m.note("keys: / commands · ctrl+k palette · @ files · ↑↓ history · select ctrl+p/n (or alt+↑/↓) · tab expand · drag select+copy · copy ctrl+y/alt+y · sessions alt+s · tray alt+n · rail ctrl+b/alt+b · panel ctrl+g/alt+g · right-tab ctrl+r (changes/git/term/tasks) · perm ctrl+a/alt+a · effort ctrl+e/alt+r · model ctrl+o/alt+m · paste image ctrl+v/alt+v · talk ctrl+t/alt+t · pgup/pgdn scroll")
 		m.note("terminal tab: /term (or ctrl+r to the term tab) opens a REAL shell in the right panel — click it or it's focused on open; your keystrokes (incl. esc/ctrl+c) go to the shell so vim/less/top work; ctrl+g returns keys to the chat, the shell keeps running")
 		m.note("tasks tab: /tasks shows background delegations live (step/tool/elapsed) — click a task to expand its result or progress, click [cancel] to stop a running one; the sidebar shows ⚒ tasks N● while work runs")
 		m.note("clickable: status-bar segments are buttons; header [home][sessions][+new][config]; side panel [x] closes rail/changes; click rail session to hop; click changes file to jump")
@@ -133,6 +133,9 @@ func (m *model) command(line string) tea.Cmd {
 		return m.setRightTab(rightTabTerminal)
 	case "/tasks":
 		return m.setRightTab(rightTabTasks)
+	case "/tray":
+		m.openTray()
+		return nil
 	case "/resume":
 		if arg == "" {
 			// open the picker

@@ -396,7 +396,8 @@ the transcript would drop below 40 cols). /changes toggles. Live-verified
       resize. Keyboard parity: widen/narrow palette actions (4-col steps).
       Widths are per-window (not yet persisted).
 - [ ] notifications/approvals tray; ~~persisted panel widths~~ (SHIPPED
-      032ebd2: ~/.eigen/ui.json); multi-pane (two transcripts side by side).
+      032ebd2: ~/.eigen/ui.json). Multi-pane (two transcripts side by side)
+      — BACKLOG (user: not needed now).
 
 ## Tier 10 — the app shell, clickable + structural (mouse parity + framing)
 
