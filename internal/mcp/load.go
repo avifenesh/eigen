@@ -145,6 +145,11 @@ func wrap(client *Client, server string, sp ToolSpec) tool.Definition {
 	// instead of prompting for approval on every call. Anything without an
 	// explicit safe hint stays mutating (fail safe).
 	readOnly := sp.Annotations != nil && sp.Annotations.ReadOnlyHint && !sp.Annotations.DestructiveHint
+	// Screenshot-producing tools (e.g. the sandbox's workspace_screenshot /
+	// workspace_observe) return a PNG file PATH rather than an inline image —
+	// attach the file so the model can see it. Gated by tool name so an
+	// ordinary tool that happens to return a "path" field isn't slurped.
+	attachShot := strings.Contains(toolName, "screenshot") || strings.Contains(toolName, "observe")
 	return tool.Definition{
 		Name:        name,
 		Description: desc,
@@ -152,6 +157,9 @@ func wrap(client *Client, server string, sp ToolSpec) tool.Definition {
 		ReadOnly:    readOnly,
 		RunRich: func(ctx context.Context, args json.RawMessage) (tool.Result, error) {
 			res, err := client.CallToolRich(ctx, toolName, args)
+			if err == nil && attachShot {
+				res = attachScreenshotPath(res)
+			}
 			return tool.Result{Text: res.Text, Images: res.Images}, err
 		},
 	}
