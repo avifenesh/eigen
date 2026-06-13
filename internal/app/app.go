@@ -509,7 +509,7 @@ func (m *Model) renderContentBox(l appLayout) string {
 
 // renderInspectorBox renders the right inspector (wide breakpoint).
 func (m *Model) renderInspectorBox(l appLayout) string {
-	inner := m.inspectorContent(l.inspInner)
+	inner := m.inspectorDetail(l.inspInner.w)
 	return sContentBox.Width(l.inspInner.w).Height(l.inspInner.h).Render(inner)
 }
 
@@ -551,14 +551,6 @@ func (m *Model) railContent(r rect) string {
 
 // railLiveMax caps how many live sessions the rail lists.
 const railLiveMax = 6
-
-// inspectorContent renders the right inspector (wide breakpoint): a contextual
-// detail of the active page's selection. v1 is a calm placeholder; Wave 4 fills
-// it with real per-selection detail.
-func (m *Model) inspectorContent(r rect) string {
-	return sFaint.Render("details") + "\n" + sFaint.Render(strings.Repeat("─", min(r.w, 20))) + "\n" +
-		sDim.Render(wrapText("select an item to inspect it here", r.w))
-}
 
 // wrapText wraps s to width w (greedy, space-separated).
 func wrapText(s string, w int) string {
