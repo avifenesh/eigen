@@ -65,6 +65,7 @@ func (m *model) paletteCatalog() []paletteCmd {
 		{label: "terminal command panel", id: actTerminalTab},
 		{label: "background tasks panel", id: actTasksTab, slash: "/tasks"},
 		{label: "notifications / approvals tray", id: actTray, slash: "/tray"},
+		{label: "run a workflow", slash: "/workflow "},
 		{label: "find in transcript", slash: "/find "},
 		{label: "copy last answer", slash: "/copy"},
 		{label: "compact (skip confirm)", slash: "/compact"},

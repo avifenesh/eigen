@@ -1750,3 +1750,34 @@ func TestSidebarSessionsHeaderClickCollapses(t *testing.T) {
 		t.Fatal("clicking the sessions header should collapse all projects")
 	}
 }
+
+func TestWorkflowCommandQueuesSteps(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".eigen", "workflows"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wf := "---\nname: w\n---\n## a\nfirst {{var.x}}.\n## b\nsecond.\n## c\nthird.\n"
+	os.WriteFile(filepath.Join(home, ".eigen", "workflows", "w.md"), []byte(wf), 0o644)
+
+	m := testModel(t)
+	m.state = stInput
+	m.runWorkflowCmd("w x=42")
+	// Steps 2..3 queued; step 1 submitted (drained from queue) — so 2 remain.
+	if len(m.queued) != 2 {
+		t.Fatalf("want 2 queued steps, got %d: %v", len(m.queued), m.queued)
+	}
+	if !strings.Contains(m.queued[0], "second") || !strings.Contains(m.queued[1], "third") {
+		t.Fatalf("queued steps wrong: %v", m.queued)
+	}
+}
+
+func TestWorkflowCommandUnknown(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m := testModel(t)
+	m.runWorkflowCmd("nope")
+	// Should note an error, not crash or queue anything.
+	if len(m.queued) != 0 {
+		t.Fatal("unknown workflow should queue nothing")
+	}
+}
