@@ -168,6 +168,7 @@ const maxEmptyTurns = 2
 // (e.g. a REPL/TUI), preserving history across user inputs.
 type Session struct {
 	a    *Agent
+	mu   sync.RWMutex // guards msgs — the daemon reads state() while drive() writes
 	msgs []llm.Message
 
 	// Circuit-breaker state for auto-compaction. compactStall is set when a
@@ -350,12 +351,48 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 	return sub, where
 }
 
-// Messages returns the conversation so far (for saving / live-replace handoff).
-// It returns the session's live slice, NOT a copy: callers must only read it,
-// and only from the goroutine that owns the session (the TUI calls it at safe
-// points — turn finished or not started). Use the Persist hook for continuous
-// race-free saving during a turn.
-func (s *Session) Messages() []llm.Message { return s.msgs }
+// Messages returns a COPY of the conversation so far (for saving / live-replace
+// handoff). A copy — not the live slice — because the daemon serves state
+// snapshots on a different goroutine than the running turn; returning the live
+// backing array would race with drive()'s appends.
+func (s *Session) Messages() []llm.Message {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]llm.Message, len(s.msgs))
+	copy(out, s.msgs)
+	return out
+}
+
+// appendMsg appends under the write lock (drive loop / SendWith).
+func (s *Session) appendMsg(m ...llm.Message) {
+	s.mu.Lock()
+	s.msgs = append(s.msgs, m...)
+	s.mu.Unlock()
+}
+
+// setMsgs replaces history under the write lock (compaction).
+func (s *Session) setMsgs(m []llm.Message) {
+	s.mu.Lock()
+	s.msgs = m
+	s.mu.Unlock()
+}
+
+// snapshot returns a copy of msgs under the read lock (for requests that send
+// the history to a provider mid-build).
+func (s *Session) snapshot() []llm.Message {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]llm.Message, len(s.msgs))
+	copy(out, s.msgs)
+	return out
+}
+
+// msgLen returns the message count under the read lock.
+func (s *Session) msgLen() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.msgs)
+}
 
 // Compact summarizes the conversation now, on demand (e.g. the /compact
 // command), regardless of the token budget. It replaces older history with a
@@ -364,7 +401,8 @@ func (s *Session) Messages() []llm.Message { return s.msgs }
 // default. Returns the message counts before/after so the caller can report it.
 func (s *Session) Compact(ctx context.Context, targetTokens int) (before, after int, err error) {
 	a := s.a
-	before = len(s.msgs)
+	msgs := s.snapshot()
+	before = len(msgs)
 	if before == 0 {
 		return 0, 0, nil
 	}
@@ -381,17 +419,17 @@ func (s *Session) Compact(ctx context.Context, targetTokens int) (before, after 
 		}
 		target = budget / 2
 	}
-	compacted, cerr := llm.CompactWith(ctx, a.compactor(), s.msgs, target)
+	compacted, cerr := llm.CompactWith(ctx, a.compactor(), msgs, target)
 	if cerr != nil {
 		return before, before, cerr
 	}
-	s.msgs = compacted
+	s.setMsgs(compacted)
 	s.persist()
-	return before, len(s.msgs), nil
+	return before, len(compacted), nil
 }
 
 // Tokens returns the current estimated context size of the conversation.
-func (s *Session) Tokens() int { return llm.EstimateTokens(s.msgs) }
+func (s *Session) Tokens() int { return llm.EstimateTokens(s.snapshot()) }
 
 // compactStallHeadroomFrac is the minimum headroom (as a fraction of the
 // budget) a compaction must leave to be considered worthwhile. If compaction
@@ -407,7 +445,8 @@ const compactStallHeadroomFrac = 0.15
 // every turn for negligible gain.
 func (s *Session) maybeCompact(ctx context.Context) {
 	a := s.a
-	before := llm.EstimateTokens(s.msgs)
+	msgs := s.snapshot()
+	before := llm.EstimateTokens(msgs)
 	budget := a.maxContextTokens()
 	if before <= budget {
 		// Under budget: reset the breaker so it can act again later.
@@ -428,13 +467,13 @@ func (s *Session) maybeCompact(ctx context.Context) {
 			return
 		}
 	}
-	compacted, err := llm.CompactWith(ctx, a.compactor(), s.msgs, budget)
+	compacted, err := llm.CompactWith(ctx, a.compactor(), msgs, budget)
 	if err != nil {
 		return
 	}
-	s.msgs = compacted
+	s.setMsgs(compacted)
 	s.lastCompactBefore = before
-	s.lastCompactAfter = llm.EstimateTokens(s.msgs)
+	s.lastCompactAfter = llm.EstimateTokens(compacted)
 }
 
 // forceCompactOnOverflow shrinks the conversation after the provider rejected
@@ -445,7 +484,8 @@ func (s *Session) maybeCompact(ctx context.Context) {
 // when there is a real chance of success).
 func (s *Session) forceCompactOnOverflow(ctx context.Context) bool {
 	a := s.a
-	before := len(s.msgs)
+	msgs := s.snapshot()
+	before := len(msgs)
 	if before <= 1 {
 		return false // nothing left to fold; a single turn over the window can't be helped here
 	}
@@ -458,17 +498,18 @@ func (s *Session) forceCompactOnOverflow(ctx context.Context) bool {
 	// current estimated size, guaranteeing the history actually folds even when
 	// our estimate already "fit" the configured budget.
 	target := budget / 2
-	if cur := llm.EstimateTokens(s.msgs); cur/2 < target {
-		target = cur / 2
+	curTokens := llm.EstimateTokens(msgs)
+	if curTokens/2 < target {
+		target = curTokens / 2
 	}
-	compacted, err := llm.CompactWith(ctx, a.compactor(), s.msgs, target)
+	compacted, err := llm.CompactWith(ctx, a.compactor(), msgs, target)
 	if err != nil {
 		return false
 	}
-	if len(compacted) >= before && llm.EstimateTokens(compacted) >= llm.EstimateTokens(s.msgs) {
+	if len(compacted) >= before && llm.EstimateTokens(compacted) >= curTokens {
 		return false // compaction couldn't shrink it; don't spin
 	}
-	s.msgs = compacted
+	s.setMsgs(compacted)
 	s.persist()
 	return true
 }
@@ -503,7 +544,7 @@ func (s *Session) SendWith(ctx context.Context, task string, images []llm.Image)
 	if a.Tools == nil {
 		return "", fmt.Errorf("agent: nil tools")
 	}
-	s.msgs = append(s.msgs, llm.Message{Role: llm.RoleUser, Text: task, Images: images})
+	s.appendMsg(llm.Message{Role: llm.RoleUser, Text: task, Images: images})
 	return s.drive(ctx)
 }
 
@@ -513,7 +554,7 @@ func (s *Session) SendWith(ctx context.Context, task string, images []llm.Image)
 // user message (and any tool results that completed), so the loop simply
 // continues from where it stopped.
 func (s *Session) Resend(ctx context.Context) (string, error) {
-	if len(s.msgs) == 0 {
+	if s.msgLen() == 0 {
 		return "", fmt.Errorf("agent: nothing to resend")
 	}
 	return s.drive(ctx)
@@ -562,7 +603,7 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		}
 		req := llm.Request{
 			System:   sys,
-			Messages: s.msgs,
+			Messages: s.snapshot(),
 			Tools:    specs,
 		}
 		var resp *llm.Response
@@ -605,7 +646,7 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		usedOut += resp.Usage.OutputTokens
 		if len(resp.ToolCalls) == 0 {
 			if strings.TrimSpace(resp.Text) != "" {
-				s.msgs = append(s.msgs, llm.Message{Role: llm.RoleAssistant, Text: resp.Text})
+				s.appendMsg(llm.Message{Role: llm.RoleAssistant, Text: resp.Text})
 				s.persist()
 				a.emit(Event{Kind: EventDone, Step: step, Text: resp.Text, InTokens: usedIn, OutTokens: usedOut})
 				return resp.Text, nil // final answer
@@ -615,7 +656,7 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 			if emptyTurns > maxEmptyTurns {
 				return "", fmt.Errorf("model returned no actionable output after %d empty turns", emptyTurns)
 			}
-			s.msgs = append(s.msgs, llm.Message{
+			s.appendMsg(llm.Message{
 				Role: llm.RoleUser,
 				Text: "Continue: use a tool to make progress, or give your final answer.",
 			})
@@ -623,7 +664,7 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		}
 		emptyTurns = 0
 
-		s.msgs = append(s.msgs, llm.Message{
+		s.appendMsg(llm.Message{
 			Role:        llm.RoleAssistant,
 			Text:        resp.Text,
 			Reasoning:   resp.Reasoning,
@@ -650,27 +691,39 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 			a.emit(Event{Kind: EventToolStart, Step: step, ToolName: tc.Name, ToolID: tc.ID, ToolArgs: tc.Arguments})
 			result, isErr := a.dispatch(ctx, tc)
 			a.emit(Event{Kind: EventToolResult, Step: step, ToolName: tc.Name, ToolID: tc.ID, Result: result, IsError: isErr})
-			s.msgs = append(s.msgs, llm.Message{
+			// Append the tool result and dedupe older identical outputs in one
+			// locked step (DedupeToolResults mutates earlier entries in place).
+			s.appendToolResult(llm.Message{
 				Role:       llm.RoleTool,
 				ToolCallID: tc.ID,
 				ToolName:   tc.Name,
 				Text:       result,
 				ToolError:  isErr,
 			})
-			// Dedupe: if this exact output already appears earlier (same tool,
-			// e.g. an unchanged file re-read), stub the older copies — the
-			// newest occurrence is the one the model will use.
-			llm.DedupeToolResults(s.msgs, len(s.msgs)-1)
 		}
 		s.persist()
 	}
 }
 
-// persist autosaves the conversation via the agent's Persist hook (called from
-// the goroutine that owns the session, so reading s.msgs here never races).
+// appendToolResult appends a tool message then dedupes older identical outputs,
+// all under the write lock (DedupeToolResults rewrites earlier entries — the
+// daemon must never read mid-rewrite).
+func (s *Session) appendToolResult(m llm.Message) {
+	s.mu.Lock()
+	s.msgs = append(s.msgs, m)
+	// Dedupe: if this exact output already appears earlier (same tool, e.g. an
+	// unchanged file re-read), stub the older copies — the newest occurrence is
+	// the one the model will use.
+	llm.DedupeToolResults(s.msgs, len(s.msgs)-1)
+	s.mu.Unlock()
+}
+
+// persist autosaves the conversation via the agent's Persist hook. It snapshots
+// under the read lock so a concurrent state() read never sees a half-written
+// slice.
 func (s *Session) persist() {
 	if s.a.Persist != nil {
-		s.a.Persist(s.msgs)
+		s.a.Persist(s.snapshot())
 	}
 }
 

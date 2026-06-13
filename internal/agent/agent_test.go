@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/tool"
@@ -745,5 +746,62 @@ func TestCompactExplicitTargetShrinksTokensViaShedding(t *testing.T) {
 	afterTok := s.Tokens()
 	if afterTok >= beforeTok {
 		t.Fatalf("explicit compact should shrink tokens: %d → %d", beforeTok, afterTok)
+	}
+}
+
+// slowStreamProvider emits a few tool calls then a final answer, sleeping
+// between steps so a concurrent reader has a wide window to race the writer.
+type slowStreamProvider struct{ step int }
+
+func (p *slowStreamProvider) Name() string    { return "slow" }
+func (p *slowStreamProvider) ModelID() string { return "slow" }
+func (p *slowStreamProvider) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
+	time.Sleep(2 * time.Millisecond)
+	p.step++
+	if p.step < 6 {
+		return &llm.Response{ToolCalls: []llm.ToolCall{
+			{ID: "c", Name: "noop", Arguments: json.RawMessage(`{}`)},
+		}}, nil
+	}
+	return &llm.Response{Text: "done"}, nil
+}
+
+// TestSessionMessagesConcurrentWithTurn pins the daemon contract: state
+// snapshots (Messages/Tokens) can be read on a different goroutine while a
+// turn mutates history. Run with -race.
+func TestSessionMessagesConcurrentWithTurn(t *testing.T) {
+	td := callTool("noop")
+	td.ReadOnly = true
+	reg, _ := tool.NewRegistry(td)
+	a := &Agent{Provider: &slowStreamProvider{}, Tools: reg, Perm: PermAuto}
+	s := a.NewSession()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = s.Send(context.Background(), "go")
+	}()
+
+	// Hammer the read paths while the turn runs.
+	stop := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				msgs := s.Messages()
+				for _, m := range msgs { // iterate the copy — must be stable
+					_ = m.Text
+				}
+				_ = s.Tokens()
+			}
+		}
+	}()
+
+	<-done
+	close(stop)
+	if got := len(s.Messages()); got == 0 {
+		t.Fatal("turn should have produced messages")
 	}
 }
