@@ -90,6 +90,7 @@ type Model struct {
 
 	data        *Data // loaded app data (sessions, projects, config…)
 	titledPolls int
+	liveSpin    int // animation frame for working-session glyphs (advances on livePoll)
 	palette     palette
 }
 
@@ -168,6 +169,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleMouse(msg)
 	case livePollMsg:
 		m.data.refreshLive()
+		m.liveSpin++ // advance the working-session animation
 		return m, livePoll()
 	case feedMsg:
 		m.data.Feed, m.data.FeedFresh = msg.f, true
@@ -543,7 +545,7 @@ func (m *Model) railContent(r rect) string {
 				b.WriteString(sFaint.Render(fmt.Sprintf("  +%d more", len(m.data.Live)-i)) + "\n")
 				break
 			}
-			b.WriteString("  " + liveGlyph(in.Status) + " " + sRailIdle.Render(liveLabel(in)) + "\n")
+			b.WriteString("  " + liveGlyph(in.Status, m.liveSpin) + " " + sRailIdle.Render(liveLabel(in)) + "\n")
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
@@ -576,10 +578,16 @@ func wrapText(s string, w int) string {
 	out.WriteString(line.String())
 	return out.String()
 }
-func liveGlyph(s daemon.Status) string {
+
+// liveGlyph renders a session's status. The WORKING state animates a rotating
+// vector (eigenvector sweep) in the loud working color, advanced by frame, so
+// an active session is unmistakable at a glance — not a static dot. Other
+// states are static.
+func liveGlyph(s daemon.Status, frame int) string {
 	switch s {
 	case daemon.StatusWorking:
-		return sOk.Render("●") // green: actively working
+		sweep := []string{"│", "╱", "─", "╲"}
+		return sWorking.Render(sweep[frame%len(sweep)])
 	case daemon.StatusApproval:
 		return sWarn.Render("◆") // amber: blocked on an approval
 	case daemon.StatusError:

@@ -50,8 +50,9 @@ var (
 
 	// accent is the calm structural color for borders, rules, and the prompt
 	// caret — present but not loud.
-	accent      = theme.Accent
-	styleAccent = theme.SAccent
+	accent       = theme.Accent
+	styleAccent  = theme.SAccent
+	styleWorking = theme.SWorking.Bold(true)
 
 	// Markdown prose styles for assistant answers.
 	styleHeading    = theme.SHeading.Bold(true)
@@ -304,6 +305,7 @@ type model struct {
 	railEntries   []chat.SessionEntry
 	railCollapsed map[string]bool
 	railSpin      int
+	brandTick     int // advances while working → animates the λ mark + loader
 
 	// Right changes panel (Tier 9 Wave 4): changesOn toggles the column of
 	// files touched in the last edit-producing run (click a file = jump to its
@@ -653,6 +655,8 @@ func (m *model) submit(task string) tea.Cmd {
 	m.text("user", task)
 	m.state = stRunning
 	m.status = "thinking"
+	m.brandTick = 0
+	setTermTitle(titleWorking(0)) // tab flips to "working" immediately
 	m.turnStarted = time.Now()
 	m.turnOutChars = 0
 	m.comp = completion{kind: compNone}
@@ -1420,7 +1424,8 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		m.state = stInput
 		m.status = ""
 		m.ti.Focus()
-		m.refreshCtx() // safe: the turn's goroutine has returned
+		setTermTitle(titleReady()) // tab shows "ready"; bell (below) chimes for long turns
+		m.refreshCtx()             // safe: the turn's goroutine has returned
 		// Autosave so the conversation survives a crash or failed rebuild.
 		m.autosave()
 		// Failover window bookkeeping: count down successful turns on the
@@ -1549,6 +1554,10 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.sp, cmd = m.sp.Update(msg)
+		if m.state == stRunning {
+			m.brandTick++ // animate the λ mark + loader while working
+			setTermTitle(titleWorking(m.brandTick))
+		}
 		return m, cmd
 
 	case growDoneMsg:
@@ -1819,7 +1828,8 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 	m.hooks.Fire(hook.Payload{Event: hook.OnSessionStart})
 	final, err := p.Run()
 	m.hooks.Fire(hook.Payload{Event: hook.OnSessionStop})
-	m.stopTerm() // kill the embedded terminal's shell process group, if any
+	m.stopTerm()     // kill the embedded terminal's shell process group, if any
+	setTermTitle("") // restore the terminal's own title on exit
 	if err != nil {
 		return Result{}, err
 	}

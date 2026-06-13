@@ -150,7 +150,7 @@ func (s *liveState) view(m *Model, w, h int) string {
 		}
 		label := liveLabel(in)
 		line := fmt.Sprintf("%s %s %s %s",
-			liveGlyph(in.Status),
+			liveGlyph(in.Status, m.liveSpin),
 			pad(label, 16),
 			sFaint.Render(pad(string(in.Status), 9)),
 			sFaint.Render(truncate(in.Dir, w-36)))

@@ -27,6 +27,28 @@ func bell() {
 	os.Stderr.WriteString("\a")
 }
 
+// setTermTitle sets the terminal window/tab title via OSC 2. Ghostty (and tmux/
+// zellij/most emulators) show it in the tab/header — so a glance at the tab
+// says whether eigen is working or waiting, even when the window isn't focused.
+// Written to stderr (the tty), like bell().
+func setTermTitle(s string) {
+	os.Stderr.WriteString("\x1b]2;" + s + "\x07")
+}
+
+// titleWorking is the tab title while a turn runs: the λ mark + animated dots,
+// so an unfocused tab visibly "breathes" (1..3 dots cycling on i).
+func titleWorking(i int) string {
+	dots := strings.Repeat(".", 1+i%3)
+	return brandGlyph + " eigen working" + dots
+}
+
+// titleReady is the tab title when eigen is waiting for the user — a calm,
+// classic "ready" banner. Paired with the bell on turn-done so an unfocused
+// tab both shows and (per the user's term settings) chimes.
+func titleReady() string {
+	return brandGlyph + " eigen — ready"
+}
+
 // notifyCmd returns the configured external notifier, if any.
 func (m *model) notifyCmdline() string {
 	if m.notifyCmd != "" {

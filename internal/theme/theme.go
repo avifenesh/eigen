@@ -40,6 +40,11 @@ var (
 
 	// Headings: calm blue, a touch of weight added at the call site.
 	Heading = lipgloss.AdaptiveColor{Dark: "#81A1C1", Light: "#3B5A82"}
+
+	// Working: the loud "actively thinking" color for the running loader — a
+	// warm orange that stands apart from the calm blues so it's unmistakable
+	// at a glance (distinct from Warn's amber, which is reserved for confirms).
+	Working = lipgloss.AdaptiveColor{Dark: "#D08770", Light: "#B4581F"}
 )
 
 // Ready-made styles for the common roles. Call sites compose (Bold/Underline/
@@ -57,4 +62,5 @@ var (
 	SCode    = lipgloss.NewStyle().Foreground(Code)
 	SLink    = lipgloss.NewStyle().Foreground(Link)
 	SHeading = lipgloss.NewStyle().Foreground(Heading)
+	SWorking = lipgloss.NewStyle().Foreground(Working)
 )

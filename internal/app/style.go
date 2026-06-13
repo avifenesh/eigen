@@ -29,15 +29,16 @@ var (
 )
 
 var (
-	sText   = lipgloss.NewStyle().Foreground(cText)
-	sDim    = lipgloss.NewStyle().Foreground(cDim)
-	sFaint  = lipgloss.NewStyle().Foreground(cFaint)
-	sTitle  = lipgloss.NewStyle().Foreground(cTitle).Bold(true)
-	sAccent = lipgloss.NewStyle().Foreground(cAccent)
-	sOk     = lipgloss.NewStyle().Foreground(cOk)
-	sWarn   = lipgloss.NewStyle().Foreground(cWarn)
-	sErr    = lipgloss.NewStyle().Foreground(cErr)
-	sViolet = lipgloss.NewStyle().Foreground(cViolet)
+	sText    = lipgloss.NewStyle().Foreground(cText)
+	sDim     = lipgloss.NewStyle().Foreground(cDim)
+	sFaint   = lipgloss.NewStyle().Foreground(cFaint)
+	sTitle   = lipgloss.NewStyle().Foreground(cTitle).Bold(true)
+	sAccent  = lipgloss.NewStyle().Foreground(cAccent)
+	sOk      = lipgloss.NewStyle().Foreground(cOk)
+	sWarn    = lipgloss.NewStyle().Foreground(cWarn)
+	sErr     = lipgloss.NewStyle().Foreground(cErr)
+	sViolet  = lipgloss.NewStyle().Foreground(cViolet)
+	sWorking = lipgloss.NewStyle().Foreground(theme.Working).Bold(true) // loud "actively working"
 
 	// Rail item styles.
 	sRailActive = lipgloss.NewStyle().Foreground(cTitle).Bold(true)
