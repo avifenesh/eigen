@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -432,5 +434,57 @@ func TestRemoteSessionsList(t *testing.T) {
 	}
 	if !dirs["/tmp/proj"] || !dirs["/tmp/other"] {
 		t.Fatalf("dirs: %+v", dirs)
+	}
+}
+
+// TestConcurrentRequestsDoNotCrossReplies pins the client request-serialization
+// fix: many goroutines issuing different ops on ONE client must each get its
+// OWN op's reply (replies carry no id — one request in flight at a time). Run
+// with -race.
+func TestConcurrentRequestsDoNotCrossReplies(t *testing.T) {
+	build := func(_, _ string) (*agent.Agent, func(), error) {
+		reg, _ := tool.NewRegistry()
+		return &agent.Agent{Provider: echoProv{}, Tools: reg, Perm: agent.PermAuto, MaxContextTokens: 9000}, func() {}, nil
+	}
+	c, id := startDaemon(t, build)
+
+	var wg sync.WaitGroup
+	errc := make(chan error, 64)
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if i%2 == 0 {
+				infos, err := c.List()
+				if err != nil {
+					errc <- err
+					return
+				}
+				// List must answer with sessions, never some other op's payload.
+				found := false
+				for _, in := range infos {
+					if in.ID == id {
+						found = true
+					}
+				}
+				if !found {
+					errc <- fmt.Errorf("List() reply missing session %s (crossed reply?)", id)
+				}
+			} else {
+				st, err := c.State(id)
+				if err != nil {
+					errc <- err
+					return
+				}
+				if st.Model != "echo-model" {
+					errc <- fmt.Errorf("State() reply had model %q (crossed reply?)", st.Model)
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errc)
+	for err := range errc {
+		t.Error(err)
 	}
 }

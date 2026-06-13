@@ -421,3 +421,33 @@ func TestWireEventCarriesEverything(t *testing.T) {
 		t.Fatalf("ToolArgs lost: %q", back.ToolArgs)
 	}
 }
+
+func TestReplayBufferBoundedAndClearedAfterTurn(t *testing.T) {
+	// A long-lived session must not accumulate events forever. Drive many
+	// dispatches; the buffer stays bounded, and after a turn finishes it's
+	// dropped (a post-turn attach reconstructs from Messages()).
+	reg, _ := tool.NewRegistry()
+	a := &agent.Agent{Provider: echoProvider{}, Tools: reg}
+	s := newSession("x", "/tmp", "m", a)
+
+	for i := 0; i < maxReplayEvents+500; i++ {
+		s.dispatch(agent.Event{Kind: agent.EventTextDelta, Text: "x"})
+	}
+	s.mu.Lock()
+	n := len(s.events)
+	s.mu.Unlock()
+	if n > maxReplayEvents {
+		t.Fatalf("replay buffer should be bounded at %d, got %d", maxReplayEvents, n)
+	}
+
+	// finishTurn drops the buffer entirely.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // mark interrupted so finishTurn emits a note then clears
+	s.finishTurn(ctx, nil)
+	s.mu.Lock()
+	after := len(s.events)
+	s.mu.Unlock()
+	if after != 0 {
+		t.Fatalf("replay buffer should be cleared after a turn, got %d", after)
+	}
+}

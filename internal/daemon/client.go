@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/avifenesh/eigen/internal/llm"
 )
@@ -16,7 +17,8 @@ import (
 type Client struct {
 	conn net.Conn
 
-	mu      sync.Mutex // guards writes + pending reply routing
+	mu      sync.Mutex // guards conn writes + onEvent handler swap
+	reqMu   sync.Mutex // serializes request/reply pairs (one in flight at a time)
 	scanner *bufio.Scanner
 
 	// replies receives non-event responses (ok/error/sessions/attached) in
@@ -96,10 +98,26 @@ func (c *Client) Done() <-chan struct{} { return c.done }
 func (c *Client) Close() error { return c.conn.Close() }
 
 // request sends a request and waits for the next non-event reply.
+// request sends one request and waits for its reply. reqMu serializes the
+// whole send→receive cycle so concurrent callers (e.g. the rail poll's List()
+// racing a turn's State()) can't read each other's reply off the shared
+// channel — replies carry no id, so pairing relies on one request in flight.
 func (c *Client) request(req Request) (Response, error) {
 	b, err := json.Marshal(req)
 	if err != nil {
 		return Response{}, err
+	}
+	c.reqMu.Lock()
+	defer c.reqMu.Unlock()
+	// Drain any stale reply a prior timed-out request may have left behind so
+	// it can't be mistaken for this one's answer.
+	for {
+		select {
+		case <-c.replies:
+			continue
+		default:
+		}
+		break
 	}
 	c.mu.Lock()
 	_, err = c.conn.Write(append(b, '\n'))
@@ -115,8 +133,15 @@ func (c *Client) request(req Request) (Response, error) {
 		return r, nil
 	case <-c.done:
 		return Response{}, fmt.Errorf("daemon connection closed")
+	case <-time.After(requestTimeout):
+		return Response{}, fmt.Errorf("daemon request %q timed out", req.Op)
 	}
 }
+
+// requestTimeout bounds a single request/reply cycle. Daemon ops are local and
+// fast (a turn streams via events, not a reply), so a stall this long means a
+// lost reply or a wedged daemon — fail rather than hang the caller forever.
+const requestTimeout = 30 * time.Second
 
 // Ping checks the daemon is alive.
 func (c *Client) Ping() error {

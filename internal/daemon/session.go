@@ -118,6 +118,15 @@ func (s *Session) dispatch(e agent.Event) {
 	case agent.EventDone:
 		s.status = StatusIdle
 	}
+	// Bound the replay buffer: a long-lived daemon session would otherwise
+	// accumulate every delta forever (a slow memory leak). The buffer only
+	// exists so a view attaching MID-TURN sees in-progress events; once a turn
+	// ends those are dead weight (chat.Remote discards replayed events and
+	// renders history from Messages()). Keep only a recent tail.
+	if len(s.events) > maxReplayEvents {
+		drop := len(s.events) - maxReplayEvents
+		s.events = append([]agent.Event(nil), s.events[drop:]...)
+	}
 	s.updated = time.Now()
 	subs := make([]chan agent.Event, 0, len(s.subs))
 	for _, ch := range s.subs {
@@ -131,6 +140,11 @@ func (s *Session) dispatch(e agent.Event) {
 		}
 	}
 }
+
+// maxReplayEvents bounds the per-session replay buffer — large enough to cover
+// any single in-progress turn's deltas (all a mid-turn attach needs), small
+// enough that a multi-day session can't leak unbounded memory.
+const maxReplayEvents = 4096
 
 // attach registers a view: returns a replay of events so far plus a live
 // channel and an unsubscribe func.
@@ -199,6 +213,12 @@ func (s *Session) finishTurn(ctx context.Context, err error) {
 	case err != nil:
 		s.dispatch(agent.Event{Kind: agent.EventNote, Text: "error: " + err.Error()})
 	}
+	// The turn is over: drop the replay buffer. A view attaching now
+	// reconstructs the conversation from Messages() (replayed events are
+	// discarded by chat.Remote), so retaining them only grows memory.
+	s.mu.Lock()
+	s.events = nil
+	s.mu.Unlock()
 }
 
 // interrupt cancels the in-flight turn, if any.
