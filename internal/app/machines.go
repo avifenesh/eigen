@@ -203,7 +203,7 @@ func (s *machinesState) view(m *Model, w, h int) string {
 		mc := d.Machines[i]
 		line := fmt.Sprintf("%s %s %s",
 			pad(truncate(mc.Name, nameW), nameW),
-			sDim.Render(pad(truncate(mc.SSH, w-40), w-40)),
+			sDim.Render(pad(truncate(machineAddr(mc), w-40), w-40)),
 			machineBadges(mc))
 		s.clicks.mark(lineCount(out), i)
 		out += row(i == s.list.cursor, line) + "\n"
@@ -223,7 +223,7 @@ func (s *machinesState) view(m *Model, w, h int) string {
 
 func (s *machinesState) viewInside(m *Model, w, h int) string {
 	mc := m.data.Machines[s.mach]
-	out := pageTitle("‹ "+mc.Name, mc.SSH, w)
+	out := pageTitle("‹ "+mc.Name, machineAddr(mc), w)
 	if s.loading {
 		if s.installing {
 			return out + sFaint.Render("  installing eigen on "+mc.Name+" over ssh…")
@@ -303,4 +303,13 @@ func (s *machinesState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
 	}
 	s.list.cursor = idx
 	return nil, true
+}
+
+// machineAddr is the human-readable target for display: the resolved
+// user@hostname when known (detected hosts), else the ssh target/alias.
+func machineAddr(mc remote.Machine) string {
+	if mc.Addr != "" {
+		return mc.Addr
+	}
+	return mc.SSH
 }

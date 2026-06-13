@@ -53,3 +53,34 @@ func TestSplitSSHDirective(t *testing.T) {
 		}
 	}
 }
+
+func TestMachinesUseAliasNotResolvedHost(t *testing.T) {
+	// Detected hosts must use the ssh-config ALIAS as the SSH target so ssh
+	// reads the Host block (IdentityFile/User/ProxyJump) — resolving to
+	// user@hostname drops the key and breaks install/connect. Regression for
+	// the "install fails" bug.
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	if err := os.MkdirAll(filepath.Join(dir, ".ssh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(dir, ".ssh", "config")
+	os.WriteFile(cfg, []byte("Host dev\n    HostName 10.0.0.9\n    User ubuntu\n    IdentityFile ~/.ssh/dev.pem\n"), 0o600)
+
+	ms := Machines()
+	var dev *Machine
+	for i := range ms {
+		if ms[i].Name == "dev" {
+			dev = &ms[i]
+		}
+	}
+	if dev == nil {
+		t.Fatal("dev not detected")
+	}
+	if dev.SSH != "dev" {
+		t.Errorf("SSH target must be the alias 'dev' (so ssh uses IdentityFile), got %q", dev.SSH)
+	}
+	if dev.Addr != "ubuntu@10.0.0.9" {
+		t.Errorf("Addr (display) = %q, want ubuntu@10.0.0.9", dev.Addr)
+	}
+}

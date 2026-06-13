@@ -98,12 +98,25 @@ func (h Hosts) Resolve(arg string) (spec HostSpec, model, perm string, err error
 // ~/.ssh/config.
 type Machine struct {
 	Name     string // alias to `eigen --remote <name>`
-	SSH      string // ssh target (user@host or alias)
+	SSH      string // ssh target — the CONFIG ALIAS for detected hosts (so ssh reads IdentityFile etc.), or user@host for saved literals
+	Addr     string // resolved user@hostname for display only (detected hosts)
 	Dir      string // default remote session root (saved only)
 	Model    string // default model (saved only)
 	Perm     string // default perm (saved only)
 	Saved    bool   // present in hosts.json
 	Detected bool   // present in ~/.ssh/config
+}
+
+// displayAddr renders a detected host's resolved user@hostname (for the UI),
+// falling back to the alias when the config gives no HostName.
+func displayAddr(d DetectedHost) string {
+	if d.HostName == "" {
+		return ""
+	}
+	if d.User != "" {
+		return d.User + "@" + d.HostName
+	}
+	return d.HostName
 }
 
 // Machines merges saved hosts (hosts.json) with auto-detected ssh_config hosts
@@ -122,13 +135,16 @@ func Machines() []Machine {
 	for _, d := range DetectSSHHosts() {
 		if m, ok := byName[d.Name]; ok {
 			m.Detected = true
+			if m.Addr == "" {
+				m.Addr = displayAddr(d)
+			}
 			continue
 		}
-		ssh := d.Name
-		if d.User != "" && d.HostName != "" {
-			ssh = d.User + "@" + d.HostName
-		}
-		byName[d.Name] = &Machine{Name: d.Name, SSH: ssh, Detected: true}
+		// Use the ssh-config ALIAS as the target (NOT user@hostname): ssh then
+		// reads the full Host block — IdentityFile, User, ProxyJump, etc. —
+		// from ~/.ssh/config. Resolving to user@hostname drops the IdentityFile
+		// and breaks auth for hosts whose key is only named in the config.
+		byName[d.Name] = &Machine{Name: d.Name, SSH: d.Name, Addr: displayAddr(d), Detected: true}
 	}
 	out := make([]Machine, 0, len(byName))
 	for _, m := range byName {
