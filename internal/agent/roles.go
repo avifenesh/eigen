@@ -16,19 +16,23 @@ type Role struct {
 	ReadOnly   bool     // every tool in Tools is read-only (enforced at build)
 }
 
-// builtinRoles are the v1 hardcoded roles. All are read-only.
+// builtinRoles are the v1 hardcoded roles. All are read-only — and crucially,
+// every tool listed is a NO-APPROVAL (ReadOnly) tool, so a parallel child never
+// blocks on the single-window approval prompt. Network tools (fetch/websearch)
+// require approval in gated mode by design, so they are intentionally excluded
+// from parallel roles; web research stays a foreground `task`.
 var builtinRoles = map[string]Role{
 	"researcher": {
 		Name:       "researcher",
-		System:     "You are a RESEARCHER sub-agent. Investigate and report findings — read code, search the web, trace how things work. You have READ-ONLY tools; you cannot modify files or run commands. Return a concise, concrete findings report the orchestrator can act on: what you found, where (paths/links), and what it means. Do not speculate beyond the evidence.",
-		Tools:      []string{"read", "grep", "glob", "list", "tree", "symbols", "websearch", "fetch", "skill"},
+		System:     "You are a RESEARCHER sub-agent. Investigate and report findings — read code, search the tree, trace how things work. You have READ-ONLY local tools (no network, no edits, no commands). Return a concise, concrete findings report the orchestrator can act on: what you found, where (paths/symbols), and what it means. Do not speculate beyond the evidence.",
+		Tools:      []string{"read", "grep", "glob", "list", "tree", "symbols", "skill"},
 		Difficulty: "easy",
 		ReadOnly:   true,
 	},
 	"reviewer": {
 		Name:       "reviewer",
 		System:     "You are a REVIEWER sub-agent. Critique the target (code, a diff, a design, an approach) for correctness, edge cases, security, and clarity. You have READ-ONLY tools plus the cross-vendor review tool. Return specific, actionable issues ranked by severity — not vague praise. Cite exact locations.",
-		Tools:      []string{"read", "grep", "glob", "list", "tree", "symbols", "diff", "review", "fetch"},
+		Tools:      []string{"read", "grep", "glob", "list", "tree", "symbols", "diff", "review"},
 		Difficulty: "medium",
 		ReadOnly:   true,
 	},

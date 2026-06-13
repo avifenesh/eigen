@@ -123,7 +123,7 @@ func TaskStatus(run TaskStatusRun) Definition {
 func TaskGroup(run TaskGroupRun) Definition {
 	return Definition{
 		Name:        "task_group",
-		Description: "Run several READ-ONLY sub-agents in PARALLEL and get one combined report. Each subtask needs a role: researcher (read code + web search), reviewer (critique + cross-vendor review), or summarizer (read + condense). Use this to fan out investigation/review across files or angles at once. Children cannot modify files or run commands — for that, use the `task` tool (one at a time). Optional workers caps concurrency (default 3).",
+		Description: "Run several READ-ONLY sub-agents in PARALLEL and get one combined report. Each subtask needs a role: researcher (read+search the codebase), reviewer (critique + cross-vendor review), or summarizer (read + condense). Use this to fan out investigation/review across files or angles at once. Children cannot modify files or run commands — for that, use the `task` tool (one at a time). Optional workers caps concurrency (default 3).",
 		ReadOnly:    true, // children are read-only, so the fan-out itself is safe to auto-run
 		Parameters: json.RawMessage(`{
   "type": "object",
@@ -137,7 +137,7 @@ func TaskGroup(run TaskGroupRun) Definition {
         "type": "object",
         "properties": {
           "task": { "type": "string", "description": "Complete, self-contained instructions. The child cannot see this conversation." },
-          "role": { "type": "string", "enum": ["researcher","reviewer","summarizer"], "description": "researcher = read+search; reviewer = critique+cross-review; summarizer = read+condense." },
+          "role": { "type": "string", "enum": ["researcher","reviewer","summarizer"], "description": "researcher = read+search code; reviewer = critique+cross-review; summarizer = read+condense." },
           "kind": { "type": "string", "enum": ["general","search","vision","social"] },
           "difficulty": { "type": "string", "enum": ["trivial","easy","medium","hard"] },
           "model": { "type": "string", "description": "Optional explicit model/ref override (beats routing)." }
