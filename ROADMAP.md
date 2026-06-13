@@ -984,7 +984,11 @@ are just tools — OUT OF SCOPE here.
   sessions + memory, so context is RETRIEVED on demand instead of pasted whole
   — the biggest remaining token-efficiency lever. A `retrieve` tool and/or
   automatic context assembly; a reranker tightens the top-k.
-- [ ] **Image generation (NEEDED — we have no image model today).** A local or
+- [x] **Image generation.** SHIPPED (65ca950): generate_image tool → Bedrock
+  (Stability stable-image-core default, us-west-2; Nova/Titan dialect too).
+  Saves PNG(s) under <project>/eigen-images/ + returns them inline. Live-
+  verified (1536×1536 PNG via opus).
+- [~] **(orig) Image generation (NEEDED — we have no image model today).** A local or
   hosted image model behind a `generate_image` tool for diagrams/mockups/
   assets — output rides the image-capable tool-result plumbing already built.
   Not optional: eigen currently cannot produce images at all.
