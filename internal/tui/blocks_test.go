@@ -352,3 +352,24 @@ func TestToolBlockHasGutterRule(t *testing.T) {
 		t.Errorf("tool block should render in a gutter lane (▏):\n%s", out)
 	}
 }
+
+func TestToolIconsAndBashLine(t *testing.T) {
+	// Bash renders like a shell line: the ❯ prompt icon, command, no "bash" word.
+	bash := &block{kind: blockTool, toolName: "bash", toolArgs: []byte(`{"command":"go test ./..."}`), state: toolDone}
+	h := bash.header()
+	if !strings.Contains(h, "❯") || !strings.Contains(h, "go test ./...") {
+		t.Errorf("bash header should be a shell line: %q", h)
+	}
+	if strings.Contains(h, "bash ") {
+		t.Errorf("bash header should not repeat the word 'bash': %q", h)
+	}
+	// Read gets the book icon, edit the pen.
+	rd := &block{kind: blockTool, toolName: "read", toolArgs: []byte(`{"path":"x.go"}`), state: toolDone}
+	if !strings.Contains(rd.header(), "📖") {
+		t.Errorf("read should get the book icon: %q", rd.header())
+	}
+	ed := &block{kind: blockTool, toolName: "edit", toolArgs: []byte(`{"path":"x.go","old_string":"a","new_string":"b"}`), state: toolDone}
+	if !strings.Contains(ed.header(), "✎") {
+		t.Errorf("edit should get the pen icon: %q", ed.header())
+	}
+}

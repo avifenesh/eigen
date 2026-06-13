@@ -91,8 +91,36 @@ func (b *block) statusGlyph() string {
 	}
 }
 
+// toolIcon returns a small glyph that signals the KIND of action at a glance —
+// a pen for writes, a book for reads, a prompt for shell, a lens for search.
+// Plain Unicode (renders in any modern terminal, no Nerd Font needed), calm
+// rather than loud.
+func toolIcon(name string) string {
+	switch name {
+	case "read":
+		return "📖" // reading
+	case "write":
+		return "✎" // writing
+	case "edit", "multiedit", "apply_patch":
+		return "✎" // editing
+	case "bash":
+		return "❯" // shell prompt
+	case "grep", "glob", "search", "find":
+		return "🔍" // searching
+	case "list":
+		return "▤" // listing
+	case "fetch":
+		return "🌐" // network
+	case "task", "task_status":
+		return "⚙" // delegated work
+	default:
+		return "▸" // generic tool
+	}
+}
+
 // header returns the one-line header text for a collapsible block (without the
-// ▸/▾ marker). Tool blocks get a status glyph + a tailored, per-tool summary.
+// ▸/▾ marker). Tool blocks get a status glyph + an action icon + a tailored,
+// per-tool summary.
 func (b *block) header() string {
 	if b.kind != blockTool {
 		return b.title
@@ -106,6 +134,10 @@ func (b *block) header() string {
 	switch b.toolName {
 	case "edit", "multiedit", "apply_patch", "write":
 		summary += statsSuffix(b.toolDetail())
+	}
+	icon := toolIcon(b.toolName)
+	if icon != "" {
+		return b.statusGlyph() + " " + icon + "  " + summary
 	}
 	return b.statusGlyph() + " " + summary
 }
@@ -143,7 +175,9 @@ func toolSummary(name string, args json.RawMessage) string {
 		}
 		return label + " " + a.Pattern
 	case "bash":
-		return label + " " + compact(a.Command)
+		// Render like an actual shell line: the ❯ icon is the prompt, so the
+		// command stands alone (no redundant "bash" word).
+		return compact(a.Command)
 	case "fetch":
 		return label + " " + a.URL
 	default:

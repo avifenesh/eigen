@@ -548,7 +548,7 @@ func TestToolSummary(t *testing.T) {
 		{"list", `{"path":"src"}`, "list src"},
 		{"write", `{"path":"a.go"}`, "write a.go"},
 		{"edit", `{"path":"a.go"}`, "edit a.go"},
-		{"bash", `{"command":"ls -la"}`, "bash ls -la"},
+		{"bash", `{"command":"ls -la"}`, "ls -la"}, // bash shows just the command (the ❯ icon is the prompt)
 		{"grep", `{"pattern":"foo","path":"src"}`, "grep foo in src"},
 		{"grep", `{"pattern":"foo"}`, "grep foo"},
 		{"glob", `{"pattern":"**/*.go"}`, "glob **/*.go"},

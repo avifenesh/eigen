@@ -548,6 +548,18 @@ func (m *model) sync() {
 		return
 	}
 	w := m.vp.Width
+	// Empty transcript: show the welcome wordmark instead of a blank void.
+	if len(m.blocks) == 0 {
+		m.blockStart = append(m.blockStart[:0], 0)
+		m.plainLines = m.plainLines[:0]
+		welcome := m.welcomeView(w, m.vp.Height)
+		for _, l := range strings.Split(welcome, "\n") {
+			m.plainLines = append(m.plainLines, ansi.Strip(l))
+		}
+		m.vp.SetContent(welcome)
+		m.vp.GotoTop()
+		return
+	}
 	var out strings.Builder
 	m.blockStart = m.blockStart[:0]
 	m.plainLines = m.plainLines[:0]
@@ -1600,7 +1612,8 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 	store := o.Store
 
 	sp := spinner.New()
-	sp.Spinner = spinner.Dot
+	sp.Spinner = spinner.MiniDot // smooth single-cell braille — calm, lively
+	sp.Style = styleAccent
 
 	ti := textarea.New()
 	ti.Placeholder = "type a task…  (enter send · ctrl+j newline · / commands · ↑↓ history · ctrl+c quit)"
