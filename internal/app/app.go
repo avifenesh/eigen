@@ -12,6 +12,7 @@ import (
 
 	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/feed"
+	"github.com/avifenesh/eigen/internal/remote"
 )
 
 // Page identifies one app surface.
@@ -189,6 +190,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.machines.sessions = msg.sessions
 			m.machines.loadErr = msg.err
 			m.machines.inner.count = len(msg.sessions)
+		}
+		return m, nil
+	case machineInstallMsg:
+		m.machines.installing = false
+		if msg.err != "" {
+			m.machines.installMsg = "install failed: " + msg.err
+		} else {
+			v := msg.ver
+			if v == "" {
+				v = "eigen"
+			}
+			m.machines.installMsg = "installed " + v + " ✓ — enter to see its sessions"
+			// Refresh the machine list so the row reflects the new state.
+			m.data.Machines = remote.Machines()
 		}
 		return m, nil
 	case feedTickMsg:

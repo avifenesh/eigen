@@ -1,13 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
-	"strings"
 
 	"github.com/avifenesh/eigen/internal/remote"
 )
@@ -130,12 +127,6 @@ func remoteRemove(name string) {
 	fmt.Printf("removed host %q\n", name)
 }
 
-// sshArgs delegates to remote.SSHArgs (single source of truth for the base ssh
-// flags: -T no-pty + keepalive).
-func sshArgs(extra ...string) []string {
-	return remote.SSHArgs(extra...)
-}
-
 // remoteInstall bootstraps eigen onto a host that does NOT have it: detect the
 // remote OS/arch, obtain a matching binary (copy the running one when the
 // target matches, else cross-compile from source), scp it to
@@ -150,145 +141,60 @@ func remoteInstall(spec string, pushCreds bool) {
 	target := h.SSHTarget()
 	fmt.Printf("eigen remote install → %s\n", target)
 
-	// 1. Detect remote OS/arch.
-	out, err := exec.Command("ssh", sshArgs(target, "uname -sm")...).Output()
-	if err != nil {
-		fail(fmt.Errorf("ssh %s uname: %w (check connectivity / ~/.ssh/config)", target, err))
-	}
-	remoteTarget, err := remote.TargetFromUname(string(out))
+	binPath, cleanup, err := remoteBinaryFor(target)
 	if err != nil {
 		fail(err)
 	}
-	localTarget := remote.Target{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH}
-	fmt.Printf("  remote: %s   local: %s\n", remoteTarget, localTarget)
-
-	// 2. Decide how to get a binary.
-	srcDir, srcOK := eigenSourceDir()
-	action, err := remote.PlanBootstrap(localTarget, remoteTarget, srcOK)
-	if err != nil {
-		fail(err)
-	}
-	fmt.Printf("  plan: %s\n", action)
-
-	// 3. Produce the binary to ship.
-	var binPath string
-	var cleanup func()
-	switch action {
-	case remote.CopyRunning:
-		binPath, err = os.Executable()
-		if err != nil {
-			fail(fmt.Errorf("locate running binary: %w", err))
-		}
-	case remote.CrossCompile:
-		binPath, cleanup, err = crossCompile(srcDir, remoteTarget)
-		if err != nil {
-			fail(err)
-		}
+	if cleanup != nil {
 		defer cleanup()
 	}
 
-	// 4. Ensure ~/.local/bin exists remotely, then scp the binary in place.
-	//    scp to a temp name + atomic mv so a half-copied binary is never run.
-	if err := runSSH(target, "mkdir -p ~/.local/bin"); err != nil {
-		fail(fmt.Errorf("remote mkdir: %w", err))
-	}
-	remoteTmp := "~/.local/bin/.eigen.upload"
-	remoteFinal := "~/.local/bin/eigen"
-	fmt.Printf("  copying %s → %s:%s\n", filepath.Base(binPath), target, remoteFinal)
-	if err := scpTo(binPath, target, remoteTmp); err != nil {
-		fail(fmt.Errorf("scp: %w", err))
-	}
-	if err := runSSH(target, fmt.Sprintf("chmod 755 %s && mv -f %s %s", remoteTmp, remoteTmp, remoteFinal)); err != nil {
-		fail(fmt.Errorf("install binary: %w", err))
-	}
-
-	// 5. Verify it runs on the remote.
-	ver, err := exec.Command("ssh", sshArgs(target, "~/.local/bin/eigen version")...).Output()
+	_, err = remote.Install(target, remote.InstallOpts{
+		LocalBinary: binPath,
+		PushCreds:   pushCreds,
+		EnvSnapshot: credentialSnapshot(),
+		Progress:    func(s string) { fmt.Println("  " + s) },
+	})
 	if err != nil {
-		fmt.Printf("  installed, but `eigen version` failed remotely: %v\n", err)
-		fmt.Println("  (ensure ~/.local/bin is on the remote PATH)")
-	} else {
-		fmt.Printf("  installed: %s on %s\n", strings.TrimSpace(string(ver)), target)
+		fail(err)
 	}
-
-	// Push the credential snapshot so the remote daemon can actually build
-	// sessions (an ssh non-login shell has no AWS/provider creds → otherwise
-	// every remote turn fails with "converse credentials"). The remote daemon
-	// loads ~/.eigen/daemon.env at startup (loadDaemonEnv). Skipped with
-	// --no-creds; secrets stay 0600 on both ends.
-	if pushCreds {
-		if err := pushRemoteCreds(target); err != nil {
-			fmt.Printf("  credentials NOT pushed (%v) — remote sessions may fail to authenticate;\n  set creds on the remote or re-run without --no-creds\n", err)
-		} else {
-			fmt.Printf("  pushed credential snapshot → %s:~/.eigen/daemon.env (0600)\n", target)
-		}
-	} else {
+	if !pushCreds {
 		fmt.Println("  (--no-creds: skipped credential push; the remote needs its own provider creds)")
 	}
-
 	fmt.Printf("\nNow run a remote session with:\n  eigen --remote %s\n", spec)
 }
 
-// pushRemoteCreds writes the local credential snapshot (the same keys
-// `eigen daemon install` captures) to the remote's ~/.eigen/daemon.env, 0600,
-// AND — because the default Converse/Bedrock model authenticates with SigV4
-// from ~/.aws/credentials (not an env token) — pushes the AWS credentials file
-// too when present. All piped over ssh (never a local temp, never secrets on a
-// command line); the remote files are created 0600.
-func pushRemoteCreds(target string) error {
-	var b strings.Builder
-	n := 0
-	for _, k := range credentialEnvKeys {
-		if v := os.Getenv(k); v != "" {
-			fmt.Fprintf(&b, "%s=%s\n", k, v)
-			n++
+// remoteBinaryFor returns an eigen binary that runs on target's arch: the
+// running binary when the arch matches (no compile), else a freshly
+// cross-compiled one (needs the source tree + go). cleanup removes a temp
+// cross-compiled binary (nil for the copy-running case).
+func remoteBinaryFor(target string) (binPath string, cleanup func(), err error) {
+	remoteTarget, err := remote.DetectArch(target)
+	if err != nil {
+		return "", nil, err
+	}
+	localTarget := remote.LocalTarget()
+	srcDir, srcOK := eigenSourceDir()
+	action, err := remote.PlanBootstrap(localTarget, remoteTarget, srcOK)
+	if err != nil {
+		return "", nil, err
+	}
+	switch action {
+	case remote.CopyRunning:
+		exe, e := os.Executable()
+		if e != nil {
+			return "", nil, fmt.Errorf("locate running binary: %w", e)
 		}
+		return exe, nil, nil
+	case remote.CrossCompile:
+		return crossCompile(srcDir, remoteTarget)
 	}
-	if n > 0 {
-		remoteCmd := "umask 077 && mkdir -p ~/.eigen && cat > ~/.eigen/daemon.env && chmod 600 ~/.eigen/daemon.env"
-		cmd := exec.Command("ssh", sshArgs(target, remoteCmd)...)
-		cmd.Stdin = strings.NewReader(b.String())
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return err
-		}
-	}
-
-	// AWS credentials file (SigV4 for Converse/Bedrock — the default model).
-	// Without it a remote converse session fails with "converse credentials".
-	if home, err := os.UserHomeDir(); err == nil {
-		credFile := filepath.Join(home, ".aws", "credentials")
-		if data, rerr := os.ReadFile(credFile); rerr == nil && len(data) > 0 {
-			remoteCmd := "umask 077 && mkdir -p ~/.aws && cat > ~/.aws/credentials && chmod 600 ~/.aws/credentials"
-			cmd := exec.Command("ssh", sshArgs(target, remoteCmd)...)
-			cmd.Stdin = bytes.NewReader(data)
-			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("push ~/.aws/credentials: %w", err)
-			}
-			fmt.Printf("  pushed ~/.aws/credentials → %s:~/.aws/credentials (0600)\n", target)
-		}
-	}
-
-	if n == 0 {
-		return fmt.Errorf("no env credentials in the local environment to push")
-	}
-	return nil
+	return "", nil, fmt.Errorf("no install plan")
 }
 
-// runSSH runs a remote command, streaming its stderr (for visibility).
-func runSSH(target, cmd string) error {
-	c := exec.Command("ssh", sshArgs(target, cmd)...)
-	c.Stderr = os.Stderr
-	return c.Run()
-}
-
-// scpTo copies a local file to target:dest via scp.
-func scpTo(local, target, dest string) error {
-	c := exec.Command("scp", "-q", local, target+":"+dest)
-	c.Stderr = os.Stderr
-	return c.Run()
-}
+// credentialSnapshot builds the KEY=VALUE daemon.env content from the current
+// environment (delegates to the remote package — the single source of truth).
+func credentialSnapshot() string { return remote.CredentialSnapshot() }
 
 // eigenSourceDir resolves the source tree for cross-compiling: $EIGEN_SRC, else
 // ~/projects/eigen, when it contains a go.mod. Returns (dir, ok).

@@ -88,3 +88,29 @@ func TestMachinesEscLeavesDrillIn(t *testing.T) {
 		t.Error("esc should leave the drill-in")
 	}
 }
+
+func TestMachinesInstallMessage(t *testing.T) {
+	d := &Data{Machines: []remote.Machine{{Name: "dev", SSH: "ubuntu@x", Detected: true}}}
+	m := &Model{data: d, active: PageMachines, width: 100, height: 30}
+	m.machines.init(d)
+
+	// A successful install result shows a ✓ message + clears installing.
+	m.machines.installing = true
+	m2, _ := m.Update(machineInstallMsg{mach: 0, ver: "eigen 0.1.0"})
+	_ = m2
+	if m.machines.installing {
+		t.Fatal("install msg should clear installing")
+	}
+	if !strings.Contains(m.machines.installMsg, "installed") {
+		t.Fatalf("want installed message, got %q", m.machines.installMsg)
+	}
+	if !strings.Contains(m.machines.view(m, 96, 26), "installed") {
+		t.Error("view should show the install result")
+	}
+
+	// A failure result surfaces the error.
+	m.Update(machineInstallMsg{mach: 0, err: "ssh: connection refused"})
+	if !strings.Contains(m.machines.installMsg, "failed") || !strings.Contains(m.machines.installMsg, "connection refused") {
+		t.Fatalf("want failure message, got %q", m.machines.installMsg)
+	}
+}

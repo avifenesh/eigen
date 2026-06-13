@@ -22,6 +22,7 @@ import (
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/mcp"
 	"github.com/avifenesh/eigen/internal/memory"
+	"github.com/avifenesh/eigen/internal/remote"
 	"github.com/avifenesh/eigen/internal/session"
 	"github.com/avifenesh/eigen/internal/skill"
 	"github.com/avifenesh/eigen/internal/tui"
@@ -499,12 +500,8 @@ func ensureDaemon() (*daemon.Client, error) {
 
 // credentialEnvKeys are the environment variables the daemon needs that a
 // systemd user session won't have (provider credentials + eigen tuning).
-var credentialEnvKeys = []string{
-	"AWS_BEARER_TOKEN_BEDROCK", "AWS_REGION", "AWS_PROFILE",
-	"XAI_API_KEY", "EIGEN_GROK_API_KEY", "GLM_API_KEY", "ANTHROPIC_API_KEY",
-	"EIGEN_SMALL_MODEL", "EIGEN_TITLE_MODEL", "EIGEN_LLAMA_BASE_URL",
-	"EIGEN_MANTLE_REGION", "EIGEN_REASONING_EFFORT", "EIGEN_NOTIFY_CMD",
-}
+// Single source of truth in internal/remote (shared with the app's install).
+var credentialEnvKeys = remote.CredentialKeys
 
 // loadDaemonEnv loads ~/.eigen/daemon.env (KEY=VALUE lines, the credential
 // snapshot written by `eigen daemon install` / pushed by `eigen remote

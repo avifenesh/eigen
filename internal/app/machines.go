@@ -2,6 +2,8 @@ package app
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -24,6 +26,10 @@ type machinesState struct {
 	loadErr  string
 	sessions []daemon.SessionInfo
 	inner    list
+
+	// one-click install
+	installing bool
+	installMsg string // last install status/result (shown on the list)
 }
 
 func (s *machinesState) init(d *Data) { s.list.count = len(d.Machines) }
@@ -35,6 +41,13 @@ type machineSessionsMsg struct {
 	err      string
 }
 
+// machineInstallMsg delivers the result of a one-click remote install.
+type machineInstallMsg struct {
+	mach int
+	ver  string
+	err  string
+}
+
 // fetchMachineSessions lists a remote daemon's sessions over a transient ssh
 // connection (read-only peek), off the UI goroutine.
 func fetchMachineSessions(mach int, target string) tea.Cmd {
@@ -43,6 +56,32 @@ func fetchMachineSessions(mach int, target string) tea.Cmd {
 		msg := machineSessionsMsg{mach: mach, sessions: infos}
 		if err != nil {
 			msg.err = err.Error()
+		}
+		return msg
+	}
+}
+
+// installMachine bootstraps eigen onto a machine from the TUI: scp the running
+// binary + push credentials. Same-arch only (the running binary must run on the
+// remote); a different arch needs `eigen remote install` in a terminal (which
+// can cross-compile from source). Runs off the UI goroutine.
+func installMachine(mach int, target, binary string) tea.Cmd {
+	return func() tea.Msg {
+		ok, err := remote.RunningBinaryInstallable(target)
+		if err != nil {
+			return machineInstallMsg{mach: mach, err: err.Error()}
+		}
+		if !ok {
+			return machineInstallMsg{mach: mach, err: "remote arch differs from local — run `eigen remote install " + target + "` in a terminal (it cross-compiles)"}
+		}
+		ver, ierr := remote.Install(target, remote.InstallOpts{
+			LocalBinary: binary,
+			PushCreds:   true,
+			EnvSnapshot: remote.CredentialSnapshot(),
+		})
+		msg := machineInstallMsg{mach: mach, ver: ver}
+		if ierr != nil {
+			msg.err = ierr.Error()
 		}
 		return msg
 	}
@@ -62,6 +101,22 @@ func (s *machinesState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if s.list.cursor < len(m.data.Machines) {
 			return s.openMachine(m, s.list.cursor)
+		}
+	case "i":
+		// One-click install onto the highlighted machine.
+		if s.installing {
+			return m, nil
+		}
+		if s.list.cursor < len(m.data.Machines) {
+			mc := m.data.Machines[s.list.cursor]
+			exe, err := os.Executable()
+			if err != nil {
+				s.installMsg = "install: cannot locate local binary: " + err.Error()
+				return m, nil
+			}
+			s.installing = true
+			s.installMsg = "installing eigen on " + mc.Name + " over ssh…"
+			return m, installMachine(s.list.cursor, mc.SSH, exe)
 		}
 	case "n":
 		// New session on the highlighted machine (skip the list).
@@ -138,7 +193,16 @@ func (s *machinesState) view(m *Model, w, h int) string {
 		s.clicks.mark(lineCount(out), i)
 		out += row(i == s.list.cursor, line) + "\n"
 	}
-	out += "\n" + sFaint.Render("  enter open machine (see its sessions) · n new session there")
+	if s.installMsg != "" {
+		tone := sFaint
+		if strings.Contains(s.installMsg, "fail") || strings.Contains(s.installMsg, "error") || strings.Contains(s.installMsg, "cannot") || strings.Contains(s.installMsg, "differs") {
+			tone = sErr
+		} else if strings.Contains(s.installMsg, "installed") {
+			tone = sOk
+		}
+		out += "\n" + tone.Render("  "+truncate(s.installMsg, w-4))
+	}
+	out += "\n" + sFaint.Render("  enter open machine (see its sessions) · i install eigen here · n new session")
 	return out
 }
 
