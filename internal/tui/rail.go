@@ -241,6 +241,41 @@ func (m *model) railGlyph(status string) string {
 	return statusGlyph(status)
 }
 
+// railEntryLabel renders ONE session row, shared by the rail (<80col) and the
+// sidebar (≥80col) so the two never drift. The session THIS pane is attached to
+// stands out unmistakably — a bold accent ❯ pointer + bright bold name — so
+// with several windows open it's instantly clear which one you're driving;
+// other sessions get a blank marker + dim name. status glyph leads (●○◆✗/spin).
+func (m *model) railEntryLabel(e chat.SessionEntry, cur string, grouped bool, contentW int) string {
+	title := e.Title
+	if title == "" {
+		title = "(untitled)"
+	}
+	indent := ""
+	if grouped {
+		indent = " "
+	}
+	isCur := e.ID == cur
+	// Marker: a clear "you are here" pointer for the current session.
+	mark := " "
+	if isCur {
+		mark = styleAccent.Bold(true).Render("❯")
+	}
+	// Name color: current = bright bold (the eye lands here); others = dim so
+	// they recede. Truncate to the remaining width (indent + glyph + mark + 1).
+	nameW := contentW - 3 - len(indent)
+	if nameW < 1 {
+		nameW = 1
+	}
+	name := ansiTrunc(title, nameW)
+	if isCur {
+		name = styleUser.Render(name) // STitle.Bold — central, distinct color
+	} else {
+		name = dim(name)
+	}
+	return indent + m.railGlyph(e.Status) + mark + name
+}
+
 // railProjectOpen reports whether any session of the project has a window
 // attached right now (Views > 0) — "open somewhere" highlights the header.
 func (m *model) railProjectOpen(dir string) bool {
@@ -335,21 +370,7 @@ func (m *model) railLines(h int) []string {
 			continue
 		}
 		e := m.railEntries[r.entry]
-		title := e.Title
-		if title == "" {
-			title = "(untitled)"
-		}
-		mark := " "
-		if e.ID == cur {
-			mark = styleAccent.Render("·")
-		}
-		indent := ""
-		if grouped {
-			indent = " "
-		}
-		// indent + glyph + mark + title, truncated to the content width.
-		label := indent + m.railGlyph(e.Status) + mark + ansiTrunc(title, contentW-3-len(indent))
-		lines = append(lines, railPad(label, rw))
+		lines = append(lines, railPad(m.railEntryLabel(e, cur, grouped, contentW), rw))
 	}
 	// Pad the rest of the column with empty gutters.
 	for len(lines) < h {

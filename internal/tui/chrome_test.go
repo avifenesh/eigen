@@ -1825,3 +1825,27 @@ func TestTermTitleStrings(t *testing.T) {
 		t.Fatalf("ready title: %q", titleReady())
 	}
 }
+
+func TestRailCurrentSessionStandsOut(t *testing.T) {
+	m := switcherModel(t) // SessionLister: s1 first, s2 current, s3 third
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m.refreshRail()
+	cur := "s2"
+	want := m.railEntries // s1/s2/s3 with titles first/current/third
+	// The current session's row must carry the ❯ pointer; others must not.
+	for _, e := range want {
+		label := m.railEntryLabel(e, cur, m.railGrouped(), 22)
+		hasPointer := strings.Contains(label, "❯")
+		if e.ID == cur && !hasPointer {
+			t.Errorf("current session %s should carry the ❯ pointer: %q", e.ID, label)
+		}
+		if e.ID != cur && hasPointer {
+			t.Errorf("non-current session %s must NOT carry the ❯ pointer: %q", e.ID, label)
+		}
+	}
+	// And the rail band, rendered, shows the pointer exactly once.
+	band := m.transcriptBand()
+	if n := strings.Count(band, "❯"); n < 1 {
+		t.Fatalf("rail band should show the current-session pointer, got %d in:\n%s", n, band)
+	}
+}

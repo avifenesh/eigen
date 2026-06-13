@@ -271,20 +271,7 @@ func (m *model) sidebarLines(h int) []string {
 				continue
 			}
 			e := m.railEntries[r.rail.entry]
-			title := e.Title
-			if title == "" {
-				title = "(untitled)"
-			}
-			mark := " "
-			if e.ID == cur {
-				mark = styleAccent.Render("·")
-			}
-			indent := ""
-			if grouped {
-				indent = " "
-			}
-			label := indent + m.railGlyph(e.Status) + mark + ansiTrunc(title, contentW-3-len(indent))
-			lines = append(lines, railPad(label, rw))
+			lines = append(lines, railPad(m.railEntryLabel(e, cur, grouped, contentW), rw))
 		}
 	}
 	for len(lines) < h {
