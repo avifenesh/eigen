@@ -68,6 +68,7 @@ var routerScores = map[string]RouterScore{
 	"grok-composer-2.5-fast": {Tier: TierSimple, Speed: 94},
 	"grok-4":                 {Tier: TierSimple, Speed: 62},
 	"grok-code-fast-1":       {Tier: TierSimple, Speed: 92},
+	"glm-5.2":                {Tier: TierSimple, Speed: 76},
 	"glm-5.1":                {Tier: TierSimple, Speed: 76},
 	"glm-5":                  {Tier: TierSimple, Speed: 76},
 	"glm-5-turbo":            {Tier: TierSimple, Speed: 90},

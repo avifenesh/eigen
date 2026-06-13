@@ -15,7 +15,7 @@ const glmDefaultBaseURL = "https://api.z.ai/api/coding/paas/v4"
 // Compile-time interface checks.
 var _ Searcher = (*GLM)(nil)
 
-// GLM drives Zhipu's GLM models (glm-5.1, glm-4.6, glm-4.5, …) over their
+// GLM drives Zhipu's GLM models (glm-5.2, glm-5.1, glm-4.6, …) over their
 // OpenAI-compatible chat-completions API. When search is enabled, it injects
 // the server-side web_search tool so GLM can ground answers in live web data
 // without requiring client-side fetch — a zero-cost alternative to eigen's
@@ -45,7 +45,7 @@ func NewGLM(model string) (*GLM, error) {
 	}
 	base := firstNonEmpty(os.Getenv("EIGEN_GLM_BASE_URL"), glmDefaultBaseURL)
 	if model == "" {
-		model = "glm-5.1"
+		model = "glm-5.2"
 	}
 	g := &GLM{
 		c:      newChatClient(base, model, key, "glm"),

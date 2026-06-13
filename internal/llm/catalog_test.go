@@ -124,8 +124,8 @@ func TestGrokAndGLMCatalog(t *testing.T) {
 	if DefaultModel("grok") != "grok-build" {
 		t.Fatal("grok default should be grok-build")
 	}
-	if DefaultModel("glm") != "glm-5.1" {
-		t.Fatal("glm default should be glm-5.1")
+	if DefaultModel("glm") != "glm-5.2" {
+		t.Fatal("glm default should be glm-5.2")
 	}
 }
 
