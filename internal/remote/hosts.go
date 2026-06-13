@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 // Host is a saved remote target in ~/.eigen/hosts.json. A short Name (the map
@@ -90,4 +91,49 @@ func (h Hosts) Resolve(arg string) (spec HostSpec, model, perm string, err error
 		return HostSpec{}, "", "", perr
 	}
 	return s, "", "", nil
+}
+
+// Machine is a unified entry for the Machines surface: a remote eigen target,
+// whether saved (with its own model/dir/perm defaults) and/or auto-detected in
+// ~/.ssh/config.
+type Machine struct {
+	Name     string // alias to `eigen --remote <name>`
+	SSH      string // ssh target (user@host or alias)
+	Dir      string // default remote session root (saved only)
+	Model    string // default model (saved only)
+	Perm     string // default perm (saved only)
+	Saved    bool   // present in hosts.json
+	Detected bool   // present in ~/.ssh/config
+}
+
+// Machines merges saved hosts (hosts.json) with auto-detected ssh_config hosts
+// into one sorted list, keyed by name. Saved entries keep their defaults and
+// are also flagged Detected when ssh_config has the same alias.
+func Machines() []Machine {
+	byName := map[string]*Machine{}
+	hosts, _ := LoadHosts()
+	for name, h := range hosts {
+		ssh := h.SSH
+		if ssh == "" {
+			ssh = name
+		}
+		byName[name] = &Machine{Name: name, SSH: ssh, Dir: h.Dir, Model: h.Model, Perm: h.Perm, Saved: true}
+	}
+	for _, d := range DetectSSHHosts() {
+		if m, ok := byName[d.Name]; ok {
+			m.Detected = true
+			continue
+		}
+		ssh := d.Name
+		if d.User != "" && d.HostName != "" {
+			ssh = d.User + "@" + d.HostName
+		}
+		byName[d.Name] = &Machine{Name: d.Name, SSH: ssh, Detected: true}
+	}
+	out := make([]Machine, 0, len(byName))
+	for _, m := range byName {
+		out = append(out, *m)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }

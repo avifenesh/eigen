@@ -356,6 +356,11 @@ func appNav(c *daemon.Client, cfg config.Config) (id, task string, ok bool) {
 	switch res.Action {
 	case app.ActionAttach:
 		return res.SessionID, "", true
+	case app.ActionRemote:
+		// Open a session on a REMOTE machine. runRemote runs its own view loop
+		// over ssh; when it returns, end this local nav leg.
+		runRemote(res.Host, cfg)
+		return "", "", false
 	case app.ActionOpenChat:
 		dir := res.Dir
 		if dir == "" {

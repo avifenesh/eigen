@@ -21,6 +21,7 @@ const (
 	PageHome Page = iota
 	PageLive
 	PageProjects
+	PageMachines
 	PageSessions
 	PageConfig
 	PageSkills
@@ -40,6 +41,7 @@ var pages = []struct {
 	{PageHome, "home", "h"},
 	{PageLive, "live", "l"},
 	{PageProjects, "projects", "p"},
+	{PageMachines, "machines", "e"},
 	{PageSessions, "sessions", "s"},
 	{PageConfig, "config", "c"},
 	{PageSkills, "skills", "k"},
@@ -58,6 +60,7 @@ const (
 	ActionOpenChat        // open a new chat (CWD = Result.Dir)
 	ActionResume          // resume Result.SessionID
 	ActionAttach          // attach a view to daemon session Result.SessionID
+	ActionRemote          // open a session on a REMOTE machine (Result.Host)
 )
 
 // Result returns the user's exit intent to main.
@@ -66,6 +69,7 @@ type Result struct {
 	Dir       string // ActionOpenChat: project directory ("" = current)
 	SessionID string // ActionResume: session store id; ActionAttach: daemon id
 	Task      string // ActionOpenChat: initial task (feed starters); "" = blank chat
+	Host      string // ActionRemote: `eigen --remote` target (saved name or user@host)
 }
 
 // Model is the app shell: a side rail of pages + the active page's content.
@@ -79,6 +83,7 @@ type Model struct {
 	home      homeState
 	live      liveState
 	projects  projectsState
+	machines  machinesState
 	sessions  sessionsState
 	config    configState
 	skills    skillsState
@@ -99,6 +104,7 @@ func New(data *Data) *Model {
 	m := &Model{data: data}
 	m.home.init(data)
 	m.projects.init(data)
+	m.machines.init(data)
 	m.sessions.init(data)
 	m.config.init(data)
 	m.skills.init(data)
@@ -343,6 +349,8 @@ func (m *Model) contentClick(localX, localY int) (tea.Cmd, bool) {
 		return m.sessions.clickAt(m, localY)
 	case PageProjects:
 		return m.projects.clickAt(m, localY)
+	case PageMachines:
+		return m.machines.clickAt(m, localY)
 	case PageLive:
 		return m.live.clickAt(m, localY)
 	case PageConfig:
@@ -369,6 +377,8 @@ func (m *Model) updatePage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.live.update(m, msg)
 	case PageProjects:
 		return m.projects.update(m, msg)
+	case PageMachines:
+		return m.machines.update(m, msg)
 	case PageSessions:
 		return m.sessions.update(m, msg)
 	case PageConfig:
@@ -625,6 +635,8 @@ func (m *Model) renderPage(w, h int) string {
 		return m.live.view(m, w, h)
 	case PageProjects:
 		return m.projects.view(m, w, h)
+	case PageMachines:
+		return m.machines.view(m, w, h)
 	case PageSessions:
 		return m.sessions.view(m, w, h)
 	case PageConfig:

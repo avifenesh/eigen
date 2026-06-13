@@ -1028,10 +1028,10 @@ A. EIGEN REACHES OUT (run agents on remote machines)
   different AWS profiles, a different repo layout). A `~/.eigen/hosts.json`.
 
 B. CONTROL YOUR EIGEN FROM ANOTHER MACHINE (phone/laptop → desktop daemon)
-- [~] **Network listener for the daemon.** DEFERRED (Wave 4b): the ssh-forwarded-socket path (below) covers control-from-another-machine with zero new auth surface; a raw network listener needs the cross-vendor security review first (review tool was down — mantle 500). Optionally bind the daemon to a TCP
+- [~] **Network listener for the daemon.** DECIDED AGAINST (cross-vendor security review by glm-5.2, 2026-06-13): net-negative for a personal tool. It adds an RCE-grade network endpoint (a connection = full agent control = arbitrary code as the user) guarded by a WEAKER boundary (static shared secret in a 0600 dotfile) than `ssh -L`+Tailscale already give (kernel fs perms + ssh/WireGuard crypto + device identity), for the marginal benefit of skipping one ssh -L command — and no native mobile client (the only thing it'd unlock) exists. Recommendation: ssh -L + Tailscale serve IS the complete remote story. Original idea: optionally bind the daemon to a TCP
   socket (loopback by default; LAN/Tailscale when explicitly enabled) in
   addition to the unix socket — same protocol. Off by default.
-- [~] **Auth + transport security.** DEFERRED with the network listener (Wave 4b); design drafted (WebSocket ws/wss, off by default, fail-closed without a token in ~/.eigen/daemon.env, bearer-token-from-env), pending cross-vendor review. The unix socket trusts filesystem perms;
+- [~] **Auth + transport security.** N/A — network listener decided against (see above). The review also flagged that the drafted bearer-token-from-env was itself a bug: eigen spawns subprocesses (the bash tool) that inherit os.Environ(), leaking an RCE-capable token to every child. ssh/Tailscale crypto is the auth. The unix socket trusts filesystem perms;
   a network socket MUST NOT. Require a token (shared secret in
   ~/.eigen/daemon.env, already 0600) and TLS, or — simpler and safer — document
   "expose only over SSH/Tailscale, never raw." Fail closed: no token ⇒ no
@@ -1040,7 +1040,7 @@ B. CONTROL YOUR EIGEN FROM ANOTHER MACHINE (phone/laptop → desktop daemon)
   session list) over the network transport, so a laptop attaches to the
   desktop's running sessions — the daemon already replays transcript + streams
   live, and views are stateless, so this is mostly transport + auth.
-- [~] **Mobile-friendly read/notify (stretch).** DEFERRED with Wave 4b (needs the network listener). A minimal read-only status +
+- [~] **Mobile-friendly read/notify (stretch).** DEFERRED — needs a network listener (decided against) or a future native client; reach via Tailscale + `eigen attach --sock` over a forwarded socket meanwhile. A minimal read-only status +
   approval-answer surface (the notifications/approvals tray is the model) so a
   phone can see "needs you" and answer an approval remotely.
 

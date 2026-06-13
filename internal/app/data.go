@@ -12,6 +12,7 @@ import (
 	"github.com/avifenesh/eigen/internal/feed"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/memory"
+	"github.com/avifenesh/eigen/internal/remote"
 	"github.com/avifenesh/eigen/internal/session"
 	"github.com/avifenesh/eigen/internal/skill"
 )
@@ -65,6 +66,11 @@ type Data struct {
 	// refreshed in the background when stale).
 	Feed      feed.Feed
 	FeedFresh bool
+
+	// Machines are remote eigen targets: saved hosts (hosts.json) merged with
+	// auto-detected ~/.ssh/config aliases. The Machines page lists them; opening
+	// one runs `eigen --remote <name>`.
+	Machines []remote.Machine
 }
 
 // projectDirs returns the known project directories, most recent first.
@@ -149,6 +155,7 @@ func Load() *Data {
 		d.GlobalMem = gm
 	}
 	d.Feed, d.FeedFresh = feed.Load() // instant (cache); app refreshes async
+	d.Machines = remote.Machines()    // saved hosts + ~/.ssh/config (auto-detect)
 	return d
 }
 

@@ -308,6 +308,10 @@ func main() {
 			// this window only mirrors + sends input.
 			runAttach(res.SessionID, cfg)
 			return
+		case app.ActionRemote:
+			// Open a session on a REMOTE machine over ssh.
+			runRemote(res.Host, cfg)
+			return
 		}
 	}
 
