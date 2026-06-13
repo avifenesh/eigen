@@ -531,6 +531,7 @@ func main() {
 		tool.TaskGroup(taskGroup),
 		tool.TaskGroupMutating(taskGroupMut),
 		tool.Retrieve(retrieveRunner(wdOrDot())),
+		tool.GenerateImage(imageGenRunner(wdOrDot())),
 		tool.GoalAchieved(goalJudge),
 		tool.Review(reviewRun),
 	}
