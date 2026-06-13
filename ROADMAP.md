@@ -1104,6 +1104,33 @@ the phone is just another "view" that can answer.
   shipping (use a background task on a different vendor when the review tool is
   down). OFF by default; enabled deliberately.
 
+## Tier 21 — TUI ergonomics + home polish (user asks)
+Captured from live use; all in `internal/tui` + `internal/app`. Keep the
+geometry-owned-first + one-action-layer + keyboard/click-parity conventions.
+
+- [ ] **Right-panel notepad tab.** A scratch pad in the right panel (a fifth
+  tab beside changes/git/term/tasks) the USER types into — not the agent:
+  jot notes, paste a snippet, draft a prompt, keep a TODO for yourself while a
+  turn runs. Persist per-session (or per-project) under `~/.eigen/` so it
+  survives detach/rebuild. Plain multi-line text edit; focus model like the
+  terminal tab (grab keys when focused, ctrl+g releases). Stretch: the agent
+  can READ it (a `notepad` tool / inject as context) so "see my notes" works,
+  but writing stays the user's.
+- [ ] **Default steer-vs-queue choice (config).** Today a message typed while a
+  turn runs always QUEUES (sent after the turn). Add a config knob (e.g.
+  `steer_default: queue|steer`) + a live toggle so the user picks the default:
+  QUEUE (current — wait for the turn) vs STEER (interrupt/inject now). Make the
+  behavior obvious in the running-line hint ("enter queues" vs "enter steers")
+  and keep the other reachable per-message (e.g. alt+enter does the opposite).
+  Respect the daemon turn semantics (a steer must interrupt cleanly, not race).
+- [ ] **Home page: less empty space, more inviting.** The home dashboard reads
+  as mostly blank — the big EIGEN wordmark + a short feed leave acres of empty
+  rows. Make it feel alive + useful: tighten vertical rhythm, fill the width
+  (the wide breakpoint especially), surface more at a glance (recent sessions
+  with status, top feed actions, quick-start buttons, maybe per-project
+  liveness or a stat strip). Designerly restraint still applies — informative,
+  not decorative — but the first screen should invite action, not echo.
+
 ## Debt / bugs
 - [x] **Untitled daemon sessions still appear.** FIXED: (1) `Host.Restore` now
   calls `maybeTitle` per restored session, so sessions whose title never landed
