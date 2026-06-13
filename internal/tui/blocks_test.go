@@ -306,3 +306,49 @@ func TestMultieditDetailNumbersEdits(t *testing.T) {
 		t.Fatalf("multiedit edits should be numbered:\n%s", d)
 	}
 }
+
+func TestProseHeadingDropsHashes(t *testing.T) {
+	out := renderProse("# Heading One\nbody")
+	if strings.Contains(out, "#") {
+		t.Errorf("heading should not keep raw '#' markers:\n%s", out)
+	}
+	if !strings.Contains(out, "Heading One") {
+		t.Error("heading text missing")
+	}
+	// h1 gets an underline rule.
+	if !strings.Contains(out, "═") {
+		t.Errorf("h1 should get an underline rule:\n%s", out)
+	}
+}
+
+func TestProseCodeFenceHidesBackticks(t *testing.T) {
+	out := renderProse("```go\nx := 1\n```")
+	if strings.Contains(out, "```") {
+		t.Errorf("code fence should hide raw backticks:\n%s", out)
+	}
+	if !strings.Contains(out, "x := 1") {
+		t.Error("code content missing")
+	}
+	if !strings.Contains(out, "go") {
+		t.Errorf("language label should show:\n%s", out)
+	}
+}
+
+func TestProseRendersLinks(t *testing.T) {
+	out := renderProse("see [the docs](http://example.com) here")
+	if strings.Contains(out, "[the docs]") || strings.Contains(out, "http://") {
+		t.Errorf("raw link markdown should be gone:\n%s", out)
+	}
+	if !strings.Contains(out, "the docs") {
+		t.Error("link text missing")
+	}
+}
+
+func TestToolBlockHasGutterRule(t *testing.T) {
+	b := &block{kind: blockTool, toolName: "read", toolArgs: []byte(`{"path":"x"}`),
+		result: "file body", state: toolDone}
+	out := b.render(false)
+	if !strings.Contains(out, "▏") {
+		t.Errorf("tool block should render in a gutter lane (▏):\n%s", out)
+	}
+}

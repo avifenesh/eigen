@@ -59,6 +59,7 @@ var (
 	styleInlineCode = lipgloss.NewStyle().Foreground(lipgloss.Color("80")) // teal
 	styleQuote      = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
 	styleBullet     = lipgloss.NewStyle().Foreground(lipgloss.Color("141")) // violet
+	styleLink       = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Underline(true)
 )
 
 type uiState int

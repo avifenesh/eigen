@@ -341,14 +341,25 @@ func renderProse(s string) string {
 	for _, ln := range lines {
 		trimmed := strings.TrimSpace(ln)
 
-		// Fenced code block delimiters toggle code mode.
+		// Fenced code block delimiters toggle code mode. Hide the raw ``` and
+		// show a clean framed block: a top rule with the language label, a
+		// teal left bar on each code line, a closing rule.
 		if strings.HasPrefix(trimmed, "```") {
+			if !inFence {
+				lang := strings.TrimSpace(strings.TrimPrefix(trimmed, "```"))
+				label := "╭─ code"
+				if lang != "" {
+					label = "╭─ " + lang
+				}
+				out = append(out, styleFaint.Render(label))
+			} else {
+				out = append(out, styleFaint.Render("╰─"))
+			}
 			inFence = !inFence
-			out = append(out, styleReason.Render(ln))
 			continue
 		}
 		if inFence {
-			out = append(out, styleCode.Render("│ "+ln))
+			out = append(out, styleFaint.Render("│ ")+styleCode.Render(ln))
 			continue
 		}
 
@@ -358,16 +369,25 @@ func renderProse(s string) string {
 			continue
 		}
 
-		// ATX heading: #, ##, … up to ######.
+		// ATX heading: #, ##, … up to ######. Render WITHOUT the raw '#'
+		// markers — a level glyph + the heading style reads as a real heading.
 		if h := headingLevel(trimmed); h > 0 {
 			text := strings.TrimSpace(trimmed[h:])
-			prefix := strings.Repeat("#", h) + " "
 			// Give headings breathing room: a blank line before, unless we're at
 			// the very top or the previous line is already blank.
 			if n := len(out); n > 0 && strings.TrimSpace(out[n-1]) != "" {
 				out = append(out, "")
 			}
-			out = append(out, styleHeading.Render(prefix+renderInline(text)))
+			rendered := styleHeading.Render(renderInline(text))
+			out = append(out, rendered)
+			// h1/h2 get an underline rule for weight, like a real document.
+			if h <= 2 {
+				rule := "═"
+				if h == 2 {
+					rule = "─"
+				}
+				out = append(out, styleHeading.Render(strings.Repeat(rule, min(lipgloss.Width(text), 48))))
+			}
 			continue
 		}
 
@@ -443,6 +463,20 @@ func renderInline(s string) string {
 				b.WriteString(styleInlineCode.Render(s[i+1 : i+1+end]))
 				i = i + 1 + end + 1
 				continue
+			}
+		case s[i] == '[':
+			// Markdown link [text](url): show the text underlined in the accent
+			// color, drop the raw URL syntax (it's noise in a terminal).
+			if close := strings.IndexByte(s[i+1:], ']'); close >= 0 {
+				rest := s[i+1+close+1:]
+				if strings.HasPrefix(rest, "(") {
+					if paren := strings.IndexByte(rest, ')'); paren >= 0 {
+						text := s[i+1 : i+1+close]
+						b.WriteString(styleLink.Render(text))
+						i = i + 1 + close + 1 + paren + 1
+						continue
+					}
+				}
 			}
 		case strings.HasPrefix(s[i:], "**"):
 			if end := strings.Index(s[i+2:], "**"); end >= 0 {
