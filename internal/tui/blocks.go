@@ -262,7 +262,14 @@ func (b *block) render(selected bool) string {
 		}
 
 	case blockNote:
-		s.WriteString(styleStatus.Render(b.body))
+		// Notes carry severity: errors read red with a ✗; ordinary status
+		// notes are muted (green is reserved for success/done, so a neutral
+		// note shouldn't masquerade as it).
+		if b.isErr {
+			s.WriteString(styleErr.Render("✗ " + b.body))
+		} else {
+			s.WriteString(styleReason.Render(b.body))
+		}
 
 	case blockThinking, blockTool:
 		marker := "▾"
