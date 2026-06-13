@@ -93,6 +93,7 @@ func main() {
 	listTools := flag.Bool("list-tools", false, "list available tools (name, posture, description) and exit")
 	instanceFlag := flag.String("instance", "", "daemon instance to use (default: production). A named instance (e.g. dev) gets its own socket/sessions/tasks so rebuilding never touches your production sessions.")
 	remoteHost := flag.String("remote", "", "attach to an eigen daemon on a remote host over ssh: user@host[:dir] (bootstrap it first with `eigen remote install`)")
+	sockPath := flag.String("sock", "", "attach to a daemon at an explicit socket path (e.g. an ssh -L forwarded ~/.eigen/daemon.sock); does NOT auto-spawn a local daemon")
 	var wfVars multiFlag
 	flag.Var(&wfVars, "var", "workflow variable k=v for `eigen run` (repeatable)")
 	flag.Parse()
@@ -169,6 +170,17 @@ func main() {
 	// `eigen attach [session-id]`: attach a view to a daemon session (the
 	// session runs in the daemon; this window just mirrors + sends input).
 	if flag.Arg(0) == "attach" {
+		// --sock may appear after `attach` (Go's flag pkg stops at the first
+		// positional, so scan the attach args ourselves).
+		sub := flag.Args()[1:]
+		if sp, id := extractSockFlag(sub); sp != "" {
+			runAttachSock(sp, id, cfg)
+			return
+		}
+		if *sockPath != "" {
+			runAttachSock(*sockPath, flag.Arg(1), cfg)
+			return
+		}
 		runAttach(flag.Arg(1), cfg)
 		return
 	}
