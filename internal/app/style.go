@@ -17,16 +17,17 @@ import (
 // Palette — sourced from internal/theme (shared with the chat TUI), so the
 // app shell and the chat are one product. Calm desaturated truecolor.
 var (
-	cAccent  = theme.Accent  // structure
-	cText    = theme.Text    // primary text
-	cDim     = theme.Dim     // secondary text / instructions
-	cFaint   = theme.Faint   // chrome, separators
-	cTitle   = theme.Title   // titles, the active thing
-	cOk      = theme.Ok      // healthy / available
-	cWarn    = theme.Warn    // attention / confirm
-	cErr     = theme.Err     // broken / missing
-	cViolet  = theme.Tool    // counts, meta
-	cWorking = theme.Working // loud "actively working"
+	cAccent = theme.Accent // structure
+	cText   = theme.Text   // primary text
+	cDim    = theme.Dim    // secondary text / instructions
+	cFaint  = theme.Faint  // chrome, separators
+	cTitle  = theme.Title  // titles, the active thing
+	cOk     = theme.Ok     // healthy / available
+	cWarn   = theme.Warn   // attention / confirm
+	cErr    = theme.Err    // broken / missing
+	cViolet = theme.Tool   // counts, meta
+	cFocus  = theme.Focus  // the active/live thing — non-brand (brand rule)
+	cSel    = theme.Sel    // selected row / cursor — non-brand (brand rule)
 )
 
 var (
@@ -40,11 +41,13 @@ var (
 	sErr    = lipgloss.NewStyle().Foreground(cErr)
 	sViolet = lipgloss.NewStyle().Foreground(cViolet)
 
-	// Rail item styles.
-	sRailActive = lipgloss.NewStyle().Foreground(cTitle).Bold(true)
+	// Rail item styles. The active rail page uses Focus (non-brand) so it
+	// stands apart from the brand-blue title bar / borders (the brand rule).
+	sRailActive = lipgloss.NewStyle().Foreground(cFocus).Bold(true)
 	sRailIdle   = lipgloss.NewStyle().Foreground(cDim)
 
-	// Selected row in a list: a quiet reverse on the accent, not a loud bar.
-	sRowSel = lipgloss.NewStyle().Foreground(cTitle).Bold(true)
+	// Selected row in a list: the keyboard-focus highlight in the Sel role
+	// (non-brand), not brand blue — a quiet bold tint, not a loud bar.
+	sRowSel = lipgloss.NewStyle().Foreground(cSel).Bold(true)
 	sRowDim = lipgloss.NewStyle().Foreground(cText)
 )

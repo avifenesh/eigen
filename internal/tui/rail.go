@@ -236,7 +236,7 @@ func (m *model) railRows() []railRow {
 // (frame advanced by the rail tick) so liveness is visible at a glance.
 func (m *model) railGlyph(status string) string {
 	if status == "working" {
-		return styleAccent.Render(railSpinnerFrames[m.railSpin%len(railSpinnerFrames)])
+		return styleWorking.Render(railSpinnerFrames[m.railSpin%len(railSpinnerFrames)]) // working = orange, matches the loader
 	}
 	return statusGlyph(status)
 }
@@ -325,7 +325,7 @@ func (m *model) railHeaderLabel(dir string, w int) string {
 	}
 	styledName := ansiTrunc(name, nameW)
 	if m.railProjectOpen(dir) {
-		styledName = styleAccent.Render(styledName)
+		styledName = styleFocus.Render(styledName) // a project open in some pane — non-brand
 	} else {
 		styledName = dim(styledName)
 	}

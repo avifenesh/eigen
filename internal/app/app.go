@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/avifenesh/eigen/internal/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -633,13 +634,8 @@ func liveGlyph(s daemon.Status, frame int) string {
 	switch s {
 	case daemon.StatusWorking:
 		// Brightness pulse over 4 poll frames (the app polls ~1.2s, so a slow
-		// breath). dim → working → bright → working → loop.
-		ramp := []lipgloss.AdaptiveColor{
-			{Dark: "#8a5a44", Light: "#c98a63"}, // dim working
-			cWorking,                            // working
-			{Dark: "#e8a583", Light: "#9a4a18"}, // bright
-			cWorking,
-		}
+		// breath): dim → working → bright → working → loop. Theme-owned ramp.
+		ramp := theme.WorkingRamp
 		return lipgloss.NewStyle().Foreground(ramp[frame%len(ramp)]).Bold(true).Render("λ")
 	case daemon.StatusApproval:
 		return sWarn.Render("◆") // amber: blocked on an approval

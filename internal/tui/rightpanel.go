@@ -125,7 +125,7 @@ func (m *model) rightPanelTitleLine(width int) string {
 			}
 			label := "[" + m.tabLabel(t, short) + "]"
 			if t == m.rightTab {
-				b.WriteString(styleAccent.Bold(true).Render(label))
+				b.WriteString(styleSel.Bold(true).Render(label)) // selected tab — non-brand
 			} else {
 				b.WriteString(dim(label))
 			}

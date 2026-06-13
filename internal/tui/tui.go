@@ -54,6 +54,7 @@ var (
 	styleAccent  = theme.SAccent
 	styleWorking = theme.SWorking.Bold(true)
 	styleFocus   = theme.SFocus // the active session (this pane) — non-brand
+	styleSel     = theme.SSel   // selected row / cursor in a list/picker — non-brand
 
 	// Markdown prose styles for assistant answers.
 	styleHeading    = theme.SHeading.Bold(true)

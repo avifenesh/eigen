@@ -196,7 +196,7 @@ func (m *model) flashBanner() string {
 		bg, glyph = theme.Err, "✗ "
 	}
 	pill := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#1b1f27")).
+		Foreground(theme.OnBright).
 		Background(bg).
 		Bold(true).
 		Padding(0, 1).
@@ -297,11 +297,11 @@ func (m *model) switcherView() string {
 		}
 		mark := " "
 		if e.ID == cur {
-			mark = styleAccent.Render("·") // you are here
+			mark = styleFocus.Render("·") // you are here (active session — non-brand)
 		}
 		line := fmt.Sprintf("%s %s %-4s %s  %s", statusGlyph(e.Status), mark, e.ID, title, dim(e.Dir))
 		if i == m.switchIdx {
-			line = styleAsk.Render("› " + line)
+			line = styleSel.Render("› " + line) // selected row — non-brand
 		} else {
 			line = "  " + line
 		}
@@ -315,7 +315,7 @@ func (m *model) switcherView() string {
 func statusGlyph(s string) string {
 	switch s {
 	case "working":
-		return styleAccent.Render("●")
+		return styleWorking.Render("●") // working = the loud orange, matching the loader
 	case "approval":
 		return styleAsk.Render("◆")
 	case "error":

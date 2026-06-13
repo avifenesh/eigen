@@ -1145,20 +1145,22 @@ session, state highlights) uses a DIFFERENT theme role.
   (rose) for "the session THIS pane drives" — rail pointer/name + sidebar
   title now use Focus, not brand blue, so the active window pops against the
   blue chrome (rail.go railEntryLabel, sidebar.go sbTitle).
-- [ ] **Lock the role vocabulary** (docs §"The plan" step 1): confirm/extend
-  roles — candidates `CodeBg`, a documented brand `Ramp`, maybe `Sel` for
-  app-shell selection if distinct from `Focus`.
-- [ ] **Apply the brand rule everywhere.** Sweep all selection/active/current
-  highlights off Accent/Title onto Focus/Sel; fold the 3 remaining raw color
-  literals (brand.go ramp, view.go code-block bg, app.go live ramp) into roles.
-- [ ] **App-shell parity.** `internal/app/style.go` `c*`/`s*` aliases become a
-  thin audited mapping to `theme.*` (no literals).
+- [x] **Lock the role vocabulary.** SHIPPED: added `Sel` (selection/cursor),
+  `OnBright` (text on bright fill), and theme-owned animation ramps
+  `BreathRamp`/`WorkingRamp` (+ `*Dim`/`*Bright` stops).
+- [x] **Apply the brand rule everywhere.** SHIPPED: all selection/active/current
+  highlights moved off Accent/Title onto Focus/Sel across tui + app; the
+  working `●` glyph + rail spinner moved to Working (orange, matches loader);
+  the 3 raw literals folded into roles. Screenshot-verified both surfaces.
+- [x] **App-shell parity.** SHIPPED: `internal/app/style.go` aliases all map to
+  `theme.*` (no literals); the drift-guard test enforces it tree-wide.
+- [x] **Drift guard test.** SHIPPED: `internal/theme/drift_test.go` fails the
+  build if any raw `lipgloss.Color(`/`AdaptiveColor{` appears outside
+  internal/theme.
 - [ ] **Living swatch** — `eigen theme` / debug page rendering every role +
   glyph + weight (reproducible screenshots).
 - [ ] **Re-theme proof** — a one-edit alternate palette (maybe a config
   `theme:` key) to prove roles-not-hues holds.
-- [ ] **Drift guard test** — assert no `lipgloss.Color(`/`AdaptiveColor{`
-  outside theme.go; keep size-sweep + band-alignment green.
 
 ## Debt / bugs
 - [x] **Untitled daemon sessions still appear.** FIXED: (1) `Host.Restore` now

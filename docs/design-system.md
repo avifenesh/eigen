@@ -4,10 +4,11 @@ The single, durable brief for eigen's visual language. Source of truth for
 color, type weight, glyphs, spacing, and the rules that keep the chat TUI
 (`internal/tui`) and the app shell (`internal/app`) looking like ONE product.
 
-Status: **v0 — bootstrapped 2026-06-14.** Color roles + the brand rule are
-implemented in `internal/theme`; this doc captures the system and the work
-still to do. When in doubt, this doc wins; update it in the same commit as any
-visual change.
+Status: **v1 — 2026-06-14.** Role vocabulary locked, the brand rule applied
+across the chat TUI + app shell, all raw color literals folded into theme roles
+with a drift-guard test enforcing it. Remaining: a living swatch + a re-theme
+proof. When in doubt, this doc wins; update it in the same commit as any visual
+change.
 
 ---
 
@@ -62,13 +63,20 @@ Calm, desaturated, Nord-inspired. Roles:
 | **`Accent`** | `#81A1C1` | **BRAND/structural blue** — borders, rules, the input caret, nav |
 | `Title` | `#88C0D0` | brand cyan — headings, the user's own voice (`❯` prompt), model name |
 | `Focus` | `#D1A0B0` | **the active session THIS pane drives** — a non-blue rose (see the rule below) |
+| `Sel` | `#D1A0B0` | **selected row / cursor in a list or picker** — same rose attention family as Focus, kept a separate role so call sites stay semantic |
 | `Ok` | `#A3BE8C` | success / available / idle-ok |
 | `Warn` | `#EBCB8B` | attention / confirm prompts |
 | `Err` | `#BF616A` | failure / missing / error notes |
 | `Tool` | `#B48EAD` | tool activity, counts, meta (violet) |
 | `Code` | `#8FBCBB` | code + monospace spans |
 | `Link` | `#88C0D0` | links (underlined at the call site) |
-| `Working` | `#D08770` | the LOUD "actively thinking" loader — warm orange, unmistakable |
+| `Working` | `#D08770` | the LOUD "actively thinking" loader + the working `●` status glyph — warm orange, unmistakable |
+| `OnBright` | `#1b1f27` | text/glyph placed ON a bright fill (the flash pill); near-black dark / near-white light |
+
+Animation ramps (theme-owned, not call-site literals): `BreathRamp` (the
+brand-λ loader, an Accent brightness cycle using `FaintDim`/`Faint`/`Accent`/
+`AccentBright`) and `WorkingRamp` (the app-shell live-session λ pulse, a Working
+brightness cycle using `WorkingDim`/`Working`/`WorkingBright`).
 
 Each has a ready `S<Role>` style (e.g. `theme.SFocus`); call sites compose
 `.Bold()/.Underline()/.Italic()` on top.
@@ -82,13 +90,22 @@ Each has a ready `S<Role>` style (e.g. `theme.SFocus`); call sites compose
 First application: the **active session** (the one this pane is attached to,
 the `❯` pointer + its name, and the sidebar title row) uses **`Focus`** (rose),
 not `Accent`/`Title`. With several windows open, the active one must pop
-*against* the blue brand chrome, not blend into it. (Shipped: rail.go
-`railEntryLabel`, sidebar.go `sbTitle`.)
+*against* the blue brand chrome, not blend into it.
 
-Open follow-through (audit): other "selection/active" highlights that still use
-brand blue should move to `Focus` (or another non-brand role) for consistency —
-e.g. app-shell selected rows, picker cursors, the in-window switcher's current
-mark. List them as they're found.
+Applied across both surfaces (commit after 395d158):
+- **active session / "where you are"** → `Focus` (rose): rail pointer+name
+  (`rail.go railEntryLabel`), sidebar title (`sidebar.go sbTitle`), the
+  switcher "you are here" mark (`view.go`), project-open rail name
+  (`rail.go`), the app-shell active rail page (`sRailActive`).
+- **selected row / cursor** → `Sel` (rose): the app-shell selected row
+  (`sRowSel`), the switcher selected line (`view.go`), the tray cursor
+  (`tray.go`), the active right-panel tab (`rightpanel.go`).
+- **working** → `Working` (orange): the `●` status glyph + the rail spinner
+  now match the loader (were brand blue — a semantic mismatch, fixed).
+- Brand blue (`Accent`/`Title`) KEEPS: the λ mark + caret, the "eigen"
+  wordmark, the app title bar/breadcrumb, all borders/rules/hairlines, section
+  headers ("navigate"/"session"/"sessions"), nav buttons, input cursors, the
+  model-name segment, lit toggle state.
 
 ## Glyph vocabulary (fixed — don't invent per-site)
 
@@ -114,41 +131,41 @@ A new glyph needs a reason; reuse the vocabulary first.
 - **Italic** = rare; reserved (e.g. quoted/secondary).
 - **Underline** = links only.
 
-## Drift surface (what the system must converge — audited 2026-06-14)
+## Drift surface — CONVERGED (2026-06-14)
 
-Raw color literals OUTSIDE `theme.go` (each is a candidate to fold into a role):
+All raw color literals are now inside `internal/theme/theme.go`. The former
+offenders were folded into roles/ramps:
 
-- `internal/tui/brand.go` — the breathing-λ brightness `breathRamp` (a ramp,
-  arguably a brand primitive; could live in theme as a documented ramp).
-- `internal/tui/view.go` — the code-block background `#1b1f27` (should be a
-  `theme.CodeBg` role).
-- `internal/app/app.go` — the live-glyph breathing ramp (same family as
-  brand.go's; share one ramp).
+- `internal/tui/brand.go` breathing-λ ramp → `theme.BreathRamp`.
+- `internal/tui/view.go` flash-pill text `#1b1f27` → `theme.OnBright`.
+- `internal/app/app.go` live-session ramp → `theme.WorkingRamp`.
 
-Everything else routes through `theme.*` today — keep it that way; a PR adding
-a `lipgloss.Color("#...")` outside theme.go should be rejected in review.
+A drift-guard test (`internal/theme/drift_test.go`,
+`TestNoRawColorLiteralsOutsideTheme`) walks the whole tree and FAILS the build
+if any `lipgloss.Color("…")` / `AdaptiveColor{…}` appears outside
+`internal/theme` (tests excepted). Adding a color now MUST add a role.
 
 ## The plan (the "design system" effort)
 
-Bootstrapped here; the full effort (post-compaction) should:
+Bootstrapped here; the full effort:
 
-1. **Lock the role vocabulary** — confirm/extend the role list above
-   (candidates: `Focus` ✓ shipped, `CodeBg`, a documented brand `Ramp`,
-   maybe `Sel` for app-shell selection if it should differ from `Focus`).
-2. **Apply the brand rule everywhere** — sweep all "selection/active/current"
-   highlights off `Accent`/`Title` onto `Focus`/`Sel`; sweep the 3 raw literals
-   into roles. One PR per surface, screenshot-verified.
-3. **App-shell parity** — make `internal/app/style.go`'s `c*`/`s*` aliases a
-   thin, audited mapping to `theme.*` (no literals), so the dashboard and chat
-   are provably one palette.
-4. **A living swatch** — a tiny `eigen theme` (or a hidden debug page) that
-   renders every role + glyph + weight, so changes are eyeballed in one place
-   and screenshots are reproducible.
-5. **Re-theme proof** — demonstrate a one-edit alternate palette (e.g. a warmer
-   or higher-contrast variant) to prove the roles-not-hues discipline holds.
-   Possibly a config `theme:` key selecting a named palette.
-6. **Tests** — assert no `lipgloss.Color(`/`AdaptiveColor{` outside theme.go
-   (a grep test), and keep the size-sweep + band-alignment nets green.
+1. **Lock the role vocabulary** — DONE. Added `Focus` (active session), `Sel`
+   (selection/cursor), `OnBright` (text on bright fill), and the theme-owned
+   ramps `BreathRamp`/`WorkingRamp` (+ their `*Dim`/`*Bright` stops).
+2. **Apply the brand rule everywhere** — DONE for tui + app: all
+   selection/active/current highlights moved off `Accent`/`Title` onto
+   `Focus`/`Sel`; the working glyph moved to `Working`; the 3 raw literals
+   folded into roles. (Screenshot-verified in both surfaces.)
+3. **App-shell parity** — DONE: `internal/app/style.go` aliases all map to
+   `theme.*` (no literals); the drift-guard test enforces it tree-wide.
+4. **A living swatch** — TODO: a `eigen theme` command (or hidden debug page)
+   that renders every role + glyph + weight, so changes are eyeballed in one
+   place and screenshots are reproducible.
+5. **Re-theme proof** — TODO: a one-edit alternate palette (e.g. a warmer or
+   higher-contrast variant) to prove roles-not-hues holds. Possibly a config
+   `theme:` key selecting a named palette.
+6. **Tests** — DONE (drift guard); keep the size-sweep + band-alignment nets
+   green.
 
 Constraints carried from the chrome work: geometry-owned-first, one action
 layer, keyboard/click parity, restrained design, degrade under 80 cols, and the

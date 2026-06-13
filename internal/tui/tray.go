@@ -101,7 +101,7 @@ func (m *model) trayView() string {
 		for i, it := range m.trayItems {
 			cursor := "  "
 			if i == m.trayIdx {
-				cursor = styleAccent.Render("▎ ")
+				cursor = styleSel.Render("▎ ") // selected row — non-brand
 			}
 			label := it.title
 			if it.current {

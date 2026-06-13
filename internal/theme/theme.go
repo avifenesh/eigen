@@ -53,6 +53,51 @@ var (
 	// calm desaturated rose/mauve: distinct from Working-orange, Tool-violet,
 	// and the semantic Ok/Warn/Err, while staying in the restrained family.
 	Focus = lipgloss.AdaptiveColor{Dark: "#D1A0B0", Light: "#9A4D6B"}
+
+	// Sel: "the selected row / cursor in a list or picker" — the keyboard
+	// focus highlight, distinct from brand blue (the brand rule). Same
+	// attention family as Focus (rose) by design: "where you are" reads as one
+	// idea whether it's the active session or the highlighted row. Kept a
+	// separate role so call sites stay semantic and the two can diverge later.
+	Sel = lipgloss.AdaptiveColor{Dark: "#D1A0B0", Light: "#9A4D6B"}
+
+	// OnBright: text/glyph color to place ON a brightly-filled background
+	// (the flash pill, any reverse badge) — a near-black on dark terminals,
+	// near-white on light — so the label stays legible over Ok/Warn/Err fills.
+	OnBright = lipgloss.AdaptiveColor{Dark: "#1b1f27", Light: "#F0F4F8"}
+
+	// AccentBright: the inhale peak of the brand blue, brighter than Accent —
+	// used only by the breathing-λ loader ramp (not a general role).
+	AccentBright = lipgloss.AdaptiveColor{Dark: "#b3c4d8", Light: "#1f3450"}
+	// FaintDim: a step below Faint — the exhale trough of the loader ramp.
+	FaintDim = lipgloss.AdaptiveColor{Dark: "#4a5365", Light: "#aab3c4"}
+	// WorkingDim / WorkingBright: the trough/peak of the app-shell live-session
+	// λ pulse (the Working orange axis), so that ramp also lives in the theme.
+	WorkingDim    = lipgloss.AdaptiveColor{Dark: "#8a5a44", Light: "#c98a63"}
+	WorkingBright = lipgloss.AdaptiveColor{Dark: "#e8a583", Light: "#9a4a18"}
+)
+
+// Animation ramps — brightness cycles for the breathing/pulsing loaders. They
+// live here (not at the call site) so every animated color is theme-owned too.
+var (
+	// BreathRamp is the brand-λ brightness cycle while a turn runs: a smooth
+	// in/out (faint → dim → accent → bright → accent → dim → loop). Adaptive.
+	BreathRamp = []lipgloss.AdaptiveColor{
+		FaintDim,     // exhaled (trough)
+		Faint,        //
+		Accent,       // the mark's rest color
+		AccentBright, // full inhale (peak)
+		Accent,       //
+		Faint,        //
+	}
+	// WorkingRamp is the app-shell live-session λ pulse (Working-orange axis),
+	// poll-paced: dim → working → bright → working → loop.
+	WorkingRamp = []lipgloss.AdaptiveColor{
+		WorkingDim,
+		Working,
+		WorkingBright,
+		Working,
+	}
 )
 
 // Ready-made styles for the common roles. Call sites compose (Bold/Underline/
@@ -72,4 +117,5 @@ var (
 	SHeading = lipgloss.NewStyle().Foreground(Heading)
 	SWorking = lipgloss.NewStyle().Foreground(Working)
 	SFocus   = lipgloss.NewStyle().Foreground(Focus)
+	SSel     = lipgloss.NewStyle().Foreground(Sel)
 )

@@ -16,17 +16,9 @@ import (
 // status text beside it never jitters.
 const brandGlyph = "λ"
 
-// breathRamp is the λ's brightness cycle while working — a smooth in/out over
-// six frames (faint → dim → accent → bright → accent → dim → loop). Adaptive
-// so it reads on dark and light terminals.
-var breathRamp = []lipgloss.AdaptiveColor{
-	{Dark: "#4a5365", Light: "#aab3c4"}, // faint (exhaled)
-	{Dark: "#5b657a", Light: "#8893a6"},
-	{Dark: "#81A1C1", Light: "#3B5A82"}, // accent (the mark's rest color)
-	{Dark: "#b3c4d8", Light: "#1f3450"}, // bright (full inhale)
-	{Dark: "#81A1C1", Light: "#3B5A82"}, // accent
-	{Dark: "#5b657a", Light: "#8893a6"},
-}
+// breathRamp is the λ's brightness cycle while working — theme-owned (see
+// theme.BreathRamp): faint → dim → accent → bright → accent → dim → loop.
+var breathRamp = theme.BreathRamp
 
 // breathDot is the synced beat after the caret: faint on the exhale, lit
 // (Working orange) at the peak of the inhale — a readable pulse even on a
