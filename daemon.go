@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -191,8 +193,45 @@ func daemonControl(sub string) bool {
 			_ = os.Remove(daemon.SocketPath())
 		}
 		return true
+	case "stdio":
+		daemonStdio()
+		return true
 	}
 	return false
+}
+
+// daemonStdio bridges this process's stdin/stdout to the local daemon socket:
+// one stdio stream == one view connection. It's the transport primitive for
+// remote use — `ssh host eigen daemon-stdio` gives a local TUI a pipe to a
+// REMOTE daemon (the whole agent loop runs on the remote; the local side is a
+// pure view). Mirrors codex's `app-server proxy`.
+//
+// CONTRACT: only protocol bytes go to STDOUT; everything human-readable
+// (errors, logs) goes to STDERR, so ssh's separate stderr channel can't corrupt
+// the byte stream the remote client reads.
+func daemonStdio() {
+	// Ensure a local daemon is up (auto-spawns one, restoring sessions), then
+	// connect to its raw socket for byte relaying.
+	c, err := ensureDaemon()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "eigen daemon-stdio: %v\n", err)
+		os.Exit(1)
+	}
+	c.Close() // we only used ensureDaemon to guarantee the daemon is running
+
+	conn, err := net.Dial("unix", daemon.SocketPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "eigen daemon-stdio: dial: %v\n", err)
+		os.Exit(1)
+	}
+	defer conn.Close()
+
+	// Relay both directions; exit as soon as either end closes (the view
+	// disconnected, or the daemon went away).
+	done := make(chan struct{}, 2)
+	go func() { _, _ = io.Copy(conn, os.Stdin); done <- struct{}{} }()
+	go func() { _, _ = io.Copy(os.Stdout, conn); done <- struct{}{} }()
+	<-done
 }
 
 func isClosedErr(err error) bool {

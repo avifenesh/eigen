@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -15,7 +16,7 @@ import (
 // connection; Attach streams one session's events while control ops
 // (List/New/Input/Interrupt) remain usable.
 type Client struct {
-	conn net.Conn
+	conn io.ReadWriteCloser
 
 	mu      sync.Mutex // guards conn writes + onEvent handler swap
 	reqMu   sync.Mutex // serializes request/reply pairs (one in flight at a time)
@@ -39,6 +40,13 @@ func Dial(sockPath string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("no daemon at %s (start one with `eigen daemon`)", sockPath)
 	}
+	return DialConn(conn), nil
+}
+
+// DialConn wraps an already-connected stream (a unix socket, an ssh stdio pipe,
+// a WebSocket adapter) as a daemon Client. The protocol is transport-agnostic
+// line-JSON, so any io.ReadWriteCloser works; Dial is just the unix-socket case.
+func DialConn(conn io.ReadWriteCloser) *Client {
 	c := &Client{
 		conn:    conn,
 		replies: make(chan Response, 16),
@@ -50,7 +58,7 @@ func Dial(sockPath string) (*Client, error) {
 	c.scanner = sc
 	go c.readLoop()
 	go c.eventLoop()
-	return c, nil
+	return c
 }
 
 // eventLoop delivers events to the handler OFF the read loop, so a handler
