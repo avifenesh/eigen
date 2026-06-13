@@ -17,7 +17,7 @@ type Policy struct {
 
 // deniedSegments are directory names that are never traversable (compared
 // case-insensitively).
-var deniedSegments = []string{".ssh", ".aws", ".gnupg"}
+var deniedSegments = []string{".ssh", ".aws", ".gnupg", ".git"}
 
 // deniedBasenames are filename globs (filepath.Match, case-insensitive) that are
 // never readable.

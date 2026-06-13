@@ -166,3 +166,57 @@ func TaskGroup(run TaskGroupRun) Definition {
 		},
 	}
 }
+
+// TaskGroupMutatingRun is injected by main/buildSession: run implementer
+// children in parallel (isolated worktrees) and apply the merged result.
+type TaskGroupMutatingRun func(ctx context.Context, subs []GroupSubtaskArg, workers int) (string, error)
+
+// TaskGroupMutating returns the parallel WRITE fan-out tool: several
+// implementer sub-agents edit code at once, each in an isolated copy of the
+// repo, and their changes are merged back behind one approval. NOT read-only
+// (the merge mutates the workspace), so it needs approval in gated mode.
+func TaskGroupMutating(run TaskGroupMutatingRun) Definition {
+	return Definition{
+		Name:        "task_group_mutating",
+		Description: "Run several IMPLEMENTER sub-agents in PARALLEL to make code changes at once — each works in its own isolated git worktree, then their diffs are merged back to your workspace behind ONE approval (conflicting patches are reported, not forced). Requires: a git repo, the session rooted at the repo root, and a CLEAN working tree (commit/stash first). Children have read/write/edit but NO shell/git/network. Use for independent edits across files; for one focused change use the `task` tool. Optional workers caps concurrency (default 3).",
+		ReadOnly:    false, // merging applies real changes — gate the delegation
+		Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "subtasks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "description": "Independent implementation subtasks, each run in its own isolated repo copy.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "task": { "type": "string", "description": "Complete, self-contained change instructions. Keep edits tightly scoped so they merge cleanly." },
+          "kind": { "type": "string", "enum": ["general","search","vision","social"] },
+          "difficulty": { "type": "string", "enum": ["trivial","easy","medium","hard"] },
+          "model": { "type": "string", "description": "Optional explicit model/ref override." }
+        },
+        "required": ["task"],
+        "additionalProperties": false
+      }
+    },
+    "workers": { "type": "integer", "description": "Max concurrent implementers (default 3, max 6)." }
+  },
+  "required": ["subtasks"],
+  "additionalProperties": false
+}`),
+		Run: func(ctx context.Context, args json.RawMessage) (string, error) {
+			var in struct {
+				Subtasks []GroupSubtaskArg `json:"subtasks"`
+				Workers  int               `json:"workers"`
+			}
+			if err := json.Unmarshal(args, &in); err != nil {
+				return "", fmt.Errorf("invalid arguments: %w", err)
+			}
+			if run == nil {
+				return "", fmt.Errorf("task_group_mutating is not available")
+			}
+			return run(ctx, in.Subtasks, in.Workers)
+		},
+	}
+}

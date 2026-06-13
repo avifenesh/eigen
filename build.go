@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -119,6 +120,26 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		}
 		return deps.Agent.TaskGroup(ctx, gs, workers)
 	}
+	taskGroupMut := func(ctx context.Context, subs []tool.GroupSubtaskArg, workers int) (string, error) {
+		if deps.Agent == nil {
+			return "", fmt.Errorf("task_group_mutating unavailable")
+		}
+		gs := make([]agent.GroupSubtask, len(subs))
+		for i, s := range subs {
+			gs[i] = agent.GroupSubtask{Task: s.Task, Kind: s.Kind, Difficulty: s.Difficulty, Model: s.Model}
+		}
+		// Apply-time approval reuses the session's tool-approval channel: one
+		// prompt naming the merge + diffstat. In auto mode Approve is nil →
+		// applies freely.
+		approve := func(ctx context.Context, summary string, diff []byte) (bool, error) {
+			if deps.Agent.Approve == nil {
+				return true, nil
+			}
+			args, _ := json.Marshal(map[string]string{"summary": summary, "diffstat": agent.PatchStat(diff)})
+			return deps.Agent.Approve(ctx, "task_group_mutating (apply)", args)
+		}
+		return deps.Agent.TaskGroupMutating(ctx, gs, workers, approve)
+	}
 	goalJudge := func(ctx context.Context, evidence string) (bool, string, error) {
 		if deps.Agent == nil {
 			return false, "", fmt.Errorf("goal judging unavailable")
@@ -147,7 +168,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		tool.Edit(policy), tool.MultiEdit(policy), tool.Patch(policy), tool.Move(policy),
 		tool.Bash(policy), tool.Fetch(), tool.Todo(), tool.Skill(p.Skills),
 		tool.Memory(mem, p.GlobalMem), tool.Task(taskRun), tool.TaskStatus(taskStatus),
-		tool.TaskGroup(taskGroup),
+		tool.TaskGroup(taskGroup), tool.TaskGroupMutating(taskGroupMut),
 		tool.GoalAchieved(goalJudge), tool.Review(reviewRun),
 	}
 	if ws, ok := tool.WebSearch(); ok {
@@ -228,6 +249,8 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		Router:           router.Route,
 		ModelProvider:    router.providerFor,
 		Bg:               agent.NewBgRegistry(agent.TasksDir()),
+		SessionDir:       p.Dir,
+		WorktreeTools:    worktreeTools,
 	}
 	deps.Agent = a
 	deps.eventWrap = func(next agent.EventSink) agent.EventSink {
@@ -236,4 +259,24 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 	a.EventWrap = deps.eventWrap
 	deps.hooks = hookRunner
 	return deps, nil
+}
+
+// worktreeTools builds the IMPLEMENTER toolset for a mutating fan-out child,
+// rooted at its isolated git worktree: read/search/write/edit/move only — NO
+// bash, NO git, NO network (a worktree confines file writes but not shelling
+// out). The policy denies .git (global deniedSegments) so a child can't break
+// its worktree's git linkage. A bad registry build yields an empty toolset
+// (the child simply can't act) rather than a panic.
+func worktreeTools(dir string) *tool.Registry {
+	policy := tool.NewPolicy(dir)
+	reg, err := tool.NewRegistry(
+		tool.Read(policy), tool.List(policy), tool.Glob(policy), tool.Grep(policy),
+		tool.Symbols(policy), tool.Tree(policy), tool.Diff(policy),
+		tool.Write(policy), tool.Edit(policy), tool.MultiEdit(policy),
+		tool.Patch(policy), tool.Move(policy), tool.Todo(),
+	)
+	if err != nil {
+		reg, _ = tool.NewRegistry()
+	}
+	return reg
 }

@@ -411,6 +411,23 @@ func main() {
 		}
 		return a.TaskGroup(ctx, gs, workers)
 	}
+	taskGroupMut := func(ctx context.Context, subs []tool.GroupSubtaskArg, workers int) (string, error) {
+		if a == nil {
+			return "", fmt.Errorf("task_group_mutating unavailable")
+		}
+		gs := make([]agent.GroupSubtask, len(subs))
+		for i, s := range subs {
+			gs[i] = agent.GroupSubtask{Task: s.Task, Kind: s.Kind, Difficulty: s.Difficulty, Model: s.Model}
+		}
+		approve := func(ctx context.Context, summary string, diff []byte) (bool, error) {
+			if a.Approve == nil {
+				return true, nil
+			}
+			args, _ := json.Marshal(map[string]string{"summary": summary, "diffstat": agent.PatchStat(diff)})
+			return a.Approve(ctx, "task_group_mutating (apply)", args)
+		}
+		return a.TaskGroupMutating(ctx, gs, workers, approve)
+	}
 	// goalJudge verifies goal-achievement claims and clears the goal on a
 	// confirmed verdict. The judge is an INDEPENDENT model: by default the
 	// other vendor (GPT judges Claude's claims, Claude judges GPT's — never
@@ -469,6 +486,7 @@ func main() {
 		tool.Task(taskRun),
 		tool.TaskStatus(taskStatus),
 		tool.TaskGroup(taskGroup),
+		tool.TaskGroupMutating(taskGroupMut),
 		tool.GoalAchieved(goalJudge),
 		tool.Review(reviewRun),
 	}
@@ -599,6 +617,8 @@ func main() {
 		Router:           router.Route,
 		ModelProvider:    router.providerFor,
 		Bg:               agent.NewBgRegistry(agent.TasksDir()),
+		SessionDir:       wdOrDot(),
+		WorktreeTools:    worktreeTools,
 	}
 
 	// Session store: discover all sources (lazy) and title untitled ones in the
@@ -1460,4 +1480,12 @@ func importResume(store *session.Store, resumeFile, from, sessionID string) []ll
 		fail(fmt.Errorf("resume: %w", herr))
 	}
 	return history
+}
+
+// wdOrDot returns the current working directory, or "." if it can't be read.
+func wdOrDot() string {
+	if wd, err := os.Getwd(); err == nil {
+		return wd
+	}
+	return "."
 }

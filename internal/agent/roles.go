@@ -53,7 +53,12 @@ func LookupRole(name string) (Role, bool) {
 	return r, ok
 }
 
-// RoleNames lists the available role names (for tool docs / errors).
+// implementerSystem frames a mutating fan-out child. Its toolset comes from
+// WorktreeTools (rooted at the child's isolated worktree), not a role
+// allowlist — so it's defined here, not in builtinRoles (which are read-only).
+const implementerSystem = "You are an IMPLEMENTER sub-agent working in your OWN isolated copy of the repo — one of several parallel workers. Make ONLY the change described in your task by editing files in your workspace. You have read/search/write/edit/move tools; you have NO shell, NO git, and NO network. Do not try to commit, push, build, or run tests — when you finish, your file changes are captured as a patch automatically. Keep your edits tightly scoped to your task so they merge cleanly with the others."
+
+// RoleNames lists the available (read-only) role names (for tool docs / errors).
 func RoleNames() []string {
 	return []string{"researcher", "reviewer", "summarizer"}
 }

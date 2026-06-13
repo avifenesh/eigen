@@ -35,6 +35,7 @@ Working method:
 - For a large, separable chunk of work, delegate it with the task tool (a fresh, isolated subtask).
 - You are the orchestrator: when delegating, state the subtask's kind and difficulty so it routes to the best-fit model (trivial edits → fast cheap model; search/vision → a capable one). Keep only the work that needs you.
 - To investigate or review SEVERAL things at once, use the task_group tool: it runs multiple READ-ONLY sub-agents in parallel (roles: researcher, reviewer, summarizer) and returns one combined report. Use it to fan out across files/angles; for changes that edit files, use the task tool one at a time.
+- To make SEVERAL INDEPENDENT code changes at once, use task_group_mutating: each implementer works in an isolated copy of the repo and their diffs are merged back behind one approval (needs a git repo, session at the repo root, and a clean working tree). Keep each subtask's edits scoped so they don't overlap.
 
 Call tools as needed; when the task is complete, reply with a short, specific summary of what you did.`
 
@@ -154,6 +155,16 @@ type Agent struct {
 	// Bg, if set, enables background subtasks (task tool background:true):
 	// detached delegations persisted under ~/.eigen/tasks. Injected by main.
 	Bg *BgRegistry
+
+	// SessionDir is the project root this agent is rooted at (the git repo for
+	// mutating fan-out). Injected by main/buildSession.
+	SessionDir string
+
+	// WorktreeTools, if set, builds the implementer toolset rooted at a child
+	// worktree dir for mutating parallel fan-out (read/search/write/edit/move —
+	// NO bash/git/network). Injected by main (the agent package does not build
+	// tool policies). nil disables mutating fan-out.
+	WorktreeTools func(dir string) *tool.Registry
 }
 
 // maxToolOutput caps a single tool result fed back to the model, so a runaway
@@ -388,6 +399,8 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 		Router:           a.Router,
 		ModelProvider:    a.ModelProvider,
 		Bg:               a.Bg,
+		SessionDir:       a.SessionDir,
+		WorktreeTools:    a.WorktreeTools,
 	}
 	return sub, where
 }
