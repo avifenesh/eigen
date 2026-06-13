@@ -29,9 +29,9 @@ func switcherModel(t *testing.T) *model {
 		Backend: m.backend,
 		id:      "s2",
 		entries: []chat.SessionEntry{
-			{ID: "s1", Title: "first", Dir: "/tmp/a", Status: "idle"},
-			{ID: "s2", Title: "current", Dir: "/tmp/b", Status: "working"},
-			{ID: "s3", Title: "third", Dir: "/tmp/c", Status: "approval"},
+			{ID: "s1", Title: "first", Dir: "/tmp/a", Status: "idle", Turns: 4},
+			{ID: "s2", Title: "current", Dir: "/tmp/b", Status: "working", Turns: 2},
+			{ID: "s3", Title: "third", Dir: "/tmp/c", Status: "approval", Turns: 8},
 		},
 	}
 	return m
@@ -267,5 +267,30 @@ func TestSwitcherTypeToSearch(t *testing.T) {
 	}
 	if len(m.switchFiltered()) != all {
 		t.Fatal("cleared query should restore the full list")
+	}
+}
+
+func TestSwitcherHidesEmptySessions(t *testing.T) {
+	m := testModel(t)
+	m.backend = &switchBackend{
+		Backend: m.backend,
+		id:      "s2",
+		entries: []chat.SessionEntry{
+			{ID: "s1", Title: "real work", Dir: "/tmp/a", Status: "idle", Turns: 10},
+			{ID: "s2", Title: "current", Dir: "/tmp/b", Status: "idle", Turns: 0}, // current, kept though empty
+			{ID: "s9", Title: "", Dir: "/tmp/c", Status: "idle", Turns: 0},        // junk: drop
+			{ID: "s12", Title: "", Dir: "/tmp/d", Status: "idle", Turns: 0},       // junk: drop
+		},
+	}
+	m.openSwitcher()
+	got := map[string]bool{}
+	for _, e := range m.switchEntries {
+		got[e.ID] = true
+	}
+	if !got["s1"] || !got["s2"] {
+		t.Fatalf("real + current sessions must be listed, got %v", got)
+	}
+	if got["s9"] || got["s12"] {
+		t.Fatalf("empty sessions must be filtered out, got %v", got)
 	}
 }

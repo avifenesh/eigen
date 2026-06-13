@@ -37,6 +37,12 @@ func (f *sessionFilter) filtered(rows []SessionRow) (idx []int, hidden int) {
 		if f.source != "" && r.Source != f.source {
 			continue
 		}
+		// Hide empty sessions (0 messages) unless explicitly searching for one
+		// or showing all — a window opened but never used is pure clutter.
+		if r.Msgs == 0 && f.query == "" && !f.showAll {
+			hidden++
+			continue
+		}
 		if f.query != "" {
 			s := fuzzy.Score(r.Title+" "+r.Dir+" "+r.ID, f.query)
 			if s < 0 {

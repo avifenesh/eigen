@@ -197,8 +197,19 @@ func (m *model) openSwitcher() {
 		return
 	}
 	entries := sl.Sessions()
+	// Drop empty/no-turn sessions (0 messages) — they're noise in a "hop to a
+	// session" list (a window opened but never used, a crashed start). Keep
+	// the CURRENT session even if somehow empty so the list stays oriented.
+	cur := sl.SessionID()
+	cleaned := entries[:0:0]
+	for _, e := range entries {
+		if e.Turns > 0 || e.ID == cur {
+			cleaned = append(cleaned, e)
+		}
+	}
+	entries = cleaned
 	if len(entries) == 0 {
-		m.note("no daemon sessions")
+		m.note("no sessions yet")
 		return
 	}
 	m.switchEntries = entries
@@ -206,7 +217,7 @@ func (m *model) openSwitcher() {
 	m.switchIdx = 0
 	// Preselect the current session so the list opens oriented.
 	for i, e := range entries {
-		if e.ID == sl.SessionID() {
+		if e.ID == cur {
 			m.switchIdx = i
 			break
 		}

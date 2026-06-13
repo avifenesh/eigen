@@ -95,3 +95,25 @@ func TestFilterKeyCapture(t *testing.T) {
 		t.Fatalf("s should cycle to daemon, got %q", f.source)
 	}
 }
+
+func TestFilterHidesEmptySessions(t *testing.T) {
+	now := time.Now().UnixNano()
+	rows := []SessionRow{
+		{ID: "s1", Title: "real", Dir: "/p", Source: "daemon", Msgs: 12, Updated: now},
+		{ID: "s2", Title: "", Dir: "/p", Source: "daemon", Msgs: 0, Updated: now}, // empty: hide
+	}
+	f := sessionFilter{}
+	idx, hidden := f.filtered(rows)
+	if len(idx) != 1 || idx[0] != 0 {
+		t.Fatalf("empty session should be hidden, got idx=%v", idx)
+	}
+	if hidden != 1 {
+		t.Fatalf("hidden count should be 1, got %d", hidden)
+	}
+	// showAll reveals it.
+	f.showAll = true
+	idx, _ = f.filtered(rows)
+	if len(idx) != 2 {
+		t.Fatalf("showAll should reveal the empty session, got %d", len(idx))
+	}
+}
