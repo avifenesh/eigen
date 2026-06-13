@@ -35,7 +35,13 @@ type ModelInfo struct {
 	ThinkingBudget int
 
 	// Search reports the model supports server-side live search (xAI Grok Live
-	// Search over web + X). When set, the Grok provider enables search by default.
+	// Search over web + X). When set, the Grok provider enables search by
+	// default. PROBED 2026-06-13: Live Search grounds only via the PUBLIC xAI
+	// API (XAI_API_KEY) — over the grok-cli OIDC proxy (~/.grok/auth.json,
+	// no key) the legacy search_parameters field is deprecated and answers
+	// fall back to training data (grok-4 returned a 2024 date). grok.go
+	// correctly leaves search OFF on the proxy path; set XAI_API_KEY for real
+	// Live Search. GLM's web_search likewise did not ground a current date.
 	Search bool
 
 	// Vision reports the model accepts image inputs (Message.Images). When set,

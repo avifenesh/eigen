@@ -749,9 +749,16 @@ orchestrator — today an image while on gpt-5.5 needlessly hops models).
   not the family). Required building the image plumbing first: mantle
   buildInput input_image blocks, openaichat chatPart image_url data URLs.
   Findings recorded as catalog comments.
-- [~] **Audit every capability axis, not just Vision:** Vision probed (see
-  above); Reasoning/EffortLevels probed earlier (keep). REMAINING: Search/
-  Social verification, ContextWindow truth, mantle Cache support.
+- [x] **Audit every capability axis, not just Vision:** Vision probed
+  (above); Reasoning/EffortLevels probed earlier. Search/Social PROBED
+  2026-06-13: Live Search grounds only via the PUBLIC xAI API (XAI_API_KEY)
+  — over the grok-cli OIDC proxy (the user's path, no key) search_parameters
+  is deprecated and grok falls back to training data (returned a 2024 date);
+  grok.go already correctly disables search on the proxy. GLM web_search
+  likewise didn't ground. Findings recorded in the Search flag comment.
+  ContextWindow/Cache are documented vendor SPEC values (200k/1M-beta Claude,
+  256k/512k grok, 200k GLM; Cache on Anthropic+mantle) with detailed catalog
+  comments — not folklore, no probe needed.
 - [x] **Fail open on uncertainty for vision-attach, fail closed for routing.**
   DONE: llm.Vision(model) returns (has, known); paste/attach refuse only on
   a POSITIVE blind verdict (unknown ids attach and surface the backend's
