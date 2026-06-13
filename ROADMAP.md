@@ -1052,6 +1052,58 @@ Constraints / non-negotiables:
   path. The transport is the only new thing; the session model is unchanged.
 - Secrets never cross the wire in the clear; credential snapshots stay 0600.
 
+## Tier 20 — eigen in your pocket (outbound notify + approve, no port, no Tailscale)
+Goal: reach your agent fleet from your phone WITHOUT carrying Tailscale or an
+ssh client around — the real away-from-desk case is "unblock a stuck agent",
+not "code from the phone". The novel move (vs the rejected Tier 19 Wave 4b
+network listener): the daemon DIALS OUT to a channel you already carry, so
+there is NO inbound port, NO Tailscale, it's NAT-proof, and the transport's
+auth is something battle-tested instead of a static dotfile token.
+
+Why this is safe where the network listener wasn't (glm-5.2 review reasoning):
+outbound-only (nothing listens/exposed → strictly safer than a WS listener);
+auth = bot token (0600) + an ALLOWLIST of your own chat/account id (only you
+can talk to it); bounded blast radius — v1 exposes READ + APPROVE, not "run
+arbitrary command", so a worst-case compromise answers approvals on tasks you
+already started, not fresh RCE. Caveat: messages transit the provider's servers
+(not E2E), so v1 sends SUMMARIES + approvals, not full transcripts, by default.
+
+Slots into seams that already exist: the notifications/approvals tray (Tier 9
+Wave 5, alt+n) + `NotifyCmd` become the push side; a new outbound long-poll
+becomes the answer side; the daemon already brokers approvals across views, so
+the phone is just another "view" that can answer.
+
+- [ ] **Pick the channel (decide at build time).** Options captured:
+  (1) **Telegram bot** — already on the phone, free, TLS, rich inline buttons
+  ([approve]/[deny]), long-poll outbound (getUpdates) so no port; bot token +
+  chat-id allowlist. RECOMMENDED default. (2) **ntfy.sh** — lighter, notify +
+  action buttons, needs the ntfy app. (3) **self-hosted relay on an existing
+  EC2 box (dolly/dev…)** — daemon dials out to a tiny relay you own, a minimal
+  phone web page hits it over HTTPS; keeps data off any third party, more to
+  build. Telegram for v1; relay as the privacy-max variant later.
+- [ ] **Push: "needs you".** An agent hits an approval (or a long turn / error /
+  goal-nag) → outbound message to your phone with the session, the tool + args
+  summary, and inline [approve]/[deny] (and a "mute this session" action).
+  Reuses the tray's "what needs me" model; respects the existing ping/notify
+  throttling (no spam per token).
+- [ ] **Answer: approve/deny remotely.** Tapping a button routes back through
+  the SAME approval path any view uses (the daemon broadcasts → the phone view
+  answers); fail-closed on timeout exactly like a local gated approval.
+- [ ] **Read: status + recent.** Ask "what's running?" / "what did <session>
+  do?" → concise status from the live session list + last-note summaries
+  (NOT full transcripts by default — they transit the provider).
+- [~] **Converse (opt-in, more power + risk).** Send a follow-up message to a
+  running session from the phone. Separate explicit opt-in beyond notify+approve
+  — widens blast radius, so gated behind its own setting + the allowlist.
+- [ ] **Security/Constraints (carried from the review).** Outbound-only (never
+  bind a port); bot token 0600 + chat-id/account allowlist (reject anyone
+  else); v1 surface = read + approve only (no arbitrary command); summaries not
+  full transcripts by default; a kill switch (`eigen daemon dm off`) that drops
+  the outbound poller; audit-log every remote approval (who/when/tool/args
+  digest); get a cross-vendor security pass on the channel-auth model before
+  shipping (use a background task on a different vendor when the review tool is
+  down). OFF by default; enabled deliberately.
+
 ## Debt / bugs
 - [x] **Untitled daemon sessions still appear.** FIXED: (1) `Host.Restore` now
   calls `maybeTitle` per restored session, so sessions whose title never landed
