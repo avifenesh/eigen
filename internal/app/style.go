@@ -17,28 +17,28 @@ import (
 // Palette — sourced from internal/theme (shared with the chat TUI), so the
 // app shell and the chat are one product. Calm desaturated truecolor.
 var (
-	cAccent = theme.Accent // structure
-	cText   = theme.Text   // primary text
-	cDim    = theme.Dim    // secondary text / instructions
-	cFaint  = theme.Faint  // chrome, separators
-	cTitle  = theme.Title  // titles, the active thing
-	cOk     = theme.Ok     // healthy / available
-	cWarn   = theme.Warn   // attention / confirm
-	cErr    = theme.Err    // broken / missing
-	cViolet = theme.Tool   // counts, meta
+	cAccent  = theme.Accent  // structure
+	cText    = theme.Text    // primary text
+	cDim     = theme.Dim     // secondary text / instructions
+	cFaint   = theme.Faint   // chrome, separators
+	cTitle   = theme.Title   // titles, the active thing
+	cOk      = theme.Ok      // healthy / available
+	cWarn    = theme.Warn    // attention / confirm
+	cErr     = theme.Err     // broken / missing
+	cViolet  = theme.Tool    // counts, meta
+	cWorking = theme.Working // loud "actively working"
 )
 
 var (
-	sText    = lipgloss.NewStyle().Foreground(cText)
-	sDim     = lipgloss.NewStyle().Foreground(cDim)
-	sFaint   = lipgloss.NewStyle().Foreground(cFaint)
-	sTitle   = lipgloss.NewStyle().Foreground(cTitle).Bold(true)
-	sAccent  = lipgloss.NewStyle().Foreground(cAccent)
-	sOk      = lipgloss.NewStyle().Foreground(cOk)
-	sWarn    = lipgloss.NewStyle().Foreground(cWarn)
-	sErr     = lipgloss.NewStyle().Foreground(cErr)
-	sViolet  = lipgloss.NewStyle().Foreground(cViolet)
-	sWorking = lipgloss.NewStyle().Foreground(theme.Working).Bold(true) // loud "actively working"
+	sText   = lipgloss.NewStyle().Foreground(cText)
+	sDim    = lipgloss.NewStyle().Foreground(cDim)
+	sFaint  = lipgloss.NewStyle().Foreground(cFaint)
+	sTitle  = lipgloss.NewStyle().Foreground(cTitle).Bold(true)
+	sAccent = lipgloss.NewStyle().Foreground(cAccent)
+	sOk     = lipgloss.NewStyle().Foreground(cOk)
+	sWarn   = lipgloss.NewStyle().Foreground(cWarn)
+	sErr    = lipgloss.NewStyle().Foreground(cErr)
+	sViolet = lipgloss.NewStyle().Foreground(cViolet)
 
 	// Rail item styles.
 	sRailActive = lipgloss.NewStyle().Foreground(cTitle).Bold(true)

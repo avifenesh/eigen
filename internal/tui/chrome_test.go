@@ -1785,13 +1785,18 @@ func TestWorkflowCommandUnknown(t *testing.T) {
 func TestBrandMarkAnimatesWhileWorking(t *testing.T) {
 	m := testModel(t)
 	m.state = stInput
-	if m.brandMark() != brandGlyph {
-		t.Fatalf("idle mark should be the static λ, got %q", m.brandMark())
+	if !strings.Contains(m.brandMark(), brandGlyph) {
+		t.Fatalf("idle mark should contain the λ glyph, got %q", m.brandMark())
 	}
 	m.state = stRunning
-	m.brandTick = 2
-	if m.brandMark() != brandSweep[2] {
-		t.Fatalf("working mark should be the rotating vector frame, got %q", m.brandMark())
+	if !strings.Contains(m.brandMark(), brandGlyph) {
+		t.Fatalf("working mark should still be the λ, got %q", m.brandMark())
+	}
+	// The breath is a brightness ramp on the λ; assert the ramp actually varies
+	// (lipgloss strips color in a non-TTY test env, so check the ramp data, not
+	// the rendered string).
+	if breathRamp[0].Dark == breathRamp[3].Dark {
+		t.Fatal("the λ breath ramp should vary in brightness across frames")
 	}
 }
 

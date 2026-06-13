@@ -242,8 +242,8 @@ func TestLivePageNoDaemon(t *testing.T) {
 
 func TestLiveRailGlyphs(t *testing.T) {
 	// Working now animates a rotating vector (eigenvector sweep), not a dot.
-	if !strings.Contains(liveGlyph(daemon.StatusWorking, 0), "│") {
-		t.Error("working should be the rotating-vector loader")
+	if !strings.Contains(liveGlyph(daemon.StatusWorking, 0), "λ") {
+		t.Error("working should be the breathing λ mark")
 	}
 	if !strings.Contains(liveGlyph(daemon.StatusIdle, 0), "○") {
 		t.Error("idle should be a hollow dot")

@@ -157,10 +157,9 @@ func (m *model) View() string {
 		// type a message to queue (enter) or interrupt (esc) while it runs.
 		// Truncated to the width — a too-long line wraps and breaks the layout.
 		hint := dim("   enter queue · esc interrupt · alt+↑/↓ select · tab expand")
-		// Loud, on-brand loader: the rotating λ-vector in bold accent + the
-		// status in the working color — unmistakably "eigen is working".
-		loader := styleAccent.Bold(true).Render(brandFrame(m.brandTick))
-		run := loader + " " + styleWorking.Render(m.status) + dim(m.liveTokRate()) + m.queuedHint() + hint
+		// On-brand loader: a breathing λ + caret + synced dot, then the status
+		// in the working color — unmistakably "eigen is working", no jitter.
+		run := loaderView(m.brandTick) + " " + styleWorking.Render(m.status) + dim(m.liveTokRate()) + m.queuedHint() + hint
 		if m.width > 0 {
 			run = ansi.Truncate(run, m.width, "")
 		}

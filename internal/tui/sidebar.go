@@ -214,7 +214,7 @@ func (m *model) sidebarLines(h int) []string {
 		}
 		switch r.kind {
 		case sbBrand:
-			lines = append(lines, railPad(styleAccent.Bold(true).Render(m.brandMark()+" eigen"), rw))
+			lines = append(lines, railPad(m.brandMark()+styleAccent.Bold(true).Render(" eigen"), rw))
 		case sbTitle:
 			lines = append(lines, railPad(styleUser.Render(ansiTrunc(m.headerTitle(), contentW)), rw))
 		case sbCwd:

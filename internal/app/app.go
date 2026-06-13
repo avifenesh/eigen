@@ -580,14 +580,22 @@ func wrapText(s string, w int) string {
 }
 
 // liveGlyph renders a session's status. The WORKING state animates a rotating
-// vector (eigenvector sweep) in the loud working color, advanced by frame, so
-// an active session is unmistakable at a glance — not a static dot. Other
-// states are static.
+// liveGlyph renders a session's status. The WORKING state shows a breathing λ
+// (eigen's mark) — pulsing brightness on the loud working color, advanced by
+// frame — so an active session reads as alive and on-brand, not a static dot.
+// Other states are static.
 func liveGlyph(s daemon.Status, frame int) string {
 	switch s {
 	case daemon.StatusWorking:
-		sweep := []string{"│", "╱", "─", "╲"}
-		return sWorking.Render(sweep[frame%len(sweep)])
+		// Brightness pulse over 4 poll frames (the app polls ~1.2s, so a slow
+		// breath). dim → working → bright → working → loop.
+		ramp := []lipgloss.AdaptiveColor{
+			{Dark: "#8a5a44", Light: "#c98a63"}, // dim working
+			cWorking,                            // working
+			{Dark: "#e8a583", Light: "#9a4a18"}, // bright
+			cWorking,
+		}
+		return lipgloss.NewStyle().Foreground(ramp[frame%len(ramp)]).Bold(true).Render("λ")
 	case daemon.StatusApproval:
 		return sWarn.Render("◆") // amber: blocked on an approval
 	case daemon.StatusError:
