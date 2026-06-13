@@ -67,7 +67,7 @@ const (
 type Result struct {
 	Action    Action
 	Dir       string // ActionOpenChat: project directory ("" = current)
-	SessionID string // ActionResume: session store id; ActionAttach: daemon id
+	SessionID string // ActionResume: store id; ActionAttach: daemon id; ActionRemote: remote session id ("" = newest/new)
 	Task      string // ActionOpenChat: initial task (feed starters); "" = blank chat
 	Host      string // ActionRemote: `eigen --remote` target (saved name or user@host)
 }
@@ -180,6 +180,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case feedMsg:
 		m.data.Feed, m.data.FeedFresh = msg.f, true
 		m.home.syncFeed(m.data)
+		return m, nil
+	case machineSessionsMsg:
+		// Deliver a remote machine's session list to the Machines drill-in
+		// (ignore if the user already navigated away from that machine).
+		if m.machines.inside && m.machines.mach == msg.mach {
+			m.machines.loading = false
+			m.machines.sessions = msg.sessions
+			m.machines.loadErr = msg.err
+			m.machines.inner.count = len(msg.sessions)
+		}
 		return m, nil
 	case feedTickMsg:
 		// Periodic refresh while the app is open: rescan in the background and

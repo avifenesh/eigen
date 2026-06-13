@@ -113,13 +113,10 @@ func remoteRemove(name string) {
 	fmt.Printf("removed host %q\n", name)
 }
 
-// sshArgs are the base flags for every ssh invocation: no pty (-T) so the byte
-// stream isn't mangled by tty line discipline or `~.` escapes, and a keepalive
-// so idle remote sessions don't silently drop. The user's ~/.ssh/config still
-// applies (and wins for anything it sets).
+// sshArgs delegates to remote.SSHArgs (single source of truth for the base ssh
+// flags: -T no-pty + keepalive).
 func sshArgs(extra ...string) []string {
-	base := []string{"-T", "-o", "ServerAliveInterval=15"}
-	return append(base, extra...)
+	return remote.SSHArgs(extra...)
 }
 
 // remoteInstall bootstraps eigen onto a host that does NOT have it: detect the

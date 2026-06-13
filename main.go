@@ -310,7 +310,7 @@ func main() {
 			return
 		case app.ActionRemote:
 			// Open a session on a REMOTE machine over ssh.
-			runRemote(res.Host, cfg)
+			runRemoteSession(res.Host, res.SessionID, cfg)
 			return
 		}
 	}
