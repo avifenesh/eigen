@@ -373,16 +373,18 @@ func (s *Session) state() *SessionState {
 		Tokens:    sess.Tokens(),
 		Title:     title,
 		Model:     model,
-		MaxTokens: a.MaxContextTokens,
-		Perm:      string(a.Perm),
+		MaxTokens: a.CurrentMaxContextTokens(),
+		Perm:      string(a.CurrentPerm()),
 		Goal:      a.CurrentGoal(),
 	}
-	if a.Provider != nil {
-		st.Provider = a.Provider.Name()
-		if es, ok := a.Provider.(llm.EffortSetter); ok {
+	// Read the provider once under the agent lock (a /model switch from another
+	// window swaps it via SetLive — a direct field read would race).
+	if prov := a.CurrentProvider(); prov != nil {
+		st.Provider = prov.Name()
+		if es, ok := prov.(llm.EffortSetter); ok {
 			st.Effort = es.Effort()
 		}
-		if sr, ok := a.Provider.(llm.Searcher); ok {
+		if sr, ok := prov.(llm.Searcher); ok {
 			st.Search = sr.SearchMode()
 		}
 	}
@@ -401,14 +403,14 @@ func (s *Session) setGoal(g string) { s.agent.SetGoal(g) }
 // setEffort/setSearch forward to the provider's optional capability; false =
 // the model has no such setting or rejected the value.
 func (s *Session) setEffort(level string) bool {
-	if es, ok := s.agent.Provider.(llm.EffortSetter); ok {
+	if es, ok := s.agent.CurrentProvider().(llm.EffortSetter); ok {
 		return es.SetEffort(level)
 	}
 	return false
 }
 
 func (s *Session) setSearch(mode string) bool {
-	if sr, ok := s.agent.Provider.(llm.Searcher); ok {
+	if sr, ok := s.agent.CurrentProvider().(llm.Searcher); ok {
 		return sr.SetSearch(mode)
 	}
 	return false

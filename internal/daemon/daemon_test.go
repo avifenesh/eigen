@@ -491,3 +491,35 @@ func TestTurnPanicDoesNotCrashDaemonEmitsError(t *testing.T) {
 		}
 	}
 }
+
+// TestStateRaceWithModelSwitch pins the provider-field race fix: state() must
+// read the provider/perm/budget through locked accessors because a /model
+// switch (SetLive) swaps them from another goroutine. Run with -race.
+func TestStateRaceWithModelSwitch(t *testing.T) {
+	reg, _ := tool.NewRegistry()
+	a := &agent.Agent{Provider: echoProvider{}, Tools: reg, Perm: agent.PermAuto, MaxContextTokens: 9000}
+	s := newSession("x", "/tmp", "m", a)
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_ = s.state() // reads provider/perm/budget
+				_ = s.info()
+			}
+		}
+	}()
+	// Hammer live switches that mutate the same fields.
+	for i := 0; i < 200; i++ {
+		a.SetLive(echoProvider{}, nil, 8000+i)
+		a.SetPerm(agent.PermGated)
+		a.SetPerm(agent.PermAuto)
+	}
+	close(stop)
+	<-done
+}

@@ -220,6 +220,16 @@ func (a *Agent) CurrentGoal() string {
 	return a.Goal
 }
 
+// CurrentPerm returns the permission posture (live-safe read).
+func (a *Agent) CurrentPerm() Permission {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.Perm
+}
+
+// CurrentMaxContextTokens returns the budget (live-safe read).
+func (a *Agent) CurrentMaxContextTokens() int { return a.maxContextTokens() }
+
 // SetMaxContextTokens adjusts the context budget live.
 func (a *Agent) SetMaxContextTokens(n int) {
 	a.mu.Lock()
@@ -228,6 +238,15 @@ func (a *Agent) SetMaxContextTokens(n int) {
 }
 
 func (a *Agent) provider() llm.Provider {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.Provider
+}
+
+// CurrentProvider returns the live provider (race-safe read for callers like
+// the daemon's state snapshot, which runs on a different goroutine than a
+// /model SetLive swap).
+func (a *Agent) CurrentProvider() llm.Provider {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.Provider
