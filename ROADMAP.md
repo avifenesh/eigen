@@ -931,24 +931,33 @@ AUTHORED structure the user trusts and reruns. Builds on existing primitives:
 lifecycle-triggered commands), skills (reusable instructions), and the goal
 feature (#3, persistent north star + judge).
 
-- [ ] **Workflow definition.** A `~/.eigen/workflows/<name>.{json,md}` with
+- [x] **Workflow definition.** SHIPPED v1 (b354fa9): ~/.eigen/workflows/<name>.md —
+  frontmatter (name/description) + "## <id>" step sections; per-step directives
+  model:/check:/on_failure:/retries:; {{var.X}} placeholders. internal/workflow
+  parser, hand-rolled (skills grain, no YAML dep). A `~/.eigen/workflows/<name>.{json,md}` with
   ordered steps; each step = a prompt (or a skill invocation), an optional
   model/role, an optional success check (a goal_achieved-style judged
   condition), and what to do on failure (stop / retry / continue). Steps can
   reference prior steps' outputs.
-- [ ] **Runner.** `eigen run <workflow>` (headless, automation-friendly,
+- [x] **Runner.** SHIPPED v1 (b354fa9 headless + 687085e in-TUI): `eigen run
+  <wf> [--var k=v]` exit-coded (0/2/1), steps on ONE carried session, stderr
+  progress + stdout final; in-TUI /workflow <name> plays steps via the queue. `eigen run <workflow>` (headless, automation-friendly,
   exit-coded like #5) and an in-TUI `/workflow <name>` that executes steps in
   sequence, shows progress in the plan panel, and pauses for approval at gated
   steps. Reuse the agent loop per step; carry context forward (or compact
   between steps for long workflows).
-- [ ] **Branching + conditions.** Minimal control flow — a step's judged
+- [x] **Branching + conditions (v1).** SHIPPED (b354fa9): per-step opt-in
+  check: judged cross-vendor → on_failure stop|continue|retry(retries:N).
+  Linear + on-failure, not a DAG (as scoped). Minimal control flow — a step's judged
   outcome picks the next step (success → ship, failure → fix-then-retry). Keep
   it small and legible (not a general DAG engine first); a linear sequence with
   on-failure branches covers most real processes.
-- [ ] **Triggers.** A workflow can be bound to a hook event (#11) or the feed
+- [~] **Triggers — DEFERRED to v2.** Bind a workflow to a hook event / feed
+  item. Not built; the runner + def exist, so this is wiring on top. A workflow can be bound to a hook event (#11) or the feed
   (#6) — e.g. "on a new review-requested PR, run the review workflow" — so
   repeatable processes fire proactively, not just on demand.
-- [ ] **Authoring from history.** "Save the last N turns as a workflow" — turn
+- [~] **Authoring from history — DEFERRED to v2.** "Save the last N turns as
+  a workflow." Not built v1. "Save the last N turns as a workflow" — turn
   an ad-hoc successful session into a replayable workflow, the way skills
   capture reusable instructions.
 
