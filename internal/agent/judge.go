@@ -90,3 +90,28 @@ func trimVerdictReason(ln string) string {
 	}
 	return ln
 }
+
+// JudgeClaim verifies a free-standing condition against evidence — like
+// JudgeGoal but for an arbitrary claim (workflow step checks), with no
+// dependency on the agent's Goal. Independence comes from the fresh context +
+// strict prompt; judge may be nil (falls back to the agent's provider).
+func (a *Agent) JudgeClaim(ctx context.Context, judge llm.Provider, condition, evidence string) (bool, string, error) {
+	if judge == nil {
+		judge = a.provider()
+	}
+	if judge == nil {
+		return false, "", fmt.Errorf("no judge model available")
+	}
+	resp, err := judge.Complete(ctx, llm.Request{
+		System: "You judge task completion claims. Be strict and literal.",
+		Messages: []llm.Message{{
+			Role: llm.RoleUser,
+			Text: fmt.Sprintf(judgePrompt, condition, evidence),
+		}},
+	})
+	if err != nil {
+		return false, "", fmt.Errorf("judge: %w", err)
+	}
+	verdict, reason := parseVerdict(resp.Text)
+	return verdict, reason, nil
+}

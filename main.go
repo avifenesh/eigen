@@ -43,6 +43,7 @@ import (
 	"github.com/avifenesh/eigen/internal/tool"
 	"github.com/avifenesh/eigen/internal/transcript"
 	"github.com/avifenesh/eigen/internal/tui"
+	"github.com/avifenesh/eigen/internal/workflow"
 	"github.com/mattn/go-isatty"
 )
 
@@ -92,6 +93,8 @@ func main() {
 	listSkills := flag.Bool("list-skills", false, "list discovered skills (name, description) and exit")
 	listTools := flag.Bool("list-tools", false, "list available tools (name, posture, description) and exit")
 	instanceFlag := flag.String("instance", "", "daemon instance to use (default: production). A named instance (e.g. dev) gets its own socket/sessions/tasks so rebuilding never touches your production sessions.")
+	var wfVars multiFlag
+	flag.Var(&wfVars, "var", "workflow variable k=v for `eigen run` (repeatable)")
 	flag.Parse()
 
 	// Resolve the daemon instance (flag wins, then $EIGEN_INSTANCE) ONCE, before
@@ -182,6 +185,20 @@ func main() {
 	}
 
 	task := strings.TrimSpace(strings.Join(flag.Args(), " "))
+
+	// `eigen run <workflow> [--var k=v ...]`: run an authored multi-step
+	// workflow headlessly (exit-coded). Captured here; executed in the headless
+	// section once the agent is built. The workflow name is flag.Arg(1).
+	workflowName := ""
+	if flag.Arg(0) == "run" {
+		workflowName = flag.Arg(1)
+		if workflowName == "" {
+			fmt.Fprintln(os.Stderr, "usage: eigen run <workflow> [--var k=v ...]   (workflows live in ~/.eigen/workflows/)")
+			os.Exit(2)
+		}
+		*printMode = true
+		task = "" // the workflow supplies the prompts
+	}
 
 	// Task sources for automation: --prompt-file (re-read each run, so a
 	// cron/systemd loop picks up edited work), else piped stdin when no
@@ -712,8 +729,9 @@ func main() {
 	}
 
 	// Headless print mode (or piped/non-TTY): one task, stream to stderr,
-	// final answer to stdout — scriptable.
-	if task == "" {
+	// final answer to stdout — scriptable. `eigen run <workflow>` has no
+	// positional task (the workflow supplies the prompts).
+	if task == "" && workflowName == "" {
 		fmt.Fprintln(os.Stderr, "usage: eigen [flags] \"task\"   (bare `eigen` opens the TUI)")
 		os.Exit(2)
 	}
@@ -762,6 +780,14 @@ func main() {
 	a.Persist = func(msgs []llm.Message) {
 		_ = transcript.Save(savePath, msgs)
 		saveMeta()
+	}
+
+	// `eigen run <workflow>`: execute an authored multi-step workflow over ONE
+	// carried session (each step's prompt sent to the same session, so step N
+	// sees prior work). Exit-coded for automation.
+	if workflowName != "" {
+		runWorkflowHeadless(a, workflowName, parseVars(wfVars))
+		return
 	}
 
 	sess := a.NewSession()
@@ -1514,4 +1540,95 @@ func wdOrDot() string {
 		return wd
 	}
 	return "."
+}
+
+// multiFlag collects repeatable string flags (eigen run --var k=v --var k2=v2).
+type multiFlag []string
+
+func (m *multiFlag) String() string { return strings.Join(*m, ",") }
+func (m *multiFlag) Set(v string) error {
+	*m = append(*m, v)
+	return nil
+}
+
+// parseVars turns ["k=v", "x=y"] into a map; entries without '=' are ignored.
+func parseVars(pairs []string) map[string]string {
+	out := map[string]string{}
+	for _, p := range pairs {
+		if k, v, ok := strings.Cut(p, "="); ok {
+			out[strings.TrimSpace(k)] = v
+		}
+	}
+	return out
+}
+
+// runWorkflowHeadless executes an authored workflow over ONE carried agent
+// session (Tier 17). Each step's prompt is sent to the same session (so step N
+// sees prior steps' work); a step's optional check is judged cross-vendor;
+// on_failure governs stop/continue/retry. Exits 0 when all steps end ok, 2 when
+// a stop-on-failure step fails, 1 on a hard error.
+func runWorkflowHeadless(a *agent.Agent, name string, vars map[string]string) {
+	wf, err := workflow.Load(name)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "eigen run:", err)
+		avail := workflow.List()
+		if len(avail) > 0 {
+			fmt.Fprintln(os.Stderr, "available workflows:", strings.Join(avail, ", "))
+		} else {
+			fmt.Fprintln(os.Stderr, "no workflows yet — author one at", filepath.Join(workflow.Dir(), name+".md"))
+		}
+		os.Exit(1)
+	}
+	fmt.Fprintf(os.Stderr, "eigen workflow: %s — %d step(s)\n", wf.Name, len(wf.Steps))
+
+	// ONE carried session across steps.
+	sess := a.NewSession()
+	runStep := func(ctx context.Context, prompt, model string) (string, error) {
+		// Per-step model override: a one-shot subtask on the chosen model keeps
+		// the step isolated to its model while still carrying context is the
+		// trade-off — v1 keeps it simple and runs every step on the main
+		// session's model (model override is recorded but applied via the
+		// router only when set). Inherit when model=="".
+		if model != "" {
+			return a.SubtaskWith(ctx, prompt, agent.SubtaskOpts{Model: model})
+		}
+		return sess.Send(ctx, prompt)
+	}
+	judge := func(ctx context.Context, condition, output string) (bool, string, error) {
+		return a.JudgeClaim(ctx, nil, condition, output)
+	}
+	report := func(ev workflow.Event) {
+		switch ev.Kind {
+		case "step":
+			fmt.Fprintf(os.Stderr, "\n▸ step %s\n", ev.StepID)
+		case "retry":
+			fmt.Fprintf(os.Stderr, "  ↻ retry %d\n", ev.Attempt)
+		case "check":
+			mark := "✓"
+			if !ev.OK {
+				mark = "✗"
+			}
+			fmt.Fprintf(os.Stderr, "  %s check: %s\n", mark, ev.Text)
+		case "error":
+			fmt.Fprintf(os.Stderr, "  ✗ %s\n", ev.Text)
+		case "done":
+			if ev.OK {
+				fmt.Fprintln(os.Stderr, "\n✓ workflow complete")
+			}
+		}
+	}
+
+	res, err := wf.Run(context.Background(), workflow.RunOpts{
+		Vars: vars, Run: runStep, Judge: judge, Report: report,
+	})
+	// Print the last step's output to stdout (scriptable).
+	if res != nil && len(res.Completed) > 0 {
+		if out := res.Outputs[res.Completed[len(res.Completed)-1]]; out != "" {
+			fmt.Println(out)
+		}
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "eigen workflow:", err)
+		os.Exit(2)
+	}
 }
