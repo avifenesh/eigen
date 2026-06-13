@@ -882,13 +882,25 @@ detection — Tier 12), the `task_status` collect surface, and the auto-router
 dream #12 (sub-agents: "named roles, parallelism, escalation") made concrete,
 and the substrate for #13 (ultraplan).
 
-- [ ] **Named roles, not anonymous subtasks.** A subtask can carry a role
+- [x] **Named roles, not anonymous subtasks.** SHIPPED v1 (7e1ca41): hardcoded
+  READ-ONLY roles researcher/reviewer/summarizer (system framing + tool
+  allowlist + default difficulty); SubtaskOpts.Role; Registry.Subset builds an
+  immutable per-child toolset. Mutating roles (implementer/tester) DEFERRED to
+  v2 (need isolated workspaces + serialized approvals). Config-file roles cut
+  (hardcoded for v1 per review).
+- [~] **(original) Named roles, not anonymous subtasks.** A subtask can carry a role
   (e.g. `researcher`, `implementer`, `reviewer`, `tester`) that sets its system
   framing, tool allowlist, and default model tier — so a `reviewer` is the
   cross-vendor critic (reuse `llm.CrossReviewer`/#25), an `implementer` gets
   write/edit/bash, a `researcher` gets read/grep/websearch only. Roles are data
   (config-definable), not hardcoded.
-- [ ] **Parallel fan-out with a bounded pool.** Today `task(background=true)`
+- [x] **Parallel fan-out with a bounded pool.** SHIPPED v1 (7e1ca41): task_group
+  tool + Agent.TaskGroup — bounded worker pool (default 3/max 6, max 8
+  children), parent-ctx cancel + per-child/group timeouts, result caps, panic
+  recovery, stable input-order report. READ-ONLY children only (enforced
+  mechanically), which is what makes it safe (no approval race, no concurrent
+  writes). -race verified + live-verified with opus.
+- [~] **(original) Parallel fan-out with a bounded pool.** Today `task(background=true)`
   detaches one goroutine per call; a plan that spawns N sub-agents needs a
   bounded worker pool (max concurrent, per the host's resource budget — the
   same discipline as the browser/MCP process manager), a join/barrier so the
