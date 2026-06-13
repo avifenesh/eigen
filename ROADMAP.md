@@ -395,8 +395,8 @@ the transcript would drop below 40 cols). /changes toggles. Live-verified
       transcript's 40-col minimum; the embedded terminal PTY reshapes on
       resize. Keyboard parity: widen/narrow palette actions (4-col steps).
       Widths are per-window (not yet persisted).
-- [ ] notifications/approvals tray; persisted panel widths; multi-pane (two
-      transcripts side by side).
+- [ ] notifications/approvals tray; ~~persisted panel widths~~ (SHIPPED
+      032ebd2: ~/.eigen/ui.json); multi-pane (two transcripts side by side).
 
 ## Tier 10 — the app shell, clickable + structural (mouse parity + framing)
 
