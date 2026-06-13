@@ -32,6 +32,7 @@ func Fields() []Field {
 		{Key: "route", Desc: "auto-router: per task, pick the cheapest capable model (/route toggles live)", Options: []string{"true", "false"}},
 		{Key: "route_providers", Desc: "providers the auto-router may roam across (space-separated); empty = stay on the current provider", Dynamic: "providers", Multi: true},
 		{Key: "observe", Desc: "structured activity log at ~/.eigen/observe (metadata only — no content)", Options: []string{"true", "false"}},
+		{Key: "local_background", Desc: "route background chores (titling, dreaming, compaction, scans) to a LOCAL model (EIGEN_LLAMA_BASE_URL) when it's up AND ready — saves frontier budget; opt-in, falls back when the local model is busy/absent", Options: []string{"true", "false"}},
 	}
 }
 

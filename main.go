@@ -15,8 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net"
-	"net/url"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -909,15 +908,24 @@ func providerContextDefault(provider string) int {
 }
 
 // smallProvider picks a small/fast/cheap model for background chores (session
-// titling, dreaming, skill vulnerability scans): a local llama if configured
-// (free), else Haiku on the same Bedrock account, else the main provider.
+// titling, dreaming, skill vulnerability scans, compaction summaries). A LOCAL
+// model is used ONLY when the user opted in (config local_background, passed as
+// localBg) AND the local server is up AND READY to serve — otherwise the usual
+// small model (grok/haiku) handles it. Falling through on "configured but not
+// ready" is deliberate: the local server may be down, or up-but-loading another
+// model, in which case background work must not stall on it.
 func smallProvider(main llm.Provider) llm.Provider {
-	// Prefer a local llama endpoint ONLY when it is actually reachable — a
-	// configured-but-dead local server must not silently swallow every small-
-	// model job (titling, dream, skill-scan, compaction). Health-check first.
-	if base := os.Getenv("EIGEN_LLAMA_BASE_URL"); base != "" && llamaReachable(base) {
-		if lp, err := llm.New("llama", os.Getenv("EIGEN_TITLE_MODEL")); err == nil {
-			return lp
+	return smallProviderFor(main, localBackgroundEnabled())
+}
+
+// smallProviderFor is smallProvider with the local opt-in passed explicitly
+// (testable; the package-level smallProvider reads the config).
+func smallProviderFor(main llm.Provider, localBg bool) llm.Provider {
+	if localBg {
+		if base := os.Getenv("EIGEN_LLAMA_BASE_URL"); base != "" && localReady(base) {
+			if lp, err := llm.New("llama", os.Getenv("EIGEN_TITLE_MODEL")); err == nil {
+				return lp
+			}
 		}
 	}
 	// Prefer an explicit small model; else grok composer when credentialed
@@ -938,27 +946,47 @@ func smallProvider(main llm.Provider) llm.Provider {
 	return main
 }
 
-// llamaReachable does a fast TCP dial to the llama endpoint's host:port, so a
-// configured-but-down local model is skipped instead of failing every job.
-func llamaReachable(base string) bool {
-	u, err := url.Parse(base)
-	if err != nil || u.Host == "" {
-		return false
+// localBackgroundEnabled reports the config's local_background opt-in (env
+// EIGEN_LOCAL_BACKGROUND overrides for a one-off run).
+func localBackgroundEnabled() bool {
+	if v := os.Getenv("EIGEN_LOCAL_BACKGROUND"); v != "" {
+		return v == "1" || strings.EqualFold(v, "true")
 	}
-	host := u.Host
-	if u.Port() == "" {
-		if u.Scheme == "https" {
-			host += ":443"
-		} else {
-			host += ":80"
+	return config.Load().LocalBackground
+}
+
+// localReady reports whether the local llama server is up AND ready to serve —
+// not merely that the port is open. A llama-server that's still loading a model
+// (or busy chaining another) answers /health with a non-OK status; we require a
+// ready signal so background jobs don't stall on a not-yet-serving server.
+// Checks /health at the HOST ROOT (llama.cpp serves it there, not under /v1),
+// then falls back to /v1/models for servers without /health.
+func localReady(base string) bool {
+	root := strings.TrimRight(base, "/")
+	root = strings.TrimSuffix(root, "/v1")
+	client := &http.Client{Timeout: 600 * time.Millisecond}
+	// llama.cpp /health: 200 + {"status":"ok"} when ready; 503 while loading.
+	if resp, err := client.Get(root + "/health"); err == nil {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<10))
+		resp.Body.Close()
+		switch {
+		case resp.StatusCode == http.StatusOK:
+			s := strings.ToLower(string(body))
+			// Ready unless the body explicitly says loading/error.
+			return !strings.Contains(s, "loading") && !strings.Contains(s, "error")
+		case resp.StatusCode == http.StatusNotFound:
+			// No /health endpoint — fall through to the /v1/models probe below.
+		default:
+			// 503 (loading) or any other status → up but not serving yet.
+			return false
 		}
 	}
-	conn, err := net.DialTimeout("tcp", host, 400*time.Millisecond)
-	if err != nil {
-		return false
+	// No /health (or no endpoint): accept a 200 from /v1/models as "serving".
+	if resp, err := client.Get(strings.TrimRight(base, "/") + "/models"); err == nil {
+		defer resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
 	}
-	_ = conn.Close()
-	return true
+	return false
 }
 
 // titleProvider is retained as an alias for smallProvider (session titling uses

@@ -37,6 +37,15 @@ type Config struct {
 	Observe     *bool `json:"observe,omitempty"`
 	DreamOnIdle bool  `json:"dream_on_idle"`
 	IdleMinutes int   `json:"idle_minutes"`
+
+	// LocalBackground routes BACKGROUND chores (session titling, dreaming,
+	// compaction summaries, skill scans, feed suggestions) to a LOCAL model
+	// (EIGEN_LLAMA_BASE_URL) when it's up AND ready to serve — saving the
+	// frontier/Bedrock budget. OPT-IN (default off): a local server's quality
+	// varies and it may be busy loading another model, so the user enables it
+	// deliberately. When off, or when the local model isn't ready, background
+	// work falls back to the usual small model (grok/haiku).
+	LocalBackground bool `json:"local_background"`
 }
 
 // Load reads ~/.eigen/config.json. A missing or malformed file yields a zero
@@ -156,6 +165,12 @@ func Set(c *Config, key, value string) error {
 		c.Route = b
 	case "route_providers":
 		c.RouteProviders = splitFields(value)
+	case "local_background":
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("local_background must be true|false")
+		}
+		c.LocalBackground = b
 	case "observe":
 		b, err := strconv.ParseBool(value)
 		if err != nil {
@@ -219,6 +234,7 @@ func View(c Config) string {
 	}
 	fmt.Fprintf(&b, "%-14s = %s\n", "route_providers", rp)
 	fmt.Fprintf(&b, "%-14s = %t\n", "observe", c.ObserveEnabled())
+	fmt.Fprintf(&b, "%-16s = %t\n", "local_background", c.LocalBackground)
 	if len(c.SkillsDirs) > 0 {
 		fmt.Fprintf(&b, "%-14s = %s (file-only)\n", "skills_dirs", strings.Join(c.SkillsDirs, ":"))
 	}
@@ -262,6 +278,8 @@ func Get(c Config, key string) string {
 		return strings.Join(c.RouteProviders, " ")
 	case "observe":
 		return strconv.FormatBool(c.ObserveEnabled())
+	case "local_background":
+		return strconv.FormatBool(c.LocalBackground)
 	}
 	return ""
 }
