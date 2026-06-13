@@ -89,6 +89,7 @@ func installMachine(mach int, target, binary string) tea.Cmd {
 
 func (s *machinesState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+	remote.DebugLog("machines key=%q inside=%v cursor=%d", key, s.inside, s.list.cursor)
 	visible := m.height - 6
 	if s.inside {
 		return s.updateInside(m, key, visible)

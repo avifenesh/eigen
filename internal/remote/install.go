@@ -108,10 +108,11 @@ func pushCreds(target, envSnapshot string, step func(string)) error {
 	return nil
 }
 
-// remoteLog appends a timestamped line to ~/.eigen/remote.log — a durable trace
-// of remote ops (install/list) so TUI failures (where stderr is hidden) are
-// diagnosable after the fact. Best-effort.
-func remoteLog(format string, args ...any) {
+// DebugLog appends a timestamped line to ~/.eigen/remote.log — a durable trace
+// of remote ops (install/list) AND app-side actions (key routing) so TUI
+// failures (where stderr is hidden) are diagnosable after the fact.
+// Best-effort.
+func DebugLog(format string, args ...any) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return
@@ -123,6 +124,9 @@ func remoteLog(format string, args ...any) {
 	defer f.Close()
 	fmt.Fprintf(f, "%s "+format+"\n", append([]any{time.Now().Format("15:04:05")}, args...)...)
 }
+
+// remoteLog is the internal alias used by this package.
+func remoteLog(format string, args ...any) { DebugLog(format, args...) }
 
 // runSSHQuiet runs a remote command, discarding output (errors carry context).
 func runSSHQuiet(target, cmd string) error {
