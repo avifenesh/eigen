@@ -39,6 +39,7 @@ import (
 	"github.com/avifenesh/eigen/internal/observe"
 	"github.com/avifenesh/eigen/internal/session"
 	"github.com/avifenesh/eigen/internal/skill"
+	"github.com/avifenesh/eigen/internal/theme"
 	"github.com/avifenesh/eigen/internal/tool"
 	"github.com/avifenesh/eigen/internal/transcript"
 	"github.com/avifenesh/eigen/internal/tui"
@@ -189,6 +190,13 @@ func main() {
 	// a freshly-installed remote binary; mirrors the --version flag).
 	if flag.Arg(0) == "version" {
 		fmt.Println("eigen", llm.Version)
+		return
+	}
+
+	// `eigen theme`: print the design-system swatch (every role + glyph +
+	// weight) — the living reference from docs/design-system.md.
+	if flag.Arg(0) == "theme" {
+		fmt.Print(theme.Swatch())
 		return
 	}
 

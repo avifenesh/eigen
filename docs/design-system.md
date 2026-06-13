@@ -6,8 +6,7 @@ color, type weight, glyphs, spacing, and the rules that keep the chat TUI
 
 Status: **v1 — 2026-06-14.** Role vocabulary locked, the brand rule applied
 across the chat TUI + app shell, all raw color literals folded into theme roles
-with a drift-guard test enforcing it. Remaining: a living swatch + a re-theme
-proof. When in doubt, this doc wins; update it in the same commit as any visual
+with a drift-guard test enforcing it. Remaining: a re-theme proof. When in doubt, this doc wins; update it in the same commit as any visual
 change.
 
 ---
@@ -158,9 +157,10 @@ Bootstrapped here; the full effort:
    folded into roles. (Screenshot-verified in both surfaces.)
 3. **App-shell parity** — DONE: `internal/app/style.go` aliases all map to
    `theme.*` (no literals); the drift-guard test enforces it tree-wide.
-4. **A living swatch** — TODO: a `eigen theme` command (or hidden debug page)
-   that renders every role + glyph + weight, so changes are eyeballed in one
-   place and screenshots are reproducible.
+4. **A living swatch** — DONE: `eigen theme` renders every role (with a color
+   chip), the animation ramps, the weight scale, and the glyph vocabulary +
+   the brand rule (internal/theme/swatch.go). Run it to eyeball the whole
+   system / verify a re-theme.
 5. **Re-theme proof** — TODO: a one-edit alternate palette (e.g. a warmer or
    higher-contrast variant) to prove roles-not-hues holds. Possibly a config
    `theme:` key selecting a named palette.

@@ -1157,8 +1157,9 @@ session, state highlights) uses a DIFFERENT theme role.
 - [x] **Drift guard test.** SHIPPED: `internal/theme/drift_test.go` fails the
   build if any raw `lipgloss.Color(`/`AdaptiveColor{` appears outside
   internal/theme.
-- [ ] **Living swatch** — `eigen theme` / debug page rendering every role +
-  glyph + weight (reproducible screenshots).
+- [x] **Living swatch** — SHIPPED: `eigen theme` renders every role (color
+  chip), the ramps, the weight scale, the glyph vocabulary + the brand rule
+  (internal/theme/swatch.go).
 - [ ] **Re-theme proof** — a one-edit alternate palette (maybe a config
   `theme:` key) to prove roles-not-hues holds.
 
