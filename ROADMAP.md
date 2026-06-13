@@ -1014,33 +1014,33 @@ protocol is already transport-agnostic; only the listener is unix-local and the
 auth model is "whoever can open the socket." That's the seam to extend.
 
 A. EIGEN REACHES OUT (run agents on remote machines)
-- [ ] **SSH-backed sessions.** A session whose tools execute on a remote host
+- [x] **SSH-backed sessions.** SHIPPED (4666bb2): `eigen --remote user@host[:dir]` → `ssh -T host eigen daemon stdio` → local TUI view drives a REMOTE daemon; whole agent loop runs remote. Transport seam (52d6c68): Client over io.ReadWriteCloser + `eigen daemon stdio` bridge. A session whose tools execute on a remote host
   over SSH: bash runs there, file tools read/write there. Cleanest path is an
   `eigen daemon` running ON the remote (reached over an SSH-forwarded socket),
   so the full agent loop is local to the code — not piping every tool call
   over the wire. `eigen --remote user@host[:dir]` opens/attaches a session on
   the remote daemon; the local TUI is just a view (the daemon/view split
   already supports this).
-- [ ] **Bootstrap.** `eigen remote install user@host` copies/builds the binary
+- [x] **Bootstrap.** SHIPPED (2ff1be0): `eigen remote install <user@host[:dir]|name>` — ssh `uname -sm`, refuse unknown arch/OS, copy the running binary when targets match else cross-compile (CGO_ENABLED=0 static), scp + atomic mv + verify. No GitHub release needed (20MB static exe). ~~systemd unit on remote~~ deferred (the auto-spawning `eigen daemon stdio` makes a persistent remote unit optional). `eigen remote install user@host` copies/builds the binary
   and sets up the remote daemon (systemd user unit + credential snapshot,
   reusing `eigen daemon install`). Detect arch/OS; refuse unknown.
-- [ ] **Per-host config.** Remote model/creds/roots (the remote may have
+- [x] **Per-host config.** SHIPPED (3d056bb): ~/.eigen/hosts.json (0600), `eigen remote add/list/remove`; a saved name carries ssh/dir/model/perm defaults that seed remote sessions. Remote model/creds/roots (the remote may have
   different AWS profiles, a different repo layout). A `~/.eigen/hosts.json`.
 
 B. CONTROL YOUR EIGEN FROM ANOTHER MACHINE (phone/laptop → desktop daemon)
-- [ ] **Network listener for the daemon.** Optionally bind the daemon to a TCP
+- [~] **Network listener for the daemon.** DEFERRED (Wave 4b): the ssh-forwarded-socket path (below) covers control-from-another-machine with zero new auth surface; a raw network listener needs the cross-vendor security review first (review tool was down — mantle 500). Optionally bind the daemon to a TCP
   socket (loopback by default; LAN/Tailscale when explicitly enabled) in
   addition to the unix socket — same protocol. Off by default.
-- [ ] **Auth + transport security.** The unix socket trusts filesystem perms;
+- [~] **Auth + transport security.** DEFERRED with the network listener (Wave 4b); design drafted (WebSocket ws/wss, off by default, fail-closed without a token in ~/.eigen/daemon.env, bearer-token-from-env), pending cross-vendor review. The unix socket trusts filesystem perms;
   a network socket MUST NOT. Require a token (shared secret in
   ~/.eigen/daemon.env, already 0600) and TLS, or — simpler and safer — document
   "expose only over SSH/Tailscale, never raw." Fail closed: no token ⇒ no
   network listener.
-- [ ] **Thin remote client.** `eigen attach --host <addr>` (or the app's
+- [x] **Thin remote client.** SHIPPED (7b34f79) as `eigen attach --sock <path>` over an ssh -L forwarded socket — reuses ssh's crypto, no token/TLS/listener. (`--host <ws-addr>` waits on Wave 4b.) `eigen attach --host <addr>` (or the app's
   session list) over the network transport, so a laptop attaches to the
   desktop's running sessions — the daemon already replays transcript + streams
   live, and views are stateless, so this is mostly transport + auth.
-- [ ] **Mobile-friendly read/notify (stretch).** A minimal read-only status +
+- [~] **Mobile-friendly read/notify (stretch).** DEFERRED with Wave 4b (needs the network listener). A minimal read-only status +
   approval-answer surface (the notifications/approvals tray is the model) so a
   phone can see "needs you" and answer an approval remotely.
 
