@@ -401,7 +401,7 @@ func main() {
 		}
 		return formatTaskStatus(a.Bg, id, all), nil
 	}
-	taskGroup := func(ctx context.Context, subs []tool.GroupSubtaskArg, workers int) (string, error) {
+	taskGroup := func(ctx context.Context, subs []tool.GroupSubtaskArg, workers int, synthesize string) (string, error) {
 		if a == nil {
 			return "", fmt.Errorf("task_group unavailable")
 		}
@@ -409,7 +409,7 @@ func main() {
 		for i, s := range subs {
 			gs[i] = agent.GroupSubtask{Task: s.Task, Role: s.Role, Kind: s.Kind, Difficulty: s.Difficulty, Model: s.Model}
 		}
-		return a.TaskGroup(ctx, gs, workers)
+		return a.TaskGroup(ctx, gs, workers, synthesize)
 	}
 	taskGroupMut := func(ctx context.Context, subs []tool.GroupSubtaskArg, workers int) (string, error) {
 		if a == nil {

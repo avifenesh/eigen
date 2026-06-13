@@ -34,8 +34,9 @@ type GroupSubtaskArg struct {
 }
 
 // TaskGroupRun is injected by main/buildSession: run several read-only
-// sub-agents in parallel and return a joined report.
-type TaskGroupRun func(ctx context.Context, subs []GroupSubtaskArg, workers int) (string, error)
+// sub-agents in parallel and return a joined report. synthesize, when non-empty,
+// runs a final merge step answering that question over the children's reports.
+type TaskGroupRun func(ctx context.Context, subs []GroupSubtaskArg, workers int, synthesize string) (string, error)
 
 // Task returns the sub-agent delegation tool. Foreground mode runs to
 // completion and returns the final answer. background=true starts a detached
@@ -146,15 +147,17 @@ func TaskGroup(run TaskGroupRun) Definition {
         "additionalProperties": false
       }
     },
-    "workers": { "type": "integer", "description": "Max concurrent subtasks (default 3, max 6)." }
+    "workers": { "type": "integer", "description": "Max concurrent subtasks (default 3, max 6)." },
+    "synthesize": { "type": "string", "description": "Optional: a question to answer by MERGING the children's reports into one coherent result (a final reasoning pass over all their findings). Omit to just get the raw per-child reports." }
   },
   "required": ["subtasks"],
   "additionalProperties": false
 }`),
 		Run: func(ctx context.Context, args json.RawMessage) (string, error) {
 			var in struct {
-				Subtasks []GroupSubtaskArg `json:"subtasks"`
-				Workers  int               `json:"workers"`
+				Subtasks   []GroupSubtaskArg `json:"subtasks"`
+				Workers    int               `json:"workers"`
+				Synthesize string            `json:"synthesize"`
 			}
 			if err := json.Unmarshal(args, &in); err != nil {
 				return "", fmt.Errorf("invalid arguments: %w", err)
@@ -162,7 +165,7 @@ func TaskGroup(run TaskGroupRun) Definition {
 			if run == nil {
 				return "", fmt.Errorf("task_group is not available")
 			}
-			return run(ctx, in.Subtasks, in.Workers)
+			return run(ctx, in.Subtasks, in.Workers, in.Synthesize)
 		},
 	}
 }

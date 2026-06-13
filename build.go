@@ -110,7 +110,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		}
 		return formatTaskStatus(deps.Agent.Bg, id, all), nil
 	}
-	taskGroup := func(ctx context.Context, subs []tool.GroupSubtaskArg, workers int) (string, error) {
+	taskGroup := func(ctx context.Context, subs []tool.GroupSubtaskArg, workers int, synthesize string) (string, error) {
 		if deps.Agent == nil {
 			return "", fmt.Errorf("task_group unavailable")
 		}
@@ -118,7 +118,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		for i, s := range subs {
 			gs[i] = agent.GroupSubtask{Task: s.Task, Role: s.Role, Kind: s.Kind, Difficulty: s.Difficulty, Model: s.Model}
 		}
-		return deps.Agent.TaskGroup(ctx, gs, workers)
+		return deps.Agent.TaskGroup(ctx, gs, workers, synthesize)
 	}
 	taskGroupMut := func(ctx context.Context, subs []tool.GroupSubtaskArg, workers int) (string, error) {
 		if deps.Agent == nil {

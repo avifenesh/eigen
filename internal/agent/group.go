@@ -2,11 +2,15 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/tool"
 )
 
 // Multi-agent fan-out (Tier 16 v1): run several READ-ONLY sub-agents in
@@ -50,7 +54,7 @@ type childResult struct {
 // a mutating toolset, parent cancellation) are returned as an error — those
 // are the orchestrator's mistakes to fix. An individual child's failure is NOT
 // an error: it's recorded in the report so the others still land.
-func (a *Agent) TaskGroup(ctx context.Context, subs []GroupSubtask, workers int) (string, error) {
+func (a *Agent) TaskGroup(ctx context.Context, subs []GroupSubtask, workers int, synthesize string) (string, error) {
 	if len(subs) == 0 {
 		return "", fmt.Errorf("task_group needs at least one subtask")
 	}
@@ -124,12 +128,68 @@ func (a *Agent) TaskGroup(ctx context.Context, subs []GroupSubtask, workers int)
 				Kind: s.Kind, Difficulty: s.Difficulty, Model: s.Model, Role: s.Role,
 			})
 			out, err := sub.NewSession().Send(cctx, s.Task)
-			results[i] = childResult{idx: i, role: s.Role, where: where, result: out, err: err, dur: time.Since(start)}
+			// Escalation (bounded, one step): a HARD error (not cancellation,
+			// not a stated model override — the orchestrator chose that) gets
+			// ONE retry on the next difficulty tier up, which the router maps
+			// to a stronger model. No text heuristics (fragile/injectable);
+			// only a real error triggers it.
+			esc := where
+			if err != nil && s.Model == "" && gctx.Err() == nil && !isCanceled(err) {
+				if up := escalateDifficulty(s.Difficulty); up != s.Difficulty {
+					retry := s
+					retry.Difficulty = up
+					rsub, rwhere := a.subAgent(cctx, retry.Task, SubtaskOpts{
+						Kind: retry.Kind, Difficulty: retry.Difficulty, Model: retry.Model, Role: retry.Role,
+					})
+					if rout, rerr := rsub.NewSession().Send(cctx, retry.Task); rerr == nil {
+						out, err, esc = rout, nil, "escalated → "+rwhere
+					}
+				}
+			}
+			results[i] = childResult{idx: i, role: s.Role, where: esc, result: out, err: err, dur: time.Since(start)}
 		}(i, s)
 	}
 	wg.Wait()
 
-	return formatGroupReport(results), nil
+	report := formatGroupReport(results)
+	if strings.TrimSpace(synthesize) == "" {
+		return report, nil
+	}
+	// Optional merge step: one more sub-agent (no tools — pure reasoning) reads
+	// the children's reports and produces a single coherent answer to the
+	// synthesis question. Best-effort: on failure, return the raw report so the
+	// orchestrator still has the children's findings.
+	merged, err := a.synthesizeReports(ctx, synthesize, report)
+	if err != nil || strings.TrimSpace(merged) == "" {
+		return report, nil
+	}
+	return report + "\n\n--- synthesis ---\n" + merged, nil
+}
+
+// synthesizeReports runs a tool-less sub-agent that reads the combined fan-out
+// report and answers the synthesis question — the "merge step" that turns N
+// child reports into one coherent result. No tools (it only reasons over the
+// text it's given), cross-vendor where the router sends it.
+func (a *Agent) synthesizeReports(ctx context.Context, question, report string) (string, error) {
+	emptyTools, _ := tool.NewRegistry()
+	prov := a.provider()
+	compactor := a.compactor()
+	if a.Router != nil {
+		if rp, _, _ := a.Router(ctx, question, "general", "medium", false); rp != nil {
+			prov = rp
+			compactor = llm.NewCompactor(rp)
+		}
+	}
+	sub := &Agent{
+		Provider:         prov,
+		Tools:            emptyTools,
+		Perm:             PermAuto,
+		MaxContextTokens: a.maxContextTokens(),
+		Compactor:        compactor,
+		ExtraSystem:      "You are a SYNTHESIZER. Read the parallel sub-agents' reports below and produce ONE coherent answer to the user's question. Reconcile overlaps, note disagreements, and cite which sub-agent found what. Do not invent findings beyond the reports.",
+	}
+	prompt := question + "\n\n=== sub-agent reports ===\n" + report
+	return sub.NewSession().Send(ctx, prompt)
 }
 
 // formatGroupReport renders the children's outcomes in stable input order.
@@ -167,4 +227,26 @@ func formatGroupReport(results []childResult) string {
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// escalateDifficulty returns the next difficulty tier up (the router maps it to
+// a stronger model), or the same value when already at the top. Used for the
+// one-step escalation retry of a failed read-only child.
+func escalateDifficulty(d string) string {
+	switch d {
+	case "", "trivial":
+		return "easy"
+	case "easy":
+		return "medium"
+	case "medium":
+		return "hard"
+	default:
+		return d // hard / unknown — already top
+	}
+}
+
+// isCanceled reports whether err is a context cancellation/deadline (never
+// retry those — the user/turn stopped, or the budget ran out).
+func isCanceled(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }

@@ -81,7 +81,7 @@ func TestTaskGroupRunsParallelReadOnly(t *testing.T) {
 		{Task: "investigate A", Role: "researcher"},
 		{Task: "review B", Role: "reviewer"},
 		{Task: "summarize C", Role: "summarizer"},
-	}, 3)
+	}, 3, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestTaskGroupRejectsUnknownRole(t *testing.T) {
 	a := roleTestAgent(t)
 	_, err := a.TaskGroup(context.Background(), []GroupSubtask{
 		{Task: "x", Role: "implementer"}, // not a built-in role
-	}, 1)
+	}, 1, "")
 	if err == nil || !strings.Contains(err.Error(), "unknown role") {
 		t.Fatalf("unknown role should fail closed, got %v", err)
 	}
@@ -111,7 +111,7 @@ func TestTaskGroupRequiresRole(t *testing.T) {
 	a := roleTestAgent(t)
 	_, err := a.TaskGroup(context.Background(), []GroupSubtask{
 		{Task: "x"}, // no role
-	}, 1)
+	}, 1, "")
 	if err == nil || !strings.Contains(err.Error(), "needs a role") {
 		t.Fatalf("missing role should fail closed, got %v", err)
 	}
@@ -123,14 +123,14 @@ func TestTaskGroupCapsChildren(t *testing.T) {
 	for i := 0; i < maxGroupChildren+1; i++ {
 		subs = append(subs, GroupSubtask{Task: "x", Role: "researcher"})
 	}
-	if _, err := a.TaskGroup(context.Background(), subs, 3); err == nil {
+	if _, err := a.TaskGroup(context.Background(), subs, 3, ""); err == nil {
 		t.Fatal("too many children should error")
 	}
 }
 
 func TestTaskGroupEmptyErrors(t *testing.T) {
 	a := roleTestAgent(t)
-	if _, err := a.TaskGroup(context.Background(), nil, 3); err == nil {
+	if _, err := a.TaskGroup(context.Background(), nil, 3, ""); err == nil {
 		t.Fatal("empty group should error")
 	}
 }
@@ -172,7 +172,69 @@ func TestReadOnlyFanoutNeverApproves(t *testing.T) {
 	if _, err := a.TaskGroup(context.Background(), []GroupSubtask{
 		{Task: "investigate", Role: "researcher"},
 		{Task: "critique", Role: "reviewer"},
-	}, 2); err != nil {
+	}, 2, ""); err != nil {
 		t.Fatalf("read-only fan-out should run under a gated parent: %v", err)
+	}
+}
+
+func TestTaskGroupSynthesizeMerges(t *testing.T) {
+	a := roleTestAgent(t) // safeProvider replies "child done" for every turn
+	out, err := a.TaskGroup(context.Background(), []GroupSubtask{
+		{Task: "look at A", Role: "researcher"},
+		{Task: "look at B", Role: "researcher"},
+	}, 2, "what do A and B have in common?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "--- synthesis ---") {
+		t.Fatalf("synthesize should append a synthesis section:\n%s", out)
+	}
+	// The raw per-child reports must still be present (synthesis augments, not replaces).
+	if !strings.Contains(out, "[1] researcher") {
+		t.Fatalf("raw child reports should remain:\n%s", out)
+	}
+}
+
+// flakyProvider errors on the first session's turn, succeeds on the retry —
+// proving escalation re-runs a hard-errored child once.
+type flakyProvider struct {
+	mu    sync.Mutex
+	tries int
+}
+
+func (f *flakyProvider) Name() string    { return "flaky" }
+func (f *flakyProvider) ModelID() string { return "flaky" }
+func (f *flakyProvider) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
+	f.mu.Lock()
+	f.tries++
+	n := f.tries
+	f.mu.Unlock()
+	if n == 1 {
+		return nil, errContext("model failed")
+	}
+	return &llm.Response{Text: "recovered"}, nil
+}
+
+type errContext string
+
+func (e errContext) Error() string { return string(e) }
+
+func TestTaskGroupEscalatesOnError(t *testing.T) {
+	reg, err := tool.NewRegistry(roTool("read"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &Agent{Provider: &flakyProvider{}, Tools: reg, Perm: PermAuto}
+	out, gerr := a.TaskGroup(context.Background(), []GroupSubtask{
+		{Task: "do the thing", Role: "researcher", Difficulty: "easy"},
+	}, 1, "")
+	if gerr != nil {
+		t.Fatal(gerr)
+	}
+	if !strings.Contains(out, "1 succeeded") {
+		t.Fatalf("escalation should recover the child:\n%s", out)
+	}
+	if !strings.Contains(out, "escalated") {
+		t.Fatalf("report should note the escalation:\n%s", out)
 	}
 }
