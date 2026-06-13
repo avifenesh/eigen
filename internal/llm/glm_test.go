@@ -173,17 +173,25 @@ func TestGLMThinkingModes(t *testing.T) {
 	if p.Effort() != "on" {
 		t.Fatalf("glm-5.2 should default to effort on, got %q", p.Effort())
 	}
-	// bodyExtra emits the enabled thinking field.
+	// bodyExtra emits the enabled thinking field + preserved thinking
+	// (clear_thinking:false) by default for coherence/cache.
 	ex := p.bodyExtra()
 	if ex == nil || ex["thinking"].(map[string]any)["type"] != "enabled" {
 		t.Fatalf("on → thinking.type=enabled, got %v", ex)
+	}
+	if ct, ok := ex["clear_thinking"]; !ok || ct != false {
+		t.Fatalf("on → clear_thinking:false (preserved thinking), got %v", ex["clear_thinking"])
 	}
 	// Turn it off → disabled.
 	if !p.SetEffort("off") || p.Effort() != "off" {
 		t.Fatalf("SetEffort(off) failed: %q", p.Effort())
 	}
-	if p.bodyExtra()["thinking"].(map[string]any)["type"] != "disabled" {
+	off := p.bodyExtra()
+	if off["thinking"].(map[string]any)["type"] != "disabled" {
 		t.Fatal("off → thinking.type=disabled")
+	}
+	if _, ok := off["clear_thinking"]; ok {
+		t.Fatal("off → no clear_thinking field (only meaningful while enabled)")
 	}
 	// Any reasoning word → enabled.
 	if !p.SetEffort("high") || p.Effort() != "on" {
@@ -194,5 +202,19 @@ func TestGLMThinkingModes(t *testing.T) {
 	air, _ := NewGLM("glm-4.5-air")
 	if air.Effort() != "" || air.SetEffort("on") {
 		t.Fatalf("glm-4.5-air should have no thinking control, got %q", air.Effort())
+	}
+}
+
+func TestGLMClearThinkingEnvOverride(t *testing.T) {
+	t.Setenv("GLM_API_KEY", "test")
+	t.Setenv("EIGEN_GLM_CLEAR_THINKING", "1")
+	p, err := NewGLM("glm-5.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// With the override, an enabled turn must NOT set clear_thinking:false.
+	ex := p.bodyExtra()
+	if _, ok := ex["clear_thinking"]; ok {
+		t.Fatalf("EIGEN_GLM_CLEAR_THINKING=1 should drop preserved thinking, got %v", ex["clear_thinking"])
 	}
 }

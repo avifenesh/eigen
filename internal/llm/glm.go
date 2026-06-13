@@ -35,6 +35,13 @@ type GLM struct {
 	// map eigen's effort vocabulary onto these: "off" → disabled, anything
 	// else → enabled. Empty = don't send the field (server default).
 	thinking string
+
+	// clearThinking controls GLM's "Preserved Thinking": when false (the
+	// default while thinking is enabled), GLM keeps reasoning_content from
+	// prior assistant turns for coherence + prompt-cache hits — the recommended
+	// mode for coding/agent use. EIGEN_GLM_CLEAR_THINKING=1 flips it to clear
+	// cross-turn reasoning (the standard-endpoint default).
+	clearThinking bool
 }
 
 // NewGLM builds a GLM provider from the environment.
@@ -74,6 +81,11 @@ func NewGLM(model string) (*GLM, error) {
 		if v := strings.TrimSpace(os.Getenv("EIGEN_REASONING_EFFORT")); v != "" {
 			g.SetEffort(v)
 		}
+	}
+	// Preserved Thinking is on by default (clear_thinking:false) for coherence
+	// + cache hits; EIGEN_GLM_CLEAR_THINKING=1 drops cross-turn reasoning.
+	if v := strings.TrimSpace(os.Getenv("EIGEN_GLM_CLEAR_THINKING")); v == "1" || strings.EqualFold(v, "true") {
+		g.clearThinking = true
 	}
 	// Wire the web_search tool injection + the thinking body field.
 	g.c.extraTools = g.webSearchTool
@@ -140,13 +152,22 @@ func (g *GLM) SetEffort(level string) bool {
 	}
 }
 
-// bodyExtra injects GLM's `thinking` request field when a mode is set, so the
-// model emits (or suppresses) reasoning_content per the user's effort choice.
+// bodyExtra injects GLM's reasoning request fields when a mode is set:
+//   - thinking.type enabled|disabled — the on/off toggle (eigen effort on|off).
+//   - clear_thinking:false when ENABLED — "Preserved Thinking": GLM retains
+//     reasoning_content from prior assistant turns for coherence + cache hits
+//     (the recommended mode for coding/agent use, per z.ai docs). eigen already
+//     carries Message.Reasoning back across turns, so this is the right default.
+//     Override with EIGEN_GLM_CLEAR_THINKING=1 to drop cross-turn reasoning.
 func (g *GLM) bodyExtra() map[string]any {
 	if g.thinking == "" {
 		return nil
 	}
-	return map[string]any{"thinking": map[string]any{"type": g.thinking}}
+	extra := map[string]any{"thinking": map[string]any{"type": g.thinking}}
+	if g.thinking == "enabled" && !g.clearThinking {
+		extra["clear_thinking"] = false // preserve reasoning across turns
+	}
+	return extra
 }
 
 // prepare appends a hint to the system prompt when web_search is active, telling
