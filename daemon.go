@@ -18,6 +18,7 @@ import (
 	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/hook"
 	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/mcp"
 	"github.com/avifenesh/eigen/internal/memory"
 	"github.com/avifenesh/eigen/internal/session"
 	"github.com/avifenesh/eigen/internal/skill"
@@ -38,6 +39,13 @@ func runDaemon(cfg config.Config) {
 
 	gmem, _ := memory.OpenGlobal()
 	skills := skill.Discover(skillDirs()...)
+
+	// Sweep leftover agent-workspace sandboxes from prior crashes/kills: the
+	// workspace daemon double-forks to persist, so a killed eigen can orphan
+	// X servers + apps. `workspace cleanup` is the binary's own safety-checked
+	// reaper (skips RUNNING workspaces, only removes verified-orphan dirs +
+	// process groups). Best-effort, async — never blocks daemon start.
+	sweepStaleWorkspaces()
 
 	host := daemon.NewPersistentHost(daemon.SessionsDir())
 	// The builder turns a (dir, model) request into a fully-wired agent +
@@ -585,4 +593,23 @@ func devFindGo() string {
 		}
 	}
 	return ""
+}
+
+// sweepStaleWorkspaces runs the agent-workspace binary's own safety-checked
+// reaper to clear sandboxes orphaned by a prior crash/kill. The workspace
+// daemon persists (double-forks) so it survives a killed eigen; `workspace
+// cleanup` removes only stale dirs + verified-orphan process groups and SKIPS
+// running workspaces, so it's safe to run unconditionally at daemon start.
+// Best-effort and async — it never blocks or fails daemon startup.
+func sweepStaleWorkspaces() {
+	bin := mcp.WorkspaceBinary()
+	if bin == "" {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, bin, "workspace", "cleanup")
+		_ = cmd.Run() // best-effort; output/errors are not fatal
+	}()
 }

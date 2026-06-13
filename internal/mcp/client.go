@@ -14,6 +14,8 @@ import (
 	"io"
 	"os/exec"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/avifenesh/eigen/internal/llm"
 )
@@ -89,6 +91,12 @@ func Connect(ctx context.Context, command []string, env []string) (*Client, erro
 	}
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Env = env
+	// Own process group: an MCP server (e.g. the agent-workspace sandbox)
+	// spawns its OWN children — an X server, window manager, browser, apps. If
+	// we kill only the server's pid, those grandchildren orphan and linger
+	// (40 zombie Xvfb/app processes were observed). Setpgid lets Close signal
+	// the WHOLE group so the sandbox tears down with the server.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -101,9 +109,22 @@ func Connect(ctx context.Context, command []string, env []string) (*Client, erro
 		return nil, err
 	}
 	c := newClient(stdin, stdout, func() error {
+		// Close stdin first: a well-behaved server (and the workspace daemon)
+		// exits its read loop and tears down its children gracefully.
 		_ = stdin.Close()
-		_ = cmd.Process.Kill()
-		return cmd.Wait()
+		pid := cmd.Process.Pid
+		// SIGTERM the whole group (graceful: lets the sandbox stop X/apps),
+		// then SIGKILL the group after a grace period if it's still up.
+		_ = syscall.Kill(-pid, syscall.SIGTERM)
+		done := make(chan error, 1)
+		go func() { done <- cmd.Wait() }()
+		select {
+		case err := <-done:
+			return err
+		case <-time.After(3 * time.Second):
+			_ = syscall.Kill(-pid, syscall.SIGKILL)
+			return <-done
+		}
 	})
 	if err := c.initialize(ctx); err != nil {
 		c.Close()
