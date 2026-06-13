@@ -149,6 +149,21 @@ func (s *machinesState) updateInside(m *Model, key string, visible int) (tea.Mod
 	switch key {
 	case "esc", "backspace":
 		s.inside = false
+	case "i":
+		// Install/reinstall eigen on this machine from inside the drill-in too
+		// (e.g. after a "not found" error). Re-fetches sessions on success.
+		if s.installing {
+			return m, nil
+		}
+		exe, err := os.Executable()
+		if err != nil {
+			s.loadErr = "install: cannot locate local binary: " + err.Error()
+			return m, nil
+		}
+		s.installing = true
+		s.loadErr = ""
+		s.loading = true // show a progress state in the drill-in
+		return m, installMachine(s.mach, mc.SSH, exe)
 	case "n":
 		// New session on this machine.
 		m.result = Result{Action: ActionRemote, Host: mc.Name}
@@ -210,10 +225,13 @@ func (s *machinesState) viewInside(m *Model, w, h int) string {
 	mc := m.data.Machines[s.mach]
 	out := pageTitle("‹ "+mc.Name, mc.SSH, w)
 	if s.loading {
+		if s.installing {
+			return out + sFaint.Render("  installing eigen on "+mc.Name+" over ssh…")
+		}
 		return out + sFaint.Render("  connecting over ssh, listing sessions…")
 	}
 	if s.loadErr != "" {
-		return out + sErr.Render("  "+truncate(s.loadErr, w-4)) + "\n\n" + sFaint.Render("  enter new session here · esc back")
+		return out + sErr.Render("  "+truncate(s.loadErr, w-4)) + "\n\n" + sFaint.Render("  i install eigen here · enter new session · esc back")
 	}
 	if len(s.sessions) == 0 {
 		return out + sFaint.Render("  no sessions on this machine yet\n\n  enter start one · esc back")

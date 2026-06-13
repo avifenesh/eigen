@@ -196,14 +196,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.machines.installing = false
 		if msg.err != "" {
 			m.machines.installMsg = "install failed: " + msg.err
-		} else {
-			v := msg.ver
-			if v == "" {
-				v = "eigen"
+			if m.machines.inside {
+				m.machines.loading = false
+				m.machines.loadErr = "install failed: " + msg.err
 			}
-			m.machines.installMsg = "installed " + v + " ✓ — enter to see its sessions"
-			// Refresh the machine list so the row reflects the new state.
-			m.data.Machines = remote.Machines()
+			return m, nil
+		}
+		v := msg.ver
+		if v == "" {
+			v = "eigen"
+		}
+		m.machines.installMsg = "installed " + v + " ✓ — enter to see its sessions"
+		m.data.Machines = remote.Machines() // refresh row state
+		// If we're inside the drill-in, re-fetch the now-installed machine's
+		// sessions so they appear without leaving the view.
+		if m.machines.inside && m.machines.mach == msg.mach && msg.mach < len(m.data.Machines) {
+			m.machines.loading = true
+			m.machines.loadErr = ""
+			return m, fetchMachineSessions(msg.mach, m.data.Machines[msg.mach].SSH)
 		}
 		return m, nil
 	case feedTickMsg:

@@ -114,3 +114,20 @@ func TestMachinesInstallMessage(t *testing.T) {
 		t.Fatalf("want failure message, got %q", m.machines.installMsg)
 	}
 }
+
+func TestMachinesInstallFromDrillIn(t *testing.T) {
+	d := &Data{Machines: []remote.Machine{{Name: "dev", SSH: "ubuntu@x", Detected: true}}}
+	m := &Model{data: d, active: PageMachines, width: 100, height: 30}
+	m.machines.init(d)
+	// Drill in, then simulate a "not found" error state.
+	m.machines.update(m, key("enter"))
+	m.Update(machineSessionsMsg{mach: 0, err: "dev: eigen: not found"})
+	if !m.machines.inside {
+		t.Fatal("should be inside the drill-in")
+	}
+	// Pressing i inside the drill-in must start an install (not be ignored).
+	_, cmd := m.machines.update(m, key("i"))
+	if !m.machines.installing || cmd == nil {
+		t.Fatalf("i inside drill-in should start install: installing=%v cmd=%v", m.machines.installing, cmd)
+	}
+}
