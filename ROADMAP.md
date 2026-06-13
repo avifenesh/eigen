@@ -994,6 +994,52 @@ clean serving + selection layer, not bespoke wiring per model.
   cheaply, prefer it over an LLM call. Surface these as tools the orchestrator
   picks, with the router aware of non-LLM options.
 
+## Tier 19 — remote: SSH machines + control eigen from another machine
+Goal: drive eigen on a remote host, and reach your eigen from another machine.
+Two directions, both building on the EXISTING daemon (a line-JSON protocol over
+~/.eigen/daemon.sock — `internal/daemon`: Dial/List/New/Attach/Input/…). The
+protocol is already transport-agnostic; only the listener is unix-local and the
+auth model is "whoever can open the socket." That's the seam to extend.
+
+A. EIGEN REACHES OUT (run agents on remote machines)
+- [ ] **SSH-backed sessions.** A session whose tools execute on a remote host
+  over SSH: bash runs there, file tools read/write there. Cleanest path is an
+  `eigen daemon` running ON the remote (reached over an SSH-forwarded socket),
+  so the full agent loop is local to the code — not piping every tool call
+  over the wire. `eigen --remote user@host[:dir]` opens/attaches a session on
+  the remote daemon; the local TUI is just a view (the daemon/view split
+  already supports this).
+- [ ] **Bootstrap.** `eigen remote install user@host` copies/builds the binary
+  and sets up the remote daemon (systemd user unit + credential snapshot,
+  reusing `eigen daemon install`). Detect arch/OS; refuse unknown.
+- [ ] **Per-host config.** Remote model/creds/roots (the remote may have
+  different AWS profiles, a different repo layout). A `~/.eigen/hosts.json`.
+
+B. CONTROL YOUR EIGEN FROM ANOTHER MACHINE (phone/laptop → desktop daemon)
+- [ ] **Network listener for the daemon.** Optionally bind the daemon to a TCP
+  socket (loopback by default; LAN/Tailscale when explicitly enabled) in
+  addition to the unix socket — same protocol. Off by default.
+- [ ] **Auth + transport security.** The unix socket trusts filesystem perms;
+  a network socket MUST NOT. Require a token (shared secret in
+  ~/.eigen/daemon.env, already 0600) and TLS, or — simpler and safer — document
+  "expose only over SSH/Tailscale, never raw." Fail closed: no token ⇒ no
+  network listener.
+- [ ] **Thin remote client.** `eigen attach --host <addr>` (or the app's
+  session list) over the network transport, so a laptop attaches to the
+  desktop's running sessions — the daemon already replays transcript + streams
+  live, and views are stateless, so this is mostly transport + auth.
+- [ ] **Mobile-friendly read/notify (stretch).** A minimal read-only status +
+  approval-answer surface (the notifications/approvals tray is the model) so a
+  phone can see "needs you" and answer an approval remotely.
+
+Constraints / non-negotiables:
+- Network exposure is OFF by default and fails closed without auth.
+- Remote tool execution inherits the same permission posture + gating; a
+  remote mutating tool is still gated in gated mode.
+- Reuse the daemon protocol + daemon/view split; do NOT fork a second control
+  path. The transport is the only new thing; the session model is unchanged.
+- Secrets never cross the wire in the clear; credential snapshots stay 0600.
+
 ## Debt / bugs
 - [x] **Untitled daemon sessions still appear.** FIXED: (1) `Host.Restore` now
   calls `maybeTitle` per restored session, so sessions whose title never landed
