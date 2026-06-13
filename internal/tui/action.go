@@ -176,6 +176,7 @@ var actionRegistry = map[actionID]action{
 		enabled: func(m *model) bool { return m.railVisible() },
 		run: func(m *model) tea.Cmd {
 			m.setRailW(m.railCols() + panelResizeStep)
+			m.persistPanelWidths()
 			return nil
 		},
 	},
@@ -184,6 +185,7 @@ var actionRegistry = map[actionID]action{
 		enabled: func(m *model) bool { return m.railVisible() },
 		run: func(m *model) tea.Cmd {
 			m.setRailW(m.railCols() - panelResizeStep)
+			m.persistPanelWidths()
 			return nil
 		},
 	},
@@ -199,6 +201,7 @@ var actionRegistry = map[actionID]action{
 		enabled: func(m *model) bool { return m.changesVisible() },
 		run: func(m *model) tea.Cmd {
 			m.setRightW(m.rightCols() + panelResizeStep)
+			m.persistPanelWidths()
 			return nil
 		},
 	},
@@ -207,6 +210,7 @@ var actionRegistry = map[actionID]action{
 		enabled: func(m *model) bool { return m.changesVisible() },
 		run: func(m *model) tea.Cmd {
 			m.setRightW(m.rightCols() - panelResizeStep)
+			m.persistPanelWidths()
 			return nil
 		},
 	},

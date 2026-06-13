@@ -1244,6 +1244,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		case msg.Action == tea.MouseActionRelease && m.resizing != regNone:
 			m.applyResizeDrag(msg.X)
 			m.resizing = regNone
+			m.persistPanelWidths() // remember the dragged width across sessions
 			return m, nil
 		case msg.Action == tea.MouseActionMotion && m.selecting:
 			// Drag: extend the selection to the current cell and show it.
@@ -1735,6 +1736,11 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 		railOn:         true, // shown only for daemon-hosted backends on wide terminals
 		changesOn:      true, // right panel (changes/git/terminal) visibility
 		rightTab:       rightTabChanges,
+	}
+	// Restore window-layout prefs (panel widths the user dragged to last time).
+	if pr := loadUIPrefs(); pr.RailW > 0 || pr.RightW > 0 {
+		m.railW = pr.RailW
+		m.rightW = pr.RightW
 	}
 	if m.idleMinutes <= 0 {
 		m.idleMinutes = 5
