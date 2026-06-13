@@ -621,8 +621,11 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 			sys += "\n\nCURRENT GOAL (persistent; the user set this as the north star — keep every action aligned with it until it changes):\n" + g + "\nWhen you believe the goal is FULLY achieved, call the goal_achieved tool with concrete evidence; an independent judge verifies and clears it."
 		}
 		req := llm.Request{
-			System:   sys,
-			Messages: s.snapshot(),
+			System: sys,
+			// Bound screenshot bytes on the wire: keep only the most recent
+			// tool-result images, drop older ones (a browser/computer-use
+			// session would otherwise resend every screenshot every turn).
+			Messages: llm.ShedToolImages(s.snapshot()),
 			Tools:    specs,
 		}
 		var resp *llm.Response
@@ -737,6 +740,12 @@ func (s *Session) appendToolResult(m llm.Message) {
 	// unchanged file re-read), stub the older copies — the newest occurrence is
 	// the one the model will use.
 	llm.DedupeToolResults(s.msgs, len(s.msgs)-1)
+	// Bound stored screenshot bytes too (not just the wire request): drop
+	// images from all but the most recent few tool results so a long
+	// browser/computer-use session can't grow daemon memory without limit.
+	if len(m.Images) > 0 {
+		s.msgs = llm.ShedToolImages(s.msgs)
+	}
 	s.mu.Unlock()
 }
 

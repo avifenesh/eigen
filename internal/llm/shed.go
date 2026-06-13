@@ -1,5 +1,43 @@
 package llm
 
+// maxRetainedToolImages is how many of the most recent tool-result images
+// (screenshots) survive in history. Images are far heavier than text — an old
+// screenshot is rarely needed once the model has acted on it — so we keep only
+// the freshest few and drop the rest, replacing the message text with a note.
+const maxRetainedToolImages = 2
+
+// imagePrunedStub marks a tool result whose screenshot was dropped to bound
+// context/memory; the tool call and a note are kept.
+const imagePrunedStub = "[earlier screenshot dropped from history to save context]"
+
+// ShedToolImages walks history newest→oldest and strips Images from all but
+// the most recent maxRetainedToolImages image-bearing tool results, so a long
+// browser/computer-use session can't accumulate screenshot bytes without
+// bound. A pruned result keeps its tool call (pairing stays valid) and gets a
+// short note appended. Returns a copy; the input is not mutated.
+func ShedToolImages(msgs []Message) []Message {
+	out := make([]Message, len(msgs))
+	copy(out, msgs)
+	kept := 0
+	for i := len(out) - 1; i >= 0; i-- {
+		m := &out[i]
+		if m.Role != RoleTool || len(m.Images) == 0 {
+			continue
+		}
+		if kept < maxRetainedToolImages {
+			kept++
+			continue
+		}
+		m.Images = nil
+		if m.Text == "" || m.Text == toolResultStub {
+			m.Text = imagePrunedStub
+		} else {
+			m.Text += "\n" + imagePrunedStub
+		}
+	}
+	return out
+}
+
 // toolResultStub replaces an elided tool result's text. The tool CALL is kept
 // intact so call/result pairing stays valid for strict providers (Converse);
 // only the (usually large) result payload is dropped.

@@ -193,13 +193,9 @@ type converseToolUse struct {
 }
 
 type converseToolResult struct {
-	ToolUseID string                   `json:"toolUseId"`
-	Content   []converseToolResultText `json:"content"`
-	Status    string                   `json:"status"`
-}
-
-type converseToolResultText struct {
-	Text string `json:"text"`
+	ToolUseID string            `json:"toolUseId"`
+	Content   []converseContent `json:"content"`
+	Status    string            `json:"status"`
 }
 
 type converseMessage struct {
@@ -388,9 +384,20 @@ func converseMessages(req Request) []converseMessage {
 			if m.ToolError {
 				status = "error"
 			}
+			rc := []converseContent{{Text: m.Text}}
+			// Bedrock toolResult content can hold image blocks alongside text —
+			// screenshots from browser/computer-use tools ride here directly.
+			for _, img := range m.Images {
+				if f := converseImageFormat(img.MediaType); f != "" {
+					rc = append(rc, converseContent{Image: &converseImage{
+						Format: f,
+						Source: converseImageSource{Bytes: img.Data},
+					}})
+				}
+			}
 			pendingResults = append(pendingResults, converseContent{ToolResult: &converseToolResult{
 				ToolUseID: m.ToolCallID,
-				Content:   []converseToolResultText{{Text: m.Text}},
+				Content:   rc,
 				Status:    status,
 			}})
 		case RoleUser:

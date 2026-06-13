@@ -168,3 +168,35 @@ func TestDedupeToolResultsRespectsGuards(t *testing.T) {
 		t.Fatal("out-of-range index must be a no-op")
 	}
 }
+
+func TestShedToolImagesKeepsRecentDropsOld(t *testing.T) {
+	img := []Image{{MediaType: "image/png", Data: []byte("X")}}
+	msgs := []Message{
+		{Role: RoleTool, ToolCallID: "a", Text: "1", Images: img},
+		{Role: RoleTool, ToolCallID: "b", Text: "2", Images: img},
+		{Role: RoleTool, ToolCallID: "c", Text: "3", Images: img},
+		{Role: RoleTool, ToolCallID: "d", Text: "4", Images: img},
+	}
+	out := ShedToolImages(msgs)
+	// Only the last maxRetainedToolImages keep images.
+	withImg := 0
+	for _, m := range out {
+		if len(m.Images) > 0 {
+			withImg++
+		}
+	}
+	if withImg != maxRetainedToolImages {
+		t.Fatalf("want %d images retained, got %d", maxRetainedToolImages, withImg)
+	}
+	// The oldest two were pruned and noted.
+	if len(out[0].Images) != 0 || out[0].Text == "1" {
+		t.Fatalf("oldest image should be dropped + noted: %+v", out[0])
+	}
+	if len(out[3].Images) == 0 {
+		t.Fatal("newest image must be kept")
+	}
+	// Input not mutated.
+	if len(msgs[0].Images) == 0 {
+		t.Fatal("ShedToolImages must not mutate the input")
+	}
+}

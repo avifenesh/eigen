@@ -117,3 +117,122 @@ func TestEstimateTokensCountsImages(t *testing.T) {
 		t.Fatalf("image should add ~1200 tokens: base=%d withImg=%d", base, withImg)
 	}
 }
+
+// --- tool-result images (browser / computer-use screenshots) ---------------
+
+func toolImgReq() Request {
+	// assistant calls a tool, the tool returns text + a screenshot.
+	return Request{Messages: []Message{
+		{Role: RoleUser, Text: "screenshot the page"},
+		{Role: RoleAssistant, ToolCalls: []ToolCall{{ID: "c1", Name: "screenshot"}}},
+		{Role: RoleTool, ToolCallID: "c1", Text: "captured", Images: []Image{{MediaType: "image/png", Data: []byte("SHOT")}}},
+	}}
+}
+
+func TestConverseToolResultCarriesImage(t *testing.T) {
+	msgs := converseMessages(toolImgReq())
+	// Find the toolResult block; it must contain a text AND an image block.
+	var tr *converseToolResult
+	for _, m := range msgs {
+		for _, c := range m.Content {
+			if c.ToolResult != nil {
+				tr = c.ToolResult
+			}
+		}
+	}
+	if tr == nil {
+		t.Fatal("no toolResult block")
+	}
+	var hasText, hasImage bool
+	for _, c := range tr.Content {
+		if c.Text == "captured" {
+			hasText = true
+		}
+		if c.Image != nil && string(c.Image.Source.Bytes) == "SHOT" {
+			hasImage = true
+		}
+	}
+	if !hasText || !hasImage {
+		t.Fatalf("toolResult should carry text+image: %+v", tr.Content)
+	}
+}
+
+func TestAnthropicToolResultCarriesImage(t *testing.T) {
+	msgs := anthropicMessages(toolImgReq())
+	var tr *anthropicContent
+	for i := range msgs {
+		for j := range msgs[i].Content {
+			if msgs[i].Content[j].Type == "tool_result" {
+				tr = &msgs[i].Content[j]
+			}
+		}
+	}
+	if tr == nil {
+		t.Fatal("no tool_result block")
+	}
+	blocks, ok := tr.Content.([]anthropicContent)
+	if !ok {
+		t.Fatalf("tool_result content should be a block array when images present, got %T", tr.Content)
+	}
+	var hasText, hasImage bool
+	for _, b := range blocks {
+		if b.Type == "text" && b.Text == "captured" {
+			hasText = true
+		}
+		if b.Type == "image" && b.Source != nil {
+			hasImage = true
+		}
+	}
+	if !hasText || !hasImage {
+		t.Fatalf("tool_result should carry text+image: %+v", blocks)
+	}
+}
+
+func TestMantleToolResultImageAsSyntheticUserMessage(t *testing.T) {
+	items := buildInput(toolImgReq())
+	// Ordering: function_call_output (text) must come BEFORE the synthetic
+	// user image message.
+	var outIdx, userImgIdx = -1, -1
+	for i, it := range items {
+		if it.Type == "function_call_output" {
+			outIdx = i
+		}
+		if it.Role == "user" && userImgIdx == -1 && i > 0 && strings.Contains(string(it.Content), "input_image") {
+			userImgIdx = i
+		}
+	}
+	if outIdx < 0 {
+		t.Fatal("no function_call_output")
+	}
+	if userImgIdx < 0 {
+		t.Fatal("tool-result image should appear as a synthetic user input_image message")
+	}
+	if !(outIdx < userImgIdx) {
+		t.Fatalf("function_call_output (%d) must precede the synthetic image user msg (%d)", outIdx, userImgIdx)
+	}
+}
+
+func TestChatToolResultImageAsSyntheticUserMessage(t *testing.T) {
+	msgs := chatMessagesFrom(toolImgReq())
+	var toolIdx, userImgIdx = -1, -1
+	for i, m := range msgs {
+		if m.Role == "tool" {
+			toolIdx = i
+		}
+		if m.Role == "user" {
+			if parts, ok := m.Content.([]chatPart); ok {
+				for _, p := range parts {
+					if p.Type == "image_url" {
+						userImgIdx = i
+					}
+				}
+			}
+		}
+	}
+	if toolIdx < 0 || userImgIdx < 0 {
+		t.Fatalf("want a tool msg and a synthetic user-image msg, got tool=%d img=%d", toolIdx, userImgIdx)
+	}
+	if !(toolIdx < userImgIdx) {
+		t.Fatalf("tool result (%d) must precede the synthetic image user msg (%d)", toolIdx, userImgIdx)
+	}
+}

@@ -168,7 +168,7 @@ type anthropicContent struct {
 	Name      string             `json:"name,omitempty"`        // tool_use
 	Input     json.RawMessage    `json:"input,omitempty"`       // tool_use
 	ToolUseID string             `json:"tool_use_id,omitempty"` // tool_result
-	Content   string             `json:"content,omitempty"`     // tool_result (text)
+	Content   any                `json:"content,omitempty"`     // tool_result: string, or []anthropicContent (text+image)
 	IsError   bool               `json:"is_error,omitempty"`    // tool_result
 }
 
@@ -377,12 +377,34 @@ func anthropicMessages(req Request) []anthropicMessage {
 				out = append(out, anthropicMessage{Role: "assistant", Content: content})
 			}
 		case RoleTool:
-			pending = append(pending, anthropicContent{
+			tr := anthropicContent{
 				Type:      "tool_result",
 				ToolUseID: m.ToolCallID,
 				Content:   m.Text,
 				IsError:   m.ToolError,
-			})
+			}
+			// Images (screenshots) make the content an array of text+image
+			// blocks instead of a plain string — Anthropic tool_result accepts
+			// either form.
+			var imgs []anthropicContent
+			for _, img := range m.Images {
+				if !isAnthropicImageType(img.MediaType) {
+					continue
+				}
+				imgs = append(imgs, anthropicContent{
+					Type: "image",
+					Source: &anthropicImageSrc{
+						Type:      "base64",
+						MediaType: img.MediaType,
+						Data:      base64.StdEncoding.EncodeToString(img.Data),
+					},
+				})
+			}
+			if len(imgs) > 0 {
+				blocks := []anthropicContent{{Type: "text", Text: m.Text}}
+				tr.Content = append(blocks, imgs...)
+			}
+			pending = append(pending, tr)
 		}
 	}
 	flush()

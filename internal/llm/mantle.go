@@ -367,7 +367,28 @@ func buildInput(req Request) []responsesInputItem {
 	if req.System != "" {
 		items = append(items, responsesInputItem{Role: "developer", Content: jsonStr(req.System)})
 	}
+	// The Responses API function_call_output is text-only — it can't carry an
+	// image. So tool-result images are buffered and emitted as ONE synthetic
+	// user message AFTER the contiguous run of tool outputs (preserving the
+	// strict function_call → function_call_output ordering), with provenance so
+	// the model knows they're tool output, not a fresh user upload.
+	var toolImgs []Image
+	var toolImgNote string
+	flushToolImgs := func() {
+		if len(toolImgs) == 0 {
+			return
+		}
+		items = append(items, responsesInputItem{
+			Role:    "user",
+			Content: inputParts(Message{Text: toolImgNote, Images: toolImgs}),
+		})
+		toolImgs = nil
+		toolImgNote = ""
+	}
 	for _, msg := range req.Messages {
+		if msg.Role != RoleTool {
+			flushToolImgs() // a non-tool message ends the tool-result run
+		}
 		switch msg.Role {
 		case RoleTool:
 			out := msg.Text
@@ -379,6 +400,10 @@ func buildInput(req Request) []responsesInputItem {
 				CallID: msg.ToolCallID,
 				Output: out,
 			})
+			if len(msg.Images) > 0 {
+				toolImgs = append(toolImgs, msg.Images...)
+				toolImgNote = "Image(s) returned by the preceding tool call(s)."
+			}
 		case RoleAssistant:
 			if msg.Reasoning != "" {
 				items = append(items, responsesInputItem{
@@ -414,6 +439,7 @@ func buildInput(req Request) []responsesInputItem {
 			items = append(items, responsesInputItem{Role: role, Content: jsonStr(msg.Text)})
 		}
 	}
+	flushToolImgs() // transcript ended on a tool-result run
 	return items
 }
 

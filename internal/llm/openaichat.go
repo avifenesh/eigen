@@ -328,10 +328,18 @@ func chatMessagesFrom(req Request) []chatMessage {
 	if req.System != "" {
 		msgs = append(msgs, chatMessage{Role: "system", Content: req.System})
 	}
+	// chat-completions tool messages are text-only — tool-result images are
+	// buffered and flushed as ONE synthetic user message after the contiguous
+	// tool run (preserving tool_calls → tool-result ordering).
+	var toolImgs []Image
 	for _, m := range req.Messages {
+		if m.Role != RoleTool {
+			flushToolImgsChat(&msgs, &toolImgs)
+		}
 		switch m.Role {
 		case RoleTool:
 			msgs = append(msgs, chatMessage{Role: "tool", ToolCallID: m.ToolCallID, Content: m.Text})
+			toolImgs = append(toolImgs, m.Images...)
 		case RoleAssistant:
 			cm := chatMessage{Role: "assistant", Content: m.Text}
 			for _, tc := range m.ToolCalls {
@@ -361,7 +369,25 @@ func chatMessagesFrom(req Request) []chatMessage {
 			msgs = append(msgs, chatMessage{Role: string(m.Role), Content: m.Text})
 		}
 	}
+	flushToolImgsChat(&msgs, &toolImgs) // transcript ended on a tool-result run
 	return msgs
+}
+
+// flushToolImgsChat emits buffered tool-result images as one synthetic user
+// message (chat-completions tool messages can't hold images), then clears the
+// buffer. Provenance text tells the model these are tool output.
+func flushToolImgsChat(msgs *[]chatMessage, toolImgs *[]Image) {
+	if len(*toolImgs) == 0 {
+		return
+	}
+	parts := []chatPart{{Type: "text", Text: "Image(s) returned by the preceding tool call(s)."}}
+	for _, img := range *toolImgs {
+		parts = append(parts, chatPart{Type: "image_url", ImageURL: &chatImageURL{
+			URL: "data:" + img.MediaType + ";base64," + base64.StdEncoding.EncodeToString(img.Data),
+		}})
+	}
+	*msgs = append(*msgs, chatMessage{Role: "user", Content: parts})
+	*toolImgs = nil
 }
 
 // chatToolsFrom wraps neutral tool specs in the function-tool shape.
