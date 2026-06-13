@@ -48,8 +48,18 @@ func fakeServer(r io.Reader, w io.Writer) {
 				Arguments json.RawMessage `json:"arguments"`
 			}
 			_ = json.Unmarshal(req.Params, &p)
-			resp["result"] = map[string]any{
-				"content": []map[string]any{{"type": "text", "text": "called " + p.Name + " with " + string(p.Arguments)}},
+			if p.Name == "shot" {
+				// A 1x1 PNG as a base64 image content block.
+				resp["result"] = map[string]any{
+					"content": []map[string]any{
+						{"type": "text", "text": "screenshot taken"},
+						{"type": "image", "mimeType": "image/png", "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="},
+					},
+				}
+			} else {
+				resp["result"] = map[string]any{
+					"content": []map[string]any{{"type": "text", "text": "called " + p.Name + " with " + string(p.Arguments)}},
+				}
 			}
 		default:
 			resp["error"] = map[string]any{"code": -32601, "message": "method not found"}
@@ -222,5 +232,27 @@ func TestSlimSchema(t *testing.T) {
 	}
 	if got := slimSchema(nil); got != nil {
 		t.Fatalf("nil should pass through, got %s", got)
+	}
+}
+
+func TestCallToolRichPreservesImages(t *testing.T) {
+	c := newTestClient(t)
+	res, err := c.CallToolRich(context.Background(), "shot", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Text != "screenshot taken" {
+		t.Fatalf("text = %q", res.Text)
+	}
+	if len(res.Images) != 1 {
+		t.Fatalf("want 1 image, got %d", len(res.Images))
+	}
+	if res.Images[0].MediaType != "image/png" || len(res.Images[0].Data) == 0 {
+		t.Fatalf("image not decoded: %+v", res.Images[0])
+	}
+	// CallTool (text-only) still works and drops the image.
+	txt, err := c.CallTool(context.Background(), "shot", json.RawMessage(`{}`))
+	if err != nil || txt != "screenshot taken" {
+		t.Fatalf("CallTool text path: %q %v", txt, err)
 	}
 }

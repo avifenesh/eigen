@@ -8,11 +8,14 @@ package mcp
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os/exec"
 	"sync"
+
+	"github.com/avifenesh/eigen/internal/llm"
 )
 
 const protocolVersion = "2024-11-05"
@@ -197,32 +200,73 @@ func (c *Client) ListTools(ctx context.Context) ([]ToolSpec, error) {
 	return out.Tools, nil
 }
 
-// CallTool invokes a tool and returns its text content (concatenated).
+// CallTool invokes a tool and returns its text content (concatenated). Image
+// content blocks are dropped — use CallToolRich when the caller can carry
+// images (e.g. a browser/computer-use MCP server returning screenshots).
 func (c *Client) CallTool(ctx context.Context, name string, args json.RawMessage) (string, error) {
+	res, err := c.CallToolRich(ctx, name, args)
+	return res.Text, err
+}
+
+// ToolResult is an MCP tool's output: concatenated text plus any image content
+// blocks the server returned (base64-decoded). Mirrors tool.Result so the
+// loader can hand images straight through to the agent.
+type ToolResult struct {
+	Text   string
+	Images []llm.Image
+}
+
+const (
+	// maxMCPImageBytes caps a single decoded MCP image (4 MiB) so a misbehaving
+	// server can't blow up memory/context; oversized images are dropped.
+	maxMCPImageBytes = 4 << 20
+	// maxMCPImages caps images per tool result.
+	maxMCPImages = 4
+)
+
+// CallToolRich invokes a tool and returns its text + image content. text and
+// image MCP content blocks are both honored; unknown block types are ignored.
+func (c *Client) CallToolRich(ctx context.Context, name string, args json.RawMessage) (ToolResult, error) {
 	params := map[string]any{"name": name}
 	if len(args) > 0 {
 		params["arguments"] = json.RawMessage(args)
 	}
 	var out struct {
 		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			Data     string `json:"data"`     // base64 (image/audio blocks)
+			MimeType string `json:"mimeType"` // e.g. image/png
 		} `json:"content"`
 		IsError bool `json:"isError"`
 	}
 	if err := c.call(ctx, "tools/call", params, &out); err != nil {
-		return "", err
+		return ToolResult{}, err
 	}
-	var text string
-	for _, c := range out.Content {
-		if c.Type == "text" {
-			text += c.Text
+	var res ToolResult
+	for _, blk := range out.Content {
+		switch blk.Type {
+		case "text":
+			res.Text += blk.Text
+		case "image":
+			if len(res.Images) >= maxMCPImages || blk.Data == "" {
+				continue
+			}
+			raw, err := base64.StdEncoding.DecodeString(blk.Data)
+			if err != nil || len(raw) == 0 || len(raw) > maxMCPImageBytes {
+				continue // skip undecodable / oversized images, keep the text
+			}
+			mt := blk.MimeType
+			if mt == "" {
+				mt = "image/png"
+			}
+			res.Images = append(res.Images, llm.Image{MediaType: mt, Data: raw})
 		}
 	}
 	if out.IsError {
-		return "", fmt.Errorf("%s", text)
+		return res, fmt.Errorf("%s", res.Text)
 	}
-	return text, nil
+	return res, nil
 }
 
 // Close shuts down the connection and the underlying process.

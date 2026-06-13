@@ -150,8 +150,9 @@ func wrap(client *Client, server string, sp ToolSpec) tool.Definition {
 		Description: desc,
 		Parameters:  params,
 		ReadOnly:    readOnly,
-		Run: func(ctx context.Context, args json.RawMessage) (string, error) {
-			return client.CallTool(ctx, toolName, args)
+		RunRich: func(ctx context.Context, args json.RawMessage) (tool.Result, error) {
+			res, err := client.CallToolRich(ctx, toolName, args)
+			return tool.Result{Text: res.Text, Images: res.Images}, err
 		},
 	}
 }
