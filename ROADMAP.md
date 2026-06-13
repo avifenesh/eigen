@@ -963,11 +963,13 @@ feature (#3, persistent north star + judge).
 
 ## Tier 18 — other model types as first-class servers (beyond chat LLMs)
 Goal: serve and use NON-chat models where they fit better/cheaper than an LLM —
-embedders, rerankers, local diffusion/vision, classifiers — as first-class
-capabilities the agent and app draw on. Tier 7 dream #23 ("integrate other
-model types efficiently") made concrete. The user already runs local model
-servers (llama.cpp, the BGE embedder service, whisper, Kokoro); the work is a
-clean serving + selection layer, not bespoke wiring per model.
+embedders, rerankers, image generation — as first-class capabilities the agent
+and app draw on. Tier 7 dream #23 ("integrate other model types efficiently")
+made concrete. The user already runs local model servers (llama.cpp, the BGE
+embedder service, whisper, Kokoro). Build order (user-set): 1+2 FIRST (embedder
+seam → retrieval, the token-efficiency win), then image gen (we have no image
+model today), then local-first routing (OPT-IN). Non-LLM deterministic helpers
+are just tools — OUT OF SCOPE here.
 
 - [ ] **Provider seam for non-generative models.** Today `llm.Provider` is
   chat-completions shaped. Add sibling interfaces — `Embedder` (text → vector),
@@ -980,18 +982,18 @@ clean serving + selection layer, not bespoke wiring per model.
   sessions + memory, so context is RETRIEVED on demand instead of pasted whole
   — the biggest remaining token-efficiency lever. A `retrieve` tool and/or
   automatic context assembly; a reranker tightens the top-k.
-- [ ] **Local-first routing for the cheap stuff.** Titling, dreaming, skill
-  scans, classification, embeddings — route to a LOCAL model (llama.cpp / a
-  small classifier) when present, saving the frontier budget for reasoning.
-  Extends the small-model selection that already prefers `EIGEN_LLAMA_BASE_URL`.
-- [ ] **Diffusion / image generation (optional, where it fits).** A local or
-  hosted image model behind a `generate_image` tool for diagrams/mockups —
-  output rides the image-capable tool-result plumbing. Lower priority; include
-  only when a concrete need appears.
-- [ ] **Non-LLM solutions where they win.** The principle (user's #23): when a
-  classifier/embedder/regex/AST tool solves a step deterministically and
-  cheaply, prefer it over an LLM call. Surface these as tools the orchestrator
-  picks, with the router aware of non-LLM options.
+- [ ] **Image generation (NEEDED — we have no image model today).** A local or
+  hosted image model behind a `generate_image` tool for diagrams/mockups/
+  assets — output rides the image-capable tool-result plumbing already built.
+  Not optional: eigen currently cannot produce images at all.
+- [ ] **Local-first routing for the cheap stuff — OPT-IN.** Titling, dreaming,
+  skill scans, embeddings — route to a LOCAL model (llama.cpp) when present,
+  saving frontier budget. OPT-IN via config (default off): local quality
+  varies, so the user enables it deliberately. Extends the small-model
+  selection that already prefers `EIGEN_LLAMA_BASE_URL`.
+- [~] **Non-LLM solutions — OUT OF SCOPE (user call).** Deterministic helpers
+  (classifier/regex/AST) are just tools the orchestrator already picks; no
+  model-serving layer needed. Dropped from this tier.
 
 ## Tier 19 — remote: SSH machines + control eigen from another machine
 Goal: drive eigen on a remote host, and reach your eigen from another machine.
