@@ -1781,3 +1781,32 @@ func TestWorkflowCommandUnknown(t *testing.T) {
 		t.Fatal("unknown workflow should queue nothing")
 	}
 }
+
+func TestBrandMarkAnimatesWhileWorking(t *testing.T) {
+	m := testModel(t)
+	m.state = stInput
+	if m.brandMark() != brandGlyph {
+		t.Fatalf("idle mark should be the static λ, got %q", m.brandMark())
+	}
+	m.state = stRunning
+	m.brandTick = 2
+	if m.brandMark() != brandSweep[2] {
+		t.Fatalf("working mark should be the rotating vector frame, got %q", m.brandMark())
+	}
+}
+
+func TestTermTitleStrings(t *testing.T) {
+	// Working title carries the mark + animated dots (1..3).
+	for i, wantDots := range map[int]int{0: 1, 1: 2, 2: 3, 3: 1} {
+		w := titleWorking(i)
+		if !strings.HasPrefix(w, brandGlyph+" eigen working") {
+			t.Fatalf("working title shape: %q", w)
+		}
+		if got := strings.Count(w, "."); got != wantDots {
+			t.Fatalf("titleWorking(%d) dots = %d, want %d (%q)", i, got, wantDots, w)
+		}
+	}
+	if !strings.Contains(titleReady(), "ready") || !strings.HasPrefix(titleReady(), brandGlyph) {
+		t.Fatalf("ready title: %q", titleReady())
+	}
+}
