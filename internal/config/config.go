@@ -18,6 +18,7 @@ type Config struct {
 	Provider   string   `json:"provider"`
 	Model      string   `json:"model"`
 	Perm       string   `json:"perm"`
+	Effort     string   `json:"effort"` // default reasoning effort for new sessions (per-model levels; e.g. max)
 	MaxTokens  int      `json:"max_tokens"`
 	TTSCmd     string   `json:"tts_cmd"`
 	NotifyCmd  string   `json:"notify_cmd"`
@@ -121,6 +122,8 @@ func Set(c *Config, key, value string) error {
 			return fmt.Errorf("perm must be gated|auto")
 		}
 		c.Perm = value
+	case "effort":
+		c.Effort = value
 	case "max_tokens":
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 0 {
@@ -202,6 +205,7 @@ func View(c Config) string {
 		fmt.Fprintf(&b, "%-14s = %s (provider default; set a model to supersede)\n", "provider", c.Provider)
 	}
 	fmt.Fprintf(&b, "%-14s = %s\n", "perm", val(c.Perm))
+	fmt.Fprintf(&b, "%-14s = %s\n", "effort", val(c.Effort))
 	fmt.Fprintf(&b, "%-14s = %d\n", "max_tokens", c.MaxTokens)
 	fmt.Fprintf(&b, "%-14s = %s\n", "tts_cmd", val(c.TTSCmd))
 	fmt.Fprintf(&b, "%-14s = %s\n", "notify_cmd", val(c.NotifyCmd))
@@ -238,6 +242,8 @@ func Get(c Config, key string) string {
 		return llm.Ref(c.Provider, c.Model)
 	case "perm":
 		return c.Perm
+	case "effort":
+		return c.Effort
 	case "max_tokens":
 		return strconv.Itoa(c.MaxTokens)
 	case "tts_cmd":

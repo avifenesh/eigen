@@ -60,6 +60,15 @@ func main() {
 			os.Setenv("EIGEN_TTS_CMD", cfg.TTSCmd)
 		}
 	}
+	// Default reasoning effort (config.effort) becomes the per-model default
+	// unless a session meta or env var already set it; providers read
+	// EIGEN_REASONING_EFFORT at construction and validate against the model's
+	// level set.
+	if cfg.Effort != "" {
+		if _, set := os.LookupEnv("EIGEN_REASONING_EFFORT"); !set {
+			os.Setenv("EIGEN_REASONING_EFFORT", cfg.Effort)
+		}
+	}
 	if len(cfg.SkillsDirs) > 0 {
 		merged := append(cfg.SkillsDirs, splitNonEmpty(os.Getenv("EIGEN_SKILLS_DIRS"))...)
 		os.Setenv("EIGEN_SKILLS_DIRS", strings.Join(merged, ":"))
