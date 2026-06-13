@@ -463,7 +463,9 @@ chat → [home] returns — mouse round-trip, no keyboard.
 The wide breakpoint already reserves a right inspector rect (Wave 1) with a
 placeholder. Remaining: fill it with real per-selection detail (session/
 project/config), wider rail labels, more table columns where width allows.
-- [ ] right inspector content (selected item detail) + wider-breakpoint density.
+- [x] right inspector content (selected item detail) — SHIPPED (36853f5):
+  per-page key/value detail of the selected row (sessions/models/providers/
+  crons/plugins/projects/skills). Wider-breakpoint density still open.
 
 ## Tier 11 — superapp panels: closable, tabbed, real content, navigable
 
