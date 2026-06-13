@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"syscall"
 	"time"
 )
 
@@ -52,6 +53,25 @@ func Bash(policy *Policy) Definition {
 			defer cancel()
 
 			cmd := exec.CommandContext(ctx, "bash", "-c", in.Command)
+			// Run the command in its OWN process group so a timeout/cancel
+			// kills the WHOLE tree (bash plus anything it spawned —
+			// background jobs, subshells, servers), not just the bash leader.
+			// Without this, a `bash -c "slow-server &"` orphans children on
+			// timeout: a real process leak in a long-lived daemon.
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+			cmd.Cancel = func() error {
+				if cmd.Process != nil {
+					// Negative pid = signal the whole process group.
+					_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+				}
+				return cmd.Process.Kill()
+			}
+			// WaitDelay bounds how long Wait blocks after Cancel for I/O pipes
+			// to close. A backgrounded child inherits the stdout pipe and would
+			// otherwise keep CombinedOutput blocked until it exits on its own —
+			// the very leak we're killing. After this grace, the pipes are
+			// force-closed and Wait returns.
+			cmd.WaitDelay = 2 * time.Second
 			if policy != nil {
 				cmd.Dir = policy.Dir() // run in the session's project dir
 			}
