@@ -121,12 +121,16 @@ var Catalog = []ModelInfo{
 	// glm-5.2 announced 2026-06-13 (Coding Plan UI only); the API model id is
 	// not served until ~next week — keep the entry ready but NOT the default
 	// until the api.z.ai coding endpoint serves it, or GLM calls 404.
-	{ID: "glm-5.2", Provider: "glm", ContextWindow: 1000000, Search: true},
-	{ID: "glm-5.1", Provider: "glm", ContextWindow: 200000, Search: true},
-	{ID: "glm-5", Provider: "glm", ContextWindow: 200000, Search: true},
-	{ID: "glm-5-turbo", Provider: "glm", ContextWindow: 200000, Search: true},
-	{ID: "glm-4.7", Provider: "glm", ContextWindow: 200000, Search: true},
-	{ID: "glm-4.6", Provider: "glm", ContextWindow: 200000, Search: true},
+	// Reasoning: GLM exposes TWO thinking modes via the `thinking.type` field
+	// (enabled/disabled) — probed live on the z.ai coding endpoint (enabled →
+	// reasoning_content; disabled → none). Mapped to effort levels off|on
+	// (off→disabled, on→enabled). Default on.
+	{ID: "glm-5.2", Provider: "glm", ContextWindow: 1000000, Search: true, Reasoning: true, Effort: "on", EffortLevels: []string{"off", "on"}},
+	{ID: "glm-5.1", Provider: "glm", ContextWindow: 200000, Search: true, Reasoning: true, Effort: "on", EffortLevels: []string{"off", "on"}},
+	{ID: "glm-5", Provider: "glm", ContextWindow: 200000, Search: true, Reasoning: true, Effort: "on", EffortLevels: []string{"off", "on"}},
+	{ID: "glm-5-turbo", Provider: "glm", ContextWindow: 200000, Search: true, Reasoning: true, Effort: "on", EffortLevels: []string{"off", "on"}},
+	{ID: "glm-4.7", Provider: "glm", ContextWindow: 200000, Search: true, Reasoning: true, Effort: "on", EffortLevels: []string{"off", "on"}},
+	{ID: "glm-4.6", Provider: "glm", ContextWindow: 200000, Search: true, Reasoning: true, Effort: "on", EffortLevels: []string{"off", "on"}},
 	{ID: "glm-4.5", Provider: "glm", ContextWindow: 128000, Search: true},
 	{ID: "glm-4.5-air", Provider: "glm", ContextWindow: 128000, Search: true},
 }

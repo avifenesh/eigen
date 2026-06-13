@@ -162,3 +162,37 @@ func TestGLMBadSearchMode(t *testing.T) {
 		t.Fatal("bogus search mode should be rejected")
 	}
 }
+
+func TestGLMThinkingModes(t *testing.T) {
+	t.Setenv("GLM_API_KEY", "test")
+	p, err := NewGLM("glm-5.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Reasoning model defaults to thinking on.
+	if p.Effort() != "on" {
+		t.Fatalf("glm-5.2 should default to effort on, got %q", p.Effort())
+	}
+	// bodyExtra emits the enabled thinking field.
+	ex := p.bodyExtra()
+	if ex == nil || ex["thinking"].(map[string]any)["type"] != "enabled" {
+		t.Fatalf("on → thinking.type=enabled, got %v", ex)
+	}
+	// Turn it off → disabled.
+	if !p.SetEffort("off") || p.Effort() != "off" {
+		t.Fatalf("SetEffort(off) failed: %q", p.Effort())
+	}
+	if p.bodyExtra()["thinking"].(map[string]any)["type"] != "disabled" {
+		t.Fatal("off → thinking.type=disabled")
+	}
+	// Any reasoning word → enabled.
+	if !p.SetEffort("high") || p.Effort() != "on" {
+		t.Fatalf("SetEffort(high) → on, got %q", p.Effort())
+	}
+	// A non-reasoning GLM model has no thinking control.
+	t.Setenv("GLM_API_KEY", "test")
+	air, _ := NewGLM("glm-4.5-air")
+	if air.Effort() != "" || air.SetEffort("on") {
+		t.Fatalf("glm-4.5-air should have no thinking control, got %q", air.Effort())
+	}
+}

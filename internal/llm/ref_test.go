@@ -107,6 +107,10 @@ func TestModelEffortLevelsPerCatalog(t *testing.T) {
 		{"us.anthropic.claude-opus-4-8", []string{"low", "medium", "high", "xhigh", "max"}},
 		// budget-style sonnet: off (thinking disabled) through xhigh budgets
 		{"us.anthropic.claude-sonnet-4-6", []string{"off", "low", "medium", "high", "xhigh"}},
+		// GLM: two thinking modes (probed live — thinking.type enabled/disabled)
+		// mapped to off|on.
+		{"glm-5.2", []string{"off", "on"}},
+		{"glm-5.1", []string{"off", "on"}},
 	}
 	for _, c := range cases {
 		got := ModelEffortLevels(c.model)
@@ -125,8 +129,9 @@ func TestModelEffortLevelsPerCatalog(t *testing.T) {
 	if got := ModelEffortLevels("us.anthropic.claude-haiku-4-5-20251001-v1:0"); got != nil {
 		t.Errorf("haiku should have no effort levels, got %v", got)
 	}
-	if got := ModelEffortLevels("glm-5.1"); got != nil {
-		t.Errorf("glm should have no effort levels, got %v", got)
+	// glm-4.5-air is a non-reasoning GLM (no thinking modes).
+	if got := ModelEffortLevels("glm-4.5-air"); got != nil {
+		t.Errorf("glm-4.5-air should have no effort levels, got %v", got)
 	}
 }
 

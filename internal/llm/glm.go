@@ -14,6 +14,7 @@ const glmDefaultBaseURL = "https://api.z.ai/api/coding/paas/v4"
 
 // Compile-time interface checks.
 var _ Searcher = (*GLM)(nil)
+var _ EffortSetter = (*GLM)(nil)
 
 // GLM drives Zhipu's GLM models (glm-5.2, glm-5.1, glm-4.6, …) over their
 // OpenAI-compatible chat-completions API. When search is enabled, it injects
@@ -27,6 +28,13 @@ type GLM struct {
 	// "auto" and "on" enable it (GLM does not distinguish auto vs on — both
 	// mean the model may search when it deems it useful).
 	search string
+
+	// thinking is GLM's reasoning mode. GLM exposes exactly TWO modes via the
+	// `thinking.type` request field: "enabled" (the model emits
+	// reasoning_content before its answer) and "disabled" (no reasoning). We
+	// map eigen's effort vocabulary onto these: "off" → disabled, anything
+	// else → enabled. Empty = don't send the field (server default).
+	thinking string
 }
 
 // NewGLM builds a GLM provider from the environment.
@@ -54,8 +62,22 @@ func NewGLM(model string) (*GLM, error) {
 	if v := strings.TrimSpace(os.Getenv("EIGEN_GLM_SEARCH")); v != "" {
 		g.search = v
 	}
-	// Wire the web_search tool injection.
+	// Default thinking mode from the catalog (reasoning models default to the
+	// catalog Effort; "off" disables). GLM exposes only enabled/disabled.
+	info, cataloged := Lookup(model)
+	if cataloged && info.Reasoning {
+		g.thinking = "enabled"
+		if info.Effort == "off" {
+			g.thinking = "disabled"
+		}
+		// EIGEN_REASONING_EFFORT can override at startup (off|on for GLM).
+		if v := strings.TrimSpace(os.Getenv("EIGEN_REASONING_EFFORT")); v != "" {
+			g.SetEffort(v)
+		}
+	}
+	// Wire the web_search tool injection + the thinking body field.
 	g.c.extraTools = g.webSearchTool
+	g.c.extra = g.bodyExtra
 	return g, nil
 }
 
@@ -82,6 +104,49 @@ func (g *GLM) SetSearch(mode string) bool {
 	default:
 		return false
 	}
+}
+
+// Effort reports the current reasoning mode in eigen's vocabulary: "off" when
+// thinking is disabled, "on" when enabled, "" when this model has no thinking
+// control.
+func (g *GLM) Effort() string {
+	switch g.thinking {
+	case "disabled":
+		return "off"
+	case "enabled":
+		return "on"
+	default:
+		return ""
+	}
+}
+
+// SetEffort maps eigen's effort vocabulary onto GLM's two thinking modes:
+// "off" → disabled, any other accepted level ("on", or any reasoning word) →
+// enabled. Returns false when this model has no thinking control, or for an
+// unrecognized value.
+func (g *GLM) SetEffort(level string) bool {
+	if g.thinking == "" {
+		return false // non-reasoning model: no thinking control
+	}
+	switch level {
+	case "off", "none", "disabled", "minimal":
+		g.thinking = "disabled"
+		return true
+	case "on", "enabled", "low", "medium", "high", "xhigh", "max":
+		g.thinking = "enabled"
+		return true
+	default:
+		return false
+	}
+}
+
+// bodyExtra injects GLM's `thinking` request field when a mode is set, so the
+// model emits (or suppresses) reasoning_content per the user's effort choice.
+func (g *GLM) bodyExtra() map[string]any {
+	if g.thinking == "" {
+		return nil
+	}
+	return map[string]any{"thinking": map[string]any{"type": g.thinking}}
 }
 
 // prepare appends a hint to the system prompt when web_search is active, telling
