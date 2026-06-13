@@ -12,6 +12,7 @@ func TestWithBuiltinServersAddsWorkspace(t *testing.T) {
 	bin := filepath.Join(dir, "agent-workspace-linux")
 	os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755)
 	t.Setenv("EIGEN_WORKSPACE_BIN", bin)
+	t.Setenv("EIGEN_CHROME_BRIDGE", "/nonexistent") // isolate from the real bridge
 
 	got := withBuiltinServers(nil)
 	if len(got) != 1 || got[0].Name != "workspace" {
@@ -31,6 +32,7 @@ func TestWithBuiltinServersUserWins(t *testing.T) {
 	os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755)
 	t.Setenv("EIGEN_WORKSPACE_BIN", bin)
 
+	t.Setenv("EIGEN_CHROME_BRIDGE", "/nonexistent")
 	user := []serverConfig{{Name: "workspace", Command: []string{"my-own-binary"}}}
 	got := withBuiltinServers(user)
 	if len(got) != 1 {
@@ -43,6 +45,7 @@ func TestWithBuiltinServersUserWins(t *testing.T) {
 
 func TestWithBuiltinServersAbsentBinary(t *testing.T) {
 	t.Setenv("EIGEN_WORKSPACE_BIN", "/nonexistent/binary")
+	t.Setenv("EIGEN_CHROME_BRIDGE", "/nonexistent")
 	got := withBuiltinServers(nil)
 	if len(got) != 0 {
 		t.Fatalf("no binary → no built-in server, got %+v", got)
@@ -63,5 +66,58 @@ func TestIsExecutable(t *testing.T) {
 	}
 	if isExecutable(dir) {
 		t.Error("a directory is not executable")
+	}
+}
+
+func TestWithBuiltinServersAddsChrome(t *testing.T) {
+	dir := t.TempDir()
+	// A fake bridge: <dir>/bin/mcp-server.js + a fake node binary.
+	os.MkdirAll(filepath.Join(dir, "bin"), 0o755)
+	script := filepath.Join(dir, "bin", "mcp-server.js")
+	os.WriteFile(script, []byte("// fake"), 0o644)
+	node := filepath.Join(dir, "node")
+	os.WriteFile(node, []byte("#!/bin/sh\n"), 0o755)
+	t.Setenv("EIGEN_WORKSPACE_BIN", "/nonexistent") // isolate workspace
+	t.Setenv("EIGEN_CHROME_BRIDGE", dir)            // repo dir form
+	t.Setenv("EIGEN_NODE_BIN", node)
+
+	got := withBuiltinServers(nil)
+	if len(got) != 1 || got[0].Name != "chrome" {
+		t.Fatalf("chrome should be auto-added, got %+v", got)
+	}
+	if got[0].Command[0] != node || got[0].Command[1] != script {
+		t.Fatalf("command should be [node script], got %v", got[0].Command)
+	}
+	if len(got[0].Tools) != len(chromeBridgeTools) {
+		t.Fatalf("chrome allowlist should apply, got %d", len(got[0].Tools))
+	}
+}
+
+func TestChromeBridgeUserWins(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "bin"), 0o755)
+	os.WriteFile(filepath.Join(dir, "bin", "mcp-server.js"), []byte("//"), 0o644)
+	node := filepath.Join(dir, "node")
+	os.WriteFile(node, []byte("#!/bin/sh\n"), 0o755)
+	t.Setenv("EIGEN_WORKSPACE_BIN", "/nonexistent")
+	t.Setenv("EIGEN_CHROME_BRIDGE", dir)
+	t.Setenv("EIGEN_NODE_BIN", node)
+
+	user := []serverConfig{{Name: "chrome", Command: []string{"my-chrome"}}}
+	got := withBuiltinServers(user)
+	if len(got) != 1 || got[0].Command[0] != "my-chrome" {
+		t.Fatalf("user's chrome config must win, got %+v", got)
+	}
+}
+
+func TestChromeBridgeAbsentNode(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "bin"), 0o755)
+	os.WriteFile(filepath.Join(dir, "bin", "mcp-server.js"), []byte("//"), 0o644)
+	t.Setenv("EIGEN_WORKSPACE_BIN", "/nonexistent")
+	t.Setenv("EIGEN_CHROME_BRIDGE", dir)
+	t.Setenv("EIGEN_NODE_BIN", "/nonexistent/node") // no node → not registered
+	if got := withBuiltinServers(nil); len(got) != 0 {
+		t.Fatalf("no node → chrome not registered, got %+v", got)
 	}
 }

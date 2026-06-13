@@ -116,6 +116,10 @@ func main() {
 		runWorkspaceCmd(flag.Arg(1))
 		return
 	}
+	if flag.Arg(0) == "chrome" {
+		runChromeCmd()
+		return
+	}
 
 	// `eigen daemon [status|stop]`: run / inspect / stop the long-lived session
 	// host (the real app). Windows attach to it as views; sessions keep running
@@ -1346,6 +1350,27 @@ func runWorkspaceCmd(sub string) {
 		fmt.Fprintf(os.Stderr, "usage: eigen workspace <status|build>\n")
 		os.Exit(2)
 	}
+}
+
+// runChromeCmd implements `eigen chrome [status]`: reports whether the
+// agent-chrome-bridge MCP server (control of the user's REAL logged-in Chrome
+// via an MV3 extension) is detected and auto-registered.
+func runChromeCmd() {
+	script, node := mcp.ChromeBridge()
+	if script == "" {
+		fmt.Println("chrome bridge: not found")
+		fmt.Println("install: clone agent-chrome-bridge to ~/projects/agent-chrome-bridge (load the unpacked extension + register the native host per its README), or set EIGEN_CHROME_BRIDGE to its dir")
+		return
+	}
+	if node == "" {
+		fmt.Println("chrome bridge: found, but no node runtime")
+		fmt.Println("script:", script)
+		fmt.Println("set EIGEN_NODE_BIN to a node executable (the daemon's PATH may miss an nvm install)")
+		return
+	}
+	fmt.Println("chrome bridge: available →", script)
+	fmt.Println("node:", node)
+	fmt.Println("(auto-registered as the `chrome` MCP server; drives your real logged-in Chrome — 32 tools incl. screenshot)")
 }
 
 // buildWorkspace compiles agent-workspace-linux from a local cargo checkout
