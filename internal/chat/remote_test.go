@@ -488,3 +488,45 @@ func TestConcurrentRequestsDoNotCrossReplies(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+// TestMultiWindowStress simulates real multi-window daemon use: several views
+// attach to the same session and to sibling sessions, polling state/list while
+// a turn runs — the scenario that surfaced the original history race. Run with
+// -race.
+func TestMultiWindowStress(t *testing.T) {
+	build := func(_, _ string) (*agent.Agent, func(), error) {
+		reg, _ := tool.NewRegistry()
+		return &agent.Agent{Provider: echoProv{}, Tools: reg, Perm: agent.PermAuto, MaxContextTokens: 9000}, func() {}, nil
+	}
+	c, id := startDaemon(t, build)
+
+	var wg sync.WaitGroup
+	// Pollers: hammer list/state like the rail + status bar do across windows.
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				_, _ = c.List()
+				_, _ = c.State(id)
+			}
+		}()
+	}
+	// A driver: run a couple of turns concurrently with the polling.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		r, err := NewRemote(c, id)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		r.Wire(func(agent.Event) {}, nil)
+		for j := 0; j < 3; j++ {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_, _ = r.Send(ctx, "hi", nil)
+			cancel()
+		}
+	}()
+	wg.Wait()
+}
