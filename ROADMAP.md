@@ -888,37 +888,25 @@ and the substrate for #13 (ultraplan).
   immutable per-child toolset. Mutating roles (implementer/tester) DEFERRED to
   v2 (need isolated workspaces + serialized approvals). Config-file roles cut
   (hardcoded for v1 per review).
-- [~] **(original) Named roles, not anonymous subtasks.** A subtask can carry a role
-  (e.g. `researcher`, `implementer`, `reviewer`, `tester`) that sets its system
-  framing, tool allowlist, and default model tier — so a `reviewer` is the
-  cross-vendor critic (reuse `llm.CrossReviewer`/#25), an `implementer` gets
-  write/edit/bash, a `researcher` gets read/grep/websearch only. Roles are data
-  (config-definable), not hardcoded.
 - [x] **Parallel fan-out with a bounded pool.** SHIPPED v1 (7e1ca41): task_group
   tool + Agent.TaskGroup — bounded worker pool (default 3/max 6, max 8
   children), parent-ctx cancel + per-child/group timeouts, result caps, panic
   recovery, stable input-order report. READ-ONLY children only (enforced
   mechanically), which is what makes it safe (no approval race, no concurrent
   writes). -race verified + live-verified with opus.
-- [~] **(original) Parallel fan-out with a bounded pool.** Today `task(background=true)`
-  detaches one goroutine per call; a plan that spawns N sub-agents needs a
-  bounded worker pool (max concurrent, per the host's resource budget — the
-  same discipline as the browser/MCP process manager), a join/barrier so the
-  orchestrator waits on a SET of tasks, and aggregate status. Likely a
-  `task_group` tool or a `wait` op over several ids.
-- [ ] **Escalation (carries Tier 7 #12's open item).** If a sub-agent fails,
-  stalls, or declares itself underpowered, auto-retry or hand off to a bigger
-  model (NOT necessarily the orchestrator) and merge the final report back via
-  `task_status`. Needs a stall/underpowered signal + a one-step escalation
-  ladder (router tier + 1), bounded so it can't loop.
-- [ ] **Merge step.** Collecting N sub-agent reports into one coherent result
-  is itself a model task — a `synthesize` role/op that reads the children's
-  transcripts (or final reports) and produces the orchestrator's answer.
-  Cross-vendor synthesis where it matters.
-- [ ] **Observability (extends Tier 12).** The `[tasks]` panel already shows
-  background tasks live; extend it to render the plan TREE (role, parent,
-  status, current tool, escalation state) so a fan-out is legible, not a flat
-  list. Cancel/retry/promote per node.
+- [x] **Escalation.** SHIPPED (d0bd692): a read-only fan-out child that fails
+  with a HARD error (not cancellation, not an explicit model override) gets ONE
+  retry at the next difficulty tier up (router → stronger model), bounded so it
+  can't loop. No text heuristics (fragile/injectable) per review — only a real
+  error triggers it; report marks "escalated → <model>".
+- [x] **Merge step.** SHIPPED (d0bd692): task_group's optional `synthesize`
+  question runs a final tool-less sub-agent over the combined report → one
+  coherent "--- synthesis ---" answer (reconcile/cite), routed cross-vendor.
+- [x] **Observability.** The per-child report (role · model · duration ·
+  status + synthesis) is the surface for FOREGROUND fan-out, which joins
+  synchronously (nothing to watch live). A live plan-tree in [tasks] only
+  applies to BACKGROUND fan-out, which doesn't exist yet — deferred until it
+  does (review: "keep task_group foreground; tree-view can wait").
 - [x] **Mutating parallel fan-out (v2).** SHIPPED (c0565f5): task_group_mutating —
   implementer children edit in ISOLATED git worktrees, parent captures each
   diff, validates the combined set in a throwaway worktree, applies the clean
@@ -927,10 +915,12 @@ and the substrate for #13 (ultraplan).
   read/write/edit/move only (NO bash/git/network); .git denied; worktree ops
   serialized; -race + live verified. Conflicting children now REBASE by redo (6ece734) instead of being
   dropped. DEFERRED: build/test after apply, subdir-session prefix, submodules.
-- [ ] **Safety.** Parallel sub-agents inherit the parent's permission posture;
-  a gated parent must NOT let children silently auto-run mutating tools.
-  Approval routing for many concurrent children needs design (one queue, clear
-  provenance per child) so approvals don't race or get mis-attributed.
+- [x] **Safety.** SHIPPED + test-enforced. Read-only children never call
+  Approve (read-only tools auto-run → the N-concurrent-approval race can't
+  occur; TestReadOnlyFanoutNeverApproves under a gated parent). Mutating
+  children run PermAuto in SANDBOXED worktrees with NO Approve callback —
+  nothing real until the parent's single apply-time approval, which respects
+  auto mode (c33a797: no prompt in auto, one prompt in gated).
 
 ## Tier 17 — workflows (declarative, repeatable multi-step runs)
 Goal: name and replay a multi-step process — "review this PR", "cut a release",
