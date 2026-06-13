@@ -45,7 +45,7 @@ func NewGLM(model string) (*GLM, error) {
 	}
 	base := firstNonEmpty(os.Getenv("EIGEN_GLM_BASE_URL"), glmDefaultBaseURL)
 	if model == "" {
-		model = "glm-5.2"
+		model = "glm-5.1"
 	}
 	g := &GLM{
 		c:      newChatClient(base, model, key, "glm"),

@@ -117,6 +117,9 @@ var Catalog = []ModelInfo{
 	// image content with 400 code 1210 "messages.content.type is invalid,
 	// allowed values: ['text']" on 5.1/4.6/4.5-air — the SERVING GATEWAY is
 	// text-only regardless of model family; no Vision flags here.
+	// glm-5.2 announced 2026-06-13 (Coding Plan UI only); the API model id is
+	// not served until ~next week — keep the entry ready but NOT the default
+	// until the api.z.ai coding endpoint serves it, or GLM calls 404.
 	{ID: "glm-5.2", Provider: "glm", ContextWindow: 200000, Search: true},
 	{ID: "glm-5.1", Provider: "glm", ContextWindow: 200000, Search: true},
 	{ID: "glm-5", Provider: "glm", ContextWindow: 200000, Search: true},
@@ -140,9 +143,9 @@ var defaultModelByProvider = map[string]string{
 	"local":            "local",
 	"grok":             "grok-build",
 	"xai":              "grok-build",
-	"glm":              "glm-5.2",
-	"zhipu":            "glm-5.2",
-	"z.ai":             "glm-5.2",
+	"glm":              "glm-5.1",
+	"zhipu":            "glm-5.1",
+	"z.ai":             "glm-5.1",
 }
 
 // DefaultModel returns the model id a provider uses when none is specified.
