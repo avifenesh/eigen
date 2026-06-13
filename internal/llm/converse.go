@@ -28,6 +28,7 @@ type Converse struct {
 	region  string
 	profile string
 	creds   awsCreds
+	bearer  string // AWS_BEARER_TOKEN_BEDROCK — when set, auth via Bearer header (no SigV4)
 	http    *http.Client
 
 	// Capabilities resolved from the catalog (with env overrides), driving the
@@ -87,15 +88,26 @@ func NewConverse(model string) (*Converse, error) {
 	if model == "" {
 		model = "us.anthropic.claude-opus-4-8"
 	}
-	creds, err := loadAWSCreds(profile)
-	if err != nil {
-		return nil, fmt.Errorf("converse credentials: %w", err)
+	// Prefer the Bedrock bearer token (AWS_BEARER_TOKEN_BEDROCK): a single
+	// credential that drives the converse endpoint via an Authorization: Bearer
+	// header — no SigV4, no ~/.aws/credentials. This is what makes a remote
+	// daemon work with just the token snapshot (no AWS file to copy). Fall back
+	// to SigV4 from ~/.aws/credentials when no token is set.
+	bearer := os.Getenv("AWS_BEARER_TOKEN_BEDROCK")
+	var creds awsCreds
+	if bearer == "" {
+		var err error
+		creds, err = loadAWSCreds(profile)
+		if err != nil {
+			return nil, fmt.Errorf("converse credentials: %w (or set AWS_BEARER_TOKEN_BEDROCK)", err)
+		}
 	}
 	c := &Converse{
 		Model:   model,
 		region:  region,
 		profile: profile,
 		creds:   creds,
+		bearer:  bearer,
 		http:    &http.Client{Timeout: 5 * time.Minute},
 	}
 	// Resolve capabilities from the catalog, then apply env overrides.
@@ -288,19 +300,25 @@ func (c *Converse) Complete(ctx context.Context, req Request) (*Response, error)
 	}
 
 	url := fmt.Sprintf("https://bedrock-runtime.%s.amazonaws.com/model/%s/converse", c.region, urlPathEscape(c.Model))
-	// Re-resolve credentials per request: the daemon is long-lived, so an AWS
-	// profile's session token can rotate/expire while a session stays open.
-	// Re-reading picks up refreshed creds without restarting the daemon (the
-	// pre-daemon process exited after each run, masking this). Fall back to the
-	// creds loaded at construction if the re-read fails.
-	creds := c.creds
-	if fresh, err := loadAWSCreds(c.profile); err == nil {
-		creds = fresh
+	var headers map[string]string
+	var sign func(r *http.Request, b []byte)
+	if c.bearer != "" {
+		// Bearer-token auth: a single header, no SigV4, no ~/.aws/credentials.
+		headers = map[string]string{"Authorization": "Bearer " + c.bearer}
+	} else {
+		// SigV4. Re-resolve credentials per request: the daemon is long-lived,
+		// so an AWS profile's session token can rotate/expire while a session
+		// stays open. Re-reading picks up refreshed creds without restarting
+		// the daemon. Fall back to the creds loaded at construction.
+		creds := c.creds
+		if fresh, err := loadAWSCreds(c.profile); err == nil {
+			creds = fresh
+		}
+		sign = func(r *http.Request, b []byte) {
+			signV4(r, b, creds, "bedrock", c.region, time.Now())
+		}
 	}
-	sign := func(r *http.Request, b []byte) {
-		signV4(r, b, creds, "bedrock", c.region, time.Now())
-	}
-	raw, status, err := httpJSON(ctx, c.http, url, nil, body, sign)
+	raw, status, err := httpJSON(ctx, c.http, url, headers, body, sign)
 	if err != nil {
 		return nil, fmt.Errorf("converse: %w", err)
 	}

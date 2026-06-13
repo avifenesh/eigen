@@ -78,6 +78,7 @@ func Install(target string, opts InstallOpts) (version string, err error) {
 // ~/.aws/credentials to the remote ~/.aws/credentials, both 0600, piped over
 // ssh (no temp files, no secrets on argv).
 func pushCreds(target, envSnapshot string, step func(string)) error {
+	hasBearer := strings.Contains(envSnapshot, "AWS_BEARER_TOKEN_BEDROCK=")
 	if strings.TrimSpace(envSnapshot) != "" {
 		cmd := exec.Command("ssh", SSHArgs(target, "umask 077 && mkdir -p ~/.eigen && cat > ~/.eigen/daemon.env && chmod 600 ~/.eigen/daemon.env")...)
 		cmd.Stdin = strings.NewReader(envSnapshot)
@@ -86,14 +87,20 @@ func pushCreds(target, envSnapshot string, step func(string)) error {
 		}
 		step("pushed credential snapshot → ~/.eigen/daemon.env (0600)")
 	}
-	if home, err := os.UserHomeDir(); err == nil {
-		if data, rerr := os.ReadFile(filepath.Join(home, ".aws", "credentials")); rerr == nil && len(data) > 0 {
-			cmd := exec.Command("ssh", SSHArgs(target, "umask 077 && mkdir -p ~/.aws && cat > ~/.aws/credentials && chmod 600 ~/.aws/credentials")...)
-			cmd.Stdin = bytes.NewReader(data)
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("push ~/.aws/credentials: %w", err)
+	// The Bedrock bearer token (in the snapshot) drives the default Converse
+	// model on its own — no AWS file needed. Only fall back to copying
+	// ~/.aws/credentials when there's NO bearer token (SigV4 is the only option
+	// then). Avoids putting real AWS keys on the remote in the common case.
+	if !hasBearer {
+		if home, err := os.UserHomeDir(); err == nil {
+			if data, rerr := os.ReadFile(filepath.Join(home, ".aws", "credentials")); rerr == nil && len(data) > 0 {
+				cmd := exec.Command("ssh", SSHArgs(target, "umask 077 && mkdir -p ~/.aws && cat > ~/.aws/credentials && chmod 600 ~/.aws/credentials")...)
+				cmd.Stdin = bytes.NewReader(data)
+				if err := cmd.Run(); err != nil {
+					return fmt.Errorf("push ~/.aws/credentials: %w", err)
+				}
+				step("pushed ~/.aws/credentials → ~/.aws/credentials (0600; no bearer token available)")
 			}
-			step("pushed ~/.aws/credentials → ~/.aws/credentials (0600)")
 		}
 	}
 	return nil

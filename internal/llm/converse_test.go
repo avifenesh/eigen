@@ -219,3 +219,19 @@ func TestConverseAdaptiveThinking(t *testing.T) {
 		t.Fatal("opus-4-8 should carry an Effort (adaptive) in the catalog")
 	}
 }
+
+func TestConverseBearerTokenSkipsAWSFile(t *testing.T) {
+	// With AWS_BEARER_TOKEN_BEDROCK set, NewConverse must NOT require
+	// ~/.aws/credentials (the bearer token drives the converse endpoint). Point
+	// HOME at an empty dir so any file read would fail.
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "test-token-123")
+	t.Setenv("AWS_ACCESS_KEY_ID", "")
+	c, err := NewConverse("us.anthropic.claude-opus-4-8")
+	if err != nil {
+		t.Fatalf("NewConverse with bearer token should not need ~/.aws/credentials: %v", err)
+	}
+	if c.bearer != "test-token-123" {
+		t.Fatalf("bearer not stored: %q", c.bearer)
+	}
+}
