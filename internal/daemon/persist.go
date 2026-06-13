@@ -34,6 +34,10 @@ type persistMeta struct {
 	Title string `json:"title,omitempty"`
 	Perm  string `json:"perm,omitempty"`
 	Goal  string `json:"goal,omitempty"`
+	// LastAttached is when a view last attached (unix seconds). "Last used by
+	// ME" — transcript mtime lies (the titler and background persistence touch
+	// files), so listings sort by this when present.
+	LastAttached int64 `json:"last_attached,omitempty"`
 }
 
 func transcriptPath(dir, id string) string { return filepath.Join(dir, id+".jsonl") }
@@ -106,7 +110,7 @@ type PersistedInfo struct {
 	Model   string
 	Title   string
 	Msgs    int
-	Updated int64 // unix seconds (transcript mtime)
+	Updated int64 // unix seconds: last attach when known, else transcript mtime
 }
 
 // ListPersisted lists durable daemon sessions from the default sessions dir.
@@ -116,7 +120,11 @@ func ListPersisted() []PersistedInfo {
 	var out []PersistedInfo
 	for _, p := range loadPersisted(dir) {
 		info := PersistedInfo{ID: p.meta.ID, Dir: p.meta.Dir, Model: p.meta.Model, Title: p.meta.Title, Msgs: len(p.history)}
-		if fi, err := os.Stat(transcriptPath(dir, p.meta.ID)); err == nil {
+		// "Last used by ME": prefer the attach timestamp over transcript mtime
+		// (the titler/persistence touch files without the user being there).
+		if p.meta.LastAttached > 0 {
+			info.Updated = p.meta.LastAttached
+		} else if fi, err := os.Stat(transcriptPath(dir, p.meta.ID)); err == nil {
 			info.Updated = fi.ModTime().Unix()
 		}
 		if info.Title == "" {

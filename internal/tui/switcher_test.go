@@ -57,7 +57,7 @@ func TestSwitcherOpensPreselectsCurrent(t *testing.T) {
 func TestSwitcherEnterHops(t *testing.T) {
 	m := switcherModel(t)
 	m.openSwitcher()
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // down to s3
+	m.Update(tea.KeyMsg{Type: tea.KeyDown}) // down to s3
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if m.switchTo != "s3" {
 		t.Fatalf("switchTo = %q, want s3", m.switchTo)
@@ -80,9 +80,9 @@ func TestSwitcherEnterOnCurrentIsNoop(t *testing.T) {
 func TestSwitcherHomeKey(t *testing.T) {
 	m := switcherModel(t)
 	m.openSwitcher()
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
 	if !m.openApp {
-		t.Fatal("h should set openApp (go home to the app)")
+		t.Fatal("ctrl+h should set openApp (go home to the app)")
 	}
 }
 
@@ -238,5 +238,34 @@ func TestKnownVisionModelAttachesImages(t *testing.T) {
 	}
 	if vr.called {
 		t.Fatal("router must not be consulted when the model can see")
+	}
+}
+
+func TestSwitcherTypeToSearch(t *testing.T) {
+	m := switcherModel(t)
+	m.openSwitcher()
+	all := len(m.switchEntries)
+	if all < 2 {
+		t.Skip("need multiple sessions")
+	}
+	// Type a query that matches one session's title/id/dir; the filtered
+	// list should narrow and enter should hop to a matching entry.
+	target := m.switchEntries[all-1]
+	for _, r := range target.ID {
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	got := m.switchFiltered()
+	if len(got) == 0 || len(got) > all {
+		t.Fatalf("search should narrow: %d of %d", len(got), all)
+	}
+	// Backspace clears back to the full list.
+	for range target.ID {
+		m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	}
+	if m.switchQuery != "" {
+		t.Fatalf("backspace should clear the query, got %q", m.switchQuery)
+	}
+	if len(m.switchFiltered()) != all {
+		t.Fatal("cleared query should restore the full list")
 	}
 }

@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/avifenesh/eigen/internal/fuzzy"
 )
 
 // paletteCmd is one launchable entry: a label, an optional key hint, and how to
@@ -101,7 +103,7 @@ func (m *model) refilterPalette() {
 	}
 	var hits []scored
 	for _, c := range all {
-		if s := fuzzyScore(strings.ToLower(c.label), q); s >= 0 {
+		if s := fuzzy.Score(c.label, q); s >= 0 {
 			hits = append(hits, scored{c, s})
 		}
 	}
@@ -111,39 +113,6 @@ func (m *model) refilterPalette() {
 		m.pal.matches[i] = h.c
 	}
 	m.pal.idx = clampInt(m.pal.idx, len(m.pal.matches))
-}
-
-// fuzzyScore returns a small score (lower = better) when q is a subsequence of
-// s, or -1 when it doesn't match. A contiguous substring scores best.
-func fuzzyScore(s, q string) int {
-	if q == "" {
-		return 0
-	}
-	if idx := strings.Index(s, q); idx >= 0 {
-		return idx // substring: rank by how early it starts
-	}
-	// Subsequence match: all query runes appear in order.
-	si := 0
-	gaps := 0
-	last := -1
-	for _, qr := range q {
-		found := false
-		for ; si < len(s); si++ {
-			if rune(s[si]) == qr {
-				if last >= 0 {
-					gaps += si - last - 1
-				}
-				last = si
-				si++
-				found = true
-				break
-			}
-		}
-		if !found {
-			return -1
-		}
-	}
-	return 100 + gaps // worse than any substring match
 }
 
 // paletteKey handles a key while the palette is active. Returns (cmd, handled).

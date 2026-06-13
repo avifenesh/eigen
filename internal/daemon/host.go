@@ -126,6 +126,7 @@ func (h *Host) enablePersist(s *Session) {
 		_ = transcript.Save(transcriptPath(dir, s.ID), msgs)
 		h.maybeTitle(s, msgs)
 	}
+	s.onAttach = func() { h.saveSessionMeta(s) } // persist LastAttached
 	h.saveSessionMeta(s)
 }
 
@@ -142,6 +143,9 @@ func (h *Host) saveSessionMeta(s *Session) {
 		Title: s.title,
 		Perm:  string(s.agent.Perm),
 		Goal:  s.agent.CurrentGoal(),
+	}
+	if !s.lastAttached.IsZero() {
+		m.LastAttached = s.lastAttached.Unix()
 	}
 	s.mu.Unlock()
 	saveMeta(h.persistDir, m)
@@ -171,6 +175,9 @@ func (h *Host) Restore(build Builder) int {
 		}
 		s := newSession(p.meta.ID, p.meta.Dir, p.meta.Model, a)
 		s.title = p.meta.Title
+		if p.meta.LastAttached > 0 {
+			s.lastAttached = time.Unix(p.meta.LastAttached, 0) // survives restart
+		}
 		s.onClose = closeFn
 		if len(p.history) > 0 {
 			s.sess = a.Resume(p.history)

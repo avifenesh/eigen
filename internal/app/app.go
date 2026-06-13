@@ -254,6 +254,9 @@ func (m *Model) capturingInput() bool {
 		return m.config.editing || m.config.picking
 	case PageMemory:
 		return m.memory.confirm
+	case PageSessions:
+		// Type-to-search captures everything (typing "q" extends the query).
+		return m.sessions.filter.searching || m.sessions.confirmDel
 	}
 	return false
 }

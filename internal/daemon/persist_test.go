@@ -12,6 +12,7 @@ import (
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/tool"
+	"github.com/avifenesh/eigen/internal/transcript"
 )
 
 func persistentBuilder() Builder {
@@ -307,4 +308,35 @@ func TestTitleInFlightGuard(t *testing.T) {
 		t.Fatalf("titler called %d times while one call was in flight, want 1", n)
 	}
 	close(release)
+}
+
+func TestListPersistedPrefersLastAttached(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	sd := SessionsDir()
+	if err := os.MkdirAll(sd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Two sessions: s1 transcript is NEWER on disk, but s2 was attached more
+	// recently. Last-used ordering must put s2 ahead of s1.
+	for _, id := range []string{"s1", "s2"} {
+		if err := transcript.Save(transcriptPath(sd, id), []llm.Message{{Role: llm.RoleUser, Text: "hello from " + id}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	saveMeta(sd, persistMeta{ID: "s1", Dir: "/p", Model: "m", LastAttached: 1000})
+	saveMeta(sd, persistMeta{ID: "s2", Dir: "/p", Model: "m", LastAttached: 9999})
+
+	var s1, s2 PersistedInfo
+	for _, p := range ListPersisted() {
+		switch p.ID {
+		case "s1":
+			s1 = p
+		case "s2":
+			s2 = p
+		}
+	}
+	if s1.Updated != 1000 || s2.Updated != 9999 {
+		t.Fatalf("LastAttached should drive Updated: s1=%d s2=%d", s1.Updated, s2.Updated)
+	}
 }

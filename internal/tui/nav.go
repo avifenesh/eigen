@@ -4,9 +4,11 @@ package tui
 // find, and copy.
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/avifenesh/eigen/internal/chat"
+	"github.com/avifenesh/eigen/internal/fuzzy"
 )
 
 // collapsibleIdx returns block indices that can be selected/toggled.
@@ -200,6 +202,7 @@ func (m *model) openSwitcher() {
 		return
 	}
 	m.switchEntries = entries
+	m.switchQuery = ""
 	m.switchIdx = 0
 	// Preselect the current session so the list opens oriented.
 	for i, e := range entries {
@@ -210,4 +213,28 @@ func (m *model) openSwitcher() {
 	}
 	m.switching = true
 	m.sync()
+}
+
+// switchFiltered returns the switcher entries matching switchQuery, fuzzy
+// rank-ordered (title + id + dir); the full list when the query is empty.
+func (m *model) switchFiltered() []chat.SessionEntry {
+	if m.switchQuery == "" {
+		return m.switchEntries
+	}
+	type hit struct {
+		e     chat.SessionEntry
+		score int
+	}
+	var hits []hit
+	for _, e := range m.switchEntries {
+		if s := fuzzy.Score(e.Title+" "+e.ID+" "+e.Dir, m.switchQuery); s >= 0 {
+			hits = append(hits, hit{e, s})
+		}
+	}
+	sort.SliceStable(hits, func(i, j int) bool { return hits[i].score < hits[j].score })
+	out := make([]chat.SessionEntry, len(hits))
+	for i, h := range hits {
+		out[i] = h.e
+	}
+	return out
 }

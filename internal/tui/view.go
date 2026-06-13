@@ -223,25 +223,38 @@ func (m *model) pickerView() string {
 // the app, the running session keeps running either way.
 func (m *model) switcherView() string {
 	var b strings.Builder
-	b.WriteString(styleUser.Render("switch session") + dim("   ↑↓ move · enter switch · h home · esc cancel") + "\n\n")
-	rows := m.height - 4
+	hint := "   type to search · ↑↓ move · enter switch · ctrl+h home · esc cancel"
+	b.WriteString(styleUser.Render("switch session") + dim(hint) + "\n")
+	entries := m.switchFiltered()
+	q := "search: " + m.switchQuery + "▌"
+	if m.switchQuery == "" {
+		q = dim("(type to filter)")
+	}
+	b.WriteString(styleAccent.Render(q) + dim(fmt.Sprintf("   %d/%d", len(entries), len(m.switchEntries))) + "\n\n")
+	rows := m.height - 5
 	if rows < 1 {
 		rows = 1
+	}
+	if m.switchIdx >= len(entries) {
+		m.switchIdx = max(0, len(entries)-1)
 	}
 	start := 0
 	if m.switchIdx >= rows {
 		start = m.switchIdx - rows + 1
 	}
 	end := start + rows
-	if end > len(m.switchEntries) {
-		end = len(m.switchEntries)
+	if end > len(entries) {
+		end = len(entries)
 	}
 	cur := ""
 	if sl, ok := m.backend.(chat.SessionLister); ok {
 		cur = sl.SessionID()
 	}
+	if len(entries) == 0 {
+		b.WriteString(dim("  no match\n"))
+	}
 	for i := start; i < end; i++ {
-		e := m.switchEntries[i]
+		e := entries[i]
 		title := e.Title
 		if title == "" {
 			title = dim("(untitled)")

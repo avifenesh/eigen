@@ -145,7 +145,8 @@ type model struct {
 	// Result.OpenApp set; main re-runs the TUI on the target — the window is a
 	// VIEW, the sessions keep running in the daemon.
 	switching     bool
-	switchEntries []chat.SessionEntry
+	switchEntries []chat.SessionEntry // all daemon sessions (unfiltered)
+	switchQuery   string              // incremental type-to-search
 	switchIdx     int
 	switchTo      string
 	openApp       bool
@@ -742,17 +743,27 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		}
 		// Session switcher captures keys while open.
 		if m.switching {
+			entries := m.switchFiltered()
+			if m.switchIdx >= len(entries) {
+				m.switchIdx = len(entries) - 1
+			}
+			if m.switchIdx < 0 {
+				m.switchIdx = 0
+			}
 			switch msg.String() {
-			case "up", "ctrl+p", "alt+up", "shift+up", "k":
+			case "up", "ctrl+p", "alt+up", "shift+up":
 				if m.switchIdx > 0 {
 					m.switchIdx--
 				}
-			case "down", "ctrl+n", "alt+down", "shift+down", "j":
-				if m.switchIdx < len(m.switchEntries)-1 {
+			case "down", "ctrl+n", "alt+down", "shift+down":
+				if m.switchIdx < len(entries)-1 {
 					m.switchIdx++
 				}
 			case "enter":
-				sel := m.switchEntries[m.switchIdx]
+				if len(entries) == 0 {
+					return m, nil
+				}
+				sel := entries[m.switchIdx]
 				m.switching = false
 				if sl, ok := m.backend.(chat.SessionLister); ok && sel.ID == sl.SessionID() {
 					m.sync() // already here
@@ -760,13 +771,31 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				}
 				m.switchTo = sel.ID
 				return m, tea.Quit
-			case "h":
+			case "ctrl+h":
 				m.switching = false
 				m.openApp = true
 				return m, tea.Quit
-			case "esc", "q":
+			case "esc":
 				m.switching = false
 				m.sync()
+			case "backspace":
+				if m.switchQuery != "" {
+					m.switchQuery = m.switchQuery[:len(m.switchQuery)-1]
+					m.switchIdx = 0
+				} else {
+					m.switching = false
+					m.sync()
+				}
+			default:
+				// Type to search; "space" arrives as a named key.
+				k := msg.String()
+				if k == "space" {
+					k = " "
+				}
+				if len(k) == 1 {
+					m.switchQuery += k
+					m.switchIdx = 0
+				}
 			}
 			return m, nil
 		}

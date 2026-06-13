@@ -57,6 +57,11 @@ type Session struct {
 	title   string
 	updated time.Time
 
+	// lastAttached: when a view last attached — "last used by ME" for list
+	// ordering (transcript mtime lies; the titler touches files).
+	lastAttached time.Time
+	onAttach     func() // host hook: persist meta when a view attaches
+
 	// events is the append-only log of this session's events, so a view that
 	// attaches mid-run can replay history and then follow live.
 	events  []agent.Event
@@ -131,12 +136,17 @@ func (s *Session) dispatch(e agent.Event) {
 // channel and an unsubscribe func.
 func (s *Session) attach() (replay []agent.Event, live <-chan agent.Event, detach func()) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	replay = append(replay, s.events...)
 	ch := make(chan agent.Event, 256)
 	id := s.nextSub
 	s.nextSub++
 	s.subs[id] = ch
+	s.lastAttached = time.Now()
+	hook := s.onAttach
+	s.mu.Unlock()
+	if hook != nil {
+		hook() // persist LastAttached (outside the lock — it re-enters)
+	}
 	return replay, ch, func() {
 		s.mu.Lock()
 		if c, ok := s.subs[id]; ok {

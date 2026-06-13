@@ -12,22 +12,38 @@ import (
 )
 
 // sessionsState: the flat all-sessions list (newest first), resume on enter.
+// Tier 13: type-to-search (/), source filter (s), recency cutoff with show-all
+// (a). The cursor walks the FILTERED view; all actions resolve rows through
+// it (operate on the row, never a raw index into the full slice).
 type sessionsState struct {
 	list       list
-	confirmDel bool   // awaiting y/n to delete the selected session
-	notice     string // transient status (export path, delete result)
+	filter     sessionFilter
+	visIdx     []int // filtered indices into d.Sessions (refreshed each render)
+	hidden     int   // rows removed by the recency cutoff
+	confirmDel bool  // awaiting y/n to delete the selected session
+	notice     string
 	clicks     clickMap
 }
 
-func (s *sessionsState) init(d *Data) { s.list.count = len(d.Sessions) }
+func (s *sessionsState) init(d *Data) {
+	s.filter = sessionFilter{}
+	s.refresh(d)
+}
+
+// refresh recomputes the filtered view and clamps the cursor.
+func (s *sessionsState) refresh(d *Data) {
+	s.visIdx, s.hidden = s.filter.filtered(d.Sessions)
+	s.list.count = len(s.visIdx)
+	s.list.clamp()
+}
 
 func (s *sessionsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
-	visible := m.height - 6
+	visible := m.height - 7
 	d := m.data
 	cur := func() *SessionRow {
-		if s.list.cursor >= 0 && s.list.cursor < len(d.Sessions) {
-			return &d.Sessions[s.list.cursor]
+		if s.list.cursor >= 0 && s.list.cursor < len(s.visIdx) {
+			return &d.Sessions[s.visIdx[s.list.cursor]]
 		}
 		return nil
 	}
@@ -49,14 +65,20 @@ func (s *sessionsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					s.notice = "deleted: " + r.Title
 				}
 				d.reloadSessions()
-				s.list.count = len(d.Sessions)
-				s.list.clamp()
+				s.refresh(d)
 			}
 			s.confirmDel = false
 		default:
 			s.confirmDel = false
 			s.notice = "delete cancelled"
 		}
+		return m, nil
+	}
+	// Search/filter keys come before list navigation (while searching they
+	// capture EVERYTHING — typing "q" must extend the query, not quit).
+	if s.filter.key(key) {
+		s.notice = ""
+		s.refresh(d)
 		return m, nil
 	}
 	if s.list.key(key, visible) {
@@ -105,18 +127,25 @@ func (s *sessionsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (s *sessionsState) view(m *Model, w, h int) string {
 	d := m.data
 	s.clicks.reset()
-	out := pageTitle("sessions", fmt.Sprintf("%d across all sources", len(d.Sessions)), w)
+	s.visIdx, s.hidden = s.filter.filtered(d.Sessions)
+	s.list.count = len(s.visIdx)
+	s.list.clamp()
+	sub := fmt.Sprintf("%d across all sources", len(d.Sessions))
+	if s.filter.active() {
+		sub = fmt.Sprintf("%d of %d", len(s.visIdx), len(d.Sessions))
+	}
+	out := pageTitle("sessions", sub, w)
 	if len(d.Sessions) == 0 {
 		return out + sFaint.Render("  none yet — press n to start one")
 	}
-	visible := h - 5
+	visible := h - 6
 	from, to := s.list.window(visible)
 	titleW := w - 36
 	if titleW < 16 {
 		titleW = 16
 	}
 	for i := from; i < to; i++ {
-		r := d.Sessions[i]
+		r := d.Sessions[s.visIdx[i]]
 		src := sFaint.Render(pad(r.Source, 9))
 		line := fmt.Sprintf("%s %s %s %s",
 			pad(truncate(r.Title, titleW), titleW),
@@ -126,18 +155,26 @@ func (s *sessionsState) view(m *Model, w, h int) string {
 		s.clicks.mark(lineCount(out), i) // this row's content-local line
 		out += row(i == s.list.cursor, line) + "\n"
 	}
-	if to < len(d.Sessions) {
-		out += sFaint.Render(fmt.Sprintf("  … %d more", len(d.Sessions)-to)) + "\n"
+	switch {
+	case to < len(s.visIdx):
+		out += sFaint.Render(fmt.Sprintf("  … %d more", len(s.visIdx)-to)) + "\n"
+	case s.hidden > 0 && !s.filter.active():
+		out += sFaint.Render(fmt.Sprintf("  … %d older than 7d — a shows all", s.hidden)) + "\n"
 	}
 	out += "\n"
 	switch {
 	case s.confirmDel:
-		r := d.Sessions[s.list.cursor]
+		r := d.Sessions[s.visIdx[s.list.cursor]]
 		out += sWarn.Render("  delete \"" + truncate(r.Title, 40) + "\"? y/n")
+	case s.filter.searching || s.filter.active():
+		out += sViolet.Render("  " + s.filter.statusLine())
+		if !s.filter.searching {
+			out += sFaint.Render("   esc clear")
+		}
 	case s.notice != "":
 		out += sDim.Render("  " + s.notice)
 	default:
-		out += sFaint.Render("  enter resume · n new · e export · d delete")
+		out += sFaint.Render("  enter resume · n new · / search · s source · a all · e export · d delete")
 	}
 	return out
 }
@@ -151,12 +188,12 @@ func (s *sessionsState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
 		return nil, false
 	}
 	d := m.data
-	if idx < 0 || idx >= len(d.Sessions) {
+	if idx < 0 || idx >= len(s.visIdx) {
 		return nil, false
 	}
 	if s.list.cursor == idx {
 		// Second click on the selected row → open it.
-		m.result = openAction(d.Sessions[idx])
+		m.result = openAction(d.Sessions[s.visIdx[idx]])
 		m.quitting = true
 		return tea.Quit, true
 	}

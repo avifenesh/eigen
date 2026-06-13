@@ -14,6 +14,7 @@ import (
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/chat"
+	"github.com/avifenesh/eigen/internal/fuzzy"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -1180,15 +1181,15 @@ func TestPaletteFuzzyFilters(t *testing.T) {
 }
 
 func TestPaletteSubsequenceMatch(t *testing.T) {
-	if fuzzyScore("config panel", "cfg") < 0 {
+	if fuzzy.Score("config panel", "cfg") < 0 {
 		t.Fatal("cfg should subsequence-match 'config panel'")
 	}
-	sub := fuzzyScore("config panel", "config")
-	seq := fuzzyScore("config panel", "cfg")
+	sub := fuzzy.Score("config panel", "config")
+	seq := fuzzy.Score("config panel", "cfg")
 	if !(sub < seq) {
 		t.Fatalf("substring (%d) should rank better than subsequence (%d)", sub, seq)
 	}
-	if fuzzyScore("config", "xyz") >= 0 {
+	if fuzzy.Score("config", "xyz") >= 0 {
 		t.Fatal("non-matching query should score -1")
 	}
 }
