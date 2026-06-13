@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/avifenesh/eigen/internal/theme"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // eigenArt is the wordmark shown on an empty transcript — a calm welcome that
@@ -24,16 +24,20 @@ var eigenArt = []string{
 // transcript width. Returns "" when there's no room (tiny terminals).
 func (m *model) welcomeView(width, height int) string {
 	if width < 44 || height < 12 {
-		// Too small for art — a quiet one-liner keeps it from looking broken.
-		return lipgloss.NewStyle().Width(width).Align(lipgloss.Center).
-			Render(theme.SDim.Render("eigen · type a task to begin"))
+		// Too small for art — a quiet centered one-liner.
+		msg := theme.SDim.Render("eigen · type a task to begin")
+		if pad := (width - ansi.StringWidth(msg)) / 2; pad > 0 {
+			msg = strings.Repeat(" ", pad) + msg
+		}
+		return msg
 	}
-	var b strings.Builder
-	art := theme.SAccent.Render(strings.Join(eigenArt, "\n"))
-	b.WriteString(art)
-	b.WriteString("\n\n")
-	b.WriteString(theme.SDim.Render("your coding agent — sessions live in the daemon, windows are views"))
-	b.WriteString("\n\n")
+	lines := make([]string, 0, len(eigenArt)+8)
+	for _, a := range eigenArt {
+		lines = append(lines, theme.SAccent.Render(a))
+	}
+	lines = append(lines, "")
+	lines = append(lines, theme.SDim.Render("your coding agent — sessions live in the daemon, windows are views"))
+	lines = append(lines, "")
 	// Starter hints: the few things worth knowing on a blank slate.
 	hints := []struct{ key, what string }{
 		{"type", "ask for anything, or describe a task"},
@@ -41,16 +45,23 @@ func (m *model) welcomeView(width, height int) string {
 		{"@", "reference a file · ◉ voice to talk"},
 	}
 	for _, h := range hints {
-		b.WriteString(theme.SAccent.Render(fmt.Sprintf("%8s", h.key)) +
-			theme.SFaint.Render("  ·  ") + theme.SDim.Render(h.what) + "\n")
+		lines = append(lines, theme.SAccent.Render(fmt.Sprintf("%8s", h.key))+
+			theme.SFaint.Render("  ·  ")+theme.SDim.Render(h.what))
 	}
-	block := b.String()
-	// Center the whole block horizontally; nudge it down a third of the height
-	// so it sits in the optical center, not jammed at the top.
-	centered := lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(block)
-	pad := (height - lipgloss.Height(block)) / 3
+	// Center each line individually by its true display width (ansi.StringWidth
+	// counts the em-dash and wide glyphs correctly — lipgloss block-centering
+	// miscounts them and drifts).
+	for i, ln := range lines {
+		w := ansi.StringWidth(ln)
+		if pad := (width - w) / 2; pad > 0 {
+			lines[i] = strings.Repeat(" ", pad) + ln
+		}
+	}
+	block := strings.Join(lines, "\n")
+	// Nudge it down a third of the height so it sits in the optical center.
+	pad := (height - len(lines)) / 3
 	if pad < 0 {
 		pad = 0
 	}
-	return strings.Repeat("\n", pad) + centered
+	return strings.Repeat("\n", pad) + block
 }
