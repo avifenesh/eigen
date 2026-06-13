@@ -75,7 +75,7 @@ var slashCommands = []slashCmd{
 	{"/config", "open the live settings panel (or /config <key> <value> to set)"},
 	{"/route", "toggle the auto-router (per-task model selection)"},
 	{"/review", "cross-vendor review of recent work (GPT⇄Claude)"},
-	{"/voice", "conversation mode — talk hands-free, replies spoken (◉ button)"},
+	{"/voice", "conversation mode — talk hands-free, replies spoken (◉ button); /voice setup diagnoses the stack"},
 	{"/mute", "mute the mic in conversation mode — replies still speak (⊘ button)"},
 	{"/dictate", "speak ONE message; the answer stays text (⏺ button)"},
 	{"/speak", "read the last answer aloud once (▶ button)"},

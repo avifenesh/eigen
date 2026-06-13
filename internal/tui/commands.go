@@ -14,6 +14,7 @@ import (
 	"github.com/avifenesh/eigen/internal/hook"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/transcript"
+	"github.com/avifenesh/eigen/internal/voice"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -187,6 +188,12 @@ func (m *model) command(line string) tea.Cmd {
 		}
 		return m.submit("Use the review tool to get a cross-vendor critique of " + target + ". Package the relevant artifact (the plan, diff, or code) into the tool's `artifact` argument with enough context to judge it, set an appropriate `focus`, then act on the critique — fix real issues it raises and note anything you disagree with and why.")
 	case "/voice":
+		if strings.EqualFold(arg, "setup") || strings.EqualFold(arg, "doctor") {
+			for _, line := range strings.Split(voice.Report(), "\n") {
+				m.note(line)
+			}
+			return nil
+		}
 		return m.toggleVoice()
 	case "/mute":
 		return m.toggleMute()

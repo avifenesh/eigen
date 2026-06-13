@@ -837,8 +837,10 @@ only `for-tests-*` fixtures) so `/voice` reports unavailable.
 - [~] **STT setup + detection fixes.** Detection SHIPPED (aa82b2e):
   `lookWhisper` accepts legacy `main`, `lookWhisperModel` skips fixtures —
   real machine resolves whisper-cli + ggml-base.en.bin. REMAINING: `/voice
-  setup` doctor + config keys (stt_cmd/whisper_bin/whisper_model in
-  config.json; env vars exist). Original text: `lookWhisper` accepts the legacy
+  setup` doctor SHIPPED (internal/voice/doctor.go): `/voice setup`
+  diagnoses every component (recorder/whisper/model/tts/kokoro
+  pieces/playback) with ✓/✗ + a concrete fix per missing item;
+  env-var config keys already exist. Original text: `lookWhisper` accepts the legacy
   `main` binary; `lookWhisperModel` skips `for-tests-*` fixtures; a
   `/voice setup` doctor reports what's missing and offers the fix (download
   ggml-base.en.bin, build/symlink whisper-cli). Config keys beside tts_cmd:
