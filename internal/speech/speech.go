@@ -53,53 +53,100 @@ func (s *Speaker) Argv() []string {
 	return s.argv
 }
 
-// detectKokoro finds the local Kokoro ONNX stack: the kokoro_stdin.py script
-// (codex-desktop-linux read-aloud backend — reads stdin, streams to aplay), a
-// python that can import kokoro_onnx (the readd venv has it), and the model +
-// voices files. Returns the full argv with env baked in, or nil.
+// detectKokoro assembles eigen's own Kokoro ONNX stack: the EMBEDDED
+// kokoro_stdin.py (vendored — no external checkout needed), the model +
+// voices files, and a python3 that can import kokoro_onnx. Everything is
+// overridable: EIGEN_KOKORO_MODEL/VOICES point at the files,
+// EIGEN_KOKORO_PYTHON picks the interpreter. Returns the full argv with env
+// baked in, or nil when a piece is missing.
 func detectKokoro() []string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil
 	}
-	script := ""
-	for _, p := range []string{
-		filepath.Join(home, "projects", "codex-desktop-linux", "codex-app", "resources", "read-aloud", "kokoro_stdin.py"),
-		filepath.Join(home, "projects", "codex-desktop-linux", "linux-features", "read-aloud", "bin", "kokoro_stdin.py"),
-	} {
-		if _, err := os.Stat(p); err == nil {
-			script = p
-			break
-		}
-	}
-	if script == "" {
+	model := firstExisting(
+		os.Getenv("EIGEN_KOKORO_MODEL"),
+		filepath.Join(home, ".eigen", "kokoro", "kokoro-v1.0.onnx"),
+		filepath.Join(home, ".local", "share", "kokoro", "kokoro-v1.0.onnx"),
+	)
+	voices := firstExisting(
+		os.Getenv("EIGEN_KOKORO_VOICES"),
+		filepath.Join(home, ".eigen", "kokoro", "voices-v1.0.bin"),
+		filepath.Join(home, ".local", "share", "kokoro", "voices-v1.0.bin"),
+	)
+	if model == "" || voices == "" {
 		return nil
 	}
-	model := filepath.Join(home, ".local", "share", "kokoro", "kokoro-v1.0.onnx")
-	voices := filepath.Join(home, ".local", "share", "kokoro", "voices-v1.0.bin")
-	if _, err := os.Stat(model); err != nil {
+	python := kokoroPython(home)
+	if python == "" {
 		return nil
 	}
-	if _, err := os.Stat(voices); err != nil {
+	script, err := materializeKokoroScript(home)
+	if err != nil {
 		return nil
-	}
-	// Python with kokoro_onnx: the readd venv is the known-good one; fall
-	// back to system python3 (may or may not have the package — Speak fails
-	// soft either way).
-	python := filepath.Join(home, "projects", "tfqol", "readd", ".venv", "bin", "python3")
-	if _, err := os.Stat(python); err != nil {
-		p, err := exec.LookPath("python3")
-		if err != nil {
-			return nil
-		}
-		python = p
 	}
 	// sh -c keeps env assignment simple and Stop() still kills the group via
 	// the speaker's process handle.
 	return []string{"sh", "-c",
-		"CODEX_LINUX_READ_ALOUD_KOKORO_MODEL=" + model +
-			" CODEX_LINUX_READ_ALOUD_KOKORO_VOICES=" + voices +
+		"EIGEN_KOKORO_MODEL=" + model +
+			" EIGEN_KOKORO_VOICES=" + voices +
 			" exec " + python + " " + script}
+}
+
+// kokoroPython finds a python3 that can import kokoro_onnx:
+// EIGEN_KOKORO_PYTHON wins; then a dedicated eigen venv (~/.eigen/kokoro/venv);
+// then any python3 on PATH that actually has the package (verified by a quick
+// import probe — a python WITHOUT kokoro_onnx would fail on every Speak).
+func kokoroPython(home string) string {
+	if p := strings.TrimSpace(os.Getenv("EIGEN_KOKORO_PYTHON")); p != "" {
+		return p
+	}
+	candidates := []string{
+		filepath.Join(home, ".eigen", "kokoro", "venv", "bin", "python3"),
+	}
+	if p, err := exec.LookPath("python3"); err == nil {
+		candidates = append(candidates, p)
+	}
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err != nil {
+			continue
+		}
+		if exec.Command(p, "-c", "import kokoro_onnx").Run() == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+// materializeKokoroScript writes the embedded kokoro_stdin.py under
+// ~/.eigen/kokoro/ (refreshed when the embedded copy changes) so the speaker
+// runs eigen's own script — no external project checkout involved.
+func materializeKokoroScript(home string) (string, error) {
+	dir := filepath.Join(home, ".eigen", "kokoro")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, "kokoro_stdin.py")
+	if cur, err := os.ReadFile(path); err == nil && string(cur) == kokoroScript {
+		return path, nil
+	}
+	if err := os.WriteFile(path, []byte(kokoroScript), 0o755); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// firstExisting returns the first non-empty path that exists on disk.
+func firstExisting(paths ...string) string {
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
 }
 
 // Speak speaks text asynchronously, interrupting any in-progress speech. It
