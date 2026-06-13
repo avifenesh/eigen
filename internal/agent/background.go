@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -112,13 +113,26 @@ func NewBgRegistry(dir string) *BgRegistry {
 	return r
 }
 
-// TasksDir returns the default background-task directory (~/.eigen/tasks).
+// TasksDir returns the background-task directory: ~/.eigen/tasks for the
+// default instance, ~/.eigen/tasks-<instance> when EIGEN_INSTANCE is set (a
+// dev daemon's tasks stay isolated from production's). Mirrors the daemon's
+// instance-name validation (a malformed env value is ignored → default).
 func TasksDir() string {
 	home, err := os.UserHomeDir()
+	base := "tasks" + tasksInstanceSuffix()
 	if err != nil {
-		return filepath.Join(os.TempDir(), "eigen-tasks")
+		return filepath.Join(os.TempDir(), "eigen-"+base)
 	}
-	return filepath.Join(home, ".eigen", "tasks")
+	return filepath.Join(home, ".eigen", base)
+}
+
+var validTaskInstance = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,31}$`)
+
+func tasksInstanceSuffix() string {
+	if n := os.Getenv("EIGEN_INSTANCE"); validTaskInstance.MatchString(n) {
+		return "-" + n
+	}
+	return ""
 }
 
 // next allocates a unique task id (time-based prefix keeps files sortable).

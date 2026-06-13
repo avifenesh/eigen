@@ -23,10 +23,11 @@ type Server struct {
 	sockPth string
 }
 
-// SocketPath is the default daemon socket (~/.eigen/daemon.sock).
+// SocketPath is the daemon socket (~/.eigen/daemon.sock for the default
+// instance; daemon-<instance>.sock otherwise).
 func SocketPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".eigen", "daemon.sock")
+	return filepath.Join(home, ".eigen", "daemon"+suffix()+".sock")
 }
 
 // Listen binds the daemon socket (removing a stale one). Only one daemon may

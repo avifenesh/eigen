@@ -268,3 +268,19 @@ func waitForStatus(t *testing.T, reg *BgRegistry, status string) string {
 	t.Fatalf("no task reached %q (have: %s)", status, dump)
 	return ""
 }
+
+func TestTasksDirInstanceScoping(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	t.Setenv("EIGEN_INSTANCE", "")
+	if got := TasksDir(); got != filepath.Join(home, ".eigen", "tasks") {
+		t.Errorf("default tasks dir = %q", got)
+	}
+	t.Setenv("EIGEN_INSTANCE", "dev")
+	if got := TasksDir(); got != filepath.Join(home, ".eigen", "tasks-dev") {
+		t.Errorf("dev tasks dir = %q", got)
+	}
+	t.Setenv("EIGEN_INSTANCE", "bad/name")
+	if got := TasksDir(); got != filepath.Join(home, ".eigen", "tasks") {
+		t.Errorf("invalid instance should fall back to default, got %q", got)
+	}
+}

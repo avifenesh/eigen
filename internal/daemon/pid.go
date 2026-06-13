@@ -14,7 +14,7 @@ import (
 // gone) so a crashed daemon doesn't wedge the socket forever.
 func PIDPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".eigen", "daemon.pid")
+	return filepath.Join(home, ".eigen", "daemon"+suffix()+".pid")
 }
 
 // WritePID records the current process as the daemon owner.

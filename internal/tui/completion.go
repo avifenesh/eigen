@@ -86,7 +86,7 @@ var slashCommands = []slashCmd{
 	{"/copy", "copy the selected block (or last answer) to clipboard"},
 	{"/export", "export this conversation to a markdown file"},
 	{"/read", "toggle reading EVERY answer aloud (persistent; /speak = once)"},
-	{"/rebuild", "rebuild eigen and live-reload"},
+	{"/rebuild", "rebuild eigen and live-reload (on production: warns — use `eigen dev` to iterate safely)"},
 	{"/quit", "exit eigen"},
 }
 

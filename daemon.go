@@ -135,10 +135,14 @@ func runDaemon(cfg config.Config) {
 func daemonControl(sub string) bool {
 	switch sub {
 	case "status":
+		label := "default"
+		if inst := daemon.Instance(); inst != "" {
+			label = inst
+		}
 		if pid := daemon.RunningPID(daemon.PIDPath()); pid != 0 {
-			fmt.Printf("eigen daemon running (pid %d) on %s\n", pid, daemon.SocketPath())
+			fmt.Printf("eigen daemon running (instance %s, pid %d) on %s\n", label, pid, daemon.SocketPath())
 		} else {
-			fmt.Println("eigen daemon not running")
+			fmt.Printf("eigen daemon not running (instance %s, socket %s)\n", label, daemon.SocketPath())
 		}
 		return true
 	case "install":
@@ -364,8 +368,16 @@ func daemonRebuildResume(bin, sessionID string) {
 	}
 	daemon.RemovePID(daemon.PIDPath())
 	_ = os.Remove(daemon.SocketPath())
-	argv := []string{bin, "attach", sessionID}
-	if err := syscall.Exec(bin, argv, os.Environ()); err != nil {
+	// Carry the instance EXPLICITLY across the exec (flag + env) so the new
+	// daemon lands on the same instance — never accidentally production.
+	env := os.Environ()
+	argv := []string{bin}
+	if inst := daemon.Instance(); inst != "" {
+		argv = append(argv, "--instance", inst)
+		env = append(env, "EIGEN_INSTANCE="+inst)
+	}
+	argv = append(argv, "attach", sessionID)
+	if err := syscall.Exec(bin, argv, env); err != nil {
 		fail(fmt.Errorf("exec new build: %w", err))
 	}
 }
@@ -391,13 +403,20 @@ func ensureDaemon() (*daemon.Client, error) {
 		return nil, err
 	}
 	home, _ := os.UserHomeDir()
-	logPath := filepath.Join(home, ".eigen", "daemon.log")
+	logPath := filepath.Join(home, ".eigen", "daemon"+daemonInstanceSuffix()+".log")
 	_ = os.MkdirAll(filepath.Dir(logPath), 0o755) // fresh install: ~/.eigen may not exist yet
 	logf, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(exe, "daemon")
+	// Spawn the daemon with the instance EXPLICIT (not relying on inherited
+	// env): a dev client must spawn a dev daemon, never accidentally a
+	// production one.
+	args := []string{"daemon"}
+	if inst := daemon.Instance(); inst != "" {
+		args = append([]string{"--instance", inst}, args...)
+	}
+	cmd := exec.Command(exe, args...)
 	cmd.Stdout = logf
 	cmd.Stderr = logf
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // detach: survive this process
@@ -504,4 +523,66 @@ func daemonUninstall() {
 	_ = os.Remove(unitPath)
 	_ = exec.Command("systemctl", "--user", "daemon-reload").Run()
 	fmt.Println("removed eigen-daemon.service (daemon.env kept; delete ~/.eigen/daemon.env to purge credentials)")
+}
+
+// daemonInstanceSuffix mirrors the daemon package's path suffix for the log
+// file name ("" default, "-<instance>" otherwise).
+func daemonInstanceSuffix() string {
+	if n := daemon.Instance(); n != "" {
+		return "-" + n
+	}
+	return ""
+}
+
+// runDevCmd implements `eigen dev [args...]`: build the source tree's binary
+// and re-exec it on the isolated "dev" instance, so iterating on eigen
+// (including /rebuild) never disturbs the production daemon/sessions. Source
+// dir: $EIGEN_SRC, else ~/projects/eigen. The freshly-built binary is what
+// runs (no version skew with the installed production binary).
+func runDevCmd(rest []string) {
+	src := os.Getenv("EIGEN_SRC")
+	if src == "" {
+		home, _ := os.UserHomeDir()
+		src = filepath.Join(home, "projects", "eigen")
+	}
+	if st, err := os.Stat(filepath.Join(src, "go.mod")); err != nil || st.IsDir() {
+		fail(fmt.Errorf("eigen dev: no source tree at %s (set EIGEN_SRC)", src))
+	}
+	gobin := devFindGo()
+	if gobin == "" {
+		fail(fmt.Errorf("eigen dev: go toolchain not found (PATH=%s)", os.Getenv("PATH")))
+	}
+	bin := filepath.Join(src, "bin", "eigen")
+	fmt.Fprintln(os.Stderr, "eigen dev: building", bin, "…")
+	build := exec.Command(gobin, "build", "-o", bin, ".")
+	build.Dir = src
+	if out, err := build.CombinedOutput(); err != nil {
+		fail(fmt.Errorf("eigen dev: build failed: %v\n%s", err, out))
+	}
+	// Re-exec the fresh binary on the dev instance (explicit flag + env).
+	argv := append([]string{bin, "--instance", "dev"}, rest...)
+	env := append(os.Environ(), "EIGEN_INSTANCE=dev")
+	if err := syscall.Exec(bin, argv, env); err != nil {
+		fail(fmt.Errorf("eigen dev: exec %s: %w", bin, err))
+	}
+}
+
+// devFindGo resolves the go toolchain (PATH, then common install locations) —
+// the daemon's minimal PATH often misses an nvm/asdf/local go.
+func devFindGo() string {
+	if p, err := exec.LookPath("go"); err == nil {
+		return p
+	}
+	home, _ := os.UserHomeDir()
+	for _, c := range []string{
+		filepath.Join(home, ".local", "bin", "go"),
+		filepath.Join(home, ".local", "go", "bin", "go"),
+		filepath.Join(home, "go", "bin", "go"),
+		"/usr/local/go/bin/go", "/usr/lib/go/bin/go",
+	} {
+		if st, err := os.Stat(c); err == nil && !st.IsDir() {
+			return c
+		}
+	}
+	return ""
 }

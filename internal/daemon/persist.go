@@ -23,7 +23,7 @@ import (
 // SessionsDir is where daemon session transcripts live.
 func SessionsDir() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".eigen", "daemon", "sessions")
+	return filepath.Join(home, ".eigen", "daemon"+suffix(), "sessions")
 }
 
 // persistMeta is the sidecar state for resurrecting a session.

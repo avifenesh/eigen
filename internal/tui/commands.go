@@ -155,6 +155,20 @@ func (m *model) command(line string) tea.Cmd {
 		}
 		m.loadSession(arg)
 	case "/rebuild":
+		// Guard the production-daemon disaster: on the DEFAULT instance with
+		// other live sessions, /rebuild restarts the whole daemon and
+		// interrupts them all. Require an explicit confirm (a second /rebuild,
+		// or /rebuild!) and point at `eigen dev` — a separate instance whose
+		// rebuilds never touch production. EIGEN_INSTANCE!="" means we're
+		// already on an isolated instance, so no guard.
+		if arg != "!" && !m.rebuildArmed && os.Getenv("EIGEN_INSTANCE") == "" {
+			if n := m.siblingSessionCount(); n > 0 {
+				m.rebuildArmed = true
+				m.note(fmt.Sprintf("⚠ /rebuild restarts the PRODUCTION daemon — it interrupts all %d running session(s), not just this one. For iterating on eigen without breaking your work, run a separate instance: `eigen dev` (its own sessions; /rebuild there is isolated). To rebuild production anyway, run /rebuild again (or /rebuild!).", n+1))
+				break
+			}
+		}
+		m.rebuildArmed = false
 		// Local sessions save a transcript for the exec-resume; daemon-hosted
 		// sessions (sessionPath == "") need nothing — the daemon persists, and
 		// the caller restarts it and reattaches to the same session id.

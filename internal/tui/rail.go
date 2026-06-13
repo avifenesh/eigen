@@ -64,6 +64,24 @@ func (m *model) railLister() railSessionLister {
 	return nil
 }
 
+// siblingSessionCount returns how many OTHER daemon sessions are alive besides
+// this window's (0 for a local chat or a lone daemon session). Used to warn
+// before a production /rebuild interrupts them all.
+func (m *model) siblingSessionCount() int {
+	sl := m.railLister()
+	if sl == nil {
+		return 0
+	}
+	cur := sl.SessionID()
+	n := 0
+	for _, e := range sl.Sessions() {
+		if e.ID != cur && e.Turns > 0 {
+			n++
+		}
+	}
+	return n
+}
+
 // railVisible reports whether the rail should render: enabled, a daemon-hosted
 // backend with siblings, and a terminal wide enough.
 func (m *model) railVisible() bool {

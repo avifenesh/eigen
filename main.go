@@ -30,6 +30,7 @@ import (
 	"github.com/avifenesh/eigen/internal/app"
 	"github.com/avifenesh/eigen/internal/chat"
 	"github.com/avifenesh/eigen/internal/config"
+	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/dream"
 	"github.com/avifenesh/eigen/internal/hook"
 	"github.com/avifenesh/eigen/internal/llm"
@@ -90,7 +91,23 @@ func main() {
 	listSessions := flag.Bool("list", false, "list resumable sessions (id, date, title) and exit")
 	listSkills := flag.Bool("list-skills", false, "list discovered skills (name, description) and exit")
 	listTools := flag.Bool("list-tools", false, "list available tools (name, posture, description) and exit")
+	instanceFlag := flag.String("instance", "", "daemon instance to use (default: production). A named instance (e.g. dev) gets its own socket/sessions/tasks so rebuilding never touches your production sessions.")
 	flag.Parse()
+
+	// Resolve the daemon instance (flag wins, then $EIGEN_INSTANCE) ONCE, before
+	// any daemon path is computed. An invalid name fails closed — silently
+	// falling back to production would be dangerous (you'd think you're on dev).
+	inst, ok := daemon.ResolveInstance(*instanceFlag)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "eigen: invalid --instance/EIGEN_INSTANCE name (use letters/digits/._- , ≤32 chars)\n")
+		os.Exit(2)
+	}
+	daemon.SetInstance(inst)
+	// Propagate to spawned daemons + the rebuild exec via env (set explicitly
+	// from the RESOLVED value, not whatever the shell had).
+	if inst != "" {
+		os.Setenv("EIGEN_INSTANCE", inst)
+	}
 
 	// Ref form: --model mantle:us.openai.gpt-5.5 names both in one flag; an
 	// explicit tag beats --provider (one field is the source of truth).
@@ -118,6 +135,13 @@ func main() {
 	}
 	if flag.Arg(0) == "chrome" {
 		runChromeCmd()
+		return
+	}
+	// `eigen dev [args...]`: build the source tree's binary and re-exec it on a
+	// SEPARATE "dev" instance (its own daemon/sessions/tasks). Iterating on
+	// eigen — including /rebuild — then never touches your production sessions.
+	if flag.Arg(0) == "dev" {
+		runDevCmd(flag.Args()[1:])
 		return
 	}
 

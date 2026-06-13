@@ -132,10 +132,11 @@ type model struct {
 	height      int
 	ready       bool
 
-	rebuild     bool
-	rebuildBin  string
-	srcDir      string
-	sessionPath string
+	rebuild      bool
+	rebuildBin   string
+	rebuildArmed bool // /rebuild on the default instance asked for confirmation
+	srcDir       string
+	sessionPath  string
 
 	// session picker
 	store   *session.Store
