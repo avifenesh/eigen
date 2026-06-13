@@ -992,7 +992,12 @@ are just tools — OUT OF SCOPE here.
   hosted image model behind a `generate_image` tool for diagrams/mockups/
   assets — output rides the image-capable tool-result plumbing already built.
   Not optional: eigen currently cannot produce images at all.
-- [ ] **Local-first routing for the cheap stuff — OPT-IN.** Titling, dreaming,
+- [x] **Local-first routing for the cheap stuff — OPT-IN.** SHIPPED (a399a64):
+  config local_background (default off) + a readiness probe (localReady: /health
+  ok vs 503-loading vs /v1/models fallback) so background work uses a LOCAL
+  model only when opted-in AND actually serving — never stalls on a busy/down
+  local server.
+- [~] **(orig) Local-first routing for the cheap stuff — OPT-IN.** Titling, dreaming,
   skill scans, embeddings — route to a LOCAL model (llama.cpp) when present,
   saving frontier budget. OPT-IN via config (default off): local quality
   varies, so the user enables it deliberately. Extends the small-model
