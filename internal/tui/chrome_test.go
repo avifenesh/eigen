@@ -379,6 +379,7 @@ func TestRailHiddenForLocalBackend(t *testing.T) {
 
 func TestRailVisibleForDaemonBackend(t *testing.T) {
 	m := switcherModel(t) // has a SessionLister with 3 entries
+	m.changesOn = false   // isolate the rail (the right panel also shows by default)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	m.refreshRail()
 	if !m.railVisible() {
@@ -402,6 +403,7 @@ func TestRailVisibleForDaemonBackend(t *testing.T) {
 
 func TestRailHidesOnNarrowTerminal(t *testing.T) {
 	m := switcherModel(t)
+	m.changesOn = false
 	m.Update(tea.WindowSizeMsg{Width: 70, Height: 24}) // < railMinTerminalWidth
 	m.refreshRail()
 	if m.railVisible() {
@@ -741,16 +743,23 @@ func editBlock(path, old, neu string) *block {
 	return &block{kind: blockTool, toolName: "edit", toolArgs: args, state: toolDone}
 }
 
-func TestChangesHiddenWithNoEdits(t *testing.T) {
+func TestChangesPanelVisibleWithNoEdits(t *testing.T) {
+	// The panel shows its TAB BAR even with no edits, so [changes][git][term]
+	// [tasks] are always reachable once it's on; the changes tab shows an empty
+	// placeholder. (Previously the whole panel hid until an edit, so the tabs
+	// appeared to not exist.)
 	m := testModel(t)
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
 	m.text("user", "hi")
 	m.text("assistant", "no edits here")
-	if m.changesVisible() {
-		t.Fatal("changes panel must hide when the last run made no edits")
+	if !m.changesVisible() {
+		t.Fatal("right panel must show (with its tab bar) even when the last run made no edits")
 	}
-	if m.rightPanelWidth() != 0 {
-		t.Fatal("hidden panel has zero width")
+	band := m.transcriptBand()
+	for _, want := range []string{"[changes]", "[git]", "no file changes"} {
+		if !strings.Contains(band, want) {
+			t.Fatalf("empty changes tab should show tabs + placeholder, missing %q:\n%s", want, band)
+		}
 	}
 }
 
@@ -1327,6 +1336,7 @@ func TestPatchSectionFiltersMultiFilePatch(t *testing.T) {
 
 func TestRailEdgeDragResizes(t *testing.T) {
 	m := switcherModel(t)
+	m.changesOn = false // isolate the rail (the right panel also takes width)
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
 	m.refreshRail()
 	l := m.computeLayout()

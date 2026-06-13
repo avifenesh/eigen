@@ -41,15 +41,14 @@ type fileChange struct {
 	blockIdx int
 }
 
-// changesVisible reports whether the right panel should render: enabled, real
-// content for the active tab (changes needs edits; git can show no-repo/status),
-// and there is room (degrade right-first — the panel hides before the rail when
-// the terminal is too narrow to keep the transcript usable).
+// changesVisible reports whether the right panel should render: enabled and
+// there is room (degrade right-first — the panel hides before the rail when
+// the terminal is too narrow to keep the transcript usable). The panel shows
+// its TAB BAR regardless of which tab is active or whether the changes tab has
+// content yet — an empty changes tab renders a placeholder, so the tabs are
+// always reachable once the panel is open.
 func (m *model) changesVisible() bool {
 	if !m.changesOn {
-		return false
-	}
-	if m.rightTab == rightTabChanges && len(m.lastRunChanges()) == 0 {
 		return false
 	}
 	// Room check: width minus the rail minus this panel must leave the
@@ -278,6 +277,13 @@ func (m *model) buildChangesView() *changesView {
 	add := func(ln string, fi int) {
 		v.lines = append(v.lines, ln)
 		v.file = append(v.file, fi)
+	}
+	if len(changes) == 0 {
+		// Empty state: the tab bar still renders above this, so the user can
+		// see + click the [git]/[term]/[tasks] tabs even with no edits yet.
+		add(dim("no file changes this turn"), -1)
+		m.changesVw = v
+		return &m.changesVw
 	}
 	for i, fc := range changes {
 		if i > 0 {

@@ -39,10 +39,12 @@ func (m *model) toggleChanges() tea.Cmd {
 	switch {
 	case !m.changesOn:
 		m.note("right panel hidden  (header [◨], /changes, or ctrl+g to show)")
-	case m.rightTab == rightTabChanges && len(m.lastRunChanges()) == 0:
-		m.note("right panel on — changes tab shows files edited in the last turn (none yet)")
 	case m.changesVisible():
-		m.note("right panel shown  ([x], [◨], or /changes to hide)")
+		if m.rightTab == rightTabChanges && len(m.lastRunChanges()) == 0 {
+			m.note("right panel shown — [changes][git][term][tasks]; changes fills after an edit ([x]/[◨] to hide)")
+		} else {
+			m.note("right panel shown  ([x], [◨], or /changes to hide)")
+		}
 	default:
 		// On, but it doesn't fit: try to stretch the pane.
 		need := m.rightNeededWidth()
