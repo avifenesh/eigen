@@ -70,7 +70,11 @@ func dialRemote(h remote.HostSpec) (*daemon.Client, *sshConn, error) {
 // tools) runs on the remote; this side is a pure view. Mirrors the local
 // daemon attach, minus local-only behavior (no local chdir, no /rebuild).
 func runRemote(spec string, cfg config.Config) {
-	h, err := remote.ParseHostSpec(spec)
+	hosts, herr := remote.LoadHosts()
+	if herr != nil {
+		fail(fmt.Errorf("hosts.json: %w", herr))
+	}
+	h, model, perm, err := hosts.Resolve(spec)
 	if err != nil {
 		fail(err)
 	}
@@ -89,13 +93,13 @@ func runRemote(spec string, cfg config.Config) {
 			h.SSHTarget(), err, spec))
 	}
 
-	// Pick or create the remote session (rooted at h.Dir when given).
+	// Pick or create the remote session (rooted at h.Dir when given). A saved
+	// host's model/perm seed a newly created session.
 	var id string
 	if len(infos) > 0 && h.Dir == "" {
 		id = infos[0].ID
 	} else {
-		dir := h.Dir // empty → remote daemon roots it at its own cwd/home
-		nid, nerr := c.NewSession(dir, "", "", nil)
+		nid, nerr := c.NewSession(h.Dir, model, perm, nil)
 		if nerr != nil {
 			fail(nerr)
 		}

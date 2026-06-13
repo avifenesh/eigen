@@ -20,13 +20,97 @@ func runRemoteCmd(args []string) {
 	switch args[0] {
 	case "install":
 		if len(args) < 2 {
-			fail(fmt.Errorf("usage: eigen remote install <user@host[:dir]>"))
+			fail(fmt.Errorf("usage: eigen remote install <user@host[:dir] | saved-name>"))
 		}
 		remoteInstall(args[1])
+	case "list", "ls":
+		remoteList()
+	case "add":
+		// eigen remote add <name> <user@host[:dir]> [model] [perm]
+		if len(args) < 3 {
+			fail(fmt.Errorf("usage: eigen remote add <name> <user@host[:dir]> [model] [perm]"))
+		}
+		remoteAdd(args[1:])
+	case "remove", "rm":
+		if len(args) < 2 {
+			fail(fmt.Errorf("usage: eigen remote remove <name>"))
+		}
+		remoteRemove(args[1])
 	default:
-		fmt.Fprintf(os.Stderr, "unknown remote subcommand %q (want: install)\n", args[0])
+		fmt.Fprintf(os.Stderr, "unknown remote subcommand %q (want: install | list | add | remove)\n", args[0])
 		os.Exit(2)
 	}
+}
+
+// remoteList prints saved hosts from ~/.eigen/hosts.json.
+func remoteList() {
+	hosts, err := remote.LoadHosts()
+	if err != nil {
+		fail(err)
+	}
+	if len(hosts) == 0 {
+		fmt.Println("no saved hosts (add one: eigen remote add <name> <user@host[:dir]>)")
+		return
+	}
+	for name, h := range hosts {
+		line := fmt.Sprintf("%-16s %s", name, h.SSH)
+		if h.Dir != "" {
+			line += ":" + h.Dir
+		}
+		if h.Model != "" {
+			line += "  model=" + h.Model
+		}
+		if h.Perm != "" {
+			line += "  perm=" + h.Perm
+		}
+		fmt.Println(line)
+	}
+}
+
+// remoteAdd saves a host to ~/.eigen/hosts.json.
+func remoteAdd(args []string) {
+	name, ssh := args[0], args[1]
+	// Validate the ssh spec parses.
+	if _, err := remote.ParseHostSpec(ssh); err != nil {
+		fail(err)
+	}
+	h := remote.Host{SSH: ssh}
+	// Pull an inline :dir out of the spec into the saved Dir.
+	if s, err := remote.ParseHostSpec(ssh); err == nil && s.Dir != "" {
+		h.SSH = s.SSHTarget()
+		h.Dir = s.Dir
+	}
+	if len(args) > 2 {
+		h.Model = args[2]
+	}
+	if len(args) > 3 {
+		h.Perm = args[3]
+	}
+	hosts, err := remote.LoadHosts()
+	if err != nil {
+		fail(err)
+	}
+	hosts[name] = h
+	if err := remote.SaveHosts(hosts); err != nil {
+		fail(err)
+	}
+	fmt.Printf("saved host %q → %s\n", name, ssh)
+}
+
+// remoteRemove deletes a saved host.
+func remoteRemove(name string) {
+	hosts, err := remote.LoadHosts()
+	if err != nil {
+		fail(err)
+	}
+	if _, ok := hosts[name]; !ok {
+		fail(fmt.Errorf("no saved host %q", name))
+	}
+	delete(hosts, name)
+	if err := remote.SaveHosts(hosts); err != nil {
+		fail(err)
+	}
+	fmt.Printf("removed host %q\n", name)
 }
 
 // sshArgs are the base flags for every ssh invocation: no pty (-T) so the byte
@@ -43,7 +127,9 @@ func sshArgs(extra ...string) []string {
 // target matches, else cross-compile from source), scp it to
 // ~/.local/bin/eigen, and verify it runs.
 func remoteInstall(spec string) {
-	h, err := remote.ParseHostSpec(spec)
+	// Allow a saved host name as well as a literal spec.
+	hosts, _ := remote.LoadHosts()
+	h, _, _, err := hosts.Resolve(spec)
 	if err != nil {
 		fail(err)
 	}
