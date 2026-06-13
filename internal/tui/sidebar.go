@@ -13,14 +13,37 @@ package tui
 import (
 	"fmt"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
+
+// styleFaint is the dimmest structural text — section labels, hairline rules.
+var styleFaint = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+
+// sectionLabel renders a sidebar section divider: a faint lowercase label
+// followed by a hairline rule filling the remaining width, e.g.
+// "navigate ──────". Subtle grouping without shouting.
+func sectionLabel(label string, w int) string {
+	label = strings.ToLower(label)
+	if w <= 0 {
+		return ""
+	}
+	lw := lipgloss.Width(label)
+	if lw+2 > w {
+		return styleFaint.Render(ansiTrunc(label, w))
+	}
+	rule := strings.Repeat("─", w-lw-1)
+	return styleFaint.Render(label+" ") + styleFaint.Render(rule)
+}
 
 type sidebarRowKind int
 
 const (
 	sbTitle sidebarRowKind = iota
+	sbBrand                // "◆ eigen" wordmark at the very top
 	sbCwd
 	sbBlank
+	sbSection        // dim section label (e.g. "NAV", "SESSION", "PLAN")
 	sbNav            // clickable action row
 	sbStatus         // clickable status setter row (model/perm/effort/…)
 	sbTodoHeader     // "plan (n/m)" header above the todo rows
@@ -51,9 +74,11 @@ func (m *model) sidebarVisible() bool {
 // hit-test (sidebarRowAt) both walk exactly this.
 func (m *model) sidebarRows() []sidebarRow {
 	rows := []sidebarRow{
+		{kind: sbBrand},
 		{kind: sbTitle, action: actRename},
 		{kind: sbCwd},
 		{kind: sbBlank},
+		{kind: sbSection, label: "navigate"},
 		{kind: sbNav, label: "⌂ home", action: actHome},
 		{kind: sbNav, label: "⇆ sessions", action: actSwitcher},
 		{kind: sbNav, label: "+ new", action: actNewSession},
@@ -65,7 +90,7 @@ func (m *model) sidebarRows() []sidebarRow {
 	if lbl := m.tasksBadge(); lbl != "" {
 		rows = append(rows, sidebarRow{kind: sbNav, label: lbl, action: actTasksTab})
 	}
-	rows = append(rows, sidebarRow{kind: sbBlank})
+	rows = append(rows, sidebarRow{kind: sbBlank}, sidebarRow{kind: sbSection, label: "session"})
 	// Status setters (Wave 3): the bottom status bar's segments as rows —
 	// click = the same actions; everything stays keyboard-reachable too.
 	rows = append(rows, m.sidebarStatusRows()...)
@@ -146,7 +171,7 @@ func (m *model) sidebarRowAt(localY int) (sidebarRow, bool) {
 // width, mirroring railLines' padding/gutter conventions.
 func (m *model) sidebarLines(h int) []string {
 	rw := m.railCols()
-	contentW := rw - 2 // " │" gutter
+	contentW := rw - 3 // separator + gutter space
 	cur := ""
 	if sl := m.railLister(); sl != nil {
 		cur = sl.SessionID()
@@ -158,12 +183,16 @@ func (m *model) sidebarLines(h int) []string {
 			break
 		}
 		switch r.kind {
+		case sbBrand:
+			lines = append(lines, railPad(styleAccent.Bold(true).Render("◆ eigen"), rw))
 		case sbTitle:
 			lines = append(lines, railPad(styleUser.Render(ansiTrunc(m.headerTitle(), contentW)), rw))
 		case sbCwd:
 			lines = append(lines, railPad(dim(ansiTrunc(m.headerBreadcrumb(), contentW)), rw))
 		case sbBlank:
 			lines = append(lines, railPad("", rw))
+		case sbSection:
+			lines = append(lines, railPad(sectionLabel(r.label, contentW), rw))
 		case sbNav:
 			label := r.label
 			// The right-panel toggle reflects its open/closed state, the same
@@ -190,7 +219,7 @@ func (m *model) sidebarLines(h int) []string {
 				}
 			}
 			hdr := fmt.Sprintf("plan (%d/%d)", done, len(m.todos))
-			lines = append(lines, railPad(panelTitleLine(hdr, rw-1, false), rw))
+			lines = append(lines, railPad(panelTitleLine(hdr, contentW, false), rw))
 		case sbTodo:
 			if r.todo >= 0 && r.todo < len(m.todos) {
 				t := m.todos[r.todo]
@@ -205,7 +234,7 @@ func (m *model) sidebarLines(h int) []string {
 				lines = append(lines, railPad(label, rw))
 			}
 		case sbSessionsHeader:
-			lines = append(lines, railPad(panelTitleLine("sessions", rw-1, false), rw))
+			lines = append(lines, railPad(panelTitleLine("sessions", contentW, false), rw))
 		case sbRail:
 			if r.rail.header {
 				lines = append(lines, railPad(m.railHeaderLabel(r.rail.dir, contentW), rw))

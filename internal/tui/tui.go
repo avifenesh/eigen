@@ -1602,7 +1602,7 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 
 	ti := textarea.New()
 	ti.Placeholder = "type a task…  (enter send · ctrl+j newline · / commands · ↑↓ history · ctrl+c quit)"
-	ti.Prompt = "│ "
+	ti.Prompt = "❯ "
 	ti.ShowLineNumbers = false
 	ti.CharLimit = 0
 	ti.MaxHeight = inputMaxRows

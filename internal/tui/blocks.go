@@ -254,7 +254,9 @@ func (b *block) render(selected bool) string {
 	switch b.kind {
 	case blockText:
 		if b.role == "user" {
-			s.WriteString(styleUser.Render("❯ " + b.body))
+			// User turns: a clear cyan caret + the message, so "you said"
+			// stands apart from assistant prose and tool activity.
+			s.WriteString(styleUser.Render("❯ ") + styleUser.Render(b.body))
 		} else {
 			s.WriteString(renderProse(b.body))
 		}
@@ -268,18 +270,23 @@ func (b *block) render(selected bool) string {
 			marker = "▸"
 		}
 		style := styleTool
+		rule := styleTool.Render("▏")
 		if b.kind == blockThinking {
 			style = styleReason
+			rule = styleReason.Render("▏")
 		}
 		if b.isErr {
 			style = styleErr
+			rule = styleErr.Render("▏")
 		}
-		header := marker + " " + b.header()
+		// Header sits on the gutter rule: "▏ ▾ ✓ tool summary". The rule turns
+		// tool/thinking activity into a distinct left lane, clearly set off
+		// from conversational prose.
+		header := rule + " " + style.Render(marker+" "+b.header())
 		if selected {
-			s.WriteString(lipgloss.NewStyle().Bold(true).Render(style.Render("❭ " + header)))
-		} else {
-			s.WriteString("  " + style.Render(header))
+			header = rule + " " + lipgloss.NewStyle().Bold(true).Render(style.Render("❭ "+marker+" "+b.header()))
 		}
+		s.WriteString(header)
 
 		full := b.body
 		detail := b.toolDetail()
@@ -298,17 +305,28 @@ func (b *block) render(selected bool) string {
 		}
 		if b.collapsed {
 			if line := previewLine(full); line != "" {
-				s.WriteString("  " + styleReason.Render(line))
+				s.WriteString(dim(" · " + line))
 			}
 		} else if full != "" {
 			if isDiff {
-				s.WriteString("\n" + indent(renderDiff(full)))
+				s.WriteString("\n" + gutterRule(renderDiff(full), rule))
 			} else {
-				s.WriteString("\n" + indent(style.Render(full)))
+				s.WriteString("\n" + gutterRule(style.Render(full), rule))
 			}
 		}
 	}
 	return s.String()
+}
+
+// gutterRule prefixes every line of s with the gutter rule + a space, so a
+// tool/thinking block's body reads as a single contiguous lane under its
+// header. The rule is a pre-styled "▏".
+func gutterRule(s, rule string) string {
+	lines := strings.Split(s, "\n")
+	for i := range lines {
+		lines[i] = rule + " " + lines[i]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // renderProse renders assistant markdown for the terminal: fenced code blocks
@@ -454,12 +472,4 @@ func previewLine(s string) string {
 		s = s[:70] + "…"
 	}
 	return s
-}
-
-func indent(s string) string {
-	lines := strings.Split(s, "\n")
-	for i := range lines {
-		lines[i] = "    " + lines[i]
-	}
-	return strings.Join(lines, "\n")
 }

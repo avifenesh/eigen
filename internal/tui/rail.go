@@ -303,11 +303,11 @@ func (m *model) railLines(h int) []string {
 		cur = sl.SessionID()
 	}
 	rw := m.railCols()
-	contentW := rw - 2 // leave a 2-col gutter (" │")
+	contentW := rw - 3 // leave separator + gutter space + margin
 	grouped := m.railGrouped()
 	lines := make([]string, 0, h)
 	// Header row for the rail, with a visible close affordance.
-	lines = append(lines, railPad(panelTitleLine("sessions", rw-1, true), rw))
+	lines = append(lines, railPad(panelTitleLine("sessions", contentW, true), rw))
 	for _, r := range m.railRows() {
 		if len(lines) >= h {
 			break
@@ -344,12 +344,12 @@ func (m *model) railLines(h int) []string {
 // appends a dim vertical separator as the gutter's last column.
 func railPad(label string, w int) string {
 	plainW := ansi.StringWidth(label)
-	inner := w - 1 // last column is the separator
+	inner := w - 2 // reserve two columns: the separator and a gutter space
 	pad := inner - plainW
 	if pad < 0 {
 		pad = 0
 	}
-	return label + strings.Repeat(" ", pad) + dim("│")
+	return label + strings.Repeat(" ", pad) + dim("│") + " "
 }
 
 // transcriptBand renders the transcript viewport, prefixed with the rail column
