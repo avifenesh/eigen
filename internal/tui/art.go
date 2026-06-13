@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/avifenesh/eigen/internal/theme"
 	"github.com/charmbracelet/x/ansi"
@@ -17,6 +18,23 @@ var eigenArt = []string{
 	"  █████    ██  ██   ███ █████   ██ ██  ██",
 	"  ██       ██  ██    ██ ██      ██  ██ ██",
 	"  ███████  ██   ██████  ███████ ██   ████",
+}
+
+// greeting returns a warm, time-of-day salutation — the room feels lived-in,
+// not like a cold prompt.
+func greeting() string {
+	switch h := time.Now().Hour(); {
+	case h < 5:
+		return "burning the midnight oil"
+	case h < 12:
+		return "good morning"
+	case h < 17:
+		return "good afternoon"
+	case h < 22:
+		return "good evening"
+	default:
+		return "late night"
+	}
 }
 
 // welcomeView renders the empty-transcript welcome: the wordmark, a one-line
@@ -36,7 +54,8 @@ func (m *model) welcomeView(width, height int) string {
 		lines = append(lines, theme.SAccent.Render(a))
 	}
 	lines = append(lines, "")
-	lines = append(lines, theme.SDim.Render("your coding agent — sessions live in the daemon, windows are views"))
+	lines = append(lines, theme.STitle.Render(greeting()))
+	lines = append(lines, theme.SDim.Render("your coding agent — what are we building?"))
 	lines = append(lines, "")
 	// Starter hints: the few things worth knowing on a blank slate.
 	hints := []struct{ key, what string }{

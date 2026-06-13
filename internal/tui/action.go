@@ -81,12 +81,12 @@ var actionRegistry = map[actionID]action{
 	actEffortCycle: {
 		id: actEffortCycle, label: "effort",
 		enabled: func(m *model) bool { return m.backend != nil && m.backend.Effort() != "" },
-		run:     func(m *model) tea.Cmd { m.cycleEffort(); return nil },
+		run:     func(m *model) tea.Cmd { return m.cycleEffort() },
 	},
 	actSearchCycle: {
 		id: actSearchCycle, label: "search",
 		enabled: func(m *model) bool { return m.backend != nil && m.backend.SearchMode() != "" },
-		run:     func(m *model) tea.Cmd { m.cycleSearch(); return nil },
+		run:     func(m *model) tea.Cmd { return m.cycleSearch() },
 	},
 	actRouteToggle: {
 		id: actRouteToggle, label: "route",

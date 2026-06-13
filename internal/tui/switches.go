@@ -6,14 +6,15 @@ package tui
 import (
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/llm"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // togglePerm flips the permission posture between gated and auto — the keyboard
 // shortcut (ctrl+a) for fast mode changes, equivalent to /perm gated|auto. It
 // persists the new posture to the session meta so it survives rebuild/resume.
-func (m *model) togglePerm() {
+func (m *model) togglePerm() tea.Cmd {
 	if m.backend == nil {
-		return
+		return nil
 	}
 	if m.backend.Perm() == agent.PermAuto {
 		m.backend.SetPerm(agent.PermGated)
@@ -21,20 +22,20 @@ func (m *model) togglePerm() {
 		m.backend.SetPerm(agent.PermAuto)
 	}
 	m.saveMeta()
-	m.note("permission posture → " + string(m.backend.Perm()))
+	return m.showFlash("perm · " + string(m.backend.Perm()))
 }
 
 // cycleEffort steps the reasoning effort to the next level (wrapping) — the
 // keyboard shortcut (ctrl+e) for fast effort changes, equivalent to /effort. It
 // is a no-op (with a note) when the current model has no effort setting.
-func (m *model) cycleEffort() {
+func (m *model) cycleEffort() tea.Cmd {
 	if m.backend == nil {
-		return
+		return nil
 	}
 	cur := m.backend.Effort()
 	if cur == "" {
 		m.note("the current model does not support a reasoning-effort setting")
-		return
+		return nil
 	}
 	// Cycle within the CURRENT MODEL's level set (per-catalog: fable/opus are
 	// adaptive auto|low|medium|high, mantle GPT low..xhigh, sonnet off..high).
@@ -53,20 +54,20 @@ func (m *model) cycleEffort() {
 		}
 	}
 	m.saveMeta()
-	m.note("reasoning effort → " + m.backend.Effort())
+	return m.showFlash("effort · " + m.backend.Effort())
 }
 
 // cycleModel switches to the next model in the catalog (wrapping) — the
 // keyboard shortcut (ctrl+o) for fast model changes, equivalent to /model. The
 // provider is reconciled from the catalog so it never desyncs.
-func (m *model) cycleModel() {
+func (m *model) cycleModel() tea.Cmd {
 	if m.newProvider == nil {
 		m.push(&block{kind: blockNote, isErr: true, body: sb("model switching unavailable")})
-		return
+		return nil
 	}
 	models := llm.Models()
 	if len(models) == 0 {
-		return
+		return nil
 	}
 	// Find the current model, then advance to the next entry (wrapping).
 	idx := -1
@@ -81,7 +82,7 @@ func (m *model) cycleModel() {
 	np, err := m.newProvider(prov, next.ID)
 	if err != nil {
 		m.push(&block{kind: blockNote, isErr: true, body: sb("switch failed: " + err.Error())})
-		return
+		return nil
 	}
 	m.backend.SetModel(np, m.compactorFor(np), m.contextBudgetFor(next.ID))
 	m.provName, m.modelID = prov, next.ID
@@ -89,7 +90,7 @@ func (m *model) cycleModel() {
 	m.failoverFrom = nil
 	m.failoverLeft = 0
 	m.saveMeta()
-	m.note("model → " + np.Name())
+	return m.showFlash("model · " + np.Name())
 }
 
 // startFailover switches the live provider to fallback for failoverTurns
@@ -134,14 +135,14 @@ func (m *model) endFailover() {
 
 // cycleSearch steps live search off→auto→on→off (wrapping). No-op (with a
 // note) when the current model has no live-search setting.
-func (m *model) cycleSearch() {
+func (m *model) cycleSearch() tea.Cmd {
 	if m.backend == nil {
-		return
+		return nil
 	}
 	cur := m.backend.SearchMode()
 	if cur == "" {
 		m.note("the current model does not support live search (grok only)")
-		return
+		return nil
 	}
 	order := []string{"off", "auto", "on"}
 	next := order[0]
@@ -155,7 +156,7 @@ func (m *model) cycleSearch() {
 		_ = m.backend.SetSearch(order[0])
 	}
 	m.saveMeta()
-	m.note("live search → " + m.backend.SearchMode())
+	return m.showFlash("search · " + m.backend.SearchMode())
 }
 
 // contextBudgetFor returns the budget for a model id, capped by

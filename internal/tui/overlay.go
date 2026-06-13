@@ -130,8 +130,7 @@ func (m *model) openPermPicker() {
 		target = agent.PermGated
 	}
 	m.openConfirm("permission "+string(cur)+" → "+string(target)+"?", func(m *model) tea.Cmd {
-		m.togglePerm()
-		return nil
+		return m.togglePerm()
 	})
 }
 

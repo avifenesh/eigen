@@ -183,12 +183,19 @@ func (m *model) View() string {
 // flashBanner renders the transient confirmation pill, right-aligned: a calm
 // filled accent badge — "✓ copied 250 chars" — that auto-clears after a beat.
 func (m *model) flashBanner() string {
+	bg, glyph := theme.Ok, "✓ "
+	switch m.flashTone {
+	case flashWarn:
+		bg, glyph = theme.Warn, "• "
+	case flashBad:
+		bg, glyph = theme.Err, "✗ "
+	}
 	pill := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#1b1f27")).
-		Background(theme.Ok).
+		Background(bg).
 		Bold(true).
 		Padding(0, 1).
-		Render("✓ " + m.flash)
+		Render(glyph + m.flash)
 	if m.width <= 0 {
 		return pill
 	}

@@ -56,19 +56,26 @@ func (m *model) ping(msg string) {
 
 // pingOnTurnDone decides whether a finished turn deserves a ping: only after
 // long turns (the user has likely tabbed away), and never for canceled ones.
-func (m *model) pingOnTurnDone(err error) {
+func (m *model) pingOnTurnDone(err error) tea.Cmd {
 	if m.turnStarted.IsZero() {
-		return
+		return nil
 	}
 	dur := time.Since(m.turnStarted)
 	if dur < pingMinTurn {
-		return
+		return nil
 	}
 	label := "done"
 	if err != nil {
 		label = "failed"
 	}
-	m.ping("turn " + label + " after " + dur.Round(time.Second).String())
+	rounded := dur.Round(time.Second).String()
+	m.ping("turn " + label + " after " + rounded)
+	// Also flash an in-app banner: a long turn finishing should be noticeable
+	// on screen, not only via the (easily-missed) terminal bell.
+	if err != nil {
+		return m.showFlashTone("turn failed · "+rounded, flashBad)
+	}
+	return m.showFlash("turn done · " + rounded)
 }
 
 // goalNagInterval is how often eigen pings while a goal is set and the session

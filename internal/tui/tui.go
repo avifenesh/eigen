@@ -119,8 +119,10 @@ type model struct {
 	// for a beat then cleared by flashClearMsg — eye-catching, no transcript
 	// clutter. flashGen guards against an earlier flash's timer clearing a
 	// newer one.
-	flash    string
-	flashGen int
+	flash     string
+	flashGen  int
+	flashTone flashKind
+	pingFlash tea.Cmd // deferred turn-done flash, batched after relayout
 
 	// approvedTools are tool names the user chose to always allow this session.
 	approvedTools map[string]bool
@@ -406,11 +408,24 @@ func (m *model) note(s string) { m.push(&block{kind: blockNote, body: sb(s)}) }
 // flashClearMsg clears a transient banner if it's still the current one.
 type flashClearMsg struct{ gen int }
 
-// showFlash sets a transient bottom banner and returns a command that clears
-// it after a short beat. Use for fast confirmations (copy, toggles) that
-// shouldn't leave a permanent transcript line.
-func (m *model) showFlash(s string) tea.Cmd {
+// flashKind tones the transient banner: ok (green), warn (amber), err (red).
+type flashKind int
+
+const (
+	flashOk flashKind = iota
+	flashWarn
+	flashBad
+)
+
+// showFlash sets a transient bottom banner (ok tone) and returns a command
+// that clears it after a short beat. Use for fast confirmations (copy,
+// toggles) that shouldn't leave a permanent transcript line.
+func (m *model) showFlash(s string) tea.Cmd { return m.showFlashTone(s, flashOk) }
+
+// showFlashTone is showFlash with an explicit tone.
+func (m *model) showFlashTone(s string, tone flashKind) tea.Cmd {
 	m.flash = s
+	m.flashTone = tone
 	m.flashGen++
 	gen := m.flashGen
 	return tea.Tick(1500*time.Millisecond, func(time.Time) tea.Msg {
@@ -1003,19 +1018,16 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		case "ctrl+a", "alt+a":
 			// Quick toggle of the permission posture (gated ↔ auto) without
 			// typing /perm. "a" = auto/approval mode.
-			m.togglePerm()
-			return m, nil
+			return m, m.togglePerm()
 		case "ctrl+e", "alt+r":
 			// Quick cycle of the reasoning effort (wraps) without typing /effort.
 			// alt+r ("reasoning") is the multiplexer-safe alternative.
-			m.cycleEffort()
-			return m, nil
+			return m, m.cycleEffort()
 		case "ctrl+o", "alt+m":
 			// Quick cycle to the next model in the catalog (wraps), without
 			// typing /model. "o" for mOdel (ctrl+m is Enter in terminals);
 			// alt+m is the multiplexer-safe alternative (ctrl+o is a zellij key).
-			m.cycleModel()
-			return m, nil
+			return m, m.cycleModel()
 		case "pgup":
 			m.vp.HalfPageUp()
 			return m, nil
@@ -1349,7 +1361,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				m.note("rate-limited (too many tokens/min). Try: /compact to shrink context, /effort low to reduce thinking tokens, or wait a moment and retry.")
 			}
 		}
-		m.pingOnTurnDone(msg.err)
+		m.pingFlash = m.pingOnTurnDone(msg.err)
 		m.finishTurnStats()
 		m.turnStarted = time.Time{}
 		m.cancel = nil
@@ -1387,11 +1399,13 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			return m, m.submit(next)
 		}
 		m.relayout()
+		pf := m.pingFlash
+		m.pingFlash = nil
 		// Conversation mode: speak the answer, then listen for the next turn.
 		if vc := m.voiceTurnDone(msg.err); vc != nil {
-			return m, tea.Batch(vc, textarea.Blink, m.scheduleIdleDream(), m.scheduleGoalNag(), m.scheduleLoop())
+			return m, tea.Batch(pf, vc, textarea.Blink, m.scheduleIdleDream(), m.scheduleGoalNag(), m.scheduleLoop())
 		}
-		return m, tea.Batch(textarea.Blink, m.scheduleIdleDream(), m.scheduleGoalNag(), m.scheduleLoop())
+		return m, tea.Batch(pf, textarea.Blink, m.scheduleIdleDream(), m.scheduleGoalNag(), m.scheduleLoop())
 
 	case goalNagMsg:
 		return m, m.handleGoalNag(msg)

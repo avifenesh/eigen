@@ -1634,3 +1634,39 @@ func TestCopyFlashBanner(t *testing.T) {
 		t.Fatal("matching flashClearMsg should clear the banner")
 	}
 }
+
+func TestToggleFlashesNotNotes(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	before := len(m.blocks)
+	cmd := m.togglePerm()
+	if cmd == nil {
+		t.Fatal("togglePerm should return a flash cmd")
+	}
+	if len(m.blocks) != before {
+		t.Fatal("togglePerm should flash, not push a transcript note")
+	}
+	if m.flash == "" || !strings.Contains(m.flash, "perm") {
+		t.Fatalf("flash should announce the perm change, got %q", m.flash)
+	}
+}
+
+func TestGreetingByHour(t *testing.T) {
+	// Just assert it's non-empty and stable (the exact text is time-of-day).
+	if greeting() == "" {
+		t.Fatal("greeting should never be empty")
+	}
+}
+
+func TestFlashToneRenders(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.showFlashTone("turn failed · 1m", flashBad)
+	out := ansi.Strip(m.View())
+	if !strings.Contains(out, "turn failed") {
+		t.Fatalf("error flash should render: %s", out)
+	}
+	if !strings.Contains(out, "✗") {
+		t.Fatalf("bad-tone flash should use the ✗ glyph: %s", out)
+	}
+}
