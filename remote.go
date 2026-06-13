@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,9 +21,25 @@ func runRemoteCmd(args []string) {
 	switch args[0] {
 	case "install":
 		if len(args) < 2 {
-			fail(fmt.Errorf("usage: eigen remote install <user@host[:dir] | saved-name>"))
+			fail(fmt.Errorf("usage: eigen remote install <user@host[:dir] | saved-name> [--no-creds]"))
 		}
-		remoteInstall(args[1])
+		// --no-creds (anywhere in the args) skips the credential push.
+		pushCreds := true
+		var spec string
+		for _, a := range args[1:] {
+			switch a {
+			case "--no-creds":
+				pushCreds = false
+			default:
+				if spec == "" {
+					spec = a
+				}
+			}
+		}
+		if spec == "" {
+			fail(fmt.Errorf("usage: eigen remote install <user@host[:dir] | saved-name> [--no-creds]"))
+		}
+		remoteInstall(spec, pushCreds)
 	case "list", "ls":
 		remoteList()
 	case "add":
@@ -123,7 +140,7 @@ func sshArgs(extra ...string) []string {
 // remote OS/arch, obtain a matching binary (copy the running one when the
 // target matches, else cross-compile from source), scp it to
 // ~/.local/bin/eigen, and verify it runs.
-func remoteInstall(spec string) {
+func remoteInstall(spec string, pushCreds bool) {
 	// Allow a saved host name as well as a literal spec.
 	hosts, _ := remote.LoadHosts()
 	h, _, _, err := hosts.Resolve(spec)
@@ -191,9 +208,72 @@ func remoteInstall(spec string) {
 		fmt.Printf("  installed, but `eigen version` failed remotely: %v\n", err)
 		fmt.Println("  (ensure ~/.local/bin is on the remote PATH)")
 	} else {
-		fmt.Printf("  installed: eigen %s on %s\n", strings.TrimSpace(string(ver)), target)
+		fmt.Printf("  installed: %s on %s\n", strings.TrimSpace(string(ver)), target)
 	}
+
+	// Push the credential snapshot so the remote daemon can actually build
+	// sessions (an ssh non-login shell has no AWS/provider creds → otherwise
+	// every remote turn fails with "converse credentials"). The remote daemon
+	// loads ~/.eigen/daemon.env at startup (loadDaemonEnv). Skipped with
+	// --no-creds; secrets stay 0600 on both ends.
+	if pushCreds {
+		if err := pushRemoteCreds(target); err != nil {
+			fmt.Printf("  credentials NOT pushed (%v) — remote sessions may fail to authenticate;\n  set creds on the remote or re-run without --no-creds\n", err)
+		} else {
+			fmt.Printf("  pushed credential snapshot → %s:~/.eigen/daemon.env (0600)\n", target)
+		}
+	} else {
+		fmt.Println("  (--no-creds: skipped credential push; the remote needs its own provider creds)")
+	}
+
 	fmt.Printf("\nNow run a remote session with:\n  eigen --remote %s\n", spec)
+}
+
+// pushRemoteCreds writes the local credential snapshot (the same keys
+// `eigen daemon install` captures) to the remote's ~/.eigen/daemon.env, 0600,
+// AND — because the default Converse/Bedrock model authenticates with SigV4
+// from ~/.aws/credentials (not an env token) — pushes the AWS credentials file
+// too when present. All piped over ssh (never a local temp, never secrets on a
+// command line); the remote files are created 0600.
+func pushRemoteCreds(target string) error {
+	var b strings.Builder
+	n := 0
+	for _, k := range credentialEnvKeys {
+		if v := os.Getenv(k); v != "" {
+			fmt.Fprintf(&b, "%s=%s\n", k, v)
+			n++
+		}
+	}
+	if n > 0 {
+		remoteCmd := "umask 077 && mkdir -p ~/.eigen && cat > ~/.eigen/daemon.env && chmod 600 ~/.eigen/daemon.env"
+		cmd := exec.Command("ssh", sshArgs(target, remoteCmd)...)
+		cmd.Stdin = strings.NewReader(b.String())
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return err
+		}
+	}
+
+	// AWS credentials file (SigV4 for Converse/Bedrock — the default model).
+	// Without it a remote converse session fails with "converse credentials".
+	if home, err := os.UserHomeDir(); err == nil {
+		credFile := filepath.Join(home, ".aws", "credentials")
+		if data, rerr := os.ReadFile(credFile); rerr == nil && len(data) > 0 {
+			remoteCmd := "umask 077 && mkdir -p ~/.aws && cat > ~/.aws/credentials && chmod 600 ~/.aws/credentials"
+			cmd := exec.Command("ssh", sshArgs(target, remoteCmd)...)
+			cmd.Stdin = bytes.NewReader(data)
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("push ~/.aws/credentials: %w", err)
+			}
+			fmt.Printf("  pushed ~/.aws/credentials → %s:~/.aws/credentials (0600)\n", target)
+		}
+	}
+
+	if n == 0 {
+		return fmt.Errorf("no env credentials in the local environment to push")
+	}
+	return nil
 }
 
 // runSSH runs a remote command, streaming its stderr (for visibility).

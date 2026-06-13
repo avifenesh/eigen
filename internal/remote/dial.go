@@ -1,9 +1,11 @@
 package remote
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 
 	"github.com/avifenesh/eigen/internal/daemon"
 )
@@ -69,18 +71,37 @@ func Dial(target string, errOut io.Writer) (*daemon.Client, io.Closer, error) {
 }
 
 // ListSessions opens a transient ssh connection, lists the remote daemon's
-// sessions, and closes it — a read-only peek for the Machines drill-in. Quiet
-// (ssh stderr discarded); returns a clear error when eigen isn't installed
-// remotely.
+// sessions, and closes it — a read-only peek for the Machines drill-in. The
+// remote's stderr is captured so a failure (eigen not installed, daemon can't
+// spawn, missing creds) surfaces its real reason instead of a bare "no daemon".
 func ListSessions(target string) ([]daemon.SessionInfo, error) {
-	c, closer, err := Dial(target, io.Discard)
+	var errBuf bytes.Buffer
+	c, closer, err := Dial(target, &errBuf)
 	if err != nil {
 		return nil, err
 	}
-	defer closer.Close()
 	infos, err := c.List()
 	if err != nil {
-		return nil, fmt.Errorf("no eigen daemon on %s (install it: eigen remote install %s): %w", target, target, err)
+		// Close first: it Waits on the ssh process, flushing any remote stderr
+		// into errBuf before we read it.
+		_ = closer.Close()
+		detail := strings.TrimSpace(errBuf.String())
+		if detail != "" {
+			// The remote said something (command not found, build error, etc.).
+			return nil, fmt.Errorf("%s: %s", target, firstLine(detail))
+		}
+		return nil, fmt.Errorf("no eigen on %s — install it: eigen remote install %s", target, target)
 	}
+	closer.Close()
 	return infos, nil
+}
+
+// firstLine returns the first non-empty line (remote stderr can be multi-line).
+func firstLine(s string) string {
+	for _, ln := range strings.Split(s, "\n") {
+		if t := strings.TrimSpace(ln); t != "" {
+			return t
+		}
+	}
+	return s
 }

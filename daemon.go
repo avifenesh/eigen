@@ -39,6 +39,14 @@ func runDaemon(cfg config.Config) {
 		return
 	}
 
+	// Load the credential snapshot (~/.eigen/daemon.env) into the environment
+	// if present. systemd's EnvironmentFile does this for the installed unit,
+	// but a daemon spawned directly (ensureDaemon's auto-start, or a REMOTE
+	// daemon reached via `ssh host eigen daemon stdio`) needs creds too — else
+	// it can't build sessions (no AWS creds → "converse credentials" errors).
+	// Existing env vars win (an explicit export overrides the snapshot).
+	loadDaemonEnv()
+
 	gmem, _ := memory.OpenGlobal()
 	skills := skill.Discover(skillDirs()...)
 
@@ -496,6 +504,38 @@ var credentialEnvKeys = []string{
 	"XAI_API_KEY", "EIGEN_GROK_API_KEY", "GLM_API_KEY", "ANTHROPIC_API_KEY",
 	"EIGEN_SMALL_MODEL", "EIGEN_TITLE_MODEL", "EIGEN_LLAMA_BASE_URL",
 	"EIGEN_MANTLE_REGION", "EIGEN_REASONING_EFFORT", "EIGEN_NOTIFY_CMD",
+}
+
+// loadDaemonEnv loads ~/.eigen/daemon.env (KEY=VALUE lines, the credential
+// snapshot written by `eigen daemon install` / pushed by `eigen remote
+// install`) into the process environment. Already-set vars are NOT overwritten
+// (an explicit export wins). Best-effort: a missing file is fine. This lets a
+// daemon spawned WITHOUT systemd (ensureDaemon auto-start, or a remote daemon
+// reached over ssh) still find its credentials.
+func loadDaemonEnv() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".eigen", "daemon.env"))
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		k = strings.TrimSpace(k)
+		if k == "" || os.Getenv(k) != "" {
+			continue // explicit env wins
+		}
+		_ = os.Setenv(k, strings.TrimSpace(v))
+	}
 }
 
 // daemonInstall writes + enables a systemd user unit so the daemon starts at
