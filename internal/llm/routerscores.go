@@ -51,7 +51,6 @@ var routerScores = map[string]RouterScore{
 	// design (Design). Rank orders quality within the tier so a newer model
 	// always beats an older one regardless of which account it lives on.
 	"global.anthropic.claude-fable-5": {Tier: TierMed, Rank: 4, Speed: 45, Design: true},
-	"claude-fable-5":                  {Tier: TierMed, Rank: 4, Speed: 45, Design: true},
 	"openai.gpt-5.5":                  {Tier: TierMed, Rank: 3, Speed: 50, Strict: true},
 	"openai.gpt-5.4":                  {Tier: TierMed, Rank: 2, Speed: 58},
 	"openai.gpt-5":                    {Tier: TierMed, Rank: 1, Speed: 60},
@@ -60,7 +59,6 @@ var routerScores = map[string]RouterScore{
 	// Tier 2 — simple-med (sonnet). 4-6 is the newest sonnet; quality first,
 	// so it wins even on Bedrock.
 	"us.anthropic.claude-sonnet-4-6": {Tier: TierSimpleMed, Rank: 3, Speed: 74},
-	"claude-sonnet-4-5-20250929":     {Tier: TierSimpleMed, Rank: 2, Speed: 74},
 	"us.anthropic.claude-3-5-sonnet": {Tier: TierSimpleMed, Rank: 1, Speed: 74},
 
 	// Tier 1 — simple (cheap/fast; grok/composer/glm/haiku/local).

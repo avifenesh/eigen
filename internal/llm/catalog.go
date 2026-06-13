@@ -72,12 +72,13 @@ var Catalog = []ModelInfo{
 	// Bedrock Converse (Anthropic Claude). Prompt caching + 1M context (beta) +
 	// extended thinking. Default 200k window; 1M when the beta is enabled.
 	//
-	// claude-fable-5 is the current flagship and eigen's default. It is served
-	// via the GLOBAL Bedrock inference profile (global.anthropic.claude-fable-5 —
-	// there is no us. profile) and requires a non-default data-retention mode
-	// enabled on the AWS account. Uses the adaptive thinking API (Effort) like
-	// opus-4-8, prompt caching, and the 1M-context beta (on by default; force
-	// off with EIGEN_CONVERSE_1M=0).
+	// claude-fable-5 is Anthropic's flagship on Bedrock. It is served via the
+	// GLOBAL inference profile (global.anthropic.claude-fable-5 — there is no
+	// us. profile) and requires a non-default data-retention mode enabled on
+	// the AWS account. Uses the adaptive thinking API (Effort) like opus-4-8,
+	// prompt caching, and the 1M-context beta (on by default; force off with
+	// EIGEN_CONVERSE_1M=0). Kept available but NOT the default for now;
+	// eigen's default is us.anthropic.claude-opus-4-8.
 	{ID: "global.anthropic.claude-fable-5", Provider: "converse", ContextWindow: 200000,
 		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
 	// us. inference profile for fable-5: requests route (the model answers —
@@ -94,16 +95,6 @@ var Catalog = []ModelInfo{
 	// Haiku 4.5: the small/fast/cheap model eigen uses for background chores
 	// (session titling, dreaming, skill vulnerability scans).
 	{ID: "us.anthropic.claude-haiku-4-5-20251001-v1:0", Provider: "converse", ContextWindow: 200000, Cache: true, Vision: true},
-
-	// Native Anthropic API (api.anthropic.com), authenticated with a Claude
-	// Code OAuth login (~/.claude/.credentials.json) or ANTHROPIC_API_KEY.
-	// These are Anthropic's own model ids (not the Bedrock us.anthropic.* names)
-	// — the same catalog Claude Code drives. Adaptive thinking (Effort) like the
-	// Bedrock opus entry; 1M context via beta.
-	{ID: "claude-fable-5", Provider: "anthropic", ContextWindow: 200000,
-		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
-	{ID: "claude-sonnet-4-5-20250929", Provider: "anthropic", ContextWindow: 200000,
-		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, ThinkingBudget: 8192, EffortLevels: []string{"off", "low", "medium", "high", "xhigh"}, Vision: true},
 
 	// Local llama (OpenAI-compatible server). Window is modest by default.
 	{ID: "local", Provider: "llama", ContextWindow: 40000},
@@ -141,9 +132,9 @@ var defaultModelByProvider = map[string]string{
 	"":                 "openai.gpt-5.5",
 	"mantle":           "openai.gpt-5.5",
 	"bedrock-mantle":   "openai.gpt-5.5",
-	"converse":         "global.anthropic.claude-fable-5",
-	"bedrock-converse": "global.anthropic.claude-fable-5",
-	"claude":           "global.anthropic.claude-fable-5",
+	"converse":         "us.anthropic.claude-opus-4-8",
+	"bedrock-converse": "us.anthropic.claude-opus-4-8",
+	"claude":           "us.anthropic.claude-opus-4-8",
 	"llama":            "local",
 	"local":            "local",
 	"grok":             "grok-build",

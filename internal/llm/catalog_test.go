@@ -34,7 +34,7 @@ func TestDefaultModel(t *testing.T) {
 	if DefaultModel("mantle") != "openai.gpt-5.5" {
 		t.Fatal("mantle default wrong")
 	}
-	if DefaultModel("converse") != "global.anthropic.claude-fable-5" {
+	if DefaultModel("converse") != "us.anthropic.claude-opus-4-8" {
 		t.Fatal("converse default wrong")
 	}
 	if DefaultModel("") != "openai.gpt-5.5" {

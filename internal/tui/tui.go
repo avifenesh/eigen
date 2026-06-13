@@ -1344,8 +1344,8 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			switch {
 			case isGPTRoutingError(m.modelID, msg.err) && m.ctx.Err() == nil:
 				// GPT routing/availability failure: walk the failover chain
-				// (fable default → gpt-5.5 → opus); never land on the failing
-				// model itself.
+				// (opus default → gpt-5.5 → sonnet-4-6); never land on the
+				// failing model itself.
 				if fb := nextFailover(m.modelID); m.startFailover(fb) {
 					m.cancel = nil
 					m.autosave()
@@ -1871,13 +1871,14 @@ type failoverOrigin struct {
 // overload before switching back to the original model.
 const failoverTurns = 5
 
-// failoverChain is the ordered fallback ladder (the user's rule): fable-5 is
-// the default, gpt-5.5 is the first failover, opus third. nextFailover picks
-// the first entry that isn't the failing model so a failover never lands on
-// the model that just failed.
+// failoverChain is the ordered fallback ladder used when the active model is
+// persistently overloaded (Bedrock 503). The default is opus-4-8, so the chain
+// is the OTHER models to try: gpt-5.5 first, then sonnet-4-6. nextFailover
+// picks the first entry that isn't the failing model so a failover never lands
+// on the model that just failed (and never on opus when opus is failing).
 var failoverChain = []string{
 	"openai.gpt-5.5",
-	"us.anthropic.claude-opus-4-8",
+	"us.anthropic.claude-sonnet-4-6",
 }
 
 // nextFailover returns the first chain model different from the failing one,

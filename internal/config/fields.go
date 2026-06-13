@@ -20,7 +20,7 @@ type Field struct {
 // Keys() derives from this — one source of truth.
 func Fields() []Field {
 	return []Field{
-		{Key: "model", Desc: "default model for new sessions — catalog ids self-tag their backend; force one with provider:id (e.g. mantle:us.openai.gpt-5.5, ant:claude-fable-5); live switch: /model", Dynamic: "models"},
+		{Key: "model", Desc: "default model for new sessions — catalog ids self-tag their backend; force one with provider:id (e.g. mantle:openai.gpt-5.5, converse:us.anthropic.claude-opus-4-8); live switch: /model", Dynamic: "models"},
 		{Key: "perm", Desc: "tool permission: gated asks before mutating tools · auto runs them freely", Options: []string{"gated", "auto"}},
 		{Key: "effort", Desc: "default reasoning effort for new sessions (per-model levels; e.g. opus max, gpt xhigh); live switch: /effort or ctrl+e", Options: []string{"off", "minimal", "none", "low", "medium", "high", "xhigh", "max"}},
 		{Key: "max_tokens", Desc: "context-budget ceiling in tokens; 0 = auto (85% of the model window)"},

@@ -6,7 +6,7 @@ import "strings"
 //
 //	us.anthropic.claude-opus-4-8          → catalog self-tags it (converse)
 //	mantle:us.openai.gpt-5.5              → explicit provider tag
-//	ant:claude-fable-5                    → provider aliases work ("ant")
+//	converse:us.anthropic.claude-opus-4-8  → explicit backend tag
 //
 // Most ids are unambiguous — the catalog knows their provider — so the tag is
 // only needed for ids the catalog hasn't met (or to force a backend). The

@@ -125,9 +125,13 @@ func TestClaudeOAuthToken(t *testing.T) {
 }
 
 func TestAnthropicProviderResolution(t *testing.T) {
-	// The native model ids resolve to the anthropic provider, not converse.
-	if p := ResolveProvider("converse", "claude-fable-5"); p != "anthropic" {
-		t.Errorf("claude-fable-5 should resolve to anthropic, got %q", p)
+	// The native Anthropic catalog entries were removed (Bedrock-only), so a
+	// native id is unknown to the catalog: an explicit "anthropic" hint is
+	// preserved (the provider code still exists for explicit refs), and a
+	// "converse" hint is NOT flipped (unknown model leaves the requested
+	// provider untouched).
+	if p := ResolveProvider("anthropic", "claude-fable-5"); p != "anthropic" {
+		t.Errorf("explicit anthropic hint should be preserved, got %q", p)
 	}
 	// The Bedrock id stays on converse (distinct backend, not flipped).
 	if p := ResolveProvider("converse", "us.anthropic.claude-opus-4-8"); p != "converse" {

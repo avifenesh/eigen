@@ -101,14 +101,12 @@ func TestModelEffortLevelsPerCatalog(t *testing.T) {
 	}{
 		// mantle GPT (verified live): none|low..xhigh — minimal and max rejected
 		{"openai.gpt-5.5", []string{"none", "low", "medium", "high", "xhigh"}},
-		// Anthropic adaptive fable/opus (verified live on converse AND native):
+		// Anthropic adaptive fable/opus on Bedrock (verified live):
 		// low..xhigh|max — auto and minimal rejected
 		{"global.anthropic.claude-fable-5", []string{"low", "medium", "high", "xhigh", "max"}},
 		{"us.anthropic.claude-opus-4-8", []string{"low", "medium", "high", "xhigh", "max"}},
-		{"claude-fable-5", []string{"low", "medium", "high", "xhigh", "max"}},
 		// budget-style sonnet: off (thinking disabled) through xhigh budgets
 		{"us.anthropic.claude-sonnet-4-6", []string{"off", "low", "medium", "high", "xhigh"}},
-		{"claude-sonnet-4-5-20250929", []string{"off", "low", "medium", "high", "xhigh"}},
 	}
 	for _, c := range cases {
 		got := ModelEffortLevels(c.model)

@@ -1800,7 +1800,8 @@ func TestOverloadFailoverCountsDownAndSwitchesBack(t *testing.T) {
 }
 
 func TestOverloadFailoverChainAndNoLoop(t *testing.T) {
-	// gpt-5.5 overloaded (no failover active): walks the chain to opus.
+	// gpt-5.5 overloaded (no failover active): walks the chain to sonnet-4-6
+	// (opus is the default, so it's not in the chain — gpt-5.5 then sonnet).
 	m := testModel(t)
 	m.provName, m.modelID = "mantle", "openai.gpt-5.5"
 	m.newProvider = func(provider, mdl string) (llm.Provider, error) {
@@ -1808,8 +1809,8 @@ func TestOverloadFailoverChainAndNoLoop(t *testing.T) {
 	}
 	m.backend.Reset([]llm.Message{{Role: llm.RoleUser, Text: "task"}})
 	m.Update(turnDoneMsg{err: fmt.Errorf("HTTP 503: unable to process")})
-	if m.modelID != "us.anthropic.claude-opus-4-8" {
-		t.Fatalf("gpt overload should fail over to opus (next chain entry), got %s", m.modelID)
+	if m.modelID != "us.anthropic.claude-sonnet-4-6" {
+		t.Fatalf("gpt overload should fail over to sonnet-4-6 (next chain entry), got %s", m.modelID)
 	}
 
 	// A second overload while a failover window is ACTIVE must not chain
@@ -1819,8 +1820,8 @@ func TestOverloadFailoverChainAndNoLoop(t *testing.T) {
 	if m.failoverFrom == nil || m.failoverFrom.model != from.model {
 		t.Fatal("must not start a second failover while one is active")
 	}
-	if m.modelID != "us.anthropic.claude-opus-4-8" {
-		t.Fatalf("model must stay on opus during the window, got %s", m.modelID)
+	if m.modelID != "us.anthropic.claude-sonnet-4-6" {
+		t.Fatalf("model must stay on sonnet-4-6 during the window, got %s", m.modelID)
 	}
 }
 

@@ -85,7 +85,7 @@ func NewConverse(model string) (*Converse, error) {
 	region := firstNonEmpty(os.Getenv("EIGEN_CONVERSE_REGION"), os.Getenv("AWS_REGION"), "us-east-2")
 	profile := firstNonEmpty(os.Getenv("EIGEN_CONVERSE_PROFILE"), os.Getenv("AWS_PROFILE"), "aviary")
 	if model == "" {
-		model = "global.anthropic.claude-fable-5"
+		model = "us.anthropic.claude-opus-4-8"
 	}
 	creds, err := loadAWSCreds(profile)
 	if err != nil {
