@@ -971,13 +971,15 @@ seam → retrieval, the token-efficiency win), then image gen (we have no image
 model today), then local-first routing (OPT-IN). Non-LLM deterministic helpers
 are just tools — OUT OF SCOPE here.
 
-- [ ] **Provider seam for non-generative models.** Today `llm.Provider` is
+- [x] **Provider seam for non-generative models.** SHIPPED (ce1ce38): llm.Embedder (text→vector), OpenAI /v1/embeddings backend = local BGE; CosineSim. Reranker deferred.
+- [~] **(orig) Provider seam for non-generative models.** Today `llm.Provider` is
   chat-completions shaped. Add sibling interfaces — `Embedder` (text → vector),
   `Reranker` (query+docs → scores), maybe `Classifier` — with the same
   catalog/credential/discovery treatment (a model entry declares its KIND).
   The local llama.cpp server + the existing BGE embedder are the first backends
   (OpenAI-compatible /embeddings).
-- [ ] **Retrieval that uses them (closes Tier 7 #1's "retrieval instead of
+- [x] **Retrieval that uses them.** SHIPPED (7e96ddd): the `retrieve` tool + per-project incremental vector index (brute-force cosine, line-window chunks, staleness-checked, optional). Session/memory indexing + auto-assembly + reranker deferred to v2.
+- [~] **(orig) Retrieval that uses them (closes Tier 7 #1's "retrieval instead of
   re-paste").** An embedder enables semantic retrieval over the project + past
   sessions + memory, so context is RETRIEVED on demand instead of pasted whole
   — the biggest remaining token-efficiency lever. A `retrieve` tool and/or
