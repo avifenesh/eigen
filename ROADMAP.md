@@ -925,8 +925,8 @@ and the substrate for #13 (ultraplan).
   result to the real tree behind ONE apply-time approval; conflicts skipped +
   reported. git-only / repo-root / clean-tree enforced; children get
   read/write/edit/move only (NO bash/git/network); .git denied; worktree ops
-  serialized; -race + live verified. DEFERRED: bash-in-OS-sandbox, build/test
-  after apply, conflict auto-rebase, subdir-session prefix, submodules.
+  serialized; -race + live verified. Conflicting children now REBASE by redo (6ece734) instead of being
+  dropped. DEFERRED: build/test after apply, subdir-session prefix, submodules.
 - [ ] **Safety.** Parallel sub-agents inherit the parent's permission posture;
   a gated parent must NOT let children silently auto-run mutating tools.
   Approval routing for many concurrent children needs design (one queue, clear
