@@ -165,6 +165,19 @@ func main() {
 		return
 	}
 
+	// `eigen version`: print version (used by `eigen remote install` to verify
+	// a freshly-installed remote binary; mirrors the --version flag).
+	if flag.Arg(0) == "version" {
+		fmt.Println("eigen", llm.Version)
+		return
+	}
+
+	// `eigen remote <install|...>`: bootstrap/manage eigen on remote hosts.
+	if flag.Arg(0) == "remote" {
+		runRemoteCmd(flag.Args()[1:])
+		return
+	}
+
 	skills := skill.Discover(skillDirs()...)
 	if *listSkills {
 		printSkills(skills)
