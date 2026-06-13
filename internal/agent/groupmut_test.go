@@ -166,3 +166,89 @@ func TestTaskGroupMutatingNoWorktreeToolsErrors(t *testing.T) {
 		t.Fatal("nil WorktreeTools should disable mutating fan-out")
 	}
 }
+
+// conflictProvider drives two children that edit the SAME file, forcing a
+// conflict the second child must rebase. Stateless per call (children share one
+// provider instance): it decides from the request messages. Tag comes from the
+// task text ("tagA"/"tagB"); rebase mode is signaled by the injected NOTE.
+type conflictProvider struct{ file string }
+
+func (c *conflictProvider) Name() string    { return "cp" }
+func (c *conflictProvider) ModelID() string { return "cp" }
+func (c *conflictProvider) Complete(_ context.Context, req llm.Request) (*llm.Response, error) {
+	task := ""
+	var lastTool string
+	toolResults := 0
+	for _, m := range req.Messages {
+		if m.Role == llm.RoleUser && task == "" {
+			task = m.Text
+		}
+		if m.Role == llm.RoleTool {
+			toolResults++
+			lastTool = m.Text
+		}
+	}
+	tag := "A"
+	if strings.Contains(task, "tagB") {
+		tag = "B"
+	}
+	rebase := strings.Contains(task, "[NOTE:")
+
+	if !rebase {
+		// Normal: overwrite the file with INIT + this child's tag.
+		if toolResults == 0 {
+			args, _ := json.Marshal(map[string]string{"path": c.file, "content": "INIT\n" + tag + "\n"})
+			return &llm.Response{ToolCalls: []llm.ToolCall{{ID: "w", Name: "write", Arguments: args}}}, nil
+		}
+		return &llm.Response{Text: "wrote " + tag}, nil
+	}
+	// Rebase: read current state, then append our tag (integrate, don't clobber).
+	switch toolResults {
+	case 0:
+		args, _ := json.Marshal(map[string]string{"path": c.file})
+		return &llm.Response{ToolCalls: []llm.ToolCall{{ID: "r", Name: "read", Arguments: args}}}, nil
+	case 1:
+		// lastTool holds the current file content; append our tag.
+		content := lastTool
+		if !strings.HasSuffix(content, "\n") {
+			content += "\n"
+		}
+		content += tag + "\n"
+		args, _ := json.Marshal(map[string]string{"path": c.file, "content": content})
+		return &llm.Response{ToolCalls: []llm.ToolCall{{ID: "w", Name: "write", Arguments: args}}}, nil
+	default:
+		return &llm.Response{Text: "rebased " + tag}, nil
+	}
+}
+
+func TestTaskGroupMutatingRebasesConflict(t *testing.T) {
+	dir := gitInit(t)
+	// Seed the shared file.
+	os.WriteFile(filepath.Join(dir, "shared.txt"), []byte("INIT\n"), 0o644)
+	cmd := exec.Command("git", "add", "-A")
+	cmd.Dir = dir
+	cmd.Run()
+	cmd = exec.Command("git", "commit", "-q", "-m", "seed")
+	cmd.Dir = dir
+	cmd.Run()
+
+	a := mutTestAgent(t, dir, &conflictProvider{file: "shared.txt"})
+	report, err := a.TaskGroupMutating(context.Background(), []GroupSubtask{
+		{Task: "edit shared.txt for tagA"},
+		{Task: "edit shared.txt for tagB"},
+	}, 1, func(context.Context, string, []byte) (bool, error) { return true, nil })
+	if err != nil {
+		t.Fatalf("fan-out errored: %v", err)
+	}
+	got, _ := os.ReadFile(filepath.Join(dir, "shared.txt"))
+	// First child overwrote to INIT+A; second conflicted, rebased onto that,
+	// and appended B → INIT, A, B all present.
+	for _, want := range []string{"INIT", "A", "B"} {
+		if !strings.Contains(string(got), want) {
+			t.Fatalf("rebase should integrate both children; file=%q\nreport:\n%s", got, report)
+		}
+	}
+	if !strings.Contains(report, "rebased") {
+		t.Fatalf("report should note a rebase:\n%s", report)
+	}
+}

@@ -18,13 +18,15 @@ type MutApprover func(ctx context.Context, summary string, diff []byte) (bool, e
 
 // mutResult is one implementer child's outcome.
 type mutResult struct {
-	idx    int
-	task   string
-	where  string
-	answer string
-	patch  []byte
-	err    error
-	dur    time.Duration
+	idx     int
+	task    string
+	sub     GroupSubtask // original spec, for rebase (re-run on the merged state)
+	where   string
+	answer  string
+	patch   []byte
+	err     error
+	dur     time.Duration
+	rebased bool // patch was re-derived on top of others' changes
 }
 
 // TaskGroupMutating runs implementer children in PARALLEL, each in its own
@@ -138,7 +140,7 @@ func (a *Agent) TaskGroupMutating(ctx context.Context, subs []GroupSubtask, work
 			if perr != nil && aerr == nil {
 				aerr = perr
 			}
-			results[i] = mutResult{idx: i, task: s.Task, where: cwhere, answer: answer, patch: patch, err: aerr, dur: time.Since(start)}
+			results[i] = mutResult{idx: i, task: s.Task, sub: s, where: cwhere, answer: answer, patch: patch, err: aerr, dur: time.Since(start)}
 		}(i, s)
 	}
 	wg.Wait()
@@ -189,26 +191,41 @@ type appliedPatch struct {
 	patch    []byte
 	ok       bool
 	conflict bool
+	rebased  bool
 }
 
 // mergeAndApply validates the children's patches in a throwaway worktree (in
 // deterministic input order), asks for ONE approval on the clean combined diff,
 // re-checks the baseline, applies to the real tree, and returns the report.
 func (a *Agent) mergeAndApply(ctx context.Context, base *repoState, parent string, results []mutResult, approve MutApprover) (string, error) {
-	// Validation worktree off the same base.
+	// Validation worktree off the same base: patches are applied here in
+	// deterministic input order to build the combined result, never touching
+	// the real tree until approved.
 	valWt, err := addWorktree(ctx, base.root, parent, "merge", base.head)
 	if err != nil {
 		return "", fmt.Errorf("merge worktree: %w", err)
 	}
 	defer func() { _ = removeWorktree(context.Background(), base.root, valWt) }()
 
-	var apps []appliedPatch
-	for _, r := range results {
+	apps := make([]appliedPatch, 0, len(results))
+	for ri := range results {
+		r := &results[ri]
 		if r.err != nil || len(r.patch) == 0 {
 			continue
 		}
+		// Clean apply onto the accumulated merge state.
 		if applyCheck(ctx, valWt, r.patch) && applyPatch(ctx, valWt, r.patch) == nil {
 			apps = append(apps, appliedPatch{idx: r.idx, patch: r.patch, ok: true})
+			continue
+		}
+		// Conflict: REBASE by redo — re-run the child on top of what's already
+		// merged, so its work is recovered (not dropped) without conflict
+		// markers. A nil result/error means the rebase couldn't recover it.
+		if newPatch := a.rebaseChild(ctx, base, parent, valWt, r); len(newPatch) > 0 &&
+			applyCheck(ctx, valWt, newPatch) && applyPatch(ctx, valWt, newPatch) == nil {
+			r.patch = newPatch
+			r.rebased = true
+			apps = append(apps, appliedPatch{idx: r.idx, patch: newPatch, ok: true, rebased: true})
 		} else {
 			apps = append(apps, appliedPatch{idx: r.idx, conflict: true})
 		}
@@ -260,14 +277,63 @@ func (a *Agent) mergeAndApply(ctx context.Context, base *repoState, parent strin
 	return report + fmt.Sprintf("\n\nApplied %d patch(es) to the workspace. Review with `git diff`, then commit.", cleanCount), nil
 }
 
+// rebaseChild recovers a conflicting child by RE-RUNNING it on top of the
+// already-merged state (the semantic equivalent of git rebase resolving by
+// redoing the change). It snapshots the merge worktree's current tree as a temp
+// commit, spins a fresh implementer worktree from that commit, re-runs the
+// child with context that its peers already landed changes, and returns the new
+// diff (against the snapshot). Returns nil if it can't recover (snapshot/spawn
+// failure, the child produced nothing, or the redo still doesn't apply).
+func (a *Agent) rebaseChild(ctx context.Context, base *repoState, parent, valWt string, r *mutResult) []byte {
+	// Snapshot the current merged state as a commit in the merge worktree
+	// (detached HEAD there, so this touches no shared branch). git apply has
+	// already staged nothing reliably, so add everything explicitly.
+	if _, err := gitText(ctx, valWt, "add", "-A"); err != nil {
+		return nil
+	}
+	snap, err := gitText(ctx, valWt, "commit", "-q", "-m", "fanout-merge-snapshot", "--no-verify")
+	_ = snap
+	if err != nil {
+		// Nothing staged (no prior patches) means there was no real conflict to
+		// rebase onto — give up cleanly.
+		return nil
+	}
+	snapSHA, err := gitText(ctx, valWt, "rev-parse", "HEAD")
+	if err != nil {
+		return nil
+	}
+
+	rebaseWt, err := addWorktree(ctx, base.root, parent, fmt.Sprintf("rebase-%d", r.idx+1), snapSHA)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = removeWorktree(context.Background(), base.root, rebaseWt) }()
+
+	redo := r.sub
+	redo.Task = r.sub.Task + "\n\n[NOTE: other parallel workers have already modified the repository since you started. You are now working on top of their changes. Re-apply YOUR change cleanly on this updated codebase — read the current state of any file you touch first, and integrate rather than overwrite.]"
+	sub, _ := a.implementerChild(rebaseWt, redo)
+	cctx, cancel := context.WithTimeout(ctx, groupChildTimeout)
+	defer cancel()
+	if _, err := sub.NewSession().Send(cctx, redo.Task); err != nil {
+		return nil
+	}
+	patch, err := capturePatch(ctx, rebaseWt, snapSHA)
+	if err != nil || len(patch) == 0 {
+		return nil
+	}
+	return patch
+}
+
 func formatMutReport(results []mutResult, apps []appliedPatch) string {
 	applyState := map[int]string{}
 	for _, ap := range apps {
 		switch {
+		case ap.ok && ap.rebased:
+			applyState[ap.idx] = "applied (rebased onto the others' changes)"
 		case ap.ok:
 			applyState[ap.idx] = "applied"
 		case ap.conflict:
-			applyState[ap.idx] = "conflict (skipped)"
+			applyState[ap.idx] = "conflict — couldn't rebase (skipped)"
 		}
 	}
 	var b strings.Builder
