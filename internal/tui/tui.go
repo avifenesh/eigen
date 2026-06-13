@@ -305,7 +305,8 @@ type model struct {
 	railEntries   []chat.SessionEntry
 	railCollapsed map[string]bool
 	railSpin      int
-	brandTick     int // advances while working → animates the λ mark + loader
+	brandTick     int    // advances while working → animates the λ mark + loader
+	lastTitle     string // last terminal-title string written (throttle: skip no-op rewrites)
 
 	// Right changes panel (Tier 9 Wave 4): changesOn toggles the column of
 	// files touched in the last edit-producing run (click a file = jump to its
@@ -656,7 +657,7 @@ func (m *model) submit(task string) tea.Cmd {
 	m.state = stRunning
 	m.status = "thinking"
 	m.brandTick = 0
-	setTermTitle(titleWorking(0)) // tab flips to "working" immediately
+	m.setTitleThrottled(titleWorking(0)) // tab flips to "working" immediately
 	m.turnStarted = time.Now()
 	m.turnOutChars = 0
 	m.comp = completion{kind: compNone}
@@ -1424,8 +1425,8 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		m.state = stInput
 		m.status = ""
 		m.ti.Focus()
-		setTermTitle(titleReady()) // tab shows "ready"; bell (below) chimes for long turns
-		m.refreshCtx()             // safe: the turn's goroutine has returned
+		m.setTitleThrottled(titleReady()) // tab shows "ready"; bell (below) chimes for long turns
+		m.refreshCtx()                    // safe: the turn's goroutine has returned
 		// Autosave so the conversation survives a crash or failed rebuild.
 		m.autosave()
 		// Failover window bookkeeping: count down successful turns on the
@@ -1555,8 +1556,12 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		var cmd tea.Cmd
 		m.sp, cmd = m.sp.Update(msg)
 		if m.state == stRunning {
-			m.brandTick++ // animate the λ mark + loader while working
-			setTermTitle(titleWorking(m.brandTick))
+			m.brandTick++ // animate the λ mark + loader (fast, in-app)
+			// Tab title breathes on WALL-CLOCK seconds, not the fast tick, and
+			// only rewrites when the string changes — so the window tab doesn't
+			// flicker like a bug. (secs since the turn started.)
+			secs := int(time.Since(m.turnStarted).Seconds())
+			m.setTitleThrottled(titleWorking(secs))
 		}
 		return m, cmd
 

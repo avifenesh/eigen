@@ -35,10 +35,24 @@ func setTermTitle(s string) {
 	os.Stderr.WriteString("\x1b]2;" + s + "\x07")
 }
 
-// titleWorking is the tab title while a turn runs: the λ mark + animated dots,
-// so an unfocused tab visibly "breathes" (1..3 dots cycling on i).
-func titleWorking(i int) string {
-	dots := strings.Repeat(".", 1+i%3)
+// setTitleThrottled writes the terminal title only when it CHANGED, so the
+// fast spinner tick can call it freely without spamming the tab (a frantic
+// rewrite read like a bug). The dot animation already advances on wall-clock
+// seconds, so this collapses ~12 ticks/sec down to ≤1 actual rewrite/sec.
+func (m *model) setTitleThrottled(s string) {
+	if s == m.lastTitle {
+		return
+	}
+	m.lastTitle = s
+	setTermTitle(s)
+}
+
+// titleWorking is the tab title while a turn runs: the λ mark + slow animated
+// dots. The dot count is driven by WALL-CLOCK seconds (1 dot/sec, cycling 1→3),
+// NOT the in-app loader's fast framerate — so the tab breathes calmly instead
+// of flickering like a bug. setTermTitle is throttled to skip no-op rewrites.
+func titleWorking(secs int) string {
+	dots := strings.Repeat(".", 1+secs%3)
 	return brandGlyph + " eigen working" + dots
 }
 
