@@ -3,6 +3,7 @@ package llm
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -404,10 +405,33 @@ func buildInput(req Request) []responsesInputItem {
 			if msg.Role == RoleSystem {
 				role = "developer"
 			}
+			if len(msg.Images) > 0 {
+				// Vision: typed content parts — input_text + input_image blocks
+				// (Responses API; images ride as data URLs).
+				items = append(items, responsesInputItem{Role: role, Content: inputParts(msg)})
+				continue
+			}
 			items = append(items, responsesInputItem{Role: role, Content: jsonStr(msg.Text)})
 		}
 	}
 	return items
+}
+
+// inputParts builds typed user content: input_text plus input_image blocks
+// carrying base64 data URLs (the Responses API vision format).
+func inputParts(msg Message) json.RawMessage {
+	parts := make([]map[string]string, 0, len(msg.Images)+1)
+	if msg.Text != "" {
+		parts = append(parts, map[string]string{"type": "input_text", "text": msg.Text})
+	}
+	for _, img := range msg.Images {
+		parts = append(parts, map[string]string{
+			"type":      "input_image",
+			"image_url": "data:" + img.MediaType + ";base64," + base64.StdEncoding.EncodeToString(img.Data),
+		})
+	}
+	b, _ := json.Marshal(parts)
+	return b
 }
 
 // jsonStr encodes s as a JSON string value for a message's content field.

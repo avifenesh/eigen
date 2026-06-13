@@ -740,24 +740,31 @@ skipped — images silently dropped), and the ONE top-level auto-route exception
 orchestrator — today an image while on gpt-5.5 needlessly hops models).
 `Search`/`Social` gate the router's kind targeting the same way.
 
-- [ ] **Probe, don't trust folklore.** Same methodology as the per-model
-  effort-levels work (d33f7e3): each flag confirmed by a REAL call against the
-  real endpoint (send a tiny image → does the backend accept the content
-  block?) or a real 4xx. The serving gateway matters more than the model
-  family — mantle/bedrock may reject image blocks even where openai.com
-  accepts them, GLM's coding API may differ from their chat API. Record
-  per-entry findings in catalog comments like the effort probes did.
-- [ ] **Audit every capability axis, not just Vision:** Vision (gpt-5.x,
-  grok-4, grok-build, glm-5.x — likely; verify), Search/Social (currently
-  grok+glm only — correct?), Reasoning/EffortLevels (probed already, keep),
-  ContextWindow (several look like defaults rather than measured truth),
-  Cache (mantle GPT has no Cache flag — does the gateway support it?).
-- [ ] **Fail open on uncertainty for vision-attach, fail closed for routing.**
+- [x] **Probe, don't trust folklore.** DONE for Vision (2026-06-13, 256x256
+  red PNG end-to-end per gateway): mantle gpt-5.5/5.4 SEE (Responses
+  input_image; gpt-5.5 hit a transient 500 once); grok-4/grok-build/
+  grok-code-fast-1 SEE (chat-completions image_url; xAI rejects <512px
+  images); grok-composer-2.5-fast BLIND (real 400 "not supported");
+  GLM coding gateway TEXT-ONLY (400 code 1210 on all models — the gateway,
+  not the family). Required building the image plumbing first: mantle
+  buildInput input_image blocks, openaichat chatPart image_url data URLs.
+  Findings recorded as catalog comments.
+- [~] **Audit every capability axis, not just Vision:** Vision probed (see
+  above); Reasoning/EffortLevels probed earlier (keep). REMAINING: Search/
+  Social verification, ContextWindow truth, mantle Cache support.
+- [x] **Fail open on uncertainty for vision-attach, fail closed for routing.**
+  DONE: llm.Vision(model) returns (has, known); paste/attach refuse only on
+  a POSITIVE blind verdict (unknown ids attach and surface the backend's
+  real error); the route-away exception fires only when known-blind.
+  Original text:
   If a model's vision support is unknown (uncataloged id), prefer attempting
   the attach and surfacing the backend's error over silently dropping the
   image — silent drops are the worst failure mode. Routing can stay
   conservative (only route-away when the catalog POSITIVELY says blind).
-- [ ] **Keep capability tests honest.** Router tests and tui vision-gate tests
+- [x] **Keep capability tests honest.** DONE: vision-route fixtures use the
+  probed-blind grok-composer-2.5-fast instead of gpt-5.5 (now sees);
+  added TestUnknownModelDoesNotForceVisionRoute +
+  TestKnownVisionModelAttachesImages. Original text: Router tests and tui vision-gate tests
   encode today's wrong flags as expectations (e.g. "image forces vision route"
   fixtures assume gpt is blind); update fixtures to use explicit fake catalogs
   rather than real ids so flag corrections don't silently flip test meaning.

@@ -156,7 +156,10 @@ func TestImageForcesVisionRouteWhenRouterOff(t *testing.T) {
 	m := testModel(t)
 	vr := &visionRouter{on: false, prov: llmProvStub{id: "claude-fable-5"}}
 	m.router = vr
-	m.modelID = "openai.gpt-5.5" // no vision in catalog
+	// A model the catalog POSITIVELY marks blind (probed: xAI returns 400
+	// "Image inputs are not supported" for composer). Routing fails closed,
+	// so only a known-blind id forces the vision route — NOT unknown ids.
+	m.modelID = "grok-composer-2.5-fast"
 
 	// Write a real (tiny) png so the image reference resolves.
 	dir := t.TempDir()
@@ -199,5 +202,41 @@ func TestRenameCommand(t *testing.T) {
 	m.overlayKey("enter")
 	if got := m.backend.Title(); got != "" {
 		t.Fatalf("clear: title = %q", got)
+	}
+}
+
+func TestUnknownModelDoesNotForceVisionRoute(t *testing.T) {
+	// Fail CLOSED for routing: an UNCATALOGED id must stay on the user's
+	// model even with an image attached — only a positive "blind" verdict
+	// routes away.
+	m := testModel(t)
+	vr := &visionRouter{on: false, prov: llmProvStub{id: "claude-fable-5"}}
+	m.router = vr
+	m.modelID = "some-unknown-model"
+	dir := t.TempDir()
+	png := dir + "/shot.png"
+	os.WriteFile(png, []byte("\x89PNG\r\n\x1a\nfakedata"), 0o644)
+	m.submit("describe " + png)
+	if m.modelID != "some-unknown-model" {
+		t.Fatalf("unknown model must not be routed away, got %q", m.modelID)
+	}
+}
+
+func TestKnownVisionModelAttachesImages(t *testing.T) {
+	// gpt-5.5 is PROBED vision-capable (mantle accepted input_image) — an
+	// image reference must attach, not route away and not drop.
+	m := testModel(t)
+	vr := &visionRouter{on: false, prov: llmProvStub{id: "claude-fable-5"}}
+	m.router = vr
+	m.modelID = "openai.gpt-5.5"
+	dir := t.TempDir()
+	png := dir + "/shot.png"
+	os.WriteFile(png, []byte("\x89PNG\r\n\x1a\nfakedata"), 0o644)
+	m.submit("describe " + png)
+	if m.modelID != "openai.gpt-5.5" {
+		t.Fatalf("vision-capable model must not be routed away, got %q", m.modelID)
+	}
+	if vr.called {
+		t.Fatal("router must not be consulted when the model can see")
 	}
 }

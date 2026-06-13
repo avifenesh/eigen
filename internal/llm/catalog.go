@@ -54,10 +54,14 @@ type ModelInfo struct {
 // model simply falls back to provider defaults.
 var Catalog = []ModelInfo{
 	// Bedrock "mantle" (OpenAI-family). Effort-style reasoning (high is stable;
-	// xhigh stalls mid-task on mantle — see mantle.go).
-	{ID: "openai.gpt-5.5", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}},
-	{ID: "openai.gpt-5.4", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}},
-	{ID: "openai.gpt-5", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}},
+	// xhigh stalls mid-task on mantle — see mantle.go). Vision PROBED 2026-06-13:
+	// 256x256 red PNG as Responses input_image → gpt-5.5 and gpt-5.4 both
+	// answered "red" through the mantle gateway (gpt-5.5 needed a retry past a
+	// transient 500; tiny 8x8 images can confuse the model — send real sizes).
+	// "openai.gpt-5" itself 404s on mantle now (kept for non-mantle aliasing).
+	{ID: "openai.gpt-5.5", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, Vision: true},
+	{ID: "openai.gpt-5.4", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, Vision: true},
+	{ID: "openai.gpt-5", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, Vision: true},
 
 	// Bedrock Converse (Anthropic Claude). Prompt caching + 1M context (beta) +
 	// extended thinking. Default 200k window; 1M when the beta is enabled.
@@ -104,14 +108,22 @@ var Catalog = []ModelInfo{
 
 	// xAI Grok (OpenAI-compatible API + Live Search). grok-build is the advanced
 	// coding model with server-side web/X search; composer is Cursor's coding
-	// model (no backend search).
-	{ID: "grok-build", Provider: "grok", ContextWindow: 512000, Search: true, Social: true},
+	// model (no backend search). Vision PROBED 2026-06-13 (256x256 red PNG as
+	// chat-completions image_url data URL): grok-4 / grok-build /
+	// grok-code-fast-1 all answered "red"; grok-composer-2.5-fast returned a
+	// REAL 400 "Image inputs are not supported by this model". Gateway gotcha:
+	// xAI rejects images under 512 total pixels ("below the minimum").
+	{ID: "grok-build", Provider: "grok", ContextWindow: 512000, Search: true, Social: true, Vision: true},
 	{ID: "grok-composer-2.5-fast", Provider: "grok", ContextWindow: 200000},
-	{ID: "grok-4", Provider: "grok", ContextWindow: 256000, Search: true, Social: true},
-	{ID: "grok-code-fast-1", Provider: "grok", ContextWindow: 256000},
+	{ID: "grok-4", Provider: "grok", ContextWindow: 256000, Search: true, Social: true, Vision: true},
+	{ID: "grok-code-fast-1", Provider: "grok", ContextWindow: 256000, Vision: true},
 
 	// Zhipu GLM coding models (OpenAI-compatible coding API). GLM-5.1 is the
-	// current flagship; 200K context across the 5.x/4.6/4.7 line.
+	// current flagship; 200K context across the 5.x/4.6/4.7 line. Vision PROBED
+	// 2026-06-13: the coding gateway (open.bigmodel.cn coding/paas) rejects ALL
+	// image content with 400 code 1210 "messages.content.type is invalid,
+	// allowed values: ['text']" on 5.1/4.6/4.5-air — the SERVING GATEWAY is
+	// text-only regardless of model family; no Vision flags here.
 	{ID: "glm-5.1", Provider: "glm", ContextWindow: 200000, Search: true},
 	{ID: "glm-5", Provider: "glm", ContextWindow: 200000, Search: true},
 	{ID: "glm-5-turbo", Provider: "glm", ContextWindow: 200000, Search: true},
@@ -224,6 +236,18 @@ func HasVision(model string) bool {
 		return m.Vision
 	}
 	return false
+}
+
+// Vision reports a model's image support AND whether the catalog actually
+// knows (Tier 14 policy): attach paths should FAIL OPEN on unknown models
+// (attempt the image, surface the backend's real error — silent drops are
+// the worst failure mode) while routing FAILS CLOSED (only route away from
+// the user's chosen model when the catalog POSITIVELY says blind).
+func Vision(model string) (has, known bool) {
+	if m, ok := Lookup(model); ok {
+		return m.Vision, true
+	}
+	return false, false
 }
 
 // EffectiveContextWindow returns the window eigen should budget against for a

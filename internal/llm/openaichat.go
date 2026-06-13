@@ -3,6 +3,7 @@ package llm
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -33,10 +34,23 @@ type chatToolCall struct {
 }
 
 type chatMessage struct {
-	Role       string         `json:"role"`
-	Content    string         `json:"content,omitempty"`
+	Role string `json:"role"`
+	// Content is a plain string for text-only messages, or a part array
+	// ([]chatPart: text + image_url blocks) for vision input.
+	Content    any            `json:"content,omitempty"`
 	ToolCalls  []chatToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string         `json:"tool_call_id,omitempty"`
+}
+
+// chatPart is one typed content block of a multimodal user message.
+type chatPart struct {
+	Type     string        `json:"type"`                // "text" | "image_url"
+	Text     string        `json:"text,omitempty"`      // for type=text
+	ImageURL *chatImageURL `json:"image_url,omitempty"` // for type=image_url
+}
+
+type chatImageURL struct {
+	URL string `json:"url"` // data URL: data:image/png;base64,...
 }
 
 type chatTool struct {
@@ -329,6 +343,21 @@ func chatMessagesFrom(req Request) []chatMessage {
 			}
 			msgs = append(msgs, cm)
 		default: // system / user
+			if len(m.Images) > 0 {
+				// Vision: typed part array — text + image_url data URLs (the
+				// chat-completions multimodal format grok/glm follow).
+				parts := make([]chatPart, 0, len(m.Images)+1)
+				if m.Text != "" {
+					parts = append(parts, chatPart{Type: "text", Text: m.Text})
+				}
+				for _, img := range m.Images {
+					parts = append(parts, chatPart{Type: "image_url", ImageURL: &chatImageURL{
+						URL: "data:" + img.MediaType + ";base64," + base64.StdEncoding.EncodeToString(img.Data),
+					}})
+				}
+				msgs = append(msgs, chatMessage{Role: string(m.Role), Content: parts})
+				continue
+			}
 			msgs = append(msgs, chatMessage{Role: string(m.Role), Content: m.Text})
 		}
 	}

@@ -594,7 +594,10 @@ func (m *model) submit(task string) tea.Cmd {
 	// image attached while the active model lacks vision forces a route to a
 	// vision-capable model — the alternative is silently dropping the image.
 	hasImageRef := referencesImage(task) || len(m.pendingImages) > 0
-	needVision := hasImageRef && !llm.HasVision(m.modelID)
+	// Routing fails CLOSED: only hop models when the catalog POSITIVELY says
+	// the active model is blind — unknown ids stay on the user's choice.
+	visionHas, visionKnown := llm.Vision(m.modelID)
+	needVision := hasImageRef && visionKnown && !visionHas
 	if m.router != nil && needVision && m.failoverFrom == nil {
 		if prov, model, label := m.router.Route(m.ctx, task, "", "", hasImageRef); prov != nil && model != m.modelID {
 			m.backend.SetModel(prov, m.compactorFor(prov), m.contextBudgetFor(model))
@@ -603,11 +606,11 @@ func (m *model) submit(task string) tea.Cmd {
 		}
 	}
 
-	// Vision: attach referenced image files when the active model supports it
-	// (model-id capability check — works for daemon sessions too, where no
-	// live provider handle exists in the view).
+	// Vision: attach referenced image files unless the catalog POSITIVELY says
+	// the model is blind (fail open for unknown ids — attempting the attach and
+	// surfacing the backend's error beats silently dropping the image).
 	var images []llm.Image
-	if m.backend != nil && llm.HasVision(m.modelID) {
+	if has, known := llm.Vision(m.modelID); m.backend != nil && (has || !known) {
 		imgs, notes := extractImages(task)
 		images = imgs
 		for _, n := range notes {

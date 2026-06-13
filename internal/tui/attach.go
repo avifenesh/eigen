@@ -147,7 +147,9 @@ func expandHome(p string) string {
 // next message. Noted to the user; no-op with a hint when the clipboard has no
 // image or the model can't see images.
 func (m *model) pasteImage() {
-	if !llm.HasVision(m.modelID) {
+	// Fail OPEN on unknown models: only a POSITIVE "blind" verdict refuses —
+	// an uncataloged model gets the paste and the backend's real answer.
+	if has, known := llm.Vision(m.modelID); known && !has {
 		m.note("image paste: the active model has no vision support (switch with /model)")
 		return
 	}
