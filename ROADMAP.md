@@ -919,6 +919,14 @@ and the substrate for #13 (ultraplan).
   background tasks live; extend it to render the plan TREE (role, parent,
   status, current tool, escalation state) so a fan-out is legible, not a flat
   list. Cancel/retry/promote per node.
+- [x] **Mutating parallel fan-out (v2).** SHIPPED (c0565f5): task_group_mutating —
+  implementer children edit in ISOLATED git worktrees, parent captures each
+  diff, validates the combined set in a throwaway worktree, applies the clean
+  result to the real tree behind ONE apply-time approval; conflicts skipped +
+  reported. git-only / repo-root / clean-tree enforced; children get
+  read/write/edit/move only (NO bash/git/network); .git denied; worktree ops
+  serialized; -race + live verified. DEFERRED: bash-in-OS-sandbox, build/test
+  after apply, conflict auto-rebase, subdir-session prefix, submodules.
 - [ ] **Safety.** Parallel sub-agents inherit the parent's permission posture;
   a gated parent must NOT let children silently auto-run mutating tools.
   Approval routing for many concurrent children needs design (one queue, clear
