@@ -1610,3 +1610,27 @@ func TestSidebarViewFitsAllSizes(t *testing.T) {
 		}
 	}
 }
+
+func TestCopyFlashBanner(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	// showFlash sets the banner and returns a clear timer.
+	cmd := m.showFlash("copied 42 chars")
+	if m.flash != "copied 42 chars" || cmd == nil {
+		t.Fatal("showFlash should set the banner and return a clear cmd")
+	}
+	out := m.View()
+	if !strings.Contains(ansi.Strip(out), "copied 42 chars") {
+		t.Fatalf("flash banner should render in the view:\n%s", ansi.Strip(out))
+	}
+	// A stale clear (older gen) must not wipe a newer flash.
+	m.Update(flashClearMsg{gen: m.flashGen - 1})
+	if m.flash == "" {
+		t.Fatal("stale flashClearMsg should not clear the current banner")
+	}
+	// The matching clear wipes it.
+	m.Update(flashClearMsg{gen: m.flashGen})
+	if m.flash != "" {
+		t.Fatal("matching flashClearMsg should clear the banner")
+	}
+}

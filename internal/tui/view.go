@@ -10,6 +10,8 @@ import (
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/chat"
+	"github.com/avifenesh/eigen/internal/theme"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -166,6 +168,9 @@ func (m *model) View() string {
 	if m.ov.active {
 		bottom = m.overlayView() + "\n" + bottom
 	}
+	if m.flash != "" {
+		bottom += "\n" + m.flashBanner()
+	}
 	if m.sidebarVisible() {
 		// Headerless sidebar mode — THE design: no header, no top plan panel,
 		// no bottom status bar. The sidebar owns all three; the band starts
@@ -173,6 +178,25 @@ func (m *model) View() string {
 		return m.transcriptBand() + "\n" + bottom
 	}
 	return m.headerView() + "\n" + m.planView() + m.transcriptBand() + "\n" + bottom + "\n" + m.statusBarView()
+}
+
+// flashBanner renders the transient confirmation pill, right-aligned: a calm
+// filled accent badge — "✓ copied 250 chars" — that auto-clears after a beat.
+func (m *model) flashBanner() string {
+	pill := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#1b1f27")).
+		Background(theme.Ok).
+		Bold(true).
+		Padding(0, 1).
+		Render("✓ " + m.flash)
+	if m.width <= 0 {
+		return pill
+	}
+	pad := m.width - lipgloss.Width(pill)
+	if pad < 0 {
+		pad = 0
+	}
+	return strings.Repeat(" ", pad) + pill
 }
 
 // queuedHint summarizes how many messages are waiting to be sent.

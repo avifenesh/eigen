@@ -458,7 +458,7 @@ func (m *model) command(line string) tea.Cmd {
 		if err := m.clip.Copy(text); err != nil {
 			m.push(&block{kind: blockNote, isErr: true, body: sb("copy failed: " + err.Error())})
 		} else {
-			m.note("copied to clipboard")
+			return m.showFlash(fmt.Sprintf("copied %d chars", len([]rune(text))))
 		}
 	case "/export":
 		path := arg

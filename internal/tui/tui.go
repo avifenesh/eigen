@@ -115,6 +115,13 @@ type model struct {
 	pending *pendingApproval
 	status  string
 
+	// flash is a transient banner (e.g. "copied 250 chars") shown bottom-right
+	// for a beat then cleared by flashClearMsg — eye-catching, no transcript
+	// clutter. flashGen guards against an earlier flash's timer clearing a
+	// newer one.
+	flash    string
+	flashGen int
+
 	// approvedTools are tool names the user chose to always allow this session.
 	approvedTools map[string]bool
 
@@ -395,6 +402,21 @@ func (m *model) push(b *block) *block {
 }
 
 func (m *model) note(s string) { m.push(&block{kind: blockNote, body: sb(s)}) }
+
+// flashClearMsg clears a transient banner if it's still the current one.
+type flashClearMsg struct{ gen int }
+
+// showFlash sets a transient bottom banner and returns a command that clears
+// it after a short beat. Use for fast confirmations (copy, toggles) that
+// shouldn't leave a permanent transcript line.
+func (m *model) showFlash(s string) tea.Cmd {
+	m.flash = s
+	m.flashGen++
+	gen := m.flashGen
+	return tea.Tick(1500*time.Millisecond, func(time.Time) tea.Msg {
+		return flashClearMsg{gen: gen}
+	})
+}
 func (m *model) text(role, s string) *block {
 	return m.push(&block{kind: blockText, role: role, body: sb(s)})
 }
@@ -947,8 +969,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			m.toggleSel()
 			return m, nil
 		case "ctrl+y", "alt+y":
-			m.copySelected()
-			return m, nil
+			return m, m.copySelected()
 		case "alt+s":
 			// In-window session switcher: hop this window to another daemon
 			// session (or home to the app) without touching running turns.
@@ -1225,11 +1246,13 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				m.sync() // restore the styled transcript (drop the highlight)
 				if strings.TrimSpace(text) != "" {
 					if m.clip != nil && m.clip.Available() {
-						if err := m.clip.Copy(text); err == nil {
-							m.note(fmt.Sprintf("copied %d chars to clipboard", len([]rune(text))))
-						} else {
-							m.push(&block{kind: blockNote, isErr: true, body: sb("copy failed: " + err.Error())})
+						err := m.clip.Copy(text)
+						if err == nil {
+							cmd := m.showFlash(fmt.Sprintf("copied %d chars", len([]rune(text))))
+							m.dragMoved = false
+							return m, cmd
 						}
+						m.push(&block{kind: blockNote, isErr: true, body: sb("copy failed: " + err.Error())})
 					} else {
 						m.push(&block{kind: blockNote, isErr: true, body: sb("no clipboard command found (set EIGEN_CLIPBOARD_CMD or install wl-copy/xclip)")})
 					}
@@ -1482,6 +1505,12 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 	case railTickMsg:
 		m.refreshRail()
 		return m, m.railTick()
+
+	case flashClearMsg:
+		if msg.gen == m.flashGen {
+			m.flash = ""
+		}
+		return m, nil
 
 	case tasksTickMsg:
 		// Stale generations (tab hidden and reshown) die silently.

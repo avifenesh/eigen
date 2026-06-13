@@ -4,11 +4,13 @@ package tui
 // find, and copy.
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/avifenesh/eigen/internal/chat"
 	"github.com/avifenesh/eigen/internal/fuzzy"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // collapsibleIdx returns block indices that can be selected/toggled.
@@ -108,15 +110,16 @@ func (m *model) historyNext() {
 }
 
 // copySelected copies the selected block (or the last answer) to the clipboard.
-func (m *model) copySelected() {
+func (m *model) copySelected() tea.Cmd {
 	if m.clip == nil || !m.clip.Available() {
-		return
+		return nil
 	}
 	if text := m.copyTarget(); text != "" {
 		if err := m.clip.Copy(text); err == nil {
-			m.note("copied to clipboard")
+			return m.showFlash(fmt.Sprintf("copied %d chars", len([]rune(text))))
 		}
 	}
+	return nil
 }
 
 // findBlocks returns indices of blocks whose text matches q (case-insensitive),
