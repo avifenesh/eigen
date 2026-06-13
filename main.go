@@ -530,6 +530,7 @@ func main() {
 		tool.TaskStatus(taskStatus),
 		tool.TaskGroup(taskGroup),
 		tool.TaskGroupMutating(taskGroupMut),
+		tool.Retrieve(retrieveRunner(wdOrDot())),
 		tool.GoalAchieved(goalJudge),
 		tool.Review(reviewRun),
 	}

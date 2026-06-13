@@ -172,6 +172,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		tool.Bash(policy), tool.Fetch(), tool.Todo(), tool.Skill(p.Skills),
 		tool.Memory(mem, p.GlobalMem), tool.Task(taskRun), tool.TaskStatus(taskStatus),
 		tool.TaskGroup(taskGroup), tool.TaskGroupMutating(taskGroupMut),
+		tool.Retrieve(retrieveRunner(p.Dir)),
 		tool.GoalAchieved(goalJudge), tool.Review(reviewRun),
 	}
 	if ws, ok := tool.WebSearch(); ok {
