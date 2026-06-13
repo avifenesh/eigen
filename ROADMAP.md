@@ -866,6 +866,110 @@ only `for-tests-*` fixtures) so `/voice` reports unavailable.
   record/VAD/interrupt on the real machine. TTS + state machine are
   verifiable headless (fake STT/TTS backends; pipe TTS to a file sink).
 
+## Tier 16 — multi-agent orchestration (plans → parallel sub-agents)
+Goal: turn the depth-bounded `task` tool (one delegated subtask at a time)
+into real multi-agent work — a plan decomposed into named roles that run in
+parallel, escalate when stuck, and merge their reports back. Builds DIRECTLY
+on what exists: `agent.Subtask`/`SubtaskWith`/`SubtaskBackground` (depth-bounded,
+routed via the orchestrator's kind/difficulty), the `BgRegistry` durable task
+store (~/.eigen/tasks/<id>.jsonl + transcript, cancel-marker protocol, lost
+detection — Tier 12), the `task_status` collect surface, and the auto-router
+(internal/llm/router.go) that already picks a model per subtask. This is Tier 7
+dream #12 (sub-agents: "named roles, parallelism, escalation") made concrete,
+and the substrate for #13 (ultraplan).
+
+- [ ] **Named roles, not anonymous subtasks.** A subtask can carry a role
+  (e.g. `researcher`, `implementer`, `reviewer`, `tester`) that sets its system
+  framing, tool allowlist, and default model tier — so a `reviewer` is the
+  cross-vendor critic (reuse `llm.CrossReviewer`/#25), an `implementer` gets
+  write/edit/bash, a `researcher` gets read/grep/websearch only. Roles are data
+  (config-definable), not hardcoded.
+- [ ] **Parallel fan-out with a bounded pool.** Today `task(background=true)`
+  detaches one goroutine per call; a plan that spawns N sub-agents needs a
+  bounded worker pool (max concurrent, per the host's resource budget — the
+  same discipline as the browser/MCP process manager), a join/barrier so the
+  orchestrator waits on a SET of tasks, and aggregate status. Likely a
+  `task_group` tool or a `wait` op over several ids.
+- [ ] **Escalation (carries Tier 7 #12's open item).** If a sub-agent fails,
+  stalls, or declares itself underpowered, auto-retry or hand off to a bigger
+  model (NOT necessarily the orchestrator) and merge the final report back via
+  `task_status`. Needs a stall/underpowered signal + a one-step escalation
+  ladder (router tier + 1), bounded so it can't loop.
+- [ ] **Merge step.** Collecting N sub-agent reports into one coherent result
+  is itself a model task — a `synthesize` role/op that reads the children's
+  transcripts (or final reports) and produces the orchestrator's answer.
+  Cross-vendor synthesis where it matters.
+- [ ] **Observability (extends Tier 12).** The `[tasks]` panel already shows
+  background tasks live; extend it to render the plan TREE (role, parent,
+  status, current tool, escalation state) so a fan-out is legible, not a flat
+  list. Cancel/retry/promote per node.
+- [ ] **Safety.** Parallel sub-agents inherit the parent's permission posture;
+  a gated parent must NOT let children silently auto-run mutating tools.
+  Approval routing for many concurrent children needs design (one queue, clear
+  provenance per child) so approvals don't race or get mis-attributed.
+
+## Tier 17 — workflows (declarative, repeatable multi-step runs)
+Goal: name and replay a multi-step process — "review this PR", "cut a release",
+"triage the inbox" — as a declarative workflow instead of re-typing the steps.
+Distinct from Tier 16 (dynamic, model-decomposed orchestration); a workflow is
+AUTHORED structure the user trusts and reruns. Builds on existing primitives:
+`/loop` (idle re-submit), `--prompt-file`/automation (Tier 7 #5), hooks (#11,
+lifecycle-triggered commands), skills (reusable instructions), and the goal
+feature (#3, persistent north star + judge).
+
+- [ ] **Workflow definition.** A `~/.eigen/workflows/<name>.{json,md}` with
+  ordered steps; each step = a prompt (or a skill invocation), an optional
+  model/role, an optional success check (a goal_achieved-style judged
+  condition), and what to do on failure (stop / retry / continue). Steps can
+  reference prior steps' outputs.
+- [ ] **Runner.** `eigen run <workflow>` (headless, automation-friendly,
+  exit-coded like #5) and an in-TUI `/workflow <name>` that executes steps in
+  sequence, shows progress in the plan panel, and pauses for approval at gated
+  steps. Reuse the agent loop per step; carry context forward (or compact
+  between steps for long workflows).
+- [ ] **Branching + conditions.** Minimal control flow — a step's judged
+  outcome picks the next step (success → ship, failure → fix-then-retry). Keep
+  it small and legible (not a general DAG engine first); a linear sequence with
+  on-failure branches covers most real processes.
+- [ ] **Triggers.** A workflow can be bound to a hook event (#11) or the feed
+  (#6) — e.g. "on a new review-requested PR, run the review workflow" — so
+  repeatable processes fire proactively, not just on demand.
+- [ ] **Authoring from history.** "Save the last N turns as a workflow" — turn
+  an ad-hoc successful session into a replayable workflow, the way skills
+  capture reusable instructions.
+
+## Tier 18 — other model types as first-class servers (beyond chat LLMs)
+Goal: serve and use NON-chat models where they fit better/cheaper than an LLM —
+embedders, rerankers, local diffusion/vision, classifiers — as first-class
+capabilities the agent and app draw on. Tier 7 dream #23 ("integrate other
+model types efficiently") made concrete. The user already runs local model
+servers (llama.cpp, the BGE embedder service, whisper, Kokoro); the work is a
+clean serving + selection layer, not bespoke wiring per model.
+
+- [ ] **Provider seam for non-generative models.** Today `llm.Provider` is
+  chat-completions shaped. Add sibling interfaces — `Embedder` (text → vector),
+  `Reranker` (query+docs → scores), maybe `Classifier` — with the same
+  catalog/credential/discovery treatment (a model entry declares its KIND).
+  The local llama.cpp server + the existing BGE embedder are the first backends
+  (OpenAI-compatible /embeddings).
+- [ ] **Retrieval that uses them (closes Tier 7 #1's "retrieval instead of
+  re-paste").** An embedder enables semantic retrieval over the project + past
+  sessions + memory, so context is RETRIEVED on demand instead of pasted whole
+  — the biggest remaining token-efficiency lever. A `retrieve` tool and/or
+  automatic context assembly; a reranker tightens the top-k.
+- [ ] **Local-first routing for the cheap stuff.** Titling, dreaming, skill
+  scans, classification, embeddings — route to a LOCAL model (llama.cpp / a
+  small classifier) when present, saving the frontier budget for reasoning.
+  Extends the small-model selection that already prefers `EIGEN_LLAMA_BASE_URL`.
+- [ ] **Diffusion / image generation (optional, where it fits).** A local or
+  hosted image model behind a `generate_image` tool for diagrams/mockups —
+  output rides the image-capable tool-result plumbing. Lower priority; include
+  only when a concrete need appears.
+- [ ] **Non-LLM solutions where they win.** The principle (user's #23): when a
+  classifier/embedder/regex/AST tool solves a step deterministically and
+  cheaply, prefer it over an LLM call. Surface these as tools the orchestrator
+  picks, with the router aware of non-LLM options.
+
 ## Debt / bugs
 - [x] **Untitled daemon sessions still appear.** FIXED: (1) `Host.Restore` now
   calls `maybeTitle` per restored session, so sessions whose title never landed
