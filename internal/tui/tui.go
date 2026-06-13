@@ -1165,13 +1165,19 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 					// Sidebar rows: nav actions resolved in hitTest (handled
 					// above); here handle the embedded rail rows — project
 					// headers collapse, session rows hop.
-					if r, ok := m.sidebarRowAt(h.localY); ok && r.kind == sbRail {
-						if r.rail.header {
+					if r, ok := m.sidebarRowAt(h.localY); ok {
+						switch {
+						case r.kind == sbSessionsHeader:
+							// Collapse-all / expand-all toggle on the header.
+							m.toggleRailProjects()
+							return m, nil
+						case r.kind == sbRail && r.rail.header:
 							m.toggleRailProject(r.rail.dir)
 							return m, nil
-						}
-						if r.rail.entry >= 0 && r.rail.entry < len(m.railEntries) {
-							return m, m.hopToSession(m.railEntries[r.rail.entry].ID)
+						case r.kind == sbRail:
+							if r.rail.entry >= 0 && r.rail.entry < len(m.railEntries) {
+								return m, m.hopToSession(m.railEntries[r.rail.entry].ID)
+							}
 						}
 					}
 					return m, nil

@@ -411,17 +411,21 @@ func (m *model) toggleRailProject(dir string) {
 	m.railCollapsed[dir] = !m.railCollapsed[dir]
 }
 
+// anyRailCollapsed reports whether any project is currently collapsed (drives
+// the collapse-all button's glyph: collapse when none are, expand when some).
+func (m *model) anyRailCollapsed() bool {
+	for _, c := range m.railCollapsed {
+		if c {
+			return true
+		}
+	}
+	return false
+}
+
 // toggleRailProjects collapses every project (or expands all when any is
 // collapsed) — the keyboard-parity path for the header clicks.
 func (m *model) toggleRailProjects() {
-	any := false
-	for _, c := range m.railCollapsed {
-		if c {
-			any = true
-			break
-		}
-	}
-	if any {
+	if m.anyRailCollapsed() {
 		m.railCollapsed = map[string]bool{}
 		return
 	}

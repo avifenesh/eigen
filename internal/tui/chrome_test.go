@@ -1670,3 +1670,83 @@ func TestFlashToneRenders(t *testing.T) {
 		t.Fatalf("bad-tone flash should use the ✗ glyph: %s", out)
 	}
 }
+
+func TestSidebarSessionsCollapseAllButton(t *testing.T) {
+	m := switcherModel(t) // 3 sessions across /tmp/a, /tmp/b, /tmp/c → grouped
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m.refreshRail()
+	if !m.railGrouped() {
+		t.Fatal("precondition: sessions should be grouped")
+	}
+	// The sessions header shows the collapse-all button [–] when expanded.
+	band := m.transcriptBand()
+	if !strings.Contains(band, "[–]") {
+		t.Fatalf("expanded grouped sidebar should show the collapse-all [–] button:\n%s", band)
+	}
+	// Find the sessions-header row and click it → collapses all projects.
+	rows := m.sidebarRows()
+	hdr := -1
+	for i, r := range rows {
+		if r.kind == sbSessionsHeader {
+			hdr = i
+			break
+		}
+	}
+	if hdr < 0 {
+		t.Fatal("no sessions header row")
+	}
+	if m.anyRailCollapsed() {
+		t.Fatal("nothing should be collapsed yet")
+	}
+	m.toggleRailProjects() // the action the header click dispatches
+	if !m.anyRailCollapsed() {
+		t.Fatal("collapse-all should collapse the projects")
+	}
+	// Now the glyph flips to expand-all [+].
+	if !strings.Contains(m.transcriptBand(), "[+]") {
+		t.Fatalf("collapsed sidebar should show the expand-all [+] button:\n%s", m.transcriptBand())
+	}
+	// Toggle again expands.
+	m.toggleRailProjects()
+	if m.anyRailCollapsed() {
+		t.Fatal("toggling again should expand all")
+	}
+}
+
+func TestSidebarSessionsHeaderNoButtonWhenUngrouped(t *testing.T) {
+	m := switcherModel(t)
+	sb := m.backend.(*switchBackend)
+	for i := range sb.entries {
+		sb.entries[i].Dir = "/tmp/only" // single project → nothing to collapse
+	}
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m.refreshRail()
+	if strings.Contains(m.transcriptBand(), "[–]") || strings.Contains(m.transcriptBand(), "[+]") {
+		t.Fatal("single-project sidebar should not show a collapse-all button")
+	}
+}
+
+func TestSidebarSessionsHeaderClickCollapses(t *testing.T) {
+	m := switcherModel(t) // grouped
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m.refreshRail()
+	rows := m.sidebarRows()
+	hdr := -1
+	for i, r := range rows {
+		if r.kind == sbSessionsHeader {
+			hdr = i
+			break
+		}
+	}
+	if hdr < 0 {
+		t.Fatal("no sessions header row")
+	}
+	if m.anyRailCollapsed() {
+		t.Fatal("precondition: nothing collapsed")
+	}
+	// A real click on the sessions header row collapses all projects.
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: hdr})
+	if !m.anyRailCollapsed() {
+		t.Fatal("clicking the sessions header should collapse all projects")
+	}
+}

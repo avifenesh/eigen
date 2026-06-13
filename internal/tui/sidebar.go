@@ -37,6 +37,35 @@ func sectionLabel(label string, w int) string {
 	return styleFaint.Render(label+" ") + styleFaint.Render(rule)
 }
 
+// sessionsCollapseGlyph is the right-aligned collapse-all button on the
+// "sessions" header: [–] collapses every project, [+] expands them. Only
+// meaningful when sessions span >1 project (grouped); otherwise just a label.
+func (m *model) sessionsCollapseGlyph() string {
+	if m.anyRailCollapsed() {
+		return "[+]"
+	}
+	return "[–]"
+}
+
+// sessionsHeaderLine renders the "sessions" header padded to width with a
+// right-aligned collapse-all toggle (only when grouped — a single project has
+// nothing to collapse).
+func (m *model) sessionsHeaderLine(width int) string {
+	if width <= 0 {
+		return ""
+	}
+	left := styleAccent.Render("sessions")
+	if !m.railGrouped() {
+		return left
+	}
+	right := dim(m.sessionsCollapseGlyph())
+	gap := width - lipgloss.Width("sessions") - lipgloss.Width(right)
+	if gap < 1 {
+		gap = 1
+	}
+	return left + strings.Repeat(" ", gap) + right
+}
+
 type sidebarRowKind int
 
 const (
@@ -235,7 +264,7 @@ func (m *model) sidebarLines(h int) []string {
 				lines = append(lines, railPad(label, rw))
 			}
 		case sbSessionsHeader:
-			lines = append(lines, railPad(panelTitleLine("sessions", contentW, false), rw))
+			lines = append(lines, railPad(m.sessionsHeaderLine(contentW), rw))
 		case sbRail:
 			if r.rail.header {
 				lines = append(lines, railPad(m.railHeaderLabel(r.rail.dir, contentW), rw))
