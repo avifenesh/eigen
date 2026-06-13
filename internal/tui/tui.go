@@ -110,11 +110,16 @@ type model struct {
 	backend chat.Backend
 	ctx     context.Context
 
-	blocks  []*block
-	sel     int // index of the selected block (-1 = none / following tail)
-	state   uiState
-	pending *pendingApproval
-	status  string
+	blocks []*block
+	sel    int // index of the selected block (-1 = none / following tail)
+	state  uiState
+	// attachedRunning: we attached to a session whose turn another view (or no
+	// view) started, so this view is WATCHING a turn it didn't launch. A
+	// terminal event from that turn flips us back to idle even though we have
+	// no local Send/turnDoneMsg in flight.
+	attachedRunning bool
+	pending         *pendingApproval
+	status          string
 
 	// flash is a transient banner (e.g. "copied 250 chars") shown bottom-right
 	// for a beat then cleared by flashClearMsg — eye-catching, no transcript
@@ -652,6 +657,21 @@ func (m *model) sync() {
 
 // --- update ----------------------------------------------------------------
 
+// isWatchedTurnEnd reports whether an event ends a turn this view is merely
+// watching (didn't start): a normal EventDone, or the daemon's terminal
+// EventNote for an interrupt/error (finishTurn emits "interrupted" / "error:…"
+// with no EventDone).
+func isWatchedTurnEnd(e agent.Event) bool {
+	if e.Kind == agent.EventDone {
+		return true
+	}
+	if e.Kind == agent.EventNote {
+		t := strings.TrimSpace(e.Text)
+		return t == "interrupted" || strings.HasPrefix(t, "error: ")
+	}
+	return false
+}
+
 func (m *model) submit(task string) tea.Cmd {
 	m.text("user", task)
 	m.state = stRunning
@@ -1172,6 +1192,14 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 					m.cancel()
 					m.dropSpeech() // don't keep narrating an interrupted turn
 					m.status = "interrupting…"
+				} else if m.attachedRunning {
+					// Watching a turn another view started: interrupt it on the
+					// daemon (the terminal event arrives over the live stream).
+					if it, ok := m.backend.(chat.Interrupter); ok {
+						_ = it.Interrupt()
+						m.dropSpeech()
+						m.status = "interrupting…"
+					}
 				}
 				return m, nil
 			}
@@ -1371,6 +1399,28 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			return m, nil
 		}
 		m.renderEvent(msg.e)
+		// When this view is WATCHING a turn it didn't start (attached to an
+		// already-running session), the daemon's terminal event is what
+		// returns us to idle — there's no local turnDoneMsg. The turn ends on
+		// EventDone (normal) or a terminal EventNote ("interrupted"/"error:…",
+		// emitted by the daemon's finishTurn). Mirror the essential turn-end
+		// transitions; the originating view handles its own turnDoneMsg.
+		if m.attachedRunning && m.cancel == nil && isWatchedTurnEnd(msg.e) {
+			m.attachedRunning = false
+			m.state = stInput
+			m.status = ""
+			m.turnStarted = time.Time{}
+			m.ti.Focus()
+			m.setTitleThrottled(titleReady())
+			m.refreshCtx()
+			m.autosave()
+			// Drain a queued steer message now that the watched turn ended.
+			if len(m.queued) > 0 {
+				next := m.queued[0]
+				m.queued = m.queued[1:]
+				return m, func() tea.Msg { return submitMsg{next} }
+			}
+		}
 		return m, nil
 
 	case voiceSpokenMsg:
@@ -1390,6 +1440,18 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 
 	case turnDoneMsg:
 		if msg.err != nil {
+			// Defensive: a "session busy" error means another view's turn was
+			// still running when this Send raced in (the attachedRunning queue
+			// path normally prevents it). Don't surface a scary error — the
+			// turn is fine; tell the user to wait/queue.
+			if strings.Contains(msg.err.Error(), "session busy") {
+				m.state = stRunning
+				m.attachedRunning = true
+				m.status = "working"
+				m.note("still working on the previous turn — your next message will queue (Enter), or press esc to interrupt")
+				m.cancel = nil
+				return m, nil
+			}
 			m.dropSpeech() // a failed/interrupted turn must not keep talking
 			m.push(&block{kind: blockNote, isErr: true, body: sb("error: " + msg.err.Error())})
 			switch {
@@ -1812,6 +1874,17 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 	if len(history) > 0 {
 		renderHistory(m, history)
 		m.note(fmt.Sprintf("— resumed %d messages —", len(history)))
+	}
+	// Attaching to a session whose turn is ALREADY running (started by another
+	// view, or still going after this view detached): start in the running
+	// state so the "working" indicator shows and typed input queues instead of
+	// erroring "session busy". A terminal event (EventDone/note) from that
+	// in-flight turn flips us back to idle (see the agentEvent handler).
+	if backend.Running() {
+		m.state = stRunning
+		m.attachedRunning = true
+		m.turnStarted = time.Now()
+		m.status = "working"
 	}
 	m.refreshCtx()
 

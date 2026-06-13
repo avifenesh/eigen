@@ -46,6 +46,11 @@ func (l *Local) Resend(ctx context.Context) (string, error) { return l.s.Resend(
 func (l *Local) Messages() []llm.Message { return l.s.Messages() }
 func (l *Local) Tokens() int             { return l.s.Tokens() }
 
+// Running is always false for a local backend: the TUI itself drives Send, so
+// no turn is ever in flight before the UI starts (unlike a remote daemon
+// session another view may already be running).
+func (l *Local) Running() bool { return false }
+
 func (l *Local) Compact(ctx context.Context, targetTokens int) (int, int, error) {
 	return l.s.Compact(ctx, targetTokens)
 }

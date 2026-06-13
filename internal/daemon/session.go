@@ -367,6 +367,7 @@ func (s *Session) state() *SessionState {
 	sess := s.sess
 	model := s.Model
 	title := s.title
+	running := s.running
 	s.mu.Unlock()
 	st := &SessionState{
 		Messages:  sess.Messages(),
@@ -376,6 +377,7 @@ func (s *Session) state() *SessionState {
 		MaxTokens: a.CurrentMaxContextTokens(),
 		Perm:      string(a.CurrentPerm()),
 		Goal:      a.CurrentGoal(),
+		Running:   running,
 	}
 	// Read the provider once under the agent lock (a /model switch from another
 	// window swaps it via SetLive — a direct field read would race).

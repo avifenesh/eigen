@@ -191,6 +191,7 @@ func (r *Remote) snap() *daemon.SessionState {
 
 func (r *Remote) Messages() []llm.Message { return r.snap().Messages }
 func (r *Remote) Tokens() int             { return r.snap().Tokens }
+func (r *Remote) Running() bool           { return r.snap().Running }
 
 func (r *Remote) Compact(ctx context.Context, target int) (int, int, error) {
 	before, after, err := r.c.Compact(r.id, target)
@@ -326,3 +327,8 @@ func (r *Remote) Detach() {
 		close(ch)
 	}
 }
+
+// Interrupt cancels the session's in-flight turn on the daemon — used when a
+// view that did NOT start the turn (attached to an already-running session)
+// presses esc. The terminal event then arrives over the live stream.
+func (r *Remote) Interrupt() error { return r.c.Interrupt(r.id) }

@@ -26,3 +26,9 @@ type SessionLister interface {
 // running (the view's context cancellation must NOT interrupt it), and any
 // blocked Send returns immediately.
 type Detacher interface{ Detach() }
+
+// Interrupter is implemented by backends that can cancel an in-flight turn
+// this view did NOT start (a daemon session running from another view). The
+// TUI's esc uses its local Send-ctx cancel when it owns the turn; for a
+// watched turn it calls Interrupt instead.
+type Interrupter interface{ Interrupt() error }

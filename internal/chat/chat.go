@@ -35,6 +35,10 @@ type Backend interface {
 	Messages() []llm.Message
 	// Tokens estimates the current context size.
 	Tokens() int
+	// Running reports whether a turn is in flight right now — true when a view
+	// ATTACHES to a session whose turn another view (or no view) started, so
+	// the UI shows "working" and queues input instead of erroring "busy".
+	Running() bool
 	// Compact summarizes the conversation toward targetTokens; returns
 	// before/after message counts.
 	Compact(ctx context.Context, targetTokens int) (before, after int, err error)

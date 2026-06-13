@@ -62,8 +62,9 @@ type SessionState struct {
 	MaxTokens int           `json:"max_tokens"`
 	Perm      string        `json:"perm"`
 	Goal      string        `json:"goal"`
-	Effort    string        `json:"effort,omitempty"` // "" = unsupported
-	Search    string        `json:"search,omitempty"` // "" = unsupported
+	Effort    string        `json:"effort,omitempty"`  // "" = unsupported
+	Search    string        `json:"search,omitempty"`  // "" = unsupported
+	Running   bool          `json:"running,omitempty"` // a turn is in flight right now
 	Tools     []ToolInfo    `json:"tools,omitempty"`
 }
 

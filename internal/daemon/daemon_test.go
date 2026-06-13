@@ -523,3 +523,47 @@ func TestStateRaceWithModelSwitch(t *testing.T) {
 	close(stop)
 	<-done
 }
+
+// TestStateReportsRunning pins the re-attach fix: a session with a turn in
+// flight must report Running:true in state(), so a view attaching mid-turn
+// shows "working" and queues input instead of erroring "session busy". After
+// the turn ends, Running flips back to false.
+func TestStateReportsRunning(t *testing.T) {
+	reg, _ := tool.NewRegistry()
+	a := &agent.Agent{Provider: blockingProvider{}, Tools: reg}
+	s := newSession("x", "/tmp", "m", a)
+
+	if s.state().Running {
+		t.Fatal("a fresh session should not be running")
+	}
+	if !s.send("go", nil) {
+		t.Fatal("send should start the turn")
+	}
+	// The blocking provider holds the turn open: state must report running.
+	deadline := time.After(2 * time.Second)
+	for {
+		if s.state().Running {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("state().Running should be true while a turn is in flight")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	// Interrupt → the turn ends → Running flips false.
+	s.interrupt()
+	deadline = time.After(2 * time.Second)
+	for {
+		if !s.state().Running {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal("state().Running should be false after the turn ends")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+}
