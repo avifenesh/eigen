@@ -709,14 +709,17 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		for _, tc := range resp.ToolCalls {
 			a.emit(Event{Kind: EventToolStart, Step: step, ToolName: tc.Name, ToolID: tc.ID, ToolArgs: tc.Arguments})
 			result, isErr := a.dispatch(ctx, tc)
-			a.emit(Event{Kind: EventToolResult, Step: step, ToolName: tc.Name, ToolID: tc.ID, Result: result, IsError: isErr})
+			a.emit(Event{Kind: EventToolResult, Step: step, ToolName: tc.Name, ToolID: tc.ID, Result: result.Text, IsError: isErr})
 			// Append the tool result and dedupe older identical outputs in one
 			// locked step (DedupeToolResults mutates earlier entries in place).
+			// Images (screenshots from browser / computer-use) ride on the
+			// RoleTool message; each provider serializes them per capability.
 			s.appendToolResult(llm.Message{
 				Role:       llm.RoleTool,
 				ToolCallID: tc.ID,
 				ToolName:   tc.Name,
-				Text:       result,
+				Text:       result.Text,
+				Images:     result.Images,
 				ToolError:  isErr,
 			})
 		}
@@ -755,10 +758,11 @@ func (a *Agent) emit(e Event) {
 
 // dispatch runs one tool call, enforcing the permission posture, and returns the
 // result (or an error string) to feed back to the model plus whether it failed.
-func (a *Agent) dispatch(ctx context.Context, tc llm.ToolCall) (string, bool) {
+func (a *Agent) dispatch(ctx context.Context, tc llm.ToolCall) (tool.Result, bool) {
+	errResult := func(s string) (tool.Result, bool) { return tool.Result{Text: s}, true }
 	def, ok := a.Tools.Get(tc.Name)
 	if !ok {
-		return fmt.Sprintf("Error: unknown tool %q", tc.Name), true
+		return errResult(fmt.Sprintf("Error: unknown tool %q", tc.Name))
 	}
 	if !def.ReadOnly {
 		// Fail closed: a mutating tool runs only under an explicitly recognized
@@ -768,37 +772,38 @@ func (a *Agent) dispatch(ctx context.Context, tc llm.ToolCall) (string, bool) {
 			// allowed
 		case PermGated:
 			if a.Approve == nil {
-				return fmt.Sprintf("Denied: tool %q was not approved by the user.", tc.Name), true
+				return errResult(fmt.Sprintf("Denied: tool %q was not approved by the user.", tc.Name))
 			}
 			ok, err := a.Approve(ctx, tc.Name, tc.Arguments)
 			if err != nil {
-				return fmt.Sprintf("Denied: approval failed for %q: %v", tc.Name, err), true
+				return errResult(fmt.Sprintf("Denied: approval failed for %q: %v", tc.Name, err))
 			}
 			if !ok {
-				return fmt.Sprintf("Denied: tool %q was not approved by the user.", tc.Name), true
+				return errResult(fmt.Sprintf("Denied: tool %q was not approved by the user.", tc.Name))
 			}
 		default:
-			return fmt.Sprintf("Denied: tool %q blocked under unknown permission posture %q.", tc.Name, a.perm()), true
+			return errResult(fmt.Sprintf("Denied: tool %q blocked under unknown permission posture %q.", tc.Name, a.perm()))
 		}
 	}
-	out, err := a.runTool(ctx, def, tc.Arguments)
+	res, err := a.runTool(ctx, def, tc.Arguments)
 	if err != nil {
-		return "Error: " + err.Error(), true
+		return errResult("Error: " + err.Error())
 	}
-	if len(out) > maxToolOutput {
-		out = tool.TruncateUTF8(out, maxToolOutput) + "\n[output truncated]"
+	if len(res.Text) > maxToolOutput {
+		res.Text = tool.TruncateUTF8(res.Text, maxToolOutput) + "\n[output truncated]"
 	}
-	return out, false
+	return res, false
 }
 
-// runTool executes a tool's Run, recovering any panic into an error so a buggy
-// tool (including a plugin or MCP tool) becomes a recoverable tool failure
-// rather than crashing the agent — in every entry path (TUI and headless).
-func (a *Agent) runTool(ctx context.Context, def tool.Definition, args json.RawMessage) (out string, err error) {
+// runTool executes a tool's Run/RunRich, recovering any panic into an error so
+// a buggy tool (including a plugin or MCP tool) becomes a recoverable tool
+// failure rather than crashing the agent — in every entry path (TUI and
+// headless).
+func (a *Agent) runTool(ctx context.Context, def tool.Definition, args json.RawMessage) (out tool.Result, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			out, err = "", fmt.Errorf("tool %q panicked: %v", def.Name, r)
+			out, err = tool.Result{}, fmt.Errorf("tool %q panicked: %v", def.Name, r)
 		}
 	}()
-	return def.Run(ctx, args)
+	return def.Invoke(ctx, args)
 }

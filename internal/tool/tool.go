@@ -23,12 +23,40 @@ type Definition struct {
 	ReadOnly bool
 
 	// Run executes the tool with raw JSON arguments and returns its textual result.
+	// Text-only tools (the vast majority) implement this.
 	Run func(ctx context.Context, args json.RawMessage) (string, error)
+
+	// RunRich is the optional image-capable variant: a tool that returns visual
+	// output (a screenshot, a rendered page) implements this instead of Run.
+	// When set it takes precedence over Run. Keeping both lets the ~all
+	// text-only tools stay unchanged while computer-use / browser tools return
+	// images the agent threads into the tool-result message.
+	RunRich func(ctx context.Context, args json.RawMessage) (Result, error)
+}
+
+// Result is a tool's output: text plus optional images (screenshots, renders).
+// Image-returning tools (browser, computer-use) populate Images; the agent
+// carries them into the RoleTool message, and each provider serializes them
+// per its capabilities (image-in-tool_result for Anthropic/Bedrock, a
+// synthetic follow-up user image for OpenAI).
+type Result struct {
+	Text   string
+	Images []llm.Image
 }
 
 // Spec returns the provider-neutral spec for this tool.
 func (d Definition) Spec() llm.ToolSpec {
 	return llm.ToolSpec{Name: d.Name, Description: d.Description, Parameters: d.Parameters}
+}
+
+// Invoke runs the tool, normalizing the text-only Run and the image-capable
+// RunRich into one Result. RunRich wins when both are set.
+func (d Definition) Invoke(ctx context.Context, args json.RawMessage) (Result, error) {
+	if d.RunRich != nil {
+		return d.RunRich(ctx, args)
+	}
+	text, err := d.Run(ctx, args)
+	return Result{Text: text}, err
 }
 
 // Registry is an ordered, name-keyed set of tools.
@@ -45,8 +73,8 @@ func NewRegistry(defs ...Definition) (*Registry, error) {
 		if d.Name == "" {
 			return nil, fmt.Errorf("tool with empty name")
 		}
-		if d.Run == nil {
-			return nil, fmt.Errorf("tool %q has nil Run", d.Name)
+		if d.Run == nil && d.RunRich == nil {
+			return nil, fmt.Errorf("tool %q has nil Run and RunRich", d.Name)
 		}
 		if _, dup := r.byName[d.Name]; dup {
 			return nil, fmt.Errorf("duplicate tool %q", d.Name)
