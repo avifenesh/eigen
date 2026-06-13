@@ -420,7 +420,9 @@ func main() {
 			gs[i] = agent.GroupSubtask{Task: s.Task, Kind: s.Kind, Difficulty: s.Difficulty, Model: s.Model}
 		}
 		approve := func(ctx context.Context, summary string, diff []byte) (bool, error) {
-			if a.Approve == nil {
+			// Auto mode applies without prompting; only a gated session gates
+			// the apply (mirrors normal tool gating).
+			if a.CurrentPerm() != agent.PermGated || a.Approve == nil {
 				return true, nil
 			}
 			args, _ := json.Marshal(map[string]string{"summary": summary, "diffstat": agent.PatchStat(diff)})

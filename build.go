@@ -132,7 +132,10 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		// prompt naming the merge + diffstat. In auto mode Approve is nil →
 		// applies freely.
 		approve := func(ctx context.Context, summary string, diff []byte) (bool, error) {
-			if deps.Agent.Approve == nil {
+			// Auto mode applies without prompting (read CurrentPerm, not just
+			// Approve!=nil — the callback stays wired in auto so /perm can flip
+			// to gated live). Only a GATED session gates the apply.
+			if deps.Agent.CurrentPerm() != agent.PermGated || deps.Agent.Approve == nil {
 				return true, nil
 			}
 			args, _ := json.Marshal(map[string]string{"summary": summary, "diffstat": agent.PatchStat(diff)})

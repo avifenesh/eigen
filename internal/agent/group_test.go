@@ -134,3 +134,45 @@ func TestTaskGroupEmptyErrors(t *testing.T) {
 		t.Fatal("empty group should error")
 	}
 }
+
+// readToolProvider drives a child to call one read-only tool then finish — to
+// prove a read-only fan-out child never reaches the approval path.
+type readToolProvider struct{ tool string }
+
+func (p *readToolProvider) Name() string    { return "rp" }
+func (p *readToolProvider) ModelID() string { return "rp" }
+func (p *readToolProvider) Complete(_ context.Context, req llm.Request) (*llm.Response, error) {
+	for _, m := range req.Messages {
+		if m.Role == llm.RoleTool {
+			return &llm.Response{Text: "done"}, nil
+		}
+	}
+	return &llm.Response{ToolCalls: []llm.ToolCall{{ID: "t", Name: p.tool, Arguments: json.RawMessage(`{}`)}}}, nil
+}
+
+// TestReadOnlyFanoutNeverApproves is the SAFETY invariant: even when the parent
+// is GATED, read-only children must never invoke Approve (which in a single
+// window would race across N concurrent children). Read-only tools auto-run, so
+// the approval path is never reached.
+func TestReadOnlyFanoutNeverApproves(t *testing.T) {
+	reg, err := tool.NewRegistry(roTool("read"), roTool("grep"), roTool("glob"),
+		roTool("list"), roTool("tree"), roTool("symbols"), roTool("diff"), roTool("review"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &Agent{
+		Provider: &readToolProvider{tool: "read"},
+		Tools:    reg,
+		Perm:     PermGated, // gated parent
+		Approve: func(context.Context, string, json.RawMessage) (bool, error) {
+			t.Fatal("a read-only fan-out child must NEVER call Approve")
+			return false, nil
+		},
+	}
+	if _, err := a.TaskGroup(context.Background(), []GroupSubtask{
+		{Task: "investigate", Role: "researcher"},
+		{Task: "critique", Role: "reviewer"},
+	}, 2); err != nil {
+		t.Fatalf("read-only fan-out should run under a gated parent: %v", err)
+	}
+}
