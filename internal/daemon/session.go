@@ -186,11 +186,24 @@ func (s *Session) send(task string, images []llm.Image) bool {
 	s.mu.Unlock()
 
 	sess := s.sess
-	go func() {
-		_, err := sess.SendWith(ctx, task, images)
-		s.finishTurn(ctx, err)
-	}()
+	go s.runTurn(ctx, func() (string, error) { return sess.SendWith(ctx, task, images) })
 	return true
+}
+
+// runTurn executes a turn body then finishes the turn, converting any panic
+// into a turn error so a bug in one session never crashes the daemon (which
+// would take down every other hosted session). Shared by send and resend.
+func (s *Session) runTurn(ctx context.Context, body func() (string, error)) {
+	var err error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("internal panic: %v", r)
+			}
+		}()
+		_, err = body()
+	}()
+	s.finishTurn(ctx, err)
 }
 
 // finishTurn clears running state and emits a terminal event so attached views
@@ -441,10 +454,7 @@ func (s *Session) resend() bool {
 	sess := s.sess
 	s.mu.Unlock()
 
-	go func() {
-		_, err := sess.Resend(ctx)
-		s.finishTurn(ctx, err)
-	}()
+	go s.runTurn(ctx, func() (string, error) { return sess.Resend(ctx) })
 	return true
 }
 

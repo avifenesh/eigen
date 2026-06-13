@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -449,5 +450,44 @@ func TestReplayBufferBoundedAndClearedAfterTurn(t *testing.T) {
 	s.mu.Unlock()
 	if after != 0 {
 		t.Fatalf("replay buffer should be cleared after a turn, got %d", after)
+	}
+}
+
+// panicProvider panics on Complete — simulating a provider/parse bug.
+type panicProvider struct{}
+
+func (panicProvider) Name() string    { return "panic" }
+func (panicProvider) ModelID() string { return "panic" }
+func (panicProvider) Complete(context.Context, llm.Request) (*llm.Response, error) {
+	panic("boom in the turn")
+}
+
+func TestTurnPanicDoesNotCrashDaemonEmitsError(t *testing.T) {
+	// A panic during a turn must be contained: the session emits a terminal
+	// error note and stays usable, and (critically) the daemon process — every
+	// OTHER hosted session — survives.
+	reg, _ := tool.NewRegistry()
+	a := &agent.Agent{Provider: panicProvider{}, Tools: reg}
+	s := newSession("x", "/tmp", "m", a)
+	_, live, detach := s.attach()
+	defer detach()
+	if !s.send("go", nil) {
+		t.Fatal("send should start")
+	}
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case e := <-live:
+			if e.Kind == agent.EventNote && strings.HasPrefix(e.Text, "error: ") &&
+				strings.Contains(e.Text, "panic") {
+				// Session recovered: a follow-up turn can start.
+				if s.running {
+					t.Fatal("session should not be stuck running after a panic")
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("a panicking turn should emit a terminal error note")
+		}
 	}
 }

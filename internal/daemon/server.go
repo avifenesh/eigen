@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -74,6 +75,14 @@ func (s *Server) Close() error {
 // handle serves one view connection.
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
+	// A panic while serving one connection (malformed request, a handler bug)
+	// must not crash the daemon and take down every other session. Contain it
+	// to this connection.
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "eigen daemon: connection handler panic: %v\n", r)
+		}
+	}()
 	var writeMu sync.Mutex
 	send := func(v any) {
 		b, err := encode(v)
