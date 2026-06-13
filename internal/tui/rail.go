@@ -256,20 +256,21 @@ func (m *model) railEntryLabel(e chat.SessionEntry, cur string, grouped bool, co
 		indent = " "
 	}
 	isCur := e.ID == cur
-	// Marker: a clear "you are here" pointer for the current session.
+	// Marker: a clear "you are here" pointer for the current session — in the
+	// Focus color (NOT brand blue; blue is reserved for structural chrome).
 	mark := " "
 	if isCur {
-		mark = styleAccent.Bold(true).Render("❯")
+		mark = styleFocus.Bold(true).Render("❯")
 	}
-	// Name color: current = bright bold (the eye lands here); others = dim so
-	// they recede. Truncate to the remaining width (indent + glyph + mark + 1).
+	// Name color: current = Focus bold (the eye lands here, distinct from the
+	// brand-blue chrome); others = dim so they recede.
 	nameW := contentW - 3 - len(indent)
 	if nameW < 1 {
 		nameW = 1
 	}
 	name := ansiTrunc(title, nameW)
 	if isCur {
-		name = styleUser.Render(name) // STitle.Bold — central, distinct color
+		name = styleFocus.Bold(true).Render(name)
 	} else {
 		name = dim(name)
 	}

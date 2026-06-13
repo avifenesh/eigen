@@ -45,6 +45,14 @@ var (
 	// warm orange that stands apart from the calm blues so it's unmistakable
 	// at a glance (distinct from Warn's amber, which is reserved for confirms).
 	Working = lipgloss.AdaptiveColor{Dark: "#D08770", Light: "#B4581F"}
+
+	// Focus: "the session THIS pane is attached to / the thing you're driving."
+	// A deliberately NON-blue role — blue (Accent/Title) is reserved for brand
+	// + structural chrome, so the active session must NOT share it (with 4
+	// windows open, the active one has to pop against the brand palette). A
+	// calm desaturated rose/mauve: distinct from Working-orange, Tool-violet,
+	// and the semantic Ok/Warn/Err, while staying in the restrained family.
+	Focus = lipgloss.AdaptiveColor{Dark: "#D1A0B0", Light: "#9A4D6B"}
 )
 
 // Ready-made styles for the common roles. Call sites compose (Bold/Underline/
@@ -63,4 +71,5 @@ var (
 	SLink    = lipgloss.NewStyle().Foreground(Link)
 	SHeading = lipgloss.NewStyle().Foreground(Heading)
 	SWorking = lipgloss.NewStyle().Foreground(Working)
+	SFocus   = lipgloss.NewStyle().Foreground(Focus)
 )

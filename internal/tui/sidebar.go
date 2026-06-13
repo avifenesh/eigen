@@ -216,7 +216,9 @@ func (m *model) sidebarLines(h int) []string {
 		case sbBrand:
 			lines = append(lines, railPad(m.brandMark()+styleAccent.Bold(true).Render(" eigen"), rw))
 		case sbTitle:
-			lines = append(lines, railPad(styleUser.Render(ansiTrunc(m.headerTitle(), contentW)), rw))
+			// This pane's session name — the Focus color (non-brand), matching
+			// the active-session highlight in the rail below.
+			lines = append(lines, railPad(styleFocus.Bold(true).Render(ansiTrunc(m.headerTitle(), contentW)), rw))
 		case sbCwd:
 			lines = append(lines, railPad(dim(ansiTrunc(m.headerBreadcrumb(), contentW)), rw))
 		case sbBlank:

@@ -1131,6 +1131,35 @@ geometry-owned-first + one-action-layer + keyboard/click-parity conventions.
   liveness or a stat strip). Designerly restraint still applies — informative,
   not decorative — but the first screen should invite action, not echo.
 
+## Tier 22 — design system (one visual language, roles not hues)
+User-initiated: "create a design system." The brief lives in
+[`docs/design-system.md`](./docs/design-system.md) (durable; survives
+compaction). Goal: the chat TUI + app shell read as ONE product, every styled
+thing means something, and a re-theme is one edit.
+
+THE BRAND RULE (user-set): blue (`theme.Accent` + `theme.Title`) is reserved
+for eigen's brand + structural chrome; anything else (selection, active
+session, state highlights) uses a DIFFERENT theme role.
+
+- [x] **`Focus` role + first application.** SHIPPED: new non-blue `theme.Focus`
+  (rose) for "the session THIS pane drives" — rail pointer/name + sidebar
+  title now use Focus, not brand blue, so the active window pops against the
+  blue chrome (rail.go railEntryLabel, sidebar.go sbTitle).
+- [ ] **Lock the role vocabulary** (docs §"The plan" step 1): confirm/extend
+  roles — candidates `CodeBg`, a documented brand `Ramp`, maybe `Sel` for
+  app-shell selection if distinct from `Focus`.
+- [ ] **Apply the brand rule everywhere.** Sweep all selection/active/current
+  highlights off Accent/Title onto Focus/Sel; fold the 3 remaining raw color
+  literals (brand.go ramp, view.go code-block bg, app.go live ramp) into roles.
+- [ ] **App-shell parity.** `internal/app/style.go` `c*`/`s*` aliases become a
+  thin audited mapping to `theme.*` (no literals).
+- [ ] **Living swatch** — `eigen theme` / debug page rendering every role +
+  glyph + weight (reproducible screenshots).
+- [ ] **Re-theme proof** — a one-edit alternate palette (maybe a config
+  `theme:` key) to prove roles-not-hues holds.
+- [ ] **Drift guard test** — assert no `lipgloss.Color(`/`AdaptiveColor{`
+  outside theme.go; keep size-sweep + band-alignment green.
+
 ## Debt / bugs
 - [x] **Untitled daemon sessions still appear.** FIXED: (1) `Host.Restore` now
   calls `maybeTitle` per restored session, so sessions whose title never landed
