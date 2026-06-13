@@ -24,6 +24,19 @@ type TaskRun func(ctx context.Context, task string, opts TaskOpts, background bo
 // background task state.
 type TaskStatusRun func(ctx context.Context, id string, all bool) (string, error)
 
+// GroupSubtaskArg is one child in a task_group fan-out, as the model supplies it.
+type GroupSubtaskArg struct {
+	Task       string
+	Role       string
+	Kind       string
+	Difficulty string
+	Model      string
+}
+
+// TaskGroupRun is injected by main/buildSession: run several read-only
+// sub-agents in parallel and return a joined report.
+type TaskGroupRun func(ctx context.Context, subs []GroupSubtaskArg, workers int) (string, error)
+
 // Task returns the sub-agent delegation tool. Foreground mode runs to
 // completion and returns the final answer. background=true starts a detached
 // task and returns immediately with a task id; later use task_status to collect
@@ -97,6 +110,59 @@ func TaskStatus(run TaskStatusRun) Definition {
 				return "", fmt.Errorf("background tasks are not available")
 			}
 			return run(ctx, in.ID, in.All)
+		},
+	}
+}
+
+// TaskGroup returns the parallel fan-out tool: run several READ-ONLY
+// sub-agents at once (each with a role) and get one joined report. Use it to
+// investigate or review several things concurrently — e.g. three researchers
+// on three files, or a researcher + a reviewer. Children are read-only by
+// design (they can't edit/write/run commands), which is what makes running
+// them in parallel safe.
+func TaskGroup(run TaskGroupRun) Definition {
+	return Definition{
+		Name:        "task_group",
+		Description: "Run several READ-ONLY sub-agents in PARALLEL and get one combined report. Each subtask needs a role: researcher (read code + web search), reviewer (critique + cross-vendor review), or summarizer (read + condense). Use this to fan out investigation/review across files or angles at once. Children cannot modify files or run commands — for that, use the `task` tool (one at a time). Optional workers caps concurrency (default 3).",
+		ReadOnly:    true, // children are read-only, so the fan-out itself is safe to auto-run
+		Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "subtasks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "description": "The parallel subtasks. Each runs in its own fresh read-only agent.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "task": { "type": "string", "description": "Complete, self-contained instructions. The child cannot see this conversation." },
+          "role": { "type": "string", "enum": ["researcher","reviewer","summarizer"], "description": "researcher = read+search; reviewer = critique+cross-review; summarizer = read+condense." },
+          "kind": { "type": "string", "enum": ["general","search","vision","social"] },
+          "difficulty": { "type": "string", "enum": ["trivial","easy","medium","hard"] },
+          "model": { "type": "string", "description": "Optional explicit model/ref override (beats routing)." }
+        },
+        "required": ["task","role"],
+        "additionalProperties": false
+      }
+    },
+    "workers": { "type": "integer", "description": "Max concurrent subtasks (default 3, max 6)." }
+  },
+  "required": ["subtasks"],
+  "additionalProperties": false
+}`),
+		Run: func(ctx context.Context, args json.RawMessage) (string, error) {
+			var in struct {
+				Subtasks []GroupSubtaskArg `json:"subtasks"`
+				Workers  int               `json:"workers"`
+			}
+			if err := json.Unmarshal(args, &in); err != nil {
+				return "", fmt.Errorf("invalid arguments: %w", err)
+			}
+			if run == nil {
+				return "", fmt.Errorf("task_group is not available")
+			}
+			return run(ctx, in.Subtasks, in.Workers)
 		},
 	}
 }

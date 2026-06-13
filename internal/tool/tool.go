@@ -108,3 +108,35 @@ func (r *Registry) Definitions() []Definition {
 	}
 	return out
 }
+
+// Subset returns a NEW registry containing only the named tools that exist in
+// r, preserving registration order. It never mutates r — sub-agents (e.g.
+// parallel task_group children with a role allowlist) get their own immutable
+// registry sharing the same underlying tool Definitions, which are safe to
+// invoke concurrently. Names not present in r are skipped.
+func (r *Registry) Subset(names ...string) *Registry {
+	want := make(map[string]bool, len(names))
+	for _, n := range names {
+		want[n] = true
+	}
+	sub := &Registry{byName: make(map[string]Definition)}
+	for _, name := range r.order {
+		if want[name] {
+			sub.order = append(sub.order, name)
+			sub.byName[name] = r.byName[name]
+		}
+	}
+	return sub
+}
+
+// AllReadOnly reports whether every tool in r is ReadOnly. Parallel fan-out
+// (task_group) requires this: a read-only child never calls Approve, so N
+// concurrent children can't race the single-window approval prompt.
+func (r *Registry) AllReadOnly() bool {
+	for _, name := range r.order {
+		if !r.byName[name].ReadOnly {
+			return false
+		}
+	}
+	return true
+}

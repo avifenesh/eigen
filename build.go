@@ -109,6 +109,16 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		}
 		return formatTaskStatus(deps.Agent.Bg, id, all), nil
 	}
+	taskGroup := func(ctx context.Context, subs []tool.GroupSubtaskArg, workers int) (string, error) {
+		if deps.Agent == nil {
+			return "", fmt.Errorf("task_group unavailable")
+		}
+		gs := make([]agent.GroupSubtask, len(subs))
+		for i, s := range subs {
+			gs[i] = agent.GroupSubtask{Task: s.Task, Role: s.Role, Kind: s.Kind, Difficulty: s.Difficulty, Model: s.Model}
+		}
+		return deps.Agent.TaskGroup(ctx, gs, workers)
+	}
 	goalJudge := func(ctx context.Context, evidence string) (bool, string, error) {
 		if deps.Agent == nil {
 			return false, "", fmt.Errorf("goal judging unavailable")
@@ -137,6 +147,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		tool.Edit(policy), tool.MultiEdit(policy), tool.Patch(policy), tool.Move(policy),
 		tool.Bash(policy), tool.Fetch(), tool.Todo(), tool.Skill(p.Skills),
 		tool.Memory(mem, p.GlobalMem), tool.Task(taskRun), tool.TaskStatus(taskStatus),
+		tool.TaskGroup(taskGroup),
 		tool.GoalAchieved(goalJudge), tool.Review(reviewRun),
 	}
 	if ws, ok := tool.WebSearch(); ok {

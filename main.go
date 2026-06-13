@@ -401,6 +401,16 @@ func main() {
 		}
 		return formatTaskStatus(a.Bg, id, all), nil
 	}
+	taskGroup := func(ctx context.Context, subs []tool.GroupSubtaskArg, workers int) (string, error) {
+		if a == nil {
+			return "", fmt.Errorf("task_group unavailable")
+		}
+		gs := make([]agent.GroupSubtask, len(subs))
+		for i, s := range subs {
+			gs[i] = agent.GroupSubtask{Task: s.Task, Role: s.Role, Kind: s.Kind, Difficulty: s.Difficulty, Model: s.Model}
+		}
+		return a.TaskGroup(ctx, gs, workers)
+	}
 	// goalJudge verifies goal-achievement claims and clears the goal on a
 	// confirmed verdict. The judge is an INDEPENDENT model: by default the
 	// other vendor (GPT judges Claude's claims, Claude judges GPT's — never
@@ -458,6 +468,7 @@ func main() {
 		tool.Memory(mem, gmem),
 		tool.Task(taskRun),
 		tool.TaskStatus(taskStatus),
+		tool.TaskGroup(taskGroup),
 		tool.GoalAchieved(goalJudge),
 		tool.Review(reviewRun),
 	}

@@ -34,6 +34,7 @@ Working method:
 - Record durable, project-specific facts (build/test commands, conventions, gotchas) with the memory tool.
 - For a large, separable chunk of work, delegate it with the task tool (a fresh, isolated subtask).
 - You are the orchestrator: when delegating, state the subtask's kind and difficulty so it routes to the best-fit model (trivial edits → fast cheap model; search/vision → a capable one). Keep only the work that needs you.
+- To investigate or review SEVERAL things at once, use the task_group tool: it runs multiple READ-ONLY sub-agents in parallel (roles: researcher, reviewer, summarizer) and returns one combined report. Use it to fan out across files/angles; for changes that edit files, use the task tool one at a time.
 
 Call tools as needed; when the task is complete, reply with a short, specific summary of what you did.`
 
@@ -291,6 +292,7 @@ type SubtaskOpts struct {
 	Kind       string
 	Difficulty string
 	Model      string // explicit model id/ref — overrides routing when set
+	Role       string // named role (researcher/reviewer/summarizer) — read-only specialization
 }
 
 // Subtask runs task on a fresh session of (a copy of) this agent, with event
@@ -324,6 +326,30 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 	prov := a.provider()
 	compactor := a.compactor()
 	where := ""
+
+	// Role: a named read-only specialization (Tier 16). Filter the toolset to
+	// the role's allowlist, prepend its system framing, and default the routing
+	// difficulty. An unknown role is ignored (the caller — task_group — fails
+	// closed before reaching here; a bare Subtask just runs unspecialized).
+	tools := a.Tools
+	extraSystem := a.ExtraSystem
+	if opts.Role != "" {
+		if role, ok := LookupRole(opts.Role); ok {
+			tools = a.Tools.Subset(role.Tools...)
+			if role.System != "" {
+				if extraSystem != "" {
+					extraSystem = role.System + "\n\n" + extraSystem
+				} else {
+					extraSystem = role.System
+				}
+			}
+			if opts.Difficulty == "" {
+				opts.Difficulty = role.Difficulty
+			}
+			where = "role " + role.Name
+		}
+	}
+
 	switch {
 	case opts.Model != "" && a.ModelProvider != nil:
 		p, err := a.ModelProvider(opts.Model)
@@ -331,22 +357,18 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 			// The named model can't be built (bad id, missing creds): fall
 			// back to routing/inherit, but SAY so — silent fallback would
 			// defeat the override's purpose.
-			where = "explicit model " + opts.Model + " unavailable (" + err.Error() + ") — falling back"
+			where = joinWhere(where, "explicit model "+opts.Model+" unavailable ("+err.Error()+") — falling back")
 		} else {
 			prov = p
 			compactor = llm.NewCompactor(p)
-			where = "running on " + opts.Model + " (explicit)"
+			where = joinWhere(where, "running on "+opts.Model+" (explicit)")
 		}
 	}
 	if prov == a.provider() && a.Router != nil { // no explicit override took effect
 		if rp, _, label := a.Router(ctx, task, opts.Kind, opts.Difficulty, false); rp != nil {
 			prov = rp
 			compactor = llm.NewCompactor(rp)
-			if where != "" {
-				where += "; " + label
-			} else {
-				where = label
-			}
+			where = joinWhere(where, label)
 		}
 	}
 	// Construct the sub-agent explicitly (not by struct copy: Agent embeds a
@@ -355,19 +377,30 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 	// ModelProvider are carried so nested subtasks route/override too.
 	sub := &Agent{
 		Provider:         prov,
-		Tools:            a.Tools,
+		Tools:            tools,
 		Perm:             a.perm(),
 		MaxSteps:         a.MaxSteps,
 		Approve:          a.Approve,
 		MaxContextTokens: a.maxContextTokens(),
 		Compactor:        compactor,
-		ExtraSystem:      a.ExtraSystem,
+		ExtraSystem:      extraSystem,
 		Memory:           a.Memory,
 		Router:           a.Router,
 		ModelProvider:    a.ModelProvider,
 		Bg:               a.Bg,
 	}
 	return sub, where
+}
+
+// joinWhere combines two non-empty "where ran" fragments with "; ".
+func joinWhere(a, b string) string {
+	if a == "" {
+		return b
+	}
+	if b == "" {
+		return a
+	}
+	return a + "; " + b
 }
 
 // Messages returns a COPY of the conversation so far (for saving / live-replace
