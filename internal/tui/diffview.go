@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/avifenesh/eigen/internal/theme"
 )
 
 // maxDiffLines bounds how many diff lines an edit block renders.
@@ -148,8 +148,8 @@ func statsSuffix(detail string) string {
 // underlined on top of the line's add/remove color, so paired edits read at a
 // glance without inverting whole blocks.
 var (
-	styleDelSpan = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Underline(true)
-	styleAddSpan = lipgloss.NewStyle().Foreground(lipgloss.Color("78")).Underline(true)
+	styleDelSpan = theme.SErr.Underline(true)
+	styleAddSpan = theme.SOk.Underline(true)
 )
 
 // renderDiff applies per-line color to +/- prefixed diff text and, when a

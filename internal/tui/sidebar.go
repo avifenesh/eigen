@@ -14,11 +14,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/avifenesh/eigen/internal/theme"
 	"github.com/charmbracelet/lipgloss"
 )
 
 // styleFaint is the dimmest structural text — section labels, hairline rules.
-var styleFaint = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+var styleFaint = theme.SFaint
 
 // sectionLabel renders a sidebar section divider: a faint lowercase label
 // followed by a hairline rule filling the remaining width, e.g.

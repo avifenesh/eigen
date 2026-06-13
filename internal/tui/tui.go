@@ -23,6 +23,7 @@ import (
 	"github.com/avifenesh/eigen/internal/session"
 	"github.com/avifenesh/eigen/internal/skill"
 	"github.com/avifenesh/eigen/internal/speech"
+	"github.com/avifenesh/eigen/internal/theme"
 	"github.com/avifenesh/eigen/internal/transcript"
 	"github.com/avifenesh/eigen/internal/voice"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -34,32 +35,32 @@ import (
 )
 
 var (
-	// Palette. 256-color indices chosen to be legible on both dark and light
-	// terminals and to read as a small, coherent set rather than a rainbow:
-	//   user = cyan, assistant prose = default fg, thinking = slate/grey,
-	//   tool = lavender/violet, ok = green, warn/active = amber, error = red,
-	//   accent (borders/rules) = soft blue.
-	styleUser   = lipgloss.NewStyle().Foreground(lipgloss.Color("44")).Bold(true)  // bright cyan
-	styleTool   = lipgloss.NewStyle().Foreground(lipgloss.Color("141"))            // soft violet
-	styleErr    = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))            // warm red
-	styleReason = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))            // mid grey
-	styleStatus = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))             // green
-	styleAsk    = lipgloss.NewStyle().Foreground(lipgloss.Color("215")).Bold(true) // amber
-	styleCode   = lipgloss.NewStyle().Foreground(lipgloss.Color("80"))             // teal
+	// Palette — sourced from internal/theme (the single source of truth shared
+	// with the app shell). Calm desaturated truecolor; roles, not hues:
+	//   user = title cyan, assistant prose = default fg, thinking = dim slate,
+	//   tool = purple, ok = green, warn/active = amber, error = red,
+	//   accent (borders/rules/caret) = frost blue.
+	styleUser   = theme.STitle.Bold(true)
+	styleTool   = theme.STool
+	styleErr    = theme.SErr
+	styleReason = theme.SDim
+	styleStatus = theme.SOk
+	styleAsk    = theme.SWarn.Bold(true)
+	styleCode   = theme.SCode
 
 	// accent is the calm structural color for borders, rules, and the prompt
 	// caret — present but not loud.
-	accent      = lipgloss.Color("67") // muted steel blue
-	styleAccent = lipgloss.NewStyle().Foreground(accent)
+	accent      = theme.Accent
+	styleAccent = theme.SAccent
 
 	// Markdown prose styles for assistant answers.
-	styleHeading    = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true) // blue
+	styleHeading    = theme.SHeading.Bold(true)
 	styleBold       = lipgloss.NewStyle().Bold(true)
 	styleItalic     = lipgloss.NewStyle().Italic(true)
-	styleInlineCode = lipgloss.NewStyle().Foreground(lipgloss.Color("80")) // teal
-	styleQuote      = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
-	styleBullet     = lipgloss.NewStyle().Foreground(lipgloss.Color("141")) // violet
-	styleLink       = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Underline(true)
+	styleInlineCode = theme.SCode
+	styleQuote      = theme.SDim.Italic(true)
+	styleBullet     = theme.STool
+	styleLink       = theme.SLink.Underline(true)
 )
 
 type uiState int
@@ -1618,11 +1619,11 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 		BorderForeground(accent)
 	ti.BlurredStyle.Base = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("238"))
+		BorderForeground(theme.Faint)
 	ti.FocusedStyle.Prompt = styleAccent
-	ti.BlurredStyle.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
-	ti.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
-	ti.BlurredStyle.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	ti.BlurredStyle.Prompt = lipgloss.NewStyle().Foreground(theme.Faint)
+	ti.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(theme.Dim)
+	ti.BlurredStyle.Placeholder = lipgloss.NewStyle().Foreground(theme.Faint)
 	// Enter is reserved for submit; newlines are inserted with ctrl+j / alt+enter
 	// (handled in Update). Disabling the textarea's own newline binding stops it
 	// from inserting a line break on Enter.

@@ -9,20 +9,23 @@
 // isn't informative.
 package app
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/avifenesh/eigen/internal/theme"
+	"github.com/charmbracelet/lipgloss"
+)
 
-// Palette — the same family as the chat TUI (cyan/violet/green/amber on grey),
-// so the app and the chat feel like one product.
+// Palette — sourced from internal/theme (shared with the chat TUI), so the
+// app shell and the chat are one product. Calm desaturated truecolor.
 var (
-	cAccent = lipgloss.Color("67")  // muted steel blue — structure
-	cText   = lipgloss.Color("252") // primary text
-	cDim    = lipgloss.Color("242") // secondary text
-	cFaint  = lipgloss.Color("238") // chrome, separators
-	cTitle  = lipgloss.Color("44")  // bright cyan — titles, the active thing
-	cOk     = lipgloss.Color("78")  // green — healthy/available
-	cWarn   = lipgloss.Color("215") // amber — attention/confirm
-	cErr    = lipgloss.Color("203") // warm red — broken/missing
-	cViolet = lipgloss.Color("141") // soft violet — counts, meta
+	cAccent = theme.Accent // structure
+	cText   = theme.Text   // primary text
+	cDim    = theme.Dim    // secondary text / instructions
+	cFaint  = theme.Faint  // chrome, separators
+	cTitle  = theme.Title  // titles, the active thing
+	cOk     = theme.Ok     // healthy / available
+	cWarn   = theme.Warn   // attention / confirm
+	cErr    = theme.Err    // broken / missing
+	cViolet = theme.Tool   // counts, meta
 )
 
 var (
