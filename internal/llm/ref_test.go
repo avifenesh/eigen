@@ -11,7 +11,7 @@ func TestParseRef(t *testing.T) {
 	}{
 		// explicit tags (canonical + aliases)
 		{"mantle:us.openai.gpt-5.5", "mantle", "us.openai.gpt-5.5"},
-		{"ant:claude-opus-4-1-20250805", "ant", "claude-opus-4-1-20250805"},
+		{"ant:claude-fable-5", "ant", "claude-fable-5"},
 		{"converse:global.anthropic.claude-fable-5", "converse", "global.anthropic.claude-fable-5"},
 		{"xai:grok-build", "xai", "grok-build"},
 		// untagged: self-tagging ids pass through whole

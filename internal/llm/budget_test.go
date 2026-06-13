@@ -3,8 +3,8 @@ package llm
 import "testing"
 
 func TestContextBudget(t *testing.T) {
-	// A known 200k-window model: auto budget = 85% = 170k.
-	const opus = "us.anthropic.claude-opus-4-1" // plain 200k window (no 1M beta)
+	// A known 200k-window model with NO 1M beta: auto budget = 85% = 170k.
+	const opus = "us.anthropic.claude-3-5-sonnet" // plain 200k window (no 1M beta)
 	if got := ContextBudget(0, opus, 0); got != 170000 {
 		t.Errorf("auto budget for %s: want 170000, got %d", opus, got)
 	}

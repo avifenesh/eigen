@@ -29,8 +29,8 @@ const (
 // work (gpt-5.5 over opus); Design marks the better frontend/design model
 // (opus over gpt-5.5) preferred when the task is frontend.
 //
-// Rank orders quality WITHIN a tier (higher = better, e.g. opus-4-8 over the
-// older opus-4-1). Bedrock-avoidance only ever breaks TRUE ties — equal tier,
+// Rank orders quality WITHIN a tier (higher = better, e.g. gpt-5.5 over
+// gpt-5.4). Bedrock-avoidance only ever breaks TRUE ties — equal tier,
 // affinity, and rank (the same-model-on-two-accounts case) — never at the cost
 // of quality.
 type RouterScore struct {
@@ -56,9 +56,6 @@ var routerScores = map[string]RouterScore{
 	"openai.gpt-5.4":                  {Tier: TierMed, Rank: 2, Speed: 58},
 	"openai.gpt-5":                    {Tier: TierMed, Rank: 1, Speed: 60},
 	"us.anthropic.claude-opus-4-8":    {Tier: TierMed, Rank: 3, Speed: 48, Design: true},
-	"us.anthropic.claude-opus-4-1":    {Tier: TierMed, Rank: 2, Speed: 45, Design: true},
-	"claude-opus-4-1-20250805":        {Tier: TierMed, Rank: 2, Speed: 45, Design: true},
-	"claude-opus-4-20250514":          {Tier: TierMed, Rank: 1, Speed: 45, Design: true},
 
 	// Tier 2 — simple-med (sonnet). 4-6 is the newest sonnet; quality first,
 	// so it wins even on Bedrock.

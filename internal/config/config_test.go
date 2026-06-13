@@ -151,9 +151,9 @@ func TestSetModelRefSplitsProvider(t *testing.T) {
 func TestLoadFromNormalizesRef(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/config.json"
-	os.WriteFile(path, []byte(`{"model":"ant:claude-opus-4-1-20250805"}`), 0o644)
+	os.WriteFile(path, []byte(`{"model":"ant:claude-opus-4-8"}`), 0o644)
 	c := LoadFrom(path)
-	if c.Provider != "ant" || c.Model != "claude-opus-4-1-20250805" {
+	if c.Provider != "ant" || c.Model != "claude-opus-4-8" {
 		t.Fatalf("hand-edited ref should normalize: %+v", c)
 	}
 }

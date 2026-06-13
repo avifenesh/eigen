@@ -90,7 +90,6 @@ var Catalog = []ModelInfo{
 		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
 	{ID: "us.anthropic.claude-sonnet-4-6", Provider: "converse", ContextWindow: 200000,
 		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, ThinkingBudget: 8192, EffortLevels: []string{"off", "low", "medium", "high", "xhigh"}, Vision: true},
-	{ID: "us.anthropic.claude-opus-4-1", Provider: "converse", ContextWindow: 200000, Cache: true, Vision: true},
 	{ID: "us.anthropic.claude-3-5-sonnet", Provider: "converse", ContextWindow: 200000, Cache: true, Vision: true},
 	// Haiku 4.5: the small/fast/cheap model eigen uses for background chores
 	// (session titling, dreaming, skill vulnerability scans).
@@ -100,14 +99,11 @@ var Catalog = []ModelInfo{
 	// Code OAuth login (~/.claude/.credentials.json) or ANTHROPIC_API_KEY.
 	// These are Anthropic's own model ids (not the Bedrock us.anthropic.* names)
 	// — the same catalog Claude Code drives. Adaptive thinking (Effort) like the
-	// Bedrock opus entries; 1M context via beta.
+	// Bedrock opus entry; 1M context via beta.
 	{ID: "claude-fable-5", Provider: "anthropic", ContextWindow: 200000,
-		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
-	{ID: "claude-opus-4-1-20250805", Provider: "anthropic", ContextWindow: 200000,
 		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
 	{ID: "claude-sonnet-4-5-20250929", Provider: "anthropic", ContextWindow: 200000,
 		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, ThinkingBudget: 8192, EffortLevels: []string{"off", "low", "medium", "high", "xhigh"}, Vision: true},
-	{ID: "claude-opus-4-20250514", Provider: "anthropic", ContextWindow: 200000, Cache: true, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
 
 	// Local llama (OpenAI-compatible server). Window is modest by default.
 	{ID: "local", Provider: "llama", ContextWindow: 40000},

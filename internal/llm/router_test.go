@@ -236,15 +236,16 @@ func TestRouteBedrockAvoidedOnlyAtTrueTie(t *testing.T) {
 		t.Fatalf("true tie should pick the non-Bedrock twin, got %s", got)
 	}
 
-	// NOT a true tie: opus-4-8 (Bedrock, rank 3) vs older native opus (rank 2):
-	// quality wins, Bedrock is NOT avoided.
+	// NOT a true tie: opus-4-8 (Bedrock, rank 3, Design) vs gpt-5.4 (rank 2) on
+	// a frontend task — Design affinity + higher quality wins, Bedrock is NOT
+	// avoided.
 	got, _ = Route(RouteRequest{
 		Kind:       TaskGeneral,
 		Difficulty: DiffMedium,
-		Frontend:   true, // frontend → Design affinity, both opus → rank decides
-		Candidates: []string{"us.anthropic.claude-opus-4-8", "claude-opus-4-1-20250805"},
+		Frontend:   true, // frontend → Design affinity favors opus
+		Candidates: []string{"us.anthropic.claude-opus-4-8", "openai.gpt-5.4"},
 	})
 	if got != "us.anthropic.claude-opus-4-8" {
-		t.Fatalf("quality must beat Bedrock-avoidance: want opus-4-8, got %s", got)
+		t.Fatalf("quality + design must beat Bedrock-avoidance: want opus-4-8, got %s", got)
 	}
 }

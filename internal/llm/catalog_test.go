@@ -16,7 +16,7 @@ func TestContextWindowExact(t *testing.T) {
 
 func TestContextWindowPrefix(t *testing.T) {
 	// A more specific versioned id should still resolve via prefix match.
-	if got := lookupWindow("us.anthropic.claude-opus-4-1-20250101"); got != 200000 {
+	if got := lookupWindow("us.anthropic.claude-opus-4-8-20250101"); got != 200000 {
 		t.Fatalf("opus prefix window = %d", got)
 	}
 }
