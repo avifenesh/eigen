@@ -112,15 +112,16 @@ var Catalog = []ModelInfo{
 	{ID: "grok-code-fast-1", Provider: "grok", ContextWindow: 256000, Vision: true},
 
 	// Zhipu GLM coding models (OpenAI-compatible coding API). GLM-5.2 is the
-	// current flagship; 200K context across the 5.x/4.6/4.7 line. Vision PROBED
-	// 2026-06-13: the coding gateway (open.bigmodel.cn coding/paas) rejects ALL
-	// image content with 400 code 1210 "messages.content.type is invalid,
-	// allowed values: ['text']" on 5.1/4.6/4.5-air — the SERVING GATEWAY is
-	// text-only regardless of model family; no Vision flags here.
+	// current flagship — 1M context (native, no beta gate); the rest of the
+	// 5.x/4.6/4.7 line is 200K. Vision PROBED 2026-06-13: the coding gateway
+	// (open.bigmodel.cn coding/paas) rejects ALL image content with 400 code
+	// 1210 "messages.content.type is invalid, allowed values: ['text']" on
+	// 5.1/4.6/4.5-air — the SERVING GATEWAY is text-only regardless of model
+	// family; no Vision flags here.
 	// glm-5.2 announced 2026-06-13 (Coding Plan UI only); the API model id is
 	// not served until ~next week — keep the entry ready but NOT the default
 	// until the api.z.ai coding endpoint serves it, or GLM calls 404.
-	{ID: "glm-5.2", Provider: "glm", ContextWindow: 200000, Search: true},
+	{ID: "glm-5.2", Provider: "glm", ContextWindow: 1000000, Search: true},
 	{ID: "glm-5.1", Provider: "glm", ContextWindow: 200000, Search: true},
 	{ID: "glm-5", Provider: "glm", ContextWindow: 200000, Search: true},
 	{ID: "glm-5-turbo", Provider: "glm", ContextWindow: 200000, Search: true},
