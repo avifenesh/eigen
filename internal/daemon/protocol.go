@@ -48,6 +48,7 @@ type Response struct {
 	State    *SessionState `json:"state,omitempty"`    // state op result
 	Before   int           `json:"before,omitempty"`   // compact result (message counts)
 	After    int           `json:"after,omitempty"`
+	Pruned   []string      `json:"pruned,omitempty"` // prune result: removed session ids
 }
 
 // SessionState is the snapshot a remote chat UI needs to render history and

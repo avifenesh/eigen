@@ -140,6 +140,23 @@ func ListPersisted() []PersistedInfo {
 	return out
 }
 
+// PrunePersisted deletes durable sessions with no conversation (0 messages)
+// from the default sessions dir and returns their ids. Safe whether or not the
+// daemon is running: empty sessions have nothing to lose, and a running daemon
+// only re-persists a session when it gets a message — a still-empty one won't
+// be rewritten. Sessions with any history are never touched.
+func PrunePersisted() []string {
+	dir := SessionsDir()
+	var pruned []string
+	for _, p := range loadPersisted(dir) {
+		if len(p.history) == 0 {
+			removePersisted(dir, p.meta.ID)
+			pruned = append(pruned, p.meta.ID)
+		}
+	}
+	return pruned
+}
+
 // snippet returns the first line of s, truncated to n runes.
 func snippet(s string, n int) string {
 	s = strings.TrimSpace(s)

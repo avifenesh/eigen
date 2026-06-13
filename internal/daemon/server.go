@@ -136,6 +136,8 @@ func (s *Server) handle(conn net.Conn) {
 			} else {
 				send(Response{Type: "error", Error: "no such session"})
 			}
+		case "prune":
+			send(Response{Type: "ok", Pruned: s.host.PruneEmpty()})
 		case "state":
 			sess := s.host.Get(req.ID)
 			if sess == nil {

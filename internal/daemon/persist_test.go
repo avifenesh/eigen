@@ -340,3 +340,58 @@ func TestListPersistedPrefersLastAttached(t *testing.T) {
 		t.Fatalf("LastAttached should drive Updated: s1=%d s2=%d", s1.Updated, s2.Updated)
 	}
 }
+
+func TestPruneEmptyRemovesOnlyEmptySessions(t *testing.T) {
+	persistDir := t.TempDir()
+	h := NewPersistentHost(persistDir)
+	reg, _ := tool.NewRegistry()
+
+	// One session with history, two empty. Seed history the way restore does
+	// (Resume populates the session), since PruneEmpty checks the live session.
+	full := h.Add("/tmp", "m", &agent.Agent{Provider: echoProvider{}, Tools: reg})
+	full.sess = full.agent.Resume([]llm.Message{{Role: llm.RoleUser, Text: "real work"}})
+	full.agent.Persist([]llm.Message{{Role: llm.RoleUser, Text: "real work"}})
+	empty1 := h.Add("/tmp", "m", &agent.Agent{Provider: echoProvider{}, Tools: reg})
+	empty2 := h.Add("/tmp", "m", &agent.Agent{Provider: echoProvider{}, Tools: reg})
+
+	pruned := h.PruneEmpty()
+	if len(pruned) != 2 {
+		t.Fatalf("should prune 2 empty sessions, got %d: %v", len(pruned), pruned)
+	}
+	if h.Get(full.ID) == nil {
+		t.Fatal("session with history must survive prune")
+	}
+	if h.Get(empty1.ID) != nil || h.Get(empty2.ID) != nil {
+		t.Fatal("empty sessions should be gone from the host")
+	}
+	// Files gone for empties, kept for the full one.
+	if _, err := os.Stat(metaPath(persistDir, empty1.ID)); err == nil {
+		t.Fatal("empty session meta should be deleted")
+	}
+	if _, err := os.Stat(metaPath(persistDir, full.ID)); err != nil {
+		t.Fatal("full session meta must remain")
+	}
+}
+
+func TestPrunePersistedFilesWhenDaemonDown(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	sd := SessionsDir()
+	if err := os.MkdirAll(sd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// s1 has history, s2 is empty (meta only, no/empty transcript).
+	if err := transcript.Save(transcriptPath(sd, "s1"), []llm.Message{{Role: llm.RoleUser, Text: "hi"}}); err != nil {
+		t.Fatal(err)
+	}
+	saveMeta(sd, persistMeta{ID: "s1", Dir: "/p", Model: "m"})
+	saveMeta(sd, persistMeta{ID: "s2", Dir: "/p", Model: "m"})
+
+	pruned := PrunePersisted()
+	if len(pruned) != 1 || pruned[0] != "s2" {
+		t.Fatalf("should prune only s2, got %v", pruned)
+	}
+	if _, err := os.Stat(metaPath(sd, "s1")); err != nil {
+		t.Fatal("s1 must remain")
+	}
+}

@@ -226,6 +226,41 @@ func (h *Host) Shutdown() {
 
 // Remove stops hosting a session (interrupting any in-flight turn) and
 // DELETES its persisted state — this is the user-facing "delete session".
+// PruneEmpty removes hosted sessions that have no conversation (0 messages):
+// interrupts them (no-op for idle), releases their resources, and deletes
+// their durable files. Returns the pruned ids. The CURRENT in-memory empties
+// are dropped too, so a running daemon won't re-persist a ghost. Never touches
+// a session with any history or a running turn.
+func (h *Host) PruneEmpty() []string {
+	h.mu.Lock()
+	var victims []*Session
+	for id, s := range h.sessions {
+		if s.running {
+			continue // never prune a session mid-turn
+		}
+		if s.sess != nil && len(s.sess.Messages()) > 0 {
+			continue
+		}
+		delete(h.sessions, id)
+		victims = append(victims, s)
+	}
+	h.mu.Unlock()
+	var pruned []string
+	for _, s := range victims {
+		s.interrupt()
+		if s.onClose != nil {
+			s.onClose()
+		}
+		if h.persistDir != "" {
+			removePersisted(h.persistDir, s.ID)
+		}
+		pruned = append(pruned, s.ID)
+	}
+	return pruned
+}
+
+// Remove stops hosting a session (interrupting any in-flight turn) and DELETES
+// its persisted state — this is the user-facing "delete session".
 func (h *Host) Remove(id string) bool {
 	h.mu.Lock()
 	s := h.sessions[id]

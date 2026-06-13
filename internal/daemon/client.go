@@ -195,6 +195,15 @@ func (c *Client) Remove(id string) error {
 	return err
 }
 
+// Prune removes hosted sessions with no conversation and returns their ids.
+func (c *Client) Prune() ([]string, error) {
+	r, err := c.request(Request{Op: "prune"})
+	if err != nil {
+		return nil, err
+	}
+	return r.Pruned, nil
+}
+
 // Approve answers a pending approval on a session.
 func (c *Client) Approve(sessionID, approvalID string, allow bool) error {
 	_, err := c.request(Request{Op: "approve", ID: sessionID, Approval: approvalID, Allow: allow})

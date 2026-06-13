@@ -130,7 +130,7 @@ func runDaemon(cfg config.Config) {
 	}
 }
 
-// daemonControl handles `eigen daemon <status|stop|install|uninstall>`;
+// daemonControl handles `eigen daemon <status|stop|prune|install|uninstall>`;
 // returns true if it handled a control subcommand (caller should return).
 func daemonControl(sub string) bool {
 	switch sub {
@@ -146,6 +146,25 @@ func daemonControl(sub string) bool {
 		return true
 	case "uninstall":
 		daemonUninstall()
+		return true
+	case "prune":
+		// Remove empty (0-message) sessions. Through the daemon when it's up
+		// (so in-memory ghosts go too), else straight off disk.
+		var pruned []string
+		if c, err := daemon.Dial(daemon.SocketPath()); err == nil {
+			pruned, err = c.Prune()
+			c.Close()
+			if err != nil {
+				fail(err)
+			}
+		} else {
+			pruned = daemon.PrunePersisted()
+		}
+		if len(pruned) == 0 {
+			fmt.Println("no empty sessions to prune")
+		} else {
+			fmt.Printf("pruned %d empty session(s): %s\n", len(pruned), strings.Join(pruned, " "))
+		}
 		return true
 	case "stop":
 		pid, err := daemon.Stop(daemon.PIDPath())
