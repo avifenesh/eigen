@@ -92,6 +92,7 @@ func main() {
 	listSkills := flag.Bool("list-skills", false, "list discovered skills (name, description) and exit")
 	listTools := flag.Bool("list-tools", false, "list available tools (name, posture, description) and exit")
 	instanceFlag := flag.String("instance", "", "daemon instance to use (default: production). A named instance (e.g. dev) gets its own socket/sessions/tasks so rebuilding never touches your production sessions.")
+	remoteHost := flag.String("remote", "", "attach to an eigen daemon on a remote host over ssh: user@host[:dir] (bootstrap it first with `eigen remote install`)")
 	var wfVars multiFlag
 	flag.Var(&wfVars, "var", "workflow variable k=v for `eigen run` (repeatable)")
 	flag.Parse()
@@ -119,6 +120,13 @@ func main() {
 
 	if *showVersion {
 		fmt.Println("eigen", llm.Version)
+		return
+	}
+
+	// `eigen --remote user@host[:dir]`: attach a local view to a REMOTE eigen
+	// daemon over ssh (the agent loop runs there; this is a pure view).
+	if *remoteHost != "" {
+		runRemote(*remoteHost, cfg)
 		return
 	}
 
