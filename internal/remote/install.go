@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // InstallOpts configures a remote bootstrap.
@@ -39,6 +40,7 @@ func Install(target string, opts InstallOpts) (version string, err error) {
 	if opts.LocalBinary == "" {
 		return "", fmt.Errorf("no binary to install")
 	}
+	remoteLog("install %s: binary=%s pushCreds=%v", target, opts.LocalBinary, opts.PushCreds)
 
 	step("ensuring ~/.local/bin on " + target)
 	if err := runSSHQuiet(target, "mkdir -p ~/.local/bin"); err != nil {
@@ -106,6 +108,22 @@ func pushCreds(target, envSnapshot string, step func(string)) error {
 	return nil
 }
 
+// remoteLog appends a timestamped line to ~/.eigen/remote.log — a durable trace
+// of remote ops (install/list) so TUI failures (where stderr is hidden) are
+// diagnosable after the fact. Best-effort.
+func remoteLog(format string, args ...any) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	f, err := os.OpenFile(filepath.Join(home, ".eigen", "remote.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "%s "+format+"\n", append([]any{time.Now().Format("15:04:05")}, args...)...)
+}
+
 // runSSHQuiet runs a remote command, discarding output (errors carry context).
 func runSSHQuiet(target, cmd string) error {
 	c := exec.Command("ssh", SSHArgs(target, cmd)...)
@@ -113,8 +131,10 @@ func runSSHQuiet(target, cmd string) error {
 	c.Stderr = &errb
 	if err := c.Run(); err != nil {
 		if s := strings.TrimSpace(errb.String()); s != "" {
+			remoteLog("ssh %s %q FAILED: %v: %s", target, cmd, err, s)
 			return fmt.Errorf("%s: %s", err, firstLine(s))
 		}
+		remoteLog("ssh %s %q FAILED: %v", target, cmd, err)
 		return err
 	}
 	return nil
@@ -127,8 +147,10 @@ func scpQuiet(local, target, dest string) error {
 	c.Stderr = &errb
 	if err := c.Run(); err != nil {
 		if s := strings.TrimSpace(errb.String()); s != "" {
+			remoteLog("scp %s -> %s FAILED: %v: %s", local, dest, err, s)
 			return fmt.Errorf("%s: %s", err, firstLine(s))
 		}
+		remoteLog("scp %s -> %s FAILED: %v", local, dest, err)
 		return err
 	}
 	return nil
@@ -138,6 +160,7 @@ func scpQuiet(local, target, dest string) error {
 func DetectArch(target string) (Target, error) {
 	out, err := exec.Command("ssh", SSHArgs(target, "uname -sm")...).Output()
 	if err != nil {
+		remoteLog("ssh %s uname FAILED: %v (out=%q)", target, err, string(out))
 		return Target{}, fmt.Errorf("ssh %s uname: %w (check connectivity / ~/.ssh/config)", target, err)
 	}
 	return TargetFromUname(string(out))

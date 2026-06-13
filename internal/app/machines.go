@@ -215,7 +215,9 @@ func (s *machinesState) view(m *Model, w, h int) string {
 		} else if strings.Contains(s.installMsg, "installed") {
 			tone = sOk
 		}
-		out += "\n" + tone.Render("  "+truncate(s.installMsg, w-4))
+		// Wrap the message across the content width so a full ssh error is
+		// readable (don't truncate — the whole point is diagnosing failures).
+		out += "\n" + tone.Render(wrapTo(s.installMsg, w-4, "  "))
 	}
 	out += "\n" + sFaint.Render("  enter open machine (see its sessions) · i install eigen here · n new session")
 	return out
