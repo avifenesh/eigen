@@ -226,7 +226,7 @@ func (b *block) codeResult(full string) string {
 	if !isCodePath(a.Path) {
 		return ""
 	}
-	codeW := b.wrapW - 1 // fill the transcript width (avoid a floating block)
+	codeW := b.wrapW // fill the transcript width edge-to-edge (no base-sliver gap)
 	if codeW < 8 {
 		codeW = 8
 	}
@@ -484,9 +484,9 @@ func renderProse(s string, width int) string {
 	lines := strings.Split(s, "\n")
 	out := make([]string, 0, len(lines))
 	// Code-block width: fill the FULL transcript content width so the framed
-	// surface spans edge-to-edge (a narrower block leaves a grey rectangle /
-	// hole in the transcript). A 1-col right inset keeps it off the boundary.
-	codeW := width - 1
+	// surface spans edge-to-edge and meets the panel/edge with no gap (a
+	// narrower block leaves an exposed-base sliver — the "hole" in the design).
+	codeW := width
 	if codeW < 8 {
 		codeW = 8
 	}
