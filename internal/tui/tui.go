@@ -1215,6 +1215,15 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				m.ti.InsertString("\n")
 				m.resizeInput()
 				return m, nil
+			case "ctrl+z":
+				// Move the turn you're waiting on to the background: the daemon
+				// keeps running it; this window returns to the dashboard. (esc
+				// interrupts — ctrl+z does NOT; it just stops watching.)
+				if m.canBackgroundTurn() {
+					m.note("moved to background — the daemon keeps running it; reattach from the dashboard to collect")
+					return m, m.backgroundTurn()
+				}
+				return m, nil
 			case "esc":
 				if m.cancel != nil {
 					m.cancel()

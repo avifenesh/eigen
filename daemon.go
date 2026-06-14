@@ -101,6 +101,19 @@ func runDaemon(cfg config.Config) {
 		return titler.Title(ctx, head)
 	})
 
+	// Desktop notifier for BACKGROUNDED turns: when the user moves a running
+	// turn to the background (leaves the window while it works), no TUI is left
+	// to ping them on completion — so the daemon fires the configured notifier.
+	if notifier := strings.Fields(notifyCmdline(cfg)); len(notifier) > 0 {
+		host.SetNotifier(func(title, body string) {
+			args := append(append([]string{}, notifier[1:]...), title+" — "+body)
+			c := exec.Command(notifier[0], args...)
+			if err := c.Start(); err == nil {
+				go func() { _ = c.Wait() }() // fire-and-forget; never block the daemon
+			}
+		})
+	}
+
 	// Resurrect persisted sessions before accepting views: each one rebuilds
 	// its agent (rooted at its dir) and resumes its saved history under the
 	// same id, so a daemon restart loses nothing.

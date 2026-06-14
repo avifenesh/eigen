@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -651,5 +652,76 @@ func TestRequestTimeoutForOpFloorsAndOverride(t *testing.T) {
 	t.Setenv("EIGEN_DAEMON_TIMEOUT", "nope")
 	if d := requestTimeoutFor("ping"); d != 30*time.Second {
 		t.Errorf("invalid override should fall back to 30s, got %v", d)
+	}
+}
+
+// TestBackgroundedTurnNotifies proves a turn that finishes with NO views
+// attached (the user moved it to the background) fires the desktop notifier,
+// while a turn with a view attached does not (the TUI pings that one).
+func TestBackgroundedTurnNotifies(t *testing.T) {
+	old := backgroundedNotifyMin
+	backgroundedNotifyMin = 0 // any turn length qualifies, for the test
+	defer func() { backgroundedNotifyMin = old }()
+
+	var mu sync.Mutex
+	var fired []string
+	notify := func(title, body string) {
+		mu.Lock()
+		fired = append(fired, title+"|"+body)
+		mu.Unlock()
+	}
+
+	reg, _ := tool.NewRegistry()
+	mk := func() *Session {
+		s := newSession("bg", "/tmp", "m", &agent.Agent{Provider: echoProvider{}, Tools: reg})
+		s.notify = notify
+		return s
+	}
+
+	// No views attached: a finished turn should notify.
+	s := mk()
+	if !s.send("go", nil) {
+		t.Fatal("send should start")
+	}
+	waitIdle(t, s)
+	mu.Lock()
+	n := len(fired)
+	mu.Unlock()
+	if n != 1 {
+		t.Fatalf("backgrounded turn (no views) should notify once, got %d", n)
+	}
+
+	// A view attached: the TUI handles the ping, the daemon must NOT notify.
+	s2 := mk()
+	_, _, detach := s2.attach()
+	defer detach()
+	if !s2.send("go", nil) {
+		t.Fatal("send should start")
+	}
+	waitIdle(t, s2)
+	mu.Lock()
+	n = len(fired)
+	mu.Unlock()
+	if n != 1 {
+		t.Fatalf("attached turn should NOT notify; fired total = %d (want still 1)", n)
+	}
+}
+
+// waitIdle waits until a session's turn finishes.
+func waitIdle(t *testing.T, s *Session) {
+	t.Helper()
+	deadline := time.After(3 * time.Second)
+	for {
+		s.mu.Lock()
+		running := s.running
+		s.mu.Unlock()
+		if !running {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal("turn did not finish")
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
 }

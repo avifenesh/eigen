@@ -28,10 +28,17 @@ type Host struct {
 	// titler names untitled sessions from their first user message on a
 	// small model (injected by main; nil = no auto-titles).
 	titler func(ctx context.Context, head string) (string, error)
+	// notify fires a desktop notification for a backgrounded turn that
+	// finishes with no views attached (injected by main from notify_cmd).
+	notify func(title, body string)
 }
 
 // SetTitler installs the small-model session titler.
 func (h *Host) SetTitler(t func(ctx context.Context, head string) (string, error)) { h.titler = t }
+
+// SetNotifier installs the desktop notifier used to alert the user when a
+// BACKGROUNDED turn (no views attached) finishes. nil = no notifications.
+func (h *Host) SetNotifier(n func(title, body string)) { h.notify = n }
 
 // maybeTitle titles an untitled session from its first user message, in the
 // background, persisting the result. Cheap no-ops: already titled, no titler,
@@ -107,6 +114,7 @@ func (h *Host) Add(dir, model string, a *agent.Agent) *Session {
 	h.seq++
 	id := fmt.Sprintf("s%d", h.seq)
 	s := newSession(id, dir, model, a)
+	s.notify = h.notify
 	h.sessions[id] = s
 	h.mu.Unlock()
 	h.enablePersist(s)
@@ -174,6 +182,7 @@ func (h *Host) Restore(build Builder) int {
 			a.SetGoal(p.meta.Goal)
 		}
 		s := newSession(p.meta.ID, p.meta.Dir, p.meta.Model, a)
+		s.notify = h.notify
 		s.title = p.meta.Title
 		if p.meta.LastAttached > 0 {
 			s.lastAttached = time.Unix(p.meta.LastAttached, 0) // survives restart

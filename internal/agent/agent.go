@@ -7,10 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/tool"
-	"sync"
 )
 
 // Permission is the loop's autonomy posture.
@@ -33,6 +34,7 @@ Working method:
 - When a task matches an available skill (listed below), load it with the skill tool first.
 - Record durable, project-specific facts (build/test commands, conventions, gotchas) with the memory tool.
 - For a large, separable chunk of work, delegate it with the task tool (a fresh, isolated subtask).
+- Background slow or independent work instead of blocking: task(background=true) returns immediately with an id and keeps running; poll/collect with task_status. Prefer it for anything that may run long or stall (a vision read of a large image, a long build/scan, web research) so a slow subtask never wedges your turn — a foreground subtask self-aborts after a timeout, but backgrounding is the right call when you don't need the result this instant.
 - You are the orchestrator: when delegating, state the subtask's kind and difficulty so it routes to the best-fit model (trivial edits → fast cheap model; search/vision → a capable one). Keep only the work that needs you.
 - To investigate or review SEVERAL things at once, use the task_group tool: it runs multiple READ-ONLY sub-agents in parallel (roles: researcher, reviewer, summarizer) and returns one combined report. Use it to fan out across files/angles; for changes that edit files, use the task tool one at a time.
 - To make SEVERAL INDEPENDENT code changes at once, use task_group_mutating: each implementer works in an isolated copy of the repo and their diffs are merged back behind one approval (needs a git repo, session at the repo root, and a clean working tree). Keep each subtask's edits scoped so they don't overlap.
@@ -294,6 +296,16 @@ type subtaskDepthKey struct{}
 // maxSubtaskDepth caps how deeply subtasks may nest.
 const maxSubtaskDepth = 2
 
+// fgSubtaskTimeout bounds a FOREGROUND subtask. Without it a hung subtask LLM
+// call (a vision read the gateway never answers, a provider that stalls) or a
+// pathological agentic loop would hang the parent turn until the user kills the
+// whole agent. With it, a stuck subtask self-aborts with a clear error the
+// parent can recover from, while still leaving ample room for a legitimately
+// long agentic subtask. (Background tasks use the larger bgMaxRuntime.) The
+// parent's own ctx cancel (interrupt) still aborts sooner. A var so tests can
+// shrink it.
+var fgSubtaskTimeout = 10 * time.Minute
+
 // SubtaskOpts shapes one delegation: routing hints (kind/difficulty), an
 // explicit Model override (the orchestrator names a specific model — beats
 // routing entirely), and ModelProvider, the injected constructor that turns a
@@ -326,7 +338,16 @@ func (a *Agent) SubtaskWith(ctx context.Context, task string, opts SubtaskOpts) 
 		a.emit(Event{Kind: EventNote, Text: "task → " + where})
 	}
 	ctx = context.WithValue(ctx, subtaskDepthKey{}, depth+1)
-	return sub.NewSession().Send(ctx, task)
+	// Bound the subtask so a hung LLM call or runaway loop can't stall the
+	// parent turn forever (the user shouldn't have to kill the whole agent).
+	// Parent cancel (interrupt) still aborts sooner via this derived ctx.
+	ctx, cancel := context.WithTimeout(ctx, fgSubtaskTimeout)
+	defer cancel()
+	out, err := sub.NewSession().Send(ctx, task)
+	if err != nil && ctx.Err() == context.DeadlineExceeded {
+		return "", fmt.Errorf("subtask timed out after %s (no result); try a smaller scope or background it", fgSubtaskTimeout)
+	}
+	return out, err
 }
 
 // subAgent constructs the sub-agent for one delegation and reports where it

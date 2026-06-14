@@ -252,3 +252,37 @@ func (m *model) switchFiltered() []chat.SessionEntry {
 	}
 	return out
 }
+
+// canBackgroundTurn reports whether the running turn can be moved to the
+// background: it only works for a daemon-hosted session (the turn keeps running
+// in the daemon after the view leaves) and only while a turn is actually
+// running (either we started it, or we attached to one another view started).
+func (m *model) canBackgroundTurn() bool {
+	if !m.isDaemonBacked() {
+		return false // local chat: no daemon to keep running it
+	}
+	return m.state == stRunning || m.attachedRunning
+}
+
+// isDaemonBacked reports whether the backend is a daemon session (a Detacher),
+// as opposed to a local in-process chat.
+func (m *model) isDaemonBacked() bool {
+	_, ok := m.backend.(chat.Detacher)
+	return ok
+}
+
+// backgroundTurn moves the running turn to the background: the daemon keeps
+// working while this window returns to the app shell (which shows the session
+// still ● working in the rail/live page). On completion with no view attached,
+// the daemon fires the desktop notifier. Quitting the view detaches WITHOUT
+// interrupting (tui.Run calls Detach before the deferred cancel), so the turn
+// survives. esc still interrupts; this never does.
+func (m *model) backgroundTurn() tea.Cmd {
+	if !m.canBackgroundTurn() {
+		m.note("nothing running to background")
+		return nil
+	}
+	m.dropSpeech() // stop narrating; we're leaving
+	m.openApp = true
+	return tea.Quit
+}

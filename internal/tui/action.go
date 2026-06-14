@@ -42,6 +42,7 @@ const (
 	actTerminalTab
 	actTasksTab
 	actTray
+	actBackgroundTurn
 )
 
 // action is a registry entry: what it's called, whether it's currently allowed,
@@ -136,6 +137,13 @@ var actionRegistry = map[actionID]action{
 		id: actHome, label: "home",
 		enabled: always,
 		run:     func(m *model) tea.Cmd { return m.command("/home") },
+	},
+	actBackgroundTurn: {
+		id: actBackgroundTurn, label: "background",
+		// Only meaningful while a daemon turn is running: the turn keeps
+		// running in the daemon after the view leaves.
+		enabled: func(m *model) bool { return m.canBackgroundTurn() },
+		run:     func(m *model) tea.Cmd { return m.backgroundTurn() },
 	},
 	actSwitcher: {
 		id: actSwitcher, label: "sessions",

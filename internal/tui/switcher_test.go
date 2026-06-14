@@ -24,6 +24,11 @@ type switchBackend struct {
 func (s *switchBackend) Sessions() []chat.SessionEntry { return s.entries }
 func (s *switchBackend) SessionID() string             { return s.id }
 
+// Detach makes switchBackend a chat.Detacher, i.e. a daemon-backed session
+// (the turn keeps running daemon-side after the view leaves). Tests of
+// background/detach paths rely on this.
+func (s *switchBackend) Detach() {}
+
 func switcherModel(t *testing.T) *model {
 	m := testModel(t)
 	m.backend = &switchBackend{

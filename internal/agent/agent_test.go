@@ -805,3 +805,35 @@ func TestSessionMessagesConcurrentWithTurn(t *testing.T) {
 		t.Fatal("turn should have produced messages")
 	}
 }
+
+// hangingProvider blocks until ctx is canceled — simulating a stalled LLM call
+// (e.g. a vision read the gateway never answers).
+type hangingProvider struct{}
+
+func (hangingProvider) Name() string    { return "hang" }
+func (hangingProvider) ModelID() string { return "hang" }
+func (hangingProvider) Complete(ctx context.Context, _ llm.Request) (*llm.Response, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+// TestForegroundSubtaskTimesOut proves a hung foreground subtask self-aborts
+// instead of hanging the parent forever (the stall the user had to kill).
+func TestForegroundSubtaskTimesOut(t *testing.T) {
+	old := fgSubtaskTimeout
+	fgSubtaskTimeout = 150 * time.Millisecond
+	defer func() { fgSubtaskTimeout = old }()
+
+	a := &Agent{Provider: hangingProvider{}, Tools: mustReg(t), MaxSteps: 3}
+	start := time.Now()
+	_, err := a.SubtaskWith(context.Background(), "do a thing", SubtaskOpts{})
+	if err == nil {
+		t.Fatal("hung subtask should return an error, not hang")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("want a timeout error, got %v", err)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("subtask should abort near its %s timeout, took %v", fgSubtaskTimeout, d)
+	}
+}

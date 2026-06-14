@@ -1077,6 +1077,15 @@ func localReady(base string) bool {
 // the same small model as the other background chores).
 func titleProvider(main llm.Provider) llm.Provider { return smallProvider(main) }
 
+// notifyCmdline returns the external desktop-notifier command (config notify_cmd,
+// else EIGEN_NOTIFY_CMD), empty when none is configured.
+func notifyCmdline(cfg config.Config) string {
+	if cfg.NotifyCmd != "" {
+		return cfg.NotifyCmd
+	}
+	return os.Getenv("EIGEN_NOTIFY_CMD")
+}
+
 // printSessions lists resumable sessions newest-first for the headless --list.
 func printSessions(store *session.Store) {
 	if store == nil {

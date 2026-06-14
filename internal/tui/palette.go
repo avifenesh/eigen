@@ -63,6 +63,8 @@ func (m *model) paletteCatalog() []paletteCmd {
 		{label: "narrow right panel", id: actPanelNarrow},
 		{label: "next right panel tab", id: actRightTabNext},
 		{label: "terminal command panel", id: actTerminalTab},
+		{label: "home (app shell)", id: actHome, slash: "/home"},
+		{label: "move running turn to background", id: actBackgroundTurn, slash: "/background"},
 		{label: "background tasks panel", id: actTasksTab, slash: "/tasks"},
 		{label: "notifications / approvals tray", id: actTray, slash: "/tray"},
 		{label: "run a workflow", slash: "/workflow "},

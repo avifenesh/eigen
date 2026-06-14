@@ -62,6 +62,12 @@ type Session struct {
 	lastAttached time.Time
 	onAttach     func() // host hook: persist meta when a view attaches
 
+	// notify, when set, fires a desktop notification when a turn finishes with
+	// NO views attached — i.e. the user backgrounded the turn (left the window
+	// while it ran). Set by the host from the configured notifier.
+	notify      func(title, body string)
+	turnStarted time.Time
+
 	// events is the append-only log of this session's events, so a view that
 	// attaches mid-run can replay history and then follow live.
 	events  []agent.Event
@@ -181,6 +187,7 @@ func (s *Session) send(task string, images []llm.Image) bool {
 	}
 	s.running = true
 	s.status = StatusWorking
+	s.turnStarted = time.Now()
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
 	s.mu.Unlock()
@@ -219,12 +226,30 @@ func (s *Session) finishTurn(ctx context.Context, err error) {
 	} else {
 		s.status = StatusIdle
 	}
+	// If the turn finished with NO views attached, the user backgrounded it
+	// (left the window while it ran). There's no TUI to ping them, so the
+	// daemon notifies. Skip interrupts (they left deliberately) and trivially
+	// short turns (not worth a popup). Snapshot under the lock.
+	noViews := len(s.subs) == 0
+	dur := time.Since(s.turnStarted)
+	notify := s.notify
+	title := s.title
+	if title == "" {
+		title = s.ID
+	}
 	s.mu.Unlock()
 	switch {
 	case interrupted:
 		s.dispatch(agent.Event{Kind: agent.EventNote, Text: "interrupted"})
 	case err != nil:
 		s.dispatch(agent.Event{Kind: agent.EventNote, Text: "error: " + err.Error()})
+	}
+	if notify != nil && noViews && !interrupted && dur >= backgroundedNotifyMin {
+		label := "done"
+		if err != nil {
+			label = "failed"
+		}
+		notify("eigen: "+title, "background turn "+label+" after "+dur.Round(time.Second).String()+" — reattach to collect")
 	}
 	// The turn is over: drop the replay buffer. A view attaching now
 	// reconstructs the conversation from Messages() (replayed events are
@@ -233,6 +258,11 @@ func (s *Session) finishTurn(ctx context.Context, err error) {
 	s.events = nil
 	s.mu.Unlock()
 }
+
+// backgroundedNotifyMin is the minimum turn length worth a desktop notification
+// when no view is attached — a short backgrounded turn isn't worth a popup. A
+// var so tests can shrink it.
+var backgroundedNotifyMin = 10 * time.Second
 
 // interrupt cancels the in-flight turn, if any.
 func (s *Session) interrupt() {
@@ -453,6 +483,7 @@ func (s *Session) resend() bool {
 	}
 	s.running = true
 	s.status = StatusWorking
+	s.turnStarted = time.Now()
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
 	sess := s.sess

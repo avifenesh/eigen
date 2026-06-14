@@ -1872,3 +1872,40 @@ func TestRailRowHasMarginsBothSides(t *testing.T) {
 		}
 	}
 }
+
+func TestBackgroundTurnDaemonOnly(t *testing.T) {
+	// Local chat (no Detacher): cannot background.
+	m := testModel(t)
+	m.state = stRunning
+	if m.canBackgroundTurn() {
+		t.Fatal("a local chat has no daemon — should not be backgroundable")
+	}
+
+	// Daemon-backed (switchBackend implements Detach) + a running turn: yes.
+	d := switcherModel(t)
+	d.state = stRunning
+	if !d.canBackgroundTurn() {
+		t.Fatal("a daemon session with a running turn should be backgroundable")
+	}
+	// Idle daemon session: nothing to background.
+	d.state = stInput
+	d.attachedRunning = false
+	if d.canBackgroundTurn() {
+		t.Fatal("idle session has nothing to background")
+	}
+	// Attached to a turn another view started: backgroundable.
+	d.attachedRunning = true
+	if !d.canBackgroundTurn() {
+		t.Fatal("a watched running turn should be backgroundable")
+	}
+
+	// /background on a running daemon turn quits to the app shell.
+	d.state = stRunning
+	cmd := d.command("/background")
+	if cmd == nil {
+		t.Fatal("/background should return a quit command while running")
+	}
+	if !d.openApp {
+		t.Fatal("/background should set openApp (return to dashboard)")
+	}
+}
