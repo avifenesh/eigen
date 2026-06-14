@@ -24,7 +24,16 @@ import (
 type Palette struct {
 	Name string
 
-	Text, Dim, Faint lipgloss.AdaptiveColor
+	// Elevation surfaces — the "construction" the user wants (Warp-like): depth
+	// without shadows. Base is the canvas; Surface lifts panels (rail, right
+	// panel, code blocks) a hair; Overlay lifts popovers/selection higher still.
+	// SurfaceText/OverlayText are the readable fg on those tints when needed.
+	Base, Surface, Overlay lipgloss.AdaptiveColor
+
+	// Neutral text tiers (primary → ghost). Ghost is below Faint: the quietest
+	// legible text (placeholders, disabled, deep metadata).
+	Text, Dim, Faint, Ghost lipgloss.AdaptiveColor
+
 	Accent, Title    lipgloss.AdaptiveColor
 	Ok, Warn, Err    lipgloss.AdaptiveColor
 	Tool, Code, Link lipgloss.AdaptiveColor
@@ -36,11 +45,63 @@ type Palette struct {
 	// Ramp stops (loader brightness cycles).
 	AccentBright, FaintDim    lipgloss.AdaptiveColor
 	WorkingDim, WorkingBright lipgloss.AdaptiveColor
+
+	// Spectrum — the brand's signature axis (eigenvalues = a matrix's spectrum).
+	// A cyan→indigo→violet sweep the λ shimmers across in signature moments
+	// (welcome, loader peak). Cool, with clear direction.
+	Spectrum []lipgloss.AdaptiveColor
 }
 
 // nordPalette — the default: calm, desaturated Nord-inspired truecolor.
+// deepTealPalette — the DEFAULT (user-chosen 2026-06-14): rich petrol/jewel
+// teal brand on deep near-black, with a warm clay Focus so "where you are"
+// pops against the cool brand. Bold via presence, not saturation. Elevation:
+// base (canvas) → surface (panels) → overlay (selection/popovers). Dark-only
+// for now; Light mirrors the Dark values (light mode is out of scope, but the
+// AdaptiveColor needs a value).
+var deepTealPalette = Palette{
+	Name:     "deepteal",
+	Base:     lipgloss.AdaptiveColor{Dark: "#0B0E0F", Light: "#0B0E0F"},
+	Surface:  lipgloss.AdaptiveColor{Dark: "#11171A", Light: "#11171A"},
+	Overlay:  lipgloss.AdaptiveColor{Dark: "#1A2428", Light: "#1A2428"},
+	Text:     lipgloss.AdaptiveColor{Dark: "#DDE4E3", Light: "#DDE4E3"},
+	Dim:      lipgloss.AdaptiveColor{Dark: "#7E8E8B", Light: "#7E8E8B"},
+	Faint:    lipgloss.AdaptiveColor{Dark: "#52605E", Light: "#52605E"},
+	Ghost:    lipgloss.AdaptiveColor{Dark: "#37423F", Light: "#37423F"},
+	Accent:   lipgloss.AdaptiveColor{Dark: "#3E9E96", Light: "#2A6E68"},
+	Title:    lipgloss.AdaptiveColor{Dark: "#69C2B8", Light: "#2A6E68"},
+	Ok:       lipgloss.AdaptiveColor{Dark: "#7BA86B", Light: "#4F6B36"},
+	Warn:     lipgloss.AdaptiveColor{Dark: "#C9A24B", Light: "#8A6B12"},
+	Err:      lipgloss.AdaptiveColor{Dark: "#C06A5E", Light: "#9A3B2E"},
+	Tool:     lipgloss.AdaptiveColor{Dark: "#9E7BA6", Light: "#6E4E76"},
+	Code:     lipgloss.AdaptiveColor{Dark: "#5FA89E", Light: "#2A6E68"},
+	Link:     lipgloss.AdaptiveColor{Dark: "#69C2B8", Light: "#2A6E68"},
+	Heading:  lipgloss.AdaptiveColor{Dark: "#3E9E96", Light: "#2A6E68"},
+	Working:  lipgloss.AdaptiveColor{Dark: "#D08C5E", Light: "#A85E2A"},
+	Focus:    lipgloss.AdaptiveColor{Dark: "#D08C5E", Light: "#A85E2A"},
+	Sel:      lipgloss.AdaptiveColor{Dark: "#D08C5E", Light: "#A85E2A"},
+	OnBright: lipgloss.AdaptiveColor{Dark: "#0B0E0F", Light: "#F0F4F3"},
+	// Loader ramp stops (brand-teal brightness cycle).
+	AccentBright: lipgloss.AdaptiveColor{Dark: "#8AD6CC", Light: "#1F5650"},
+	FaintDim:     lipgloss.AdaptiveColor{Dark: "#33403D", Light: "#9AACA8"},
+	// Working pulse (warm clay axis).
+	WorkingDim:    lipgloss.AdaptiveColor{Dark: "#8A5E3E", Light: "#C98A63"},
+	WorkingBright: lipgloss.AdaptiveColor{Dark: "#E8A878", Light: "#8A4A18"},
+	// Spectrum — teal→aqua→cyan→indigo sweep for the λ's signature moments.
+	Spectrum: []lipgloss.AdaptiveColor{
+		{Dark: "#3E9E96", Light: "#2A6E68"},
+		{Dark: "#69C2B8", Light: "#2A7B72"},
+		{Dark: "#5BB6C9", Light: "#2A6E80"},
+		{Dark: "#6F9BD0", Light: "#3B5A82"},
+	},
+}
+
 var nordPalette = Palette{
 	Name:          "nord",
+	Base:          lipgloss.AdaptiveColor{Dark: "#1b1f27", Light: "#F0F4F8"},
+	Surface:       lipgloss.AdaptiveColor{Dark: "#222734", Light: "#E3E9F2"},
+	Overlay:       lipgloss.AdaptiveColor{Dark: "#2b3140", Light: "#D6DEEC"},
+	Ghost:         lipgloss.AdaptiveColor{Dark: "#5b657a", Light: "#9aa3b6"},
 	Text:          lipgloss.AdaptiveColor{Dark: "#D8DEE9", Light: "#2E3440"},
 	Dim:           lipgloss.AdaptiveColor{Dark: "#9aa5b8", Light: "#4C566A"},
 	Faint:         lipgloss.AdaptiveColor{Dark: "#79839a", Light: "#8a93a6"},
@@ -94,22 +155,23 @@ var gruvboxPalette = Palette{
 
 // palettes is the registry of named themes (the re-theme menu).
 var palettes = map[string]Palette{
-	nordPalette.Name:    nordPalette,
-	gruvboxPalette.Name: gruvboxPalette,
+	deepTealPalette.Name: deepTealPalette,
+	nordPalette.Name:     nordPalette,
+	gruvboxPalette.Name:  gruvboxPalette,
 }
 
 // PaletteNames lists the available theme names (for config option lists / docs).
-func PaletteNames() []string { return []string{"nord", "gruvbox"} }
+func PaletteNames() []string { return []string{"deepteal", "nord", "gruvbox"} }
 
 // Active is the palette in force (selected at init from EIGEN_THEME, default
-// nord). Read-only after init.
+// deepteal — the user-chosen luxury palette). Read-only after init.
 var Active = selectPalette(os.Getenv("EIGEN_THEME"))
 
 func selectPalette(name string) Palette {
 	if p, ok := palettes[strings.ToLower(strings.TrimSpace(name))]; ok {
 		return p
 	}
-	return nordPalette
+	return deepTealPalette
 }
 
 // Role colors — assigned from the Active palette. Call sites reference these.
@@ -117,9 +179,13 @@ func selectPalette(name string) Palette {
 // S* styles below are unchanged; the re-theme happens by Active selection at
 // init, before any importer's vars initialize.)
 var (
+	Base    = Active.Base
+	Surface = Active.Surface
+	Overlay = Active.Overlay
 	Text    = Active.Text
 	Dim     = Active.Dim
 	Faint   = Active.Faint
+	Ghost   = Active.Ghost
 	Accent  = Active.Accent
 	Title   = Active.Title
 	Ok      = Active.Ok
@@ -138,6 +204,8 @@ var (
 	FaintDim      = Active.FaintDim
 	WorkingDim    = Active.WorkingDim
 	WorkingBright = Active.WorkingBright
+
+	Spectrum = Active.Spectrum
 )
 
 // Animation ramps — brightness cycles for the breathing/pulsing loaders. They
@@ -154,7 +222,12 @@ var (
 // Ready-made styles for the common roles. Call sites compose (Bold/Underline/
 // Italic) on top as needed.
 var (
-	SText    = lipgloss.NewStyle().Foreground(Text)
+	SText  = lipgloss.NewStyle().Foreground(Text)
+	SGhost = lipgloss.NewStyle().Foreground(Ghost)
+	// Surface styles: foreground tiers ON the lifted panel tint. Use these for
+	// content that sits inside a Surface-filled region so fg/bg stay paired.
+	SSurface = lipgloss.NewStyle().Background(Surface)
+	SOverlay = lipgloss.NewStyle().Background(Overlay)
 	SDim     = lipgloss.NewStyle().Foreground(Dim)
 	SFaint   = lipgloss.NewStyle().Foreground(Faint)
 	SAccent  = lipgloss.NewStyle().Foreground(Accent)

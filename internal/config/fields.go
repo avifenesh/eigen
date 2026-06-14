@@ -23,7 +23,7 @@ func Fields() []Field {
 		{Key: "model", Desc: "default model for new sessions — catalog ids self-tag their backend; force one with provider:id (e.g. mantle:openai.gpt-5.5, converse:us.anthropic.claude-opus-4-8); live switch: /model", Dynamic: "models"},
 		{Key: "perm", Desc: "tool permission: gated asks before mutating tools · auto runs them freely", Options: []string{"gated", "auto"}},
 		{Key: "effort", Desc: "default reasoning effort for new sessions (per-model levels; e.g. opus max, gpt xhigh); live switch: /effort or ctrl+e", Options: []string{"off", "minimal", "none", "low", "medium", "high", "xhigh", "max"}},
-		{Key: "theme", Desc: "color palette (applied at startup): nord (default, calm) · gruvbox (warm, higher contrast); same roles, different hues", Options: []string{"nord", "gruvbox"}},
+		{Key: "theme", Desc: "color palette (applied at startup): deepteal (default — jewel teal, warm-clay focus, elevated surfaces) · nord (calm blue) · gruvbox (warm); same roles, different hues", Options: []string{"deepteal", "nord", "gruvbox"}},
 		{Key: "max_tokens", Desc: "context-budget ceiling in tokens; 0 = auto (85% of the model window)"},
 		{Key: "tts_cmd", Desc: "text-to-speech command for /read and voice mode, e.g. espeak-ng or readd — the text is passed as the last argument"},
 		{Key: "notify_cmd", Desc: "notifier run on pings (approval needed, long turn done), e.g. notify-send — the message is passed as the last argument; empty = terminal bell only"},

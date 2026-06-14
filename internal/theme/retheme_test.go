@@ -11,12 +11,12 @@ func TestReThemeSwapsAllRoles(t *testing.T) {
 	if nord.Accent == gruv.Accent {
 		t.Error("re-theme should change Accent across palettes")
 	}
-	if selectPalette("nonexistent").Name != "nord" {
-		t.Error("unknown theme should fall back to nord")
+	if selectPalette("nonexistent").Name != "deepteal" {
+		t.Error("unknown theme should fall back to the default (deepteal)")
 	}
 	// Brand rule invariant in EVERY palette: Focus/Sel must differ from the
 	// brand blues (Accent/Title) — selection/active must never be brand.
-	for _, p := range []Palette{nord, gruv} {
+	for _, p := range []Palette{deepTealPalette, nord, gruv} {
 		if p.Focus == p.Accent || p.Focus == p.Title {
 			t.Errorf("%s: Focus must not equal brand Accent/Title", p.Name)
 		}

@@ -1,2 +1,5 @@
 /bin/
 .env
+
+# design-system scratch mocks
+.design-mock/
