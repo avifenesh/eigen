@@ -174,6 +174,82 @@ func toolSummary(name string, args json.RawMessage) string {
 	}
 }
 
+// codeResult renders a tool result that is SOURCE CODE (e.g. `read` of a code
+// file) as a framed, syntax-tinted block on the Surface tint — the same
+// document treatment as a fenced code block — instead of a flat blob. Returns
+// "" when the result isn't code (so the caller falls back to plain text).
+func (b *block) codeResult(full string) string {
+	if b.kind != blockTool || full == "" || b.toolName != "read" {
+		return ""
+	}
+	var a struct {
+		Path string `json:"path"`
+	}
+	_ = json.Unmarshal(b.toolArgs, &a)
+	if !isCodePath(a.Path) {
+		return ""
+	}
+	codeW := 64
+	if b.wrapW > 4 && b.wrapW-2 < codeW {
+		codeW = b.wrapW - 2
+	}
+	if codeW < 8 {
+		codeW = 8
+	}
+	out := []string{fillBG(styleSurfaceBrand.Render(" "+langForPath(a.Path)+" "), surfaceHex(theme.Overlay), codeW)}
+	for _, ln := range strings.Split(full, "\n") {
+		out = append(out, fillBG("  "+tintCodeLine(expandTabs(ln), styleCodeOnSurface), surfaceHex(theme.Surface), codeW))
+	}
+	out = append(out, fillBG("", surfaceHex(theme.Surface), codeW))
+	return strings.Join(out, "\n")
+}
+
+// isCodePath reports whether a file path looks like source code worth syntax
+// framing (by extension).
+func isCodePath(path string) bool {
+	path = strings.ToLower(path)
+	dot := strings.LastIndexByte(path, '.')
+	if dot < 0 {
+		return false
+	}
+	switch path[dot+1:] {
+	case "go", "py", "js", "ts", "jsx", "tsx", "rs", "c", "h", "cpp", "cc", "hpp",
+		"java", "kt", "rb", "php", "swift", "scala", "sh", "bash", "zsh", "lua",
+		"sql", "html", "css", "scss", "vue", "svelte", "json", "yaml", "yml",
+		"toml", "md", "proto", "graphql", "tf", "zig", "ml", "ex", "exs", "clj":
+		return true
+	}
+	return false
+}
+
+// langForPath maps a file extension to a short language label for the chip.
+func langForPath(path string) string {
+	dot := strings.LastIndexByte(path, '.')
+	if dot < 0 {
+		return "code"
+	}
+	switch ext := strings.ToLower(path[dot+1:]); ext {
+	case "py":
+		return "python"
+	case "js", "jsx":
+		return "javascript"
+	case "ts", "tsx":
+		return "typescript"
+	case "rs":
+		return "rust"
+	case "rb":
+		return "ruby"
+	case "sh", "bash", "zsh":
+		return "shell"
+	case "yml":
+		return "yaml"
+	case "md":
+		return "markdown"
+	default:
+		return ext
+	}
+}
+
 // toolDetail returns tool-specific expanded content (plain text). For edit /
 // multiedit it returns a +/- diff derived from the arguments; for apply_patch
 // the patch text with collapsed context; for write an all-added preview.
@@ -346,6 +422,11 @@ func (b *block) render(selected bool) string {
 			} else if b.kind == blockTool && looksLikeJSON(full) {
 				// JSON tool results read terribly raw — pretty-print + tint.
 				s.WriteString("\n" + gutterRule(renderJSON(full, nil), rule))
+			} else if code := b.codeResult(full); code != "" {
+				// A tool that returned source code (e.g. read a .go file) gets
+				// the document treatment: framed on the Surface tint, syntax-
+				// tinted — same as a fenced code block, not a flat blob.
+				s.WriteString("\n" + gutterRule(code, rule))
 			} else {
 				s.WriteString("\n" + gutterRule(style.Render(full), rule))
 			}
