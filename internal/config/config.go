@@ -9,7 +9,18 @@ import (
 	"strings"
 
 	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/theme"
 )
+
+// knownTheme reports whether name is a registered palette.
+func knownTheme(name string) bool {
+	for _, n := range theme.PaletteNames() {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
 
 // Config is eigen's optional JSON config (~/.eigen/config.json). Every field is
 // optional; flags and environment variables override it. It supplies defaults
@@ -19,6 +30,7 @@ type Config struct {
 	Model      string   `json:"model"`
 	Perm       string   `json:"perm"`
 	Effort     string   `json:"effort"` // default reasoning effort for new sessions (per-model levels; e.g. max)
+	Theme      string   `json:"theme"`  // named color palette (nord|gruvbox); applied at startup via EIGEN_THEME
 	MaxTokens  int      `json:"max_tokens"`
 	TTSCmd     string   `json:"tts_cmd"`
 	NotifyCmd  string   `json:"notify_cmd"`
@@ -133,6 +145,11 @@ func Set(c *Config, key, value string) error {
 		c.Perm = value
 	case "effort":
 		c.Effort = value
+	case "theme":
+		if value != "" && !knownTheme(value) {
+			return fmt.Errorf("theme must be one of %s", strings.Join(theme.PaletteNames(), "|"))
+		}
+		c.Theme = value
 	case "max_tokens":
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 0 {
@@ -221,6 +238,7 @@ func View(c Config) string {
 	}
 	fmt.Fprintf(&b, "%-14s = %s\n", "perm", val(c.Perm))
 	fmt.Fprintf(&b, "%-14s = %s\n", "effort", val(c.Effort))
+	fmt.Fprintf(&b, "%-14s = %s\n", "theme", val(c.Theme))
 	fmt.Fprintf(&b, "%-14s = %d\n", "max_tokens", c.MaxTokens)
 	fmt.Fprintf(&b, "%-14s = %s\n", "tts_cmd", val(c.TTSCmd))
 	fmt.Fprintf(&b, "%-14s = %s\n", "notify_cmd", val(c.NotifyCmd))
@@ -260,6 +278,8 @@ func Get(c Config, key string) string {
 		return c.Perm
 	case "effort":
 		return c.Effort
+	case "theme":
+		return c.Theme
 	case "max_tokens":
 		return strconv.Itoa(c.MaxTokens)
 	case "tts_cmd":

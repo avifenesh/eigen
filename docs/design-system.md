@@ -4,9 +4,9 @@ The single, durable brief for eigen's visual language. Source of truth for
 color, type weight, glyphs, spacing, and the rules that keep the chat TUI
 (`internal/tui`) and the app shell (`internal/app`) looking like ONE product.
 
-Status: **v1 — 2026-06-14.** Role vocabulary locked, the brand rule applied
+Status: **v1 — 2026-06-14 (complete).** Role vocabulary locked, the brand rule applied
 across the chat TUI + app shell, all raw color literals folded into theme roles
-with a drift-guard test enforcing it. Remaining: a re-theme proof. When in doubt, this doc wins; update it in the same commit as any visual
+with a drift-guard test enforcing it. All six steps shipped. When in doubt, this doc wins; update it in the same commit as any visual
 change.
 
 ---
@@ -161,9 +161,14 @@ Bootstrapped here; the full effort:
    chip), the animation ramps, the weight scale, and the glyph vocabulary +
    the brand rule (internal/theme/swatch.go). Run it to eyeball the whole
    system / verify a re-theme.
-5. **Re-theme proof** — TODO: a one-edit alternate palette (e.g. a warmer or
-   higher-contrast variant) to prove roles-not-hues holds. Possibly a config
-   `theme:` key selecting a named palette.
+5. **Re-theme proof** — DONE: `theme.Palette` is the data a theme IS; named
+   palettes `nord` (default) + `gruvbox` (warm, higher-contrast) live in
+   theme.go. Select via the config `theme` key or `EIGEN_THEME=<name>`; the
+   role vars + every S* style + both ramps derive from the chosen palette at
+   init, so it re-themes the WHOLE product with zero call-site changes. main.go
+   re-execs once with EIGEN_THEME set when the config picks a non-default theme
+   (init happens before main). Brand rule holds in every palette (Focus/Sel ≠
+   Accent/Title — enforced by TestReThemeSwapsAllRoles).
 6. **Tests** — DONE (drift guard); keep the size-sweep + band-alignment nets
    green.
 

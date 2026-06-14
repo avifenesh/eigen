@@ -57,6 +57,23 @@ func main() {
 	}
 	// Optional ~/.eigen/config.json supplies defaults; flags/env override it.
 	cfg := config.Load()
+	// Theme (config.theme): the named palette is selected at package init from
+	// EIGEN_THEME, which happens before main() — so if the config picks a
+	// non-default theme and the env isn't already set, re-exec ourselves once
+	// with EIGEN_THEME set so the whole process (and its styles) initialize on
+	// the chosen palette. Cheap, and only when a non-default theme is configured.
+	if cfg.Theme != "" && cfg.Theme != theme.Active.Name {
+		if _, set := os.LookupEnv("EIGEN_THEME"); !set {
+			if exe, err := os.Executable(); err == nil {
+				env := append(os.Environ(), "EIGEN_THEME="+cfg.Theme)
+				if e := syscall.Exec(exe, os.Args, env); e != nil {
+					// Re-exec failed — fall through on the default palette
+					// rather than abort; the app still works, just unthemed.
+					os.Setenv("EIGEN_THEME", cfg.Theme)
+				}
+			}
+		}
+	}
 	if cfg.TTSCmd != "" {
 		if _, set := os.LookupEnv("EIGEN_TTS_CMD"); !set {
 			os.Setenv("EIGEN_TTS_CMD", cfg.TTSCmd)

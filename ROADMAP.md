@@ -1131,7 +1131,7 @@ geometry-owned-first + one-action-layer + keyboard/click-parity conventions.
   liveness or a stat strip). Designerly restraint still applies — informative,
   not decorative — but the first screen should invite action, not echo.
 
-## Tier 22 — design system (one visual language, roles not hues)
+## Tier 22 — design system (one visual language, roles not hues) ✅ COMPLETE
 User-initiated: "create a design system." The brief lives in
 [`docs/design-system.md`](./docs/design-system.md) (durable; survives
 compaction). Goal: the chat TUI + app shell read as ONE product, every styled
@@ -1160,8 +1160,10 @@ session, state highlights) uses a DIFFERENT theme role.
 - [x] **Living swatch** — SHIPPED: `eigen theme` renders every role (color
   chip), the ramps, the weight scale, the glyph vocabulary + the brand rule
   (internal/theme/swatch.go).
-- [ ] **Re-theme proof** — a one-edit alternate palette (maybe a config
-  `theme:` key) to prove roles-not-hues holds.
+- [x] **Re-theme proof** — SHIPPED: named palettes (nord default + gruvbox) as
+  theme.Palette data; config `theme` key / EIGEN_THEME selects one at init and
+  re-themes everything (roles + styles + ramps) with zero call-site changes;
+  main.go re-execs once to apply. Brand rule holds per-palette (test).
 
 ## Debt / bugs
 - [x] **Untitled daemon sessions still appear.** FIXED: (1) `Host.Restore` now
