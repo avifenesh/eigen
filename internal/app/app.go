@@ -628,24 +628,24 @@ func wrapText(s string, w int) string {
 	return out.String()
 }
 
-// liveGlyph renders a session's status. The WORKING state animates a rotating
-// liveGlyph renders a session's status. The WORKING state shows a breathing λ
-// (eigen's mark) — pulsing brightness on the loud working color, advanced by
-// frame — so an active session reads as alive and on-brand, not a static dot.
-// Other states are static.
+// liveGlyph renders a session's status in the app rail/live page. WORKING shows
+// a breathing λ (eigen's mark) — a brightness pulse on the loud working color,
+// advanced by frame — so an active session reads as alive and on-brand, not a
+// static dot. The other states use the shared theme.Status* glyphs (width-1,
+// matching the chat's status language exactly).
 func liveGlyph(s daemon.Status, frame int) string {
 	switch s {
 	case daemon.StatusWorking:
-		// Brightness pulse over 4 poll frames (the app polls ~1.2s, so a slow
-		// breath): dim → working → bright → working → loop. Theme-owned ramp.
+		// Brightness pulse over the working ramp (the app polls ~1.2s, so a
+		// slow breath): dim → working → bright → working → loop.
 		ramp := theme.WorkingRamp
 		return lipgloss.NewStyle().Foreground(ramp[frame%len(ramp)]).Bold(true).Render("λ")
 	case daemon.StatusApproval:
-		return sWarn.Render("◆") // amber: blocked on an approval
+		return sWarn.Render(theme.StatusApproval)
 	case daemon.StatusError:
-		return sErr.Render("✗")
+		return sErr.Render(theme.StatusError)
 	default:
-		return sFaint.Render("○") // idle
+		return sFaint.Render(theme.StatusIdle)
 	}
 }
 

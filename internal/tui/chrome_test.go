@@ -710,14 +710,19 @@ func TestRailWorkingSpinnerAnimates(t *testing.T) {
 	m := switcherModel(t) // s2 is "working"
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m.refreshRail()
-	g0 := m.railGlyph("working")
-	m.refreshRail() // tick advances the spinner
-	g1 := m.railGlyph("working")
-	if g0 == g1 {
-		t.Fatal("working glyph should animate across refreshes")
+	// Working is the breathing λ (eigen's mark) — animated by a brightness
+	// pulse on railSpin. (Color-only, so in a no-color test we assert the mark
+	// + that the frame counter advances, not the rendered string.)
+	if !strings.Contains(ansiStrip(m.railGlyph("working")), "λ") {
+		t.Fatal("working glyph should be the breathing λ mark")
+	}
+	before := m.railSpin
+	m.refreshRail() // tick advances the pulse
+	if m.railSpin == before {
+		t.Fatal("railSpin should advance across refreshes (the pulse animates)")
 	}
 	if m.railGlyph("idle") != statusGlyph("idle") {
-		t.Fatal("idle glyph stays the static ○")
+		t.Fatal("idle glyph stays the static status dot")
 	}
 	// With a working sibling the poll cadence speeds up (spinner cadence).
 	if m.railTick() == nil {

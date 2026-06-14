@@ -9,6 +9,7 @@ import (
 	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/feed"
 	"github.com/avifenesh/eigen/internal/skill"
+	"github.com/avifenesh/eigen/internal/theme"
 )
 
 func testData() *Data {
@@ -241,15 +242,16 @@ func TestLivePageNoDaemon(t *testing.T) {
 }
 
 func TestLiveRailGlyphs(t *testing.T) {
-	// Working now animates a rotating vector (eigenvector sweep), not a dot.
+	// Working is the breathing λ (eigen's mark), pulsing on the working ramp.
 	if !strings.Contains(liveGlyph(daemon.StatusWorking, 0), "λ") {
 		t.Error("working should be the breathing λ mark")
 	}
-	if !strings.Contains(liveGlyph(daemon.StatusIdle, 0), "○") {
-		t.Error("idle should be a hollow dot")
+	// The other states use the shared theme.Status* glyphs (width-1).
+	if !strings.Contains(liveGlyph(daemon.StatusIdle, 0), theme.StatusIdle) {
+		t.Error("idle should be the status idle glyph")
 	}
-	if !strings.Contains(liveGlyph(daemon.StatusApproval, 0), "◆") {
-		t.Error("approval should be a diamond")
+	if !strings.Contains(liveGlyph(daemon.StatusApproval, 0), theme.StatusApproval) {
+		t.Error("approval should be the status approval glyph")
 	}
 }
 

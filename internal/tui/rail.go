@@ -46,9 +46,10 @@ const railPollEvery = 1200 * time.Millisecond
 // cheap local-socket roundtrip).
 const railSpinEvery = 300 * time.Millisecond
 
-// railSpinnerFrames animates working sessions in the rail — visibly alive,
-// distinct from the static idle ○.
-var railSpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+// toolSpinnerFrames animates an in-flight TOOL call in the transcript — a
+// distinct, faster churn from the breathing-λ "session is working" signature
+// (a running tool is a unit of work spinning, not the agent's pulse).
+var toolSpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 // railSessionLister is the backend capability the rail needs (daemon-hosted
 // chats). Local chats have no siblings, so the rail stays hidden for them.
@@ -237,7 +238,7 @@ func (m *model) railRows() []railRow {
 // (frame advanced by the rail tick) so liveness is visible at a glance.
 func (m *model) railGlyph(status string) string {
 	if status == "working" {
-		return styleWorking.Render(railSpinnerFrames[m.railSpin%len(railSpinnerFrames)]) // working = orange, matches the loader
+		return workingLambda(m.railSpin) // breathing λ — the one working signature, matches the app
 	}
 	return statusGlyph(status)
 }

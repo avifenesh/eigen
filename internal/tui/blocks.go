@@ -92,7 +92,7 @@ func (b *block) statusGlyph() string {
 	default:
 		// Running: a synced braille spinner (orange, like the loader) so an
 		// in-progress tool visibly WORKS in the transcript.
-		return styleWorking.Render(railSpinnerFrames[animFrame%len(railSpinnerFrames)])
+		return styleWorking.Render(toolSpinnerFrames[animFrame%len(toolSpinnerFrames)])
 	}
 }
 

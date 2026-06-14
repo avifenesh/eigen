@@ -20,6 +20,9 @@ const brandGlyph = "λ"
 // theme.BreathRamp): faint → dim → accent → bright → accent → dim → loop.
 var breathRamp = theme.BreathRamp
 
+// workingRamp is the brightness ramp for the working λ (orange), theme-owned.
+var workingRamp = theme.WorkingRamp
+
 // breathDot is the synced beat after the caret: faint on the exhale, lit
 // (Working orange) at the peak of the inhale — a readable pulse even on a
 // low-contrast terminal. Indexed by the same frame as breathRamp.
@@ -37,6 +40,14 @@ func breathDot(frame int) string {
 // the glow reads at one cell).
 func breathingLambda(frame int) string {
 	c := breathRamp[frame%len(breathRamp)]
+	return lipgloss.NewStyle().Foreground(c).Bold(true).Render(brandGlyph)
+}
+
+// workingLambda renders a breathing λ on the WORKING ramp (orange) — the ONE
+// "a session is working" signature, shared by the chat rail and the app
+// shell's live sessions so the motion reads identically across surfaces.
+func workingLambda(frame int) string {
+	c := workingRamp[frame%len(workingRamp)]
 	return lipgloss.NewStyle().Foreground(c).Bold(true).Render(brandGlyph)
 }
 
