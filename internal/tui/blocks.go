@@ -407,8 +407,9 @@ func renderProse(s string, width int) string {
 			continue
 		}
 		if inFence {
-			// Code line on the Surface tint, padded to the block width.
-			line := "  " + styleCodeOnSurface.Render(expandTabs(ln))
+			// Code line on the Surface tint, lightly syntax-tinted, padded to
+			// the block width.
+			line := "  " + tintCodeLine(expandTabs(ln), styleCodeOnSurface)
 			out = append(out, fillBG(line, surfaceHex(theme.Surface), codeW))
 			continue
 		}
