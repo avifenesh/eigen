@@ -119,7 +119,9 @@ func pageTitle(title, sub string, w int) string {
 // row renders a list row with selection styling.
 func row(selected bool, text string) string {
 	if selected {
-		return sAccent.Render("▎") + sRowSel.Render(text)
+		// One selection treatment (shared with the chat rail): a Focus bar +
+		// Focus-tinted text — NOT brand accent (brand rule: blue is brand only).
+		return lipgloss.NewStyle().Foreground(cSel).Render("▎") + sRowSel.Render(text)
 	}
 	return " " + sRowDim.Render(text)
 }

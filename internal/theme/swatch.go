@@ -48,6 +48,23 @@ func Swatch() string {
 		b.WriteString(fmt.Sprintf("  %s %s %s\n", swatch, name, SDim.Render(r.desc)))
 	}
 
+	// Elevation surfaces — the depth layers (base → surface → overlay), shown
+	// as filled swatches with text on each so contrast reads.
+	b.WriteString("\n" + hdr.Render("elevation") + "\n")
+	surf := func(name string, bg lipgloss.AdaptiveColor) string {
+		return lipgloss.NewStyle().Background(bg).Foreground(Text).Padding(0, 2).Render(name)
+	}
+	b.WriteString("  " + surf("base", Base) + " " + surf("surface", Surface) + " " + surf("overlay", Overlay) +
+		SDim.Render("   canvas → panels → selection/popovers") + "\n")
+
+	// Tool icons — the coherent, no-emoji set.
+	b.WriteString("\n" + hdr.Render("icons") + "\n")
+	ic := func(g, label string) string { return SText.Render(g) + SDim.Render(" "+label) }
+	b.WriteString("  " + ic(IconRead, "read") + "  " + ic(IconWrite, "write") + "  " + ic(IconEdit, "edit") + "  " +
+		ic(IconSearch, "search") + "  " + ic(IconList, "list") + "\n")
+	b.WriteString("  " + ic(IconBash, "bash") + "  " + ic(IconFetch, "fetch") + "  " + ic(IconTask, "task") + "  " +
+		ic(IconImage, "image") + "  " + ic(IconTool, "tool") + "\n")
+
 	// Animation ramps — show each frame's chip in sequence.
 	b.WriteString("\n" + hdr.Render("ramps") + "\n")
 	b.WriteString("  " + SDim.Render(fmt.Sprintf("%-9s", "Breath")) + " " + rampChips(BreathRamp) + SDim.Render("  brand-λ loader (working)") + "\n")

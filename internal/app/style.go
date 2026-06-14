@@ -28,6 +28,11 @@ var (
 	cViolet = theme.Tool   // counts, meta
 	cFocus  = theme.Focus  // the active/live thing — non-brand (brand rule)
 	cSel    = theme.Sel    // selected row / cursor — non-brand (brand rule)
+
+	// Elevation surface (shared with the chat chrome — one product). Base is
+	// the default terminal canvas (no fill needed); Overlay arrives with the
+	// inspector/selection work.
+	cSurface = theme.Surface // lifted panels (rail)
 )
 
 var (

@@ -12,7 +12,7 @@ func TestSwatchRendersAllRolesAndRule(t *testing.T) {
 			t.Errorf("swatch missing role %q", role)
 		}
 	}
-	for _, section := range []string{"roles", "ramps", "weight", "glyphs"} {
+	for _, section := range []string{"roles", "elevation", "icons", "ramps", "weight", "glyphs"} {
 		if !strings.Contains(out, section) {
 			t.Errorf("swatch missing section %q", section)
 		}
