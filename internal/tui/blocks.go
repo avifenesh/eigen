@@ -178,6 +178,33 @@ func toolSummary(name string, args json.RawMessage) string {
 // file) as a framed, syntax-tinted block on the Surface tint — the same
 // document treatment as a fenced code block — instead of a flat blob. Returns
 // "" when the result isn't code (so the caller falls back to plain text).
+// renderCodeBlock renders source code as a framed block on the Surface tint: a
+// lang chip on Overlay, then each code line filled on Surface. It uses real
+// chroma syntax highlighting (mapped to our palette) when a lexer matches the
+// language/content, falling back to the heuristic tintCodeLine otherwise.
+func renderCodeBlock(code, lang string, codeW int) string {
+	if codeW < 8 {
+		codeW = 8
+	}
+	chipLang := lang
+	if chipLang == "" {
+		chipLang = "code"
+	}
+	out := []string{fillBG(styleSurfaceBrand.Render(" "+chipLang+" "), surfaceHex(theme.Overlay), codeW)}
+	if hl, ok := highlightCode(code, lang, theme.Surface); ok {
+		// chroma emits a token per newline, so styled lines split cleanly.
+		for _, ln := range strings.Split(strings.TrimRight(hl, "\n"), "\n") {
+			out = append(out, fillBG("  "+expandTabs(ln), surfaceHex(theme.Surface), codeW))
+		}
+	} else {
+		for _, ln := range strings.Split(code, "\n") {
+			out = append(out, fillBG("  "+tintCodeLine(expandTabs(ln), styleCodeOnSurface), surfaceHex(theme.Surface), codeW))
+		}
+	}
+	out = append(out, fillBG("", surfaceHex(theme.Surface), codeW))
+	return strings.Join(out, "\n")
+}
+
 func (b *block) codeResult(full string) string {
 	if b.kind != blockTool || full == "" || b.toolName != "read" {
 		return ""
@@ -193,15 +220,7 @@ func (b *block) codeResult(full string) string {
 	if b.wrapW > 4 && b.wrapW-2 < codeW {
 		codeW = b.wrapW - 2
 	}
-	if codeW < 8 {
-		codeW = 8
-	}
-	out := []string{fillBG(styleSurfaceBrand.Render(" "+langForPath(a.Path)+" "), surfaceHex(theme.Overlay), codeW)}
-	for _, ln := range strings.Split(full, "\n") {
-		out = append(out, fillBG("  "+tintCodeLine(expandTabs(ln), styleCodeOnSurface), surfaceHex(theme.Surface), codeW))
-	}
-	out = append(out, fillBG("", surfaceHex(theme.Surface), codeW))
-	return strings.Join(out, "\n")
+	return renderCodeBlock(full, langForPath(a.Path), codeW)
 }
 
 // isCodePath reports whether a file path looks like source code worth syntax
@@ -454,7 +473,6 @@ func gutterRule(s, rule string) string {
 func renderProse(s string, width int) string {
 	lines := strings.Split(s, "\n")
 	out := make([]string, 0, len(lines))
-	inFence := false
 	// Code-block width: a comfortable column, capped to the available width so
 	// the surface fill never overflows the transcript.
 	codeW := 64
@@ -471,7 +489,7 @@ func renderProse(s string, width int) string {
 		// Markdown table: a header row "| a | b |" followed by a separator row
 		// (|---|---|). Render as an aligned, bordered table on the Surface tint
 		// — models emit tables constantly; raw pipes look broken.
-		if !inFence && strings.Contains(ln, "|") && isTableSep(lineAt(lines, li+1)) {
+		if strings.Contains(ln, "|") && isTableSep(lineAt(lines, li+1)) {
 			tbl, consumed := renderMarkdownTable(lines[li:], codeW)
 			if consumed > 0 {
 				out = append(out, tbl...)
@@ -480,28 +498,27 @@ func renderProse(s string, width int) string {
 			}
 		}
 
-		// Fenced code block: render as a real framed panel on the Surface tint
-		// — a lang chip on Overlay, code lines filled on Surface (so code reads
-		// as a distinct document element, not teal prose), a thin closing rule.
+		// Fenced code block: collect the whole body to the closing ``` and
+		// render it as one framed, syntax-highlighted block (chroma needs the
+		// full block for accurate per-language highlighting).
 		if strings.HasPrefix(trimmed, "```") {
-			if !inFence {
-				lang := strings.TrimSpace(strings.TrimPrefix(trimmed, "```"))
-				if lang == "" {
-					lang = "code"
+			lang := strings.TrimSpace(strings.TrimPrefix(trimmed, "```"))
+			body := make([]string, 0, 8)
+			closed := false
+			j := li + 1
+			for ; j < len(lines); j++ {
+				if strings.HasPrefix(strings.TrimSpace(lines[j]), "```") {
+					closed = true
+					break
 				}
-				chip := styleSurfaceBrand.Render(" " + lang + " ")
-				out = append(out, fillBG(chip, surfaceHex(theme.Overlay), codeW))
-			} else {
-				out = append(out, fillBG("", surfaceHex(theme.Surface), codeW))
+				body = append(body, lines[j])
 			}
-			inFence = !inFence
-			continue
-		}
-		if inFence {
-			// Code line on the Surface tint, lightly syntax-tinted, padded to
-			// the block width.
-			line := "  " + tintCodeLine(expandTabs(ln), styleCodeOnSurface)
-			out = append(out, fillBG(line, surfaceHex(theme.Surface), codeW))
+			out = append(out, renderCodeBlock(strings.Join(body, "\n"), lang, codeW))
+			if closed {
+				li = j // consume through the closing fence
+			} else {
+				li = len(lines) // unterminated fence: consume the rest
+			}
 			continue
 		}
 
