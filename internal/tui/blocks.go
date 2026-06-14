@@ -373,8 +373,21 @@ func renderProse(s string, width int) string {
 	if codeW < 8 {
 		codeW = 8
 	}
-	for _, ln := range lines {
+	for li := 0; li < len(lines); li++ {
+		ln := lines[li]
 		trimmed := strings.TrimSpace(ln)
+
+		// Markdown table: a header row "| a | b |" followed by a separator row
+		// (|---|---|). Render as an aligned, bordered table on the Surface tint
+		// — models emit tables constantly; raw pipes look broken.
+		if !inFence && strings.Contains(ln, "|") && isTableSep(lineAt(lines, li+1)) {
+			tbl, consumed := renderMarkdownTable(lines[li:], codeW)
+			if consumed > 0 {
+				out = append(out, tbl...)
+				li += consumed - 1
+				continue
+			}
+		}
 
 		// Fenced code block: render as a real framed panel on the Surface tint
 		// — a lang chip on Overlay, code lines filled on Surface (so code reads
@@ -436,18 +449,23 @@ func renderProse(s string, width int) string {
 
 		// Bullet list item: -, *, or + followed by a space (keep indentation).
 		if item, indent, ok := bulletItem(ln); ok {
-			out = append(out, indent+styleBullet.Render("• ")+renderInline(item))
+			out = append(out, indent+styleBullet.Render("• ")+styleText.Render(renderInline(item)))
 			continue
 		}
 
 		// Ordered list item: "N. text" (keep the number).
 		if num, item, indent, ok := orderedItem(ln); ok {
-			out = append(out, indent+styleBullet.Render(num+". ")+renderInline(item))
+			out = append(out, indent+styleBullet.Render(num+". ")+styleText.Render(renderInline(item)))
 			continue
 		}
 
-		// Plain paragraph line: apply inline styling.
-		out = append(out, renderInline(ln))
+		// Plain paragraph line: apply inline styling, on the crisp Text color
+		// (not the terminal default, which reads muddy on the deep base).
+		if strings.TrimSpace(ln) == "" {
+			out = append(out, "")
+		} else {
+			out = append(out, styleText.Render(renderInline(ln)))
+		}
 	}
 	return strings.Join(out, "\n")
 }

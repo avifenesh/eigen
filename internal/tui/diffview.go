@@ -196,7 +196,8 @@ func renderDiff(s string) string {
 			out[i] = styleStatus.Render(ln)
 			i++
 		default:
-			out[i] = ln
+			// Context line: quiet (dim) so the +/− changes pop against it.
+			out[i] = styleReason.Render(ln)
 			i++
 		}
 	}

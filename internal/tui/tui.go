@@ -41,6 +41,7 @@ var (
 	//   tool = purple, ok = green, warn/active = amber, error = red,
 	//   accent (borders/rules/caret) = frost blue.
 	styleUser   = theme.STitle.Bold(true)
+	styleText   = theme.SText // assistant prose — crisp, explicit (not terminal default)
 	styleTool   = theme.STool
 	styleErr    = theme.SErr
 	styleReason = theme.SDim
@@ -64,11 +65,12 @@ var (
 
 	// Markdown prose styles for assistant answers.
 	styleHeading    = theme.SHeading.Bold(true)
+	styleTableHead  = theme.STitle.Bold(true) // markdown table column headers
 	styleBold       = lipgloss.NewStyle().Bold(true)
 	styleItalic     = lipgloss.NewStyle().Italic(true)
 	styleInlineCode = theme.SCode
 	styleQuote      = theme.SDim.Italic(true)
-	styleBullet     = theme.STool
+	styleBullet     = theme.SAccent
 	styleLink       = theme.SLink.Underline(true)
 )
 
