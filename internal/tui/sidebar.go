@@ -201,7 +201,7 @@ func (m *model) sidebarRowAt(localY int) (sidebarRow, bool) {
 // width, mirroring railLines' padding/gutter conventions.
 func (m *model) sidebarLines(h int) []string {
 	rw := m.railCols()
-	contentW := rw - 3 // separator + gutter space
+	contentW := railContentW(rw)
 	cur := ""
 	if sl := m.railLister(); sl != nil {
 		cur = sl.SessionID()

@@ -1849,3 +1849,23 @@ func TestRailCurrentSessionStandsOut(t *testing.T) {
 		t.Fatalf("rail band should show the current-session pointer, got %d in:\n%s", n, band)
 	}
 }
+
+func TestRailRowHasMarginsBothSides(t *testing.T) {
+	// Every rail row must have a left margin AND a gap before the separator —
+	// even a max-width (truncated) label must not touch either edge.
+	w := 20
+	for _, label := range []string{"x", "a-very-long-label-that-exceeds-the-width-by-a-lot"} {
+		row := ansiStrip(railPadOn(ansiTrunc(label, railContentW(w)), w, "#11171A"))
+		if len(row) == 0 || row[0] != ' ' {
+			t.Errorf("row %q should start with a left margin", row)
+		}
+		// Find the separator and assert a space precedes it.
+		idx := strings.IndexRune(row, '│')
+		if idx <= 0 {
+			t.Fatalf("row %q has no separator", row)
+		}
+		if row[idx-1] != ' ' {
+			t.Errorf("label should not touch the separator (gap required): %q", row)
+		}
+	}
+}

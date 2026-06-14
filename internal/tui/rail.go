@@ -371,7 +371,7 @@ func (m *model) railLines(h int) []string {
 		cur = sl.SessionID()
 	}
 	rw := m.railCols()
-	contentW := rw - 3 // leave separator + gutter space + margin
+	contentW := railContentW(rw)
 	grouped := m.railGrouped()
 	lines := make([]string, 0, h)
 	// Header row for the rail, with a visible close affordance.
@@ -405,12 +405,13 @@ func railPad(label string, w int) string {
 // railPadOn is railPad with an explicit surface hex, so a single row can sit on
 // a different elevation (e.g. the active session / a selected row on Overlay).
 // railPadOn renders one rail/sidebar row at total width w on the surface tint:
-// a one-column left margin (breathing room from the panel edge), the label, a
-// dim vertical separator in the second-to-last column, and a trailing gutter
-// space. So content reads as " <label> … │ " — never flush against either edge.
+// a one-column left margin, the label, AT LEAST one space, a dim vertical
+// separator, and a trailing gutter space — " <label> … │ ". The guaranteed gap
+// before the separator means even a max-width (truncated) label never touches
+// the border. Labels should be truncated to railContentW(w) so they fit.
 func railPadOn(label string, w int, hex string) string {
 	plainW := ansi.StringWidth(label)
-	inner := w - 3 // reserve: 1 left margin + separator + trailing space
+	inner := w - 4 // 1 left margin + 1 gap + separator + trailing space
 	if inner < 0 {
 		inner = 0
 	}
@@ -418,8 +419,17 @@ func railPadOn(label string, w int, hex string) string {
 	if pad < 0 {
 		pad = 0
 	}
-	row := " " + label + strings.Repeat(" ", pad) + dim("│") + " "
+	row := " " + label + strings.Repeat(" ", pad) + " " + dim("│") + " "
 	return fillBG(row, hex, w)
+}
+
+// railContentW is the label width a rail row can hold at total width w (so
+// callers truncate to the same budget railPadOn reserves).
+func railContentW(w int) int {
+	if w-4 < 0 {
+		return 0
+	}
+	return w - 4
 }
 
 // transcriptBand renders the transcript viewport, prefixed with the rail column
