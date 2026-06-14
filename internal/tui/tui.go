@@ -640,14 +640,20 @@ func (m *model) sync() {
 	m.plainLines = m.plainLines[:0]
 	line := 0
 	for i, b := range m.blocks {
-		// Breathing room: a blank separator line before every block but the
-		// first, so messages / thoughts / tool actions don't run together. It is
-		// tracked in plainLines + line count so click-mapping and drag-selection
-		// stay aligned with the rendered viewport.
+		// Composed vertical rhythm: a blank separator before every block (so
+		// messages / thoughts / tool actions don't run together), and an EXTRA
+		// blank before a user message — a new turn reads as a fresh section
+		// with real air around it. Tracked in plainLines + line count so
+		// click-mapping and drag-selection stay aligned with the viewport.
 		if i > 0 {
 			out.WriteString("\n")
 			m.plainLines = append(m.plainLines, "")
 			line++
+			if b.kind == blockText && b.role == "user" {
+				out.WriteString("\n")
+				m.plainLines = append(m.plainLines, "")
+				line++
+			}
 		}
 		rendered := b.renderWrapped(i == m.sel, w)
 		m.blockStart = append(m.blockStart, line)
