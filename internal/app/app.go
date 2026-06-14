@@ -537,7 +537,7 @@ func (m *Model) titleStats() string {
 // renderRailBox renders the bordered rail into its outer rect.
 func (m *Model) renderRailBox(l appLayout) string {
 	inner := m.railContent(l.railInner)
-	style := sRailBox.Width(l.railInner.w).Height(l.railInner.h)
+	style := sRailBox.Width(l.railInner.w + sContentPadH).Height(l.railInner.h)
 	if l.bp == bpNarrow {
 		// Compact: drop the border, keep the column.
 		return lipgloss.NewStyle().Width(l.rail.w).Height(l.rail.h).Render(inner)
@@ -546,9 +546,13 @@ func (m *Model) renderRailBox(l appLayout) string {
 }
 
 // renderContentBox renders the active page into the bordered content rect.
+// lipgloss .Width() is padding-INCLUSIVE (border excluded), so the box width is
+// the inner content width + the horizontal padding; the page itself is rendered
+// at the true content width (l.inner.w) so its own width math (rules, rows) is
+// exact and never wraps against the gutter.
 func (m *Model) renderContentBox(l appLayout) string {
 	page := m.renderPage(l.inner.w, l.inner.h)
-	style := sContentBox.Width(l.inner.w).Height(l.inner.h)
+	style := sContentBox.Width(l.inner.w + sContentPadH).Height(l.inner.h)
 	if l.bp == bpNarrow {
 		return lipgloss.NewStyle().Width(l.content.w).Height(l.content.h).Render(page)
 	}
@@ -558,7 +562,7 @@ func (m *Model) renderContentBox(l appLayout) string {
 // renderInspectorBox renders the right inspector (wide breakpoint).
 func (m *Model) renderInspectorBox(l appLayout) string {
 	inner := m.inspectorDetail(l.inspInner.w)
-	return sContentBox.Width(l.inspInner.w).Height(l.inspInner.h).Render(inner)
+	return sContentBox.Width(l.inspInner.w + sContentPadH).Height(l.inspInner.h).Render(inner)
 }
 
 // renderStatusBar draws the bottom help/status bar.

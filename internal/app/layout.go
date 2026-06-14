@@ -153,13 +153,20 @@ func breakpointFor(w int) breakpoint {
 var (
 	// The rail box lifts onto the Surface tint (elevation — matches the chat
 	// rail, so the dashboard and chat read as one product). A faint brand-tinted
-	// hairline border.
+	// hairline border + a 1-col inner gutter so content breathes off the frame.
 	sRailBox = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(cFaint).
-			Background(cSurface)
-	// The content box stays on the Base canvas with a hairline frame.
+			Background(cSurface).
+			Padding(0, 1)
+	// The content box stays on the Base canvas with a hairline frame + gutter.
 	sContentBox = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(cFaint)
+			BorderForeground(cFaint).
+			Padding(0, 1)
 )
+
+// sContentPadH is the total horizontal padding (left+right) inside the framed
+// panels — used to convert the true content width into lipgloss's padding-
+// inclusive .Width() so a panel's content area equals the layout's inner rect.
+const sContentPadH = 2
