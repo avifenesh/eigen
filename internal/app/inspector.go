@@ -160,8 +160,67 @@ func (m *Model) inspectorFor() (string, []kv, string) {
 		return sk.Name, []kv{
 			{"path", sk.Path},
 		}, sk.Description
+
+	case PageHome:
+		// The home cursor walks feed items (0..feedN-1) then recent sessions.
+		h := &m.home
+		c := h.list.cursor
+		switch {
+		case c >= 0 && c < h.feedN:
+			it := h.feed[c]
+			return it.Title, []kv{
+				{"kind", it.Kind},
+				{"detail", it.Detail},
+				{"project", dirLabel(it.Dir)},
+				{"url", it.URL},
+			}, it.Task // the offered task is the body — the full "what enter does"
+		case c >= h.feedN && c-h.feedN < h.sessionN:
+			r := d.Sessions[c-h.feedN]
+			title := r.Title
+			if title == "" {
+				title = "(untitled)"
+			}
+			return title, []kv{
+				{"source", r.Source},
+				{"messages", fmt.Sprintf("%d", r.Msgs)},
+				{"updated", relTime(r.Updated)},
+				{"project", dirLabel(r.Dir)},
+			}, ""
+		}
+		return "", nil, ""
+
+	case PageMachines:
+		mc := &m.machines
+		if mc.list.cursor < 0 || mc.list.cursor >= len(d.Machines) {
+			return "", nil, ""
+		}
+		r := d.Machines[mc.list.cursor]
+		src := "saved + ssh config"
+		switch {
+		case r.Saved && !r.Detected:
+			src = "saved (hosts.json)"
+		case r.Detected && !r.Saved:
+			src = "ssh config"
+		}
+		return r.Name, []kv{
+			{"ssh", r.SSH},
+			{"address", r.Addr},
+			{"source", src},
+			{"model", r.Model},
+			{"dir", dirLabel(r.Dir)},
+			{"perm", r.Perm},
+		}, "enter: open a remote session · i: install eigen here"
 	}
 	return "", nil, ""
+}
+
+// dirLabel renders a directory path for the inspector — the base name with the
+// home dir abbreviated, or "—" when empty.
+func dirLabel(dir string) string {
+	if dir == "" {
+		return "—"
+	}
+	return dir
 }
 
 // projShort renders a project dir as its base name (full path is too wide for

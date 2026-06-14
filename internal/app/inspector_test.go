@@ -37,10 +37,18 @@ func TestInspectorModelsDetail(t *testing.T) {
 func TestInspectorEmptyHint(t *testing.T) {
 	m := New(testData())
 	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
-	m.active = PageHome // home has no inspector selection
+	// A page with no inspector contribution (memory) falls back to the hint.
+	m.active = PageMemory
 	out := m.inspectorDetail(30)
 	if !strings.Contains(out, "select an item") {
-		t.Fatalf("home should fall back to the inspect hint:\n%s", out)
+		t.Fatalf("a page with no inspector should fall back to the hint:\n%s", out)
+	}
+	// Home WITH a selection shows real detail (the selected recent session).
+	m.active = PageHome
+	m.home.syncFeed(m.data)
+	m.home.list.cursor = 0
+	if d := m.inspectorDetail(30); strings.Contains(d, "select an item") || !strings.Contains(d, "fix the parser") {
+		t.Fatalf("home should inspect the selected row, got:\n%s", d)
 	}
 }
 
