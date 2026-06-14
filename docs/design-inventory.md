@@ -265,16 +265,19 @@ high-taste luxury super-app:
    real chroma syntax highlighting (distinct hues), markdown tables, headings
    with rules, blockquotes, composed turn rhythm. REMAINING: finer speaker
    rhythm / reading polish if wanted.
-6. **Spacing is uniform-1, not composed** — no deliberate spacing scale, tight
-   gutters, no "air" around key moments. Premium = rhythm + breathing room.
+6. ~~**Spacing is uniform-1, not composed**~~ — DONE: framed app panels have a
+   1-col inner gutter (content breathes off the border); transcript has composed
+   turn rhythm (1 blank between blocks, 2 before a user turn); page-title rules
+   span full width.
 7. ~~**Three+ "working" motions**~~ — DONE: ONE working signature (breathing λ
    on the orange ramp) across chat rail + app; braille reserved for in-flight
    TOOL calls only. (Reveals/settles polish still optional.)
 8. **Microcopy is terse dev-speak** — calm but cold. A crafted, consistent voice
    (still minimal) lifts the whole thing.
-9. **App-shell ≠ chat chrome** — PARTLY DONE: home section headers now use the
-   sidebar's hairline-divider treatment (sectionLabel), and selection/active read
-   identically across both. REMAINING: sparse home density + empty wide inspector.
+9. ~~**App-shell ≠ chat chrome / sparse home**~~ — DONE: home section headers
+   match the sidebar (sectionLabel); selection/active identical across both; the
+   wide inspector is filled (home/machines + others); home gained a "working
+   now" section + a live count in the banner (command-center density).
 10. ~~**Code/diff aesthetics**~~ — DONE: framed code blocks + real chroma syntax
     tint (distinct hues) + diffs render as uniform edge-to-edge add/del bands.
 
@@ -283,10 +286,8 @@ restraint, terminal art, color/elevation systems), then design the new system
 from zero — principles first, then tokens (color incl. surfaces, spacing scale,
 glyph set, motion), then components, then roll it across theme/tui/app.
 
-**Progress (2026-06-14):** #1 icons, #2 surfaces/elevation, #3 glyph vocabulary,
-#4 selection+active, #7 motion signature (one breathing-λ "working" + braille
-only for in-flight tools), #10 diff bands all DONE; #5 transcript-as-document
-and #9 app↔chat cohesion (incl. the wide inspector for home/machines, full-width
-page-title rules) MOSTLY done. REMAINING: #6 spacing scale (more composed
-rhythm/air), #8 microcopy voice (warmer empty states), and the #9 tail (home
-density).
+**Progress (2026-06-14):** #1–#7, #9, #10 all DONE. The whole top-10 slate is
+closed except #8 (microcopy voice) — deliberately left: the existing copy is
+calm and clear, and warming it risks twee; revisit only on explicit request.
+The wrapped-line/styled bg-leak (fillBG missed the \x1b[m shorthand reset) is
+also fixed.
