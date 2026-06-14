@@ -4,12 +4,43 @@ The single, durable brief for eigen's visual language. Source of truth for
 color, type weight, glyphs, spacing, and the rules that keep the chat TUI
 (`internal/tui`) and the app shell (`internal/app`) looking like ONE product.
 
-Status: **v1 — 2026-06-14 (complete).** Role vocabulary locked, the brand rule applied
-across the chat TUI + app shell, all raw color literals folded into theme roles
-with a drift-guard test enforcing it. All six steps shipped. When in doubt, this doc wins; update it in the same commit as any visual
-change.
+Status: **v2 — 2026-06-14 (luxury redesign).** Built from a from-scratch
+review (see `docs/design-inventory.md` for the map + `docs/design-references.md`
+for the references). The system now has: a chosen signature palette (**deep
+teal**), elevation surfaces, a coherent no-emoji icon set, one selection
+treatment, a document-grade transcript (framed code on surfaces, syntax
+tinting, markdown tables), composed vertical rhythm, and motion in several
+places. When in doubt, this doc wins; update it in the same commit as any
+visual change.
+
+## v2 at a glance (the luxury redesign)
+- **Palette = "deep teal"** (default; user-chosen): jewel petrol-teal brand
+  `#3E9E96` + warm-clay Focus `#D08C5E` on a deep base `#0B0E0F`. Rich + composed
+  jewel tones, bold via presence not saturation (rejected: brass=too brown,
+  neon=too electric). nord/gruvbox remain as alternate palettes.
+- **Elevation surfaces** (the "construction"/depth — Warp-like): `Base` (canvas)
+  → `Surface` (rail, right panel, code blocks, tables) → `Overlay` (active
+  session, selection, popovers). Painted via `fillBG` (internal/tui/surface.go),
+  which re-asserts the bg after every reset so tints run flush. The rail + right
+  panel sit on Surface; the active session on Overlay.
+- **One coherent icon set, no emoji** (internal/theme/icons.go): a Nerd-Font
+  tier (user runs JetBrainsMono NF) with a pure-Unicode geometric fallback,
+  one glyph per tool (◇ read · ✎ edit · ⌕ search · ≣ list · » bash · ⊕ fetch ·
+  ◈ task · ▦ image · ▪ tool). `❯` is reserved for the prompt/you-are-here.
+- **One selection treatment**: a Focus `▎` bar + Focus-tinted text, shared by
+  the chat rail, the app-shell rows, and selected transcript blocks.
+- **Transcript as a document**: fenced code in a framed block on Surface with a
+  lang chip + lightweight syntax tinting (keywords/strings/comments/numbers);
+  markdown tables rendered aligned + bordered on Surface; crisp prose on the
+  Text color; quiet (dim) diff context so +/− pop.
+- **Composed rhythm**: an extra blank line before each user turn (turns read as
+  sections); tight grouping within a turn.
+- **Motion in several places**: the breathing-λ loader, the rail working
+  spinner, and now a synced braille spinner on in-flight tool blocks in the
+  transcript; tonal flash pills.
 
 ---
+
 
 ## Why a design system
 
