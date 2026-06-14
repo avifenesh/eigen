@@ -1206,6 +1206,31 @@ caps) — this tier is about MEASUREMENT + LONG-RUN bounds, not re-fixing those.
   how to profile (`EIGEN_PPROF`), and the soak recipe — so this stays
   re-runnable, not a one-off.
 
+## Tier 24 — clean up + arrange the roadmap (do NEXT, after current work)
+User-initiated: the roadmap has grown to ~1265 lines / 23 tiers, most of them
+SHIPPED with long inline "SHIPPED: …" writeups. It's now a history log, not a
+forward plan — hard to see what's actually left. This is the immediate next
+task once the current work wraps. Scope (a doc-only pass, no code):
+
+- [ ] **Split done from todo.** Move completed tiers/items into a terse
+  `## Shipped` ledger (one line each: title + commit/area, NO multi-paragraph
+  writeups — those live in git history + project memory). The top of the file
+  should show, at a glance, ONLY what's open.
+- [ ] **Surface the open work.** A short "Now / Next / Later" (or
+  active-vs-backlog) section up top: what's in flight, the immediate queue
+  (e.g. Tier 21 ergonomics, Tier 23 perf), and the parked big bets (Tier 7
+  leftovers). Renumber or tag so priority is obvious without reading 1200 lines.
+- [ ] **Prune redundancy.** Fold per-tier "SHIPPED" detail into one-liners;
+  drop notes duplicated in project memory; keep the genuinely-useful grounding
+  (conventions, the verify gate, architecture pointers) but trim it.
+- [ ] **Reconcile with reality.** Walk each `[~]`/`[ ]` and confirm it's still
+  true (some "todo"s may be done; some "done"s regressed). Mark deferred items
+  `[~] DEFERRED — why`, not a bare `[ ]`, per the finish-each-tier rule.
+- [ ] **Keep it durable.** Result: a roadmap that a fresh (post-compaction)
+  instance can read in 2 minutes to know what to do next. Update
+  `docs/` cross-links (design-system, performance) so the roadmap points at
+  the detailed docs instead of inlining them.
+
 ## Debt / bugs
 - [x] **Untitled daemon sessions still appear.** FIXED: (1) `Host.Restore` now
   calls `maybeTitle` per restored session, so sessions whose title never landed
