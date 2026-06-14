@@ -106,13 +106,17 @@ func (c *clickMap) at(line int) (int, bool) {
 // so far (used while building a view to know where the next row lands).
 func lineCount(s string) int { return strings.Count(s, "\n") }
 
-// pageTitle renders a page heading with a subtle underline rule.
+// pageTitle renders a page heading with a subtle full-width underline rule.
 func pageTitle(title, sub string, w int) string {
 	t := sTitle.Render(title)
 	if sub != "" {
 		t += "  " + sDim.Render(sub)
 	}
-	rule := sFaint.Render(strings.Repeat("─", min(w, 60)))
+	rw := w
+	if rw < 1 {
+		rw = 1
+	}
+	rule := sFaint.Render(strings.Repeat("─", rw))
 	return t + "\n" + rule + "\n"
 }
 
