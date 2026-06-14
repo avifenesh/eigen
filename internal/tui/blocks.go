@@ -62,7 +62,7 @@ func (b *block) renderWrapped(selected bool, width int) string {
 	key := fmt.Sprintf("%d|%s|%t|%t|%d|%t|%d|%d|%d|%d|%d",
 		b.kind, b.role, b.collapsed, b.isErr, b.state, selected, width,
 		len(b.body), len(b.result), len(b.title), len(b.toolArgs))
-	if key == b.rkey && b.rcache != "" {
+	if key == b.rkey && b.rcache != "" && b.state != toolRunning {
 		return b.rcache
 	}
 	b.wrapW = width // available width, for surface-filled regions (code blocks)
@@ -90,9 +90,16 @@ func (b *block) statusGlyph() string {
 	case toolDone:
 		return styleStatus.Render("✓")
 	default:
-		return styleAsk.Render("•")
+		// Running: a synced braille spinner (orange, like the loader) so an
+		// in-progress tool visibly WORKS in the transcript.
+		return styleWorking.Render(railSpinnerFrames[animFrame%len(railSpinnerFrames)])
 	}
 }
+
+// animFrame is the shared animation frame for transcript spinners, advanced by
+// the in-turn spinner tick (m.brandTick). Package-level so block methods (which
+// don't hold the model) can read it; only meaningful while a turn runs.
+var animFrame int
 
 // toolIcon returns a small glyph that signals the KIND of action at a glance —
 // a pen for writes, a book for reads, a prompt for shell, a lens for search.

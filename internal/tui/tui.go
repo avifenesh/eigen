@@ -618,6 +618,17 @@ func (m *model) lastOpen(k blockKind) *block {
 // records each block's first viewport line in blockStart (so mouse clicks can
 // be mapped back to a block). It also records the plain-text (ANSI-stripped)
 // content lines used by drag-to-copy selection.
+// hasRunningTool reports whether any block is a tool call still in flight — the
+// signal to re-render the transcript on the spinner tick so its glyph animates.
+func (m *model) hasRunningTool() bool {
+	for _, b := range m.blocks {
+		if b.kind == blockTool && b.state == toolRunning {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *model) sync() {
 	if !m.ready {
 		return
@@ -1635,6 +1646,13 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		m.sp, cmd = m.sp.Update(msg)
 		if m.state == stRunning {
 			m.brandTick++ // animate the λ mark + loader (fast, in-app)
+			animFrame = m.brandTick // shared frame for the running-tool spinner
+			// Re-render the transcript so a running tool block's spinner glyph
+			// animates (running blocks bypass the render cache). Cheap: only
+			// while a turn is in flight and only if a tool is actually running.
+			if m.hasRunningTool() {
+				m.sync()
+			}
 			// Tab title breathes on WALL-CLOCK seconds, not the fast tick, and
 			// only rewrites when the string changes — so the window tab doesn't
 			// flicker like a bug. (secs since the turn started.)

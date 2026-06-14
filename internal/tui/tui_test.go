@@ -573,8 +573,12 @@ func TestToolBlockLiveStatus(t *testing.T) {
 	if tb == nil || tb.state != toolRunning {
 		t.Fatal("tool start should create a running tool block")
 	}
-	if g := tb.statusGlyph(); !strings.Contains(g, "•") {
-		t.Fatalf("running glyph should contain '•', got %q", g)
+	if g := tb.statusGlyph(); strings.TrimSpace(ansi.Strip(g)) == "" {
+		t.Fatalf("running glyph should be a non-empty spinner frame, got %q", g)
+	}
+	// Running glyph is a braille spinner frame (animated), not a static dot.
+	if frame := ansi.Strip(tb.statusGlyph()); !strings.ContainsAny(frame, "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏") {
+		t.Fatalf("running glyph should be a braille spinner frame, got %q", frame)
 	}
 	if !strings.Contains(tb.header(), "read x") {
 		t.Fatalf("tool header should use the rich summary, got %q", tb.header())
