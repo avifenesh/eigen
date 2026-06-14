@@ -9,7 +9,8 @@ review (see `docs/design-inventory.md` for the map + `docs/design-references.md`
 for the references). The system now has: a chosen signature palette (**deep
 teal**), elevation surfaces, a coherent no-emoji icon set, one selection
 treatment, a document-grade transcript (framed code on surfaces, syntax
-tinting, markdown tables), composed vertical rhythm, and motion in several
+tinting, markdown tables, pretty-printed + tinted JSON tool results), composed
+vertical rhythm, and motion in several
 places. When in doubt, this doc wins; update it in the same commit as any
 visual change.
 
