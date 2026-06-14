@@ -10,6 +10,8 @@
 package app
 
 import (
+	"strings"
+
 	"github.com/avifenesh/eigen/internal/theme"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -56,3 +58,19 @@ var (
 	sRowSel = lipgloss.NewStyle().Foreground(cSel).Bold(true)
 	sRowDim = lipgloss.NewStyle().Foreground(cText)
 )
+
+// sectionLabel renders a page section header as "label ─────" — a lowercase
+// label followed by a faint hairline rule out to width w. Mirrors the chat
+// sidebar's section dividers (internal/tui), so the app shell and the chat read
+// as ONE product (one section-header treatment, not two).
+func sectionLabel(label string, w int) string {
+	label = strings.ToLower(label)
+	if w <= 0 {
+		return sFaint.Render(label)
+	}
+	lw := lipgloss.Width(label)
+	if lw+2 > w {
+		return sFaint.Render(label)
+	}
+	return sFaint.Render(label+" ") + sFaint.Render(strings.Repeat("─", w-lw-1))
+}

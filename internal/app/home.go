@@ -117,7 +117,7 @@ func (h *homeState) view(m *Model, w, _ int) string {
 
 	// The proactive feed: offered actions, one keystroke to start.
 	if h.feedN > 0 {
-		s += sDim.Render("  act on") + "\n"
+		s += "  " + sectionLabel("act on", min(w, 60)-2) + "\n"
 		for i := 0; i < h.feedN; i++ {
 			it := h.feed[i]
 			line := fmt.Sprintf("%s %s %s",
@@ -135,7 +135,7 @@ func (h *homeState) view(m *Model, w, _ int) string {
 		s += sFaint.Render("  scanning for things to act on…") + "\n\n"
 	}
 
-	s += sDim.Render("  recent") + "\n"
+	s += "  " + sectionLabel("recent", min(w, 60)-2) + "\n"
 	if h.sessionN == 0 {
 		s += sFaint.Render("  no sessions yet — press n to start one") + "\n"
 		return s
