@@ -24,6 +24,7 @@ func Fields() []Field {
 		{Key: "perm", Desc: "tool permission: gated asks before mutating tools · auto runs them freely", Options: []string{"gated", "auto"}},
 		{Key: "effort", Desc: "default reasoning effort for new sessions (per-model levels; e.g. opus max, gpt xhigh); live switch: /effort or ctrl+e", Options: []string{"off", "minimal", "none", "low", "medium", "high", "xhigh", "max"}},
 		{Key: "theme", Desc: "color palette (applied at startup): deepteal (default — jewel teal, warm-clay focus, elevated surfaces) · nord (calm blue) · gruvbox (warm); same roles, different hues", Options: []string{"deepteal", "nord", "gruvbox"}},
+		{Key: "nerd_font", Desc: "icon tier (applied at startup): on uses richer Nerd Font glyphs (needs a Nerd Font, e.g. JetBrainsMono NF) · off uses the universal Unicode fallback · empty auto-detects (defaults to off — no tofu)", Options: []string{"on", "off"}},
 		{Key: "max_tokens", Desc: "context-budget ceiling in tokens; 0 = auto (85% of the model window)"},
 		{Key: "tts_cmd", Desc: "text-to-speech command for /read and voice mode, e.g. espeak-ng or readd — the text is passed as the last argument"},
 		{Key: "notify_cmd", Desc: "notifier run on pings (approval needed, long turn done), e.g. notify-send — the message is passed as the last argument; empty = terminal bell only"},

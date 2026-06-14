@@ -74,6 +74,19 @@ func main() {
 			}
 		}
 	}
+	// Nerd Font tier (config.nerd_font): same story as theme — the icon tier is
+	// chosen at package init from EIGEN_NERD_FONT, so re-exec once with it set
+	// when the config picks a tier the env hasn't.
+	if cfg.NerdFont != "" && cfg.NerdFont != theme.NerdFontMode() {
+		if _, set := os.LookupEnv("EIGEN_NERD_FONT"); !set {
+			if exe, err := os.Executable(); err == nil {
+				env := append(os.Environ(), "EIGEN_NERD_FONT="+cfg.NerdFont)
+				if e := syscall.Exec(exe, os.Args, env); e != nil {
+					os.Setenv("EIGEN_NERD_FONT", cfg.NerdFont)
+				}
+			}
+		}
+	}
 	if cfg.TTSCmd != "" {
 		if _, set := os.LookupEnv("EIGEN_TTS_CMD"); !set {
 			os.Setenv("EIGEN_TTS_CMD", cfg.TTSCmd)

@@ -29,8 +29,9 @@ type Config struct {
 	Provider   string   `json:"provider"`
 	Model      string   `json:"model"`
 	Perm       string   `json:"perm"`
-	Effort     string   `json:"effort"` // default reasoning effort for new sessions (per-model levels; e.g. max)
-	Theme      string   `json:"theme"`  // named color palette (nord|gruvbox); applied at startup via EIGEN_THEME
+	Effort     string   `json:"effort"`    // default reasoning effort for new sessions (per-model levels; e.g. max)
+	Theme      string   `json:"theme"`     // named color palette (nord|gruvbox); applied at startup via EIGEN_THEME
+	NerdFont   string   `json:"nerd_font"` // on|off icon tier (Nerd Font glyphs vs Unicode fallback); applied via EIGEN_NERD_FONT
 	MaxTokens  int      `json:"max_tokens"`
 	TTSCmd     string   `json:"tts_cmd"`
 	NotifyCmd  string   `json:"notify_cmd"`
@@ -150,6 +151,11 @@ func Set(c *Config, key, value string) error {
 			return fmt.Errorf("theme must be one of %s", strings.Join(theme.PaletteNames(), "|"))
 		}
 		c.Theme = value
+	case "nerd_font":
+		if value != "" && value != "on" && value != "off" {
+			return fmt.Errorf("nerd_font must be on|off")
+		}
+		c.NerdFont = value
 	case "max_tokens":
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 0 {
@@ -239,6 +245,7 @@ func View(c Config) string {
 	fmt.Fprintf(&b, "%-14s = %s\n", "perm", val(c.Perm))
 	fmt.Fprintf(&b, "%-14s = %s\n", "effort", val(c.Effort))
 	fmt.Fprintf(&b, "%-14s = %s\n", "theme", val(c.Theme))
+	fmt.Fprintf(&b, "%-14s = %s\n", "nerd_font", val(c.NerdFont))
 	fmt.Fprintf(&b, "%-14s = %d\n", "max_tokens", c.MaxTokens)
 	fmt.Fprintf(&b, "%-14s = %s\n", "tts_cmd", val(c.TTSCmd))
 	fmt.Fprintf(&b, "%-14s = %s\n", "notify_cmd", val(c.NotifyCmd))
@@ -280,6 +287,8 @@ func Get(c Config, key string) string {
 		return c.Effort
 	case "theme":
 		return c.Theme
+	case "nerd_font":
+		return c.NerdFont
 	case "max_tokens":
 		return strconv.Itoa(c.MaxTokens)
 	case "tts_cmd":
