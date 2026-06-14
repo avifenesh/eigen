@@ -104,13 +104,16 @@ func (h *homeState) view(m *Model, w, _ int) string {
 	d := m.data
 	h.syncFeed(d)
 	h.clicks.reset()
-	s := pageTitle("eigen", "your agent, everywhere", w)
 
-	// Quick stats line: informative at a glance.
-	s += fmt.Sprintf("  %s   %s   %s\n\n",
+	// Brand banner: the λ mark + a time-of-day greeting + at-a-glance stats —
+	// the first screen has a face and feels lived-in, not a bare title.
+	s := sTitle.Bold(true).Render("λ eigen")
+	s += "  " + sDim.Render(homeGreeting()) + "\n"
+	s += "  " + fmt.Sprintf("%s   %s   %s",
 		countLabel(len(d.Sessions), "session"),
 		countLabel(len(d.Projects), "project"),
-		countLabel(d.Skills.Len(), "skill"))
+		countLabel(d.Skills.Len(), "skill")) + "\n"
+	s += sFaint.Render(strings.Repeat("─", min(w, 60))) + "\n\n"
 
 	// The proactive feed: offered actions, one keystroke to start.
 	if h.feedN > 0 {
@@ -229,5 +232,22 @@ func relTime(unixNano int64) string {
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	default:
 		return fmt.Sprintf("%dmo", int(d.Hours()/(24*30)))
+	}
+}
+
+// homeGreeting is a warm, time-of-day line for the home banner — the dashboard
+// feels lived-in rather than a cold index.
+func homeGreeting() string {
+	switch hh := time.Now().Hour(); {
+	case hh < 5:
+		return "burning the midnight oil — what's next?"
+	case hh < 12:
+		return "good morning — what are we building?"
+	case hh < 17:
+		return "good afternoon — what are we building?"
+	case hh < 22:
+		return "good evening — what are we building?"
+	default:
+		return "late night — what are we building?"
 	}
 }

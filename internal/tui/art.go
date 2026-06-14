@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/avifenesh/eigen/internal/theme"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -42,30 +43,38 @@ func greeting() string {
 // transcript width. Returns "" when there's no room (tiny terminals).
 func (m *model) welcomeView(width, height int) string {
 	if width < 44 || height < 12 {
-		// Too small for art — a quiet centered one-liner.
-		msg := theme.SDim.Render("eigen · type a task to begin")
+		// Too small for art — a quiet centered one-liner with the brand mark.
+		msg := theme.SAccent.Bold(true).Render("λ ") + theme.SDim.Render("eigen · type a task to begin")
 		if pad := (width - ansi.StringWidth(msg)) / 2; pad > 0 {
 			msg = strings.Repeat(" ", pad) + msg
 		}
 		return msg
 	}
 	lines := make([]string, 0, len(eigenArt)+8)
-	for _, a := range eigenArt {
-		lines = append(lines, theme.SAccent.Render(a))
+	// The wordmark sweeps the brand spectrum top→bottom (teal→aqua→cyan→indigo)
+	// — a signature shimmer, the eigenvalue "spectrum" made literal.
+	for i, a := range eigenArt {
+		c := theme.Accent
+		if len(theme.Spectrum) > 0 {
+			c = theme.Spectrum[i*len(theme.Spectrum)/len(eigenArt)]
+		}
+		lines = append(lines, lipgloss.NewStyle().Foreground(c).Bold(true).Render(a))
 	}
 	lines = append(lines, "")
-	lines = append(lines, theme.STitle.Render(greeting()))
-	lines = append(lines, theme.SDim.Render("your coding agent — what are we building?"))
+	lines = append(lines, theme.STitle.Bold(true).Render(greeting())+theme.SFaint.Render("  ·  ")+theme.SDim.Render("what are we building?"))
 	lines = append(lines, "")
-	// Starter hints: the few things worth knowing on a blank slate.
-	hints := []struct{ key, what string }{
-		{"type", "ask for anything, or describe a task"},
-		{"/help", "commands · ctrl+k for the palette"},
-		{"@", "reference a file · ◉ voice to talk"},
+	// Starter hints: the few things worth knowing on a blank slate, each led by
+	// its icon from the coherent set.
+	hints := []struct{ icon, key, what string }{
+		{theme.Caret, "type", "ask for anything, or describe a task"},
+		{theme.ToolIcon("task"), "/help", "commands · ctrl+k for the palette"},
+		{"@", "@file", "reference a file · ◉ voice to talk"},
 	}
 	for _, h := range hints {
-		lines = append(lines, theme.SAccent.Render(fmt.Sprintf("%8s", h.key))+
-			theme.SFaint.Render("  ·  ")+theme.SDim.Render(h.what))
+		lines = append(lines,
+			theme.SAccent.Render(fmt.Sprintf("%2s", h.icon))+" "+
+				theme.STitle.Render(fmt.Sprintf("%-6s", h.key))+
+				theme.SFaint.Render(" ·  ")+theme.SDim.Render(h.what))
 	}
 	// Center each line individually by its true display width (ansi.StringWidth
 	// counts the em-dash and wide glyphs correctly — lipgloss block-centering

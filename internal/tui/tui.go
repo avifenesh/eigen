@@ -1645,7 +1645,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		var cmd tea.Cmd
 		m.sp, cmd = m.sp.Update(msg)
 		if m.state == stRunning {
-			m.brandTick++ // animate the λ mark + loader (fast, in-app)
+			m.brandTick++           // animate the λ mark + loader (fast, in-app)
 			animFrame = m.brandTick // shared frame for the running-tool spinner
 			// Re-render the transcript so a running tool block's spinner glyph
 			// animates (running blocks bypass the render cache). Cheap: only
