@@ -282,34 +282,16 @@ func TestApplyPatchDetailNormalizes(t *testing.T) {
 }
 
 func TestRenderDiffHighlightsChangedSpan(t *testing.T) {
-	// Force a color profile: tests run without a TTY, where lipgloss strips
-	// all styling and the underline assertion would be vacuous.
+	// Tests run without a TTY, where lipgloss strips styling; force a profile.
 	old := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.ANSI256)
+	lipgloss.SetColorProfile(termenv.TrueColor)
 	defer lipgloss.SetColorProfile(old)
 
-	// A modified pair with a clear common prefix/suffix should use the
-	// underline span styles.
+	// A +/- pair now renders with add/remove BACKGROUND tints (the diff-viewer
+	// look) — the change is unmistakable and the code stays readable.
 	out := renderDiff("- x := compute(a, b)\n+ x := compute(a, c)")
-	if !strings.Contains(out, "\x1b[4") { // underline SGR from the span styles
-		t.Fatalf("changed span should be underlined:\n%q", out)
-	}
-	// Dissimilar pair: no underline (similarity gate).
-	out = renderDiff("- completely different\n+ zzz qqq vvv")
-	if strings.Contains(out, "\x1b[4;") || strings.Contains(out, "\x1b[4m") {
-		t.Fatalf("dissimilar lines should not underline:\n%q", out)
-	}
-}
-
-func TestSplitCommon(t *testing.T) {
-	pre, aMid, bMid, suf := splitCommon("foo(bar)", "foo(baz)")
-	if pre != "foo(ba" || suf != ")" || aMid != "r" || bMid != "z" {
-		t.Fatalf("splitCommon wrong: pre=%q aMid=%q bMid=%q suf=%q", pre, aMid, bMid, suf)
-	}
-	// Identical strings: middles empty.
-	_, aMid, bMid, _ = splitCommon("same", "same")
-	if aMid != "" || bMid != "" {
-		t.Fatalf("identical strings should have empty middles: %q %q", aMid, bMid)
+	if !strings.Contains(out, "48;2;") { // a background SGR (the add/del tint)
+		t.Fatalf("changed lines should carry an add/del background tint:\n%q", out)
 	}
 }
 

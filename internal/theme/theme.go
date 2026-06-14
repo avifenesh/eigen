@@ -42,6 +42,11 @@ type Palette struct {
 	Focus, Sel       lipgloss.AdaptiveColor
 	OnBright         lipgloss.AdaptiveColor
 
+	// Diff line backgrounds — faint red/green-tinted surfaces behind removed/
+	// added lines so a diff reads like a real diff viewer (the code on the line
+	// stays syntax-highlighted; the tint signals the change).
+	AddBg, DelBg lipgloss.AdaptiveColor
+
 	// Ramp stops (loader brightness cycles).
 	AccentBright, FaintDim    lipgloss.AdaptiveColor
 	WorkingDim, WorkingBright lipgloss.AdaptiveColor
@@ -81,6 +86,8 @@ var deepTealPalette = Palette{
 	Focus:    lipgloss.AdaptiveColor{Dark: "#D08C5E", Light: "#A85E2A"},
 	Sel:      lipgloss.AdaptiveColor{Dark: "#D08C5E", Light: "#A85E2A"},
 	OnBright: lipgloss.AdaptiveColor{Dark: "#0B0E0F", Light: "#F0F4F3"},
+	AddBg:    lipgloss.AdaptiveColor{Dark: "#10261C", Light: "#DCEFE0"},
+	DelBg:    lipgloss.AdaptiveColor{Dark: "#2A1517", Light: "#F2DCDC"},
 	// Loader ramp stops (brand-teal brightness cycle).
 	AccentBright: lipgloss.AdaptiveColor{Dark: "#8AD6CC", Light: "#1F5650"},
 	FaintDim:     lipgloss.AdaptiveColor{Dark: "#33403D", Light: "#9AACA8"},
@@ -118,6 +125,8 @@ var nordPalette = Palette{
 	Focus:         lipgloss.AdaptiveColor{Dark: "#D1A0B0", Light: "#9A4D6B"},
 	Sel:           lipgloss.AdaptiveColor{Dark: "#D1A0B0", Light: "#9A4D6B"},
 	OnBright:      lipgloss.AdaptiveColor{Dark: "#1b1f27", Light: "#F0F4F8"},
+	AddBg:         lipgloss.AdaptiveColor{Dark: "#1e2a22", Light: "#DCEFE0"},
+	DelBg:         lipgloss.AdaptiveColor{Dark: "#2e2026", Light: "#F2DCDC"},
 	AccentBright:  lipgloss.AdaptiveColor{Dark: "#b3c4d8", Light: "#1f3450"},
 	FaintDim:      lipgloss.AdaptiveColor{Dark: "#4a5365", Light: "#aab3c4"},
 	WorkingDim:    lipgloss.AdaptiveColor{Dark: "#8a5a44", Light: "#c98a63"},
@@ -147,6 +156,8 @@ var gruvboxPalette = Palette{
 	Focus:         lipgloss.AdaptiveColor{Dark: "#d3869b", Light: "#8f3f71"}, // purple (non-brand)
 	Sel:           lipgloss.AdaptiveColor{Dark: "#d3869b", Light: "#8f3f71"},
 	OnBright:      lipgloss.AdaptiveColor{Dark: "#1d2021", Light: "#fbf1c7"},
+	AddBg:         lipgloss.AdaptiveColor{Dark: "#28280f", Light: "#e6e2b0"},
+	DelBg:         lipgloss.AdaptiveColor{Dark: "#321a16", Light: "#f0d8cc"},
 	AccentBright:  lipgloss.AdaptiveColor{Dark: "#bdddd0", Light: "#024450"},
 	FaintDim:      lipgloss.AdaptiveColor{Dark: "#504945", Light: "#bdae93"},
 	WorkingDim:    lipgloss.AdaptiveColor{Dark: "#a85a1f", Light: "#d98a3d"},
@@ -200,6 +211,8 @@ var (
 	Sel     = Active.Sel
 
 	OnBright      = Active.OnBright
+	AddBg         = Active.AddBg
+	DelBg         = Active.DelBg
 	AccentBright  = Active.AccentBright
 	FaintDim      = Active.FaintDim
 	WorkingDim    = Active.WorkingDim

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/avifenesh/eigen/internal/theme"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // maxDiffLines bounds how many diff lines an edit block renders.
@@ -144,113 +145,49 @@ func statsSuffix(detail string) string {
 	return fmt.Sprintf(" (+%d −%d)", add, del)
 }
 
-// Intra-line highlight styles: the changed span within a modified line gets
-// underlined on top of the line's add/remove color, so paired edits read at a
-// glance without inverting whole blocks.
-var (
-	styleDelSpan = theme.SErr.Underline(true)
-	styleAddSpan = theme.SOk.Underline(true)
-)
-
 // renderDiff applies per-line color to +/- prefixed diff text and, when a
 // removed line is paired with an added line (a modification), underlines the
 // changed span within each line (common prefix/suffix split). Context-collapse
 // markers render dim.
 func renderDiff(s string) string { return renderDiffLang(s, "") }
 
-// renderDiffLang renders a +/- diff. Add/removed lines keep their semantic
-// red/green (with intra-line word-diff) because the CHANGE is the primary
-// signal. Context lines (unchanged code you're just reading) get real syntax
-// highlighting when a language is known — the GitHub/delta pattern: changes
-// dominate, context reads as code.
+// renderDiffLang renders a +/- diff like a real diff viewer: every line's CODE
+// is syntax-highlighted (when lang is known), and added/removed lines carry a
+// faint green/red background tint + a colored ± marker so the change is
+// unmistakable while the code stays readable. Context lines are highlighted on
+// no tint. Falls back to plain marker coloring when no lexer matches.
 func renderDiffLang(s, lang string) string {
 	lines := strings.Split(s, "\n")
 	out := make([]string, len(lines))
-	i := 0
-	hl := func(code string) string {
+	// code paints a line's content with syntax highlighting on the given bg
+	// (nil = none); falls back to a plain style when no lexer.
+	code := func(src string, bg lipgloss.TerminalColor, plain lipgloss.Style) string {
 		if lang != "" {
-			if h, ok := highlightCode(code, lang, nil); ok {
+			if h, ok := highlightCode(src, lang, bg); ok {
 				return strings.TrimRight(h, "\n")
 			}
 		}
-		return styleReason.Render(code)
+		return plain.Render(src)
 	}
-	for i < len(lines) {
-		ln := lines[i]
+	addBg := theme.AddBg
+	delBg := theme.DelBg
+	for i, ln := range lines {
 		switch {
 		case strings.HasPrefix(ln, "⋯"):
 			out[i] = styleReason.Render(ln)
-			i++
-		case strings.HasPrefix(ln, "- "):
-			// Gather the -/+ run and pair them in order: k removed lines
-			// followed by l added lines pairs min(k,l) modifications.
-			j := i
-			for j < len(lines) && strings.HasPrefix(lines[j], "- ") {
-				j++
-			}
-			k := j
-			for k < len(lines) && strings.HasPrefix(lines[k], "+ ") {
-				k++
-			}
-			dels := lines[i:j]
-			adds := lines[j:k]
-			for x := range dels {
-				if x < len(adds) {
-					d, a := highlightPair(dels[x][2:], adds[x][2:])
-					out[i+x] = styleErr.Render("- ") + d
-					out[j+x] = styleStatus.Render("+ ") + a
-				} else {
-					out[i+x] = styleErr.Render(dels[x])
-				}
-			}
-			for x := len(dels); x < len(adds); x++ {
-				out[j+x] = styleStatus.Render(adds[x])
-			}
-			i = k
 		case strings.HasPrefix(ln, "+ "):
-			out[i] = styleStatus.Render(ln)
-			i++
+			marker := lipgloss.NewStyle().Foreground(theme.Ok).Background(addBg).Render("+ ")
+			out[i] = marker + code(ln[2:], addBg, lipgloss.NewStyle().Foreground(theme.Ok).Background(addBg))
+		case strings.HasPrefix(ln, "- "):
+			marker := lipgloss.NewStyle().Foreground(theme.Err).Background(delBg).Render("- ")
+			out[i] = marker + code(ln[2:], delBg, lipgloss.NewStyle().Foreground(theme.Err).Background(delBg))
 		default:
-			// Context line: a quiet marker + syntax-highlighted code, so the
-			// surrounding code reads while the +/− changes still pop.
 			body := ln
 			if strings.HasPrefix(ln, "  ") {
 				body = ln[2:]
 			}
-			out[i] = styleGhost.Render("  ") + hl(body)
-			i++
+			out[i] = styleGhost.Render("  ") + code(body, nil, styleReason)
 		}
 	}
 	return strings.Join(out, "\n")
-}
-
-// highlightPair renders a removed/added line pair, underlining the changed
-// middle span found by common prefix/suffix. When the lines are too dissimilar
-// (changed span dominates), it falls back to whole-line coloring — underlining
-// nearly everything is noise.
-func highlightPair(del, add string) (string, string) {
-	pre, dMid, aMid, suf := splitCommon(del, add)
-	// Similarity gate: at least a third of the longer line must be common.
-	common := len(pre) + len(suf)
-	longest := max(len(del), len(add))
-	if longest == 0 || common*3 < longest {
-		return styleErr.Render(del), styleStatus.Render(add)
-	}
-	d := styleErr.Render(pre) + styleDelSpan.Render(dMid) + styleErr.Render(suf)
-	a := styleStatus.Render(pre) + styleAddSpan.Render(aMid) + styleStatus.Render(suf)
-	return d, a
-}
-
-// splitCommon splits two strings into common prefix, differing middles, and
-// common suffix (byte-wise, which is fine for code).
-func splitCommon(a, b string) (pre, aMid, bMid, suf string) {
-	p := 0
-	for p < len(a) && p < len(b) && a[p] == b[p] {
-		p++
-	}
-	s := 0
-	for s < len(a)-p && s < len(b)-p && a[len(a)-1-s] == b[len(b)-1-s] {
-		s++
-	}
-	return a[:p], a[p : len(a)-s], b[p : len(b)-s], a[len(a)-s:]
 }
