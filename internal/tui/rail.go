@@ -410,8 +410,13 @@ func railPad(label string, w int) string {
 // before the separator means even a max-width (truncated) label never touches
 // the border. Labels should be truncated to railContentW(w) so they fit.
 func railPadOn(label string, w int, hex string) string {
+	// Layout: the sidebar's surface spans columns 0..w-1 and ENDS exactly at
+	// the separator │ (the last cell). The transcript (base) begins at column
+	// w — so the separator is the precise boundary between the two looks, with
+	// no surface bleeding past it.
+	//   " " left margin + label + pad + " " gap + "│"
 	plainW := ansi.StringWidth(label)
-	inner := w - 4 // 1 left margin + 1 gap + separator + trailing space
+	inner := w - 3 // 1 left margin + 1 gap + separator (no trailing space)
 	if inner < 0 {
 		inner = 0
 	}
@@ -419,17 +424,17 @@ func railPadOn(label string, w int, hex string) string {
 	if pad < 0 {
 		pad = 0
 	}
-	row := " " + label + strings.Repeat(" ", pad) + " " + dim("│") + " "
+	row := " " + label + strings.Repeat(" ", pad) + " " + dim("│")
 	return fillBG(row, hex, w)
 }
 
 // railContentW is the label width a rail row can hold at total width w (so
 // callers truncate to the same budget railPadOn reserves).
 func railContentW(w int) int {
-	if w-4 < 0 {
+	if w-3 < 0 {
 		return 0
 	}
-	return w - 4
+	return w - 3 // matches railPadOn: margin + gap + separator (no trailing)
 }
 
 // transcriptBand renders the transcript viewport, prefixed with the rail column
