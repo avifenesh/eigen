@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"github.com/avifenesh/eigen/internal/theme"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -77,3 +78,23 @@ func fillBG(content, hex string, width int) string {
 // onSurface is the dark-resolved hex for a theme surface role, for fillBG.
 // (fillBG needs a hex string, not an AdaptiveColor; we're dark-only for now.)
 func surfaceHex(c lipgloss.AdaptiveColor) string { return c.Dark }
+
+// paintBase guarantees every line of a composed view sits on the Base canvas,
+// padded to the full width. Terminals with a non-black background (e.g. ghostty
+// with background-opacity / a custom background) show their OWN color in any
+// cell eigen leaves unpainted — so an unpainted region (the input row, a short
+// status line, a gap) glows as an "exposed background" hole. Running the final
+// View through this paints every cell, so eigen owns the whole rectangle and no
+// terminal background leaks through. Rows that already carry their own bg
+// spans (rail/panel/code) keep them — Base is only the foundation/padding.
+func paintBase(view string, width int) string {
+	if width <= 0 {
+		return view
+	}
+	hex := surfaceHex(theme.Base)
+	lines := strings.Split(view, "\n")
+	for i, ln := range lines {
+		lines[i] = fillBG(ln, hex, width)
+	}
+	return strings.Join(lines, "\n")
+}
