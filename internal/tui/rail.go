@@ -439,8 +439,23 @@ func railContentW(w int) int {
 func (m *model) transcriptBand() string {
 	railOn := m.railWidth() > 0
 	chgOn := m.rightPanelWidth() > 0
+	baseHex := surfaceHex(theme.Base)
 	if !railOn && !chgOn {
-		return m.vp.View()
+		// Plain transcript: still paint it on the Base canvas, full width, so
+		// eigen owns every pixel (no terminal bg showing through the gaps).
+		vpLines := strings.Split(m.vp.View(), "\n")
+		var b strings.Builder
+		for i := 0; i < m.vp.Height; i++ {
+			if i > 0 {
+				b.WriteByte('\n')
+			}
+			line := ""
+			if i < len(vpLines) {
+				line = vpLines[i]
+			}
+			b.WriteString(fillBG(line, baseHex, m.vp.Width))
+		}
+		return b.String()
 	}
 	vpLines := strings.Split(m.vp.View(), "\n")
 	var railLines, chgLines []string
@@ -462,9 +477,14 @@ func (m *model) transcriptBand() string {
 		if railOn && i < len(railLines) {
 			b.WriteString(railLines[i])
 		}
+		// The transcript column is painted on the Base canvas and filled to its
+		// full width, so it reads as a deliberate deepest layer beneath the
+		// Surface panels (the depth difference) — never a terminal-bg gap.
+		line := ""
 		if i < len(vpLines) {
-			b.WriteString(vpLines[i])
+			line = vpLines[i]
 		}
+		b.WriteString(fillBG(line, baseHex, m.vp.Width))
 		if chgOn && i < len(chgLines) {
 			b.WriteString(chgLines[i])
 		}

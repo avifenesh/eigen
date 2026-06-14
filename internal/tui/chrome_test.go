@@ -367,13 +367,16 @@ func TestRailHiddenForLocalBackend(t *testing.T) {
 			t.Fatal("local chat sidebar must not render session rows")
 		}
 	}
-	// Narrow terminals: no sidebar, no rail, plain viewport.
+	// Narrow terminals: no sidebar, no rail, plain viewport — painted on the
+	// Base canvas (eigen owns every pixel), so the band CONTAINS the viewport
+	// content but is base-filled rather than byte-identical.
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
 	if m.railWidth() != 0 {
 		t.Fatal("narrow local chat has no left column")
 	}
-	if m.transcriptBand() != m.vp.View() {
-		t.Fatal("with no rail the band is just the viewport")
+	band := m.transcriptBand()
+	if vp := ansiStrip(m.vp.View()); !strings.Contains(ansiStrip(band), strings.TrimRight(strings.Split(vp, "\n")[0], " ")) {
+		t.Fatalf("band should contain the viewport content:\n%s", band)
 	}
 }
 
