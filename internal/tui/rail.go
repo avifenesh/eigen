@@ -404,14 +404,21 @@ func railPad(label string, w int) string {
 
 // railPadOn is railPad with an explicit surface hex, so a single row can sit on
 // a different elevation (e.g. the active session / a selected row on Overlay).
+// railPadOn renders one rail/sidebar row at total width w on the surface tint:
+// a one-column left margin (breathing room from the panel edge), the label, a
+// dim vertical separator in the second-to-last column, and a trailing gutter
+// space. So content reads as " <label> … │ " — never flush against either edge.
 func railPadOn(label string, w int, hex string) string {
 	plainW := ansi.StringWidth(label)
-	inner := w - 2 // reserve two columns: the separator and a gutter space
+	inner := w - 3 // reserve: 1 left margin + separator + trailing space
+	if inner < 0 {
+		inner = 0
+	}
 	pad := inner - plainW
 	if pad < 0 {
 		pad = 0
 	}
-	row := label + strings.Repeat(" ", pad) + dim("│") + " "
+	row := " " + label + strings.Repeat(" ", pad) + dim("│") + " "
 	return fillBG(row, hex, w)
 }
 
