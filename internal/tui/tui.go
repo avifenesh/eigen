@@ -1995,6 +1995,19 @@ func styleInputBox(ti *textarea.Model, accent lipgloss.TerminalColor) {
 	ti.Cursor.TextStyle = lipgloss.NewStyle().Background(theme.Base)
 }
 
+// selectLine renders ONE list/picker row with the single, unified selection
+// treatment used everywhere (palette, pickers, switcher, tray, app lists): a
+// clay Sel bar "▎ " + the row in the Sel color when selected; a matching
+// 2-space indent otherwise. Selection is ALWAYS Sel (never the amber Ask, which
+// means "approval"), and ALWAYS the ▎ bar (never a stray ›) — one component, so
+// "the selected thing" reads identically across every surface.
+func selectLine(selected bool, text string) string {
+	if selected {
+		return styleSel.Render("▎ " + text)
+	}
+	return "  " + text
+}
+
 func compact(s string) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	if len(s) > 80 {

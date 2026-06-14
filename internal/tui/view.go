@@ -245,12 +245,7 @@ func (m *model) pickerView() string {
 			title = dim("(untitled)")
 		}
 		when := time.Unix(0, p.Updated).Format("01-02 15:04")
-		line := fmt.Sprintf("%s  %-7s  %s", when, p.Source, title)
-		if i == m.pickIdx {
-			line = styleAsk.Render("› " + line)
-		} else {
-			line = "  " + line
-		}
+		line := selectLine(i == m.pickIdx, fmt.Sprintf("%s  %-7s  %s", when, p.Source, title))
 		b.WriteString(line + "\n")
 	}
 	return b.String()
@@ -302,11 +297,7 @@ func (m *model) switcherView() string {
 			mark = styleFocus.Render("·") // you are here (active session — non-brand)
 		}
 		line := fmt.Sprintf("%s %s %-4s %s  %s", statusGlyph(e.Status), mark, e.ID, title, dim(e.Dir))
-		if i == m.switchIdx {
-			line = styleSel.Render("› " + line) // selected row — non-brand
-		} else {
-			line = "  " + line
-		}
+		line = selectLine(i == m.switchIdx, line)
 		b.WriteString(line + "\n")
 	}
 	return b.String()
@@ -376,19 +367,23 @@ func (m *model) modelPickerView() string {
 			tagStr = "  [" + strings.Join(tags, " ") + "]"
 		}
 		// One render path: selection marker first, then active marker, then the
-		// row — styled once at the end.
+		// Selection uses the unified ▎ bar (Sel); the active model is marked
+		// with a working-colored ● inside the row, so both signals coexist
+		// without a bespoke prefix.
 		active := mi.ID == m.modelID
-		raw := fmt.Sprintf("%-34s %-9s %-5s%s", mi.ID, mi.Provider, winStr, tagStr)
+		dot := " "
+		if active {
+			dot = theme.StatusWorking
+		}
+		raw := fmt.Sprintf("%s %-34s %-9s %-5s%s", dot, mi.ID, mi.Provider, winStr, tagStr)
 		var line string
 		switch {
-		case i == m.modelPickIdx && active:
-			line = styleAsk.Render("›● " + raw)
 		case i == m.modelPickIdx:
-			line = styleAsk.Render("›  " + raw)
+			line = selectLine(true, raw)
 		case active:
-			line = styleStatus.Render(" ● " + raw)
+			line = "  " + styleStatus.Render(raw)
 		default:
-			line = "   " + raw
+			line = "  " + raw
 		}
 		b.WriteString(line + "\n")
 	}

@@ -218,7 +218,7 @@ func (m *model) paletteView() string {
 		var line string
 		switch {
 		case i == m.pal.idx:
-			line = styleAsk.Render("› " + c.label)
+			line = selectLine(true, c.label)
 			if c.hint != "" {
 				line += "  " + dim("("+c.hint+")")
 			}
