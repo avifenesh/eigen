@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/avifenesh/eigen/internal/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -427,7 +428,10 @@ func changesPad(label string, w int) string {
 	if pad < 0 {
 		pad = 0
 	}
-	return dim("│ ") + label + strings.Repeat(" ", pad)
+	row := dim("│ ") + label + strings.Repeat(" ", pad)
+	// Paint the panel on the Surface tint (matches the rail elevation), so the
+	// right panel reads as a lifted surface, not flat fg-on-canvas.
+	return fillBG(row, surfaceHex(theme.Surface), w)
 }
 
 // changesRowAt maps a changes-panel-local y to a file-change index, or -1.

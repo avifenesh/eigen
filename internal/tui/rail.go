@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/avifenesh/eigen/internal/chat"
+	"github.com/avifenesh/eigen/internal/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -277,6 +278,19 @@ func (m *model) railEntryLabel(e chat.SessionEntry, cur string, grouped bool, co
 	return indent + m.railGlyph(e.Status) + mark + name
 }
 
+// railEntryRow renders a full session row at width rw, choosing its elevation:
+// the active session (this pane) sits on the Overlay tint (lifted higher than
+// the Surface rail) so "where you are" reads instantly — the clay Focus ❯ +
+// name (from railEntryLabel) pop against it. Other sessions sit flat on the
+// rail Surface.
+func (m *model) railEntryRow(e chat.SessionEntry, cur string, grouped bool, contentW, rw int) string {
+	label := m.railEntryLabel(e, cur, grouped, contentW)
+	if e.ID == cur {
+		return railPadOn(label, rw, surfaceHex(theme.Overlay))
+	}
+	return railPad(label, rw)
+}
+
 // railProjectOpen reports whether any session of the project has a window
 // attached right now (Views > 0) — "open somewhere" highlights the header.
 func (m *model) railProjectOpen(dir string) bool {
@@ -371,7 +385,7 @@ func (m *model) railLines(h int) []string {
 			continue
 		}
 		e := m.railEntries[r.entry]
-		lines = append(lines, railPad(m.railEntryLabel(e, cur, grouped, contentW), rw))
+		lines = append(lines, m.railEntryRow(e, cur, grouped, contentW, rw))
 	}
 	// Pad the rest of the column with empty gutters.
 	for len(lines) < h {
@@ -380,16 +394,25 @@ func (m *model) railLines(h int) []string {
 	return lines
 }
 
-// railPad pads a (possibly styled) label to width w in display columns and
-// appends a dim vertical separator as the gutter's last column.
+// railPad pads a (possibly styled) label to width w in display columns,
+// appends a dim vertical separator as the gutter's last column, and paints the
+// whole row on the Surface tint — the elevation that makes the rail read as a
+// lifted panel (the "construction" feel) rather than flat fg-on-canvas.
 func railPad(label string, w int) string {
+	return railPadOn(label, w, surfaceHex(theme.Surface))
+}
+
+// railPadOn is railPad with an explicit surface hex, so a single row can sit on
+// a different elevation (e.g. the active session / a selected row on Overlay).
+func railPadOn(label string, w int, hex string) string {
 	plainW := ansi.StringWidth(label)
 	inner := w - 2 // reserve two columns: the separator and a gutter space
 	pad := inner - plainW
 	if pad < 0 {
 		pad = 0
 	}
-	return label + strings.Repeat(" ", pad) + dim("│") + " "
+	row := label + strings.Repeat(" ", pad) + dim("│") + " "
+	return fillBG(row, hex, w)
 }
 
 // transcriptBand renders the transcript viewport, prefixed with the rail column

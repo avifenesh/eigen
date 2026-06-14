@@ -273,7 +273,7 @@ func (m *model) sidebarLines(h int) []string {
 				continue
 			}
 			e := m.railEntries[r.rail.entry]
-			lines = append(lines, railPad(m.railEntryLabel(e, cur, grouped, contentW), rw))
+			lines = append(lines, m.railEntryRow(e, cur, grouped, contentW, rw))
 		}
 	}
 	for len(lines) < h {
