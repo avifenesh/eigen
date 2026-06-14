@@ -48,6 +48,7 @@ type block struct {
 	// are set once), so a length+flags signature uniquely identifies the render.
 	rcache string
 	rkey   string
+	wrapW  int // width available at last renderWrapped (for code-block surfaces)
 }
 
 func (b *block) collapsible() bool { return b.kind == blockThinking || b.kind == blockTool }
@@ -64,6 +65,7 @@ func (b *block) renderWrapped(selected bool, width int) string {
 	if key == b.rkey && b.rcache != "" {
 		return b.rcache
 	}
+	b.wrapW = width // available width, for surface-filled regions (code blocks)
 	s := b.render(selected)
 	// Expand tabs BEFORE width-wrapping: the wrap (and the side panels'
 	// padding math) counts \t as one column, but the terminal expands it to
@@ -272,7 +274,7 @@ func (b *block) render(selected bool) string {
 			// stands apart from assistant prose and tool activity.
 			s.WriteString(styleUser.Render("❯ ") + styleUser.Render(b.body))
 		} else {
-			s.WriteString(renderProse(b.body))
+			s.WriteString(renderProse(b.body, b.wrapW))
 		}
 
 	case blockNote:
@@ -358,32 +360,43 @@ func gutterRule(s, rule string) string {
 // horizontal rules are styled per-line; inline **bold**, *italic*, and `code`
 // are styled within normal text. It is deliberately lightweight (no full
 // CommonMark) so it stays fast and dependency-free.
-func renderProse(s string) string {
+func renderProse(s string, width int) string {
 	lines := strings.Split(s, "\n")
 	out := make([]string, 0, len(lines))
 	inFence := false
+	// Code-block width: a comfortable column, capped to the available width so
+	// the surface fill never overflows the transcript.
+	codeW := 64
+	if width > 4 && width-2 < codeW {
+		codeW = width - 2
+	}
+	if codeW < 8 {
+		codeW = 8
+	}
 	for _, ln := range lines {
 		trimmed := strings.TrimSpace(ln)
 
-		// Fenced code block delimiters toggle code mode. Hide the raw ``` and
-		// show a clean framed block: a top rule with the language label, a
-		// teal left bar on each code line, a closing rule.
+		// Fenced code block: render as a real framed panel on the Surface tint
+		// — a lang chip on Overlay, code lines filled on Surface (so code reads
+		// as a distinct document element, not teal prose), a thin closing rule.
 		if strings.HasPrefix(trimmed, "```") {
 			if !inFence {
 				lang := strings.TrimSpace(strings.TrimPrefix(trimmed, "```"))
-				label := "╭─ code"
-				if lang != "" {
-					label = "╭─ " + lang
+				if lang == "" {
+					lang = "code"
 				}
-				out = append(out, styleFaint.Render(label))
+				chip := styleSurfaceBrand.Render(" " + lang + " ")
+				out = append(out, fillBG(chip, surfaceHex(theme.Overlay), codeW))
 			} else {
-				out = append(out, styleFaint.Render("╰─"))
+				out = append(out, fillBG("", surfaceHex(theme.Surface), codeW))
 			}
 			inFence = !inFence
 			continue
 		}
 		if inFence {
-			out = append(out, styleFaint.Render("│ ")+styleCode.Render(ln))
+			// Code line on the Surface tint, padded to the block width.
+			line := "  " + styleCodeOnSurface.Render(expandTabs(ln))
+			out = append(out, fillBG(line, surfaceHex(theme.Surface), codeW))
 			continue
 		}
 

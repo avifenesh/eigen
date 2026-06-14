@@ -114,12 +114,23 @@ func TestRenderWrappedCacheInvalidates(t *testing.T) {
 func TestProseStylesCodeFences(t *testing.T) {
 	body := "Here is code:\n```go\nfunc main() {}\n```\ndone"
 	b := &block{kind: blockText, role: "assistant", body: body}
+	b.wrapW = 80
 	out := b.render(false)
 	if !strings.Contains(out, "func main() {}") {
 		t.Fatalf("code content should be present:\n%s", out)
 	}
-	if !strings.Contains(out, "│") {
-		t.Fatalf("fenced code should get a left bar:\n%s", out)
+	// Fenced code renders on the Surface tint (a real framed element, not a
+	// left bar): the surface background sequence must appear.
+	if !strings.Contains(out, bgSeq(surfaceHex(theme.Surface))) {
+		t.Fatalf("fenced code should be filled on the Surface tint:\n%q", out)
+	}
+	// The language label shows in the chip.
+	if !strings.Contains(out, "go") {
+		t.Fatalf("language label should show:\n%s", out)
+	}
+	// Raw backticks are hidden.
+	if strings.Contains(out, "```") {
+		t.Fatalf("raw fence backticks should be hidden:\n%s", out)
 	}
 }
 
@@ -314,7 +325,7 @@ func TestMultieditDetailNumbersEdits(t *testing.T) {
 }
 
 func TestProseHeadingDropsHashes(t *testing.T) {
-	out := renderProse("# Heading One\nbody")
+	out := renderProse("# Heading One\nbody", 80)
 	if strings.Contains(out, "#") {
 		t.Errorf("heading should not keep raw '#' markers:\n%s", out)
 	}
@@ -328,7 +339,7 @@ func TestProseHeadingDropsHashes(t *testing.T) {
 }
 
 func TestProseCodeFenceHidesBackticks(t *testing.T) {
-	out := renderProse("```go\nx := 1\n```")
+	out := renderProse("```go\nx := 1\n```", 80)
 	if strings.Contains(out, "```") {
 		t.Errorf("code fence should hide raw backticks:\n%s", out)
 	}
@@ -341,7 +352,7 @@ func TestProseCodeFenceHidesBackticks(t *testing.T) {
 }
 
 func TestProseRendersLinks(t *testing.T) {
-	out := renderProse("see [the docs](http://example.com) here")
+	out := renderProse("see [the docs](http://example.com) here", 80)
 	if strings.Contains(out, "[the docs]") || strings.Contains(out, "http://") {
 		t.Errorf("raw link markdown should be gone:\n%s", out)
 	}

@@ -48,6 +48,12 @@ var (
 	styleAsk    = theme.SWarn.Bold(true)
 	styleCode   = theme.SCode
 
+	// Code on the Surface tint: the fg paired with the code-block surface bg so
+	// fenced code reads as a distinct framed element (not teal prose). The lang
+	// chip is bright brand on the Overlay tint.
+	styleCodeOnSurface = theme.SCode.Background(theme.Surface)
+	styleSurfaceBrand  = lipgloss.NewStyle().Foreground(theme.Title).Background(theme.Overlay).Bold(true)
+
 	// accent is the calm structural color for borders, rules, and the prompt
 	// caret — present but not loud.
 	accent       = theme.Accent
