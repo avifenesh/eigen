@@ -106,11 +106,16 @@ func (c *Client) Done() <-chan struct{} { return c.done }
 func (c *Client) Close() error { return c.conn.Close() }
 
 // request sends a request and waits for the next non-event reply.
-// request sends one request and waits for its reply. reqMu serializes the
-// whole send→receive cycle so concurrent callers (e.g. the rail poll's List()
-// racing a turn's State()) can't read each other's reply off the shared
-// channel — replies carry no id, so pairing relies on one request in flight.
+// request sends one request and waits for its reply with the default timeout.
 func (c *Client) request(req Request) (Response, error) {
+	return c.requestWithin(req, defaultRequestTimeout)
+}
+
+// requestWithin sends one request and waits up to d for its reply. reqMu
+// serializes the whole send→receive cycle so concurrent callers (e.g. the rail
+// poll's List() racing a turn's State()) can't read each other's reply off the
+// shared channel — replies carry no id, so pairing relies on one in flight.
+func (c *Client) requestWithin(req Request, d time.Duration) (Response, error) {
 	b, err := json.Marshal(req)
 	if err != nil {
 		return Response{}, err
@@ -141,15 +146,25 @@ func (c *Client) request(req Request) (Response, error) {
 		return r, nil
 	case <-c.done:
 		return Response{}, fmt.Errorf("daemon connection closed")
-	case <-time.After(requestTimeout):
+	case <-time.After(d):
 		return Response{}, fmt.Errorf("daemon request %q timed out", req.Op)
 	}
 }
 
-// requestTimeout bounds a single request/reply cycle. Daemon ops are local and
-// fast (a turn streams via events, not a reply), so a stall this long means a
-// lost reply or a wedged daemon — fail rather than hang the caller forever.
-const requestTimeout = 30 * time.Second
+// defaultRequestTimeout bounds a normal request/reply cycle. Daemon ops are
+// local and fast (a turn streams via events, not a reply), so a stall this long
+// means a lost reply or a wedged daemon — fail rather than hang forever.
+const defaultRequestTimeout = 30 * time.Second
+
+// compactRequestTimeout bounds a /compact. Compaction runs a summarizer LLM
+// call over the LARGEST the context ever gets, which legitimately takes far
+// longer than a local op (tens of seconds, more on a slow/loaded gateway). The
+// 30s default was killing real compactions mid-summary — the daemon kept
+// working and the late reply was then dropped as stale, so /compact "failed"
+// while actually succeeding. Give it a generous ceiling — kept just ABOVE the
+// provider's own 5-minute HTTP timeout so the daemon always resolves (success
+// or a real error) before the client gives up, never a phantom timeout.
+const compactRequestTimeout = 6 * time.Minute
 
 // Ping checks the daemon is alive.
 func (c *Client) Ping() error {
@@ -250,7 +265,7 @@ func (c *Client) SetTitle(sessionID, title string) error {
 
 // Compact summarizes a session's conversation toward target tokens.
 func (c *Client) Compact(sessionID string, target int) (before, after int, err error) {
-	r, err := c.request(Request{Op: "compact", ID: sessionID, Target: target})
+	r, err := c.requestWithin(Request{Op: "compact", ID: sessionID, Target: target}, compactRequestTimeout)
 	if err != nil {
 		return 0, 0, err
 	}

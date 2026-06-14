@@ -567,3 +567,57 @@ func TestStateReportsRunning(t *testing.T) {
 		}
 	}
 }
+
+// TestCompactUsesLongerTimeout proves the per-op timeout fix: a compact reply
+// that arrives slowly (longer than a short op timeout would allow, simulating a
+// real summarizer call over a large context) still succeeds, while the same
+// delay under a too-short timeout fails. This is the exact bug — the 30s
+// default was killing legitimate, slow compactions mid-summary.
+func TestCompactUsesLongerTimeout(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "d.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	// Mock daemon: on a "compact" op, wait 200ms then reply "compacted".
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		sc := bufio.NewScanner(conn)
+		sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
+		for sc.Scan() {
+			var req Request
+			if json.Unmarshal(sc.Bytes(), &req) != nil {
+				continue
+			}
+			if req.Op == "compact" {
+				time.Sleep(200 * time.Millisecond)
+				b, _ := json.Marshal(Response{Type: "compacted", Before: 10, After: 4})
+				conn.Write(append(b, '\n'))
+			}
+		}
+	}()
+
+	c, err := Dial(sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	// A too-short timeout fails (the old 30s-vs-slow-summary bug, in miniature).
+	if _, err := c.requestWithin(Request{Op: "compact", ID: "s1", Target: 8000}, 50*time.Millisecond); err == nil {
+		t.Fatal("expected a timeout when the op outlasts the deadline")
+	}
+	// A generous timeout (like compactRequestTimeout) lets the slow reply land.
+	r, err := c.requestWithin(Request{Op: "compact", ID: "s1", Target: 8000}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("slow compact should succeed with a generous timeout: %v", err)
+	}
+	if r.Before != 10 || r.After != 4 {
+		t.Fatalf("compact result not delivered: before=%d after=%d", r.Before, r.After)
+	}
+}
