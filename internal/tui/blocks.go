@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/avifenesh/eigen/internal/theme"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -95,28 +96,7 @@ func (b *block) statusGlyph() string {
 // a pen for writes, a book for reads, a prompt for shell, a lens for search.
 // Plain Unicode (renders in any modern terminal, no Nerd Font needed), calm
 // rather than loud.
-func toolIcon(name string) string {
-	switch name {
-	case "read":
-		return "📖" // reading
-	case "write":
-		return "✎" // writing
-	case "edit", "multiedit", "apply_patch":
-		return "✎" // editing
-	case "bash":
-		return "❯" // shell prompt
-	case "grep", "glob", "search", "find":
-		return "🔍" // searching
-	case "list":
-		return "▤" // listing
-	case "fetch":
-		return "🌐" // network
-	case "task", "task_status":
-		return "⚙" // delegated work
-	default:
-		return "▸" // generic tool
-	}
-}
+func toolIcon(name string) string { return theme.ToolIcon(name) }
 
 // header returns the one-line header text for a collapsible block (without the
 // ▸/▾ marker). Tool blocks get a status glyph + an action icon + a tailored,
@@ -175,8 +155,8 @@ func toolSummary(name string, args json.RawMessage) string {
 		}
 		return label + " " + a.Pattern
 	case "bash":
-		// Render like an actual shell line: the ❯ icon is the prompt, so the
-		// command stands alone (no redundant "bash" word).
+		// Render like an actual shell line: the bash icon leads (the prompt),
+		// so the command stands alone (no redundant "bash" word).
 		return compact(a.Command)
 	case "fetch":
 		return label + " " + a.URL
@@ -306,9 +286,9 @@ func (b *block) render(selected bool) string {
 		}
 
 	case blockThinking, blockTool:
-		marker := "▾"
+		marker := theme.Expanded
 		if b.collapsed {
-			marker = "▸"
+			marker = theme.Collapsed
 		}
 		style := styleTool
 		rule := styleTool.Render("▏")
@@ -325,7 +305,10 @@ func (b *block) render(selected bool) string {
 		// from conversational prose.
 		header := rule + " " + style.Render(marker+" "+b.header())
 		if selected {
-			header = rule + " " + lipgloss.NewStyle().Bold(true).Render(style.Render("❭ "+marker+" "+b.header()))
+			// Selected: a leading Focus bar (the ONE selection treatment,
+			// shared with the rail) — structural so it reads even without
+			// color — plus Focus-tinted, bold header.
+			header = styleFocus.Render("▎") + styleFocus.Bold(true).Render(marker+" ") + style.Bold(true).Render(b.header())
 		}
 		s.WriteString(header)
 

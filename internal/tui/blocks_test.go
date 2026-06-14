@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/avifenesh/eigen/internal/theme"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )
@@ -52,8 +53,13 @@ func TestToolBlockShowsResultWhenExpanded(t *testing.T) {
 
 func TestSelectedBlockMarked(t *testing.T) {
 	b := &block{kind: blockTool, title: "bash", collapsed: true}
-	if !strings.Contains(b.render(true), "❭") {
-		t.Fatalf("selected block should show ❭ marker:\n%s", b.render(true))
+	// Selected blocks get the Focus selection bar (▎) — the one selection
+	// treatment, structural so it reads even without color.
+	if !strings.Contains(b.render(true), "▎") {
+		t.Fatalf("selected block should show the ▎ selection bar:\n%s", b.render(true))
+	}
+	if b.render(true) == b.render(false) {
+		t.Fatal("selected render must differ from unselected")
 	}
 }
 
@@ -354,22 +360,31 @@ func TestToolBlockHasGutterRule(t *testing.T) {
 }
 
 func TestToolIconsAndBashLine(t *testing.T) {
-	// Bash renders like a shell line: the ❯ prompt icon, command, no "bash" word.
+	// Bash renders like a shell line: its tool icon + command, no "bash" word.
 	bash := &block{kind: blockTool, toolName: "bash", toolArgs: []byte(`{"command":"go test ./..."}`), state: toolDone}
 	h := bash.header()
-	if !strings.Contains(h, "❯") || !strings.Contains(h, "go test ./...") {
-		t.Errorf("bash header should be a shell line: %q", h)
+	if !strings.Contains(h, theme.ToolIcon("bash")) || !strings.Contains(h, "go test ./...") {
+		t.Errorf("bash header should be a shell line with its icon: %q", h)
 	}
 	if strings.Contains(h, "bash ") {
 		t.Errorf("bash header should not repeat the word 'bash': %q", h)
 	}
-	// Read gets the book icon, edit the pen.
+	// Each tool gets its coherent icon (no emoji).
 	rd := &block{kind: blockTool, toolName: "read", toolArgs: []byte(`{"path":"x.go"}`), state: toolDone}
-	if !strings.Contains(rd.header(), "📖") {
-		t.Errorf("read should get the book icon: %q", rd.header())
+	if !strings.Contains(rd.header(), theme.ToolIcon("read")) {
+		t.Errorf("read should get the read icon: %q", rd.header())
 	}
 	ed := &block{kind: blockTool, toolName: "edit", toolArgs: []byte(`{"path":"x.go","old_string":"a","new_string":"b"}`), state: toolDone}
-	if !strings.Contains(ed.header(), "✎") {
-		t.Errorf("edit should get the pen icon: %q", ed.header())
+	if !strings.Contains(ed.header(), theme.ToolIcon("edit")) {
+		t.Errorf("edit should get the edit icon: %q", ed.header())
+	}
+	// No emoji anywhere in the icon set (the luxury rule).
+	for _, name := range []string{"read", "write", "edit", "grep", "list", "bash", "fetch", "task", "generate_image", "other"} {
+		ic := theme.ToolIcon(name)
+		for _, r := range ic {
+			if r >= 0x1F000 || (r >= 0x2600 && r <= 0x27BF) {
+				t.Errorf("tool %q icon %q contains an emoji rune %U — must be monochrome line-art", name, ic, r)
+			}
+		}
 	}
 }
