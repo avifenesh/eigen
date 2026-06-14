@@ -11,6 +11,7 @@ import (
 
 	"github.com/avifenesh/eigen/internal/theme"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // maxDiffLines bounds how many diff lines an edit block renders.
@@ -171,16 +172,34 @@ func renderDiffLang(s, lang string) string {
 	}
 	addBg := theme.AddBg
 	delBg := theme.DelBg
+	// Uniform band width: pad every +/- line's tint to the widest content line
+	// so changed lines render as clean edge-to-edge colored bands (like an
+	// editor / GitHub), not ragged stripes that stop at each line's length.
+	bandW := 0
+	for _, ln := range lines {
+		if w := ansi.StringWidth(ln); w > bandW {
+			bandW = w
+		}
+	}
+	padTo := func(s string, bg lipgloss.TerminalColor) string {
+		if bandW <= 0 {
+			return s
+		}
+		if pad := bandW - ansi.StringWidth(ansi.Strip(s)); pad > 0 {
+			s += lipgloss.NewStyle().Background(bg).Render(strings.Repeat(" ", pad))
+		}
+		return s
+	}
 	for i, ln := range lines {
 		switch {
 		case strings.HasPrefix(ln, "⋯"):
 			out[i] = styleReason.Render(ln)
 		case strings.HasPrefix(ln, "+ "):
 			marker := lipgloss.NewStyle().Foreground(theme.Ok).Background(addBg).Render("+ ")
-			out[i] = marker + code(ln[2:], addBg, lipgloss.NewStyle().Foreground(theme.Ok).Background(addBg))
+			out[i] = padTo(marker+code(ln[2:], addBg, lipgloss.NewStyle().Foreground(theme.Ok).Background(addBg)), addBg)
 		case strings.HasPrefix(ln, "- "):
 			marker := lipgloss.NewStyle().Foreground(theme.Err).Background(delBg).Render("- ")
-			out[i] = marker + code(ln[2:], delBg, lipgloss.NewStyle().Foreground(theme.Err).Background(delBg))
+			out[i] = padTo(marker+code(ln[2:], delBg, lipgloss.NewStyle().Foreground(theme.Err).Background(delBg)), delBg)
 		default:
 			body := ln
 			if strings.HasPrefix(ln, "  ") {
