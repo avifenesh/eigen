@@ -579,7 +579,10 @@ func (m *Model) railContent(r rect) string {
 		marker := "  "
 		style := sRailIdle
 		if p.page == m.active {
-			marker = sAccent.Render("▎") + " "
+			// Active page: the clay Focus bar — the SAME "you are here" / active
+			// treatment as everywhere else (selection ▎, active session). Blue
+			// is reserved for brand + structure, not "active".
+			marker = lipgloss.NewStyle().Foreground(cFocus).Render("▎") + " "
 			style = sRailActive
 		}
 		b.WriteString(marker + style.Render(truncate(p.name, r.w-2)) + "\n")
