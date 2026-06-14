@@ -17,6 +17,7 @@ import (
 	"github.com/avifenesh/eigen/internal/memory"
 	"github.com/avifenesh/eigen/internal/session"
 	"github.com/avifenesh/eigen/internal/skill"
+	"github.com/avifenesh/eigen/internal/theme"
 	"github.com/avifenesh/eigen/internal/tool"
 	"github.com/avifenesh/eigen/internal/transcript"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -49,6 +50,7 @@ func testModel(t *testing.T) *model {
 	ti.ShowLineNumbers = false
 	ti.MaxHeight = inputMaxRows
 	ti.SetHeight(1)
+	styleInputBox(&ti, theme.Accent)
 	ti.KeyMap.InsertNewline.SetEnabled(false)
 	ti.Focus()
 	m := &model{

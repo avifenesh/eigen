@@ -182,9 +182,9 @@ func (m *model) View() string {
 		// at the top and the input sits clean at the bottom. paintBase ensures
 		// every cell (incl. the input row) sits on Base, so a terminal with a
 		// non-black background can't show through as an "exposed" grey hole.
-		return paintBase(m.transcriptBand()+"\n"+bottom, m.width)
+		return paintBase(m.transcriptBand()+"\n"+bottom, m.width, m.height)
 	}
-	return paintBase(m.headerView()+"\n"+m.planView()+m.transcriptBand()+"\n"+bottom+"\n"+m.statusBarView(), m.width)
+	return paintBase(m.headerView()+"\n"+m.planView()+m.transcriptBand()+"\n"+bottom+"\n"+m.statusBarView(), m.width, m.height)
 }
 
 // flashBanner renders the transient confirmation pill, right-aligned: a calm

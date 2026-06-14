@@ -87,12 +87,19 @@ func surfaceHex(c lipgloss.AdaptiveColor) string { return c.Dark }
 // View through this paints every cell, so eigen owns the whole rectangle and no
 // terminal background leaks through. Rows that already carry their own bg
 // spans (rail/panel/code) keep them — Base is only the foundation/padding.
-func paintBase(view string, width int) string {
+func paintBase(view string, width, height int) string {
 	if width <= 0 {
 		return view
 	}
 	hex := surfaceHex(theme.Base)
 	lines := strings.Split(view, "\n")
+	// Never emit more rows than the terminal has: at tiny sizes the regions
+	// (header+plan+input+status) can sum past the height. Keep the LAST height
+	// lines so the input + status (the interactive bottom) survive and the top
+	// chrome is what scrolls off — rather than overflowing the screen.
+	if height > 0 && len(lines) > height {
+		lines = lines[len(lines)-height:]
+	}
 	for i, ln := range lines {
 		lines[i] = fillBG(ln, hex, width)
 	}

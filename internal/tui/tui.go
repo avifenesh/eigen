@@ -1837,21 +1837,7 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 	ti.CharLimit = 0
 	ti.MaxHeight = inputMaxRows
 	ti.SetHeight(1)
-	// Flat look inside the box: no cursor-line background highlight.
-	ti.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	ti.BlurredStyle.CursorLine = lipgloss.NewStyle()
-	// A rounded border draws the input as a box; the accent color when focused,
-	// dim when blurred. The prompt caret and placeholder pick up the palette.
-	ti.FocusedStyle.Base = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(accent)
-	ti.BlurredStyle.Base = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(theme.Faint)
-	ti.FocusedStyle.Prompt = styleAccent
-	ti.BlurredStyle.Prompt = lipgloss.NewStyle().Foreground(theme.Faint)
-	ti.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(theme.Dim)
-	ti.BlurredStyle.Placeholder = lipgloss.NewStyle().Foreground(theme.Faint)
+	styleInputBox(&ti, accent)
 	// Enter is reserved for submit; newlines are inserted with ctrl+j / alt+enter
 	// (handled in Update). Disabling the textarea's own newline binding stops it
 	// from inserting a line break on Enter.
@@ -1975,6 +1961,38 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 		Effort:      fm.backend.Effort(),
 		Search:      fm.backend.SearchMode(),
 	}, nil
+}
+
+// styleInputBox pins every textarea sub-style (and the cursor) to the eigen
+// Base background. The bubbles textarea otherwise paints its content/cursor
+// with ANSI black ([40m) + reverse video, which on a terminal with a non-black
+// background (e.g. ghostty `background = #1b1c20` + opacity) leaks through as an
+// "exposed" patch around the input box. Shared by Run and tests so both render
+// the same. A rounded border frames the box: accent when focused, faint when
+// blurred; the caret/placeholder follow the palette.
+func styleInputBox(ti *textarea.Model, accent lipgloss.TerminalColor) {
+	base := lipgloss.NewStyle().Background(theme.Base)
+	for _, st := range []*textarea.Style{&ti.FocusedStyle, &ti.BlurredStyle} {
+		st.CursorLine = base // flat: no cursor-line highlight, on Base
+		st.CursorLineNumber = base
+		st.EndOfBuffer = base
+		st.LineNumber = base
+		st.Text = st.Text.Background(theme.Base)
+	}
+	ti.FocusedStyle.Base = lipgloss.NewStyle().
+		Background(theme.Base).Border(lipgloss.RoundedBorder()).
+		BorderForeground(accent).BorderBackground(theme.Base)
+	ti.BlurredStyle.Base = lipgloss.NewStyle().
+		Background(theme.Base).Border(lipgloss.RoundedBorder()).
+		BorderForeground(theme.Faint).BorderBackground(theme.Base)
+	ti.FocusedStyle.Prompt = lipgloss.NewStyle().Foreground(theme.Accent).Background(theme.Base)
+	ti.BlurredStyle.Prompt = lipgloss.NewStyle().Foreground(theme.Faint).Background(theme.Base)
+	ti.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(theme.Dim).Background(theme.Base)
+	ti.BlurredStyle.Placeholder = lipgloss.NewStyle().Foreground(theme.Faint).Background(theme.Base)
+	// The cursor bubble defaults to reverse video on ANSI black; put it on Base
+	// (the block cursor still inverts the glyph cell, but on the right canvas).
+	ti.Cursor.Style = lipgloss.NewStyle().Background(theme.Base)
+	ti.Cursor.TextStyle = lipgloss.NewStyle().Background(theme.Base)
 }
 
 func compact(s string) string {
