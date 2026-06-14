@@ -16,23 +16,25 @@ import (
 // line-art only — NO emoji (emoji are double-width, render per-font, and
 // cheapen the luxury feel). Each tool/concept maps to exactly one glyph.
 //
-// Tier is chosen once at init: EIGEN_NERD_FONT=0 forces the Unicode fallback;
-// =1 forces NF; unset → detect from $TERM_PROGRAM / known NF env hints, default
-// to NF (the common case for this product's users), since the fallback is only
-// needed on bare terminals and those users can set =0.
+// Tier is chosen once at init: EIGEN_NERD_FONT=1 opts INTO the richer Nerd Font
+// glyphs; 0/unset uses the pure-Unicode fallback. The fallback is the SAFE
+// default — it renders on every terminal/font, so eigen never shows tofu out of
+// the box. Users running a Nerd Font (e.g. JetBrainsMono NF in ghostty) set
+// EIGEN_NERD_FONT=1 once for the richer icons.
 
 var nerdFont = detectNerdFont()
 
 func detectNerdFont() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("EIGEN_NERD_FONT"))) {
-	case "0", "false", "off", "no":
-		return false
 	case "1", "true", "on", "yes":
 		return true
+	case "0", "false", "off", "no":
+		return false
 	}
-	// Heuristic: terminals that ship/commonly use Nerd Fonts. Default true —
-	// the target users run a NF; bare-terminal users set EIGEN_NERD_FONT=0.
-	return true
+	// Best-effort hint: some setups advertise a Nerd Font in the font env.
+	// Otherwise default to the Unicode fallback (no tofu anywhere).
+	font := strings.ToLower(os.Getenv("EIGEN_FONT") + " " + os.Getenv("TERMINAL_FONT"))
+	return strings.Contains(font, "nerd") || strings.Contains(font, "nf")
 }
 
 // NerdFont reports whether the Nerd Font icon tier is active.

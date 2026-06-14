@@ -389,11 +389,13 @@ func TestToolIconsAndBashLine(t *testing.T) {
 	if !strings.Contains(ed.header(), theme.ToolIcon("edit")) {
 		t.Errorf("edit should get the edit icon: %q", ed.header())
 	}
-	// No emoji anywhere in the icon set (the luxury rule).
+	// No emoji anywhere in the icon set (the luxury rule). Check the pictographic
+	// planes (U+1F000+) and the explicit emoji-presentation selector — NOT the
+	// whole Misc-Symbols block, which holds plain monochrome dingbats like ✎/✓.
 	for _, name := range []string{"read", "write", "edit", "grep", "list", "bash", "fetch", "task", "generate_image", "other"} {
 		ic := theme.ToolIcon(name)
 		for _, r := range ic {
-			if r >= 0x1F000 || (r >= 0x2600 && r <= 0x27BF) {
+			if r >= 0x1F000 || r == 0xFE0F {
 				t.Errorf("tool %q icon %q contains an emoji rune %U — must be monochrome line-art", name, ic, r)
 			}
 		}
