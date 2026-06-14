@@ -1165,6 +1165,47 @@ session, state highlights) uses a DIFFERENT theme role.
   re-themes everything (roles + styles + ramps) with zero call-site changes;
   main.go re-execs once to apply. Brand rule holds per-palette (test).
 
+## Tier 23 — performance + resource health (RSS, leaks, profiling)
+User-initiated: "memory leak check, RSS, resource usage, performance." eigen's
+real process is the **daemon** — long-lived, hosting many sessions in ONE
+process (MCP/LSP children, PTY shells, background tasks, event buffers). So a
+slow leak or unbounded growth is the failure that actually bites (orphaned
+daemons were once the machine-freeze bug). Goal: measure, bound, and keep it
+honest over time. Builds on the earlier stability sweep (RWMutex on sessions,
+bounded replay buffer, bash process-group kill, MCP/LSP teardown, bg-task
+caps) — this tier is about MEASUREMENT + LONG-RUN bounds, not re-fixing those.
+
+- [ ] **Baseline + visibility.** Capture daemon RSS/goroutines/heap at rest,
+  per idle session, and per active turn. Wire `net/http/pprof` behind an opt-in
+  env (`EIGEN_PPROF=127.0.0.1:port`, loopback only, off by default) so heap /
+  goroutine / allocs profiles are grabbable live. Maybe surface a cheap
+  `eigen daemon status` line: RSS, goroutines, session count, uptime.
+- [ ] **Leak hunt (the real one).** Run a long soak: N sessions, many
+  turns/attaches/detaches/rebuilds over hours, watch RSS + goroutine count for
+  monotonic growth. Prime suspects to audit: per-session event/replay slices,
+  the daemon subs fan-out, BgRegistry records, PTY emulator buffers, MCP/LSP
+  client lifecycles, transcript history growth, goroutines that outlive a
+  detached view. `go test -race` already clean; add a goroutine-count
+  regression assertion (attach→detach→GC leaves no residual goroutines).
+- [ ] **Bound what grows.** Confirm/cap the unbounded-over-time structures:
+  in-memory transcript vs on-disk (does a 1000-turn session hold everything in
+  RAM?), event buffers (replay cap exists — verify others), tool-result image
+  retention (ShedToolImages), feed/suggest caches. Each long-lived slice/map
+  needs a documented ceiling or eviction.
+- [ ] **Turn latency + allocs.** Profile a turn's hot path (wire encode/decode,
+  transcript render, context-budget compaction, token counting). Cut obvious
+  per-turn allocations; note any O(history) work that should be incremental.
+  TUI render cost at scale (huge transcript, 4 panes) — the band/sidebar
+  recompute should already be memoized; verify under a big transcript.
+- [ ] **CI/regression guard.** A `make perf` (or a tagged test) that runs the
+  soak in miniature + asserts no goroutine/heap growth across a fixed workload,
+  so a future change that reintroduces a leak fails loudly. Keep it in the
+  standard gate or a nightly.
+- [ ] **Document findings.** A short `docs/performance.md`: measured baselines
+  (RSS at rest / per session / per turn), the bounds each structure carries,
+  how to profile (`EIGEN_PPROF`), and the soak recipe — so this stays
+  re-runnable, not a one-off.
+
 ## Debt / bugs
 - [x] **Untitled daemon sessions still appear.** FIXED: (1) `Host.Restore` now
   calls `maybeTitle` per restored session, so sessions whose title never landed
