@@ -315,13 +315,13 @@ func (m *model) switcherView() string {
 func statusGlyph(s string) string {
 	switch s {
 	case "working":
-		return styleWorking.Render("●") // working = the loud orange, matching the loader
+		return styleWorking.Render(theme.StatusWorking) // loud orange, matches the loader
 	case "approval":
-		return styleAsk.Render("◆")
+		return styleAsk.Render(theme.StatusApproval)
 	case "error":
-		return styleErr.Render("✗")
+		return styleErr.Render(theme.StatusError)
 	}
-	return dim("○")
+	return dim(theme.StatusIdle)
 }
 
 // modelPickerView renders the interactive model chooser (bare /model).

@@ -340,7 +340,7 @@ func TestHeaderTitleClickOpensRename(t *testing.T) {
 }
 
 func TestAnsiTrunc(t *testing.T) {
-	if got := ansiTrunc("hello world", 5); got != "hell…" {
+	if got := ansiTrunc("hello world", 5); got != "hell⋯" {
 		t.Fatalf("truncate to 5 = %q", got)
 	}
 	if got := ansiTrunc("hi", 10); got != "hi" {

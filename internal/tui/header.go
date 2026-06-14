@@ -278,7 +278,7 @@ func ansiTrunc(s string, max int) string {
 		return s
 	}
 	if max <= 1 {
-		return "…"
+		return "⋯"
 	}
 	r := []rune(s)
 	out := make([]rune, 0, len(r))
@@ -291,5 +291,5 @@ func ansiTrunc(s string, max int) string {
 		out = append(out, c)
 		w += cw
 	}
-	return string(out) + "…"
+	return string(out) + "⋯"
 }

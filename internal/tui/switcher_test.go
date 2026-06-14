@@ -10,6 +10,7 @@ import (
 
 	"github.com/avifenesh/eigen/internal/chat"
 	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/theme"
 )
 
 // switchBackend wraps the local test backend with a fake daemon session list,
@@ -117,7 +118,8 @@ func TestSessionsSlashCommand(t *testing.T) {
 
 func TestStatusGlyphs(t *testing.T) {
 	for status, want := range map[string]string{
-		"working": "●", "idle": "○", "approval": "◆", "error": "✗",
+		"working": theme.StatusWorking, "idle": theme.StatusIdle,
+		"approval": theme.StatusApproval, "error": theme.StatusError,
 	} {
 		if g := statusGlyph(status); !strings.Contains(g, want) {
 			t.Fatalf("statusGlyph(%q) = %q, want %q", status, g, want)

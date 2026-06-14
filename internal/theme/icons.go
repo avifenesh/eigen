@@ -108,9 +108,13 @@ var (
 	Expanded  = "▾"
 	Collapsed = "▸"
 	// Status: working / idle / approval-wait / error.
-	StatusWorking  = "●"
-	StatusIdle     = "○"
-	StatusApproval = "◆"
+	// Status dots — width-1 glyphs (the plain round ● ○ and ◆ are East-Asian-
+	// AMBIGUOUS, which some terminals render two cells wide, overflowing the
+	// rail's column math and crossing the separator). These read one cell on
+	// every terminal: filled ◉ working, dotted ◌ idle, lozenge ◊ approval.
+	StatusWorking  = "◉"
+	StatusIdle     = "◌"
+	StatusApproval = "◊"
 	StatusError    = "✗"
 	// Back.
 	Back = "‹"
