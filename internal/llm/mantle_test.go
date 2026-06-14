@@ -1,7 +1,12 @@
 package llm
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -94,5 +99,102 @@ func TestMantleIgnoresUnsupportedEnvEffort(t *testing.T) {
 	m2, _ := NewMantle("openai.gpt-5.5")
 	if m2.effort != "low" {
 		t.Fatalf("supported env effort should apply; got %q", m2.effort)
+	}
+}
+
+// sseCompleted writes a minimal successful Responses SSE stream with one text
+// message, then a response.completed event.
+func sseCompleted(w http.ResponseWriter, text string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	io := w.(interface{ Flush() })
+	w.Write([]byte(`data: {"type":"response.output_text.delta","delta":` + mustJSON(text) + "}\n\n"))
+	io.Flush()
+	w.Write([]byte(`data: {"type":"response.completed","response":{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":` + mustJSON(text) + `}]}]}}` + "\n\n"))
+	io.Flush()
+}
+
+// sseFailed writes a transient response.failed event (the intermittent Bedrock
+// mantle server_error that arrives over an HTTP-200 stream).
+func sseFailed(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Write([]byte(`data: {"type":"response.failed","response":{"status":"failed","error":{"code":"server_error","message":"The server had an error while processing your request. Sorry about that!"}}}` + "\n\n"))
+	w.(interface{ Flush() }).Flush()
+}
+
+func mustJSON(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+// TestMantleStreamRetriesTransientFailure is the regression for the eigen↔mantle
+// bug: mantle intermittently emits response.failed (transient server_error) on
+// an HTTP-200 stream. When it arrives BEFORE any output, eigen must retry rather
+// than killing the turn (codex survives because its bridge posts non-streaming
+// and retries the equivalent 5xx).
+func TestMantleStreamRetriesTransientFailure(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := calls.Add(1)
+		if n <= 2 { // first two attempts fail transiently
+			sseFailed(w)
+			return
+		}
+		sseCompleted(w, "OK")
+	}))
+	defer srv.Close()
+
+	m := &Mantle{BaseURL: srv.URL, Model: "openai.gpt-5.5", effort: "high", token: "t", http: srv.Client()}
+	var got strings.Builder
+	resp, err := m.Stream(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}},
+		func(c StreamChunk) { got.WriteString(c.Text) })
+	if err != nil {
+		t.Fatalf("Stream should recover from transient failures: %v", err)
+	}
+	if resp.Text != "OK" {
+		t.Fatalf("resp.Text = %q, want OK", resp.Text)
+	}
+	if got.String() != "OK" {
+		t.Fatalf("streamed text = %q, want OK (no duplication)", got.String())
+	}
+	if calls.Load() != 3 {
+		t.Fatalf("expected 3 attempts (2 fail + 1 success), got %d", calls.Load())
+	}
+}
+
+// TestMantleStreamFailureAfterOutputIsNotRetried ensures a failure that arrives
+// AFTER deltas were emitted is surfaced (retrying would duplicate streamed text).
+func TestMantleStreamFailureAfterOutputIsNotRetried(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl := w.(interface{ Flush() })
+		w.Write([]byte(`data: {"type":"response.output_text.delta","delta":"partial"}` + "\n\n"))
+		fl.Flush()
+		w.Write([]byte(`data: {"type":"response.failed","response":{"status":"failed","error":{"code":"server_error","message":"boom"}}}` + "\n\n"))
+		fl.Flush()
+	}))
+	defer srv.Close()
+
+	m := &Mantle{BaseURL: srv.URL, Model: "openai.gpt-5.5", effort: "high", token: "t", http: srv.Client()}
+	_, err := m.Stream(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}}, nil)
+	if err == nil {
+		t.Fatal("a failure after streamed output must be surfaced, not retried")
+	}
+	if !strings.Contains(err.Error(), "server_error") {
+		t.Fatalf("error should carry the reason: %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("must NOT retry after output emitted; got %d attempts", calls.Load())
+	}
+}
+
+func TestStreamFailReason(t *testing.T) {
+	r := streamFailReason(json.RawMessage(`{"error":{"code":"server_error","message":"oops"}}`))
+	if r != "server_error: oops" {
+		t.Fatalf("got %q", r)
+	}
+	if r := streamFailReason(json.RawMessage(`{"status":"failed"}`)); !strings.Contains(r, "failed") {
+		t.Fatalf("fallback to raw json, got %q", r)
 	}
 }

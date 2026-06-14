@@ -228,6 +228,14 @@ func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
 
 // Stream runs a completion over SSE, forwarding text/reasoning deltas to sink
 // and returning the final assembled Response parsed from the completed event.
+//
+// Bedrock mantle intermittently emits a "response.failed" event carrying a
+// transient server error ("The server had an error while processing your
+// request") on an otherwise-HTTP-200 stream. When that arrives BEFORE any
+// output has been streamed to the sink, the attempt is safe to retry (no
+// partial output was shown), mirroring how a non-streaming 5xx is retried.
+// A failure that arrives after deltas were emitted is surfaced (retrying would
+// duplicate streamed text).
 func (m *Mantle) Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error) {
 	if len(req.Messages) == 0 {
 		return nil, fmt.Errorf("request has no messages")
@@ -247,16 +255,45 @@ func (m *Mantle) Stream(ctx context.Context, req Request, sink StreamSink) (*Res
 		_ = os.WriteFile(dbg, body, 0o600)
 	}
 
+	for attempt := 0; ; attempt++ {
+		final, emitted, failErr, err := m.streamOnce(ctx, body, sink)
+		if err != nil {
+			return nil, err
+		}
+		if failErr != nil {
+			// A pre-output failure is the transient mantle quirk: retry with
+			// backoff (capped). Once any delta has been emitted, or retries are
+			// exhausted, surface it.
+			if !emitted && attempt < maxStreamFailRetries {
+				if berr := sleepBackoff(ctx, attempt+1, 0); berr != nil {
+					return nil, berr
+				}
+				continue
+			}
+			return nil, failErr
+		}
+		return final, nil
+	}
+}
+
+// maxStreamFailRetries bounds re-requests when a streamed completion reports a
+// transient "response.failed" before any output was emitted.
+const maxStreamFailRetries = 3
+
+// streamOnce performs a single SSE attempt. It returns the assembled Response
+// on success; emitted reports whether any text/reasoning delta was forwarded to
+// sink (so the caller can decide whether a retry is safe); failErr is non-nil
+// when the stream reported "response.failed".
+func (m *Mantle) streamOnce(ctx context.Context, body []byte, sink StreamSink) (final *Response, emitted bool, failErr error, err error) {
 	resp, err := httpStream(ctx, m.http, m.BaseURL+"/responses",
 		map[string]string{"Authorization": "Bearer " + m.token}, body, nil)
 	if err != nil {
-		return nil, fmt.Errorf("mantle: %w", err)
+		return nil, false, nil, fmt.Errorf("mantle: %w", err)
 	}
 	defer resp.Body.Close()
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
-	var final *Response
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data:") {
@@ -276,39 +313,59 @@ func (m *Mantle) Stream(ctx context.Context, req Request, sink StreamSink) (*Res
 		}
 		switch ev.Type {
 		case "response.output_text.delta":
+			emitted = true
 			if sink != nil {
 				sink(StreamChunk{Kind: ChunkText, Text: ev.Delta})
 			}
 		case "response.reasoning_summary_text.delta":
+			emitted = true
 			if sink != nil {
 				sink(StreamChunk{Kind: ChunkReasoning, Text: ev.Delta})
 			}
 		case "response.completed", "response.incomplete":
 			out, status, reason, perr := parseReply(ev.Response)
 			if perr != nil {
-				return nil, perr
+				return nil, emitted, nil, perr
 			}
 			if status == "incomplete" {
 				if reason == "" {
 					reason = "unknown"
 				}
-				return nil, fmt.Errorf("mantle response incomplete (%s): refusing possibly-truncated output", reason)
+				return nil, emitted, nil, fmt.Errorf("mantle response incomplete (%s): refusing possibly-truncated output", reason)
 			}
 			final = out
 		case "response.failed":
 			if dbg := os.Getenv("EIGEN_DEBUG_STREAM"); dbg != "" {
 				_ = os.WriteFile(dbg, []byte(data), 0o600)
 			}
-			return nil, fmt.Errorf("mantle stream failed: %s", string(ev.Response))
+			return nil, emitted, fmt.Errorf("mantle stream failed: %s", streamFailReason(ev.Response)), nil
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("read stream: %w", err)
+		return nil, emitted, nil, fmt.Errorf("read stream: %w", err)
 	}
 	if final == nil {
-		return &Response{}, nil // empty; the agent's empty-turn nudge handles it
+		return &Response{}, emitted, nil, nil // empty; the agent's empty-turn nudge handles it
 	}
-	return final, nil
+	return final, emitted, nil, nil
+}
+
+// streamFailReason extracts a concise error message from a failed response
+// payload, falling back to the raw JSON when no structured error is present.
+func streamFailReason(raw json.RawMessage) string {
+	var r struct {
+		Error *struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &r); err == nil && r.Error != nil {
+		if r.Error.Code != "" {
+			return r.Error.Code + ": " + r.Error.Message
+		}
+		return r.Error.Message
+	}
+	return string(raw)
 }
 
 // post sends the request body to the Responses endpoint via the shared
