@@ -156,10 +156,25 @@ var (
 // removed line is paired with an added line (a modification), underlines the
 // changed span within each line (common prefix/suffix split). Context-collapse
 // markers render dim.
-func renderDiff(s string) string {
+func renderDiff(s string) string { return renderDiffLang(s, "") }
+
+// renderDiffLang renders a +/- diff. Add/removed lines keep their semantic
+// red/green (with intra-line word-diff) because the CHANGE is the primary
+// signal. Context lines (unchanged code you're just reading) get real syntax
+// highlighting when a language is known — the GitHub/delta pattern: changes
+// dominate, context reads as code.
+func renderDiffLang(s, lang string) string {
 	lines := strings.Split(s, "\n")
 	out := make([]string, len(lines))
 	i := 0
+	hl := func(code string) string {
+		if lang != "" {
+			if h, ok := highlightCode(code, lang, nil); ok {
+				return strings.TrimRight(h, "\n")
+			}
+		}
+		return styleReason.Render(code)
+	}
 	for i < len(lines) {
 		ln := lines[i]
 		switch {
@@ -196,8 +211,13 @@ func renderDiff(s string) string {
 			out[i] = styleStatus.Render(ln)
 			i++
 		default:
-			// Context line: quiet (dim) so the +/− changes pop against it.
-			out[i] = styleReason.Render(ln)
+			// Context line: a quiet marker + syntax-highlighted code, so the
+			// surrounding code reads while the +/− changes still pop.
+			body := ln
+			if strings.HasPrefix(ln, "  ") {
+				body = ln[2:]
+			}
+			out[i] = styleGhost.Render("  ") + hl(body)
 			i++
 		}
 	}

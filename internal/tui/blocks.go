@@ -174,6 +174,16 @@ func toolSummary(name string, args json.RawMessage) string {
 	}
 }
 
+// editPath returns the file path an edit/write/apply_patch block targets, for
+// language-aware diff highlighting. "" when unknown.
+func (b *block) editPath() string {
+	var a struct {
+		Path string `json:"path"`
+	}
+	_ = json.Unmarshal(b.toolArgs, &a)
+	return a.Path
+}
+
 // codeResult renders a tool result that is SOURCE CODE (e.g. `read` of a code
 // file) as a framed, syntax-tinted block on the Surface tint — the same
 // document treatment as a fenced code block — instead of a flat blob. Returns
@@ -437,7 +447,7 @@ func (b *block) render(selected bool) string {
 			}
 		} else if full != "" {
 			if isDiff {
-				s.WriteString("\n" + gutterRule(renderDiff(full), rule))
+				s.WriteString("\n" + gutterRule(renderDiffLang(full, langForPath(b.editPath())), rule))
 			} else if b.kind == blockTool && looksLikeJSON(full) {
 				// JSON tool results read terribly raw — pretty-print + tint.
 				s.WriteString("\n" + gutterRule(renderJSON(full, nil), rule))

@@ -34,3 +34,44 @@ func TestHighlightCodeUsesLexer(t *testing.T) {
 		t.Log("analyse guessed a lexer for gibberish (acceptable)")
 	}
 }
+
+func TestRenderDiffLangHighlightsContextNotChanges(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(prev)
+	// A diff with a code context line + a -/+ change.
+	diff := "  func f() {\n- \tx := 1\n+ \tx := 2\n  }"
+	out := renderDiffLang(diff, "go")
+	// Context "func f()" got syntax color (the keyword 'func' → Accent teal),
+	// possibly combined with other SGR params (bold) — match the color triplet.
+	if !strings.Contains(out, "38;2;62;158;150") {
+		t.Errorf("context code should be syntax-highlighted:\n%q", out)
+	}
+	// The change still reads with its +/- markers in the plain text.
+	plain := stripANSI(out)
+	if !strings.Contains(plain, "- ") || !strings.Contains(plain, "+ ") {
+		t.Errorf("diff should keep -/+ markers:\n%s", plain)
+	}
+	if !strings.Contains(plain, "x := 1") || !strings.Contains(plain, "x := 2") {
+		t.Errorf("diff should keep changed content:\n%s", plain)
+	}
+}
+
+func stripANSI(s string) string {
+	var b strings.Builder
+	in := false
+	for _, r := range s {
+		if r == '\x1b' {
+			in = true
+			continue
+		}
+		if in {
+			if r == 'm' {
+				in = false
+			}
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}

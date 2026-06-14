@@ -45,6 +45,7 @@ var (
 	styleTool   = theme.STool
 	styleErr    = theme.SErr
 	styleReason = theme.SDim
+	styleGhost  = theme.SGhost
 	styleStatus = theme.SOk
 	styleAsk    = theme.SWarn.Bold(true)
 	styleCode   = theme.SCode

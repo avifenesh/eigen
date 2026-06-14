@@ -353,7 +353,7 @@ func (m *model) diffForChange(fc fileChange) string {
 	if b.toolName == "apply_patch" {
 		detail = patchSection(detail, fc.path)
 	}
-	return renderDiff(detail)
+	return renderDiffLang(detail, langForPath(fc.path))
 }
 
 // patchSection extracts the normalized-patch lines belonging to one file from
