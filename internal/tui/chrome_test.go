@@ -15,6 +15,7 @@ import (
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/chat"
 	"github.com/avifenesh/eigen/internal/fuzzy"
+	"github.com/avifenesh/eigen/internal/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -1691,10 +1692,10 @@ func TestSidebarSessionsCollapseAllButton(t *testing.T) {
 	if !m.railGrouped() {
 		t.Fatal("precondition: sessions should be grouped")
 	}
-	// The sessions header shows the collapse-all button [–] when expanded.
+	// The sessions header shows the collapse-all button [⊟] when expanded.
 	band := m.transcriptBand()
-	if !strings.Contains(band, "[–]") {
-		t.Fatalf("expanded grouped sidebar should show the collapse-all [–] button:\n%s", band)
+	if !strings.Contains(band, "["+theme.CollapseAll+"]") {
+		t.Fatalf("expanded grouped sidebar should show the collapse-all button:\n%s", band)
 	}
 	// Find the sessions-header row and click it → collapses all projects.
 	rows := m.sidebarRows()
@@ -1715,9 +1716,9 @@ func TestSidebarSessionsCollapseAllButton(t *testing.T) {
 	if !m.anyRailCollapsed() {
 		t.Fatal("collapse-all should collapse the projects")
 	}
-	// Now the glyph flips to expand-all [+].
-	if !strings.Contains(m.transcriptBand(), "[+]") {
-		t.Fatalf("collapsed sidebar should show the expand-all [+] button:\n%s", m.transcriptBand())
+	// Now the glyph flips to expand-all [⊞].
+	if !strings.Contains(m.transcriptBand(), "["+theme.ExpandAll+"]") {
+		t.Fatalf("collapsed sidebar should show the expand-all button:\n%s", m.transcriptBand())
 	}
 	// Toggle again expands.
 	m.toggleRailProjects()
@@ -1734,7 +1735,7 @@ func TestSidebarSessionsHeaderNoButtonWhenUngrouped(t *testing.T) {
 	}
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m.refreshRail()
-	if strings.Contains(m.transcriptBand(), "[–]") || strings.Contains(m.transcriptBand(), "[+]") {
+	if strings.Contains(m.transcriptBand(), "["+theme.CollapseAll+"]") || strings.Contains(m.transcriptBand(), "["+theme.ExpandAll+"]") {
 		t.Fatal("single-project sidebar should not show a collapse-all button")
 	}
 }

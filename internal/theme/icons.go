@@ -118,4 +118,13 @@ var (
 	StatusError    = "✗"
 	// Back.
 	Back = "‹"
+	// Ellipsis — the ONE truncation marker. ⋯ (midline horizontal ellipsis) is
+	// width-1 on every terminal; the typographic … is East-Asian-ambiguous
+	// (renders 2 cells on ghostty etc.) and would overflow width-budgeted slots
+	// where a truncated string is sliced to an exact width then a marker added.
+	Ellipsis = "⋯"
+	// Collapse-all / expand-all (the sessions-header toggle): a clear pair, not
+	// a stray en-dash. ⊟ = collapse everything, ⊞ = expand everything.
+	CollapseAll = "⊟"
+	ExpandAll   = "⊞"
 )

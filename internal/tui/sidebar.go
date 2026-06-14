@@ -38,13 +38,13 @@ func sectionLabel(label string, w int) string {
 }
 
 // sessionsCollapseGlyph is the right-aligned collapse-all button on the
-// "sessions" header: [–] collapses every project, [+] expands them. Only
+// "sessions" header: ⊟ collapses every project, ⊞ expands them. Only
 // meaningful when sessions span >1 project (grouped); otherwise just a label.
 func (m *model) sessionsCollapseGlyph() string {
 	if m.anyRailCollapsed() {
-		return "[+]"
+		return "[" + theme.ExpandAll + "]"
 	}
-	return "[–]"
+	return "[" + theme.CollapseAll + "]"
 }
 
 // sessionsHeaderLine renders the "sessions" header padded to width with a

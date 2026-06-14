@@ -258,7 +258,7 @@ func compactDuration(d time.Duration) string {
 func oneLineTrunc(s string, n int) string {
 	s = strings.Join(strings.Fields(s), " ")
 	if len(s) > n {
-		return s[:n] + "…"
+		return s[:n] + "⋯"
 	}
 	return s
 }

@@ -1998,7 +1998,7 @@ func styleInputBox(ti *textarea.Model, accent lipgloss.TerminalColor) {
 func compact(s string) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	if len(s) > 80 {
-		s = s[:80] + "…"
+		s = s[:80] + "⋯"
 	}
 	return s
 }
@@ -2011,7 +2011,7 @@ func firstLineOf(s string) string {
 		s = s[:i]
 	}
 	if len(s) > 100 {
-		s = s[:100] + "…"
+		s = s[:100] + "⋯"
 	}
 	return s
 }

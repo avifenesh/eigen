@@ -365,7 +365,7 @@ func (s *skillsState) view(m *Model, w, h int) string {
 			out += "  " + sText.Render(truncate(l, w-4)) + "\n"
 		}
 		if limit < len(lines) {
-			out += sFaint.Render(fmt.Sprintf("  … %d more lines", len(lines)-limit)) + "\n"
+			out += sFaint.Render(fmt.Sprintf("  ⋯ %d more lines", len(lines)-limit)) + "\n"
 		}
 		out += "\n" + sFaint.Render("  esc back")
 		return out
@@ -616,7 +616,7 @@ func (s *memoryState) view(m *Model, w, h int) string {
 		lines := strings.Split(detail, "\n")
 		for i, l := range lines {
 			if i >= 3 {
-				out += sFaint.Render(fmt.Sprintf("  … %d more lines", len(lines)-i)) + "\n"
+				out += sFaint.Render(fmt.Sprintf("  ⋯ %d more lines", len(lines)-i)) + "\n"
 				break
 			}
 			out += "  " + sDim.Render(truncate(l, w-4)) + "\n"

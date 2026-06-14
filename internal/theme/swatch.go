@@ -74,15 +74,16 @@ func Swatch() string {
 	b.WriteString("\n" + hdr.Render("weight") + "\n")
 	b.WriteString("  " + SText.Render("normal") + "   " + SText.Bold(true).Render("bold (the one thing to look at)") + "   " + SFaint.Render("faint (recede)") + "   " + SText.Italic(true).Render("italic (rare)") + "   " + SLink.Underline(true).Render("underline (links)") + "\n")
 
-	// Glyph vocabulary.
+	// Glyph vocabulary — render the ACTUAL constants so the swatch is the truth.
 	b.WriteString("\n" + hdr.Render("glyphs") + "\n")
 	b.WriteString("  " + SAccent.Bold(true).Render("λ") + SDim.Render(" brand mark") + "    " +
-		SWorking.Render("●") + SDim.Render(" working") + "  " +
-		SDim.Render("○ idle") + "  " +
-		SWarn.Render("◆") + SDim.Render(" approval") + "  " +
-		SErr.Render("✗") + SDim.Render(" error") + "\n")
-	b.WriteString("  " + SFocus.Bold(true).Render("❯") + SDim.Render(" you-are-here/prompt") + "   " +
-		SDim.Render("▸/▾ collapse  ‹ back  ⏺ speak  ▶ read  ◉ voice  ⚒ tasks") + "\n")
+		SWorking.Render(StatusWorking) + SDim.Render(" working") + "  " +
+		SDim.Render(StatusIdle+" idle") + "  " +
+		SWarn.Render(StatusApproval) + SDim.Render(" approval") + "  " +
+		SErr.Render(StatusError) + SDim.Render(" error") + "\n")
+	b.WriteString("  " + SFocus.Bold(true).Render(Caret) + SDim.Render(" you-are-here/prompt") + "   " +
+		SDim.Render(Expanded+"/"+Collapsed+" collapse  "+Back+" back  "+Ellipsis+" truncate  "+CollapseAll+"/"+ExpandAll+" collapse-all") + "\n")
+	b.WriteString("  " + SDim.Render("tools: "+IconRead+" read  "+IconWrite+" write  "+IconSearch+" search  "+IconBash+" bash  "+IconFetch+" fetch  "+IconTask+" task") + "\n")
 
 	// Brand rule reminder.
 	b.WriteString("\n" + SFaint.Render("brand rule: blue (Accent/Title) = brand + structure ONLY; selection/active/state use other roles.") + "\n")

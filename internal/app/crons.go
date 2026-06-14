@@ -103,7 +103,7 @@ func loadCrontab() []CronRow {
 		}
 		name := command
 		if len(name) > 40 {
-			name = name[:40] + "…"
+			name = name[:40] + "⋯"
 		}
 		rows = append(rows, CronRow{
 			Name:    name,

@@ -135,7 +135,7 @@ func truncate(s string, w int) string {
 	if len(r) <= w-1 {
 		return s
 	}
-	return string(r[:w-1]) + "…"
+	return string(r[:w-1]) + "⋯"
 }
 
 // pad right-pads s to width (for column alignment).

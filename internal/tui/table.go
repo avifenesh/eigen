@@ -133,7 +133,7 @@ func renderMarkdownTable(lines []string, maxW int) ([]string, int) {
 		return theme.SFaint.Render(b.String())
 	}
 	cell := func(s string, width int, header bool) string {
-		s = ansi.Truncate(s, width, "…")
+		s = ansi.Truncate(s, width, "⋯")
 		pad := width - ansi.StringWidth(s)
 		if pad < 0 {
 			pad = 0

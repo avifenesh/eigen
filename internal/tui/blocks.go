@@ -675,7 +675,7 @@ func previewLine(s string) string {
 		s = s[:i]
 	}
 	if len(s) > 70 {
-		s = s[:70] + "…"
+		s = s[:70] + "⋯"
 	}
 	return s
 }
