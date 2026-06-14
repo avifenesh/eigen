@@ -226,9 +226,9 @@ func (b *block) codeResult(full string) string {
 	if !isCodePath(a.Path) {
 		return ""
 	}
-	codeW := 64
-	if b.wrapW > 4 && b.wrapW-2 < codeW {
-		codeW = b.wrapW - 2
+	codeW := b.wrapW - 1 // fill the transcript width (avoid a floating block)
+	if codeW < 8 {
+		codeW = 8
 	}
 	return renderCodeBlock(full, langForPath(a.Path), codeW)
 }
@@ -483,12 +483,10 @@ func gutterRule(s, rule string) string {
 func renderProse(s string, width int) string {
 	lines := strings.Split(s, "\n")
 	out := make([]string, 0, len(lines))
-	// Code-block width: a comfortable column, capped to the available width so
-	// the surface fill never overflows the transcript.
-	codeW := 64
-	if width > 4 && width-2 < codeW {
-		codeW = width - 2
-	}
+	// Code-block width: fill the FULL transcript content width so the framed
+	// surface spans edge-to-edge (a narrower block leaves a grey rectangle /
+	// hole in the transcript). A 1-col right inset keeps it off the boundary.
+	codeW := width - 1
 	if codeW < 8 {
 		codeW = 8
 	}
