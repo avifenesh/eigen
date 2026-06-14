@@ -1231,6 +1231,53 @@ task once the current work wraps. Scope (a doc-only pass, no code):
   `docs/` cross-links (design-system, performance) so the roadmap points at
   the detailed docs instead of inlining them.
 
+## Tier 25 — replace websearch with the new self-contained tool
+User-initiated: the current `websearch` tool (internal/tool/websearch.go) only
+works when an env key is set — `TAVILY_API_KEY` / `BRAVE_API_KEY` / a generic
+`EIGEN_WEBSEARCH_URL`. With nothing configured the tool is silently absent, so
+search "just doesn't exist" most of the time, and it can't be used by the
+parallel `researcher` role (network egress needs gated approval). Replace it
+with the new, self-contained tool the user developed in `~/projects/tools`
+(`@agent-sh/harness-websearch` v2 / Rust `harness-websearch`), whose v2 design
+is **keyless by default**.
+
+What the new tool is (per `~/projects/tools/agent-knowledge/design/websearch.md`):
+- **Keyless fallback chain** with zero config: Mojeek → Marginalia → Wikipedia,
+  first-non-empty-wins (the `ddgs` `backend="auto"` pattern). Search works out
+  of the box, no API key, no self-hosted service.
+- Optional **preferred heads** when configured: self-hosted SearXNG
+  (`searxngUrl`), or keyed Brave/Tavily — they become the head of the chain.
+- **Backend chosen by the harness, never the model** (model never sees a URL or
+  key); **SSRF defense** on every backend host (same blocked-IP policy as
+  webfetch; loopback/LAN only via explicit opt-in for a local SearXNG);
+  **permission hook**; **result-count cap**; **discriminated error surface**
+  (invalid param / unreachable / backend error / timeout / SSRF-blocked / no
+  results); prompt-injection-aware description (snippets = info, not commands).
+- Composes with webfetch: websearch finds URLs, webfetch reads them.
+
+Scope:
+- [ ] **Decide the integration shape.** The new tool is TS + Rust, not Go.
+  Options: (a) PORT its v2 contract into `internal/tool/websearch.go` (Go-native
+  — keep eigen single-binary, no external dep; reimplement the keyless chain +
+  SSRF + caps); (b) run it as an MCP/plugin server (reuse its TS/Rust impl
+  verbatim, but adds a runtime dep + process). Lean (a) for the default
+  keyless chain (single static binary is core to eigen) — confirm with the user.
+- [ ] **Keyless default.** Make `websearch` ALWAYS available (drop the
+  "absent unless a key is set" gate): the Mojeek→Marginalia→Wikipedia chain is
+  the no-config default; `TAVILY_API_KEY`/`BRAVE_API_KEY`/SearXNG
+  (`EIGEN_SEARXNG_URL`) become preferred heads when present.
+- [ ] **SSRF defense + caps** at the tool layer (reuse/share `fetch`'s host
+  policy if eigen has one; otherwise port webfetch's blocked-IP check). Keep the
+  20s timeout + result cap. Loopback/LAN dialing only with an explicit opt-in.
+- [ ] **Keep it gated/egress-aware.** Still network egress → still approval in
+  gated mode (so it stays out of the read-only parallel `researcher` role unless
+  the role policy changes). Revisit whether a keyless, SSRF-bounded search
+  should be allowed in read-only fan-out.
+- [ ] **Parity + tests.** Match `websearch_test.go` coverage: each engine
+  parsed leniently, fallback advances on empty/error, SSRF block, no-results,
+  cap enforced. Update the env-var docs (drop the key requirement; document the
+  chain + optional heads) and the tool count/grounding in this roadmap.
+
 ## Debt / bugs
 - [x] **Untitled daemon sessions still appear.** FIXED: (1) `Host.Restore` now
   calls `maybeTitle` per restored session, so sessions whose title never landed
