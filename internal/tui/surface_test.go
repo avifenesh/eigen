@@ -34,6 +34,22 @@ func TestFillBGReassertsAfterReset(t *testing.T) {
 	}
 }
 
+func TestFillBGReassertsAfterShorthandReset(t *testing.T) {
+	// lipgloss emits the EMPTY-param reset \x1b[m (not just \x1b[0m) for wrapped
+	// / styled lines — e.g. "…word\x1b[m   " with trailing pad spaces. fillBG
+	// must re-assert the bg after \x1b[m too, or those spaces show the terminal
+	// background (the wrapped-line "empty space" leak).
+	frag := "\x1b[38;2;221;227;227malpha beta\x1b[m   " // shorthand reset + pad
+	bg := bgSeq("#0B0E0F")
+	out := fillBG(frag, "#0B0E0F", 20)
+	if !strings.Contains(out, "\x1b[m"+bg) {
+		t.Fatalf("bg not re-asserted after the \\x1b[m shorthand reset:\n%q", out)
+	}
+	if w := ansi.StringWidth(out); w != 20 {
+		t.Errorf("filled width = %d, want 20", w)
+	}
+}
+
 func TestHexRGB(t *testing.T) {
 	r, g, b, ok := hexRGB("#11171A")
 	if !ok || r != 0x11 || g != 0x17 || b != 0x1A {

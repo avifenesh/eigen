@@ -70,8 +70,14 @@ func fillBG(content, hex string, width int) string {
 		}
 	}
 	// Re-assert the bg immediately after each reset so padding + post-reset
-	// runs keep the tint. (lipgloss emits \x1b[0m for resets.)
+	// runs keep the tint. lipgloss emits BOTH \x1b[0m AND the empty-param
+	// shorthand \x1b[m for a reset — a wrapped/styled line often ends "…word
+	// \x1b[m   " (trailing pad spaces after the shorthand), and missing the
+	// shorthand left those spaces on the terminal bg (the "empty space on a
+	// wrapped line" leak). Handle both; do \x1b[0m first so its replacement's
+	// trailing "\x1b[m"-free bg isn't matched again.
 	content = strings.ReplaceAll(content, "\x1b[0m", "\x1b[0m"+bg)
+	content = strings.ReplaceAll(content, "\x1b[m", "\x1b[m"+bg)
 	return bg + content + "\x1b[0m"
 }
 

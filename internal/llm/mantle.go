@@ -296,7 +296,10 @@ func (m *Mantle) Stream(ctx context.Context, req Request, sink StreamSink) (*Res
 			}
 			final = out
 		case "response.failed":
-			return nil, fmt.Errorf("mantle stream failed")
+			if dbg := os.Getenv("EIGEN_DEBUG_STREAM"); dbg != "" {
+				_ = os.WriteFile(dbg, []byte(data), 0o600)
+			}
+			return nil, fmt.Errorf("mantle stream failed: %s", string(ev.Response))
 		}
 	}
 	if err := scanner.Err(); err != nil {
