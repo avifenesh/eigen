@@ -5,6 +5,7 @@ package app
 import (
 	"testing"
 
+	"github.com/avifenesh/eigen/internal/daemon"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -113,5 +114,36 @@ func TestContentClickOutsideRowsIsNoop(t *testing.T) {
 	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: l.inner.y + l.inner.h - 1})
 	if m.sessions.list.cursor != before || m.quitting {
 		t.Fatal("clicking empty content space should be a no-op")
+	}
+}
+
+// TestHomeClickWithLiveSection verifies the home click map stays aligned when a
+// "working now" section is inserted above the feed (the live section pushes the
+// feed + recent rows down; clicks.mark records actual lines, so the mapping
+// must self-adjust).
+func TestHomeClickWithLiveSection(t *testing.T) {
+	d := feedData()
+	d.Live = []daemon.SessionInfo{
+		{ID: "s1", Title: "working one", Dir: "/home/u/proj-a", Status: daemon.StatusWorking},
+		{ID: "s2", Title: "idle two", Dir: "/home/u/proj-b", Status: daemon.StatusIdle},
+	}
+	m := New(d)
+	m.width, m.height = 120, 36
+	m.active = PageHome
+	l := m.computeLayout()
+	_ = m.home.view(m, l.inner.w, l.inner.h)
+	if m.home.feedN == 0 {
+		t.Skip("no feed items")
+	}
+	// Feed item 0's recorded line must point at a row that, when clicked,
+	// selects feed item 0 (not a live-section row).
+	line := rowLine(&m.home.clicks, 0)
+	if line < 0 {
+		t.Fatal("feed item 0 should still be in the click map with a live section")
+	}
+	m.home.list.cursor = 0
+	_, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: l.inner.y + line})
+	if !m.quitting || cmd == nil || m.result.Action != ActionOpenChat {
+		t.Fatalf("clicking the mapped feed line should open the feed item's chat, got action=%v quitting=%v", m.result.Action, m.quitting)
 	}
 }

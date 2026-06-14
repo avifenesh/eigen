@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/feed"
 )
 
@@ -27,6 +28,7 @@ type homeState struct {
 const (
 	homeFeedLimit   = 6
 	homeRecentLimit = 6
+	homeLiveLimit   = 5 // working-now rows shown on home before "+N more"
 )
 
 func (h *homeState) init(d *Data) {
@@ -109,11 +111,36 @@ func (h *homeState) view(m *Model, w, _ int) string {
 	// the first screen has a face and feels lived-in, not a bare title.
 	s := sTitle.Bold(true).Render("λ eigen")
 	s += "  " + sDim.Render(homeGreeting()) + "\n"
-	s += "  " + fmt.Sprintf("%s   %s   %s",
+	stats := fmt.Sprintf("%s   %s   %s",
 		countLabel(len(d.Sessions), "session"),
 		countLabel(len(d.Projects), "project"),
-		countLabel(d.Skills.Len(), "skill")) + "\n"
+		countLabel(d.Skills.Len(), "skill"))
+	if n := workingCount(d.Live); n > 0 {
+		// A live signal in the banner: how many sessions are working right now.
+		stats += "   " + sWorkingText.Render(fmt.Sprintf("λ %d working", n))
+	}
+	s += "  " + stats + "\n"
 	s += sFaint.Render(strings.Repeat("─", min(w, 60))) + "\n\n"
+
+	// Working now: live daemon sessions currently active — the command-center
+	// at-a-glance "what's running". Read-only (the cursor walks feed+recent);
+	// act on them from the live/sessions pages or the rail.
+	if len(d.Live) > 0 {
+		s += "  " + sectionLabel("working now", min(w, 60)-2) + "\n"
+		shown := 0
+		for _, in := range d.Live {
+			if shown >= homeLiveLimit {
+				s += sFaint.Render(fmt.Sprintf("   +%d more on the live page", len(d.Live)-shown)) + "\n"
+				break
+			}
+			label := liveLabel(in)
+			s += "  " + liveGlyph(in.Status, m.liveSpin) + " " +
+				sRowDim.Render(pad(truncate(label, w-22), w-22)) + " " +
+				sDim.Render(string(in.Status)) + "\n"
+			shown++
+		}
+		s += "\n"
+	}
 
 	// The proactive feed: offered actions, one keystroke to start.
 	if h.feedN > 0 {
@@ -250,4 +277,15 @@ func homeGreeting() string {
 	default:
 		return "late night — what are we building?"
 	}
+}
+
+// workingCount counts live sessions currently in the working state.
+func workingCount(live []daemon.SessionInfo) int {
+	n := 0
+	for _, in := range live {
+		if in.Status == daemon.StatusWorking {
+			n++
+		}
+	}
+	return n
 }

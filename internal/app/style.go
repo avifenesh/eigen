@@ -19,17 +19,18 @@ import (
 // Palette — sourced from internal/theme (shared with the chat TUI), so the
 // app shell and the chat are one product. Calm desaturated truecolor.
 var (
-	cAccent = theme.Accent // structure
-	cText   = theme.Text   // primary text
-	cDim    = theme.Dim    // secondary text / instructions
-	cFaint  = theme.Faint  // chrome, separators
-	cTitle  = theme.Title  // titles, the active thing
-	cOk     = theme.Ok     // healthy / available
-	cWarn   = theme.Warn   // attention / confirm
-	cErr    = theme.Err    // broken / missing
-	cViolet = theme.Tool   // counts, meta
-	cFocus  = theme.Focus  // the active/live thing — non-brand (brand rule)
-	cSel    = theme.Sel    // selected row / cursor — non-brand (brand rule)
+	cAccent  = theme.Accent  // structure
+	cText    = theme.Text    // primary text
+	cDim     = theme.Dim     // secondary text / instructions
+	cFaint   = theme.Faint   // chrome, separators
+	cTitle   = theme.Title   // titles, the active thing
+	cOk      = theme.Ok      // healthy / available
+	cWarn    = theme.Warn    // attention / confirm
+	cErr     = theme.Err     // broken / missing
+	cViolet  = theme.Tool    // counts, meta
+	cFocus   = theme.Focus   // the active/live thing — non-brand (brand rule)
+	cSel     = theme.Sel     // selected row / cursor — non-brand (brand rule)
+	cWorking = theme.Working // a session is working (the loud orange axis)
 
 	// Elevation surface (shared with the chat chrome — one product). Base is
 	// the default terminal canvas (no fill needed); Overlay arrives with the
@@ -38,15 +39,16 @@ var (
 )
 
 var (
-	sText   = lipgloss.NewStyle().Foreground(cText)
-	sDim    = lipgloss.NewStyle().Foreground(cDim)
-	sFaint  = lipgloss.NewStyle().Foreground(cFaint)
-	sTitle  = lipgloss.NewStyle().Foreground(cTitle).Bold(true)
-	sAccent = lipgloss.NewStyle().Foreground(cAccent)
-	sOk     = lipgloss.NewStyle().Foreground(cOk)
-	sWarn   = lipgloss.NewStyle().Foreground(cWarn)
-	sErr    = lipgloss.NewStyle().Foreground(cErr)
-	sViolet = lipgloss.NewStyle().Foreground(cViolet)
+	sText        = lipgloss.NewStyle().Foreground(cText)
+	sDim         = lipgloss.NewStyle().Foreground(cDim)
+	sFaint       = lipgloss.NewStyle().Foreground(cFaint)
+	sTitle       = lipgloss.NewStyle().Foreground(cTitle).Bold(true)
+	sAccent      = lipgloss.NewStyle().Foreground(cAccent)
+	sWorkingText = lipgloss.NewStyle().Foreground(cWorking)
+	sOk          = lipgloss.NewStyle().Foreground(cOk)
+	sWarn        = lipgloss.NewStyle().Foreground(cWarn)
+	sErr         = lipgloss.NewStyle().Foreground(cErr)
+	sViolet      = lipgloss.NewStyle().Foreground(cViolet)
 
 	// Rail item styles. The active rail page uses Focus (non-brand) so it
 	// stands apart from the brand-blue title bar / borders (the brand rule).
