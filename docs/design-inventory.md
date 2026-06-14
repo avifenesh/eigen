@@ -267,15 +267,16 @@ high-taste luxury super-app:
    rhythm / reading polish if wanted.
 6. **Spacing is uniform-1, not composed** — no deliberate spacing scale, tight
    gutters, no "air" around key moments. Premium = rhythm + breathing room.
-7. **Three+ "working" motions, snapping transitions, missing feedback** — one
-   motion signature; tasteful reveals/settles; acknowledge every action.
+7. ~~**Three+ "working" motions**~~ — DONE: ONE working signature (breathing λ
+   on the orange ramp) across chat rail + app; braille reserved for in-flight
+   TOOL calls only. (Reveals/settles polish still optional.)
 8. **Microcopy is terse dev-speak** — calm but cold. A crafted, consistent voice
    (still minimal) lifts the whole thing.
 9. **App-shell ≠ chat chrome** — PARTLY DONE: home section headers now use the
    sidebar's hairline-divider treatment (sectionLabel), and selection/active read
    identically across both. REMAINING: sparse home density + empty wide inspector.
-10. **Code/diff aesthetics** — the thing developers stare at most; deserves the
-    most craft (real framing, subtle syntax tint, beautiful diffs).
+10. ~~**Code/diff aesthetics**~~ — DONE: framed code blocks + real chroma syntax
+    tint (distinct hues) + diffs render as uniform edge-to-edge add/del bands.
 
 This is the slate. Next: web-research high-taste references (typographic
 restraint, terminal art, color/elevation systems), then design the new system
@@ -283,7 +284,9 @@ from zero — principles first, then tokens (color incl. surfaces, spacing scale
 glyph set, motion), then components, then roll it across theme/tui/app.
 
 **Progress (2026-06-14):** #1 icons, #2 surfaces/elevation, #3 glyph vocabulary,
-#4 selection+active all DONE; #5 transcript-as-document and #9 app↔chat cohesion
-MOSTLY done. REMAINING: #6 spacing scale (composed rhythm), #7 motion signature
-(reveals/settles, fewer working animations), #8 microcopy voice (warm empty
-states), #9 tail (home density + wide inspector), #10 diff aesthetics polish.
+#4 selection+active, #7 motion signature (one breathing-λ "working" + braille
+only for in-flight tools), #10 diff bands all DONE; #5 transcript-as-document
+and #9 app↔chat cohesion (incl. the wide inspector for home/machines, full-width
+page-title rules) MOSTLY done. REMAINING: #6 spacing scale (more composed
+rhythm/air), #8 microcopy voice (warmer empty states), and the #9 tail (home
+density).
