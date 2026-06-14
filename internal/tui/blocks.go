@@ -343,6 +343,9 @@ func (b *block) render(selected bool) string {
 		} else if full != "" {
 			if isDiff {
 				s.WriteString("\n" + gutterRule(renderDiff(full), rule))
+			} else if b.kind == blockTool && looksLikeJSON(full) {
+				// JSON tool results read terribly raw — pretty-print + tint.
+				s.WriteString("\n" + gutterRule(renderJSON(full, nil), rule))
 			} else {
 				s.WriteString("\n" + gutterRule(style.Render(full), rule))
 			}
