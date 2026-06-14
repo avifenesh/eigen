@@ -249,28 +249,31 @@ Designer view (user already flagged home emptiness):
 Ranked by how much each makes eigen feel like a dev tool rather than a
 high-taste luxury super-app:
 
-1. **Emoji tool icons** (📖🔍🌐) amid monochrome line-art — the loudest
-   off-brand note. A redesigned system needs ONE coherent monochrome icon set.
-2. **No surfaces / elevation / tonal depth** — everything is fg-on-default,
-   flat. Luxury comes from subtle surfaces, a hair of elevation, restrained
-   tinted regions. The palette needs a *surface* layer, not just role fg colors.
-3. **Glyph overload & duplication** — `❯` (×3 meanings), 4 caret shapes, `◉`
-   reused, 2 ellipses, 2 dot/bar variants. One disciplined glyph vocabulary,
-   each symbol = one meaning.
-4. **No single "selection / active" component** — 4 selection renderings, 3
-   "active" languages. One selection treatment, one active treatment, everywhere.
-5. **Transcript reads like a log, not a document** — code blocks unframed &
-   un-highlighted, no tables, speaker rhythm weak. A beautiful reading
-   experience is the core of a chat super-app.
+1. ~~**Emoji tool icons** (📖🔍🌐) amid monochrome line-art~~ — DONE: one
+   coherent monochrome/Nerd-Font icon set in theme.ToolIcon (no emoji).
+2. ~~**No surfaces / elevation / tonal depth**~~ — DONE: base→surface→overlay
+   elevation (deep-teal palette); rail/panels on Surface, transcript on Base,
+   selection on Overlay; the whole View is painted (no terminal-bg leak).
+3. ~~**Glyph overload & duplication**~~ — DONE: one vocabulary in theme/icons.go
+   (theme.Ellipsis ⋯, CollapseAll/ExpandAll ⊟/⊞, Status*, Caret); the `eigen
+   theme` swatch is the documentation. Each symbol = one meaning.
+4. ~~**No single "selection / active" component**~~ — DONE: selectLine() renders
+   ONE selection (clay ▎ bar) across palette/pickers/switcher/tray/app lists;
+   "active" (rail page, right-panel tab, active session) is all clay Focus, never
+   brand blue. styleAsk is back to meaning only "approval".
+5. **Transcript reads like a document** — MOSTLY DONE: framed code blocks with
+   real chroma syntax highlighting (distinct hues), markdown tables, headings
+   with rules, blockquotes, composed turn rhythm. REMAINING: finer speaker
+   rhythm / reading polish if wanted.
 6. **Spacing is uniform-1, not composed** — no deliberate spacing scale, tight
    gutters, no "air" around key moments. Premium = rhythm + breathing room.
 7. **Three+ "working" motions, snapping transitions, missing feedback** — one
    motion signature; tasteful reveals/settles; acknowledge every action.
 8. **Microcopy is terse dev-speak** — calm but cold. A crafted, consistent voice
    (still minimal) lifts the whole thing.
-9. **App-shell ≠ chat chrome** (two chrome models) + **sparse home + empty
-   inspector** — the dashboard should feel like one premium command center with
-   the chat.
+9. **App-shell ≠ chat chrome** — PARTLY DONE: home section headers now use the
+   sidebar's hairline-divider treatment (sectionLabel), and selection/active read
+   identically across both. REMAINING: sparse home density + empty wide inspector.
 10. **Code/diff aesthetics** — the thing developers stare at most; deserves the
     most craft (real framing, subtle syntax tint, beautiful diffs).
 
@@ -278,3 +281,9 @@ This is the slate. Next: web-research high-taste references (typographic
 restraint, terminal art, color/elevation systems), then design the new system
 from zero — principles first, then tokens (color incl. surfaces, spacing scale,
 glyph set, motion), then components, then roll it across theme/tui/app.
+
+**Progress (2026-06-14):** #1 icons, #2 surfaces/elevation, #3 glyph vocabulary,
+#4 selection+active all DONE; #5 transcript-as-document and #9 app↔chat cohesion
+MOSTLY done. REMAINING: #6 spacing scale (composed rhythm), #7 motion signature
+(reveals/settles, fewer working animations), #8 microcopy voice (warm empty
+states), #9 tail (home density + wide inspector), #10 diff aesthetics polish.
