@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/avifenesh/eigen/internal/theme"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )
@@ -42,10 +43,12 @@ func TestRenderDiffLangHighlightsContextNotChanges(t *testing.T) {
 	// A diff with a code context line + a -/+ change.
 	diff := "  func f() {\n- \tx := 1\n+ \tx := 2\n  }"
 	out := renderDiffLang(diff, "go")
-	// Context "func f()" got syntax color (the keyword 'func' → Accent teal),
-	// possibly combined with other SGR params (bold) — match the color triplet.
-	if !strings.Contains(out, "38;2;62;158;150") {
-		t.Errorf("context code should be syntax-highlighted:\n%q", out)
+	// Context "func f()" got syntax color (the 'func' keyword → SynKeyword).
+	kw := theme.SynKeyword.Dark
+	r, g, b, _ := hexRGB(kw)
+	wantKw := "38;2;" + itoa(int(r)) + ";" + itoa(int(g)) + ";" + itoa(int(b))
+	if !strings.Contains(out, wantKw) {
+		t.Errorf("context code should be syntax-highlighted (%s):\n%q", wantKw, out)
 	}
 	// The change still reads with its +/- markers in the plain text.
 	plain := stripANSI(out)

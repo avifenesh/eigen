@@ -50,7 +50,7 @@ func lexerFor(lang, code string) chroma.Lexer {
 
 // codeStyles bundles the role styles for code tokens (all on one bg).
 type codeStyles struct {
-	keyword, str, num, comment, fn, typ, plain lipgloss.Style
+	keyword, str, num, comment, fn, typ, text, punct lipgloss.Style
 }
 
 func codeTokenStyles(bg lipgloss.TerminalColor) codeStyles {
@@ -67,14 +67,17 @@ func codeTokenStyles(bg lipgloss.TerminalColor) codeStyles {
 		}
 		return s
 	}
+	// Dedicated, DISTINCT syntax hues (not the cool/teal chrome roles, which
+	// blur into one color) — a real editor palette tuned to the active theme.
 	return codeStyles{
-		keyword: mk(theme.Accent, true, false), // keywords — brand accent, bold
-		str:     mk(theme.Ok, false, false),    // strings — green
-		num:     mk(theme.Tool, false, false),  // numbers/consts — violet
-		comment: mk(theme.Ghost, false, true),  // comments — ghost italic
-		fn:      mk(theme.Title, false, false), // function/name decls — cyan
-		typ:     mk(theme.Link, false, false),  // types/classes — teal-cyan
-		plain:   mk(theme.Code, false, false),  // everything else — code teal
+		keyword: mk(theme.SynKeyword, true, false),
+		str:     mk(theme.SynString, false, false),
+		num:     mk(theme.SynNumber, false, false),
+		comment: mk(theme.SynComment, false, true),
+		fn:      mk(theme.SynFunc, false, false),
+		typ:     mk(theme.SynType, false, false),
+		text:    mk(theme.Text, false, false),     // identifiers/variables — readable
+		punct:   mk(theme.SynPunct, false, false), // operators/punctuation — soft
 	}
 }
 
@@ -85,18 +88,27 @@ func (s codeStyles) style(t chroma.TokenType) lipgloss.Style {
 	case t.InCategory(chroma.Comment):
 		return s.comment
 	case t.InCategory(chroma.Keyword):
-		return s.keyword
-	case t.InCategory(chroma.String) || t == chroma.LiteralStringInterpol:
+		switch t {
+		case chroma.KeywordType:
+			return s.typ
+		default:
+			return s.keyword
+		}
+	case t.InCategory(chroma.String):
 		return s.str
 	case t.InCategory(chroma.Number) || t == chroma.LiteralStringChar:
 		return s.num
-	case t == chroma.NameFunction || t == chroma.NameClass || t == chroma.NameNamespace:
+	case t == chroma.NameFunction || t == chroma.NameFunctionMagic:
 		return s.fn
-	case t.InSubCategory(chroma.NameBuiltin) || t == chroma.KeywordType || t == chroma.NameClass:
+	case t == chroma.NameClass || t == chroma.NameNamespace || t.InSubCategory(chroma.NameBuiltin) || t == chroma.KeywordType:
 		return s.typ
 	case t == chroma.NameConstant || t == chroma.KeywordConstant || t.InCategory(chroma.Literal):
 		return s.num
+	case t.InCategory(chroma.Operator) || t.InCategory(chroma.Punctuation):
+		return s.punct
+	case t.InCategory(chroma.Name):
+		return s.text // identifiers / variables — readable, not dim
 	default:
-		return s.plain
+		return s.text
 	}
 }

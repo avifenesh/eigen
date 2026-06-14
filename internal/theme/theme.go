@@ -47,6 +47,12 @@ type Palette struct {
 	// stays syntax-highlighted; the tint signals the change).
 	AddBg, DelBg lipgloss.AdaptiveColor
 
+	// Code syntax palette — DISTINCT hues for real syntax highlighting (the
+	// chrome roles are all cool/teal and blur together as one color). These
+	// harmonize with the deep base but are genuinely separable: keyword,
+	// type, function, string, number, comment, and a default for the rest.
+	SynKeyword, SynType, SynFunc, SynString, SynNumber, SynComment, SynPunct lipgloss.AdaptiveColor
+
 	// Ramp stops (loader brightness cycles).
 	AccentBright, FaintDim    lipgloss.AdaptiveColor
 	WorkingDim, WorkingBright lipgloss.AdaptiveColor
@@ -65,29 +71,36 @@ type Palette struct {
 // for now; Light mirrors the Dark values (light mode is out of scope, but the
 // AdaptiveColor needs a value).
 var deepTealPalette = Palette{
-	Name:     "deepteal",
-	Base:     lipgloss.AdaptiveColor{Dark: "#0B0E0F", Light: "#0B0E0F"},
-	Surface:  lipgloss.AdaptiveColor{Dark: "#11171A", Light: "#11171A"},
-	Overlay:  lipgloss.AdaptiveColor{Dark: "#1A2428", Light: "#1A2428"},
-	Text:     lipgloss.AdaptiveColor{Dark: "#DDE4E3", Light: "#DDE4E3"},
-	Dim:      lipgloss.AdaptiveColor{Dark: "#7E8E8B", Light: "#7E8E8B"},
-	Faint:    lipgloss.AdaptiveColor{Dark: "#52605E", Light: "#52605E"},
-	Ghost:    lipgloss.AdaptiveColor{Dark: "#37423F", Light: "#37423F"},
-	Accent:   lipgloss.AdaptiveColor{Dark: "#3E9E96", Light: "#2A6E68"},
-	Title:    lipgloss.AdaptiveColor{Dark: "#69C2B8", Light: "#2A6E68"},
-	Ok:       lipgloss.AdaptiveColor{Dark: "#7BA86B", Light: "#4F6B36"},
-	Warn:     lipgloss.AdaptiveColor{Dark: "#C9A24B", Light: "#8A6B12"},
-	Err:      lipgloss.AdaptiveColor{Dark: "#C06A5E", Light: "#9A3B2E"},
-	Tool:     lipgloss.AdaptiveColor{Dark: "#9E7BA6", Light: "#6E4E76"},
-	Code:     lipgloss.AdaptiveColor{Dark: "#5FA89E", Light: "#2A6E68"},
-	Link:     lipgloss.AdaptiveColor{Dark: "#69C2B8", Light: "#2A6E68"},
-	Heading:  lipgloss.AdaptiveColor{Dark: "#3E9E96", Light: "#2A6E68"},
-	Working:  lipgloss.AdaptiveColor{Dark: "#D08C5E", Light: "#A85E2A"},
-	Focus:    lipgloss.AdaptiveColor{Dark: "#D08C5E", Light: "#A85E2A"},
-	Sel:      lipgloss.AdaptiveColor{Dark: "#D08C5E", Light: "#A85E2A"},
-	OnBright: lipgloss.AdaptiveColor{Dark: "#0B0E0F", Light: "#F0F4F3"},
-	AddBg:    lipgloss.AdaptiveColor{Dark: "#10261C", Light: "#DCEFE0"},
-	DelBg:    lipgloss.AdaptiveColor{Dark: "#2A1517", Light: "#F2DCDC"},
+	Name:       "deepteal",
+	Base:       lipgloss.AdaptiveColor{Dark: "#0B0E0F", Light: "#0B0E0F"},
+	Surface:    lipgloss.AdaptiveColor{Dark: "#11171A", Light: "#11171A"},
+	Overlay:    lipgloss.AdaptiveColor{Dark: "#1A2428", Light: "#1A2428"},
+	Text:       lipgloss.AdaptiveColor{Dark: "#DDE4E3", Light: "#DDE4E3"},
+	Dim:        lipgloss.AdaptiveColor{Dark: "#7E8E8B", Light: "#7E8E8B"},
+	Faint:      lipgloss.AdaptiveColor{Dark: "#52605E", Light: "#52605E"},
+	Ghost:      lipgloss.AdaptiveColor{Dark: "#37423F", Light: "#37423F"},
+	Accent:     lipgloss.AdaptiveColor{Dark: "#3E9E96", Light: "#2A6E68"},
+	Title:      lipgloss.AdaptiveColor{Dark: "#69C2B8", Light: "#2A6E68"},
+	Ok:         lipgloss.AdaptiveColor{Dark: "#7BA86B", Light: "#4F6B36"},
+	Warn:       lipgloss.AdaptiveColor{Dark: "#C9A24B", Light: "#8A6B12"},
+	Err:        lipgloss.AdaptiveColor{Dark: "#C06A5E", Light: "#9A3B2E"},
+	Tool:       lipgloss.AdaptiveColor{Dark: "#9E7BA6", Light: "#6E4E76"},
+	Code:       lipgloss.AdaptiveColor{Dark: "#5FA89E", Light: "#2A6E68"},
+	Link:       lipgloss.AdaptiveColor{Dark: "#69C2B8", Light: "#2A6E68"},
+	Heading:    lipgloss.AdaptiveColor{Dark: "#3E9E96", Light: "#2A6E68"},
+	Working:    lipgloss.AdaptiveColor{Dark: "#D08C5E", Light: "#A85E2A"},
+	Focus:      lipgloss.AdaptiveColor{Dark: "#D08C5E", Light: "#A85E2A"},
+	Sel:        lipgloss.AdaptiveColor{Dark: "#D08C5E", Light: "#A85E2A"},
+	OnBright:   lipgloss.AdaptiveColor{Dark: "#0B0E0F", Light: "#F0F4F3"},
+	AddBg:      lipgloss.AdaptiveColor{Dark: "#10261C", Light: "#DCEFE0"},
+	DelBg:      lipgloss.AdaptiveColor{Dark: "#2A1517", Light: "#F2DCDC"},
+	SynKeyword: lipgloss.AdaptiveColor{Dark: "#C58FD8", Light: "#8A4D9E"}, // orchid
+	SynType:    lipgloss.AdaptiveColor{Dark: "#E0B36A", Light: "#9A6B12"}, // gold
+	SynFunc:    lipgloss.AdaptiveColor{Dark: "#6FB7E8", Light: "#2A6E9E"}, // sky blue
+	SynString:  lipgloss.AdaptiveColor{Dark: "#8FC98A", Light: "#4F6B36"}, // green
+	SynNumber:  lipgloss.AdaptiveColor{Dark: "#E8A878", Light: "#A85E2A"}, // peach
+	SynComment: lipgloss.AdaptiveColor{Dark: "#5E6E6A", Light: "#7E8E8B"}, // muted
+	SynPunct:   lipgloss.AdaptiveColor{Dark: "#9AB0AC", Light: "#52605E"}, // soft
 	// Loader ramp stops (brand-teal brightness cycle).
 	AccentBright: lipgloss.AdaptiveColor{Dark: "#8AD6CC", Light: "#1F5650"},
 	FaintDim:     lipgloss.AdaptiveColor{Dark: "#33403D", Light: "#9AACA8"},
@@ -127,6 +140,13 @@ var nordPalette = Palette{
 	OnBright:      lipgloss.AdaptiveColor{Dark: "#1b1f27", Light: "#F0F4F8"},
 	AddBg:         lipgloss.AdaptiveColor{Dark: "#1e2a22", Light: "#DCEFE0"},
 	DelBg:         lipgloss.AdaptiveColor{Dark: "#2e2026", Light: "#F2DCDC"},
+	SynKeyword:    lipgloss.AdaptiveColor{Dark: "#B48EAD", Light: "#7A4E73"},
+	SynType:       lipgloss.AdaptiveColor{Dark: "#EBCB8B", Light: "#9A6B00"},
+	SynFunc:       lipgloss.AdaptiveColor{Dark: "#88C0D0", Light: "#2A7B8C"},
+	SynString:     lipgloss.AdaptiveColor{Dark: "#A3BE8C", Light: "#4F6B36"},
+	SynNumber:     lipgloss.AdaptiveColor{Dark: "#D08770", Light: "#B4581F"},
+	SynComment:    lipgloss.AdaptiveColor{Dark: "#616E88", Light: "#8a93a6"},
+	SynPunct:      lipgloss.AdaptiveColor{Dark: "#9aa5b8", Light: "#4C566A"},
 	AccentBright:  lipgloss.AdaptiveColor{Dark: "#b3c4d8", Light: "#1f3450"},
 	FaintDim:      lipgloss.AdaptiveColor{Dark: "#4a5365", Light: "#aab3c4"},
 	WorkingDim:    lipgloss.AdaptiveColor{Dark: "#8a5a44", Light: "#c98a63"},
@@ -158,6 +178,13 @@ var gruvboxPalette = Palette{
 	OnBright:      lipgloss.AdaptiveColor{Dark: "#1d2021", Light: "#fbf1c7"},
 	AddBg:         lipgloss.AdaptiveColor{Dark: "#28280f", Light: "#e6e2b0"},
 	DelBg:         lipgloss.AdaptiveColor{Dark: "#321a16", Light: "#f0d8cc"},
+	SynKeyword:    lipgloss.AdaptiveColor{Dark: "#fb4934", Light: "#9d0006"},
+	SynType:       lipgloss.AdaptiveColor{Dark: "#fabd2f", Light: "#b57614"},
+	SynFunc:       lipgloss.AdaptiveColor{Dark: "#8ec07c", Light: "#427b58"},
+	SynString:     lipgloss.AdaptiveColor{Dark: "#b8bb26", Light: "#79740e"},
+	SynNumber:     lipgloss.AdaptiveColor{Dark: "#d3869b", Light: "#8f3f71"},
+	SynComment:    lipgloss.AdaptiveColor{Dark: "#928374", Light: "#7c6f64"},
+	SynPunct:      lipgloss.AdaptiveColor{Dark: "#a89984", Light: "#665c54"},
 	AccentBright:  lipgloss.AdaptiveColor{Dark: "#bdddd0", Light: "#024450"},
 	FaintDim:      lipgloss.AdaptiveColor{Dark: "#504945", Light: "#bdae93"},
 	WorkingDim:    lipgloss.AdaptiveColor{Dark: "#a85a1f", Light: "#d98a3d"},
@@ -210,9 +237,17 @@ var (
 	Focus   = Active.Focus
 	Sel     = Active.Sel
 
-	OnBright      = Active.OnBright
-	AddBg         = Active.AddBg
-	DelBg         = Active.DelBg
+	OnBright = Active.OnBright
+	AddBg    = Active.AddBg
+	DelBg    = Active.DelBg
+
+	SynKeyword    = Active.SynKeyword
+	SynType       = Active.SynType
+	SynFunc       = Active.SynFunc
+	SynString     = Active.SynString
+	SynNumber     = Active.SynNumber
+	SynComment    = Active.SynComment
+	SynPunct      = Active.SynPunct
 	AccentBright  = Active.AccentBright
 	FaintDim      = Active.FaintDim
 	WorkingDim    = Active.WorkingDim
