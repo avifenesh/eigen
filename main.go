@@ -92,6 +92,15 @@ func main() {
 			os.Setenv("EIGEN_TTS_CMD", cfg.TTSCmd)
 		}
 	}
+	// Daemon request-timeout override (config.daemon_timeout, seconds). The
+	// daemon client reads EIGEN_DAEMON_TIMEOUT lazily per request, so exporting
+	// it here (before any daemon op) is enough — no re-exec needed. An explicit
+	// env var still wins.
+	if cfg.DaemonTimeout > 0 {
+		if _, set := os.LookupEnv("EIGEN_DAEMON_TIMEOUT"); !set {
+			os.Setenv("EIGEN_DAEMON_TIMEOUT", strconv.Itoa(cfg.DaemonTimeout))
+		}
+	}
 	// Default reasoning effort (config.effort) becomes the per-model default
 	// unless a session meta or env var already set it; providers read
 	// EIGEN_REASONING_EFFORT at construction and validate against the model's

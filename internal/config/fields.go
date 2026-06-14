@@ -35,6 +35,7 @@ func Fields() []Field {
 		{Key: "route_providers", Desc: "providers the auto-router may roam across (space-separated); empty = stay on the current provider", Dynamic: "providers", Multi: true},
 		{Key: "observe", Desc: "structured activity log at ~/.eigen/observe (metadata only — no content)", Options: []string{"true", "false"}},
 		{Key: "local_background", Desc: "route background chores (titling, dreaming, compaction, scans) to a LOCAL model (EIGEN_LLAMA_BASE_URL) when it's up AND ready — saves frontier budget; opt-in, falls back when the local model is busy/absent", Options: []string{"true", "false"}},
+		{Key: "daemon_timeout", Desc: "client→daemon per-request timeout in SECONDS (0 = default 30s). Raise it if a model switch or other op stalls and fails with a phantom timeout on a slow link / slow provider build. Heavy ops (/compact, /model) keep longer floors and rise with this."},
 	}
 }
 

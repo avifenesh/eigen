@@ -59,6 +59,14 @@ type Config struct {
 	// deliberately. When off, or when the local model isn't ready, background
 	// work falls back to the usual small model (grok/haiku).
 	LocalBackground bool `json:"local_background"`
+
+	// DaemonTimeout overrides the client→daemon per-request timeout, in SECONDS
+	// (0 = default 30s). Raise it when slow links or slow provider/model
+	// construction make a model switch or other op exceed the default and
+	// "fail" with a phantom timeout while the daemon is still working. Heavy ops
+	// (/compact, /model) already get longer floors; this raises the base and
+	// those floors with it. Exported to the client as EIGEN_DAEMON_TIMEOUT.
+	DaemonTimeout int `json:"daemon_timeout,omitempty"`
 }
 
 // Load reads ~/.eigen/config.json. A missing or malformed file yields a zero
@@ -194,6 +202,12 @@ func Set(c *Config, key, value string) error {
 			return fmt.Errorf("local_background must be true|false")
 		}
 		c.LocalBackground = b
+	case "daemon_timeout":
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 0 {
+			return fmt.Errorf("daemon_timeout must be a non-negative integer (seconds; 0 = default 30s)")
+		}
+		c.DaemonTimeout = n
 	case "observe":
 		b, err := strconv.ParseBool(value)
 		if err != nil {
@@ -260,6 +274,7 @@ func View(c Config) string {
 	fmt.Fprintf(&b, "%-14s = %s\n", "route_providers", rp)
 	fmt.Fprintf(&b, "%-14s = %t\n", "observe", c.ObserveEnabled())
 	fmt.Fprintf(&b, "%-16s = %t\n", "local_background", c.LocalBackground)
+	fmt.Fprintf(&b, "%-16s = %d\n", "daemon_timeout", c.DaemonTimeout)
 	if len(c.SkillsDirs) > 0 {
 		fmt.Fprintf(&b, "%-14s = %s (file-only)\n", "skills_dirs", strings.Join(c.SkillsDirs, ":"))
 	}
@@ -309,6 +324,8 @@ func Get(c Config, key string) string {
 		return strconv.FormatBool(c.ObserveEnabled())
 	case "local_background":
 		return strconv.FormatBool(c.LocalBackground)
+	case "daemon_timeout":
+		return strconv.Itoa(c.DaemonTimeout)
 	}
 	return ""
 }

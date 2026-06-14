@@ -621,3 +621,35 @@ func TestCompactUsesLongerTimeout(t *testing.T) {
 		t.Fatalf("compact result not delivered: before=%d after=%d", r.Before, r.After)
 	}
 }
+
+func TestRequestTimeoutForOpFloorsAndOverride(t *testing.T) {
+	t.Setenv("EIGEN_DAEMON_TIMEOUT", "") // default 30s
+	if d := requestTimeoutFor("ping"); d != 30*time.Second {
+		t.Errorf("default op = %v, want 30s", d)
+	}
+	if d := requestTimeoutFor("compact"); d != 6*time.Minute {
+		t.Errorf("compact floor = %v, want 6m", d)
+	}
+	if d := requestTimeoutFor("set"); d != 90*time.Second {
+		t.Errorf("set floor = %v, want 90s", d)
+	}
+	if d := requestTimeoutFor("new"); d != 2*time.Minute {
+		t.Errorf("new floor = %v, want 2m", d)
+	}
+	// Override raises the base AND any floor below it; floors above it stay.
+	t.Setenv("EIGEN_DAEMON_TIMEOUT", "600") // 10m
+	if d := requestTimeoutFor("ping"); d != 10*time.Minute {
+		t.Errorf("override base = %v, want 10m", d)
+	}
+	if d := requestTimeoutFor("set"); d != 10*time.Minute {
+		t.Errorf("override should lift the 90s set floor to 10m, got %v", d)
+	}
+	if d := requestTimeoutFor("compact"); d != 10*time.Minute {
+		t.Errorf("compact floor (6m) should rise to the 10m override, got %v", d)
+	}
+	// Invalid / non-positive override is ignored.
+	t.Setenv("EIGEN_DAEMON_TIMEOUT", "nope")
+	if d := requestTimeoutFor("ping"); d != 30*time.Second {
+		t.Errorf("invalid override should fall back to 30s, got %v", d)
+	}
+}

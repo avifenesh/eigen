@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -108,7 +110,7 @@ func (c *Client) Close() error { return c.conn.Close() }
 // request sends a request and waits for the next non-event reply.
 // request sends one request and waits for its reply with the default timeout.
 func (c *Client) request(req Request) (Response, error) {
-	return c.requestWithin(req, defaultRequestTimeout)
+	return c.requestWithin(req, requestTimeoutFor(req.Op))
 }
 
 // requestWithin sends one request and waits up to d for its reply. reqMu
@@ -151,20 +153,46 @@ func (c *Client) requestWithin(req Request, d time.Duration) (Response, error) {
 	}
 }
 
-// defaultRequestTimeout bounds a normal request/reply cycle. Daemon ops are
-// local and fast (a turn streams via events, not a reply), so a stall this long
-// means a lost reply or a wedged daemon — fail rather than hang forever.
-const defaultRequestTimeout = 30 * time.Second
+// requestTimeoutFor returns the deadline for an op, read LAZILY from
+// EIGEN_DAEMON_TIMEOUT each call so a config-driven override (which sets the
+// env at startup, after this package's init) takes effect without a re-exec.
+//   - normal ops: EIGEN_DAEMON_TIMEOUT or 30s
+//   - "set"/model switch: max(90s, override) — provider construction is slow
+//   - "compact": max(6m, override) — a summary over the largest context, kept
+//     above the provider's own 5m HTTP timeout so the daemon always resolves
+func requestTimeoutFor(op string) time.Duration {
+	base := envTimeout("EIGEN_DAEMON_TIMEOUT", 30*time.Second)
+	switch op {
+	case "compact":
+		return maxDur(6*time.Minute, base)
+	case "new":
+		// Creating a session builds the whole agent: provider + MCP servers +
+		// LSP + plugins. A cold start with several MCP servers can take a while.
+		return maxDur(2*time.Minute, base)
+	case "set":
+		return maxDur(90*time.Second, base)
+	default:
+		return base
+	}
+}
 
-// compactRequestTimeout bounds a /compact. Compaction runs a summarizer LLM
-// call over the LARGEST the context ever gets, which legitimately takes far
-// longer than a local op (tens of seconds, more on a slow/loaded gateway). The
-// 30s default was killing real compactions mid-summary — the daemon kept
-// working and the late reply was then dropped as stale, so /compact "failed"
-// while actually succeeding. Give it a generous ceiling — kept just ABOVE the
-// provider's own 5-minute HTTP timeout so the daemon always resolves (success
-// or a real error) before the client gives up, never a phantom timeout.
-const compactRequestTimeout = 6 * time.Minute
+// envTimeout reads a whole-seconds duration from an env var, falling back to def
+// when unset, non-numeric, or non-positive.
+func envTimeout(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return def
+}
+
+func maxDur(a, b time.Duration) time.Duration {
+	if a > b {
+		return a
+	}
+	return b
+}
 
 // Ping checks the daemon is alive.
 func (c *Client) Ping() error {
@@ -265,7 +293,7 @@ func (c *Client) SetTitle(sessionID, title string) error {
 
 // Compact summarizes a session's conversation toward target tokens.
 func (c *Client) Compact(sessionID string, target int) (before, after int, err error) {
-	r, err := c.requestWithin(Request{Op: "compact", ID: sessionID, Target: target}, compactRequestTimeout)
+	r, err := c.requestWithin(Request{Op: "compact", ID: sessionID, Target: target}, requestTimeoutFor("compact"))
 	if err != nil {
 		return 0, 0, err
 	}
@@ -291,8 +319,10 @@ func (c *Client) Resend(sessionID string) error {
 }
 
 // SetModel switches a session's model live (the daemon rebuilds the provider).
+// Uses the longer "set" timeout: building a provider can resolve
+// credentials / probe an endpoint and outlast a normal op.
 func (c *Client) SetModel(sessionID, modelID string) error {
-	_, err := c.request(Request{Op: "set", ID: sessionID, Model: modelID})
+	_, err := c.requestWithin(Request{Op: "set", ID: sessionID, Model: modelID}, requestTimeoutFor("set"))
 	return err
 }
 
