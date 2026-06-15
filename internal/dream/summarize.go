@@ -66,3 +66,53 @@ func Summarize(ctx context.Context, p llm.Provider, memory string) (string, erro
 	}
 	return out + "\n", nil
 }
+
+const globalProfilePrompt = `You are distilling a coding agent's CROSS-PROJECT user profile. You are given per-session memory summaries from MANY different projects (their Preferences and Reusable sections especially). Extract ONLY the durable, project-INDEPENDENT facts about the USER worth remembering everywhere:
+
+- Working style and preferences that recur across projects (how they want the agent to operate, verify, commit, communicate).
+- Hard rules / corrections the user states repeatedly.
+- Durable cross-project facts about their environment/tooling/accounts that apply everywhere.
+
+Strict rules:
+- Project-SPECIFIC facts (this repo's build command, a file path, a one-project gotcha) do NOT belong here — drop them; they live in project memory.
+- Only include something if it plausibly recurs across DIFFERENT projects or is a stated user rule.
+- Preserve exact wording for rules and short user quotes; never store secrets ([REDACTED_SECRET]).
+- Do NOT repeat facts already in the existing global memory; if a new fact supersedes one, say so.
+- Minimum-signal gate: if nothing clears the cross-project bar, output nothing.
+
+Output ONLY a bullet list ("- " lines), at most 6, most reusable first. No headings, no commentary.`
+
+// DistillGlobal extracts cross-project user-profile facts (working style,
+// recurring preferences, global rules) from per-project session summaries,
+// skipping anything already in the existing global memory. Returns new bullets.
+func DistillGlobal(ctx context.Context, p llm.Provider, summaries []string, existingGlobal string) ([]string, error) {
+	if p == nil {
+		return nil, fmt.Errorf("dream: nil provider")
+	}
+	if len(summaries) == 0 {
+		return nil, nil
+	}
+	var b strings.Builder
+	b.WriteString("Existing global memory:\n")
+	if strings.TrimSpace(existingGlobal) == "" {
+		b.WriteString("(none)\n")
+	} else {
+		b.WriteString(existingGlobal + "\n")
+	}
+	b.WriteString("\nPer-session summaries from many projects:\n")
+	for i, s := range summaries {
+		fmt.Fprintf(&b, "--- %d ---\n%s\n", i+1, s)
+	}
+	content := b.String()
+	if len(content) > maxSummarizeInput {
+		content = content[len(content)-maxSummarizeInput:]
+	}
+	resp, err := p.Complete(ctx, llm.Request{
+		System:   globalProfilePrompt,
+		Messages: []llm.Message{{Role: llm.RoleUser, Text: content}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return dedupe(parseBullets(resp.Text), existingGlobal), nil
+}

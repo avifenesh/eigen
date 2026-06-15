@@ -737,14 +737,15 @@ func nightlyDreamer(host *daemon.Host, gmem *memory.Store) {
 		if prov == nil {
 			continue
 		}
-		runNightlyDream(host, prov)
+		runNightlyDream(host, prov, gmem)
 	}
 }
 
 // runNightlyDream groups persisted sessions by dir and runs the memory pipeline
 // for each scope. Idempotency (watermarks) means unchanged sessions are skipped
-// cheaply, so this is safe to run on every idle interval.
-func runNightlyDream(host *daemon.Host, prov llm.Provider) {
+// cheaply, so this is safe to run on every idle interval. After per-project
+// dreaming, it distills cross-project preferences into the GLOBAL profile.
+func runNightlyDream(host *daemon.Host, prov llm.Provider, gmem *memory.Store) {
 	idx, err := memory.OpenIndex()
 	if err != nil {
 		return
@@ -759,6 +760,7 @@ func runNightlyDream(host *daemon.Host, prov llm.Provider) {
 		}
 		byDir[p.Dir] = append(byDir[p.Dir], p)
 	}
+	var globalCorpus []string // a sample of rollout summaries for the global profile
 	for dir, infos := range byDir {
 		if host.AnyRunning() {
 			return // a turn started mid-dream; yield the model
@@ -793,11 +795,24 @@ func runNightlyDream(host *daemon.Host, prov llm.Provider) {
 		}
 		// Propose a skill (never auto-install) when recurring friction shows.
 		if corpus := mem.RawSummaries(12); len(corpus) > 0 {
+			globalCorpus = append(globalCorpus, corpus...)
 			if draft, ok, serr := dream.SynthesizeSkill(context.Background(), prov, corpus); serr == nil && ok {
 				if path, werr := skill.Propose(draft.Name, draft.Description, draft.Body); werr == nil && path != "" {
 					fmt.Fprintf(os.Stderr, "eigen daemon: proposed skill %q (eigen skill accept %s)\n", draft.Name, draft.Name)
 				}
 			}
+		}
+	}
+
+	// Global profile: distill cross-project preferences/working-style from the
+	// per-project rollout summaries into the global scope.
+	if gmem != nil && len(globalCorpus) > 0 && !host.AnyRunning() {
+		if notes, err := dream.DistillGlobal(context.Background(), prov, globalCorpus, gmem.Read()); err == nil && len(notes) > 0 {
+			for _, n := range notes {
+				_ = gmem.Append(n)
+			}
+			memory.CommitMemory(fmt.Sprintf("dream: global profile — %d new", len(notes)))
+			fmt.Fprintf(os.Stderr, "eigen daemon: global profile +%d\n", len(notes))
 		}
 	}
 }
