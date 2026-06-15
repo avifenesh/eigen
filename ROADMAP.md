@@ -143,6 +143,16 @@ from a cross-vendor review; channel undecided.
   refused unless opted in); per-engine timeout slicing. Ported from
   `@agent-sh/harness-websearch` v2 into `internal/tool/websearch{,_engines}.go`.
   Live-verified keyless end-to-end.
+- **Subagent lifecycle + steer (2026-06-15).** ✅ (1) STEER: enter-while-running
+  injects a message BETWEEN tool-call rounds (mid-turn course-correct), not at
+  end-of-turn. (2) IDLE-STALL: a subagent with no tool call for `stall_idle_min`
+  (2) is killed as hung — NOT a global wall-clock; steady tool calls run as long
+  as needed. (3) PROMOTION: a foreground subtask still active past
+  `front_window_min` (2) moves to the background; the orchestrator gets a task id
+  and keeps working. (4) WAKE: a finished background task wakes its idle
+  orchestrator with the result (hands-free). (5) alt+z / click the status line
+  backgrounds the running turn (ctrl+z is captured by zellij). Routing fix:
+  gpt-5.5 lost its Strict affinity (it was wedged) so general work routes to opus.
 - **`/add-dir` — extra working directories (user grant).** ✅ The USER (never the
   agent) can extend a session's tool sandbox to more dirs: `/add-dir <path>` +
   repeatable `--add-dir` flag. Policy.AddRoot (RWMutex-guarded; existing-dir +
