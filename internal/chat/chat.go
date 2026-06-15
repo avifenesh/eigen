@@ -77,6 +77,12 @@ type Backend interface {
 	AddDir(path string) (string, error)
 	Roots() []string
 
+	// Steer injects a message into a RUNNING turn — it lands between tool-call
+	// rounds (mid-turn course-correction), not deferred to the next turn.
+	// Returns true when a turn was running and the message was steered; false
+	// when idle (the caller should Send instead). Never blocks on the turn.
+	Steer(text string, images []llm.Image) bool
+
 	// Provider exposes the live provider for capability checks (vision,
 	// streaming) and the router. May be nil for remote backends.
 	Provider() llm.Provider

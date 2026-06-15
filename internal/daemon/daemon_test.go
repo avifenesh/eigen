@@ -725,3 +725,56 @@ func waitIdle(t *testing.T, s *Session) {
 		}
 	}
 }
+
+func TestInputSteersRunningTurnOverSocket(t *testing.T) {
+	build := func(_, _ string) (*agent.Agent, func(), error) {
+		reg, _ := tool.NewRegistry()
+		return &agent.Agent{Provider: blockingProvider{}, Tools: reg, Perm: agent.PermAuto}, func() {}, nil
+	}
+	sock := filepath.Join(t.TempDir(), "d.sock")
+	srv, err := Listen(sock, NewHost(), build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve()
+	defer srv.Close()
+	c, err := Dial(sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	id, err := c.New("/tmp", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// First input with no turn running → starts a turn (not steered).
+	steered, err := c.SteerInput(id, "start the work", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if steered {
+		t.Fatal("first input (idle) should start a turn, not steer")
+	}
+	// Give the turn a moment to mark running (blockingProvider hangs on ctx).
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		st, _ := c.State(id)
+		if st != nil && st.Running {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("turn never marked running")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// Second input WHILE running → steered (injected mid-turn), not "busy".
+	steered, err = c.SteerInput(id, "actually focus on X", nil)
+	if err != nil {
+		t.Fatalf("steer should not error mid-turn: %v", err)
+	}
+	if !steered {
+		t.Fatal("input during a running turn should be steered, not rejected busy")
+	}
+	_ = c.Interrupt(id)
+}

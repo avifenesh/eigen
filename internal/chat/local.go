@@ -20,6 +20,7 @@ type Local struct {
 	mu      sync.Mutex
 	modelID string // current model id (live switches update it)
 	title   string // user-set session title (/rename); "" = derived
+	running bool   // a turn is in flight (so Steer can inject vs Send)
 
 	// pending gated-tool approvals (surfaced as EventApproval, answered by id)
 	approvals   map[string]chan bool
@@ -38,7 +39,27 @@ func NewLocal(a *agent.Agent, history []llm.Message, modelID string) *Local {
 }
 
 func (l *Local) Send(ctx context.Context, task string, images []llm.Image) (string, error) {
-	return l.s.SendWith(ctx, task, images)
+	l.mu.Lock()
+	l.running = true
+	l.mu.Unlock()
+	out, err := l.s.SendWith(ctx, task, images)
+	l.mu.Lock()
+	l.running = false
+	l.mu.Unlock()
+	return out, err
+}
+
+// Steer injects a message mid-turn when a turn is running (drained between
+// tool-call rounds); returns false when idle so the caller starts a new turn.
+func (l *Local) Steer(text string, images []llm.Image) bool {
+	l.mu.Lock()
+	running := l.running
+	l.mu.Unlock()
+	if !running {
+		return false
+	}
+	l.s.Steer(text, images)
+	return true
 }
 
 func (l *Local) Resend(ctx context.Context) (string, error) { return l.s.Resend(ctx) }

@@ -234,6 +234,17 @@ func (c *Client) Input(id, text string, images []llm.Image) error {
 	return err
 }
 
+// SteerInput delivers a message to a session: if a turn is running it's injected
+// mid-turn (between tool-call rounds) and steered=true; otherwise it starts a
+// new turn (steered=false). One op so the caller need not pre-check "running".
+func (c *Client) SteerInput(id, text string, images []llm.Image) (steered bool, err error) {
+	resp, err := c.request(Request{Op: "input", ID: id, Text: text, Images: images})
+	if err != nil {
+		return false, err
+	}
+	return resp.Steered, nil
+}
+
 // Interrupt cancels a session's in-flight turn.
 func (c *Client) Interrupt(id string) error {
 	_, err := c.request(Request{Op: "interrupt", ID: id})

@@ -199,6 +199,42 @@ type Session struct {
 	lastCompactBefore int // estimated tokens before the last auto-compaction
 	lastCompactAfter  int // estimated tokens after it
 	compactStall      bool
+
+	// steerMu guards steer: messages injected by the user (or orchestrator)
+	// WHILE a turn is running. drive() drains them at the top of each step, so
+	// a steer appears BETWEEN tool-call rounds (mid-turn), not deferred to the
+	// next turn. This is the "steer, don't queue-to-end" contract.
+	steerMu sync.Mutex
+	steer   []llm.Message
+}
+
+// Steer injects a message into a RUNNING turn: it's appended to the
+// conversation at the next step boundary (between tool-call rounds), so the
+// model course-corrects mid-turn instead of at end-of-turn. Safe to call from
+// another goroutine than the one driving the turn. No-op semantics if the turn
+// ends before the next step — the message stays pending and a later turn drains
+// it (callers that need end-of-turn delivery should append a user message
+// instead).
+func (s *Session) Steer(text string, images []llm.Image) {
+	if strings.TrimSpace(text) == "" && len(images) == 0 {
+		return
+	}
+	s.steerMu.Lock()
+	s.steer = append(s.steer, llm.Message{Role: llm.RoleUser, Text: text, Images: images})
+	s.steerMu.Unlock()
+}
+
+// drainSteer returns and clears any pending steer messages (drive calls it at
+// each step boundary).
+func (s *Session) drainSteer() []llm.Message {
+	s.steerMu.Lock()
+	defer s.steerMu.Unlock()
+	if len(s.steer) == 0 {
+		return nil
+	}
+	out := s.steer
+	s.steer = nil
+	return out
 }
 
 // NewSession starts an empty conversation.
@@ -705,6 +741,16 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		// Respect cancellation between steps (esc in the TUI cancels the turn).
 		if err := ctx.Err(); err != nil {
 			return "", err
+		}
+		// Steer: drain any messages the user/orchestrator injected mid-turn and
+		// append them now, so they land BETWEEN tool-call rounds — the model
+		// course-corrects on the next request instead of at end-of-turn.
+		if steers := s.drainSteer(); len(steers) > 0 {
+			for _, m := range steers {
+				s.appendMsg(m)
+				a.emit(Event{Kind: EventNote, Step: step, Text: "↪ steer: " + truncateForNote(m.Text)})
+			}
+			s.persist()
 		}
 		// The goal is read per step (live-settable via /goal) and appended
 		// last so it stays the freshest instruction in the system prompt.

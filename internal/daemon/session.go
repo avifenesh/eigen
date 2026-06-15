@@ -197,6 +197,20 @@ func (s *Session) send(task string, images []llm.Image) bool {
 	return true
 }
 
+// steer injects a message into the RUNNING turn (between tool-call rounds).
+// Returns false when no turn is running (the caller should send() instead).
+func (s *Session) steer(text string, images []llm.Image) bool {
+	s.mu.Lock()
+	running := s.running
+	sess := s.sess
+	s.mu.Unlock()
+	if !running || sess == nil {
+		return false
+	}
+	sess.Steer(text, images)
+	return true
+}
+
 // runTurn executes a turn body then finishes the turn, converting any panic
 // into a turn error so a bug in one session never crashes the daemon (which
 // would take down every other hosted session). Shared by send and resend.

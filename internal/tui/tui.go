@@ -1206,6 +1206,18 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 					return m, m.command(task)
 				}
 				m.recordHistory(task)
+				// Steer: inject the message into the RUNNING turn — it lands
+				// between tool-call rounds (mid-turn course-correction), not
+				// deferred to end-of-turn. Falls back to the end-of-turn queue
+				// only if the backend reports it's no longer running (race).
+				if m.backend.Steer(task, nil) {
+					m.ti.Reset()
+					m.ti.SetHeight(1)
+					m.comp = completion{kind: compNone}
+					m.relayout()
+					m.note("↪ steering: " + compact(task))
+					return m, nil
+				}
 				m.queued = append(m.queued, task)
 				m.ti.Reset()
 				m.ti.SetHeight(1)

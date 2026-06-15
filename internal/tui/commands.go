@@ -81,7 +81,7 @@ func (m *model) command(line string) tea.Cmd {
 		m.note("tasks tab: /tasks shows background delegations live (step/tool/elapsed) — click a task to expand its result or progress, click [cancel] to stop a running one; the sidebar shows ⚒ tasks N● while work runs")
 		m.note("clickable: status-bar segments are buttons; header [home][sessions][+new][config]; side panel [x] closes rail/changes; click rail session to hop; click changes file to jump")
 		m.note("multiplexer note: zellij/tmux capture ctrl+p/n/o, and zellij ALSO takes alt+arrows/alt+j/k (pane focus) — use shift+↑/↓ to select blocks there; alt+m model, alt+r effort, alt+a perm, alt+y copy still work")
-		m.note("while running: enter queues a message · esc interrupts · ctrl+z (or /background) moves it to the background — the daemon keeps running it and notifies you when done · settings commands (/effort /perm /model /search) run immediately")
+		m.note("while running: enter STEERS (injects your message mid-turn, between tool rounds) · esc interrupts · ctrl+z (or /background) moves it to the background — the daemon keeps running it and notifies you when done · settings commands (/effort /perm /model /search) run immediately")
 	case "/clear":
 		m.backend.Reset(nil)
 		m.blocks = nil

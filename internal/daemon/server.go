@@ -262,11 +262,17 @@ func (s *Server) handle(conn net.Conn) {
 				send(Response{Type: "error", Error: "no such session"})
 				continue
 			}
-			if !sess.send(req.Text, req.Images) {
-				send(Response{Type: "error", Error: "session busy"})
+			if sess.send(req.Text, req.Images) {
+				send(Response{Type: "ok"})
 				continue
 			}
-			send(Response{Type: "ok"})
+			// A turn is already running → steer it (inject between tool-call
+			// rounds) instead of rejecting "busy".
+			if sess.steer(req.Text, req.Images) {
+				send(Response{Type: "ok", Steered: true})
+				continue
+			}
+			send(Response{Type: "error", Error: "session busy"})
 		case "attach":
 			sess := s.host.Get(req.ID)
 			if sess == nil {

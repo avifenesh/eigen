@@ -837,3 +837,52 @@ func TestForegroundSubtaskTimesOut(t *testing.T) {
 		t.Fatalf("subtask should abort near its %s timeout, took %v", fgSubtaskTimeout, d)
 	}
 }
+
+func TestSteerInjectsBetweenToolRounds(t *testing.T) {
+	// A 3-step turn: round 1 calls a tool, round 2 calls a tool, round 3 done.
+	// During round 1's tool, we Steer a message — it must appear as a user
+	// message in round 2's request (between rounds), NOT at end-of-turn.
+	var sess *Session
+	steerTool := callTool("work")
+	steerTool.ReadOnly = true
+	steered := false
+	steerTool.Run = func(context.Context, json.RawMessage) (string, error) {
+		if !steered { // steer once, during the first tool call
+			sess.Steer("actually, focus on X instead", nil)
+			steered = true
+		}
+		return "did work", nil
+	}
+	prov := &mockProvider{replies: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "c1", Name: "work", Arguments: json.RawMessage(`{}`)}}},
+		{ToolCalls: []llm.ToolCall{{ID: "c2", Name: "work", Arguments: json.RawMessage(`{}`)}}},
+		{Text: "done"},
+	}}
+	reg, err := tool.NewRegistry(steerTool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto}
+	sess = a.NewSession()
+	if _, err := sess.Send(context.Background(), "original task"); err != nil {
+		t.Fatal(err)
+	}
+	// Round 2's request (prov.seen[1]) must contain the steer as a user message
+	// that was NOT present in round 1's request (prov.seen[0]).
+	r2 := prov.seen[1]
+	found := false
+	for _, m := range r2.Messages {
+		if m.Role == llm.RoleUser && strings.Contains(m.Text, "focus on X") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("steer message should appear in round 2's request (mid-turn), messages: %+v", r2.Messages)
+	}
+	// And it must NOT have been in round 1 (it was injected DURING round 1).
+	for _, m := range prov.seen[0].Messages {
+		if strings.Contains(m.Text, "focus on X") {
+			t.Fatal("steer leaked into round 1 — should only appear from round 2 on")
+		}
+	}
+}

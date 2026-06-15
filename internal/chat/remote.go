@@ -257,6 +257,19 @@ func (r *Remote) AddDir(path string) (string, error) {
 // Roots lists the daemon session's tool-sandbox allowed dirs (primary first).
 func (r *Remote) Roots() []string { return r.snap().Roots }
 
+// Steer injects a message into the daemon session's running turn (mid-turn,
+// between tool-call rounds). Returns true when a turn was running and the
+// message was steered; false when idle (caller should Send). Fire-and-forget —
+// never blocks on the turn (unlike Send).
+func (r *Remote) Steer(text string, images []llm.Image) bool {
+	steered, err := r.c.SteerInput(r.id, text, images)
+	if err != nil {
+		return false
+	}
+	r.refresh()
+	return steered
+}
+
 // Provider is nil for remote backends: capability checks that need the live
 // provider (vision, effort, search) degrade gracefully in the TUI.
 func (r *Remote) Provider() llm.Provider { return nil }
