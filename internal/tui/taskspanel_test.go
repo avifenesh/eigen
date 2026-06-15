@@ -63,7 +63,7 @@ func TestTasksTabEmptyState(t *testing.T) {
 	m := tasksModel(t)
 	m.setRightTab(rightTabTasks)
 	band := ansi.Strip(m.transcriptBand())
-	if !strings.Contains(band, "no background tasks") {
+	if !strings.Contains(band, "nothing running in the background") {
 		t.Fatalf("empty state missing:\n%s", band)
 	}
 }

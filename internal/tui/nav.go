@@ -212,7 +212,7 @@ func (m *model) openSwitcher() {
 	}
 	entries = cleaned
 	if len(entries) == 0 {
-		m.note("no sessions yet")
+		m.note("no other sessions yet — this is your only one")
 		return
 	}
 	m.switchEntries = entries

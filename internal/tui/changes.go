@@ -282,7 +282,7 @@ func (m *model) buildChangesView() *changesView {
 	if len(changes) == 0 {
 		// Empty state: the tab bar still renders above this, so the user can
 		// see + click the [git]/[term]/[tasks] tabs even with no edits yet.
-		add(dim("no file changes this turn"), -1)
+		add(dim("no edits yet — file changes will show up here"), -1)
 		m.changesVw = v
 		return &m.changesVw
 	}

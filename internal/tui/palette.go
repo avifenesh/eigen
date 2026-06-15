@@ -230,7 +230,7 @@ func (m *model) paletteView() string {
 		b.WriteString(line + "\n")
 	}
 	if len(m.pal.matches) == 0 {
-		b.WriteString(dim("  (no matches)\n"))
+		b.WriteString(dim("  no matches\n"))
 	}
 	return b.String()
 }

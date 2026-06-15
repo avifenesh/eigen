@@ -284,7 +284,7 @@ func (m *model) switcherView() string {
 		cur = sl.SessionID()
 	}
 	if len(entries) == 0 {
-		b.WriteString(dim("  no match\n"))
+		b.WriteString(dim("  no matches\n"))
 	}
 	for i := start; i < end; i++ {
 		e := entries[i]

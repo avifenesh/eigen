@@ -107,7 +107,7 @@ type taskRow struct {
 // task's detail lines directly under it.
 func (m *model) tasksRows(contentW int) []taskRow {
 	if len(m.tasks.tasks) == 0 {
-		return []taskRow{{kind: trEmpty, task: -1, text: "no background tasks"}, {kind: trEmpty, task: -1, text: dim("task(background=true) starts one")}}
+		return []taskRow{{kind: trEmpty, task: -1, text: "nothing running in the background"}, {kind: trEmpty, task: -1, text: dim("delegate with task(background=true) and it shows up here")}}
 	}
 	var rows []taskRow
 	for i, t := range m.tasks.tasks {

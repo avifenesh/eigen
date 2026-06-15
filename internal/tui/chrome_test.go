@@ -765,7 +765,7 @@ func TestChangesPanelVisibleWithNoEdits(t *testing.T) {
 		t.Fatal("right panel must show (with its tab bar) even when the last run made no edits")
 	}
 	band := m.transcriptBand()
-	for _, want := range []string{"[changes]", "[git]", "no file changes"} {
+	for _, want := range []string{"[changes]", "[git]", "no edits yet"} {
 		if !strings.Contains(band, want) {
 			t.Fatalf("empty changes tab should show tabs + placeholder, missing %q:\n%s", want, band)
 		}

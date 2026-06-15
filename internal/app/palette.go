@@ -152,7 +152,7 @@ func (p *palette) view(w int) string {
 		shown++
 	}
 	if len(p.matches) == 0 {
-		b.WriteString(sAccent.Render("│ ") + sFaint.Render("no match") + "\n")
+		b.WriteString(sAccent.Render("│ ") + sFaint.Render("no matches") + "\n")
 	}
 	b.WriteString(sAccent.Render("└" + strings.Repeat("─", max(boxW-1, 0)) + "┘"))
 	return b.String()
