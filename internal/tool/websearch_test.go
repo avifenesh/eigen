@@ -15,7 +15,7 @@ func clearSearchEnv(t *testing.T) {
 	for _, k := range []string{
 		"TAVILY_API_KEY", "BRAVE_API_KEY", "EIGEN_WEBSEARCH_URL", "EIGEN_WEBSEARCH_KEY",
 		"EIGEN_TAVILY_URL", "EIGEN_BRAVE_URL", "EIGEN_SEARXNG_URL", "EIGEN_WEBSEARCH_NO_MOJEEK",
-		"EIGEN_WEBSEARCH_NO_DUCKDUCKGO",
+		"EIGEN_WEBSEARCH_NO_DUCKDUCKGO", "EIGEN_WEBSEARCH_NO_BRAVE_WEB",
 		"EIGEN_WEBSEARCH_ALLOW_LOOPBACK", "EIGEN_WEBSEARCH_ALLOW_PRIVATE",
 	} {
 		t.Setenv(k, "")
@@ -295,7 +295,7 @@ func TestBuildChainKeylessByDefault(t *testing.T) {
 	for _, e := range c.engines {
 		names = append(names, e.name())
 	}
-	want := []string{"mojeek", "duckduckgo", "marginalia", "wikipedia"}
+	want := []string{"mojeek", "duckduckgo", "brave-web", "marginalia", "wikipedia"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("default chain should be the keyless tail %v, got %v", want, names)
 	}
@@ -313,6 +313,16 @@ func TestBuildChainDuckDuckGoOptOut(t *testing.T) {
 	for _, e := range buildSearchChain().engines {
 		if e.name() == "duckduckgo" {
 			t.Fatal("EIGEN_WEBSEARCH_NO_DUCKDUCKGO should drop DuckDuckGo from the chain")
+		}
+	}
+}
+
+func TestBuildChainBraveWebOptOut(t *testing.T) {
+	clearSearchEnv(t)
+	t.Setenv("EIGEN_WEBSEARCH_NO_BRAVE_WEB", "1")
+	for _, e := range buildSearchChain().engines {
+		if e.name() == "brave-web" {
+			t.Fatal("EIGEN_WEBSEARCH_NO_BRAVE_WEB should drop the keyless Brave engine")
 		}
 	}
 }

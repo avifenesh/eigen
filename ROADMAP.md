@@ -159,14 +159,18 @@ from a cross-vendor review; channel undecided.
   only ever signals a live pgid); 30-finished-shell retention cap. Live-verified
   in the X11 workspace (`sleep 60` → alt+d → "backgrounded as shell-1" → agent
   kept polling → `[sh]` panel showed it).
-- **websearch — second general head + honest fallback (2026-06-15).** ✅ Added a
-  DuckDuckGo HTML-scrape engine (general class) so a Mojeek rate-limit/anti-bot
-  block (403) still has broad-web fallback before dropping to niche/encyclopedic;
-  chain is now Mojeek → DuckDuckGo → Marginalia → Wikipedia (each keyless head
-  opt-out-able: `EIGEN_WEBSEARCH_NO_MOJEEK`/`_NO_DUCKDUCKGO`). DDG `uddg` redirect
-  hrefs are unwrapped to real URLs. The keyless chain error also now aggregates
-  EVERY engine's failure ("all search engines failed: mojeek: …; duckduckgo: …;
-  …") instead of naming one — a real chain failure is distinguishable from a
+- **websearch — second general head + honest fallback (2026-06-15).** ✅ Added
+  DuckDuckGo + keyless Brave (search.brave.com HTML) general engines, so a
+  rate-limit/anti-bot block on one general head still has broad-web fallback
+  before dropping to niche/encyclopedic; chain is now Mojeek → DuckDuckGo →
+  brave-web → Marginalia → Wikipedia (each keyless head opt-out-able:
+  `EIGEN_WEBSEARCH_NO_MOJEEK`/`_NO_DUCKDUCKGO`/`_NO_BRAVE_WEB`). DDG `uddg`
+  redirect hrefs are unwrapped; Brave is parsed on STABLE tokens (the `l1`
+  result anchor + the `search-snippet-title` title= attribute) so its rotating
+  Svelte class hashes don't break it. The keyless chain error also now
+  aggregates EVERY engine's failure ("all search engines failed: mojeek: …;
+  duckduckgo: …; …") instead of naming one — a real chain failure is
+  distinguishable from a
   single-engine rate-limit. The chain already fell through correctly on a
   rate-limited engine (TestChainFailureIsolation); this just gives it a stronger
   general fallback. Live-verified DDG returns + unwraps results.
@@ -253,7 +257,7 @@ Env: `EIGEN_PROVIDER`, `EIGEN_PERMISSION`, `EIGEN_MAX_CONTEXT_TOKENS`,
 `EIGEN_EMBED_BASE_URL`, `EIGEN_IMAGE_MODEL`, `EIGEN_SMALL_MODEL`, `EIGEN_SUGGEST_MODEL`.
 Web search (keyless by default — these only pick a PREFERRED head): `TAVILY_API_KEY`,
 `BRAVE_API_KEY`, `EIGEN_SEARXNG_URL`, or `EIGEN_WEBSEARCH_URL` (+ `EIGEN_WEBSEARCH_KEY`);
-`EIGEN_WEBSEARCH_NO_MOJEEK` / `EIGEN_WEBSEARCH_NO_DUCKDUCKGO` opt out of those
+`EIGEN_WEBSEARCH_NO_MOJEEK` / `_NO_DUCKDUCKGO` / `_NO_BRAVE_WEB` opt out of those
 keyless scrapes; `EIGEN_WEBSEARCH_ALLOW_LOOPBACK`
 / `EIGEN_WEBSEARCH_ALLOW_PRIVATE` permit a local/LAN SearXNG past the SSRF guard.
 

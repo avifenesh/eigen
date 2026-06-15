@@ -108,6 +108,9 @@ func buildSearchChain() *searchChain {
 	if !envTrue("EIGEN_WEBSEARCH_NO_DUCKDUCKGO") {
 		engines = append(engines, &duckduckgoEngine{})
 	}
+	if !envTrue("EIGEN_WEBSEARCH_NO_BRAVE_WEB") {
+		engines = append(engines, &braveWebEngine{})
+	}
 	engines = append(engines, &marginaliaEngine{}, &wikipediaEngine{})
 	return &searchChain{engines: engines, checkSSRF: ssrfCheck}
 }

@@ -473,6 +473,97 @@ func unwrapDDGRedirect(href string) string {
 	return ""
 }
 
+// --- Brave (public search.brave.com HTML, no key) ---------------------------
+
+// braveWebEngine scrapes the PUBLIC search.brave.com HTML SERP — keyless,
+// distinct from braveBackend (the keyed Brave Search API). A third GENERAL head
+// so the keyless chain survives both Mojeek and DuckDuckGo being blocked. Brave
+// is a Svelte app with rotating hashed class names, so this anchors only on the
+// STABLE tokens: each result link is <a href="https://…" target="_self"
+// class="… l1"> and its title is the title="…" attribute on the following
+// "search-snippet-title" element.
+type braveWebEngine struct{ base string }
+
+func (b *braveWebEngine) name() string       { return "brave-web" }
+func (b *braveWebEngine) class() engineClass { return classGeneral }
+func (b *braveWebEngine) host() string       { return hostOf(b.base, "search.brave.com") }
+
+func (b *braveWebEngine) search(ctx context.Context, hc *http.Client, query string, count int) ([]searchResult, error) {
+	base := strings.TrimRight(envOr2(b.base, "https://search.brave.com"), "/")
+	u := base + "/search?q=" + url.QueryEscape(query) + "&source=web"
+	// Brave gates on a non-browser UA, so send a browser one for this engine.
+	raw, err := searchHTTPGet(ctx, hc, u, "text/html,application/xhtml+xml", "brave-web", map[string]string{
+		"User-Agent": braveBrowserUA,
+	})
+	if err != nil {
+		return nil, err
+	}
+	html := string(raw)
+	results := parseBraveWeb(html)
+	if len(results) > count {
+		results = results[:count]
+	}
+	if len(results) == 0 && !strings.Contains(html, "search-snippet-title") {
+		return nil, fmt.Errorf("brave-web: no parseable results (likely a challenge/redesign from this IP)")
+	}
+	return results, nil
+}
+
+const braveBrowserUA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+
+// parseBraveWeb pairs each result anchor (class ends " l1", target="_self",
+// https href) with the title="…" of the next search-snippet-title element.
+func parseBraveWeb(html string) []searchResult {
+	var out []searchResult
+	rest := html
+	for {
+		// Next result anchor: an <a …> tag carrying the stable `l1` class token.
+		i := strings.Index(rest, ` l1"`)
+		if i < 0 {
+			break
+		}
+		tagStart := strings.LastIndex(rest[:i], "<a ")
+		if tagStart < 0 {
+			rest = rest[i+len(` l1"`):]
+			continue
+		}
+		gt := strings.IndexByte(rest[tagStart:], '>')
+		if gt < 0 {
+			break
+		}
+		tag := rest[tagStart : tagStart+gt+1]
+		rest = rest[tagStart+gt+1:]
+		href := attrValue(tag, "href")
+		if !strings.HasPrefix(href, "http://") && !strings.HasPrefix(href, "https://") {
+			continue // skip Brave-internal/relative links
+		}
+		// Title: the next search-snippet-title element's title="…" attribute.
+		title := ""
+		if ti := strings.Index(rest, "search-snippet-title"); ti >= 0 && ti < 2000 {
+			seg := rest[ti:]
+			if tgt := strings.IndexByte(seg, '>'); tgt >= 0 {
+				title = attrValue(seg[:tgt+1], "title")
+			}
+		}
+		title = strings.TrimSpace(htmlUnescapeBasic(title))
+		if href != "" && title != "" {
+			out = append(out, searchResult{URL: strings.ReplaceAll(href, "&amp;", "&"), Title: title})
+		}
+	}
+	return out
+}
+
+// htmlUnescapeBasic decodes the handful of entities that appear in title attrs.
+func htmlUnescapeBasic(s string) string {
+	s = strings.ReplaceAll(s, "&amp;", "&")
+	s = strings.ReplaceAll(s, "&lt;", "<")
+	s = strings.ReplaceAll(s, "&gt;", ">")
+	s = strings.ReplaceAll(s, "&quot;", "\"")
+	s = strings.ReplaceAll(s, "&#39;", "'")
+	s = strings.ReplaceAll(s, "&#x27;", "'")
+	return s
+}
+
 func attrValue(tag, attr string) string {
 	needle := attr + `="`
 	i := strings.Index(tag, needle)
