@@ -53,3 +53,18 @@ func (m *model) toggleChanges() tea.Cmd {
 	}
 	return nil
 }
+
+// toggleMouse suspends/restores eigen's mouse capture. When OFF, eigen stops
+// listening for mouse events so the TERMINAL's native click-drag selection
+// works again (mark text → copy with the system clipboard / middle-click) —
+// the thing eigen's clickable chrome otherwise disables. When ON, clickable
+// chrome (status bar, rail, panels, scroll) is back.
+func (m *model) toggleMouse() tea.Cmd {
+	m.mouseOff = !m.mouseOff
+	if m.mouseOff {
+		m.note("mouse capture OFF — use your terminal to mark + copy text; alt+x (or /mouse) to re-enable clicks")
+		return tea.DisableMouse
+	}
+	m.note("mouse capture ON — clickable chrome + scroll restored")
+	return tea.EnableMouseCellMotion
+}

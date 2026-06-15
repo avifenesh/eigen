@@ -324,6 +324,12 @@ type model struct {
 	brandTick     int    // advances while working → animates the λ mark + loader
 	lastTitle     string // last terminal-title string written (throttle: skip no-op rewrites)
 
+	// mouseOff suspends eigen's mouse capture so the TERMINAL's native
+	// click-drag selection works again (mark + copy with the mouse). eigen
+	// captures the mouse for clickable chrome, which disables native marking;
+	// this hands it back. Toggled with alt+m-mouse / the [mouse] segment.
+	mouseOff bool
+
 	// Right changes panel (Tier 9 Wave 4): changesOn toggles the column of
 	// files touched in the last edit-producing run (click a file = jump to its
 	// tool block). Hidden when the last run made no edits or the terminal is
@@ -1090,6 +1096,10 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			return m, nil
 		case "ctrl+y", "alt+y":
 			return m, m.copySelected()
+		case "alt+x":
+			// Suspend/restore mouse capture so the terminal's native click-drag
+			// selection works (mark + copy with the mouse).
+			return m, m.toggleMouse()
 		case "alt+s":
 			// In-window session switcher: hop this window to another daemon
 			// session (or home to the app) without touching running turns.

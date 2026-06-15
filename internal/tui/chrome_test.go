@@ -1944,3 +1944,24 @@ func TestBackgroundTurnAltZAndClick(t *testing.T) {
 		}
 	}
 }
+
+func TestMouseToggle(t *testing.T) {
+	m := testModel(t)
+	if m.mouseOff {
+		t.Fatal("mouse capture should start ON")
+	}
+	cmd := m.toggleMouse()
+	if !m.mouseOff || cmd == nil {
+		t.Fatal("toggleMouse should turn capture OFF and return a DisableMouse cmd")
+	}
+	cmd = m.toggleMouse()
+	if m.mouseOff || cmd == nil {
+		t.Fatal("toggleMouse again should turn capture ON and return an Enable cmd")
+	}
+	// alt+x is wired to the toggle.
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}, Alt: true})
+	if !m.mouseOff {
+		t.Fatal("alt+x should toggle mouse capture off")
+	}
+}

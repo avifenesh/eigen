@@ -87,6 +87,7 @@ var slashCommands = []slashCmd{
 	{"/add-dir", "grant the tools another working directory (/add-dir <path>)"},
 	{"/find", "search the transcript"},
 	{"/copy", "copy the selected block (or last answer) to clipboard"},
+	{"/mouse", "toggle mouse capture — turn OFF to mark + copy text with your terminal (alt+x)"},
 	{"/export", "export this conversation to a markdown file"},
 	{"/read", "toggle reading EVERY answer aloud (persistent; /speak = once)"},
 	{"/rebuild", "rebuild eigen and live-reload (on production: warns — use `eigen dev` to iterate safely)"},

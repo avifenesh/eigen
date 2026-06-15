@@ -32,6 +32,7 @@ const (
 	actConfigPanel
 	actRename
 	actRailToggle
+	actMouseToggle
 	actRailCollapse
 	actRailWiden
 	actRailNarrow
@@ -170,6 +171,12 @@ var actionRegistry = map[actionID]action{
 		enabled: func(m *model) bool { return m.railLister() != nil },
 		run: func(m *model) tea.Cmd {
 			return m.toggleRail()
+		},
+	},
+	actMouseToggle: {
+		id: actMouseToggle, label: "mouse capture (off = mark+copy in your terminal)",
+		run: func(m *model) tea.Cmd {
+			return m.toggleMouse()
 		},
 	},
 	actRailCollapse: {
