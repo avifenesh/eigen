@@ -20,40 +20,26 @@ const mantleDefaultRegion = "us-east-2"
 // Mantle drives an OpenAI-family model on the Bedrock "mantle" endpoint via the
 // OpenAI Responses API. Auth is a Bedrock long-term API key (Bearer token).
 type Mantle struct {
-	BaseURL  string
-	Model    string // wire model id (bare slug "gpt-5.5" in bridge mode)
-	publicID string // the id callers/catalog use ("openai.gpt-5.5"); == Model off-bridge
-	effort   string
-	token    string
-	http     *http.Client
-	// bridge: gpt-5.5 routes to the ChatGPT backend (chatgpt.com/backend-api/
-	// codex) via ~/.codex/auth.json, because the mantle gateway's
-	// openai.gpt-5.5 engine is down (500/"Engine not found"). Self-contained:
-	// native Go, no external proxy. Requires instructions + store=false; auth
-	// is the ChatGPT-plan token (not the Bedrock Bearer).
-	bridge       bool
-	instructions string
-	auth         *chatgptAuth
+	BaseURL string
+	Model   string
+	effort  string
+	token   string
+	http    *http.Client
 }
 
 // NewMantle builds a Mantle provider from the environment.
 // Requires AWS_BEARER_TOKEN_BEDROCK; region defaults to us-east-2.
 func NewMantle(model string) (*Mantle, error) {
-	if model == "" {
-		model = "openai.gpt-5.5"
-	}
-	// gpt-5.5 routes through the ChatGPT backend (self-contained, native) when a
-	// ChatGPT-plan credential exists, since the mantle openai.gpt-5.5 engine is
-	// down. That path authenticates via ~/.codex/auth.json, NOT the Bedrock
-	// token, so the token requirement is waived when bridging.
-	bridging := useGPTBridge(model)
 	token := os.Getenv("AWS_BEARER_TOKEN_BEDROCK")
-	if token == "" && !bridging {
+	if token == "" {
 		return nil, fmt.Errorf("AWS_BEARER_TOKEN_BEDROCK not set")
 	}
 	region := os.Getenv("EIGEN_MANTLE_REGION")
 	if region == "" {
 		region = mantleDefaultRegion
+	}
+	if model == "" {
+		model = "openai.gpt-5.5"
 	}
 	// Per-model default from the catalog, falling back to the package default.
 	effort := reasoningEffort
@@ -69,58 +55,17 @@ func NewMantle(model string) (*Mantle, error) {
 			effort = env
 		}
 	}
-	m := &Mantle{
+	return &Mantle{
 		BaseURL: fmt.Sprintf("https://bedrock-mantle.%s.api.aws/openai/v1", region),
 		Model:   model,
 		effort:  effort,
 		token:   token,
 		http:    &http.Client{Timeout: 5 * time.Minute},
-	}
-	if bridging {
-		m.bridge = true
-		m.BaseURL = chatgptBridgeBaseURL()
-		m.publicID = model                             // keep the catalog/config id (openai.gpt-5.5)
-		m.Model = strings.TrimPrefix(model, "openai.") // bare slug on the wire: gpt-5.5
-		m.instructions = bridgeInstructions
-		m.auth = sharedChatGPTAuth
-	}
-	return m, nil
+	}, nil
 }
 
-// useGPTBridge reports whether gpt-5.5 should route to the ChatGPT backend:
-// it's a gpt-5.5 id, bridging isn't disabled, and a ChatGPT credential exists.
-func useGPTBridge(model string) bool {
-	if os.Getenv("EIGEN_GPT_BRIDGE_OFF") != "" {
-		return false
-	}
-	if model != "gpt-5.5" && model != "openai.gpt-5.5" {
-		return false
-	}
-	return chatgptAvailable()
-}
-
-// chatgptBridgeBaseURL is the ChatGPT-codex Responses base (override for tests).
-func chatgptBridgeBaseURL() string {
-	if u := strings.TrimSpace(os.Getenv("EIGEN_GPT_BRIDGE_URL")); u != "" {
-		return strings.TrimRight(u, "/")
-	}
-	return chatgptCodexBaseURL
-}
-
-const bridgeInstructions = "You are eigen, a precise, safe, and helpful coding agent."
-
-func (m *Mantle) Name() string {
-	if m.bridge {
-		return m.Model + " (chatgpt)"
-	}
-	return m.Model + " (bedrock mantle)"
-}
-func (m *Mantle) ModelID() string {
-	if m.publicID != "" {
-		return m.publicID
-	}
-	return m.Model
-}
+func (m *Mantle) Name() string    { return m.Model + " (bedrock mantle)" }
+func (m *Mantle) ModelID() string { return m.Model }
 
 // SetEffort changes the reasoning effort for subsequent requests. Returns false
 // for an unrecognized level (validated against the per-model set when known).
@@ -197,13 +142,11 @@ type responsesTool struct {
 }
 
 type responsesRequest struct {
-	Model        string               `json:"model"`
-	Input        []responsesInputItem `json:"input"`
-	Tools        []responsesTool      `json:"tools,omitempty"`
-	Reasoning    *reasoningConfig     `json:"reasoning,omitempty"`
-	Stream       bool                 `json:"stream,omitempty"`
-	Instructions string               `json:"instructions,omitempty"` // bridge: ChatGPT-codex backend requires it
-	Store        *bool                `json:"store,omitempty"`        // bridge: must be false
+	Model     string               `json:"model"`
+	Input     []responsesInputItem `json:"input"`
+	Tools     []responsesTool      `json:"tools,omitempty"`
+	Reasoning *reasoningConfig     `json:"reasoning,omitempty"`
+	Stream    bool                 `json:"stream,omitempty"`
 }
 
 type responsesReply struct {
@@ -251,7 +194,6 @@ func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
 		Tools:     toResponsesTools(req.Tools),
 		Reasoning: &reasoningConfig{Effort: m.effort, Summary: reasoningSummary},
 	}
-	m.applyBridge(&payload)
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -305,7 +247,6 @@ func (m *Mantle) Stream(ctx context.Context, req Request, sink StreamSink) (*Res
 		Reasoning: &reasoningConfig{Effort: m.effort, Summary: reasoningSummary},
 		Stream:    true,
 	}
-	m.applyBridge(&payload)
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -344,11 +285,8 @@ const maxStreamFailRetries = 3
 // sink (so the caller can decide whether a retry is safe); failErr is non-nil
 // when the stream reported "response.failed".
 func (m *Mantle) streamOnce(ctx context.Context, body []byte, sink StreamSink) (final *Response, emitted bool, failErr error, err error) {
-	hdr, herr := m.authHeaders(ctx)
-	if herr != nil {
-		return nil, false, nil, fmt.Errorf("mantle: %w", herr)
-	}
-	resp, err := httpStream(ctx, m.http, m.BaseURL+"/responses", hdr, body, nil)
+	resp, err := httpStream(ctx, m.http, m.BaseURL+"/responses",
+		map[string]string{"Authorization": "Bearer " + m.token}, body, nil)
 	if err != nil {
 		return nil, false, nil, fmt.Errorf("mantle: %w", err)
 	}
@@ -356,12 +294,6 @@ func (m *Mantle) streamOnce(ctx context.Context, body []byte, sink StreamSink) (
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
-	// Accumulate completed output items as they stream. The ChatGPT backend
-	// (gpt-5.5 bridge) does NOT repeat them in response.completed (its output is
-	// empty there), so tool calls + text must be gathered from
-	// response.output_item.done — unlike the mantle gateway which echoes them.
-	var streamedCalls []ToolCall
-	var streamedText strings.Builder
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data:") {
@@ -375,17 +307,6 @@ func (m *Mantle) streamOnce(ctx context.Context, body []byte, sink StreamSink) (
 			Type     string          `json:"type"`
 			Delta    string          `json:"delta"`
 			Response json.RawMessage `json:"response"`
-			Item     *struct {
-				Type      string `json:"type"`
-				ID        string `json:"id"`
-				CallID    string `json:"call_id"`
-				Name      string `json:"name"`
-				Arguments string `json:"arguments"`
-				Content   []struct {
-					Type string `json:"type"`
-					Text string `json:"text"`
-				} `json:"content"`
-			} `json:"item"`
 		}
 		if err := json.Unmarshal([]byte(data), &ev); err != nil {
 			continue
@@ -400,25 +321,6 @@ func (m *Mantle) streamOnce(ctx context.Context, body []byte, sink StreamSink) (
 			emitted = true
 			if sink != nil {
 				sink(StreamChunk{Kind: ChunkReasoning, Text: ev.Delta})
-			}
-		case "response.output_item.done":
-			// Gather function calls + message text from each completed item.
-			if ev.Item == nil {
-				break
-			}
-			switch ev.Item.Type {
-			case "function_call":
-				streamedCalls = append(streamedCalls, ToolCall{
-					ID:        firstNonEmpty(ev.Item.CallID, ev.Item.ID),
-					Name:      ev.Item.Name,
-					Arguments: normalizeArgs(ev.Item.Arguments),
-				})
-			case "message":
-				for _, c := range ev.Item.Content {
-					if c.Type == "output_text" {
-						streamedText.WriteString(c.Text)
-					}
-				}
 			}
 		case "response.completed", "response.incomplete":
 			out, status, reason, perr := parseReply(ev.Response)
@@ -443,19 +345,7 @@ func (m *Mantle) streamOnce(ctx context.Context, body []byte, sink StreamSink) (
 		return nil, emitted, nil, fmt.Errorf("read stream: %w", err)
 	}
 	if final == nil {
-		final = &Response{}
-	}
-	// Merge stream-accumulated items when response.completed didn't echo them
-	// (the ChatGPT bridge case). Don't double-count when the gateway DID include
-	// them (mantle): only fill what's missing.
-	if len(final.ToolCalls) == 0 && len(streamedCalls) > 0 {
-		final.ToolCalls = streamedCalls
-	}
-	if strings.TrimSpace(final.Text) == "" && streamedText.Len() > 0 {
-		final.Text = streamedText.String()
-	}
-	if final.Text == "" && len(final.ToolCalls) == 0 {
-		return &Response{}, emitted, nil, nil // truly empty; the agent's nudge handles it
+		return &Response{}, emitted, nil, nil // empty; the agent's empty-turn nudge handles it
 	}
 	return final, emitted, nil, nil
 }
@@ -481,50 +371,15 @@ func streamFailReason(raw json.RawMessage) string {
 // post sends the request body to the Responses endpoint via the shared
 // transport (retry/backoff/Retry-After) and surfaces non-2xx as an error.
 func (m *Mantle) post(ctx context.Context, body []byte) ([]byte, error) {
-	hdr, err := m.authHeaders(ctx)
+	raw, status, err := httpJSON(ctx, m.http, m.BaseURL+"/responses",
+		map[string]string{"Authorization": "Bearer " + m.token}, body, nil)
 	if err != nil {
 		return nil, fmt.Errorf("mantle: %w", err)
-	}
-	raw, status, err := httpJSON(ctx, m.http, m.BaseURL+"/responses", hdr, body, nil)
-	if err != nil {
-		return nil, fmt.Errorf("mantle: %w", err)
-	}
-	// Bridge: a 401 means the ChatGPT token expired — refresh once and retry.
-	if m.bridge && status == 401 {
-		if rerr := m.auth.refreshNow(ctx, m.http); rerr == nil {
-			if hdr, err = m.authHeaders(ctx); err == nil {
-				raw, status, err = httpJSON(ctx, m.http, m.BaseURL+"/responses", hdr, body, nil)
-				if err != nil {
-					return nil, fmt.Errorf("mantle: %w", err)
-				}
-			}
-		}
 	}
 	if status < 200 || status >= 300 {
 		return nil, fmt.Errorf("mantle HTTP %d: %s", status, string(raw))
 	}
 	return raw, nil
-}
-
-// applyBridge sets the ChatGPT-backend-required fields on a Responses payload
-// when in bridge mode (instructions present, store=false). No-op otherwise.
-func (m *Mantle) applyBridge(p *responsesRequest) {
-	if !m.bridge {
-		return
-	}
-	p.Instructions = m.instructions
-	no := false
-	p.Store = &no
-}
-
-// authHeaders returns the request headers for the active mode: the Bedrock
-// Bearer token for the mantle gateway, or the ChatGPT-plan headers (with
-// refresh) for the bridge.
-func (m *Mantle) authHeaders(ctx context.Context) (map[string]string, error) {
-	if m.bridge {
-		return m.auth.headers(ctx, m.http)
-	}
-	return map[string]string{"Authorization": "Bearer " + m.token}, nil
 }
 
 // parseReply decodes a Responses API body into a normalized Response, returning
