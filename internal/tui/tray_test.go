@@ -86,3 +86,20 @@ func TestTrayKeyCloses(t *testing.T) {
 		t.Fatal("esc should close the tray")
 	}
 }
+
+func TestTrayKeyAltW(t *testing.T) {
+	// alt+w opens the tray (zellij-safe; zellij binds alt+n to NewPane).
+	m := switcherModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}, Alt: true})
+	if !m.tray {
+		t.Fatal("alt+w should open the tray")
+	}
+	// alt+n still works for terminals that don't capture it.
+	m2 := switcherModel(t)
+	m2.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}, Alt: true})
+	if !m2.tray {
+		t.Fatal("alt+n should still open the tray on non-zellij terminals")
+	}
+}

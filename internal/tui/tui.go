@@ -1085,10 +1085,10 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			}
 			m.historyNext()
 			return m, nil
-		case "ctrl+p", "alt+up", "alt+k", "shift+up":
+		case "ctrl+p", "alt+up", "shift+up":
 			m.moveSel(-1)
 			return m, nil
-		case "ctrl+n", "alt+down", "alt+j", "shift+down":
+		case "ctrl+n", "alt+down", "shift+down":
 			m.moveSel(1)
 			return m, nil
 		case "tab", "shift+tab":
@@ -1105,8 +1105,10 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			// session (or home to the app) without touching running turns.
 			m.openSwitcher()
 			return m, nil
-		case "alt+n":
+		case "alt+w", "alt+n":
 			// Notifications/approvals tray: what needs me across sessions.
+			// alt+w is the primary (zellij binds Alt+n to NewPane); alt+n kept
+			// for terminals that don't capture it.
 			m.openTray()
 			return m, nil
 		case "ctrl+b", "alt+b":
