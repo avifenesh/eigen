@@ -17,6 +17,14 @@ type serverConfig struct {
 	Command []string          `json:"command"`
 	Env     map[string]string `json:"env"`
 
+	// Description is the one-line "what is this server" shown to the model at
+	// the top level of progressive disclosure (e.g. "drive the user's real
+	// Chrome", "isolated Linux sandbox"). REQUIRED in practice: it's how eigen
+	// presents the server before the model drills in. When empty, eigen falls
+	// back to the server's own MCP `instructions`, then warns — an undescribed
+	// server is opaque to the model.
+	Description string `json:"description"`
+
 	// Tools, when non-empty, is an allowlist: only the named server tools are
 	// exposed to the model (names as the server declares them, without the
 	// "<server>_" prefix; "*" suffix allowed for prefix matches). Tool schemas
@@ -84,12 +92,22 @@ func LoadTools(ctx context.Context, path string) (defs []tool.Definition, client
 			continue
 		}
 		clients = append(clients, client)
+		// Group description (Level-0 frontmatter): config description wins, else
+		// the server's own MCP instructions, else a warning + generic gist.
+		gist := strings.TrimSpace(sc.Description)
+		if gist == "" {
+			gist = firstSentence(client.Instructions())
+		}
+		if gist == "" {
+			gist = sc.Name + " MCP server"
+			fmt.Fprintf(os.Stderr, "eigen: mcp %q has no description — add \"description\" in mcp.json so the model knows what it's for\n", sc.Name)
+		}
 		kept := 0
 		for _, sp := range specs {
 			if !toolAllowed(sc, sp.Name) {
 				continue
 			}
-			defs = append(defs, wrap(client, sc.Name, sp))
+			defs = append(defs, wrap(client, sc.Name, gist, sp))
 			kept++
 		}
 		if len(sc.Tools) > 0 || len(sc.ExcludeTools) > 0 {
@@ -129,7 +147,7 @@ func toolAllowed(sc serverConfig, name string) bool {
 }
 
 // wrap turns an MCP ToolSpec into an eigen tool.Definition backed by the client.
-func wrap(client *Client, server string, sp ToolSpec) tool.Definition {
+func wrap(client *Client, server, gist string, sp ToolSpec) tool.Definition {
 	params := slimSchema(sp.InputSchema)
 	if len(params) == 0 {
 		params = json.RawMessage(`{"type":"object","additionalProperties":true}`)
@@ -158,8 +176,9 @@ func wrap(client *Client, server string, sp ToolSpec) tool.Definition {
 		// Progressive disclosure: MCP tools are niche (schema withheld from each
 		// request) and grouped by their server, so the model browses the server
 		// then opens a tool via search_tools instead of paying for every schema.
-		Niche: true,
-		Group: sanitize(server),
+		Niche:     true,
+		Group:     sanitize(server),
+		GroupDesc: gist,
 		RunRich: func(ctx context.Context, args json.RawMessage) (tool.Result, error) {
 			res, err := client.CallToolRich(ctx, toolName, args)
 			if err == nil && attachShot {
@@ -232,4 +251,24 @@ func sanitize(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// firstSentence returns the first sentence/line of s (for a one-line server
+// gist derived from a server's MCP instructions), truncated.
+func firstSentence(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	if i := strings.IndexAny(s, ".!"); i > 0 {
+		s = s[:i]
+	}
+	s = strings.TrimSpace(s)
+	if len(s) > 120 {
+		s = s[:117] + "…"
+	}
+	return s
 }

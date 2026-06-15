@@ -116,19 +116,19 @@ func TestWrapMapsReadOnlyHint(t *testing.T) {
 		byName[sp.Name] = sp
 	}
 	// No annotations → mutating (fail safe).
-	if d := wrap(c, "srv", byName["echo"]); d.ReadOnly {
+	if d := wrap(c, "srv", "srv gist", byName["echo"]); d.ReadOnly {
 		t.Error("echo (no hint) should be mutating")
 	}
 	// readOnly + not destructive → read-only, auto-runs in gated mode.
-	if d := wrap(c, "srv", byName["peek"]); !d.ReadOnly {
+	if d := wrap(c, "srv", "srv gist", byName["peek"]); !d.ReadOnly {
 		t.Error("peek (readOnlyHint, non-destructive) should be read-only")
 	}
 	// readOnly BUT destructive → stay mutating (the destructive flag wins).
-	if d := wrap(c, "srv", byName["nuke"]); d.ReadOnly {
+	if d := wrap(c, "srv", "srv gist", byName["nuke"]); d.ReadOnly {
 		t.Error("nuke (destructiveHint) must stay mutating despite readOnlyHint")
 	}
 	// Name is server-prefixed and sanitized.
-	if d := wrap(c, "srv", byName["echo"]); d.Name != "srv_echo" {
+	if d := wrap(c, "srv", "srv gist", byName["echo"]); d.Name != "srv_echo" {
 		t.Errorf("wrapped name = %q, want srv_echo", d.Name)
 	}
 }

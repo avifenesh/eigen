@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // Built-in MCP servers: capabilities eigen registers as first-class when their
@@ -51,12 +52,27 @@ func withBuiltinServers(user []serverConfig) []serverConfig {
 	for _, s := range user {
 		have[s.Name] = true
 	}
+	// Backfill descriptions for the KNOWN builtin servers when the user
+	// configured them without one — so workspace/chrome are always clearly
+	// described at Level-0 even if the user's mcp.json entry omits it.
+	builtinDesc := map[string]string{
+		"workspace": "isolated Linux desktop sandbox: launch apps, control a GUI/X11 session, run a browser, click/type, screenshot — a safe scratch machine separate from the user's real desktop",
+		"chrome":    "drive the user's REAL logged-in Chrome (their tabs, sessions, cookies) via the bridge extension: open/read/navigate tabs, click & type, extract page content, screenshot",
+	}
+	for i := range user {
+		if strings.TrimSpace(user[i].Description) == "" {
+			if d := builtinDesc[user[i].Name]; d != "" {
+				user[i].Description = d
+			}
+		}
+	}
 	if !have["workspace"] {
 		if bin := WorkspaceBinary(); bin != "" {
 			user = append(user, serverConfig{
-				Name:    "workspace",
-				Command: []string{bin, "mcp", "--headless"},
-				Tools:   workspaceTools,
+				Name:        "workspace",
+				Description: "isolated Linux desktop sandbox: launch apps, control a GUI/X11 session, run a browser, click/type, screenshot — a safe scratch machine separate from the user's real desktop",
+				Command:     []string{bin, "mcp", "--headless"},
+				Tools:       workspaceTools,
 			})
 		}
 	}
@@ -66,9 +82,10 @@ func withBuiltinServers(user []serverConfig) []serverConfig {
 	if !have["chrome"] {
 		if script, node := ChromeBridge(); script != "" && node != "" {
 			user = append(user, serverConfig{
-				Name:    "chrome",
-				Command: []string{node, script},
-				Tools:   chromeBridgeTools,
+				Name:        "chrome",
+				Description: "drive the user's REAL logged-in Chrome (their tabs, sessions, cookies) via the bridge extension: open/read/navigate tabs, click & type, extract page content, screenshot",
+				Command:     []string{node, script},
+				Tools:       chromeBridgeTools,
 			})
 		}
 	}

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -71,7 +72,19 @@ type Client struct {
 	pending map[int]chan rpcResponse
 
 	closeFn func() error
+
+	// instructions is the server's self-description from the initialize result
+	// (MCP `instructions` field) — a fallback group description when the
+	// mcp.json entry doesn't provide one.
+	instructions string
+	serverName   string
 }
+
+// Instructions returns the server's self-description (may be empty).
+func (c *Client) Instructions() string { return c.instructions }
+
+// ServerName returns the name the server reported at initialize (may be empty).
+func (c *Client) ServerName() string { return c.serverName }
 
 // newClient starts the read loop over r and writes requests to w.
 func newClient(w io.Writer, r io.Reader, closeFn func() error) *Client {
@@ -204,9 +217,17 @@ func (c *Client) initialize(ctx context.Context) error {
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "eigen", "version": "0.1.0"},
 	}
-	if err := c.call(ctx, "initialize", params, nil); err != nil {
+	var res struct {
+		Instructions string `json:"instructions"`
+		ServerInfo   struct {
+			Name string `json:"name"`
+		} `json:"serverInfo"`
+	}
+	if err := c.call(ctx, "initialize", params, &res); err != nil {
 		return err
 	}
+	c.instructions = strings.TrimSpace(res.Instructions)
+	c.serverName = strings.TrimSpace(res.ServerInfo.Name)
 	return c.notify("notifications/initialized", map[string]any{})
 }
 

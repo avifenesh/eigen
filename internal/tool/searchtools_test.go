@@ -17,6 +17,7 @@ func nicheDef(name, desc string) Definition {
 func nicheGroupDef(name, group, desc string) Definition {
 	d := nicheDef(name, desc)
 	d.Group = group
+	d.GroupDesc = group + " server gist"
 	return d
 }
 
@@ -44,6 +45,9 @@ func TestProgressiveDisclosure(t *testing.T) {
 	groups, loose := reg.GroupCatalog(nil)
 	if len(groups) != 1 || groups[0].Name != "chrome" || groups[0].Count != 2 {
 		t.Fatalf("catalog should have the chrome group with 2 tools, got %v", groups)
+	}
+	if groups[0].Gist != "chrome server gist" {
+		t.Fatalf("group gist should come from GroupDesc, got %q", groups[0].Gist)
 	}
 	if len(loose) != 1 || !strings.Contains(loose[0], "generate_image") {
 		t.Fatalf("catalog should list the ungrouped niche tool, got %v", loose)

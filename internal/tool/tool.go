@@ -37,6 +37,11 @@ type Definition struct {
 	// search_tools <tool/keyword> reveals full schemas. Empty = ungrouped niche.
 	Group string
 
+	// GroupDesc is the group's one-line "what is this" shown at Level 0 (e.g.
+	// the MCP server's description/instructions). All tools in a group should
+	// carry the same GroupDesc; the first non-empty one wins.
+	GroupDesc string
+
 	// Run executes the tool with raw JSON arguments and returns its textual result.
 	// Text-only tools (the vast majority) implement this.
 	Run func(ctx context.Context, args json.RawMessage) (string, error)
@@ -162,8 +167,8 @@ func (r *Registry) GroupCatalog(unlocked map[string]bool) (groups []NicheGroup, 
 			continue
 		}
 		seen[d.Group]++
-		if gist[d.Group] == "" {
-			gist[d.Group] = groupGist(d.Group)
+		if gist[d.Group] == "" && d.GroupDesc != "" {
+			gist[d.Group] = d.GroupDesc
 		}
 	}
 	// Stable order: by first appearance.
@@ -174,7 +179,11 @@ func (r *Registry) GroupCatalog(unlocked map[string]bool) (groups []NicheGroup, 
 			continue
 		}
 		added[d.Group] = true
-		groups = append(groups, NicheGroup{Name: d.Group, Count: seen[d.Group], Gist: gist[d.Group]})
+		g := gist[d.Group]
+		if g == "" {
+			g = d.Group + " tools"
+		}
+		groups = append(groups, NicheGroup{Name: d.Group, Count: seen[d.Group], Gist: g})
 	}
 	return groups, loose
 }
@@ -226,17 +235,6 @@ func (r *Registry) MatchNiche(query string) []Definition {
 		}
 	}
 	return out
-}
-
-// groupGist returns a short human gist for a known niche group (MCP server).
-func groupGist(group string) string {
-	switch group {
-	case "workspace":
-		return "isolated Linux desktop/browser sandbox automation (launch apps, click, type, screenshot)"
-	case "chrome":
-		return "drive the user's real logged-in Chrome (tabs, navigate, read, click, screenshot)"
-	}
-	return "MCP server tools"
 }
 
 func firstLine(s string) string {
