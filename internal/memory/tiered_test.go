@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMigrateFlatToTiered(t *testing.T) {
@@ -74,5 +75,27 @@ func TestPathRemainsMemoryFile(t *testing.T) {
 	s, _ := Open("/p")
 	if filepath.Base(s.Path()) != "MEMORY.md" {
 		t.Fatalf("Path() should point at MEMORY.md, got %s", s.Path())
+	}
+}
+
+func TestWriteAndReadRollouts(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	s, _ := Open("/p")
+	_, err := s.WriteRollout("first-thing", "# First\noutcome: success\n", time.Unix(1, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.WriteRollout("second-thing", "# Second\n", time.Unix(2, 0))
+	raws := s.RawSummaries(0)
+	if len(raws) != 2 || !strings.Contains(raws[0], "First") || !strings.Contains(raws[1], "Second") {
+		t.Fatalf("rollouts should read chronologically, got %d: %v", len(raws), raws)
+	}
+	// raw is NOT injected.
+	if strings.Contains(s.Section(), "First") {
+		t.Fatal("raw rollout summaries must NEVER be injected")
+	}
+	// limit returns most-recent.
+	if got := s.RawSummaries(1); len(got) != 1 || !strings.Contains(got[0], "Second") {
+		t.Fatalf("limit should return most recent, got %v", got)
 	}
 }

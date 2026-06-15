@@ -332,3 +332,42 @@ func key(abs string) string {
 	}
 	return base + "-" + hex.EncodeToString(h[:])[:8]
 }
+
+// WriteRollout persists a per-session rollout summary's markdown into the
+// scope's raw/ dir as raw/<ts>-<slug>.md and returns the path. The raw tier is
+// append-only and NEVER injected — it's the input to consolidation.
+func (s *Store) WriteRollout(slug, body string, when time.Time) (string, error) {
+	if s == nil {
+		return "", fmt.Errorf("memory unavailable")
+	}
+	if err := os.MkdirAll(s.RawDir(), 0o755); err != nil {
+		return "", err
+	}
+	name := when.Format("20060102-150405") + "-" + slug + ".md"
+	p := filepath.Join(s.RawDir(), name)
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		return "", err
+	}
+	return p, nil
+}
+
+// RawSummaries returns the raw rollout-summary file contents in chronological
+// order (oldest first) — the corpus consolidation reads. Bounded by limit
+// (most recent `limit` when >0).
+func (s *Store) RawSummaries(limit int) []string {
+	if s == nil {
+		return nil
+	}
+	matches, _ := filepath.Glob(filepath.Join(s.RawDir(), "*.md"))
+	sort.Strings(matches) // timestamp prefix sorts chronologically
+	if limit > 0 && len(matches) > limit {
+		matches = matches[len(matches)-limit:]
+	}
+	var out []string
+	for _, m := range matches {
+		if b, err := os.ReadFile(m); err == nil {
+			out = append(out, string(b))
+		}
+	}
+	return out
+}
