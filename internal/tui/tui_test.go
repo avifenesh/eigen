@@ -1806,8 +1806,8 @@ func TestOverloadFailoverCountsDownAndSwitchesBack(t *testing.T) {
 }
 
 func TestOverloadFailoverChainAndNoLoop(t *testing.T) {
-	// gpt-5.5 overloaded (no failover active): walks the chain to glm-5.2
-	// (opus is the default, so it's not in the chain — glm-5.2 then sonnet).
+	// gpt-5.5 overloaded (no failover active): fails over to gpt-5.4 FIRST
+	// (the healthy sibling on the same mantle path), per failoverFor.
 	m := testModel(t)
 	m.provName, m.modelID = "mantle", "openai.gpt-5.5"
 	m.newProvider = func(provider, mdl string) (llm.Provider, error) {
@@ -1815,8 +1815,8 @@ func TestOverloadFailoverChainAndNoLoop(t *testing.T) {
 	}
 	m.backend.Reset([]llm.Message{{Role: llm.RoleUser, Text: "task"}})
 	m.Update(turnDoneMsg{err: fmt.Errorf("HTTP 503: unable to process")})
-	if m.modelID != "glm-5.2" {
-		t.Fatalf("gpt overload should fail over to glm-5.2 (first chain entry), got %s", m.modelID)
+	if m.modelID != "openai.gpt-5.4" {
+		t.Fatalf("gpt-5.5 overload should fail over to gpt-5.4 first, got %s", m.modelID)
 	}
 
 	// A second overload while a failover window is ACTIVE must not chain
@@ -1826,8 +1826,21 @@ func TestOverloadFailoverChainAndNoLoop(t *testing.T) {
 	if m.failoverFrom == nil || m.failoverFrom.model != from.model {
 		t.Fatal("must not start a second failover while one is active")
 	}
-	if m.modelID != "glm-5.2" {
-		t.Fatalf("model must stay on glm-5.2 during the window, got %s", m.modelID)
+	if m.modelID != "openai.gpt-5.4" {
+		t.Fatalf("model must stay on gpt-5.4 during the window, got %s", m.modelID)
+	}
+}
+
+func TestGPT55ServerErrorFailsOverToGPT54(t *testing.T) {
+	// The mantle gpt-5.5 outage shape: a bare server_error (500) must be
+	// treated as a routing failure and fail over to gpt-5.4.
+	m := testModel(t)
+	m.provName, m.modelID = "mantle", "openai.gpt-5.5"
+	m.newProvider = func(provider, mdl string) (llm.Provider, error) { return fakeProv{}, nil }
+	m.backend.Reset([]llm.Message{{Role: llm.RoleUser, Text: "task"}})
+	m.Update(turnDoneMsg{err: fmt.Errorf("mantle stream failed: server_error: The server had an error while processing your request.")})
+	if m.modelID != "openai.gpt-5.4" {
+		t.Fatalf("gpt-5.5 server_error should fail over to gpt-5.4, got %s", m.modelID)
 	}
 }
 
@@ -2439,6 +2452,10 @@ func TestIsGPTRoutingError(t *testing.T) {
 	}
 	if !isGPTRoutingError("openai.gpt-5.4", errString("HTTP 503 unavailable")) {
 		t.Error("gpt + 503 should be detected")
+	}
+	// The mantle gpt-5.5 outage shape (500 server_error) → true.
+	if !isGPTRoutingError("openai.gpt-5.5", errString("mantle stream failed: server_error: The server had an error")) {
+		t.Error("gpt + server_error (mantle outage) should be detected")
 	}
 	// GPT model + ordinary task error → false (don't fail over normal errors).
 	if isGPTRoutingError("openai.gpt-5.5", errString("tool returned a bad result")) {

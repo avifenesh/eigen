@@ -1560,9 +1560,10 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			m.push(&block{kind: blockNote, isErr: true, body: sb("error: " + msg.err.Error())})
 			switch {
 			case isGPTRoutingError(m.modelID, msg.err) && m.ctx.Err() == nil:
-				// GPT routing/availability failure: walk the failover chain
-				// (opus default → gpt-5.5 → sonnet-4-6); never land on the
-				// failing model itself.
+				// GPT routing/availability failure (incl. the mantle gpt-5.5
+				// server_error outage): walk the failover ladder. gpt-5.5 →
+				// gpt-5.4 first (healthy sibling on the same path), then the
+				// generic chain; never land on the failing model itself.
 				if fb := nextFailover(m.modelID); m.startFailover(fb) {
 					m.cancel = nil
 					m.autosave()
@@ -2133,6 +2134,10 @@ func isGPTRoutingError(model string, err error) bool {
 	for _, cue := range []string{
 		"no route", "routing", "not found", "does not exist", "unavailable",
 		"bad gateway", "502", "503", "504", "connection", "timeout", "eof",
+		// mantle gpt-5.5 outage: the engine 500s / streams response.failed with
+		// a server_error (codex#27185) — treat it as a routing/availability
+		// failure so the turn fails over instead of just erroring.
+		"500", "server_error", "server had an error", "stream failed", "internal_server_error",
 	} {
 		if strings.Contains(s, cue) {
 			return true
@@ -2175,12 +2180,24 @@ var failoverChain = []string{
 // nextFailover returns the first chain model different from the failing one,
 // or "" when the chain is exhausted (the failing model IS the last resort).
 func nextFailover(failing string) string {
-	for _, id := range failoverChain {
+	for _, id := range failoverFor(failing) {
 		if id != failing {
 			return id
 		}
 	}
 	return ""
+}
+
+// failoverFor returns the fallback ladder for a specific failing model. gpt-5.5
+// fails over to gpt-5.4 FIRST — the closest sibling, on the identical mantle
+// path, which stays healthy when the gpt-5.5 engine is out (its frequent
+// server_error outage, codex#27185) — then the generic chain. Other models use
+// the generic chain directly.
+func failoverFor(failing string) []string {
+	if failing == "openai.gpt-5.5" || failing == "gpt-5.5" {
+		return append([]string{"openai.gpt-5.4"}, failoverChain...)
+	}
+	return failoverChain
 }
 
 // renderHistory pre-fills the transcript with resumed messages as blocks, so
