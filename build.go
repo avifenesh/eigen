@@ -175,9 +175,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		tool.Retrieve(retrieveRunner(p.Dir)),
 		tool.GenerateImage(imageGenRunner(p.Dir)),
 		tool.GoalAchieved(goalJudge), tool.Review(reviewRun),
-	}
-	if ws, ok := tool.WebSearch(); ok {
-		defs = append(defs, ws)
+		tool.WebSearch(), // always available: keyless chain, keyed/SearXNG preferred
 	}
 	builtin := map[string]bool{}
 	for _, d := range defs {

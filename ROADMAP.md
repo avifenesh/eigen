@@ -13,8 +13,7 @@ project memory). Detailed design/perf notes live under `docs/`.
 ## Now / Next / Later
 
 **Now (in flight):**
-- **Tier 25 — replace `websearch`** with the new self-contained, keyless-default
-  tool (`~/projects/tools`). The immediate next feature.
+- Nothing in flight — pick the next item.
 
 **Next (queued, well-scoped):**
 - **Tier 23 — performance + resource health.** RSS/leak soak, bound growth,
@@ -37,41 +36,6 @@ non-LLM models = out of scope; Tier 11 scrollback/reorder polish; etc.).
 ---
 
 ## Open work (detail)
-
-### Tier 25 — replace websearch with the new self-contained tool
-The current `websearch` (`internal/tool/websearch.go`) only exists when an env
-key is set (`TAVILY_API_KEY`/`BRAVE_API_KEY`/`EIGEN_WEBSEARCH_URL`) — otherwise
-it's silently absent, so search rarely works, and it can't be used by the
-read-only `researcher` role (network egress needs gated approval). Replace it
-with the tool the user built in `~/projects/tools`
-(`@agent-sh/harness-websearch` v2 / Rust `harness-websearch`), whose v2 design is
-**keyless by default**.
-
-What the new tool is (per `~/projects/tools/agent-knowledge/design/websearch.md`):
-- **Keyless fallback chain**, zero config: Mojeek → Marginalia → Wikipedia,
-  first-non-empty-wins (the `ddgs` `backend="auto"` pattern).
-- Optional **preferred heads** when configured: self-hosted SearXNG, or keyed
-  Brave/Tavily — they become the head of the chain.
-- **Backend chosen by the harness, never the model**; **SSRF defense** on every
-  backend host (loopback/LAN only via explicit opt-in); **permission hook**;
-  **result-count cap**; **discriminated errors**; prompt-injection-aware wording.
-- Composes with webfetch (search finds URLs, fetch reads them).
-
-Scope:
-- [ ] **Decide the integration shape** (the new tool is TS + Rust, not Go):
-  (a) PORT its v2 contract into `internal/tool/websearch.go` (keeps eigen
-  single-binary — reimplement the keyless chain + SSRF + caps), or (b) run it as
-  an MCP/plugin server (reuse verbatim, adds a runtime dep). Lean (a); confirm.
-- [ ] **Keyless default.** Make `websearch` ALWAYS available (drop the
-  absent-unless-keyed gate); keys/SearXNG become preferred heads when present.
-- [ ] **SSRF defense + caps** at the tool layer (reuse `fetch`'s host policy or
-  port webfetch's blocked-IP check); keep the 20s timeout + result cap;
-  loopback/LAN only with an explicit opt-in.
-- [ ] **Keep it gated/egress-aware** (still approval in gated mode); revisit
-  whether keyless+SSRF-bounded search could join the read-only `researcher` role.
-- [ ] **Parity + tests** (each engine parsed leniently, fallback advances on
-  empty/error, SSRF block, no-results, cap enforced); update the env-var docs +
-  the tool count in the reference below.
 
 ### Tier 23 — performance + resource health (RSS, leaks, profiling)
 The daemon is long-lived and hosts many sessions; nothing has profiled steady-
@@ -172,6 +136,13 @@ from a cross-vendor review; channel undecided.
   renders the live swatch; a drift-guard test enforces "no raw color outside theme".
 - **Tier 24 — roadmap cleanup.** ✅ This pass: split done from open, terse Shipped
   ledger, Now/Next/Later up top.
+- **Tier 25 — websearch replaced (native Go port, no MCP).** ✅ `websearch` is now
+  ALWAYS available: keyless fallback chain (Mojeek HTML scrape → Marginalia JSON →
+  Wikipedia JSON) with per-engine failure isolation + gather/dedup; Brave/Tavily
+  key or `EIGEN_SEARXNG_URL` is the preferred head; SSRF host check (loopback/LAN
+  refused unless opted in); per-engine timeout slicing. Ported from
+  `@agent-sh/harness-websearch` v2 into `internal/tool/websearch{,_engines}.go`.
+  Live-verified keyless end-to-end.
 - **Instance isolation.** `eigen dev` runs eigen on a separate "dev" daemon instance
   (own socket/sessions/tasks) so `/rebuild` never kills production sessions.
 
@@ -210,8 +181,8 @@ from a cross-vendor review; channel undecided.
 Tools (~25): read, list, glob, grep, symbols, tree, diff, write, edit, multiedit,
 apply_patch, move, bash, fetch, todo, skill, memory, task, task_status,
 task_group, task_group_mutating, goal_achieved, retrieve, generate_image,
-websearch (when a backend is configured) (+ plugins + MCP + LSP; builtin MCP:
-`workspace` sandbox, `chrome` bridge).
+websearch (always available — keyless by default) (+ plugins + MCP + LSP; builtin
+MCP: `workspace` sandbox, `chrome` bridge).
 
 Files (under `~/.eigen/`, plus project-local `./.eigen/`):
 - `config.json` — defaults: `provider`,`model`,`perm`,`effort`,`theme`,`nerd_font`,
@@ -230,8 +201,10 @@ Env: `EIGEN_PROVIDER`, `EIGEN_PERMISSION`, `EIGEN_MAX_CONTEXT_TOKENS`,
 `EIGEN_INSTANCE`, `EIGEN_SRC`, `EIGEN_NO_DAEMON`, `EIGEN_TTS_CMD`, `EIGEN_NOTIFY_CMD`,
 `EIGEN_CLIPBOARD_CMD`, `EIGEN_SKILLS_DIRS`, `EIGEN_LLAMA_BASE_URL`,
 `EIGEN_EMBED_BASE_URL`, `EIGEN_IMAGE_MODEL`, `EIGEN_SMALL_MODEL`, `EIGEN_SUGGEST_MODEL`.
-Web search (current, being replaced by Tier 25): `TAVILY_API_KEY`, `BRAVE_API_KEY`,
-or `EIGEN_WEBSEARCH_URL` (+ `EIGEN_WEBSEARCH_KEY`).
+Web search (keyless by default — these only pick a PREFERRED head): `TAVILY_API_KEY`,
+`BRAVE_API_KEY`, `EIGEN_SEARXNG_URL`, or `EIGEN_WEBSEARCH_URL` (+ `EIGEN_WEBSEARCH_KEY`);
+`EIGEN_WEBSEARCH_NO_MOJEEK` opts out of the Mojeek scrape; `EIGEN_WEBSEARCH_ALLOW_LOOPBACK`
+/ `EIGEN_WEBSEARCH_ALLOW_PRIVATE` permit a local/LAN SearXNG past the SSRF guard.
 
 CLI: `eigen [task]` · `-p` print · `--resume/-c` · `--list` · `--list-skills` ·
 `--list-tools` · `eigen dev` · `eigen daemon [status|stop|install|prune|stdio]` ·

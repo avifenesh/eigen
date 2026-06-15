@@ -617,12 +617,7 @@ func main() {
 		tool.GenerateImage(imageGenRunner(wdOrDot())),
 		tool.GoalAchieved(goalJudge),
 		tool.Review(reviewRun),
-	}
-	// Web search: only registered when a backend is configured (TAVILY_API_KEY,
-	// BRAVE_API_KEY, or EIGEN_WEBSEARCH_URL), so the model never sees a tool it
-	// cannot run.
-	if ws, ok := tool.WebSearch(); ok {
-		defs = append(defs, ws)
+		tool.WebSearch(), // always available: keyless fallback chain; keyed/SearXNG preferred
 	}
 	// Plugins: external-command tools defined in plugins.json. A plugin whose
 	// name collides with a built-in is skipped (built-ins win).
