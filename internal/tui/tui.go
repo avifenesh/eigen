@@ -1196,6 +1196,10 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 					m.note("moved to background — the daemon keeps running it and wakes you when done")
 					return m, m.backgroundTurn()
 				}
+			case "alt+d", "ctrl+b":
+				// Background the running bash step (works while attached too).
+				m.detachRunningBash()
+				return m, nil
 			case "ctrl+j", "alt+enter":
 				// Insert a literal newline (multi-line prompts) without submitting.
 				m.ti.InsertString("\n")
@@ -1274,6 +1278,14 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 					m.note("moved to background — the daemon keeps running it and wakes you when done")
 					return m, m.backgroundTurn()
 				}
+				return m, nil
+			case "alt+d", "ctrl+b":
+				// Background the bash command running RIGHT NOW (this step), so
+				// the agent stops waiting on it and keeps working in the SAME
+				// turn — Claude-Code's ctrl+b. alt+d is the zellij-safe trigger
+				// (zellij captures ctrl+b for tmux mode). No-op if the current
+				// step isn't a bash command.
+				m.detachRunningBash()
 				return m, nil
 			case "esc":
 				if m.cancel != nil {

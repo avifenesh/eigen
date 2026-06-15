@@ -220,3 +220,18 @@ func (m *model) steerOrQueue(task string) {
 	m.queued = append(m.queued, task)
 	m.note(fmt.Sprintf("queued (%d): %s", len(m.queued), compact(task)))
 }
+
+// detachRunningBash backgrounds the bash command running in the current turn
+// (the alt+d / ctrl+b key) — the agent stops waiting on it and keeps working in
+// the same turn, while the command runs on as a background shell. Flashes
+// feedback; a no-op note when the current step isn't a foreground bash.
+func (m *model) detachRunningBash() {
+	if m.backend == nil {
+		return
+	}
+	if m.backend.DetachBash() {
+		m.showFlash("backgrounded the running command → shells panel")
+	} else {
+		m.showFlashTone("nothing to background (no bash running this step)", flashWarn)
+	}
+}

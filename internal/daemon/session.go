@@ -489,6 +489,10 @@ func (s *Session) killShell(id string) bool {
 	return s.agent.Shells.KillByID(id)
 }
 
+// detachBash backgrounds the foreground bash command running in this session's
+// turn (the user's "background this step" key).
+func (s *Session) detachBash() bool { return s.agent.DetachBash() }
+
 // setEffort/setSearch forward to the provider's optional capability; false =
 // the model has no such setting or rejected the value.
 func (s *Session) setEffort(level string) bool {

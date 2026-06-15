@@ -321,6 +321,15 @@ func (c *Client) KillShell(sessionID, shellID string) (bool, error) {
 	return resp.Killed, nil
 }
 
+// DetachBash backgrounds the foreground bash command running in the session.
+func (c *Client) DetachBash(sessionID string) (bool, error) {
+	resp, err := c.request(Request{Op: "detach-bash", ID: sessionID})
+	if err != nil {
+		return false, err
+	}
+	return resp.Detached, nil
+}
+
 // Compact summarizes a session's conversation toward target tokens.
 func (c *Client) Compact(sessionID string, target int) (before, after int, err error) {
 	r, err := c.requestWithin(Request{Op: "compact", ID: sessionID, Target: target}, requestTimeoutFor("compact"))

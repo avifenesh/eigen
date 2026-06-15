@@ -206,6 +206,13 @@ func (s *Server) handle(conn net.Conn) {
 				continue
 			}
 			send(Response{Type: "ok", Killed: sess.killShell(req.Shell)})
+		case "detach-bash":
+			sess := s.host.Get(req.ID)
+			if sess == nil {
+				send(Response{Type: "error", Error: "no such session"})
+				continue
+			}
+			send(Response{Type: "ok", Detached: sess.detachBash()})
 		case "clear":
 			sess := s.host.Get(req.ID)
 			if sess == nil {

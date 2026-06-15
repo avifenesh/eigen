@@ -96,3 +96,25 @@ func TestShellsPanelKillFromClick(t *testing.T) {
 		t.Fatalf("clicking [kill] should kill the shell, killed=%v", be.killed)
 	}
 }
+
+// detachBackend records DetachBash calls.
+type detachBackend struct {
+	chat.Backend
+	detachCalls int
+	detachOK    bool
+}
+
+func (d *detachBackend) DetachBash() bool { d.detachCalls++; return d.detachOK }
+
+func TestAltDDetachesRunningBash(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	be := &detachBackend{Backend: m.backend, detachOK: true}
+	m.backend = be
+	m.state = stRunning
+	// alt+d while running → DetachBash on the backend.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}, Alt: true})
+	if be.detachCalls != 1 {
+		t.Fatalf("alt+d while running should call DetachBash once, got %d", be.detachCalls)
+	}
+}

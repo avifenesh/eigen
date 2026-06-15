@@ -150,6 +150,9 @@ func (l *Local) KillShell(id string) bool {
 	return l.a.Shells.KillByID(id)
 }
 
+// DetachBash backgrounds the bash command running in the current turn.
+func (l *Local) DetachBash() bool { return l.a.DetachBash() }
+
 // AddDir extends the tool sandbox (user-invoked /add-dir grant).
 func (l *Local) AddDir(path string) (string, error) { return l.a.AddDir(path) }
 

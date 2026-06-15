@@ -113,3 +113,30 @@ func TestStatusBlockSurfacesRunningShells(t *testing.T) {
 	}
 	shells.Get("shell-1").kill()
 }
+
+func TestDetachChannelOnlyLiveDuringBash(t *testing.T) {
+	shells := NewShellRegistry()
+	// Pre-make the channel so the test goroutine and the bash call share it
+	// without a race (mirrors the agent storing one channel per call).
+	ch := make(chan struct{})
+	detach := func() <-chan struct{} { return ch }
+	bash := BashWithShells(nil, shells, detach)
+
+	// Fire detach shortly after the command starts (while runBash selects).
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		select {
+		case ch <- struct{}{}: // succeeds: runBash is selecting
+		case <-time.After(2 * time.Second):
+			t.Error("detach send found no receiver — runBash not selecting")
+		}
+	}()
+	out := bashCall(t, bash, map[string]any{"command": "echo go; sleep 5; echo done"})
+	if !strings.Contains(out, "backgrounded as shell") {
+		t.Fatalf("on-demand detach should background the running command, got %q", out)
+	}
+	if !shells.Get("shell-1").running() {
+		t.Fatal("detached command should still be running")
+	}
+	shells.Get("shell-1").kill()
+}

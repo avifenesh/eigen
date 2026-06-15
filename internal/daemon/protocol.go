@@ -53,9 +53,10 @@ type Response struct {
 	State    *SessionState `json:"state,omitempty"`    // state op result
 	Before   int           `json:"before,omitempty"`   // compact result (message counts)
 	After    int           `json:"after,omitempty"`
-	Pruned   []string      `json:"pruned,omitempty"`  // prune result: removed session ids
-	Steered  bool          `json:"steered,omitempty"` // input: delivered as a mid-turn steer (a turn was running)
-	Killed   bool          `json:"killed,omitempty"`  // kill-shell: a running shell was signaled
+	Pruned   []string      `json:"pruned,omitempty"`   // prune result: removed session ids
+	Steered  bool          `json:"steered,omitempty"`  // input: delivered as a mid-turn steer (a turn was running)
+	Killed   bool          `json:"killed,omitempty"`   // kill-shell: a running shell was signaled
+	Detached bool          `json:"detached,omitempty"` // detach-bash: a foreground bash was backgrounded
 }
 
 // SessionState is the snapshot a remote chat UI needs to render history and

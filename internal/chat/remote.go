@@ -265,6 +265,19 @@ func (r *Remote) KillShell(id string) bool {
 	return killed
 }
 
+// DetachBash backgrounds the foreground bash command running in the daemon
+// session's turn (over the socket), then refreshes so the shells panel updates.
+func (r *Remote) DetachBash() bool {
+	detached, err := r.c.DetachBash(r.id)
+	if err != nil {
+		return false
+	}
+	if detached {
+		r.refresh()
+	}
+	return detached
+}
+
 // AddDir extends the daemon session's tool sandbox (user /add-dir grant) and
 // refreshes the snapshot so Roots reflects it.
 func (r *Remote) AddDir(path string) (string, error) {

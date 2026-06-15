@@ -305,13 +305,16 @@ func (a *Agent) CurrentGoal() string {
 
 // BashDetachCh hands the bash tool a fresh detach channel for one command and
 // stores it so DetachBash can signal it. There is at most one foreground bash
-// per session turn, so a single slot suffices; it's cleared when the next bash
-// starts. Returns nil when backgrounding isn't wired.
+// per session turn, so a single slot suffices; it's replaced when the next bash
+// starts. UNBUFFERED: a DetachBash send succeeds only while runBash is actively
+// selecting on it (a real running command) — between bash calls the send finds
+// no receiver and DetachBash correctly reports "nothing to background". Returns
+// nil when backgrounding isn't wired.
 func (a *Agent) BashDetachCh() <-chan struct{} {
 	if a.Shells == nil {
 		return nil
 	}
-	ch := make(chan struct{}, 1)
+	ch := make(chan struct{})
 	a.mu.Lock()
 	a.detachBash = ch
 	a.mu.Unlock()

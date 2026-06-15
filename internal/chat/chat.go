@@ -85,6 +85,12 @@ type Backend interface {
 	Shells() []ShellInfo
 	KillShell(id string) bool
 
+	// DetachBash backgrounds the bash command running RIGHT NOW in the current
+	// turn (the user's "background this step" key) — it keeps running as a
+	// shell while the agent continues. Returns true if a foreground bash was
+	// running and got detached.
+	DetachBash() bool
+
 	// AddDir extends the tool sandbox with an additional allowed directory —
 	// the user-invoked /add-dir grant (never the agent). Returns the normalized
 	// root that was added. Roots lists the current allowed directories (primary
