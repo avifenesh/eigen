@@ -66,7 +66,7 @@ func (m *model) paletteCatalog() []paletteCmd {
 		{label: "home (app shell)", id: actHome, slash: "/home"},
 		{label: "move running turn to background", id: actBackgroundTurn, slash: "/background"},
 		{label: "background tasks panel", id: actTasksTab, slash: "/tasks"},
-		{label: "notifications / approvals tray", id: actTray, slash: "/tray"},
+		{label: "notifications / approvals tray", hint: "alt+n", id: actTray, slash: "/tray"},
 		{label: "run a workflow", slash: "/workflow "},
 		{label: "find in transcript", slash: "/find "},
 		{label: "copy last answer", slash: "/copy"},

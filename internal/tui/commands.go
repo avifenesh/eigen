@@ -76,7 +76,7 @@ func (m *model) command(line string) tea.Cmd {
 	switch name {
 	case "/help":
 		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /loop  /route  /review  /voice  /config  /skills  /tools  /add-dir  /find  /copy  /read  /rebuild  /quit")
-		m.note("keys: / commands · ctrl+k palette · @ files · ↑↓ history · select ctrl+p/n (or alt+↑/↓) · tab expand · drag select+copy · copy ctrl+y/alt+y · sessions alt+s · tray alt+n · rail ctrl+b/alt+b · panel ctrl+g/alt+g · right-tab ctrl+r (changes/git/term/tasks) · perm ctrl+a/alt+a · effort ctrl+e/alt+r · model ctrl+o/alt+m · paste image ctrl+v/alt+v · talk ctrl+t/alt+t · pgup/pgdn scroll")
+		m.note("keys: / commands · ctrl+k palette · @ files · ↑↓ history · tab expand · drag-select+copy (ctrl+y) · alt+s switch session · alt+n tray (approvals/notifications across sessions) · alt+z background the running turn · ctrl+b/alt+b rail · ctrl+g/alt+g panel · ctrl+r right-tab (changes/git/term/tasks) · alt+a perm · alt+r effort · alt+m model · alt+v paste image · alt+t talk · pgup/pgdn scroll")
 		m.note("terminal tab: /term (or ctrl+r to the term tab) opens a REAL shell in the right panel — click it or it's focused on open; your keystrokes (incl. esc/ctrl+c) go to the shell so vim/less/top work; ctrl+g returns keys to the chat, the shell keeps running")
 		m.note("tasks tab: /tasks shows background delegations live (step/tool/elapsed) — click a task to expand its result or progress, click [cancel] to stop a running one; the sidebar shows ⚒ tasks N● while work runs")
 		m.note("clickable: status-bar segments are buttons; header [home][sessions][+new][config]; side panel [x] closes rail/changes; click rail session to hop; click changes file to jump")
