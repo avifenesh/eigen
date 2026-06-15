@@ -16,6 +16,8 @@ project memory). Detailed design/perf notes live under `docs/`.
 - Nothing in flight — pick the next item.
 
 **Next (queued, well-scoped):**
+- **`/add-dir` — extra working directories.** Let the agent (and bash) operate
+  outside the single session root by adding more allowed roots at runtime.
 - **Tier 23 — performance + resource health.** RSS/leak soak, bound growth,
   turn-latency profile, a `make perf` guard, `docs/performance.md`.
 - **Tier 21 — remaining TUI ergonomics.** Right-panel notepad tab; a
@@ -36,6 +38,40 @@ non-LLM models = out of scope; Tier 11 scrollback/reorder polish; etc.).
 ---
 
 ## Open work (detail)
+
+### `/add-dir` — add extra working directories (cross the single-root limit)
+Today a session's tools are confined to ONE root (`tool.NewPolicy(p.Dir)` in
+build.go) — `tool.Policy.Resolve` rejects anything "outside the allowed roots"
+and `bash` runs in `policy.Dir()` (the primary root) with relative paths
+resolved there. So the agent can't read/edit/run across a sibling repo, a shared
+lib, a scratch dir, etc. — a real friction when work spans dirs.
+
+The Policy ALREADY supports multiple roots (`NewPolicy(roots...)`, `within()`
+checks them all) — what's missing is a way to ADD one at runtime and have the
+live tools honor it. Like Claude Code's `--add-dir` / `/add-dir`.
+
+Scope:
+- [ ] **Mutable roots.** Make `Policy` roots safely extendable at runtime
+  (`AddRoot(path)` under a mutex; re-clean/abs/symlink-resolve like NewPolicy).
+  Tools capture the `*Policy` pointer, so an added root takes effect immediately
+  for read/list/glob/grep/write/edit/move (they go through `Resolve`).
+- [ ] **bash across roots.** `bash` still runs in the primary `Dir()`, but a
+  command can now `cd`/reference an added root without the resolve denying it.
+  Decide whether bash's cwd stays the primary root (yes — predictable) and the
+  added dirs are simply reachable.
+- [ ] **`/add-dir <path>` command + CLI flag.** A slash command (TUI) +
+  `--add-dir` (repeatable, headless) that calls `AddRoot`. Tab-complete the path;
+  reject a path that doesn't exist; show the active roots (e.g. in `/help` or a
+  status line). Daemon sessions: route through a `set`/new daemon op so the
+  added root persists in the session (survives detach) and is applied to the
+  hosted agent's policy.
+- [ ] **Keep the denials.** `.git`/`.ssh`/`.aws`/secret-file denials still apply
+  inside an added root (they're per-path, not per-root). An added root is still
+  a deliberate user grant — confirm/echo it so it's never silent.
+- [ ] **Persistence + display.** Persist added roots in the daemon session meta
+  (so a reattach keeps them); surface them somewhere (sidebar/cwd line or
+  `/help`). Tests: Resolve accepts paths in an added root + still denies outside
+  all roots + still denies secrets within.
 
 ### Tier 23 — performance + resource health (RSS, leaks, profiling)
 The daemon is long-lived and hosts many sessions; nothing has profiled steady-
