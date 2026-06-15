@@ -188,15 +188,17 @@ func TestRouteSocialRequiresGrok(t *testing.T) {
 	}
 }
 
-func TestRouteMediumGeneralPrefersGPT(t *testing.T) {
-	// Medium general: gpt-5.5 is stricter/more correct than opus → it wins.
+func TestRouteMediumGeneralPrefersOpus(t *testing.T) {
+	// Medium general: opus is the default/orchestrator and the top med model
+	// (Rank 4) → it wins. (gpt-5.5's Strict affinity was removed — it was
+	// hanging, so it must not be the default general target.)
 	got, _ := Route(RouteRequest{
 		Kind:       TaskGeneral,
 		Difficulty: DiffMedium,
 		Candidates: []string{"us.anthropic.claude-opus-4-8", "openai.gpt-5.5"},
 	})
-	if got != "openai.gpt-5.5" {
-		t.Fatalf("medium general should prefer gpt-5.5 (stricter), got %s", got)
+	if got != "us.anthropic.claude-opus-4-8" {
+		t.Fatalf("medium general should prefer opus (top med, default), got %s", got)
 	}
 }
 
@@ -223,20 +225,15 @@ func TestGPTAndOpusShareMedTier(t *testing.T) {
 }
 
 func TestRouteBedrockAvoidedOnlyAtTrueTie(t *testing.T) {
-	// The Bedrock-avoidance tiebreak: at equal affinity AND equal rank, the
-	// non-Bedrock model wins (spares the employer-paid Bedrock quota). Exercise
-	// tierOrder directly — opus-4-8 is Bedrock; a same-rank/same-affinity
-	// non-Bedrock peer should sort ahead of it. (No native-Anthropic models
-	// remain to form a natural in-catalog tie, so we assert the tiebreak
-	// function on a constructed equal pair.)
-	if !tierOrder("openai.gpt-5.5", "us.anthropic.claude-opus-4-8", false) {
-		// gpt-5.5 (rank 3, non-Bedrock) vs opus-4-8 (rank 3, Bedrock) on a
-		// general task: gpt is Strict (affinity), so it wins outright — but
-		// even stripping affinity, non-Bedrock breaks the tie.
-		t.Fatal("non-Bedrock peer should sort ahead of the Bedrock model")
+	// Bedrock-avoidance is the LAST tiebreak — it only fires at equal affinity
+	// AND equal rank. It must NOT override a real rank difference: opus-4-8
+	// (Bedrock, Rank 4) beats gpt-5.5 (non-Bedrock, Rank 3) on rank, so the
+	// non-Bedrock model does NOT win here.
+	if tierOrder("openai.gpt-5.5", "us.anthropic.claude-opus-4-8", false) {
+		t.Fatal("rank must beat Bedrock-avoidance: opus (Rank 4) outranks gpt-5.5 (Rank 3)")
 	}
 
-	// NOT a true tie: opus-4-8 (Bedrock, rank 3, Design) vs gpt-5.4 (rank 2) on
+	// NOT a true tie: opus-4-8 (Bedrock, rank 4, Design) vs gpt-5.4 (rank 2) on
 	// a frontend task — Design affinity + higher quality wins, Bedrock is NOT
 	// avoided.
 	got, _ := Route(RouteRequest{
