@@ -1170,7 +1170,22 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				if strings.HasPrefix(task, "/") {
 					return m, m.command(task)
 				}
+				// Attached to a turn another view (or this window pre-attach)
+				// started: the session is busy, so STEER the message into that
+				// running turn (mid-turn) rather than starting a second turn
+				// that would race "session busy".
+				if m.attachedRunning && m.backend != nil && m.backend.Steer(task, nil) {
+					m.note("↪ steering: " + compact(task))
+					return m, nil
+				}
 				return m, m.submit(task)
+			case "ctrl+z", "alt+z":
+				// Background the watched turn from the idle/attached state too
+				// (not only while THIS window drives it).
+				if m.canBackgroundTurn() {
+					m.note("moved to background — the daemon keeps running it and wakes you when done")
+					return m, m.backgroundTurn()
+				}
 			case "ctrl+j", "alt+enter":
 				// Insert a literal newline (multi-line prompts) without submitting.
 				m.ti.InsertString("\n")

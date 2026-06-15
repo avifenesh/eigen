@@ -2707,3 +2707,59 @@ func TestUpDownMoveBetweenInputLines(t *testing.T) {
 		t.Fatalf("up on the first line should recall history, got %q", m.ti.Value())
 	}
 }
+
+// steerRecorder wraps a Backend and records Steer calls (returns true = a turn
+// was running and the message was injected).
+type steerRecorder struct {
+	chat.Backend
+	steered []string
+}
+
+func (s *steerRecorder) Steer(text string, _ []llm.Image) bool {
+	s.steered = append(s.steered, text)
+	return true
+}
+
+func TestEnterWhileRunningSteers(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	rec := &steerRecorder{Backend: m.backend}
+	m.backend = rec
+	m.state = stRunning // a turn this window started is in flight
+	m.ti.SetValue("change course please")
+	// Enter while running must STEER (not queue to end-of-turn).
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if len(rec.steered) != 1 || rec.steered[0] != "change course please" {
+		t.Fatalf("enter while running should steer the message, got steered=%v queued=%v", rec.steered, m.queued)
+	}
+	if len(m.queued) != 0 {
+		t.Fatalf("steered message must NOT also be queued, queued=%v", m.queued)
+	}
+}
+
+func TestAttachedRunningSteersAndBackgrounds(t *testing.T) {
+	// Window attached to a turn another view started: state stays stInput with
+	// attachedRunning=true. Enter must STEER (not start a 2nd turn), and alt+z
+	// must background — the same as the stRunning case.
+	d := switcherModel(t) // daemon-backed (Detacher)
+	d.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	rec := &steerRecorder{Backend: d.backend}
+	d.backend = rec
+	d.state = stInput
+	d.attachedRunning = true
+	d.ti.SetValue("steer me")
+	d.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if len(rec.steered) != 1 {
+		t.Fatalf("enter while attached-running should steer, got %v", rec.steered)
+	}
+	// alt+z backgrounds from the attached state (use the daemon-backed backend
+	// directly so the Detacher assertion in canBackgroundTurn holds).
+	d2 := switcherModel(t)
+	d2.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	d2.attachedRunning = true
+	d2.state = stInput
+	_, cmd := d2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}, Alt: true})
+	if cmd == nil || !d2.openApp {
+		t.Fatal("alt+z while attached-running should background (openApp + quit)")
+	}
+}
