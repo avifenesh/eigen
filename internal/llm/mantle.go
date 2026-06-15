@@ -277,8 +277,10 @@ func (m *Mantle) Stream(ctx context.Context, req Request, sink StreamSink) (*Res
 }
 
 // maxStreamFailRetries bounds re-requests when a streamed completion reports a
-// transient "response.failed" before any output was emitted.
-const maxStreamFailRetries = 3
+// transient "response.failed" with NO recoverable output. mantle's gpt-5.5
+// fails this way often (codex#27185), and a fresh request usually succeeds, so
+// the budget is generous; each retry backs off.
+const maxStreamFailRetries = 6
 
 // streamOnce performs a single SSE attempt. It returns the assembled Response
 // on success; emitted reports whether any text/reasoning delta was forwarded to
@@ -338,6 +340,18 @@ func (m *Mantle) streamOnce(ctx context.Context, body []byte, sink StreamSink) (
 			if dbg := os.Getenv("EIGEN_DEBUG_STREAM"); dbg != "" {
 				_ = os.WriteFile(dbg, []byte(data), 0o600)
 			}
+			// mantle gpt-5.5 quirk (codex#27185): it streams a COMPLETE reply,
+			// then tags the turn response.failed with a spurious server_error —
+			// but the finished output is right there in the event. Recover it
+			// instead of failing/retrying: if the failed response already
+			// carries text or tool calls, use it as the answer. (parseReply
+			// rejects on the error field, so extract output directly here.)
+			if out := outputFromFailed(ev.Response); out != nil &&
+				(strings.TrimSpace(out.Text) != "" || len(out.ToolCalls) > 0) {
+				return out, true, nil, nil
+			}
+			// Otherwise it failed with no usable output → a real transient: let
+			// the caller retry.
 			return nil, emitted, fmt.Errorf("mantle stream failed: %s", streamFailReason(ev.Response)), nil
 		}
 	}
@@ -348,6 +362,35 @@ func (m *Mantle) streamOnce(ctx context.Context, body []byte, sink StreamSink) (
 		return &Response{}, emitted, nil, nil // empty; the agent's empty-turn nudge handles it
 	}
 	return final, emitted, nil, nil
+}
+
+// outputFromFailed extracts any completed output (text + tool calls) from a
+// response.failed event's response object, IGNORING its error field — mantle
+// gpt-5.5 often streams a full reply then flags the turn failed (codex#27185).
+// Returns nil when there's nothing usable.
+func outputFromFailed(raw json.RawMessage) *Response {
+	var reply responsesReply
+	if json.Unmarshal(raw, &reply) != nil {
+		return nil
+	}
+	out := &Response{Usage: Usage{InputTokens: reply.Usage.InputTokens, OutputTokens: reply.Usage.OutputTokens}}
+	for _, item := range reply.Output {
+		switch item.Type {
+		case "message":
+			for _, part := range item.Content {
+				if part.Type == "output_text" {
+					out.Text += part.Text
+				}
+			}
+		case "function_call":
+			out.ToolCalls = append(out.ToolCalls, ToolCall{
+				ID:        item.CallID,
+				Name:      item.Name,
+				Arguments: normalizeArgs(item.Arguments),
+			})
+		}
+	}
+	return out
 }
 
 // streamFailReason extracts a concise error message from a failed response
