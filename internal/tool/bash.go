@@ -136,8 +136,12 @@ func runBash(ctx context.Context, command, dir string, timeout time.Duration, sh
 		return "", err
 	}
 	pgid := cmd.Process.Pid // Setpgid makes pid == pgid
-	// Pump the pipe into the buffer.
+	// Pump the pipe into the buffer; pumpDone closes when all output is drained
+	// (so callers read buf only AFTER the reader finishes — otherwise the final
+	// line can be missed under load, a real truncation race).
+	pumpDone := make(chan struct{})
 	go func() {
+		defer close(pumpDone)
 		sc := bufio.NewScanner(pr)
 		sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 		for sc.Scan() {
@@ -148,11 +152,17 @@ func runBash(ctx context.Context, command, dir string, timeout time.Duration, sh
 	go func() { done <- cmd.Wait() }()
 
 	killGroup := func(sig syscall.Signal) { _ = syscall.Kill(-pgid, sig) }
+	// finishOutput closes the write end (unblocking the scanner) and waits for
+	// the pump to drain before returning the captured output.
+	finishOutput := func() string {
+		pw.Close()
+		<-pumpDone
+		return buf.String()
+	}
 
 	select {
 	case err := <-done:
-		pw.Close()
-		out := buf.String()
+		out := finishOutput()
 		if ee := (*exec.ExitError)(nil); errors.As(err, &ee) {
 			return out + fmt.Sprintf("\n[exit status %d]", ee.ExitCode()), nil
 		}
@@ -167,8 +177,7 @@ func runBash(ctx context.Context, command, dir string, timeout time.Duration, sh
 		case <-done:
 		case <-time.After(2 * time.Second):
 		}
-		pw.Close()
-		out := buf.String()
+		out := finishOutput()
 		if ctx.Err() == context.DeadlineExceeded {
 			return out + fmt.Sprintf("\n[timed out after %s]", timeout), nil
 		}
