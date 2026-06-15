@@ -39,6 +39,18 @@ type sessionDeps struct {
 	hooks     *hook.Runner
 }
 
+// registryRef returns a getter for the session's tool registry, resolved
+// lazily from the agent (built after the registry, so search_tools can be
+// created before deps.Agent is set).
+func (d *sessionDeps) registryRef() func() *tool.Registry {
+	return func() *tool.Registry {
+		if d.Agent == nil {
+			return nil
+		}
+		return d.Agent.Tools
+	}
+}
+
 // Close releases the session's external resources.
 func (d *sessionDeps) Close() {
 	for _, c := range d.mcpClients {
@@ -207,6 +219,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		if builtin[d.Name] {
 			continue
 		}
+		d.Niche = true // progressive disclosure: MCP tools are the schema-bloat; unlock via search_tools
 		defs = append(defs, d)
 		builtin[d.Name] = true
 	}
@@ -219,9 +232,19 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		if builtin[d.Name] {
 			continue
 		}
+		d.Niche = true // LSP tools: occasional; disclose via search_tools
 		defs = append(defs, d)
 		builtin[d.Name] = true
 	}
+	// search_tools (progressive disclosure) reveals + unlocks the niche tools
+	// above. It needs the finished registry (to search) + the agent (to unlock),
+	// both resolved lazily via deps so the placeholder can be created before
+	// the registry exists.
+	defs = append(defs, tool.SearchTools(deps.registryRef(), func(names []string) {
+		if deps.Agent != nil {
+			deps.Agent.UnlockTools(names)
+		}
+	}))
 
 	registry, err := tool.NewRegistry(defs...)
 	if err != nil {

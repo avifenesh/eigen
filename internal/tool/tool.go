@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/avifenesh/eigen/internal/llm"
 )
@@ -21,6 +22,20 @@ type Definition struct {
 
 	// ReadOnly marks tools that never mutate state; they auto-run even in gated mode.
 	ReadOnly bool
+
+	// Niche marks a tool whose full JSON schema is withheld from the model by
+	// default (progressive disclosure): it's listed by name+description in the
+	// system prompt, and the model unlocks its full spec on demand via the
+	// search_tools meta-tool. This keeps dozens of occasional tools (e.g. the
+	// MCP workspace/chrome servers) from spending ~10k tokens of schema on
+	// EVERY request. Core tools (read/edit/grep/bash/…) are never niche.
+	Niche bool
+
+	// Group namespaces a niche tool (e.g. its MCP server: "workspace",
+	// "chrome"). Disclosure is hierarchical: the prompt lists GROUPS (one line
+	// each), search_tools <group> reveals that group's tool NAMES, and
+	// search_tools <tool/keyword> reveals full schemas. Empty = ungrouped niche.
+	Group string
 
 	// Run executes the tool with raw JSON arguments and returns its textual result.
 	// Text-only tools (the vast majority) implement this.
@@ -92,6 +107,147 @@ func (r *Registry) Specs() []llm.ToolSpec {
 		specs = append(specs, r.byName[name].Spec())
 	}
 	return specs
+}
+
+// CoreSpecs returns specs for the non-niche tools plus any niche tools in the
+// unlocked set — the actual tool list sent to the model under progressive
+// disclosure. unlocked may be nil.
+func (r *Registry) CoreSpecs(unlocked map[string]bool) []llm.ToolSpec {
+	specs := make([]llm.ToolSpec, 0, len(r.order))
+	for _, name := range r.order {
+		d := r.byName[name]
+		if d.Niche && !unlocked[name] {
+			continue
+		}
+		specs = append(specs, d.Spec())
+	}
+	return specs
+}
+
+// HasNiche reports whether any tool is niche (so the disclosure machinery — the
+// catalog line + search_tools — is worth wiring).
+func (r *Registry) HasNiche() bool {
+	for _, name := range r.order {
+		if r.byName[name].Niche {
+			return true
+		}
+	}
+	return false
+}
+
+// NicheGroup summarizes a namespace of niche tools (an MCP server) for the
+// top-level catalog: the group name, how many tools, and a one-line gist.
+type NicheGroup struct {
+	Name  string
+	Count int
+	Gist  string
+}
+
+// GroupCatalog returns the hierarchical Level-0 catalog: one entry per niche
+// GROUP (e.g. an MCP server) plus any ungrouped niche tools listed by name.
+// unlocked tools/groups are omitted. This is what rides in the system prompt —
+// a handful of lines regardless of how many tools each group holds.
+func (r *Registry) GroupCatalog(unlocked map[string]bool) (groups []NicheGroup, loose []string) {
+	seen := map[string]int{}
+	gist := map[string]string{}
+	for _, name := range r.order {
+		d := r.byName[name]
+		if !d.Niche {
+			continue
+		}
+		if d.Group == "" {
+			if !unlocked[name] {
+				loose = append(loose, name+" — "+firstLine(d.Description))
+			}
+			continue
+		}
+		seen[d.Group]++
+		if gist[d.Group] == "" {
+			gist[d.Group] = groupGist(d.Group)
+		}
+	}
+	// Stable order: by first appearance.
+	added := map[string]bool{}
+	for _, name := range r.order {
+		d := r.byName[name]
+		if d.Group == "" || added[d.Group] {
+			continue
+		}
+		added[d.Group] = true
+		groups = append(groups, NicheGroup{Name: d.Group, Count: seen[d.Group], Gist: gist[d.Group]})
+	}
+	return groups, loose
+}
+
+// GroupTools returns "name — first line" for every niche tool in a group (the
+// Level-1 reveal: search_tools <group>). Empty if the group is unknown.
+func (r *Registry) GroupTools(group string) []string {
+	g := strings.ToLower(strings.TrimSpace(group))
+	var out []string
+	for _, name := range r.order {
+		d := r.byName[name]
+		if d.Niche && strings.ToLower(d.Group) == g {
+			out = append(out, d.Name+" — "+firstLine(d.Description))
+		}
+	}
+	return out
+}
+
+// GroupNames returns the distinct niche group names.
+func (r *Registry) GroupNames() []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, name := range r.order {
+		d := r.byName[name]
+		if d.Niche && d.Group != "" && !seen[d.Group] {
+			seen[d.Group] = true
+			out = append(out, d.Group)
+		}
+	}
+	return out
+}
+
+// MatchNiche returns the niche tools whose name or description matches query
+// (case-insensitive substring; empty query matches all niche tools). A query
+// equal to a GROUP name matches that whole group. Used by search_tools.
+func (r *Registry) MatchNiche(query string) []Definition {
+	q := strings.ToLower(strings.TrimSpace(query))
+	var out []Definition
+	for _, name := range r.order {
+		d := r.byName[name]
+		if !d.Niche {
+			continue
+		}
+		if q == "" ||
+			strings.Contains(strings.ToLower(d.Name), q) ||
+			strings.Contains(strings.ToLower(d.Description), q) ||
+			(d.Group != "" && strings.Contains(strings.ToLower(d.Group), q)) {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// groupGist returns a short human gist for a known niche group (MCP server).
+func groupGist(group string) string {
+	switch group {
+	case "workspace":
+		return "isolated Linux desktop/browser sandbox automation (launch apps, click, type, screenshot)"
+	case "chrome":
+		return "drive the user's real logged-in Chrome (tabs, navigate, read, click, screenshot)"
+	}
+	return "MCP server tools"
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	s = strings.TrimSpace(s)
+	if len(s) > 140 {
+		s = s[:137] + "…"
+	}
+	return s
 }
 
 // Get looks up a tool by name.

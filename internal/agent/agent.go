@@ -46,6 +46,8 @@ Tools worth reaching for (beyond read/edit/grep):
 - generate_image creates images from a text prompt (diagrams, mockups, assets) saved into the project.
 - review gets an independent cross-vendor critique of a plan/diff before you commit to it.
 
+You have a CORE set of tools always available (above). Many more — browser & desktop automation, project-specific integrations, language-server queries — are not loaded by default to save context; they're listed by name under "MORE TOOLS" when present. When a task needs a capability the core tools don't cover, call search_tools with a keyword to get the full tool(s) and make them callable. Don't assume a capability is missing without searching.
+
 Call tools as needed; when the task is complete, reply with a short, specific summary of what you did.`
 
 // Approver decides whether a mutating tool call may run in gated mode. It is
@@ -193,6 +195,11 @@ type Agent struct {
 	// Set by the bash tool's detach func; signaled by DetachBash (the user's
 	// background-the-running-command key). Guarded by mu.
 	detachBash chan struct{}
+
+	// unlockedTools is the set of niche tool names revealed via search_tools
+	// (progressive disclosure). Guarded by mu. Sticky for the session: once the
+	// model discovers a tool it stays callable (discovery is cumulative).
+	unlockedTools map[string]bool
 }
 
 // maxToolOutput caps a single tool result fed back to the model, so a runaway
@@ -332,6 +339,33 @@ func (a *Agent) DetachBash() bool {
 
 // Shelled reports whether this agent has a backgrounded-shell registry.
 func (a *Agent) Shelled() bool { return a.Shells != nil }
+
+// UnlockTools reveals niche tools (by name) for the rest of the turn — the
+// search_tools meta-tool calls this so the discovered tools become callable.
+func (a *Agent) UnlockTools(names []string) {
+	a.mu.Lock()
+	if a.unlockedTools == nil {
+		a.unlockedTools = map[string]bool{}
+	}
+	for _, n := range names {
+		a.unlockedTools[n] = true
+	}
+	a.mu.Unlock()
+}
+
+// unlockedSet returns a copy of the currently-unlocked niche tool names.
+func (a *Agent) unlockedSet() map[string]bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if len(a.unlockedTools) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(a.unlockedTools))
+	for k := range a.unlockedTools {
+		out[k] = true
+	}
+	return out
+}
 
 // backgroundShellStatus renders a concise per-step block listing the agent's
 // backgrounded shells, so it stays AWARE of them across steps. Empty when there
@@ -853,7 +887,7 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		s.maybeCompact(ctx)
 	}
 	s.persist()
-	specs := a.Tools.Specs()
+	disclose := a.Tools.HasNiche() // progressive tool disclosure when any niche tools exist
 	emptyTurns := 0
 	overflowRetried := false // guard: force-compact-and-retry at most once per step
 	var usedIn, usedOut int  // provider-reported usage, summed over the turn
@@ -896,6 +930,25 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		// checking it is the failure mode this prevents.
 		if bs := a.backgroundShellStatus(); bs != "" {
 			sys += bs
+		}
+		// Progressive tool disclosure: send core tools' full schemas + the
+		// already-unlocked niche tools, and list the rest by name so the model
+		// can unlock them with search_tools. Recomputed per step because a
+		// search_tools call mid-turn unlocks more.
+		specs := a.Tools.Specs()
+		if disclose {
+			unlocked := a.unlockedSet()
+			specs = a.Tools.CoreSpecs(unlocked)
+			groups, loose := a.Tools.GroupCatalog(unlocked)
+			if len(groups) > 0 || len(loose) > 0 {
+				sys += "\n\nMORE TOOLS (not loaded — call search_tools to open them):"
+				for _, g := range groups {
+					sys += fmt.Sprintf("\n- %s (%d tools) — %s [search_tools \"%s\"]", g.Name, g.Count, g.Gist, g.Name)
+				}
+				for _, l := range loose {
+					sys += "\n- " + l
+				}
+			}
 		}
 		req := llm.Request{
 			System: sys,

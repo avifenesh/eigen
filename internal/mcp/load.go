@@ -155,6 +155,11 @@ func wrap(client *Client, server string, sp ToolSpec) tool.Definition {
 		Description: desc,
 		Parameters:  params,
 		ReadOnly:    readOnly,
+		// Progressive disclosure: MCP tools are niche (schema withheld from each
+		// request) and grouped by their server, so the model browses the server
+		// then opens a tool via search_tools instead of paying for every schema.
+		Niche: true,
+		Group: sanitize(server),
 		RunRich: func(ctx context.Context, args json.RawMessage) (tool.Result, error) {
 			res, err := client.CallToolRich(ctx, toolName, args)
 			if err == nil && attachShot {

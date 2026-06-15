@@ -680,15 +680,16 @@ func main() {
 			fmt.Fprintf(os.Stderr, "eigen: mcp tool %q shadows an existing tool; skipping\n", d.Name)
 			continue
 		}
+		d.Niche = true // progressive disclosure: unlock via search_tools (no per-request schema bloat)
 		defs = append(defs, d)
 		builtin[d.Name] = true
 		mcpTokens += (len(d.Description) + len(d.Parameters)) / 4
 	}
-	// Tool schemas ride along on every model request; make a heavy MCP setup
-	// visible so the user can allowlist (mcp.json "tools") what they use.
-	if mcpTokens > 6000 {
-		fmt.Fprintf(os.Stderr, "eigen: mcp: %d tools add ~%dk tokens of schema to every request — consider a \"tools\" allowlist in mcp.json\n",
-			len(mcpDefs), mcpTokens/1000)
+	// MCP tools are NICHE (progressive disclosure): their schemas are withheld
+	// from each request and unlocked on demand via search_tools, so a heavy MCP
+	// setup no longer bloats every request. Just note the count.
+	if len(mcpDefs) > 12 {
+		fmt.Fprintf(os.Stderr, "eigen: mcp: %d tools available (schemas withheld; the model unlocks them with search_tools — no per-request bloat)\n", len(mcpDefs))
 	}
 	// LSP: language servers from lsp.json provide go-to-definition, references,
 	// hover, document symbols, and diagnostics as native tools. Servers start
@@ -706,9 +707,21 @@ func main() {
 			fmt.Fprintf(os.Stderr, "eigen: lsp tool %q shadows an existing tool; skipping\n", d.Name)
 			continue
 		}
+		d.Niche = true // disclose via search_tools
 		defs = append(defs, d)
 		builtin[d.Name] = true
 	}
+	// search_tools (progressive disclosure): reveal + unlock the niche tools.
+	defs = append(defs, tool.SearchTools(func() *tool.Registry {
+		if a != nil {
+			return a.Tools
+		}
+		return nil
+	}, func(names []string) {
+		if a != nil {
+			a.UnlockTools(names)
+		}
+	}))
 	registry, err := tool.NewRegistry(defs...)
 	if err != nil {
 		fail(err)
