@@ -342,6 +342,7 @@ type model struct {
 	rightTab        rightPanelTab // selected right panel tab (changes/git/terminal)
 	term            termState     // embedded PTY terminal tab state
 	tasks           tasksState    // background-tasks tab state (Tier 12)
+	shells          shellsState   // background-shells tab state
 	tasksDir        string        // background-task store dir (tests isolate it)
 	changesCache    []fileChange  // memoized last-run change index
 	changesCacheSig string        // transcript signature the cache was built for
@@ -1386,6 +1387,10 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				if m.rightTab == rightTabTasks {
 					return m, m.tasksClick(h.localY)
 				}
+				// A click on a shell row selects/expands it; [kill] stops it.
+				if m.rightTab == rightTabShells {
+					return m, m.shellsClick(h.localY)
+				}
 				return m, nil
 			}
 			// A click inside the input box positions the text cursor there.
@@ -1755,6 +1760,11 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		}
 		m.refreshTasks()
 		return m, m.tasksTick()
+	case shellsTickMsg:
+		if msg.gen != m.shells.gen {
+			return m, nil
+		}
+		return m, m.shellsTick()
 	}
 	return m, nil
 }

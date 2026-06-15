@@ -62,6 +62,7 @@ var slashCommands = []slashCmd{
 	{"/changes", "toggle the right panel (changes/git/term)"},
 	{"/term", "open a real shell terminal in the right panel"},
 	{"/tasks", "background tasks panel (live progress, view result, cancel)"},
+	{"/shells", "background shells panel (running commands, output, kill)"},
 	{"/tray", "notifications / approvals tray — what needs you across sessions"},
 	{"/workflow", "run an authored multi-step workflow (~/.eigen/workflows/<name>.md)"},
 	{"/resume", "resume a saved session (picker, or path/id)"},

@@ -19,6 +19,7 @@ const (
 	rightTabGit
 	rightTabTerminal
 	rightTabTasks
+	rightTabShells
 )
 
 func (t rightPanelTab) label() string {
@@ -29,6 +30,8 @@ func (t rightPanelTab) label() string {
 		return "term"
 	case rightTabTasks:
 		return "tasks"
+	case rightTabShells:
+		return "shells"
 	default:
 		return "changes"
 	}
@@ -40,11 +43,20 @@ func (t rightPanelTab) shortLabel() string {
 	if t == rightTabChanges {
 		return "chg"
 	}
+	if t == rightTabShells {
+		return "sh"
+	}
 	return t.label()
 }
 
 func (m *model) rightTabs() []rightPanelTab {
-	return []rightPanelTab{rightTabChanges, rightTabGit, rightTabTerminal, rightTabTasks}
+	tabs := []rightPanelTab{rightTabChanges, rightTabGit, rightTabTerminal, rightTabTasks}
+	// The shells tab appears only when the backend can host background shells
+	// AND there are shells to show (keeps the header lean otherwise).
+	if len(m.backendShells()) > 0 {
+		tabs = append(tabs, rightTabShells)
+	}
+	return tabs
 }
 
 // nextRightTab cycles the right panel tab and returns any command needed to
@@ -79,6 +91,10 @@ func (m *model) setRightTab(t rightPanelTab) tea.Cmd {
 		m.refreshTasks()
 		m.tasks.gen++ // retire any previous tick chain; start a fresh one
 		return m.tasksTick()
+	}
+	if t == rightTabShells {
+		m.shells.gen++ // fresh poll tick chain
+		return m.shellsTick()
 	}
 	return nil
 }

@@ -245,6 +245,26 @@ func (r *Remote) Tools() []ToolInfo {
 	return out
 }
 
+// Shells lists the daemon session's backgrounded bash shells (from the snapshot).
+func (r *Remote) Shells() []ShellInfo {
+	st := r.snap()
+	out := make([]ShellInfo, 0, len(st.Shells))
+	for _, s := range st.Shells {
+		out = append(out, ShellInfo{ID: s.ID, Command: s.Command, Status: s.Status, ExitCode: s.ExitCode, LastLine: s.LastLine})
+	}
+	return out
+}
+
+// KillShell stops a backgrounded shell by id over the socket, then refreshes.
+func (r *Remote) KillShell(id string) bool {
+	killed, err := r.c.KillShell(r.id, id)
+	if err != nil {
+		return false
+	}
+	r.refresh()
+	return killed
+}
+
 // AddDir extends the daemon session's tool sandbox (user /add-dir grant) and
 // refreshes the snapshot so Roots reflects it.
 func (r *Remote) AddDir(path string) (string, error) {

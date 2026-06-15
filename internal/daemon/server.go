@@ -199,6 +199,13 @@ func (s *Server) handle(conn net.Conn) {
 			}
 			s.host.saveSessionMeta(sess) // persist the added root across restart
 			send(Response{Type: "ok", Root: root})
+		case "kill-shell":
+			sess := s.host.Get(req.ID)
+			if sess == nil {
+				send(Response{Type: "error", Error: "no such session"})
+				continue
+			}
+			send(Response{Type: "ok", Killed: sess.killShell(req.Shell)})
 		case "clear":
 			sess := s.host.Get(req.ID)
 			if sess == nil {

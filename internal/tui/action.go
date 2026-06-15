@@ -43,6 +43,7 @@ const (
 	actRightTabNext
 	actTerminalTab
 	actTasksTab
+	actShellsTab
 	actTray
 	actBackgroundTurn
 )
@@ -256,6 +257,13 @@ var actionRegistry = map[actionID]action{
 		enabled: always,
 		run: func(m *model) tea.Cmd {
 			return m.setRightTab(rightTabTasks)
+		},
+	},
+	actShellsTab: {
+		id: actShellsTab, label: "background shells panel",
+		enabled: always,
+		run: func(m *model) tea.Cmd {
+			return m.setRightTab(rightTabShells)
 		},
 	},
 	actTray: {

@@ -129,6 +129,27 @@ func (l *Local) Tools() []ToolInfo {
 
 func (l *Local) Provider() llm.Provider { return l.a.Provider }
 
+// Shells lists the agent's backgrounded bash shells.
+func (l *Local) Shells() []ShellInfo {
+	if l.a.Shells == nil {
+		return nil
+	}
+	infos := l.a.Shells.Infos()
+	out := make([]ShellInfo, 0, len(infos))
+	for _, s := range infos {
+		out = append(out, ShellInfo{ID: s.ID, Command: s.Command, Status: s.Status, ExitCode: s.ExitCode, LastLine: s.LastLine})
+	}
+	return out
+}
+
+// KillShell stops a backgrounded shell by id.
+func (l *Local) KillShell(id string) bool {
+	if l.a.Shells == nil {
+		return false
+	}
+	return l.a.Shells.KillByID(id)
+}
+
 // AddDir extends the tool sandbox (user-invoked /add-dir grant).
 func (l *Local) AddDir(path string) (string, error) { return l.a.AddDir(path) }
 

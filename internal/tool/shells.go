@@ -19,6 +19,23 @@ import (
 // can't grow memory without bound; oldest bytes are dropped).
 const maxShellBuffer = 256 << 10 // 256 KiB
 
+// maxFinishedShells caps how many terminal (exited/killed) shells the registry
+// keeps — the in-memory "TTL": once a session has accumulated more than this,
+// the oldest finished ones are forgotten so a long session can't grow the list
+// without bound. Running shells are never dropped.
+const maxFinishedShells = 30
+
+// ShellInfo is a lock-safe snapshot of a shell for listing (panel/SessionState).
+type ShellInfo struct {
+	ID       string
+	Command  string
+	Status   string // running | exited | killed
+	ExitCode int
+	Started  time.Time
+	Finished time.Time
+	LastLine string // last non-empty output line (one-line hint)
+}
+
 // Shell is one backgrounded command.
 type Shell struct {
 	ID      string
@@ -130,15 +147,62 @@ func NewShellRegistry() *ShellRegistry {
 	return &ShellRegistry{shells: map[string]*Shell{}}
 }
 
-// add registers a new running shell and returns it.
+// add registers a new running shell and returns it. It also evicts the oldest
+// finished shells past maxFinishedShells (the in-memory retention cap) so a
+// long-lived session's list can't grow without bound. Running shells are kept.
 func (r *ShellRegistry) add(command string) *Shell {
 	id := fmt.Sprintf("shell-%d", r.seq.Add(1))
 	s := &Shell{ID: id, Command: command, Started: time.Now(), status: "running"}
 	r.mu.Lock()
 	r.shells[id] = s
 	r.order = append(r.order, id)
+	r.evictFinishedLocked()
 	r.mu.Unlock()
 	return s
+}
+
+// evictFinishedLocked drops the oldest terminal shells beyond the cap. Caller
+// holds r.mu.
+func (r *ShellRegistry) evictFinishedLocked() {
+	finished := 0
+	for _, id := range r.order {
+		if s := r.shells[id]; s != nil && !s.running() {
+			finished++
+		}
+	}
+	for finished > maxFinishedShells {
+		// Remove the oldest finished shell (front of order).
+		for i, id := range r.order {
+			if s := r.shells[id]; s != nil && !s.running() {
+				delete(r.shells, id)
+				r.order = append(r.order[:i], r.order[i+1:]...)
+				finished--
+				break
+			}
+		}
+	}
+}
+
+// Infos returns lock-safe snapshots of all shells in insertion order, for the
+// shells panel + the daemon's SessionState. Newest last.
+func (r *ShellRegistry) Infos() []ShellInfo {
+	if r == nil {
+		return nil
+	}
+	out := make([]ShellInfo, 0)
+	for _, s := range r.List() {
+		full, status, code := s.snapshot()
+		out = append(out, ShellInfo{
+			ID:       s.ID,
+			Command:  s.Command,
+			Status:   status,
+			ExitCode: code,
+			Started:  s.Started,
+			Finished: s.finishedAt(),
+			LastLine: lastShellLine(full),
+		})
+	}
+	return out
 }
 
 // Get returns a shell by id (nil if unknown).
@@ -181,6 +245,18 @@ func (r *ShellRegistry) RunningCount() int {
 		}
 	}
 	return n
+}
+
+// KillByID stops a backgrounded shell by id (the panel's kill action). Returns
+// true if a running shell was signaled. Only ever signals a pgid this live
+// registry recorded — never a stale/persisted one.
+func (r *ShellRegistry) KillByID(id string) bool {
+	s := r.Get(id)
+	if s == nil || !s.running() {
+		return false
+	}
+	s.kill()
+	return true
 }
 
 // StatusBlock renders a concise awareness block for the agent's system prompt:

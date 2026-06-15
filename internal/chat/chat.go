@@ -22,6 +22,15 @@ type ToolInfo struct {
 	ReadOnly bool
 }
 
+// ShellInfo describes one backgrounded bash shell for the shells panel.
+type ShellInfo struct {
+	ID       string
+	Command  string
+	Status   string // running | exited | killed
+	ExitCode int
+	LastLine string
+}
+
 // Backend runs one conversation for the chat UI.
 type Backend interface {
 	// Send runs a turn (with optional images). Progress arrives through the
@@ -69,6 +78,12 @@ type Backend interface {
 
 	// Tools lists registered tools (for /tools). Empty when unknown.
 	Tools() []ToolInfo
+
+	// Shells lists the backgrounded bash shells (the shells panel). Empty when
+	// none or unsupported. KillShell stops one by id (returns false if unknown
+	// or already stopped).
+	Shells() []ShellInfo
+	KillShell(id string) bool
 
 	// AddDir extends the tool sandbox with an additional allowed directory —
 	// the user-invoked /add-dir grant (never the agent). Returns the normalized

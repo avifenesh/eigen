@@ -465,6 +465,11 @@ func (s *Session) state() *SessionState {
 		}
 	}
 	st.Roots = a.Roots()
+	if a.Shells != nil {
+		for _, sh := range a.Shells.Infos() {
+			st.Shells = append(st.Shells, ShellInfo{ID: sh.ID, Command: sh.Command, Status: sh.Status, ExitCode: sh.ExitCode, LastLine: sh.LastLine})
+		}
+	}
 	return st
 }
 
@@ -475,6 +480,14 @@ func (s *Session) setGoal(g string) { s.agent.SetGoal(g) }
 // addDir extends the session's tool sandbox (user-invoked /add-dir grant).
 // Returns the normalized root added; the agent's Policy guards its concurrency.
 func (s *Session) addDir(path string) (string, error) { return s.agent.AddDir(path) }
+
+// killShell stops a backgrounded bash shell by id (the shells panel's kill).
+func (s *Session) killShell(id string) bool {
+	if s.agent.Shells == nil {
+		return false
+	}
+	return s.agent.Shells.KillByID(id)
+}
 
 // setEffort/setSearch forward to the provider's optional capability; false =
 // the model has no such setting or rejected the value.

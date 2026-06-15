@@ -68,6 +68,7 @@ func (m *model) paletteCatalog() []paletteCmd {
 		{label: "mouse capture on/off (off = mark + copy in your terminal)", hint: "alt+x", id: actMouseToggle, slash: "/mouse"},
 		{label: "move running turn to background", id: actBackgroundTurn, slash: "/background"},
 		{label: "background tasks panel", id: actTasksTab, slash: "/tasks"},
+		{label: "background shells panel (running commands, kill)", id: actShellsTab, slash: "/shells"},
 		{label: "notifications / approvals tray", hint: "alt+w", id: actTray, slash: "/tray"},
 		{label: "run a workflow", slash: "/workflow "},
 		{label: "find in transcript", slash: "/find "},

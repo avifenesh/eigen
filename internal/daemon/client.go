@@ -312,6 +312,15 @@ func (c *Client) AddDir(sessionID, path string) (string, error) {
 	return resp.Root, nil
 }
 
+// KillShell stops a backgrounded bash shell by id in the session.
+func (c *Client) KillShell(sessionID, shellID string) (bool, error) {
+	resp, err := c.request(Request{Op: "kill-shell", ID: sessionID, Shell: shellID})
+	if err != nil {
+		return false, err
+	}
+	return resp.Killed, nil
+}
+
 // Compact summarizes a session's conversation toward target tokens.
 func (c *Client) Compact(sessionID string, target int) (before, after int, err error) {
 	r, err := c.requestWithin(Request{Op: "compact", ID: sessionID, Target: target}, requestTimeoutFor("compact"))

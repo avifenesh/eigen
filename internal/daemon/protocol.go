@@ -37,6 +37,8 @@ type Request struct {
 	Search string `json:"search,omitempty"`
 	// add-dir: an additional allowed sandbox directory (user grant)
 	AddDir string `json:"add_dir,omitempty"`
+	// kill-shell: the backgrounded shell id to stop
+	Shell string `json:"shell,omitempty"`
 }
 
 // Response is a daemon→view message. Type discriminates the payload.
@@ -53,6 +55,7 @@ type Response struct {
 	After    int           `json:"after,omitempty"`
 	Pruned   []string      `json:"pruned,omitempty"`  // prune result: removed session ids
 	Steered  bool          `json:"steered,omitempty"` // input: delivered as a mid-turn steer (a turn was running)
+	Killed   bool          `json:"killed,omitempty"`  // kill-shell: a running shell was signaled
 }
 
 // SessionState is the snapshot a remote chat UI needs to render history and
@@ -70,7 +73,17 @@ type SessionState struct {
 	Search    string        `json:"search,omitempty"`  // "" = unsupported
 	Running   bool          `json:"running,omitempty"` // a turn is in flight right now
 	Tools     []ToolInfo    `json:"tools,omitempty"`
-	Roots     []string      `json:"roots,omitempty"` // tool sandbox allowed dirs (primary first)
+	Roots     []string      `json:"roots,omitempty"`  // tool sandbox allowed dirs (primary first)
+	Shells    []ShellInfo   `json:"shells,omitempty"` // backgrounded bash shells
+}
+
+// ShellInfo mirrors chat.ShellInfo over the wire (backgrounded bash shells).
+type ShellInfo struct {
+	ID       string `json:"id"`
+	Command  string `json:"command"`
+	Status   string `json:"status"`
+	ExitCode int    `json:"exit_code"`
+	LastLine string `json:"last_line,omitempty"`
 }
 
 // ToolInfo mirrors chat.ToolInfo over the wire.

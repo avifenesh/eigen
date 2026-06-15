@@ -61,7 +61,7 @@ func (m *model) applyResumed(msgs []llm.Message) {
 func safeWhileRunning(name string) bool {
 	switch name {
 	case "/effort", "/search", "/perm", "/model", "/help", "/goal", "/loop", "/config", "/route",
-		"/skills", "/tools", "/find", "/copy", "/read", "/voice", "/mute", "/dictate", "/talk", "/speak", "/rail", "/changes", "/term", "/tasks", "/tray", "/workflow", "/rename", "/background", "/add-dir", "/mouse", "/steer", "/queue":
+		"/skills", "/tools", "/find", "/copy", "/read", "/voice", "/mute", "/dictate", "/talk", "/speak", "/rail", "/changes", "/term", "/tasks", "/shells", "/tray", "/workflow", "/rename", "/background", "/add-dir", "/mouse", "/steer", "/queue":
 		return true
 	default:
 		// /clear, /compact, /resume, /rebuild, /save, /export, /quit, /exit
@@ -157,6 +157,8 @@ func (m *model) command(line string) tea.Cmd {
 		return m.setRightTab(rightTabTerminal)
 	case "/tasks":
 		return m.setRightTab(rightTabTasks)
+	case "/shells":
+		return m.setRightTab(rightTabShells)
 	case "/tray":
 		m.openTray()
 		return nil
