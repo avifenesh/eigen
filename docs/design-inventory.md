@@ -272,8 +272,9 @@ high-taste luxury super-app:
 7. ~~**Three+ "working" motions**~~ — DONE: ONE working signature (breathing λ
    on the orange ramp) across chat rail + app; braille reserved for in-flight
    TOOL calls only. (Reveals/settles polish still optional.)
-8. **Microcopy is terse dev-speak** — calm but cold. A crafted, consistent voice
-   (still minimal) lifts the whole thing.
+8. ~~**Microcopy is terse dev-speak**~~ — DONE: warmed the empty states (a calm
+   fact + a gentle path forward, never cute) and unified the "no matches"
+   phrasing; left precise error messages + the inline footer hints as-is.
 9. ~~**App-shell ≠ chat chrome / sparse home**~~ — DONE: home section headers
    match the sidebar (sectionLabel); selection/active identical across both; the
    wide inspector is filled (home/machines + others); home gained a "working
@@ -286,8 +287,10 @@ restraint, terminal art, color/elevation systems), then design the new system
 from zero — principles first, then tokens (color incl. surfaces, spacing scale,
 glyph set, motion), then components, then roll it across theme/tui/app.
 
-**Progress (2026-06-14):** #1–#7, #9, #10 all DONE. The whole top-10 slate is
-closed except #8 (microcopy voice) — deliberately left: the existing copy is
-calm and clear, and warming it risks twee; revisit only on explicit request.
-The wrapped-line/styled bg-leak (fillBG missed the \x1b[m shorthand reset) is
-also fixed.
+**Progress (2026-06-14):** the WHOLE top-10 design slate (#1–#10) is DONE. The
+chat TUI + app shell read as one product: shared palette/elevation, one glyph
+vocabulary, one selection + one active treatment, one motion signature (breathing
+λ), framed syntax-highlighted code, uniform diff bands, composed spacing, a
+dense command-center home, and warmed microcopy — with the whole View painted on
+Base so no terminal background leaks through (incl. the \x1b[m shorthand-reset
+fix for wrapped/styled lines).
