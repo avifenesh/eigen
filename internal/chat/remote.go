@@ -115,8 +115,8 @@ func wireToEvent(e daemon.WireEvent) agent.Event {
 }
 
 // Send forwards the task and blocks until the daemon reports the turn ended,
-// mirroring the local backend's contract (progress streams via events).
-// Images are not yet carried over the socket.
+// mirroring the local backend's contract (progress streams via events). Images
+// are carried over the socket via the input op.
 func (r *Remote) Send(ctx context.Context, task string, images []llm.Image) (string, error) {
 	ch := make(chan struct{})
 	r.mu.Lock()
