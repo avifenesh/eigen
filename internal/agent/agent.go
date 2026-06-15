@@ -39,6 +39,13 @@ Working method:
 - To investigate or review SEVERAL things at once, use the task_group tool: it runs multiple READ-ONLY sub-agents in parallel (roles: researcher, reviewer, summarizer) and returns one combined report. Use it to fan out across files/angles; for changes that edit files, use the task tool one at a time.
 - To make SEVERAL INDEPENDENT code changes at once, use task_group_mutating: each implementer works in an isolated copy of the repo and their diffs are merged back behind one approval (needs a git repo, session at the repo root, and a clean working tree). Keep each subtask's edits scoped so they don't overlap.
 
+Tools worth reaching for (beyond read/edit/grep):
+- bash runs shell commands. For anything long-lived or slow — a dev server, a file watcher, a long build or test run — pass background=true: it returns a shell id immediately and keeps running so you DON'T block the turn. Poll it with bash_output (incremental: shows new output + status), and stop it with kill_shell. Running shells are listed back to you each step, so start them freely and check in when it matters.
+- retrieve does SEMANTIC search over the project (find code by meaning, not just text). Use it for "where/how is X handled" when you don't know the exact string; use grep for a known literal.
+- websearch finds current/external information (it works out of the box, no key needed); fetch GETs a specific URL. Reach for them when the answer depends on something outside the codebase (a library's current API, an error message, docs).
+- generate_image creates images from a text prompt (diagrams, mockups, assets) saved into the project.
+- review gets an independent cross-vendor critique of a plan/diff before you commit to it.
+
 Call tools as needed; when the task is complete, reply with a short, specific summary of what you did.`
 
 // Approver decides whether a mutating tool call may run in gated mode. It is

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/avifenesh/eigen/internal/fuzzy"
 )
@@ -21,8 +22,12 @@ type Skill struct {
 	Path        string // path to the SKILL.md file
 }
 
-// Set is an ordered, name-keyed collection of discovered skills.
+// Set is an ordered, name-keyed collection of discovered skills. It remembers
+// the directories it was discovered from so it can Rescan in place when a skill
+// is added mid-session (the catalog is otherwise a start-of-session snapshot).
 type Set struct {
+	mu     sync.RWMutex
+	dirs   []string
 	order  []string
 	byName map[string]Skill
 }
@@ -31,8 +36,17 @@ type Set struct {
 // of each. Later directories do not override earlier ones (first wins on name).
 // Missing directories are skipped silently.
 func Discover(dirs ...string) *Set {
-	s := &Set{byName: map[string]Skill{}}
-	for _, dir := range dirs {
+	s := &Set{byName: map[string]Skill{}, dirs: append([]string(nil), dirs...)}
+	s.scan()
+	return s
+}
+
+// scan (re)populates order/byName from s.dirs. Caller holds the write lock, or
+// constructs before publishing (Discover).
+func (s *Set) scan() {
+	order := s.order[:0]
+	byName := make(map[string]Skill, len(s.byName))
+	for _, dir := range s.dirs {
 		if dir == "" {
 			continue
 		}
@@ -43,18 +57,30 @@ func Discover(dirs ...string) *Set {
 			if err != nil || sk.Name == "" {
 				continue
 			}
-			if _, dup := s.byName[sk.Name]; dup {
+			if _, dup := byName[sk.Name]; dup {
 				continue
 			}
-			s.order = append(s.order, sk.Name)
-			s.byName[sk.Name] = sk
+			order = append(order, sk.Name)
+			byName[sk.Name] = sk
 		}
 	}
-	return s
+	s.order = order
+	s.byName = byName
+}
+
+// Rescan re-reads the source directories so skills added since construction
+// (e.g. `eigen skill add` in another window, or a hand-dropped SKILL.md) become
+// discoverable without restarting the session. Safe to call concurrently.
+func (s *Set) Rescan() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.scan()
 }
 
 // List returns the skills in discovery order.
 func (s *Set) List() []Skill {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	out := make([]Skill, 0, len(s.order))
 	for _, n := range s.order {
 		out = append(out, s.byName[n])
@@ -63,18 +89,22 @@ func (s *Set) List() []Skill {
 }
 
 // Len reports how many skills were discovered.
-func (s *Set) Len() int { return len(s.order) }
+func (s *Set) Len() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.order)
+}
 
 // Get returns a skill by name (exact, then via Resolve's hint matching, so a
 // near-miss like "skill curator" or "curator" still finds "skill-curator").
 func (s *Set) Get(name string) (Skill, bool) {
-	if sk, ok := s.byName[name]; ok {
-		return sk, true
+	resolved, ok := s.Resolve(name)
+	if !ok {
+		return Skill{}, false
 	}
-	if n, ok := s.Resolve(name); ok {
-		return s.byName[n], true
-	}
-	return Skill{}, false
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.byName[resolved], true
 }
 
 // normalizeName lowercases and collapses separators so "Skill Curator",
@@ -107,8 +137,26 @@ func normalizeName(s string) string {
 //  4. unique fuzzy subsequence match (internal/fuzzy), the same ranker the
 //     palette/search use
 //
-// Returns (name, true) only on a unique winner.
+// Returns (name, true) only on a unique winner. On a miss it rescans the source
+// directories once and retries, so a skill installed mid-session resolves
+// without restarting (the catalog is otherwise a start-of-session snapshot).
 func (s *Set) Resolve(hint string) (string, bool) {
+	s.mu.RLock()
+	name, ok := s.resolveLocked(hint)
+	s.mu.RUnlock()
+	if ok {
+		return name, true
+	}
+	s.Rescan()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.resolveLocked(hint)
+}
+
+// resolveLocked is the pure matching ladder; the caller holds at least a read
+// lock. It never rescans (Resolve owns that), so it is reused on both the
+// pre-rescan and post-rescan attempts.
+func (s *Set) resolveLocked(hint string) (string, bool) {
 	if hint == "" {
 		return "", false
 	}
@@ -211,6 +259,8 @@ func overlapAll(a, b []string) bool {
 
 // Names returns the discovered skill names in order.
 func (s *Set) Names() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	out := make([]string, len(s.order))
 	copy(out, s.order)
 	return out
@@ -223,9 +273,17 @@ func (s *Set) Names() []string {
 func (s *Set) Body(name string) (string, error) {
 	resolved, ok := s.Resolve(name)
 	if !ok {
-		return "", fmt.Errorf("unknown skill %q (available: %s)", name, strings.Join(s.order, ", "))
+		s.mu.RLock()
+		avail := strings.Join(s.order, ", ")
+		s.mu.RUnlock()
+		return "", fmt.Errorf("unknown skill %q (available: %s)", name, avail)
 	}
-	sk := s.byName[resolved]
+	s.mu.RLock()
+	sk, ok := s.byName[resolved]
+	s.mu.RUnlock()
+	if !ok {
+		return "", fmt.Errorf("unknown skill %q", resolved)
+	}
 	data, err := os.ReadFile(sk.Path)
 	if err != nil {
 		return "", err
@@ -236,6 +294,8 @@ func (s *Set) Body(name string) (string, error) {
 // Catalog renders the skill list for injection into the system prompt. Empty
 // when no skills are present.
 func (s *Set) Catalog() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if len(s.order) == 0 {
 		return ""
 	}

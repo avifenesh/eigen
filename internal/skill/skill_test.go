@@ -113,6 +113,32 @@ func TestGetAcceptsHint(t *testing.T) {
 	}
 }
 
+func TestResolveRescansForMidSessionInstall(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "alpha", "Alpha.", "# a")
+	set := Discover(dir) // snapshot taken with only alpha
+
+	if _, ok := set.Resolve("skill-curator"); ok {
+		t.Fatal("skill-curator should not exist yet")
+	}
+	// Install a skill AFTER the set was discovered (mimics `eigen skill add`
+	// or a hand-dropped SKILL.md mid-session).
+	writeSkill(t, dir, "skill-curator", "Curate skills.", "# the curator body")
+
+	// Resolve/Body must pick it up without an explicit Rescan (rescan-on-miss).
+	if got, ok := set.Resolve("skill curator"); !ok || got != "skill-curator" {
+		t.Fatalf("mid-session install not resolved: %q,%v", got, ok)
+	}
+	body, err := set.Body("skill-curator")
+	if err != nil || !strings.Contains(body, "the curator body") {
+		t.Fatalf("Body after install: %q err=%v", body, err)
+	}
+	// And it now shows in the catalog/names.
+	if !strings.Contains(strings.Join(set.Names(), ","), "skill-curator") {
+		t.Fatalf("names missing the new skill: %v", set.Names())
+	}
+}
+
 func TestNameFallsBackToDir(t *testing.T) {
 	dir := t.TempDir()
 	sd := filepath.Join(dir, "no-name-skill")
