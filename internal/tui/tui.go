@@ -2087,11 +2087,12 @@ const failoverTurns = 5
 
 // failoverChain is the ordered fallback ladder used when the active model is
 // persistently overloaded (Bedrock 503). The default is opus-4-8, so the chain
-// is the OTHER models to try: gpt-5.5 first, then sonnet-4-6. nextFailover
-// picks the first entry that isn't the failing model so a failover never lands
-// on the model that just failed (and never on opus when opus is failing).
+// is the OTHER models to try, in order: glm-5.2 first, then sonnet-4-6.
+// (gpt-5.5 was dropped — it was hanging/500ing.) nextFailover picks the first
+// entry that isn't the failing model so a failover never lands on the model
+// that just failed (and never on opus when opus is failing).
 var failoverChain = []string{
-	"openai.gpt-5.5",
+	"glm-5.2",
 	"us.anthropic.claude-sonnet-4-6",
 }
 

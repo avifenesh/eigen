@@ -1757,7 +1757,7 @@ func TestIsOverloaded(t *testing.T) {
 
 func TestOverloadFailoverRedirectsAndRetries(t *testing.T) {
 	m := testModel(t)
-	m.provName, m.modelID = "converse", "global.anthropic.claude-fable-5"
+	m.provName, m.modelID = "converse", "us.anthropic.claude-opus-4-8"
 	m.newProvider = func(provider, mdl string) (llm.Provider, error) {
 		return fakeProv{text: provider + "/" + mdl}, nil
 	}
@@ -1765,10 +1765,10 @@ func TestOverloadFailoverRedirectsAndRetries(t *testing.T) {
 	m.backend.Reset([]llm.Message{{Role: llm.RoleUser, Text: "task"}})
 
 	_, cmd := m.Update(turnDoneMsg{err: fmt.Errorf("converse: failed after 5 attempts: HTTP 503: unable to process")})
-	if m.modelID != "openai.gpt-5.5" {
-		t.Fatalf("failover should switch to gpt-5.5 (first chain entry), got %s", m.modelID)
+	if m.modelID != "glm-5.2" {
+		t.Fatalf("failover should switch to glm-5.2 (first chain entry), got %s", m.modelID)
 	}
-	if m.failoverFrom == nil || m.failoverFrom.model != "global.anthropic.claude-fable-5" {
+	if m.failoverFrom == nil || m.failoverFrom.model != "us.anthropic.claude-opus-4-8" {
 		t.Fatalf("failover should remember the origin, got %+v", m.failoverFrom)
 	}
 	if m.failoverLeft != failoverTurns {
@@ -1784,8 +1784,8 @@ func TestOverloadFailoverRedirectsAndRetries(t *testing.T) {
 
 func TestOverloadFailoverCountsDownAndSwitchesBack(t *testing.T) {
 	m := testModel(t)
-	m.provName, m.modelID = "mantle", "openai.gpt-5.5"
-	m.failoverFrom = &failoverOrigin{provider: "converse", model: "global.anthropic.claude-fable-5"}
+	m.provName, m.modelID = "glm", "glm-5.2"
+	m.failoverFrom = &failoverOrigin{provider: "converse", model: "us.anthropic.claude-opus-4-8"}
 	m.failoverLeft = 2
 	m.newProvider = func(provider, mdl string) (llm.Provider, error) {
 		return fakeProv{text: provider + "/" + mdl}, nil
@@ -1800,14 +1800,14 @@ func TestOverloadFailoverCountsDownAndSwitchesBack(t *testing.T) {
 	if m.failoverFrom != nil {
 		t.Fatal("failover window should be over")
 	}
-	if m.modelID != "global.anthropic.claude-fable-5" {
+	if m.modelID != "us.anthropic.claude-opus-4-8" {
 		t.Fatalf("should switch back to the origin model, got %s", m.modelID)
 	}
 }
 
 func TestOverloadFailoverChainAndNoLoop(t *testing.T) {
-	// gpt-5.5 overloaded (no failover active): walks the chain to sonnet-4-6
-	// (opus is the default, so it's not in the chain — gpt-5.5 then sonnet).
+	// gpt-5.5 overloaded (no failover active): walks the chain to glm-5.2
+	// (opus is the default, so it's not in the chain — glm-5.2 then sonnet).
 	m := testModel(t)
 	m.provName, m.modelID = "mantle", "openai.gpt-5.5"
 	m.newProvider = func(provider, mdl string) (llm.Provider, error) {
@@ -1815,8 +1815,8 @@ func TestOverloadFailoverChainAndNoLoop(t *testing.T) {
 	}
 	m.backend.Reset([]llm.Message{{Role: llm.RoleUser, Text: "task"}})
 	m.Update(turnDoneMsg{err: fmt.Errorf("HTTP 503: unable to process")})
-	if m.modelID != "us.anthropic.claude-sonnet-4-6" {
-		t.Fatalf("gpt overload should fail over to sonnet-4-6 (next chain entry), got %s", m.modelID)
+	if m.modelID != "glm-5.2" {
+		t.Fatalf("gpt overload should fail over to glm-5.2 (first chain entry), got %s", m.modelID)
 	}
 
 	// A second overload while a failover window is ACTIVE must not chain
@@ -1826,15 +1826,15 @@ func TestOverloadFailoverChainAndNoLoop(t *testing.T) {
 	if m.failoverFrom == nil || m.failoverFrom.model != from.model {
 		t.Fatal("must not start a second failover while one is active")
 	}
-	if m.modelID != "us.anthropic.claude-sonnet-4-6" {
-		t.Fatalf("model must stay on sonnet-4-6 during the window, got %s", m.modelID)
+	if m.modelID != "glm-5.2" {
+		t.Fatalf("model must stay on glm-5.2 during the window, got %s", m.modelID)
 	}
 }
 
 func TestManualModelSwitchClearsFailover(t *testing.T) {
 	m := testModel(t)
 	m.provName, m.modelID = "mantle", "openai.gpt-5.5"
-	m.failoverFrom = &failoverOrigin{provider: "converse", model: "global.anthropic.claude-fable-5"}
+	m.failoverFrom = &failoverOrigin{provider: "converse", model: "us.anthropic.claude-opus-4-8"}
 	m.failoverLeft = 3
 	m.newProvider = func(provider, mdl string) (llm.Provider, error) {
 		return fakeProv{}, nil
@@ -1848,13 +1848,13 @@ func TestManualModelSwitchClearsFailover(t *testing.T) {
 func TestSaveMetaDuringFailoverKeepsOriginalModel(t *testing.T) {
 	m := testModel(t)
 	m.provName, m.modelID = "mantle", "openai.gpt-5.5"
-	m.failoverFrom = &failoverOrigin{provider: "converse", model: "global.anthropic.claude-fable-5"}
+	m.failoverFrom = &failoverOrigin{provider: "converse", model: "us.anthropic.claude-opus-4-8"}
 	m.saveMeta()
 	meta, ok := loadMetaForTest(t, m.sessionPath)
 	if !ok {
 		t.Fatal("meta not saved")
 	}
-	if meta.Model != "global.anthropic.claude-fable-5" {
+	if meta.Model != "us.anthropic.claude-opus-4-8" {
 		t.Fatalf("meta during failover should keep the original model, got %s", meta.Model)
 	}
 }
