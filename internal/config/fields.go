@@ -31,6 +31,8 @@ func Fields() []Field {
 		{Key: "judge_model", Desc: "pin the goal_achieved judge to a specific model — ANY provider works; empty = automatic cross-vendor judge (GPT judges Claude and vice versa)", Dynamic: "models"},
 		{Key: "dream_on_idle", Desc: "reflect recent sessions into memory when idle", Options: []string{"true", "false"}},
 		{Key: "idle_minutes", Desc: "minutes of idle before dreaming kicks in (default 5)"},
+		{Key: "front_window_min", Desc: "minutes a subtask runs in the foreground before it's promoted to the background (default 2; 0 = default)"},
+		{Key: "stall_idle_min", Desc: "minutes a subagent may go with no tool call before it's considered hung and stopped (default 2; 0 = default)"},
 		{Key: "route", Desc: "auto-router: per task, pick the cheapest capable model (/route toggles live)", Options: []string{"true", "false"}},
 		{Key: "route_providers", Desc: "providers the auto-router may roam across (space-separated); empty = stay on the current provider", Dynamic: "providers", Multi: true},
 		{Key: "observe", Desc: "structured activity log at ~/.eigen/observe (metadata only — no content)", Options: []string{"true", "false"}},

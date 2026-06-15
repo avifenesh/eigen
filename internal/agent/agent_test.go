@@ -817,24 +817,26 @@ func (hangingProvider) Complete(ctx context.Context, _ llm.Request) (*llm.Respon
 	return nil, ctx.Err()
 }
 
-// TestForegroundSubtaskTimesOut proves a hung foreground subtask self-aborts
-// instead of hanging the parent forever (the stall the user had to kill).
-func TestForegroundSubtaskTimesOut(t *testing.T) {
-	old := fgSubtaskTimeout
-	fgSubtaskTimeout = 150 * time.Millisecond
-	defer func() { fgSubtaskTimeout = old }()
+// TestForegroundSubtaskStallsWhenIdle proves a hung foreground subtask (no tool
+// activity) is killed by the idle-stall watchdog instead of hanging forever.
+func TestForegroundSubtaskStallsWhenIdle(t *testing.T) {
+	oldIdle, oldGrace, oldFront := stallIdle, heartbeatGrace, frontWindow
+	stallIdle = 120 * time.Millisecond
+	heartbeatGrace = 0
+	frontWindow = 10 * time.Second // long, so promotion doesn't pre-empt the stall
+	defer func() { stallIdle, heartbeatGrace, frontWindow = oldIdle, oldGrace, oldFront }()
 
 	a := &Agent{Provider: hangingProvider{}, Tools: mustReg(t), MaxSteps: 3}
 	start := time.Now()
 	_, err := a.SubtaskWith(context.Background(), "do a thing", SubtaskOpts{})
 	if err == nil {
-		t.Fatal("hung subtask should return an error, not hang")
+		t.Fatal("a hung (idle) subtask should return an error, not hang")
 	}
-	if !strings.Contains(err.Error(), "timed out") {
-		t.Fatalf("want a timeout error, got %v", err)
+	if !strings.Contains(err.Error(), "stalled") {
+		t.Fatalf("want a stall error, got %v", err)
 	}
 	if d := time.Since(start); d > 2*time.Second {
-		t.Fatalf("subtask should abort near its %s timeout, took %v", fgSubtaskTimeout, d)
+		t.Fatalf("subtask should abort near its %s idle window, took %v", stallIdle, d)
 	}
 }
 
@@ -884,5 +886,100 @@ func TestSteerInjectsBetweenToolRounds(t *testing.T) {
 		if strings.Contains(m.Text, "focus on X") {
 			t.Fatal("steer leaked into round 1 — should only appear from round 2 on")
 		}
+	}
+}
+
+// activeProvider calls a tool every step (steady activity), finishing after n
+// tool rounds — simulates a subtask doing real, ongoing work.
+type activeProvider struct {
+	step, rounds int
+}
+
+func (p *activeProvider) Name() string    { return "active" }
+func (p *activeProvider) ModelID() string { return "active" }
+func (p *activeProvider) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
+	p.step++
+	if p.step > p.rounds {
+		return &llm.Response{Text: "done"}, nil
+	}
+	return &llm.Response{ToolCalls: []llm.ToolCall{{ID: "c", Name: "work", Arguments: json.RawMessage(`{}`)}}}, nil
+}
+
+// TestSlowButActiveSubtaskSurvives proves a subtask making steady tool calls is
+// NOT killed even when it runs longer than stallIdle — only IDLE kills it.
+func TestSlowButActiveSubtaskSurvives(t *testing.T) {
+	oldIdle, oldGrace, oldFront := stallIdle, heartbeatGrace, frontWindow
+	stallIdle = 100 * time.Millisecond
+	heartbeatGrace = 0
+	frontWindow = 10 * time.Second
+	defer func() { stallIdle, heartbeatGrace, frontWindow = oldIdle, oldGrace, oldFront }()
+
+	// A tool that takes 40ms per call; 8 rounds = ~320ms total, well past the
+	// 100ms idle window — but each call resets the heartbeat, so no stall.
+	work := callTool("work")
+	work.ReadOnly = true
+	work.Run = func(context.Context, json.RawMessage) (string, error) {
+		time.Sleep(40 * time.Millisecond)
+		return "did work", nil
+	}
+	reg, err := tool.NewRegistry(work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &Agent{Provider: &activeProvider{rounds: 8}, Tools: reg, Perm: PermAuto}
+	out, err := a.SubtaskWith(context.Background(), "steady work", SubtaskOpts{})
+	if err != nil {
+		t.Fatalf("a steadily-active subtask must NOT be killed, got: %v", err)
+	}
+	if out != "done" {
+		t.Fatalf("want done, got %q", out)
+	}
+}
+
+// TestForegroundPromotesToBackground proves a still-active subtask that outruns
+// the front window is promoted to the background (returns a bg id, not blocked).
+func TestForegroundPromotesToBackground(t *testing.T) {
+	oldIdle, oldGrace, oldFront := stallIdle, heartbeatGrace, frontWindow
+	stallIdle = 10 * time.Second // long: don't stall an active child
+	heartbeatGrace = 0
+	frontWindow = 80 * time.Millisecond // short: promote quickly
+	defer func() { stallIdle, heartbeatGrace, frontWindow = oldIdle, oldGrace, oldFront }()
+
+	work := callTool("work")
+	work.ReadOnly = true
+	work.Run = func(context.Context, json.RawMessage) (string, error) {
+		time.Sleep(30 * time.Millisecond)
+		return "did work", nil
+	}
+	reg, err := tool.NewRegistry(work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &Agent{Provider: &activeProvider{rounds: 20}, Tools: reg, Perm: PermAuto, Bg: NewBgRegistry(t.TempDir())}
+	out, err := a.SubtaskWith(context.Background(), "long active work", SubtaskOpts{})
+	if err != nil {
+		t.Fatalf("promotion path should not error: %v", err)
+	}
+	if !strings.Contains(out, "moved to background") || !strings.Contains(out, "task_status") {
+		t.Fatalf("a subtask past the front window should report promotion to bg, got: %q", out)
+	}
+	// The bg task exists; wait for it to finish so the detached goroutine
+	// doesn't outlive the test's defer (and so we observe a clean terminal).
+	tasks := a.Bg.List()
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 background task after promotion, got %d", len(tasks))
+	}
+	id := tasks[0].ID
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		bt := a.Bg.Get(id)
+		if bt != nil && bt.Status != "running" {
+			break
+		}
+		if time.Now().After(deadline) {
+			_ = a.Bg // give up waiting; the activeProvider finishes fast anyway
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

@@ -51,6 +51,14 @@ type Config struct {
 	DreamOnIdle bool  `json:"dream_on_idle"`
 	IdleMinutes int   `json:"idle_minutes"`
 
+	// FrontWindowMin / StallIdleMin tune the subtask lifecycle: a foreground
+	// subtask runs inline for FrontWindowMin minutes before it's promoted to
+	// the background (if still active); a (sub)agent with no tool call for
+	// StallIdleMin minutes is considered hung and stopped. 0 = built-in default
+	// (2 min each).
+	FrontWindowMin int `json:"front_window_min,omitempty"`
+	StallIdleMin   int `json:"stall_idle_min,omitempty"`
+
 	// LocalBackground routes BACKGROUND chores (session titling, dreaming,
 	// compaction summaries, skill scans, feed suggestions) to a LOCAL model
 	// (EIGEN_LLAMA_BASE_URL) when it's up AND ready to serve — saving the
@@ -188,6 +196,18 @@ func Set(c *Config, key, value string) error {
 			return fmt.Errorf("idle_minutes must be a non-negative integer")
 		}
 		c.IdleMinutes = n
+	case "front_window_min":
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 0 {
+			return fmt.Errorf("front_window_min must be a non-negative integer (minutes; 0 = default)")
+		}
+		c.FrontWindowMin = n
+	case "stall_idle_min":
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 0 {
+			return fmt.Errorf("stall_idle_min must be a non-negative integer (minutes; 0 = default)")
+		}
+		c.StallIdleMin = n
 	case "route":
 		b, err := strconv.ParseBool(value)
 		if err != nil {
@@ -266,6 +286,8 @@ func View(c Config) string {
 	fmt.Fprintf(&b, "%-14s = %s\n", "judge_model", val(c.JudgeModel))
 	fmt.Fprintf(&b, "%-14s = %t\n", "dream_on_idle", c.DreamOnIdle)
 	fmt.Fprintf(&b, "%-14s = %d\n", "idle_minutes", c.IdleMinutes)
+	fmt.Fprintf(&b, "%-14s = %d\n", "front_window_min", c.FrontWindowMin)
+	fmt.Fprintf(&b, "%-14s = %d\n", "stall_idle_min", c.StallIdleMin)
 	fmt.Fprintf(&b, "%-14s = %t\n", "route", c.Route)
 	rp := "(current provider only)"
 	if len(c.RouteProviders) > 0 {
@@ -316,6 +338,10 @@ func Get(c Config, key string) string {
 		return strconv.FormatBool(c.DreamOnIdle)
 	case "idle_minutes":
 		return strconv.Itoa(c.IdleMinutes)
+	case "front_window_min":
+		return strconv.Itoa(c.FrontWindowMin)
+	case "stall_idle_min":
+		return strconv.Itoa(c.StallIdleMin)
 	case "route":
 		return strconv.FormatBool(c.Route)
 	case "route_providers":

@@ -122,27 +122,39 @@ func (a *Agent) TaskGroup(ctx context.Context, subs []GroupSubtask, workers int,
 				}
 			}()
 			start := time.Now()
-			cctx, ccancel := context.WithTimeout(gctx, groupChildTimeout)
-			defer ccancel()
-			sub, where := a.subAgent(cctx, s.Task, SubtaskOpts{
+			sub, where := a.subAgent(gctx, s.Task, SubtaskOpts{
 				Kind: s.Kind, Difficulty: s.Difficulty, Model: s.Model, Role: s.Role,
 			})
-			out, err := sub.NewSession().Send(cctx, s.Task)
+			// Run with idle-stall detection + front-window→background promotion
+			// (a child still working past frontWindow is moved to the bg so the
+			// group doesn't block on it; a child idle past stallIdle is killed).
+			r := a.runChild(gctx, childRun{task: s.Task, sub: sub, where: where, opts: SubtaskOpts{
+				Kind: s.Kind, Difficulty: s.Difficulty, Model: s.Model, Role: s.Role,
+			}, depth: depth})
+			out, err, esc := r.out, r.err, where
+			if r.promoted != "" {
+				results[i] = childResult{idx: i, role: s.Role, where: where, result: "still working past " + frontWindow.String() + " → moved to background " + r.promoted + " (task_status " + r.promoted + " to collect)", dur: time.Since(start)}
+				return
+			}
 			// Escalation (bounded, one step): a HARD error (not cancellation,
 			// not a stated model override — the orchestrator chose that) gets
 			// ONE retry on the next difficulty tier up, which the router maps
 			// to a stronger model. No text heuristics (fragile/injectable);
 			// only a real error triggers it.
-			esc := where
 			if err != nil && s.Model == "" && gctx.Err() == nil && !isCanceled(err) {
 				if up := escalateDifficulty(s.Difficulty); up != s.Difficulty {
 					retry := s
 					retry.Difficulty = up
-					rsub, rwhere := a.subAgent(cctx, retry.Task, SubtaskOpts{
+					rsub, rwhere := a.subAgent(gctx, retry.Task, SubtaskOpts{
 						Kind: retry.Kind, Difficulty: retry.Difficulty, Model: retry.Model, Role: retry.Role,
 					})
-					if rout, rerr := rsub.NewSession().Send(cctx, retry.Task); rerr == nil {
-						out, err, esc = rout, nil, "escalated → "+rwhere
+					rr := a.runChild(gctx, childRun{task: retry.Task, sub: rsub, where: rwhere, opts: SubtaskOpts{
+						Kind: retry.Kind, Difficulty: retry.Difficulty, Model: retry.Model, Role: retry.Role,
+					}, depth: depth})
+					if rr.promoted != "" {
+						out, err, esc = "still working past "+frontWindow.String()+" → moved to background "+rr.promoted, nil, "escalated → "+rwhere
+					} else if rr.err == nil {
+						out, err, esc = rr.out, nil, "escalated → "+rwhere
 					}
 				}
 			}

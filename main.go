@@ -114,6 +114,9 @@ func main() {
 		merged := append(cfg.SkillsDirs, splitNonEmpty(os.Getenv("EIGEN_SKILLS_DIRS"))...)
 		os.Setenv("EIGEN_SKILLS_DIRS", strings.Join(merged, ":"))
 	}
+	// Subtask lifecycle windows (config; 0 = built-in 2-min defaults). Process-
+	// global in the agent package; set once at startup.
+	agent.SetLifecycle(cfg.FrontWindowMin, cfg.StallIdleMin)
 
 	model := flag.String("model", cfg.Model, "model id, or provider:id ref (e.g. mantle:us.openai.gpt-5.5; default: openai.gpt-5.5)")
 	provider := flag.String("provider", firstNonEmpty(os.Getenv("EIGEN_PROVIDER"), cfg.Provider, "mantle"), "provider: mantle|llama|converse|anthropic|grok|glm (usually inferred from the model)")

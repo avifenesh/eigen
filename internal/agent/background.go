@@ -278,30 +278,7 @@ func (a *Agent) SubtaskBackground(ctx context.Context, task string, opts Subtask
 	// update the durable record — bounded by step count (never text deltas),
 	// so the tasks panel can show "step 4 · bash · 40s" live.
 	bg := a.Bg
-	sub.OnEvent = func(e Event) {
-		switch e.Kind {
-		case EventToolStart:
-			bg.update(id, func(t *BgTask) {
-				t.Steps++
-				t.LastTool = e.ToolName
-				t.ToolStarted = time.Now()
-			})
-		case EventToolResult:
-			bg.update(id, func(t *BgTask) {
-				t.LastTool = ""
-				t.ToolStarted = time.Time{}
-			})
-		case EventNote:
-			bg.update(id, func(t *BgTask) { t.LastNote = sanitizeNote(e.Text) })
-		case EventDone:
-			if e.InTokens > 0 || e.OutTokens > 0 {
-				bg.update(id, func(t *BgTask) {
-					t.InTokens += e.InTokens
-					t.OutTokens += e.OutTokens
-				})
-			}
-		}
-	}
+	sub.OnEvent = bgEventSink(bg, id, nil)
 
 	go func() {
 		// This is deliberately detached from the caller's context: interrupting the
@@ -417,4 +394,106 @@ func truncateForNote(s string) string {
 		return s[:160] + "…"
 	}
 	return s
+}
+
+// bgEventSink builds the OnEvent sink that mirrors a background/promoted task's
+// progress into its durable BgTask record (bounded — never text deltas), then
+// calls chain (if any). Shared by SubtaskBackground and promoteRunning.
+func bgEventSink(bg *BgRegistry, id string, chain EventSink) EventSink {
+	return func(e Event) {
+		switch e.Kind {
+		case EventToolStart:
+			bg.update(id, func(t *BgTask) {
+				t.Steps++
+				t.LastTool = e.ToolName
+				t.ToolStarted = time.Now()
+			})
+		case EventToolResult:
+			bg.update(id, func(t *BgTask) {
+				t.LastTool = ""
+				t.ToolStarted = time.Time{}
+			})
+		case EventNote:
+			bg.update(id, func(t *BgTask) { t.LastNote = sanitizeNote(e.Text) })
+		case EventDone:
+			if e.InTokens > 0 || e.OutTokens > 0 {
+				bg.update(id, func(t *BgTask) {
+					t.InTokens += e.InTokens
+					t.OutTokens += e.OutTokens
+				})
+			}
+		}
+		if chain != nil {
+			chain(e)
+		}
+	}
+}
+
+// promoteRunning adopts an ALREADY-RUNNING foreground child into the background
+// registry: the child keeps running on its existing context (cctx) and result
+// channel (ch); this records a BgTask, rewires the child's event sink to update
+// it, installs the cancel-marker watcher + idle-stall, and spawns a collector
+// that records the final result and emits the completion note. Returns the new
+// task id, or "" when there is no registry (caller falls back to blocking).
+//
+// This is the foreground→background PROMOTION: a subtask that outran the front
+// window but is still active is handed off so the orchestrator regains control.
+func (a *Agent) promoteRunning(cctx context.Context, cancel context.CancelFunc, c childRun, rl *relay, ch <-chan childDone, stalled func() bool, idle, front time.Duration) string {
+	if a.Bg == nil {
+		return ""
+	}
+	id := a.Bg.next()
+	host, _ := os.Hostname()
+	rec := &BgTask{
+		ID: id, Task: c.task, Where: c.where,
+		Kind: c.opts.Kind, Difficulty: c.opts.Difficulty, Model: c.opts.Model,
+		Status: "running", Started: time.Now(),
+		Pid: os.Getpid(), Host: host,
+		LastNote: "promoted from foreground (still working past " + front.String() + ")",
+	}
+	if dir := a.Bg.dir; dir != "" {
+		os.Remove(filepath.Join(dir, id+".cancel")) // a stale marker must not kill a fresh task
+		tpath := filepath.Join(dir, id+".transcript.jsonl")
+		rl.setPersist(func(msgs []llm.Message) { writeTranscript(tpath, msgs) })
+	}
+	a.Bg.put(rec)
+	// Re-point the relay (NOT the agent fields — the run goroutine reads those
+	// concurrently) so the child's events now update THIS bg record.
+	rl.setEvent(bgEventSink(a.Bg, id, nil))
+	// Honor a cross-process cancel marker for the promoted task.
+	canceled := watchCancelMarker(cctx, cancel, a.Bg, id)
+
+	bg := a.Bg
+	go func() {
+		d := <-ch // the same goroutine started in runChild is still running
+		cancel()
+		status := "done"
+		bg.update(id, func(t *BgTask) {
+			t.Finished = time.Now()
+			switch {
+			case d.err != nil && canceled():
+				t.Status, t.Error = "canceled", ""
+			case d.err != nil && stalled():
+				t.Status, t.Error = "error", "stalled (no tool activity for "+idle.String()+")"
+			case d.err != nil:
+				t.Status, t.Error = "error", d.err.Error()
+			default:
+				t.Status, t.Result = "done", d.out
+			}
+			status = t.Status
+		})
+		if dir := bg.dir; dir != "" {
+			os.Remove(filepath.Join(dir, id+".cancel"))
+		}
+		note := "background task " + id + " finished"
+		switch status {
+		case "error":
+			note = "background task " + id + " FAILED: " + truncateForNote(d.err.Error())
+		case "canceled":
+			note = "background task " + id + " canceled"
+		}
+		a.emit(Event{Kind: EventNote, Text: note + " — task_status " + id + " to collect"})
+	}()
+	a.emit(Event{Kind: EventNote, Text: "subtask still working past " + front.String() + " → moved to background " + id + " (task_status " + id + " to collect; you can keep working)"})
+	return id
 }

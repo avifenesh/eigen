@@ -357,16 +357,6 @@ type subtaskDepthKey struct{}
 // maxSubtaskDepth caps how deeply subtasks may nest.
 const maxSubtaskDepth = 2
 
-// fgSubtaskTimeout bounds a FOREGROUND subtask. Without it a hung subtask LLM
-// call (a vision read the gateway never answers, a provider that stalls) or a
-// pathological agentic loop would hang the parent turn until the user kills the
-// whole agent. With it, a stuck subtask self-aborts with a clear error the
-// parent can recover from, while still leaving ample room for a legitimately
-// long agentic subtask. (Background tasks use the larger bgMaxRuntime.) The
-// parent's own ctx cancel (interrupt) still aborts sooner. A var so tests can
-// shrink it.
-var fgSubtaskTimeout = 10 * time.Minute
-
 // SubtaskOpts shapes one delegation: routing hints (kind/difficulty), an
 // explicit Model override (the orchestrator names a specific model — beats
 // routing entirely), and ModelProvider, the injected constructor that turns a
@@ -388,7 +378,12 @@ func (a *Agent) Subtask(ctx context.Context, task, kind, difficulty string) (str
 	return a.SubtaskWith(ctx, task, SubtaskOpts{Kind: kind, Difficulty: difficulty})
 }
 
-// SubtaskWith is Subtask with full options (explicit model override).
+// SubtaskWith is Subtask with full options (explicit model override). It runs
+// the subtask in the FOREGROUND for up to frontWindow; if the subtask is still
+// active past that, it's PROMOTED to the background (the orchestrator gets a
+// task id and continues, and can task_status / cancel it). A subtask that goes
+// idle (no tool call for stallIdle) is cancelled as hung. The parent's ctx
+// cancel (interrupt) still aborts it sooner.
 func (a *Agent) SubtaskWith(ctx context.Context, task string, opts SubtaskOpts) (string, error) {
 	depth, _ := ctx.Value(subtaskDepthKey{}).(int)
 	if depth >= maxSubtaskDepth {
@@ -398,17 +393,89 @@ func (a *Agent) SubtaskWith(ctx context.Context, task string, opts SubtaskOpts) 
 	if where != "" {
 		a.emit(Event{Kind: EventNote, Text: "task → " + where})
 	}
-	ctx = context.WithValue(ctx, subtaskDepthKey{}, depth+1)
-	// Bound the subtask so a hung LLM call or runaway loop can't stall the
-	// parent turn forever (the user shouldn't have to kill the whole agent).
-	// Parent cancel (interrupt) still aborts sooner via this derived ctx.
-	ctx, cancel := context.WithTimeout(ctx, fgSubtaskTimeout)
-	defer cancel()
-	out, err := sub.NewSession().Send(ctx, task)
-	if err != nil && ctx.Err() == context.DeadlineExceeded {
-		return "", fmt.Errorf("subtask timed out after %s (no result); try a smaller scope or background it", fgSubtaskTimeout)
+	r := a.runChild(ctx, childRun{task: task, sub: sub, where: where, opts: opts, depth: depth})
+	if r.promoted != "" {
+		return "subtask still working past " + frontWindow.String() + " → moved to background as " + r.promoted +
+			". Keep working on other things; check progress with task_status " + r.promoted +
+			", and collect the result when its finish note arrives.", nil
 	}
-	return out, err
+	return r.out, r.err
+}
+
+// childRun describes one foreground child to runChild.
+type childRun struct {
+	task  string
+	sub   *Agent
+	where string
+	opts  SubtaskOpts
+	depth int
+}
+
+// childResultFG is the outcome of a foreground child: a result, an error, or a
+// promotion (the child outran the front window and is now a background task).
+type childResultFG struct {
+	out      string
+	err      error
+	promoted string // bg task id when promoted (out/err empty)
+}
+
+// childDone is a foreground child's terminal result, sent on the run channel.
+type childDone struct {
+	out string
+	err error
+}
+
+// runChild runs a child subtask in the foreground with idle-stall detection and
+// front-window→background promotion. Shared by Subtask and the group fan-out.
+func (a *Agent) runChild(ctx context.Context, c childRun) childResultFG {
+	// Snapshot the tunables once at run start so a later config change can't
+	// race this run's watchdog.
+	idle, front := stallIdle, frontWindow
+	cctx := context.WithValue(ctx, subtaskDepthKey{}, c.depth+1)
+	cctx, cancel := context.WithCancel(cctx)
+
+	hb := newHeartbeat()
+	// Install a settable relay ONCE so promotion can re-point the sinks without
+	// racing the run goroutine (which reads OnEvent/Persist mid-drive). The
+	// child's original OnEvent (e.g. group-report capture) chains through it.
+	rl := &relay{onEvent: c.sub.OnEvent}
+	c.sub.OnEvent = activitySink(hb, rl.emit)
+	c.sub.Persist = rl.save
+	stalled := watchStall(cctx, hb, cancel, idle, heartbeatGrace)
+
+	ch := make(chan childDone, 1)
+	sess := c.sub.NewSession()
+	go func() {
+		out, err := sess.Send(cctx, c.task)
+		ch <- childDone{out, err}
+	}()
+
+	select {
+	case d := <-ch:
+		cancel()
+		if d.err != nil && stalled() {
+			return childResultFG{err: fmt.Errorf("subtask stalled (no tool activity for %s) and was stopped; try a smaller scope or background it", idle)}
+		}
+		if d.err != nil && cctx.Err() == context.Canceled && ctx.Err() != nil {
+			return childResultFG{err: ctx.Err()} // parent interrupted
+		}
+		return childResultFG{out: d.out, err: d.err}
+	case <-time.After(front):
+		// Still working past the front window → promote to background. The
+		// child keeps running on cctx (NOT cancelled); the bg registry adopts
+		// the in-flight goroutine so the orchestrator can task_status/cancel.
+		id := a.promoteRunning(cctx, cancel, c, rl, ch, stalled, idle, front)
+		if id == "" {
+			// No bg registry: fall back to blocking (idle-stall still applies).
+			d := <-ch
+			cancel()
+			if d.err != nil && stalled() {
+				return childResultFG{err: fmt.Errorf("subtask stalled (no tool activity for %s) and was stopped", idle)}
+			}
+			return childResultFG{out: d.out, err: d.err}
+		}
+		return childResultFG{promoted: id}
+	}
 }
 
 // subAgent constructs the sub-agent for one delegation and reports where it
