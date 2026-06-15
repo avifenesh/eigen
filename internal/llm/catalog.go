@@ -65,28 +65,16 @@ var Catalog = []ModelInfo{
 	// answered "red" through the mantle gateway (gpt-5.5 needed a retry past a
 	// transient 500; tiny 8x8 images can confuse the model — send real sizes).
 	// "openai.gpt-5" itself 404s on mantle now (kept for non-mantle aliasing).
-	{ID: "openai.gpt-5.5", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, Vision: true},
+	{ID: "openai.gpt-5.5", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "medium", EffortLevels: []string{"none", "low", "medium"}, Vision: true},
 	{ID: "openai.gpt-5.4", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, Vision: true},
 	{ID: "openai.gpt-5", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, Vision: true},
 
 	// Bedrock Converse (Anthropic Claude). Prompt caching + 1M context (beta) +
 	// extended thinking. Default 200k window; 1M when the beta is enabled.
 	//
-	// claude-fable-5 is Anthropic's flagship on Bedrock. It is served via the
-	// GLOBAL inference profile (global.anthropic.claude-fable-5 — there is no
-	// us. profile) and requires a non-default data-retention mode enabled on
-	// the AWS account. Uses the adaptive thinking API (Effort) like opus-4-8,
-	// prompt caching, and the 1M-context beta (on by default; force off with
-	// EIGEN_CONVERSE_1M=0). Kept available but NOT the default for now;
-	// eigen's default is us.anthropic.claude-opus-4-8.
-	{ID: "global.anthropic.claude-fable-5", Provider: "converse", ContextWindow: 200000,
-		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
-	// us. inference profile for fable-5: requests route (the model answers —
-	// it 400s on the WRONG thinking API), so it must carry the same adaptive
-	// capabilities or effort falls back to thinking.type=enabled and the
-	// model rejects every call.
-	{ID: "us.anthropic.claude-fable-5", Provider: "converse", ContextWindow: 200000,
-		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
+	// claude-fable-5 has been REMOVED (it 500'd persistently on the Bedrock
+	// gateway and the user dropped it). eigen's default is
+	// us.anthropic.claude-opus-4-8.
 	{ID: "us.anthropic.claude-opus-4-8", Provider: "converse", ContextWindow: 200000,
 		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
 	{ID: "us.anthropic.claude-sonnet-4-6", Provider: "converse", ContextWindow: 200000,

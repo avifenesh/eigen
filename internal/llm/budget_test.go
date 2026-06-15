@@ -47,14 +47,14 @@ func TestContextBudget(t *testing.T) {
 }
 
 func TestContextBudget1MClampedByUserSetting(t *testing.T) {
-	// fable-5 has a 1M window (beta default on) → auto = 850k. A user ceiling of
+	// opus-4-8 has a 1M window (beta default on) → auto = 850k. A user ceiling of
 	// 200k (the Bedrock-TPM guard, now an explicit setting) must win.
-	const fable = "global.anthropic.claude-fable-5"
-	auto := ContextBudget(0, fable, 0)
+	const m = "us.anthropic.claude-opus-4-8"
+	auto := ContextBudget(0, m, 0)
 	if auto < 800000 {
 		t.Fatalf("expected ~850k auto budget for a 1M model, got %d (1M beta off?)", auto)
 	}
-	if got := ContextBudget(200000, fable, 0); got != 200000 {
+	if got := ContextBudget(200000, m, 0); got != 200000 {
 		t.Errorf("user 200k ceiling on a 1M model: want 200000, got %d", got)
 	}
 }

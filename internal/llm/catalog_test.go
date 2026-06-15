@@ -70,14 +70,9 @@ func TestLookupCapabilities(t *testing.T) {
 	if !ok || !o.Cache || !o.Context1M {
 		t.Fatalf("opus-4-8 capabilities wrong: %+v (ok=%v)", o, ok)
 	}
-	// Fable 5 (default flagship): caching + 1M + adaptive thinking (Effort set).
-	f, ok := Lookup("global.anthropic.claude-fable-5")
-	if !ok || !f.Cache || !f.Context1M || f.Effort == "" {
-		t.Fatalf("fable-5 capabilities wrong: %+v (ok=%v)", f, ok)
-	}
-	// Mantle GPT: effort-style reasoning, no cache/1M.
+	// Mantle GPT: effort-style reasoning (capped to medium), no cache/1M.
 	g, ok := Lookup("openai.gpt-5.5")
-	if !ok || !g.Reasoning || g.Effort != "high" || g.Cache || g.Context1M {
+	if !ok || !g.Reasoning || g.Effort != "medium" || g.Cache || g.Context1M {
 		t.Fatalf("gpt-5.5 capabilities wrong: %+v (ok=%v)", g, ok)
 	}
 	// llama local present.

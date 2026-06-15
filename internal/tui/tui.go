@@ -713,7 +713,7 @@ func (m *model) submit(task string) tea.Cmd {
 	m.idleGen++ // invalidate any pending idle-dream timer
 
 	// Routing is ORCHESTRATOR-DRIVEN, not static: the top-level turn always
-	// stays on the user's chosen model (fable by default), which acts as the
+	// stays on the user's chosen model (opus by default), which acts as the
 	// orchestrator — it decides per delegation (task tool kind/difficulty)
 	// what routes where. The ONE top-level exception is a capability need: an
 	// image attached while the active model lacks vision forces a route to a

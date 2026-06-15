@@ -71,7 +71,7 @@ func TestRefRendersOneField(t *testing.T) {
 	if got := Ref("mantle", "us.anthropic.claude-opus-4-8"); got != "us.anthropic.claude-opus-4-8" {
 		t.Fatalf("catalog id should render bare, got %q", got)
 	}
-	if got := Ref("converse", "global.anthropic.claude-fable-5"); got != "global.anthropic.claude-fable-5" {
+	if got := Ref("converse", "us.anthropic.claude-opus-4-8"); got != "us.anthropic.claude-opus-4-8" {
 		t.Fatalf("got %q", got)
 	}
 	// Unknown ids: the provider field is the only signal → tagged.
@@ -99,11 +99,10 @@ func TestModelEffortLevelsPerCatalog(t *testing.T) {
 		model string
 		want  []string
 	}{
-		// mantle GPT (verified live): none|low..xhigh — minimal and max rejected
-		{"openai.gpt-5.5", []string{"none", "low", "medium", "high", "xhigh"}},
-		// Anthropic adaptive fable/opus on Bedrock (verified live):
+		// mantle GPT capped to medium (user policy): none|low|medium
+		{"openai.gpt-5.5", []string{"none", "low", "medium"}},
+		// Anthropic adaptive opus on Bedrock (verified live):
 		// low..xhigh|max — auto and minimal rejected
-		{"global.anthropic.claude-fable-5", []string{"low", "medium", "high", "xhigh", "max"}},
 		{"us.anthropic.claude-opus-4-8", []string{"low", "medium", "high", "xhigh", "max"}},
 		// budget-style sonnet: off (thinking disabled) through xhigh budgets
 		{"us.anthropic.claude-sonnet-4-6", []string{"off", "low", "medium", "high", "xhigh"}},
@@ -150,22 +149,25 @@ func TestSetEffortRespectsModelCatalog(t *testing.T) {
 	if !m.SetEffort("none") {
 		t.Error("gpt-5.5 must accept none")
 	}
-	if !m.SetEffort("xhigh") {
-		t.Error("gpt-5.5 must accept xhigh")
+	if m.SetEffort("xhigh") {
+		t.Error("gpt-5.5 must reject xhigh (capped to medium)")
 	}
-	// Adaptive fable (verified live): max accepted, auto/minimal rejected.
-	c := &Converse{Model: "global.anthropic.claude-fable-5"}
+	if !m.SetEffort("medium") {
+		t.Error("gpt-5.5 must accept medium")
+	}
+	// Adaptive opus (verified live): max accepted, auto/minimal rejected.
+	c := &Converse{Model: "us.anthropic.claude-opus-4-8"}
 	if !c.SetEffort("max") {
-		t.Error("fable-5 must accept max")
+		t.Error("opus-4-8 must accept max")
 	}
 	if c.Effort() != "max" {
-		t.Errorf("fable-5 effort = %q, want max", c.Effort())
+		t.Errorf("opus-4-8 effort = %q, want max", c.Effort())
 	}
 	if c.SetEffort("auto") {
-		t.Error("fable-5 must reject auto (API rejects it)")
+		t.Error("opus-4-8 must reject auto (API rejects it)")
 	}
 	if c.SetEffort("minimal") {
-		t.Error("fable-5 must reject minimal")
+		t.Error("opus-4-8 must reject minimal")
 	}
 	// Budget sonnet: off zeroes the thinking budget; max rejected.
 	s := &Converse{Model: "us.anthropic.claude-sonnet-4-6"}

@@ -203,8 +203,10 @@ from a cross-vendor review; channel undecided.
 - **Commit** via `git commit -F <file>` when the message has backticks/`$()`
   (shell substitution bites). Commit often; push/deploy/delete need explicit OK.
 - **Models (user-set):** default `us.anthropic.claude-opus-4-8` effort max;
-  failover `openai.gpt-5.5` → `us.anthropic.claude-sonnet-4-6`; native Anthropic
-  removed (Bedrock-only). glm flagship `glm-5.2` (1M ctx).
+  failover `openai.gpt-5.5` → `us.anthropic.claude-sonnet-4-6`. fable-5 REMOVED
+  (Bedrock 500s); native Anthropic removed (Bedrock-only). gpt-5.5 capped to
+  MEDIUM effort. Routing: opus + gpt-5.x = Tier-3/med; `glm-5.2` (1M ctx) sits
+  in Tier-2 ABOVE `sonnet-4-6`.
 - **Finish each tier:** ship items or mark `[~] DEFERRED — why` (not a bare `[ ]`).
 
 ## Notes / grounding

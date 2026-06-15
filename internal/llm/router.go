@@ -20,7 +20,7 @@ const (
 //	easy     "well-scoped, needs iteration, little reasoning"  → tier 2 (sonnet)
 //	medium   "not fully scoped, reasoning, maybe long-running" → tier 3 (opus)
 //	hard     "not scoped, reasoning, long-running"             → the DEFAULT model
-//	         (whatever is currently set — fable today, opus if switched)
+//	         (whatever is currently set — opus by default)
 type Difficulty int
 
 const (
@@ -66,7 +66,7 @@ type RouteRequest struct {
 
 // Route picks the model for req per the user's quality-tier ladder:
 //  1. HARD general tasks are NOT routed: they keep the user's current default
-//     model (fable today, opus if that is what is set) — Route returns no
+//     model (opus by default) — Route returns no
 //     choice and the caller stays put. Hard search/vision tasks still route,
 //     because the default may lack the capability.
 //  2. Keep only CAPABLE candidates (required search/vision flag, big-enough

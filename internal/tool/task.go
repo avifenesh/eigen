@@ -47,7 +47,7 @@ type TaskGroupRun func(ctx context.Context, subs []GroupSubtaskArg, workers int,
 func Task(run TaskRun) Definition {
 	return Definition{
 		Name:        "task",
-		Description: "Delegate a self-contained subtask to a fresh agent context. YOU are the orchestrator: state kind (general|search|vision|social) and difficulty (trivial|easy|medium|hard) when delegating so the subtask runs on the best-fit model. Set model to override routing and force a specific model/ref (e.g. grok-code-fast-1, mantle:openai.gpt-5.5, ant:claude-fable-5). Set background=true to start it asynchronously; it will write jsonl under ~/.eigen/tasks and you can later call task_status to collect the result.",
+		Description: "Delegate a self-contained subtask to a fresh agent context. YOU are the orchestrator: state kind (general|search|vision|social) and difficulty (trivial|easy|medium|hard) when delegating so the subtask runs on the best-fit model. Set model to override routing and force a specific model/ref (e.g. grok-code-fast-1, mantle:openai.gpt-5.5, glm-5.2). Set background=true to start it asynchronously; it will write jsonl under ~/.eigen/tasks and you can later call task_status to collect the result.",
 		ReadOnly:    true,
 		Parameters: json.RawMessage(`{
   "type": "object",

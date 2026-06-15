@@ -37,7 +37,7 @@ func (m *model) cycleEffort() tea.Cmd {
 		m.note("the current model does not support a reasoning-effort setting")
 		return nil
 	}
-	// Cycle within the CURRENT MODEL's level set (per-catalog: fable/opus are
+	// Cycle within the CURRENT MODEL's level set (per-catalog: opus is
 	// adaptive auto|low|medium|high, mantle GPT low..xhigh, sonnet off..high).
 	levels := m.effortLevels()
 	next := cur

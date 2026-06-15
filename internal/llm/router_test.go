@@ -68,15 +68,15 @@ func TestRouteHardSearchStillRoutes(t *testing.T) {
 }
 
 func TestRouteClimbsWhenTargetTierAbsent(t *testing.T) {
-	// Medium wants tier 3 (opus); none present → climb to the next tier up
-	// (frontier), never down to tier-1.
+	// Medium wants tier 3 (med); with only a tier-1 + a tier-3 candidate, it
+	// picks the tier-3 model (opus), never down to tier-1.
 	got, _ := Route(RouteRequest{
 		Kind:       TaskGeneral,
 		Difficulty: DiffMedium,
-		Candidates: []string{"grok-build", "global.anthropic.claude-fable-5"},
+		Candidates: []string{"grok-build", "us.anthropic.claude-opus-4-8"},
 	})
-	if got != "global.anthropic.claude-fable-5" {
-		t.Fatalf("with no opus, medium should climb to frontier, got %s", got)
+	if got != "us.anthropic.claude-opus-4-8" {
+		t.Fatalf("with only a tier-1 + a tier-med candidate, medium picks tier-med, got %s", got)
 	}
 }
 

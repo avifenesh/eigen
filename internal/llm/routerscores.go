@@ -9,9 +9,9 @@ package llm
 // The cheap, fast models (grok / composer / glm) are trusted ONLY for simple
 // work, regardless of their nominal benchmark scores. Tiers, per the user:
 //
-//	Tier 1 (simple)     grok, composer, glm, haiku, local
-//	Tier 2 (simple-med) sonnet
-//	Tier 3 (med)        fable, opus, gpt-5.x — all hard/frontier work lands here
+//	Tier 1 (simple)     grok, composer, glm (≤5.1), haiku, local
+//	Tier 2 (simple-med) sonnet, glm-5.2
+//	Tier 3 (med)        opus, gpt-5.x — all hard/frontier work lands here
 
 // Tier is a model's quality class (1 simple … 4 frontier). Higher = stronger.
 type Tier int
@@ -20,7 +20,7 @@ const (
 	TierSimple    Tier = 1 // grok/composer/glm/haiku/local — simple tasks
 	TierSimpleMed Tier = 2 // sonnet
 	TierMed       Tier = 3 // opus
-	TierFrontier  Tier = 4 // fable / gpt-5.x
+	TierFrontier  Tier = 4 // reserved: unknown-model fallback target
 )
 
 // RouterScore is a model's routing profile: its quality tier, a within-tier
@@ -45,19 +45,18 @@ type RouterScore struct {
 // user's TRUST (grok/glm are "simple only" even at high benchmark scores), not
 // leaderboard numbers. Tune freely.
 var routerScores = map[string]RouterScore{
-	// Tier 3 — med (fable + opus + GPT family). This is the tier for hard work.
-	// fable-5 is the strongest model here (Rank:4). gpt-5.5 is more strict/
-	// correct than opus for general tasks (Strict); opus is better for frontend/
-	// design (Design). Rank orders quality within the tier so a newer model
-	// always beats an older one regardless of which account it lives on.
-	"global.anthropic.claude-fable-5": {Tier: TierMed, Rank: 4, Speed: 45, Design: true},
-	"openai.gpt-5.5":                  {Tier: TierMed, Rank: 3, Speed: 50, Strict: true},
-	"openai.gpt-5.4":                  {Tier: TierMed, Rank: 2, Speed: 58},
-	"openai.gpt-5":                    {Tier: TierMed, Rank: 1, Speed: 60},
-	"us.anthropic.claude-opus-4-8":    {Tier: TierMed, Rank: 3, Speed: 48, Design: true},
+	// Tier 3 — med (opus + GPT family). This is the tier for hard work.
+	// gpt-5.5 is more strict/correct than opus for general tasks (Strict);
+	// opus is better for frontend/design (Design). Rank orders quality within
+	// the tier so a newer model always beats an older one.
+	"openai.gpt-5.5":               {Tier: TierMed, Rank: 3, Speed: 50, Strict: true},
+	"openai.gpt-5.4":               {Tier: TierMed, Rank: 2, Speed: 58},
+	"openai.gpt-5":                 {Tier: TierMed, Rank: 1, Speed: 60},
+	"us.anthropic.claude-opus-4-8": {Tier: TierMed, Rank: 4, Speed: 48, Design: true},
 
-	// Tier 2 — simple-med (sonnet). 4-6 is the newest sonnet; quality first,
-	// so it wins even on Bedrock.
+	// Tier 2 — simple-med (sonnet + glm-5.2). glm-5.2 is the user's flagship GLM
+	// and ranks ABOVE sonnet-4-6 here (Rank 4 > 3) — it wins a simple-med tie.
+	"glm-5.2":                        {Tier: TierSimpleMed, Rank: 4, Speed: 76},
 	"us.anthropic.claude-sonnet-4-6": {Tier: TierSimpleMed, Rank: 3, Speed: 74},
 	"us.anthropic.claude-3-5-sonnet": {Tier: TierSimpleMed, Rank: 1, Speed: 74},
 
@@ -68,7 +67,6 @@ var routerScores = map[string]RouterScore{
 	"grok-composer-2.5-fast": {Tier: TierSimple, Speed: 94},
 	"grok-4":                 {Tier: TierSimple, Speed: 62},
 	"grok-code-fast-1":       {Tier: TierSimple, Speed: 92},
-	"glm-5.2":                {Tier: TierSimple, Speed: 76},
 	"glm-5.1":                {Tier: TierSimple, Speed: 76},
 	"glm-5":                  {Tier: TierSimple, Speed: 76},
 	"glm-5-turbo":            {Tier: TierSimple, Speed: 90},
