@@ -371,3 +371,38 @@ func (s *Store) RawSummaries(limit int) []string {
 	}
 	return out
 }
+
+// appendRollout folds a rollout summary's durable content into MEMORY.md. The
+// raw markdown (headings + bullets) is appended verbatim under a dated divider;
+// consolidation later dedups + structures it. Secrets are already redacted by
+// stage1's prompt, but Redact is applied defensively.
+func (s *Store) appendRollout(body string) error {
+	if s == nil {
+		return fmt.Errorf("memory unavailable")
+	}
+	if err := s.ensureDir(); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(s.MemoryPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = fmt.Fprintf(f, "\n<!-- rollout %s -->\n%s\n", time.Now().Format("2006-01-02"), strings.TrimSpace(Redact(body)))
+	return err
+}
+
+// writeSummary atomically writes the small injected SUMMARY.md.
+func (s *Store) writeSummary(content string) error {
+	if s == nil {
+		return fmt.Errorf("memory unavailable")
+	}
+	if err := s.ensureDir(); err != nil {
+		return err
+	}
+	tmp := s.SummaryPath() + ".tmp"
+	if err := os.WriteFile(tmp, []byte(content), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, s.SummaryPath())
+}

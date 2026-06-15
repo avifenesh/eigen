@@ -1299,36 +1299,71 @@ func lastBackup(mem *memory.Store) string {
 	return baks[len(baks)-1]
 }
 
+// newMemoryPipeline wires the dream package's model-facing steps into a
+// memory.Pipeline for the given scope (avoids a memory→dream import cycle).
+func newMemoryPipeline(prov llm.Provider, mem *memory.Store, idx *memory.Index) *memory.Pipeline {
+	return &memory.Pipeline{
+		Store: mem,
+		Index: idx,
+		Stage1: func(ctx context.Context, transcript string) (body, slug, outcome string, ok bool, err error) {
+			r, ok, err := dream.Stage1(ctx, prov, transcript)
+			if err != nil || !ok {
+				return "", "", "", false, err
+			}
+			return r.Markdown("", time.Now()), r.Slug(), r.Outcome, true, nil
+		},
+		Consolidate: func(ctx context.Context, current string) (string, error) {
+			return dream.Consolidate(ctx, prov, current)
+		},
+		Summarize: func(ctx context.Context, memText string) (string, error) {
+			return dream.Summarize(ctx, prov, memText)
+		},
+	}
+}
+
 func runDream(prov llm.Provider, mem *memory.Store) {
-	paths := recentEigenSessions(5)
+	paths := recentEigenSessions(8)
 	if len(paths) == 0 {
 		fmt.Fprintln(os.Stderr, "eigen: dream: no eigen sessions to reflect on")
 		return
 	}
-	var transcripts []string
+	idx, err := memory.OpenIndex()
+	if err != nil {
+		fail(fmt.Errorf("dream: open memory index: %w", err))
+	}
+	defer idx.Close()
+	pipe := newMemoryPipeline(prov, mem, idx)
+
+	// Build the session list (id + watermark so unchanged sessions are skipped).
+	var sessions []memory.Session
+	var transcripts []string // kept for skill synthesis below
 	for _, p := range paths {
-		msgs, err := transcript.Load(p)
-		if err != nil {
+		msgs, lerr := transcript.Load(p)
+		if lerr != nil {
 			continue
 		}
-		if t := dream.RenderSession(msgs); t != "" {
-			transcripts = append(transcripts, t)
+		t := dream.RenderSession(msgs)
+		if t == "" {
+			continue
 		}
+		transcripts = append(transcripts, t)
+		id := strings.TrimSuffix(filepath.Base(p), ".eigen.jsonl")
+		wm := int64(0)
+		if fi, e := os.Stat(p); e == nil {
+			wm = fi.ModTime().Unix() ^ fi.Size()
+		}
+		sessions = append(sessions, memory.Session{ID: id, Transcript: t, Watermark: wm})
 	}
-	notes, err := dream.Distill(context.Background(), prov, transcripts, mem.Read())
-	if err != nil {
-		fail(fmt.Errorf("dream: %w", err))
-	}
-	if len(notes) == 0 {
-		fmt.Fprintln(os.Stderr, "eigen: dream: nothing new worth remembering")
-		return
-	}
-	for _, n := range notes {
-		_ = mem.Append(n)
-	}
-	fmt.Printf("dreamed %d new note(s) into %s\n", len(notes), mem.Path())
-	for _, n := range notes {
-		fmt.Println("  - " + n)
+
+	report, rerr := pipe.Run(context.Background(), sessions)
+	if report == "" {
+		if rerr != nil {
+			fmt.Fprintf(os.Stderr, "eigen: dream: reflection failed (%v) — the small model may be unavailable; set EIGEN_SMALL_MODEL to a working model\n", rerr)
+		} else {
+			fmt.Fprintln(os.Stderr, "eigen: dream: nothing new worth remembering")
+		}
+	} else {
+		fmt.Printf("dreamed: %s → %s\n", report, mem.Dir())
 	}
 
 	// Skill synthesis: propose a reusable skill if the sessions reveal one.
