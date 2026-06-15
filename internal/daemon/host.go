@@ -336,3 +336,20 @@ func (h *Host) Count() int {
 	defer h.mu.Unlock()
 	return len(h.sessions)
 }
+
+// AnyRunning reports whether any hosted session has a turn in flight. Used by
+// the nightly dreamer to only reflect when the machine is idle (never compete
+// with a live turn for the model).
+func (h *Host) AnyRunning() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, s := range h.sessions {
+		s.mu.Lock()
+		r := s.running
+		s.mu.Unlock()
+		if r {
+			return true
+		}
+	}
+	return false
+}

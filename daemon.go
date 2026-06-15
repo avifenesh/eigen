@@ -18,6 +18,7 @@ import (
 	"github.com/avifenesh/eigen/internal/chat"
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/daemon"
+	"github.com/avifenesh/eigen/internal/dream"
 	"github.com/avifenesh/eigen/internal/hook"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/mcp"
@@ -25,6 +26,7 @@ import (
 	"github.com/avifenesh/eigen/internal/remote"
 	"github.com/avifenesh/eigen/internal/session"
 	"github.com/avifenesh/eigen/internal/skill"
+	"github.com/avifenesh/eigen/internal/transcript"
 	"github.com/avifenesh/eigen/internal/tui"
 )
 
@@ -120,6 +122,11 @@ func runDaemon(cfg config.Config) {
 	if n := host.Restore(build); n > 0 {
 		fmt.Fprintf(os.Stderr, "eigen daemon: restored %d session(s)\n", n)
 	}
+
+	// Nightly dreaming: when the machine is idle, reflect persisted sessions
+	// into structured memory across all scopes (the codex-style pipeline) on
+	// the small model. Best-effort, never competes with a live turn.
+	go nightlyDreamer(host, gmem)
 
 	srv, err := daemon.Listen(daemon.SocketPath(), host, build)
 	if err != nil {
@@ -707,4 +714,82 @@ func sweepStaleWorkspaces() {
 		cmd := exec.CommandContext(ctx, bin, "workspace", "cleanup")
 		_ = cmd.Run() // best-effort; output/errors are not fatal
 	}()
+}
+
+// nightlyDreamer reflects persisted daemon sessions into structured memory when
+// the machine is idle. Every dreamInterval it checks: nothing running, and a
+// session has changed since last dream → run the memory pipeline per scope
+// (grouped by session dir) on the small model. Best-effort and quiet: a model
+// outage or a busy daemon just skips this cycle.
+func nightlyDreamer(host *daemon.Host, gmem *memory.Store) {
+	const dreamInterval = 3 * time.Hour
+	// First pass shortly after startup (the daemon just restored sessions), then
+	// on the interval. A jittered initial delay avoids dreaming during a fresh
+	// burst of activity right after launch.
+	timer := time.NewTimer(20 * time.Minute)
+	defer timer.Stop()
+	for range timer.C {
+		timer.Reset(dreamInterval)
+		if host.AnyRunning() {
+			continue // never compete with a live turn for the model
+		}
+		prov := titleProvider(nil) // the small model (health-checks itself)
+		if prov == nil {
+			continue
+		}
+		runNightlyDream(host, prov)
+	}
+}
+
+// runNightlyDream groups persisted sessions by dir and runs the memory pipeline
+// for each scope. Idempotency (watermarks) means unchanged sessions are skipped
+// cheaply, so this is safe to run on every idle interval.
+func runNightlyDream(host *daemon.Host, prov llm.Provider) {
+	idx, err := memory.OpenIndex()
+	if err != nil {
+		return
+	}
+	defer idx.Close()
+
+	// Group persisted sessions by their working dir (the memory scope).
+	byDir := map[string][]daemon.PersistedInfo{}
+	for _, p := range daemon.ListPersisted() {
+		if p.Dir == "" || p.Msgs < 2 {
+			continue // no dir or empty conversation — nothing to reflect
+		}
+		byDir[p.Dir] = append(byDir[p.Dir], p)
+	}
+	for dir, infos := range byDir {
+		if host.AnyRunning() {
+			return // a turn started mid-dream; yield the model
+		}
+		mem, err := memory.Open(dir)
+		if err != nil {
+			continue
+		}
+		pipe := newMemoryPipeline(prov, mem, idx)
+		var sessions []memory.Session
+		for _, p := range infos {
+			path := daemon.PersistedTranscriptPath(p.ID)
+			msgs, lerr := transcript.Load(path)
+			if lerr != nil {
+				continue
+			}
+			t := dream.RenderSession(msgs)
+			if t == "" {
+				continue
+			}
+			wm := int64(0)
+			if fi, e := os.Stat(path); e == nil {
+				wm = fi.ModTime().Unix() ^ fi.Size()
+			}
+			sessions = append(sessions, memory.Session{ID: p.ID, Transcript: t, Watermark: wm})
+		}
+		if len(sessions) == 0 {
+			continue
+		}
+		if report, _ := pipe.Run(context.Background(), sessions); report != "" {
+			fmt.Fprintf(os.Stderr, "eigen daemon: dreamed %s — %s\n", dir, report)
+		}
+	}
 }
