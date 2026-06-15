@@ -124,6 +124,12 @@ func (s *Session) dispatch(e agent.Event) {
 	case agent.EventDone:
 		s.status = StatusIdle
 	}
+	wakeID := ""
+	if e.Kind == agent.EventBgDone && !s.running {
+		// A background task this session spawned finished while the orchestrator
+		// is idle → wake it to collect the result (started after we unlock).
+		wakeID = e.Result
+	}
 	// Bound the replay buffer: a long-lived daemon session would otherwise
 	// accumulate every delta forever (a slow memory leak). The buffer only
 	// exists so a view attaching MID-TURN sees in-progress events; once a turn
@@ -145,6 +151,25 @@ func (s *Session) dispatch(e agent.Event) {
 		default: // a slow view must not stall the agent loop; it can resync
 		}
 	}
+	if wakeID != "" {
+		s.wakeForBg(wakeID)
+	}
+}
+
+// wakeForBg starts a fresh turn on an IDLE session to consume a finished
+// background task — the orchestrator "wakes up" when its promoted/background
+// subtask reports done. The result rides in as the turn's user message so the
+// orchestrator acts on it without the user having to nudge. No-op if a turn
+// raced into running first (send() returns false → the running turn will see
+// the bg note in its own stream).
+func (s *Session) wakeForBg(id string) {
+	result := s.agent.BgResult(id)
+	if strings.TrimSpace(result) == "" {
+		return // canceled / no collectable output: just leave the note
+	}
+	msg := "Your background task " + id + " finished. Here is its result:\n\n" + result +
+		"\n\nContinue: incorporate this and proceed, or report back if it completes your work."
+	s.send(msg, nil)
 }
 
 // maxReplayEvents bounds the per-session replay buffer — large enough to cover

@@ -144,6 +144,16 @@ func (r *BgRegistry) next() string {
 }
 
 // put records (and persists) a task state.
+// SeedDone registers a pre-completed background task with the given result and
+// returns its id. Used to inject a result the registry didn't itself run (e.g.
+// tests, or adopting an external computation) so the wake-on-done path can
+// surface it.
+func (r *BgRegistry) SeedDone(task, result string) string {
+	id := r.next()
+	r.put(&BgTask{ID: id, Task: task, Status: "done", Result: result, Started: time.Now(), Finished: time.Now()})
+	return id
+}
+
 func (r *BgRegistry) put(t *BgTask) {
 	r.mu.Lock()
 	t.Updated = time.Now()
@@ -306,14 +316,7 @@ func (a *Agent) SubtaskBackground(ctx context.Context, task string, opts Subtask
 		if dir := a.Bg.dir; dir != "" {
 			os.Remove(filepath.Join(dir, id+".cancel")) // never leave stale markers
 		}
-		note := "background task " + id + " finished"
-		switch status {
-		case "error":
-			note = "background task " + id + " FAILED: " + truncateForNote(err.Error())
-		case "canceled":
-			note = "background task " + id + " canceled"
-		}
-		a.emit(Event{Kind: EventNote, Text: note + " — task_status " + id + " to collect"})
+		a.emitBgFinished(id, status, err)
 	}()
 
 	label := "started background task " + id
@@ -396,7 +399,40 @@ func truncateForNote(s string) string {
 	return s
 }
 
-// bgEventSink builds the OnEvent sink that mirrors a background/promoted task's
+// emitBgFinished emits the completion note + a structured EventBgDone (carrying
+// the task id) when a background/promoted task ends. The EventBgDone lets an
+// idle orchestrator session WAKE and collect the result (the daemon starts a
+// fresh turn on it); front-ends that don't wake just render the note.
+func (a *Agent) emitBgFinished(id, status string, err error) {
+	note := "background task " + id + " finished"
+	switch status {
+	case "error":
+		if err != nil {
+			note = "background task " + id + " FAILED: " + truncateForNote(err.Error())
+		} else {
+			note = "background task " + id + " FAILED"
+		}
+	case "canceled":
+		note = "background task " + id + " canceled"
+	}
+	a.emit(Event{Kind: EventNote, Text: note + " — task_status " + id + " to collect"})
+	a.emit(Event{Kind: EventBgDone, Result: id, Text: note})
+}
+
+// BgResult returns a finished background task's result text (empty when the
+// task is unknown, still running, errored, or canceled — i.e. nothing useful to
+// hand an orchestrator). Used by the daemon to wake an idle session.
+func (a *Agent) BgResult(id string) string {
+	if a.Bg == nil {
+		return ""
+	}
+	t := a.Bg.Get(id)
+	if t == nil || t.Status != "done" {
+		return ""
+	}
+	return t.Result
+}
+
 // progress into its durable BgTask record (bounded — never text deltas), then
 // calls chain (if any). Shared by SubtaskBackground and promoteRunning.
 func bgEventSink(bg *BgRegistry, id string, chain EventSink) EventSink {
@@ -485,14 +521,7 @@ func (a *Agent) promoteRunning(cctx context.Context, cancel context.CancelFunc, 
 		if dir := bg.dir; dir != "" {
 			os.Remove(filepath.Join(dir, id+".cancel"))
 		}
-		note := "background task " + id + " finished"
-		switch status {
-		case "error":
-			note = "background task " + id + " FAILED: " + truncateForNote(d.err.Error())
-		case "canceled":
-			note = "background task " + id + " canceled"
-		}
-		a.emit(Event{Kind: EventNote, Text: note + " — task_status " + id + " to collect"})
+		a.emitBgFinished(id, status, d.err)
 	}()
 	a.emit(Event{Kind: EventNote, Text: "subtask still working past " + front.String() + " → moved to background " + id + " (task_status " + id + " to collect; you can keep working)"})
 	return id

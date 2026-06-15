@@ -106,6 +106,8 @@ func wireToEvent(e daemon.WireEvent) agent.Event {
 		k = agent.EventDone
 	case "approval":
 		k = agent.EventApproval
+	case "bg_done":
+		k = agent.EventBgDone // wake signal; the sibling note renders the text
 	default:
 		k = agent.EventNote
 	}

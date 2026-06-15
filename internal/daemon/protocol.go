@@ -124,6 +124,8 @@ func eventKindName(k agent.EventKind) string {
 		return "note"
 	case agent.EventApproval:
 		return "approval"
+	case agent.EventBgDone:
+		return "bg_done" // the wake signal; the sibling EventNote handles display
 	}
 	return "unknown"
 }

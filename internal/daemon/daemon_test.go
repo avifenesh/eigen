@@ -778,3 +778,34 @@ func TestInputSteersRunningTurnOverSocket(t *testing.T) {
 	}
 	_ = c.Interrupt(id)
 }
+
+func TestBgDoneWakesIdleOrchestrator(t *testing.T) {
+	// A finished background task must WAKE an idle session: dispatching
+	// EventBgDone while idle starts a fresh turn carrying the task's result.
+	reg, _ := tool.NewRegistry()
+	bg := agent.NewBgRegistry(t.TempDir())
+	a := &agent.Agent{Provider: echoProvider{}, Tools: reg, Perm: agent.PermAuto, Bg: bg}
+	s := newSession("s1", "/tmp", "", a)
+
+	// Seed a completed bg task with a collectable result.
+	id := bg.SeedDone("did the thing", "research summary: 42")
+
+	// Idle session: dispatch the bg-done signal (as the bg goroutine would).
+	if s.status != StatusIdle {
+		t.Fatal("precondition: session should be idle")
+	}
+	s.dispatch(agent.Event{Kind: agent.EventBgDone, Result: id, Text: "background task " + id + " finished"})
+
+	// The wake starts a turn: wait for it to run + finish (echoProvider is fast).
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		msgs := s.sess.Messages()
+		for _, m := range msgs {
+			if m.Role == llm.RoleUser && strings.Contains(m.Text, "research summary: 42") {
+				return // the orchestrator was woken with the result
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("idle orchestrator was not woken with the finished task's result")
+}
