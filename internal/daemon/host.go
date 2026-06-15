@@ -31,6 +31,10 @@ type Host struct {
 	// notify fires a desktop notification for a backgrounded turn that
 	// finishes with no views attached (injected by main from notify_cmd).
 	notify func(title, body string)
+	// titleWG tracks in-flight background titling goroutines so they can be
+	// awaited (tests; clean shutdown) — a fire-and-forget goroutine that writes
+	// the meta file must not outlive a RemoveAll/teardown.
+	titleWG sync.WaitGroup
 }
 
 // SetTitler installs the small-model session titler.
@@ -73,7 +77,9 @@ func (h *Host) maybeTitle(s *Session, msgs []llm.Message) {
 		done()
 		return
 	}
+	h.titleWG.Add(1)
 	go func() {
+		defer h.titleWG.Done()
 		defer done()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -90,6 +96,11 @@ func (h *Host) maybeTitle(s *Session, msgs []llm.Message) {
 		h.saveSessionMeta(s)
 	}()
 }
+
+// waitTitles blocks until all in-flight background titling goroutines finish
+// (and have written their meta files). Used by tests and clean teardown so a
+// title write never races a directory removal.
+func (h *Host) waitTitles() { h.titleWG.Wait() }
 
 // ModelSwitcher builds the live-switch inputs for a model id rooted at dir.
 type ModelSwitcher func(dir, modelID string) (provider llm.Provider, compactor llm.Compactor, budget int, err error)

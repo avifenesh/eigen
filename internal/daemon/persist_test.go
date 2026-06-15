@@ -203,6 +203,7 @@ func TestAutoTitleOnFirstMessage(t *testing.T) {
 	for time.Now().Before(deadline) {
 		ps := loadPersisted(persistDir)
 		if len(ps) == 1 && ps[0].meta.Title == "Test Title" {
+			h.waitTitles() // ensure no title write is still in flight vs TempDir cleanup
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -308,6 +309,10 @@ func TestTitleInFlightGuard(t *testing.T) {
 		t.Fatalf("titler called %d times while one call was in flight, want 1", n)
 	}
 	close(release)
+	// Wait for the in-flight title goroutine to finish writing its meta file
+	// before the test returns — otherwise t.TempDir() RemoveAll races the
+	// write ("directory not empty").
+	h.waitTitles()
 }
 
 func TestListPersistedPrefersLastAttached(t *testing.T) {
