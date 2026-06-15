@@ -89,6 +89,8 @@ var slashCommands = []slashCmd{
 	{"/find", "search the transcript"},
 	{"/copy", "copy the selected block (or last answer) to clipboard"},
 	{"/mouse", "toggle mouse capture — turn OFF to mark + copy text with your terminal (alt+x)"},
+	{"/ban", "record a hard prohibition (banthis): /ban <title>: <rule> — enforced across future sessions"},
+	{"/unban", "remove a banned behavior by title"},
 	{"/steer", "Enter injects your message mid-turn (between tool rounds) — alt+q toggles"},
 	{"/queue", "Enter holds your message for the next turn — alt+q toggles"},
 	{"/export", "export this conversation to a markdown file"},

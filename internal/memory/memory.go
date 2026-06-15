@@ -406,3 +406,105 @@ func (s *Store) writeSummary(content string) error {
 	}
 	return os.Rename(tmp, s.SummaryPath())
 }
+
+// Ban is one banned behavior: a short title + the rule body.
+type Ban struct {
+	Title string
+	Rule  string
+}
+
+// AddBan adds or updates (by title) a hard prohibition in bans.md — the
+// banthis layer, native in eigen. Stored as "### <title>\n<rule>" blocks so a
+// repeated title replaces (not duplicates) the rule. Returns whether it
+// replaced an existing ban.
+func (s *Store) AddBan(title, rule string) (replaced bool, err error) {
+	if s == nil {
+		return false, fmt.Errorf("memory unavailable")
+	}
+	title = strings.TrimSpace(title)
+	rule = strings.TrimSpace(Redact(rule))
+	if title == "" || rule == "" {
+		return false, fmt.Errorf("a ban needs a title and a rule")
+	}
+	bans := s.ListBans()
+	for i := range bans {
+		if strings.EqualFold(bans[i].Title, title) {
+			bans[i].Rule = rule
+			replaced = true
+		}
+	}
+	if !replaced {
+		bans = append(bans, Ban{Title: title, Rule: rule})
+	}
+	return replaced, s.writeBans(bans)
+}
+
+// RemoveBan deletes a ban by title (case-insensitive). Returns whether one was
+// removed.
+func (s *Store) RemoveBan(title string) (bool, error) {
+	if s == nil {
+		return false, fmt.Errorf("memory unavailable")
+	}
+	title = strings.TrimSpace(title)
+	bans := s.ListBans()
+	kept := bans[:0]
+	removed := false
+	for _, b := range bans {
+		if strings.EqualFold(b.Title, title) {
+			removed = true
+			continue
+		}
+		kept = append(kept, b)
+	}
+	if !removed {
+		return false, nil
+	}
+	return true, s.writeBans(kept)
+}
+
+// ListBans parses bans.md into its title/rule blocks.
+func (s *Store) ListBans() []Ban {
+	var out []Ban
+	var cur *Ban
+	for _, ln := range strings.Split(s.Bans(), "\n") {
+		if strings.HasPrefix(ln, "### ") {
+			if cur != nil && cur.Rule != "" {
+				out = append(out, *cur)
+			}
+			cur = &Ban{Title: strings.TrimSpace(strings.TrimPrefix(ln, "### "))}
+			continue
+		}
+		if cur != nil {
+			if t := strings.TrimSpace(ln); t != "" {
+				if cur.Rule != "" {
+					cur.Rule += " "
+				}
+				cur.Rule += t
+			}
+		}
+	}
+	if cur != nil && cur.Rule != "" {
+		out = append(out, *cur)
+	}
+	return out
+}
+
+// writeBans renders the bans to bans.md (banthis-compatible "### title" blocks).
+func (s *Store) writeBans(bans []Ban) error {
+	if err := s.ensureDir(); err != nil {
+		return err
+	}
+	if len(bans) == 0 {
+		_ = os.Remove(s.BansPath())
+		return nil
+	}
+	var b strings.Builder
+	for _, ban := range bans {
+		fmt.Fprintf(&b, "### %s\n%s\n\n", ban.Title, ban.Rule)
+	}
+	tmp := s.BansPath() + ".tmp"
+	if err := os.WriteFile(tmp, []byte(strings.TrimRight(b.String(), "\n")+"\n"), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, s.BansPath())
+}

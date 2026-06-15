@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -61,7 +62,7 @@ func (m *model) applyResumed(msgs []llm.Message) {
 func safeWhileRunning(name string) bool {
 	switch name {
 	case "/effort", "/search", "/perm", "/model", "/help", "/goal", "/loop", "/config", "/route",
-		"/skills", "/tools", "/find", "/copy", "/read", "/voice", "/mute", "/dictate", "/talk", "/speak", "/rail", "/changes", "/term", "/tasks", "/shells", "/tray", "/workflow", "/rename", "/background", "/add-dir", "/mouse", "/steer", "/queue":
+		"/skills", "/tools", "/find", "/copy", "/read", "/voice", "/mute", "/dictate", "/talk", "/speak", "/rail", "/changes", "/term", "/tasks", "/shells", "/tray", "/workflow", "/rename", "/background", "/add-dir", "/mouse", "/steer", "/queue", "/ban", "/unban":
 		return true
 	default:
 		// /clear, /compact, /resume, /rebuild, /save, /export, /quit, /exit
@@ -141,6 +142,57 @@ func (m *model) command(line string) tea.Cmd {
 		m.openSwitcher()
 	case "/mouse":
 		return m.toggleMouse()
+	case "/ban":
+		// /ban <title>: <rule>  — record a hard prohibition (banthis, native).
+		// /ban with no args lists current bans.
+		if m.mem == nil {
+			m.note("memory unavailable — can't record bans here")
+			return nil
+		}
+		if strings.TrimSpace(arg) == "" {
+			bans := m.mem.ListBans()
+			if len(bans) == 0 {
+				m.note("no banned behaviors yet — /ban <title>: <rule> to add one (a hard prohibition enforced in future sessions)")
+				return nil
+			}
+			var b strings.Builder
+			b.WriteString("banned behaviors (hard rules):")
+			for _, ban := range bans {
+				b.WriteString("\n  ✗ " + ban.Title + " — " + ban.Rule)
+			}
+			m.note(b.String())
+			return nil
+		}
+		title, rule := splitBan(arg)
+		if title == "" || rule == "" {
+			m.note("usage: /ban <title>: <rule>   (e.g. /ban No hedging: don't start replies with 'I think')")
+			return nil
+		}
+		replaced, err := m.mem.AddBan(title, rule)
+		if err != nil {
+			m.note("ban failed: " + err.Error())
+			return nil
+		}
+		verb := "banned"
+		if replaced {
+			verb = "updated ban"
+		}
+		return m.showFlash("✗ " + verb + ": " + title)
+	case "/unban":
+		if m.mem == nil || strings.TrimSpace(arg) == "" {
+			m.note("usage: /unban <title>")
+			return nil
+		}
+		ok, err := m.mem.RemoveBan(strings.TrimSpace(arg))
+		if err != nil {
+			m.note("unban failed: " + err.Error())
+			return nil
+		}
+		if !ok {
+			m.note("no ban titled " + strconv.Quote(strings.TrimSpace(arg)))
+			return nil
+		}
+		return m.showFlash("removed ban: " + strings.TrimSpace(arg))
 	case "/steer", "/queue":
 		// Set the input mode explicitly (or toggle with bare /steer-vs-current).
 		want := strings.TrimPrefix(name, "/")
@@ -641,4 +693,15 @@ func configOptionsHint(f config.Field) string {
 		return "any catalog model id (see the models page or `eigen models`)"
 	}
 	return ""
+}
+
+// splitBan parses "title: rule" or "title | rule" or "title - rule" into its
+// two parts (the first separator wins). Returns empty strings when no separator.
+func splitBan(s string) (title, rule string) {
+	for _, sep := range []string{":", "|", " - ", "—"} {
+		if i := strings.Index(s, sep); i > 0 {
+			return strings.TrimSpace(s[:i]), strings.TrimSpace(s[i+len(sep):])
+		}
+	}
+	return "", ""
 }

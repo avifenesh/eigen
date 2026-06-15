@@ -99,3 +99,47 @@ func TestWriteAndReadRollouts(t *testing.T) {
 		t.Fatalf("limit should return most recent, got %v", got)
 	}
 }
+
+func TestBansAddUpdateRemoveList(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	s, _ := Open("/p")
+	if r, _ := s.AddBan("No hedging", "Do not start with 'I think'."); r {
+		t.Fatal("first add is not a replace")
+	}
+	if r, _ := s.AddBan("No call it a day", "Do not suggest stopping."); r {
+		t.Fatal("second distinct add is not a replace")
+	}
+	// update by title (case-insensitive).
+	r, _ := s.AddBan("no hedging", "Updated rule.")
+	if !r {
+		t.Fatal("same-title add should replace")
+	}
+	bans := s.ListBans()
+	if len(bans) != 2 {
+		t.Fatalf("want 2 bans, got %d: %+v", len(bans), bans)
+	}
+	// the updated one carries the new rule.
+	var found bool
+	for _, b := range bans {
+		if b.Title == "No hedging" && b.Rule == "Updated rule." {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("update should change the rule, got %+v", bans)
+	}
+	// injected as hard constraints.
+	if !strings.Contains(s.Section(), "BANNED BEHAVIORS") || !strings.Contains(s.Section(), "Updated rule.") {
+		t.Fatal("bans should inject")
+	}
+	// remove.
+	ok, _ := s.RemoveBan("No hedging")
+	if !ok || len(s.ListBans()) != 1 {
+		t.Fatalf("remove should drop one, got %d", len(s.ListBans()))
+	}
+	// removing all clears bans.md.
+	s.RemoveBan("No call it a day")
+	if strings.Contains(s.Section(), "BANNED BEHAVIORS") {
+		t.Fatal("no bans → no banned-behaviors section")
+	}
+}

@@ -8,6 +8,7 @@ import (
 
 type fakeMem struct {
 	notes []string
+	bans  map[string]string
 	fail  bool
 }
 
@@ -17,6 +18,18 @@ func (f *fakeMem) Append(note string) error {
 	}
 	f.notes = append(f.notes, note)
 	return nil
+}
+
+func (f *fakeMem) AddBan(title, rule string) (bool, error) {
+	if f.fail {
+		return false, errTest("disk full")
+	}
+	if f.bans == nil {
+		f.bans = map[string]string{}
+	}
+	_, existed := f.bans[title]
+	f.bans[title] = rule
+	return existed, nil
 }
 
 func TestMemoryToolAppends(t *testing.T) {
@@ -74,5 +87,24 @@ func TestMemoryToolGlobalScopeFallsBackWhenNoGlobal(t *testing.T) {
 	}
 	if len(proj.notes) != 1 {
 		t.Fatal("global scope with no global store should fall back to project")
+	}
+}
+
+func TestMemoryToolBanKind(t *testing.T) {
+	fm := &fakeMem{}
+	def := Memory(fm, nil)
+	out, err := def.Run(nil, []byte(`{"kind":"ban","title":"No emoji","note":"never use emoji"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fm.bans["No emoji"] != "never use emoji" {
+		t.Fatalf("ban should be stored, got %v", fm.bans)
+	}
+	if !contains(out, "banned behavior") {
+		t.Fatalf("result should confirm the ban, got %q", out)
+	}
+	// ban without a title errors.
+	if _, err := def.Run(nil, []byte(`{"kind":"ban","note":"x"}`)); err == nil {
+		t.Fatal("ban without a title should error")
 	}
 }
