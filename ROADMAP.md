@@ -18,8 +18,8 @@ project memory). Detailed design/perf notes live under `docs/`.
 **Next (queued, well-scoped):**
 - **Tier 23 — performance + resource health.** RSS/leak soak, bound growth,
   turn-latency profile, a `make perf` guard, `docs/performance.md`.
-- **Tier 21 — remaining TUI ergonomics.** Right-panel notepad tab; a
-  steer-vs-queue config default. (Home density already shipped via the design work.)
+- **Tier 21 — remaining TUI ergonomics.** Right-panel notepad tab. (Home density,
+  steer-vs-queue config, and the steer-at-turn-end fix already shipped.)
 
 **Later (parked big bets — pull when wanted):**
 - **Tier 20 — eigen in your pocket.** Outbound notify + remote approve with no
@@ -55,9 +55,11 @@ state RSS, goroutine growth, or per-turn allocs.
 ### Tier 21 — TUI ergonomics (remaining)
 - [ ] **Right-panel notepad tab.** A scratch pad in the right panel (a fifth
   tab) — freeform notes per session, persisted; survives detach/restart.
-- [ ] **Default steer-vs-queue choice (config).** Today enter-while-running
-  always queues; some users want it to interrupt-and-send. A config default
-  (`steer`/`queue`) + the per-press override.
+- [x] **Default steer-vs-queue choice (config).** SHIPPED: `config.input_mode`
+  (`steer`/`queue`, default steer) + a clickable `input=` sidebar/status segment,
+  `alt+q`, `/steer`//`/queue`, palette. steer injects mid-turn (between tool
+  rounds); queue holds for the next turn. A steer that lands as the turn ends is
+  consumed by one more round (not stranded).
 - [x] **Home page density.** DONE via the design work: "working now" section +
   live count in the banner, panel gutters, full-width rules, filled inspector.
 
@@ -136,13 +138,36 @@ from a cross-vendor review; channel undecided.
   renders the live swatch; a drift-guard test enforces "no raw color outside theme".
 - **Tier 24 — roadmap cleanup.** ✅ This pass: split done from open, terse Shipped
   ledger, Now/Next/Later up top.
-- **Tier 25 — websearch replaced (native Go port, no MCP).** ✅ `websearch` is now
-  ALWAYS available: keyless fallback chain (Mojeek HTML scrape → Marginalia JSON →
-  Wikipedia JSON) with per-engine failure isolation + gather/dedup; Brave/Tavily
-  key or `EIGEN_SEARXNG_URL` is the preferred head; SSRF host check (loopback/LAN
-  refused unless opted in); per-engine timeout slicing. Ported from
-  `@agent-sh/harness-websearch` v2 into `internal/tool/websearch{,_engines}.go`.
-  Live-verified keyless end-to-end.
+- **Tier 26 — hierarchical tool disclosure + background shells (2026-06-15).** ✅
+  Two big ergonomics wins:
+  (1) PROGRESSIVE TOOL DISCLOSURE — the agent no longer carries ~73 MCP schemas
+  (~10k tokens) on every request. `tool.Definition` gains `Niche`+`Group`+
+  `GroupDesc`; the prompt lists niche GROUPS (one line each), `search_tools <server>`
+  reveals tool NAMES, `search_tools <keyword>` returns full schemas + UNLOCKS them
+  (sticky per session). MCP server `description` is REQUIRED at the config level
+  (mcp.json `description` → server `initialize.instructions` → warn); it's the
+  Level-0 frontmatter, so every server (incl. builtins, with backfilled
+  descriptions) is clearly named. Live-verified end-to-end (chrome drilled in,
+  used).
+  (2) BACKGROUND SHELLS (Claude-Code ctrl+b) — `bash background=true` returns a
+  shell id immediately and keeps running so the agent parallelizes; `bash_output`
+  polls, `kill_shell` stops; the running shells are injected into the prompt each
+  step (awareness). `alt+d` (zellij-safe; ctrl+b eaten by zellij) backgrounds the
+  bash running RIGHT NOW mid-turn — it's adopted as a shell and the agent
+  continues in the same turn. A `[shells]` right-panel tab lists them (click to
+  expand/kill). In-memory per-session (NO disk → no startup-signal hazard; kill
+  only ever signals a live pgid); 30-finished-shell retention cap. Live-verified
+  in the X11 workspace (`sleep 60` → alt+d → "backgrounded as shell-1" → agent
+  kept polling → `[sh]` panel showed it).
+- **websearch honest fallback (2026-06-15).** ✅ The keyless chain error now
+  aggregates EVERY engine's failure ("all search engines failed: mojeek: …;
+  marginalia: …; wikipedia: …") instead of naming one — a real chain failure is
+  distinguishable from a single-engine rate-limit. No behavior change to the
+  fallback itself (it does try all engines).
+- **Daemon title-goroutine race fixed (2026-06-15).** ✅ `Host.maybeTitle`'s
+  fire-and-forget meta-write goroutine was unwaited, racing test/teardown cleanup
+  (the "TestTitleInFlightGuard flake" — a real bug, not a flake). `Host.titleWG`
+  + `waitTitles()`; 0 failures in 40 runs (was ~1/14), `-race` clean.
 - **Subagent lifecycle + steer (2026-06-15).** ✅ (1) STEER: enter-while-running
   injects a message BETWEEN tool-call rounds (mid-turn course-correct), not at
   end-of-turn. (2) IDLE-STALL: a subagent with no tool call for `stall_idle_min`
@@ -196,16 +221,17 @@ from a cross-vendor review; channel undecided.
 - permission postures: `gated` (asks for mutating tools) / `auto`.
 
 ## Configuration & extension reference (as shipped)
-Tools (~25): read, list, glob, grep, symbols, tree, diff, write, edit, multiedit,
-apply_patch, move, bash, fetch, todo, skill, memory, task, task_status,
-task_group, task_group_mutating, goal_achieved, retrieve, generate_image,
-websearch (always available — keyless by default) (+ plugins + MCP + LSP; builtin
-MCP: `workspace` sandbox, `chrome` bridge).
+Tools (~28): read, list, glob, grep, symbols, tree, diff, write, edit, multiedit,
+apply_patch, move, bash (+ background=true), bash_output, kill_shell, fetch, todo,
+skill, memory, task, task_status, task_group, task_group_mutating, goal_achieved,
+retrieve, generate_image, websearch (always available — keyless by default),
+search_tools (unlocks niche tools on demand) (+ plugins + MCP + LSP, all niche/
+disclosed via search_tools; builtin MCP: `workspace` sandbox, `chrome` bridge).
 
 Files (under `~/.eigen/`, plus project-local `./.eigen/`):
 - `config.json` — defaults: `provider`,`model`,`perm`,`effort`,`theme`,`nerd_font`,
-  `max_tokens`,`daemon_timeout`,`tts_cmd`,`notify_cmd`,`judge_model`,`route`,
-  `route_providers`,`local_background`,`skills_dirs`,`dream_on_idle`,`idle_minutes`
+  `input_mode`,`max_tokens`,`daemon_timeout`,`tts_cmd`,`notify_cmd`,`judge_model`,
+  `route`,`route_providers`,`local_background`,`skills_dirs`,`dream_on_idle`,`idle_minutes`
 - `skills/<name>/SKILL.md` — discovered skills (also `EIGEN_SKILLS_DIRS`, colon-sep)
 - `plugins.json` / `mcp.json` / `lsp.json` / `hooks.json` — extensions (per-scope)
 - `memory/global.md` + `memory/<project>.md` — durable notes (auto-injected)
@@ -232,5 +258,6 @@ CLI: `eigen [task]` · `-p` print · `--resume/-c` · `--list` · `--list-skills
 `eigen chrome [status]`.
 
 TUI: `/help` lists all slash commands; keys: `/` commands · `@` files · ctrl+k
-palette · alt+s sessions · alt+n tray · while running: enter queues · esc
-interrupts · ctrl+z backgrounds the turn.
+palette · alt+s sessions · alt+w tray · while running: enter steers or queues
+(per `input_mode`, toggle `alt+q`) · esc interrupts · alt+d backgrounds the
+running bash step · alt+z backgrounds the whole turn.

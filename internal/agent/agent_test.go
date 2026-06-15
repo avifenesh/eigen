@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -981,5 +982,70 @@ func TestForegroundPromotesToBackground(t *testing.T) {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// steerProvider is a thread-safe scripted provider that fires a callback after
+// a given reply index (to inject a steer at the final-answer boundary).
+type steerProvider struct {
+	mu      sync.Mutex
+	replies []*llm.Response
+	seen    []llm.Request
+	after   map[int]func() // index → side effect run just before returning that reply
+}
+
+func (p *steerProvider) Name() string    { return "steer" }
+func (p *steerProvider) ModelID() string { return "steer" }
+func (p *steerProvider) Complete(_ context.Context, r llm.Request) (*llm.Response, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	i := len(p.seen)
+	p.seen = append(p.seen, r)
+	if fn := p.after[i]; fn != nil {
+		fn()
+	}
+	if i >= len(p.replies) {
+		return &llm.Response{Text: "done"}, nil
+	}
+	return p.replies[i], nil
+}
+
+func TestSteerAtFinalAnswerIsConsumedNotStranded(t *testing.T) {
+	// The model returns a final answer (no tool calls) on reply 0. A steer
+	// lands DURING that call (the after-hook). The turn must NOT end stranding
+	// the steer: it loops once more, the steer appears in reply 1's request,
+	// and the model answers it.
+	var sess *Session
+	prov := &steerProvider{
+		replies: []*llm.Response{
+			{Text: "first answer"},    // reply 0: final answer — but a steer lands now
+			{Text: "answer to steer"}, // reply 1: must respond to the steer
+		},
+	}
+	prov.after = map[int]func(){
+		0: func() { sess.Steer("wait, also do Y", nil) },
+	}
+	reg, _ := tool.NewRegistry()
+	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto}
+	sess = a.NewSession()
+	out, err := sess.Send(context.Background(), "do X")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The turn must have made a SECOND request that carries the steer.
+	if len(prov.seen) < 2 {
+		t.Fatalf("steer at final answer should trigger another round, got %d requests", len(prov.seen))
+	}
+	found := false
+	for _, m := range prov.seen[1].Messages {
+		if m.Role == llm.RoleUser && strings.Contains(m.Text, "also do Y") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the steer must appear in the follow-up request, messages: %+v", prov.seen[1].Messages)
+	}
+	if out != "answer to steer" {
+		t.Fatalf("turn should end with the post-steer answer, got %q", out)
 	}
 }

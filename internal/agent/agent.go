@@ -263,6 +263,16 @@ func (s *Session) drainSteer() []llm.Message {
 	return out
 }
 
+// hasSteer reports whether a steer is pending (peek without draining). Used at
+// the final-answer boundary: a steer that landed during the last model call
+// must be consumed by THIS turn (loop once more) rather than stranded until a
+// future turn.
+func (s *Session) hasSteer() bool {
+	s.steerMu.Lock()
+	defer s.steerMu.Unlock()
+	return len(s.steer) > 0
+}
+
 // NewSession starts an empty conversation.
 func (a *Agent) NewSession() *Session { return &Session{a: a} }
 
@@ -1001,8 +1011,26 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		usedOut += resp.Usage.OutputTokens
 		if len(resp.ToolCalls) == 0 {
 			if strings.TrimSpace(resp.Text) != "" {
+				// Final answer — UNLESS a steer landed during this last model
+				// call. A steer that arrives in the narrow window after the
+				// step's drainSteer() but before the turn ends would otherwise
+				// sit unconsumed until some future turn (the user saw the turn
+				// end and assumes their message was dropped/queued). Instead,
+				// record the answer and loop once more so the next iteration
+				// drains the steer and the model responds to it — making a
+				// late steer behave like a same-turn follow-up, not a silent
+				// wait.
 				s.appendMsg(llm.Message{Role: llm.RoleAssistant, Text: resp.Text})
 				s.persist()
+				if s.hasSteer() {
+					// Non-streaming providers haven't shown this text yet; emit
+					// it so the answer-before-the-steer is visible (streaming
+					// already delivered it as deltas).
+					if !streamed {
+						a.emit(Event{Kind: EventTextDelta, Step: step, Text: resp.Text})
+					}
+					continue
+				}
 				a.emit(Event{Kind: EventDone, Step: step, Text: resp.Text, InTokens: usedIn, OutTokens: usedOut})
 				return resp.Text, nil // final answer
 			}
