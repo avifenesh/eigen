@@ -66,9 +66,9 @@ func (c *searchChain) run(ctx context.Context, hc *http.Client, query string, co
 	var (
 		acc        []searchResult
 		seen       = map[string]bool{}
-		lastErr    error
-		generalErr bool // a general-class engine failed
-		anyEmpty   bool // some engine returned successfully-but-empty
+		errs       []string // every engine failure, for an honest aggregate error
+		generalErr bool     // a general-class engine failed
+		anyEmpty   bool     // some engine returned successfully-but-empty
 	)
 	for i, e := range c.engines {
 		if ctx.Err() != nil {
@@ -76,7 +76,7 @@ func (c *searchChain) run(ctx context.Context, hc *http.Client, query string, co
 		}
 		if c.checkSSRF != nil {
 			if err := c.checkSSRF(e.host()); err != nil {
-				lastErr = fmt.Errorf("%s: %w", e.name(), err)
+				errs = append(errs, fmt.Sprintf("%s: %v", e.name(), err))
 				if e.class() == classGeneral {
 					generalErr = true
 				}
@@ -89,7 +89,7 @@ func (c *searchChain) run(ctx context.Context, hc *http.Client, query string, co
 		res, err := e.search(ectx, hc, query, count)
 		cancel()
 		if err != nil {
-			lastErr = fmt.Errorf("%s: %w", e.name(), err)
+			errs = append(errs, fmt.Sprintf("%s: %v", e.name(), err))
 			if e.class() == classGeneral {
 				generalErr = true
 			}
@@ -129,7 +129,10 @@ func (c *searchChain) run(ctx context.Context, hc *http.Client, query string, co
 	if anyEmpty && !generalErr {
 		return nil, nil // a niche/vertical empty with no general failure = best signal
 	}
-	return nil, lastErr // all failed (or degraded): report it
+	if len(errs) == 0 {
+		return nil, nil // nothing ran (e.g. ctx cancelled) — no results, no error
+	}
+	return nil, fmt.Errorf("all search engines failed: %s", strings.Join(errs, "; "))
 }
 
 // engineCtx derives a per-engine context that gets a fair slice of the parent's
