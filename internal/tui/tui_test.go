@@ -2653,3 +2653,57 @@ func lastNote(m *model) string {
 	}
 	return ""
 }
+
+func TestCopyInputWhenComposing(t *testing.T) {
+	// ctrl+y with text in the input and no block selected copies the INPUT
+	// (the user's draft), not the last assistant message.
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	fc := &fakeClip{avail: true}
+	m.clip = fc
+	m.text("assistant", "previous answer")
+	m.sel = -1 // no transcript selection
+	m.ti.SetValue("my draft to copy")
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}, Alt: true}) // alt+y copy
+	if fc.copied != "my draft to copy" {
+		t.Fatalf("ctrl/alt+y while composing should copy the input draft, got %q", fc.copied)
+	}
+	// With a block selected, ctrl+y still copies the block (not the input).
+	fc.copied = ""
+	m.sel = len(m.blocks) - 1
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}, Alt: true})
+	if fc.copied != "previous answer" {
+		t.Fatalf("with a block selected, copy should target the block, got %q", fc.copied)
+	}
+}
+
+func TestUpDownMoveBetweenInputLines(t *testing.T) {
+	// In a multi-line input, up/down move the cursor between lines; history is
+	// recalled only at the first/last line.
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.history = []string{"old command"}
+	m.histIdx = len(m.history)
+	// Build a 3-line input; cursor ends on the last line.
+	m.ti.SetValue("line one\nline two\nline three")
+	if m.ti.LineCount() < 3 {
+		t.Skipf("textarea didn't accept 3 lines (got %d)", m.ti.LineCount())
+	}
+	// Cursor on the last line → up moves within the text (does NOT recall history).
+	m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if m.ti.Line() != 1 {
+		t.Fatalf("up on a multi-line input should move to line 1, got line %d", m.ti.Line())
+	}
+	if v := m.ti.Value(); !strings.Contains(v, "line one") {
+		t.Fatalf("up should NOT have recalled history (input replaced), value=%q", v)
+	}
+	// Move to the first line, then up → recall history.
+	m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if m.ti.Line() != 0 {
+		t.Fatalf("expected cursor on line 0, got %d", m.ti.Line())
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if m.ti.Value() != "old command" {
+		t.Fatalf("up on the first line should recall history, got %q", m.ti.Value())
+	}
+}

@@ -1063,9 +1063,20 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		// reach the app.
 		switch msg.String() {
 		case "up":
+			// Multi-line input: move the cursor up a line; only recall history
+			// when already on the FIRST line (shell convention).
+			if m.ti.Line() > 0 {
+				m.ti, cmd = m.ti.Update(msg)
+				return m, cmd
+			}
 			m.historyPrev()
 			return m, nil
 		case "down":
+			// Move the cursor down a line; recall history only on the LAST line.
+			if m.ti.Line() < m.ti.LineCount()-1 {
+				m.ti, cmd = m.ti.Update(msg)
+				return m, cmd
+			}
 			m.historyNext()
 			return m, nil
 		case "ctrl+p", "alt+up", "alt+k", "shift+up":

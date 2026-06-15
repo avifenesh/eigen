@@ -161,6 +161,12 @@ func (m *model) copyTarget() string {
 		}
 		return text
 	}
+	// No transcript block selected: if you're composing, copy the input box —
+	// "copy what I'm typing" (terminal mouse-select is captured by the app, so
+	// ctrl+y is the way to grab your draft).
+	if v := strings.TrimRight(m.ti.Value(), "\n"); strings.TrimSpace(v) != "" {
+		return v
+	}
 	return m.lastAssistantText()
 }
 
