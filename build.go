@@ -165,11 +165,17 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 	}
 	reviewRun := router.crossReviewer(func() string { return effectiveModel(p.Provider, p.Model) })
 
+	// Backgrounded shells: bash background=true / on-demand detach. The registry
+	// is shared by the bash, bash_output and kill_shell tools and the agent.
+	shells := tool.NewShellRegistry()
+
 	defs := []tool.Definition{
 		tool.Read(policy), tool.List(policy), tool.Glob(policy), tool.Grep(policy),
 		tool.Symbols(policy), tool.Tree(policy), tool.Diff(policy), tool.Write(policy),
 		tool.Edit(policy), tool.MultiEdit(policy), tool.Patch(policy), tool.Move(policy),
-		tool.Bash(policy), tool.Fetch(), tool.Todo(), tool.Skill(p.Skills),
+		tool.BashWithShells(policy, shells, func() <-chan struct{} { return deps.Agent.BashDetachCh() }),
+		tool.BashOutput(shells), tool.KillShell(shells),
+		tool.Fetch(), tool.Todo(), tool.Skill(p.Skills),
 		tool.Memory(mem, p.GlobalMem), tool.Task(taskRun), tool.TaskStatus(taskStatus),
 		tool.TaskGroup(taskGroup), tool.TaskGroupMutating(taskGroupMut),
 		tool.Retrieve(retrieveRunner(p.Dir)),
@@ -255,6 +261,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		SessionDir:       p.Dir,
 		WorktreeTools:    worktreeTools,
 		Policy:           policy,
+		Shells:           shells,
 	}
 	deps.Agent = a
 	deps.eventWrap = func(next agent.EventSink) agent.EventSink {

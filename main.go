@@ -614,6 +614,8 @@ func main() {
 	reviewRun := router.crossReviewer(func() string {
 		return effectiveModel(*provider, *model)
 	})
+	// Backgrounded shells (bash background=true / on-demand detach).
+	shells := tool.NewShellRegistry()
 	defs := []tool.Definition{
 		tool.Read(policy),
 		tool.List(policy),
@@ -627,7 +629,9 @@ func main() {
 		tool.MultiEdit(policy),
 		tool.Patch(policy),
 		tool.Move(policy),
-		tool.Bash(policy),
+		tool.BashWithShells(policy, shells, func() <-chan struct{} { return a.BashDetachCh() }),
+		tool.BashOutput(shells),
+		tool.KillShell(shells),
 		tool.Fetch(),
 		tool.Todo(),
 		tool.Skill(skills),
@@ -766,6 +770,7 @@ func main() {
 		SessionDir:       wdOrDot(),
 		WorktreeTools:    worktreeTools,
 		Policy:           policy,
+		Shells:           shells,
 	}
 
 	// Session store: discover all sources (lazy) and title untitled ones in the

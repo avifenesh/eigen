@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/avifenesh/eigen/internal/fuzzy"
 )
 
 // Skill is one discovered skill (frontmatter only; the body is read on demand).
@@ -63,10 +65,148 @@ func (s *Set) List() []Skill {
 // Len reports how many skills were discovered.
 func (s *Set) Len() int { return len(s.order) }
 
-// Get returns a skill by name.
+// Get returns a skill by name (exact, then via Resolve's hint matching, so a
+// near-miss like "skill curator" or "curator" still finds "skill-curator").
 func (s *Set) Get(name string) (Skill, bool) {
-	sk, ok := s.byName[name]
-	return sk, ok
+	if sk, ok := s.byName[name]; ok {
+		return sk, true
+	}
+	if n, ok := s.Resolve(name); ok {
+		return s.byName[n], true
+	}
+	return Skill{}, false
+}
+
+// normalizeName lowercases and collapses separators so "Skill Curator",
+// "skill_curator", and "skill-curator" all compare equal.
+func normalizeName(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	repl := func(r rune) rune {
+		switch r {
+		case ' ', '_', '-', '.', '/':
+			return '-'
+		}
+		return r
+	}
+	s = strings.Map(repl, s)
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
+	}
+	return strings.Trim(s, "-")
+}
+
+// Resolve maps a loose hint to a registered skill name. Models rarely echo the
+// exact registered key, so a hint ("skill curator", "curator", "curate skill")
+// must still land. Resolution is a confidence ladder, each tier only accepted
+// when it names exactly ONE skill (an ambiguous hint resolves to nothing rather
+// than guessing wrong):
+//
+//  1. exact name
+//  2. separator/case-insensitive normalized name ("Skill Curator")
+//  3. unique whole-word containment either direction ("curator", "curate a skill")
+//  4. unique fuzzy subsequence match (internal/fuzzy), the same ranker the
+//     palette/search use
+//
+// Returns (name, true) only on a unique winner.
+func (s *Set) Resolve(hint string) (string, bool) {
+	if hint == "" {
+		return "", false
+	}
+	if _, ok := s.byName[hint]; ok {
+		return hint, true
+	}
+	nh := normalizeName(hint)
+	if nh == "" {
+		return "", false
+	}
+
+	// Tier 2: normalized exact.
+	var norm []string
+	for _, n := range s.order {
+		if normalizeName(n) == nh {
+			norm = append(norm, n)
+		}
+	}
+	if len(norm) == 1 {
+		return norm[0], true
+	}
+
+	// Tier 3: unique whole-word containment, hint-word ↔ name-word, either way.
+	hintWords := strings.Split(nh, "-")
+	var contain []string
+	for _, n := range s.order {
+		nn := normalizeName(n)
+		nameWords := strings.Split(nn, "-")
+		if sharesWord(hintWords, nameWords) && (strings.Contains(nn, nh) || strings.Contains(nh, nn) || overlapAll(hintWords, nameWords)) {
+			contain = append(contain, n)
+		}
+	}
+	if len(contain) == 1 {
+		return contain[0], true
+	}
+	// More than one name shares the hint's words: genuinely ambiguous
+	// ("curator" with both skill-curator and system-prompt-curator). Fail
+	// closed rather than letting the fuzzy tier silently pick one.
+	if len(contain) > 1 {
+		return "", false
+	}
+
+	// Tier 4: unique best fuzzy subsequence match.
+	best, bestScore, ties := "", int(^uint(0)>>1), 0
+	for _, n := range s.order {
+		sc := fuzzy.Score(normalizeName(n), nh)
+		if sc < 0 {
+			continue
+		}
+		if sc < bestScore {
+			best, bestScore, ties = n, sc, 1
+		} else if sc == bestScore {
+			ties++
+		}
+	}
+	if best != "" && ties == 1 {
+		return best, true
+	}
+	return "", false
+}
+
+// sharesWord reports whether the two word lists share at least one non-trivial
+// token (length ≥ 3 so "a"/"to" don't create spurious matches).
+func sharesWord(a, b []string) bool {
+	for _, x := range a {
+		if len(x) < 3 {
+			continue
+		}
+		for _, y := range b {
+			if x == y {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// overlapAll reports whether every word of the shorter list appears in the
+// longer one, so "curate skill" matches "skill-curator"-style multiword names
+// even when neither string contains the other verbatim.
+func overlapAll(a, b []string) bool {
+	short, long := a, b
+	if len(short) > len(long) {
+		short, long = long, short
+	}
+	set := map[string]bool{}
+	for _, w := range long {
+		set[w] = true
+	}
+	for _, w := range short {
+		if len(w) < 3 {
+			continue // ignore filler tokens
+		}
+		if !set[w] {
+			return false
+		}
+	}
+	return len(short) > 0
 }
 
 // Names returns the discovered skill names in order.
@@ -77,12 +217,15 @@ func (s *Set) Names() []string {
 }
 
 // Body returns the instruction body of a skill (everything after the
-// frontmatter), read from disk on demand.
+// frontmatter), read from disk on demand. The name is resolved through Resolve,
+// so a loose hint ("skill curator", "curator") loads the right skill instead of
+// erroring on an inexact match.
 func (s *Set) Body(name string) (string, error) {
-	sk, ok := s.byName[name]
+	resolved, ok := s.Resolve(name)
 	if !ok {
 		return "", fmt.Errorf("unknown skill %q (available: %s)", name, strings.Join(s.order, ", "))
 	}
+	sk := s.byName[resolved]
 	data, err := os.ReadFile(sk.Path)
 	if err != nil {
 		return "", err

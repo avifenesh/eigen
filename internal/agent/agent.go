@@ -175,6 +175,17 @@ type Agent struct {
 	// nil when tools were built without a policy (rare). The agent NEVER calls
 	// AddDir itself — only the user, via the command/flag.
 	Policy *tool.Policy
+
+	// Shells is the per-session registry of backgrounded bash commands (the
+	// bash background=true / detach feature). Held here so the on-demand detach
+	// signal + a shells panel can reach it. nil = backgrounding disabled.
+	Shells *tool.ShellRegistry
+
+	// detachBash, when non-nil, returns the detach channel for the CURRENT
+	// foreground bash call: a receive means "background this running command".
+	// Set by the bash tool's detach func; signaled by DetachBash (the user's
+	// background-the-running-command key). Guarded by mu.
+	detachBash chan struct{}
 }
 
 // maxToolOutput caps a single tool result fed back to the model, so a runaway
@@ -276,6 +287,53 @@ func (a *Agent) CurrentGoal() string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.Goal
+}
+
+// BashDetachCh hands the bash tool a fresh detach channel for one command and
+// stores it so DetachBash can signal it. There is at most one foreground bash
+// per session turn, so a single slot suffices; it's cleared when the next bash
+// starts. Returns nil when backgrounding isn't wired.
+func (a *Agent) BashDetachCh() <-chan struct{} {
+	if a.Shells == nil {
+		return nil
+	}
+	ch := make(chan struct{}, 1)
+	a.mu.Lock()
+	a.detachBash = ch
+	a.mu.Unlock()
+	return ch
+}
+
+// DetachBash signals the currently-running foreground bash command to move to
+// the background (the user's "background this running command" key). No-op when
+// no bash is running. Returns true if a command was signaled.
+func (a *Agent) DetachBash() bool {
+	a.mu.Lock()
+	ch := a.detachBash
+	a.detachBash = nil
+	a.mu.Unlock()
+	if ch == nil {
+		return false
+	}
+	select {
+	case ch <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+// Shelled reports whether this agent has a backgrounded-shell registry.
+func (a *Agent) Shelled() bool { return a.Shells != nil }
+
+// backgroundShellStatus renders a concise per-step block listing the agent's
+// backgrounded shells, so it stays AWARE of them across steps. Empty when there
+// are none. Injected into the system prompt each step, like the goal.
+func (a *Agent) backgroundShellStatus() string {
+	if a.Shells == nil {
+		return ""
+	}
+	return a.Shells.StatusBlock()
 }
 
 // AddDir extends the tool sandbox with an additional allowed directory — the
@@ -825,6 +883,12 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		sys := system
 		if g := a.CurrentGoal(); g != "" {
 			sys += "\n\nCURRENT GOAL (persistent; the user set this as the north star — keep every action aligned with it until it changes):\n" + g + "\nWhen you believe the goal is FULLY achieved, call the goal_achieved tool with concrete evidence; an independent judge verifies and clears it."
+		}
+		// Background-shell awareness: surface any shells you started so you
+		// remember to poll/collect them — backgrounding a command then never
+		// checking it is the failure mode this prevents.
+		if bs := a.backgroundShellStatus(); bs != "" {
+			sys += bs
 		}
 		req := llm.Request{
 			System: sys,

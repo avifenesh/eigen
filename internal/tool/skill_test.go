@@ -17,6 +17,20 @@ func (f fakeSkillSet) Body(name string) (string, error) {
 }
 func (f fakeSkillSet) Names() []string { return []string{"alpha"} }
 
+// Resolve mirrors *skill.Set: exact name wins; otherwise a known body whose
+// name contains the hint resolves (enough to exercise the tool's fuzzy note).
+func (f fakeSkillSet) Resolve(hint string) (string, bool) {
+	if _, ok := f.bodies[hint]; ok {
+		return hint, true
+	}
+	for n := range f.bodies {
+		if strings.Contains(n, strings.ToLower(strings.TrimSpace(hint))) {
+			return n, true
+		}
+	}
+	return "", false
+}
+
 var errNotFound = errTest("not found")
 
 type errTest string

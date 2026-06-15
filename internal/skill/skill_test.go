@@ -63,6 +63,56 @@ func TestBodyUnknownSkill(t *testing.T) {
 	}
 }
 
+func TestResolveHints(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "skill-curator", "Curate SKILL.md files.", "# body")
+	writeSkill(t, dir, "system-prompt-curator", "Curate system prompts.", "# body")
+	writeSkill(t, dir, "pdf", "Work with PDFs.", "# body")
+	set := Discover(dir)
+
+	// Exact and loose hints that must land on skill-curator.
+	for _, hint := range []string{
+		"skill-curator", // exact
+		"skill curator", // space separator (the real miss this session)
+		"Skill Curator", // case + space
+		"skill_curator", // underscore
+	} {
+		got, ok := set.Resolve(hint)
+		if !ok || got != "skill-curator" {
+			t.Fatalf("Resolve(%q) = %q,%v; want skill-curator", hint, got, ok)
+		}
+	}
+
+	// "curator" alone is AMBIGUOUS (two *-curator skills) -> must not guess.
+	if got, ok := set.Resolve("curator"); ok {
+		t.Fatalf("ambiguous hint \"curator\" should not resolve, got %q", got)
+	}
+
+	// A hint that names one curator unambiguously still resolves.
+	if got, ok := set.Resolve("system prompt curator"); !ok || got != "system-prompt-curator" {
+		t.Fatalf("Resolve(system prompt curator) = %q,%v", got, ok)
+	}
+
+	// Body() goes through Resolve, so a hint loads the right skill.
+	if _, err := set.Body("skill curator"); err != nil {
+		t.Fatalf("Body via hint should load: %v", err)
+	}
+
+	// Pure nonsense still fails closed.
+	if _, ok := set.Resolve("zzzqqq"); ok {
+		t.Fatal("nonsense hint should not resolve")
+	}
+}
+
+func TestGetAcceptsHint(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "frontend-skill", "Build UIs.", "# body")
+	set := Discover(dir)
+	if _, ok := set.Get("frontend skill"); !ok {
+		t.Fatal("Get should accept a loose hint")
+	}
+}
+
 func TestNameFallsBackToDir(t *testing.T) {
 	dir := t.TempDir()
 	sd := filepath.Join(dir, "no-name-skill")
