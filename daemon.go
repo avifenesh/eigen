@@ -791,5 +791,13 @@ func runNightlyDream(host *daemon.Host, prov llm.Provider) {
 		if report, _ := pipe.Run(context.Background(), sessions); report != "" {
 			fmt.Fprintf(os.Stderr, "eigen daemon: dreamed %s — %s\n", dir, report)
 		}
+		// Propose a skill (never auto-install) when recurring friction shows.
+		if corpus := mem.RawSummaries(12); len(corpus) > 0 {
+			if draft, ok, serr := dream.SynthesizeSkill(context.Background(), prov, corpus); serr == nil && ok {
+				if path, werr := skill.Propose(draft.Name, draft.Description, draft.Body); werr == nil && path != "" {
+					fmt.Fprintf(os.Stderr, "eigen daemon: proposed skill %q (eigen skill accept %s)\n", draft.Name, draft.Name)
+				}
+			}
+		}
 	}
 }

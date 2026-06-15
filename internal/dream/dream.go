@@ -112,17 +112,23 @@ func RenderSession(msgs []llm.Message) string {
 	return b.String()
 }
 
-const synthPrompt = `You are eigen's skill-synthesis process. Read the recent coding-session transcripts.
-If — and only if — they reveal a REUSABLE, generalizable workflow worth capturing as a reusable skill (a repeatable procedure that would help in future, similar tasks), output a skill in EXACTLY this format:
+const synthPrompt = `You are eigen's skill-synthesis process. You are given recent session summaries / transcripts for a project. Propose a reusable SKILL only when the material shows a RECURRING, generalizable workflow or a repeated friction worth capturing — something that happened more than once, or a hard-won procedure a future session would clearly reuse.
+
+Strong signals to look for:
+- The same kind of task / fix / setup recurring across sessions.
+- A "Failures and how to do differently" lesson that would prevent a repeated mistake.
+- A multi-step recipe (commands, order, gotchas) the user had to discover.
+
+If — and only if — such a durable, reusable skill is warranted, output EXACTLY:
 
 NAME: <short-kebab-case-name>
 DESCRIPTION: <one sentence: when to use this skill>
 BODY:
-<concise markdown instructions for the workflow>
+<concise markdown instructions for the workflow — concrete commands/paths/steps>
 
-If there is no such durable, reusable workflow, output exactly: NONE
+If there is no clearly recurring, reusable workflow, output exactly: NONE
 
-Be conservative: most sessions do NOT warrant a new skill. Never invent a workflow that is not clearly demonstrated.`
+Be conservative: most material does NOT warrant a new skill. Never invent a workflow that is not clearly demonstrated. A one-off task is NOT a skill.`
 
 // SkillDraft is a proposed skill from synthesis.
 type SkillDraft struct {

@@ -1366,12 +1366,18 @@ func runDream(prov llm.Provider, mem *memory.Store) {
 		fmt.Printf("dreamed: %s → %s\n", report, mem.Dir())
 	}
 
-	// Skill synthesis: propose a reusable skill if the sessions reveal one.
-	if draft, ok, serr := dream.SynthesizeSkill(context.Background(), prov, transcripts); serr == nil && ok {
-		home, _ := os.UserHomeDir()
-		dir := filepath.Join(home, ".eigen", "skills")
-		if path, werr := skill.Save(dir, draft.Name, draft.Description, draft.Body); werr == nil {
-			fmt.Printf("synthesized skill %q → %s\n", draft.Name, path)
+	// Skill synthesis: PROPOSE a reusable skill (never auto-install) when the
+	// sessions show recurring, generalizable friction. Feed the structured
+	// rollout summaries (incl. their FAILURES sections) so synthesis sees
+	// patterns across sessions, not just one transcript. The user accepts via
+	// `eigen skill accept <name>`.
+	corpus := mem.RawSummaries(12)
+	if len(corpus) == 0 {
+		corpus = transcripts
+	}
+	if draft, ok, serr := dream.SynthesizeSkill(context.Background(), prov, corpus); serr == nil && ok {
+		if path, werr := skill.Propose(draft.Name, draft.Description, draft.Body); werr == nil && path != "" {
+			fmt.Printf("proposed skill %q → %s\n  review: eigen skill proposed · accept: eigen skill accept %s\n", draft.Name, path, draft.Name)
 		}
 	}
 }
@@ -1474,8 +1480,40 @@ func runSkillCmd(args []string, provider, model string) {
 			fmt.Printf("installed %q → %s (scan skipped)\n", res.Name, res.Path)
 		}
 		return
+	case "proposed", "proposals":
+		props := skill.Proposals()
+		if len(props) == 0 {
+			fmt.Println("no proposed skills (dreaming proposes them from recurring friction)")
+			return
+		}
+		fmt.Printf("proposed skills (accept: eigen skill accept <name>):\n")
+		for _, p := range props {
+			fmt.Printf("  %s — %s\n    %s\n", p.Name, p.Description, p.Path)
+		}
+		return
+	case "accept":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: eigen skill accept <name>")
+			os.Exit(2)
+		}
+		path, err := skill.Accept(args[1])
+		if err != nil {
+			fail(fmt.Errorf("skill accept: %w", err))
+		}
+		fmt.Printf("accepted skill %q → %s (now active)\n", args[1], path)
+		return
+	case "reject":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: eigen skill reject <name>")
+			os.Exit(2)
+		}
+		if err := skill.Reject(args[1]); err != nil {
+			fail(fmt.Errorf("skill reject: %w", err))
+		}
+		fmt.Printf("rejected proposed skill %q\n", args[1])
+		return
 	default:
-		fmt.Fprintf(os.Stderr, "unknown skill subcommand %q (want: add | list)\n", args[0])
+		fmt.Fprintf(os.Stderr, "unknown skill subcommand %q (want: add | list | proposed | accept | reject)\n", args[0])
 		os.Exit(2)
 	}
 }
