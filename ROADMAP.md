@@ -130,6 +130,23 @@ build ON it — read their format directly so the user's existing marketplaces w
   (`think` tool skipped — redundant with streamed reasoning.)
 - **Tier 3 — plugins + extension.** `plugins.json` external-command tools; MCP servers.
 - **Tier 4 — dreaming + learning.** Idle reflection → durable memory; consolidation.
+- **Tier 28 — memory v2 (codex-style structured memory).** ✅ Reverse-engineered
+  codex's `~/.codex/memories` pipeline + claude's banthis, ported natively
+  (docs/memory-system.md, S1–S7). Per scope `~/.eigen/memory/<key>/`: tiers
+  `raw/`(per-session rollout summaries, never injected) → `MEMORY.md`(curated)
+  → `SUMMARY.md`(the ONLY injected tier — fixes prompt bloat) + `bans.md`.
+  `index.sqlite` (pure-Go modernc) = leased job queue + usage/forgetting; the
+  whole memory dir is git-versioned. dream.Stage1 = structured rollout summary
+  (outcome / verbatim-quote→rule preferences / key / failures-&-do-differently /
+  reusable); dream.Consolidate + dream.Summarize drive the tiers; pipeline runs
+  via `eigen dream` AND a daemon nightly dreamer (idle-gated, machine-wide, small
+  model). banthis NATIVE: bans.md hard prohibitions via `/ban`//`/unban` + the
+  memory tool's `kind=ban`, injected as system-priority. Self-improvement:
+  recurring friction → PROPOSED subskills (`eigen skill proposed|accept|reject`,
+  never auto-installed). Global profile: cross-project working-style distilled
+  into global scope. Migration: pre-v2 flat `<key>.md` → `<key>/MEMORY.md`
+  non-destructively. Lesson baked in: a flaky-small-model "skip" is NOT a sticky
+  watermark. All live-verified.
 - **Tier 5 — TUI/UX polish.** Steer+queue, mouse, autocomplete, rich tool blocks, diffs.
 - **Tier 6 — agent quality.** Compaction, failover chain, routing, effort levels, usage.
 - **Tier 8 — eigen the app.** Daemon/view architecture; the app shell (home/projects/
