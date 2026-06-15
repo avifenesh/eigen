@@ -161,10 +161,16 @@ func (m *model) hitTest(x, y int) hit {
 		lx, ly := local(l.composer)
 		return hit{region: regComposer, action: m.composerActionAt(lx), localX: lx, localY: ly}
 	}
-	// Input box.
+	// Input box. While a turn is running, its top row is the status/spinner
+	// line — clicking it backgrounds the turn (a zellij-safe affordance, since
+	// ctrl+z is captured). Other rows are the text input.
 	if l.input.contains(x, y) {
 		lx, ly := local(l.input)
-		return hit{region: regInput, localX: lx, localY: ly}
+		a := actNone
+		if ly == 0 && m.state == stRunning && m.canBackgroundTurn() {
+			a = actBackgroundTurn
+		}
+		return hit{region: regInput, action: a, localX: lx, localY: ly}
 	}
 	// Completion menu.
 	if l.comp.contains(x, y) {

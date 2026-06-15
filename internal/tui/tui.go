@@ -1227,12 +1227,14 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				m.ti.InsertString("\n")
 				m.resizeInput()
 				return m, nil
-			case "ctrl+z":
+			case "ctrl+z", "alt+z":
 				// Move the turn you're waiting on to the background: the daemon
-				// keeps running it; this window returns to the dashboard. (esc
-				// interrupts — ctrl+z does NOT; it just stops watching.)
+				// keeps running it; this window returns to the dashboard, and
+				// the session wakes you when it's done. (esc interrupts — this
+				// does NOT; it just stops watching.) alt+z is the zellij-safe
+				// trigger — zellij captures ctrl+z (job control).
 				if m.canBackgroundTurn() {
-					m.note("moved to background — the daemon keeps running it; reattach from the dashboard to collect")
+					m.note("moved to background — the daemon keeps running it and wakes you when done")
 					return m, m.backgroundTurn()
 				}
 				return m, nil

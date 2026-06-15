@@ -1915,3 +1915,32 @@ func TestBackgroundTurnDaemonOnly(t *testing.T) {
 		t.Fatal("/background should set openApp (return to dashboard)")
 	}
 }
+
+func TestBackgroundTurnAltZAndClick(t *testing.T) {
+	// alt+z backgrounds a running daemon turn (zellij-safe; ctrl+z is captured
+	// by zellij).
+	d := switcherModel(t)
+	d.state = stRunning
+	d.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	_, cmd := d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}, Alt: true})
+	if cmd == nil || !d.openApp {
+		t.Fatal("alt+z should background the running turn (openApp + quit cmd)")
+	}
+
+	// Clicking the running status line (input region row 0) backgrounds too.
+	d2 := switcherModel(t)
+	d2.state = stRunning
+	d2.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	l := d2.computeLayout()
+	h := d2.hitTest(l.input.x+2, l.input.y) // row 0 of the input = the run line
+	if h.action != actBackgroundTurn {
+		t.Fatalf("clicking the running status line should target actBackgroundTurn, got %v", h.action)
+	}
+	// And a click below (the actual text input row) must NOT background.
+	if l.input.h > 1 {
+		h2 := d2.hitTest(l.input.x+2, l.input.y+1)
+		if h2.action == actBackgroundTurn {
+			t.Fatal("clicking the text input row should not background")
+		}
+	}
+}

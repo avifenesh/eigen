@@ -56,7 +56,7 @@ type slashCmd struct {
 var slashCommands = []slashCmd{
 	{"/help", "show commands and keybindings"},
 	{"/home", "return to the app shell (home page)"},
-	{"/background", "move the turn you're waiting on to the background (ctrl+z) — daemon keeps running it"},
+	{"/background", "move the running turn to the background (alt+z, or click the status line) — daemon keeps running it + wakes you"},
 	{"/sessions", "switch this window to another session (alt+s)"},
 	{"/rail", "toggle the left session rail (running sessions)"},
 	{"/changes", "toggle the right panel (changes/git/term)"},

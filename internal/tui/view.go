@@ -156,7 +156,7 @@ func (m *model) View() string {
 		// Status/spinner on its own line, with the input below so the user can
 		// type a message to queue (enter) or interrupt (esc) while it runs.
 		// Truncated to the width — a too-long line wraps and breaks the layout.
-		hint := dim("   enter steer · esc interrupt · alt+↑/↓ select · tab expand")
+		hint := dim("   enter steer · esc interrupt · alt+z background · tab expand")
 		// On-brand loader: a breathing λ + caret + synced dot, then the status
 		// in the working color — unmistakably "eigen is working", no jitter.
 		run := loaderView(m.brandTick) + " " + styleWorking.Render(m.status) + dim(m.liveTokRate()) + m.queuedHint() + hint
