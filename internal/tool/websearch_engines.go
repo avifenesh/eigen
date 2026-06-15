@@ -366,6 +366,113 @@ func mojeekSnippet(block string) string {
 	return stripTags(after[:end])
 }
 
+// --- DuckDuckGo (HTML endpoint, no key) --------------------------------------
+
+// duckduckgoEngine scrapes DuckDuckGo's lite HTML SERP (html.duckduckgo.com).
+// A second GENERAL keyless head so a Mojeek rate-limit (403) still has broad-web
+// fallback rather than dropping straight to niche/encyclopedic engines.
+type duckduckgoEngine struct{ base string }
+
+func (d *duckduckgoEngine) name() string       { return "duckduckgo" }
+func (d *duckduckgoEngine) class() engineClass { return classGeneral }
+func (d *duckduckgoEngine) host() string       { return hostOf(d.base, "html.duckduckgo.com") }
+
+func (d *duckduckgoEngine) search(ctx context.Context, hc *http.Client, query string, count int) ([]searchResult, error) {
+	base := strings.TrimRight(envOr2(d.base, "https://html.duckduckgo.com"), "/")
+	u := base + "/html/?q=" + url.QueryEscape(query)
+	raw, err := searchHTTPGet(ctx, hc, u, "text/html,application/xhtml+xml", "duckduckgo", nil)
+	if err != nil {
+		return nil, err
+	}
+	html := string(raw)
+	results := parseDuckDuckGo(html)
+	if len(results) > count {
+		results = results[:count]
+	}
+	// DDG serves an anti-bot/empty page without the result scaffold; only that
+	// should fail the engine (a genuine zero-hit SERP still has the class).
+	if len(results) == 0 && !strings.Contains(html, "result__a") && !strings.Contains(html, "no-results") {
+		return nil, fmt.Errorf("duckduckgo: no parseable results (likely an anti-bot interstitial from this IP)")
+	}
+	return results, nil
+}
+
+// parseDuckDuckGo extracts <a class="result__a" href="//duckduckgo.com/l/?uddg=…">
+// title</a> blocks; the real URL is the uddg redirect param. Snippets come from
+// the sibling <a class="result__snippet">.
+func parseDuckDuckGo(html string) []searchResult {
+	var out []searchResult
+	rest := html
+	for {
+		i := strings.Index(rest, `class="result__a"`)
+		if i < 0 {
+			break
+		}
+		// Back up to the opening <a of this anchor to read its href.
+		tagStart := strings.LastIndex(rest[:i], "<a ")
+		if tagStart < 0 {
+			rest = rest[i+len(`class="result__a"`):]
+			continue
+		}
+		gt := strings.IndexByte(rest[tagStart:], '>')
+		if gt < 0 {
+			break
+		}
+		tagEnd := tagStart + gt
+		tag := rest[tagStart : tagEnd+1]
+		after := rest[tagEnd+1:]
+		closeIdx := strings.Index(after, "</a>")
+		if closeIdx < 0 {
+			break
+		}
+		title := stripTags(after[:closeIdx])
+		realURL := unwrapDDGRedirect(attrValue(tag, "href"))
+		// Snippet: the next result__snippet anchor in this block.
+		snippet := ""
+		if si := strings.Index(after, `class="result__snippet"`); si >= 0 {
+			sgt := strings.IndexByte(after[si:], '>')
+			if sgt >= 0 {
+				sAfter := after[si+sgt+1:]
+				if sc := strings.Index(sAfter, "</a>"); sc >= 0 {
+					snippet = stripTags(sAfter[:sc])
+				}
+			}
+		}
+		if realURL != "" && title != "" {
+			out = append(out, searchResult{URL: realURL, Title: title, Snippet: snippet})
+		}
+		rest = after[closeIdx+len("</a>"):]
+	}
+	return out
+}
+
+// unwrapDDGRedirect turns a DDG redirect href (//duckduckgo.com/l/?uddg=ENCODED
+// &rut=…, or a bare/relative URL) into the real target URL.
+func unwrapDDGRedirect(href string) string {
+	href = strings.ReplaceAll(href, "&amp;", "&")
+	if href == "" {
+		return ""
+	}
+	// Locate uddg= param wherever it sits.
+	if i := strings.Index(href, "uddg="); i >= 0 {
+		v := href[i+len("uddg="):]
+		if amp := strings.IndexByte(v, '&'); amp >= 0 {
+			v = v[:amp]
+		}
+		if dec, err := url.QueryUnescape(v); err == nil && dec != "" {
+			return dec
+		}
+	}
+	// Not a redirect wrapper: normalize a protocol-relative URL.
+	if strings.HasPrefix(href, "//") {
+		return "https:" + href
+	}
+	if strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://") {
+		return href
+	}
+	return ""
+}
+
 func attrValue(tag, attr string) string {
 	needle := attr + `="`
 	i := strings.Index(tag, needle)

@@ -99,9 +99,14 @@ func buildSearchChain() *searchChain {
 	if tmpl := strings.TrimSpace(os.Getenv("EIGEN_WEBSEARCH_URL")); tmpl != "" {
 		engines = append(engines, &genericBackend{template: tmpl})
 	}
-	// Keyless tail — always present.
+	// Keyless tail — always present. Two GENERAL heads (Mojeek + DuckDuckGo) so
+	// a rate-limit/anti-bot block on one still has broad-web fallback before
+	// dropping to the niche/encyclopedic engines.
 	if !envTrue("EIGEN_WEBSEARCH_NO_MOJEEK") {
 		engines = append(engines, &mojeekEngine{})
+	}
+	if !envTrue("EIGEN_WEBSEARCH_NO_DUCKDUCKGO") {
+		engines = append(engines, &duckduckgoEngine{})
 	}
 	engines = append(engines, &marginaliaEngine{}, &wikipediaEngine{})
 	return &searchChain{engines: engines, checkSSRF: ssrfCheck}
