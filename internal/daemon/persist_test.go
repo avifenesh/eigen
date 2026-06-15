@@ -395,3 +395,49 @@ func TestPrunePersistedFilesWhenDaemonDown(t *testing.T) {
 		t.Fatal("s1 must remain")
 	}
 }
+
+func TestRestoreReappliesAddedRootsAndDropsInvalid(t *testing.T) {
+	persistDir := t.TempDir()
+	primary := t.TempDir()
+	good := t.TempDir()                            // exists at restore → re-applied
+	gone := filepath.Join(t.TempDir(), "vanished") // never created → dropped
+
+	saveMeta(persistDir, persistMeta{
+		ID: "s1", Dir: primary, Model: "m",
+		AddedRoots: []string{good, gone},
+	})
+	// A Policy-aware builder (rooted at the session dir) so AddDir works.
+	build := func(dir, _ string) (*agent.Agent, func(), error) {
+		reg, _ := tool.NewRegistry()
+		return &agent.Agent{
+			Provider: echoProvider{}, Tools: reg, Perm: agent.PermAuto,
+			Policy: tool.NewPolicy(dir),
+		}, func() {}, nil
+	}
+	h := NewPersistentHost(persistDir)
+	if n := h.Restore(build); n != 1 {
+		t.Fatalf("restore: %d, want 1", n)
+	}
+	s := h.Get("s1")
+	if s == nil {
+		t.Fatal("session not restored")
+	}
+	roots := s.agent.Roots()
+	// primary + good (gone is dropped on re-validation).
+	if len(roots) != 2 {
+		t.Fatalf("expected primary + the surviving added root, got %v", roots)
+	}
+	wantGood, _ := filepath.EvalSymlinks(good)
+	found := false
+	for _, r := range roots {
+		if r == filepath.Clean(wantGood) {
+			found = true
+		}
+		if r == filepath.Clean(gone) {
+			t.Fatalf("a vanished added root must be dropped on restore, got %v", roots)
+		}
+	}
+	if !found {
+		t.Fatalf("the surviving added root should be re-applied, got %v", roots)
+	}
+}

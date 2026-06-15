@@ -167,6 +167,13 @@ type Agent struct {
 	// NO bash/git/network). Injected by main (the agent package does not build
 	// tool policies). nil disables mutating fan-out.
 	WorktreeTools func(dir string) *tool.Registry
+
+	// Policy is the filesystem sandbox the tools enforce. Held here so the
+	// user-invoked /add-dir grant (AddDir) can extend it at runtime; the tools
+	// capture this same *Policy, so an added root takes effect immediately.
+	// nil when tools were built without a policy (rare). The agent NEVER calls
+	// AddDir itself — only the user, via the command/flag.
+	Policy *tool.Policy
 }
 
 // maxToolOutput caps a single tool result fed back to the model, so a runaway
@@ -232,6 +239,24 @@ func (a *Agent) CurrentGoal() string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.Goal
+}
+
+// AddDir extends the tool sandbox with an additional allowed directory — the
+// user-invoked /add-dir grant. Returns the normalized root that was added (the
+// Policy guards its own concurrency). A no-op error when no policy is wired.
+func (a *Agent) AddDir(path string) (string, error) {
+	if a.Policy == nil {
+		return "", fmt.Errorf("no sandbox policy on this session")
+	}
+	return a.Policy.AddRoot(path)
+}
+
+// Roots returns the tool sandbox's allowed directories (primary first), or nil.
+func (a *Agent) Roots() []string {
+	if a.Policy == nil {
+		return nil
+	}
+	return a.Policy.Roots()
 }
 
 // CurrentPerm returns the permission posture (live-safe read).

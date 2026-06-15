@@ -291,6 +291,16 @@ func (c *Client) SetTitle(sessionID, title string) error {
 	return err
 }
 
+// AddDir extends a session's tool sandbox with an additional allowed directory
+// (the user-invoked /add-dir grant). Returns the normalized root that was added.
+func (c *Client) AddDir(sessionID, path string) (string, error) {
+	resp, err := c.request(Request{Op: "add-dir", ID: sessionID, AddDir: path})
+	if err != nil {
+		return "", err
+	}
+	return resp.Root, nil
+}
+
 // Compact summarizes a session's conversation toward target tokens.
 func (c *Client) Compact(sessionID string, target int) (before, after int, err error) {
 	r, err := c.requestWithin(Request{Op: "compact", ID: sessionID, Target: target}, requestTimeoutFor("compact"))

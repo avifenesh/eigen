@@ -425,12 +425,17 @@ func (s *Session) state() *SessionState {
 			st.Tools = append(st.Tools, ToolInfo{Name: d.Name, ReadOnly: d.ReadOnly})
 		}
 	}
+	st.Roots = a.Roots()
 	return st
 }
 
 // setPerm/setGoal mutate session state (the agent's setters are mutex-guarded).
 func (s *Session) setPerm(p string) { s.agent.SetPerm(agent.Permission(p)) }
 func (s *Session) setGoal(g string) { s.agent.SetGoal(g) }
+
+// addDir extends the session's tool sandbox (user-invoked /add-dir grant).
+// Returns the normalized root added; the agent's Policy guards its concurrency.
+func (s *Session) addDir(path string) (string, error) { return s.agent.AddDir(path) }
 
 // setEffort/setSearch forward to the provider's optional capability; false =
 // the model has no such setting or rejected the value.

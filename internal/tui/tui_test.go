@@ -2613,3 +2613,43 @@ func TestFindGoFallsBackWhenPathLacksGo(t *testing.T) {
 		t.Fatalf("findGo should prefer PATH, got %q want %q", got, fake)
 	}
 }
+
+func TestAddDirCommandGrantsAndLists(t *testing.T) {
+	m := testModel(t)
+	primary := t.TempDir()
+	extra := t.TempDir()
+	a := m.backend.(*chat.Local).Agent()
+	a.Policy = tool.NewPolicy(primary)
+
+	// /add-dir <existing dir> grants it and notes the normalized root.
+	m.command("/add-dir " + extra)
+	if got := lastNote(m); !strings.Contains(got, "added working directory") {
+		t.Fatalf("/add-dir should confirm the grant, got note: %q", got)
+	}
+	roots := a.Roots()
+	if len(roots) != 2 {
+		t.Fatalf("expected primary + added root, got %v", roots)
+	}
+
+	// /add-dir of a non-existent dir is a clean error note, not a crash.
+	m.command("/add-dir " + filepath.Join(extra, "nope"))
+	if got := lastNote(m); !strings.Contains(got, "add-dir:") {
+		t.Fatalf("/add-dir of a bad path should note an error, got: %q", got)
+	}
+
+	// bare /add-dir lists the working directories.
+	m.command("/add-dir")
+	if got := lastNote(m); !strings.Contains(got, "working directories") || !strings.Contains(got, "primary") {
+		t.Fatalf("bare /add-dir should list roots, got: %q", got)
+	}
+}
+
+// lastNote returns the body of the most recent note block (for command tests).
+func lastNote(m *model) string {
+	for i := len(m.blocks) - 1; i >= 0; i-- {
+		if m.blocks[i].kind == blockNote {
+			return m.blocks[i].body
+		}
+	}
+	return ""
+}

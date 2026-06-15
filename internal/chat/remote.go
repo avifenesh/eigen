@@ -243,6 +243,20 @@ func (r *Remote) Tools() []ToolInfo {
 	return out
 }
 
+// AddDir extends the daemon session's tool sandbox (user /add-dir grant) and
+// refreshes the snapshot so Roots reflects it.
+func (r *Remote) AddDir(path string) (string, error) {
+	root, err := r.c.AddDir(r.id, path)
+	if err != nil {
+		return "", err
+	}
+	r.refresh()
+	return root, nil
+}
+
+// Roots lists the daemon session's tool-sandbox allowed dirs (primary first).
+func (r *Remote) Roots() []string { return r.snap().Roots }
+
 // Provider is nil for remote backends: capability checks that need the live
 // provider (vision, effort, search) degrade gracefully in the TUI.
 func (r *Remote) Provider() llm.Provider { return nil }

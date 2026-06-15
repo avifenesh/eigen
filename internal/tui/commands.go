@@ -61,7 +61,7 @@ func (m *model) applyResumed(msgs []llm.Message) {
 func safeWhileRunning(name string) bool {
 	switch name {
 	case "/effort", "/search", "/perm", "/model", "/help", "/goal", "/loop", "/config", "/route",
-		"/skills", "/tools", "/find", "/copy", "/read", "/voice", "/mute", "/dictate", "/talk", "/speak", "/rail", "/changes", "/term", "/tasks", "/tray", "/workflow", "/rename", "/background":
+		"/skills", "/tools", "/find", "/copy", "/read", "/voice", "/mute", "/dictate", "/talk", "/speak", "/rail", "/changes", "/term", "/tasks", "/tray", "/workflow", "/rename", "/background", "/add-dir":
 		return true
 	default:
 		// /clear, /compact, /resume, /rebuild, /save, /export, /quit, /exit
@@ -75,7 +75,7 @@ func (m *model) command(line string) tea.Cmd {
 	arg := strings.TrimSpace(strings.TrimPrefix(line, name))
 	switch name {
 	case "/help":
-		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /loop  /route  /review  /voice  /config  /skills  /tools  /find  /copy  /read  /rebuild  /quit")
+		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /loop  /route  /review  /voice  /config  /skills  /tools  /add-dir  /find  /copy  /read  /rebuild  /quit")
 		m.note("keys: / commands · ctrl+k palette · @ files · ↑↓ history · select ctrl+p/n (or alt+↑/↓) · tab expand · drag select+copy · copy ctrl+y/alt+y · sessions alt+s · tray alt+n · rail ctrl+b/alt+b · panel ctrl+g/alt+g · right-tab ctrl+r (changes/git/term/tasks) · perm ctrl+a/alt+a · effort ctrl+e/alt+r · model ctrl+o/alt+m · paste image ctrl+v/alt+v · talk ctrl+t/alt+t · pgup/pgdn scroll")
 		m.note("terminal tab: /term (or ctrl+r to the term tab) opens a REAL shell in the right panel — click it or it's focused on open; your keystrokes (incl. esc/ctrl+c) go to the shell so vim/less/top work; ctrl+g returns keys to the chat, the shell keeps running")
 		m.note("tasks tab: /tasks shows background delegations live (step/tool/elapsed) — click a task to expand its result or progress, click [cancel] to stop a running one; the sidebar shows ⚒ tasks N● while work runs")
@@ -260,6 +260,29 @@ func (m *model) command(line string) tea.Cmd {
 			// Arm the idle nag for when the running turn ends.
 			m.idleGen++
 			return m.scheduleGoalNag()
+		}
+	case "/add-dir":
+		switch arg {
+		case "":
+			roots := m.backend.Roots()
+			if len(roots) == 0 {
+				m.note("no sandbox roots reported")
+				break
+			}
+			lines := "working directories (tools may read/write/run here):\n  " + roots[0] + "  (primary)"
+			for _, r := range roots[1:] {
+				lines += "\n  " + r
+			}
+			lines += "\n(/add-dir <path> to grant another)"
+			m.note(lines)
+		default:
+			root, err := m.backend.AddDir(expandHome(arg))
+			if err != nil {
+				m.note("add-dir: " + err.Error())
+				break
+			}
+			m.saveMeta()
+			m.note("added working directory → " + root + "   (tools can now read/write/run here)")
 		}
 	case "/route":
 		if m.router == nil {

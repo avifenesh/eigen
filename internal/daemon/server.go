@@ -186,6 +186,19 @@ func (s *Server) handle(conn net.Conn) {
 			}
 			s.host.saveSessionMeta(sess) // durable: survives daemon restart
 			send(Response{Type: "ok"})
+		case "add-dir":
+			sess := s.host.Get(req.ID)
+			if sess == nil {
+				send(Response{Type: "error", Error: "no such session"})
+				continue
+			}
+			root, err := sess.addDir(req.AddDir)
+			if err != nil {
+				send(Response{Type: "error", Error: err.Error()})
+				continue
+			}
+			s.host.saveSessionMeta(sess) // persist the added root across restart
+			send(Response{Type: "ok", Root: root})
 		case "clear":
 			sess := s.host.Get(req.ID)
 			if sess == nil {

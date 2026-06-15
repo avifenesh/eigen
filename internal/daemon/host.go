@@ -152,6 +152,11 @@ func (h *Host) saveSessionMeta(s *Session) {
 		Perm:  string(s.agent.Perm),
 		Goal:  s.agent.CurrentGoal(),
 	}
+	// Persist user-granted extra roots (everything past the primary, which is
+	// the session Dir that build() already roots at).
+	if roots := s.agent.Roots(); len(roots) > 1 {
+		m.AddedRoots = append([]string(nil), roots[1:]...)
+	}
 	if !s.lastAttached.IsZero() {
 		m.LastAttached = s.lastAttached.Unix()
 	}
@@ -180,6 +185,13 @@ func (h *Host) Restore(build Builder) int {
 		}
 		if p.meta.Goal != "" {
 			a.SetGoal(p.meta.Goal)
+		}
+		// Re-apply user-granted extra roots; AddDir re-validates (existence +
+		// not-denied), so a vanished or now-sensitive path silently drops.
+		for _, root := range p.meta.AddedRoots {
+			if _, err := a.AddDir(root); err != nil {
+				fmt.Fprintf(os.Stderr, "eigen daemon: restore %s: drop added dir %s: %v\n", p.meta.ID, root, err)
+			}
 		}
 		s := newSession(p.meta.ID, p.meta.Dir, p.meta.Model, a)
 		s.notify = h.notify

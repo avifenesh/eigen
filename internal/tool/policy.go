@@ -1,9 +1,11 @@
 package tool
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -11,7 +13,14 @@ import (
 // of the policy's roots and must not match a denied directory or filename
 // pattern. It is enforced inside each tool (defense in depth), independent of
 // the agent loop's gated/auto permission posture.
+//
+// Roots can be extended at runtime via AddRoot (the user-invoked /add-dir
+// grant). The daemon hosts many sessions in one process and a session's tools
+// all share one *Policy across goroutines (the turn runs on a different
+// goroutine than control ops), so every read of roots and the AddRoot write are
+// guarded by mu.
 type Policy struct {
+	mu    sync.RWMutex
 	roots []string // absolute, symlink-resolved, cleaned roots
 }
 
@@ -54,10 +63,53 @@ func DefaultPolicy() *Policy {
 
 // Dir returns the policy's primary root (the project dir tools operate in).
 func (p *Policy) Dir() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	if len(p.roots) > 0 {
 		return p.roots[0]
 	}
 	return "."
+}
+
+// Roots returns a copy of the policy's allowed roots (primary first).
+func (p *Policy) Roots() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return append([]string(nil), p.roots...)
+}
+
+// AddRoot extends the policy with an additional allowed directory at runtime —
+// the user-invoked /add-dir grant (never the agent; the agent can't widen its
+// own sandbox). The path must be an existing directory and must not itself sit
+// under a denied segment (e.g. ~/.ssh). It is made absolute, symlink-resolved,
+// and cleaned exactly like NewPolicy, then appended (deduped). The primary root
+// (roots[0], used for bash cwd + relative resolution) is unchanged. Returns the
+// normalized root that was added.
+func (p *Policy) AddRoot(path string) (string, error) {
+	abs, err := filepath.Abs(strings.TrimSpace(path))
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = resolved
+	}
+	abs = filepath.Clean(abs)
+	fi, err := os.Stat(abs)
+	if err != nil || !fi.IsDir() {
+		return "", fmt.Errorf("%s is not an existing directory", path)
+	}
+	if reason := deniedReason(abs); reason != "" {
+		return "", fmt.Errorf("%s is denied (%s)", path, reason)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, ex := range p.roots {
+		if ex == abs {
+			return abs, nil // already a root (idempotent)
+		}
+	}
+	p.roots = append(p.roots, abs)
+	return abs, nil
 }
 
 // Resolve validates path against the policy and returns the absolute, symlink-
@@ -66,8 +118,9 @@ func (p *Policy) Dir() string {
 // hosts many sessions rooted at different projects in one process, so the
 // process cwd is meaningless.
 func (p *Policy) Resolve(path string) (string, error) {
-	if !filepath.IsAbs(path) && len(p.roots) > 0 {
-		path = filepath.Join(p.roots[0], path)
+	primary := p.Dir()
+	if !filepath.IsAbs(path) && primary != "." {
+		path = filepath.Join(primary, path)
 	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -85,6 +138,8 @@ func (p *Policy) Resolve(path string) (string, error) {
 }
 
 func (p *Policy) within(path string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	for _, root := range p.roots {
 		if path == root || strings.HasPrefix(path, root+string(filepath.Separator)) {
 			return true

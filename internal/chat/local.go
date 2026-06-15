@@ -108,6 +108,12 @@ func (l *Local) Tools() []ToolInfo {
 
 func (l *Local) Provider() llm.Provider { return l.a.Provider }
 
+// AddDir extends the tool sandbox (user-invoked /add-dir grant).
+func (l *Local) AddDir(path string) (string, error) { return l.a.AddDir(path) }
+
+// Roots lists the tool sandbox's allowed directories (primary first).
+func (l *Local) Roots() []string { return l.a.Roots() }
+
 // Agent exposes the underlying agent for the few main-side wiring needs
 // (EventWrap composition, subtask hookup) that predate the seam. The TUI must
 // NOT use this — it talks to the Backend interface only.

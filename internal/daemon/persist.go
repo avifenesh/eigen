@@ -38,6 +38,9 @@ type persistMeta struct {
 	// ME" — transcript mtime lies (the titler and background persistence touch
 	// files), so listings sort by this when present.
 	LastAttached int64 `json:"last_attached,omitempty"`
+	// AddedRoots are extra tool-sandbox dirs the user granted via /add-dir.
+	// Re-applied on restore (re-validated — invalid/vanished paths drop).
+	AddedRoots []string `json:"added_roots,omitempty"`
 }
 
 func transcriptPath(dir, id string) string { return filepath.Join(dir, id+".jsonl") }

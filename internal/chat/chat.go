@@ -70,6 +70,13 @@ type Backend interface {
 	// Tools lists registered tools (for /tools). Empty when unknown.
 	Tools() []ToolInfo
 
+	// AddDir extends the tool sandbox with an additional allowed directory —
+	// the user-invoked /add-dir grant (never the agent). Returns the normalized
+	// root that was added. Roots lists the current allowed directories (primary
+	// first). Remote backends carry both over the socket.
+	AddDir(path string) (string, error)
+	Roots() []string
+
 	// Provider exposes the live provider for capability checks (vision,
 	// streaming) and the router. May be nil for remote backends.
 	Provider() llm.Provider

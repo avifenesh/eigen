@@ -136,6 +136,8 @@ func main() {
 	sockPath := flag.String("sock", "", "attach to a daemon at an explicit socket path (e.g. an ssh -L forwarded ~/.eigen/daemon.sock); does NOT auto-spawn a local daemon")
 	var wfVars multiFlag
 	flag.Var(&wfVars, "var", "workflow variable k=v for `eigen run` (repeatable)")
+	var addDirs multiFlag
+	flag.Var(&addDirs, "add-dir", "grant the tools an extra working directory beyond the session root (repeatable)")
 	flag.Parse()
 
 	// Resolve the daemon instance (flag wins, then $EIGEN_INSTANCE) ONCE, before
@@ -442,6 +444,14 @@ func main() {
 			if nerr != nil {
 				fail(fmt.Errorf("daemon session: %w", nerr))
 			}
+			// User-granted extra working dirs (--add-dir, repeatable).
+			for _, d := range addDirs {
+				if root, aerr := dc.AddDir(sid, expandTilde(d)); aerr != nil {
+					fmt.Fprintf(os.Stderr, "eigen: --add-dir %s: %v\n", d, aerr)
+				} else {
+					fmt.Fprintln(os.Stderr, "eigen: added working dir", root)
+				}
+			}
 			backend, berr := chat.NewRemote(dc, sid)
 			if berr != nil {
 				fail(berr)
@@ -483,6 +493,15 @@ func main() {
 	}
 
 	policy := tool.DefaultPolicy()
+	// User-granted extra working dirs (--add-dir, repeatable). AddRoot
+	// re-validates (must be an existing, non-denied dir).
+	for _, d := range addDirs {
+		if root, err := policy.AddRoot(expandTilde(d)); err != nil {
+			fmt.Fprintf(os.Stderr, "eigen: --add-dir %s: %v\n", d, err)
+		} else {
+			fmt.Fprintln(os.Stderr, "eigen: added working dir", root)
+		}
+	}
 	mem, _ := memory.Open("")
 	gmem, _ := memory.OpenGlobal()
 	// Sub-agent delegation: the task tool runs a subtask on a fresh session of
@@ -742,6 +761,7 @@ func main() {
 		Bg:               agent.NewBgRegistry(agent.TasksDir()),
 		SessionDir:       wdOrDot(),
 		WorktreeTools:    worktreeTools,
+		Policy:           policy,
 	}
 
 	// Session store: discover all sources (lazy) and title untitled ones in the
@@ -1658,6 +1678,19 @@ func wdOrDot() string {
 		return wd
 	}
 	return "."
+}
+
+// expandTilde resolves a leading ~/ to the user's home directory (for --add-dir).
+func expandTilde(p string) string {
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			if p == "~" {
+				return home
+			}
+			return filepath.Join(home, p[2:])
+		}
+	}
+	return p
 }
 
 // multiFlag collects repeatable string flags (eigen run --var k=v --var k2=v2).

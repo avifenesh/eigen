@@ -15,7 +15,7 @@ type Builder func(dir, model string) (*agent.Agent, func(), error)
 
 // Request is a view→daemon command (line-delimited JSON over the socket).
 type Request struct {
-	Op       string `json:"op"`                 // list|new|attach|input|interrupt|remove|approve|state|set|compact|clear|resend|ping
+	Op       string `json:"op"`                 // list|new|attach|input|interrupt|remove|approve|state|set|compact|clear|resend|ping|add-dir
 	ID       string `json:"id,omitempty"`       // session id
 	Dir      string `json:"dir,omitempty"`      // new: working directory
 	Model    string `json:"model,omitempty"`    // new / set: model id
@@ -35,6 +35,8 @@ type Request struct {
 	// set: effort / search ("" = not in this request)
 	Effort string `json:"effort,omitempty"`
 	Search string `json:"search,omitempty"`
+	// add-dir: an additional allowed sandbox directory (user grant)
+	AddDir string `json:"add_dir,omitempty"`
 }
 
 // Response is a daemon→view message. Type discriminates the payload.
@@ -42,6 +44,7 @@ type Response struct {
 	Type     string        `json:"type"` // ok | error | sessions | attached | event | state | compacted
 	Error    string        `json:"error,omitempty"`
 	ID       string        `json:"id,omitempty"`       // session id (new/attached)
+	Root     string        `json:"root,omitempty"`     // add-dir: the normalized root added
 	Sessions []SessionInfo `json:"sessions,omitempty"` // list
 	Event    *WireEvent    `json:"event,omitempty"`    // streamed agent event
 	Replay   bool          `json:"replay,omitempty"`   // event is from the replay buffer
@@ -66,6 +69,7 @@ type SessionState struct {
 	Search    string        `json:"search,omitempty"`  // "" = unsupported
 	Running   bool          `json:"running,omitempty"` // a turn is in flight right now
 	Tools     []ToolInfo    `json:"tools,omitempty"`
+	Roots     []string      `json:"roots,omitempty"` // tool sandbox allowed dirs (primary first)
 }
 
 // ToolInfo mirrors chat.ToolInfo over the wire.

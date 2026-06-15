@@ -254,6 +254,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		Bg:               agent.NewBgRegistry(agent.TasksDir()),
 		SessionDir:       p.Dir,
 		WorktreeTools:    worktreeTools,
+		Policy:           policy,
 	}
 	deps.Agent = a
 	deps.eventWrap = func(next agent.EventSink) agent.EventSink {

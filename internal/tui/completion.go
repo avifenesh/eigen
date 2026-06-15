@@ -84,6 +84,7 @@ var slashCommands = []slashCmd{
 	{"/speak", "read the last answer aloud once (▶ button)"},
 	{"/skills", "list skills, or /skills <name> to preview one"},
 	{"/tools", "list available tools"},
+	{"/add-dir", "grant the tools another working directory (/add-dir <path>)"},
 	{"/find", "search the transcript"},
 	{"/copy", "copy the selected block (or last answer) to clipboard"},
 	{"/export", "export this conversation to a markdown file"},
