@@ -61,7 +61,7 @@ func (m *model) applyResumed(msgs []llm.Message) {
 func safeWhileRunning(name string) bool {
 	switch name {
 	case "/effort", "/search", "/perm", "/model", "/help", "/goal", "/loop", "/config", "/route",
-		"/skills", "/tools", "/find", "/copy", "/read", "/voice", "/mute", "/dictate", "/talk", "/speak", "/rail", "/changes", "/term", "/tasks", "/tray", "/workflow", "/rename", "/background", "/add-dir", "/mouse":
+		"/skills", "/tools", "/find", "/copy", "/read", "/voice", "/mute", "/dictate", "/talk", "/speak", "/rail", "/changes", "/term", "/tasks", "/tray", "/workflow", "/rename", "/background", "/add-dir", "/mouse", "/steer", "/queue":
 		return true
 	default:
 		// /clear, /compact, /resume, /rebuild, /save, /export, /quit, /exit
@@ -141,6 +141,14 @@ func (m *model) command(line string) tea.Cmd {
 		m.openSwitcher()
 	case "/mouse":
 		return m.toggleMouse()
+	case "/steer", "/queue":
+		// Set the input mode explicitly (or toggle with bare /steer-vs-current).
+		want := strings.TrimPrefix(name, "/")
+		if normalizeInputMode(m.inputMode) != want {
+			return m.toggleInputMode()
+		}
+		m.note("input mode already " + want)
+		return nil
 	case "/rail":
 		return m.toggleRail()
 	case "/changes":

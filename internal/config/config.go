@@ -26,9 +26,14 @@ func knownTheme(name string) bool {
 // optional; flags and environment variables override it. It supplies defaults
 // so users don't repeat flags every run.
 type Config struct {
-	Provider   string   `json:"provider"`
-	Model      string   `json:"model"`
-	Perm       string   `json:"perm"`
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	Perm     string `json:"perm"`
+	// InputMode is what Enter does while a turn is running: "steer" injects the
+	// message mid-turn (between tool rounds); "queue" holds it until the turn
+	// ends, then sends it as the next turn. Default steer. Per-press override
+	// in the TUI (alt+q) + /steer //queue.
+	InputMode  string   `json:"input_mode,omitempty"`
 	Effort     string   `json:"effort"`    // default reasoning effort for new sessions (per-model levels; e.g. max)
 	Theme      string   `json:"theme"`     // named color palette (nord|gruvbox); applied at startup via EIGEN_THEME
 	NerdFont   string   `json:"nerd_font"` // on|off icon tier (Nerd Font glyphs vs Unicode fallback); applied via EIGEN_NERD_FONT
@@ -160,6 +165,11 @@ func Set(c *Config, key, value string) error {
 			return fmt.Errorf("perm must be gated|auto")
 		}
 		c.Perm = value
+	case "input_mode":
+		if value != "steer" && value != "queue" {
+			return fmt.Errorf("input_mode must be steer|queue")
+		}
+		c.InputMode = value
 	case "effort":
 		c.Effort = value
 	case "theme":
@@ -277,6 +287,7 @@ func View(c Config) string {
 		fmt.Fprintf(&b, "%-14s = %s (provider default; set a model to supersede)\n", "provider", c.Provider)
 	}
 	fmt.Fprintf(&b, "%-14s = %s\n", "perm", val(c.Perm))
+	fmt.Fprintf(&b, "%-14s = %s\n", "input_mode", val(Get(c, "input_mode")))
 	fmt.Fprintf(&b, "%-14s = %s\n", "effort", val(c.Effort))
 	fmt.Fprintf(&b, "%-14s = %s\n", "theme", val(c.Theme))
 	fmt.Fprintf(&b, "%-14s = %s\n", "nerd_font", val(c.NerdFont))
@@ -320,6 +331,11 @@ func Get(c Config, key string) string {
 		return llm.Ref(c.Provider, c.Model)
 	case "perm":
 		return c.Perm
+	case "input_mode":
+		if c.InputMode == "" {
+			return "steer"
+		}
+		return c.InputMode
 	case "effort":
 		return c.Effort
 	case "theme":

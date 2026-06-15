@@ -112,6 +112,8 @@ func (m *model) statusBarParts() []statusSeg {
 			permStyle = styleAsk
 		}
 		segs = append(segs, statusSeg{text: "perm=" + string(m.backend.Perm()), style: permStyle, action: actPermPicker})
+		// input mode: steer (inject mid-turn) vs queue (next turn) — clickable.
+		segs = append(segs, statusSeg{text: "input=" + normalizeInputMode(m.inputMode), style: styleTool, action: actInputModeToggle})
 		if e := m.backend.Effort(); e != "" {
 			segs = append(segs, statusSeg{text: "effort=" + e, style: styleTool, action: actEffortCycle})
 		}

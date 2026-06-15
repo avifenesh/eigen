@@ -318,6 +318,7 @@ func attachTUI(c *daemon.Client, id string, cfg config.Config, task string) tui.
 		InitialTask:   task,
 		Provider:      backend.ProviderName(),
 		Model:         backend.ModelID(),
+		InputMode:     cfg.InputMode,
 		Memory:        mem,
 		Store:         store,
 		Skills:        skills,

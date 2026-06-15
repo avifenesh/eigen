@@ -4,6 +4,8 @@ package tui
 // failover window, and the context-budget rule they all share.
 
 import (
+	"fmt"
+
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/llm"
 	tea "github.com/charmbracelet/bubbletea"
@@ -179,4 +181,42 @@ func (m *model) effortLevels() []string {
 		return levels
 	}
 	return llm.EffortLevels
+}
+
+// normalizeInputMode coerces a config value to a valid input mode (default steer).
+func normalizeInputMode(s string) string {
+	if s == "queue" {
+		return "queue"
+	}
+	return "steer"
+}
+
+// steering reports whether Enter steers (vs queues) while a turn runs.
+func (m *model) steering() bool { return normalizeInputMode(m.inputMode) != "queue" }
+
+// toggleInputMode flips steer↔queue (the input= status segment, alt+q, /steer,
+// /queue). A flash shows the new mode; it rides in saveMeta for daemon sessions.
+func (m *model) toggleInputMode() tea.Cmd {
+	if m.steering() {
+		m.inputMode = "queue"
+	} else {
+		m.inputMode = "steer"
+	}
+	m.saveMeta()
+	if m.steering() {
+		return m.showFlash("input · steer (Enter injects mid-turn)")
+	}
+	return m.showFlash("input · queue (Enter waits for the next turn)")
+}
+
+// steerOrQueue handles a message typed while a turn is running, honoring the
+// input mode: steer injects it mid-turn (between tool rounds); queue holds it
+// for the next turn. Shared by the stRunning and attachedRunning Enter paths.
+func (m *model) steerOrQueue(task string) {
+	if m.steering() && m.backend != nil && m.backend.Steer(task, nil) {
+		m.note("↪ steering: " + compact(task))
+		return
+	}
+	m.queued = append(m.queued, task)
+	m.note(fmt.Sprintf("queued (%d): %s", len(m.queued), compact(task)))
 }

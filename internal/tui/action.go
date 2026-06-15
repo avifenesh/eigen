@@ -33,6 +33,7 @@ const (
 	actRename
 	actRailToggle
 	actMouseToggle
+	actInputModeToggle
 	actRailCollapse
 	actRailWiden
 	actRailNarrow
@@ -177,6 +178,12 @@ var actionRegistry = map[actionID]action{
 		id: actMouseToggle, label: "mouse capture (off = mark+copy in your terminal)",
 		run: func(m *model) tea.Cmd {
 			return m.toggleMouse()
+		},
+	},
+	actInputModeToggle: {
+		id: actInputModeToggle, label: "input mode: steer (mid-turn) / queue (next turn)",
+		run: func(m *model) tea.Cmd {
+			return m.toggleInputMode()
 		},
 	},
 	actRailCollapse: {

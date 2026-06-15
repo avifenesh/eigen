@@ -189,10 +189,14 @@ type model struct {
 	trayItems []trayItem
 	notif     []string
 
-	// steer + queue: messages typed while a turn runs are queued and sent when
-	// it finishes; esc interrupts the running turn via cancel.
-	queued []string
-	cancel context.CancelFunc
+	// steer + queue: what Enter does while a turn runs. inputMode "steer"
+	// injects the message mid-turn (between tool rounds); "queue" holds it in
+	// `queued` and sends it as the next turn when this one ends. Default from
+	// config.input_mode; toggled live (alt+q / the input= status segment /
+	// /steer //queue). esc interrupts the running turn via cancel.
+	inputMode string // "steer" | "queue"
+	queued    []string
+	cancel    context.CancelFunc
 
 	// slash-command + @file autocomplete menu for the input box.
 	comp      completion
@@ -1100,6 +1104,9 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			// Suspend/restore mouse capture so the terminal's native click-drag
 			// selection works (mark + copy with the mouse).
 			return m, m.toggleMouse()
+		case "alt+q":
+			// Toggle steer↔queue (what Enter does while a turn runs).
+			return m, m.toggleInputMode()
 		case "alt+s":
 			// In-window session switcher: hop this window to another daemon
 			// session (or home to the app) without touching running turns.
@@ -1173,11 +1180,11 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 					return m, m.command(task)
 				}
 				// Attached to a turn another view (or this window pre-attach)
-				// started: the session is busy, so STEER the message into that
-				// running turn (mid-turn) rather than starting a second turn
+				// started: the session is busy, so steer/queue the message
+				// into that running turn rather than starting a second turn
 				// that would race "session busy".
-				if m.attachedRunning && m.backend != nil && m.backend.Steer(task, nil) {
-					m.note("↪ steering: " + compact(task))
+				if m.attachedRunning {
+					m.steerOrQueue(task)
 					return m, nil
 				}
 				return m, m.submit(task)
@@ -1244,22 +1251,13 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 					return m, m.command(task)
 				}
 				m.recordHistory(task)
-				// Steer: inject the message into the RUNNING turn — it lands
-				// between tool-call rounds (mid-turn course-correction), not
-				// deferred to end-of-turn. Falls back to the end-of-turn queue
-				// only if the backend reports it's no longer running (race).
-				if m.backend.Steer(task, nil) {
-					m.ti.Reset()
-					m.ti.SetHeight(1)
-					m.comp = completion{kind: compNone}
-					m.relayout()
-					m.note("↪ steering: " + compact(task))
-					return m, nil
-				}
-				m.queued = append(m.queued, task)
 				m.ti.Reset()
 				m.ti.SetHeight(1)
-				m.note(fmt.Sprintf("queued (%d): %s", len(m.queued), compact(task)))
+				m.comp = completion{kind: compNone}
+				m.relayout()
+				// Steer (inject mid-turn) or queue (hold for next turn), per the
+				// input mode (toggle: the input= status segment / alt+q / /steer).
+				m.steerOrQueue(task)
 				return m, nil
 			case "ctrl+j", "alt+enter":
 				m.ti.InsertString("\n")
@@ -1858,6 +1856,9 @@ type Options struct {
 	// Title restores a resumed session's user-set name so a later saveMeta
 	// doesn't blank it (local sessions); daemon sessions carry it in State.
 	Title string
+	// InputMode is what Enter does while a turn runs: "steer" (inject mid-turn)
+	// or "queue" (hold for the next turn). "" = steer.
+	InputMode string
 }
 
 // Router is the auto-router surface the TUI needs: toggle, status, and routing
@@ -1936,6 +1937,7 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 		notifyCmd:      o.NotifyCmd,
 		loopPrompt:     o.LoopPrompt,
 		loopEvery:      o.LoopEvery,
+		inputMode:      normalizeInputMode(o.InputMode),
 		railOn:         true, // shown only for daemon-hosted backends on wide terminals
 		changesOn:      true, // right panel (changes/git/terminal) visibility
 		rightTab:       rightTabChanges,

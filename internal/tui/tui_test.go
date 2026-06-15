@@ -2763,3 +2763,55 @@ func TestAttachedRunningSteersAndBackgrounds(t *testing.T) {
 		t.Fatal("alt+z while attached-running should background (openApp + quit)")
 	}
 }
+
+func TestInputModeQueueHoldsForNextTurn(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	rec := &steerRecorder{Backend: m.backend}
+	m.backend = rec
+	m.state = stRunning
+	m.inputMode = "queue" // queue mode: enter holds, does NOT steer
+	m.ti.SetValue("later please")
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if len(rec.steered) != 0 {
+		t.Fatalf("queue mode must NOT steer, got %v", rec.steered)
+	}
+	if len(m.queued) != 1 || m.queued[0] != "later please" {
+		t.Fatalf("queue mode should hold the message for the next turn, queued=%v", m.queued)
+	}
+}
+
+func TestToggleInputMode(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	if !m.steering() {
+		t.Fatal("default input mode should be steer")
+	}
+	m.toggleInputMode()
+	if m.steering() || m.inputMode != "queue" {
+		t.Fatalf("toggle should switch to queue, got %q", m.inputMode)
+	}
+	// alt+q toggles back.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}, Alt: true})
+	if !m.steering() {
+		t.Fatal("alt+q should toggle back to steer")
+	}
+}
+
+func TestInputModeStatusSegmentClickable(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	// The status parts include a clickable input= segment wired to the toggle.
+	var found bool
+	for _, s := range m.statusBarParts() {
+		if strings.HasPrefix(s.text, "input=") {
+			found = true
+			if s.action != actInputModeToggle {
+				t.Fatalf("input= segment should toggle the mode, got action %v", s.action)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("status parts should include an input= segment")
+	}
+}

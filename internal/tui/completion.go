@@ -88,6 +88,8 @@ var slashCommands = []slashCmd{
 	{"/find", "search the transcript"},
 	{"/copy", "copy the selected block (or last answer) to clipboard"},
 	{"/mouse", "toggle mouse capture — turn OFF to mark + copy text with your terminal (alt+x)"},
+	{"/steer", "Enter injects your message mid-turn (between tool rounds) — alt+q toggles"},
+	{"/queue", "Enter holds your message for the next turn — alt+q toggles"},
 	{"/export", "export this conversation to a markdown file"},
 	{"/read", "toggle reading EVERY answer aloud (persistent; /speak = once)"},
 	{"/rebuild", "rebuild eigen and live-reload (on production: warns — use `eigen dev` to iterate safely)"},

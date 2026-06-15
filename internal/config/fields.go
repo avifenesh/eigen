@@ -22,6 +22,7 @@ func Fields() []Field {
 	return []Field{
 		{Key: "model", Desc: "default model for new sessions — catalog ids self-tag their backend; force one with provider:id (e.g. mantle:openai.gpt-5.5, converse:us.anthropic.claude-opus-4-8); live switch: /model", Dynamic: "models"},
 		{Key: "perm", Desc: "tool permission: gated asks before mutating tools · auto runs them freely", Options: []string{"gated", "auto"}},
+		{Key: "input_mode", Desc: "what Enter does while a turn runs: steer injects mid-turn (between tool rounds) · queue holds it for the next turn", Options: []string{"steer", "queue"}},
 		{Key: "effort", Desc: "default reasoning effort for new sessions (per-model levels; e.g. opus max, gpt xhigh); live switch: /effort or ctrl+e", Options: []string{"off", "minimal", "none", "low", "medium", "high", "xhigh", "max"}},
 		{Key: "theme", Desc: "color palette (applied at startup): deepteal (default — jewel teal, warm-clay focus, elevated surfaces) · nord (calm blue) · gruvbox (warm); same roles, different hues", Options: []string{"deepteal", "nord", "gruvbox"}},
 		{Key: "nerd_font", Desc: "icon tier (applied at startup): on uses richer Nerd Font glyphs (needs a Nerd Font, e.g. JetBrainsMono NF) · off uses the universal Unicode fallback · empty auto-detects (defaults to off — no tofu)", Options: []string{"on", "off"}},
