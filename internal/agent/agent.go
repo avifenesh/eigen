@@ -668,6 +668,12 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 	if w := applySubtaskEffort(prov, opts.Difficulty); w != "" {
 		where = joinWhere(where, w)
 	}
+	// Latency discipline: a trivial/easy subtask on a fast-capable provider
+	// (Codex priority tier) takes the fast path; medium/hard keep the configured
+	// tier (quality over latency). Same opt-out.
+	if w := applySubtaskFast(prov, opts.Difficulty); w != "" {
+		where = joinWhere(where, w)
+	}
 	// Construct the sub-agent explicitly (not by struct copy: Agent embeds a
 	// mutex). It inherits the perm/budget snapshot but stays silent (no
 	// OnEvent) and does not persist (its session is ephemeral). The Router and
@@ -763,6 +769,32 @@ func effortRank(levels []string, level string) int {
 		}
 	}
 	return -1
+}
+
+// applySubtaskFast turns ON the fast/low-latency path for trivial/easy subtasks
+// on a fast-capable provider (Codex priority tier). A cheap mechanical
+// delegation wants speed; medium/hard keep the configured tier (quality over
+// latency). Only enables (never disables a provider the user set fast),
+// subtask-only, same opt-out (EIGEN_SUBTASK_EFFORT=keep). Non-fast providers
+// no-op.
+func applySubtaskFast(prov llm.Provider, difficulty string) string {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("EIGEN_SUBTASK_EFFORT")), "keep") {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(difficulty)) {
+	case "trivial", "easy":
+		// proceed
+	default:
+		return ""
+	}
+	fm, ok := prov.(llm.FastModer)
+	if !ok || fm.FastMode() {
+		return "" // not fast-capable, or already fast
+	}
+	if fm.SetFast(true) {
+		return "fast (" + strings.ToLower(difficulty) + ")"
+	}
+	return ""
 }
 
 // Messages returns a COPY of the conversation so far (for saving / live-replace

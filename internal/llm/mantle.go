@@ -147,6 +147,10 @@ type responsesRequest struct {
 	Tools     []responsesTool      `json:"tools,omitempty"`
 	Reasoning *reasoningConfig     `json:"reasoning,omitempty"`
 	Stream    bool                 `json:"stream,omitempty"`
+	// ServiceTier selects the throughput/latency tier on backends that support
+	// it (Codex: "priority" = fast/low-latency, "flex" = cheap/slow). Empty =
+	// the backend default. Mantle leaves this empty.
+	ServiceTier string `json:"service_tier,omitempty"`
 }
 
 type responsesReply struct {

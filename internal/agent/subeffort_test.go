@@ -88,3 +88,48 @@ func TestApplySubtaskEffortLeavesNoMiddleModelsAlone(t *testing.T) {
 		}
 	}
 }
+
+// effortFastProv implements EffortSetter + FastModer for fast-routing tests.
+type effortFastProv struct {
+	id     string
+	effort string
+	fast   bool
+}
+
+func (p *effortFastProv) Name() string    { return p.id }
+func (p *effortFastProv) ModelID() string { return p.id }
+func (p *effortFastProv) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
+	return &llm.Response{}, nil
+}
+func (p *effortFastProv) SetEffort(l string) bool { p.effort = l; return true }
+func (p *effortFastProv) Effort() string          { return p.effort }
+func (p *effortFastProv) SetFast(on bool) bool    { p.fast = on; return on }
+func (p *effortFastProv) FastMode() bool          { return p.fast }
+
+func TestApplySubtaskFast(t *testing.T) {
+	t.Run("trivial enables fast", func(t *testing.T) {
+		p := &effortFastProv{id: "gpt-5.5"}
+		if w := applySubtaskFast(p, "trivial"); w == "" || !p.fast {
+			t.Fatalf("trivial should enable fast; fast=%v where=%q", p.fast, w)
+		}
+	})
+	t.Run("hard keeps configured", func(t *testing.T) {
+		p := &effortFastProv{id: "gpt-5.5"}
+		if w := applySubtaskFast(p, "hard"); w != "" || p.fast {
+			t.Fatalf("hard must not toggle fast; fast=%v where=%q", p.fast, w)
+		}
+	})
+	t.Run("already-fast no churn", func(t *testing.T) {
+		p := &effortFastProv{id: "gpt-5.5", fast: true}
+		if w := applySubtaskFast(p, "easy"); w != "" {
+			t.Fatalf("already-fast should report nothing, got %q", w)
+		}
+	})
+	t.Run("opt-out", func(t *testing.T) {
+		t.Setenv("EIGEN_SUBTASK_EFFORT", "keep")
+		p := &effortFastProv{id: "gpt-5.5"}
+		if w := applySubtaskFast(p, "trivial"); w != "" || p.fast {
+			t.Fatalf("opt-out must keep; fast=%v", p.fast)
+		}
+	})
+}

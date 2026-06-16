@@ -54,6 +54,11 @@ type ModelInfo struct {
 	// understanding (sentiment, what people are saying, X threads). Only Grok
 	// models with Live Search have this; GLM's web_search does not reach X.
 	Social bool
+
+	// ServiceTier is the default Codex service tier for this model: "priority"
+	// (fast/low-latency), "flex" (cheap/slow), or "" (backend default). Only the
+	// codex provider sends it. Toggled at runtime via SetFast / EIGEN_CODEX_SERVICE_TIER.
+	ServiceTier string
 }
 
 // Catalog is the set of models eigen knows about. It is additive: an unknown
@@ -68,6 +73,15 @@ var Catalog = []ModelInfo{
 	{ID: "openai.gpt-5.5", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "medium", EffortLevels: []string{"none", "low", "medium"}, Vision: true},
 	{ID: "openai.gpt-5.4", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, Vision: true},
 	{ID: "openai.gpt-5", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, Vision: true},
+
+	// Codex models — the OpenAI Responses API over the ChatGPT-account backend
+	// (chatgpt.com/backend-api/codex), auth from ~/.codex/auth.json. Same wire
+	// API as mantle, different auth + the service_tier "fast mode" knob. Effort
+	// levels include xhigh (the codex CLI default is xhigh); the default
+	// ServiceTier "priority" matches a fast-mode-on Codex setup (toggle with
+	// /fast or EIGEN_CODEX_SERVICE_TIER).
+	{ID: "gpt-5.5", Provider: "codex", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "minimal", "low", "medium", "high", "xhigh"}, ServiceTier: "priority", Vision: true},
+	{ID: "gpt-5.4", Provider: "codex", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "minimal", "low", "medium", "high", "xhigh"}, ServiceTier: "priority", Vision: true},
 
 	// Bedrock Converse (Anthropic Claude). Prompt caching + 1M context (beta) +
 	// extended thinking. Default 200k window; 1M when the beta is enabled.
@@ -180,6 +194,8 @@ func canonicalProvider(p string) string {
 		return "converse"
 	case "anthropic", "ant", "claude-code", "claude-api":
 		return "anthropic"
+	case "codex", "openai-codex", "chatgpt":
+		return "codex"
 	case "llama", "local":
 		return "llama"
 	case "grok", "xai":

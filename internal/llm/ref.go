@@ -33,7 +33,7 @@ func knownProvider(name string) bool {
 		return false // canonicalProvider("") defaults to mantle; not a tag
 	}
 	switch canonicalProvider(name) {
-	case "mantle", "converse", "anthropic", "llama", "grok", "glm":
+	case "mantle", "converse", "anthropic", "codex", "llama", "grok", "glm":
 		return true
 	}
 	return false

@@ -1,0 +1,462 @@
+package llm
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+)
+
+// Codex drives an OpenAI model through the **Codex** backend — the same path
+// the `codex` CLI uses: the Responses API over chatgpt.com/backend-api with a
+// ChatGPT-account OAuth token (NOT api.openai.com / OPENAI_API_KEY). It reuses
+// the Responses request/reply shapes + SSE parsing from the mantle provider
+// (same wire API), swapping auth + base URL and adding the service_tier "fast
+// mode" knob.
+//
+// Auth: ~/.codex/auth.json {auth_mode:"chatgpt", tokens:{access_token,
+// refresh_token, account_id, id_token}}. The access_token is sent as a Bearer;
+// account_id rides in the ChatGPT-Account-Id header. On a 401 the token is
+// refreshed via auth.openai.com/oauth/token (refresh_token grant) and the file
+// is rewritten — mirroring the codex CLI.
+type Codex struct {
+	BaseURL  string
+	Model    string
+	effort   string
+	tier     string // service_tier: "priority" (fast) | "flex" | "" (default)
+	authPath string
+	oauthURL string // OAuth token endpoint (override for tests)
+
+	mu        sync.Mutex
+	token     string // access_token
+	refresh   string // refresh_token
+	accountID string
+	http      *http.Client
+}
+
+const (
+	// codexBaseURL is the Codex backend the CLI targets (Responses API).
+	codexBaseURL = "https://chatgpt.com/backend-api/codex"
+	// codexOAuthTokenURL is the OAuth token endpoint for refresh.
+	codexOAuthTokenURL = "https://auth.openai.com/oauth/token"
+	// codexClientID is the public Codex CLI OAuth client id (from the binary).
+	codexClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
+)
+
+// codexAuth is the on-disk ~/.codex/auth.json shape (only the fields we use).
+type codexAuth struct {
+	AuthMode string `json:"auth_mode,omitempty"`
+	APIKey   string `json:"OPENAI_API_KEY,omitempty"`
+	Tokens   struct {
+		IDToken      string `json:"id_token,omitempty"`
+		AccessToken  string `json:"access_token,omitempty"`
+		RefreshToken string `json:"refresh_token,omitempty"`
+		AccountID    string `json:"account_id,omitempty"`
+	} `json:"tokens"`
+	LastRefresh string `json:"last_refresh,omitempty"`
+}
+
+// codexAuthPath is ~/.codex/auth.json (EIGEN_CODEX_AUTH overrides).
+func codexAuthPath() string {
+	if p := strings.TrimSpace(os.Getenv("EIGEN_CODEX_AUTH")); p != "" {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".codex", "auth.json")
+}
+
+// NewCodex builds the Codex provider from ~/.codex/auth.json. Requires a
+// ChatGPT-account login (codex login); API-key-only auth.json is rejected (that
+// path is api.openai.com, which is the mantle/openai story, not Codex).
+func NewCodex(model string) (*Codex, error) {
+	if model == "" {
+		model = "gpt-5.5"
+	}
+	path := codexAuthPath()
+	auth, err := readCodexAuth(path)
+	if err != nil {
+		return nil, fmt.Errorf("no Codex credentials at %s (run `codex login`): %w", path, err)
+	}
+	if auth.Tokens.AccessToken == "" {
+		return nil, fmt.Errorf("Codex auth at %s has no ChatGPT access token (run `codex login` — API-key-only auth uses the mantle/openai provider, not codex)", path)
+	}
+	c := &Codex{
+		BaseURL:   firstNonEmpty(os.Getenv("EIGEN_CODEX_BASE_URL"), codexBaseURL),
+		Model:     model,
+		authPath:  path,
+		oauthURL:  firstNonEmpty(os.Getenv("EIGEN_CODEX_OAUTH_URL"), codexOAuthTokenURL),
+		token:     auth.Tokens.AccessToken,
+		refresh:   auth.Tokens.RefreshToken,
+		accountID: auth.Tokens.AccountID,
+		effort:    reasoningEffort,
+		http:      &http.Client{Timeout: 5 * time.Minute},
+	}
+	// Per-model default effort + service tier from the catalog.
+	if info, ok := Lookup(model); ok {
+		if info.Effort != "" {
+			c.effort = info.Effort
+		}
+		c.tier = info.ServiceTier
+	}
+	// EIGEN_REASONING_EFFORT applies only if the model accepts it.
+	if e := strings.TrimSpace(os.Getenv("EIGEN_REASONING_EFFORT")); e != "" {
+		if levels := ModelEffortLevels(model); effortSupported(e, levels) {
+			c.effort = e
+		}
+	}
+	// Fast mode: env override of the service tier (priority|flex|off|"").
+	if t := strings.TrimSpace(os.Getenv("EIGEN_CODEX_SERVICE_TIER")); t != "" {
+		c.tier = normalizeTier(t)
+	}
+	return c, nil
+}
+
+func (c *Codex) Name() string    { return c.Model + " (codex)" }
+func (c *Codex) ModelID() string { return c.Model }
+
+// SetEffort changes reasoning effort if the model supports the level.
+func (c *Codex) SetEffort(level string) bool {
+	levels := ModelEffortLevels(c.Model)
+	if len(levels) == 0 {
+		levels = EffortLevels
+	}
+	if !effortSupported(level, levels) {
+		return false
+	}
+	c.mu.Lock()
+	c.effort = level
+	c.mu.Unlock()
+	return true
+}
+
+// Effort returns the current reasoning effort.
+func (c *Codex) Effort() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.effort
+}
+
+// SetSearch is a no-op stub: Codex has no client-side search toggle. (Implements
+// the optional interface symmetry; not registered as a Searcher.)
+
+// FastMode reports whether the fast (priority) service tier is active.
+func (c *Codex) FastMode() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.tier == "priority"
+}
+
+// SetFast toggles the fast/priority service tier on or off (off → backend
+// default, i.e. no service_tier sent). Returns the new state.
+func (c *Codex) SetFast(on bool) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if on {
+		c.tier = "priority"
+	} else {
+		c.tier = ""
+	}
+	return on
+}
+
+// normalizeTier maps user-facing aliases to the wire value. "fast" → priority.
+func normalizeTier(t string) string {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case "fast", "priority":
+		return "priority"
+	case "flex":
+		return "flex"
+	case "off", "default", "none", "":
+		return ""
+	default:
+		return strings.ToLower(t)
+	}
+}
+
+func (c *Codex) snapshot() (token, account, tier, effort string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.token, c.accountID, c.tier, c.effort
+}
+
+func (c *Codex) buildPayload(req Request, stream bool) responsesRequest {
+	_, _, tier, effort := c.snapshot()
+	return responsesRequest{
+		Model:       c.Model,
+		Input:       buildInput(req),
+		Tools:       toResponsesTools(req.Tools),
+		Reasoning:   &reasoningConfig{Effort: effort, Summary: reasoningSummary},
+		ServiceTier: tier,
+		Stream:      stream,
+	}
+}
+
+// headers builds the Codex request headers (Bearer + account id + beta flag).
+func (c *Codex) headers() map[string]string {
+	token, account, _, _ := c.snapshot()
+	h := map[string]string{
+		"Authorization": "Bearer " + token,
+		"OpenAI-Beta":   "responses=experimental",
+		"originator":    "codex_cli_rs",
+	}
+	if account != "" {
+		h["ChatGPT-Account-Id"] = account
+	}
+	return h
+}
+
+func (c *Codex) Complete(ctx context.Context, req Request) (*Response, error) {
+	if len(req.Messages) == 0 {
+		return nil, fmt.Errorf("request has no messages")
+	}
+	body, err := json.Marshal(c.buildPayload(req, false))
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+	raw, err := c.post(ctx, body)
+	if err != nil {
+		return nil, err
+	}
+	out, status, reason, err := parseReply(raw)
+	if err != nil {
+		return nil, err
+	}
+	if status == "incomplete" {
+		if reason == "" {
+			reason = "unknown"
+		}
+		return nil, fmt.Errorf("codex response incomplete (%s): refusing possibly-truncated output", reason)
+	}
+	return out, nil
+}
+
+// post sends a Responses request, refreshing the OAuth token once on a 401.
+func (c *Codex) post(ctx context.Context, body []byte) ([]byte, error) {
+	raw, status, err := httpJSON(ctx, c.http, c.BaseURL+"/responses", c.headers(), body, nil)
+	if err != nil {
+		return nil, err
+	}
+	if status == http.StatusUnauthorized {
+		if rerr := c.refreshToken(ctx); rerr != nil {
+			return nil, fmt.Errorf("codex auth expired and refresh failed: %w", rerr)
+		}
+		raw, status, err = httpJSON(ctx, c.http, c.BaseURL+"/responses", c.headers(), body, nil)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf("codex HTTP %d: %s", status, trimErr(raw))
+	}
+	return raw, nil
+}
+
+// Stream runs a streamed completion over SSE, reusing the mantle SSE assembler.
+func (c *Codex) Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error) {
+	if len(req.Messages) == 0 {
+		return nil, fmt.Errorf("request has no messages")
+	}
+	body, err := json.Marshal(c.buildPayload(req, true))
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+	resp, err := httpStream(ctx, c.http, c.BaseURL+"/responses", c.headers(), body, nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		resp.Body.Close()
+		if rerr := c.refreshToken(ctx); rerr != nil {
+			return nil, fmt.Errorf("codex auth expired and refresh failed: %w", rerr)
+		}
+		resp, err = httpStream(ctx, c.http, c.BaseURL+"/responses", c.headers(), body, nil)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		defer resp.Body.Close()
+		return nil, fmt.Errorf("codex stream HTTP %d", resp.StatusCode)
+	}
+	return parseResponsesSSE(resp, sink)
+}
+
+// refreshToken exchanges the refresh_token for a new access_token and persists
+// it back to auth.json (matching the codex CLI's rotation).
+func (c *Codex) refreshToken(ctx context.Context) error {
+	c.mu.Lock()
+	refresh := c.refresh
+	c.mu.Unlock()
+	if refresh == "" {
+		return fmt.Errorf("no refresh token (run `codex login`)")
+	}
+	form := url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refresh},
+		"client_id":     {codexClientID},
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.oauthURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	hreq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := c.http.Do(hreq)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("oauth token refresh HTTP %d", resp.StatusCode)
+	}
+	var tok struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		IDToken      string `json:"id_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tok); err != nil {
+		return err
+	}
+	if tok.AccessToken == "" {
+		return fmt.Errorf("oauth refresh returned no access_token")
+	}
+	c.mu.Lock()
+	c.token = tok.AccessToken
+	if tok.RefreshToken != "" {
+		c.refresh = tok.RefreshToken
+	}
+	c.mu.Unlock()
+	c.persist(tok.AccessToken, tok.RefreshToken, tok.IDToken)
+	return nil
+}
+
+// persist rewrites the access/refresh/id tokens into auth.json (best-effort,
+// preserving other fields).
+func (c *Codex) persist(access, refresh, id string) {
+	if c.authPath == "" {
+		return
+	}
+	auth, err := readCodexAuth(c.authPath)
+	if err != nil {
+		auth = &codexAuth{AuthMode: "chatgpt"}
+	}
+	auth.Tokens.AccessToken = access
+	if refresh != "" {
+		auth.Tokens.RefreshToken = refresh
+	}
+	if id != "" {
+		auth.Tokens.IDToken = id
+	}
+	auth.LastRefresh = time.Now().UTC().Format(time.RFC3339)
+	b, err := json.MarshalIndent(auth, "", "  ")
+	if err != nil {
+		return
+	}
+	tmp := c.authPath + ".tmp"
+	if os.WriteFile(tmp, b, 0o600) == nil {
+		_ = os.Rename(tmp, c.authPath)
+	}
+}
+
+func readCodexAuth(path string) (*codexAuth, error) {
+	if path == "" {
+		return nil, fmt.Errorf("no auth path")
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var a codexAuth
+	if err := json.Unmarshal(b, &a); err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+// trimErr returns a short single-line slice of an error body for messages.
+func trimErr(b []byte) string {
+	s := strings.TrimSpace(string(b))
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	if len(s) > 200 {
+		s = s[:200] + "…"
+	}
+	return s
+}
+
+// parseResponsesSSE assembles a Responses-API SSE stream into a final Response,
+// forwarding text/reasoning deltas to sink. Shared shape with the mantle
+// streamer but without mantle's response.failed-recovery quirk (a Codex backend
+// concern, not present here). The caller owns closing resp.Body? No — this
+// closes it.
+func parseResponsesSSE(resp *http.Response, sink StreamSink) (*Response, error) {
+	defer resp.Body.Close()
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
+	var final *Response
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(line[len("data:"):])
+		if data == "" || data == "[DONE]" {
+			continue
+		}
+		var ev struct {
+			Type     string          `json:"type"`
+			Delta    string          `json:"delta"`
+			Response json.RawMessage `json:"response"`
+		}
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			continue
+		}
+		switch ev.Type {
+		case "response.output_text.delta":
+			if sink != nil {
+				sink(StreamChunk{Kind: ChunkText, Text: ev.Delta})
+			}
+		case "response.reasoning_summary_text.delta":
+			if sink != nil {
+				sink(StreamChunk{Kind: ChunkReasoning, Text: ev.Delta})
+			}
+		case "response.completed", "response.incomplete":
+			out, status, reason, perr := parseReply(ev.Response)
+			if perr != nil {
+				return nil, perr
+			}
+			if status == "incomplete" {
+				if reason == "" {
+					reason = "unknown"
+				}
+				return nil, fmt.Errorf("codex response incomplete (%s): refusing possibly-truncated output", reason)
+			}
+			final = out
+		case "response.failed":
+			if out := outputFromFailed(ev.Response); out != nil &&
+				(strings.TrimSpace(out.Text) != "" || len(out.ToolCalls) > 0) {
+				return out, nil
+			}
+			return nil, fmt.Errorf("codex stream failed: %s", streamFailReason(ev.Response))
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read stream: %w", err)
+	}
+	if final == nil {
+		return &Response{}, nil
+	}
+	return final, nil
+}

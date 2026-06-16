@@ -178,6 +178,14 @@ type Searcher interface {
 	SearchMode() string
 }
 
+// FastModer is an optional capability: providers with a fast/low-latency
+// service tier (Codex "priority") implement it, so the TUI (/fast) and the
+// subtask router can turn the fast path on/off without rebuilding the provider.
+type FastModer interface {
+	SetFast(on bool) bool
+	FastMode() bool
+}
+
 // ValidEffort reports whether level is one of EffortLevels.
 func ValidEffort(level string) bool {
 	for _, l := range EffortLevels {
