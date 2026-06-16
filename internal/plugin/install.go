@@ -13,8 +13,17 @@ import (
 
 // pluginRootVar is the Claude placeholder that expands to a plugin's installed
 // root dir. Bundled scripts/MCP commands reference it so they never hardcode a
-// path. We expand it at wire time against the cached bundle dir.
+// path. On install we rewrite it to eigenRootVar (OUR namespace) and provide the
+// value via the EIGEN_PLUGIN_ROOT env param — so the path lives in ONE env
+// variable, not smeared as a literal through every arg. The MCP loader expands
+// ${EIGEN_PLUGIN_ROOT} in command/args at launch against the server's env.
 const pluginRootVar = "${CLAUDE_PLUGIN_ROOT}"
+
+// eigenRootEnv is our namespaced env var carrying the bundle root.
+const eigenRootEnv = "EIGEN_PLUGIN_ROOT"
+
+// eigenRootVar is the reference form used in stored configs/commands/skills.
+const eigenRootVar = "${" + eigenRootEnv + "}"
 
 // InstallOptions controls a plugin install.
 type InstallOptions struct {
@@ -296,8 +305,12 @@ func (r *Registry) resolvePluginRoot(ctx context.Context, entry PluginEntry, mar
 	return filepath.Join(root, ref.Path), cleanup, nil
 }
 
-// installSkillDir copies a plugin's skill directory into ~/.eigen/skills/<inst>,
-// expanding ${CLAUDE_PLUGIN_ROOT} in the SKILL.md to the cached bundle root.
+// installSkillDir copies a plugin's skill directory into ~/.eigen/skills/<inst>.
+// The Claude plugin-root placeholder in SKILL.md is rewritten to OUR namespace
+// (${EIGEN_PLUGIN_ROOT}), and a ".eigen-root" sidecar records the cached bundle
+// path — the skill loader (skill.Body) expands the ref from the sidecar at read
+// time, so the path lives in one place (consistent with the MCP env param)
+// rather than smeared as a literal through the skill text.
 func (r *Registry) installSkillDir(srcDir, instName, bundleRoot string, overwrite bool) error {
 	dst := filepath.Join(r.SkillsDir(), instName)
 	if overwrite {
@@ -309,17 +322,22 @@ func (r *Registry) installSkillDir(srcDir, instName, bundleRoot string, overwrit
 	if err := copyTree(srcDir, dst); err != nil {
 		return err
 	}
-	// Expand the plugin-root placeholder in SKILL.md so bundled-script
-	// references resolve to the cached bundle.
+	// Rewrite the Claude root placeholder to our namespaced ref in SKILL.md.
 	smd := filepath.Join(dst, "SKILL.md")
 	if b, err := os.ReadFile(smd); err == nil {
-		exp := strings.ReplaceAll(string(b), pluginRootVar, bundleRoot)
-		_ = os.WriteFile(smd, []byte(exp), 0o644)
+		_ = os.WriteFile(smd, []byte(toEigenRoot(string(b))), 0o644)
 	}
+	// Record the bundle path for skill.Body's ${EIGEN_PLUGIN_ROOT} expansion.
+	_ = os.WriteFile(filepath.Join(dst, ".eigen-root"), []byte(bundleRoot+"\n"), 0o644)
 	return nil
 }
 
 func expandRoot(s, root string) string { return strings.ReplaceAll(s, pluginRootVar, root) }
+
+// toEigenRoot rewrites the Claude root placeholder to OUR namespaced env ref
+// (${EIGEN_PLUGIN_ROOT}), used in MCP command/args/env that the loader expands
+// against the server env at launch.
+func toEigenRoot(s string) string { return strings.ReplaceAll(s, pluginRootVar, eigenRootVar) }
 
 // installCommand writes a plugin slash command to ~/.eigen/commands/<inst>.md,
 // expanding ${CLAUDE_PLUGIN_ROOT} so any bundled-file references resolve.

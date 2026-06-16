@@ -77,7 +77,8 @@ func LoadTools(ctx context.Context, path string) (defs []tool.Definition, client
 			continue
 		}
 		cctx, cancel := context.WithTimeout(ctx, connectTimeout)
-		client, err := Connect(cctx, sc.Command, serverEnv(sc.Env))
+		env := serverEnv(sc.Env)
+		client, err := Connect(cctx, expandCommand(sc.Command, env), env)
 		cancel()
 		if err != nil {
 			errs = append(errs, fmt.Errorf("mcp %q: %w", sc.Name, err))
@@ -237,6 +238,33 @@ func serverEnv(extra map[string]string) []string {
 		env = append(env, k+"="+v)
 	}
 	return env
+}
+
+// expandCommand expands ${VAR} / $VAR references in a server's command and args
+// against the given environment (os.Environ + configured env). exec.Command does
+// NOT do shell expansion, so a config like ["node", "${EIGEN_PLUGIN_ROOT}/x.js"]
+// would otherwise pass the literal "${EIGEN_PLUGIN_ROOT}" to the process. This
+// is how plugin-installed MCP servers locate their bundled files: the installer
+// sets EIGEN_PLUGIN_ROOT in the server's env and references it in args.
+func expandCommand(command []string, env []string) []string {
+	lookup := envLookup(env)
+	out := make([]string, len(command))
+	for i, c := range command {
+		out[i] = os.Expand(c, lookup)
+	}
+	return out
+}
+
+// envLookup builds a ${VAR} resolver from a "K=V" environment slice. An unknown
+// var expands to "" (shell semantics).
+func envLookup(env []string) func(string) string {
+	m := make(map[string]string, len(env))
+	for _, kv := range env {
+		if k, v, ok := strings.Cut(kv, "="); ok {
+			m[k] = v
+		}
+	}
+	return func(k string) string { return m[k] }
 }
 
 // sanitize keeps tool names to a provider-safe character set.

@@ -7,10 +7,13 @@ import (
 )
 
 // addMCPServer appends a plugin's MCP server to ~/.eigen/mcp.json as a niche,
-// auto-described server entry, expanding ${CLAUDE_PLUGIN_ROOT} in command/args/
-// env against the cached bundle root. Idempotent: replaces an entry of the same
-// name. eigen marks MCP tools niche at load time (progressive disclosure), so
-// the server stays gated behind search_tools — no per-request schema bloat.
+// auto-described server entry. The plugin-root placeholder is handled via OUR
+// namespaced env param: ${CLAUDE_PLUGIN_ROOT} in command/args/env values is
+// rewritten to ${EIGEN_PLUGIN_ROOT}, and EIGEN_PLUGIN_ROOT=<bundle> is injected
+// into the server's env. The MCP loader expands ${EIGEN_PLUGIN_ROOT} at launch
+// — so the path lives in one env var, not smeared as a literal. Idempotent:
+// replaces an entry of the same name. eigen marks MCP tools niche at load time
+// (progressive disclosure), so the server stays gated behind search_tools.
 func (r *Registry) addMCPServer(name string, s MCPServer, bundleRoot string, entry PluginEntry) error {
 	root, err := readObj(r.MCPPath())
 	if err != nil {
@@ -18,16 +21,16 @@ func (r *Registry) addMCPServer(name string, s MCPServer, bundleRoot string, ent
 	}
 	servers, _ := root["servers"].([]any)
 
-	// Build the eigen server entry. eigen's serverConfig uses a single
-	// `command` array (command + args), `env`, and a `description`.
+	// Build the eigen server entry: single `command` array (command + args),
+	// `env`, `description`. Rewrite the Claude root placeholder to OUR env ref.
 	cmd := append([]string{}, s.Command...)
 	cmd = append(cmd, s.Args...)
 	for i := range cmd {
-		cmd[i] = expandRoot(cmd[i], bundleRoot)
+		cmd[i] = toEigenRoot(cmd[i])
 	}
-	env := map[string]any{}
+	env := map[string]any{eigenRootEnv: bundleRoot} // the one place the path lives
 	for k, v := range s.Env {
-		env[k] = expandRoot(v, bundleRoot)
+		env[k] = toEigenRoot(v)
 	}
 	desc := s.Description
 	if strings.TrimSpace(desc) == "" {
@@ -39,12 +42,10 @@ func (r *Registry) addMCPServer(name string, s MCPServer, bundleRoot string, ent
 	srv := jsonObj{
 		"name":        name,
 		"description": desc,
+		"env":         env,
 	}
 	if len(cmd) > 0 {
 		srv["command"] = toAnySlice(cmd)
-	}
-	if len(env) > 0 {
-		srv["env"] = env
 	}
 
 	// Replace any existing server of this name; else append.

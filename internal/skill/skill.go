@@ -269,7 +269,10 @@ func (s *Set) Names() []string {
 // Body returns the instruction body of a skill (everything after the
 // frontmatter), read from disk on demand. The name is resolved through Resolve,
 // so a loose hint ("skill curator", "curator") loads the right skill instead of
-// erroring on an inexact match.
+// erroring on an inexact match. A plugin-installed skill may reference
+// ${EIGEN_PLUGIN_ROOT} (our namespaced bundle path); it is expanded here from
+// the per-skill ".eigen-root" sidecar the plugin installer writes, so the model
+// sees a real path it can use.
 func (s *Set) Body(name string) (string, error) {
 	resolved, ok := s.Resolve(name)
 	if !ok {
@@ -288,7 +291,23 @@ func (s *Set) Body(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return stripFrontmatter(string(data)), nil
+	return expandPluginRoot(stripFrontmatter(string(data)), filepath.Dir(sk.Path)), nil
+}
+
+// expandPluginRoot replaces ${EIGEN_PLUGIN_ROOT} in a skill body with the path
+// recorded in the skill dir's ".eigen-root" sidecar (written by the plugin
+// installer). With no sidecar (a hand-authored or `eigen skill add` skill) the
+// body is returned unchanged.
+func expandPluginRoot(body, skillDir string) string {
+	const ref = "${EIGEN_PLUGIN_ROOT}"
+	if !strings.Contains(body, ref) {
+		return body
+	}
+	root, err := os.ReadFile(filepath.Join(skillDir, ".eigen-root"))
+	if err != nil {
+		return body
+	}
+	return strings.ReplaceAll(body, ref, strings.TrimSpace(string(root)))
 }
 
 // Catalog renders the skill list for injection into the system prompt. Empty

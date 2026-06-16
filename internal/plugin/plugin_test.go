@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/avifenesh/eigen/internal/skill"
@@ -146,19 +147,25 @@ func TestInstallPluginWiresComponents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("skill not installed: %v", err)
 	}
-	if bytes.Contains(b, []byte(pluginRootVar)) {
-		t.Fatal("${CLAUDE_PLUGIN_ROOT} should have been expanded in SKILL.md")
+	// Stored SKILL.md uses OUR namespaced ref, not Claude's var nor a literal path.
+	if bytes.Contains(b, []byte("${CLAUDE_PLUGIN_ROOT}")) {
+		t.Fatal("Claude var should be rewritten to ${EIGEN_PLUGIN_ROOT}")
+	}
+	if !bytes.Contains(b, []byte("${EIGEN_PLUGIN_ROOT}")) {
+		t.Fatalf("SKILL.md should reference ${EIGEN_PLUGIN_ROOT}, got: %s", b)
 	}
 	bundle := filepath.Join(dir, "plugins", "toolbox")
-	if !bytes.Contains(b, []byte(bundle)) {
-		t.Fatalf("SKILL.md should reference the cached bundle dir %s", bundle)
+	// The bundle path lives in the .eigen-root sidecar (skill.Body expands from it).
+	rootSidecar, err := os.ReadFile(filepath.Join(dir, "skills", "toolbox-greet", ".eigen-root"))
+	if err != nil || strings.TrimSpace(string(rootSidecar)) != bundle {
+		t.Fatalf(".eigen-root sidecar should record the bundle path %s, got %q (err %v)", bundle, rootSidecar, err)
 	}
 	// Bundled skill support file copied.
 	if _, err := os.Stat(filepath.Join(dir, "skills", "toolbox-greet", "hi.sh")); err != nil {
 		t.Fatalf("bundled skill file not copied: %v", err)
 	}
 
-	// MCP server wired into mcp.json, namespaced, ${ROOT}-expanded, described.
+	// MCP server wired into mcp.json, namespaced, root via OUR env param, described.
 	mcp, _ := readObj(r.MCPPath())
 	servers, _ := mcp["servers"].([]any)
 	if len(servers) != 1 {
@@ -171,13 +178,27 @@ func TestInstallPluginWiresComponents(t *testing.T) {
 	if srv["description"] == nil || srv["description"] == "" {
 		t.Fatal("mcp server must be auto-described")
 	}
+	// command/args reference ${EIGEN_PLUGIN_ROOT}, NOT a literal path.
 	cmd := srv["command"].([]any)
 	joined := ""
 	for _, c := range cmd {
 		joined += c.(string) + " "
 	}
-	if !bytes.Contains([]byte(joined), []byte(bundle)) {
-		t.Fatalf("mcp command should reference bundle: %v", cmd)
+	if !bytes.Contains([]byte(joined), []byte("${EIGEN_PLUGIN_ROOT}")) {
+		t.Fatalf("mcp command should reference ${EIGEN_PLUGIN_ROOT}, got: %v", cmd)
+	}
+	if bytes.Contains([]byte(joined), []byte(bundle)) {
+		t.Fatalf("mcp command should NOT contain the literal bundle path (use the env param): %v", cmd)
+	}
+	// The path lives in the server env param EIGEN_PLUGIN_ROOT=<bundle>.
+	env, _ := srv["env"].(jsonObj)
+	if env == nil {
+		if m, ok := srv["env"].(map[string]any); ok {
+			env = m
+		}
+	}
+	if env["EIGEN_PLUGIN_ROOT"] != bundle {
+		t.Fatalf("EIGEN_PLUGIN_ROOT env should be the bundle path %s, got %v", bundle, env["EIGEN_PLUGIN_ROOT"])
 	}
 
 	// Hook wired into hooks.json, event-mapped, ${ROOT}-expanded.
