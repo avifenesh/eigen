@@ -270,3 +270,26 @@ func TestLegacyReasoningWithoutBlobIsDropped(t *testing.T) {
 		t.Error("expected the function_call to survive (only reasoning is dropped)")
 	}
 }
+
+// A turn that emits MULTIPLE reasoning items (xhigh/fast often does) must pair
+// the echoed id with ITS OWN encrypted blob — not first-item-id +
+// last-item-blob (the old first-id/last-blob bug 400'd: "Encrypted content
+// item_id did not match the target item id"). The server verifies the pair.
+func TestApplyOutputItemPairsReasoningIDWithBlob(t *testing.T) {
+	out := &Response{}
+	// Two reasoning items in one turn, each with its own id + blob.
+	applyOutputItem(json.RawMessage(`{"type":"reasoning","id":"rs_AAA","encrypted_content":"BLOB_A","summary":[{"type":"summary_text","text":"first"}]}`), out)
+	applyOutputItem(json.RawMessage(`{"type":"reasoning","id":"rs_BBB","encrypted_content":"BLOB_B","summary":[{"type":"summary_text","text":"second"}]}`), out)
+	// The LAST item with a blob wins — and id + blob must come from the SAME item.
+	if out.ReasoningID != "rs_BBB" {
+		t.Fatalf("id = %q, want rs_BBB (paired with its blob)", out.ReasoningID)
+	}
+	if out.ReasoningEncrypted != "BLOB_B" {
+		t.Fatalf("blob = %q, want BLOB_B (the rs_BBB blob)", out.ReasoningEncrypted)
+	}
+	// The mismatch that used to 400 must never happen: rs_AAA is not paired
+	// with BLOB_B.
+	if out.ReasoningID == "rs_AAA" && out.ReasoningEncrypted == "BLOB_B" {
+		t.Fatal("id/blob mispaired across reasoning items (the 400 bug)")
+	}
+}

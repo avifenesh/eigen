@@ -487,14 +487,18 @@ func applyOutputItem(raw json.RawMessage, out *Response) {
 			}
 		}
 	case "reasoning":
-		if out.ReasoningID == "" {
-			out.ReasoningID = item.ID
-		}
-		// Capture the encrypted reasoning blob to echo back next turn — with
-		// store:false the server doesn't persist reasoning by id, so the client
-		// MUST carry encrypted_content back or it 404s on the reasoning id.
+		// Each encrypted_content blob is bound to a SPECIFIC item id — the
+		// server verifies they match ("Encrypted content item_id did not match
+		// the target item id" = 400). So ReasoningID + ReasoningEncrypted must
+		// come from the SAME reasoning item, always paired. A turn can emit
+		// several reasoning items (xhigh/fast often does): we take the LAST one
+		// with a blob (the most recent chain of thought), setting BOTH id and
+		// blob from it together — never first-id + last-blob (that mismatch 400s).
 		if item.Encrypted != "" {
 			out.ReasoningEncrypted = item.Encrypted
+			out.ReasoningID = item.ID // pair the id with THIS blob
+		} else if out.ReasoningID == "" {
+			out.ReasoningID = item.ID
 		}
 		for _, s := range item.Summary {
 			if s.Text != "" {
