@@ -35,6 +35,7 @@ type Request struct {
 	// set: effort / search ("" = not in this request)
 	Effort string `json:"effort,omitempty"`
 	Search string `json:"search,omitempty"`
+	Fast   *bool  `json:"fast,omitempty"` // set fast/priority service tier (pointer distinguishes on/off from absent)
 	// add-dir: an additional allowed sandbox directory (user grant)
 	AddDir string `json:"add_dir,omitempty"`
 	// kill-shell: the backgrounded shell id to stop
@@ -97,6 +98,8 @@ type SessionState struct {
 	Goal      string        `json:"goal"`
 	Effort    string        `json:"effort,omitempty"`  // "" = unsupported
 	Search    string        `json:"search,omitempty"`  // "" = unsupported
+	Fast      bool          `json:"fast,omitempty"`    // fast/priority service tier active
+	FastOK    bool          `json:"fast_ok,omitempty"` // model supports a fast tier (segment shown)
 	Running   bool          `json:"running,omitempty"` // a turn is in flight right now
 	Tools     []ToolInfo    `json:"tools,omitempty"`
 	Roots     []string      `json:"roots,omitempty"`  // tool sandbox allowed dirs (primary first)

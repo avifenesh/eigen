@@ -400,3 +400,9 @@ func (c *Client) SetSearch(sessionID, mode string) error {
 	_, err := c.request(Request{Op: "set", ID: sessionID, Search: mode})
 	return err
 }
+
+// SetFast toggles the session's fast/priority service tier; error = unsupported.
+func (c *Client) SetFast(sessionID string, on bool) error {
+	_, err := c.request(Request{Op: "set", ID: sessionID, Fast: &on})
+	return err
+}

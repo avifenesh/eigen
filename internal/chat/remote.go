@@ -349,6 +349,21 @@ func (r *Remote) SetSearch(mode string) bool {
 	return true
 }
 
+// FastSupported reports whether the daemon session's model has a fast tier.
+func (r *Remote) FastSupported() bool { return r.snap().FastOK }
+
+// FastMode reports whether the fast/priority service tier is active.
+func (r *Remote) FastMode() bool { return r.snap().Fast }
+
+// SetFast toggles the fast/priority service tier on the daemon's provider.
+func (r *Remote) SetFast(on bool) bool {
+	if err := r.c.SetFast(r.id, on); err != nil {
+		return false
+	}
+	r.refresh()
+	return true
+}
+
 // SessionID returns the daemon session id this backend drives.
 func (r *Remote) SessionID() string { return r.id }
 

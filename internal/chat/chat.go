@@ -75,6 +75,13 @@ type Backend interface {
 	SetEffort(string) bool
 	SearchMode() string
 	SetSearch(string) bool
+	// FastMode/SetFast expose the provider's fast/low-latency service tier
+	// (Codex "priority") as chat state. FastSupported is false when the model
+	// has no fast path (the segment is hidden then). Remote backends carry
+	// these over the socket.
+	FastSupported() bool
+	FastMode() bool
+	SetFast(bool) bool
 
 	// Tools lists registered tools (for /tools). Empty when unknown.
 	Tools() []ToolInfo

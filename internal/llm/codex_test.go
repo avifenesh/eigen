@@ -73,14 +73,19 @@ func TestCodexBuildsRequestWithTierAndEffort(t *testing.T) {
 func TestCodexCompleteAgainstLocalServer(t *testing.T) {
 	writeCodexAuth(t, "acc-tok", "ref-tok", "acct-123")
 	var gotTier, gotAuth, gotAccount string
+	var gotStore *bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		gotAccount = r.Header.Get("ChatGPT-Account-Id")
 		var body responsesRequest
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		gotTier = body.ServiceTier
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello from codex"}]}],"usage":{"input_tokens":10,"output_tokens":3}}`))
+		gotStore = body.Store
+		// Codex is stream-only: reply as SSE with text deltas + an empty
+		// completed event (the real backend's completed output is []).
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"hello from codex\"}\n\n" +
+			"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":3}}}\n\n"))
 	}))
 	defer srv.Close()
 	t.Setenv("EIGEN_CODEX_BASE_URL", srv.URL)
@@ -99,6 +104,9 @@ func TestCodexCompleteAgainstLocalServer(t *testing.T) {
 	if gotTier != "priority" {
 		t.Fatalf("server saw service_tier %q, want priority", gotTier)
 	}
+	if gotStore == nil || *gotStore != false {
+		t.Fatalf("server should see store:false, got %v", gotStore)
+	}
 	if gotAuth != "Bearer acc-tok" || gotAccount != "acct-123" {
 		t.Fatalf("server saw auth=%q account=%q", gotAuth, gotAccount)
 	}
@@ -106,13 +114,12 @@ func TestCodexCompleteAgainstLocalServer(t *testing.T) {
 
 func TestCodexRefreshesOn401(t *testing.T) {
 	authPath := writeCodexAuth(t, "stale-tok", "ref-tok", "acct-1")
-	var calls int
-	// OAuth refresh endpoint.
 	oauth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"access_token":"fresh-tok","refresh_token":"ref2"}`))
 	}))
 	defer oauth.Close()
 
+	var calls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		if r.Header.Get("Authorization") == "Bearer stale-tok" {
@@ -120,8 +127,9 @@ func TestCodexRefreshesOn401(t *testing.T) {
 			_, _ = w.Write([]byte(`{"error":{"message":"expired"}}`))
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{}}`))
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n" +
+			"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[],\"usage\":{}}}\n\n"))
 	}))
 	defer srv.Close()
 	t.Setenv("EIGEN_CODEX_BASE_URL", srv.URL)
@@ -130,7 +138,6 @@ func TestCodexRefreshesOn401(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Point refresh at the local oauth server.
 	c.oauthURL = oauth.URL
 	resp, err := c.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}})
 	if err != nil {
@@ -142,9 +149,28 @@ func TestCodexRefreshesOn401(t *testing.T) {
 	if calls < 2 {
 		t.Fatalf("expected a retry after 401, got %d calls", calls)
 	}
-	// The refreshed token was persisted.
 	a, _ := readCodexAuth(authPath)
 	if a.Tokens.AccessToken != "fresh-tok" {
 		t.Fatalf("auth.json not updated, token = %q", a.Tokens.AccessToken)
+	}
+}
+
+// Codex requires the system prompt in top-level `instructions`, not as a
+// developer input item (the backend 400s "Instructions are required" otherwise).
+func TestCodexPutsSystemInInstructions(t *testing.T) {
+	writeCodexAuth(t, "tok", "ref", "acct")
+	c, err := NewCodex("gpt-5.5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := c.buildPayload(Request{System: "You are eigen.", Messages: []Message{{Role: RoleUser, Text: "hi"}}}, false)
+	if p.Instructions != "You are eigen." {
+		t.Fatalf("instructions = %q, want the system prompt", p.Instructions)
+	}
+	// The system prompt must NOT also appear as a developer input item.
+	for _, it := range p.Input {
+		if it.Role == "developer" {
+			t.Fatal("system prompt must not be duplicated as a developer input item")
+		}
 	}
 }

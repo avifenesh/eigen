@@ -249,3 +249,25 @@ func (l *Local) SetSearch(mode string) bool {
 	}
 	return false
 }
+
+// FastSupported reports whether the active model has a fast/low-latency tier.
+func (l *Local) FastSupported() bool {
+	_, ok := l.a.Provider.(llm.FastModer)
+	return ok
+}
+
+// FastMode reports whether the fast (priority) service tier is active.
+func (l *Local) FastMode() bool {
+	if fm, ok := l.a.Provider.(llm.FastModer); ok {
+		return fm.FastMode()
+	}
+	return false
+}
+
+// SetFast toggles the fast/priority service tier; false = unsupported.
+func (l *Local) SetFast(on bool) bool {
+	if fm, ok := l.a.Provider.(llm.FastModer); ok {
+		return fm.SetFast(on)
+	}
+	return false
+}

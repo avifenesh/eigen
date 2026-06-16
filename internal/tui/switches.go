@@ -161,6 +161,27 @@ func (m *model) cycleSearch() tea.Cmd {
 	return m.showFlash("search · " + m.backend.SearchMode())
 }
 
+// toggleFast flips the Codex fast/priority service tier on the active provider.
+func (m *model) toggleFast() tea.Cmd {
+	if m.backend == nil {
+		return nil
+	}
+	if !m.backend.FastSupported() {
+		m.note("the current model has no fast mode (Codex gpt-5.x only)")
+		return nil
+	}
+	if !m.backend.SetFast(!m.backend.FastMode()) {
+		m.note("fast mode unavailable")
+		return nil
+	}
+	m.saveMeta()
+	state := "off"
+	if m.backend.FastMode() {
+		state = "on"
+	}
+	return m.showFlash("fast · " + state)
+}
+
 // contextBudgetFor returns the budget for a model id, capped by
 // min(user ceiling, model window minus headroom) via llm.ContextBudget — the
 // same rule as main's startup budget, so live /model switches stay consistent.

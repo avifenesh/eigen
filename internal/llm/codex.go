@@ -191,13 +191,23 @@ func (c *Codex) snapshot() (token, account, tier, effort string) {
 
 func (c *Codex) buildPayload(req Request, stream bool) responsesRequest {
 	_, _, tier, effort := c.snapshot()
+	// Codex requires the system prompt in the top-level `instructions` field
+	// (the backend rejects a request without it: "Instructions are required").
+	// So we pull System out of the message stream and pass it separately —
+	// unlike mantle, which carries it as a developer-role input item.
+	sys := req.System
+	noSys := req
+	noSys.System = ""
+	storeFalse := false
 	return responsesRequest{
-		Model:       c.Model,
-		Input:       buildInput(req),
-		Tools:       toResponsesTools(req.Tools),
-		Reasoning:   &reasoningConfig{Effort: effort, Summary: reasoningSummary},
-		ServiceTier: tier,
-		Stream:      stream,
+		Model:        c.Model,
+		Instructions: sys,
+		Input:        buildInput(noSys),
+		Tools:        toResponsesTools(req.Tools),
+		Reasoning:    &reasoningConfig{Effort: effort, Summary: reasoningSummary},
+		ServiceTier:  tier,
+		Store:        &storeFalse, // Codex requires store:false
+		Stream:       stream,
 	}
 }
 
@@ -219,46 +229,10 @@ func (c *Codex) Complete(ctx context.Context, req Request) (*Response, error) {
 	if len(req.Messages) == 0 {
 		return nil, fmt.Errorf("request has no messages")
 	}
-	body, err := json.Marshal(c.buildPayload(req, false))
-	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
-	}
-	raw, err := c.post(ctx, body)
-	if err != nil {
-		return nil, err
-	}
-	out, status, reason, err := parseReply(raw)
-	if err != nil {
-		return nil, err
-	}
-	if status == "incomplete" {
-		if reason == "" {
-			reason = "unknown"
-		}
-		return nil, fmt.Errorf("codex response incomplete (%s): refusing possibly-truncated output", reason)
-	}
-	return out, nil
-}
-
-// post sends a Responses request, refreshing the OAuth token once on a 401.
-func (c *Codex) post(ctx context.Context, body []byte) ([]byte, error) {
-	raw, status, err := httpJSON(ctx, c.http, c.BaseURL+"/responses", c.headers(), body, nil)
-	if err != nil {
-		return nil, err
-	}
-	if status == http.StatusUnauthorized {
-		if rerr := c.refreshToken(ctx); rerr != nil {
-			return nil, fmt.Errorf("codex auth expired and refresh failed: %w", rerr)
-		}
-		raw, status, err = httpJSON(ctx, c.http, c.BaseURL+"/responses", c.headers(), body, nil)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if status < 200 || status >= 300 {
-		return nil, fmt.Errorf("codex HTTP %d: %s", status, trimErr(raw))
-	}
-	return raw, nil
+	// The Codex backend is STREAM-ONLY (it 400s "Stream must be set to true" on
+	// a non-stream request), so Complete drives the SSE path with a nil sink and
+	// returns the assembled final response.
+	return c.Stream(ctx, req, nil)
 }
 
 // Stream runs a streamed completion over SSE, reusing the mantle SSE assembler.
@@ -272,23 +246,24 @@ func (c *Codex) Stream(ctx context.Context, req Request, sink StreamSink) (*Resp
 	}
 	resp, err := httpStream(ctx, c.http, c.BaseURL+"/responses", c.headers(), body, nil)
 	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode == http.StatusUnauthorized {
-		resp.Body.Close()
-		if rerr := c.refreshToken(ctx); rerr != nil {
-			return nil, fmt.Errorf("codex auth expired and refresh failed: %w", rerr)
+		// httpStream returns a non-2xx as an error ("HTTP 401: …"), not a
+		// response. On a 401 (expired access token) refresh once and retry.
+		if isUnauthorized(err) {
+			if rerr := c.refreshToken(ctx); rerr != nil {
+				return nil, fmt.Errorf("codex auth expired and refresh failed: %w", rerr)
+			}
+			resp, err = httpStream(ctx, c.http, c.BaseURL+"/responses", c.headers(), body, nil)
 		}
-		resp, err = httpStream(ctx, c.http, c.BaseURL+"/responses", c.headers(), body, nil)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("codex: %w", err)
 		}
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		defer resp.Body.Close()
-		return nil, fmt.Errorf("codex stream HTTP %d", resp.StatusCode)
 	}
 	return parseResponsesSSE(resp, sink)
+}
+
+// isUnauthorized reports whether an httpStream error is a 401 (expired token).
+func isUnauthorized(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "HTTP 401")
 }
 
 // refreshToken exchanges the refresh_token for a new access_token and persists
@@ -384,18 +359,6 @@ func readCodexAuth(path string) (*codexAuth, error) {
 	return &a, nil
 }
 
-// trimErr returns a short single-line slice of an error body for messages.
-func trimErr(b []byte) string {
-	s := strings.TrimSpace(string(b))
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i]
-	}
-	if len(s) > 200 {
-		s = s[:200] + "…"
-	}
-	return s
-}
-
 // parseResponsesSSE assembles a Responses-API SSE stream into a final Response,
 // forwarding text/reasoning deltas to sink. Shared shape with the mantle
 // streamer but without mantle's response.failed-recovery quirk (a Codex backend
@@ -406,6 +369,7 @@ func parseResponsesSSE(resp *http.Response, sink StreamSink) (*Response, error) 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
 	var final *Response
+	var sbText, sbReason strings.Builder // accumulated deltas (Codex's completed event has empty output)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data:") {
@@ -425,10 +389,12 @@ func parseResponsesSSE(resp *http.Response, sink StreamSink) (*Response, error) 
 		}
 		switch ev.Type {
 		case "response.output_text.delta":
+			sbText.WriteString(ev.Delta)
 			if sink != nil {
 				sink(StreamChunk{Kind: ChunkText, Text: ev.Delta})
 			}
 		case "response.reasoning_summary_text.delta":
+			sbReason.WriteString(ev.Delta)
 			if sink != nil {
 				sink(StreamChunk{Kind: ChunkReasoning, Text: ev.Delta})
 			}
@@ -456,7 +422,17 @@ func parseResponsesSSE(resp *http.Response, sink StreamSink) (*Response, error) 
 		return nil, fmt.Errorf("read stream: %w", err)
 	}
 	if final == nil {
-		return &Response{}, nil
+		final = &Response{}
+	}
+	// Codex's response.completed often carries output:[] (the text/tool calls
+	// arrived only as deltas), so backfill from the accumulated deltas when the
+	// completed event didn't already give us text. Tool calls, when present,
+	// DO appear in the completed output (parseReply handles those).
+	if strings.TrimSpace(final.Text) == "" && sbText.Len() > 0 {
+		final.Text = sbText.String()
+	}
+	if final.Reasoning == "" && sbReason.Len() > 0 {
+		final.Reasoning = sbReason.String()
 	}
 	return final, nil
 }

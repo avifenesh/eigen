@@ -19,6 +19,7 @@ const (
 	actPermPicker
 	actEffortCycle
 	actSearchCycle
+	actFastToggle
 	actRouteToggle
 	actCompactPrompt
 	actReadAloudToggle
@@ -92,6 +93,11 @@ var actionRegistry = map[actionID]action{
 		id: actSearchCycle, label: "search",
 		enabled: func(m *model) bool { return m.backend != nil && m.backend.SearchMode() != "" },
 		run:     func(m *model) tea.Cmd { return m.cycleSearch() },
+	},
+	actFastToggle: {
+		id: actFastToggle, label: "fast",
+		enabled: func(m *model) bool { return m.backend != nil && m.backend.FastSupported() },
+		run:     func(m *model) tea.Cmd { return m.toggleFast() },
 	},
 	actRouteToggle: {
 		id: actRouteToggle, label: "route",

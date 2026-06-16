@@ -75,6 +75,7 @@ var slashCommands = []slashCmd{
 	{"/model", "show or switch the model/provider"},
 	{"/effort", "show or set reasoning effort (levels are per-model)"},
 	{"/search", "show or set grok live search (off|auto|on)"},
+	{"/fast", "toggle Codex fast mode (priority service tier) on|off"},
 	{"/perm", "show or set the permission posture"},
 	{"/goal", "show, set, or clear a persistent goal (north star)"},
 	{"/loop", "re-submit a prompt every interval while idle (/loop 10m <prompt>)"},

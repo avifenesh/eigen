@@ -172,6 +172,11 @@ func (s *Server) handle(conn net.Conn) {
 					send(Response{Type: "error", Error: "search not supported (or unknown mode)"})
 					continue
 				}
+			case req.Fast != nil:
+				if !sess.setFast(*req.Fast) {
+					send(Response{Type: "error", Error: "fast mode not supported on this model"})
+					continue
+				}
 			case req.Model != "":
 				if s.host.switchModel == nil {
 					send(Response{Type: "error", Error: "model switching unavailable"})

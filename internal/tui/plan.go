@@ -120,6 +120,17 @@ func (m *model) statusBarParts() []statusSeg {
 		if sm := m.backend.SearchMode(); sm != "" && sm != "off" {
 			segs = append(segs, statusSeg{text: "search=" + sm, style: styleCode, action: actSearchCycle})
 		}
+		// fast: the Codex priority service tier. Shown only when the model has a
+		// fast path; lit (accent) when on, dim-style when off — a clickable toggle.
+		if m.backend.FastSupported() {
+			fastStyle := styleTool
+			label := "fast=off"
+			if m.backend.FastMode() {
+				fastStyle = styleAsk
+				label = "fast=on"
+			}
+			segs = append(segs, statusSeg{text: label, style: fastStyle, action: actFastToggle})
+		}
 	}
 	if ind := m.ctxIndicator(); ind != "" {
 		segs = append(segs, statusSeg{text: ind, style: m.ctxStyle(), action: actCompactPrompt})

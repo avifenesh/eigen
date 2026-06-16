@@ -80,8 +80,8 @@ var Catalog = []ModelInfo{
 	// levels include xhigh (the codex CLI default is xhigh); the default
 	// ServiceTier "priority" matches a fast-mode-on Codex setup (toggle with
 	// /fast or EIGEN_CODEX_SERVICE_TIER).
-	{ID: "gpt-5.5", Provider: "codex", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "minimal", "low", "medium", "high", "xhigh"}, ServiceTier: "priority", Vision: true},
-	{ID: "gpt-5.4", Provider: "codex", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "minimal", "low", "medium", "high", "xhigh"}, ServiceTier: "priority", Vision: true},
+	{ID: "gpt-5.5", Provider: "codex", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, ServiceTier: "priority", Vision: true},
+	{ID: "gpt-5.4", Provider: "codex", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, ServiceTier: "priority", Vision: true},
 
 	// Bedrock Converse (Anthropic Claude). Prompt caching + 1M context (beta) +
 	// extended thinking. Default 200k window; 1M when the beta is enabled.

@@ -467,6 +467,9 @@ func (s *Session) state() *SessionState {
 		if sr, ok := prov.(llm.Searcher); ok {
 			st.Search = sr.SearchMode()
 		}
+		if fm, ok := prov.(llm.FastModer); ok {
+			st.Fast, st.FastOK = fm.FastMode(), true
+		}
 	}
 	if a.Tools != nil {
 		for _, d := range a.Tools.Definitions() {
@@ -514,6 +517,14 @@ func (s *Session) setEffort(level string) bool {
 func (s *Session) setSearch(mode string) bool {
 	if sr, ok := s.agent.CurrentProvider().(llm.Searcher); ok {
 		return sr.SetSearch(mode)
+	}
+	return false
+}
+
+// setFast toggles the fast/priority service tier; false = unsupported.
+func (s *Session) setFast(on bool) bool {
+	if fm, ok := s.agent.CurrentProvider().(llm.FastModer); ok {
+		return fm.SetFast(on)
 	}
 	return false
 }

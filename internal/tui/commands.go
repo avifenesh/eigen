@@ -62,7 +62,7 @@ func (m *model) applyResumed(msgs []llm.Message) {
 // wait until the turn finishes (press esc to interrupt).
 func safeWhileRunning(name string) bool {
 	switch name {
-	case "/effort", "/search", "/perm", "/model", "/help", "/goal", "/loop", "/config", "/route",
+	case "/effort", "/search", "/fast", "/perm", "/model", "/help", "/goal", "/loop", "/config", "/route",
 		"/skills", "/tools", "/find", "/copy", "/read", "/voice", "/mute", "/dictate", "/talk", "/speak", "/rail", "/changes", "/term", "/tasks", "/shells", "/tray", "/workflow", "/rename", "/background", "/add-dir", "/mouse", "/steer", "/queue", "/ban", "/unban":
 		return true
 	default:
@@ -460,6 +460,28 @@ func (m *model) command(line string) tea.Cmd {
 			break
 		}
 		m.note("live search → " + m.backend.SearchMode())
+	case "/fast":
+		if !m.backend.FastSupported() {
+			m.note("the current model has no fast mode (Codex gpt-5.x — the priority service tier)")
+			break
+		}
+		switch strings.ToLower(arg) {
+		case "", "toggle":
+			return m.toggleFast()
+		case "on", "true", "1":
+			m.backend.SetFast(true)
+		case "off", "false", "0":
+			m.backend.SetFast(false)
+		default:
+			m.push(&block{kind: blockNote, isErr: true, body: sb("usage: /fast [on|off] (bare /fast toggles)")})
+			return nil
+		}
+		m.saveMeta()
+		state := "off"
+		if m.backend.FastMode() {
+			state = "on"
+		}
+		m.note("fast mode → " + state)
 	case "/model":
 		if arg == "" {
 			m.modelPicks = llm.Models()

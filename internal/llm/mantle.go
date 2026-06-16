@@ -142,15 +142,21 @@ type responsesTool struct {
 }
 
 type responsesRequest struct {
-	Model     string               `json:"model"`
-	Input     []responsesInputItem `json:"input"`
-	Tools     []responsesTool      `json:"tools,omitempty"`
-	Reasoning *reasoningConfig     `json:"reasoning,omitempty"`
-	Stream    bool                 `json:"stream,omitempty"`
+	Model        string               `json:"model"`
+	Instructions string               `json:"instructions,omitempty"`
+	Input        []responsesInputItem `json:"input"`
+	Tools        []responsesTool      `json:"tools,omitempty"`
+	Reasoning    *reasoningConfig     `json:"reasoning,omitempty"`
+	Stream       bool                 `json:"stream,omitempty"`
 	// ServiceTier selects the throughput/latency tier on backends that support
 	// it (Codex: "priority" = fast/low-latency, "flex" = cheap/slow). Empty =
 	// the backend default. Mantle leaves this empty.
 	ServiceTier string `json:"service_tier,omitempty"`
+	// Store, when non-nil, sets the Responses API `store` flag. The Codex
+	// backend REQUIRES store:false (it manages its own thread state and rejects
+	// store:true / a missing store with "Store must be set to false"). A pointer
+	// so mantle (which omits it) and codex (explicit false) differ cleanly.
+	Store *bool `json:"store,omitempty"`
 }
 
 type responsesReply struct {
