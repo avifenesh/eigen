@@ -85,8 +85,20 @@ from a cross-vendor review; channel undecided.
 - [ ] **Background-task escalation.** If a bg task fails/stalls/declares itself
   underpowered, auto re-run or hand off to a bigger model (not necessarily the
   orchestrator) and merge the final report back via `task_status`.
-- Unbuilt §7 dreams (no commitment): #13 ultraplan, #23 non-LLM heads,
-  #24 adversarial GPT×Claude planning.
+- Unbuilt §7 dreams (no commitment): #13 ultraplan, #23 non-LLM heads.
+
+- **Tier 29 — adversarial cross-vendor planning (#24).** ✅ `plan` tool +
+  `eigen plan <task>`: the active model AUTHORS a step-by-step plan, a model from
+  the OTHER vendor adversarially CRITIQUES it (cite-the-flaw, VERDICT:
+  APPROVE|REVISE), the author REVISES, repeat until APPROVE or the round budget
+  (default 3). internal/llm/council.go (Council/FormatCouncil) on the existing
+  cross-vendor plumbing (VendorOf/CrossReviewer/providerFor). Ordered adversary
+  FALLBACK across vendors (CrossVendorAdversaries) + 45s per-adversary timeout so
+  a hanging/flaky primary (gpt-5.5) falls through to grok/glm instead of blocking;
+  author calls unbounded. EIGEN_PLAN_ADVERSARY pins a specific adversary.
+  Live-verified: opus authored + grok-4 critiqued + opus revised → 15KB hardened
+  plan with surfaced dissent. Cost: opus-max author ~100s/call (deliberate, not a
+  hang).
 
 ### Tier 27 — plugins / marketplaces (bundled extensions from a catalog repo)
 eigen already installs a SKILL from GitHub (`eigen skill add owner/repo[/sub][@ref]`,
