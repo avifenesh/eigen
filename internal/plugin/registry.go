@@ -41,7 +41,8 @@ type InstalledPlugin struct {
 	Root        string    `json:"root"`             // ~/.eigen/plugins/<name> (bundled files)
 	Skills      []string  `json:"skills,omitempty"` // installed skill dir names (~/.eigen/skills/<n>)
 	MCPServers  []string  `json:"mcp_servers,omitempty"`
-	Hooks       int       `json:"hooks,omitempty"` // count appended to hooks.json
+	Hooks       int       `json:"hooks,omitempty"`    // count appended to hooks.json
+	Commands    []string  `json:"commands,omitempty"` // installed command names (~/.eigen/commands/<n>.md)
 }
 
 // NewRegistry opens the registry rooted at ~/.eigen.
@@ -66,6 +67,9 @@ func (r *Registry) PluginsDir() string { return filepath.Join(r.dir, "plugins") 
 func (r *Registry) SkillsDir() string { return filepath.Join(r.dir, "skills") }
 func (r *Registry) MCPPath() string   { return filepath.Join(r.dir, "mcp.json") }
 func (r *Registry) HooksPath() string { return filepath.Join(r.dir, "hooks.json") }
+
+// CommandsDir is where plugin slash commands are wired (~/.eigen/commands).
+func (r *Registry) CommandsDir() string { return filepath.Join(r.dir, "commands") }
 
 // --- marketplaces ---
 

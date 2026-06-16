@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/avifenesh/eigen/internal/command"
 )
 
 // compKind is which autocomplete source is currently driving the popup.
@@ -111,6 +113,18 @@ func (m *model) refreshCompletion() {
 		for _, c := range slashCommands {
 			if strings.HasPrefix(c.name, v) {
 				items = append(items, compItem{insert: c.name + " ", label: c.name, desc: c.desc})
+			}
+		}
+		// Custom commands (~/.eigen/commands + project .eigen/commands — the
+		// Claude commands/*.md format, incl. plugin-installed ones).
+		for _, c := range command.Load(command.Dirs()...).All() {
+			slash := "/" + c.Name
+			if strings.HasPrefix(slash, v) {
+				desc := c.Description
+				if c.ArgHint != "" {
+					desc += "  " + c.ArgHint
+				}
+				items = append(items, compItem{insert: slash + " ", label: slash, desc: desc})
 			}
 		}
 		m.comp = completion{kind: compSlash, items: items, start: 0}

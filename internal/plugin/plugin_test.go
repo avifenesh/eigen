@@ -119,6 +119,7 @@ func demoTarball(t *testing.T) []byte {
 		"plugins/toolbox/hooks/hooks.json":           `{"hooks": {"PostToolUse": [{"matcher": "Write", "hooks": [{"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/fmt.sh"}]}]}}`,
 		"plugins/toolbox/server.js":                  "// mcp server\n",
 		"plugins/toolbox/fmt.sh":                     "echo fmt\n",
+		"plugins/toolbox/commands/do-it.md":          "---\ndescription: do the thing\nargument-hint: \"[scope]\"\n---\n\nDo it for: $ARGUMENTS\n",
 	})
 }
 
@@ -190,6 +191,18 @@ func TestInstallPluginWiresComponents(t *testing.T) {
 		t.Fatalf("PostToolUse should map to tool_result, got %v", h0["event"])
 	}
 
+	// Command wired into ~/.eigen/commands, namespaced, ${ROOT}-expanded.
+	if len(res.Plugin.Commands) != 1 || res.Plugin.Commands[0] != "toolbox-do-it" {
+		t.Fatalf("commands = %v", res.Plugin.Commands)
+	}
+	cb, err := os.ReadFile(filepath.Join(dir, "commands", "toolbox-do-it.md"))
+	if err != nil {
+		t.Fatalf("command not installed: %v", err)
+	}
+	if !bytes.Contains(cb, []byte("Do it for: $ARGUMENTS")) {
+		t.Fatalf("command body wrong: %s", cb)
+	}
+
 	// Recorded as installed.
 	if _, ok := r.InstalledByName("toolbox"); !ok {
 		t.Fatal("plugin should be recorded as installed")
@@ -240,6 +253,9 @@ func TestUninstallReversesWiring(t *testing.T) {
 	// Skill dir, mcp server, hook, bundle, record all gone.
 	if _, err := os.Stat(filepath.Join(dir, "skills", "toolbox-greet")); err == nil {
 		t.Fatal("skill dir should be removed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "commands", "toolbox-do-it.md")); err == nil {
+		t.Fatal("command file should be removed")
 	}
 	mcp, _ := readObj(r.MCPPath())
 	if servers, _ := mcp["servers"].([]any); len(servers) != 0 {

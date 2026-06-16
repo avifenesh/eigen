@@ -103,6 +103,11 @@ func (r *Registry) uninstallFiles(pluginName string) {
 	for _, sd := range rec.Skills {
 		_ = os.RemoveAll(filepath.Join(r.SkillsDir(), sd))
 	}
+	// Commands.
+	for _, cn := range rec.Commands {
+		_ = os.Remove(filepath.Join(r.CommandsDir(), cn+".md"))
+		_ = os.Remove(filepath.Join(r.CommandsDir(), cn+".md.disabled"))
+	}
 	// MCP servers + hooks: drop entries whose name starts with "<plugin>-" (mcp)
 	// or whose command references the plugin's bundle dir (hooks).
 	r.removeMCPByPrefix(pluginName + "-")
@@ -194,6 +199,17 @@ func (r *Registry) SetEnabled(pluginName string, enabled bool) (bool, error) {
 	// no in-file disable marker for skills). Renamed back to re-enable.
 	for _, sd := range rec.Skills {
 		active := filepath.Join(r.SkillsDir(), sd, "SKILL.md")
+		parked := active + ".disabled"
+		if enabled {
+			_ = os.Rename(parked, active)
+		} else {
+			_ = os.Rename(active, parked)
+		}
+	}
+	// Commands: same park-aside trick — the command loader globs commands/*.md,
+	// so a .md.disabled suffix hides it.
+	for _, cn := range rec.Commands {
+		active := filepath.Join(r.CommandsDir(), cn+".md")
 		parked := active + ".disabled"
 		if enabled {
 			_ = os.Rename(parked, active)

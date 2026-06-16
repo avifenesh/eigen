@@ -143,7 +143,7 @@ func runPluginCmd(args []string, provider, model string) {
 		}
 		for _, p := range installed {
 			fmt.Printf("%-20s %s\n", p.Name, p.Description)
-			fmt.Printf("    %d skill(s), %d mcp server(s), %d hook(s)", len(p.Skills), len(p.MCPServers), p.Hooks)
+			fmt.Printf("    %d skill(s), %d command(s), %d mcp server(s), %d hook(s)", len(p.Skills), len(p.Commands), len(p.MCPServers), p.Hooks)
 			if p.Marketplace != "" {
 				fmt.Printf("  · from %s", p.Marketplace)
 			}
@@ -203,7 +203,7 @@ func printInstallResult(res *plugin.InstallResult, scanned bool) {
 	} else {
 		fmt.Printf("installed %q (scan skipped)\n", p.Name)
 	}
-	fmt.Printf("  %d skill(s), %d mcp server(s), %d hook(s)\n", len(p.Skills), len(p.MCPServers), p.Hooks)
+	fmt.Printf("  %d skill(s), %d command(s), %d mcp server(s), %d hook(s)\n", len(p.Skills), len(p.Commands), len(p.MCPServers), p.Hooks)
 	for _, w := range res.Warnings {
 		fmt.Println("  note: " + w)
 	}

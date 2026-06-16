@@ -18,8 +18,14 @@ type Components struct {
 	Skills     []SkillFile     // skills/<name>/SKILL.md
 	MCPServers []MCPServer     // .mcp.json (or manifest mcpServers path)
 	Hooks      []HookSpec      // hooks/hooks.json (or manifest hooks path)
-	Commands   int             // count only (not wired in v1)
-	Agents     int             // count only (not wired in v1)
+	Commands   []CommandFile   // commands/*.md (Claude slash commands) — wired in Tier 31
+	Agents     int             // count only (not wired)
+}
+
+// CommandFile is one slash-command markdown file from a plugin's commands/ dir.
+type CommandFile struct {
+	Name    string // file basename sans .md
+	Content string // raw markdown (frontmatter + body)
 }
 
 // SkillFile is one discovered skill: its directory name and the raw SKILL.md.
@@ -72,9 +78,28 @@ func Discover(root string, lenient bool) (*Components, error) {
 	c.Skills = discoverSkills(root)
 	c.MCPServers = discoverMCP(root, c.Manifest)
 	c.Hooks = discoverHooks(root, c.Manifest)
-	c.Commands = countDir(root, c.Manifest, "commands", ".md")
+	c.Commands = discoverCommands(root)
 	c.Agents = countDir(root, c.Manifest, "agents", ".md")
 	return c, nil
+}
+
+// discoverCommands reads commands/*.md (Claude slash commands). Subdir
+// namespacing (commands/git/commit.md → git:commit) is flattened to the file
+// basename for v1.
+func discoverCommands(root string) []CommandFile {
+	dir := filepath.Join(root, "commands")
+	matches, _ := filepath.Glob(filepath.Join(dir, "*.md"))
+	sort.Strings(matches)
+	var out []CommandFile
+	for _, p := range matches {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		name := strings.TrimSuffix(filepath.Base(p), ".md")
+		out = append(out, CommandFile{Name: name, Content: string(b)})
+	}
+	return out
 }
 
 // discoverSkills reads skills/*/SKILL.md (the convention; no manifest override).

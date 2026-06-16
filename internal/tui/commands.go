@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
+	"github.com/avifenesh/eigen/internal/command"
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/hook"
 	"github.com/avifenesh/eigen/internal/llm"
@@ -609,9 +610,40 @@ func (m *model) command(line string) tea.Cmd {
 		m.sync()
 		m.scrollToSelected()
 	default:
+		if cmd := m.runCustomCommand(name, arg); cmd != nil || m.isCustomCommand(name) {
+			return cmd
+		}
 		m.push(&block{kind: blockNote, isErr: true, body: sb("unknown command " + name + " (try /help)")})
 	}
 	return nil
+}
+
+// isCustomCommand reports whether name matches a loaded custom command.
+func (m *model) isCustomCommand(name string) bool {
+	_, ok := command.Load(command.Dirs()...).Get(name)
+	return ok
+}
+
+// runCustomCommand looks up a custom slash command (~/.eigen/commands or
+// project .eigen/commands — the Claude commands/*.md format), expands its body
+// with the given args ($ARGUMENTS / $1..$9), and submits it as a normal turn.
+// Returns nil (and isCustomCommand is false) when name isn't a custom command,
+// so the caller falls through to "unknown command".
+func (m *model) runCustomCommand(name, arg string) tea.Cmd {
+	c, ok := command.Load(command.Dirs()...).Get(name)
+	if !ok {
+		return nil
+	}
+	if m.state == stRunning {
+		m.note("finish or interrupt the current turn before running " + name)
+		return nil
+	}
+	prompt := command.Expand(c.Body, arg)
+	if strings.TrimSpace(prompt) == "" {
+		m.note(name + ": empty command body")
+		return nil
+	}
+	return m.submit(prompt)
 }
 
 func defaultSessionPath() string {

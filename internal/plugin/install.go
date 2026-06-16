@@ -196,10 +196,31 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 		res.Plugin.Hooks = n
 	}
 
-	// commands/agents: parsed-but-not-wired in v1.
-	if comps.Commands > 0 {
-		res.Warnings = append(res.Warnings, fmt.Sprintf("%d command(s) not wired (eigen has no slash-command-prompt subsystem yet)", comps.Commands))
+	// 4) Wire slash commands (commands/*.md) into ~/.eigen/commands, scanned +
+	// namespaced. These become /<plugin>-<name> in the TUI.
+	for _, cf := range comps.Commands {
+		if opts.Scanner != nil {
+			sr, serr := opts.Scanner.Scan(ctx, cf.Name, cf.Content)
+			if serr != nil {
+				return nil, fmt.Errorf("scan command %q: %w", cf.Name, serr)
+			}
+			if !sr.Safe {
+				res.Scans = append(res.Scans, ScanFinding{Component: "command:" + cf.Name, Reasons: sr.Reasons})
+				if !opts.Force {
+					r.uninstallFiles(pluginName)
+					_ = os.RemoveAll(dest)
+					return nil, &skill.RiskyError{Name: pluginName + "/" + cf.Name, Reasons: sr.Reasons}
+				}
+			}
+		}
+		instName := pluginName + "-" + cf.Name
+		if err := r.installCommand(instName, cf.Content, dest, opts.Overwrite); err != nil {
+			return nil, fmt.Errorf("install command %q: %w", cf.Name, err)
+		}
+		res.Plugin.Commands = append(res.Plugin.Commands, instName)
 	}
+
+	// agents: parsed-but-not-wired (no subagent-prompt subsystem yet).
 	if comps.Agents > 0 {
 		res.Warnings = append(res.Warnings, fmt.Sprintf("%d agent(s) not wired (subagent prompts deferred to a later version)", comps.Agents))
 	}
@@ -299,6 +320,22 @@ func (r *Registry) installSkillDir(srcDir, instName, bundleRoot string, overwrit
 }
 
 func expandRoot(s, root string) string { return strings.ReplaceAll(s, pluginRootVar, root) }
+
+// installCommand writes a plugin slash command to ~/.eigen/commands/<inst>.md,
+// expanding ${CLAUDE_PLUGIN_ROOT} so any bundled-file references resolve.
+func (r *Registry) installCommand(instName, content, bundleRoot string, overwrite bool) error {
+	dir := r.CommandsDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	path := filepath.Join(dir, instName+".md")
+	if !overwrite {
+		if _, err := os.Stat(path); err == nil {
+			return fmt.Errorf("command %q already exists at %s", instName, path)
+		}
+	}
+	return os.WriteFile(path, []byte(expandRoot(content, bundleRoot)), 0o644)
+}
 
 // copyTree recursively copies src into dst (files 0644, dirs 0755). Symlinks
 // are skipped. dst is created.
