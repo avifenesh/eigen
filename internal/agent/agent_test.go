@@ -821,11 +821,14 @@ func (hangingProvider) Complete(ctx context.Context, _ llm.Request) (*llm.Respon
 // TestForegroundSubtaskStallsWhenIdle proves a hung foreground subtask (no tool
 // activity) is killed by the idle-stall watchdog instead of hanging forever.
 func TestForegroundSubtaskStallsWhenIdle(t *testing.T) {
-	oldIdle, oldGrace, oldFront := stallIdle, heartbeatGrace, frontWindow
+	oldIdle, oldGrace, oldFront, oldModel := stallIdle, heartbeatGrace, frontWindow, modelMaxWait
 	stallIdle = 120 * time.Millisecond
+	modelMaxWait = 150 * time.Millisecond // a hung model call is capped here now
 	heartbeatGrace = 0
 	frontWindow = 10 * time.Second // long, so promotion doesn't pre-empt the stall
-	defer func() { stallIdle, heartbeatGrace, frontWindow = oldIdle, oldGrace, oldFront }()
+	defer func() {
+		stallIdle, heartbeatGrace, frontWindow, modelMaxWait = oldIdle, oldGrace, oldFront, oldModel
+	}()
 
 	a := &Agent{Provider: hangingProvider{}, Tools: mustReg(t), MaxSteps: 3}
 	start := time.Now()
@@ -837,7 +840,7 @@ func TestForegroundSubtaskStallsWhenIdle(t *testing.T) {
 		t.Fatalf("want a stall error, got %v", err)
 	}
 	if d := time.Since(start); d > 2*time.Second {
-		t.Fatalf("subtask should abort near its %s idle window, took %v", stallIdle, d)
+		t.Fatalf("subtask should abort near its %s model cap, took %v", modelMaxWait, d)
 	}
 }
 

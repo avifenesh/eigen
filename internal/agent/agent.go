@@ -134,6 +134,13 @@ type Agent struct {
 	// implements llm.Streamer.
 	OnEvent EventSink
 
+	// onModelCall, if set, is invoked at the START of every model call — the
+	// subtask stall watchdog's heartbeat hook. It bypasses the user-facing
+	// event stream entirely (a long non-streaming Complete() emits no events
+	// but must not look "idle"). Set by runChild for subtasks; nil for the
+	// top-level agent, which isn't stall-watched.
+	onModelCall func()
+
 	// EventWrap, if set, wraps any sink installed as OnEvent by a session
 	// host (observability logging, hooks). The daemon applies it when wiring
 	// its dispatch so obs/hooks run daemon-side regardless of views.
@@ -560,6 +567,9 @@ func (a *Agent) runChild(ctx context.Context, c childRun) childResultFG {
 	rl := &relay{onEvent: c.sub.OnEvent}
 	c.sub.OnEvent = activitySink(hb, rl.emit)
 	c.sub.Persist = rl.save
+	// Heartbeat hook: a model call in flight switches the watchdog to its larger
+	// budget so a slow non-streaming Complete() isn't mistaken for a hang.
+	c.sub.onModelCall = hb.modelStart
 	stalled := watchStall(cctx, hb, cancel, idle, heartbeatGrace)
 
 	ch := make(chan childDone, 1)
@@ -1068,6 +1078,15 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		var err error
 		streamed := false
 		prov := a.provider()
+		// Heartbeat the subtask watchdog at model-call START: a non-streaming
+		// Complete() (e.g. the Converse/opus path) emits NOTHING until it
+		// returns, so a slow-but-healthy inference would otherwise look "idle"
+		// and trip the stall cancel. onModelCall switches the watchdog to its
+		// larger in-flight budget (modelMaxWait). nil for the top-level agent
+		// (not stall-watched); set by runChild for subtasks.
+		if a.onModelCall != nil {
+			a.onModelCall()
+		}
 		if sm, ok := prov.(llm.Streamer); ok && a.OnEvent != nil {
 			streamed = true
 			sink := func(c llm.StreamChunk) {
