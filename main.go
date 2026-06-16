@@ -264,6 +264,19 @@ func main() {
 		return
 	}
 
+	// `eigen marketplace <add|list|remove|update>` and `eigen plugin
+	// <install|list|remove|enable|disable>`: the Tier 27 plugin/marketplace
+	// layer. CLI-only — the agent cannot install plugins (same rule as
+	// /add-dir); untrusted bundle code is scanned before install.
+	if flag.Arg(0) == "marketplace" {
+		runMarketplaceCmd(flag.Args()[1:])
+		return
+	}
+	if flag.Arg(0) == "plugin" {
+		runPluginCmd(flag.Args()[1:], *provider, *model)
+		return
+	}
+
 	if flag.Arg(0) == "telegram" {
 		runTelegram(cfg)
 		return

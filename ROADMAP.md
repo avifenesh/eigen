@@ -16,10 +16,9 @@ project memory). Detailed design/perf notes live under `docs/`.
 - Nothing in flight — pick the next item.
 
 **Next (queued, well-scoped):**
-- **Tier 27 — plugins / marketplaces.** Install bundled plugins (skills + MCP +
-  commands + hooks) from a catalog repo (what Claude/Codex call a marketplace);
-  `eigen marketplace add/list` + `eigen plugin install/list/remove/enable`. Builds
-  on the existing skill-from-GitHub installer + per-scope `plugins.json`/`mcp.json`.
+- **Tier 27 v1.1 (follow-up)** — app browse/install page, `/plugin` + `/marketplace`
+  slash commands, and wiring Claude "commands"/"agents" components (need a
+  slash-command-prompt subsystem). v1 (CLI consume+manage: skills+MCP+hooks) shipped.
 
 **Later (parked big bets — pull when wanted):**
 - **Tier 20 — eigen in your pocket.** Outbound notify + remote approve with no
@@ -156,22 +155,22 @@ shape first (Claude: a repo with `.claude-plugin/marketplace.json` cataloguing
 plugins, each with `.claude-plugin/plugin.json` + `skills/`,`commands/`,`hooks/`,
 `.mcp.json`; tracked in `known_marketplaces.json` + `installed_plugins.json`) and
 build ON it — read their format directly so the user's existing marketplaces work.
-- [ ] **Marketplace registry.** `eigen marketplace add <owner/repo|url>` clones/fetches
+- [x] **Marketplace registry.** SHIPPED. `eigen marketplace add <owner/repo|url>` clones/fetches
   the catalog repo, parses its manifest, records it in `~/.eigen/marketplaces.json`;
   `marketplace list` / `marketplace remove` / `marketplace update`.
-- [ ] **Plugin install.** `eigen plugin install <name>[@marketplace]` fetches the
+- [x] **Plugin install.** SHIPPED (skills+MCP+hooks wired; commands/agents deferred). `eigen plugin install <name>[@marketplace]` fetches the
   plugin bundle, security-scans it (reuse the skill scanner), and wires its
   components into the right per-scope configs: skills → `skills/`, MCP server →
   `mcp.json` (niche, auto-described), commands/prompts → a prompts dir, hooks →
   `hooks.json`. `plugin list` / `remove` / `enable|disable` (reuse the existing
   disable-marker mechanism). Record installs in `~/.eigen/plugins-installed.json`.
-- [ ] **Read existing Claude/Codex marketplaces.** Parse `.claude-plugin/*.json`
+- [x] **Read existing Claude/Codex marketplaces.** SHIPPED (Claude .claude-plugin format parsed directly; Codex has no equivalent — MCP is the interop point). Parse `.claude-plugin/*.json`
   (and the Codex equivalent) so a user's already-installed marketplaces are
   usable in eigen without re-authoring — import, don't reinvent.
-- [ ] **App page + commands.** Extend the read-only `[plugins]` page into a
+- [~] **App page + commands.** DEFERRED to v1.1 (CLI shipped; app browse/install page + /plugin /marketplace slash commands + commands/agents components are the follow-up). Extend the read-only `[plugins]` page into a
   browse/install/enable surface; `/plugin` + `/marketplace` slash commands;
   `search_tools`-style disclosure for plugin-provided tools.
-- [ ] **Safety.** Untrusted code: scan before install (RISKY → blocked unless
+- [x] **Safety.** SHIPPED: skill scanner reused (RISKY blocks unless --force, rolls back partial wiring); MCP servers niche+gated; tarball traversal/size guards; CLI-ONLY (agent has no install tool — verified internal/plugin imported only by main). Untrusted code: scan before install (RISKY → blocked unless
   `--force`), MCP servers stay niche + gated, hooks/commands are opt-in, nothing
   auto-runs on install. The agent CANNOT install plugins — user action only
   (same rule as `/add-dir`).
