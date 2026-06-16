@@ -113,6 +113,9 @@ func (s *Server) handle(conn net.Conn) {
 		switch req.Op {
 		case "ping":
 			send(Response{Type: "ok"})
+		case "stats":
+			st := s.host.Stats()
+			send(Response{Type: "stats", Stats: &st})
 		case "list":
 			send(Response{Type: "sessions", Sessions: s.host.List()})
 		case "new":

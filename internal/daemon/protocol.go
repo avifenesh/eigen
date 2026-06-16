@@ -57,6 +57,23 @@ type Response struct {
 	Steered  bool          `json:"steered,omitempty"`  // input: delivered as a mid-turn steer (a turn was running)
 	Killed   bool          `json:"killed,omitempty"`   // kill-shell: a running shell was signaled
 	Detached bool          `json:"detached,omitempty"` // detach-bash: a foreground bash was backgrounded
+	Stats    *DaemonStats  `json:"stats,omitempty"`    // stats op: daemon resource health
+}
+
+// DaemonStats is the daemon's resource-health snapshot (the `stats` op): enough
+// to spot leaks/growth over long uptime without attaching a profiler.
+type DaemonStats struct {
+	UptimeSec    int64  `json:"uptime_sec"`
+	Goroutines   int    `json:"goroutines"`
+	HeapAllocB   uint64 `json:"heap_alloc_b"` // live heap bytes
+	HeapSysB     uint64 `json:"heap_sys_b"`   // heap reserved from OS
+	RSSB         uint64 `json:"rss_b"`        // resident set (0 if unavailable)
+	NumGC        uint32 `json:"num_gc"`
+	Sessions     int    `json:"sessions"`      // hosted sessions
+	Views        int    `json:"views"`         // attached views across all sessions
+	RunningTurns int    `json:"running_turns"` // turns in flight
+	BgTasks      int    `json:"bg_tasks"`      // in-memory background-task records
+	GoVersion    string `json:"go_version,omitempty"`
 }
 
 // SessionState is the snapshot a remote chat UI needs to render history and

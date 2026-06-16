@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +36,11 @@ type Host struct {
 	// awaited (tests; clean shutdown) — a fire-and-forget goroutine that writes
 	// the meta file must not outlive a RemoveAll/teardown.
 	titleWG sync.WaitGroup
+	// started is the host creation time (daemon uptime for the stats op).
+	started time.Time
+	// bgCount reports the in-memory background-task record count (injected by
+	// main, which owns the BgRegistry); nil = unknown.
+	bgCount func() int
 }
 
 // SetTitler installs the small-model session titler.
@@ -110,12 +116,54 @@ func (h *Host) SetModelSwitcher(s ModelSwitcher) { h.switchModel = s }
 
 // NewHost creates an empty session host (no persistence — tests).
 func NewHost() *Host {
-	return &Host{sessions: map[string]*Session{}}
+	return &Host{sessions: map[string]*Session{}, started: time.Now()}
 }
 
 // NewPersistentHost creates a host that persists sessions under dir.
 func NewPersistentHost(dir string) *Host {
-	return &Host{sessions: map[string]*Session{}, persistDir: dir}
+	return &Host{sessions: map[string]*Session{}, persistDir: dir, started: time.Now()}
+}
+
+// SetBgCount injects a reporter for the in-memory background-task record count
+// (the BgRegistry lives in package main / the agent layer).
+func (h *Host) SetBgCount(f func() int) { h.bgCount = f }
+
+// Stats returns the daemon's resource-health snapshot for the `stats` op.
+func (h *Host) Stats() DaemonStats {
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	h.mu.Lock()
+	sessions := len(h.sessions)
+	views, running := 0, 0
+	for _, s := range h.sessions {
+		s.mu.Lock()
+		views += len(s.subs)
+		if s.running {
+			running++
+		}
+		s.mu.Unlock()
+	}
+	started := h.started
+	bgCount := h.bgCount
+	h.mu.Unlock()
+	st := DaemonStats{
+		Goroutines:   runtime.NumGoroutine(),
+		HeapAllocB:   ms.HeapAlloc,
+		HeapSysB:     ms.HeapSys,
+		RSSB:         currentRSS(),
+		NumGC:        ms.NumGC,
+		Sessions:     sessions,
+		Views:        views,
+		RunningTurns: running,
+		GoVersion:    runtime.Version(),
+	}
+	if !started.IsZero() {
+		st.UptimeSec = int64(time.Since(started).Seconds())
+	}
+	if bgCount != nil {
+		st.BgTasks = bgCount()
+	}
+	return st
 }
 
 // Add registers a freshly built agent as a hosted session and returns it. dir

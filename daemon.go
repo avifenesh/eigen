@@ -197,6 +197,32 @@ func daemonControl(sub string) bool {
 	case "install":
 		daemonInstall()
 		return true
+	case "stats":
+		c, err := daemon.Dial(daemon.SocketPath())
+		if err != nil {
+			fail(fmt.Errorf("daemon not reachable: %w", err))
+		}
+		defer c.Close()
+		st, err := c.Stats()
+		if err != nil {
+			fail(err)
+		}
+		fmt.Printf("eigen daemon stats (instance %s):\n", firstNonEmpty(daemon.Instance(), "default"))
+		fmt.Printf("  uptime:      %s\n", time.Duration(st.UptimeSec)*time.Second)
+		fmt.Printf("  goroutines:  %d\n", st.Goroutines)
+		fmt.Printf("  heap alloc:  %s (sys %s)\n", humanBytes(st.HeapAllocB), humanBytes(st.HeapSysB))
+		if st.RSSB > 0 {
+			fmt.Printf("  rss:         %s\n", humanBytes(st.RSSB))
+		}
+		fmt.Printf("  gc cycles:   %d\n", st.NumGC)
+		fmt.Printf("  sessions:    %d (%d views, %d running)\n", st.Sessions, st.Views, st.RunningTurns)
+		if st.BgTasks > 0 {
+			fmt.Printf("  bg tasks:    %d (in memory)\n", st.BgTasks)
+		}
+		if st.GoVersion != "" {
+			fmt.Printf("  go:          %s\n", st.GoVersion)
+		}
+		return true
 	case "uninstall":
 		daemonUninstall()
 		return true
@@ -893,4 +919,18 @@ func exitCode(err error) int {
 		return ee.ExitCode()
 	}
 	return -1
+}
+
+// humanBytes formats a byte count as a human-readable string (KiB/MiB/GiB).
+func humanBytes(b uint64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := uint64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
 }

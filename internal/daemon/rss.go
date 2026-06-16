@@ -1,0 +1,26 @@
+package daemon
+
+import (
+	"os"
+	"strconv"
+	"strings"
+)
+
+// currentRSS returns this process's resident set size in bytes, or 0 if it
+// can't be read (non-Linux, or /proc unavailable). Reads /proc/self/statm,
+// whose second field is resident pages.
+func currentRSS() uint64 {
+	data, err := os.ReadFile("/proc/self/statm")
+	if err != nil {
+		return 0
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) < 2 {
+		return 0
+	}
+	pages, err := strconv.ParseUint(fields[1], 10, 64)
+	if err != nil {
+		return 0
+	}
+	return pages * uint64(os.Getpagesize())
+}

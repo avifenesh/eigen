@@ -200,6 +200,19 @@ func (c *Client) Ping() error {
 	return err
 }
 
+// Stats returns the daemon's resource-health snapshot (uptime, goroutines,
+// heap/RSS, session/view/turn/bg-task counts).
+func (c *Client) Stats() (*DaemonStats, error) {
+	resp, err := c.request(Request{Op: "stats"})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Stats == nil {
+		return nil, fmt.Errorf("daemon returned no stats")
+	}
+	return resp.Stats, nil
+}
+
 // List returns the daemon's sessions.
 func (c *Client) List() ([]SessionInfo, error) {
 	r, err := c.request(Request{Op: "list"})

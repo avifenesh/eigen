@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -159,6 +160,7 @@ func (r *BgRegistry) put(t *BgTask) {
 	t.Updated = time.Now()
 	cp := *t
 	r.tasks[t.ID] = &cp
+	r.reapLocked() // bound the in-memory map over long daemon uptime
 	dir := r.dir
 	r.mu.Unlock()
 	// Append the state change to the task's jsonl (best-effort: persistence
@@ -179,6 +181,49 @@ func (r *BgRegistry) put(t *BgTask) {
 	}
 	defer f.Close()
 	f.Write(append(line, '\n'))
+}
+
+// maxRetainedTasks bounds the in-memory task map. Running tasks are ALWAYS kept
+// (never reaped); only finished/terminal records beyond this many (most-recent
+// first) are dropped from memory — their jsonl stays on disk, and `task_status`
+// can still read it. Prevents the registry growing unbounded over a long-lived
+// daemon that runs many subtasks.
+const maxRetainedTasks = 200
+
+// reapLocked drops the oldest terminal tasks when the map exceeds the cap.
+// Caller holds r.mu. Running tasks are exempt.
+func (r *BgRegistry) reapLocked() {
+	if len(r.tasks) <= maxRetainedTasks {
+		return
+	}
+	// Collect terminal tasks (everything except still-running), oldest first.
+	type ref struct {
+		id string
+		at time.Time
+	}
+	var term []ref
+	for id, t := range r.tasks {
+		if t.Status == "running" || t.Status == "" {
+			continue // never reap a live task
+		}
+		when := t.Finished
+		if when.IsZero() {
+			when = t.Updated
+		}
+		term = append(term, ref{id, when})
+	}
+	// How many we must drop to get back under the cap.
+	over := len(r.tasks) - maxRetainedTasks
+	if over > len(term) {
+		over = len(term) // can't drop running tasks; cap may be exceeded by live work
+	}
+	if over <= 0 {
+		return
+	}
+	sort.Slice(term, func(i, j int) bool { return term[i].at.Before(term[j].at) })
+	for i := 0; i < over; i++ {
+		delete(r.tasks, term[i].id)
+	}
 }
 
 // update applies fn to a live task record under the registry lock, then

@@ -809,3 +809,41 @@ func TestBgDoneWakesIdleOrchestrator(t *testing.T) {
 	}
 	t.Fatal("idle orchestrator was not woken with the finished task's result")
 }
+
+func TestStatsOp(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "d.sock")
+	host := NewHost()
+	srv, err := Listen(sock, host, testBuilder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve()
+	defer srv.Close()
+
+	c, err := Dial(sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	// One session, no turns.
+	if _, err := c.New("/tmp/p", ""); err != nil {
+		t.Fatal(err)
+	}
+	st, err := c.Stats()
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+	if st.Goroutines < 1 {
+		t.Fatal("goroutines should be > 0")
+	}
+	if st.HeapAllocB == 0 {
+		t.Fatal("heap alloc should be reported")
+	}
+	if st.Sessions != 1 {
+		t.Fatalf("want 1 session, got %d", st.Sessions)
+	}
+	if st.GoVersion == "" {
+		t.Fatal("go version should be reported")
+	}
+}
