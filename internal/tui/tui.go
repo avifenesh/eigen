@@ -1484,18 +1484,29 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			return m, nil
 		}
 		if tea.MouseEvent(msg).IsWheel() {
-			// Wheel over the changes tab scrolls the inline diff view.
-			if h := m.hitTest(msg.X, msg.Y); h.region == regRightPanel && m.rightTab == rightTabChanges {
-				switch msg.Button {
-				case tea.MouseButtonWheelUp:
-					m.changesScroll -= 3
-				case tea.MouseButtonWheelDown:
-					m.changesScroll += 3
+			// Wheel over right-panel tabs scrolls that panel, not the transcript.
+			if h := m.hitTest(msg.X, msg.Y); h.region == regRightPanel {
+				switch m.rightTab {
+				case rightTabChanges:
+					switch msg.Button {
+					case tea.MouseButtonWheelUp:
+						m.changesScroll -= 3
+					case tea.MouseButtonWheelDown:
+						m.changesScroll += 3
+					}
+					if m.changesScroll < 0 {
+						m.changesScroll = 0
+					}
+					return m, nil
+				case rightTabTasks:
+					switch msg.Button {
+					case tea.MouseButtonWheelUp:
+						m.scrollTasks(-3)
+					case tea.MouseButtonWheelDown:
+						m.scrollTasks(3)
+					}
+					return m, nil
 				}
-				if m.changesScroll < 0 {
-					m.changesScroll = 0
-				}
-				return m, nil
 			}
 			var cmd tea.Cmd
 			m.vp, cmd = m.vp.Update(msg)

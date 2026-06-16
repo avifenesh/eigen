@@ -31,6 +31,7 @@ type tasksState struct {
 	tasks     []agent.BgTask
 	expanded  string
 	sel       int
+	scroll    int // first rendered row below the header (summary/detail/cancel rows)
 	loaded    bool
 	ticking   bool
 	gen       int
@@ -82,7 +83,11 @@ func (m *model) refreshTasks() {
 		}
 		if !found {
 			m.tasks.expanded = ""
+			m.tasks.scroll = 0
 		}
+	}
+	if len(m.tasks.tasks) == 0 || m.tasks.scroll < 0 {
+		m.tasks.scroll = 0
 	}
 }
 
@@ -122,6 +127,33 @@ func (m *model) tasksRows(contentW int) []taskRow {
 		}
 	}
 	return rows
+}
+
+func (m *model) clampTasksScroll(rows []taskRow, bodyH int) {
+	if bodyH < 1 {
+		bodyH = 1
+	}
+	maxScroll := len(rows) - bodyH
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if m.tasks.scroll > maxScroll {
+		m.tasks.scroll = maxScroll
+	}
+	if m.tasks.scroll < 0 {
+		m.tasks.scroll = 0
+	}
+}
+
+// scrollTasks scrolls the tasks panel's row model (summary rows plus expanded
+// detail/cancel rows). It is driven by the mouse wheel over the right panel.
+func (m *model) scrollTasks(delta int) {
+	if !m.tasks.loaded {
+		m.refreshTasks()
+	}
+	m.tasks.scroll += delta
+	rows := m.tasksRows(m.rightCols() - 4)
+	m.clampTasksScroll(rows, m.vp.Height-1)
 }
 
 // taskGlyph maps a task status to the shared glyph language.
@@ -263,7 +295,7 @@ func oneLineTrunc(s string, n int) string {
 	return s
 }
 
-// tasksLines renders the tab as exactly h panel lines (header + rows).
+// tasksLines renders the tab as exactly h panel lines (header + scrollable rows).
 func (m *model) tasksLines(h int) []string {
 	if !m.tasks.loaded {
 		m.refreshTasks()
@@ -273,8 +305,10 @@ func (m *model) tasksLines(h int) []string {
 	lines := make([]string, 0, h)
 	lines = append(lines, changesPad(m.rightPanelTitleLine(pw-2), pw))
 	rows := m.tasksRows(contentW)
+	bodyH := h - 1
+	m.clampTasksScroll(rows, bodyH)
 	now := time.Now()
-	for i := 0; i < len(rows) && len(lines) < h; i++ {
+	for i := m.tasks.scroll; i < len(rows) && len(lines) < h; i++ {
 		r := rows[i]
 		var s string
 		switch r.kind {
@@ -304,8 +338,12 @@ func (m *model) tasksRowAt(localY int) (taskRow, bool) {
 	if localY <= 0 {
 		return taskRow{}, false
 	}
+	if !m.tasks.loaded {
+		m.refreshTasks()
+	}
 	rows := m.tasksRows(m.rightCols() - 4)
-	i := localY - 1
+	m.clampTasksScroll(rows, m.vp.Height-1)
+	i := m.tasks.scroll + localY - 1
 	if i < 0 || i >= len(rows) || rows[i].task < 0 {
 		return taskRow{}, false
 	}

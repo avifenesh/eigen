@@ -297,7 +297,7 @@ func (m *Model) capturingInput() bool {
 	case PageConfig:
 		return m.config.editing || m.config.picking
 	case PageMemory:
-		return m.memory.confirm
+		return m.memory.confirm || m.memory.open
 	case PageSessions:
 		// Type-to-search captures everything (typing "q" extends the query).
 		return m.sessions.filter.searching || m.sessions.confirmDel
@@ -395,6 +395,8 @@ func (m *Model) contentClick(localX, localY int) (tea.Cmd, bool) {
 		return m.live.clickAt(m, localY)
 	case PageConfig:
 		return m.config.clickAt(m, localY)
+	case PageMemory:
+		return m.memory.clickAt(m, localY)
 	}
 	return nil, false
 }

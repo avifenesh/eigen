@@ -103,6 +103,41 @@ func TestTasksExpandShowsResultAndCancelRow(t *testing.T) {
 	}
 }
 
+func TestTasksExpandedDetailScrolls(t *testing.T) {
+	m := tasksModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 16})
+	var result strings.Builder
+	for i := 0; i < 40; i++ {
+		result.WriteString("result line " + itoa(i) + "\n")
+	}
+	seedTask(t, m, agent.BgTask{
+		ID: "bg-12345678-1", Task: "long result", Status: "done",
+		Result: result.String(), Started: time.Now().Add(-time.Minute), Finished: time.Now(),
+	})
+	m.setRightTab(rightTabTasks)
+	m.toggleTaskExpand(taskIndex(t, m, "bg-12345678-1"))
+
+	before := ansi.Strip(strings.Join(m.tasksLines(m.vp.Height), "\n"))
+	if !strings.Contains(before, "result line 0") {
+		t.Fatalf("expanded task should start at the result top:\n%s", before)
+	}
+	if strings.Contains(before, "result line 30") {
+		t.Fatalf("unscrolled panel should not already show late result lines:\n%s", before)
+	}
+
+	l := m.computeLayout()
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown, X: l.rightPanel.x + 3, Y: l.rightPanel.y + 3})
+	if m.tasks.scroll == 0 {
+		t.Fatal("mouse wheel over the tasks panel should scroll task detail")
+	}
+
+	m.scrollTasks(30)
+	after := ansi.Strip(strings.Join(m.tasksLines(m.vp.Height), "\n"))
+	if !strings.Contains(after, "result line 30") {
+		t.Fatalf("scrolling tasks should reveal later result lines:\n%s", after)
+	}
+}
+
 func taskIndex(t *testing.T, m *model, id string) int {
 	t.Helper()
 	m.refreshTasks()

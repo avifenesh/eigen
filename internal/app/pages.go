@@ -486,12 +486,15 @@ func (s *providersState) view(m *Model, w, h int) string {
 // (with confirm), c consolidates via the small model (async), j/k move.
 // Project memory lives with each project.
 type memoryState struct {
-	list      list
-	bullets   []string
-	loaded    bool
-	confirm   bool   // pending delete confirmation for the selected bullet
-	status    string // transient feedback ("consolidating…", errors)
-	consoling bool   // consolidation running in the background
+	list         list
+	bullets      []string
+	loaded       bool
+	confirm      bool   // pending delete confirmation for the selected bullet
+	status       string // transient feedback ("consolidating…", errors)
+	consoling    bool   // consolidation running in the background
+	open         bool   // full selected-note reader is open
+	detailScroll int    // first visible wrapped detail line in the reader
+	clicks       clickMap
 }
 
 func (s *memoryState) init(*Data) {}
@@ -536,9 +539,86 @@ func memoryBullets(content string) []string {
 // consolidateDoneMsg reports the background consolidation result.
 type consolidateDoneMsg struct{ err error }
 
+func (s *memoryState) selectedNote() string {
+	if s.list.cursor < 0 || s.list.cursor >= len(s.bullets) {
+		return ""
+	}
+	return s.bullets[s.list.cursor]
+}
+
+func memoryDetailLines(note string, w int) []string {
+	lineW := w - 4
+	if lineW < 12 {
+		lineW = 12
+	}
+	var out []string
+	for _, raw := range strings.Split(strings.TrimRight(note, "\n"), "\n") {
+		if strings.TrimSpace(raw) == "" {
+			out = append(out, "")
+			continue
+		}
+		for _, ln := range strings.Split(wrapTo(raw, lineW, ""), "\n") {
+			out = append(out, ln)
+		}
+	}
+	if len(out) == 0 {
+		out = []string{"(empty)"}
+	}
+	return out
+}
+
+func (s *memoryState) clampDetailScroll(lineN, visible int) {
+	if visible < 1 {
+		visible = 1
+	}
+	maxScroll := lineN - visible
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if s.detailScroll > maxScroll {
+		s.detailScroll = maxScroll
+	}
+	if s.detailScroll < 0 {
+		s.detailScroll = 0
+	}
+}
+
+func (s *memoryState) scrollDetail(m *Model, delta int) {
+	l := m.computeLayout()
+	w, visible := l.inner.w, l.inner.h-5
+	if w <= 0 {
+		w = m.width
+	}
+	s.detailScroll += delta
+	lines := memoryDetailLines(s.selectedNote(), w)
+	s.clampDetailScroll(len(lines), visible)
+}
+
 func (s *memoryState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	s.load(m.data)
 	key := msg.String()
+
+	if s.open {
+		switch key {
+		case "esc", "backspace", "enter", "q":
+			s.open = false
+			s.detailScroll = 0
+		case "j", "down":
+			s.scrollDetail(m, 1)
+		case "k", "up":
+			s.scrollDetail(m, -1)
+		case "ctrl+d", "pgdown":
+			s.scrollDetail(m, max(1, m.computeLayout().inner.h/2))
+		case "ctrl+u", "pgup":
+			s.scrollDetail(m, -max(1, m.computeLayout().inner.h/2))
+		case "home":
+			s.detailScroll = 0
+		case "G", "end":
+			s.detailScroll = 1 << 30
+			s.scrollDetail(m, 0)
+		}
+		return m, nil
+	}
 
 	if s.confirm {
 		switch key {
@@ -563,6 +643,12 @@ func (s *memoryState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch key {
+	case "enter", " ", "space":
+		if len(s.bullets) > 0 {
+			s.open = true
+			s.detailScroll = 0
+			s.status = ""
+		}
 	case "d":
 		if len(s.bullets) > 0 {
 			s.confirm = true
@@ -624,11 +710,16 @@ func (s *memoryState) view(m *Model, w, h int) string {
 	if len(s.bullets) == 0 {
 		return out + sFaint.Render("  empty — global notes accumulate from sessions (scope=global)")
 	}
+	if s.open {
+		return s.detailView(m, w, h)
+	}
+	s.clicks.reset()
 	visible := h - 7
 	from, to := s.list.window(visible)
 	for i := from; i < to; i++ {
 		// One line per bullet: first line, truncated.
 		first := strings.TrimPrefix(strings.SplitN(s.bullets[i], "\n", 2)[0], "- ")
+		s.clicks.mark(lineCount(out), i)
 		out += row(i == s.list.cursor, sText.Render(truncate(first, w-6))) + "\n"
 	}
 	if s.list.cursor < len(s.bullets) {
@@ -650,7 +741,61 @@ func (s *memoryState) view(m *Model, w, h int) string {
 	case s.status != "":
 		out += "\n" + sWarn.Render("  "+s.status)
 	default:
-		out += "\n" + sFaint.Render("  d delete note · C consolidate (small model) · R refresh")
+		out += "\n" + sFaint.Render("  enter read note · d delete · C consolidate · R refresh")
 	}
+	return out
+}
+
+// clickAt selects a memory row; clicking the already-selected note opens the
+// full reader, matching enter.
+func (s *memoryState) clickAt(_ *Model, localY int) (tea.Cmd, bool) {
+	if s.open || s.confirm {
+		return nil, false
+	}
+	idx, ok := s.clicks.at(localY)
+	if !ok || idx < 0 || idx >= len(s.bullets) {
+		return nil, false
+	}
+	if s.list.cursor == idx {
+		s.open = true
+		s.detailScroll = 0
+	} else {
+		s.list.cursor = idx
+		s.status = ""
+	}
+	return nil, true
+}
+
+func (s *memoryState) detailView(m *Model, w, h int) string {
+	n := s.list.cursor + 1
+	if n < 1 || n > len(s.bullets) {
+		n = 0
+	}
+	sub := fmt.Sprintf("note %d/%d", n, len(s.bullets))
+	if m.data.GlobalMem != nil {
+		sub += " · " + m.data.GlobalMem.Path()
+	}
+	out := pageTitle("memory", sub, w)
+	lines := memoryDetailLines(s.selectedNote(), w)
+	visible := h - 5
+	if visible < 1 {
+		visible = 1
+	}
+	s.clampDetailScroll(len(lines), visible)
+	from := s.detailScroll
+	to := from + visible
+	if to > len(lines) {
+		to = len(lines)
+	}
+	if from > 0 {
+		out += sFaint.Render(fmt.Sprintf("  ⋯ %d earlier lines", from)) + "\n"
+	}
+	for _, l := range lines[from:to] {
+		out += "  " + sText.Render(truncate(l, w-4)) + "\n"
+	}
+	if to < len(lines) {
+		out += sFaint.Render(fmt.Sprintf("  ⋯ %d more lines", len(lines)-to)) + "\n"
+	}
+	out += "\n" + sFaint.Render("  j/k or wheel scroll · pgup/pgdn page · esc/q back")
 	return out
 }

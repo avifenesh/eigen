@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -297,6 +298,41 @@ func TestMemoryConsolidateNeedsSmall(t *testing.T) {
 	}
 	if !strings.Contains(m.memory.status, "small model") {
 		t.Fatalf("status: %q", m.memory.status)
+	}
+}
+
+func TestMemoryEnterOpensScrollableNote(t *testing.T) {
+	var note strings.Builder
+	note.WriteString("- first line\n")
+	for i := 0; i < 30; i++ {
+		note.WriteString(fmt.Sprintf("  detail line %d\n", i))
+	}
+	m := memModel(t, note.String())
+	m.width, m.height = 90, 14
+
+	m.Update(key("enter"))
+	if !m.memory.open {
+		t.Fatal("enter should open the selected memory note")
+	}
+	v := m.memory.view(m, 70, 10)
+	if !strings.Contains(v, m.data.GlobalMem.Path()) {
+		t.Fatalf("detail view should show the actual memory file path:\n%s", v)
+	}
+	if !strings.Contains(v, "detail line 0") {
+		t.Fatalf("detail view should show the note body:\n%s", v)
+	}
+
+	for i := 0; i < 20; i++ {
+		m.Update(key("j"))
+	}
+	v = m.memory.view(m, 70, 10)
+	if !strings.Contains(v, "detail line 20") {
+		t.Fatalf("j/wheel scrolling should reveal later memory lines:\n%s", v)
+	}
+
+	m.Update(key("q"))
+	if m.quitting || m.memory.open {
+		t.Fatal("q in the memory reader should close it, not quit the app")
 	}
 }
 
