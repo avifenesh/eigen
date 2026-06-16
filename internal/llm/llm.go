@@ -49,6 +49,12 @@ type Message struct {
 	// calls. ReasoningID is the provider's id for that reasoning item, if any.
 	Reasoning   string
 	ReasoningID string
+	// ReasoningEncrypted is the provider's opaque reasoning blob to echo back
+	// the next turn (Codex Responses API: reasoning.encrypted_content). With
+	// store:false the server doesn't persist reasoning, so the client MUST carry
+	// this blob back or it 404s on the reasoning item's id. Empty for providers
+	// that don't return encrypted reasoning.
+	ReasoningEncrypted string
 
 	// ToolCalls is set on an assistant turn that invokes tools.
 	ToolCalls []ToolCall
@@ -82,7 +88,10 @@ type Response struct {
 	Text        string
 	Reasoning   string
 	ReasoningID string
-	ToolCalls   []ToolCall
+	// ReasoningEncrypted is the opaque reasoning blob to echo back next turn
+	// (Codex Responses API reasoning.encrypted_content). See Message.ReasoningEncrypted.
+	ReasoningEncrypted string
+	ToolCalls          []ToolCall
 
 	// Usage is the provider-reported token accounting for THIS request
 	// (zero when the provider doesn't return it — callers fall back to the

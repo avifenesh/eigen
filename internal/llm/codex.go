@@ -468,6 +468,7 @@ func applyOutputItem(raw json.RawMessage, out *Response) {
 			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"summary"`
+		Encrypted string `json:"encrypted_content"`
 	}
 	if json.Unmarshal(raw, &item) != nil {
 		return
@@ -488,6 +489,12 @@ func applyOutputItem(raw json.RawMessage, out *Response) {
 	case "reasoning":
 		if out.ReasoningID == "" {
 			out.ReasoningID = item.ID
+		}
+		// Capture the encrypted reasoning blob to echo back next turn — with
+		// store:false the server doesn't persist reasoning by id, so the client
+		// MUST carry encrypted_content back or it 404s on the reasoning id.
+		if item.Encrypted != "" {
+			out.ReasoningEncrypted = item.Encrypted
 		}
 		for _, s := range item.Summary {
 			if s.Text != "" {

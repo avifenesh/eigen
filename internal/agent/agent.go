@@ -1199,9 +1199,10 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 					return "", fmt.Errorf("model produced %d reasoning-only turns without acting", reasoningOnlyTurns)
 				}
 				s.appendMsg(llm.Message{
-					Role:        llm.RoleAssistant,
-					Reasoning:   resp.Reasoning,
-					ReasoningID: resp.ReasoningID,
+					Role:               llm.RoleAssistant,
+					Reasoning:          resp.Reasoning,
+					ReasoningID:        resp.ReasoningID,
+					ReasoningEncrypted: resp.ReasoningEncrypted,
 				})
 				s.persist()
 				if !streamed {
@@ -1225,11 +1226,12 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		reasoningOnlyTurns = 0
 
 		s.appendMsg(llm.Message{
-			Role:        llm.RoleAssistant,
-			Text:        resp.Text,
-			Reasoning:   resp.Reasoning,
-			ReasoningID: resp.ReasoningID,
-			ToolCalls:   resp.ToolCalls,
+			Role:               llm.RoleAssistant,
+			Text:               resp.Text,
+			Reasoning:          resp.Reasoning,
+			ReasoningID:        resp.ReasoningID,
+			ReasoningEncrypted: resp.ReasoningEncrypted,
+			ToolCalls:          resp.ToolCalls,
 		})
 		// Non-streaming providers deliver the in-between commentary (reasoning
 		// + text accompanying tool calls) only in the final response — emit it

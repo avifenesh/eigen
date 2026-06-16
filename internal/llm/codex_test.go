@@ -212,3 +212,31 @@ func TestCodexParsesToolCallFromOutputItem(t *testing.T) {
 		t.Fatalf("include = %v, want [reasoning.encrypted_content]", p.Include)
 	}
 }
+
+// The encrypted reasoning blob is echoed back at the ITEM level
+// (encrypted_content field), NOT a content-array part — the server rejects a
+// content array on a reasoning item ("expected maximum length 0").
+func TestReasoningEncryptedEchoedAtItemLevel(t *testing.T) {
+	msg := Message{
+		Role:               RoleAssistant,
+		Reasoning:          "thinking",
+		ReasoningID:        "rs_abc",
+		ReasoningEncrypted: "BLOB==",
+	}
+	items := buildInput(Request{Messages: []Message{msg}})
+	var ri *responsesInputItem
+	for i := range items {
+		if items[i].Type == "reasoning" {
+			ri = &items[i]
+		}
+	}
+	if ri == nil {
+		t.Fatal("no reasoning item emitted")
+	}
+	if ri.Encrypted != "BLOB==" {
+		t.Fatalf("encrypted_content field = %q, want the blob", ri.Encrypted)
+	}
+	if ri.Content != nil {
+		t.Fatalf("reasoning item must NOT carry a content array (server rejects it): %s", ri.Content)
+	}
+}

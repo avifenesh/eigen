@@ -121,6 +121,12 @@ type responsesInputItem struct {
 	Output    string          `json:"output,omitempty"`
 	ID        string          `json:"id,omitempty"`
 	Summary   []summaryPart   `json:"summary,omitempty"`
+	// Encrypted is the opaque reasoning blob echoed back at the ITEM level for a
+	// reasoning item (Responses API: the field is `encrypted_content`, NOT a
+	// content-array part — a content array on a reasoning item is rejected with
+	// "array too long, expected maximum length 0"). store:false path: the server
+	// didn't persist the reasoning, so we carry it back verbatim.
+	Encrypted string `json:"encrypted_content,omitempty"`
 }
 
 type summaryPart struct {
@@ -530,12 +536,20 @@ func buildInput(req Request) []responsesInputItem {
 				toolImgNote = "Image(s) returned by the preceding tool call(s)."
 			}
 		case RoleAssistant:
-			if msg.Reasoning != "" {
-				items = append(items, responsesInputItem{
-					Type:    "reasoning",
-					ID:      msg.ReasoningID,
-					Summary: []summaryPart{{Type: "summary_text", Text: msg.Reasoning}},
-				})
+			if msg.Reasoning != "" || msg.ReasoningEncrypted != "" {
+				item := responsesInputItem{Type: "reasoning", ID: msg.ReasoningID}
+				if msg.ReasoningEncrypted != "" {
+					// store:false path: echo the opaque reasoning blob back at
+					// the ITEM level (encrypted_content field — NOT a content
+					// array; the server rejects content on a reasoning item)
+					// so the model resumes its chain of thought. The server
+					// never persisted it by id.
+					item.Encrypted = msg.ReasoningEncrypted
+				}
+				if msg.Reasoning != "" {
+					item.Summary = []summaryPart{{Type: "summary_text", Text: msg.Reasoning}}
+				}
+				items = append(items, item)
 			}
 			if msg.Text != "" {
 				// Assistant history must use typed output_text content (a plain
