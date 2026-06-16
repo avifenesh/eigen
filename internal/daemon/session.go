@@ -321,6 +321,48 @@ func (s *Session) interrupt() {
 	s.mu.Unlock()
 }
 
+// waitUntilIdle waits briefly for an interrupted in-flight turn to unwind.
+// It is bounded because a provider/tool bug must not hang daemon shutdown
+// forever. A final flush after this wait captures messages appended while the
+// cancellation was being handled.
+func (s *Session) waitUntilIdle(timeout time.Duration) bool {
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		s.mu.Lock()
+		running := s.running
+		s.mu.Unlock()
+		if !running {
+			return true
+		}
+		select {
+		case <-deadline.C:
+			return false
+		case <-tick.C:
+		}
+	}
+}
+
+// flush persists the session's in-memory transcript to disk. Called by
+// Host.Shutdown so a clean stop (daemon stop / SIGTERM / restart) NEVER loses
+// unflushed work — the agent loop's persist() only fires at its own save
+// points, so a turn in flight (or any state added since the last save, e.g. a
+// /model switch that swaps the provider in memory) would be dropped on a kill.
+// This makes shutdown lossless. Best-effort: a flush error must not block
+// shutdown (the last good on-disk file still stands).
+func (s *Session) flush() {
+	s.mu.Lock()
+	sess := s.sess
+	persist := s.agent.Persist
+	s.mu.Unlock()
+	if sess == nil || persist == nil {
+		return
+	}
+	persist(sess.Messages())
+}
+
 // info snapshots the session for listing.
 func (s *Session) info() SessionInfo {
 	s.mu.Lock()

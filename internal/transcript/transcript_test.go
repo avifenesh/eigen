@@ -83,3 +83,34 @@ func TestImportCodex(t *testing.T) {
 }
 func TestImportPi(t *testing.T)     { importRealSource(t, ".pi/agent/sessions/*/*.jsonl", SourcePi) }
 func TestImportHermes(t *testing.T) { importRealSource(t, ".hermes/sessions/*.jsonl", SourceHermes) }
+
+func TestSaveKeepsPreviousFileBackup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s1.jsonl")
+	first := []llm.Message{{Role: llm.RoleUser, Text: "first"}}
+	second := []llm.Message{{Role: llm.RoleUser, Text: "second"}}
+
+	if err := Save(path, first); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(path, second); err != nil {
+		t.Fatal(err)
+	}
+
+	bak, err := Load(path + ".bak")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bak) != 1 || bak[0].Text != "first" {
+		t.Fatalf("backup should contain previous transcript, got %#v", bak)
+	}
+	cur, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cur) != 1 || cur[0].Text != "second" {
+		t.Fatalf("current transcript should contain new save, got %#v", cur)
+	}
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("temporary file should be gone after save, stat err=%v", err)
+	}
+}

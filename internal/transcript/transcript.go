@@ -96,6 +96,13 @@ func Save(path string, msgs []llm.Message) error {
 		os.Remove(tmp)
 		return err
 	}
+	// Keep one .bak of the previous good file before overwriting — a recovery
+	// path if a future bug (a bad compaction, an overwrite, a kill mid-rename)
+	// ever replaces good content. Best-effort + silent: a backup failure must
+	// not block the save.
+	if old, e := os.ReadFile(path); e == nil && len(old) > 0 {
+		_ = os.WriteFile(path+".bak", old, 0o644)
+	}
 	return os.Rename(tmp, path)
 }
 

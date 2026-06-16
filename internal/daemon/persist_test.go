@@ -446,3 +446,98 @@ func TestRestoreReappliesAddedRootsAndDropsInvalid(t *testing.T) {
 		t.Fatalf("the surviving added root should be re-applied, got %v", roots)
 	}
 }
+
+// THE fix for the silent data-loss bug: Shutdown must flush each session's
+// in-memory transcript to disk. The agent loop's persist() only fires at its
+// own save points, so a turn in flight (or state added since the last save,
+// like a /model switch applied in memory) would be DROPPED on a stop/restart.
+// This pins that Shutdown is lossless: messages present in memory but never
+// persisted survive via the flush.
+func TestShutdownFlushesInMemoryTranscript(t *testing.T) {
+	persistDir := t.TempDir()
+	h := NewPersistentHost(persistDir)
+	reg, _ := tool.NewRegistry()
+	a := &agent.Agent{Provider: echoProvider{}, Tools: reg, Perm: agent.PermAuto}
+	s := h.Add("/tmp", "m", a)
+
+	// Drive a turn so the session's sess + Persist hook are wired and one
+	// message lands on disk (the normal save-point path).
+	s.mu.Lock()
+	s.sess = a.NewSession()
+	s.mu.Unlock()
+	s.flush()
+	// Seed one message and flush it to disk.
+	s.mu.Lock()
+	s.sess = a.Resume([]llm.Message{{Role: llm.RoleUser, Text: "first turn"}})
+	s.mu.Unlock()
+	s.flush()
+	before, _ := transcript.Load(transcriptPath(persistDir, s.ID))
+	if len(before) != 1 {
+		t.Fatalf("precondition: want 1 persisted msg, got %d", len(before))
+	}
+
+	// Now simulate work that has NOT reached a save point: add more messages in
+	// memory only (no flush), as a turn in flight would. Resume replaces the
+	// session's message list in memory.
+	s.mu.Lock()
+	s.sess = a.Resume([]llm.Message{
+		{Role: llm.RoleUser, Text: "first turn"},
+		{Role: llm.RoleUser, Text: "in-flight work that must not be lost"},
+	})
+	s.mu.Unlock()
+	// (deliberately do NOT call s.flush() — this is the loss window)
+
+	// Shutdown — must flush the in-memory tail to disk.
+	h.Shutdown()
+
+	// Reload from disk: BOTH messages must be present (the fix).
+	got, err := transcript.Load(transcriptPath(persistDir, s.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("Shutdown must flush in-memory work: want 2 msgs on disk, got %d (DATA LOSS)", len(got))
+	}
+}
+
+func TestShutdownFlushesAfterInterruptedTurnUnwinds(t *testing.T) {
+	persistDir := t.TempDir()
+	h := NewPersistentHost(persistDir)
+	reg, _ := tool.NewRegistry()
+	a := &agent.Agent{Provider: echoProvider{}, Tools: reg, Perm: agent.PermAuto}
+	s := h.Add("/tmp", "m", a)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	s.mu.Lock()
+	s.sess = a.Resume([]llm.Message{{Role: llm.RoleUser, Text: "before interrupt"}})
+	s.running = true
+	s.cancel = cancel
+	s.mu.Unlock()
+	s.flush()
+
+	done := make(chan struct{})
+	go func() {
+		<-ctx.Done()
+		time.Sleep(20 * time.Millisecond)
+		s.mu.Lock()
+		s.sess = a.Resume([]llm.Message{
+			{Role: llm.RoleUser, Text: "before interrupt"},
+			{Role: llm.RoleAssistant, Text: "saved while unwinding"},
+		})
+		s.running = false
+		s.cancel = nil
+		s.mu.Unlock()
+		close(done)
+	}()
+
+	h.Shutdown()
+	<-done
+
+	got, err := transcript.Load(transcriptPath(persistDir, s.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("Shutdown must flush after interrupted turn unwinds: want 2 msgs, got %d", len(got))
+	}
+}

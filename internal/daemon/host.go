@@ -306,7 +306,15 @@ func (h *Host) Shutdown() {
 	h.sessions = map[string]*Session{}
 	h.mu.Unlock()
 	for _, s := range sessions {
+		// Lossless shutdown: first persist the current in-memory transcript,
+		// then cancel any in-flight turn, wait briefly for it to unwind, and
+		// persist again. The agent loop's normal persist() only fires at its
+		// save points; without this shutdown flush, a stop/restart can silently
+		// drop a turn in flight or a /model switch applied only in memory.
+		s.flush()
 		s.interrupt()
+		s.waitUntilIdle(2 * time.Second)
+		s.flush()
 		if s.onClose != nil {
 			s.onClose()
 		}
