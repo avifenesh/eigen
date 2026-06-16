@@ -13,7 +13,9 @@ project memory). Detailed design/perf notes live under `docs/`.
 ## Now / Next / Later
 
 **Now (in flight):**
-- Nothing in flight — pick the next item.
+- **Tier 30 — token efficiency (research + implementation).** NEXT UP after
+  compact. Reduce tokens per turn without hurting quality. See the Tier 30 detail
+  section for the grounded findings + checklist.
 
 **Next (queued, well-scoped):**
 - **Tier 27 — plugins / marketplaces.** Install bundled plugins (skills + MCP +
@@ -36,6 +38,47 @@ non-LLM models = out of scope; Tier 11 scrollback/reorder polish; etc.).
 ---
 
 ## Open work (detail)
+
+### Tier 30 — token efficiency (research + implementation)
+Reduce tokens per turn without hurting quality — the daemon is becoming an
+always-on driver, so input-token cost compounds. Research FIRST (measure where
+tokens actually go), then implement the wins.
+
+**Grounded findings (from a pre-compact code scan — verify before acting):**
+- Token accounting EXISTS but is shallow: `llm.Usage{InputTokens, OutputTokens}`
+  only (`internal/llm/llm.go:94`). Providers fill it (anthropic/converse/mantle
+  `.Usage`). It does NOT track **cache read/creation tokens** — so we can't see
+  prompt-cache hit rates today. First research step: extend `Usage` with
+  CacheRead/CacheCreation and surface them.
+- Prompt caching is PARTIALLY wired: Anthropic `cache_control: ephemeral` is set
+  (`internal/llm/anthropic.go:294`) but only in one place — audit whether the
+  system prompt + tool schemas + memory (the big static prefix) are actually
+  marked cacheable, and whether converse/mantle/glm/grok have any caching.
+- Per-turn input = systemPrompt (`internal/agent/agent.go:27`) + ExtraSystem
+  (skills) + memory Sections(gmem,mem) + ALL tool schemas (descriptions sent
+  every call) + full transcript. These are the consumers to measure + trim.
+- Compaction exists (`Session.Compact`, agent.go:729) — check it's triggered
+  early enough and that the summary is tight.
+
+**Checklist:**
+- [ ] **Research/measure.** Extend `llm.Usage` with cache tokens; add a per-turn
+  token breakdown (system / tools / memory / transcript / output) to
+  `eigen daemon stats` or a debug log. Find the biggest line items empirically.
+- [ ] **Prompt caching.** Ensure the static prefix (system + tool schemas +
+  memory) is marked cacheable on every provider that supports it; verify cache
+  HIT rates via the new Usage fields. This is likely the single biggest win
+  (the static prefix is re-sent every turn).
+- [ ] **Tool-schema cost.** Measure tokens spent on tool descriptions sent every
+  call; consider trimming verbose descriptions or lazy/disclosed schemas
+  (search_tools already does niche disclosure — extend the principle).
+- [ ] **Memory injection cost.** SUMMARY.md is the only injected tier (good) —
+  measure its token weight; confirm it stays small as memory grows.
+- [ ] **Transcript/compaction.** Confirm compaction fires before the window
+  bloats; tighten the compaction summary; consider dropping stale tool outputs.
+- [ ] **Output discipline.** Reasoning-effort defaults per task; avoid max-effort
+  where medium suffices (ties into the council/author latency finding).
+- [ ] **Guard + docs.** A token-cost baseline + a note in docs (like
+  docs/performance.md) so regressions are visible.
 
 ### Tier 23 — performance + resource health (RSS, leaks, profiling)
 The daemon is long-lived and hosts many sessions; nothing has profiled steady-
