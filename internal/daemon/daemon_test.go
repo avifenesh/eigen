@@ -875,3 +875,46 @@ func TestStatsAggregatesCacheTokens(t *testing.T) {
 		t.Fatalf("denom = %d, want 2000", denom)
 	}
 }
+
+// fastProvider implements llm.FastModer so we can verify a /model switch to a
+// fast-capable provider re-derives fast_ok:true in state() and that setFast works.
+type fastProvider struct{ on bool }
+
+func (fastProvider) Name() string    { return "fast-prov" }
+func (fastProvider) ModelID() string { return "fast-model" }
+func (fastProvider) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
+	return &llm.Response{Text: "ok"}, nil
+}
+func (f *fastProvider) FastMode() bool       { return f.on }
+func (f *fastProvider) SetFast(on bool) bool { f.on = on; return true }
+
+// TestStateFastReDerivesAfterSwitch: the fast_ok bit in state() must follow the
+// LIVE provider after a model switch, not a snapshot from before it. This is
+// the /model adaptation the /fast toggle depends on.
+func TestStateFastReDerivesAfterSwitch(t *testing.T) {
+	reg, _ := tool.NewRegistry()
+	a := &agent.Agent{Provider: echoProvider{}, Tools: reg, Perm: agent.PermAuto}
+	s := newSession("x", "/tmp", "echo", a)
+
+	if st := s.state(); st.FastOK {
+		t.Fatal("echo provider has no fast mode — fast_ok should be false before switch")
+	}
+
+	// Switch to a fast-capable provider.
+	fp := &fastProvider{}
+	a.SetLive(fp, nil, 8000)
+	if st := s.state(); !st.FastOK {
+		t.Fatal("after switch to a FastModer provider, fast_ok must re-derive to true")
+	}
+
+	// setFast must now act on the new provider.
+	if !s.setFast(true) {
+		t.Fatal("setFast must succeed on a fast-capable provider")
+	}
+	if !fp.on {
+		t.Fatal("setFast(true) must flip the provider's fast state")
+	}
+	if !s.state().Fast {
+		t.Fatal("state().Fast must reflect the toggled fast mode")
+	}
+}

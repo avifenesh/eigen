@@ -185,6 +185,11 @@ func (r *Remote) refresh() {
 	}
 }
 
+// Refresh is the exported variant for callers that must re-derive the snapshot
+// before reading capability bits (e.g. the /fast toggle, which must not act on
+// a snapshot cached before a /model switch).
+func (r *Remote) Refresh() { r.refresh() }
+
 func (r *Remote) snap() *daemon.SessionState {
 	r.mu.Lock()
 	defer r.mu.Unlock()

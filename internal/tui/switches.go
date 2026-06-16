@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/avifenesh/eigen/internal/agent"
+	"github.com/avifenesh/eigen/internal/chat"
 	"github.com/avifenesh/eigen/internal/llm"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -165,6 +166,12 @@ func (m *model) cycleSearch() tea.Cmd {
 func (m *model) toggleFast() tea.Cmd {
 	if m.backend == nil {
 		return nil
+	}
+	// Refresh state before deciding: a stale cached snapshot (from before a
+	// /model switch) would report fast_ok=false for a model that now supports
+	// it (or vice-versa). The daemon is authoritative.
+	if rb, ok := m.backend.(*chat.Remote); ok {
+		rb.Refresh()
 	}
 	if !m.backend.FastSupported() {
 		m.note("the current model has no fast mode (Codex gpt-5.x only)")
