@@ -13,9 +13,7 @@ project memory). Detailed design/perf notes live under `docs/`.
 ## Now / Next / Later
 
 **Now (in flight):**
-- **Tier 30 — token efficiency (research + implementation).** NEXT UP after
-  compact. Reduce tokens per turn without hurting quality. See the Tier 30 detail
-  section for the grounded findings + checklist.
+- Nothing in flight — pick the next item.
 
 **Next (queued, well-scoped):**
 - **Tier 27 — plugins / marketplaces.** Install bundled plugins (skills + MCP +
@@ -61,23 +59,23 @@ tokens actually go), then implement the wins.
   early enough and that the summary is tight.
 
 **Checklist:**
-- [ ] **Research/measure.** Extend `llm.Usage` with cache tokens; add a per-turn
+- [x] **Research/measure.** SHIPPED (f59f2f1). Extend `llm.Usage` with cache tokens; add a per-turn
   token breakdown (system / tools / memory / transcript / output) to
   `eigen daemon stats` or a debug log. Find the biggest line items empirically.
-- [ ] **Prompt caching.** Ensure the static prefix (system + tool schemas +
+- [x] **Prompt caching.** SHIPPED (f59f2f1). Ensure the static prefix (system + tool schemas +
   memory) is marked cacheable on every provider that supports it; verify cache
   HIT rates via the new Usage fields. This is likely the single biggest win
   (the static prefix is re-sent every turn).
-- [ ] **Tool-schema cost.** Measure tokens spent on tool descriptions sent every
+- [x] **Tool-schema cost.** SHIPPED (1f115a1). Measure tokens spent on tool descriptions sent every
   call; consider trimming verbose descriptions or lazy/disclosed schemas
   (search_tools already does niche disclosure — extend the principle).
-- [ ] **Memory injection cost.** SUMMARY.md is the only injected tier (good) —
+- [x] **Memory injection cost.** SHIPPED (aaa7617). SUMMARY.md is the only injected tier (good) —
   measure its token weight; confirm it stays small as memory grows.
-- [ ] **Transcript/compaction.** Confirm compaction fires before the window
+- [x] **Transcript/compaction.** SHIPPED (04857a5). Confirm compaction fires before the window
   bloats; tighten the compaction summary; consider dropping stale tool outputs.
-- [ ] **Output discipline.** Reasoning-effort defaults per task; avoid max-effort
+- [x] **Output discipline.** SHIPPED (85c3579). Reasoning-effort defaults per task; avoid max-effort
   where medium suffices (ties into the council/author latency finding).
-- [ ] **Guard + docs.** A token-cost baseline + a note in docs (like
+- [x] **Guard + docs.** SHIPPED. A token-cost baseline + a note in docs (like
   docs/performance.md) so regressions are visible.
 
 ### Tier 23 — performance + resource health (RSS, leaks, profiling)

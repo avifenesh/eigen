@@ -71,3 +71,78 @@ encode, or goroutine growth in the soak, as a real regression to investigate.
 - A hanging/slow model call does not leak goroutines in the daemon (turns run one
   at a time per session; the goroutine exits when the turn ends), but it does
   hold a turn slot — see the council/adversary timeout work for model-call hangs.
+
+---
+
+# Token efficiency (Tier 30)
+
+Input-token cost compounds for an always-on agent: the static prefix (system
+prompt + tool schemas + memory) is re-sent every turn, and subtasks multiply it.
+Tier 30 made that cost visible and cut the avoidable parts.
+
+## Measure it live
+
+`eigen daemon stats` reports cumulative token usage across all sessions plus the
+headline metric:
+
+```
+  tokens:      in 1.2M (cache: 8.4M read, 220.0K write) · out 340.0K
+  cache hit:   87.5% of input tokens served from cache
+```
+
+**Cache hit rate** = `cache_read / (input + cache_read)`. A healthy always-on
+agent with prompt caching should see a high hit rate — the static prefix is read
+from cache after the first turn in a window. A low rate means the prefix is being
+invalidated (something in system/tools/memory changes every turn) or caching is
+off for the active provider.
+
+Per-turn usage (in/out/cacheRead/cacheWrite) rides on `agent.Event` (EventDone)
+and is summed in `internal/agent/agent.go`'s drive loop.
+
+## What's cached, and where
+
+| Provider | System prompt | Tool schemas | Cache usage parsed |
+|---|---|---|---|
+| Converse (default) | cachePoint | cachePoint | cacheRead/Write ✓ |
+| Anthropic | ephemeral block | ephemeral on last tool ✓ (Tier 30) | cache_read/creation ✓ |
+| OpenAI-compatible (glm/grok/local) | provider-side | provider-side | prompt_tokens_details.cached ✓ |
+| Mantle (Responses) | provider-side | provider-side | input_tokens_details.cached ✓ |
+
+Caching is gated by the catalog `Cache` flag per model (`internal/llm/catalog.go`)
+and, for Converse, `EIGEN_CONVERSE_CACHE`. Before Tier 30 every provider DISCARDED
+the cache token counts its API returned, so hit rates were invisible.
+
+## What's bounded / trimmed
+
+| Concern | Mechanism | Location |
+|---|---|---|
+| Tool JSON schemas re-sent every turn | compacted to canonical form ONCE at registration; pretty-print is render-only | `tool.NewRegistry` / `compactJSON`; render in `internal/tui/jsonview` |
+| Injected memory per scope | capped at `maxInjectedBytes` (8 KiB ≈ 2K tok), keep newest | `Store.Injected` / `clampMemoryTail` |
+| Stale/duplicate tool outputs | `DedupeToolResults` stubs older identical results; `ShedToolResults` sheds old payloads at compaction | `internal/llm/shed.go` |
+| Transcript growth | auto-compaction fires at `compactTriggerFrac` (85%) of budget, with headroom | `Session.maybeCompact` |
+| Subtask reasoning effort | trivial/easy lowered to lowest real effort (only lowers) | `applySubtaskEffort` |
+
+## Principle
+
+The prompt/data plane carries **canonical compact JSON** — no `MarshalIndent`
+anywhere in `internal/agent`, `internal/tool`, `internal/llm`. Pretty-printing
+is a **render-time** concern (the TUI re-indents + colorizes for humans). Don't
+put data-shaping in `Definition.Spec()` (per-step hot path); normalize at the
+authoring→runtime boundary instead.
+
+## Knobs
+
+- `EIGEN_CONVERSE_CACHE` — toggle Converse prompt caching.
+- `EIGEN_SUBTASK_EFFORT=keep` — disable per-difficulty subtask effort lowering.
+- `compactTriggerFrac` (`internal/agent/agent.go`) — compaction trigger (0.85).
+- `maxInjectedBytes` (`internal/memory/memory.go`) — injected memory cap per scope.
+
+## Indicative findings (dev box)
+
+- Static tool text ≈ 4.9K tokens (descriptions ~1.8K + schemas ~3.1K); schema
+  whitespace was ~15% before compaction.
+- Memory injected ≈ 2.4K tok/turn here (global + project SUMMARY); the raw
+  MEMORY.md fallback for an un-summarized scope was an unbounded token bomb
+  (projects scope MEMORY.md ≈ 127K tokens) — now capped.
+- Subtasks previously inherited `effort=max` globally; trivial/easy now run at
+  the lowest real effort.

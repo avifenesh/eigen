@@ -26,12 +26,19 @@ gate: build vet test
 # Tier 23 performance + resource-health guard.
 #  - soak: session/attach/detach churn must not leak goroutines or sessions.
 #  - bench: per-event wire encode + stats snapshot allocs/latency baselines.
-perf: perf-soak perf-bench
+#  - tokens: token-efficiency guards (cache parsing, schema compaction,
+#    memory cap, compaction trigger, subtask effort).
+perf: perf-soak perf-tokens perf-bench
 	@echo "perf: OK"
 
 perf-soak:
 	go test ./internal/daemon/ ./internal/agent/ \
 		-run 'TestSoak|TestBgRegistry|TestReplayBuffer' -count=1 -v
+
+perf-tokens:
+	go test ./internal/llm/ ./internal/tool/ ./internal/memory/ ./internal/agent/ ./internal/daemon/ \
+		-run 'Usage|CacheHitRate|Cached|RegistryCompacts|CompactJSON|ClampMemoryTail|MaybeCompactFiresAtThreshold|ApplySubtaskEffort|StatsAggregatesCacheTokens' \
+		-count=1 -v
 
 perf-bench:
 	go test ./internal/daemon/ -run x -bench 'BenchmarkWireEventEncode|BenchmarkHostStats' -benchmem -benchtime 2000x
