@@ -159,12 +159,14 @@ func loadHookRows(path, src string) []ExtRow {
 	return rows
 }
 
-// pluginsState: the read-only extensions page (MCP, plugins, LSP, hooks).
+// pluginsState: the extensions page (MCP, plugins, LSP, hooks) — browse, toggle,
+// and install marketplaces/plugins inline.
 type pluginsState struct {
 	list   list
 	rows   []ExtRow
 	loaded bool
 	err    string // last toggle error ("" = none)
+	prompt installPrompt
 }
 
 func (p *pluginsState) init(*Data) {}
@@ -181,6 +183,27 @@ func (p *pluginsState) load() {
 func (p *pluginsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	p.load()
 	key := msg.String()
+
+	// Inline install prompt active: capture text input.
+	if p.prompt.active {
+		if src, ok := p.prompt.key(key, msg.Runes); ok {
+			p.prompt.busy = true
+			var status string
+			switch p.prompt.kind {
+			case "marketplace":
+				status = runMarketplaceAdd(m.data, src)
+			case "plugin":
+				status = runPluginInstall(m.data, src)
+			}
+			p.prompt.busy = false
+			p.prompt.close()
+			p.prompt.status = status
+			p.loaded = false
+			p.load()
+		}
+		return m, nil
+	}
+
 	if p.list.key(key, m.height-6) {
 		return m, nil
 	}
@@ -188,6 +211,12 @@ func (p *pluginsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "R": // manual refresh (capital: bare letters are page-jumps)
 		p.loaded = false
 		p.load()
+	case "a": // add a marketplace catalog
+		p.prompt.open("marketplace", "marketplace (owner/repo[/sub][@ref])")
+	case "i": // install a plugin by name from any added marketplace
+		p.prompt.open("plugin", "plugin name to install")
+	case "X", "delete": // uninstall the selected plugin-installed extension's owning plugin
+		p.uninstallSelected(m)
 	case " ", "enter":
 		// Toggle the selected extension on/off (persists "disabled": true in
 		// its config file; applies to NEW sessions — running ones keep their
@@ -206,12 +235,43 @@ func (p *pluginsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// uninstallSelected removes the plugin that owns the selected extension row, if
+// it's a plugin-installed component (matched by the "<plugin>-" name prefix
+// against the installed-plugins registry).
+func (p *pluginsState) uninstallSelected(m *Model) {
+	if p.list.cursor >= len(p.rows) {
+		return
+	}
+	name := p.rows[p.list.cursor].Name
+	reg, err := appPluginRegistry()
+	if err != nil {
+		p.err = err.Error()
+		return
+	}
+	installed, _ := reg.Installed()
+	for _, pl := range installed {
+		if strings.HasPrefix(name, pl.Name+"-") || name == pl.Name {
+			if _, err := reg.Uninstall(pl.Name); err != nil {
+				p.err = err.Error()
+			} else {
+				p.prompt.status = "removed plugin " + pl.Name
+				p.loaded = false
+				p.load()
+			}
+			return
+		}
+	}
+	p.err = "not a plugin-installed extension (only plugins can be uninstalled here)"
+}
+
 func (p *pluginsState) view(m *Model, w, h int) string {
 	p.load()
 	out := pageTitle("plugins", "mcp servers · plugin tools · lsp · hooks", w)
 	if len(p.rows) == 0 {
 		out += "\n" + sDim.Render("  no extensions configured") + "\n"
-		out += sFaint.Render("  add: ~/.eigen/{mcp,plugins,lsp,hooks}.json (or per-project .eigen/)")
+		out += sFaint.Render("  add: ~/.eigen/{mcp,plugins,lsp,hooks}.json (or per-project .eigen/)") + "\n"
+		out += p.prompt.render()
+		out += "\n" + sFaint.Render("  a add-marketplace · i install-plugin")
 		return out
 	}
 	visible := h - 6
@@ -242,7 +302,8 @@ func (p *pluginsState) view(m *Model, w, h int) string {
 	if p.err != "" {
 		out += sErr.Render("  "+truncate(p.err, w-4)) + "\n"
 	}
-	out += sFaint.Render("  space toggle on/off (new sessions) · R refresh")
+	out += p.prompt.render()
+	out += sFaint.Render("  space toggle · a add-marketplace · i install-plugin · X uninstall · R refresh")
 	return out
 }
 

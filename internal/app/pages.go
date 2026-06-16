@@ -324,11 +324,13 @@ func wrapTo(s string, w int, indent string) string {
 	return b.String()
 }
 
-// skillsState lists discovered skills with preview on enter.
+// skillsState lists discovered skills with preview on enter, and installs new
+// ones inline (i).
 type skillsState struct {
 	list    list
 	preview string // body being previewed ("" = list view)
 	name    string
+	prompt  installPrompt
 }
 
 func (s *skillsState) init(d *Data) { s.list.count = d.Skills.Len() }
@@ -341,10 +343,26 @@ func (s *skillsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	// Inline install prompt active: capture text input.
+	if s.prompt.active {
+		if src, ok := s.prompt.key(key, msg.Runes); ok {
+			s.prompt.busy = true
+			status := runSkillInstall(m.data, src)
+			s.prompt.busy = false
+			s.prompt.close()
+			s.prompt.status = status
+			m.data.Skills.Rescan()
+			s.list.count = m.data.Skills.Len()
+		}
+		return m, nil
+	}
 	if s.list.key(key, m.height-6) {
 		return m, nil
 	}
-	if key == "enter" {
+	switch key {
+	case "i": // install a skill from a path or owner/repo[/sub][@ref]
+		s.prompt.open("skill", "skill source (path or owner/repo[/sub][@ref])")
+	case "enter":
 		skills := m.data.Skills.List()
 		if s.list.cursor < len(skills) {
 			sk := skills[s.list.cursor]
@@ -373,7 +391,10 @@ func (s *skillsState) view(m *Model, w, h int) string {
 	skills := m.data.Skills.List()
 	out := pageTitle("skills", fmt.Sprintf("%d discovered", len(skills)), w)
 	if len(skills) == 0 {
-		return out + sFaint.Render("  none — add SKILL.md under ~/.eigen/skills/<name>/ or `eigen skill add`")
+		out += sFaint.Render("  none — add SKILL.md under ~/.eigen/skills/<name>/ or press i to install") + "\n"
+		out += s.prompt.render()
+		out += "\n" + sFaint.Render("  i install a skill")
+		return out
 	}
 	visible := h - 5
 	from, to := s.list.window(visible)
@@ -382,7 +403,8 @@ func (s *skillsState) view(m *Model, w, h int) string {
 		line := pad(sk.Name, 24) + sDim.Render(truncate(sk.Description, w-28))
 		out += row(i == s.list.cursor, line) + "\n"
 	}
-	out += "\n" + sFaint.Render("  enter preview · eigen skill add <src> to install")
+	out += s.prompt.render()
+	out += "\n" + sFaint.Render("  enter preview · i install (path or owner/repo[@ref])")
 	return out
 }
 

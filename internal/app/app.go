@@ -301,6 +301,10 @@ func (m *Model) capturingInput() bool {
 	case PageSessions:
 		// Type-to-search captures everything (typing "q" extends the query).
 		return m.sessions.filter.searching || m.sessions.confirmDel
+	case PagePlugins:
+		return m.plugins.prompt.active
+	case PageSkills:
+		return m.skills.prompt.active
 	}
 	return false
 }
