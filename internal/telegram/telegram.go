@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -132,20 +133,40 @@ func (b *Bot) GetUpdates(ctx context.Context, offset int64, timeoutSecs int) ([]
 }
 
 // Send sends a text message to chat, returning the new message id. markup may be
-// nil (no buttons).
+// nil (no buttons). HTML parse mode renders <b>/<code>/<pre>/<a>.
 func (b *Bot) Send(ctx context.Context, chatID int64, text string, markup *InlineKeyboard) (int64, error) {
 	p := url.Values{}
 	p.Set("chat_id", strconv.FormatInt(chatID, 10))
 	p.Set("text", clampMsg(text))
+	p.Set("parse_mode", "HTML")
+	p.Set("link_preview_options", `{"is_disabled":true}`)
 	if markup != nil {
 		j, _ := json.Marshal(markup)
 		p.Set("reply_markup", string(j))
 	}
 	var m Message
 	if err := b.call(ctx, "sendMessage", p, &m); err != nil {
+		// HTML can fail on malformed entities; retry once as plain text so a
+		// reply is never lost to a stray "<".
+		if isParseError(err) {
+			p.Del("parse_mode")
+			p.Set("text", clampMsg(stripHTML(text)))
+			if err2 := b.call(ctx, "sendMessage", p, &m); err2 == nil {
+				return m.MessageID, nil
+			}
+		}
 		return 0, err
 	}
 	return m.MessageID, nil
+}
+
+// SendChatAction shows the "typing…" indicator (decays after ~5s; re-send to
+// keep it up while the agent works).
+func (b *Bot) SendChatAction(ctx context.Context, chatID int64, action string) {
+	p := url.Values{}
+	p.Set("chat_id", strconv.FormatInt(chatID, 10))
+	p.Set("action", action)
+	_ = b.call(ctx, "sendChatAction", p, nil)
 }
 
 // Edit replaces the text (and markup) of a previously-sent message — used to
@@ -155,6 +176,8 @@ func (b *Bot) Edit(ctx context.Context, chatID, messageID int64, text string, ma
 	p.Set("chat_id", strconv.FormatInt(chatID, 10))
 	p.Set("message_id", strconv.FormatInt(messageID, 10))
 	p.Set("text", clampMsg(text))
+	p.Set("parse_mode", "HTML")
+	p.Set("link_preview_options", `{"is_disabled":true}`)
 	if markup != nil {
 		j, _ := json.Marshal(markup)
 		p.Set("reply_markup", string(j))
@@ -164,6 +187,11 @@ func (b *Bot) Edit(ctx context.Context, chatID, messageID int64, text string, ma
 	// benign for a streaming editor.
 	if err != nil && isNotModified(err) {
 		return nil
+	}
+	if err != nil && isParseError(err) {
+		p.Del("parse_mode")
+		p.Set("text", clampMsg(stripHTML(text)))
+		return b.call(ctx, "editMessageText", p, nil)
 	}
 	return err
 }
@@ -226,4 +254,88 @@ func truncate(s string, n int) string {
 
 func isNotModified(err error) bool {
 	return err != nil && bytes.Contains([]byte(err.Error()), []byte("not modified"))
+}
+
+func isParseError(err error) bool {
+	return err != nil && bytes.Contains([]byte(err.Error()), []byte("can't parse entities"))
+}
+
+// SendLong sends text that may exceed Telegram's limit by SPLITTING it into
+// multiple messages (on line/paragraph boundaries) instead of truncating —
+// so a long answer arrives in full when you're reading on your phone. Returns
+// the last message's id.
+func (b *Bot) SendLong(ctx context.Context, chatID int64, text string, markup *InlineKeyboard) (int64, error) {
+	chunks := splitForTelegram(text, maxTelegramMsg)
+	var last int64
+	var err error
+	for i, c := range chunks {
+		var mk *InlineKeyboard
+		if i == len(chunks)-1 {
+			mk = markup // buttons only on the final chunk
+		}
+		last, err = b.Send(ctx, chatID, c, mk)
+		if err != nil {
+			return last, err
+		}
+	}
+	return last, nil
+}
+
+// splitForTelegram breaks s into <=limit pieces, preferring to cut on blank
+// lines, then newlines, then hard length. Keeps fenced code blocks readable by
+// not splitting mid-line when avoidable.
+func splitForTelegram(s string, limit int) []string {
+	s = strings.TrimRight(s, "\n")
+	if s == "" {
+		return []string{"…"}
+	}
+	var out []string
+	for len(s) > limit {
+		cut := strings.LastIndex(s[:limit], "\n\n")
+		if cut < limit/2 {
+			cut = strings.LastIndex(s[:limit], "\n")
+		}
+		if cut < limit/2 {
+			cut = limit
+		}
+		out = append(out, strings.TrimRight(s[:cut], "\n"))
+		s = strings.TrimLeft(s[cut:], "\n")
+	}
+	if s != "" {
+		out = append(out, s)
+	}
+	return out
+}
+
+// escapeHTML escapes the characters Telegram's HTML parse mode reserves.
+func escapeHTML(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	return s
+}
+
+// stripHTML removes tags for the plain-text fallback when HTML parse fails.
+func stripHTML(s string) string {
+	var b strings.Builder
+	depth := 0
+	for _, r := range s {
+		switch r {
+		case '<':
+			depth++
+		case '>':
+			if depth > 0 {
+				depth--
+			}
+		default:
+			if depth == 0 {
+				b.WriteRune(r)
+			}
+		}
+	}
+	out := b.String()
+	out = strings.ReplaceAll(out, "&lt;", "<")
+	out = strings.ReplaceAll(out, "&gt;", ">")
+	out = strings.ReplaceAll(out, "&amp;", "&")
+	return out
 }

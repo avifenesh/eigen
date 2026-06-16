@@ -128,6 +128,14 @@ func runDaemon(cfg config.Config) {
 	// the small model. Best-effort, never competes with a live turn.
 	go nightlyDreamer(host, gmem)
 
+	// Telegram phone bridge: when a bot token is configured, the daemon keeps
+	// `eigen telegram` running (spawn + restart-on-exit) so the bot is always
+	// reachable without a manual launch. A separate process so a bridge bug
+	// can't wedge the daemon, and so it can be restarted independently.
+	if telegramConfigured(cfg) {
+		go telegramSupervisor()
+	}
+
 	srv, err := daemon.Listen(daemon.SocketPath(), host, build)
 	if err != nil {
 		fail(fmt.Errorf("daemon: %w", err))
@@ -815,4 +823,52 @@ func runNightlyDream(host *daemon.Host, prov llm.Provider, gmem *memory.Store) {
 			fmt.Fprintf(os.Stderr, "eigen daemon: global profile +%d\n", len(notes))
 		}
 	}
+}
+
+// telegramConfigured reports whether a Telegram bot token is set (config or env)
+// — the gate for the daemon auto-starting the bridge.
+func telegramConfigured(cfg config.Config) bool {
+	return strings.TrimSpace(cfg.TelegramToken) != "" || strings.TrimSpace(os.Getenv("EIGEN_TELEGRAM_TOKEN")) != ""
+}
+
+// telegramSupervisor keeps `eigen telegram` running: spawn it, and if it exits,
+// restart with capped backoff. Runs for the daemon's lifetime. The child shares
+// the daemon's env (token/allowlist) and is killed when the daemon's process
+// group is torn down.
+func telegramSupervisor() {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	backoff := 2 * time.Second
+	const maxBackoff = 60 * time.Second
+	for {
+		cmd := exec.Command(exe, "telegram")
+		cmd.Env = os.Environ()
+		cmd.Stdout = os.Stderr // bridge logs ride the daemon log
+		cmd.Stderr = os.Stderr
+		start := time.Now()
+		if err := cmd.Start(); err != nil {
+			fmt.Fprintf(os.Stderr, "eigen daemon: telegram bridge spawn failed: %v\n", err)
+			time.Sleep(backoff)
+			backoff = minDur(backoff*2, maxBackoff)
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "eigen daemon: telegram bridge started (pid %d)\n", cmd.Process.Pid)
+		_ = cmd.Wait()
+		// Ran a healthy while → reset backoff; crash-looped → keep backing off.
+		if time.Since(start) > 2*time.Minute {
+			backoff = 2 * time.Second
+		}
+		fmt.Fprintf(os.Stderr, "eigen daemon: telegram bridge exited; restarting in %s\n", backoff)
+		time.Sleep(backoff)
+		backoff = minDur(backoff*2, maxBackoff)
+	}
+}
+
+func minDur(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
 }
