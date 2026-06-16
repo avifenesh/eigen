@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -649,6 +650,14 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 			where = joinWhere(where, label)
 		}
 	}
+	// Output discipline: a trivial/easy subtask doesn't need max reasoning.
+	// Lower the subtask provider's effort to match its difficulty (never raise
+	// it, never touch the orchestrator's own provider) so a mechanical
+	// delegation doesn't burn the global "max" reasoning budget. Opt out with
+	// EIGEN_SUBTASK_EFFORT=keep.
+	if w := applySubtaskEffort(prov, opts.Difficulty); w != "" {
+		where = joinWhere(where, w)
+	}
 	// Construct the sub-agent explicitly (not by struct copy: Agent embeds a
 	// mutex). It inherits the perm/budget snapshot but stays silent (no
 	// OnEvent) and does not persist (its session is ephemeral). The Router and
@@ -681,6 +690,71 @@ func joinWhere(a, b string) string {
 		return a
 	}
 	return a + "; " + b
+}
+
+// applySubtaskEffort lowers a subtask provider's reasoning effort to match its
+// difficulty — a trivial/easy delegation shouldn't burn the global "max"
+// reasoning budget (more thinking = more output tokens + slower) when a fast,
+// low-effort pass suffices. It ONLY lowers (never raises) and only for
+// trivial/easy; medium/hard keep the provider's configured effort. Returns a
+// short "where" note when it changed something. Opt out with
+// EIGEN_SUBTASK_EFFORT=keep. The provider must implement llm.EffortSetter
+// (non-reasoning models silently no-op).
+func applySubtaskEffort(prov llm.Provider, difficulty string) string {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("EIGEN_SUBTASK_EFFORT")), "keep") {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(difficulty)) {
+	case "trivial", "easy":
+		// proceed
+	default:
+		return "" // medium/hard/unset: keep the configured effort
+	}
+	es, ok := prov.(llm.EffortSetter)
+	if !ok {
+		return ""
+	}
+	levels := llm.ModelEffortLevels(prov.ModelID())
+	target := lowestNonOffEffort(levels)
+	if target == "" {
+		return ""
+	}
+	// Only lower: if the current effort is already at or below the target
+	// position, leave it (don't raise a model that's intentionally low).
+	if effortRank(levels, es.Effort()) <= effortRank(levels, target) {
+		return ""
+	}
+	if es.SetEffort(target) {
+		return "effort→" + target + " (" + strings.ToLower(difficulty) + ")"
+	}
+	return ""
+}
+
+// lowestNonOffEffort returns the lowest "real" reasoning level (skipping
+// off/none/minimal, which disable thinking entirely) from an ordered
+// lowest→highest set, or "" if none qualify. We want LOW reasoning for cheap
+// subtasks, not NO reasoning — a trivial task still benefits from a little.
+func lowestNonOffEffort(levels []string) string {
+	for _, l := range levels {
+		switch strings.ToLower(l) {
+		case "off", "none", "minimal":
+			continue
+		default:
+			return l
+		}
+	}
+	return ""
+}
+
+// effortRank returns the index of level in the ordered set (lowest→highest), or
+// -1 if absent. Used to compare two efforts so we only ever lower.
+func effortRank(levels []string, level string) int {
+	for i, l := range levels {
+		if strings.EqualFold(l, level) {
+			return i
+		}
+	}
+	return -1
 }
 
 // Messages returns a COPY of the conversation so far (for saving / live-replace
