@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/avifenesh/eigen/internal/llm"
@@ -22,42 +21,70 @@ func (p *effortProv) Complete(_ context.Context, _ llm.Request) (*llm.Response, 
 func (p *effortProv) SetEffort(level string) bool { p.effort = level; return true }
 func (p *effortProv) Effort() string              { return p.effort }
 
-func TestApplySubtaskEffortLowersForCheapDifficulties(t *testing.T) {
-	// Use a model with a known ordered effort set (opus-style: low..max).
-	const model = "us.anthropic.claude-opus-4-8"
+// Subtask effort is CAPPED at a safe middle ("medium"), never floored — flooring
+// reasoning would hurt quality. It only steps DOWN, only when the model has a
+// real "medium" rung, and never disables reasoning.
+func TestApplySubtaskEffortCapsAtMedium(t *testing.T) {
+	// Claude-style ordered set {low, medium, high, xhigh, max}.
+	const claude = "us.anthropic.claude-opus-4-8"
 
-	t.Run("trivial lowers from max", func(t *testing.T) {
-		p := &effortProv{id: model, effort: "max"}
+	t.Run("trivial caps max→medium (not the floor)", func(t *testing.T) {
+		p := &effortProv{id: claude, effort: "max"}
 		w := applySubtaskEffort(p, "trivial")
-		if p.effort == "max" {
-			t.Fatalf("effort should have been lowered, still %q (where=%q)", p.effort, w)
+		if p.effort != "medium" {
+			t.Fatalf("want effort capped to medium, got %q (where=%q)", p.effort, w)
 		}
 		if w == "" {
 			t.Fatal("expected a where-note when effort changed")
 		}
 	})
 
-	t.Run("medium keeps", func(t *testing.T) {
-		p := &effortProv{id: model, effort: "max"}
-		if w := applySubtaskEffort(p, "medium"); w != "" || p.effort != "max" {
-			t.Fatalf("medium must keep effort; got effort=%q where=%q", p.effort, w)
+	t.Run("easy caps high→medium", func(t *testing.T) {
+		p := &effortProv{id: claude, effort: "high"}
+		if w := applySubtaskEffort(p, "easy"); p.effort != "medium" || w == "" {
+			t.Fatalf("easy should cap to medium; got effort=%q where=%q", p.effort, w)
 		}
 	})
 
-	t.Run("already-low not raised", func(t *testing.T) {
-		p := &effortProv{id: model, effort: "low"}
-		if w := applySubtaskEffort(p, "easy"); w != "" || p.effort != "low" {
-			t.Fatalf("already-low must stay; got effort=%q where=%q", p.effort, w)
+	t.Run("never goes BELOW medium (low stays low, not floored further)", func(t *testing.T) {
+		p := &effortProv{id: claude, effort: "low"}
+		if w := applySubtaskEffort(p, "trivial"); p.effort != "low" || w != "" {
+			t.Fatalf("already-below-medium must stay; got effort=%q where=%q", p.effort, w)
+		}
+	})
+
+	t.Run("medium unchanged (no churn)", func(t *testing.T) {
+		p := &effortProv{id: claude, effort: "medium"}
+		if w := applySubtaskEffort(p, "trivial"); p.effort != "medium" || w != "" {
+			t.Fatalf("medium must stay medium with no note; got effort=%q where=%q", p.effort, w)
+		}
+	})
+
+	t.Run("medium difficulty keeps configured effort", func(t *testing.T) {
+		p := &effortProv{id: claude, effort: "max"}
+		if w := applySubtaskEffort(p, "medium"); p.effort != "max" || w != "" {
+			t.Fatalf("medium difficulty must keep effort; got effort=%q where=%q", p.effort, w)
 		}
 	})
 
 	t.Run("opt-out keeps", func(t *testing.T) {
 		t.Setenv("EIGEN_SUBTASK_EFFORT", "keep")
-		p := &effortProv{id: model, effort: "max"}
-		if w := applySubtaskEffort(p, "trivial"); w != "" || p.effort != "max" {
+		p := &effortProv{id: claude, effort: "max"}
+		if w := applySubtaskEffort(p, "trivial"); p.effort != "max" || w != "" {
 			t.Fatalf("opt-out must keep; got effort=%q where=%q", p.effort, w)
 		}
 	})
+}
 
-	_ = os.Unsetenv
+// A model with NO safe middle rung ({off, on}, e.g. GLM) is left UNTOUCHED — the
+// only step down from "on" is "off", which disables reasoning entirely.
+func TestApplySubtaskEffortLeavesNoMiddleModelsAlone(t *testing.T) {
+	// llm.ModelEffortLevels resolves from the catalog; use a GLM id that maps to
+	// {off, on}. If the catalog lacks a "medium" rung, applySubtaskEffort no-ops.
+	for _, id := range []string{"glm-5.2", "glm-4.6"} {
+		p := &effortProv{id: id, effort: "on"}
+		if w := applySubtaskEffort(p, "trivial"); p.effort != "on" || w != "" {
+			t.Fatalf("%s ({off,on}) must be untouched (no safe middle); got effort=%q where=%q", id, p.effort, w)
+		}
+	}
 }

@@ -120,7 +120,7 @@ the cache token counts its API returned, so hit rates were invisible.
 | Injected memory per scope | capped at `maxInjectedBytes` (8 KiB ≈ 2K tok), keep newest | `Store.Injected` / `clampMemoryTail` |
 | Stale/duplicate tool outputs | `DedupeToolResults` stubs older identical results; `ShedToolResults` sheds old payloads at compaction | `internal/llm/shed.go` |
 | Transcript growth | auto-compaction fires at `compactTriggerFrac` (85%) of budget, with headroom | `Session.maybeCompact` |
-| Subtask reasoning effort | trivial/easy lowered to lowest real effort (only lowers) | `applySubtaskEffort` |
+| Subtask reasoning effort | trivial/easy CAPPED at "medium" (never floored; models with no middle rung left alone) | `applySubtaskEffort` |
 
 ## Principle
 
@@ -144,5 +144,7 @@ authoring→runtime boundary instead.
 - Memory injected ≈ 2.4K tok/turn here (global + project SUMMARY); the raw
   MEMORY.md fallback for an un-summarized scope was an unbounded token bomb
   (projects scope MEMORY.md ≈ 127K tokens) — now capped.
-- Subtasks previously inherited `effort=max` globally; trivial/easy now run at
-  the lowest real effort.
+- Subtasks previously inherited `effort=max` globally; trivial/easy are now
+  CAPPED at "medium" — never floored (flooring reasoning hurts quality), and
+  models with no safe middle rung (e.g. GLM `{off,on}`) are left untouched so a
+  step-down can't disable reasoning entirely.

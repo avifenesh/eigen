@@ -692,21 +692,33 @@ func joinWhere(a, b string) string {
 	return a + "; " + b
 }
 
-// applySubtaskEffort lowers a subtask provider's reasoning effort to match its
-// difficulty — a trivial/easy delegation shouldn't burn the global "max"
-// reasoning budget (more thinking = more output tokens + slower) when a fast,
-// low-effort pass suffices. It ONLY lowers (never raises) and only for
-// trivial/easy; medium/hard keep the provider's configured effort. Returns a
-// short "where" note when it changed something. Opt out with
-// EIGEN_SUBTASK_EFFORT=keep. The provider must implement llm.EffortSetter
-// (non-reasoning models silently no-op).
+// subtaskEffortFloor is the effort a trivial/easy subtask is CAPPED at — a safe
+// middle, never the model's minimum. Flooring reasoning (low/none/off) would hurt
+// quality, which Tier 30 explicitly must not do; "medium" keeps solid reasoning
+// while shedding the wasteful max/high/xhigh budget on cheap delegations.
+const subtaskEffortFloor = "medium"
+
+// applySubtaskEffort caps a subtask provider's reasoning effort at a safe middle
+// ("medium") for trivial/easy delegations, so a cheap subtask doesn't burn the
+// global "max" reasoning budget (more thinking = more output tokens + slower).
+// It is deliberately conservative:
+//   - it ONLY steps DOWN to the floor (never raises; never touches a model
+//     already at/below medium);
+//   - it acts ONLY when the model has a real "medium" rung — models like GLM
+//     ({off,on}) have no safe middle, so stepping down would DISABLE reasoning;
+//     those are left untouched;
+//   - it never targets low/none/off (flooring reasoning hurts quality);
+//   - it never touches the orchestrator's own provider (subtask providers only).
+//
+// Returns a short "where" note when it changed something. Opt out entirely with
+// EIGEN_SUBTASK_EFFORT=keep. Non-reasoning models (no EffortSetter) no-op.
 func applySubtaskEffort(prov llm.Provider, difficulty string) string {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("EIGEN_SUBTASK_EFFORT")), "keep") {
 		return ""
 	}
 	switch strings.ToLower(strings.TrimSpace(difficulty)) {
 	case "trivial", "easy":
-		// proceed
+		// proceed — these are the cheap delegations worth capping
 	default:
 		return "" // medium/hard/unset: keep the configured effort
 	}
@@ -715,33 +727,19 @@ func applySubtaskEffort(prov llm.Provider, difficulty string) string {
 		return ""
 	}
 	levels := llm.ModelEffortLevels(prov.ModelID())
-	target := lowestNonOffEffort(levels)
-	if target == "" {
+	floorRank := effortRank(levels, subtaskEffortFloor)
+	if floorRank < 0 {
+		// No "medium" rung (e.g. GLM {off,on}): there is no safe middle to step
+		// down to, and the only lower option disables reasoning. Leave it alone.
 		return ""
 	}
-	// Only lower: if the current effort is already at or below the target
-	// position, leave it (don't raise a model that's intentionally low).
-	if effortRank(levels, es.Effort()) <= effortRank(levels, target) {
+	// Only step DOWN: do nothing if the current effort is already at or below
+	// the floor (don't raise an intentionally-low model, don't churn medium).
+	if effortRank(levels, es.Effort()) <= floorRank {
 		return ""
 	}
-	if es.SetEffort(target) {
-		return "effort→" + target + " (" + strings.ToLower(difficulty) + ")"
-	}
-	return ""
-}
-
-// lowestNonOffEffort returns the lowest "real" reasoning level (skipping
-// off/none/minimal, which disable thinking entirely) from an ordered
-// lowest→highest set, or "" if none qualify. We want LOW reasoning for cheap
-// subtasks, not NO reasoning — a trivial task still benefits from a little.
-func lowestNonOffEffort(levels []string) string {
-	for _, l := range levels {
-		switch strings.ToLower(l) {
-		case "off", "none", "minimal":
-			continue
-		default:
-			return l
-		}
+	if es.SetEffort(subtaskEffortFloor) {
+		return "effort→" + subtaskEffortFloor + " (" + strings.ToLower(difficulty) + ")"
 	}
 	return ""
 }
