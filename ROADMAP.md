@@ -16,9 +16,9 @@ project memory). Detailed design/perf notes live under `docs/`.
 - Nothing in flight — pick the next item.
 
 **Next (queued, well-scoped):**
-- **Tier 27 v1.1 (follow-up)** — app browse/install page, `/plugin` + `/marketplace`
-  slash commands, and wiring Claude "commands"/"agents" components (need a
-  slash-command-prompt subsystem). v1 (CLI consume+manage: skills+MCP+hooks) shipped.
+- **Tier 27 v1.1 (follow-up)** — app browse/install page + `/plugin` + `/marketplace`
+  slash commands; wiring Claude "agents" (subagent prompts). v1 shipped (CLI
+  consume+manage: skills+MCP+hooks+COMMANDS); custom slash commands shipped (Tier 31).
 
 **Later (parked big bets — pull when wanted):**
 - **Tier 20 — eigen in your pocket.** Outbound notify + remote approve with no
@@ -167,7 +167,7 @@ build ON it — read their format directly so the user's existing marketplaces w
 - [x] **Read existing Claude/Codex marketplaces.** SHIPPED (Claude .claude-plugin format parsed directly; Codex has no equivalent — MCP is the interop point). Parse `.claude-plugin/*.json`
   (and the Codex equivalent) so a user's already-installed marketplaces are
   usable in eigen without re-authoring — import, don't reinvent.
-- [~] **App page + commands.** DEFERRED to v1.1 (CLI shipped; app browse/install page + /plugin /marketplace slash commands + commands/agents components are the follow-up). Extend the read-only `[plugins]` page into a
+- [x] **Commands.** SHIPPED (Tier 31): plugin commands/*.md wired to ~/.eigen/commands as /<plugin>-<name>; custom slash commands (Claude format) loaded from ~/.eigen/commands + project .eigen/commands. [~] App browse page + /plugin /marketplace slash UI + agents components still v1.1. Extend the read-only `[plugins]` page into a
   browse/install/enable surface; `/plugin` + `/marketplace` slash commands;
   `search_tools`-style disclosure for plugin-provided tools.
 - [x] **Safety.** SHIPPED: skill scanner reused (RISKY blocks unless --force, rolls back partial wiring); MCP servers niche+gated; tarball traversal/size guards; CLI-ONLY (agent has no install tool — verified internal/plugin imported only by main). Untrusted code: scan before install (RISKY → blocked unless

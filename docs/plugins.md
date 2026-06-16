@@ -71,3 +71,35 @@ reverses cleanly.
 
 App `[plugins]` browse/install page; `/plugin` + `/marketplace` slash commands;
 wiring the `commands`/`agents` components (needs a slash-command-prompt subsystem).
+
+## Custom slash commands (Tier 31)
+
+eigen reads **Claude-format** slash commands, so a plugin's `commands/*.md` — and
+your own hand-authored ones — work unchanged.
+
+- **Locations:** `~/.eigen/commands/*.md` (global) and `./.eigen/commands/*.md`
+  (project; shadows global). Plugin-installed commands land in the global dir as
+  `<plugin>-<name>.md`.
+- **Format:** optional `--- … ---` frontmatter (`description`, `argument-hint`;
+  `allowed-tools`/`model` are tolerated and ignored) + a markdown body that
+  becomes the prompt.
+- **Arguments:** `$ARGUMENTS` → everything you typed after the command; `$1`..`$9`
+  → positional tokens (quoted groups respected). A command with no placeholder
+  gets your args appended.
+- **Use:** type `/<name> [args]` in the TUI (it appears in the `/` menu with its
+  description + arg-hint). The body is expanded and submitted as a normal turn —
+  the model then does the work with the regular toolset, composing with
+  approvals + steering (like `/workflow`).
+
+Example: `~/.eigen/commands/pr.md`
+```markdown
+---
+description: open a PR for the current branch
+argument-hint: "[base-branch]"
+---
+Review the staged changes, write a tight PR description, and open a PR against $ARGUMENTS.
+```
+→ `/pr main`
+
+(Telegram custom-command expansion is a follow-up; today custom commands run in
+the TUI — local and daemon-attached sessions.)
