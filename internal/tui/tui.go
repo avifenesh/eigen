@@ -439,7 +439,7 @@ func (m *model) Init() tea.Cmd {
 
 func (m *model) push(b *block) *block {
 	m.blocks = append(m.blocks, b)
-	m.sel = -1 // new content: follow the tail
+	m.sel = -1 // new content clears block selection; sync follows only if already at tail
 	m.sync()
 	return b
 }
@@ -647,6 +647,7 @@ func (m *model) sync() {
 		return
 	}
 	w := m.vp.Width
+	followTail := m.sel < 0 && m.vp.AtBottom()
 	// Empty transcript: show the welcome wordmark instead of a blank void.
 	if len(m.blocks) == 0 {
 		m.blockStart = append(m.blockStart[:0], 0)
@@ -690,7 +691,7 @@ func (m *model) sync() {
 	}
 	m.blockStart = append(m.blockStart, line) // sentinel: total line count
 	m.vp.SetContent(out.String())
-	if m.sel < 0 {
+	if followTail {
 		m.vp.GotoBottom()
 	}
 }
@@ -714,6 +715,7 @@ func isWatchedTurnEnd(e agent.Event) bool {
 
 func (m *model) submit(task string) tea.Cmd {
 	m.text("user", task)
+	m.vp.GotoBottom()
 	m.state = stRunning
 	m.status = "thinking"
 	m.brandTick = 0
@@ -1082,21 +1084,20 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		// reach the app.
 		switch msg.String() {
 		case "up":
-			// Multi-line input: move the cursor up a line; only recall history
-			// when already on the FIRST line (shell convention). Use the
-			// explicit CursorUp() method — bubbles/textarea v1.0.0's key-event
-			// Update(KeyUp) does NOT move across logical lines, so forwarding the
-			// key left up/down arrows dead on multi-line input.
-			if m.ti.Line() > 0 {
+			// Multi-line/soft-wrapped input: move the cursor up a visible row;
+			// only recall history when already at the true top (shell convention).
+			// Use CursorUp() directly — bubbles/textarea v1.0.0's key-event
+			// Update(KeyUp) does NOT reliably move across lines.
+			if m.inputCursorCanMoveUp() {
 				m.ti.CursorUp()
 				return m, nil
 			}
 			m.historyPrev()
 			return m, nil
 		case "down":
-			// Move the cursor down a line; recall history only on the LAST line.
-			// (See "up" above for why we call CursorDown() directly.)
-			if m.ti.Line() < m.ti.LineCount()-1 {
+			// Move down through visible rows first; recall newer history only at
+			// the textarea's true bottom.
+			if m.inputCursorCanMoveDown() {
 				m.ti.CursorDown()
 				return m, nil
 			}

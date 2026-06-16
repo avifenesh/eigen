@@ -49,6 +49,7 @@ func (m *model) moveSel(dir int) {
 		if n >= len(idx) {
 			m.sel = -1 // past the end → back to following tail
 			m.sync()
+			m.vp.GotoBottom()
 			return
 		}
 		m.sel = idx[n]

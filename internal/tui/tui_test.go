@@ -1646,6 +1646,50 @@ func TestEventDoneDoesNotDuplicateStreamedText(t *testing.T) {
 	}
 }
 
+func TestStreamingPreservesManualScrollback(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 14})
+	for i := 0; i < 30; i++ {
+		m.text("assistant", fmt.Sprintf("message %02d\nextra line", i))
+	}
+	m.vp.GotoBottom()
+	bottom := m.vp.YOffset
+	if bottom == 0 {
+		t.Skip("transcript did not exceed viewport height")
+	}
+
+	m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	scrolled := m.vp.YOffset
+	if scrolled >= bottom {
+		t.Fatalf("pgup should leave bottom: before=%d after=%d", bottom, scrolled)
+	}
+
+	m.Update(agentEvent{e: agent.Event{Kind: agent.EventTextDelta, Text: "\nstreamed while reading"}})
+	if m.vp.YOffset != scrolled {
+		t.Fatalf("streaming should preserve manual scrollback offset: got %d want %d", m.vp.YOffset, scrolled)
+	}
+	if m.vp.AtBottom() {
+		t.Fatal("streaming while scrolled up must not snap back to bottom")
+	}
+}
+
+func TestStreamingFollowsTailWhenAlreadyAtBottom(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 14})
+	for i := 0; i < 30; i++ {
+		m.text("assistant", fmt.Sprintf("message %02d\nextra line", i))
+	}
+	m.vp.GotoBottom()
+	if !m.vp.AtBottom() {
+		t.Fatal("precondition: viewport should start at bottom")
+	}
+
+	m.Update(agentEvent{e: agent.Event{Kind: agent.EventTextDelta, Text: "\nnew streamed line\nanother streamed line"}})
+	if !m.vp.AtBottom() {
+		t.Fatalf("viewport at tail should continue following streamed output (offset=%d)", m.vp.YOffset)
+	}
+}
+
 // --- input history ----------------------------------------------------------
 
 func TestInputHistoryRecall(t *testing.T) {
@@ -2739,6 +2783,41 @@ func TestUpDownMoveBetweenInputLines(t *testing.T) {
 	m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	if m.ti.Value() != "old command" {
 		t.Fatalf("up on the first line should recall history, got %q", m.ti.Value())
+	}
+}
+
+func TestUpDownMoveBetweenSoftWrappedInputRows(t *testing.T) {
+	// A single long logical line can occupy several visual rows. Plain arrows
+	// should move through those rows before falling back to history recall.
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 32, Height: 24})
+	m.history = []string{"old command"}
+	m.histIdx = len(m.history)
+
+	text := strings.Repeat("word ", 20)
+	m.ti.SetValue(text)
+	m.resizeInput()
+	start := m.ti.LineInfo()
+	if start.Height < 2 || start.RowOffset == 0 {
+		t.Skipf("test input did not soft-wrap under this textarea width: %+v", start)
+	}
+
+	m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	up := m.ti.LineInfo()
+	if got := m.ti.Value(); got != text {
+		t.Fatalf("up inside a soft-wrapped line should not recall history, got %q", got)
+	}
+	if up.RowOffset >= start.RowOffset {
+		t.Fatalf("up should move to an earlier visual row: before=%+v after=%+v", start, up)
+	}
+
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	down := m.ti.LineInfo()
+	if got := m.ti.Value(); got != text {
+		t.Fatalf("down inside a soft-wrapped line should not recall history, got %q", got)
+	}
+	if down.RowOffset <= up.RowOffset {
+		t.Fatalf("down should move to a later visual row: before=%+v after=%+v", up, down)
 	}
 }
 

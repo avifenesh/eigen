@@ -206,6 +206,30 @@ func (m *model) positionCursorAt(vrow, col int) {
 	m.ti.CursorEnd()
 }
 
+// inputCursorCanMoveUp reports whether a plain ↑ key should move the textarea
+// cursor instead of recalling shell-style history. textarea.Line() only tracks
+// *logical* lines, but the box also grows for soft-wrapped visual rows; within
+// a wrapped line Line() stays constant, so consult LineInfo's visual row offset
+// too.
+func (m *model) inputCursorCanMoveUp() bool {
+	if m.ti.Line() > 0 {
+		return true
+	}
+	li := m.ti.LineInfo()
+	return li.RowOffset > 0
+}
+
+// inputCursorCanMoveDown is the down-arrow twin of inputCursorCanMoveUp: move
+// inside soft-wrapped visual rows (or to the next logical line) before falling
+// through to input-history recall at the true bottom of the textarea.
+func (m *model) inputCursorCanMoveDown() bool {
+	if m.ti.Line() < m.ti.LineCount()-1 {
+		return true
+	}
+	li := m.ti.LineInfo()
+	return li.Height > 0 && li.RowOffset+1 < li.Height
+}
+
 // pasteIntoInput inserts the clipboard contents at the input cursor (right-click
 // paste). Newlines are kept literal so a multi-line paste fills the box.
 func (m *model) pasteIntoInput() {
