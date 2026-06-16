@@ -53,7 +53,7 @@ func TestWatchStallToleratesInFlightButCatchesIdle(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
-		fired := watchStall(ctx, hb, cancel, 100*time.Millisecond, 0)
+		fired := watchStall(ctx, hb, cancel, 100*time.Millisecond, modelMaxWait, 0)
 		time.Sleep(400 * time.Millisecond) // way past stallIdle(100ms), still in flight
 		if fired() {
 			t.Fatal("must NOT fire on an in-flight model call under the model cap")
@@ -66,7 +66,7 @@ func TestWatchStallToleratesInFlightButCatchesIdle(t *testing.T) {
 		done := make(chan struct{})
 		cancelled := false
 		cancel := func() { cancelled = true; close(done) }
-		fired := watchStall(t.Context(), hb, cancel, 40*time.Millisecond, 0)
+		fired := watchStall(t.Context(), hb, cancel, 40*time.Millisecond, modelMaxWait, 0)
 		select {
 		case <-done:
 		case <-time.After(2 * time.Second):

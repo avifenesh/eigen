@@ -77,6 +77,46 @@ func newTestClient(t *testing.T) *Client {
 	return newClient(cw, sr, func() error { cw.Close(); sw.Close(); return nil })
 }
 
+func TestCallDeletesPendingOnContextCancellation(t *testing.T) {
+	c := &Client{
+		enc:     json.NewEncoder(io.Discard),
+		pending: map[int]chan rpcResponse{},
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := c.call(ctx, "tools/list", map[string]any{}, nil); err == nil {
+		t.Fatal("expected canceled context error")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.pending) != 0 {
+		t.Fatalf("pending request leaked after cancellation: %d", len(c.pending))
+	}
+}
+
+func TestLateMCPResponseAfterCancellationDoesNotBlockReader(t *testing.T) {
+	pr, pw := io.Pipe()
+	c := newClient(io.Discard, pr, func() error { return pw.Close() })
+	defer c.Close()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := c.call(ctx, "tools/list", map[string]any{}, nil); err == nil {
+		t.Fatal("expected canceled context error")
+	}
+
+	done := make(chan struct{})
+	go func() {
+		_, _ = pw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}` + "\n"))
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("late response write blocked; read loop likely wedged")
+	}
+}
+
 func TestInitializeAndListTools(t *testing.T) {
 	c := newTestClient(t)
 	defer c.Close()

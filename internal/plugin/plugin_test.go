@@ -85,11 +85,78 @@ func TestExtractTarGzRejectsTraversal(t *testing.T) {
 	}
 }
 
+func TestSafeJoinUnderRejectsTraversal(t *testing.T) {
+	root := t.TempDir()
+	for _, rel := range []string{"../evil", "a/../../evil"} {
+		if _, err := safeJoinUnder(root, rel, "test"); err == nil {
+			t.Fatalf("expected %q to be rejected", rel)
+		}
+	}
+	if got, err := safeJoinUnder(root, "./plugins/toolbox", "test"); err != nil || got != filepath.Join(root, "plugins", "toolbox") {
+		t.Fatalf("safe relative path: got %q err %v", got, err)
+	}
+}
+
+func TestSafeJoinUnderRejectsSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "link")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	_, err := safeJoinUnder(root, "link/secret.txt", "test")
+	if err == nil || !strings.Contains(err.Error(), "resolves outside root") {
+		t.Fatalf("expected symlink escape rejection, got %v", err)
+	}
+}
+
 // fakeTree returns a TreeFetcher that extracts a prebuilt tarball, ignoring the
 // owner/repo/ref (the test controls the bytes).
 func fakeTree(tgz []byte) TreeFetcher {
 	return func(_ context.Context, _, _, _, destDir string) (string, error) {
 		return extractTarGz(bytes.NewReader(tgz), destDir)
+	}
+}
+
+func TestInstallPluginRejectsExternalRepoPathTraversal(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRegistryAt(dir)
+	tgz := buildTarGz(t, "repo-main", map[string]string{
+		".claude-plugin/marketplace.json": `{
+		  "name": "demo", "owner": {"name": "Jane"},
+		  "plugins": [{"name": "escape", "source": {"source": "github", "repo": "evil/repo/../outside"}}]
+		}`,
+	})
+	if _, _, err := r.AddMarketplace(context.Background(), "jane/demo", fakeTree(tgz)); err != nil {
+		t.Fatalf("add marketplace: %v", err)
+	}
+	_, err := r.InstallPlugin(context.Background(), "escape", "", InstallOptions{Scanner: okScanner{}, Tree: fakeTree(tgz)})
+	if err == nil || !strings.Contains(err.Error(), "unsafe plugin repo path") {
+		t.Fatalf("expected unsafe plugin repo path error, got %v", err)
+	}
+}
+
+func TestDiscoverRejectsManifestComponentTraversal(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".claude-plugin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"name":"escape","mcpServers":"../outside.json"}`
+	if err := os.WriteFile(filepath.Join(root, ".claude-plugin", "plugin.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Discover(root, false); err == nil || !strings.Contains(err.Error(), "unsafe mcpServers path") {
+		t.Fatalf("expected unsafe mcpServers path error, got %v", err)
+	}
+
+	manifest = `{"name":"escape","hooks":"../outside.json"}`
+	if err := os.WriteFile(filepath.Join(root, ".claude-plugin", "plugin.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Discover(root, false); err == nil || !strings.Contains(err.Error(), "unsafe hooks path") {
+		t.Fatalf("expected unsafe hooks path error, got %v", err)
 	}
 }
 

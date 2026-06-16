@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 )
 
 // glmDefaultBaseURL is Zhipu's OpenAI-compatible "coding plan" API root, the
@@ -23,6 +24,8 @@ var _ EffortSetter = (*GLM)(nil)
 // built-in fetch for web queries.
 type GLM struct {
 	c *chatClient
+
+	mu sync.RWMutex
 
 	// search controls the server-side web_search tool: "off" disables it;
 	// "auto" and "on" enable it (GLM does not distinguish auto vs on — both
@@ -97,21 +100,35 @@ func (g *GLM) Name() string    { return g.c.model + " (zhipu glm)" }
 func (g *GLM) ModelID() string { return g.c.model }
 
 func (g *GLM) Complete(ctx context.Context, req Request) (*Response, error) {
-	return g.c.complete(ctx, g.prepare(req))
+	search, thinking, clearThinking := g.snapshot()
+	cc := *g.c
+	cc.extraTools = func() []map[string]any { return glmWebSearchTool(search) }
+	cc.extra = func() map[string]any { return glmBodyExtra(thinking, clearThinking) }
+	return cc.complete(ctx, glmPrepare(req, search))
 }
 
 func (g *GLM) Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error) {
-	return g.c.stream(ctx, g.prepare(req), sink)
+	search, thinking, clearThinking := g.snapshot()
+	cc := *g.c
+	cc.extraTools = func() []map[string]any { return glmWebSearchTool(search) }
+	cc.extra = func() map[string]any { return glmBodyExtra(thinking, clearThinking) }
+	return cc.stream(ctx, glmPrepare(req, search), sink)
 }
 
 // SearchMode reports the current web search mode (off|auto|on).
-func (g *GLM) SearchMode() string { return g.search }
+func (g *GLM) SearchMode() string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.search
+}
 
 // SetSearch changes the web search mode. Returns false for an unknown mode.
 func (g *GLM) SetSearch(mode string) bool {
 	switch mode {
 	case "off", "auto", "on":
+		g.mu.Lock()
 		g.search = mode
+		g.mu.Unlock()
 		return true
 	default:
 		return false
@@ -122,6 +139,8 @@ func (g *GLM) SetSearch(mode string) bool {
 // thinking is disabled, "on" when enabled, "" when this model has no thinking
 // control.
 func (g *GLM) Effort() string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
 	switch g.thinking {
 	case "disabled":
 		return "off"
@@ -137,6 +156,8 @@ func (g *GLM) Effort() string {
 // enabled. Returns false when this model has no thinking control, or for an
 // unrecognized value.
 func (g *GLM) SetEffort(level string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	if g.thinking == "" {
 		return false // non-reasoning model: no thinking control
 	}
@@ -152,6 +173,12 @@ func (g *GLM) SetEffort(level string) bool {
 	}
 }
 
+func (g *GLM) snapshot() (search, thinking string, clearThinking bool) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.search, g.thinking, g.clearThinking
+}
+
 // bodyExtra injects GLM's reasoning request fields when a mode is set:
 //   - thinking.type enabled|disabled — the on/off toggle (eigen effort on|off).
 //   - clear_thinking:false when ENABLED — "Preserved Thinking": GLM retains
@@ -160,11 +187,16 @@ func (g *GLM) SetEffort(level string) bool {
 //     carries Message.Reasoning back across turns, so this is the right default.
 //     Override with EIGEN_GLM_CLEAR_THINKING=1 to drop cross-turn reasoning.
 func (g *GLM) bodyExtra() map[string]any {
-	if g.thinking == "" {
+	_, thinking, clearThinking := g.snapshot()
+	return glmBodyExtra(thinking, clearThinking)
+}
+
+func glmBodyExtra(thinking string, clearThinking bool) map[string]any {
+	if thinking == "" {
 		return nil
 	}
-	extra := map[string]any{"thinking": map[string]any{"type": g.thinking}}
-	if g.thinking == "enabled" && !g.clearThinking {
+	extra := map[string]any{"thinking": map[string]any{"type": thinking}}
+	if thinking == "enabled" && !clearThinking {
 		extra["clear_thinking"] = false // preserve reasoning across turns
 	}
 	return extra
@@ -173,7 +205,12 @@ func (g *GLM) bodyExtra() map[string]any {
 // prepare appends a hint to the system prompt when web_search is active, telling
 // GLM to prefer its built-in search over the client-side fetch tool.
 func (g *GLM) prepare(req Request) Request {
-	if g.search == "off" {
+	search, _, _ := g.snapshot()
+	return glmPrepare(req, search)
+}
+
+func glmPrepare(req Request, search string) Request {
+	if search == "off" {
 		return req
 	}
 	req.System += "\n\nYou have a built-in web_search tool that can search the live web. Use it instead of the fetch tool for any web lookups — it is faster, more reliable, and returns fresher results. Prefer web_search over fetch for all online information."
@@ -183,7 +220,12 @@ func (g *GLM) prepare(req Request) Request {
 // webSearchTool returns the GLM web_search built-in tool entry when search is
 // enabled, or nil when off.
 func (g *GLM) webSearchTool() []map[string]any {
-	if g.search == "off" {
+	search, _, _ := g.snapshot()
+	return glmWebSearchTool(search)
+}
+
+func glmWebSearchTool(search string) []map[string]any {
+	if search == "off" {
 		return nil
 	}
 	return []map[string]any{

@@ -181,12 +181,19 @@ func (r *relay) setPersist(fn func([]llm.Message)) {
 // is done. The durations are snapshotted by the caller at run start so a config
 // change can't race the running watchdog. Returns a func reporting whether the
 // stall fired, so callers can label the outcome.
-func watchStall(ctx context.Context, hb *heartbeat, cancel context.CancelFunc, idle, grace time.Duration) func() bool {
+func watchStall(ctx context.Context, hb *heartbeat, cancel context.CancelFunc, idle, modelWait, grace time.Duration) func() bool {
 	var fired bool
 	var mu sync.Mutex
 	go func() {
 		// Tick fast enough to honor the tighter of the two budgets.
-		tick := time.NewTicker(idle / 4)
+		tickEvery := idle / 4
+		if modelWait > 0 && modelWait < idle {
+			tickEvery = modelWait / 4
+		}
+		if tickEvery <= 0 {
+			tickEvery = time.Millisecond
+		}
+		tick := time.NewTicker(tickEvery)
 		defer tick.Stop()
 		start := time.Now()
 		for {
@@ -200,7 +207,7 @@ func watchStall(ctx context.Context, hb *heartbeat, cancel context.CancelFunc, i
 				since, inFlight := hb.idle()
 				budget := idle
 				if inFlight {
-					budget = modelMaxWait // a slow model call gets the larger cap
+					budget = modelWait // a slow model call gets the larger cap
 				}
 				if since >= budget {
 					mu.Lock()

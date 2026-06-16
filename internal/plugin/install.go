@@ -68,7 +68,11 @@ func (r *Registry) AddMarketplace(ctx context.Context, source string, fetch Tree
 		return nil, MarketRecord{}, err
 	}
 	// The marketplace manifest may be at the repo root or under the ref's path.
-	mfPath := filepath.Join(root, ref.Path, ".claude-plugin", "marketplace.json")
+	base, err := safeJoinUnder(root, ref.Path, "marketplace repo")
+	if err != nil {
+		return nil, MarketRecord{}, err
+	}
+	mfPath := filepath.Join(base, ".claude-plugin", "marketplace.json")
 	b, err := os.ReadFile(mfPath)
 	if err != nil {
 		return nil, MarketRecord{}, fmt.Errorf("no .claude-plugin/marketplace.json in %s", source)
@@ -101,7 +105,11 @@ func (r *Registry) fetchMarketplace(ctx context.Context, rec MarketRecord, fetch
 		cleanup()
 		return nil, "", nil, err
 	}
-	base := filepath.Join(root, ref.Path)
+	base, err := safeJoinUnder(root, ref.Path, "marketplace repo")
+	if err != nil {
+		cleanup()
+		return nil, "", nil, err
+	}
 	b, err := os.ReadFile(filepath.Join(base, ".claude-plugin", "marketplace.json"))
 	if err != nil {
 		cleanup()
@@ -277,10 +285,9 @@ func (r *Registry) resolvePlugin(ctx context.Context, pluginName, mktName string
 // a subdir of the marketplace repo; a git/github source is fetched separately.
 func (r *Registry) resolvePluginRoot(ctx context.Context, entry PluginEntry, marketBase string, fetch TreeFetcher) (string, func(), error) {
 	if entry.Source.IsLocal() {
-		p := strings.TrimPrefix(filepath.Clean(entry.Source.Path), "./")
-		root := filepath.Join(marketBase, p)
-		if !withinDir(marketBase, root) {
-			return "", func() {}, fmt.Errorf("plugin source escapes marketplace: %q", entry.Source.Path)
+		root, err := safeJoinUnder(marketBase, entry.Source.Path, "plugin source")
+		if err != nil {
+			return "", func() {}, err
 		}
 		return root, func() {}, nil
 	}
@@ -302,7 +309,12 @@ func (r *Registry) resolvePluginRoot(ctx context.Context, entry PluginEntry, mar
 		cleanup()
 		return "", func() {}, err
 	}
-	return filepath.Join(root, ref.Path), cleanup, nil
+	pluginRoot, err := safeJoinUnder(root, ref.Path, "plugin repo")
+	if err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	return pluginRoot, cleanup, nil
 }
 
 // installSkillDir copies a plugin's skill directory into ~/.eigen/skills/<inst>.

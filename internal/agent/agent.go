@@ -578,7 +578,7 @@ type childDone struct {
 func (a *Agent) runChild(ctx context.Context, c childRun) childResultFG {
 	// Snapshot the tunables once at run start so a later config change can't
 	// race this run's watchdog.
-	idle, front := stallIdle, frontWindow
+	idle, modelWait, front := stallIdle, modelMaxWait, frontWindow
 	cctx := context.WithValue(ctx, subtaskDepthKey{}, c.depth+1)
 	cctx, cancel := context.WithCancel(cctx)
 
@@ -592,7 +592,7 @@ func (a *Agent) runChild(ctx context.Context, c childRun) childResultFG {
 	// Heartbeat hook: a model call in flight switches the watchdog to its larger
 	// budget so a slow non-streaming Complete() isn't mistaken for a hang.
 	c.sub.onModelCall = hb.modelStart
-	stalled := watchStall(cctx, hb, cancel, idle, heartbeatGrace)
+	stalled := watchStall(cctx, hb, cancel, idle, modelWait, heartbeatGrace)
 
 	ch := make(chan childDone, 1)
 	sess := c.sub.NewSession()

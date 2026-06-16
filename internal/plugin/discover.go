@@ -76,8 +76,16 @@ func Discover(root string, lenient bool) (*Components, error) {
 	}
 
 	c.Skills = discoverSkills(root)
-	c.MCPServers = discoverMCP(root, c.Manifest)
-	c.Hooks = discoverHooks(root, c.Manifest)
+	mcp, err := discoverMCP(root, c.Manifest)
+	if err != nil {
+		return nil, err
+	}
+	c.MCPServers = mcp
+	hooks, err := discoverHooks(root, c.Manifest)
+	if err != nil {
+		return nil, err
+	}
+	c.Hooks = hooks
 	c.Commands = discoverCommands(root)
 	c.Agents = countDir(root, c.Manifest, "agents", ".md")
 	return c, nil
@@ -136,18 +144,24 @@ type claudeMCPFile struct {
 	} `json:"mcpServers"`
 }
 
-func discoverMCP(root string, m *PluginManifest) []MCPServer {
-	path := filepath.Join(root, ".mcp.json")
+func discoverMCP(root string, m *PluginManifest) ([]MCPServer, error) {
+	path, err := safeJoinUnder(root, ".mcp.json", "mcpServers")
+	if err != nil {
+		return nil, err
+	}
 	if m != nil && strings.TrimSpace(m.MCPServers) != "" {
-		path = filepath.Join(root, filepath.Clean(m.MCPServers))
+		path, err = safeJoinUnder(root, m.MCPServers, "mcpServers")
+		if err != nil {
+			return nil, err
+		}
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	var f claudeMCPFile
 	if err := json.Unmarshal(b, &f); err != nil {
-		return nil
+		return nil, nil
 	}
 	var out []MCPServer
 	for name, s := range f.MCPServers {
@@ -157,7 +171,7 @@ func discoverMCP(root string, m *PluginManifest) []MCPServer {
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out
+	return out, nil
 }
 
 // claudeHooksFile is the Claude hooks shape: { "hooks": { Event: [ {matcher, hooks:[{type,command}]} ] } }.
@@ -171,18 +185,24 @@ type claudeHooksFile struct {
 	} `json:"hooks"`
 }
 
-func discoverHooks(root string, m *PluginManifest) []HookSpec {
-	path := filepath.Join(root, "hooks", "hooks.json")
+func discoverHooks(root string, m *PluginManifest) ([]HookSpec, error) {
+	path, err := safeJoinUnder(root, filepath.Join("hooks", "hooks.json"), "hooks")
+	if err != nil {
+		return nil, err
+	}
 	if m != nil && strings.TrimSpace(m.Hooks) != "" {
-		path = filepath.Join(root, filepath.Clean(m.Hooks))
+		path, err = safeJoinUnder(root, m.Hooks, "hooks")
+		if err != nil {
+			return nil, err
+		}
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	var f claudeHooksFile
 	if err := json.Unmarshal(b, &f); err != nil {
-		return nil
+		return nil, nil
 	}
 	var out []HookSpec
 	var events []string
@@ -203,7 +223,7 @@ func discoverHooks(root string, m *PluginManifest) []HookSpec {
 			}
 		}
 	}
-	return out
+	return out, nil
 }
 
 func countDir(root string, m *PluginManifest, dir, ext string) int {

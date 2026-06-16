@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -33,15 +34,17 @@ type Converse struct {
 
 	// Capabilities resolved from the catalog (with env overrides), driving the
 	// extra wire features: prompt caching, 1M-context beta, extended thinking.
-	cache          bool
-	context1M      bool
-	thinkingBudget int    // 0 disables extended thinking (budget-style models)
-	effort         string // reasoning-effort label
+	cache     bool
+	context1M bool
 
 	// adaptive selects the newer Anthropic thinking API
 	// (thinking.type=adaptive + output_config.effort) used by opus-4-8+, vs the
 	// older budget API (thinking.type=enabled + budget_tokens) used by sonnet-4-6.
 	adaptive bool
+
+	mu             sync.RWMutex
+	thinkingBudget int    // 0 disables extended thinking (budget-style models)
+	effort         string // reasoning-effort label
 }
 
 // effortBudget maps an effort label to an Anthropic extended-thinking token
@@ -158,6 +161,8 @@ func (c *Converse) SetEffort(level string) bool {
 		return false
 	}
 	b, ok := effortBudget[level]
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if !ok {
 		// Adaptive effort (auto/low/medium/high): not in the budget map.
 		// For adaptive models the effort string is sent directly; set budget=0.
@@ -171,7 +176,17 @@ func (c *Converse) SetEffort(level string) bool {
 }
 
 // Effort returns the current reasoning-effort label.
-func (c *Converse) Effort() string { return c.effort }
+func (c *Converse) Effort() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.effort
+}
+
+func (c *Converse) snapshotSettings() (context1M bool, thinkingBudget int, effort string, adaptive bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.context1M, c.thinkingBudget, c.effort, c.adaptive
+}
 
 type converseContent struct {
 	Text       string              `json:"text,omitempty"`
@@ -275,9 +290,10 @@ func (c *Converse) Complete(ctx context.Context, req Request) (*Response, error)
 	}
 	// Extended thinking needs maxTokens > thinking budget; give the answer room
 	// on top of the reasoning budget.
+	context1M, thinkingBudget, effort, adaptive := c.snapshotSettings()
 	maxTokens := converseMaxTokens
-	if c.thinkingBudget > 0 && maxTokens <= c.thinkingBudget {
-		maxTokens = c.thinkingBudget + converseMaxTokens
+	if thinkingBudget > 0 && maxTokens <= thinkingBudget {
+		maxTokens = thinkingBudget + converseMaxTokens
 	}
 	payload := converseRequest{
 		Messages:        converseMessages(req),
@@ -293,7 +309,7 @@ func (c *Converse) Complete(ctx context.Context, req Request) (*Response, error)
 	if tools := converseTools(req.Tools, c.cache); len(tools) > 0 {
 		payload.ToolConfig = &converseToolConfig{Tools: tools}
 	}
-	if extra := c.additionalFields(); extra != nil {
+	if extra := additionalConverseFields(context1M, thinkingBudget, effort, adaptive); extra != nil {
 		payload.AdditionalModelRequestFields = extra
 	}
 	body, err := json.Marshal(payload)
@@ -362,16 +378,21 @@ func (c *Converse) Complete(ctx context.Context, req Request) (*Response, error)
 // output_config.effort; budget-style models (sonnet-4-6) use
 // thinking.type=enabled with budget_tokens.
 func (c *Converse) additionalFields() json.RawMessage {
+	context1M, thinkingBudget, effort, adaptive := c.snapshotSettings()
+	return additionalConverseFields(context1M, thinkingBudget, effort, adaptive)
+}
+
+func additionalConverseFields(context1M bool, thinkingBudget int, effort string, adaptive bool) json.RawMessage {
 	extra := map[string]any{}
-	if c.context1M {
+	if context1M {
 		extra["anthropic_beta"] = []string{context1mBeta}
 	}
 	switch {
-	case c.adaptive && c.effort != "" && c.effort != "minimal" && c.effort != "off":
+	case adaptive && effort != "" && effort != "minimal" && effort != "off":
 		extra["thinking"] = map[string]any{"type": "adaptive"}
-		extra["output_config"] = map[string]any{"effort": c.effort}
-	case !c.adaptive && c.thinkingBudget > 0:
-		extra["thinking"] = map[string]any{"type": "enabled", "budget_tokens": c.thinkingBudget}
+		extra["output_config"] = map[string]any{"effort": effort}
+	case !adaptive && thinkingBudget > 0:
+		extra["thinking"] = map[string]any{"type": "enabled", "budget_tokens": thinkingBudget}
 	}
 	if len(extra) == 0 {
 		return nil

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,6 +26,8 @@ const grokCLIProxyBaseURL = "https://cli-chat-proxy.grok.com/v1"
 // and overridable with env.
 type Grok struct {
 	c *chatClient
+
+	mu sync.RWMutex
 
 	// search controls Live Search: "off" disables it; "auto" lets the model
 	// decide; "on" forces it. sources are the Live Search sources to allow
@@ -100,21 +103,32 @@ func (g *Grok) Name() string    { return g.c.model + " (xai grok)" }
 func (g *Grok) ModelID() string { return g.c.model }
 
 func (g *Grok) Complete(ctx context.Context, req Request) (*Response, error) {
-	return g.c.complete(ctx, g.prepare(req))
+	search, sources := g.snapshot()
+	cc := *g.c
+	cc.extra = func() map[string]any { return grokSearchParams(search, sources) }
+	return cc.complete(ctx, grokPrepare(req, search, sources))
 }
 
 func (g *Grok) Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error) {
-	return g.c.stream(ctx, g.prepare(req), sink)
+	search, sources := g.snapshot()
+	cc := *g.c
+	cc.extra = func() map[string]any { return grokSearchParams(search, sources) }
+	return cc.stream(ctx, grokPrepare(req, search, sources), sink)
 }
 
 // prepare appends a hint to the system prompt when Live Search is active,
 // telling Grok to prefer its built-in search over the client-side fetch tool.
 // It lists the actual enabled sources so the model knows what it can search.
 func (g *Grok) prepare(req Request) Request {
-	if g.search == "off" {
+	search, sources := g.snapshot()
+	return grokPrepare(req, search, sources)
+}
+
+func grokPrepare(req Request, search string, sources []string) Request {
+	if search == "off" {
 		return req
 	}
-	srcList := strings.Join(g.sources, " and ")
+	srcList := strings.Join(sources, " and ")
 	req.System += fmt.Sprintf(
 		"\n\nYou have built-in live search via search_parameters (sources: %s). "+
 			"Use it instead of the fetch tool for any web lookups — it is faster, more reliable, and returns fresher results. "+
@@ -125,32 +139,49 @@ func (g *Grok) prepare(req Request) Request {
 }
 
 // SearchMode reports the current Live Search mode (off|auto|on).
-func (g *Grok) SearchMode() string { return g.search }
+func (g *Grok) SearchMode() string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.search
+}
 
 // SetSearch changes the Live Search mode. Returns false for an unknown mode.
 func (g *Grok) SetSearch(mode string) bool {
 	switch mode {
 	case "off", "auto", "on":
+		g.mu.Lock()
 		g.search = mode
+		g.mu.Unlock()
 		return true
 	default:
 		return false
 	}
 }
 
+func (g *Grok) snapshot() (search string, sources []string) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.search, append([]string(nil), g.sources...)
+}
+
 // searchParams builds xAI's search_parameters field for Live Search, or nil
 // when search is off (so the field is omitted entirely).
 func (g *Grok) searchParams() map[string]any {
-	if g.search == "off" || g.search == "" {
+	search, sources := g.snapshot()
+	return grokSearchParams(search, sources)
+}
+
+func grokSearchParams(search string, sources []string) map[string]any {
+	if search == "off" || search == "" {
 		return nil
 	}
-	srcs := make([]map[string]any, 0, len(g.sources))
-	for _, s := range g.sources {
+	srcs := make([]map[string]any, 0, len(sources))
+	for _, s := range sources {
 		srcs = append(srcs, map[string]any{"type": s})
 	}
 	return map[string]any{
 		"search_parameters": map[string]any{
-			"mode":    g.search, // "auto" | "on"
+			"mode":    search, // "auto" | "on"
 			"sources": srcs,
 		},
 	}

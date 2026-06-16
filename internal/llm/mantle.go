@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,9 +23,11 @@ const mantleDefaultRegion = "us-east-2"
 type Mantle struct {
 	BaseURL string
 	Model   string
-	effort  string
 	token   string
 	http    *http.Client
+
+	mu     sync.RWMutex
+	effort string
 }
 
 // NewMantle builds a Mantle provider from the environment.
@@ -76,7 +79,9 @@ func (m *Mantle) SetEffort(level string) bool {
 	}
 	for _, l := range levels {
 		if l == level {
+			m.mu.Lock()
 			m.effort = level
+			m.mu.Unlock()
 			return true
 		}
 	}
@@ -84,7 +89,17 @@ func (m *Mantle) SetEffort(level string) bool {
 }
 
 // Effort returns the current reasoning effort.
-func (m *Mantle) Effort() string { return m.effort }
+func (m *Mantle) Effort() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.effort
+}
+
+func (m *Mantle) snapshot() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.effort
+}
 
 // Reasoning configuration for GPT-5.5 on mantle.
 //
@@ -211,11 +226,12 @@ func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
 	if len(req.Messages) == 0 {
 		return nil, fmt.Errorf("request has no messages")
 	}
+	effort := m.snapshot()
 	payload := responsesRequest{
 		Model:     m.Model,
 		Input:     buildInput(req),
 		Tools:     toResponsesTools(req.Tools),
-		Reasoning: &reasoningConfig{Effort: m.effort, Summary: reasoningSummary},
+		Reasoning: &reasoningConfig{Effort: effort, Summary: reasoningSummary},
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -263,11 +279,12 @@ func (m *Mantle) Stream(ctx context.Context, req Request, sink StreamSink) (*Res
 	if len(req.Messages) == 0 {
 		return nil, fmt.Errorf("request has no messages")
 	}
+	effort := m.snapshot()
 	payload := responsesRequest{
 		Model:     m.Model,
 		Input:     buildInput(req),
 		Tools:     toResponsesTools(req.Tools),
-		Reasoning: &reasoningConfig{Effort: m.effort, Summary: reasoningSummary},
+		Reasoning: &reasoningConfig{Effort: effort, Summary: reasoningSummary},
 		Stream:    true,
 	}
 	body, err := json.Marshal(payload)

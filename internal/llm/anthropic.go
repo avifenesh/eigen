@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -31,11 +32,13 @@ type Anthropic struct {
 	oauthFile string // path to ~/.claude/.credentials.json (OAuth fallback)
 
 	// Capabilities from the catalog.
-	cache          bool
-	context1M      bool
+	cache     bool
+	context1M bool
+	adaptive  bool
+
+	mu             sync.RWMutex
 	thinkingBudget int
 	effort         string
-	adaptive       bool
 }
 
 const (
@@ -125,6 +128,8 @@ func (a *Anthropic) SetEffort(level string) bool {
 		return false
 	}
 	b, ok := effortBudget[level]
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if !ok {
 		// Adaptive effort (auto/low/medium/high): not in the budget map.
 		// For adaptive models the effort string is sent directly; set budget=0.
@@ -138,7 +143,17 @@ func (a *Anthropic) SetEffort(level string) bool {
 }
 
 // Effort returns the current reasoning-effort label.
-func (a *Anthropic) Effort() string { return a.effort }
+func (a *Anthropic) Effort() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.effort
+}
+
+func (a *Anthropic) snapshotThinking() (thinkingBudget int, effort string, adaptive bool) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.thinkingBudget, a.effort, a.adaptive
+}
 
 // --- wire types (native Messages API) ---
 
@@ -223,9 +238,10 @@ func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error
 	if len(req.Messages) == 0 {
 		return nil, fmt.Errorf("request has no messages")
 	}
+	thinkingBudget, effort, adaptive := a.snapshotThinking()
 	maxTokens := anthropicMaxTok
-	if a.thinkingBudget > 0 && maxTokens <= a.thinkingBudget {
-		maxTokens = a.thinkingBudget + anthropicMaxTok
+	if thinkingBudget > 0 && maxTokens <= thinkingBudget {
+		maxTokens = thinkingBudget + anthropicMaxTok
 	}
 	payload := anthropicRequest{
 		Model:     a.Model,
@@ -237,11 +253,11 @@ func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error
 	// Thinking: adaptive models use thinking.type=adaptive + output_config.effort;
 	// budget models use thinking.type=enabled + budget_tokens.
 	switch {
-	case a.adaptive && a.effort != "" && a.effort != "minimal" && a.effort != "off":
+	case adaptive && effort != "" && effort != "minimal" && effort != "off":
 		payload.Thinking = json.RawMessage(`{"type":"adaptive"}`)
-		payload.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":%q}`, a.effort))
-	case !a.adaptive && a.thinkingBudget > 0:
-		payload.Thinking = json.RawMessage(fmt.Sprintf(`{"type":"enabled","budget_tokens":%d}`, a.thinkingBudget))
+		payload.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":%q}`, effort))
+	case !adaptive && thinkingBudget > 0:
+		payload.Thinking = json.RawMessage(fmt.Sprintf(`{"type":"enabled","budget_tokens":%d}`, thinkingBudget))
 	}
 
 	body, err := json.Marshal(payload)

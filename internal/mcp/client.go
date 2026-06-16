@@ -183,6 +183,9 @@ func (c *Client) call(ctx context.Context, method string, params any, result any
 	ch := make(chan rpcResponse, 1)
 	c.pending[id] = ch
 	err := c.enc.Encode(rpcRequest{JSONRPC: "2.0", ID: id, Method: method, Params: params})
+	if err != nil {
+		delete(c.pending, id)
+	}
 	c.mu.Unlock()
 	if err != nil {
 		return err
@@ -200,6 +203,9 @@ func (c *Client) call(ctx context.Context, method string, params any, result any
 		}
 		return nil
 	case <-ctx.Done():
+		c.mu.Lock()
+		delete(c.pending, id)
+		c.mu.Unlock()
 		return ctx.Err()
 	}
 }

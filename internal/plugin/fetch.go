@@ -122,6 +122,49 @@ func extractTarGz(r io.Reader, destDir string) (string, error) {
 	return topDir, nil
 }
 
+// safeJoinUnder joins a manifest/catalog path under root after rejecting paths
+// that are absolute or climb upward. Use this for any untrusted plugin path
+// before reading/copying from a fetched repository tree.
+func safeJoinUnder(root, rel, what string) (string, error) {
+	rel = strings.TrimSpace(rel)
+	if abs, err := filepath.Abs(root); err == nil {
+		root = abs
+	}
+	if rel == "" || rel == "." {
+		return root, nil
+	}
+	clean := filepath.Clean(rel)
+	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("unsafe %s path %q", what, rel)
+	}
+	joined := filepath.Join(root, clean)
+	if !withinDir(root, joined) {
+		return "", fmt.Errorf("%s path escapes root: %q", what, rel)
+	}
+	if err := ensureResolvedUnder(root, joined, what, rel); err != nil {
+		return "", err
+	}
+	return joined, nil
+}
+
+func ensureResolvedUnder(root, path, what, rel string) error {
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return fmt.Errorf("resolve %s root: %w", what, err)
+	}
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // optional component paths may be absent; reads will handle it.
+		}
+		return fmt.Errorf("resolve %s path %q: %w", what, rel, err)
+	}
+	if !withinDir(resolvedRoot, resolvedPath) {
+		return fmt.Errorf("%s path resolves outside root: %q", what, rel)
+	}
+	return nil
+}
+
 // withinDir reports whether path is inside (or equal to) dir after cleaning.
 func withinDir(dir, path string) bool {
 	rel, err := filepath.Rel(dir, path)
