@@ -18,8 +18,6 @@ project memory). Detailed design/perf notes live under `docs/`.
 **Next (queued, well-scoped):**
 - **Tier 23 — performance + resource health.** RSS/leak soak, bound growth,
   turn-latency profile, a `make perf` guard, `docs/performance.md`.
-- **Tier 21 — remaining TUI ergonomics.** Right-panel notepad tab. (Home density,
-  steer-vs-queue config, and the steer-at-turn-end fix already shipped.)
 - **Tier 27 — plugins / marketplaces.** Install bundled plugins (skills + MCP +
   commands + hooks) from a catalog repo (what Claude/Codex call a marketplace);
   `eigen marketplace add/list` + `eigen plugin install/list/remove/enable`. Builds
