@@ -52,7 +52,7 @@ func bashWith(policy *Policy, deps bashDeps) Definition {
   "type": "object",
   "properties": {
     "command": { "type": "string", "description": "Shell command to run." },
-    "timeout_seconds": { "type": "integer", "description": "Max seconds to run (default 30, max 600)." }
+    "timeout_seconds": { "type": "integer", "description": "Max seconds to run (default 30, max 600). Set this for any build/test/install/grep you expect to exceed ~30s so it is not killed mid-run." }
   },
   "required": ["command"],
   "additionalProperties": false
@@ -62,7 +62,7 @@ func bashWith(policy *Policy, deps bashDeps) Definition {
   "type": "object",
   "properties": {
     "command": { "type": "string", "description": "Shell command to run." },
-    "timeout_seconds": { "type": "integer", "description": "Max seconds to run (default 30, max 600). Ignored when background=true." },
+    "timeout_seconds": { "type": "integer", "description": "Max seconds to run (default 30, max 600). Set this for any build/test/install/grep you expect to exceed ~30s so it is not killed mid-run. Ignored when background=true." },
     "background": { "type": "boolean", "description": "Run detached: return a shell id immediately and keep it running in the background (for servers, watchers, long builds). Poll with bash_output, stop with kill_shell." }
   },
   "required": ["command"],

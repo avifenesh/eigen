@@ -1083,18 +1083,22 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		switch msg.String() {
 		case "up":
 			// Multi-line input: move the cursor up a line; only recall history
-			// when already on the FIRST line (shell convention).
+			// when already on the FIRST line (shell convention). Use the
+			// explicit CursorUp() method — bubbles/textarea v1.0.0's key-event
+			// Update(KeyUp) does NOT move across logical lines, so forwarding the
+			// key left up/down arrows dead on multi-line input.
 			if m.ti.Line() > 0 {
-				m.ti, cmd = m.ti.Update(msg)
-				return m, cmd
+				m.ti.CursorUp()
+				return m, nil
 			}
 			m.historyPrev()
 			return m, nil
 		case "down":
 			// Move the cursor down a line; recall history only on the LAST line.
+			// (See "up" above for why we call CursorDown() directly.)
 			if m.ti.Line() < m.ti.LineCount()-1 {
-				m.ti, cmd = m.ti.Update(msg)
-				return m, cmd
+				m.ti.CursorDown()
+				return m, nil
 			}
 			m.historyNext()
 			return m, nil

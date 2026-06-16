@@ -104,6 +104,21 @@ func TestCtrlJInsertsNewline(t *testing.T) {
 	if m.ti.Height() < 2 {
 		t.Fatalf("multi-line input should grow to >=2 text rows, got %d", m.ti.Height())
 	}
+
+	// Arrow up/down must move the cursor across logical lines. bubbles/textarea
+	// v1.0.0's key-event Update(KeyUp/KeyDown) does NOT move across lines, so we
+	// call CursorUp/CursorDown directly — this pins that the up/down arrow
+	// handler navigates the multi-line input (the fix for "arrows do nothing on
+	// the top/bottom line").
+	m.Update(tea.KeyMsg{Type: tea.KeyUp}) // line 1 → line 0
+	if m.ti.Line() != 0 {
+		t.Fatalf("up arrow should move to line 0, got %d", m.ti.Line())
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyDown}) // line 0 → line 1
+	if m.ti.Line() != 1 {
+		t.Fatalf("down arrow should move to line 1, got %d", m.ti.Line())
+	}
+
 	// Enter still submits the whole multi-line value.
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if m.state != stRunning {
