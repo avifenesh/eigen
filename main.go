@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -39,6 +40,7 @@ import (
 	"github.com/avifenesh/eigen/internal/observe"
 	"github.com/avifenesh/eigen/internal/session"
 	"github.com/avifenesh/eigen/internal/skill"
+	"github.com/avifenesh/eigen/internal/telegram"
 	"github.com/avifenesh/eigen/internal/theme"
 	"github.com/avifenesh/eigen/internal/tool"
 	"github.com/avifenesh/eigen/internal/transcript"
@@ -259,6 +261,11 @@ func main() {
 	// `eigen skill <add|list> ...`: manage skills from the CLI, then exit.
 	if flag.Arg(0) == "skill" {
 		runSkillCmd(flag.Args()[1:], *provider, *model)
+		return
+	}
+
+	if flag.Arg(0) == "telegram" {
+		runTelegram(cfg)
 		return
 	}
 
@@ -1878,4 +1885,58 @@ func runWorkflowHeadless(a *agent.Agent, name string, vars map[string]string) {
 		fmt.Fprintln(os.Stderr, "eigen workflow:", err)
 		os.Exit(2)
 	}
+}
+
+// runTelegram runs the Telegram phone bridge: a view onto the local daemon's
+// sessions over Telegram (long-poll, no inbound listener). Token + chat
+// allowlist come from config (telegram_token / telegram_allow) or env
+// (EIGEN_TELEGRAM_TOKEN / EIGEN_TELEGRAM_ALLOW=comma,separated,ids).
+func runTelegram(cfg config.Config) {
+	token := strings.TrimSpace(os.Getenv("EIGEN_TELEGRAM_TOKEN"))
+	if token == "" {
+		token = strings.TrimSpace(cfg.TelegramToken)
+	}
+	if token == "" {
+		fail(fmt.Errorf("no Telegram bot token: set telegram_token in config or EIGEN_TELEGRAM_TOKEN (create a bot with @BotFather)"))
+	}
+	allow := cfg.TelegramAllow
+	if env := strings.TrimSpace(os.Getenv("EIGEN_TELEGRAM_ALLOW")); env != "" {
+		for _, p := range strings.Split(env, ",") {
+			if id, err := strconv.ParseInt(strings.TrimSpace(p), 10, 64); err == nil {
+				allow = append(allow, id)
+			}
+		}
+	}
+	if len(allow) == 0 {
+		fmt.Fprintln(os.Stderr, "eigen telegram: WARNING — no chat allowlist (telegram_allow / EIGEN_TELEGRAM_ALLOW). DM the bot /whoami to get your chat id, then add it.")
+	}
+	// Ensure the daemon is up (the bridge dials it per chat).
+	if c, err := ensureDaemon(); err != nil {
+		fail(fmt.Errorf("telegram: daemon unavailable: %w", err))
+	} else {
+		c.Close()
+	}
+	bot := telegram.New(token)
+	br := telegram.NewBridge(bot, func() (*daemon.Client, error) {
+		return ensureDaemon()
+	}, allow)
+
+	ctx, cancel := signalContext()
+	defer cancel()
+	if err := br.Run(ctx); err != nil && ctx.Err() == nil {
+		fail(fmt.Errorf("telegram: %w", err))
+	}
+}
+
+// signalContext returns a context cancelled on SIGINT/SIGTERM (for long-running
+// foreground commands like the Telegram bridge).
+func signalContext() (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-ch
+		cancel()
+	}()
+	return ctx, cancel
 }

@@ -33,15 +33,20 @@ type Config struct {
 	// message mid-turn (between tool rounds); "queue" holds it until the turn
 	// ends, then sends it as the next turn. Default steer. Per-press override
 	// in the TUI (alt+q) + /steer //queue.
-	InputMode  string   `json:"input_mode,omitempty"`
-	Effort     string   `json:"effort"`    // default reasoning effort for new sessions (per-model levels; e.g. max)
-	Theme      string   `json:"theme"`     // named color palette (nord|gruvbox); applied at startup via EIGEN_THEME
-	NerdFont   string   `json:"nerd_font"` // on|off icon tier (Nerd Font glyphs vs Unicode fallback); applied via EIGEN_NERD_FONT
-	MaxTokens  int      `json:"max_tokens"`
-	TTSCmd     string   `json:"tts_cmd"`
-	NotifyCmd  string   `json:"notify_cmd"`
-	JudgeModel string   `json:"judge_model"`
-	SkillsDirs []string `json:"skills_dirs"`
+	InputMode  string `json:"input_mode,omitempty"`
+	Effort     string `json:"effort"`    // default reasoning effort for new sessions (per-model levels; e.g. max)
+	Theme      string `json:"theme"`     // named color palette (nord|gruvbox); applied at startup via EIGEN_THEME
+	NerdFont   string `json:"nerd_font"` // on|off icon tier (Nerd Font glyphs vs Unicode fallback); applied via EIGEN_NERD_FONT
+	MaxTokens  int    `json:"max_tokens"`
+	TTSCmd     string `json:"tts_cmd"`
+	NotifyCmd  string `json:"notify_cmd"`
+	JudgeModel string `json:"judge_model"`
+	// TelegramToken is the bot token (from @BotFather) for the `eigen telegram`
+	// phone bridge; TelegramAllow is the chat-id allowlist (only these chats are
+	// served — fail-closed). Env EIGEN_TELEGRAM_TOKEN / EIGEN_TELEGRAM_ALLOW.
+	TelegramToken string   `json:"telegram_token,omitempty"`
+	TelegramAllow []int64  `json:"telegram_allow,omitempty"`
+	SkillsDirs    []string `json:"skills_dirs"`
 
 	// Route enables the opt-in auto-router: per task, pick the cheapest model
 	// that can do it well (ties → stronger → faster). RouteProviders is the
@@ -192,6 +197,8 @@ func Set(c *Config, key, value string) error {
 		c.TTSCmd = value
 	case "notify_cmd":
 		c.NotifyCmd = value
+	case "telegram_token":
+		c.TelegramToken = value
 	case "judge_model":
 		c.JudgeModel = value
 	case "dream_on_idle":
@@ -348,6 +355,11 @@ func Get(c Config, key string) string {
 		return c.TTSCmd
 	case "notify_cmd":
 		return c.NotifyCmd
+	case "telegram_token":
+		if c.TelegramToken != "" {
+			return "set"
+		}
+		return ""
 	case "judge_model":
 		return c.JudgeModel
 	case "dream_on_idle":
