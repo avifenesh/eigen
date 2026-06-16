@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Adversarial cross-vendor planning ("GPT×Claude planning"): for a hard task,
@@ -27,6 +28,10 @@ type CouncilConfig struct {
 	// provider+id pair.
 	Fallbacks []AdversaryOption
 	MaxRounds int // critique/revise rounds (default 3)
+	// CallTimeout bounds each single model call. A hanging adversary (e.g. a
+	// stalled endpoint) is treated as a failure so the council falls through to
+	// the next vendor instead of blocking forever. 0 = a sane default.
+	CallTimeout time.Duration
 }
 
 // AdversaryOption is one candidate adversary (provider + model id).
@@ -93,6 +98,10 @@ func Council(ctx context.Context, cfg CouncilConfig, task, taskContext string) (
 	if rounds <= 0 {
 		rounds = 3
 	}
+	timeout := cfg.CallTimeout
+	if timeout <= 0 {
+		timeout = 150 * time.Second // generous for a thorough plan; a true hang still falls through
+	}
 	res := &CouncilResult{}
 
 	ctxBlock := ""
@@ -101,7 +110,7 @@ func Council(ctx context.Context, cfg CouncilConfig, task, taskContext string) (
 	}
 
 	// Round 0: the author drafts the initial plan.
-	plan, err := complete(ctx, cfg.Author,
+	plan, err := complete(ctx, timeout, cfg.Author,
 		"You write precise, pragmatic engineering plans.",
 		fmt.Sprintf(councilAuthorDraft, authorVendorLabel(cfg.AuthorID), strings.TrimSpace(task), ctxBlock))
 	if err != nil {
@@ -127,7 +136,7 @@ func Council(ctx context.Context, cfg CouncilConfig, task, taskContext string) (
 	var firstCritique string
 	picked := false
 	for _, a := range advs {
-		critique, err := complete(ctx, a.Provider,
+		critique, err := complete(ctx, timeout, a.Provider,
 			"You are an independent, critical senior reviewer. Concrete over vague.",
 			fmt.Sprintf(councilCritique, authorVendorLabel(a.ID), authorVendorLabel(cfg.AuthorID), res.Plan))
 		if err != nil {
@@ -148,7 +157,7 @@ func Council(ctx context.Context, cfg CouncilConfig, task, taskContext string) (
 	for round := 1; round <= rounds; round++ {
 		if round > 1 {
 			var err error
-			critique, err = complete(ctx, adv.Provider,
+			critique, err = complete(ctx, timeout, adv.Provider,
 				"You are an independent, critical senior reviewer. Concrete over vague.",
 				fmt.Sprintf(councilCritique, authorVendorLabel(adv.ID), authorVendorLabel(cfg.AuthorID), res.Plan))
 			if err != nil {
@@ -166,7 +175,7 @@ func Council(ctx context.Context, cfg CouncilConfig, task, taskContext string) (
 		}
 
 		// Author revises to address the critique.
-		revised, err := complete(ctx, cfg.Author,
+		revised, err := complete(ctx, timeout, cfg.Author,
 			"You write precise, pragmatic engineering plans and take critique seriously.",
 			fmt.Sprintf(councilRevise, authorVendorLabel(adv.ID), critique, res.Plan))
 		if err != nil {
@@ -186,8 +195,15 @@ func Council(ctx context.Context, cfg CouncilConfig, task, taskContext string) (
 	return res, nil
 }
 
-// complete runs one single-shot completion.
-func complete(ctx context.Context, p Provider, system, user string) (string, error) {
+// complete runs one single-shot completion, bounded by timeout so a hanging
+// endpoint doesn't block the council (the caller treats the error as a failed
+// model and falls through).
+func complete(ctx context.Context, timeout time.Duration, p Provider, system, user string) (string, error) {
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 	resp, err := p.Complete(ctx, Request{
 		System:   system,
 		Messages: []Message{{Role: RoleUser, Text: user}},
