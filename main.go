@@ -1916,6 +1916,15 @@ func runTelegram(cfg config.Config) {
 	} else {
 		c.Close()
 	}
+	// Singleton: only ONE bridge may poll a given bot (Telegram 409s a second
+	// getUpdates). Take an exclusive lock so a supervisor restart + a manual run
+	// can never double-poll; a second instance exits cleanly.
+	lock, err := acquireTelegramLock()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "eigen telegram: another bridge already holds the bot — exiting")
+		os.Exit(3) // distinct code so the daemon supervisor backs off hard
+	}
+	defer lock.Close()
 	bot := telegram.New(token)
 	br := telegram.NewBridge(bot, func() (*daemon.Client, error) {
 		return ensureDaemon()
@@ -1939,4 +1948,23 @@ func signalContext() (context.Context, context.CancelFunc) {
 		cancel()
 	}()
 	return ctx, cancel
+}
+
+// acquireTelegramLock takes an exclusive flock so only ONE bridge polls the bot
+// at a time. The lock is GLOBAL (not instance-scoped): Telegram allows a single
+// getUpdates poller per bot token, so a dev daemon and a prod daemon must not
+// both run a bridge for the same bot. The returned file must stay open for the
+// lock to hold; closing it releases the lock.
+func acquireTelegramLock() (*os.File, error) {
+	home, _ := os.UserHomeDir()
+	path := filepath.Join(home, ".eigen", "telegram.lock")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return f, nil
 }

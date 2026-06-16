@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -855,7 +856,14 @@ func telegramSupervisor() {
 			continue
 		}
 		fmt.Fprintf(os.Stderr, "eigen daemon: telegram bridge started (pid %d)\n", cmd.Process.Pid)
-		_ = cmd.Wait()
+		werr := cmd.Wait()
+		// Exit code 3 = "another bridge already holds the bot" (lost the
+		// singleton lock). Don't tight-loop respawning a duplicate — back off
+		// to the max; the healthy bridge owns the bot.
+		if exitCode(werr) == 3 {
+			time.Sleep(maxBackoff)
+			continue
+		}
 		// Ran a healthy while → reset backoff; crash-looped → keep backing off.
 		if time.Since(start) > 2*time.Minute {
 			backoff = 2 * time.Second
@@ -871,4 +879,17 @@ func minDur(a, b time.Duration) time.Duration {
 		return a
 	}
 	return b
+}
+
+// exitCode extracts the process exit code from a cmd.Wait error (-1 if not an
+// exec.ExitError).
+func exitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		return ee.ExitCode()
+	}
+	return -1
 }

@@ -108,6 +108,24 @@ func (b *Bot) call(ctx context.Context, method string, params url.Values, out an
 	return nil
 }
 
+// SetCommands registers the bot's command menu (Telegram's "/" autocomplete) so
+// every command is discoverable on the phone. pairs are {command, description}
+// (command WITHOUT the leading slash).
+func (b *Bot) SetCommands(ctx context.Context, pairs [][2]string) error {
+	type cmd struct {
+		Command     string `json:"command"`
+		Description string `json:"description"`
+	}
+	cmds := make([]cmd, 0, len(pairs))
+	for _, p := range pairs {
+		cmds = append(cmds, cmd{Command: p[0], Description: p[1]})
+	}
+	j, _ := json.Marshal(cmds)
+	p := url.Values{}
+	p.Set("commands", string(j))
+	return b.call(ctx, "setMyCommands", p, nil)
+}
+
 // GetMe verifies the token and returns the bot's username.
 func (b *Bot) GetMe(ctx context.Context) (string, error) {
 	var u User

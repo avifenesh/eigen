@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -98,8 +99,23 @@ func (br *Bridge) listSessions(ctx context.Context, chatID int64) {
 		br.bot.Send(ctx, chatID, "no sessions. /new <dir> to start one.", nil)
 		return
 	}
+	// Active sessions (running / awaiting approval) to the TOP, then by
+	// recency — so on the phone the thing actually doing work is first.
+	sort.SliceStable(infos, func(i, j int) bool {
+		ai, aj := sessionActive(infos[i].Status), sessionActive(infos[j].Status)
+		if ai != aj {
+			return ai // active first
+		}
+		return infos[i].Updated > infos[j].Updated
+	})
 	var b strings.Builder
-	b.WriteString("sessions (tap to attach):\n")
+	active := 0
+	for _, s := range infos {
+		if sessionActive(s.Status) {
+			active++
+		}
+	}
+	fmt.Fprintf(&b, "<b>%d sessions</b> (%d active) — tap to attach:\n", len(infos), active)
 	var rows [][]Button
 	for _, s := range infos {
 		title := s.Title
@@ -110,13 +126,14 @@ func (br *Bridge) listSessions(ctx context.Context, chatID int64) {
 		if s.ID == cs.sessionID {
 			mark = " ← attached"
 		}
-		fmt.Fprintf(&b, "\n<code>%s</code> — %s\n  <i>%s</i>%s", s.ID, escapeHTML(title), escapeHTML(s.Dir), mark)
-		label := s.ID
-		if len(title) <= 24 {
-			label = s.ID + ": " + title
+		glyph := statusGlyph(s.Status)
+		fmt.Fprintf(&b, "\n%s <code>%s</code> — %s\n  <i>%s</i>%s", glyph, s.ID, escapeHTML(title), escapeHTML(s.Dir), mark)
+		label := glyph + " " + s.ID
+		if len(title) <= 22 {
+			label = glyph + " " + s.ID + ": " + title
 		}
-		rows = append(rows, []Button{{Text: trunc(label, 40), Data: "attach:" + s.ID}})
-		if len(rows) >= 10 {
+		rows = append(rows, []Button{{Text: trunc(label, 44), Data: "attach:" + s.ID}})
+		if len(rows) >= 12 {
 			break
 		}
 	}
@@ -400,4 +417,41 @@ func trunc(s string, n int) string {
 		return s[:n] + "…"
 	}
 	return s
+}
+
+// sessionActive reports whether a session is doing/awaiting work (sorts first).
+func sessionActive(status daemon.Status) bool {
+	return status == daemon.StatusWorking || status == daemon.StatusApproval
+}
+
+// statusGlyph is the at-a-glance status marker for the session list.
+func statusGlyph(status daemon.Status) string {
+	switch status {
+	case daemon.StatusWorking:
+		return "⚙"
+	case daemon.StatusApproval:
+		return "🔒"
+	case daemon.StatusError:
+		return "⚠"
+	default:
+		return "·"
+	}
+}
+
+// commandMenu is the bot's "/" autocomplete list (registered via setMyCommands).
+// Keep in sync with onCommand.
+var commandMenu = [][2]string{
+	{"sessions", "list sessions (tap to attach)"},
+	{"attach", "follow a session: /attach <id>"},
+	{"new", "start a new session: /new <dir>"},
+	{"status", "model · perm · context% · running"},
+	{"model", "switch model (inline picker)"},
+	{"perm", "gated (ask) / auto (run)"},
+	{"goal", "set a north-star goal (/goal clear)"},
+	{"compact", "shrink the context"},
+	{"clear", "fresh context, same session"},
+	{"resend", "retry the last turn"},
+	{"stop", "interrupt the running turn"},
+	{"whoami", "show this chat id"},
+	{"help", "show help"},
 }

@@ -60,6 +60,9 @@ func (br *Bridge) Run(ctx context.Context) error {
 		return fmt.Errorf("telegram: cannot reach bot (check token): %w", err)
 	}
 	fmt.Printf("eigen telegram: bot @%s online; serving %d chat(s)\n", me, len(br.allow))
+	// Register the "/" command menu so every command is discoverable on the
+	// phone (best-effort — a registration failure doesn't stop the bridge).
+	_ = br.bot.SetCommands(ctx, commandMenu)
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
