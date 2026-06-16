@@ -57,8 +57,10 @@ state RSS, goroutine growth, or per-turn allocs.
 - [ ] **Document findings** in `docs/performance.md` (baselines, caps, knobs).
 
 ### Tier 21 — TUI ergonomics (remaining)
-- [ ] **Right-panel notepad tab.** A scratch pad in the right panel (a fifth
-  tab) — freeform notes per session, persisted; survives detach/restart.
+- [x] **Right-panel notepad tab.** SHIPPED: a freeform per-session scratch pad
+  tab (internal/tui/notepad.go) — type/edit notes, persisted to
+  ~/.eigen/notepad[-instance]/<sessionID>.md (survives detach + daemon restart),
+  autosaved; focus contract mirrors the terminal tab (ctrl+g releases).
 - [x] **Default steer-vs-queue choice (config).** SHIPPED: `config.input_mode`
   (`steer`/`queue`, default steer) + a clickable `input=` sidebar/status segment,
   `alt+q`, `/steer`//`/queue`, palette. steer injects mid-turn (between tool
