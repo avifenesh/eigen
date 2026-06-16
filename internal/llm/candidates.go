@@ -8,6 +8,18 @@ import "os"
 // mantle/converse Bedrock pair as available when AWS creds resolve.
 func ProviderAvailable(provider string) bool {
 	switch canonicalProvider(provider) {
+	case "codex":
+		// ChatGPT-account OAuth at ~/.codex/auth.json (EIGEN_CODEX_AUTH
+		// overrides). Available when an access token is present (refresh on
+		// 401 is handled at call time).
+		p := codexAuthPath()
+		if p == "" {
+			return false
+		}
+		if a, err := readCodexAuth(p); err == nil {
+			return a.Tokens.AccessToken != ""
+		}
+		return false
 	case "mantle":
 		// Bedrock mantle uses the same AWS creds as converse.
 		return awsAvailable()

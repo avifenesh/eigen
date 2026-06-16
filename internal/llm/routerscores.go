@@ -46,11 +46,13 @@ type RouterScore struct {
 // leaderboard numbers. Tune freely.
 var routerScores = map[string]RouterScore{
 	// Tier 3 — med (opus + GPT family). This is the tier for hard work.
-	// opus is the strongest here (Rank 4) and is the default/orchestrator;
-	// general work lands on it. gpt-5.x rank below it. (gpt-5.5 had Strict, but
-	// it was pulled — it was hanging/timing out, so it must not be the default
-	// general-work target; it stays a selectable model, just not preferred.)
-	"openai.gpt-5.5":               {Tier: TierMed, Rank: 3, Speed: 50},
+	// gpt-5.5 (codex) is the default main agent now (xhigh effort + fast
+	// service tier) and ranks highest here (Rank 5); opus is the strong
+	// general fallback (Rank 4, and the design-affinity pick). The codex and
+	// mantle gpt-5.5 ids are distinct catalog entries but score the same.
+	"gpt-5.5":                      {Tier: TierMed, Rank: 5, Speed: 50, Strict: true},
+	"openai.gpt-5.5":               {Tier: TierMed, Rank: 5, Speed: 50, Strict: true},
+	"gpt-5.4":                      {Tier: TierMed, Rank: 2, Speed: 58},
 	"openai.gpt-5.4":               {Tier: TierMed, Rank: 2, Speed: 58},
 	"openai.gpt-5":                 {Tier: TierMed, Rank: 1, Speed: 60},
 	"us.anthropic.claude-opus-4-8": {Tier: TierMed, Rank: 4, Speed: 48, Design: true},

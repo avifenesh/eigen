@@ -77,10 +77,10 @@ var Catalog = []ModelInfo{
 	// Codex models — the OpenAI Responses API over the ChatGPT-account backend
 	// (chatgpt.com/backend-api/codex), auth from ~/.codex/auth.json. Same wire
 	// API as mantle, different auth + the service_tier "fast mode" knob. Effort
-	// levels include xhigh (the codex CLI default is xhigh); the default
-	// ServiceTier "priority" matches a fast-mode-on Codex setup (toggle with
-	// /fast or EIGEN_CODEX_SERVICE_TIER).
-	{ID: "gpt-5.5", Provider: "codex", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, ServiceTier: "priority", Vision: true},
+	// levels include xhigh (the codex CLI default is xhigh); the default Effort
+	// "xhigh" matches the codex CLI; the default ServiceTier "priority" matches a
+	// fast-mode-on Codex setup (toggle with /fast or EIGEN_CODEX_SERVICE_TIER).
+	{ID: "gpt-5.5", Provider: "codex", ContextWindow: 272000, Reasoning: true, Effort: "xhigh", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, ServiceTier: "priority", Vision: true},
 	{ID: "gpt-5.4", Provider: "codex", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, ServiceTier: "priority", Vision: true},
 
 	// Bedrock Converse (Anthropic Claude). Prompt caching + 1M context (beta) +

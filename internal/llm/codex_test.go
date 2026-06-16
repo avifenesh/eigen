@@ -52,8 +52,8 @@ func TestCodexBuildsRequestWithTierAndEffort(t *testing.T) {
 	if payload.ServiceTier != "priority" {
 		t.Fatalf("service_tier = %q, want priority", payload.ServiceTier)
 	}
-	if payload.Reasoning == nil || payload.Reasoning.Effort != "high" {
-		t.Fatalf("effort = %+v, want high", payload.Reasoning)
+	if payload.Reasoning == nil || payload.Reasoning.Effort != "xhigh" {
+		t.Fatalf("effort = %+v, want xhigh (gpt-5.5 codex default)", payload.Reasoning)
 	}
 	// Toggle fast off → no service_tier sent.
 	c.SetFast(false)

@@ -197,8 +197,10 @@ func TestRouteMediumGeneralPrefersOpus(t *testing.T) {
 		Difficulty: DiffMedium,
 		Candidates: []string{"us.anthropic.claude-opus-4-8", "openai.gpt-5.5"},
 	})
-	if got != "us.anthropic.claude-opus-4-8" {
-		t.Fatalf("medium general should prefer opus (top med, default), got %s", got)
+	// gpt-5.5 is the default main agent (Strict general affinity, Rank 5) — it
+	// wins general work over opus. opus stays the frontend pick (Design).
+	if got != "openai.gpt-5.5" {
+		t.Fatalf("medium general should prefer gpt-5.5 (default main, Strict), got %s", got)
 	}
 }
 
@@ -227,10 +229,10 @@ func TestGPTAndOpusShareMedTier(t *testing.T) {
 func TestRouteBedrockAvoidedOnlyAtTrueTie(t *testing.T) {
 	// Bedrock-avoidance is the LAST tiebreak — it only fires at equal affinity
 	// AND equal rank. It must NOT override a real rank difference: opus-4-8
-	// (Bedrock, Rank 4) beats gpt-5.5 (non-Bedrock, Rank 3) on rank, so the
+	// (Bedrock, Rank 4) beats gpt-5.4 (non-Bedrock, Rank 2) on rank, so the
 	// non-Bedrock model does NOT win here.
-	if tierOrder("openai.gpt-5.5", "us.anthropic.claude-opus-4-8", false) {
-		t.Fatal("rank must beat Bedrock-avoidance: opus (Rank 4) outranks gpt-5.5 (Rank 3)")
+	if tierOrder("openai.gpt-5.4", "us.anthropic.claude-opus-4-8", false) {
+		t.Fatal("rank must beat Bedrock-avoidance: opus (Rank 4) outranks gpt-5.4 (Rank 2)")
 	}
 
 	// NOT a true tie: opus-4-8 (Bedrock, rank 4, Design) vs gpt-5.4 (rank 2) on

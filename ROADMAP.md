@@ -181,6 +181,28 @@ build ON it — read their format directly so the user's existing marketplaces w
 
 ## Shipped (terse ledger — full writeups in git history + project memory)
 
+- **Tier 32 — native Codex provider (ChatGPT-account backend) + fast mode (2026-06-16).** ✅
+  A native OpenAI Responses-API provider over the ChatGPT-account backend
+  (`chatgpt.com/backend-api/codex`, auth from `~/.codex/auth.json` — NOT
+  api.openai.com / OPENAI_API_KEY, which is the `mantle` path). Studied the
+  open-source codex-rs client + live-captured the wire shape. gpt-5.5 + gpt-5.4
+  in the catalog under provider `codex`; **gpt-5.5 is the default main agent**
+  (xhigh effort, fast on). Four backend hard-requirements found + fixed
+  live: (1) system prompt → top-level `instructions` (not a developer item);
+  (2) `store:false`; (3) `stream:true` — backend is stream-only, Complete drives
+  the SSE path; (4) `include:["reasoning.encrypted_content"]` + the reasoning
+  item's `encrypted_content` echoed back next turn (store:false never persists
+  reasoning, so the client carries the blob or it 404s). SSE tool calls arrive
+  via `response.output_item.done` (the `completed` event has empty output) —
+  applyOutputItem collects function_call/message/reasoning. Legacy transcripts
+  with a bare reasoning id self-heal (dropped, not 404ed). The agent loop treats
+  a reasoning-only turn as progress (not empty), bounded at 20. **Fast mode** =
+  `service_tier:"priority"` (the OpenAI fast/low-latency tier); a clickable
+  `fast=on/off` sidebar/status segment (shown only when supported) + `/fast`
+  command + full daemon plumbing (chat.Backend FastSupported/FastMode/SetFast;
+  daemon `set` op; SessionState.Fast/FastOK). All live-verified against gpt-5.5:
+  single-turn, tool calls, and multi-turn reason→tool→answer.
+
 - **Tier 1 — core capabilities.** Agent loop, tools, sessions, perm gating, MCP/LSP.
 - **Tier 2 — tools + catalog.** read/list/glob/grep/symbols/tree/diff/write/edit/
   multiedit/apply_patch/move/bash/fetch/todo/skill/memory/task/goal_achieved.
@@ -327,11 +349,14 @@ build ON it — read their format directly so the user's existing marketplaces w
   instance). `EIGEN_NO_DAEMON=1` is the in-process escape hatch.
 - **Commit** via `git commit -F <file>` when the message has backticks/`$()`
   (shell substitution bites). Commit often; push/deploy/delete need explicit OK.
-- **Models (user-set):** default `us.anthropic.claude-opus-4-8` effort max;
-  failover `glm-5.2` → `us.anthropic.claude-sonnet-4-6` (gpt-5.5 dropped from the chain — it was hanging/500ing). fable-5 REMOVED
-  (Bedrock 500s); native Anthropic removed (Bedrock-only). gpt-5.5 capped to
-  MEDIUM effort. Routing: opus + gpt-5.x = Tier-3/med; `glm-5.2` (1M ctx) sits
-  in Tier-2 ABOVE `sonnet-4-6`.
+- **Models (user-set):** default main agent **`gpt-5.5` (codex)** — effort
+  **xhigh**, fast mode **on** (service_tier `priority`), via the ChatGPT-account
+  backend (`~/.codex/auth.json`). Failover chain `gpt-5.5` → `us.anthropic.claude-opus-4-8`
+  → `glm-5.2` → `us.anthropic.claude-sonnet-4-6`. fable-5 REMOVED (Bedrock 500s);
+  native Anthropic removed (Bedrock-only). Routing: `gpt-5.5` (Strict, Rank 5) wins
+  general work; opus (Design) keeps frontend; both Tier-3/med. `glm-5.2` (1M ctx) is
+  Tier-2 above `sonnet-4-6`. `route_providers`: codex, mantle, converse, anthropic,
+  grok, glm.
 - **Finish each tier:** ship items or mark `[~] DEFERRED — why` (not a bare `[ ]`).
 
 ## Notes / grounding
