@@ -398,6 +398,9 @@ func (m *model) changesLines(h int) []string {
 	if m.rightTab == rightTabShells {
 		return m.shellsLines(h)
 	}
+	if m.rightTab == rightTabNotepad {
+		return m.notepadLines(h)
+	}
 	pw := m.rightCols()
 	v := m.buildChangesView()
 	lines := make([]string, 0, h)

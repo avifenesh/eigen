@@ -343,6 +343,7 @@ type model struct {
 	term            termState     // embedded PTY terminal tab state
 	tasks           tasksState    // background-tasks tab state (Tier 12)
 	shells          shellsState   // background-shells tab state
+	notepad         notepadState  // freeform per-session scratch pad tab (Tier 21)
 	tasksDir        string        // background-task store dir (tests isolate it)
 	changesCache    []fileChange  // memoized last-run change index
 	changesCacheSig string        // transcript signature the cache was built for
@@ -838,6 +839,13 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		// is the one chord that releases focus back to the TUI.
 		if m.termFocused() {
 			if cmd, handled := m.termKey(msg.String(), msg); handled {
+				return m, cmd
+			}
+		}
+		// The notepad tab, when focused, owns keys next (type/edit notes);
+		// ctrl+g / esc release focus. It never quits eigen or sends to chat.
+		if m.notepadFocused() {
+			if cmd, handled := m.notepadKey(msg.String(), msg); handled {
 				return m, cmd
 			}
 		}
@@ -1403,6 +1411,11 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				if m.rightTab == rightTabShells {
 					return m, m.shellsClick(h.localY)
 				}
+				// A click on the notepad body focuses it for editing.
+				if m.rightTab == rightTabNotepad {
+					m.notepadClickFocus(h.localY)
+					return m, nil
+				}
 				return m, nil
 			}
 			// A click inside the input box positions the text cursor there.
@@ -1644,6 +1657,16 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			return m, nil
 		}
 		return m, m.dreamCmd()
+
+	case notepadSaveMsg:
+		// Periodic flush of dirty notes; reschedule only while the tab is live.
+		if m.notepad.dirty {
+			m.saveNotepad()
+		}
+		if m.rightTab == rightTabNotepad && m.changesOn {
+			return m, m.notepadAutosaveTick()
+		}
+		return m, nil
 
 	case dreamDoneMsg:
 		if len(msg.notes) > 0 && m.mem != nil {

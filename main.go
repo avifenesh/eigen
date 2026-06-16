@@ -1903,6 +1903,15 @@ func runWorkflowHeadless(a *agent.Agent, name string, vars map[string]string) {
 // allowlist come from config (telegram_token / telegram_allow) or env
 // (EIGEN_TELEGRAM_TOKEN / EIGEN_TELEGRAM_ALLOW=comma,separated,ids).
 func runTelegram(cfg config.Config) {
+	// The bridge serves the PRODUCTION (default) instance only: you drive your
+	// real sessions from your phone, and a single bot can have just one poller,
+	// so a dev instance must never run (or squat) the bridge. A non-default
+	// instance exits immediately — so a dev daemon's auto-spawned bridge frees
+	// the singleton lock for the prod one. Override with EIGEN_TELEGRAM_FORCE=1.
+	if inst := strings.TrimSpace(os.Getenv("EIGEN_INSTANCE")); inst != "" && os.Getenv("EIGEN_TELEGRAM_FORCE") == "" {
+		fmt.Fprintf(os.Stderr, "eigen telegram: instance %q is not production — the bridge serves prod only (set EIGEN_TELEGRAM_FORCE=1 to override). Exiting.\n", inst)
+		return
+	}
 	token := strings.TrimSpace(os.Getenv("EIGEN_TELEGRAM_TOKEN"))
 	if token == "" {
 		token = strings.TrimSpace(cfg.TelegramToken)

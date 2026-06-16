@@ -52,7 +52,10 @@ func TestTasksTabRendersTasks(t *testing.T) {
 	})
 	m.setRightTab(rightTabTasks)
 	band := ansi.Strip(m.transcriptBand())
-	for _, want := range []string{"[tasks]", "…5678-1", "grep", "…5678-2", "→ view result"} {
+	if !strings.Contains(band, "[tasks]") && !strings.Contains(band, "[tsk]") {
+		t.Fatalf("tasks tab missing [tasks]/[tsk]:\n%s", band)
+	}
+	for _, want := range []string{"…5678-1", "grep", "…5678-2", "→ view result"} {
 		if !strings.Contains(band, want) {
 			t.Fatalf("tasks tab missing %q:\n%s", want, band)
 		}

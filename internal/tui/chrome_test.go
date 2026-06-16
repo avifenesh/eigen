@@ -765,9 +765,11 @@ func TestChangesPanelVisibleWithNoEdits(t *testing.T) {
 		t.Fatal("right panel must show (with its tab bar) even when the last run made no edits")
 	}
 	band := m.transcriptBand()
-	for _, want := range []string{"[changes]", "[git]", "no edits yet"} {
-		if !strings.Contains(band, want) {
-			t.Fatalf("empty changes tab should show tabs + placeholder, missing %q:\n%s", want, band)
+	// The right panel now hosts more tabs (incl. the notepad), so labels may
+	// render compressed; accept either the full or short form.
+	for _, want := range [][2]string{{"[changes]", "[chg]"}, {"[git]", "[git]"}, {"no edits yet", "no edits yet"}} {
+		if !strings.Contains(band, want[0]) && !strings.Contains(band, want[1]) {
+			t.Fatalf("empty changes tab should show tabs + placeholder, missing %q:\n%s", want[0], band)
 		}
 	}
 }
@@ -778,9 +780,9 @@ func TestRightPanelTabHeaderAndSwitch(t *testing.T) {
 	m.text("user", "edit")
 	m.push(editBlock("f.go", "a", "b"))
 	band := m.transcriptBand()
-	for _, want := range []string{"[changes]", "[git]", "[x]"} {
-		if !strings.Contains(band, want) {
-			t.Fatalf("right panel tab header missing %q:\n%s", want, band)
+	for _, want := range [][2]string{{"[changes]", "[chg]"}, {"[git]", "[git]"}, {"[x]", "[x]"}} {
+		if !strings.Contains(band, want[0]) && !strings.Contains(band, want[1]) {
+			t.Fatalf("right panel tab header missing %q:\n%s", want[0], band)
 		}
 	}
 	m.nextRightTab()
@@ -803,8 +805,13 @@ func TestRightPanelTabClickSwitches(t *testing.T) {
 	if m.rightTab != rightTabChanges {
 		t.Fatal("default right tab should be changes")
 	}
-	// Right panel has leading "│ " gutter; [changes] is 9 cols, space, then [git].
-	gitX := l.rightPanel.x + 2 + len("[changes] ") + 1
+	// Right panel has a leading "│ " gutter, then the first tab label. The label
+	// may render full ([changes]) or compressed ([chg]) depending on fit; click
+	// just past the first label to land on the second tab ([git]).
+	pw := m.rightPanelWidth() - 2
+	short := !m.tabsFit(pw, false)
+	firstLabel := "[" + m.tabLabel(rightTabChanges, short) + "] "
+	gitX := l.rightPanel.x + 2 + len(firstLabel) + 1
 	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: gitX, Y: l.rightPanel.y})
 	if m.rightTab != rightTabGit {
 		t.Fatalf("clicking [git] should switch right tab to git, got %v", m.rightTab)
@@ -872,7 +879,10 @@ func TestChangesShowsLastRunFiles(t *testing.T) {
 		t.Fatalf("files in first-touched order expected, got %+v", changes)
 	}
 	band := m.transcriptBand()
-	for _, want := range []string{"changes", "[x]", "main.go", "README.md"} {
+	if !strings.Contains(band, "changes") && !strings.Contains(band, "chg") {
+		t.Fatalf("changes band missing changes/chg tab:\n%s", band)
+	}
+	for _, want := range []string{"[x]", "main.go", "README.md"} {
 		if !strings.Contains(band, want) {
 			t.Fatalf("changes band missing %q:\n%s", want, band)
 		}
@@ -1056,9 +1066,11 @@ func TestTermTabStartsShellAndRenders(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("starting the terminal should return the reader command")
 	}
-	// Header still shows the tab bar with [term].
-	if !strings.Contains(m.termLines(8)[0], "term") {
-		t.Fatal("terminal tab header should mention term")
+	// Header still shows the tab bar with the terminal tab (full "term" or
+	// compressed "trm" depending on fit).
+	hdr := m.termLines(8)[0]
+	if !strings.Contains(hdr, "term") && !strings.Contains(hdr, "trm") {
+		t.Fatalf("terminal tab header should mention term/trm:\n%s", hdr)
 	}
 }
 

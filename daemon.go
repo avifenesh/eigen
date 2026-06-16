@@ -131,9 +131,10 @@ func runDaemon(cfg config.Config) {
 
 	// Telegram phone bridge: when a bot token is configured, the daemon keeps
 	// `eigen telegram` running (spawn + restart-on-exit) so the bot is always
-	// reachable without a manual launch. A separate process so a bridge bug
-	// can't wedge the daemon, and so it can be restarted independently.
-	if telegramConfigured(cfg) {
+	// reachable without a manual launch. ONLY the default (production) instance
+	// does this: you drive your real work from your phone, not a dev instance —
+	// and a single bot can have only one poller, so dev must not squat it.
+	if telegramConfigured(cfg) && daemon.IsDefaultInstance() {
 		go telegramSupervisor()
 	}
 

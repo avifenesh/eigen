@@ -20,6 +20,7 @@ const (
 	rightTabTerminal
 	rightTabTasks
 	rightTabShells
+	rightTabNotepad
 )
 
 func (t rightPanelTab) label() string {
@@ -32,6 +33,8 @@ func (t rightPanelTab) label() string {
 		return "tasks"
 	case rightTabShells:
 		return "shells"
+	case rightTabNotepad:
+		return "notes"
 	default:
 		return "changes"
 	}
@@ -40,13 +43,20 @@ func (t rightPanelTab) label() string {
 // shortLabel is the compressed tab label used when the full set no longer
 // fits the panel header (4 tabs × default width).
 func (t rightPanelTab) shortLabel() string {
-	if t == rightTabChanges {
+	switch t {
+	case rightTabChanges:
 		return "chg"
-	}
-	if t == rightTabShells {
+	case rightTabTerminal:
+		return "trm"
+	case rightTabTasks:
+		return "tsk"
+	case rightTabShells:
 		return "sh"
+	case rightTabNotepad:
+		return "nt"
+	default:
+		return t.label()
 	}
-	return t.label()
 }
 
 func (m *model) rightTabs() []rightPanelTab {
@@ -56,6 +66,7 @@ func (m *model) rightTabs() []rightPanelTab {
 	if len(m.backendShells()) > 0 {
 		tabs = append(tabs, rightTabShells)
 	}
+	tabs = append(tabs, rightTabNotepad)
 	return tabs
 }
 
@@ -95,6 +106,11 @@ func (m *model) setRightTab(t rightPanelTab) tea.Cmd {
 	if t == rightTabShells {
 		m.shells.gen++ // fresh poll tick chain
 		return m.shellsTick()
+	}
+	if t == rightTabNotepad {
+		m.loadNotepad() // pull the saved notes for this session (once)
+		m.notepad.focused = false
+		return m.notepadAutosaveTick()
 	}
 	return nil
 }
