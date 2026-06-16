@@ -101,7 +101,10 @@ func Council(ctx context.Context, cfg CouncilConfig, task, taskContext string) (
 	}
 	timeout := cfg.CallTimeout
 	if timeout <= 0 {
-		timeout = 150 * time.Second // generous for a thorough plan; a true hang still falls through
+		// Real adversary critiques finish in ~5-30s; 45s gives headroom while a
+		// genuine hang (e.g. a stalled endpoint) fails fast and falls through to
+		// the next vendor.
+		timeout = 45 * time.Second
 	}
 	res := &CouncilResult{}
 

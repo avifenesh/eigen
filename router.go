@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"sync"
 
 	"github.com/avifenesh/eigen/internal/llm"
@@ -188,7 +190,13 @@ func (r *autoRouter) councilRunner(authorModel func() string) func(context.Conte
 		if len(cands) == 0 {
 			cands = llm.AllCredentialedModels()
 		}
-		for _, adv := range llm.CrossVendorAdversaries(author, cands) {
+		// EIGEN_PLAN_ADVERSARY pins a specific adversary model (skip auto-pick) —
+		// useful to force a fast/known-good cross-vendor model.
+		advList := llm.CrossVendorAdversaries(author, cands)
+		if pin := strings.TrimSpace(os.Getenv("EIGEN_PLAN_ADVERSARY")); pin != "" {
+			advList = append([]string{pin}, advList...)
+		}
+		for _, adv := range advList {
 			if ap, err := r.providerFor(adv); err == nil {
 				if cfg.Adversary == nil {
 					cfg.Adversary, cfg.AdversaryID = ap, adv
