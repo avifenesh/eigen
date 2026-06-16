@@ -74,6 +74,14 @@ type DaemonStats struct {
 	RunningTurns int    `json:"running_turns"` // turns in flight
 	BgTasks      int    `json:"bg_tasks"`      // in-memory background-task records
 	GoVersion    string `json:"go_version,omitempty"`
+
+	// Cumulative token usage across all hosted sessions since daemon start.
+	// CacheReadTokens vs InputTokens is the prompt-cache hit rate — the headline
+	// token-efficiency metric (Tier 30).
+	InputTokens      int64 `json:"input_tokens,omitempty"`
+	OutputTokens     int64 `json:"output_tokens,omitempty"`
+	CacheReadTokens  int64 `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int64 `json:"cache_write_tokens,omitempty"`
 }
 
 // SessionState is the snapshot a remote chat UI needs to render history and

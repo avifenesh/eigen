@@ -219,6 +219,17 @@ func daemonControl(sub string) bool {
 		if st.BgTasks > 0 {
 			fmt.Printf("  bg tasks:    %d (in memory)\n", st.BgTasks)
 		}
+		if st.InputTokens > 0 || st.CacheReadTokens > 0 {
+			denom := st.InputTokens + st.CacheReadTokens
+			var hit float64
+			if denom > 0 {
+				hit = 100 * float64(st.CacheReadTokens) / float64(denom)
+			}
+			fmt.Printf("  tokens:      in %s (cache: %s read, %s write) · out %s\n",
+				humanCount(st.InputTokens), humanCount(st.CacheReadTokens),
+				humanCount(st.CacheWriteTokens), humanCount(st.OutputTokens))
+			fmt.Printf("  cache hit:   %.1f%% of input tokens served from cache\n", hit)
+		}
 		if st.GoVersion != "" {
 			fmt.Printf("  go:          %s\n", st.GoVersion)
 		}
@@ -933,4 +944,17 @@ func humanBytes(b uint64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+// humanCount formats a count (e.g. token totals) compactly: 1234 → "1.2K",
+// 1500000 → "1.5M".
+func humanCount(n int64) string {
+	switch {
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.1fM", float64(n)/1e6)
+	case n >= 1_000:
+		return fmt.Sprintf("%.1fK", float64(n)/1e3)
+	default:
+		return fmt.Sprintf("%d", n)
+	}
 }

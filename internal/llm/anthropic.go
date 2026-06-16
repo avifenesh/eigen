@@ -156,6 +156,10 @@ type anthropicTool struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	InputSchema json.RawMessage `json:"input_schema"`
+	// CacheControl on the LAST tool marks the end of the (fully static) tool
+	// prefix as a cache breakpoint, so the tool schemas stay cached even when
+	// the smaller system/memory portion changes between turns.
+	CacheControl *anthropicCacheCtl `json:"cache_control,omitempty"`
 }
 
 // anthropicContent is one block in a message's content array (text / image /
@@ -204,8 +208,10 @@ type anthropicReply struct {
 	} `json:"content"`
 	StopReason string `json:"stop_reason"`
 	Usage      struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
+		InputTokens              int `json:"input_tokens"`
+		OutputTokens             int `json:"output_tokens"`
+		CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+		CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 	} `json:"usage"`
 	Error *struct {
 		Type    string `json:"type"`
@@ -226,7 +232,7 @@ func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error
 		MaxTokens: maxTokens,
 		System:    a.systemBlocks(req.System),
 		Messages:  anthropicMessages(req),
-		Tools:     anthropicTools(req.Tools),
+		Tools:     anthropicTools(req.Tools, a.cache),
 	}
 	// Thinking: adaptive models use thinking.type=adaptive + output_config.effort;
 	// budget models use thinking.type=enabled + budget_tokens.
@@ -265,7 +271,7 @@ func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error
 		return nil, fmt.Errorf("anthropic response truncated (max_tokens): refusing possibly-truncated output")
 	}
 
-	out := &Response{Usage: Usage{InputTokens: reply.Usage.InputTokens, OutputTokens: reply.Usage.OutputTokens}}
+	out := &Response{Usage: Usage{InputTokens: reply.Usage.InputTokens, OutputTokens: reply.Usage.OutputTokens, CacheReadTokens: reply.Usage.CacheReadInputTokens, CacheWriteTokens: reply.Usage.CacheCreationInputTokens}}
 	for _, blk := range reply.Content {
 		switch blk.Type {
 		case "text":
@@ -420,8 +426,10 @@ func isAnthropicImageType(mt string) bool {
 	return false
 }
 
-// anthropicTools maps neutral tool specs to native tool definitions.
-func anthropicTools(tools []ToolSpec) []anthropicTool {
+// anthropicTools maps neutral tool specs to native tool definitions. When cache
+// is on, the LAST tool gets a cache breakpoint so the (static) tool prefix is
+// cached independently of the system/message tail.
+func anthropicTools(tools []ToolSpec, cache bool) []anthropicTool {
 	if len(tools) == 0 {
 		return nil
 	}
@@ -432,6 +440,9 @@ func anthropicTools(tools []ToolSpec) []anthropicTool {
 			schema = json.RawMessage(`{"type":"object"}`)
 		}
 		out = append(out, anthropicTool{Name: t.Name, Description: t.Description, InputSchema: schema})
+	}
+	if cache {
+		out[len(out)-1].CacheControl = &anthropicCacheCtl{Type: "ephemeral"}
 	}
 	return out
 }

@@ -85,6 +85,11 @@ type Event struct {
 	// (EventDone only; zero when the provider reports none).
 	InTokens  int
 	OutTokens int
+	// CacheReadTokens/CacheWriteTokens: prompt-cache hits/writes summed over the
+	// turn (EventDone only). CacheReadTokens vs InTokens is the cache hit rate —
+	// the headline token-efficiency signal for an always-on agent.
+	CacheReadTokens  int
+	CacheWriteTokens int
 }
 
 // EventSink receives agent events. It must not block for long.
@@ -902,8 +907,9 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 	s.persist()
 	disclose := a.Tools.HasNiche() // progressive tool disclosure when any niche tools exist
 	emptyTurns := 0
-	overflowRetried := false // guard: force-compact-and-retry at most once per step
-	var usedIn, usedOut int  // provider-reported usage, summed over the turn
+	overflowRetried := false              // guard: force-compact-and-retry at most once per step
+	var usedIn, usedOut int               // provider-reported usage, summed over the turn
+	var usedCacheRead, usedCacheWrite int // prompt-cache hits/writes, summed over the turn
 
 	system := systemPrompt
 	if a.ExtraSystem != "" {
@@ -1009,6 +1015,8 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		overflowRetried = false
 		usedIn += resp.Usage.InputTokens
 		usedOut += resp.Usage.OutputTokens
+		usedCacheRead += resp.Usage.CacheReadTokens
+		usedCacheWrite += resp.Usage.CacheWriteTokens
 		if len(resp.ToolCalls) == 0 {
 			if strings.TrimSpace(resp.Text) != "" {
 				// Final answer — UNLESS a steer landed during this last model
@@ -1031,7 +1039,7 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 					}
 					continue
 				}
-				a.emit(Event{Kind: EventDone, Step: step, Text: resp.Text, InTokens: usedIn, OutTokens: usedOut})
+				a.emit(Event{Kind: EventDone, Step: step, Text: resp.Text, InTokens: usedIn, OutTokens: usedOut, CacheReadTokens: usedCacheRead, CacheWriteTokens: usedCacheWrite})
 				return resp.Text, nil // final answer
 			}
 			// Empty turn (e.g. reasoning-only): nudge to act, bounded.

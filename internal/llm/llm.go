@@ -94,6 +94,26 @@ type Response struct {
 type Usage struct {
 	InputTokens  int
 	OutputTokens int
+
+	// CacheReadTokens is the count of input tokens served from the prompt cache
+	// (a HIT — billed at a large discount). CacheWriteTokens is input tokens
+	// written INTO the cache this request (a miss/creation — billed at a small
+	// premium). Both are 0 when the provider doesn't report caching or it's off.
+	// Together with InputTokens they let us see the prompt-cache hit rate, which
+	// is the single biggest lever on input-token cost for an always-on agent.
+	CacheReadTokens  int
+	CacheWriteTokens int
+}
+
+// CachedInputTokens returns the share of input tokens served from cache (0..1),
+// or 0 when there were no input tokens or no caching. The denominator includes
+// cache reads, since providers report fresh input and cache reads separately.
+func (u Usage) CacheHitRate() float64 {
+	denom := u.InputTokens + u.CacheReadTokens
+	if denom == 0 {
+		return 0
+	}
+	return float64(u.CacheReadTokens) / float64(denom)
 }
 
 // Provider is any model backend eigen can drive.

@@ -261,8 +261,10 @@ type converseReply struct {
 	} `json:"output"`
 	StopReason string `json:"stopReason"`
 	Usage      struct {
-		InputTokens  int `json:"inputTokens"`
-		OutputTokens int `json:"outputTokens"`
+		InputTokens           int `json:"inputTokens"`
+		OutputTokens          int `json:"outputTokens"`
+		CacheReadInputTokens  int `json:"cacheReadInputTokens"`
+		CacheWriteInputTokens int `json:"cacheWriteInputTokens"`
 	} `json:"usage"`
 	Message string `json:"message"` // error message on failure
 }
@@ -338,7 +340,7 @@ func (c *Converse) Complete(ctx context.Context, req Request) (*Response, error)
 		return nil, fmt.Errorf("converse response truncated (max_tokens): refusing possibly-truncated output")
 	}
 
-	out := &Response{Usage: Usage{InputTokens: reply.Usage.InputTokens, OutputTokens: reply.Usage.OutputTokens}}
+	out := &Response{Usage: Usage{InputTokens: reply.Usage.InputTokens, OutputTokens: reply.Usage.OutputTokens, CacheReadTokens: reply.Usage.CacheReadInputTokens, CacheWriteTokens: reply.Usage.CacheWriteInputTokens}}
 	for _, blk := range reply.Output.Message.Content {
 		if blk.Text != "" {
 			out.Text += blk.Text

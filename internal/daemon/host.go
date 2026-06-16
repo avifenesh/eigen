@@ -135,27 +135,36 @@ func (h *Host) Stats() DaemonStats {
 	h.mu.Lock()
 	sessions := len(h.sessions)
 	views, running := 0, 0
+	var cumIn, cumOut, cumCacheRead, cumCacheWrite int64
 	for _, s := range h.sessions {
 		s.mu.Lock()
 		views += len(s.subs)
 		if s.running {
 			running++
 		}
+		cumIn += s.cumIn
+		cumOut += s.cumOut
+		cumCacheRead += s.cumCacheRead
+		cumCacheWrite += s.cumCacheWrite
 		s.mu.Unlock()
 	}
 	started := h.started
 	bgCount := h.bgCount
 	h.mu.Unlock()
 	st := DaemonStats{
-		Goroutines:   runtime.NumGoroutine(),
-		HeapAllocB:   ms.HeapAlloc,
-		HeapSysB:     ms.HeapSys,
-		RSSB:         currentRSS(),
-		NumGC:        ms.NumGC,
-		Sessions:     sessions,
-		Views:        views,
-		RunningTurns: running,
-		GoVersion:    runtime.Version(),
+		Goroutines:       runtime.NumGoroutine(),
+		HeapAllocB:       ms.HeapAlloc,
+		HeapSysB:         ms.HeapSys,
+		RSSB:             currentRSS(),
+		NumGC:            ms.NumGC,
+		Sessions:         sessions,
+		Views:            views,
+		RunningTurns:     running,
+		GoVersion:        runtime.Version(),
+		InputTokens:      cumIn,
+		OutputTokens:     cumOut,
+		CacheReadTokens:  cumCacheRead,
+		CacheWriteTokens: cumCacheWrite,
 	}
 	if !started.IsZero() {
 		st.UptimeSec = int64(time.Since(started).Seconds())

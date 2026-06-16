@@ -171,8 +171,11 @@ type responsesReply struct {
 		Arguments string `json:"arguments"`
 	} `json:"output"`
 	Usage struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
+		InputTokens        int `json:"input_tokens"`
+		OutputTokens       int `json:"output_tokens"`
+		InputTokensDetails struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"input_tokens_details"`
 	} `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
@@ -373,7 +376,7 @@ func outputFromFailed(raw json.RawMessage) *Response {
 	if json.Unmarshal(raw, &reply) != nil {
 		return nil
 	}
-	out := &Response{Usage: Usage{InputTokens: reply.Usage.InputTokens, OutputTokens: reply.Usage.OutputTokens}}
+	out := &Response{Usage: mantleUsage(reply.Usage.InputTokens, reply.Usage.OutputTokens, reply.Usage.InputTokensDetails.CachedTokens)}
 	for _, item := range reply.Output {
 		switch item.Type {
 		case "message":
@@ -440,7 +443,7 @@ func parseReply(raw []byte) (*Response, string, string, error) {
 		reason = reply.IncompleteDetails.Reason
 	}
 
-	out := &Response{Usage: Usage{InputTokens: reply.Usage.InputTokens, OutputTokens: reply.Usage.OutputTokens}}
+	out := &Response{Usage: mantleUsage(reply.Usage.InputTokens, reply.Usage.OutputTokens, reply.Usage.InputTokensDetails.CachedTokens)}
 	for _, item := range reply.Output {
 		switch item.Type {
 		case "message":
@@ -611,4 +614,15 @@ func normalizeArgs(s string) json.RawMessage {
 		return json.RawMessage("{}")
 	}
 	return json.RawMessage(s)
+}
+
+// mantleUsage builds a neutral Usage from the Responses-API counts. cached is
+// part of input (input_tokens_details.cached_tokens), so split it out:
+// InputTokens is the fresh slice, CacheReadTokens the cache-hit slice.
+func mantleUsage(input, output, cached int) Usage {
+	in := input - cached
+	if in < 0 {
+		in = 0
+	}
+	return Usage{InputTokens: in, OutputTokens: output, CacheReadTokens: cached}
 }

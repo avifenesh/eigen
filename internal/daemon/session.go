@@ -74,6 +74,11 @@ type Session struct {
 	subs    map[int]chan agent.Event // attached views
 	nextSub int
 
+	// Cumulative token usage over this session's lifetime (summed from each
+	// turn's EventDone). cumCacheRead vs cumIn is the prompt-cache hit rate,
+	// surfaced in the daemon stats for token-efficiency visibility.
+	cumIn, cumOut, cumCacheRead, cumCacheWrite int64
+
 	cancel  context.CancelFunc // cancels the in-flight turn (interrupt)
 	running bool
 	titling bool   // a title request is already in flight
@@ -123,6 +128,10 @@ func (s *Session) dispatch(e agent.Event) {
 		s.status = StatusWorking
 	case agent.EventDone:
 		s.status = StatusIdle
+		s.cumIn += int64(e.InTokens)
+		s.cumOut += int64(e.OutTokens)
+		s.cumCacheRead += int64(e.CacheReadTokens)
+		s.cumCacheWrite += int64(e.CacheWriteTokens)
 	}
 	wakeID := ""
 	if e.Kind == agent.EventBgDone && !s.running {

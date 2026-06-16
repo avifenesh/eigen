@@ -847,3 +847,31 @@ func TestStatsOp(t *testing.T) {
 		t.Fatal("go version should be reported")
 	}
 }
+
+func TestStatsAggregatesCacheTokens(t *testing.T) {
+	host := NewHost()
+	a, _, _ := testBuilder("", "")
+	s := host.Add("/tmp/p", "", a)
+	// Two completed turns with cache hits.
+	s.dispatch(agent.Event{Kind: agent.EventDone, InTokens: 100, OutTokens: 50, CacheReadTokens: 900, CacheWriteTokens: 200})
+	s.dispatch(agent.Event{Kind: agent.EventDone, InTokens: 100, OutTokens: 50, CacheReadTokens: 900})
+
+	st := host.Stats()
+	if st.InputTokens != 200 {
+		t.Errorf("input = %d, want 200", st.InputTokens)
+	}
+	if st.OutputTokens != 100 {
+		t.Errorf("output = %d, want 100", st.OutputTokens)
+	}
+	if st.CacheReadTokens != 1800 {
+		t.Errorf("cache read = %d, want 1800", st.CacheReadTokens)
+	}
+	if st.CacheWriteTokens != 200 {
+		t.Errorf("cache write = %d, want 200", st.CacheWriteTokens)
+	}
+	// hit rate = 1800 / (200 + 1800) = 0.9
+	denom := st.InputTokens + st.CacheReadTokens
+	if denom != 2000 {
+		t.Fatalf("denom = %d, want 2000", denom)
+	}
+}

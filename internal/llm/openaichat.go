@@ -87,7 +87,29 @@ type chatReply struct {
 type chatUsage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
+	// PromptTokensDetails.CachedTokens is the slice of prompt_tokens served from
+	// the provider's prompt cache (OpenAI/compatible report it here). These are
+	// INCLUDED in PromptTokens, so the fresh-input count is PromptTokens-cached.
+	PromptTokensDetails struct {
+		CachedTokens int `json:"cached_tokens"`
+	} `json:"prompt_tokens_details"`
 }
+
+// usage converts the OpenAI-compatible block to the neutral Usage. cached_tokens
+// is part of prompt_tokens, so we split it out: InputTokens is the fresh
+// (uncached) slice and CacheReadTokens is the hit slice — matching how
+// Anthropic/Converse report the two separately.
+func (u chatUsage) usage() Usage {
+	cached := u.CachedTokens()
+	in := u.PromptTokens - cached
+	if in < 0 {
+		in = 0
+	}
+	return Usage{InputTokens: in, OutputTokens: u.CompletionTokens, CacheReadTokens: cached}
+}
+
+// CachedTokens returns the cached prompt-token count (0 when unreported).
+func (u chatUsage) CachedTokens() int { return u.PromptTokensDetails.CachedTokens }
 
 type chatClient struct {
 	baseURL string
@@ -195,8 +217,7 @@ func (c *chatClient) complete(ctx context.Context, req Request) (*Response, erro
 	}
 
 	msg := reply.Choices[0].Message
-	out := &Response{Text: msg.Content, Reasoning: msg.ReasoningContent,
-		Usage: Usage{InputTokens: reply.Usage.PromptTokens, OutputTokens: reply.Usage.CompletionTokens}}
+	out := &Response{Text: msg.Content, Reasoning: msg.ReasoningContent, Usage: reply.Usage.usage()}
 	for _, tc := range msg.ToolCalls {
 		out.ToolCalls = append(out.ToolCalls, ToolCall{
 			ID:        tc.ID,
@@ -271,7 +292,7 @@ func (c *chatClient) stream(ctx context.Context, req Request, sink StreamSink) (
 			return nil, fmt.Errorf("%s error: %s", c.label, ev.Error.Message)
 		}
 		if ev.Usage != nil {
-			usage = Usage{InputTokens: ev.Usage.PromptTokens, OutputTokens: ev.Usage.CompletionTokens}
+			usage = ev.Usage.usage()
 		}
 		if len(ev.Choices) == 0 {
 			continue
