@@ -28,9 +28,10 @@ type CouncilConfig struct {
 	// provider+id pair.
 	Fallbacks []AdversaryOption
 	MaxRounds int // critique/revise rounds (default 3)
-	// CallTimeout bounds each single model call. A hanging adversary (e.g. a
-	// stalled endpoint) is treated as a failure so the council falls through to
-	// the next vendor instead of blocking forever. 0 = a sane default.
+	// CallTimeout bounds each ADVERSARY model call (not the author's). A hanging
+	// adversary (e.g. a stalled endpoint) is treated as a failure so the council
+	// falls through to the next vendor instead of blocking forever. The author's
+	// calls are unbounded — it's the main model doing the real work. 0 = default.
 	CallTimeout time.Duration
 }
 
@@ -110,7 +111,7 @@ func Council(ctx context.Context, cfg CouncilConfig, task, taskContext string) (
 	}
 
 	// Round 0: the author drafts the initial plan.
-	plan, err := complete(ctx, timeout, cfg.Author,
+	plan, err := complete(ctx, 0, cfg.Author,
 		"You write precise, pragmatic engineering plans.",
 		fmt.Sprintf(councilAuthorDraft, authorVendorLabel(cfg.AuthorID), strings.TrimSpace(task), ctxBlock))
 	if err != nil {
@@ -175,7 +176,7 @@ func Council(ctx context.Context, cfg CouncilConfig, task, taskContext string) (
 		}
 
 		// Author revises to address the critique.
-		revised, err := complete(ctx, timeout, cfg.Author,
+		revised, err := complete(ctx, 0, cfg.Author,
 			"You write precise, pragmatic engineering plans and take critique seriously.",
 			fmt.Sprintf(councilRevise, authorVendorLabel(adv.ID), critique, res.Plan))
 		if err != nil {
