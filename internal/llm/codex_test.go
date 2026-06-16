@@ -240,3 +240,33 @@ func TestReasoningEncryptedEchoedAtItemLevel(t *testing.T) {
 		t.Fatalf("reasoning item must NOT carry a content array (server rejects it): %s", ri.Content)
 	}
 }
+
+// A legacy reasoning message with an id (and/or summary) but NO encrypted blob
+// must be DROPPED from the input, not emitted by bare id — store:false never
+// persisted it, so emitting the bare id 404s forever ("Item 'rs_…' not found").
+// This is the stuck-transcript self-heal: the old turn's chain of thought is
+// lost, but the conversation resumes instead of wedging.
+func TestLegacyReasoningWithoutBlobIsDropped(t *testing.T) {
+	msgs := []Message{
+		{Role: RoleUser, Text: "hi"},
+		// legacy assistant turn: reasoning + tool call, but no encrypted blob
+		{Role: RoleAssistant, Reasoning: "old thought", ReasoningID: "rs_09fb781d9aaa", ToolCalls: []ToolCall{{ID: "call_1", Name: "read", Arguments: json.RawMessage(`{}`)}}},
+		{Role: RoleTool, ToolCallID: "call_1", Text: "result"},
+		{Role: RoleUser, Text: "continue"},
+	}
+	items := buildInput(Request{Messages: msgs})
+	// the function_call must still be present (stateless — no server
+	// persistence needed); only the reasoning id is the persistence problem.
+	var sawCall bool
+	for _, it := range items {
+		if it.Type == "reasoning" {
+			t.Fatalf("legacy reasoning without blob must be dropped, got item id=%q", it.ID)
+		}
+		if it.Type == "function_call" {
+			sawCall = true
+		}
+	}
+	if !sawCall {
+		t.Error("expected the function_call to survive (only reasoning is dropped)")
+	}
+}

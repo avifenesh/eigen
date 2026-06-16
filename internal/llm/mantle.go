@@ -536,15 +536,19 @@ func buildInput(req Request) []responsesInputItem {
 				toolImgNote = "Image(s) returned by the preceding tool call(s)."
 			}
 		case RoleAssistant:
-			if msg.Reasoning != "" || msg.ReasoningEncrypted != "" {
-				item := responsesInputItem{Type: "reasoning", ID: msg.ReasoningID}
-				if msg.ReasoningEncrypted != "" {
-					// store:false path: echo the opaque reasoning blob back at
-					// the ITEM level (encrypted_content field — NOT a content
-					// array; the server rejects content on a reasoning item)
-					// so the model resumes its chain of thought. The server
-					// never persisted it by id.
-					item.Encrypted = msg.ReasoningEncrypted
+			// Reasoning carry. With store:false the server never persisted the
+			// reasoning item, so we can only reference it by echoing the opaque
+			// encrypted_content blob back. A reasoning message that has an id
+			// (or a summary) but NO blob is a legacy transcript from before
+			// this was captured — emitting its bare id 404s forever ("Item with
+			// id 'rs_…' not found"). Such items are silently dropped: the chain
+			// of thought is lost for that old turn, but the conversation
+			// resumes instead of wedging. Only when we have the blob do we emit
+			// the reasoning item.
+			if msg.ReasoningEncrypted != "" {
+				item := responsesInputItem{Type: "reasoning", Encrypted: msg.ReasoningEncrypted}
+				if msg.ReasoningID != "" {
+					item.ID = msg.ReasoningID
 				}
 				if msg.Reasoning != "" {
 					item.Summary = []summaryPart{{Type: "summary_text", Text: msg.Reasoning}}
