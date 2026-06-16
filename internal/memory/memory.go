@@ -262,18 +262,43 @@ func (s *Store) Bans() string { return s.readFile(s.BansPath()) }
 
 // --- injection ---------------------------------------------------------------
 
+// maxInjectedBytes caps the memory injected into the prompt PER SCOPE. SUMMARY.md
+// is curated and small, so it rarely trips this; the cap exists to bound the
+// raw-MEMORY.md fallback (a scope with no summary yet) — that file is
+// append-only and can grow to many thousands of tokens, which must never be
+// dumped wholesale into every turn's context. ~8 KiB ≈ 2K tokens.
+const maxInjectedBytes = 8 * 1024
+
 // Injected returns what should go into the prompt for this scope: SUMMARY.md
 // when it exists (the small distilled tier), otherwise MEMORY.md (so a store
 // without a generated summary yet still injects its notes — no regression).
-// bans are rendered separately by Section.
+// Either way the result is bounded to maxInjectedBytes (keeping the NEWEST
+// content — notes are append-only, newest last) so an un-summarized or
+// oversized store can't blow the context window. bans are rendered separately.
 func (s *Store) Injected() string {
 	if s == nil {
 		return ""
 	}
 	if sum := strings.TrimSpace(s.readFile(s.SummaryPath())); sum != "" {
-		return sum
+		return clampMemoryTail(sum, maxInjectedBytes)
 	}
-	return strings.TrimSpace(s.Read())
+	return clampMemoryTail(strings.TrimSpace(s.Read()), maxInjectedBytes)
+}
+
+// clampMemoryTail bounds s to at most max bytes, keeping the TAIL (newest notes,
+// since memory is append-only) and trimming whole lines from the front so a
+// note is never cut mid-line. A truncation marker flags that older notes were
+// dropped from the injected view (they remain on disk).
+func clampMemoryTail(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	tail := s[len(s)-max:]
+	// Drop the partial leading line so we start at a clean note boundary.
+	if i := strings.IndexByte(tail, '\n'); i >= 0 {
+		tail = tail[i+1:]
+	}
+	return "[…older notes trimmed from prompt — full history on disk…]\n" + tail
 }
 
 // Section renders the memory for system-prompt injection (empty when no notes).
