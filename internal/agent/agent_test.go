@@ -1089,3 +1089,42 @@ func TestMaybeCompactFiresAtThreshold(t *testing.T) {
 			got, int(compactTriggerFrac*budget), budget)
 	}
 }
+
+// A reasoning-only turn (no text, no tool call — Codex/gpt-5.x thinking across
+// turns) must NOT count as an "empty turn". Several in a row, then a final
+// answer, should succeed — not fail with "no actionable output".
+func TestReasoningOnlyTurnsNotEmpty(t *testing.T) {
+	prov := &mockProvider{replies: []*llm.Response{
+		{Reasoning: "let me think about this"},      // reasoning-only
+		{Reasoning: "still thinking, almost there"}, // reasoning-only
+		{Reasoning: "ok, more thought"},             // reasoning-only (3rd — would trip maxEmptyTurns=2)
+		{Text: "the final answer"},                  // acts
+	}}
+	reg, _ := tool.NewRegistry()
+	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto}
+	out, err := a.Run(context.Background(), "task")
+	if err != nil {
+		t.Fatalf("reasoning-only turns should not error: %v", err)
+	}
+	if out != "the final answer" {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+// But a model that ONLY ever reasons (never acts) is still bounded.
+func TestReasoningOnlyTurnsBounded(t *testing.T) {
+	var replies []*llm.Response
+	for i := 0; i < maxReasoningOnlyTurns+5; i++ {
+		replies = append(replies, &llm.Response{Reasoning: "thinking forever"})
+	}
+	prov := &mockProvider{replies: replies}
+	reg, _ := tool.NewRegistry()
+	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto}
+	_, err := a.Run(context.Background(), "task")
+	if err == nil {
+		t.Fatal("a never-acting reasoning loop must eventually error")
+	}
+	if !strings.Contains(err.Error(), "reasoning-only") {
+		t.Fatalf("want a reasoning-only-bound error, got %v", err)
+	}
+}

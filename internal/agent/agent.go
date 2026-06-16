@@ -224,6 +224,12 @@ const maxToolOutput = 100_000
 // preventing both a premature empty exit and an infinite spin.
 const maxEmptyTurns = 2
 
+// maxReasoningOnlyTurns bounds consecutive turns that produce ONLY reasoning
+// (no text, no tool call) before we give up. Codex/gpt-5.x legitimately think
+// across several Responses turns before acting, so this is generous — it exists
+// only so a model that never acts can't loop forever.
+const maxReasoningOnlyTurns = 20
+
 // Session holds a running conversation so the agent can be driven turn by turn
 // (e.g. a REPL/TUI), preserving history across user inputs.
 type Session struct {
@@ -1036,6 +1042,7 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 	s.persist()
 	disclose := a.Tools.HasNiche() // progressive tool disclosure when any niche tools exist
 	emptyTurns := 0
+	reasoningOnlyTurns := 0               // consecutive reason-only turns (thinking across turns; bounded so a never-acting model can't spin forever)
 	overflowRetried := false              // guard: force-compact-and-retry at most once per step
 	var usedIn, usedOut int               // provider-reported usage, summed over the turn
 	var usedCacheRead, usedCacheWrite int // prompt-cache hits/writes, summed over the turn
@@ -1180,7 +1187,30 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 				a.emit(Event{Kind: EventDone, Step: step, Text: resp.Text, InTokens: usedIn, OutTokens: usedOut, CacheReadTokens: usedCacheRead, CacheWriteTokens: usedCacheWrite})
 				return resp.Text, nil // final answer
 			}
-			// Empty turn (e.g. reasoning-only): nudge to act, bounded.
+			// Empty turn: no tool call AND no text. A turn that produced
+			// REASONING is NOT idle — the model is thinking across turns
+			// (Codex/gpt-5.x reason-then-act in separate Responses turns). Carry
+			// the reasoning forward (so the chain of thought isn't lost and the
+			// model resumes instead of re-thinking) and loop. Bounded by
+			// maxReasoningOnlyTurns so a model that NEVER acts can't spin forever.
+			if strings.TrimSpace(resp.Reasoning) != "" {
+				reasoningOnlyTurns++
+				if reasoningOnlyTurns > maxReasoningOnlyTurns {
+					return "", fmt.Errorf("model produced %d reasoning-only turns without acting", reasoningOnlyTurns)
+				}
+				s.appendMsg(llm.Message{
+					Role:        llm.RoleAssistant,
+					Reasoning:   resp.Reasoning,
+					ReasoningID: resp.ReasoningID,
+				})
+				s.persist()
+				if !streamed {
+					a.emit(Event{Kind: EventReasoningDelta, Step: step, Text: resp.Reasoning})
+				}
+				continue
+			}
+			// Genuinely empty (no text, no tools, no reasoning): nudge to act,
+			// bounded.
 			emptyTurns++
 			if emptyTurns > maxEmptyTurns {
 				return "", fmt.Errorf("model returned no actionable output after %d empty turns", emptyTurns)
@@ -1192,6 +1222,7 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 			continue
 		}
 		emptyTurns = 0
+		reasoningOnlyTurns = 0
 
 		s.appendMsg(llm.Message{
 			Role:        llm.RoleAssistant,

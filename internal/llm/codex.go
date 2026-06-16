@@ -206,7 +206,8 @@ func (c *Codex) buildPayload(req Request, stream bool) responsesRequest {
 		Tools:        toResponsesTools(req.Tools),
 		Reasoning:    &reasoningConfig{Effort: effort, Summary: reasoningSummary},
 		ServiceTier:  tier,
-		Store:        &storeFalse, // Codex requires store:false
+		Store:        &storeFalse,                             // Codex requires store:false
+		Include:      []string{"reasoning.encrypted_content"}, // carry reasoning across turns
 		Stream:       stream,
 	}
 }
@@ -360,16 +361,18 @@ func readCodexAuth(path string) (*codexAuth, error) {
 }
 
 // parseResponsesSSE assembles a Responses-API SSE stream into a final Response,
-// forwarding text/reasoning deltas to sink. Shared shape with the mantle
-// streamer but without mantle's response.failed-recovery quirk (a Codex backend
-// concern, not present here). The caller owns closing resp.Body? No — this
-// closes it.
+// forwarding text/reasoning deltas to sink. It collects the authoritative output
+// from `response.output_item.done` events (the Codex backend delivers tool calls
+// and the final message there; its `response.completed` event carries an EMPTY
+// output array). Text/reasoning deltas are accumulated for streaming + as a
+// fallback. This is the single source for both the Codex and mantle wire shapes.
 func parseResponsesSSE(resp *http.Response, sink StreamSink) (*Response, error) {
 	defer resp.Body.Close()
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
-	var final *Response
-	var sbText, sbReason strings.Builder // accumulated deltas (Codex's completed event has empty output)
+	out := &Response{}
+	var sbText, sbReason strings.Builder
+	var completedReply *Response // from response.completed (mantle fills output; codex empty)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data:") {
@@ -382,6 +385,7 @@ func parseResponsesSSE(resp *http.Response, sink StreamSink) (*Response, error) 
 		var ev struct {
 			Type     string          `json:"type"`
 			Delta    string          `json:"delta"`
+			Item     json.RawMessage `json:"item"`
 			Response json.RawMessage `json:"response"`
 		}
 		if err := json.Unmarshal([]byte(data), &ev); err != nil {
@@ -398,8 +402,13 @@ func parseResponsesSSE(resp *http.Response, sink StreamSink) (*Response, error) 
 			if sink != nil {
 				sink(StreamChunk{Kind: ChunkReasoning, Text: ev.Delta})
 			}
+		case "response.output_item.done":
+			// The authoritative output channel for Codex: a completed output
+			// item — a function_call (tool use), a message (assistant text), or
+			// a reasoning summary. Collect each into the final response.
+			applyOutputItem(ev.Item, out)
 		case "response.completed", "response.incomplete":
-			out, status, reason, perr := parseReply(ev.Response)
+			r, status, reason, perr := parseReply(ev.Response)
 			if perr != nil {
 				return nil, perr
 			}
@@ -409,11 +418,11 @@ func parseResponsesSSE(resp *http.Response, sink StreamSink) (*Response, error) 
 				}
 				return nil, fmt.Errorf("codex response incomplete (%s): refusing possibly-truncated output", reason)
 			}
-			final = out
+			completedReply = r
 		case "response.failed":
-			if out := outputFromFailed(ev.Response); out != nil &&
-				(strings.TrimSpace(out.Text) != "" || len(out.ToolCalls) > 0) {
-				return out, nil
+			if r := outputFromFailed(ev.Response); r != nil &&
+				(strings.TrimSpace(r.Text) != "" || len(r.ToolCalls) > 0) {
+				return r, nil
 			}
 			return nil, fmt.Errorf("codex stream failed: %s", streamFailReason(ev.Response))
 		}
@@ -421,18 +430,72 @@ func parseResponsesSSE(resp *http.Response, sink StreamSink) (*Response, error) 
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("read stream: %w", err)
 	}
-	if final == nil {
-		final = &Response{}
+	// Prefer output_item.done collection (Codex). If it yielded nothing but the
+	// completed event carried output (mantle), use that. Then backfill
+	// text/reasoning from the accumulated deltas, and carry usage.
+	if len(out.ToolCalls) == 0 && strings.TrimSpace(out.Text) == "" && completedReply != nil {
+		out = completedReply
+	} else if completedReply != nil {
+		out.Usage = completedReply.Usage // usage always lives on the completed event
 	}
-	// Codex's response.completed often carries output:[] (the text/tool calls
-	// arrived only as deltas), so backfill from the accumulated deltas when the
-	// completed event didn't already give us text. Tool calls, when present,
-	// DO appear in the completed output (parseReply handles those).
-	if strings.TrimSpace(final.Text) == "" && sbText.Len() > 0 {
-		final.Text = sbText.String()
+	if strings.TrimSpace(out.Text) == "" && sbText.Len() > 0 {
+		out.Text = sbText.String()
 	}
-	if final.Reasoning == "" && sbReason.Len() > 0 {
-		final.Reasoning = sbReason.String()
+	if out.Reasoning == "" && sbReason.Len() > 0 {
+		out.Reasoning = sbReason.String()
 	}
-	return final, nil
+	return out, nil
+}
+
+// applyOutputItem folds one response.output_item.done item into the response:
+// a function_call becomes a ToolCall, a message's output_text becomes Text, a
+// reasoning item's summary becomes Reasoning (with its id for cross-turn carry).
+func applyOutputItem(raw json.RawMessage, out *Response) {
+	if len(raw) == 0 {
+		return
+	}
+	var item struct {
+		Type      string `json:"type"`
+		ID        string `json:"id"`
+		Name      string `json:"name"`
+		CallID    string `json:"call_id"`
+		Arguments string `json:"arguments"`
+		Content   []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+		Summary []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"summary"`
+	}
+	if json.Unmarshal(raw, &item) != nil {
+		return
+	}
+	switch item.Type {
+	case "function_call":
+		out.ToolCalls = append(out.ToolCalls, ToolCall{
+			ID:        item.CallID,
+			Name:      item.Name,
+			Arguments: normalizeArgs(item.Arguments),
+		})
+	case "message":
+		for _, p := range item.Content {
+			if p.Type == "output_text" {
+				out.Text += p.Text
+			}
+		}
+	case "reasoning":
+		if out.ReasoningID == "" {
+			out.ReasoningID = item.ID
+		}
+		for _, s := range item.Summary {
+			if s.Text != "" {
+				if out.Reasoning != "" {
+					out.Reasoning += "\n"
+				}
+				out.Reasoning += s.Text
+			}
+		}
+	}
 }

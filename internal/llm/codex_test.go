@@ -174,3 +174,41 @@ func TestCodexPutsSystemInInstructions(t *testing.T) {
 		}
 	}
 }
+
+// Codex delivers tool calls via response.output_item.done (function_call), and
+// its response.completed event has output:[] — parseResponsesSSE must collect
+// the tool call from the item event, not the empty completed event. This is the
+// fix for "model returned no actionable output after 3 empty turns".
+func TestCodexParsesToolCallFromOutputItem(t *testing.T) {
+	writeCodexAuth(t, "tok", "ref", "acct")
+	sse := "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"fc_1\",\"call_id\":\"call_1\",\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"/x\\\"}\"}}\n\n" +
+		"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":5,\"output_tokens\":2}}}\n\n"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sse))
+	}))
+	defer srv.Close()
+	t.Setenv("EIGEN_CODEX_BASE_URL", srv.URL)
+	c, err := NewCodex("gpt-5.5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := c.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "read /x"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.ToolCalls) != 1 {
+		t.Fatalf("want 1 tool call from output_item.done, got %d (completed event is empty!)", len(resp.ToolCalls))
+	}
+	if resp.ToolCalls[0].Name != "read_file" {
+		t.Fatalf("tool name = %q", resp.ToolCalls[0].Name)
+	}
+	if string(resp.ToolCalls[0].Arguments) != `{"path":"/x"}` {
+		t.Fatalf("tool args = %s", resp.ToolCalls[0].Arguments)
+	}
+	// include:["reasoning.encrypted_content"] is requested.
+	p := c.buildPayload(Request{Messages: []Message{{Role: RoleUser, Text: "x"}}}, true)
+	if len(p.Include) != 1 || p.Include[0] != "reasoning.encrypted_content" {
+		t.Fatalf("include = %v, want [reasoning.encrypted_content]", p.Include)
+	}
+}

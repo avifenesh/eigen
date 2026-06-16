@@ -157,6 +157,10 @@ type responsesRequest struct {
 	// store:true / a missing store with "Store must be set to false"). A pointer
 	// so mantle (which omits it) and codex (explicit false) differ cleanly.
 	Store *bool `json:"store,omitempty"`
+	// Include lists extra response data to return. Codex sends
+	// ["reasoning.encrypted_content"] so the model's reasoning carries across
+	// turns (reason-then-act spans multiple Responses turns). Mantle omits it.
+	Include []string `json:"include,omitempty"`
 }
 
 type responsesReply struct {
