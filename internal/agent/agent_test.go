@@ -1049,3 +1049,40 @@ func TestSteerAtFinalAnswerIsConsumedNotStranded(t *testing.T) {
 		t.Fatalf("turn should end with the post-steer answer, got %q", out)
 	}
 }
+
+// TestMaybeCompactFiresAtThreshold: compaction now triggers with headroom (at
+// compactTriggerFrac of the budget), not only when the full budget is exceeded.
+// A conversation between the threshold and the budget must compact.
+func TestMaybeCompactFiresAtThreshold(t *testing.T) {
+	fc := &fakeCompactor{}
+	const budget = 10000
+	a := &Agent{
+		Provider:         &mockProvider{},
+		Tools:            mustReg(t),
+		Perm:             PermAuto,
+		Compactor:        fc,
+		MaxContextTokens: budget,
+	}
+	// Build a conversation ~90% of budget: above the 85% trigger, below 100%.
+	// EstimateTokens ≈ chars/4. Needs ≥2 user turns so there's older history to
+	// summarize (CompactWith degrades to non-LLM Compact with <2 user starts).
+	target := int(0.90 * budget)
+	chunk := strings.Repeat("word ", target*4/5/3) // ~target/3 tokens each
+	msgs := []llm.Message{
+		{Role: llm.RoleUser, Text: chunk},
+		{Role: llm.RoleAssistant, Text: chunk},
+		{Role: llm.RoleUser, Text: chunk},
+		{Role: llm.RoleAssistant, Text: "ok"},
+	}
+	s := a.Resume(msgs)
+	got := llm.EstimateTokens(s.snapshot())
+	if got <= int(compactTriggerFrac*budget) || got > budget {
+		t.Skipf("test fixture sizing off (tokens=%d, want between %d and %d) — estimator drift",
+			got, int(compactTriggerFrac*budget), budget)
+	}
+	s.maybeCompact(context.Background())
+	if fc.calls == 0 {
+		t.Fatalf("compaction should fire at %d tokens (threshold %d, budget %d)",
+			got, int(compactTriggerFrac*budget), budget)
+	}
+}

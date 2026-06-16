@@ -769,6 +769,14 @@ func (s *Session) Tokens() int { return llm.EstimateTokens(s.snapshot()) }
 // the circuit breaker trips instead of summarizing every turn for no gain.
 const compactStallHeadroomFrac = 0.15
 
+// compactTriggerFrac is the fraction of the budget at which start-of-turn
+// auto-compaction fires. Compacting at the FULL budget (1.0) means the priciest
+// turns run at maximum context and risk a provider overflow; triggering with
+// headroom keeps turns smaller and folds history before it gets expensive. The
+// budget already reserves window headroom (ContextBudget = window×85%), so this
+// is a second, conversation-level trigger.
+const compactTriggerFrac = 0.85
+
 // maybeCompact runs start-of-turn auto-compaction with a circuit breaker. It
 // only acts when the context is over budget. After a compaction it records how
 // much headroom remained; if a subsequent over-budget turn follows one that
@@ -780,8 +788,12 @@ func (s *Session) maybeCompact(ctx context.Context) {
 	msgs := s.snapshot()
 	before := llm.EstimateTokens(msgs)
 	budget := a.maxContextTokens()
-	if before <= budget {
-		// Under budget: reset the breaker so it can act again later.
+	triggerAt := budget
+	if budget > 0 {
+		triggerAt = int(compactTriggerFrac * float64(budget))
+	}
+	if before <= triggerAt {
+		// Under the trigger threshold: reset the breaker so it can act again later.
 		s.compactStall = false
 		return
 	}
@@ -789,8 +801,8 @@ func (s *Session) maybeCompact(ctx context.Context) {
 		// Already tripped and still over budget: don't keep summarizing.
 		return
 	}
-	// If the previous compaction left too little headroom and we're over budget
-	// again, trip the breaker instead of compacting once more — it can't help.
+	// If the previous compaction left too little headroom and we're over the
+	// trigger again, trip the breaker instead of compacting once more.
 	if s.lastCompactAfter > 0 {
 		headroom := budget - s.lastCompactAfter
 		if float64(headroom) < compactStallHeadroomFrac*float64(budget) {
@@ -799,7 +811,10 @@ func (s *Session) maybeCompact(ctx context.Context) {
 			return
 		}
 	}
-	compacted, err := llm.CompactWith(ctx, a.compactor(), msgs, budget)
+	// Target below the trigger threshold (not the full budget) so the fold
+	// leaves real headroom and won't immediately re-trip next turn.
+	target := triggerAt
+	compacted, err := llm.CompactWith(ctx, a.compactor(), msgs, target)
 	if err != nil {
 		return
 	}
