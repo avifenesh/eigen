@@ -292,6 +292,22 @@ func (s *Session) hasSteer() bool {
 	return len(s.steer) > 0
 }
 
+// FlushSteer appends any pending steer messages to the conversation and
+// persists them. It is used by the daemon during shutdown: a user's mid-turn
+// follow-up may still be sitting in the steer queue (not yet consumed at a step
+// boundary), and dropping it on restart would lose user input. Safe if the
+// running turn races with shutdown: drainSteer serializes on steerMu, so either
+// the turn consumes the steer or this method makes it durable.
+func (s *Session) FlushSteer() bool {
+	steers := s.drainSteer()
+	if len(steers) == 0 {
+		return false
+	}
+	s.appendMsg(steers...)
+	s.persist()
+	return true
+}
+
 // NewSession starts an empty conversation.
 func (a *Agent) NewSession() *Session { return &Session{a: a} }
 

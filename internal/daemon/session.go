@@ -360,6 +360,10 @@ func (s *Session) flush() {
 	if sess == nil || persist == nil {
 		return
 	}
+	// Make pending mid-turn user input durable too. Without this, a restart
+	// before the agent loop reaches its next steer-drain boundary can lose the
+	// user's follow-up even though the main transcript was flushed.
+	sess.FlushSteer()
 	persist(sess.Messages())
 }
 
@@ -595,6 +599,10 @@ func (s *Session) clear() {
 	s.sess = s.agent.NewSession()
 	s.events = nil // a fresh attach replays nothing
 	s.mu.Unlock()
+	// /clear is user-visible state, not just in-memory UI state. Persist the
+	// empty transcript immediately so a daemon restart cannot resurrect the old
+	// conversation.
+	s.flush()
 }
 
 // resend retries the last user turn (the /resend command) — runs like send.

@@ -189,6 +189,67 @@ func TestMantleStreamFailureAfterOutputIsNotRetried(t *testing.T) {
 	}
 }
 
+func TestCodexStreamRetriesTransientFailure(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := calls.Add(1)
+		if n <= 2 {
+			sseFailed(w)
+			return
+		}
+		sseCompleted(w, "OK")
+	}))
+	defer srv.Close()
+
+	c := &Codex{BaseURL: srv.URL, Model: "gpt-5.5", token: "t", http: srv.Client()}
+	var got strings.Builder
+	resp, err := c.Stream(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}},
+		func(c StreamChunk) { got.WriteString(c.Text) })
+	if err != nil {
+		t.Fatalf("Codex Stream should recover from transient pre-output failures: %v", err)
+	}
+	if resp.Text != "OK" {
+		t.Fatalf("resp.Text = %q, want OK", resp.Text)
+	}
+	if got.String() != "OK" {
+		t.Fatalf("streamed text = %q, want OK (no duplication)", got.String())
+	}
+	if calls.Load() != 3 {
+		t.Fatalf("expected 3 attempts (2 fail + 1 success), got %d", calls.Load())
+	}
+}
+
+func TestCodexStreamFailureAfterOutputIsNotRetried(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl := w.(interface{ Flush() })
+		w.Write([]byte(`data: {"type":"response.output_text.delta","delta":"partial"}` + "\n\n"))
+		fl.Flush()
+		w.Write([]byte(`data: {"type":"response.failed","response":{"status":"failed","error":{"code":"server_error","message":"boom"}}}` + "\n\n"))
+		fl.Flush()
+	}))
+	defer srv.Close()
+
+	c := &Codex{BaseURL: srv.URL, Model: "gpt-5.5", token: "t", http: srv.Client()}
+	var got strings.Builder
+	_, err := c.Stream(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}},
+		func(c StreamChunk) { got.WriteString(c.Text) })
+	if err == nil {
+		t.Fatal("a Codex failure after streamed output must be surfaced, not retried")
+	}
+	if !strings.Contains(err.Error(), "server_error") {
+		t.Fatalf("error should carry the reason: %v", err)
+	}
+	if got.String() != "partial" {
+		t.Fatalf("streamed text = %q, want partial", got.String())
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("must NOT retry after output emitted; got %d attempts", calls.Load())
+	}
+}
+
 func TestStreamFailReason(t *testing.T) {
 	r := streamFailReason(json.RawMessage(`{"error":{"code":"server_error","message":"oops"}}`))
 	if r != "server_error: oops" {

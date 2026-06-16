@@ -114,14 +114,19 @@ func TestRemoveDeletesPersistedFiles(t *testing.T) {
 	h := NewPersistentHost(persistDir)
 	reg, _ := tool.NewRegistry()
 	s := h.Add("/tmp", "m", &agent.Agent{Provider: echoProvider{}, Tools: reg})
-	// Write something durable.
+	// Write something durable, including backup generations.
 	_ = transcript_save_probe(persistDir, s.ID)
+	_ = os.WriteFile(transcriptPath(persistDir, s.ID)+".bak", []byte("backup"), 0o644)
+	_ = os.WriteFile(transcriptPath(persistDir, s.ID)+".bak.1", []byte("older backup"), 0o644)
 	h.Remove(s.ID)
 	if _, err := os.Stat(metaPath(persistDir, s.ID)); !os.IsNotExist(err) {
 		t.Fatal("meta should be deleted on remove")
 	}
 	if _, err := os.Stat(transcriptPath(persistDir, s.ID)); !os.IsNotExist(err) {
 		t.Fatal("transcript should be deleted on remove")
+	}
+	if backups, _ := filepath.Glob(transcriptPath(persistDir, s.ID) + ".bak*"); len(backups) != 0 {
+		t.Fatalf("backup transcripts should be deleted on remove, got %v", backups)
 	}
 }
 
@@ -539,5 +544,53 @@ func TestShutdownFlushesAfterInterruptedTurnUnwinds(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Fatalf("Shutdown must flush after interrupted turn unwinds: want 2 msgs, got %d", len(got))
+	}
+}
+
+func TestShutdownFlushesPendingSteer(t *testing.T) {
+	persistDir := t.TempDir()
+	h := NewPersistentHost(persistDir)
+	reg, _ := tool.NewRegistry()
+	a := &agent.Agent{Provider: echoProvider{}, Tools: reg, Perm: agent.PermAuto}
+	s := h.Add("/tmp", "m", a)
+
+	s.mu.Lock()
+	s.sess = a.Resume([]llm.Message{{Role: llm.RoleUser, Text: "already persisted"}})
+	s.mu.Unlock()
+	s.flush()
+
+	// Simulate user input steered into a running turn but not yet drained by the
+	// agent loop. Shutdown must not lose it.
+	s.sess.Steer("queued follow-up", nil)
+	h.Shutdown()
+
+	got, err := transcript.Load(transcriptPath(persistDir, s.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[1].Text != "queued follow-up" {
+		t.Fatalf("shutdown should persist pending steer, got %#v", got)
+	}
+}
+
+func TestClearPersistsEmptyTranscript(t *testing.T) {
+	persistDir := t.TempDir()
+	h := NewPersistentHost(persistDir)
+	reg, _ := tool.NewRegistry()
+	a := &agent.Agent{Provider: echoProvider{}, Tools: reg, Perm: agent.PermAuto}
+	s := h.Add("/tmp", "m", a)
+
+	s.mu.Lock()
+	s.sess = a.Resume([]llm.Message{{Role: llm.RoleUser, Text: "old conversation"}})
+	s.mu.Unlock()
+	s.flush()
+
+	s.clear()
+	got, err := transcript.Load(transcriptPath(persistDir, s.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("clear must persist an empty transcript immediately, got %#v", got)
 	}
 }

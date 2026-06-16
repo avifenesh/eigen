@@ -101,7 +101,13 @@ func idNum(id string) int {
 
 // removePersisted deletes a session's durable files.
 func removePersisted(dir, id string) {
-	_ = os.Remove(transcriptPath(dir, id))
+	path := transcriptPath(dir, id)
+	_ = os.Remove(path)
+	if backups, err := filepath.Glob(path + ".bak*"); err == nil {
+		for _, p := range backups {
+			_ = os.Remove(p)
+		}
+	}
 	_ = os.Remove(metaPath(dir, id))
 }
 

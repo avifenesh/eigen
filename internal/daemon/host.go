@@ -199,7 +199,10 @@ func (h *Host) enablePersist(s *Session) {
 	// The agent's Persist hook runs in the agent goroutine after every
 	// appended message — the same continuous autosave as the local chat.
 	s.agent.Persist = func(msgs []llm.Message) {
-		_ = transcript.Save(transcriptPath(dir, s.ID), msgs)
+		if err := transcript.Save(transcriptPath(dir, s.ID), msgs); err != nil {
+			fmt.Fprintf(os.Stderr, "eigen daemon: persist %s: %v\n", s.ID, err)
+			return
+		}
 		h.maybeTitle(s, msgs)
 	}
 	s.onAttach = func() { h.saveSessionMeta(s) } // persist LastAttached

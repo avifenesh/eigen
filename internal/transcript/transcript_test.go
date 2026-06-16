@@ -114,3 +114,33 @@ func TestSaveKeepsPreviousFileBackup(t *testing.T) {
 		t.Fatalf("temporary file should be gone after save, stat err=%v", err)
 	}
 }
+
+func TestSaveRotatesBackupGenerations(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s1.jsonl")
+	for i := 1; i <= 7; i++ {
+		if err := Save(path, []llm.Message{{Role: llm.RoleUser, Text: string(rune('0' + i))}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cases := map[string]string{
+		path:            "7",
+		path + ".bak":   "6",
+		path + ".bak.1": "5",
+		path + ".bak.2": "4",
+		path + ".bak.3": "3",
+		path + ".bak.4": "2",
+	}
+	for p, want := range cases {
+		got, err := Load(p)
+		if err != nil {
+			t.Fatalf("load %s: %v", filepath.Base(p), err)
+		}
+		if len(got) != 1 || got[0].Text != want {
+			t.Fatalf("%s = %#v, want %q", filepath.Base(p), got, want)
+		}
+	}
+	if _, err := os.Stat(path + ".bak.5"); !os.IsNotExist(err) {
+		t.Fatalf("only five backup generations should be kept, stat .bak.5 err=%v", err)
+	}
+}

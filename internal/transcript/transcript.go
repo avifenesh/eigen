@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/avifenesh/eigen/internal/llm"
@@ -92,18 +93,54 @@ func Save(path string, msgs []llm.Message) error {
 		os.Remove(tmp)
 		return err
 	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
 	if err := f.Close(); err != nil {
 		os.Remove(tmp)
 		return err
 	}
-	// Keep one .bak of the previous good file before overwriting — a recovery
-	// path if a future bug (a bad compaction, an overwrite, a kill mid-rename)
-	// ever replaces good content. Best-effort + silent: a backup failure must
-	// not block the save.
-	if old, e := os.ReadFile(path); e == nil && len(old) > 0 {
-		_ = os.WriteFile(path+".bak", old, 0o644)
+	rotateBackups(path)
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
 	}
-	return os.Rename(tmp, path)
+	// Best-effort directory fsync makes the rename durable across sudden power
+	// loss on filesystems that require fsync(dir) for metadata persistence.
+	_ = syncDir(filepath.Dir(path))
+	return nil
+}
+
+const transcriptBackupGenerations = 5 // .bak + .bak.1 .. .bak.4
+
+func backupPath(path string, gen int) string {
+	if gen == 0 {
+		return path + ".bak"
+	}
+	return fmt.Sprintf("%s.bak.%d", path, gen)
+}
+
+func rotateBackups(path string) {
+	old, err := os.ReadFile(path)
+	if err != nil || len(old) == 0 {
+		return
+	}
+	_ = os.Remove(backupPath(path, transcriptBackupGenerations-1))
+	for i := transcriptBackupGenerations - 2; i >= 0; i-- {
+		_ = os.Rename(backupPath(path, i), backupPath(path, i+1))
+	}
+	_ = os.WriteFile(backupPath(path, 0), old, 0o644)
+}
+
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
 }
 
 // Load reads an eigen-native JSONL session file.

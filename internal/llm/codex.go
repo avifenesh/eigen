@@ -245,6 +245,38 @@ func (c *Codex) Stream(ctx context.Context, req Request, sink StreamSink) (*Resp
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
+	for attempt := 0; ; attempt++ {
+		emitted := false
+		wrappedSink := sink
+		if sink != nil {
+			wrappedSink = func(c StreamChunk) {
+				emitted = true
+				sink(c)
+			}
+		}
+		resp, err := c.openStream(ctx, body)
+		if err != nil {
+			return nil, err
+		}
+		out, err := parseResponsesSSE(resp, wrappedSink)
+		if err == nil {
+			return out, nil
+		}
+		// Codex often reports transient backend failures as a response.failed SSE
+		// event over HTTP 200. If NOTHING was streamed to the user yet, retrying is
+		// safe and avoids killing the turn. Once deltas have been emitted, surface
+		// the failure to avoid duplicating visible text/reasoning.
+		if !emitted && isTransientCodexStreamFailure(err) && attempt < maxStreamFailRetries {
+			if berr := sleepBackoff(ctx, attempt+1, 0); berr != nil {
+				return nil, berr
+			}
+			continue
+		}
+		return nil, err
+	}
+}
+
+func (c *Codex) openStream(ctx context.Context, body []byte) (*http.Response, error) {
 	resp, err := httpStream(ctx, c.http, c.BaseURL+"/responses", c.headers(), body, nil)
 	if err != nil {
 		// httpStream returns a non-2xx as an error ("HTTP 401: …"), not a
@@ -259,7 +291,17 @@ func (c *Codex) Stream(ctx context.Context, req Request, sink StreamSink) (*Resp
 			return nil, fmt.Errorf("codex: %w", err)
 		}
 	}
-	return parseResponsesSSE(resp, sink)
+	return resp, nil
+}
+
+func isTransientCodexStreamFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "codex stream failed: server_error") ||
+		strings.Contains(s, "codex stream failed: rate_limit") ||
+		strings.Contains(s, "codex stream failed: overloaded")
 }
 
 // isUnauthorized reports whether an httpStream error is a 401 (expired token).
