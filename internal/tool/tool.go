@@ -4,6 +4,7 @@
 package tool
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -64,9 +65,26 @@ type Result struct {
 	Images []llm.Image
 }
 
-// Spec returns the provider-neutral spec for this tool.
+// Spec returns the provider-neutral spec for this tool. Parameters is already
+// in canonical compact form — schemas are normalized once at registration
+// (NewRegistry), not here in the per-step prompt-assembly path. Pretty-printing
+// a schema for humans is a render-time concern (see internal/tui/jsonview).
 func (d Definition) Spec() llm.ToolSpec {
 	return llm.ToolSpec{Name: d.Name, Description: d.Description, Parameters: d.Parameters}
+}
+
+// compactJSON returns raw with insignificant whitespace removed (canonical
+// compact form). On any error (or empty input) it returns the input unchanged —
+// normalization must never corrupt a schema.
+func compactJSON(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return raw
+	}
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, raw); err != nil {
+		return raw
+	}
+	return json.RawMessage(buf.Bytes())
 }
 
 // Invoke runs the tool, normalizing the text-only Run and the image-capable
@@ -99,6 +117,12 @@ func NewRegistry(defs ...Definition) (*Registry, error) {
 		if _, dup := r.byName[d.Name]; dup {
 			return nil, fmt.Errorf("duplicate tool %q", d.Name)
 		}
+		// Normalize the JSON Schema to its canonical compact form ONCE, here at
+		// the authoring→runtime boundary. Source literals may be pretty-printed
+		// for readability; the prompt/data plane always carries compact JSON
+		// (no indentation/newlines re-sent to the model every turn). Human
+		// pretty-printing is a render-time concern (internal/tui/jsonview).
+		d.Parameters = compactJSON(d.Parameters)
 		r.order = append(r.order, d.Name)
 		r.byName[d.Name] = d
 	}
