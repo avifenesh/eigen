@@ -269,6 +269,11 @@ func main() {
 		return
 	}
 
+	if flag.Arg(0) == "plan" {
+		runPlan(cfg, *provider, *model, strings.Join(flag.Args()[1:], " "))
+		return
+	}
+
 	switch agent.Permission(*perm) {
 	case agent.PermGated, agent.PermAuto:
 	default:
@@ -621,6 +626,11 @@ func main() {
 	reviewRun := router.crossReviewer(func() string {
 		return effectiveModel(*provider, *model)
 	})
+	// Adversarial cross-vendor planning: author = active model, adversary =
+	// the other vendor. Tracks /model + routing like the reviewer.
+	planRun := router.councilRunner(func() string {
+		return effectiveModel(*provider, *model)
+	})
 	// Backgrounded shells (bash background=true / on-demand detach).
 	shells := tool.NewShellRegistry()
 	defs := []tool.Definition{
@@ -651,6 +661,7 @@ func main() {
 		tool.GenerateImage(imageGenRunner(wdOrDot())),
 		tool.GoalAchieved(goalJudge),
 		tool.Review(reviewRun),
+		tool.Plan(planRun),
 		tool.WebSearch(), // always available: keyless fallback chain; keyed/SearXNG preferred
 	}
 	// Plugins: external-command tools defined in plugins.json. A plugin whose
@@ -1967,4 +1978,24 @@ func acquireTelegramLock() (*os.File, error) {
 		return nil, err
 	}
 	return f, nil
+}
+
+// runPlan runs the adversarial cross-vendor planning council from the CLI:
+// `eigen plan <task>`. The active model authors a plan and the other vendor's
+// model critiques/hardens it; prints the converged plan.
+func runPlan(cfg config.Config, provider, model, task string) {
+	task = strings.TrimSpace(task)
+	if task == "" {
+		fmt.Fprintln(os.Stderr, "usage: eigen plan <task description>")
+		os.Exit(2)
+	}
+	router := newAutoRouter(cfg.Route, cfg.RouteProviders, provider)
+	author := effectiveModel(provider, model)
+	run := router.councilRunner(func() string { return author })
+	fmt.Fprintf(os.Stderr, "planning (author %s, adversary = other vendor)…\n", author)
+	out, err := run(context.Background(), task, "")
+	if err != nil {
+		fail(fmt.Errorf("plan: %w", err))
+	}
+	fmt.Println(out)
 }

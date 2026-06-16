@@ -57,3 +57,56 @@ func CrossReviewer(author string, candidates []string) string {
 	}
 	return best
 }
+
+// CrossVendorAdversaries returns candidate adversaries from vendors OTHER than
+// the author's, ordered best-first: the canonical cross-reviewer vendor first
+// (GPT for a Claude author, Claude for everyone else), then the remaining
+// non-author vendors. Within a vendor, stronger models (tier, then rank) come
+// first. Used by the planning council to fall back across vendors when the
+// primary adversary is unavailable — never back to the author's own vendor
+// (which would share its blind spots).
+func CrossVendorAdversaries(author string, candidates []string) []string {
+	authorVendor := VendorOf(author)
+	primary := VendorOpenAI // matches CrossReviewer's default
+	if authorVendor == VendorOpenAI {
+		primary = VendorAnthropic
+	}
+	// Group candidates by vendor, excluding the author's vendor and the author.
+	byVendor := map[Vendor][]string{}
+	for _, id := range candidates {
+		v := VendorOf(id)
+		if v == authorVendor || id == author {
+			continue
+		}
+		byVendor[v] = append(byVendor[v], id)
+	}
+	// Strongest-first within each vendor.
+	rank := func(id string) int { s := scoreFor(id); return int(s.Tier)*100 + s.Rank }
+	for v := range byVendor {
+		ids := byVendor[v]
+		sortByRankDesc(ids, rank)
+		byVendor[v] = ids
+	}
+	// Vendor order: primary first, then the rest in a stable order.
+	order := []Vendor{primary, VendorAnthropic, VendorOpenAI, VendorXAI, VendorZhipu}
+	seen := map[Vendor]bool{}
+	var out []string
+	for _, v := range order {
+		if seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, byVendor[v]...)
+	}
+	return out
+}
+
+func sortByRankDesc(ids []string, rank func(string) int) {
+	for i := 0; i < len(ids); i++ {
+		for j := i + 1; j < len(ids); j++ {
+			if rank(ids[j]) > rank(ids[i]) {
+				ids[i], ids[j] = ids[j], ids[i]
+			}
+		}
+	}
+}

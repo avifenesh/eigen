@@ -168,3 +168,39 @@ func (r *autoRouter) crossReviewer(authorModel func() string) func(context.Conte
 		return llm.ReviewArtifact(ctx, prov, reviewer, author, artifact, focus)
 	}
 }
+
+// councilRunner builds the adversarial planning function: the AUTHOR is the
+// active model, the ADVERSARY is a model from the other vendor (cross-vendor,
+// like review). Returns the hardened plan + a short convergence note. Falls
+// back to a solo author plan when no cross-vendor model is credentialed.
+func (r *autoRouter) councilRunner(authorModel func() string) func(context.Context, string, string) (string, error) {
+	return func(ctx context.Context, task, taskContext string) (string, error) {
+		author := authorModel()
+		authorProv, err := r.providerFor(author)
+		if err != nil {
+			return "", err
+		}
+		cfg := llm.CouncilConfig{Author: authorProv, AuthorID: author, MaxRounds: 3}
+		// Pick the cross-vendor adversary over the credentialed candidate set,
+		// with fallbacks from OTHER vendors (so a flaky primary, e.g. a down
+		// endpoint, degrades to a different vendor — not to a solo plan).
+		cands := llm.RouteCandidates(r.current, r.Providers())
+		if len(cands) == 0 {
+			cands = llm.AllCredentialedModels()
+		}
+		for _, adv := range llm.CrossVendorAdversaries(author, cands) {
+			if ap, err := r.providerFor(adv); err == nil {
+				if cfg.Adversary == nil {
+					cfg.Adversary, cfg.AdversaryID = ap, adv
+				} else {
+					cfg.Fallbacks = append(cfg.Fallbacks, llm.AdversaryOption{Provider: ap, ID: adv})
+				}
+			}
+		}
+		res, err := llm.Council(ctx, cfg, task, taskContext)
+		if err != nil {
+			return "", err
+		}
+		return llm.FormatCouncil(res), nil
+	}
+}
