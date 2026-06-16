@@ -209,6 +209,22 @@ func daemonControl(sub string) bool {
 		}
 		fmt.Printf("eigen daemon stats (instance %s):\n", firstNonEmpty(daemon.Instance(), "default"))
 		fmt.Printf("  uptime:      %s\n", time.Duration(st.UptimeSec)*time.Second)
+		if st.Version != "" {
+			fmt.Printf("  version:     %s\n", st.Version)
+		}
+		if st.Executable != "" {
+			fmt.Printf("  executable:  %s\n", st.Executable)
+		}
+		if st.BinarySHA256 != "" {
+			fmt.Printf("  binary sha:  %s\n", shortHash(st.BinarySHA256, 16))
+		}
+		if st.VCSRevision != "" {
+			dirty := ""
+			if st.VCSModified {
+				dirty = " (dirty)"
+			}
+			fmt.Printf("  git rev:     %s%s\n", shortHash(st.VCSRevision, 12), dirty)
+		}
 		fmt.Printf("  goroutines:  %d\n", st.Goroutines)
 		fmt.Printf("  heap alloc:  %s (sys %s)\n", humanBytes(st.HeapAllocB), humanBytes(st.HeapSysB))
 		if st.RSSB > 0 {
@@ -957,4 +973,11 @@ func humanCount(n int64) string {
 	default:
 		return fmt.Sprintf("%d", n)
 	}
+}
+
+func shortHash(s string, n int) string {
+	if len(s) <= n || n <= 0 {
+		return s
+	}
+	return s[:n]
 }

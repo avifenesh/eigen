@@ -1,409 +1,463 @@
 # eigen roadmap
 
 eigen is a Go terminal coding agent. The real app is `eigen daemon` (a long-lived
-host of many chat sessions over `~/.eigen/daemon.sock`); windows are thin views
-(`eigen attach`). The user is the END user — polish/ergonomics are first-class.
+host of many chat sessions over `~/.eigen/daemon.sock`); terminal windows are
+thin views (`eigen attach` / normal `eigen` auto-attach). The user is the END
+user — durability, polish, and day-to-day ergonomics are first-class.
 
-This file is the **forward plan**: what's open, in priority order. Completed work
-is a terse ledger in `## Shipped` (the long writeups live in git history +
-project memory). Detailed design/perf notes live under `docs/`.
+This file is the **forward plan**. It is intentionally not a changelog: shipped
+work is a terse ledger, with details in git history, docs, and project memory.
+
+---
+
+## Roadmap audit — 2026-06-16
+
+Audit outcome: the previous roadmap had several fully shipped tiers still sitting
+under “Open work.” The actual unshipped backlog is now much smaller.
+
+**Current source of truth:**
+- Repo is clean at the time of this audit.
+- Recently shipped but previously under-recorded:
+  - native Codex/gpt-5.5 backend and fast mode follow-ups;
+  - session persistence/data-loss hardening;
+  - Codex streamed `server_error` retry;
+  - daemon build identity in `eigen daemon stats`.
+- Fully shipped and no longer “open”: Tier 30 token efficiency, Tier 23 daemon
+  resource health, Tier 21 TUI ergonomics, Tier 22 design system, Tier 26 tool
+  disclosure/background shells, Tier 31 custom commands, Tier 32 Codex backend.
+
+**Actual open backlog:**
+1. Tier 27 v1.1 — plugin/marketplace UX + plugin slash commands + Claude
+   `agents/`/subagent prompts.
+2. Tier 20 — phone/pocket mode: outbound notify + remote approve.
+3. Tier 7 leftovers — background-task escalation and bigger planning/research
+   experiments.
+
+**Operational note:** when rebuilding Eigen, a running daemon keeps executing the
+old binary until the user restarts it. `eigen daemon stats` now exposes the
+running executable + exact binary SHA so we can verify this directly.
 
 ---
 
 ## Now / Next / Later
 
 **Now (in flight):**
-- Nothing in flight — pick the next item.
+- Nothing in flight after this audit lands — pick the next item deliberately.
 
 **Next (queued, well-scoped):**
-- **Tier 27 v1.1 (follow-up)** — app browse/install page + `/plugin` + `/marketplace`
-  slash commands; wiring Claude "agents" (subagent prompts). v1 shipped (CLI
-  consume+manage: skills+MCP+hooks+COMMANDS); custom slash commands shipped (Tier 31).
+- **Tier 27 v1.1 — plugin/marketplace product surface.** CLI v1 shipped; custom
+  commands shipped. Remaining work is the user-facing install/browse surface and
+  Claude `agents/` compatibility.
 
 **Later (parked big bets — pull when wanted):**
 - **Tier 20 — eigen in your pocket.** Outbound notify + remote approve with no
-  port/Tailscale (channel choice undecided). Distinct from Tier 19's ssh path.
-- **Tier 7 leftovers.** Background-task escalation (auto re-run/hand-off a
-  failed/stalled/underpowered bg task to a bigger model, merge via `task_status`);
-  plus the unbuilt §7 ideas (#13 ultraplan, #23 non-LLM heads, #24 adversarial
-  GPT×Claude planning).
+  inbound port; Telegram is the likely first channel because it already exists.
+- **Tier 7 leftovers.** Background-task escalation (rerun/hand off failed or
+  underpowered background tasks to a bigger model), plus unbuilt planning dreams
+  (#13 ultraplan, #23 non-LLM heads, #24-style adversarial expansion if wanted).
 
-**Deferred (decided, not bugs)** — see each shipped tier for the `[~]` items and
-their rationale (e.g. Tier 19 network listener = ssh -L is safer; Tier 18 #5
-non-LLM models = out of scope; Tier 11 scrollback/reorder polish; etc.).
-
----
-
-## Open work (detail)
-
-### Tier 30 — token efficiency (research + implementation)
-Reduce tokens per turn without hurting quality — the daemon is becoming an
-always-on driver, so input-token cost compounds. Research FIRST (measure where
-tokens actually go), then implement the wins.
-
-**Grounded findings (from a pre-compact code scan — verify before acting):**
-- Token accounting EXISTS but is shallow: `llm.Usage{InputTokens, OutputTokens}`
-  only (`internal/llm/llm.go:94`). Providers fill it (anthropic/converse/mantle
-  `.Usage`). It does NOT track **cache read/creation tokens** — so we can't see
-  prompt-cache hit rates today. First research step: extend `Usage` with
-  CacheRead/CacheCreation and surface them.
-- Prompt caching is PARTIALLY wired: Anthropic `cache_control: ephemeral` is set
-  (`internal/llm/anthropic.go:294`) but only in one place — audit whether the
-  system prompt + tool schemas + memory (the big static prefix) are actually
-  marked cacheable, and whether converse/mantle/glm/grok have any caching.
-- Per-turn input = systemPrompt (`internal/agent/agent.go:27`) + ExtraSystem
-  (skills) + memory Sections(gmem,mem) + ALL tool schemas (descriptions sent
-  every call) + full transcript. These are the consumers to measure + trim.
-- Compaction exists (`Session.Compact`, agent.go:729) — check it's triggered
-  early enough and that the summary is tight.
-
-**Checklist:**
-- [x] **Research/measure.** SHIPPED (f59f2f1). Extend `llm.Usage` with cache tokens; add a per-turn
-  token breakdown (system / tools / memory / transcript / output) to
-  `eigen daemon stats` or a debug log. Find the biggest line items empirically.
-- [x] **Prompt caching.** SHIPPED (f59f2f1). Ensure the static prefix (system + tool schemas +
-  memory) is marked cacheable on every provider that supports it; verify cache
-  HIT rates via the new Usage fields. This is likely the single biggest win
-  (the static prefix is re-sent every turn).
-- [x] **Tool-schema cost.** SHIPPED (1f115a1). Measure tokens spent on tool descriptions sent every
-  call; consider trimming verbose descriptions or lazy/disclosed schemas
-  (search_tools already does niche disclosure — extend the principle).
-- [x] **Memory injection cost.** SHIPPED (aaa7617). SUMMARY.md is the only injected tier (good) —
-  measure its token weight; confirm it stays small as memory grows.
-- [x] **Transcript/compaction.** SHIPPED (04857a5). Confirm compaction fires before the window
-  bloats; tighten the compaction summary; consider dropping stale tool outputs.
-- [x] **Output discipline.** SHIPPED (85c3579). Reasoning-effort defaults per task; avoid max-effort
-  where medium suffices (ties into the council/author latency finding).
-- [x] **Guard + docs.** SHIPPED. A token-cost baseline + a note in docs (like
-  docs/performance.md) so regressions are visible.
-
-### Tier 23 — performance + resource health (RSS, leaks, profiling)
-The daemon is long-lived and hosts many sessions; nothing has profiled steady-
-state RSS, goroutine growth, or per-turn allocs.
-- [x] **Baseline + visibility.** SHIPPED: `stats` daemon op + `eigen daemon stats`
-  — uptime, goroutines, heap alloc/sys, RSS, GC, sessions/views/running, bg-tasks.
-  Idle baseline ≈ 5 goroutines / 1.8 MiB heap / 20.5 MiB RSS.
-- [x] **Leak hunt.** SHIPPED: found + fixed the one real unbounded-growth bug —
-  the in-memory `BgRegistry.tasks` map (every subtask record, never pruned at
-  runtime). `TestSoakSessionChurnNoLeak` (300-cycle churn) confirms the rest is
-  clean (sessions→0, goroutines flat).
-- [x] **Bound what grows.** SHIPPED: `reapLocked` caps bg-tasks at 200 terminal
-  records (running never reaped, reaped still on disk). Daemon core (sessions,
-  subs, replay@4096) was already bounded — documented in docs/performance.md.
-- [x] **Turn latency + allocs.** SHIPPED: `BenchmarkWireEventEncode`
-  (~500ns/3 allocs, the per-event socket hot path) + `BenchmarkHostStats` (~12µs)
-  as baselines. (Deeper TUI render/diff profiling deferred — not a hot path on
-  the daemon.)
-- [x] **CI/regression guard.** SHIPPED: `make perf` (soak + bg-reap + replay-bound
-  guards, then the benchmarks); `make gate` for build/vet/test/fmt.
-- [x] **Document findings.** SHIPPED: `docs/performance.md` (bounded-structures
-  table, stats usage, baselines, knobs, findings).
-
-### Tier 21 — TUI ergonomics (remaining)
-- [x] **Right-panel notepad tab.** SHIPPED: a freeform per-session scratch pad
-  tab (internal/tui/notepad.go) — type/edit notes, persisted to
-  ~/.eigen/notepad[-instance]/<sessionID>.md (survives detach + daemon restart),
-  autosaved; focus contract mirrors the terminal tab (ctrl+g releases).
-- [x] **Default steer-vs-queue choice (config).** SHIPPED: `config.input_mode`
-  (`steer`/`queue`, default steer) + a clickable `input=` sidebar/status segment,
-  `alt+q`, `/steer`//`/queue`, palette. steer injects mid-turn (between tool
-  rounds); queue holds for the next turn. A steer that lands as the turn ends is
-  consumed by one more round (not stranded).
-- [x] **Home page density.** DONE via the design work: "working now" section +
-  live count in the banner, panel gutters, full-width rules, filled inspector.
-
-### Tier 20 — eigen in your pocket (outbound notify + remote approve)
-A way to be pinged + approve from a phone with NO inbound port and NO Tailscale
-(distinct from Tier 19's ssh path, which needs a reachable box). All captured
-from a cross-vendor review; channel undecided.
-- [ ] **Pick the channel** (build-time): e.g. a relay the daemon polls, or a
-  push provider — outbound-only, no listener.
-- [ ] **Push "needs you"**: an approval / long-turn / error / done event fans out
-  to the channel.
-- [ ] **Answer approve/deny remotely**: a tap routes back through the channel to
-  the daemon's approval queue (the same gated path).
-- [ ] **Read status + recent**: "what's running?" / "what did <session> do?".
-- [ ] **Security/constraints** (from the review): outbound-only, fail-closed,
-  signed/short-lived tokens, approvals stay strictly gated, audit-logged.
-
-### Tier 7 leftovers (big bets, unordered)
-- [ ] **Background-task escalation.** If a bg task fails/stalls/declares itself
-  underpowered, auto re-run or hand off to a bigger model (not necessarily the
-  orchestrator) and merge the final report back via `task_status`.
-- Unbuilt §7 dreams (no commitment): #13 ultraplan, #23 non-LLM heads.
-
-- **Tier 29 — adversarial cross-vendor planning (#24).** ✅ `plan` tool +
-  `eigen plan <task>`: the active model AUTHORS a step-by-step plan, a model from
-  the OTHER vendor adversarially CRITIQUES it (cite-the-flaw, VERDICT:
-  APPROVE|REVISE), the author REVISES, repeat until APPROVE or the round budget
-  (default 3). internal/llm/council.go (Council/FormatCouncil) on the existing
-  cross-vendor plumbing (VendorOf/CrossReviewer/providerFor). Ordered adversary
-  FALLBACK across vendors (CrossVendorAdversaries) + 45s per-adversary timeout so
-  a hanging/flaky primary (gpt-5.5) falls through to grok/glm instead of blocking;
-  author calls unbounded. EIGEN_PLAN_ADVERSARY pins a specific adversary.
-  Live-verified: opus authored + grok-4 critiqued + opus revised → 15KB hardened
-  plan with surfaced dissent. Cost: opus-max author ~100s/call (deliberate, not a
-  hang).
-
-### Tier 27 — plugins / marketplaces (bundled extensions from a catalog repo)
-eigen already installs a SKILL from GitHub (`eigen skill add owner/repo[/sub][@ref]`,
-security-scanned) and loads per-scope `plugins.json`/`mcp.json`/`lsp.json`/`hooks.json`.
-What it lacks is the layer above: a **plugin** = a bundle of components (skills +
-an MCP server + slash commands/prompts + hooks), and a **marketplace** = a catalog
-repo listing many plugins (what Claude/Codex ship). Reverse-engineer their on-disk
-shape first (Claude: a repo with `.claude-plugin/marketplace.json` cataloguing
-plugins, each with `.claude-plugin/plugin.json` + `skills/`,`commands/`,`hooks/`,
-`.mcp.json`; tracked in `known_marketplaces.json` + `installed_plugins.json`) and
-build ON it — read their format directly so the user's existing marketplaces work.
-- [x] **Marketplace registry.** SHIPPED. `eigen marketplace add <owner/repo|url>` clones/fetches
-  the catalog repo, parses its manifest, records it in `~/.eigen/marketplaces.json`;
-  `marketplace list` / `marketplace remove` / `marketplace update`.
-- [x] **Plugin install.** SHIPPED (skills+MCP+hooks wired; commands/agents deferred). `eigen plugin install <name>[@marketplace]` fetches the
-  plugin bundle, security-scans it (reuse the skill scanner), and wires its
-  components into the right per-scope configs: skills → `skills/`, MCP server →
-  `mcp.json` (niche, auto-described), commands/prompts → a prompts dir, hooks →
-  `hooks.json`. `plugin list` / `remove` / `enable|disable` (reuse the existing
-  disable-marker mechanism). Record installs in `~/.eigen/plugins-installed.json`.
-- [x] **Read existing Claude/Codex marketplaces.** SHIPPED (Claude .claude-plugin format parsed directly; Codex has no equivalent — MCP is the interop point). Parse `.claude-plugin/*.json`
-  (and the Codex equivalent) so a user's already-installed marketplaces are
-  usable in eigen without re-authoring — import, don't reinvent.
-- [x] **Commands.** SHIPPED (Tier 31): plugin commands/*.md wired to ~/.eigen/commands as /<plugin>-<name>; custom slash commands (Claude format) loaded from ~/.eigen/commands + project .eigen/commands. [~] App browse page + /plugin /marketplace slash UI + agents components still v1.1. Extend the read-only `[plugins]` page into a
-  browse/install/enable surface; `/plugin` + `/marketplace` slash commands;
-  `search_tools`-style disclosure for plugin-provided tools.
-- [x] **Safety.** SHIPPED: skill scanner reused (RISKY blocks unless --force, rolls back partial wiring); MCP servers niche+gated; tarball traversal/size guards; CLI-ONLY (agent has no install tool — verified internal/plugin imported only by main). Untrusted code: scan before install (RISKY → blocked unless
-  `--force`), MCP servers stay niche + gated, hooks/commands are opt-in, nothing
-  auto-runs on install. The agent CANNOT install plugins — user action only
-  (same rule as `/add-dir`).
-- [~] **Authoring/publishing** a marketplace from eigen = later; v1 is consume +
-  manage, mirroring how `eigen skill add` consumes without authoring.
+**Deferred by decision, not bugs:**
+- Raw daemon network listener: stay with Unix socket / ssh / Tailscale.
+- Agent-side install of skills/plugins: CLI/user action only.
+- Full marketplace authoring/publishing from Eigen: later; v1 consumes/manages.
+- Non-LLM local heads as first-class planning modules: parked until a concrete
+  use-case beats normal model/tool routing.
 
 ---
 
-## Shipped (terse ledger — full writeups in git history + project memory)
+## Open work — detail
 
-- **Tier 32 — native Codex provider (ChatGPT-account backend) + fast mode (2026-06-16).** ✅
-  A native OpenAI Responses-API provider over the ChatGPT-account backend
-  (`chatgpt.com/backend-api/codex`, auth from `~/.codex/auth.json` — NOT
-  api.openai.com / OPENAI_API_KEY, which is the `mantle` path). Studied the
-  open-source codex-rs client + live-captured the wire shape. gpt-5.5 + gpt-5.4
-  in the catalog under provider `codex`; **gpt-5.5 is the default main agent**
-  (xhigh effort, fast on). Four backend hard-requirements found + fixed
-  live: (1) system prompt → top-level `instructions` (not a developer item);
-  (2) `store:false`; (3) `stream:true` — backend is stream-only, Complete drives
-  the SSE path; (4) `include:["reasoning.encrypted_content"]` + the reasoning
-  item's `encrypted_content` echoed back next turn (store:false never persists
-  reasoning, so the client carries the blob or it 404s). SSE tool calls arrive
-  via `response.output_item.done` (the `completed` event has empty output) —
-  applyOutputItem collects function_call/message/reasoning. Legacy transcripts
-  with a bare reasoning id self-heal (dropped, not 404ed). The agent loop treats
-  a reasoning-only turn as progress (not empty), bounded at 20. **Fast mode** =
-  `service_tier:"priority"` (the OpenAI fast/low-latency tier); a clickable
-  `fast=on/off` sidebar/status segment (shown only when supported) + `/fast`
-  command + full daemon plumbing (chat.Backend FastSupported/FastMode/SetFast;
-  daemon `set` op; SessionState.Fast/FastOK). All live-verified against gpt-5.5:
-  single-turn, tool calls, and multi-turn reason→tool→answer.
+### Tier 27 v1.1 — plugins / marketplaces product surface
 
-- **Tier 1 — core capabilities.** Agent loop, tools, sessions, perm gating, MCP/LSP.
-- **Tier 2 — tools + catalog.** read/list/glob/grep/symbols/tree/diff/write/edit/
-  multiedit/apply_patch/move/bash/fetch/todo/skill/memory/task/goal_achieved.
-  (`think` tool skipped — redundant with streamed reasoning.)
-- **Tier 3 — plugins + extension.** `plugins.json` external-command tools; MCP servers.
-- **Tier 4 — dreaming + learning.** Idle reflection → durable memory; consolidation.
-- **Tier 28 — memory v2 (codex-style structured memory).** ✅ Reverse-engineered
-  codex's `~/.codex/memories` pipeline + claude's banthis, ported natively
-  (docs/memory-system.md, S1–S7). Per scope `~/.eigen/memory/<key>/`: tiers
-  `raw/`(per-session rollout summaries, never injected) → `MEMORY.md`(curated)
-  → `SUMMARY.md`(the ONLY injected tier — fixes prompt bloat) + `bans.md`.
-  `index.sqlite` (pure-Go modernc) = leased job queue + usage/forgetting; the
-  whole memory dir is git-versioned. dream.Stage1 = structured rollout summary
-  (outcome / verbatim-quote→rule preferences / key / failures-&-do-differently /
-  reusable); dream.Consolidate + dream.Summarize drive the tiers; pipeline runs
-  via `eigen dream` AND a daemon nightly dreamer (idle-gated, machine-wide, small
-  model). banthis NATIVE: bans.md hard prohibitions via `/ban`//`/unban` + the
-  memory tool's `kind=ban`, injected as system-priority. Self-improvement:
-  recurring friction → PROPOSED subskills (`eigen skill proposed|accept|reject`,
-  never auto-installed). Global profile: cross-project working-style distilled
-  into global scope. Migration: pre-v2 flat `<key>.md` → `<key>/MEMORY.md`
-  non-destructively. Lesson baked in: a flaky-small-model "skip" is NOT a sticky
-  watermark. All live-verified.
-- **Tier 5 — TUI/UX polish.** Steer+queue, mouse, autocomplete, rich tool blocks, diffs.
-- **Tier 6 — agent quality.** Compaction, failover chain, routing, effort levels, usage.
-- **Tier 8 — eigen the app.** Daemon/view architecture; the app shell (home/projects/
-  sessions/config/skills/models/providers/memory/crons/plugins); proactive feed.
-- **Tier 9 — the chat IS the app.** Clickable chrome around the transcript: named-rect
-  layout + hitTest + one action registry; status bar, header, rail, right panel,
-  command palette — keyboard-first AND mouse.
-- **Tier 10 — app shell clickable + structural.** Mouse parity + framed panels +
-  layout rects + per-page clickAt.
-- **Tier 11 — superapp panels.** Closable/tabbed right panel [changes][git][term]
-  [tasks] (term = real PTY); resizable + persisted widths; inline diffs.
-  ([~] later: terminal scrollback/copy/resource caps; rail per-header cursor + drag-reorder.)
-- **Tier 11.5 — chrome consolidation.** Headerless left command sidebar IS the design
-  (≥80 cols); classic header+status only as the <80col fallback.
-- **Tier 12 — subagent observability.** `[tasks]` panel + cross-process cancel via
-  marker file + durable task store. ([~] open child transcript viewer; promote-to-session.)
-- **Tier 13 — session-list ergonomics.** `LastAttached` ordering; type-to-search +
-  source/recency filters; shared fuzzy matcher.
-- **Tier 14 — catalog capability correctness.** Probed vision flags; image plumbing in
-  all 4 providers; fail-open attach / fail-closed routing.
-- **Tier 15 — voice.** Button-first conversation mode: dictate / read-aloud / hands-free;
-  VAD endpointing, interrupt-on-speech, mute, streaming TTS (Kokoro vendored), `/voice`
-  doctor. ([~] "better than the original" is open-ended; minor polish remains.)
-- **Tier 16 — multi-agent orchestration.** `task_group` (read-only parallel fan-out +
-  escalation + synthesize) and `task_group_mutating` (parallel writes in isolated git
-  worktrees, one apply-time approval, rebase-on-conflict).
-- **Tier 17 — workflows.** Authored `~/.eigen/workflows/<name>.md`; `eigen run <name>`
-  + in-TUI `/workflow`. ([~] triggers + authoring-from-history = v2.)
-- **Tier 18 — non-chat model servers.** Embedder seam + semantic `retrieve`; Bedrock
-  `generate_image`; opt-in local-first background routing. ([~] local-routing for main
-  turns; #5 non-LLM heads = out of scope.)
-- **Tier 19 — remote.** `eigen --remote user@host` (ssh-backed sessions), `eigen remote
-  install`, `eigen remote add/list/remove`, `eigen attach --sock` (ssh -L), Machines page.
-  ([~] raw network/WebSocket listener = DECIDED AGAINST: ssh -L + Tailscale is the safer
-  story for an RCE-grade endpoint.)
-- **Tier 22 — design system.** ✅ One visual language across chat + app: deep-teal
-  palette + elevation (base/surface/overlay), one glyph vocabulary, one selection +
-  one active treatment, one breathing-λ motion signature, framed syntax-highlighted
-  code, uniform diff bands, composed spacing, dense command-center home, warmed
-  microcopy; the whole View is painted on Base (no terminal-bg leak). Brief +
-  inventory in `docs/design-system.md` / `docs/design-inventory.md`; `eigen theme`
-  renders the live swatch; a drift-guard test enforces "no raw color outside theme".
-- **Tier 24 — roadmap cleanup.** ✅ This pass: split done from open, terse Shipped
-  ledger, Now/Next/Later up top.
-- **Tier 26 — hierarchical tool disclosure + background shells (2026-06-15).** ✅
-  Two big ergonomics wins:
-  (1) PROGRESSIVE TOOL DISCLOSURE — the agent no longer carries ~73 MCP schemas
-  (~10k tokens) on every request. `tool.Definition` gains `Niche`+`Group`+
-  `GroupDesc`; the prompt lists niche GROUPS (one line each), `search_tools <server>`
-  reveals tool NAMES, `search_tools <keyword>` returns full schemas + UNLOCKS them
-  (sticky per session). MCP server `description` is REQUIRED at the config level
-  (mcp.json `description` → server `initialize.instructions` → warn); it's the
-  Level-0 frontmatter, so every server (incl. builtins, with backfilled
-  descriptions) is clearly named. Live-verified end-to-end (chrome drilled in,
-  used).
-  (2) BACKGROUND SHELLS (Claude-Code ctrl+b) — `bash background=true` returns a
-  shell id immediately and keeps running so the agent parallelizes; `bash_output`
-  polls, `kill_shell` stops; the running shells are injected into the prompt each
-  step (awareness). `alt+d` (zellij-safe; ctrl+b eaten by zellij) backgrounds the
-  bash running RIGHT NOW mid-turn — it's adopted as a shell and the agent
-  continues in the same turn. A `[shells]` right-panel tab lists them (click to
-  expand/kill). In-memory per-session (NO disk → no startup-signal hazard; kill
-  only ever signals a live pgid); 30-finished-shell retention cap. Live-verified
-  in the X11 workspace (`sleep 60` → alt+d → "backgrounded as shell-1" → agent
-  kept polling → `[sh]` panel showed it).
-- **websearch — second general head + honest fallback (2026-06-15).** ✅ Added
-  DuckDuckGo + keyless Brave (search.brave.com HTML) general engines, so a
-  rate-limit/anti-bot block on one general head still has broad-web fallback
-  before dropping to niche/encyclopedic; chain is now Mojeek → DuckDuckGo →
-  brave-web → Marginalia → Wikipedia (each keyless head opt-out-able:
-  `EIGEN_WEBSEARCH_NO_MOJEEK`/`_NO_DUCKDUCKGO`/`_NO_BRAVE_WEB`). DDG `uddg`
-  redirect hrefs are unwrapped; Brave is parsed on STABLE tokens (the `l1`
-  result anchor + the `search-snippet-title` title= attribute) so its rotating
-  Svelte class hashes don't break it. The keyless chain error also now
-  aggregates EVERY engine's failure ("all search engines failed: mojeek: …;
-  duckduckgo: …; …") instead of naming one — a real chain failure is
-  distinguishable from a
-  single-engine rate-limit. The chain already fell through correctly on a
-  rate-limited engine (TestChainFailureIsolation); this just gives it a stronger
-  general fallback. Live-verified DDG returns + unwraps results.
-- **Daemon title-goroutine race fixed (2026-06-15).** ✅ `Host.maybeTitle`'s
-  fire-and-forget meta-write goroutine was unwaited, racing test/teardown cleanup
-  (the "TestTitleInFlightGuard flake" — a real bug, not a flake). `Host.titleWG`
-  + `waitTitles()`; 0 failures in 40 runs (was ~1/14), `-race` clean.
-- **Subagent lifecycle + steer (2026-06-15).** ✅ (1) STEER: enter-while-running
-  injects a message BETWEEN tool-call rounds (mid-turn course-correct), not at
-  end-of-turn. (2) IDLE-STALL: a subagent with no tool call for `stall_idle_min`
-  (2) is killed as hung — NOT a global wall-clock; steady tool calls run as long
-  as needed. (3) PROMOTION: a foreground subtask still active past
-  `front_window_min` (2) moves to the background; the orchestrator gets a task id
-  and keeps working. (4) WAKE: a finished background task wakes its idle
-  orchestrator with the result (hands-free). (5) alt+z / click the status line
-  backgrounds the running turn (ctrl+z is captured by zellij). Routing fix:
-  gpt-5.5 lost its Strict affinity (it was wedged) so general work routes to opus.
-- **`/add-dir` — extra working directories (user grant).** ✅ The USER (never the
-  agent) can extend a session's tool sandbox to more dirs: `/add-dir <path>` +
-  repeatable `--add-dir` flag. Policy.AddRoot (RWMutex-guarded; existing-dir +
-  not-denied validated), Agent.AddDir/Roots, a daemon `add-dir` op, and
-  AddedRoots persisted in session meta + re-validated on restore. Secret/.git
-  denials still apply inside an added root; bash cwd stays the primary root.
-- **Instance isolation.** `eigen dev` runs eigen on a separate "dev" daemon instance
-  (own socket/sessions/tasks) so `/rebuild` never kills production sessions.
+**Goal:** make installed marketplaces/plugins feel first-class in the app and the
+chat command surface, while preserving the safety boundary: the agent cannot
+install code; only the user can.
+
+Already shipped:
+- Marketplace registry: `eigen marketplace add|list|remove|update`.
+- Plugin install engine: `eigen plugin install|list|remove|enable|disable`.
+- Claude `.claude-plugin` format parsing.
+- Skills/MCP/hooks wiring with scanner/rollback safety.
+- Custom slash commands from `~/.eigen/commands` and project `.eigen/commands`;
+  plugin commands are wired as prefixed commands.
+
+Remaining v1.1 work:
+- [ ] **Slash command wrappers.** Add chat commands for the existing safe CLI
+  operations:
+  - `/plugin list`
+  - `/plugin install <name>[@marketplace]`
+  - `/plugin remove <name>`
+  - `/plugin enable <name>` / `/plugin disable <name>`
+  - `/marketplace list`
+  - `/marketplace add <owner/repo|url>`
+  - `/marketplace update [name]`
+  These should call the same code paths as the CLI and keep install operations
+  user-confirmed, never model-initiated.
+- [ ] **App browse/install page.** Upgrade the existing plugins page from status
+  display to a real browser: marketplace list, plugin manifest preview,
+  installed/enabled state, install/remove/enable/disable actions, scanner risk
+  display, and rollback result display.
+- [ ] **Claude `agents/` compatibility.** Parse plugin-provided subagent prompt
+  definitions and expose them through Eigen’s subtask/role system. Decide the
+  mapping carefully: role name, allowed tools, default difficulty/model routing,
+  and whether an installed agent is visible to `task` / `task_group` / command
+  palette.
+- [ ] **Docs + smoke test.** One minimal marketplace fixture; one install/remove
+  flow; one command-wrapper flow; docs/plugins.md updated.
+
+Suggested order:
+1. slash commands (fastest value, easy tests),
+2. app browse/install page,
+3. `agents/` mapping.
+
+### Tier 20 — eigen in your pocket
+
+**Goal:** be pinged and approve work from a phone without opening an inbound port
+and without requiring Tailscale. This is distinct from Tier 19 remote SSH.
+
+Likely first channel: Telegram, because the outbound long-poll bridge already
+exists and is production-only by design.
+
+Open work:
+- [ ] **Push “needs you.”** Approval wait, long-turn done, error, and background
+  completion events fan out to the phone channel.
+- [ ] **Remote approve/deny.** A tap routes back into the existing daemon
+  approval queue; fail closed; audit logged.
+- [ ] **Status/recent.** “What’s running?”, “what changed?”, “show recent result”
+  for a session.
+- [ ] **Security constraints.** Outbound-only, no raw daemon listener, allowlist
+  enforced, short-lived/signed callback payloads if a relay is introduced,
+  approvals stay strictly gated.
+
+Non-goals for v1:
+- full chat UI on phone;
+- arbitrary tool execution from phone;
+- bypassing normal approval gates.
+
+### Tier 7 leftovers — background-task escalation + research bets
+
+Open work:
+- [ ] **Background-task escalation.** If a background task stalls, fails, or
+  explicitly reports underpowered model/context, rerun or hand it to a stronger
+  model and surface the final result through `task_status`.
+- [ ] **Child transcript viewer / promote-to-session.** Useful for debugging
+  long delegated work, but not required for escalation v1.
+- [ ] **Ultraplan / adversarial expansion / non-LLM heads.** Parked research
+  items. Pull only when there is a concrete product reason.
+
+### Reliability watchlist (no active build unless it reproduces)
+
+- **Codex stream failures.** Pre-output `response.failed` server errors are now
+  retried. If users still see `codex stream failed: server_error`, determine
+  whether retries were exhausted or whether the failure happened after partial
+  streamed output (unsafe to auto-retry without duplicating visible text).
+- **Session durability.** Current hardening is file-based and intentionally small:
+  shutdown flush, pending-steer flush, immediate `/clear` persistence, fsync,
+  rotating backups. Do not jump to a database/journal unless the file approach
+  shows another concrete failure.
+- **Prod/dev identity.** `eigen daemon stats` exposes binary identity; use it
+  before assuming a running daemon is on the latest build.
+
+---
+
+## Shipped ledger
+
+### Tier 33 — session durability + Codex resilience (2026-06-16)
+
+Shipped after a real data-loss incident. The goal was not overengineering; it was
+to close the concrete holes that cost time.
+
+- **Lossless daemon shutdown.** `Host.Shutdown` flushes every session transcript,
+  interrupts in-flight turns, waits briefly for cancellation to unwind, then
+  flushes again.
+- **Pending user input is durable.** Steered mid-turn input is flushed on
+  shutdown so a follow-up typed during a running turn is not lost.
+- **Immediate `/clear` persistence.** Clearing a session writes the empty
+  transcript immediately, so restart cannot resurrect stale history.
+- **Transcript hardening.** Atomic write via temp+rename; fsync temp; best-effort
+  fsync directory; keep five backup generations (`.bak` through `.bak.4`);
+  session delete removes backups too.
+- **Persist errors are visible.** Daemon logs transcript save failures instead of
+  swallowing them silently.
+- **Codex streamed failure retry.** Pre-output Codex SSE `response.failed`
+  (`server_error` / `rate_limit` / `overloaded`) is retried with backoff; failures
+  after visible output are surfaced to avoid duplicated text.
+- **Build identity in stats.** `eigen daemon stats` reports version, executable,
+  binary SHA, Go version, and embedded VCS revision/dirty bit when available.
+
+Validation used: focused daemon/transcript/agent/llm tests, full `go test ./...`,
+targeted staticcheck, and `git diff --check`.
+
+### Tier 32 — native Codex provider + fast mode (2026-06-16)
+
+Native provider over the ChatGPT-account Codex backend
+`https://chatgpt.com/backend-api/codex` using `~/.codex/auth.json` OAuth tokens.
+This is not api.openai.com; api-key OpenAI remains the mantle/openai path.
+
+Key shipped behavior:
+- `gpt-5.5` is the default main agent through provider `codex`.
+- Codex backend requirements handled:
+  - system prompt in top-level `instructions`,
+  - `store:false`,
+  - `stream:true`,
+  - `include:["reasoning.encrypted_content"]`,
+  - carry item-level `encrypted_content` back on the next turn.
+- SSE parsing uses `response.output_item.done` for tool calls/messages/reasoning;
+  the `completed` event is not trusted as the only output source.
+- Legacy bare reasoning IDs self-heal by being dropped instead of causing 404.
+- Fast mode = `service_tier:"priority"`, surfaced in TUI/sidebar/status and
+  inherited by trivial/easy subtasks when safe.
+- Failover/routing adjusted around Codex + opus + GLM.
+
+### Tier 31 — custom slash commands
+
+Claude-format markdown commands from user/project/plugin command directories;
+argument expansion in TUI; plugin commands prefixed to avoid collisions.
+Telegram intentionally does not expand command arguments.
+
+### Tier 30 — token efficiency
+
+Shipped:
+- cache read/write token accounting;
+- prompt-cache hit reporting in daemon stats;
+- tool schema caching/progressive disclosure;
+- memory injection kept to compact `SUMMARY.md`;
+- compaction trigger tightened (0.85) and stale tool output shedding;
+- output/effort discipline for subtasks;
+- performance docs and `make perf` / `make perf-tokens` style checks.
+
+### Tier 29 — adversarial cross-vendor planning
+
+`plan` tool / `eigen plan <task>`: author model writes a plan, other-vendor
+adversary critiques, author revises until approval or round budget. Includes
+fallback adversary ladder and timeout so a flaky primary does not block.
+
+### Tier 28 — memory v2
+
+Codex-style structured memory pipeline:
+- `~/.eigen/memory/<scope>/raw/` rollout summaries;
+- `MEMORY.md` curated layer;
+- `SUMMARY.md` is the only injected tier;
+- `bans.md` hard prohibitions;
+- sqlite job queue/index;
+- `eigen dream` + nightly idle dreamer;
+- proposed skills generated but never auto-installed.
+
+### Tier 27 — plugins / marketplaces v1
+
+CLI marketplace/plugin consume-and-manage shipped:
+- marketplace add/list/remove/update;
+- plugin install/list/remove/enable/disable;
+- Claude `.claude-plugin` parsing;
+- skills/MCP/hooks/commands wiring;
+- scanner + rollback safety;
+- agent has no install tool.
+
+v1.1 remains open above.
+
+### Tier 26 — progressive tool disclosure + background shells
+
+- Niche MCP/browser/desktop tools are not all injected every turn.
+- `search_tools` reveals grouped tool names or matching schemas and unlocks
+  them for the session.
+- Bash supports `background=true`, `bash_output`, `kill_shell`, and mid-turn
+  detach (`alt+d`) with a shells panel.
+
+### Tier 23 — performance + resource health
+
+Shipped:
+- `stats` daemon op and `eigen daemon stats`;
+- RSS/heap/goroutine/session/running/bg-task visibility;
+- background-task in-memory reap cap;
+- replay buffer bounded;
+- soak tests and benchmarks;
+- docs/performance.md.
+
+### Tier 22 — design system
+
+One visual language across chat and app:
+- deep-teal palette with surface/elevation;
+- one glyph vocabulary;
+- one selection treatment;
+- one working motion (breathing λ);
+- framed syntax-highlighted code;
+- uniform diff bands;
+- dense command-center home;
+- warmed empty states;
+- no terminal background leaks.
+
+### Tier 21 — TUI ergonomics
+
+Shipped:
+- per-session notepad tab;
+- configurable steer vs queue input mode;
+- home density/working-now improvements.
+
+### Tier 20 — pocket mode
+
+Not shipped; open above.
+
+### Tier 19 — remote
+
+SSH-backed remote sessions, `eigen remote install`, host registry, attach over
+forwarded socket/stdout. Raw network daemon listener deliberately rejected.
+
+### Tier 18 — non-chat model servers
+
+Embedder seam + semantic `retrieve`; image generation; local-first background
+routing where configured. Non-LLM planning heads parked.
+
+### Tier 17 — workflows
+
+Authored markdown workflows in `~/.eigen/workflows/<name>.md`; `eigen run` and
+TUI `/workflow`. Triggers/authoring-from-history deferred.
+
+### Tier 16 — multi-agent orchestration
+
+`task_group` read-only fan-out with synthesis and `task_group_mutating` parallel
+isolated-worktree implementers with one merge approval.
+
+### Tier 15 — voice
+
+Button-first voice mode: dictate/read-aloud/hands-free, VAD endpointing,
+interrupt-on-speech, mute, Kokoro TTS, `/voice doctor`.
+
+### Tier 14 — catalog capability correctness
+
+Model capability probing, vision flags, image plumbing, fail-open attach and
+fail-closed routing.
+
+### Tier 13 — session-list ergonomics
+
+Last-attached ordering, type-to-search, source/recency filters, shared fuzzy
+matcher.
+
+### Tier 12 — subagent observability
+
+Tasks panel, durable background-task store, cross-process cancel markers.
+Child transcript viewer/promote-to-session remains optional future work.
+
+### Tier 11 / 11.5 — panels + chrome consolidation
+
+Right-panel tabs `[changes][git][term][tasks]`, real PTY terminal, resize/persist
+widths, inline diffs, headerless left command sidebar at normal widths.
+
+### Tier 10 — app shell clickable/structural
+
+Mouse parity, framed panels, named rects, per-page click handling.
+
+### Tier 9 — chat is the app
+
+Clickable chrome around transcript: status/sidebar/header/rail/right panel and a
+single action registry.
+
+### Tier 8 — eigen the app
+
+Daemon/view architecture; app shell pages for home/projects/sessions/config/
+skills/models/providers/memory/crons/plugins; proactive feed.
+
+### Tier 7 — leftovers
+
+Core shipped enough to support background tasks/subagents; escalation and bigger
+research dreams remain open above.
+
+### Tier 6 — agent quality
+
+Compaction, failover chain, routing, effort levels, usage reporting.
+
+### Tier 5 — TUI/UX polish
+
+Steer+queue, mouse, autocomplete, rich tool blocks, diffs.
+
+### Tier 4 — dreaming + learning
+
+Idle reflection into durable memory and consolidation.
+
+### Tier 3 — plugins + extension substrate
+
+`plugins.json` tools, MCP servers, hooks/LSP/config substrate.
+
+### Tier 2 — core tool catalog
+
+Core filesystem/search/edit/bash/fetch/todo/skill/memory/task/review/retrieve/
+image/web/search-tools capabilities.
+
+### Tier 1 — core agent
+
+Agent loop, tool use, sessions, permission gating, MCP/LSP wiring.
 
 ---
 
 ## Debt / bugs
-- [x] **Untitled daemon sessions.** FIXED: `Host.Restore` backfills titles; `info()`
-  falls back to a first-message snippet; titler errors log + retry; in-flight guard.
+
+No known critical open data-loss bugs after Tier 33. Watch the reliability notes
+above; promote a watch item to this section only when it reproduces with a clear
+failure mode.
 
 ---
 
-## Conventions / verify gate (durable)
-- **Verify gate (every change):** `gofmt`, `go build ./...`, `go vet ./...`,
-  `go test ./... -count=1`, `staticcheck`. TUI chrome changes ALSO pass the
-  size-sweep (`internal/tui/sizes_test.go`). `go` lives at `~/.local/bin/go`
-  (not on the default PATH); `staticcheck` via `~/go/bin`.
-- **Live-verify** a change with a real model headless: `EIGEN_NO_DAEMON=1 eigen
-  --perm auto -p "…"`. For TUI visuals: an isolated `HOME=/tmp/…` + an xterm with
-  `-bg '#1b1c20'` (the user's ghostty bg, to catch unpainted cells).
-- **Dev workflow:** iterate on eigen with `eigen dev` (isolated "dev" daemon
-  instance). `EIGEN_NO_DAEMON=1` is the in-process escape hatch.
-- **Commit** via `git commit -F <file>` when the message has backticks/`$()`
-  (shell substitution bites). Commit often; push/deploy/delete need explicit OK.
-- **Models (user-set):** default main agent **`gpt-5.5` (codex)** — effort
-  **xhigh**, fast mode **on** (service_tier `priority`), via the ChatGPT-account
-  backend (`~/.codex/auth.json`). Failover chain `gpt-5.5` → `us.anthropic.claude-opus-4-8`
-  → `glm-5.2` → `us.anthropic.claude-sonnet-4-6`. fable-5 REMOVED (Bedrock 500s);
-  native Anthropic removed (Bedrock-only). Routing: `gpt-5.5` (Strict, Rank 5) wins
-  general work; opus (Design) keeps frontend; both Tier-3/med. `glm-5.2` (1M ctx) is
-  Tier-2 above `sonnet-4-6`. `route_providers`: codex, mantle, converse, anthropic,
-  grok, glm.
-- **Finish each tier:** ship items or mark `[~] DEFERRED — why` (not a bare `[ ]`).
+## Verify gate / conventions
 
-## Notes / grounding
-- read-aloud tool the user has: `readd` at `~/projects/tfqol/readd`.
-- skills format = Claude Code SKILL.md (YAML frontmatter `name`,`description`
-  [,`allowed-tools`] + markdown body).
-- permission postures: `gated` (asks for mutating tools) / `auto`.
+- **Normal gate:** `gofmt`, `go build ./...`, `go vet ./...`,
+  `go test ./... -count=1`, staticcheck.
+- **Project gate:** `make gate` when practical; `make perf` for performance/
+  soak-sensitive changes.
+- **TUI visual changes:** include the size-sweep tests under `internal/tui`.
+- **Live verification:** for model/provider changes, run a real model headless
+  when possible (`EIGEN_NO_DAEMON=1 eigen --perm auto -p "..."`).
+- **Production daemon:** do not restart it from an agent session. Rebuilds update
+  `bin/eigen`; the running daemon stays on its current executable until the user
+  restarts it. Use `env -u EIGEN_INSTANCE eigen daemon stats` to verify prod.
+- **Prod instance:** default/empty instance. Use `env -u EIGEN_INSTANCE ...` from
+  a plain terminal to avoid accidentally targeting dev.
+- **Dev instance:** `eigen dev` uses `--instance dev` and separate socket/session
+  stores.
+- **Commit often locally; ask before pushing.**
 
-## Configuration & extension reference (as shipped)
-Tools (~28): read, list, glob, grep, symbols, tree, diff, write, edit, multiedit,
-apply_patch, move, bash (+ background=true), bash_output, kill_shell, fetch, todo,
-skill, memory, task, task_status, task_group, task_group_mutating, goal_achieved,
-retrieve, generate_image, websearch (always available — keyless by default),
-search_tools (unlocks niche tools on demand) (+ plugins + MCP + LSP, all niche/
-disclosed via search_tools; builtin MCP: `workspace` sandbox, `chrome` bridge).
+---
 
-Files (under `~/.eigen/`, plus project-local `./.eigen/`):
-- `config.json` — defaults: `provider`,`model`,`perm`,`effort`,`theme`,`nerd_font`,
-  `input_mode`,`max_tokens`,`daemon_timeout`,`tts_cmd`,`notify_cmd`,`judge_model`,
-  `route`,`route_providers`,`local_background`,`skills_dirs`,`dream_on_idle`,`idle_minutes`
-- `skills/<name>/SKILL.md` — discovered skills (also `EIGEN_SKILLS_DIRS`, colon-sep)
-- `plugins.json` / `mcp.json` / `lsp.json` / `hooks.json` — extensions (per-scope)
-- `memory/global.md` + `memory/<project>.md` — durable notes (auto-injected)
-- `daemon/sessions/*.jsonl` — durable daemon sessions · `sessions/*.eigen.jsonl` — local
-- `workflows/<name>.md` — authored workflows · `hosts.json` — remote machines
-- `tasks/` — background-task records · `index/` — semantic retrieval index
-- `daemon.sock`/`daemon.pid`/`daemon.log` (+ `-<instance>` suffix for named instances)
+## Configuration & extension reference
 
-Env: `EIGEN_PROVIDER`, `EIGEN_PERMISSION`, `EIGEN_MAX_CONTEXT_TOKENS`,
-`EIGEN_REASONING_EFFORT`, `EIGEN_THEME`, `EIGEN_NERD_FONT`, `EIGEN_DAEMON_TIMEOUT`,
-`EIGEN_INSTANCE`, `EIGEN_SRC`, `EIGEN_NO_DAEMON`, `EIGEN_TTS_CMD`, `EIGEN_NOTIFY_CMD`,
-`EIGEN_CLIPBOARD_CMD`, `EIGEN_SKILLS_DIRS`, `EIGEN_LLAMA_BASE_URL`,
-`EIGEN_EMBED_BASE_URL`, `EIGEN_IMAGE_MODEL`, `EIGEN_SMALL_MODEL`, `EIGEN_SUGGEST_MODEL`.
-Web search (keyless by default — these only pick a PREFERRED head): `TAVILY_API_KEY`,
-`BRAVE_API_KEY`, `EIGEN_SEARXNG_URL`, or `EIGEN_WEBSEARCH_URL` (+ `EIGEN_WEBSEARCH_KEY`);
-`EIGEN_WEBSEARCH_NO_MOJEEK` / `_NO_DUCKDUCKGO` / `_NO_BRAVE_WEB` opt out of those
-keyless scrapes; `EIGEN_WEBSEARCH_ALLOW_LOOPBACK`
-/ `EIGEN_WEBSEARCH_ALLOW_PRIVATE` permit a local/LAN SearXNG past the SSRF guard.
+CLI highlights:
+- `eigen [task]`
+- `eigen -p "task"`
+- `eigen -c` / `eigen attach [id]`
+- `eigen dev`
+- `eigen daemon [status|stats|stop|prune|stdio|install|uninstall]`
+- `eigen remote <install|add|list|remove>`
+- `eigen run <workflow>`
+- `eigen dream`
+- `eigen models`
+- `eigen memory <show|backups|consolidate>`
+- `eigen skill <add|list|proposed|accept|reject>`
+- `eigen marketplace ...`
+- `eigen plugin ...`
 
-CLI: `eigen [task]` · `-p` print · `--resume/-c` · `--list` · `--list-skills` ·
-`--list-tools` · `eigen dev` · `eigen daemon [status|stop|install|prune|stdio]` ·
-`eigen attach [--sock]` · `eigen --remote <host>` · `eigen remote <install|add|list|remove>` ·
-`eigen run <workflow>` · `eigen theme` · `eigen dream` · `eigen models` ·
-`eigen memory <show|backups|consolidate> [--global]` · `eigen skill <add|list>` ·
-`eigen chrome [status]`.
+Always-available tool families:
+- filesystem/search/edit/diff;
+- bash + background shells;
+- web/fetch/search;
+- todo/plan/review/goal;
+- memory/skills;
+- subtasks and task groups;
+- retrieve/image generation;
+- `search_tools` for niche MCP/browser/desktop tools.
 
-TUI: `/help` lists all slash commands; keys: `/` commands · `@` files · ctrl+k
-palette · alt+s sessions · alt+w tray · while running: enter steers or queues
-(per `input_mode`, toggle `alt+q`) · esc interrupts · alt+d backgrounds the
-running bash step · alt+z backgrounds the whole turn.
+Important paths:
+- `~/.eigen/config.json`
+- `~/.eigen/daemon/sessions/*.jsonl` + `.meta.json`
+- `~/.eigen/daemon-dev/sessions/` for dev instance
+- `~/.eigen/memory/<scope>/`
+- `~/.eigen/tasks/`
+- `~/.eigen/commands/`
+- `~/.eigen/plugins-installed.json`
+- `~/.eigen/marketplaces.json`
+- `~/.eigen/daemon.sock` / `~/.eigen/daemon-dev.sock`
+
+Important env:
+- `EIGEN_INSTANCE`
+- `EIGEN_NO_DAEMON`
+- `EIGEN_PROVIDER`, `EIGEN_REASONING_EFFORT`, `EIGEN_MAX_CONTEXT_TOKENS`
+- `EIGEN_CODEX_AUTH`, `EIGEN_CODEX_BASE_URL`, `EIGEN_CODEX_SERVICE_TIER`
+- `EIGEN_TELEGRAM_TOKEN`, `EIGEN_TELEGRAM_ALLOW`
+- websearch opt-outs / preferred engines as documented in tool docs.

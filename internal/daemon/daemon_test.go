@@ -846,6 +846,15 @@ func TestStatsOp(t *testing.T) {
 	if st.GoVersion == "" {
 		t.Fatal("go version should be reported")
 	}
+	if st.Version == "" {
+		t.Fatal("eigen version should be reported")
+	}
+	if st.Executable == "" {
+		t.Fatal("daemon executable should be reported")
+	}
+	if len(st.BinarySHA256) != 64 {
+		t.Fatalf("binary sha256 should be full hex digest, got %q", st.BinarySHA256)
+	}
 }
 
 func TestStatsAggregatesCacheTokens(t *testing.T) {

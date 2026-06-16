@@ -2,9 +2,14 @@ package daemon
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -128,6 +133,42 @@ func NewPersistentHost(dir string) *Host {
 // (the BgRegistry lives in package main / the agent layer).
 func (h *Host) SetBgCount(f func() int) { h.bgCount = f }
 
+var buildIdentity struct {
+	once        sync.Once
+	executable  string
+	binarySHA   string
+	vcsRevision string
+	vcsModified bool
+}
+
+func daemonBuildIdentity() (exe, sha, rev string, modified bool) {
+	buildIdentity.once.Do(func() {
+		if exe, err := os.Executable(); err == nil {
+			if real, err := filepath.EvalSymlinks(exe); err == nil {
+				exe = real
+			}
+			buildIdentity.executable = exe
+			if f, err := os.Open(exe); err == nil {
+				h := sha256.New()
+				_, _ = io.Copy(h, f)
+				_ = f.Close()
+				buildIdentity.binarySHA = hex.EncodeToString(h.Sum(nil))
+			}
+		}
+		if bi, ok := debug.ReadBuildInfo(); ok {
+			for _, s := range bi.Settings {
+				switch s.Key {
+				case "vcs.revision":
+					buildIdentity.vcsRevision = s.Value
+				case "vcs.modified":
+					buildIdentity.vcsModified = s.Value == "true"
+				}
+			}
+		}
+	})
+	return buildIdentity.executable, buildIdentity.binarySHA, buildIdentity.vcsRevision, buildIdentity.vcsModified
+}
+
 // Stats returns the daemon's resource-health snapshot for the `stats` op.
 func (h *Host) Stats() DaemonStats {
 	var ms runtime.MemStats
@@ -151,6 +192,7 @@ func (h *Host) Stats() DaemonStats {
 	started := h.started
 	bgCount := h.bgCount
 	h.mu.Unlock()
+	exe, sha, rev, modified := daemonBuildIdentity()
 	st := DaemonStats{
 		Goroutines:       runtime.NumGoroutine(),
 		HeapAllocB:       ms.HeapAlloc,
@@ -161,6 +203,11 @@ func (h *Host) Stats() DaemonStats {
 		Views:            views,
 		RunningTurns:     running,
 		GoVersion:        runtime.Version(),
+		Version:          llm.Version,
+		Executable:       exe,
+		BinarySHA256:     sha,
+		VCSRevision:      rev,
+		VCSModified:      modified,
 		InputTokens:      cumIn,
 		OutputTokens:     cumOut,
 		CacheReadTokens:  cumCacheRead,

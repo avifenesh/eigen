@@ -75,6 +75,11 @@ type DaemonStats struct {
 	RunningTurns int    `json:"running_turns"` // turns in flight
 	BgTasks      int    `json:"bg_tasks"`      // in-memory background-task records
 	GoVersion    string `json:"go_version,omitempty"`
+	Version      string `json:"version,omitempty"`       // eigen version string
+	Executable   string `json:"executable,omitempty"`    // resolved binary path for this daemon
+	BinarySHA256 string `json:"binary_sha256,omitempty"` // exact executable identity (hex)
+	VCSRevision  string `json:"vcs_revision,omitempty"`  // git revision embedded by Go, when available
+	VCSModified  bool   `json:"vcs_modified,omitempty"`  // build had uncommitted changes
 
 	// Cumulative token usage across all hosted sessions since daemon start.
 	// CacheReadTokens vs InputTokens is the prompt-cache hit rate — the headline
