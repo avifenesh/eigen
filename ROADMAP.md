@@ -16,8 +16,6 @@ project memory). Detailed design/perf notes live under `docs/`.
 - Nothing in flight — pick the next item.
 
 **Next (queued, well-scoped):**
-- **Tier 23 — performance + resource health.** RSS/leak soak, bound growth,
-  turn-latency profile, a `make perf` guard, `docs/performance.md`.
 - **Tier 27 — plugins / marketplaces.** Install bundled plugins (skills + MCP +
   commands + hooks) from a catalog repo (what Claude/Codex call a marketplace);
   `eigen marketplace add/list` + `eigen plugin install/list/remove/enable`. Builds
@@ -42,17 +40,24 @@ non-LLM models = out of scope; Tier 11 scrollback/reorder polish; etc.).
 ### Tier 23 — performance + resource health (RSS, leaks, profiling)
 The daemon is long-lived and hosts many sessions; nothing has profiled steady-
 state RSS, goroutine growth, or per-turn allocs.
-- [ ] **Baseline + visibility.** Capture daemon RSS/goroutines/heap at rest and
-  under load; expose a cheap `eigen daemon status` resource line (or a debug op).
-- [ ] **Leak hunt.** Long soak: N sessions, many turns, attach/detach churn,
-  bg tasks, MCP/LSP spin-up/down — watch RSS/goroutines/fds for monotonic growth.
-- [ ] **Bound what grows.** Confirm/cap the unbounded-over-time structures
-  (event replay buffers, per-session history, task records, caches).
-- [ ] **Turn latency + allocs.** Profile a turn's hot path (wire encode/decode,
-  render, diff/markdown, width math); cut obvious allocs.
-- [ ] **CI/regression guard.** A `make perf` (or tagged test) that runs the
-  soak/profile and flags regressions.
-- [ ] **Document findings** in `docs/performance.md` (baselines, caps, knobs).
+- [x] **Baseline + visibility.** SHIPPED: `stats` daemon op + `eigen daemon stats`
+  — uptime, goroutines, heap alloc/sys, RSS, GC, sessions/views/running, bg-tasks.
+  Idle baseline ≈ 5 goroutines / 1.8 MiB heap / 20.5 MiB RSS.
+- [x] **Leak hunt.** SHIPPED: found + fixed the one real unbounded-growth bug —
+  the in-memory `BgRegistry.tasks` map (every subtask record, never pruned at
+  runtime). `TestSoakSessionChurnNoLeak` (300-cycle churn) confirms the rest is
+  clean (sessions→0, goroutines flat).
+- [x] **Bound what grows.** SHIPPED: `reapLocked` caps bg-tasks at 200 terminal
+  records (running never reaped, reaped still on disk). Daemon core (sessions,
+  subs, replay@4096) was already bounded — documented in docs/performance.md.
+- [x] **Turn latency + allocs.** SHIPPED: `BenchmarkWireEventEncode`
+  (~500ns/3 allocs, the per-event socket hot path) + `BenchmarkHostStats` (~12µs)
+  as baselines. (Deeper TUI render/diff profiling deferred — not a hot path on
+  the daemon.)
+- [x] **CI/regression guard.** SHIPPED: `make perf` (soak + bg-reap + replay-bound
+  guards, then the benchmarks); `make gate` for build/vet/test/fmt.
+- [x] **Document findings.** SHIPPED: `docs/performance.md` (bounded-structures
+  table, stats usage, baselines, knobs, findings).
 
 ### Tier 21 — TUI ergonomics (remaining)
 - [x] **Right-panel notepad tab.** SHIPPED: a freeform per-session scratch pad
