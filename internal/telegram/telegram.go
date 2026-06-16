@@ -339,3 +339,7 @@ func stripHTML(s string) string {
 	out = strings.ReplaceAll(out, "&amp;", "&")
 	return out
 }
+
+func isConflict(err error) bool {
+	return err != nil && bytes.Contains([]byte(err.Error()), []byte("Conflict"))
+}

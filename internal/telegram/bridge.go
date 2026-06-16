@@ -69,7 +69,19 @@ func (br *Bridge) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			time.Sleep(3 * time.Second) // transient network/Telegram blip; back off
+			// 409 Conflict = another poller holds this bot (a second bridge /
+			// daemon instance). Back off longer and retry — don't thrash; the
+			// other one may stop, and only one bridge should win.
+			delay := 3 * time.Second
+			if isConflict(err) {
+				delay = 30 * time.Second
+				fmt.Println("eigen telegram: another poller holds this bot (409) — backing off")
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(delay):
+			}
 			continue
 		}
 		for _, up := range ups {
