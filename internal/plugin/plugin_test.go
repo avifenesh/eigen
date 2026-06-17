@@ -20,14 +20,17 @@ func TestParseMarketplaceSourcePolymorphism(t *testing.T) {
 	  "plugins": [
 	    {"name": "p-local", "source": "./plugins/p-local", "description": "local"},
 	    {"name": "p-obj-local", "source": {"source": "./plugins/x"}},
-	    {"name": "p-git", "source": {"source": "github", "repo": "acme/p-git", "ref": "v1"}}
+	    {"name": "p-git", "source": {"source": "github", "repo": "acme/p-git", "ref": "v1"}},
+	    {"name": "p-url", "source": {"source": "url", "url": "https://github.com/acme/p-url.git", "commit": "abc123"}},
+	    {"name": "p-subdir", "source": {"source": "git-subdir", "url": "https://github.com/acme/packs.git", "path": "plugins/one", "sha": "def456"}},
+	    {"name": "p-url-string", "source": "https://github.com/acme/p-url-string.git"}
 	  ]
 	}`
 	m, err := ParseMarketplace([]byte(js))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Name != "demo-market" || len(m.Plugins) != 3 {
+	if m.Name != "demo-market" || len(m.Plugins) != 6 {
 		t.Fatalf("bad parse: %+v", m)
 	}
 	if !m.Plugins[0].Source.IsLocal() || m.Plugins[0].Source.Path != "./plugins/p-local" {
@@ -40,6 +43,18 @@ func TestParseMarketplaceSourcePolymorphism(t *testing.T) {
 	if g.IsLocal() || g.Kind != "github" || g.Repo != "acme/p-git" || g.Ref != "v1" {
 		t.Fatalf("github source: %+v", g)
 	}
+	u := m.Plugins[3].Source
+	if u.Kind != "url" || u.Repo != "https://github.com/acme/p-url.git" || u.EffectiveRef() != "abc123" {
+		t.Fatalf("url source: %+v", u)
+	}
+	sd := m.Plugins[4].Source
+	if sd.Kind != "git-subdir" || sd.Repo != "https://github.com/acme/packs.git" || sd.Path != "plugins/one" || sd.EffectiveRef() != "def456" {
+		t.Fatalf("git-subdir source: %+v", sd)
+	}
+	su := m.Plugins[5].Source
+	if su.Kind != "url" || su.Repo != "https://github.com/acme/p-url-string.git" {
+		t.Fatalf("url string source: %+v", su)
+	}
 	if _, ok := m.Find("p-git"); !ok {
 		t.Fatal("Find should be case-insensitive and locate p-git")
 	}
@@ -48,6 +63,13 @@ func TestParseMarketplaceSourcePolymorphism(t *testing.T) {
 func TestParseMarketplaceRejectsMissingName(t *testing.T) {
 	if _, err := ParseMarketplace([]byte(`{"plugins":[]}`)); err == nil {
 		t.Fatal("expected error on missing name")
+	}
+}
+
+func TestAddMarketplaceRejectsPlainHTTPURL(t *testing.T) {
+	r := NewRegistryAt(t.TempDir())
+	if _, _, err := r.AddMarketplace(context.Background(), "http://example.com/marketplace.json", nil); err == nil || !strings.Contains(err.Error(), "https") {
+		t.Fatalf("expected https-only error, got %v", err)
 	}
 }
 
@@ -70,6 +92,74 @@ func buildTarGz(t *testing.T, top string, files map[string]string) []byte {
 	tw.Close()
 	gz.Close()
 	return buf.Bytes()
+}
+
+func TestExtractTarGzIgnoresPAXGlobalHeader(t *testing.T) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	if err := tw.WriteHeader(&tar.Header{Name: "pax_global_header", Typeflag: tar.TypeXGlobalHeader}); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"name":"demo","plugins":[]}`
+	if err := tw.WriteHeader(&tar.Header{Name: "repo-main/.claude-plugin/marketplace.json", Mode: 0o644, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write([]byte(body)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	root, err := extractTarGz(bytes.NewReader(buf.Bytes()), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(root) != "repo-main" {
+		t.Fatalf("topDir should ignore pax global header, got %s", root)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".claude-plugin", "marketplace.json")); err != nil {
+		t.Fatalf("marketplace missing after extract: %v", err)
+	}
+}
+
+func TestExtractTarGzSkipsSymlinkEntries(t *testing.T) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	if err := tw.WriteHeader(&tar.Header{Name: "repo-main/link", Linkname: "/etc", Typeflag: tar.TypeSymlink}); err != nil {
+		t.Fatal(err)
+	}
+	body := "safe"
+	if err := tw.WriteHeader(&tar.Header{Name: "repo-main/link/file.txt", Mode: 0o644, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write([]byte(body)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	root, err := extractTarGz(bytes.NewReader(buf.Bytes()), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(filepath.Join(root, "link"))
+	if err != nil {
+		t.Fatalf("expected link path to exist as a directory for nested file: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("tar symlink entry should be skipped, not created")
+	}
+	if !info.IsDir() {
+		t.Fatalf("link path should be a directory created by nested file, got %v", info.Mode())
+	}
 }
 
 func TestExtractTarGzRejectsTraversal(t *testing.T) {
@@ -171,6 +261,15 @@ type riskyScanner struct{}
 
 func (riskyScanner) Scan(_ context.Context, _, _ string) (skill.ScanResult, error) {
 	return skill.ScanResult{Safe: false, Reasons: []string{"curl|sh"}}, nil
+}
+
+type commandRiskyScanner struct{}
+
+func (commandRiskyScanner) Scan(_ context.Context, name, _ string) (skill.ScanResult, error) {
+	if name == "do-it" {
+		return skill.ScanResult{Safe: false, Reasons: []string{"command risky"}}, nil
+	}
+	return skill.ScanResult{Safe: true}, nil
 }
 
 // A full marketplace+plugin tarball with a skill, an MCP server, and a hook.
@@ -297,6 +396,104 @@ func TestInstallPluginWiresComponents(t *testing.T) {
 	}
 }
 
+func TestInstallCodexMarketplaceAndAdaptAgents(t *testing.T) {
+	dir := t.TempDir()
+	market := filepath.Join(dir, "openai-bundled")
+	pluginRoot := filepath.Join(market, "plugins", "browser")
+	mustWrite(t, filepath.Join(market, ".agents", "plugins", "marketplace.json"), `{
+	  "name": "openai-bundled",
+	  "interface": {"displayName": "OpenAI Bundled"},
+	  "plugins": [{"name": "browser", "source": {"source": "local", "path": "./plugins/browser"}, "category": "Engineering"}]
+	}`)
+	mustWrite(t, filepath.Join(pluginRoot, ".codex-plugin", "plugin.json"), `{
+	  "name": "browser",
+	  "version": "1.0.0",
+	  "description": "Codex browser plugin",
+	  "skills": "./skills/",
+	  "agents": "./agents/",
+	  "mcp_servers": {"browser": {"command": ["node", "${CODEX_PLUGIN_ROOT}/server.js"], "env": {"ROOT": "${CODEX_PLUGIN_ROOT}"}}}
+	}`)
+	mustWrite(t, filepath.Join(pluginRoot, "skills", "control", "SKILL.md"), "---\nname: control\ndescription: control browser\n---\nUse ${CODEX_PLUGIN_ROOT}/scripts/browser.js\n")
+	mustWrite(t, filepath.Join(pluginRoot, "agents", "tester.md"), "---\nname: qa-tester\ndescription: test local web apps\n---\nYou are a browser QA tester.\n")
+	mustWrite(t, filepath.Join(pluginRoot, "server.js"), "// server\n")
+
+	r := NewRegistryAt(filepath.Join(dir, "eigen"))
+	if _, _, err := r.AddMarketplace(context.Background(), market, nil); err != nil {
+		t.Fatalf("add codex marketplace: %v", err)
+	}
+	res, err := r.InstallPlugin(context.Background(), "browser", "", InstallOptions{})
+	if err != nil {
+		t.Fatalf("install codex plugin: %v", err)
+	}
+	if len(res.Plugin.Skills) != 2 || len(res.Plugin.Agents) != 1 || res.Plugin.Agents[0] != "browser-agent-qa-tester" {
+		t.Fatalf("skills=%v agents=%v", res.Plugin.Skills, res.Plugin.Agents)
+	}
+	agentSkill, err := os.ReadFile(filepath.Join(r.SkillsDir(), "browser-agent-qa-tester", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("agent skill missing: %v", err)
+	}
+	if !bytes.Contains(agentSkill, []byte("Original agent prompt")) || !bytes.Contains(agentSkill, []byte("browser QA tester")) {
+		t.Fatalf("agent prompt not preserved:\n%s", agentSkill)
+	}
+	browserSkill, err := os.ReadFile(filepath.Join(r.SkillsDir(), "browser-control", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("browser skill missing: %v", err)
+	}
+	if bytes.Contains(browserSkill, []byte("${CODEX_PLUGIN_ROOT}")) || !bytes.Contains(browserSkill, []byte("${EIGEN_PLUGIN_ROOT}")) {
+		t.Fatalf("Codex root var should be rewritten, got:\n%s", browserSkill)
+	}
+	mcp, _ := readObj(r.MCPPath())
+	servers, _ := mcp["servers"].([]any)
+	if len(servers) != 1 {
+		t.Fatalf("want 1 mcp server, got %d", len(servers))
+	}
+	cmd := servers[0].(jsonObj)["command"].([]any)
+	if !strings.Contains(cmd[1].(string), "${EIGEN_PLUGIN_ROOT}") {
+		t.Fatalf("mcp command should use eigen root var: %v", cmd)
+	}
+	ok, err := r.Uninstall("browser")
+	if err != nil || !ok {
+		t.Fatalf("uninstall browser: ok=%v err=%v", ok, err)
+	}
+	if _, err := os.Stat(filepath.Join(r.SkillsDir(), "browser-agent-qa-tester")); err == nil {
+		t.Fatal("uninstall should remove generated agent skill")
+	}
+}
+
+func mustWrite(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDisabledMarketplaceIsNotSearchedForInstalls(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRegistryAt(dir)
+	tgz := demoTarball(t)
+	if _, _, err := r.AddMarketplace(context.Background(), "jane/demo", fakeTree(tgz)); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := r.SetMarketEnabled("demo", false); err != nil || !ok {
+		t.Fatalf("disable market: ok=%v err=%v", ok, err)
+	}
+	if _, err := r.InstallPlugin(context.Background(), "toolbox", "", InstallOptions{Tree: fakeTree(tgz)}); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("disabled marketplace should be skipped for implicit installs, got %v", err)
+	}
+	if _, err := r.InstallPlugin(context.Background(), "toolbox", "demo", InstallOptions{Tree: fakeTree(tgz)}); err == nil || !strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("explicit disabled marketplace should explain disabled state, got %v", err)
+	}
+	if ok, err := r.SetMarketEnabled("demo", true); err != nil || !ok {
+		t.Fatalf("enable market: ok=%v err=%v", ok, err)
+	}
+	if _, err := r.InstallPlugin(context.Background(), "toolbox", "", InstallOptions{Tree: fakeTree(tgz)}); err != nil {
+		t.Fatalf("enabled marketplace should install: %v", err)
+	}
+}
+
 func TestInstallPluginBlocksRiskyUnlessForced(t *testing.T) {
 	dir := t.TempDir()
 	r := NewRegistryAt(dir)
@@ -323,6 +520,30 @@ func TestInstallPluginBlocksRiskyUnlessForced(t *testing.T) {
 	}
 	if len(res.Scans) == 0 {
 		t.Fatal("forced install should still surface the risky verdict")
+	}
+}
+
+func TestInstallRollbackCleansEarlierComponentsWhenLaterScanFails(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRegistryAt(dir)
+	tgz := demoTarball(t)
+	_, _, _ = r.AddMarketplace(context.Background(), "jane/demo", fakeTree(tgz))
+	_, err := r.InstallPlugin(context.Background(), "toolbox", "", InstallOptions{Scanner: commandRiskyScanner{}, Tree: fakeTree(tgz)})
+	if err == nil {
+		t.Fatal("expected command scan failure")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "skills", "toolbox-greet")); err == nil {
+		t.Fatal("rollback should remove skills installed before later scan failure")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "plugins", "toolbox")); err == nil {
+		t.Fatal("rollback should remove cached bundle")
+	}
+	mcp, _ := readObj(r.MCPPath())
+	if servers, _ := mcp["servers"].([]any); len(servers) != 0 {
+		t.Fatalf("rollback should remove mcp servers, got %d", len(servers))
+	}
+	if _, ok := r.InstalledByName("toolbox"); ok {
+		t.Fatal("failed install must not be recorded")
 	}
 }
 

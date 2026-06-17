@@ -264,10 +264,11 @@ func main() {
 		return
 	}
 
-	// `eigen marketplace <add|list|remove|update>` and `eigen plugin
-	// <install|list|remove|enable|disable>`: the Tier 27 plugin/marketplace
-	// layer. CLI-only — the agent cannot install plugins (same rule as
-	// /add-dir); untrusted bundle code is scanned before install.
+	// `eigen marketplace <add|list|remove|delete|enable|disable|update>` and
+	// `eigen plugin <install|list|remove|delete|enable|disable>`: the Tier 27
+	// plugin/marketplace layer. User-command only — the agent cannot install
+	// plugins (same rule as /add-dir); untrusted bundle code is scanned before
+	// install.
 	if flag.Arg(0) == "marketplace" {
 		runMarketplaceCmd(flag.Args()[1:])
 		return

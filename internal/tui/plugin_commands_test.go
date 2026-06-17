@@ -35,9 +35,9 @@ func TestPluginCommandListAndRemove(t *testing.T) {
 		t.Fatalf("/plugin list missing installed plugin details:\n%s", got)
 	}
 
-	m.command("/plugin remove demo")
-	if got := lastNote(m); !strings.Contains(got, "removed plugin") {
-		t.Fatalf("/plugin remove should confirm removal, got %q", got)
+	m.command("/plugin delete demo")
+	if got := lastNote(m); !strings.Contains(got, "deleted plugin") {
+		t.Fatalf("/plugin delete should confirm removal, got %q", got)
 	}
 	if _, ok := reg.InstalledByName("demo"); ok {
 		t.Fatal("/plugin remove should delete the installed-plugin record")
@@ -81,9 +81,24 @@ func TestMarketplaceCommandListAndRemove(t *testing.T) {
 		t.Fatalf("/marketplace list missing marketplace details:\n%s", got)
 	}
 
-	m.command("/marketplace remove core")
-	if got := lastNote(m); !strings.Contains(got, "removed marketplace") {
-		t.Fatalf("/marketplace remove should confirm removal, got %q", got)
+	m.command("/marketplace disable core")
+	if got := lastNote(m); !strings.Contains(got, "disabled marketplace") {
+		t.Fatalf("/marketplace disable should confirm disable, got %q", got)
+	}
+	if mk, ok := reg.MarketByName("core"); !ok || !mk.Disabled {
+		t.Fatalf("/marketplace disable should mark record disabled: %+v ok=%v", mk, ok)
+	}
+	m.command("/marketplace enable core")
+	if got := lastNote(m); !strings.Contains(got, "enabled marketplace") {
+		t.Fatalf("/marketplace enable should confirm enable, got %q", got)
+	}
+	if mk, ok := reg.MarketByName("core"); !ok || mk.Disabled {
+		t.Fatalf("/marketplace enable should clear disabled flag: %+v ok=%v", mk, ok)
+	}
+
+	m.command("/marketplace delete core")
+	if got := lastNote(m); !strings.Contains(got, "deleted marketplace") {
+		t.Fatalf("/marketplace delete should confirm removal, got %q", got)
 	}
 	if _, ok := reg.MarketByName("core"); ok {
 		t.Fatal("/marketplace remove should delete the market record")

@@ -114,8 +114,8 @@ func runPluginInstall(d *Data, name string) string {
 		return "install failed: " + err.Error()
 	}
 	pl := res.Plugin
-	msg := fmt.Sprintf("✓ installed %q — %d skill(s), %d command(s), %d mcp, %d hook(s)",
-		pl.Name, len(pl.Skills), len(pl.Commands), len(pl.MCPServers), pl.Hooks)
+	msg := fmt.Sprintf("✓ installed %q — %d skill(s), %d agent(s), %d command(s), %d mcp, %d hook(s)",
+		pl.Name, len(pl.Skills), len(pl.Agents), len(pl.Commands), len(pl.MCPServers), pl.Hooks)
 	if len(res.Scans) > 0 {
 		msg += "  ⚠ scan flags (kept; --force-style)"
 	}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,12 +14,15 @@ import (
 )
 
 // pluginRootVar is the Claude placeholder that expands to a plugin's installed
-// root dir. Bundled scripts/MCP commands reference it so they never hardcode a
-// path. On install we rewrite it to eigenRootVar (OUR namespace) and provide the
+// root dir. Codex plugins use CODEX_PLUGIN_ROOT for the same purpose. Bundled
+// scripts/MCP commands reference it so they never hardcode a path. On install we
+// rewrite either placeholder to eigenRootVar (OUR namespace) and provide the
 // value via the EIGEN_PLUGIN_ROOT env param — so the path lives in ONE env
 // variable, not smeared as a literal through every arg. The MCP loader expands
 // ${EIGEN_PLUGIN_ROOT} in command/args at launch against the server's env.
 const pluginRootVar = "${CLAUDE_PLUGIN_ROOT}"
+
+const codexPluginRootVar = "${CODEX_PLUGIN_ROOT}"
 
 // eigenRootEnv is our namespaced env var carrying the bundle root.
 const eigenRootEnv = "EIGEN_PLUGIN_ROOT"
@@ -37,7 +42,7 @@ type InstallOptions struct {
 type InstallResult struct {
 	Plugin   InstalledPlugin
 	Scans    []ScanFinding // per-component scan verdicts (RISKY ones, when forced)
-	Warnings []string      // non-fatal notes (e.g. commands/agents not wired in v1)
+	Warnings []string      // non-fatal notes (e.g. Codex app integrations not wired yet)
 }
 
 // ScanFinding is one component's risky scan verdict (surfaced to the user).
@@ -52,6 +57,9 @@ type ScanFinding struct {
 func (r *Registry) AddMarketplace(ctx context.Context, source string, fetch TreeFetcher) (*Marketplace, MarketRecord, error) {
 	if fetch == nil {
 		fetch = DefaultTreeFetcher
+	}
+	if mkt, rec, ok, err := r.addDirectMarketplace(ctx, source); ok || err != nil {
+		return mkt, rec, err
 	}
 	ref, err := skill.ParseGitHubRef(source)
 	if err != nil {
@@ -72,10 +80,9 @@ func (r *Registry) AddMarketplace(ctx context.Context, source string, fetch Tree
 	if err != nil {
 		return nil, MarketRecord{}, err
 	}
-	mfPath := filepath.Join(base, ".claude-plugin", "marketplace.json")
-	b, err := os.ReadFile(mfPath)
+	b, _, err := readMarketplaceManifest(base)
 	if err != nil {
-		return nil, MarketRecord{}, fmt.Errorf("no .claude-plugin/marketplace.json in %s", source)
+		return nil, MarketRecord{}, fmt.Errorf("no marketplace.json in %s (looked for .claude-plugin/marketplace.json, .agents/plugins/marketplace.json, marketplace.json): %w", source, err)
 	}
 	mkt, err := ParseMarketplace(b)
 	if err != nil {
@@ -91,6 +98,9 @@ func (r *Registry) AddMarketplace(ctx context.Context, source string, fetch Tree
 // fetchMarketplace re-fetches a recorded marketplace's catalog into a temp dir,
 // returning the parsed catalog + the extracted repo root + a cleanup func.
 func (r *Registry) fetchMarketplace(ctx context.Context, rec MarketRecord, fetch TreeFetcher) (*Marketplace, string, func(), error) {
+	if mkt, base, ok, err := r.fetchDirectMarketplace(ctx, rec.Source); ok || err != nil {
+		return mkt, base, func() {}, err
+	}
 	ref, err := skill.ParseGitHubRef(rec.Source)
 	if err != nil {
 		return nil, "", nil, err
@@ -110,7 +120,7 @@ func (r *Registry) fetchMarketplace(ctx context.Context, rec MarketRecord, fetch
 		cleanup()
 		return nil, "", nil, err
 	}
-	b, err := os.ReadFile(filepath.Join(base, ".claude-plugin", "marketplace.json"))
+	b, _, err := readMarketplaceManifest(base)
 	if err != nil {
 		cleanup()
 		return nil, "", nil, fmt.Errorf("marketplace %q catalog missing: %w", rec.Name, err)
@@ -123,11 +133,134 @@ func (r *Registry) fetchMarketplace(ctx context.Context, rec MarketRecord, fetch
 	return mkt, base, cleanup, nil
 }
 
+func (r *Registry) addDirectMarketplace(ctx context.Context, source string) (*Marketplace, MarketRecord, bool, error) {
+	mkt, base, ok, err := r.fetchDirectMarketplace(ctx, source)
+	if !ok || err != nil {
+		return nil, MarketRecord{}, ok, err
+	}
+	rec := MarketRecord{Name: mkt.Name, Source: source, Owner: mkt.Owner.Name}
+	if err := r.AddMarket(rec); err != nil {
+		return nil, MarketRecord{}, true, err
+	}
+	_ = base
+	return mkt, rec, true, nil
+}
+
+func (r *Registry) fetchDirectMarketplace(ctx context.Context, source string) (*Marketplace, string, bool, error) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return nil, "", false, nil
+	}
+	if strings.HasPrefix(source, "http://") {
+		return nil, "", true, fmt.Errorf("marketplace URL must use https: %s", source)
+	}
+	if isHTTP(source) && !strings.Contains(source, "github.com/") {
+		b, err := fetchURL(ctx, source)
+		if err != nil {
+			return nil, "", true, err
+		}
+		mkt, err := ParseMarketplace(b)
+		return mkt, "", true, err
+	}
+	if isHTTP(source) && strings.HasSuffix(strings.ToLower(strings.Split(source, "?")[0]), ".json") {
+		b, err := fetchURL(ctx, source)
+		if err != nil {
+			return nil, "", true, err
+		}
+		mkt, err := ParseMarketplace(b)
+		return mkt, "", true, err
+	}
+	if isLocalPath(source) {
+		path := source
+		if strings.HasPrefix(path, "file://") {
+			path = strings.TrimPrefix(path, "file://")
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, "", true, err
+		}
+		base := path
+		var b []byte
+		if info.IsDir() {
+			var err error
+			b, _, err = readMarketplaceManifest(path)
+			if err != nil {
+				return nil, "", true, err
+			}
+		} else {
+			var err error
+			b, err = os.ReadFile(path)
+			if err != nil {
+				return nil, "", true, err
+			}
+			base = filepath.Dir(path)
+		}
+		mkt, err := ParseMarketplace(b)
+		return mkt, base, true, err
+	}
+	return nil, "", false, nil
+}
+
+func readMarketplaceManifest(base string) ([]byte, string, error) {
+	candidates := []string{
+		filepath.Join(base, ".claude-plugin", "marketplace.json"),
+		filepath.Join(base, ".agents", "plugins", "marketplace.json"),
+		filepath.Join(base, "marketplace.json"),
+	}
+	var last error
+	for _, p := range candidates {
+		b, err := os.ReadFile(p)
+		if err == nil {
+			return b, p, nil
+		}
+		last = err
+	}
+	if last == nil {
+		last = os.ErrNotExist
+	}
+	return nil, "", last
+}
+
+func fetchURL(ctx context.Context, url string) ([]byte, error) {
+	if !strings.HasPrefix(url, "https://") {
+		return nil, fmt.Errorf("marketplace URL must use https: %s", url)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "eigen/plugin-install")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("fetch %s: HTTP %d", url, resp.StatusCode)
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, maxFileBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > maxFileBytes {
+		return nil, fmt.Errorf("remote marketplace exceeds %d bytes", maxFileBytes)
+	}
+	return b, nil
+}
+
+func isHTTP(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+func isLocalPath(s string) bool {
+	return strings.HasPrefix(s, ".") || strings.HasPrefix(s, "/") || strings.HasPrefix(s, "file://")
+}
+
 // InstallPlugin installs a plugin by name from a recorded marketplace (mktName
 // optional — if empty, the first marketplace listing the plugin wins). It
 // fetches the plugin's tree, scans each skill/command body, and wires
 // components into the global per-scope configs. CLI-only (the agent never
-// calls this).
+// calls this); only CLI/TUI/app user actions do.
 func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string, opts InstallOptions) (*InstallResult, error) {
 	if err := SafeName(pluginName); err != nil {
 		return nil, err
@@ -168,11 +301,23 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 		return nil, fmt.Errorf("cache bundle: %w", err)
 	}
 
+	desc := entry.Description
+	version := entry.Version
+	if comps.Manifest != nil {
+		desc = firstNonEmpty(desc, firstNonEmpty(comps.Manifest.Description, comps.Manifest.Interface.ShortDescription))
+		version = firstNonEmpty(version, comps.Manifest.Version)
+	}
 	res := &InstallResult{}
 	res.Plugin = InstalledPlugin{
-		Name: pluginName, Marketplace: mkt, Version: entry.Version,
-		Description: entry.Description, Root: dest,
+		Name: pluginName, Marketplace: mkt, Version: version,
+		Description: desc, Root: dest,
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			r.cleanupPluginFiles(res.Plugin)
+		}
+	}()
 
 	// 1) Scan + wire skills (copy each skill dir; scan its SKILL.md body).
 	for _, sf := range comps.Skills {
@@ -184,14 +329,12 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 			if !sr.Safe {
 				res.Scans = append(res.Scans, ScanFinding{Component: "skill:" + sf.Name, Reasons: sr.Reasons})
 				if !opts.Force {
-					r.uninstallFiles(pluginName)
-					_ = os.RemoveAll(dest)
 					return nil, &skill.RiskyError{Name: pluginName + "/" + sf.Name, Reasons: sr.Reasons}
 				}
 			}
 		}
 		instName := pluginName + "-" + sf.Name // namespace to avoid collisions
-		if err := r.installSkillDir(filepath.Join(comps.Root, "skills", sf.Name), instName, dest, opts.Overwrite); err != nil {
+		if err := r.installSkillDir(sf.Dir, instName, dest, opts.Overwrite); err != nil {
 			return nil, fmt.Errorf("install skill %q: %w", sf.Name, err)
 		}
 		res.Plugin.Skills = append(res.Plugin.Skills, instName)
@@ -224,8 +367,6 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 			if !sr.Safe {
 				res.Scans = append(res.Scans, ScanFinding{Component: "command:" + cf.Name, Reasons: sr.Reasons})
 				if !opts.Force {
-					r.uninstallFiles(pluginName)
-					_ = os.RemoveAll(dest)
 					return nil, &skill.RiskyError{Name: pluginName + "/" + cf.Name, Reasons: sr.Reasons}
 				}
 			}
@@ -237,14 +378,39 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 		res.Plugin.Commands = append(res.Plugin.Commands, instName)
 	}
 
-	// agents: parsed-but-not-wired (no subagent-prompt subsystem yet).
-	if comps.Agents > 0 {
-		res.Warnings = append(res.Warnings, fmt.Sprintf("%d agent(s) not wired (subagent prompts deferred to a later version)", comps.Agents))
+	// 5) Adapt Claude/Codex agents into Eigen skills. Eigen does not yet expose
+	// plugin-defined subtask roles, but preserving the agent prompt as a namespaced
+	// skill makes the agent usable immediately and keeps it enable/disable-able.
+	for _, af := range comps.Agents {
+		content := agentAsSkillContent(pluginName, af)
+		if opts.Scanner != nil {
+			sr, serr := opts.Scanner.Scan(ctx, af.Name, content)
+			if serr != nil {
+				return nil, fmt.Errorf("scan agent %q: %w", af.Name, serr)
+			}
+			if !sr.Safe {
+				res.Scans = append(res.Scans, ScanFinding{Component: "agent:" + af.Name, Reasons: sr.Reasons})
+				if !opts.Force {
+					return nil, &skill.RiskyError{Name: pluginName + "/" + af.Name, Reasons: sr.Reasons}
+				}
+			}
+		}
+		instName := pluginName + "-agent-" + safeComponentName(af.Name)
+		if err := r.installGeneratedSkill(instName, content, dest, opts.Overwrite); err != nil {
+			return nil, fmt.Errorf("install agent %q: %w", af.Name, err)
+		}
+		res.Plugin.Skills = append(res.Plugin.Skills, instName)
+		res.Plugin.Agents = append(res.Plugin.Agents, instName)
+	}
+
+	if comps.Apps > 0 {
+		res.Warnings = append(res.Warnings, fmt.Sprintf("%d Codex app integration(s) not wired yet", comps.Apps))
 	}
 
 	if err := r.RecordInstall(res.Plugin); err != nil {
 		return nil, err
 	}
+	committed = true
 	return res, nil
 }
 
@@ -260,6 +426,12 @@ func (r *Registry) resolvePlugin(ctx context.Context, pluginName, mktName string
 	}
 	for _, m := range markets {
 		if mktName != "" && !strings.EqualFold(m.Name, mktName) {
+			continue
+		}
+		if m.Disabled {
+			if mktName != "" {
+				return PluginEntry{}, "", "", func() {}, fmt.Errorf("marketplace %q is disabled (enable it first)", m.Name)
+			}
 			continue
 		}
 		mkt, base, cleanup, ferr := r.fetchMarketplace(ctx, m, fetch)
@@ -285,19 +457,26 @@ func (r *Registry) resolvePlugin(ctx context.Context, pluginName, mktName string
 // a subdir of the marketplace repo; a git/github source is fetched separately.
 func (r *Registry) resolvePluginRoot(ctx context.Context, entry PluginEntry, marketBase string, fetch TreeFetcher) (string, func(), error) {
 	if entry.Source.IsLocal() {
+		if marketBase == "" {
+			return "", func() {}, fmt.Errorf("plugin %q uses a relative source but marketplace %q has no local base", entry.Name, entry.Source.Path)
+		}
 		root, err := safeJoinUnder(marketBase, entry.Source.Path, "plugin source")
 		if err != nil {
 			return "", func() {}, err
 		}
 		return root, func() {}, nil
 	}
-	// External repo (git/github): owner/repo[@ref] in Repo.
-	ref, err := skill.ParseGitHubRef(entry.Source.Repo)
-	if err != nil {
-		return "", func() {}, fmt.Errorf("plugin source %q: %w", entry.Source.Repo, err)
+	// External repo (git/github/url/git-subdir): owner/repo[@ref] or a GitHub URL.
+	repo := entry.Source.Repo
+	if repo == "" {
+		return "", func() {}, fmt.Errorf("plugin source for %q has no repo/url", entry.Name)
 	}
-	if entry.Source.Ref != "" {
-		ref.Ref = entry.Source.Ref
+	ref, err := skill.ParseGitHubRef(repo)
+	if err != nil {
+		return "", func() {}, fmt.Errorf("plugin source %q: %w", repo, err)
+	}
+	if r := entry.Source.EffectiveRef(); r != "" {
+		ref.Ref = r
 	}
 	tmp, err := os.MkdirTemp("", "eigen-plugin-*")
 	if err != nil {
@@ -309,7 +488,11 @@ func (r *Registry) resolvePluginRoot(ctx context.Context, entry PluginEntry, mar
 		cleanup()
 		return "", func() {}, err
 	}
-	pluginRoot, err := safeJoinUnder(root, ref.Path, "plugin repo")
+	pluginPath := ref.Path
+	if strings.TrimSpace(entry.Source.Path) != "" {
+		pluginPath = entry.Source.Path
+	}
+	pluginRoot, err := safeJoinUnder(root, pluginPath, "plugin repo")
 	if err != nil {
 		cleanup()
 		return "", func() {}, err
@@ -344,12 +527,83 @@ func (r *Registry) installSkillDir(srcDir, instName, bundleRoot string, overwrit
 	return nil
 }
 
-func expandRoot(s, root string) string { return strings.ReplaceAll(s, pluginRootVar, root) }
+func (r *Registry) installGeneratedSkill(instName, content, bundleRoot string, overwrite bool) error {
+	dst := filepath.Join(r.SkillsDir(), instName)
+	if overwrite {
+		_ = os.RemoveAll(dst)
+	}
+	if _, err := os.Stat(dst); err == nil {
+		return fmt.Errorf("skill %q already exists at %s", instName, dst)
+	}
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dst, "SKILL.md"), []byte(toEigenRoot(content)), 0o644); err != nil {
+		return err
+	}
+	_ = os.WriteFile(filepath.Join(dst, ".eigen-root"), []byte(bundleRoot+"\n"), 0o644)
+	return nil
+}
+
+func agentAsSkillContent(pluginName string, af AgentFile) string {
+	desc := af.Description
+	if desc == "" {
+		desc = "Claude/Codex agent adapted from plugin " + pluginName
+	}
+	return fmt.Sprintf(`---
+name: %s-agent-%s
+description: %s
+---
+# %s agent
+
+This skill adapts a Claude/Codex plugin agent for Eigen. When loaded, follow the original agent instructions below as a specialized role. Use Eigen tools normally, and do not bypass Eigen approval or permission gates.
+
+## Original agent prompt
+
+%s
+`, pluginName, safeComponentName(af.Name), yamlQuote(desc), af.Name, af.Content)
+}
+
+func yamlQuote(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "\"", "\\\"")
+	return "\"" + s + "\""
+}
+
+func safeComponentName(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range s {
+		ok := r >= 'a' && r <= 'z' || r >= '0' && r <= '9'
+		if ok {
+			b.WriteRune(r)
+			lastDash = false
+		} else if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "agent"
+	}
+	return out
+}
+
+func expandRoot(s, root string) string {
+	s = strings.ReplaceAll(s, pluginRootVar, root)
+	return strings.ReplaceAll(s, codexPluginRootVar, root)
+}
 
 // toEigenRoot rewrites the Claude root placeholder to OUR namespaced env ref
 // (${EIGEN_PLUGIN_ROOT}), used in MCP command/args/env that the loader expands
 // against the server env at launch.
-func toEigenRoot(s string) string { return strings.ReplaceAll(s, pluginRootVar, eigenRootVar) }
+func toEigenRoot(s string) string {
+	s = strings.ReplaceAll(s, pluginRootVar, eigenRootVar)
+	return strings.ReplaceAll(s, codexPluginRootVar, eigenRootVar)
+}
 
 // installCommand writes a plugin slash command to ~/.eigen/commands/<inst>.md,
 // expanding ${CLAUDE_PLUGIN_ROOT} so any bundled-file references resolve.

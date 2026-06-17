@@ -8,8 +8,9 @@ import (
 
 // addMCPServer appends a plugin's MCP server to ~/.eigen/mcp.json as a niche,
 // auto-described server entry. The plugin-root placeholder is handled via OUR
-// namespaced env param: ${CLAUDE_PLUGIN_ROOT} in command/args/env values is
-// rewritten to ${EIGEN_PLUGIN_ROOT}, and EIGEN_PLUGIN_ROOT=<bundle> is injected
+// namespaced env param: ${CLAUDE_PLUGIN_ROOT}/${CODEX_PLUGIN_ROOT} in
+// command/args/env values are rewritten to ${EIGEN_PLUGIN_ROOT}, and
+// EIGEN_PLUGIN_ROOT=<bundle> is injected
 // into the server's env. The MCP loader expands ${EIGEN_PLUGIN_ROOT} at launch
 // — so the path lives in one env var, not smeared as a literal. Idempotent:
 // replaces an entry of the same name. eigen marks MCP tools niche at load time
@@ -100,7 +101,18 @@ func (r *Registry) uninstallFiles(pluginName string) {
 		// No record (e.g. mid-install rollback): clean by name prefix anyway.
 		rec = InstalledPlugin{Name: pluginName, Root: filepath.Join(r.PluginsDir(), pluginName)}
 	}
-	// Skills.
+	r.cleanupPluginFiles(rec)
+}
+
+func (r *Registry) cleanupPluginFiles(rec InstalledPlugin) {
+	if rec.Name == "" {
+		return
+	}
+	root := rec.Root
+	if root == "" {
+		root = filepath.Join(r.PluginsDir(), rec.Name)
+	}
+	// Skills, including generated agent skills (tracked in Skills too).
 	for _, sd := range rec.Skills {
 		_ = os.RemoveAll(filepath.Join(r.SkillsDir(), sd))
 	}
@@ -111,14 +123,10 @@ func (r *Registry) uninstallFiles(pluginName string) {
 	}
 	// MCP servers + hooks: drop entries whose name starts with "<plugin>-" (mcp)
 	// or whose command references the plugin's bundle dir (hooks).
-	r.removeMCPByPrefix(pluginName + "-")
-	r.removeHooksByRoot(filepath.Join(r.PluginsDir(), pluginName))
+	r.removeMCPByPrefix(rec.Name + "-")
+	r.removeHooksByRoot(root)
 	// Cached bundle.
-	if rec.Root != "" {
-		_ = os.RemoveAll(rec.Root)
-	} else {
-		_ = os.RemoveAll(filepath.Join(r.PluginsDir(), pluginName))
-	}
+	_ = os.RemoveAll(root)
 }
 
 func (r *Registry) removeMCPByPrefix(prefix string) {

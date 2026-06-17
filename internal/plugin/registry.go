@@ -23,11 +23,12 @@ type Registry struct {
 
 // MarketRecord is one added marketplace.
 type MarketRecord struct {
-	Name    string    `json:"name"`   // marketplace name (from its manifest)
-	Source  string    `json:"source"` // owner/repo[@ref] the user added
-	Owner   string    `json:"owner,omitempty"`
-	Added   time.Time `json:"added"`
-	Updated time.Time `json:"updated,omitempty"`
+	Name     string    `json:"name"`   // marketplace name (from its manifest)
+	Source   string    `json:"source"` // owner/repo[@ref] the user added
+	Owner    string    `json:"owner,omitempty"`
+	Disabled bool      `json:"disabled,omitempty"` // kept in registry but ignored for installs/update-all
+	Added    time.Time `json:"added"`
+	Updated  time.Time `json:"updated,omitempty"`
 }
 
 // InstalledPlugin records one installed plugin and the files it wrote, so
@@ -40,6 +41,7 @@ type InstalledPlugin struct {
 	Installed   time.Time `json:"installed"`
 	Root        string    `json:"root"`             // ~/.eigen/plugins/<name> (bundled files)
 	Skills      []string  `json:"skills,omitempty"` // installed skill dir names (~/.eigen/skills/<n>)
+	Agents      []string  `json:"agents,omitempty"` // agent names adapted into skills
 	MCPServers  []string  `json:"mcp_servers,omitempty"`
 	Hooks       int       `json:"hooks,omitempty"`    // count appended to hooks.json
 	Commands    []string  `json:"commands,omitempty"` // installed command names (~/.eigen/commands/<n>.md)
@@ -92,6 +94,7 @@ func (r *Registry) AddMarket(rec MarketRecord) error {
 	for i, m := range list {
 		if strings.EqualFold(m.Name, rec.Name) {
 			rec.Added = m.Added
+			rec.Disabled = m.Disabled
 			rec.Updated = time.Now()
 			list[i] = rec
 			return writeJSON(r.marketsPath(), list)
@@ -113,6 +116,23 @@ func (r *Registry) MarketByName(name string) (MarketRecord, bool) {
 		}
 	}
 	return MarketRecord{}, false
+}
+
+// SetMarketEnabled enables or disables a marketplace without deleting it.
+// Disabled marketplaces are not searched for plugin installs or bulk updates.
+func (r *Registry) SetMarketEnabled(name string, enabled bool) (bool, error) {
+	list, err := r.Markets()
+	if err != nil {
+		return false, err
+	}
+	for i, m := range list {
+		if strings.EqualFold(m.Name, name) {
+			m.Disabled = !enabled
+			list[i] = m
+			return true, writeJSON(r.marketsPath(), list)
+		}
+	}
+	return false, nil
 }
 
 // RemoveMarket drops a marketplace by name. Returns false if it wasn't present.

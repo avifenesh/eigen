@@ -86,6 +86,21 @@ func TestPluginsPageRendersProductSurface(t *testing.T) {
 		}
 	}
 
+	m.Update(key(" "))
+	m.plugins.reload()
+	if mk, ok := pluginpkg.NewRegistryAt(filepath.Join(os.Getenv("HOME"), ".eigen")).MarketByName("core"); !ok || !mk.Disabled {
+		t.Fatalf("space on marketplace tab should disable marketplace: %+v ok=%v", mk, ok)
+	}
+	v = m.plugins.view(m, 100, 30)
+	if !strings.Contains(v, "disabled") {
+		t.Fatalf("disabled marketplace state should render:\n%s", v)
+	}
+	m.Update(key(" "))
+	m.plugins.reload()
+	if mk, ok := pluginpkg.NewRegistryAt(filepath.Join(os.Getenv("HOME"), ".eigen")).MarketByName("core"); !ok || mk.Disabled {
+		t.Fatalf("second space should re-enable marketplace: %+v ok=%v", mk, ok)
+	}
+
 	m.Update(key("3"))
 	v = m.plugins.view(m, 100, 30)
 	for _, want := range []string{"wired components", "demo-mcp", "mcp"} {

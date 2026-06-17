@@ -73,6 +73,12 @@ func extractTarGz(r io.Reader, destDir string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("tar: %w", err)
 		}
+		// GitHub archives may start with PAX metadata entries (often named
+		// "pax_global_header"). They are not part of the repo tree and must not set
+		// the returned topDir, or callers will look under the metadata pseudo-file.
+		if h.Typeflag == tar.TypeXGlobalHeader || h.Typeflag == tar.TypeXHeader || h.Name == "pax_global_header" {
+			continue
+		}
 		// Clean + reject traversal/absolute paths.
 		name := filepath.Clean(h.Name)
 		if name == "." || name == ".." || strings.HasPrefix(name, ".."+string(filepath.Separator)) || filepath.IsAbs(name) {
@@ -83,16 +89,22 @@ func extractTarGz(r io.Reader, destDir string) (string, error) {
 		if !withinDir(destDir, dest) {
 			return "", fmt.Errorf("tar entry escapes dest: %q", h.Name)
 		}
-		if topDir == "" {
-			// First path component is the repo's nested top dir.
-			topDir = filepath.Join(destDir, firstComponent(name))
-		}
 		switch h.Typeflag {
 		case tar.TypeDir:
+			if topDir == "" {
+				// First real path component is the repo's nested top dir. Metadata and
+				// skipped link/device entries must not influence the returned root.
+				topDir = filepath.Join(destDir, firstComponent(name))
+			}
 			if err := os.MkdirAll(dest, 0o755); err != nil {
 				return "", err
 			}
 		case tar.TypeReg:
+			if topDir == "" {
+				// First real path component is the repo's nested top dir. Metadata and
+				// skipped link/device entries must not influence the returned root.
+				topDir = filepath.Join(destDir, firstComponent(name))
+			}
 			if h.Size > maxFileBytes {
 				return "", fmt.Errorf("file %q too large (%d bytes)", h.Name, h.Size)
 			}

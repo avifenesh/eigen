@@ -24,7 +24,7 @@ const (
 func (m *model) pluginCommand(arg string) tea.Cmd {
 	fields := strings.Fields(arg)
 	if len(fields) == 0 {
-		m.note("usage: /plugin list | install <name>[@marketplace] [--force] [--overwrite] [--no-scan] | remove <name> | enable <name> | disable <name>")
+		m.note("usage: /plugin list | install <name>[@marketplace] [--force] [--overwrite] [--no-scan] | remove/delete <name> | enable <name> | disable <name>")
 		return nil
 	}
 	reg, err := plugin.NewRegistry()
@@ -39,21 +39,21 @@ func (m *model) pluginCommand(arg string) tea.Cmd {
 		m.pluginList(reg)
 	case "install", "add":
 		m.pluginInstall(reg, rest)
-	case "remove", "rm", "uninstall":
+	case "remove", "rm", "uninstall", "delete", "del":
 		if len(rest) == 0 {
-			m.note("usage: /plugin remove <name>")
+			m.note("usage: /plugin remove/delete <name>")
 			return nil
 		}
 		ok, err := reg.Uninstall(rest[0])
 		if err != nil {
-			m.commandError("plugin remove: " + err.Error())
+			m.commandError("plugin delete: " + err.Error())
 			return nil
 		}
 		if !ok {
 			m.note(fmt.Sprintf("no plugin %q installed", rest[0]))
 			return nil
 		}
-		m.note(fmt.Sprintf("removed plugin %q (skills, commands, MCP servers, hooks, and bundle)", rest[0]))
+		m.note(fmt.Sprintf("deleted plugin %q (skills, agents, commands, MCP servers, hooks, and bundle)", rest[0]))
 	case "enable", "disable":
 		if len(rest) == 0 {
 			m.note("usage: /plugin " + sub + " <name>")
@@ -75,7 +75,7 @@ func (m *model) pluginCommand(arg string) tea.Cmd {
 		}
 		m.note(fmt.Sprintf("%s plugin %q (applies to NEW sessions)", state, rest[0]))
 	default:
-		m.note("unknown /plugin subcommand " + sub + " (want: list | install | remove | enable | disable)")
+		m.note("unknown /plugin subcommand " + sub + " (want: list | install | remove/delete | enable | disable)")
 	}
 	return nil
 }
@@ -97,7 +97,7 @@ func (m *model) pluginList(reg *plugin.Registry) {
 		if p.Description != "" {
 			b.WriteString(" — " + p.Description)
 		}
-		fmt.Fprintf(&b, "\n    %d skill(s), %d command(s), %d MCP server(s), %d hook(s)", len(p.Skills), len(p.Commands), len(p.MCPServers), p.Hooks)
+		fmt.Fprintf(&b, "\n    %d skill(s), %d agent(s), %d command(s), %d MCP server(s), %d hook(s)", len(p.Skills), len(p.Agents), len(p.Commands), len(p.MCPServers), p.Hooks)
 		if p.Marketplace != "" {
 			b.WriteString(" · from " + p.Marketplace)
 		}
@@ -165,7 +165,7 @@ func formatPluginInstallResult(res *plugin.InstallResult, scanned bool) string {
 	default:
 		fmt.Fprintf(&b, "installed %q (scan skipped)", p.Name)
 	}
-	fmt.Fprintf(&b, "\n  %d skill(s), %d command(s), %d MCP server(s), %d hook(s)", len(p.Skills), len(p.Commands), len(p.MCPServers), p.Hooks)
+	fmt.Fprintf(&b, "\n  %d skill(s), %d agent(s), %d command(s), %d MCP server(s), %d hook(s)", len(p.Skills), len(p.Agents), len(p.Commands), len(p.MCPServers), p.Hooks)
 	for _, w := range res.Warnings {
 		b.WriteString("\n  note: " + w)
 	}
@@ -179,7 +179,7 @@ func formatPluginInstallResult(res *plugin.InstallResult, scanned bool) string {
 func (m *model) marketplaceCommand(arg string) tea.Cmd {
 	fields := strings.Fields(arg)
 	if len(fields) == 0 {
-		m.note("usage: /marketplace list | add <owner/repo[/sub][@ref]|url> | update [name] | remove <name>")
+		m.note("usage: /marketplace list | add <owner/repo[/sub][@ref]|url|local-dir> | update [name] | remove/delete <name> | enable <name> | disable <name>")
 		return nil
 	}
 	reg, err := plugin.NewRegistry()
@@ -194,7 +194,7 @@ func (m *model) marketplaceCommand(arg string) tea.Cmd {
 		m.marketplaceList(reg)
 	case "add":
 		if len(rest) == 0 {
-			m.note("usage: /marketplace add <owner/repo[/sub][@ref] | url>")
+			m.note("usage: /marketplace add <owner/repo[/sub][@ref] | url | local-dir>")
 			return nil
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), marketplaceTimeout)
@@ -205,21 +205,41 @@ func (m *model) marketplaceCommand(arg string) tea.Cmd {
 			return nil
 		}
 		m.note(formatMarketplaceAdded(mkt, rec))
-	case "remove", "rm":
+	case "remove", "rm", "delete", "del":
 		if len(rest) == 0 {
-			m.note("usage: /marketplace remove <name>")
+			m.note("usage: /marketplace remove/delete <name>")
 			return nil
 		}
 		ok, err := reg.RemoveMarket(rest[0])
 		if err != nil {
-			m.commandError("marketplace remove: " + err.Error())
+			m.commandError("marketplace delete: " + err.Error())
 			return nil
 		}
 		if !ok {
 			m.note(fmt.Sprintf("no marketplace %q", rest[0]))
 			return nil
 		}
-		m.note(fmt.Sprintf("removed marketplace %q (installed plugins are unaffected)", rest[0]))
+		m.note(fmt.Sprintf("deleted marketplace %q (installed plugins are unaffected)", rest[0]))
+	case "enable", "disable":
+		if len(rest) == 0 {
+			m.note("usage: /marketplace " + sub + " <name>")
+			return nil
+		}
+		enabled := sub == "enable"
+		ok, err := reg.SetMarketEnabled(rest[0], enabled)
+		if err != nil {
+			m.commandError("marketplace " + sub + ": " + err.Error())
+			return nil
+		}
+		if !ok {
+			m.note(fmt.Sprintf("no marketplace %q", rest[0]))
+			return nil
+		}
+		state := "disabled"
+		if enabled {
+			state = "enabled"
+		}
+		m.note(fmt.Sprintf("%s marketplace %q", state, rest[0]))
 	case "update", "refresh":
 		target := ""
 		if len(rest) > 0 {
@@ -227,7 +247,7 @@ func (m *model) marketplaceCommand(arg string) tea.Cmd {
 		}
 		m.marketplaceUpdate(reg, target)
 	default:
-		m.note("unknown /marketplace subcommand " + sub + " (want: list | add | update | remove)")
+		m.note("unknown /marketplace subcommand " + sub + " (want: list | add | update | remove/delete | enable | disable)")
 	}
 	return nil
 }
@@ -239,14 +259,18 @@ func (m *model) marketplaceList(reg *plugin.Registry) {
 		return
 	}
 	if len(markets) == 0 {
-		m.note("no marketplaces added (/marketplace add <owner/repo>)")
+		m.note("no marketplaces added (/marketplace add <owner/repo|url|local-dir>)")
 		return
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d marketplace(s):", len(markets))
 	for _, mk := range markets {
 		when := mk.Added.Format("2006-01-02")
-		fmt.Fprintf(&b, "\n  • %-20s %s (added %s)", mk.Name, mk.Source, when)
+		state := "enabled"
+		if mk.Disabled {
+			state = "disabled"
+		}
+		fmt.Fprintf(&b, "\n  • %-20s %-8s %s (added %s)", mk.Name, state, mk.Source, when)
 	}
 	m.note(b.String())
 }
@@ -268,6 +292,10 @@ func (m *model) marketplaceUpdate(reg *plugin.Registry, target string) {
 			continue
 		}
 		updated++
+		if mk.Disabled {
+			fmt.Fprintf(&b, "\n  - %-20s disabled", mk.Name)
+			continue
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), marketplaceTimeout)
 		mkt, rec, err := reg.AddMarketplace(ctx, mk.Source, nil)
 		cancel()

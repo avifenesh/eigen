@@ -74,38 +74,41 @@ chat command surface, while preserving the safety boundary: the agent cannot
 install code; only the user can.
 
 Already shipped:
-- Marketplace registry: `eigen marketplace add|list|remove|update`.
-- Plugin install engine: `eigen plugin install|list|remove|enable|disable`.
-- Claude `.claude-plugin` format parsing.
-- Skills/MCP/hooks wiring with scanner/rollback safety.
+- Marketplace registry: `eigen marketplace add|list|remove/delete|enable|disable|update`.
+- Plugin install engine: `eigen plugin install|list|remove/delete|enable|disable`.
+- Claude `.claude-plugin` and Codex `.agents/plugins` / `.codex-plugin` format parsing.
+- `url` / `git-subdir` / local marketplace source forms, including real `agent-sh/agentsys`.
+- Skills/MCP/hooks/commands wiring with scanner/rollback safety.
+- Claude/Codex `agents/*.md` are adapted into namespaced Eigen skills.
 - Custom slash commands from `~/.eigen/commands` and project `.eigen/commands`;
   plugin commands are wired as prefixed commands.
 
 Remaining v1.1 work:
 - [x] **Slash command wrappers.** Chat commands now cover the existing safe CLI
-  operations (`/plugin list|install|remove|enable|disable`,
-  `/marketplace list|add|update|remove`) and bare `/plugins`, `/plugin`, and
+  operations (`/plugin list|install|remove/delete|enable|disable`,
+  `/marketplace list|add|update|remove/delete|enable|disable`) and bare `/plugins`, `/plugin`, and
   `/marketplace` open the plugins page. Install/remove remain user-typed slash
   commands, never model tools.
 - [ ] **App browse/install page.** Partially shipped: upgraded from raw status
   display to a first-class plugins surface: tabbed Plugins / Marketplace /
   Wiring page,
-  installed/enabled state, install/remove/enable/disable actions, marketplace
-  add/remove/refresh, and catalog preview after refresh. Remaining polish:
+  installed/enabled state, install/remove/delete/enable/disable actions, marketplace
+  add/remove/delete/enable/disable/refresh, and catalog preview after refresh. Remaining polish:
   deeper plugin manifest preview, scanner-risk history, and rollback/result
   detail display.
-- [ ] **Claude `agents/` compatibility.** Parse plugin-provided subagent prompt
-  definitions and expose them through Eigen’s subtask/role system. Decide the
-  mapping carefully: role name, allowed tools, default difficulty/model routing,
-  and whether an installed agent is visible to `task` / `task_group` / command
-  palette.
-- [ ] **Docs + smoke test.** One minimal marketplace fixture; one install/remove
-  flow; one command-wrapper flow; docs/plugins.md updated.
+- [ ] **Claude/Codex `agents/` compatibility.** Basic compatibility shipped by
+  adapting plugin-provided agent prompts into loadable Eigen skills. Remaining:
+  expose them through Eigen’s subtask/role system. Decide the mapping carefully:
+  role name, allowed tools, default difficulty/model routing, and whether an
+  installed agent is visible to `task` / `task_group` / command palette.
+- [x] **Docs + smoke test.** Added fixture coverage for marketplace source
+  polymorphism, GitHub PAX tarballs, Codex local marketplaces, Codex plugin
+  manifests, and agent adaptation. docs/plugins.md updated.
 
 Suggested order from here:
 1. finish app browse/install polish (manifest preview + scan/rollback detail),
-2. `agents/` mapping,
-3. docs + smoke fixture.
+2. native `agents/` → subtask/role mapping,
+3. non-GitHub git fetch support if real marketplaces need it.
 
 ### Tier 20 v2 — control from another machine
 
@@ -241,10 +244,10 @@ Codex-style structured memory pipeline:
 ### Tier 27 — plugins / marketplaces v1
 
 CLI marketplace/plugin consume-and-manage shipped:
-- marketplace add/list/remove/update;
-- plugin install/list/remove/enable/disable;
-- Claude `.claude-plugin` parsing;
-- skills/MCP/hooks/commands wiring;
+- marketplace add/list/remove/delete/enable/disable/update;
+- plugin install/list/remove/delete/enable/disable;
+- Claude `.claude-plugin` and Codex `.agents/plugins` / `.codex-plugin` parsing;
+- skills/MCP/hooks/commands wiring plus basic agents-as-skills adaptation;
 - scanner + rollback safety;
 - agent has no install tool.
 

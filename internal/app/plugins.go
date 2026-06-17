@@ -414,7 +414,7 @@ func (p *pluginsState) removePlugin(name string) {
 		p.err = "plugin no longer installed"
 		return
 	}
-	p.prompt.status = "removed plugin " + name
+	p.prompt.status = "deleted plugin " + name
 	p.err = ""
 	p.loaded = false
 	p.load()
@@ -431,9 +431,36 @@ func (p *pluginsState) updateMarketplace(key string) {
 		// the parsed plugin entries in page state so the marketplace tab can behave
 		// like a real catalog, not just a list of repos.
 		p.refreshMarketplace(mk)
+	case " ", "space":
+		p.setMarketplaceEnabled(mk.Name, mk.Disabled)
 	case "X", "delete":
 		p.confirm.open("marketplace", mk.Name)
 	}
+}
+
+func (p *pluginsState) setMarketplaceEnabled(name string, enabled bool) {
+	reg, err := appPluginRegistry()
+	if err != nil {
+		p.err = err.Error()
+		return
+	}
+	ok, err := reg.SetMarketEnabled(name, enabled)
+	if err != nil {
+		p.err = err.Error()
+		return
+	}
+	if !ok {
+		p.err = "marketplace no longer present"
+		return
+	}
+	state := "disabled"
+	if enabled {
+		state = "enabled"
+	}
+	p.prompt.status = state + " marketplace " + name
+	p.err = ""
+	p.loaded = false
+	p.load()
 }
 
 func (p *pluginsState) removeMarketplace(name string) {
@@ -455,7 +482,7 @@ func (p *pluginsState) removeMarketplace(name string) {
 		p.catalogMarket = ""
 		p.catalog = nil
 	}
-	p.prompt.status = "removed marketplace " + name + " (installed plugins unaffected)"
+	p.prompt.status = "deleted marketplace " + name + " (installed plugins unaffected)"
 	p.err = ""
 	p.loaded = false
 	p.load()
@@ -523,7 +550,7 @@ func (p *pluginsState) confirmUninstallSelected() {
 			return
 		}
 	}
-	p.err = "not a plugin-installed extension (only plugins can be uninstalled here)"
+	p.err = "not a plugin-installed extension (only plugins can be deleted here)"
 }
 
 func (p *pluginsState) view(m *Model, w, h int) string {
@@ -614,7 +641,7 @@ func (p *pluginsState) viewInstalled(w, h int) string {
 		out += sErr.Render("  "+truncate(p.err, w-4)) + "\n"
 	}
 	out += p.prompt.render()
-	out += "\n" + sFaint.Render("  enter/space toggle · i install · X uninstall · a add marketplace · R refresh")
+	out += "\n" + sFaint.Render("  enter/space toggle · i install · X delete · a add marketplace · R refresh")
 	return out
 }
 
@@ -666,7 +693,7 @@ func (p *pluginsState) pluginDetail(pl pluginpkg.InstalledPlugin, reg *pluginpkg
 func (p *pluginsState) viewMarketplace(w, h int) string {
 	out := sectionLabel("marketplaces", w) + "\n"
 	if len(p.markets) == 0 {
-		out += emptyCard("No marketplaces added", "Add a Claude-format marketplace repo such as owner/repo.", w)
+		out += emptyCard("No marketplaces added", "Add a Claude or Codex marketplace repo, local directory, or HTTPS marketplace.json.", w)
 		out += p.prompt.render()
 		out += "\n" + sFaint.Render("  a add marketplace · i install by name once added")
 		return out
@@ -686,7 +713,7 @@ func (p *pluginsState) viewMarketplace(w, h int) string {
 		out += sErr.Render("  "+truncate(p.err, w-4)) + "\n"
 	}
 	out += p.prompt.render()
-	out += "\n" + sFaint.Render("  a add marketplace · enter/U refresh selected · i install plugin · X remove · R refresh")
+	out += "\n" + sFaint.Render("  space enable/disable · a add marketplace · enter/U refresh selected · i install plugin · X delete · R refresh")
 	return out
 }
 
@@ -707,7 +734,11 @@ func (p *pluginsState) marketCard(selected bool, mk pluginpkg.MarketRecord, w in
 	} else {
 		stamp = "updated " + stamp
 	}
-	line1 := "◇ " + sText.Render(pad(truncate(mk.Name, 24), 24)) + " " + sViolet.Render(fmt.Sprintf("%d installed", installed))
+	state := sOk.Render("enabled")
+	if mk.Disabled {
+		state = sDim.Render("disabled")
+	}
+	line1 := "◇ " + sText.Render(pad(truncate(mk.Name, 24), 24)) + " " + state + "  " + sViolet.Render(fmt.Sprintf("%d installed", installed))
 	if selected {
 		line1 = row(true, line1)
 	} else {
@@ -723,6 +754,11 @@ func (p *pluginsState) marketDetail(mk pluginpkg.MarketRecord, w int) string {
 	if mk.Owner != "" {
 		b.WriteString("  " + sDim.Render("owner ") + mk.Owner + "\n")
 	}
+	state := "enabled"
+	if mk.Disabled {
+		state = "disabled (not searched by installs/update-all)"
+	}
+	b.WriteString("  " + sDim.Render("state ") + state + "\n")
 	b.WriteString("  " + sDim.Render("source ") + truncate(mk.Source, max(12, w-12)) + "\n")
 	b.WriteString("  " + sDim.Render("install ") + "/plugin install <name>@" + mk.Name + "\n")
 	if strings.EqualFold(p.catalogMarket, mk.Name) {
@@ -789,7 +825,7 @@ func (p *pluginsState) viewExtensions(w, h int) string {
 		out += sErr.Render("  "+truncate(p.err, w-4)) + "\n"
 	}
 	out += p.prompt.render()
-	out += sFaint.Render("  space toggle component · X uninstall owning plugin · a add-marketplace · i install-plugin · R refresh")
+	out += sFaint.Render("  space toggle component · X delete owning plugin · a add-marketplace · i install-plugin · R refresh")
 	return out
 }
 
@@ -837,6 +873,9 @@ func pluginCounts(pl pluginpkg.InstalledPlugin) string {
 	if len(pl.Skills) > 0 {
 		parts = append(parts, fmt.Sprintf("%d skill", len(pl.Skills)))
 	}
+	if len(pl.Agents) > 0 {
+		parts = append(parts, fmt.Sprintf("%d agent", len(pl.Agents)))
+	}
 	if len(pl.Commands) > 0 {
 		parts = append(parts, fmt.Sprintf("%d cmd", len(pl.Commands)))
 	}
@@ -856,6 +895,9 @@ func pluginComponentNames(pl pluginpkg.InstalledPlugin) []string {
 	var parts []string
 	if len(pl.Skills) > 0 {
 		parts = append(parts, "skills: "+strings.Join(pl.Skills, ", "))
+	}
+	if len(pl.Agents) > 0 {
+		parts = append(parts, "agents: "+strings.Join(pl.Agents, ", "))
 	}
 	if len(pl.Commands) > 0 {
 		parts = append(parts, "commands: "+strings.Join(pl.Commands, ", "))
@@ -915,7 +957,12 @@ func pluginEnabled(pl pluginpkg.InstalledPlugin, rows []ExtRow, reg *pluginpkg.R
 			return true
 		}
 	}
-	if seen || len(pl.Skills) > 0 || len(pl.Commands) > 0 || len(pl.MCPServers) > 0 || pl.Hooks > 0 {
+	for _, an := range pl.Agents {
+		if _, err := os.Stat(filepath.Join(reg.SkillsDir(), an, "SKILL.md")); err == nil {
+			return true
+		}
+	}
+	if seen || len(pl.Skills) > 0 || len(pl.Agents) > 0 || len(pl.Commands) > 0 || len(pl.MCPServers) > 0 || pl.Hooks > 0 {
 		return false
 	}
 	// If there are no inspectable components, treat the record as enabled: the

@@ -1,21 +1,24 @@
 # Plugins & marketplaces (Tier 27)
 
-eigen consumes **Claude-format** plugin marketplaces: a *marketplace* is a
-catalog repo listing *plugins*; a *plugin* bundles components (skills + an MCP
-server + hooks). eigen reads the on-disk `.claude-plugin/*.json` format directly,
-so an existing Claude marketplace works without re-authoring.
+eigen consumes **Claude- and Codex-format** plugin marketplaces. A marketplace is
+a catalog repo (or local directory) listing plugins; a plugin bundles skills,
+agents, slash commands, MCP servers, hooks, and sometimes Codex app integrations.
 
-v1 is **consume + manage** (CLI), mirroring `eigen skill add`. The agent cannot
-install plugins — it's a user action only (like `/add-dir`).
+Installs are a **user action only**: CLI, TUI slash command, or app-page action.
+The agent does not get a tool that can install/remove plugins.
 
 ## Use it
 
 ```sh
-# Add a marketplace catalog (GitHub owner/repo, optional /subdir and @ref):
-eigen marketplace add anthropics/claude-plugins
+# Add a marketplace catalog (GitHub owner/repo, full GitHub URL, local dir, or a
+# direct marketplace.json URL):
+eigen marketplace add https://github.com/agent-sh/agentsys
+eigen marketplace add /path/to/codex/plugins/openai-bundled
 eigen marketplace list
-eigen marketplace update          # re-check catalogs are reachable
-eigen marketplace remove <name>
+eigen marketplace update          # re-check enabled catalogs are reachable
+eigen marketplace disable <name>  # keep it recorded, don't search/update it
+eigen marketplace enable  <name>
+eigen marketplace remove <name>   # alias: delete
 
 # Install a plugin from any added marketplace (scanned on the small model):
 eigen plugin install <name>
@@ -26,51 +29,68 @@ eigen plugin install <name> --no-scan              # skip the scan (not recommen
 eigen plugin list
 eigen plugin disable <name>       # keep installed, stop loading (new sessions)
 eigen plugin enable  <name>
-eigen plugin remove  <name>       # reverse all wiring + delete the bundle
+eigen plugin remove  <name>       # alias: delete; reverse all wiring + delete bundle
 ```
 
-## What gets wired (v1)
+In the TUI:
+
+- bare `/plugins`, `/plugin`, or `/marketplace` opens the plugins page;
+- `/plugin list|install|remove|delete|enable|disable` and
+  `/marketplace list|add|update|remove|delete|enable|disable` call the same registry paths as the CLI.
+
+## What gets wired
 
 A plugin's components flow into the **global** per-scope configs under `~/.eigen`:
 
-| Component | Source in bundle | Wired into | Notes |
+| Component | Claude/Codex source | Wired into | Notes |
 |---|---|---|---|
-| Skills | `skills/<n>/SKILL.md` (+ files) | `~/.eigen/skills/<plugin>-<n>/` | namespaced; `${CLAUDE_PLUGIN_ROOT}` expanded to the cached bundle |
-| MCP servers | `.mcp.json` | `~/.eigen/mcp.json` | **niche** (gated behind `search_tools`), auto-described, `${ROOT}` expanded |
-| Hooks | `hooks/hooks.json` | `~/.eigen/hooks.json` | Claude events mapped (`PostToolUse`→`tool_result`, …) |
-| Commands / agents | `commands/`, `agents/` | — | **counted, not wired in v1** (no slash-command-prompt subsystem yet) → v1.1 |
+| Skills | `skills/<n>/SKILL.md`, manifest `skills` path, or root `SKILL.md` | `~/.eigen/skills/<plugin>-<n>/` | namespaced; `${CLAUDE_PLUGIN_ROOT}` / `${CODEX_PLUGIN_ROOT}` rewritten to `${EIGEN_PLUGIN_ROOT}` |
+| Agents | `agents/*.md` or manifest `agents` path | `~/.eigen/skills/<plugin>-agent-<n>/` | adapted into loadable Eigen skills until plugin-defined subtask roles exist |
+| Commands | `commands/*.md` or manifest `commands` path | `~/.eigen/commands/<plugin>-<n>.md` | appears as `/<plugin>-<n>` in the TUI |
+| MCP servers | `.mcp.json`, manifest `mcpServers`, or Codex `mcp_servers` | `~/.eigen/mcp.json` | **niche** (gated behind `search_tools`), auto-described, root vars rewritten |
+| Hooks | `hooks/hooks.json` or manifest `hooks` | `~/.eigen/hooks.json` | Claude events mapped (`PostToolUse`→`tool_result`, …) |
+| Codex app integrations | manifest `apps` | not wired yet | counted and warned; app/runtime integration is deferred |
 
-The bundle is cached at `~/.eigen/plugins/<name>/` so `${CLAUDE_PLUGIN_ROOT}`
-references in scripts/MCP commands resolve. Installs are recorded in
-`~/.eigen/plugins-installed.json` (with the exact files written) so `remove`
-reverses cleanly.
+The bundle is cached at `~/.eigen/plugins/<name>/` so root placeholders resolve.
+Installs are recorded in `~/.eigen/plugins-installed.json` (with the exact files
+written) so `remove` reverses cleanly.
 
 ## Safety
 
-- **Scanned before install**: each skill body goes through the same LLM security
-  scanner as `eigen skill add`. A RISKY verdict blocks the install (rolling back
-  any partial wiring) unless `--force`.
+- **Scanned before install**: each skill, command, and adapted agent body goes
+  through the same LLM security scanner as `eigen skill add`. A RISKY verdict
+  blocks the install (rolling back partial wiring) unless `--force`.
 - **MCP servers stay niche + gated**: the agent only sees them after unlocking via
   `search_tools` — no per-request schema bloat, no auto-run.
-- **CLI-only**: there is no agent tool that installs plugins. Untrusted bundle
-  code never runs on install.
-- **Fetch guards**: bundles download as a single tarball (codeload, no git
-  binary) with path-traversal and size caps.
+- **User-only installs**: there is no agent tool that installs plugins. Untrusted
+  bundle code never runs on install.
+- **Fetch guards**: GitHub bundles download as a single tarball (codeload, no git
+  binary) with path-traversal, symlink-escape, and size caps.
 
 ## Format notes
 
-- Marketplace manifest: `.claude-plugin/marketplace.json` (name, owner, plugins[]
-  with a polymorphic `source`: string path / `{source: local|git|github, repo,
-  ref}`).
-- Plugin manifest: `.claude-plugin/plugin.json` (only `name` required; component
-  dirs discovered by convention, manifest paths are additive overrides).
-- Codex has no equivalent marketplace format; MCP is the shared interop point, so
-  eigen builds on the Claude format.
+Marketplace manifests are discovered in this order:
 
-## v1.1 (follow-up)
+1. `.claude-plugin/marketplace.json`
+2. `.agents/plugins/marketplace.json` (Codex bundled/local marketplace layout)
+3. `marketplace.json`
 
-App `[plugins]` browse/install page; `/plugin` + `/marketplace` slash commands;
-wiring the `commands`/`agents` components (needs a slash-command-prompt subsystem).
+Plugin manifests are discovered in this order:
+
+1. `.claude-plugin/plugin.json`
+2. `.codex-plugin/plugin.json`
+
+Supported marketplace `source` forms:
+
+- string relative path: `"./plugins/foo"`
+- Claude local object: `{ "source": "local", "path": "./plugins/foo" }`
+- Claude/Codex GitHub object: `{ "source": "github", "repo": "owner/repo", "ref": "v1" }`
+- agentsys-style URL object: `{ "source": "url", "url": "https://github.com/owner/repo.git", "commit": "..." }`
+- Codex subdir object: `{ "source": "git-subdir", "url": "https://github.com/owner/repo.git", "path": "plugins/foo", "sha": "..." }`
+
+Non-GitHub git hosts are not fetched yet; direct HTTPS `marketplace.json` URLs
+are supported for catalogs whose plugin entries use external GitHub-style source
+objects (relative local plugin paths require a marketplace repo/directory base).
 
 ## Custom slash commands (Tier 31)
 
@@ -88,10 +108,11 @@ your own hand-authored ones — work unchanged.
   gets your args appended.
 - **Use:** type `/<name> [args]` in the TUI (it appears in the `/` menu with its
   description + arg-hint). The body is expanded and submitted as a normal turn —
-  the model then does the work with the regular toolset, composing with
-  approvals + steering (like `/workflow`).
+  the model then does the work with the regular toolset, composing with approvals
+  + steering (like `/workflow`).
 
 Example: `~/.eigen/commands/pr.md`
+
 ```markdown
 ---
 description: open a PR for the current branch
@@ -99,7 +120,5 @@ argument-hint: "[base-branch]"
 ---
 Review the staged changes, write a tight PR description, and open a PR against $ARGUMENTS.
 ```
-→ `/pr main`
 
-(Telegram custom-command expansion is a follow-up; today custom commands run in
-the TUI — local and daemon-attached sessions.)
+→ `/pr main`

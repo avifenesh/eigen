@@ -149,12 +149,17 @@ func (m *Model) inspectorFor() (string, []kv, string) {
 				return "", nil, ""
 			}
 			mk := s.markets[s.list.cursor]
+			state := sOk.Render("enabled")
+			if mk.Disabled {
+				state = sDim.Render("disabled")
+			}
 			return mk.Name, []kv{
+				{"state", state},
 				{"source", mk.Source},
 				{"owner", mk.Owner},
 				{"added", dateLabel(mk.Added)},
 				{"updated", dateLabel(mk.Updated)},
-			}, "enter/U refresh catalog · X remove marketplace"
+			}, "space enable/disable · enter/U refresh catalog · X delete marketplace"
 		case pluginsTabExtensions:
 			if s.list.cursor < 0 || s.list.cursor >= len(s.rows) {
 				return "", nil, ""
