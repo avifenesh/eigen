@@ -12,14 +12,15 @@ import (
 // Summary is an aggregate view over events.jsonl. It is intentionally compact:
 // counts and resource maxima, no transcript/content.
 type Summary struct {
-	Records int
-	ByKind  map[string]int
-	Tools   map[string]ToolSummary
-	Errors  map[string]int
-	Notes   map[string]int
-	Hooks   map[string]HookSummary
-	Models  map[string]ModelSummary
-	Runtime RuntimeSummary
+	Records   int
+	ByKind    map[string]int
+	Tools     map[string]ToolSummary
+	Errors    map[string]int
+	Notes     map[string]int
+	Hooks     map[string]HookSummary
+	Models    map[string]ModelSummary
+	Subagents SubagentSummary
+	Runtime   RuntimeSummary
 }
 
 type ToolSummary struct {
@@ -42,6 +43,25 @@ type ModelSummary struct {
 	CacheReadTokens  int
 	CacheWriteTokens int
 	DurationMS       int64
+}
+
+type SubagentSummary struct {
+	TaskCalls       int
+	TaskErrors      int
+	GroupCalls      int
+	GroupErrors     int
+	MutatingCalls   int
+	MutatingErrors  int
+	StatusChecks    int
+	Promotes        int
+	PromoteErrors   int
+	BackgroundDone  int
+	BackgroundNotes int
+	RouteNotes      int
+}
+
+func (s SubagentSummary) Total() int {
+	return s.TaskCalls + s.GroupCalls + s.MutatingCalls + s.StatusChecks + s.Promotes
 }
 
 type RuntimeSummary struct {
@@ -105,9 +125,19 @@ func summarize(records []Record) Summary {
 			}
 			st.DurationMS += r.DurationMS
 			s.Tools[r.Tool] = st
+			accumulateSubagentTool(&s.Subagents, r)
 		}
 		if r.NoteKind != "" {
 			s.Notes[r.NoteKind]++
+			if r.NoteKind == "background" {
+				s.Subagents.BackgroundNotes++
+			}
+			if r.NoteKind == "route" {
+				s.Subagents.RouteNotes++
+			}
+		}
+		if r.Kind == "background_done" {
+			s.Subagents.BackgroundDone++
 		}
 		if strings.HasPrefix(r.Kind, "hook_") {
 			key := r.HookEvent
@@ -160,12 +190,49 @@ func summarize(records []Record) Summary {
 	return s
 }
 
+func accumulateSubagentTool(s *SubagentSummary, r Record) {
+	switch r.Tool {
+	case "task":
+		s.TaskCalls++
+		if r.IsError {
+			s.TaskErrors++
+		}
+	case "task_group":
+		s.GroupCalls++
+		if r.IsError {
+			s.GroupErrors++
+		}
+	case "task_group_mutating":
+		s.MutatingCalls++
+		if r.IsError {
+			s.MutatingErrors++
+		}
+	case "task_status":
+		s.StatusChecks++
+	case "task_promote":
+		s.Promotes++
+		if r.IsError {
+			s.PromoteErrors++
+		}
+	}
+}
+
 func FormatSummary(s Summary) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "observability summary — %d record(s)\n", s.Records)
 	writeTop(&b, "events", s.ByKind, 8)
 	writeTop(&b, "errors", s.Errors, 8)
 	writeTop(&b, "notes", s.Notes, 8)
+	if s.Subagents.Total() > 0 || s.Subagents.BackgroundDone > 0 || s.Subagents.RouteNotes > 0 {
+		fmt.Fprintf(&b, "\nsubagents/spawns:\n")
+		fmt.Fprintf(&b, "  task=%d/%d task_group=%d/%d mutating=%d/%d status=%d promote=%d/%d bg_done=%d bg_notes=%d route_notes=%d\n",
+			s.Subagents.TaskCalls, s.Subagents.TaskErrors,
+			s.Subagents.GroupCalls, s.Subagents.GroupErrors,
+			s.Subagents.MutatingCalls, s.Subagents.MutatingErrors,
+			s.Subagents.StatusChecks,
+			s.Subagents.Promotes, s.Subagents.PromoteErrors,
+			s.Subagents.BackgroundDone, s.Subagents.BackgroundNotes, s.Subagents.RouteNotes)
+	}
 	if len(s.Models) > 0 {
 		b.WriteString("\nmodels:\n")
 		for _, k := range sortedKeys(s.Models) {

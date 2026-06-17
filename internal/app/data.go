@@ -12,6 +12,7 @@ import (
 	"github.com/avifenesh/eigen/internal/feed"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/memory"
+	"github.com/avifenesh/eigen/internal/observe"
 	"github.com/avifenesh/eigen/internal/remote"
 	"github.com/avifenesh/eigen/internal/session"
 	"github.com/avifenesh/eigen/internal/skill"
@@ -71,6 +72,12 @@ type Data struct {
 	// auto-detected ~/.ssh/config aliases. The Machines page lists them; opening
 	// one runs `eigen --remote <name>`.
 	Machines []remote.Machine
+
+	// Observe is the metadata-only observability rollup (tool/model/route/hook
+	// failures and runtime stress). Missing logs are normal on a fresh install.
+	Observe     observe.Summary
+	ObserveErr  string
+	ObservePath string
 }
 
 // projectDirs returns the known project directories, most recent first.
@@ -156,6 +163,12 @@ func Load() *Data {
 	}
 	d.Feed, d.FeedFresh = feed.Load() // instant (cache); app refreshes async
 	d.Machines = remote.Machines()    // saved hosts + ~/.ssh/config (auto-detect)
+	d.ObservePath = observe.DefaultPath()
+	if s, err := observe.ReadSummary(d.ObservePath, 5000); err == nil {
+		d.Observe = s
+	} else if !os.IsNotExist(err) {
+		d.ObserveErr = err.Error()
+	}
 	return d
 }
 

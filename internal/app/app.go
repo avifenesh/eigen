@@ -30,6 +30,7 @@ const (
 	PageSkills
 	PageModels
 	PageProviders
+	PageObserve
 	PageMemory
 	PageCrons
 	PagePlugins
@@ -50,6 +51,7 @@ var pages = []struct {
 	{PageSkills, "skills", "k"},
 	{PageModels, "models", "m"},
 	{PageProviders, "providers", "v"},
+	{PageObserve, "observe", "o"},
 	{PageMemory, "memory", "y"},
 	{PageCrons, "crons", "r"},
 	{PagePlugins, "plugins", "x"},
@@ -93,6 +95,7 @@ type Model struct {
 	skills    skillsState
 	models    modelsState
 	providers providersState
+	observe   observeState
 	memory    memoryState
 	crons     cronsState
 	plugins   pluginsState
@@ -122,6 +125,7 @@ func NewAt(data *Data, initial Page) *Model {
 	m.skills.init(data)
 	m.models.init(data)
 	m.providers.init(data)
+	m.observe.init(data)
 	m.memory.init(data)
 	m.crons.init(data)
 	m.plugins.init(data)
@@ -152,6 +156,8 @@ func PageByName(name string) (Page, bool) {
 	switch name {
 	case "plugin", "plugins", "market", "marketplace", "extension", "extensions", "wiring", "hook", "hooks":
 		return PagePlugins, true
+	case "observe", "observability", "obs", "usage", "telemetry", "errors":
+		return PageObserve, true
 	}
 	return PageHome, false
 }
@@ -583,6 +589,8 @@ func (m *Model) updatePage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.models.update(m, msg)
 	case PageProviders:
 		return m.providers.update(m, msg)
+	case PageObserve:
+		return m.observe.update(m, msg)
 	case PageMemory:
 		return m.memory.update(m, msg)
 	case PageCrons:
@@ -883,6 +891,8 @@ func (m *Model) renderPage(w, h int) string {
 		return m.models.view(m, w, h)
 	case PageProviders:
 		return m.providers.view(m, w, h)
+	case PageObserve:
+		return m.observe.view(m, w, h)
 	case PageMemory:
 		return m.memory.view(m, w, h)
 	case PageCrons:

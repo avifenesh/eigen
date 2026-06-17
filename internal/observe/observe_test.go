@@ -75,6 +75,10 @@ func TestHookObserverAndSummary(t *testing.T) {
 	obs := lg.HookObserver()
 	obs(hook.Observation{Event: "session_start", Phase: "start", Session: "sess-2", CommandHash: "sha256:abc", Argc: 2})
 	obs(hook.Observation{Event: "session_start", Phase: "done", Session: "sess-2", CommandHash: "sha256:abc", Argc: 2})
+	sink := lg.Wrap(nil)
+	sink(agent.Event{Kind: agent.EventToolResult, ToolName: "task", Result: "ok"})
+	sink(agent.Event{Kind: agent.EventToolResult, ToolName: "task_group", IsError: true, Result: "failed"})
+	sink(agent.Event{Kind: agent.EventBgDone, Text: "background finished"})
 	lg.Close()
 	s, err := ReadSummary(path, 0)
 	if err != nil {
@@ -83,9 +87,12 @@ func TestHookObserverAndSummary(t *testing.T) {
 	if s.Hooks["session_start"].Starts != 1 || s.Hooks["session_start"].Done != 1 {
 		t.Fatalf("hook summary wrong: %+v", s.Hooks)
 	}
+	if s.Subagents.TaskCalls != 1 || s.Subagents.GroupCalls != 1 || s.Subagents.GroupErrors != 1 || s.Subagents.BackgroundDone != 1 {
+		t.Fatalf("subagent summary wrong: %+v", s.Subagents)
+	}
 	out := FormatSummary(s)
-	if !strings.Contains(out, "hooks:") || !strings.Contains(out, "session_start") {
-		t.Fatalf("summary should include hooks, got:\n%s", out)
+	if !strings.Contains(out, "hooks:") || !strings.Contains(out, "session_start") || !strings.Contains(out, "subagents/spawns") {
+		t.Fatalf("summary should include hooks/subagents, got:\n%s", out)
 	}
 }
 
