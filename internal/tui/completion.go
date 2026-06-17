@@ -88,6 +88,8 @@ var slashCommands = []slashCmd{
 	{"/speak", "read the last answer aloud once (▶ button)"},
 	{"/skills", "list skills, or /skills <name> to preview one"},
 	{"/tools", "list available tools"},
+	{"/plugin", "manage installed plugins (/plugin list|install|remove|enable|disable)"},
+	{"/marketplace", "manage plugin marketplaces (/marketplace list|add|update|remove)"},
 	{"/add-dir", "grant the tools another working directory (/add-dir <path>)"},
 	{"/find", "search the transcript"},
 	{"/copy", "copy the selected block (or last answer) to clipboard"},
