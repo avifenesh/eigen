@@ -34,17 +34,19 @@ type MarketRecord struct {
 // InstalledPlugin records one installed plugin and the files it wrote, so
 // `plugin remove` can cleanly reverse it.
 type InstalledPlugin struct {
-	Name        string    `json:"name"`
-	Marketplace string    `json:"marketplace,omitempty"`
-	Version     string    `json:"version,omitempty"`
-	Description string    `json:"description,omitempty"`
-	Installed   time.Time `json:"installed"`
-	Root        string    `json:"root"`             // ~/.eigen/plugins/<name> (bundled files)
-	Skills      []string  `json:"skills,omitempty"` // installed skill dir names (~/.eigen/skills/<n>)
-	Agents      []string  `json:"agents,omitempty"` // agent names adapted into skills
-	MCPServers  []string  `json:"mcp_servers,omitempty"`
-	Hooks       int       `json:"hooks,omitempty"`    // count appended to hooks.json
-	Commands    []string  `json:"commands,omitempty"` // installed command names (~/.eigen/commands/<n>.md)
+	Name        string        `json:"name"`
+	Marketplace string        `json:"marketplace,omitempty"`
+	Version     string        `json:"version,omitempty"`
+	Description string        `json:"description,omitempty"`
+	Installed   time.Time     `json:"installed"`
+	Root        string        `json:"root"`             // ~/.eigen/plugins/<name> (bundled files)
+	Skills      []string      `json:"skills,omitempty"` // installed skill dir names (~/.eigen/skills/<n>)
+	Agents      []string      `json:"agents,omitempty"` // agent names adapted into skills
+	MCPServers  []string      `json:"mcp_servers,omitempty"`
+	Hooks       int           `json:"hooks,omitempty"`    // count appended to hooks.json
+	Commands    []string      `json:"commands,omitempty"` // installed command names (~/.eigen/commands/<n>.md)
+	Scans       []ScanFinding `json:"scans,omitempty"`    // forced risky scan verdicts kept for audit/UI
+	Warnings    []string      `json:"warnings,omitempty"` // non-fatal install notes (e.g. unsupported Codex apps)
 }
 
 // NewRegistry opens the registry rooted at ~/.eigen.

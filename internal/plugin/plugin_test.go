@@ -470,6 +470,25 @@ func mustWrite(t *testing.T, path, content string) {
 	}
 }
 
+func TestPreviewPluginReportsManifestAndComponents(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRegistryAt(dir)
+	tgz := demoTarball(t)
+	if _, _, err := r.AddMarketplace(context.Background(), "jane/demo", fakeTree(tgz)); err != nil {
+		t.Fatal(err)
+	}
+	pv, err := r.PreviewPlugin(context.Background(), "toolbox", "", fakeTree(tgz))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pv.Entry.Name != "toolbox" || pv.Manifest == nil || pv.Manifest.Name != "toolbox" {
+		t.Fatalf("bad preview identity: %+v", pv)
+	}
+	if len(pv.Skills) != 1 || pv.Skills[0] != "greet" || len(pv.Commands) != 1 || pv.Commands[0] != "do-it" || len(pv.MCPServers) != 1 || pv.Hooks != 1 {
+		t.Fatalf("preview missing components: %+v", pv)
+	}
+}
+
 func TestDisabledMarketplaceIsNotSearchedForInstalls(t *testing.T) {
 	dir := t.TempDir()
 	r := NewRegistryAt(dir)
@@ -520,6 +539,10 @@ func TestInstallPluginBlocksRiskyUnlessForced(t *testing.T) {
 	}
 	if len(res.Scans) == 0 {
 		t.Fatal("forced install should still surface the risky verdict")
+	}
+	rec, ok := r.InstalledByName("toolbox")
+	if !ok || len(rec.Scans) == 0 {
+		t.Fatalf("forced scan findings should be recorded for UI audit: ok=%v rec=%+v", ok, rec)
 	}
 }
 

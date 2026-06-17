@@ -168,21 +168,23 @@ func loadHookRows(path, src string) []ExtRow {
 // header copy, segmented tabs, install affordances, cards, enabled state,
 // and a power-user wiring view.
 type pluginsState struct {
-	list            list
-	tab             pluginsTab
-	rows            []ExtRow
-	installed       []pluginpkg.InstalledPlugin
-	markets         []pluginpkg.MarketRecord
-	catalogMarket   string
-	catalog         []pluginpkg.PluginEntry
-	catalogList     list
-	catalogFocus    bool
-	catalogSelected map[string]bool // selected catalog plugin names for batch install
-	loaded          bool
-	err             string // last action error/status ("" = none)
-	prompt          installPrompt
-	confirm         pluginConfirm
-	clicks          clickMap
+	list              list
+	tab               pluginsTab
+	rows              []ExtRow
+	installed         []pluginpkg.InstalledPlugin
+	markets           []pluginpkg.MarketRecord
+	catalogMarket     string
+	catalog           []pluginpkg.PluginEntry
+	catalogList       list
+	catalogFocus      bool
+	catalogSelected   map[string]bool // selected catalog plugin names for batch install
+	catalogPreview    *pluginpkg.PluginPreview
+	catalogPreviewKey string
+	loaded            bool
+	err               string // last action error/status ("" = none)
+	prompt            installPrompt
+	confirm           pluginConfirm
+	clicks            clickMap
 }
 
 type pluginConfirm struct {
@@ -604,12 +606,16 @@ func (p *pluginsState) updateCatalog(m *Model, key string) (bool, tea.Cmd) {
 		return true, p.installSelectedCatalogPlugin(m)
 	case "i":
 		return true, p.installMarkedCatalogPlugins(m)
+	case "v":
+		return true, p.previewSelectedCatalogPlugin()
 	}
 	visible := p.catalogVisibleRows(m.height)
 	if p.catalogList.key(key, visible) {
 		return true, nil
 	}
-	return false, nil
+	// While focused inside the catalog, consume stray keys so page-jump/destructive
+	// marketplace shortcuts do not fire accidentally.
+	return true, nil
 }
 
 func (p *pluginsState) selectedCatalogEntry() (pluginpkg.PluginEntry, bool) {
@@ -621,6 +627,10 @@ func (p *pluginsState) selectedCatalogEntry() (pluginpkg.PluginEntry, bool) {
 
 func catalogEntryKey(e pluginpkg.PluginEntry) string {
 	return strings.ToLower(strings.TrimSpace(e.Name))
+}
+
+func catalogPreviewKey(name, market string) string {
+	return strings.ToLower(strings.TrimSpace(name)) + "@" + strings.ToLower(strings.TrimSpace(market))
 }
 
 func (p *pluginsState) toggleSelectedCatalogPlugin() {
@@ -661,6 +671,23 @@ func (p *pluginsState) catalogMarketName() string {
 		market = p.markets[p.list.cursor].Name
 	}
 	return market
+}
+
+func (p *pluginsState) previewSelectedCatalogPlugin() tea.Cmd {
+	entry, ok := p.selectedCatalogEntry()
+	if !ok {
+		return nil
+	}
+	market := p.catalogMarketName()
+	key := catalogPreviewKey(entry.Name, market)
+	p.prompt.startBusy("plugin", "plugin", entry.Name, "previewing plugin "+entry.Name+" … (fetching manifest)")
+	return func() tea.Msg {
+		pv, err := runPluginPreview(entry.Name, market)
+		if err != nil {
+			return pluginPreviewDoneMsg{key: key, err: "preview failed: " + err.Error()}
+		}
+		return pluginPreviewDoneMsg{key: key, preview: pv}
+	}
 }
 
 func (p *pluginsState) installSelectedCatalogPlugin(m *Model) tea.Cmd {
@@ -882,9 +909,56 @@ func (p *pluginsState) pluginDetail(pl pluginpkg.InstalledPlugin, reg *pluginpkg
 		state = "disabled"
 	}
 	b.WriteString("  " + sDim.Render("state ") + state + sFaint.Render(" · ") + sDim.Render("root ") + truncate(pl.Root, max(12, w-20)) + "\n")
+	if pl.Version != "" {
+		b.WriteString("  " + sDim.Render("version ") + pl.Version + "\n")
+	}
 	parts := pluginComponentNames(pl)
 	if len(parts) > 0 {
 		b.WriteString("  " + sDim.Render("components ") + truncate(strings.Join(parts, " · "), max(20, w-15)) + "\n")
+	}
+	if pv := installedPluginPreview(pl); pv != "" {
+		b.WriteString(pv)
+	}
+	for _, warn := range pl.Warnings {
+		b.WriteString("  " + sWarn.Render("warning ") + sDim.Render(truncate(warn, max(20, w-12))) + "\n")
+	}
+	if len(pl.Scans) > 0 {
+		b.WriteString("\n" + sectionLabel("scan flags", w) + "\n")
+		for _, sf := range pl.Scans {
+			b.WriteString("  " + sWarn.Render(sf.Component) + "\n")
+			for _, reason := range sf.Reasons {
+				b.WriteString("    - " + sDim.Render(truncate(reason, max(20, w-8))) + "\n")
+			}
+		}
+	}
+	return b.String()
+}
+
+func installedPluginPreview(pl pluginpkg.InstalledPlugin) string {
+	if strings.TrimSpace(pl.Root) == "" {
+		return ""
+	}
+	comps, err := pluginpkg.Discover(pl.Root, true)
+	if err != nil || comps == nil || comps.Manifest == nil {
+		return ""
+	}
+	m := comps.Manifest
+	var b strings.Builder
+	if m.DisplayName != "" && m.DisplayName != pl.Name {
+		b.WriteString("  " + sDim.Render("manifest ") + m.DisplayName + "\n")
+	}
+	if m.Repository != "" || m.Homepage != "" || m.License != "" {
+		var bits []string
+		if m.Repository != "" {
+			bits = append(bits, "repo "+m.Repository)
+		}
+		if m.Homepage != "" {
+			bits = append(bits, "home "+m.Homepage)
+		}
+		if m.License != "" {
+			bits = append(bits, "license "+m.License)
+		}
+		b.WriteString("  " + sDim.Render("manifest ") + strings.Join(bits, " · ") + "\n")
 	}
 	return b.String()
 }
@@ -913,7 +987,7 @@ func (p *pluginsState) viewMarketplace(w, h int) string {
 	}
 	out += p.prompt.render()
 	if p.catalogFocus {
-		out += "\n" + sFaint.Render("  j/k choose · space mark/unmark · i install marked · enter install current · esc back")
+		out += "\n" + sFaint.Render("  j/k choose · v preview · space mark/unmark · i install marked · enter install current · esc back")
 	} else {
 		out += "\n" + sFaint.Render("  space enable/disable · a add marketplace · enter open catalog · Shift+U pull updates · i install by name · X delete")
 	}
@@ -974,7 +1048,7 @@ func (p *pluginsState) marketDetail(mk pluginpkg.MarketRecord, w, h int) string 
 				label += fmt.Sprintf("  ·  %d marked", marked)
 			}
 			if p.catalogFocus {
-				label += "  ·  space mark  ·  i install marked  ·  esc back"
+				label += "  ·  v preview  ·  space mark  ·  i install marked  ·  esc back"
 			}
 			b.WriteString("\n" + sectionLabel(label, w) + "\n")
 			p.catalogList.count = len(p.catalog)
@@ -1003,8 +1077,16 @@ func (p *pluginsState) marketDetail(mk pluginpkg.MarketRecord, w, h int) string 
 			if from > 0 || to < len(p.catalog) {
 				b.WriteString(sFaint.Render(fmt.Sprintf("  showing %d-%d of %d", from+1, to, len(p.catalog))) + "\n")
 			}
+			if p.catalogFocus && p.catalogList.cursor < len(p.catalog) {
+				sel := p.catalog[p.catalogList.cursor]
+				if p.catalogPreview != nil && p.catalogPreviewKey == catalogPreviewKey(sel.Name, mk.Name) {
+					b.WriteString("\n" + p.pluginPreviewBlock(p.catalogPreview, w))
+				} else {
+					b.WriteString("  " + sFaint.Render("v previews manifest/components before install") + "\n")
+				}
+			}
 			if !p.catalogFocus {
-				b.WriteString("  " + sFaint.Render("enter focuses this catalog; then j/k choose, space mark, i install marked") + "\n")
+				b.WriteString("  " + sFaint.Render("enter focuses this catalog; then j/k choose, v preview, space mark, i install marked") + "\n")
 			}
 		}
 	} else {
@@ -1134,6 +1216,77 @@ func pluginComponentNames(pl pluginpkg.InstalledPlugin) []string {
 		parts = append(parts, fmt.Sprintf("%d hook(s)", pl.Hooks))
 	}
 	return parts
+}
+
+func (p *pluginsState) pluginPreviewBlock(pv *pluginpkg.PluginPreview, w int) string {
+	if pv == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(sectionLabel("manifest preview", w) + "\n")
+	name := pv.Entry.Name
+	version := pv.Entry.Version
+	desc := pv.Entry.Description
+	if pv.Manifest != nil {
+		name = firstNonEmptyApp(pv.Manifest.DisplayName, firstNonEmptyApp(pv.Manifest.Name, name))
+		version = firstNonEmptyApp(pv.Manifest.Version, version)
+		desc = firstNonEmptyApp(pv.Manifest.Description, firstNonEmptyApp(pv.Manifest.Interface.ShortDescription, desc))
+	}
+	b.WriteString("  " + sText.Render(name))
+	if version != "" {
+		b.WriteString(" " + sViolet.Render("v"+version))
+	}
+	b.WriteString("\n")
+	if desc != "" {
+		b.WriteString("  " + sDim.Render(truncate(desc, max(20, w-6))) + "\n")
+	}
+	b.WriteString("  " + sDim.Render("will install ") + pluginPreviewCounts(pv) + "\n")
+	if len(pv.Skills) > 0 {
+		b.WriteString("  " + sDim.Render("skills ") + truncate(strings.Join(pv.Skills, ", "), max(20, w-10)) + "\n")
+	}
+	if len(pv.Agents) > 0 {
+		b.WriteString("  " + sDim.Render("agents ") + truncate(strings.Join(pv.Agents, ", "), max(20, w-10)) + "\n")
+	}
+	if len(pv.Commands) > 0 {
+		b.WriteString("  " + sDim.Render("commands ") + truncate(strings.Join(pv.Commands, ", "), max(20, w-12)) + "\n")
+	}
+	for _, wmsg := range pv.Warnings {
+		b.WriteString("  " + sWarn.Render("warning ") + sDim.Render(truncate(wmsg, max(20, w-12))) + "\n")
+	}
+	return b.String()
+}
+
+func pluginPreviewCounts(pv *pluginpkg.PluginPreview) string {
+	var parts []string
+	if len(pv.Skills) > 0 {
+		parts = append(parts, fmt.Sprintf("%d skill(s)", len(pv.Skills)))
+	}
+	if len(pv.Agents) > 0 {
+		parts = append(parts, fmt.Sprintf("%d agent(s)", len(pv.Agents)))
+	}
+	if len(pv.Commands) > 0 {
+		parts = append(parts, fmt.Sprintf("%d command(s)", len(pv.Commands)))
+	}
+	if len(pv.MCPServers) > 0 {
+		parts = append(parts, fmt.Sprintf("%d MCP server(s)", len(pv.MCPServers)))
+	}
+	if pv.Hooks > 0 {
+		parts = append(parts, fmt.Sprintf("%d hook(s)", pv.Hooks))
+	}
+	if pv.Apps > 0 {
+		parts = append(parts, fmt.Sprintf("%d app(s)", pv.Apps))
+	}
+	if len(parts) == 0 {
+		return "metadata only"
+	}
+	return strings.Join(parts, ", ")
+}
+
+func firstNonEmptyApp(a, b string) string {
+	if strings.TrimSpace(a) != "" {
+		return a
+	}
+	return b
 }
 
 func catalogEntryMeta(e pluginpkg.PluginEntry) string {

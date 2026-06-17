@@ -44,6 +44,8 @@ func seedPluginPage(t *testing.T) *pluginpkg.Registry {
 		Skills:      []string{"demo-skill"},
 		Commands:    []string{"demo-review"},
 		MCPServers:  []string{"demo-mcp"},
+		Warnings:    []string{"1 Codex app integration(s) not wired yet"},
+		Scans:       []pluginpkg.ScanFinding{{Component: "skill:demo-skill", Reasons: []string{"forced test finding"}}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -65,6 +67,8 @@ func TestPluginsPageRendersProductSurface(t *testing.T) {
 		"enabled",
 		"1 skill",
 		"from core",
+		"scan flags",
+		"forced test finding",
 	} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("plugins page missing %q:\n%s", want, v)
@@ -174,6 +178,17 @@ func TestPluginsPageCanNavigateCatalogAndInstall(t *testing.T) {
 	m.Update(cmd())
 	if !m.plugins.catalogFocus || len(m.plugins.catalog) != 2 {
 		t.Fatalf("enter should focus refreshed catalog, focus=%v catalog=%v", m.plugins.catalogFocus, m.plugins.catalog)
+	}
+	_, cmd = m.Update(key("v"))
+	if cmd == nil || !m.plugins.prompt.busy {
+		t.Fatal("v should start a visible plugin preview job")
+	}
+	m.Update(cmd())
+	if m.plugins.catalogPreview == nil || m.plugins.catalogPreview.Entry.Name != "alpha" {
+		t.Fatalf("expected alpha preview, got %+v", m.plugins.catalogPreview)
+	}
+	if v := m.plugins.view(m, 100, 30); !strings.Contains(v, "manifest preview") || !strings.Contains(v, "will install") {
+		t.Fatalf("preview should render manifest/component summary:\n%s", v)
 	}
 	m.Update(key("j"))              // beta
 	_, cmd = m.Update(key("enter")) // install focused catalog plugin

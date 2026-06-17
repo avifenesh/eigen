@@ -47,8 +47,23 @@ type InstallResult struct {
 
 // ScanFinding is one component's risky scan verdict (surfaced to the user).
 type ScanFinding struct {
-	Component string
-	Reasons   []string
+	Component string   `json:"component"`
+	Reasons   []string `json:"reasons"`
+}
+
+// PluginPreview is a read-only manifest/component summary for marketplace UI.
+// It intentionally carries names/counts, not full prompt bodies.
+type PluginPreview struct {
+	Entry       PluginEntry     `json:"entry"`
+	Marketplace string          `json:"marketplace"`
+	Manifest    *PluginManifest `json:"manifest,omitempty"`
+	Skills      []string        `json:"skills,omitempty"`
+	Agents      []string        `json:"agents,omitempty"`
+	Commands    []string        `json:"commands,omitempty"`
+	MCPServers  []string        `json:"mcp_servers,omitempty"`
+	Hooks       int             `json:"hooks,omitempty"`
+	Apps        int             `json:"apps,omitempty"`
+	Warnings    []string        `json:"warnings,omitempty"`
 }
 
 // AddMarketplace fetches a catalog repo, parses its marketplace.json, and
@@ -256,6 +271,59 @@ func isLocalPath(s string) bool {
 	return strings.HasPrefix(s, ".") || strings.HasPrefix(s, "/") || strings.HasPrefix(s, "file://")
 }
 
+// PreviewPlugin resolves a marketplace plugin and returns its manifest/component
+// summary without scanning or wiring anything. It may fetch plugin sources, so
+// callers should run it off the UI goroutine.
+func (r *Registry) PreviewPlugin(ctx context.Context, pluginName, mktName string, fetch TreeFetcher) (*PluginPreview, error) {
+	if err := SafeName(pluginName); err != nil {
+		return nil, err
+	}
+	if fetch == nil {
+		fetch = DefaultTreeFetcher
+	}
+	entry, mkt, base, cleanup, err := r.resolvePlugin(ctx, pluginName, mktName, fetch)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	pluginRoot, extraCleanup, err := r.resolvePluginRoot(ctx, entry, base, fetch)
+	if err != nil {
+		return nil, err
+	}
+	defer extraCleanup()
+	comps, err := Discover(pluginRoot, !entry.strictMode())
+	if err != nil {
+		return nil, err
+	}
+	return buildPluginPreview(entry, mkt, comps), nil
+}
+
+func buildPluginPreview(entry PluginEntry, mkt string, comps *Components) *PluginPreview {
+	pv := &PluginPreview{Entry: entry, Marketplace: mkt}
+	if comps == nil {
+		return pv
+	}
+	pv.Manifest = comps.Manifest
+	for _, sf := range comps.Skills {
+		pv.Skills = append(pv.Skills, sf.Name)
+	}
+	for _, af := range comps.Agents {
+		pv.Agents = append(pv.Agents, af.Name)
+	}
+	for _, cf := range comps.Commands {
+		pv.Commands = append(pv.Commands, cf.Name)
+	}
+	for _, s := range comps.MCPServers {
+		pv.MCPServers = append(pv.MCPServers, s.Name)
+	}
+	pv.Hooks = len(comps.Hooks)
+	pv.Apps = comps.Apps
+	if comps.Apps > 0 {
+		pv.Warnings = append(pv.Warnings, fmt.Sprintf("%d Codex app integration(s) not wired yet", comps.Apps))
+	}
+	return pv
+}
+
 // InstallPlugin installs a plugin by name from a recorded marketplace (mktName
 // optional — if empty, the first marketplace listing the plugin wins). It
 // fetches the plugin's tree, scans each skill/command body, and wires
@@ -406,6 +474,8 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 	if comps.Apps > 0 {
 		res.Warnings = append(res.Warnings, fmt.Sprintf("%d Codex app integration(s) not wired yet", comps.Apps))
 	}
+	res.Plugin.Scans = append([]ScanFinding(nil), res.Scans...)
+	res.Plugin.Warnings = append([]string(nil), res.Warnings...)
 
 	if err := r.RecordInstall(res.Plugin); err != nil {
 		return nil, err

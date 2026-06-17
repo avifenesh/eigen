@@ -283,12 +283,26 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.plugins.catalogMarket = msg.marketName
 		m.plugins.catalog = append([]pluginpkg.PluginEntry(nil), msg.catalog...)
 		m.plugins.catalogSelected = nil
+		m.plugins.catalogPreview = nil
+		m.plugins.catalogPreviewKey = ""
 		m.plugins.err = ""
 		m.plugins.loaded = false
 		m.plugins.load()
 		m.plugins.catalogList.count = len(m.plugins.catalog)
 		m.plugins.catalogList.cursor, m.plugins.catalogList.top = 0, 0
 		m.plugins.catalogFocus = msg.focus && len(m.plugins.catalog) > 0
+		return m, nil
+	case pluginPreviewDoneMsg:
+		m.plugins.prompt.finish("preview ready")
+		if msg.err != "" {
+			m.plugins.err = msg.err
+			m.plugins.catalogPreview = nil
+			m.plugins.catalogPreviewKey = ""
+			return m, nil
+		}
+		m.plugins.catalogPreviewKey = msg.key
+		m.plugins.catalogPreview = msg.preview
+		m.plugins.err = ""
 		return m, nil
 	case consolidateDoneMsg:
 		m.memory.consoling = false
@@ -371,7 +385,7 @@ func (m *Model) capturingInput() bool {
 		// Type-to-search captures everything (typing "q" extends the query).
 		return m.sessions.filter.searching || m.sessions.confirmDel
 	case PagePlugins:
-		return m.plugins.prompt.active || m.plugins.confirm.active
+		return m.plugins.prompt.active || m.plugins.confirm.active || m.plugins.catalogFocus
 	case PageSkills:
 		return m.skills.prompt.active
 	}

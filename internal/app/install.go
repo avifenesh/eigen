@@ -115,6 +115,12 @@ type marketplaceRefreshDoneMsg struct {
 	focus      bool
 }
 
+type pluginPreviewDoneMsg struct {
+	key     string
+	preview *plugin.PluginPreview
+	err     string
+}
+
 func appPluginRegistry() (*plugin.Registry, error) { return plugin.NewRegistry() }
 
 // runMarketplaceAdd adds a marketplace catalog by source.
@@ -147,7 +153,7 @@ func runPluginInstallFrom(d *Data, name, market string) string {
 	}
 	res, err := installOnePlugin(context.Background(), d, reg, name, market, false)
 	if err != nil {
-		return "install failed: " + err.Error()
+		return "install failed (rolled back/no plugin recorded): " + err.Error()
 	}
 	return formatPluginInstallStatus(res)
 }
@@ -162,7 +168,7 @@ func runPluginBatchInstall(d *Data, names []string, market string) string {
 	for _, name := range names {
 		res, err := installOnePlugin(ctx, d, reg, name, market, false)
 		if err != nil {
-			failures = append(failures, name+": "+err.Error())
+			failures = append(failures, name+" (rolled back/no record): "+err.Error())
 			continue
 		}
 		okNames = append(okNames, res.Plugin.Name)
@@ -184,6 +190,16 @@ func installOnePlugin(parent context.Context, d *Data, reg *plugin.Registry, nam
 	ctx, cancel := context.WithTimeout(parent, 120*time.Second)
 	defer cancel()
 	return reg.InstallPlugin(ctx, name, market, opts)
+}
+
+func runPluginPreview(name, market string) (*plugin.PluginPreview, error) {
+	reg, err := appPluginRegistry()
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	return reg.PreviewPlugin(ctx, name, market, nil)
 }
 
 func runMarketplaceUpdate(d *Data, mk plugin.MarketRecord) (marketName, status string, catalog []plugin.PluginEntry) {
