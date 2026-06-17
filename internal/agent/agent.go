@@ -905,37 +905,43 @@ func (s *Session) Tokens() int { return llm.EstimateTokens(s.snapshot()) }
 // the circuit breaker trips instead of summarizing every turn for no gain.
 const compactStallHeadroomFrac = 0.15
 
-// compactTriggerFrac is the fraction of the budget at which start-of-turn
-// auto-compaction fires. Compacting at the FULL budget (1.0) means the priciest
-// turns run at maximum context and risk a provider overflow; triggering with
-// headroom keeps turns smaller and folds history before it gets expensive. The
-// budget already reserves window headroom (ContextBudget = window×85%), so this
-// is a second, conversation-level trigger.
+// compactTriggerFrac is the fraction of the budget at which proactive
+// auto-compaction fires before a model call. Compacting at the FULL budget (1.0)
+// means the priciest turns run at maximum context and risk a provider overflow;
+// triggering with headroom keeps turns smaller and folds history before it gets
+// expensive.
 const compactTriggerFrac = 0.85
 
-// maybeCompact runs start-of-turn auto-compaction with a circuit breaker. It
-// only acts when the context is over budget. After a compaction it records how
-// much headroom remained; if a subsequent over-budget turn follows one that
-// left too little headroom, it stops auto-compacting and emits a one-time note
-// suggesting the user refocus or /clear, rather than spinning a summary call
-// every turn for negligible gain.
-func (s *Session) maybeCompact(ctx context.Context) {
+// compactTargetFrac is where auto-compaction aims after it fires. This is much
+// close to the trigger but still below it: enough headroom to avoid immediate
+// overflow without throwing away more recent context than necessary.
+const compactTargetFrac = 0.80
+
+// maybeCompact runs proactive auto-compaction with a circuit breaker. It fires
+// before a model call when the conversation crosses compactTriggerFrac of the
+// session budget — including between tool-use steps inside one long turn. After
+// a compaction it records how much headroom remained; if a subsequent over-full
+// step follows one that left too little headroom, it stops auto-compacting and
+// emits a one-time note suggesting the user refocus or /clear, rather than
+// spinning a summary call every step for negligible gain. It reports whether the
+// session history was replaced and should be persisted.
+func (s *Session) maybeCompact(ctx context.Context) bool {
 	a := s.a
 	msgs := s.snapshot()
 	before := llm.EstimateTokens(msgs)
 	budget := a.maxContextTokens()
-	triggerAt := budget
-	if budget > 0 {
-		triggerAt = int(compactTriggerFrac * float64(budget))
+	if budget <= 0 {
+		return false
 	}
+	triggerAt := int(compactTriggerFrac * float64(budget))
 	if before <= triggerAt {
 		// Under the trigger threshold: reset the breaker so it can act again later.
 		s.compactStall = false
-		return
+		return false
 	}
 	if s.compactStall {
 		// Already tripped and still over budget: don't keep summarizing.
-		return
+		return false
 	}
 	// If the previous compaction left too little headroom and we're over the
 	// trigger again, trip the breaker instead of compacting once more.
@@ -944,19 +950,26 @@ func (s *Session) maybeCompact(ctx context.Context) {
 		if float64(headroom) < compactStallHeadroomFrac*float64(budget) {
 			s.compactStall = true
 			a.emit(Event{Kind: EventNote, Text: "Context keeps refilling and compaction is no longer freeing much space. Consider /clear for a fresh thread or a more focused task."})
-			return
+			return false
 		}
 	}
-	// Target below the trigger threshold (not the full budget) so the fold
-	// leaves real headroom and won't immediately re-trip next turn.
-	target := triggerAt
+	// Target below the trigger threshold so the fold leaves headroom and won't
+	// immediately re-trip on the next model/tool step.
+	target := int(compactTargetFrac * float64(budget))
+	if target <= 0 {
+		target = triggerAt
+	}
 	compacted, err := llm.CompactWith(ctx, a.compactor(), msgs, target)
 	if err != nil {
-		return
+		return false
 	}
-	s.setMsgs(compacted)
 	s.lastCompactBefore = before
 	s.lastCompactAfter = llm.EstimateTokens(compacted)
+	s.setMsgs(compacted)
+	if s.lastCompactAfter < before {
+		a.emit(Event{Kind: EventNote, Text: fmt.Sprintf("context auto-compacted: ~%d → ~%d tokens", before, s.lastCompactAfter)})
+	}
+	return true
 }
 
 // forceCompactOnOverflow shrinks the conversation after the provider rejected
@@ -1052,9 +1065,6 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 	if a.Tools == nil {
 		return "", fmt.Errorf("agent: nil tools")
 	}
-	if a.maxContextTokens() > 0 {
-		s.maybeCompact(ctx)
-	}
 	s.persist()
 	disclose := a.Tools.HasNiche() // progressive tool disclosure when any niche tools exist
 	emptyTurns := 0
@@ -1101,6 +1111,12 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		// checking it is the failure mode this prevents.
 		if bs := a.backgroundShellStatus(); bs != "" {
 			sys += bs
+		}
+		// Proactive compaction must run before EVERY model request, not only at
+		// the top of a user turn: a single long turn can accumulate enough tool
+		// results to overflow the very next step.
+		if a.maxContextTokens() > 0 && s.maybeCompact(ctx) {
+			s.persist()
 		}
 		// Progressive tool disclosure: send core tools' full schemas + the
 		// already-unlocked niche tools, and list the rest by name so the model

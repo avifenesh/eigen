@@ -36,6 +36,12 @@ const summaryReinjectPrefix = "[Context compacted to save space.] Another instan
 // results verbatim during microcompaction; older results are stubbed.
 const shedKeepRounds = 3
 
+// shedKeepToolResults is the in-turn safety valve: when the current/recent
+// rounds themselves contain many tool payloads, round-based shedding cannot
+// help. Keep only the freshest few result bodies; older ones stay paired but
+// become stubs, and the model can re-read if needed.
+const shedKeepToolResults = 4
+
 // CompactWith compacts msgs to fit maxTokens. It preserves the most recent
 // whole rounds verbatim (cut only at user boundaries, so no tool call is ever
 // orphaned) and replaces older history with a single model-generated summary
@@ -55,9 +61,16 @@ func CompactWith(ctx context.Context, c Compactor, msgs []Message, maxTokens int
 	if EstimateTokens(msgs) <= maxTokens {
 		return msgs, nil
 	}
+	// A single long turn can still be too large after round-based shedding because
+	// the whole current round is "recent". Shed older result bodies by count too,
+	// before paying for a model summary.
+	msgs = ShedOldToolResults(msgs, shedKeepToolResults)
+	if EstimateTokens(msgs) <= maxTokens {
+		return msgs, nil
+	}
 
 	if c == nil {
-		return Compact(msgs, maxTokens), nil
+		return compactFit(msgs, maxTokens), nil
 	}
 
 	// Reserve ~45% of the budget for verbatim recent turns; the rest holds the
@@ -66,7 +79,7 @@ func CompactWith(ctx context.Context, c Compactor, msgs []Message, maxTokens int
 
 	starts := userStarts(msgs)
 	if len(starts) < 2 {
-		return Compact(msgs, maxTokens), nil // nothing meaningful to summarize
+		return compactFit(msgs, maxTokens), nil // nothing meaningful to summarize
 	}
 
 	// Earliest recent-round start whose suffix fits recentBudget.
@@ -86,7 +99,7 @@ func CompactWith(ctx context.Context, c Compactor, msgs []Message, maxTokens int
 
 	summary, err := c.Summarize(ctx, older)
 	if err != nil {
-		return Compact(msgs, maxTokens), nil // degrade gracefully to v0
+		return compactFit(msgs, maxTokens), nil // degrade gracefully to v0
 	}
 
 	// Preserve the original task verbatim alongside the summary so the model's
@@ -107,13 +120,31 @@ func CompactWith(ctx context.Context, c Compactor, msgs []Message, maxTokens int
 	})
 	out = append(out, recent...)
 
-	// If summary + recent still overflow, fall back to a hard deterministic
-	// trim that is guaranteed to fit — never recurse unbounded (a summary that
-	// won't shrink would otherwise loop forever and overflow the stack).
+	// If summary + recent still overflow, fall back to progressively stubbing
+	// tool results and then the deterministic whole-round tail — never recurse
+	// unbounded (a summary that won't shrink would otherwise loop forever).
 	if EstimateTokens(out) > maxTokens {
-		return Compact(out, maxTokens), nil
+		return compactFit(out, maxTokens), nil
 	}
 	return out, nil
+}
+
+// compactFit is the last-resort path: progressively shed tool-result payloads
+// by count, then fall back to the deterministic whole-round tail. This is what
+// makes compaction useful for a single enormous current turn, where there may be
+// no older user round to summarize away.
+func compactFit(msgs []Message, maxTokens int) []Message {
+	if EstimateTokens(msgs) <= maxTokens {
+		return msgs
+	}
+	for _, keep := range []int{2, 1, 0} {
+		out := ShedOldToolResults(msgs, keep)
+		if EstimateTokens(out) <= maxTokens {
+			return out
+		}
+		msgs = out
+	}
+	return Compact(msgs, maxTokens)
 }
 
 // userStarts returns indices where a user message begins a round.

@@ -91,6 +91,63 @@ func TestShedToolResultsDoesNotMutateInput(t *testing.T) {
 	}
 }
 
+func TestShedOldToolResultsByCountStubsOlderWithinOneRound(t *testing.T) {
+	msgs := []Message{{Role: RoleUser, Text: "do a long tool-heavy turn"}}
+	for i := 0; i < 6; i++ {
+		msgs = append(msgs,
+			Message{Role: RoleAssistant, ToolCalls: []ToolCall{{Name: "read"}}},
+			Message{Role: RoleTool, ToolName: "read", Text: strings.Repeat("BIG ", 300)},
+		)
+	}
+	out := ShedOldToolResults(msgs, 2)
+
+	stubbed, verbatim := 0, 0
+	for _, m := range out {
+		if m.Role != RoleTool {
+			continue
+		}
+		if m.Text == toolResultStub {
+			stubbed++
+		} else if strings.HasPrefix(m.Text, "BIG ") {
+			verbatim++
+		}
+	}
+	if stubbed != 4 || verbatim != 2 {
+		t.Fatalf("want 4 old stubbed + 2 recent verbatim, got stubbed=%d verbatim=%d", stubbed, verbatim)
+	}
+	if msgs[2].Text == toolResultStub {
+		t.Fatal("ShedOldToolResults must not mutate the input")
+	}
+}
+
+func TestCompactWithShedsCurrentRoundToolResults(t *testing.T) {
+	// One user round with many large tool results used to be impossible to shrink:
+	// round-based compaction kept the whole current round verbatim and there was
+	// no older user boundary to summarize away.
+	msgs := []Message{{Role: RoleUser, Text: "inspect a lot"}}
+	for i := 0; i < 8; i++ {
+		msgs = append(msgs,
+			Message{Role: RoleAssistant, ToolCalls: []ToolCall{{Name: "read"}}},
+			Message{Role: RoleTool, ToolName: "read", Text: strings.Repeat("x ", 800)}, // ~400 tok each
+		)
+	}
+	before := EstimateTokens(msgs)
+	fc := &fakeCompactor{}
+	out, err := CompactWith(context.Background(), fc, msgs, 1800)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fc.calls != 0 {
+		t.Fatalf("single-round tool shedding should avoid a summary call, got %d", fc.calls)
+	}
+	if got := EstimateTokens(out); got > 1800 || got >= before {
+		t.Fatalf("compaction should shrink current-round tool results under budget: before=%d after=%d", before, got)
+	}
+	if !hasToolResultStub(out) {
+		t.Fatal("expected older current-round tool results to be stubbed")
+	}
+}
+
 // TestCompactWithShedsBeforeSummarizing verifies microcompaction can avoid the
 // model summary call entirely when stubbing tool results is enough.
 func TestCompactWithShedsBeforeSummarizing(t *testing.T) {
@@ -115,6 +172,15 @@ func TestCompactWithShedsBeforeSummarizing(t *testing.T) {
 	if EstimateTokens(out) > 8000 {
 		t.Fatalf("shedding did not bring context under budget: %d", EstimateTokens(out))
 	}
+}
+
+func hasToolResultStub(msgs []Message) bool {
+	for _, m := range msgs {
+		if m.Role == RoleTool && m.Text == toolResultStub {
+			return true
+		}
+	}
+	return false
 }
 
 func TestDedupeToolResultsStubsOlderCopies(t *testing.T) {

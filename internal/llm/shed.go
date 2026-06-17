@@ -38,6 +38,41 @@ func ShedToolImages(msgs []Message) []Message {
 	return out
 }
 
+// ShedOldToolResults is the same microcompaction primitive, but bounded by a
+// COUNT of recent tool results instead of user-led rounds. It is used when a
+// single long turn accumulates many large tool outputs: round-based shedding
+// preserves the whole current round, so it cannot prevent the next model call
+// from overflowing. Keeping only the freshest N successful tool payloads is
+// safe for strict providers because the tool-result message remains paired with
+// its tool call; the model can re-read anything older if it truly needs it.
+//
+// keepResults==0 stubs every non-error result. Already-stubbed results and
+// errored results are left as-is. The returned slice is a copy; the input is not
+// mutated.
+func ShedOldToolResults(msgs []Message, keepResults int) []Message {
+	if keepResults < 0 {
+		keepResults = 0
+	}
+	out := make([]Message, len(msgs))
+	copy(out, msgs)
+	kept := 0
+	for i := len(out) - 1; i >= 0; i-- {
+		m := &out[i]
+		if m.Role != RoleTool || m.ToolError {
+			continue
+		}
+		if m.Text == toolResultStub || m.Text == "" {
+			continue
+		}
+		if kept < keepResults {
+			kept++
+			continue
+		}
+		m.Text = toolResultStub
+	}
+	return out
+}
+
 // toolResultStub replaces an elided tool result's text. The tool CALL is kept
 // intact so call/result pairing stays valid for strict providers (Converse);
 // only the (usually large) result payload is dropped.

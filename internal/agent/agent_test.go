@@ -1090,6 +1090,82 @@ func TestMaybeCompactFiresAtThreshold(t *testing.T) {
 	}
 }
 
+func TestDriveAutoCompactsBetweenToolSteps(t *testing.T) {
+	// Regression: auto-compaction used to run only once at the top of a user turn.
+	// A single long turn could then accumulate tool results and send an oversized
+	// next-step request unless the user manually ran /compact. The drive loop must
+	// compact again before later model calls in the same turn.
+	var replies []*llm.Response
+	for i := 0; i < 6; i++ {
+		replies = append(replies, &llm.Response{ToolCalls: []llm.ToolCall{{
+			ID:        string(rune('a' + i)),
+			Name:      "big",
+			Arguments: json.RawMessage(`{}`),
+		}}})
+	}
+	replies = append(replies, &llm.Response{Text: "done"})
+	prov := &mockProvider{replies: replies}
+
+	toolResult := strings.Repeat("data ", 300) // ~375 tokens per result
+	bigTool := tool.Definition{
+		Name:       "big",
+		ReadOnly:   true,
+		Parameters: json.RawMessage(`{"type":"object"}`),
+		Run: func(context.Context, json.RawMessage) (string, error) {
+			return toolResult, nil
+		},
+	}
+	reg, err := tool.NewRegistry(bigTool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var notes []string
+	a := &Agent{
+		Provider:         prov,
+		Tools:            reg,
+		Perm:             PermAuto,
+		MaxContextTokens: 2000,
+		Compactor:        &fakeCompactor{},
+		OnEvent: func(e Event) {
+			if e.Kind == EventNote {
+				notes = append(notes, e.Text)
+			}
+		},
+	}
+
+	out, err := a.NewSession().Send(context.Background(), "run a long tool-heavy turn")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "done" {
+		t.Fatalf("got %q", out)
+	}
+	if len(prov.seen) != 7 {
+		t.Fatalf("expected 7 model calls (6 tool steps + final), got %d", len(prov.seen))
+	}
+	finalReq := prov.seen[len(prov.seen)-1]
+	stubbed, full := 0, 0
+	for _, m := range finalReq.Messages {
+		if m.Role != llm.RoleTool {
+			continue
+		}
+		if strings.Contains(m.Text, "elided to save context") {
+			stubbed++
+		} else if m.Text == toolResult {
+			full++
+		}
+	}
+	if stubbed == 0 || full >= 6 {
+		t.Fatalf("final in-turn request should shed old tool results; full=%d stubbed=%d", full, stubbed)
+	}
+	if got, trigger := llm.EstimateTokens(finalReq.Messages), int(compactTriggerFrac*2000); got > trigger {
+		t.Fatalf("final request should be back under trigger after auto-compaction: got %d trigger %d", got, trigger)
+	}
+	if len(notes) == 0 {
+		t.Fatal("auto-compaction should emit a note so the user can see it happened")
+	}
+}
+
 // A reasoning-only turn (no text, no tool call — Codex/gpt-5.x thinking across
 // turns) must NOT count as an "empty turn". Several in a row, then a final
 // answer, should succeed — not fail with "no actionable output".

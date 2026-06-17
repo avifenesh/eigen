@@ -303,8 +303,8 @@ func (m *model) ctxIndicator() string {
 // refreshCtx recomputes the cached context-token estimate. Call only on the main
 // goroutine when no turn is running (the session slice is otherwise mutated by
 // the agent goroutine). It also fires a one-time proactive nudge as usage
-// approaches the budget, so the user can /compact deliberately before
-// auto-compaction (or a 429) kicks in.
+// approaches the budget, so the user can /compact deliberately; otherwise the
+// agent will auto-compact before the next model call once it crosses the guard.
 func (m *model) refreshCtx() {
 	if m.backend == nil {
 		m.ctxTokens = 0
@@ -319,15 +319,15 @@ func (m *model) refreshCtx() {
 	switch {
 	case frac >= ctxNudgeFrac && !m.ctxNudged:
 		m.ctxNudged = true
-		m.note(fmt.Sprintf("context ~%d%% full — consider /compact (or keep going; it auto-compacts at the limit)", int(frac*100)))
+		m.note(fmt.Sprintf("context ~%d%% full — consider /compact, or keep going and eigen will auto-compact before the next model call", int(frac*100)))
 	case frac < ctxNudgeFrac:
 		m.ctxNudged = false // refilled headroom (e.g. after /compact): re-arm
 	}
 }
 
 // ctxNudgeFrac is the budget fraction at which the proactive context nudge
-// fires — below auto-compaction (which happens at the limit), so the user gets
-// a chance to compact or refocus deliberately first.
+// fires — below auto-compaction, so the user gets a chance to compact or
+// refocus deliberately first.
 const ctxNudgeFrac = 0.8
 
 // kfmt formats a token count compactly (e.g. 12345 -> "12k").
