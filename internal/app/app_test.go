@@ -301,6 +301,15 @@ func TestLiveLabelFallsBackToDirThenID(t *testing.T) {
 	}
 }
 
+func TestMemoryPageShowsSummary(t *testing.T) {
+	out := memorySummaryLine([]string{"## Rules", "**2026-01-01** — remember this", "Never delete user data"}, 100)
+	for _, want := range []string{"3 notes", "1 sections", "1 dated", "1 hard rules"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("memory summary missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestMachinesAndCronsPagesShowSummaries(t *testing.T) {
 	d := testData()
 	d.Machines = []remote.Machine{{Name: "dev", SSH: "ubuntu@dev", Saved: true}, {Name: "prod", SSH: "ubuntu@prod", Detected: true}}

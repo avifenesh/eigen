@@ -851,7 +851,8 @@ func (s *memoryState) view(m *Model, w, h int) string {
 		return s.detailView(m, w, h)
 	}
 	s.clicks.reset()
-	visible := h - 7
+	out += memorySummaryLine(s.bullets, w) + "\n\n"
+	visible := h - 9
 	from, to := s.list.window(visible)
 	for i := from; i < to; i++ {
 		// One line per bullet: first line, truncated.
@@ -881,6 +882,33 @@ func (s *memoryState) view(m *Model, w, h int) string {
 		out += "\n" + sFaint.Render("  enter read note · d delete · C consolidate · R refresh")
 	}
 	return out
+}
+
+func memorySummaryLine(bullets []string, w int) string {
+	var sections, dated, bans int
+	for _, b := range bullets {
+		first := strings.TrimSpace(strings.TrimPrefix(strings.SplitN(b, "\n", 2)[0], "- "))
+		if strings.HasPrefix(first, "## ") {
+			sections++
+		}
+		if strings.HasPrefix(first, "**20") {
+			dated++
+		}
+		if strings.Contains(strings.ToLower(first), "ban") || strings.Contains(strings.ToLower(first), "never") {
+			bans++
+		}
+	}
+	parts := []string{fmt.Sprintf("%d notes", len(bullets))}
+	if sections > 0 {
+		parts = append(parts, fmt.Sprintf("%d sections", sections))
+	}
+	if dated > 0 {
+		parts = append(parts, fmt.Sprintf("%d dated", dated))
+	}
+	if bans > 0 {
+		parts = append(parts, fmt.Sprintf("%d hard rules", bans))
+	}
+	return sFaint.Render("  " + truncate(strings.Join(parts, "  ·  "), max(20, w-2)))
 }
 
 // clickAt selects a memory row; clicking the already-selected note opens the
