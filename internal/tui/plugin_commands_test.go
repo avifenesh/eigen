@@ -53,6 +53,18 @@ func TestPluginCommandNoPlugins(t *testing.T) {
 	}
 }
 
+func TestBarePluginCommandsOpenPluginsPage(t *testing.T) {
+	for _, cmd := range []string{"/plugins", "/plugin", "/marketplace"} {
+		m := testModel(t)
+		if teaCmd := m.command(cmd); teaCmd == nil {
+			t.Fatalf("%s should return a quit command", cmd)
+		}
+		if !m.openApp || m.openAppPage != "plugins" {
+			t.Fatalf("%s should open app plugins page, openApp=%v page=%q", cmd, m.openApp, m.openAppPage)
+		}
+	}
+}
+
 func TestMarketplaceCommandListAndRemove(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	reg, err := plugin.NewRegistry()

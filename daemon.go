@@ -411,16 +411,17 @@ func attachTUI(c *daemon.Client, id string, cfg config.Config, task string) tui.
 }
 
 // continueNav keeps ONE WINDOW navigating after a chat exits with an intent:
-// alt+s hop → attach the next session; h home → the app shell, whose choice
-// (attach / new chat / resume) feeds back into another chat leg. Sessions
-// keep running in the daemon across every hop; only quit ends the loop.
+// alt+s hop → attach the next session; h home (or a page slash like /plugins)
+// → the app shell, whose choice (attach / new chat / resume) feeds back into
+// another chat leg. Sessions keep running in the daemon across every hop; only
+// quit ends the loop.
 func continueNav(c *daemon.Client, res tui.Result, cfg config.Config) {
 	for {
 		switch {
 		case res.SwitchTo != "":
 			res = attachTUI(c, res.SwitchTo, cfg, "")
 		case res.OpenApp:
-			id, task, ok := appNav(c, cfg)
+			id, task, ok := appNav(c, cfg, res.OpenAppPage)
 			if !ok {
 				return
 			}
@@ -431,15 +432,15 @@ func continueNav(c *daemon.Client, res tui.Result, cfg config.Config) {
 	}
 }
 
-// appNav opens the app shell from inside the view loop and translates its
-// result into the next chat leg: which session to show (creating one for
-// "new chat" / store resumes) and an optional initial task (feed starters).
-// ok=false means the user quit from the app.
-func appNav(c *daemon.Client, cfg config.Config) (id, task string, ok bool) {
+// appNav opens the app shell from inside the view loop, optionally landing on a
+// requested page, and translates its result into the next chat leg: which
+// session to show (creating one for "new chat" / store resumes) and an optional
+// initial task (feed starters). ok=false means the user quit from the app.
+func appNav(c *daemon.Client, cfg config.Config, page string) (id, task string, ok bool) {
 	data := app.Load()
 	data.Titler = session.ProviderTitler{P: titleProvider(nil)}
 	data.Small = titleProvider(nil)
-	res, err := app.Run(data)
+	res, err := app.RunPage(data, page)
 	if data.Daemon != nil {
 		data.Daemon.Close()
 	}

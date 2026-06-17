@@ -102,8 +102,16 @@ type Model struct {
 }
 
 // New builds the app shell with loaded data.
-func New(data *Data) *Model {
+func New(data *Data) *Model { return NewAt(data, PageHome) }
+
+// NewAt builds the app shell and selects an initial page. Unknown zero-value
+// callers keep landing on Home, while chat slash commands can return directly
+// to a product surface such as Plugins.
+func NewAt(data *Data, initial Page) *Model {
 	m := &Model{data: data}
+	if isKnownPage(initial) {
+		m.active = initial
+	}
 	m.home.init(data)
 	m.projects.init(data)
 	m.machines.init(data)
@@ -116,6 +124,34 @@ func New(data *Data) *Model {
 	m.crons.init(data)
 	m.plugins.init(data)
 	return m
+}
+
+func isKnownPage(page Page) bool {
+	for _, p := range pages {
+		if p.page == page {
+			return true
+		}
+	}
+	return false
+}
+
+// PageByName resolves a stable app-page name/alias for integrations that do
+// not import the Page enum directly (for example, the TUI result payload).
+func PageByName(name string) (Page, bool) {
+	name = strings.TrimSpace(strings.ToLower(name))
+	if name == "" {
+		return PageHome, true
+	}
+	for _, p := range pages {
+		if name == p.name || name == p.key {
+			return p.page, true
+		}
+	}
+	switch name {
+	case "plugin", "plugins", "market", "marketplace", "extension", "extensions":
+		return PagePlugins, true
+	}
+	return PageHome, false
 }
 
 func (m *Model) Init() tea.Cmd {
@@ -707,8 +743,18 @@ func (m *Model) helpLine() string {
 }
 
 // Run opens the app shell and returns the exit intent.
-func Run(data *Data) (Result, error) {
-	m := New(data)
+func Run(data *Data) (Result, error) { return RunAt(data, PageHome) }
+
+// RunPage opens the app shell at a named page. Unknown names gracefully land on
+// Home so slash-command navigation never bricks the window.
+func RunPage(data *Data, pageName string) (Result, error) {
+	page, _ := PageByName(pageName)
+	return RunAt(data, page)
+}
+
+// RunAt opens the app shell at an initial page and returns the exit intent.
+func RunAt(data *Data, initial Page) (Result, error) {
+	m := NewAt(data, initial)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	final, err := p.Run()
 	if err != nil {

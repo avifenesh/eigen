@@ -179,6 +179,7 @@ type model struct {
 	switchIdx     int
 	switchTo      string
 	openApp       bool
+	openAppPage   string // optional app page to open ("plugins", "sessions", …); empty = home/default
 
 	// notifications/approvals tray (alt+t / actTray): an at-a-glance "what
 	// needs me" surface — sibling daemon sessions blocked on an approval or
@@ -384,11 +385,13 @@ type Result struct {
 	SessionPath string
 	BinPath     string
 	// SwitchTo / OpenApp: in-window navigation. SwitchTo names a daemon
-	// session to hop this window to; OpenApp returns to the app shell. The
-	// session that was showing keeps running in the daemon (detached, not
+	// session to hop this window to; OpenApp returns to the app shell. OpenAppPage
+	// optionally asks the app shell to land on a specific page (e.g. "plugins").
+	// The session that was showing keeps running in the daemon (detached, not
 	// interrupted).
-	SwitchTo string
-	OpenApp  bool
+	SwitchTo    string
+	OpenApp     bool
+	OpenAppPage string
 	// Provider/Model/Perm/Effort/Search are the live session config at exit
 	// (possibly changed via /model, /perm, /effort, /search), so a
 	// rebuild-resume continues exactly as the conversation was — not reset to
@@ -2071,6 +2074,7 @@ func Run(backend chat.Backend, o Options) (Result, error) {
 		BinPath:     fm.rebuildBin,
 		SwitchTo:    fm.switchTo,
 		OpenApp:     fm.openApp,
+		OpenAppPage: fm.openAppPage,
 		Provider:    fm.provName,
 		Model:       fm.modelID,
 		Perm:        string(fm.backend.Perm()),

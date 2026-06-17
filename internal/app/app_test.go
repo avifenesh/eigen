@@ -44,6 +44,19 @@ func key(s string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 }
 
+func TestNewAtAndPageByName(t *testing.T) {
+	m := NewAt(testData(), PagePlugins)
+	if m.active != PagePlugins {
+		t.Fatalf("NewAt(PagePlugins) active = %v", m.active)
+	}
+	for _, name := range []string{"plugins", "plugin", "marketplace", "extensions", "x"} {
+		p, ok := PageByName(name)
+		if !ok || p != PagePlugins {
+			t.Fatalf("PageByName(%q) = %v, %v; want PagePlugins, true", name, p, ok)
+		}
+	}
+}
+
 func TestAppNavigation(t *testing.T) {
 	m := New(testData())
 	m.width, m.height = 100, 30

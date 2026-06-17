@@ -56,6 +56,12 @@ func (m *model) applyResumed(msgs []llm.Message) {
 	m.note(fmt.Sprintf("— resumed %d messages —", len(msgs)))
 }
 
+func (m *model) openAppPageCmd(page string) tea.Cmd {
+	m.openApp = true
+	m.openAppPage = page
+	return tea.Quit
+}
+
 // safeWhileRunning reports whether a slash command can run while a turn is in
 // flight. Settings and read-only commands are safe; commands that replace or
 // mutate the session the agent goroutine is using (or exit) are not — they must
@@ -77,7 +83,7 @@ func (m *model) command(line string) tea.Cmd {
 	arg := strings.TrimSpace(strings.TrimPrefix(line, name))
 	switch name {
 	case "/help":
-		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /loop  /route  /review  /voice  /config  /skills  /tools  /plugin  /marketplace  /add-dir  /find  /copy  /read  /rebuild  /quit")
+		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /loop  /route  /review  /voice  /config  /skills  /tools  /plugins  /plugin  /marketplace  /add-dir  /find  /copy  /read  /rebuild  /quit")
 		m.note("keys: / commands · ctrl+k palette · @ files · ↑↓ history · tab expand · drag-select+copy (ctrl+y) · alt+x mouse off (mark+copy in your terminal) · alt+s switch session · alt+w tray (approvals/notifications; alt+n on non-zellij) · alt+z background the running turn · ctrl+b/alt+b rail · ctrl+g/alt+g panel · ctrl+r right-tab (changes/git/term/tasks) · alt+a perm · alt+r effort · alt+m model · alt+v paste image · alt+t talk · pgup/pgdn scroll")
 		m.note("terminal tab: /term (or ctrl+r to the term tab) opens a REAL shell in the right panel — click it or it's focused on open; your keystrokes (incl. esc/ctrl+c) go to the shell so vim/less/top work; ctrl+g returns keys to the chat, the shell keeps running")
 		m.note("tasks tab: /tasks shows background delegations live (step/tool/elapsed) — click a task to expand its result or progress, click [cancel] to stop a running one; the sidebar shows ⚒ tasks N● while work runs")
@@ -123,8 +129,7 @@ func (m *model) command(line string) tea.Cmd {
 			m.note("saved → " + path)
 		}
 	case "/home":
-		m.openApp = true
-		return tea.Quit
+		return m.openAppPageCmd("")
 	case "/background", "/bg":
 		// Move the turn you're WAITING ON to the background: the daemon keeps
 		// running it; this window returns to the dashboard. On completion the
@@ -217,9 +222,20 @@ func (m *model) command(line string) tea.Cmd {
 		return nil
 	case "/workflow":
 		return m.runWorkflowCmd(arg)
+	case "/plugins":
+		if strings.TrimSpace(arg) == "" {
+			return m.openAppPageCmd("plugins")
+		}
+		return m.pluginCommand(arg)
 	case "/plugin":
+		if strings.TrimSpace(arg) == "" {
+			return m.openAppPageCmd("plugins")
+		}
 		return m.pluginCommand(arg)
 	case "/marketplace":
+		if strings.TrimSpace(arg) == "" {
+			return m.openAppPageCmd("plugins")
+		}
 		return m.marketplaceCommand(arg)
 	case "/resume":
 		if arg == "" {
