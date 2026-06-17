@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/observe"
 	pluginpkg "github.com/avifenesh/eigen/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -135,10 +136,11 @@ func TestPluginsPageRendersProductSurface(t *testing.T) {
 
 	root := filepath.Join(os.Getenv("HOME"), ".eigen")
 	mustWriteAppTest(t, filepath.Join(root, "hooks.json"), `{"hooks":[{"event":"session_stop","command":["echo","done"]}]}`)
+	m.data.Observe.Hooks = map[string]observe.HookSummary{"session_stop": {Starts: 2, Done: 2, Errors: 1, DurationMS: 40}}
 	m.plugins.reload()
 	m.Update(key("4"))
 	v = m.plugins.view(m, 100, 30)
-	for _, want := range []string{"hooks", "session_stop", "hook", "echo done", "space toggle hook"} {
+	for _, want := range []string{"recent hook telemetry", "1 errors / 2 done", "session_stop", "hooks", "hook", "echo done", "space toggle hook"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("hooks tab missing %q:\n%s", want, v)
 		}

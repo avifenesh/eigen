@@ -838,7 +838,7 @@ func (p *pluginsState) view(m *Model, w, h int) string {
 	case pluginsTabExtensions:
 		out += p.viewExtensions(w, h-lineCount(out))
 	case pluginsTabHooks:
-		out += p.viewHooks(w, h-lineCount(out))
+		out += p.viewHooks(m.data, w, h-lineCount(out))
 	}
 	return out
 }
@@ -1178,15 +1178,46 @@ func (p *pluginsState) viewExtensions(w, h int) string {
 	)
 }
 
-func (p *pluginsState) viewHooks(w, h int) string {
-	return p.viewExtensionRows(
-		w, h,
+func (p *pluginsState) viewHooks(d *Data, w, h int) string {
+	telemetry := hookTelemetryBlock(d, w)
+	body := p.viewExtensionRows(
+		w, max(3, h-lineCount(telemetry)),
 		"hooks",
 		"No hooks wired",
 		"User and project hooks from .eigen/hooks.json appear here.",
-		"space toggle hook · X delete owning plugin · a add-marketplace · i install-plugin · R refresh",
+		"space toggle hook · X delete owning plugin · i install-plugin · R refresh · observe page shows full history",
 		p.hookRows(),
 	)
+	return telemetry + body
+}
+
+func hookTelemetryBlock(d *Data, w int) string {
+	if d == nil || len(d.Observe.Hooks) == 0 {
+		return ""
+	}
+	var starts, done, errs int
+	for _, h := range d.Observe.Hooks {
+		starts += h.Starts
+		done += h.Done
+		errs += h.Errors
+	}
+	status := sOk.Render(fmt.Sprintf("%d done", done))
+	if errs > 0 {
+		status = sErr.Render(fmt.Sprintf("%d errors / %d done", errs, done))
+	}
+	out := sectionLabel("recent hook telemetry", w) + "\n"
+	out += "  " + status + sFaint.Render(fmt.Sprintf(" · %d starts · metadata only", starts)) + "\n"
+	shown := 0
+	for _, name := range sortedKeys(d.Observe.Hooks) {
+		h := d.Observe.Hooks[name]
+		line := fmt.Sprintf("%s done=%d errors=%d avg=%dms", pad(truncate(name, 22), 24), h.Done, h.Errors, avg64(h.DurationMS, h.Done))
+		out += "  " + truncate(line, w-2) + "\n"
+		shown++
+		if shown >= 3 {
+			break
+		}
+	}
+	return out + "\n"
 }
 
 func (p *pluginsState) viewExtensionRows(w, h int, title, emptyTitle, emptyBody, footer string, rows []ExtRow) string {
