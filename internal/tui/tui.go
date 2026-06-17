@@ -104,8 +104,11 @@ type submitMsg struct{ task string }
 // idleTickMsg fires after the idle delay; gen guards against stale timers.
 type idleTickMsg struct{ gen int }
 
-// dreamDoneMsg carries notes distilled by idle dreaming.
-type dreamDoneMsg struct{ notes []string }
+// dreamDoneMsg reports memory-v2 idle dreaming work.
+type dreamDoneMsg struct {
+	report string
+	err    error
+}
 
 // compactDoneMsg reports the result of an on-demand /compact.
 type compactDoneMsg struct {
@@ -569,30 +572,93 @@ func (m *model) scheduleIdleDream() tea.Cmd {
 }
 
 // dreamCmd reflects over the current session into project memory in the
-// background, returning the distilled notes via dreamDoneMsg.
+// background, using the memory-v2 stage1 pipeline.
 func (m *model) dreamCmd() tea.Cmd {
 	if m.mem == nil || m.backend == nil {
 		return nil
 	}
 	prov := m.backend.Provider()
 	if prov == nil {
-		// Daemon session: the provider lives in the daemon. Dreaming is a
-		// read-only distillation, so build a throwaway provider here.
+		if m.sessionPath == "" {
+			return nil // daemon-hosted sessions are reflected by the daemon dreamer
+		}
+		// If a local transcript exists but the backend does not expose its
+		// provider, build a throwaway one for this read-only reflection.
 		p, err := llm.New("", m.modelID)
 		if err != nil {
 			return nil
 		}
 		prov = p
 	}
-	convo := dream.RenderSession(m.backend.Messages())
-	existing := m.mem.Read()
-	return func() tea.Msg {
-		notes, err := dream.Distill(context.Background(), prov, []string{convo}, existing)
-		if err != nil {
-			return dreamDoneMsg{}
-		}
-		return dreamDoneMsg{notes: notes}
+	msgs := m.backend.Messages()
+	convo := dream.RenderSession(msgs)
+	if strings.TrimSpace(convo) == "" {
+		return nil
 	}
+	sessionID := m.dreamSessionID()
+	watermark := m.dreamWatermark(msgs)
+	return func() tea.Msg {
+		idx, err := memory.OpenIndex()
+		if err != nil {
+			return dreamDoneMsg{err: err}
+		}
+		defer idx.Close()
+		report, err := newTUIDreamPipeline(prov, m.mem, idx).Run(context.Background(), []memory.Session{{
+			ID:         sessionID,
+			Transcript: convo,
+			Watermark:  watermark,
+		}})
+		return dreamDoneMsg{report: report, err: err}
+	}
+}
+
+func newTUIDreamPipeline(prov llm.Provider, mem *memory.Store, idx *memory.Index) *memory.Pipeline {
+	return &memory.Pipeline{
+		Store: mem,
+		Index: idx,
+		Stage1: func(ctx context.Context, sessionID, transcript string) (body, slug, outcome string, ok bool, err error) {
+			r, ok, err := dream.Stage1(ctx, prov, transcript)
+			if err != nil || !ok {
+				return "", "", "", false, err
+			}
+			return r.Markdown(sessionID, time.Now()), r.Slug(), r.Outcome, true, nil
+		},
+		Consolidate: func(ctx context.Context, current string) (string, error) {
+			return dream.Consolidate(ctx, prov, current)
+		},
+		Summarize: func(ctx context.Context, memText string) (string, error) {
+			return dream.Summarize(ctx, prov, memText)
+		},
+	}
+}
+
+func (m *model) dreamSessionID() string {
+	if m != nil && m.sessionPath != "" {
+		base := filepath.Base(m.sessionPath)
+		if ext := filepath.Ext(base); ext != "" {
+			base = strings.TrimSuffix(base, ext)
+		}
+		if strings.TrimSpace(base) != "" {
+			return base
+		}
+	}
+	return "tui-session"
+}
+
+func (m *model) dreamWatermark(msgs []llm.Message) int64 {
+	if m != nil && m.sessionPath != "" {
+		if fi, err := os.Stat(m.sessionPath); err == nil {
+			return fi.ModTime().Unix() ^ fi.Size()
+		}
+	}
+	var wm int64 = 1
+	for _, msg := range msgs {
+		wm = wm*33 + int64(len(msg.Role)) + int64(len(msg.Text))
+	}
+	if wm == 0 {
+		return 1
+	}
+	return wm
 }
 
 func sb(s string) string { return s }
@@ -1688,11 +1754,8 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		return m, nil
 
 	case dreamDoneMsg:
-		if len(msg.notes) > 0 && m.mem != nil {
-			for _, n := range msg.notes {
-				_ = m.mem.Append(n)
-			}
-			m.note(fmt.Sprintf("dreamt %d note(s) into project memory", len(msg.notes)))
+		if msg.report != "" {
+			m.note("dreamt " + msg.report + " into project memory")
 		}
 		return m, nil
 

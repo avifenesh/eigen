@@ -775,7 +775,7 @@ func main() {
 
 	// `eigen dream`: reflect over recent sessions into project memory, then exit.
 	if flag.Arg(0) == "dream" {
-		runDream(titleProvider(prov), mem)
+		runDream(titleProvider(prov), mem, gmem)
 		return
 	}
 
@@ -1337,12 +1337,12 @@ func newMemoryPipeline(prov llm.Provider, mem *memory.Store, idx *memory.Index) 
 	return &memory.Pipeline{
 		Store: mem,
 		Index: idx,
-		Stage1: func(ctx context.Context, transcript string) (body, slug, outcome string, ok bool, err error) {
+		Stage1: func(ctx context.Context, sessionID, transcript string) (body, slug, outcome string, ok bool, err error) {
 			r, ok, err := dream.Stage1(ctx, prov, transcript)
 			if err != nil || !ok {
 				return "", "", "", false, err
 			}
-			return r.Markdown("", time.Now()), r.Slug(), r.Outcome, true, nil
+			return r.Markdown(sessionID, time.Now()), r.Slug(), r.Outcome, true, nil
 		},
 		Consolidate: func(ctx context.Context, current string) (string, error) {
 			return dream.Consolidate(ctx, prov, current)
@@ -1353,7 +1353,32 @@ func newMemoryPipeline(prov llm.Provider, mem *memory.Store, idx *memory.Index) 
 	}
 }
 
-func runDream(prov llm.Provider, mem *memory.Store) {
+func memoryScopeKey(mem *memory.Store) string {
+	if mem == nil {
+		return ""
+	}
+	if mem.IsGlobal() {
+		return "global"
+	}
+	return filepath.Base(mem.Dir())
+}
+
+func refreshMemorySummary(ctx context.Context, prov llm.Provider, mem *memory.Store, idx *memory.Index) (bool, error) {
+	if mem == nil {
+		return false, nil
+	}
+	pipe := newMemoryPipeline(prov, mem, idx)
+	if idx == nil {
+		return pipe.RegenSummary(ctx)
+	}
+	if err := idx.Enqueue(memory.JobSummary, memoryScopeKey(mem), "scope"); err != nil {
+		return false, err
+	}
+	report, err := pipe.RunQueued(ctx, 4)
+	return strings.Contains(report, "SUMMARY.md"), err
+}
+
+func runDream(prov llm.Provider, mem, gmem *memory.Store) {
 	paths := recentEigenSessions(8)
 	if len(paths) == 0 {
 		fmt.Fprintln(os.Stderr, "eigen: dream: no eigen sessions to reflect on")
@@ -1406,6 +1431,19 @@ func runDream(prov llm.Provider, mem *memory.Store) {
 	corpus := mem.RawSummaries(12)
 	if len(corpus) == 0 {
 		corpus = transcripts
+	}
+	if gmem != nil && len(corpus) > 0 {
+		if notes, err := dream.DistillGlobal(context.Background(), prov, corpus, gmem.Read()); err == nil && len(notes) > 0 {
+			for _, n := range notes {
+				_ = gmem.Append(n)
+			}
+			if did, serr := refreshMemorySummary(context.Background(), prov, gmem, idx); serr == nil && did {
+				fmt.Printf("global memory: %d new note(s), regenerated SUMMARY.md → %s\n", len(notes), gmem.Dir())
+			} else {
+				fmt.Printf("global memory: %d new note(s) → %s\n", len(notes), gmem.Dir())
+			}
+			memory.CommitMemory(fmt.Sprintf("dream: global profile — %d new", len(notes)))
+		}
 	}
 	if draft, ok, serr := dream.SynthesizeSkill(context.Background(), prov, corpus); serr == nil && ok {
 		if path, werr := skill.Propose(draft.Name, draft.Description, draft.Body); werr == nil && path != "" {

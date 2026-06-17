@@ -2,8 +2,17 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
+)
+
+const (
+	JobStage1      = "mem_stage1"
+	JobConsolidate = "mem_consolidate"
+	JobSummary     = "mem_summary"
+
+	scopeJobKey = "scope"
 )
 
 // Pipeline orchestrates the memory generation stages over a scope: turn new
@@ -21,7 +30,7 @@ type Pipeline struct {
 
 	// Stage1 summarizes one transcript → (markdown body, slug, outcome, ok).
 	// ok=false means skip (trivial session). Provided by the dream package.
-	Stage1 func(ctx context.Context, transcript string) (body, slug, outcome string, ok bool, err error)
+	Stage1 func(ctx context.Context, sessionID, transcript string) (body, slug, outcome string, ok bool, err error)
 	// Consolidate rewrites the full MEMORY.md into a smaller current one.
 	Consolidate func(ctx context.Context, current string) (string, error)
 	// Summarize distills MEMORY.md into the small injected SUMMARY.md.
@@ -74,10 +83,10 @@ func (p *Pipeline) Stage1Sessions(ctx context.Context, sessions []Session) (int,
 		if ctx.Err() != nil {
 			break
 		}
-		if p.Index.Summarized(scope, s.ID, s.Watermark) {
+		if p.Index != nil && p.Index.Summarized(scope, s.ID, s.Watermark) {
 			continue
 		}
-		body, slug, outcome, ok, err := p.Stage1(ctx, s.Transcript)
+		body, slug, outcome, ok, err := p.Stage1(ctx, s.ID, s.Transcript)
 		if err != nil {
 			lastErr = err // one bad session must not stall the rest; remember it
 			continue
@@ -91,19 +100,87 @@ func (p *Pipeline) Stage1Sessions(ctx context.Context, sessions []Session) (int,
 			// cheaply.)
 			continue
 		}
-		raw, err := p.Store.WriteRollout(slug, body, time.Now())
+		when := time.Now()
+		raw, err := p.Store.WriteRollout(slug, body, when)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		_ = p.Index.RecordSummary(SummaryRow{Scope: scope, SessionID: s.ID, Slug: slug, RawPath: raw, Outcome: outcome, Watermark: s.Watermark, GeneratedAt: time.Now().Unix()})
 		// Fold the rollout's durable content into MEMORY.md (the working tier).
 		// Consolidation later dedups/structures it; here we just accrue.
-		if err := p.Store.appendRollout(body); err == nil {
-			n++
+		if err := p.Store.appendRollout(body); err != nil {
+			lastErr = err
+			continue
 		}
+		if p.Index != nil {
+			if err := p.Index.RecordSummary(SummaryRow{Scope: scope, SessionID: s.ID, Slug: slug, RawPath: raw, Outcome: outcome, Watermark: s.Watermark, GeneratedAt: when.Unix()}); err != nil {
+				lastErr = err
+				continue
+			}
+			if err := p.Index.Enqueue(JobConsolidate, scope, scopeJobKey); err != nil {
+				lastErr = err
+			}
+			if err := p.Index.Enqueue(JobSummary, scope, scopeJobKey); err != nil {
+				lastErr = err
+			}
+		}
+		n++
 	}
 	return n, lastErr
+}
+
+// RunQueued drains queued downstream memory jobs for this pipeline's scope.
+// Stage1 jobs need caller-supplied transcripts, so this worker handles the
+// per-scope jobs that operate from the Store itself: consolidate and summary.
+func (p *Pipeline) RunQueued(ctx context.Context, maxJobs int) (string, error) {
+	if p.Store == nil || p.Index == nil {
+		return "", nil
+	}
+	if maxJobs <= 0 {
+		maxJobs = 16
+	}
+	scope := p.scopeKey()
+	var parts []string
+	var lastErr error
+	for n := 0; n < maxJobs; n++ {
+		if ctx.Err() != nil {
+			if lastErr == nil {
+				lastErr = ctx.Err()
+			}
+			break
+		}
+		j, ok, err := p.Index.ClaimScope(scope, 5*60)
+		if err != nil {
+			return strings.Join(parts, ", "), err
+		}
+		if !ok {
+			break
+		}
+		var jobErr error
+		switch j.Kind {
+		case JobConsolidate:
+			if did, err := p.MaybeConsolidate(ctx, false); err != nil {
+				jobErr = err
+			} else if did {
+				parts = append(parts, "consolidated MEMORY.md")
+			}
+		case JobSummary:
+			if did, err := p.RegenSummary(ctx); err != nil {
+				jobErr = err
+			} else if did {
+				parts = append(parts, "regenerated SUMMARY.md")
+			}
+		default:
+			jobErr = fmt.Errorf("unsupported memory job %q for scope %q", j.Kind, j.Scope)
+		}
+		if err := p.Index.Finish(j, jobErr); err != nil && jobErr == nil {
+			jobErr = err
+		}
+		if jobErr != nil {
+			lastErr = jobErr
+		}
+	}
+	return strings.Join(parts, ", "), lastErr
 }
 
 // MaybeConsolidate rewrites MEMORY.md when it exceeds the size threshold (or
@@ -162,11 +239,22 @@ func (p *Pipeline) Run(ctx context.Context, sessions []Session) (string, error) 
 	if n > 0 {
 		parts = append(parts, itoa(n)+" new session summaries")
 	}
-	if did, _ := p.MaybeConsolidate(ctx, false); did {
-		parts = append(parts, "consolidated MEMORY.md")
+	queued, queuedErr := p.RunQueued(ctx, 16)
+	if queued != "" {
+		parts = append(parts, queued)
 	}
-	if did, _ := p.RegenSummary(ctx); did {
-		parts = append(parts, "regenerated SUMMARY.md")
+	if stageErr == nil {
+		stageErr = queuedErr
+	}
+	// Keep `eigen dream` useful for existing MEMORY.md files that have no
+	// queued work yet (for example after migrating a flat v1 memory).
+	if queued == "" {
+		if did, _ := p.MaybeConsolidate(ctx, false); did {
+			parts = append(parts, "consolidated MEMORY.md")
+		}
+		if did, _ := p.RegenSummary(ctx); did {
+			parts = append(parts, "regenerated SUMMARY.md")
+		}
 	}
 	if len(parts) > 0 {
 		CommitMemory("dream: " + p.scopeKey() + " — " + strings.Join(parts, ", "))

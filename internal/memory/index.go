@@ -201,14 +201,41 @@ func (i *Index) Claim(leaseSecs int64) (Job, bool, error) {
 	if i == nil {
 		return Job{}, false, nil
 	}
+	return i.claim("", leaseSecs)
+}
+
+// ClaimScope leases one pending job for scope only. This lets a per-scope
+// Pipeline drain its own queue without stealing work for another project.
+func (i *Index) ClaimScope(scope string, leaseSecs int64) (Job, bool, error) {
+	if i == nil {
+		return Job{}, false, nil
+	}
+	return i.claim(scope, leaseSecs)
+}
+
+func (i *Index) claim(scope string, leaseSecs int64) (Job, bool, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	now := time.Now().Unix()
 	var j Job
+	where := "WHERE status='pending' OR (status='running' AND COALESCE(lease_until,0) < ?)"
+	args := []any{now}
+	if scope != "" {
+		where = "WHERE scope=? AND (status='pending' OR (status='running' AND COALESCE(lease_until,0) < ?))"
+		args = []any{scope, now}
+	}
 	err := i.db.QueryRow(`
 SELECT kind,scope,job_key,status,COALESCE(last_error,''),retry_remaining FROM jobs
-WHERE status='pending' OR (status='running' AND COALESCE(lease_until,0) < ?)
-ORDER BY updated_at ASC LIMIT 1`, now).Scan(&j.Kind, &j.Scope, &j.JobKey, &j.Status, &j.LastError, &j.RetryRemaining)
+`+where+`
+ORDER BY
+  CASE kind
+    WHEN 'mem_stage1' THEN 0
+    WHEN 'mem_consolidate' THEN 1
+    WHEN 'mem_summary' THEN 2
+    ELSE 3
+  END,
+  updated_at ASC
+LIMIT 1`, args...).Scan(&j.Kind, &j.Scope, &j.JobKey, &j.Status, &j.LastError, &j.RetryRemaining)
 	if err == sql.ErrNoRows {
 		return Job{}, false, nil
 	}

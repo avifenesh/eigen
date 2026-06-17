@@ -251,8 +251,25 @@ func (s *Store) Append(note string) error {
 		return err
 	}
 	defer f.Close()
-	_, err = fmt.Fprintf(f, "- %s — %s\n", time.Now().Format("2006-01-02"), note)
-	return err
+	if _, err = fmt.Fprintf(f, "- %s — %s\n", time.Now().Format("2006-01-02"), note); err != nil {
+		return err
+	}
+	s.enqueueMaintenance()
+	return nil
+}
+
+func (s *Store) enqueueMaintenance() {
+	idx, err := OpenIndex()
+	if err != nil {
+		return
+	}
+	defer idx.Close()
+	scope := baseName(s.Dir())
+	if s.IsGlobal() {
+		scope = "global"
+	}
+	_ = idx.Enqueue(JobConsolidate, scope, scopeJobKey)
+	_ = idx.Enqueue(JobSummary, scope, scopeJobKey)
 }
 
 // --- bans (hard negative constraints; the banthis layer) ---------------------

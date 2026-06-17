@@ -36,6 +36,28 @@ func (p fakeProv) Complete(context.Context, llm.Request) (*llm.Response, error) 
 	return &llm.Response{Text: p.text}, nil
 }
 
+type dreamPipelineProv struct{}
+
+func (dreamPipelineProv) Name() string    { return "dream-pipeline" }
+func (dreamPipelineProv) ModelID() string { return "dream-pipeline" }
+func (dreamPipelineProv) Complete(_ context.Context, req llm.Request) (*llm.Response, error) {
+	switch {
+	case strings.Contains(req.System, "per-session reflection"):
+		return &llm.Response{Text: `TITLE: Keep Go Tests
+OUTCOME: success
+PREFERENCES:
+- "always run go test" -> Run go test before reporting completion.
+KEY:
+- Captured the test command as durable project knowledge.
+REUSABLE:
+- go test ./... verifies the project.`}, nil
+	case strings.Contains(req.System, "SMALL injected summary"):
+		return &llm.Response{Text: "- Run go test before reporting completion."}, nil
+	default:
+		return &llm.Response{Text: "- 2026-06-17 — Run go test before reporting completion."}, nil
+	}
+}
+
 // testModel builds a model wired to the fake provider, in the same shape Run
 // assembles it, but without starting Bubble Tea.
 func testModel(t *testing.T) *model {
@@ -1482,15 +1504,55 @@ func TestSubmitBumpsIdleGen(t *testing.T) {
 	}
 }
 
-func TestDreamDoneAppendsToMemory(t *testing.T) {
+func TestDreamDoneReportsPipelineResult(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m := testModel(t)
+	m.Update(dreamDoneMsg{report: "1 new session summaries"})
+	if len(m.blocks) == 0 || !strings.Contains(m.blocks[len(m.blocks)-1].body, "1 new session summaries") {
+		t.Fatalf("dreamDoneMsg should surface the pipeline report, blocks=%+v", m.blocks)
+	}
+}
+
+func TestDreamCmdRunsStage1Pipeline(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	m := testModel(t)
 	mem, _ := memory.Open("/proj")
 	m.mem = mem
-	m.Update(dreamDoneMsg{notes: []string{"build with go build", "tests via go test"}})
-	got := mem.Read()
-	if !strings.Contains(got, "go build") || !strings.Contains(got, "go test") {
-		t.Fatalf("dream notes should be appended to memory:\n%s", got)
+	m.backend.SetModel(dreamPipelineProv{}, nil, 0)
+	m.backend.Reset([]llm.Message{
+		{Role: llm.RoleUser, Text: "Please always run go test before reporting completion."},
+		{Role: llm.RoleAssistant, Text: "Done, I ran go test ./..."},
+	})
+
+	cmd := m.dreamCmd()
+	if cmd == nil {
+		t.Fatal("dreamCmd should run when memory and transcript are present")
+	}
+	msg, ok := cmd().(dreamDoneMsg)
+	if !ok {
+		t.Fatalf("dreamCmd returned unexpected message type %T", msg)
+	}
+	if msg.err != nil {
+		t.Fatal(msg.err)
+	}
+	if !strings.Contains(msg.report, "session summaries") {
+		t.Fatalf("dream report should mention stage1 summaries, got %q", msg.report)
+	}
+	raws := mem.RawSummaries(0)
+	if len(raws) != 1 || !strings.Contains(raws[0], "Keep Go Tests") || !strings.Contains(raws[0], "session:") {
+		t.Fatalf("idle dream should persist one raw rollout summary, got %v", raws)
+	}
+	idx, err := memory.OpenIndex()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer idx.Close()
+	rows, err := idx.Summaries(filepath.Base(mem.Dir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Outcome != "success" || rows[0].RawPath == "" {
+		t.Fatalf("idle dream should record the rollout summary in index.sqlite, got %+v", rows)
 	}
 }
 

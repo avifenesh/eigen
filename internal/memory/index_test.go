@@ -43,6 +43,39 @@ func TestIndexJobQueue(t *testing.T) {
 	}
 }
 
+func TestIndexClaimScopeDoesNotStealOtherScopes(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	idx, err := OpenIndex()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer idx.Close()
+
+	if err := idx.Enqueue(JobSummary, "scopeA", "scope"); err != nil {
+		t.Fatal(err)
+	}
+	if err := idx.Enqueue(JobSummary, "scopeB", "scope"); err != nil {
+		t.Fatal(err)
+	}
+	j, ok, err := idx.ClaimScope("scopeB", 60)
+	if err != nil || !ok {
+		t.Fatalf("claim scopeB: ok=%v err=%v", ok, err)
+	}
+	if j.Scope != "scopeB" {
+		t.Fatalf("ClaimScope should claim only scopeB, got %+v", j)
+	}
+	if err := idx.Finish(j, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := idx.ClaimScope("scopeB", 60); err != nil || ok {
+		t.Fatalf("scopeB should now be drained: ok=%v err=%v", ok, err)
+	}
+	j, ok, err = idx.ClaimScope("scopeA", 60)
+	if err != nil || !ok || j.Scope != "scopeA" {
+		t.Fatalf("scopeA job should remain claimable, got %+v ok=%v err=%v", j, ok, err)
+	}
+}
+
 func TestIndexJobRetryThenError(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	idx, _ := OpenIndex()

@@ -3,7 +3,10 @@ package tool
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"testing"
+
+	"github.com/avifenesh/eigen/internal/memory"
 )
 
 type fakeMem struct {
@@ -40,6 +43,40 @@ func TestMemoryToolAppends(t *testing.T) {
 	}
 	if len(fm.notes) != 1 || fm.notes[0] != "use make build" {
 		t.Fatalf("note not appended: %v", fm.notes)
+	}
+}
+
+func TestMemoryToolWithRealStoreEnqueuesMaintenance(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	proj, err := memory.Open("/project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	args, _ := json.Marshal(map[string]string{"note": "use make test"})
+	if _, err := Memory(proj, nil).Run(context.Background(), args); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := memory.OpenIndex()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer idx.Close()
+	kinds := map[string]bool{}
+	for {
+		j, ok, err := idx.ClaimScope(filepath.Base(proj.Dir()), 60)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ok {
+			break
+		}
+		kinds[j.Kind] = true
+		if err := idx.Finish(j, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !kinds[memory.JobConsolidate] || !kinds[memory.JobSummary] {
+		t.Fatalf("memory tool should enqueue downstream jobs, got %v", kinds)
 	}
 }
 

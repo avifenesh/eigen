@@ -31,6 +31,39 @@ func TestAppendAndRead(t *testing.T) {
 	}
 }
 
+func TestAppendEnqueuesMemoryMaintenance(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	s, err := Open("/some/project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Append("use go test ./... to run tests"); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := OpenIndex()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer idx.Close()
+	kinds := map[string]bool{}
+	for {
+		j, ok, err := idx.ClaimScope(baseName(s.Dir()), 60)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ok {
+			break
+		}
+		kinds[j.Kind] = true
+		if err := idx.Finish(j, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !kinds[JobConsolidate] || !kinds[JobSummary] {
+		t.Fatalf("manual memory append should enqueue downstream jobs, got %v", kinds)
+	}
+}
+
 func TestSectionEmptyWhenNoNotes(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	s, _ := Open("/p")
