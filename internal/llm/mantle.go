@@ -135,7 +135,10 @@ type responsesInputItem struct {
 	Arguments string          `json:"arguments,omitempty"`
 	Output    string          `json:"output,omitempty"`
 	ID        string          `json:"id,omitempty"`
-	Summary   []summaryPart   `json:"summary,omitempty"`
+	// Summary is a pointer so an empty-but-required `summary: []` survives JSON
+	// marshaling. Codex/Responses rejects carried reasoning items without this
+	// field ("Missing required parameter: input[N].summary").
+	Summary *[]summaryPart `json:"summary,omitempty"`
 	// Encrypted is the opaque reasoning blob echoed back at the ITEM level for a
 	// reasoning item (Responses API: the field is `encrypted_content`, NOT a
 	// content-array part — a content array on a reasoning item is rejected with
@@ -563,12 +566,13 @@ func buildInput(req Request) []responsesInputItem {
 			// resumes instead of wedging. Only when we have the blob do we emit
 			// the reasoning item.
 			if msg.ReasoningEncrypted != "" {
-				item := responsesInputItem{Type: "reasoning", Encrypted: msg.ReasoningEncrypted}
+				summary := []summaryPart{}
+				if msg.Reasoning != "" {
+					summary = []summaryPart{{Type: "summary_text", Text: msg.Reasoning}}
+				}
+				item := responsesInputItem{Type: "reasoning", Encrypted: msg.ReasoningEncrypted, Summary: &summary}
 				if msg.ReasoningID != "" {
 					item.ID = msg.ReasoningID
-				}
-				if msg.Reasoning != "" {
-					item.Summary = []summaryPart{{Type: "summary_text", Text: msg.Reasoning}}
 				}
 				items = append(items, item)
 			}

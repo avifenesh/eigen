@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -236,8 +237,30 @@ func TestReasoningEncryptedEchoedAtItemLevel(t *testing.T) {
 	if ri.Encrypted != "BLOB==" {
 		t.Fatalf("encrypted_content field = %q, want the blob", ri.Encrypted)
 	}
+	if ri.Summary == nil || len(*ri.Summary) != 1 || (*ri.Summary)[0].Text != "thinking" {
+		t.Fatalf("summary = %#v, want preserved reasoning summary", ri.Summary)
+	}
 	if ri.Content != nil {
 		t.Fatalf("reasoning item must NOT carry a content array (server rejects it): %s", ri.Content)
+	}
+}
+
+func TestReasoningEncryptedWithoutTextStillCarriesEmptySummary(t *testing.T) {
+	msg := Message{
+		Role:               RoleAssistant,
+		ReasoningID:        "rs_empty_summary",
+		ReasoningEncrypted: "BLOB==",
+	}
+	payload := (&Codex{Model: "gpt-5.5", token: "tok"}).buildPayload(Request{Messages: []Message{msg}}, false)
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"type":"reasoning"`) {
+		t.Fatalf("payload missing reasoning item: %s", raw)
+	}
+	if !strings.Contains(string(raw), `"summary":[]`) {
+		t.Fatalf("encrypted reasoning item must include empty summary array for Codex Responses API: %s", raw)
 	}
 }
 
