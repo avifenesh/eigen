@@ -579,6 +579,12 @@ func main() {
 		}
 		return formatTaskStatus(a.Bg, id, all, verbose, tail), nil
 	}
+	taskPromote := func(ctx context.Context, id string) (string, error) {
+		if a == nil || a.Bg == nil {
+			return "", fmt.Errorf("background tasks unavailable")
+		}
+		return promoteTaskTranscript(a.Bg, id)
+	}
 	taskGroup := func(ctx context.Context, subs []tool.GroupSubtaskArg, workers int, synthesize string) (string, error) {
 		if a == nil {
 			return "", fmt.Errorf("task_group unavailable")
@@ -674,6 +680,7 @@ func main() {
 		tool.Memory(mem, gmem),
 		tool.Task(taskRun),
 		tool.TaskStatus(taskStatus),
+		tool.TaskPromote(taskPromote),
 		tool.TaskGroup(taskGroup),
 		tool.TaskGroupMutating(taskGroupMut),
 		tool.Retrieve(retrieveRunner(wdOrDot())),

@@ -122,6 +122,12 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		}
 		return formatTaskStatus(deps.Agent.Bg, id, all, verbose, tail), nil
 	}
+	taskPromote := func(ctx context.Context, id string) (string, error) {
+		if deps.Agent == nil || deps.Agent.Bg == nil {
+			return "", fmt.Errorf("background tasks unavailable")
+		}
+		return promoteTaskTranscript(deps.Agent.Bg, id)
+	}
 	taskGroup := func(ctx context.Context, subs []tool.GroupSubtaskArg, workers int, synthesize string) (string, error) {
 		if deps.Agent == nil {
 			return "", fmt.Errorf("task_group unavailable")
@@ -188,7 +194,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		tool.BashWithShells(policy, shells, func() <-chan struct{} { return deps.Agent.BashDetachCh() }),
 		tool.BashOutput(shells), tool.KillShell(shells),
 		tool.Fetch(), tool.Todo(), tool.Skill(p.Skills),
-		tool.Memory(mem, p.GlobalMem), tool.Task(taskRun), tool.TaskStatus(taskStatus),
+		tool.Memory(mem, p.GlobalMem), tool.Task(taskRun), tool.TaskStatus(taskStatus), tool.TaskPromote(taskPromote),
 		tool.TaskGroup(taskGroup), tool.TaskGroupMutating(taskGroupMut),
 		tool.Retrieve(retrieveRunner(p.Dir)),
 		tool.GenerateImage(imageGenRunner(p.Dir)),

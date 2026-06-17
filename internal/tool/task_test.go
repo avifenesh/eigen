@@ -64,3 +64,19 @@ func TestTaskStatusTool(t *testing.T) {
 		t.Fatalf("out=%q err=%v", out, err)
 	}
 }
+
+func TestTaskPromoteTool(t *testing.T) {
+	def := TaskPromote(func(_ context.Context, id string) (string, error) {
+		if id != "bg1" {
+			t.Fatalf("bad promote id=%q", id)
+		}
+		return "promoted", nil
+	})
+	if def.ReadOnly {
+		t.Fatal("task_promote writes a session file and must not be marked read-only")
+	}
+	out, err := def.Run(context.Background(), json.RawMessage(`{"id":"bg1"}`))
+	if err != nil || out != "promoted" {
+		t.Fatalf("out=%q err=%v", out, err)
+	}
+}

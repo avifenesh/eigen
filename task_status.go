@@ -7,12 +7,69 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/transcript"
 )
+
+func promoteTaskTranscript(bg *agent.BgRegistry, id string) (string, error) {
+	if bg == nil {
+		return "", fmt.Errorf("background tasks unavailable")
+	}
+	if id == "" {
+		return "", fmt.Errorf("promote needs a background task id")
+	}
+	t := bg.Get(id)
+	if t == nil {
+		return "", fmt.Errorf("no such background task: %s", id)
+	}
+	src := bg.TranscriptPath(id)
+	if src == "" {
+		return "", fmt.Errorf("background task %s has no transcript path", id)
+	}
+	msgs, err := transcript.Load(src)
+	if err != nil {
+		return "", fmt.Errorf("read background transcript: %w", err)
+	}
+	if len(msgs) == 0 {
+		return "", fmt.Errorf("background transcript %s is empty", src)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(home, ".eigen", "sessions")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	dst := uniquePromotedSessionPath(dir, id)
+	if err := transcript.Save(dst, msgs); err != nil {
+		return "", err
+	}
+	wd, _ := os.Getwd()
+	_ = transcript.SaveMeta(dst, transcript.SessionMeta{
+		Dir:   wd,
+		Title: "background " + id + ": " + oneLineLimit(t.Task, 80),
+		Model: t.Model,
+	})
+	return fmt.Sprintf("promoted background task %s to a resumable session\npath: %s\nresume: eigen --resume %s\nmessages: %d", id, dst, strconv.Quote(dst), len(msgs)), nil
+}
+
+func uniquePromotedSessionPath(dir, id string) string {
+	base := time.Now().Format("20060102-150405") + "-" + id
+	path := filepath.Join(dir, base+".eigen.jsonl")
+	for i := 1; ; i++ {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return path
+		}
+		path = filepath.Join(dir, fmt.Sprintf("%s-%d.eigen.jsonl", base, i))
+	}
+}
 
 // formatTaskStatus is the textual surface behind the task_status tool.
 func formatTaskStatus(bg *agent.BgRegistry, id string, all, verbose bool, tail int) string {

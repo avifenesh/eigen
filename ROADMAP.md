@@ -137,17 +137,18 @@ Non-goals for v2:
 ### Tier 7 leftovers — background-task escalation + research bets
 
 Open work:
-- [~] **Background-task escalation.** Direct `task(background=true)` subtasks and
+- [x] **Background-task escalation.** Direct `task(background=true)` subtasks and
   foreground subtasks promoted into the background now retry once at the next
   difficulty tier when they fail, stall, or explicitly report an underpowered
   model; explicit model overrides are respected and not escalated. Context-window
   failures retry with compacted task/transcript prompts rather than blind model
   reroute. `task_status` verbose mode shows attempt history plus state/transcript
   paths.
-- [~] **Child transcript viewer / promote-to-session.** `task_status(verbose=true)`
+- [x] **Child transcript viewer / promote-to-session.** `task_status(verbose=true)`
   exposes transcript/state paths and attempt summaries; `task_status(tail:N)`
-  shows the last N transcript messages inline. Remaining: promote-to-session /
-  resume flow.
+  shows the last N transcript messages inline; `task_promote(id)` copies the
+  background transcript into `~/.eigen/sessions` as a resumable Eigen session
+  and returns the `eigen --resume` command.
 - [ ] **Ultraplan / adversarial expansion / non-LLM heads.** Parked research
   items. Pull only when there is a concrete product reason.
 

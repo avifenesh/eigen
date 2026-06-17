@@ -10,7 +10,65 @@ import (
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/transcript"
 )
+
+func TestPromoteTaskTranscriptCreatesResumableSession(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := t.TempDir()
+	id := "bg-9-1"
+	rec := agent.BgTask{ID: id, Task: "continue this background work", Status: "done", Result: "ok", Model: "demo-model", Started: time.Now(), Finished: time.Now()}
+	line, err := json.Marshal(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, id+".jsonl"), append(line, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	msgs := []llm.Message{{Role: llm.RoleUser, Text: "do work"}, {Role: llm.RoleAssistant, Text: "done"}}
+	if err := transcript.Save(filepath.Join(dir, id+".transcript.jsonl"), msgs); err != nil {
+		t.Fatal(err)
+	}
+	out, err := promoteTaskTranscript(agent.NewBgRegistry(dir), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "promoted background task "+id) || !strings.Contains(out, "eigen --resume") {
+		t.Fatalf("unexpected promote output:\n%s", out)
+	}
+	matches, err := filepath.Glob(filepath.Join(home, ".eigen", "sessions", "*"+id+"*.eigen.jsonl"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("expected one promoted session, matches=%v err=%v", matches, err)
+	}
+	got, err := transcript.Load(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(msgs) || got[0].Text != "do work" || got[1].Text != "done" {
+		t.Fatalf("promoted transcript mismatch: %+v", got)
+	}
+	meta, ok := transcript.LoadMeta(matches[0])
+	if !ok || meta.Model != "demo-model" || !strings.Contains(meta.Title, id) {
+		t.Fatalf("promoted session meta missing, ok=%v meta=%+v", ok, meta)
+	}
+}
+
+func TestPromoteTaskTranscriptErrorsWithoutTranscript(t *testing.T) {
+	dir := t.TempDir()
+	id := "bg-9-2"
+	line, err := json.Marshal(agent.BgTask{ID: id, Task: "missing transcript", Status: "done", Started: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, id+".jsonl"), append(line, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = promoteTaskTranscript(agent.NewBgRegistry(dir), id)
+	if err == nil || !strings.Contains(err.Error(), "read background transcript") {
+		t.Fatalf("expected missing transcript error, got %v", err)
+	}
+}
 
 func TestFormatTaskStatusShowsEscalatedAttempt(t *testing.T) {
 	dir := t.TempDir()

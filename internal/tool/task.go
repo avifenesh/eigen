@@ -24,6 +24,7 @@ type TaskRun func(ctx context.Context, task string, opts TaskOpts, background bo
 // TaskStatusRun is injected by main/buildSession for querying/collecting
 // background task state.
 type TaskStatusRun func(ctx context.Context, id string, all, verbose bool, tail int) (string, error)
+type TaskPromoteRun func(ctx context.Context, id string) (string, error)
 
 // GroupSubtaskArg is one child in a task_group fan-out, as the model supplies it.
 type GroupSubtaskArg struct {
@@ -128,6 +129,38 @@ func TaskStatus(run TaskStatusRun) Definition {
 // on three files, or a researcher + a reviewer. Children are read-only by
 // design (they can't edit/write/run commands), which is what makes running
 // them in parallel safe.
+// TaskPromote copies a background task transcript into ~/.eigen/sessions so it
+// can be resumed as a normal Eigen session. This is intentionally separate from
+// read-only task_status because it writes a new session file.
+func TaskPromote(run TaskPromoteRun) Definition {
+	return Definition{
+		Name:        "task_promote",
+		Description: "Promote a background task transcript to a normal resumable Eigen session. Writes a new ~/.eigen/sessions/*.eigen.jsonl file and returns the resume path/command.",
+		Parameters: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "id": { "type": "string", "description": "Background task id, e.g. bg-142233-1." }
+  },
+  "required": ["id"],
+  "additionalProperties": false
+}`),
+		Run: func(ctx context.Context, args json.RawMessage) (string, error) {
+			var in struct {
+				ID string `json:"id"`
+			}
+			if len(args) > 0 {
+				if err := json.Unmarshal(args, &in); err != nil {
+					return "", err
+				}
+			}
+			if run == nil {
+				return "", fmt.Errorf("background task promotion is not available")
+			}
+			return run(ctx, in.ID)
+		},
+	}
+}
+
 func TaskGroup(run TaskGroupRun) Definition {
 	return Definition{
 		Name:        "task_group",
