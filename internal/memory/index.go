@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS summaries (
 	  PRIMARY KEY (scope, thread_id)
 	);
 	CREATE INDEX IF NOT EXISTS idx_stage1_outputs_scope_source ON stage1_outputs(scope, source_updated_at DESC, thread_id DESC);
-	CREATE INDEX IF NOT EXISTS idx_jobs_kind_status_retry_lease ON jobs(kind, status, retry_at, lease_until);`)
+	`)
 	if err != nil {
 		return err
 	}
@@ -130,6 +130,9 @@ CREATE TABLE IF NOT EXISTS summaries (
 		if err := i.ensureColumn("jobs", col.name, col.def); err != nil {
 			return err
 		}
+	}
+	if _, err := i.db.Exec(`CREATE INDEX IF NOT EXISTS idx_jobs_kind_status_retry_lease ON jobs(kind, status, retry_at, lease_until)`); err != nil {
+		return err
 	}
 	return nil
 }
