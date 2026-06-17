@@ -295,6 +295,14 @@ func main() {
 	}
 
 	task := strings.TrimSpace(strings.Join(flag.Args(), " "))
+	appRequested := flag.Arg(0) == "app"
+	appPage := flag.Arg(1)
+	if appRequested {
+		// `eigen app [page]` opens the app shell directly at a page. Without this,
+		// "app observe" is interpreted as a chat task, which is exactly the kind of
+		// app-view affordance mismatch the observability pass is meant to remove.
+		task = ""
+	}
 
 	// `eigen run <workflow> [--var k=v ...]`: run an authored multi-step
 	// workflow headlessly (exit-coded). Captured here; executed in the headless
@@ -313,14 +321,14 @@ func main() {
 	// Task sources for automation: --prompt-file (re-read each run, so a
 	// cron/systemd loop picks up edited work), else piped stdin when no
 	// positional task was given. Both imply headless print mode.
-	if *promptFile != "" {
+	if *promptFile != "" && !appRequested {
 		data, perr := os.ReadFile(*promptFile)
 		if perr != nil {
 			fail(fmt.Errorf("prompt-file: %w", perr))
 		}
 		task = strings.TrimSpace(string(data))
 		*printMode = true
-	} else if task == "" && !isatty.IsTerminal(os.Stdin.Fd()) {
+	} else if !appRequested && task == "" && !isatty.IsTerminal(os.Stdin.Fd()) {
 		if data, rerr := io.ReadAll(os.Stdin); rerr == nil {
 			if piped := strings.TrimSpace(string(data)); piped != "" {
 				task = piped
@@ -351,11 +359,17 @@ func main() {
 	// dropping straight into a chat. `eigen .`, `eigen <path>`, a task, or
 	// --resume/-c all bypass it.
 	appInteractive := isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd())
-	if task == "" && *resumeFile == "" && !*printMode && appInteractive && !startedInDir {
+	if (appRequested || (task == "" && !startedInDir)) && *resumeFile == "" && !*printMode && appInteractive {
 		appData := app.Load()
 		appData.Titler = session.ProviderTitler{P: titleProvider(nil)}
 		appData.Small = titleProvider(nil)
-		res, err := app.Run(appData)
+		var res app.Result
+		var err error
+		if appRequested {
+			res, err = app.RunPage(appData, appPage)
+		} else {
+			res, err = app.Run(appData)
+		}
 		if err != nil {
 			fail(err)
 		}
