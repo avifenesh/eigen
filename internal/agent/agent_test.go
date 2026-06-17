@@ -557,6 +557,59 @@ func TestMaybeCompactResetsUnderBudget(t *testing.T) {
 	}
 }
 
+func TestMaybeCompactSkipsRecentSmallGrowth(t *testing.T) {
+	fc := &fakeCompactor{}
+	const budget = 10000
+	a := &Agent{
+		Provider:         &mockProvider{},
+		Tools:            mustReg(t),
+		Perm:             PermAuto,
+		Compactor:        fc,
+		MaxContextTokens: budget,
+	}
+	// Build history just above the proactive trigger but still below the hard
+	// budget. Pretend the last full/manual compaction landed only 500 tokens ago:
+	// that used to compact every step because 80% target and 85% trigger are close.
+	var s *Session
+	var before int
+	for chars := 1; chars < 100000; chars += 1000 {
+		s = a.Resume([]llm.Message{{Role: llm.RoleUser, Text: strings.Repeat("x", chars)}})
+		before = llm.EstimateTokens(s.snapshot())
+		if before > int(compactTriggerFrac*budget) && before < budget {
+			break
+		}
+	}
+	if before <= int(compactTriggerFrac*budget) || before >= budget {
+		t.Fatalf("fixture sizing off: before=%d", before)
+	}
+	s.lastCompactAfter = before - 500
+	if s.maybeCompact(context.Background()) {
+		t.Fatal("recent small growth after compaction should not compact again")
+	}
+	if fc.calls != 0 {
+		t.Fatalf("compactor should not run for small post-compact growth, calls=%d", fc.calls)
+	}
+}
+
+func TestManualCompactRecordsAutoCompactState(t *testing.T) {
+	fc := &fakeCompactor{}
+	a := &Agent{Provider: &mockProvider{}, Tools: mustReg(t), Perm: PermAuto, Compactor: fc, MaxContextTokens: 10000}
+	chunk := strings.Repeat("word ", 1000)
+	s := a.Resume([]llm.Message{
+		{Role: llm.RoleUser, Text: chunk},
+		{Role: llm.RoleAssistant, Text: chunk},
+		{Role: llm.RoleUser, Text: chunk},
+		{Role: llm.RoleAssistant, Text: chunk},
+	})
+	_, _, err := s.Compact(context.Background(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.lastCompactBefore == 0 || s.lastCompactAfter == 0 {
+		t.Fatalf("manual compact should seed auto-compact state, before=%d after=%d", s.lastCompactBefore, s.lastCompactAfter)
+	}
+}
+
 func mustReg(t *testing.T) *tool.Registry {
 	t.Helper()
 	reg, err := tool.NewRegistry()
@@ -621,6 +674,9 @@ func TestErrorDrivenCompactionRetriesOnOverflow(t *testing.T) {
 	}
 	if len(notes) == 0 {
 		t.Fatal("expected an EventNote about compacting on overflow")
+	}
+	if s.lastCompactBefore == 0 || s.lastCompactAfter == 0 {
+		t.Fatalf("overflow compaction should seed auto-compact state, before=%d after=%d", s.lastCompactBefore, s.lastCompactAfter)
 	}
 }
 

@@ -899,6 +899,12 @@ func (s *Session) Compact(ctx context.Context, targetTokens int) (before, after 
 	if cerr != nil {
 		return before, before, cerr
 	}
+	s.lastCompactBefore = llm.EstimateTokens(msgs)
+	s.lastCompactAfter = llm.EstimateTokens(compacted)
+	budget := a.maxContextTokens()
+	if budget <= 0 || s.lastCompactAfter <= int(compactTriggerFrac*float64(budget)) {
+		s.compactStall = false
+	}
 	s.setMsgs(compacted)
 	s.persist()
 	return before, len(compacted), nil
@@ -924,6 +930,13 @@ const compactTriggerFrac = 0.85
 // close to the trigger but still below it: enough headroom to avoid immediate
 // overflow without throwing away more recent context than necessary.
 const compactTargetFrac = 0.80
+
+// compactRecompactMinGrowthFrac is the minimum post-compaction growth before a
+// second proactive compaction is worthwhile. With target=80% and trigger=85%, a
+// long tool loop can otherwise compact after every ~5% tool-result bump forever.
+// We still compact if the history reaches the full budget; this only suppresses
+// repeated below-budget churn after a recent full/manual compaction.
+const compactRecompactMinGrowthFrac = 0.15
 
 // maybeCompact runs proactive auto-compaction with a circuit breaker. It fires
 // before a model call when the conversation crosses compactTriggerFrac of the
@@ -960,6 +973,16 @@ func (s *Session) maybeCompactWithNotes(ctx context.Context, announce bool) bool
 		if float64(headroom) < compactStallHeadroomFrac*float64(budget) {
 			s.compactStall = true
 			a.emit(Event{Kind: EventNote, Text: "Context keeps refilling and compaction is no longer freeing much space. Consider /clear for a fresh thread or a more focused task."})
+			return false
+		}
+		growth := before - s.lastCompactAfter
+		minGrowth := int(compactRecompactMinGrowthFrac * float64(budget))
+		if before < budget && growth >= 0 && growth < minGrowth {
+			// A recent compaction left the history around the target, and only a
+			// small amount has been added since. Do not pay for another summary just
+			// because target=80% and trigger=85% are intentionally close; wait until
+			// the post-compact working set has grown materially, or until it reaches
+			// the full budget where overflow risk becomes real.
 			return false
 		}
 	}
@@ -1015,9 +1038,13 @@ func (s *Session) forceCompactOnOverflow(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	if len(compacted) >= before && llm.EstimateTokens(compacted) >= curTokens {
+	afterTokens := llm.EstimateTokens(compacted)
+	if len(compacted) >= before && afterTokens >= curTokens {
 		return false // compaction couldn't shrink it; don't spin
 	}
+	s.lastCompactBefore = curTokens
+	s.lastCompactAfter = afterTokens
+	s.compactStall = false
 	s.setMsgs(compacted)
 	s.persist()
 	return true
