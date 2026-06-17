@@ -12,6 +12,7 @@ import (
 	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/feed"
 	"github.com/avifenesh/eigen/internal/observe"
+	"github.com/avifenesh/eigen/internal/remote"
 	"github.com/avifenesh/eigen/internal/skill"
 	"github.com/avifenesh/eigen/internal/theme"
 )
@@ -297,6 +298,29 @@ func TestLiveLabelFallsBackToDirThenID(t *testing.T) {
 	}
 	if got := liveLabel(daemon.SessionInfo{ID: "s7"}); got != "s7" {
 		t.Errorf("id fallback: %q", got)
+	}
+}
+
+func TestMachinesAndCronsPagesShowSummaries(t *testing.T) {
+	d := testData()
+	d.Machines = []remote.Machine{{Name: "dev", SSH: "ubuntu@dev", Saved: true}, {Name: "prod", SSH: "ubuntu@prod", Detected: true}}
+	m := NewAt(d, PageMachines)
+	out := m.machines.view(m, 100, 30)
+	for _, want := range []string{"2 machines", "saved 1", "ssh-config 1", "selected: dev", "ubuntu@dev"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("machines page missing %q:\n%s", want, out)
+		}
+	}
+
+	m.active = PageCrons
+	m.crons.rows = []CronRow{{Name: "backup", Kind: "timer", Next: "today 03:00", Active: true, Command: "backup.service"}, {Name: "echo hi", Kind: "crontab", Next: "*/15 * * * *", Active: true, Command: "echo hi"}}
+	m.crons.loaded = true
+	m.crons.list.count = len(m.crons.rows)
+	out = m.crons.view(m, 100, 30)
+	for _, want := range []string{"2 jobs", "2 active", "1 timers", "1 crontab", "selected: timer", "backup.service"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("crons page missing %q:\n%s", want, out)
+		}
 	}
 }
 

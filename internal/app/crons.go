@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"sort"
 	"strings"
@@ -201,7 +202,8 @@ func (c *cronsState) view(m *Model, w, h int) string {
 		out += "\n" + sDim.Render("  no scheduled jobs found") + "\n"
 		return out
 	}
-	visible := h - 6
+	out += cronsSummaryLine(c.rows, w) + "\n\n"
+	visible := h - 8
 	if visible < 3 {
 		visible = 3
 	}
@@ -222,11 +224,37 @@ func (c *cronsState) view(m *Model, w, h int) string {
 		out += cursor + mark + " " + kind + name + next + "\n"
 	}
 	if i := c.list.cursor; i < len(c.rows) {
-		out += "\n" + sFaint.Render("  runs: "+truncate(c.rows[i].Command, w-10)) + "\n"
+		out += "\n" + cronSelectedDetail(c.rows[i], w) + "\n"
 	}
 	if c.status != "" {
 		out += sWarn.Render("  "+truncate(c.status, w-4)) + "\n"
 	}
 	out += sFaint.Render("  space stop/start timer · t trigger now · R refresh")
 	return out
+}
+
+func cronsSummaryLine(rows []CronRow, w int) string {
+	var timers, crontabs, active int
+	for _, r := range rows {
+		switch r.Kind {
+		case "timer":
+			timers++
+		case "crontab":
+			crontabs++
+		}
+		if r.Active {
+			active++
+		}
+	}
+	parts := []string{fmt.Sprintf("%d jobs", len(rows)), fmt.Sprintf("%d active", active), fmt.Sprintf("%d timers", timers), fmt.Sprintf("%d crontab", crontabs)}
+	return sFaint.Render("  " + truncate(strings.Join(parts, "  ·  "), max(20, w-2)))
+}
+
+func cronSelectedDetail(r CronRow, w int) string {
+	cmd := r.Command
+	if cmd == "" {
+		cmd = r.Name
+	}
+	line := fmt.Sprintf("selected: %s · next %s · runs %s", r.Kind, r.Next, cmd)
+	return sFaint.Render("  " + truncate(line, max(20, w-2)))
 }

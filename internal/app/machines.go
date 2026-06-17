@@ -197,7 +197,8 @@ func (s *machinesState) view(m *Model, w, h int) string {
 	if len(d.Machines) == 0 {
 		return out + sFaint.Render("  none — add one with `eigen remote add <name> <user@host>`\n  or define a Host in ~/.ssh/config (auto-detected)")
 	}
-	visible := h - 5
+	out += machinesSummaryLine(d.Machines, w) + "\n\n"
+	visible := h - 8
 	from, to := s.list.window(visible)
 	nameW := 16
 	for i := from; i < to; i++ {
@@ -208,6 +209,9 @@ func (s *machinesState) view(m *Model, w, h int) string {
 			machineBadges(mc))
 		s.clicks.mark(lineCount(out), i)
 		out += row(i == s.list.cursor, line) + "\n"
+	}
+	if s.list.cursor >= 0 && s.list.cursor < len(d.Machines) {
+		out += "\n" + machineSelectedDetail(d.Machines[s.list.cursor], w) + "\n"
 	}
 	if s.installMsg != "" {
 		tone := sFaint
@@ -222,6 +226,45 @@ func (s *machinesState) view(m *Model, w, h int) string {
 	}
 	out += "\n" + sFaint.Render("  enter open machine (see its sessions) · i install eigen here · n new session")
 	return out
+}
+
+func machinesSummaryLine(rows []remote.Machine, w int) string {
+	counts := map[string]int{}
+	for _, r := range rows {
+		counts[machineSource(r)]++
+	}
+	parts := []string{fmt.Sprintf("%d machines", len(rows))}
+	for _, src := range []string{"saved", "ssh-config"} {
+		if counts[src] > 0 {
+			parts = append(parts, fmt.Sprintf("%s %d", src, counts[src]))
+			delete(counts, src)
+		}
+	}
+	for src, n := range counts {
+		if src == "" {
+			src = "unknown"
+		}
+		parts = append(parts, fmt.Sprintf("%s %d", src, n))
+	}
+	return sFaint.Render("  " + truncate(strings.Join(parts, "  ·  "), max(20, w-2)))
+}
+
+func machineSelectedDetail(m remote.Machine, w int) string {
+	line := fmt.Sprintf("selected: %s · %s · %s", m.Name, machineAddr(m), machineSource(m))
+	return sFaint.Render("  " + truncate(line, max(20, w-2)))
+}
+
+func machineSource(m remote.Machine) string {
+	switch {
+	case m.Saved && m.Detected:
+		return "saved+ssh-config"
+	case m.Saved:
+		return "saved"
+	case m.Detected:
+		return "ssh-config"
+	default:
+		return "unknown"
+	}
 }
 
 func (s *machinesState) viewInside(m *Model, w, h int) string {
