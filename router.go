@@ -77,7 +77,10 @@ func (r *autoRouter) Route(ctx context.Context, prompt, kind, difficulty string,
 		k = llm.TaskVision
 	}
 
-	candidates := llm.RouteCandidates(current, providers)
+	candidates := r.routeCandidates(enabled || explicit || hasImage, current, providers)
+	if len(candidates) == 0 {
+		return nil, "", "route skipped: no credentialed candidate models"
+	}
 	chosen, ok := llm.Route(llm.RouteRequest{
 		Kind:       k,
 		Difficulty: d,
@@ -85,15 +88,27 @@ func (r *autoRouter) Route(ctx context.Context, prompt, kind, difficulty string,
 		Candidates: candidates,
 	})
 	if !ok {
-		return nil, "", ""
+		return nil, "", "route skipped: no capable candidate model"
 	}
 
 	prov, err := r.providerFor(chosen)
 	if err != nil {
-		return nil, "", ""
+		return nil, "", fmt.Sprintf("route skipped: %s unavailable (%v)", chosen, err)
 	}
 	label := fmt.Sprintf("routed → %s (%s/%s)", chosen, kindName(k), diffName(d))
 	return prov, chosen, label
+}
+
+func (r *autoRouter) routeCandidates(widen bool, current string, providers []string) []string {
+	if widen && len(providers) == 0 {
+		// Route=true or explicit orchestration should actually roam to the best
+		// credentialed tier by default. The old empty allowlist meant "current
+		// provider only", which made route=true a near no-op when the current
+		// provider had no cheaper/stronger alternatives. Set route_providers to a
+		// concrete list to restrict this behavior.
+		return llm.AllCredentialedModels()
+	}
+	return llm.RouteCandidates(current, providers)
 }
 
 // providerFor builds (and caches) the provider for a model id.

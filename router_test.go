@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -28,6 +29,36 @@ func TestAutoRouterProviders(t *testing.T) {
 	got := r.Providers()
 	if len(got) != 2 || got[0] != "converse" || got[1] != "glm" {
 		t.Fatalf("providers wrong: %v", got)
+	}
+}
+
+func TestAutoRouterRouteTrueWidensDefaultProviderSet(t *testing.T) {
+	t.Setenv("XAI_API_KEY", "test-key")
+	t.Setenv("GLM_API_KEY", "test-key")
+	t.Setenv("EIGEN_CODEX_AUTH", t.TempDir()+"/missing-auth.json")
+	r := newAutoRouter(true, nil, "codex")
+	p, model, label := r.Route(context.Background(), "rename this file", "", "trivial", false)
+	if p == nil {
+		t.Fatal("route=true with empty route_providers should roam all credentialed providers, not stay stuck on current")
+	}
+	if model == "gpt-5.5" || strings.TrimSpace(model) == "" {
+		t.Fatalf("trivial task should route away from current codex default, got %q (%s)", model, label)
+	}
+	if !strings.Contains(label, "trivial") {
+		t.Fatalf("label should expose route decision, got %q", label)
+	}
+}
+
+func TestAutoRouterRouteProvidersRestrictDefaultWidening(t *testing.T) {
+	t.Setenv("XAI_API_KEY", "test-key")
+	t.Setenv("GLM_API_KEY", "test-key")
+	r := newAutoRouter(true, []string{"grok"}, "grok")
+	p, model, label := r.Route(context.Background(), "rename this file", "", "trivial", false)
+	if p == nil {
+		t.Fatalf("restricted route should still find grok candidate: %s", label)
+	}
+	if !strings.HasPrefix(model, "grok-") {
+		t.Fatalf("route_providers should restrict routing to grok, got %q (%s)", model, label)
 	}
 }
 

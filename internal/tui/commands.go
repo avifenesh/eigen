@@ -390,14 +390,14 @@ func (m *model) command(line string) tea.Cmd {
 			if m.router.Enabled() {
 				status = "on"
 			}
-			scope := "current provider only"
+			scope := "all credentialed providers"
 			if p := m.router.Providers(); len(p) > 0 {
 				scope = "across " + strings.Join(p, " ")
 			}
-			m.note(fmt.Sprintf("routing: %s (%s) — your model orchestrates: task-tool delegations with stated kind/difficulty always route; heuristic routing of unstated subtasks is %s (/route on|off)", status, scope, status))
+			m.note(fmt.Sprintf("routing: %s (%s) — top-level turns and task-tool delegations route when enabled; stated task kind/difficulty and vision needs route even when heuristic routing is off", status, scope))
 		case "on":
 			m.router.SetEnabled(true)
-			m.note("heuristic routing ON — unstated subtasks also route by prompt classification (orchestrator-stated kind/difficulty always routes)")
+			m.note("heuristic routing ON — top-level turns and unstated subtasks route by prompt classification; empty route_providers means all credentialed providers")
 		case "off":
 			m.router.SetEnabled(false)
 			m.note("heuristic routing OFF — routing still happens when YOU state kind/difficulty on a task delegation (and for vision needs)")

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/avifenesh/eigen/internal/agent"
@@ -19,11 +20,13 @@ func TestLoggerWritesRecords(t *testing.T) {
 	}
 	var forwarded int
 	sink := lg.Wrap(func(agent.Event) { forwarded++ })
-	sink(agent.Event{Kind: agent.EventToolStart, Step: 0, ToolName: "bash"})
-	sink(agent.Event{Kind: agent.EventToolResult, Step: 0, ToolName: "bash", IsError: true, Result: "boom"})
+	sink(agent.Event{Kind: agent.EventToolStart, Step: 0, ToolName: "bash", ToolID: "tc1"})
+	sink(agent.Event{Kind: agent.EventToolResult, Step: 0, ToolName: "bash", ToolID: "tc1", IsError: true, Result: "Denied: nope"})
+	sink(agent.Event{Kind: agent.EventNote, Text: "routed → grok-code-fast-1 (general/trivial)"})
+	sink(agent.Event{Kind: agent.EventDone, InTokens: 10, OutTokens: 3, CacheReadTokens: 4, CacheWriteTokens: 2})
 	lg.Close()
 
-	if forwarded != 2 {
+	if forwarded != 4 {
 		t.Fatalf("sink should forward to next, got %d", forwarded)
 	}
 	f, _ := os.Open(path)
@@ -37,14 +40,27 @@ func TestLoggerWritesRecords(t *testing.T) {
 		}
 		recs = append(recs, r)
 	}
-	if len(recs) != 2 {
-		t.Fatalf("want 2 records, got %d", len(recs))
+	if len(recs) != 4 {
+		t.Fatalf("want 4 records, got %d", len(recs))
 	}
-	if recs[0].Kind != "tool_start" || recs[0].Tool != "bash" || recs[0].Session != "sess-1" {
+	if recs[0].Kind != "tool_start" || recs[0].Tool != "bash" || recs[0].ToolID != "tc1" || recs[0].Session != "sess-1" {
 		t.Fatalf("rec0 wrong: %+v", recs[0])
 	}
-	if recs[1].Kind != "tool_result" || !recs[1].IsError || recs[1].ResultLen != 4 {
+	if recs[1].Kind != "tool_result" || !recs[1].IsError || recs[1].ResultLen == 0 || recs[1].ErrorKind != "denied" || recs[1].ErrorHash == "" {
 		t.Fatalf("rec1 wrong: %+v", recs[1])
+	}
+	rawRec, _ := json.Marshal(recs[1])
+	if strings.Contains(string(rawRec), "Denied: nope") {
+		t.Fatalf("observability record must not store raw error text: %s", rawRec)
+	}
+	if recs[1].Goroutines == 0 || recs[1].MemAllocBytes == 0 {
+		t.Fatalf("rec1 should include runtime sample: %+v", recs[1])
+	}
+	if recs[2].Kind != "note" || recs[2].NoteKind != "route" {
+		t.Fatalf("rec2 wrong: %+v", recs[2])
+	}
+	if recs[3].Kind != "done" || recs[3].InTokens != 10 || recs[3].OutTokens != 3 || recs[3].CacheReadTokens != 4 || recs[3].CacheWriteTokens != 2 || recs[3].Goroutines == 0 {
+		t.Fatalf("rec3 wrong: %+v", recs[3])
 	}
 }
 

@@ -307,7 +307,7 @@ func View(c Config) string {
 	fmt.Fprintf(&b, "%-14s = %d\n", "front_window_min", c.FrontWindowMin)
 	fmt.Fprintf(&b, "%-14s = %d\n", "stall_idle_min", c.StallIdleMin)
 	fmt.Fprintf(&b, "%-14s = %t\n", "route", c.Route)
-	rp := "(current provider only)"
+	rp := "(all credentialed providers when route=true)"
 	if len(c.RouteProviders) > 0 {
 		rp = strings.Join(c.RouteProviders, " ")
 	}

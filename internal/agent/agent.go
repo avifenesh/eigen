@@ -34,6 +34,7 @@ Working method:
 - After changing code, use diff to review your changes before reporting.
 - When a task matches an available skill (listed below), load it with the skill tool first.
 - Record durable, project-specific facts (build/test commands, conventions, gotchas) with the memory tool.
+- Use subagents proactively for self-contained work: independent investigation, cross-checks, long scans, and review should usually go to task/task_group instead of being done serially in the main turn.
 - For a large, separable chunk of work, delegate it with the task tool (a fresh, isolated subtask).
 - Background slow or independent work instead of blocking: task(background=true) returns immediately with an id and keeps running; poll/collect with task_status. Prefer it for anything that may run long or stall (a vision read of a large image, a long build/scan, web research) so a slow subtask never wedges your turn — a foreground subtask self-aborts after a timeout, but backgrounding is the right call when you don't need the result this instant.
 - You are the orchestrator: when delegating, state the subtask's kind and difficulty so it routes to the best-fit model (trivial edits → fast cheap model; search/vision → a capable one). Keep only the work that needs you.
@@ -692,6 +693,8 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 		if rp, _, label := a.Router(ctx, task, opts.Kind, opts.Difficulty, false); rp != nil {
 			prov = rp
 			compactor = llm.NewCompactor(rp)
+			where = joinWhere(where, label)
+		} else if label != "" {
 			where = joinWhere(where, label)
 		}
 	}

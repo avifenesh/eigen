@@ -804,22 +804,29 @@ func (m *model) submit(task string) tea.Cmd {
 	m.streamedText = false
 	m.idleGen++ // invalidate any pending idle-dream timer
 
-	// Routing is ORCHESTRATOR-DRIVEN, not static: the top-level turn always
-	// stays on the user's chosen model (opus by default), which acts as the
-	// orchestrator — it decides per delegation (task tool kind/difficulty)
-	// what routes where. The ONE top-level exception is a capability need: an
-	// image attached while the active model lacks vision forces a route to a
-	// vision-capable model — the alternative is silently dropping the image.
+	// Routing: when /route is on, every top-level turn is eligible for the
+	// heuristic router. Even when /route is off, an image attached to a known-blind
+	// model forces a vision-capable hop; otherwise the image would be silently
+	// dropped or rejected by the backend.
 	hasImageRef := referencesImage(task) || len(m.pendingImages) > 0
-	// Routing fails CLOSED: only hop models when the catalog POSITIVELY says
-	// the active model is blind — unknown ids stay on the user's choice.
+	// Capability routing fails CLOSED: only force-hop for images when the catalog
+	// POSITIVELY says the active model is blind — unknown ids stay on the user's
+	// choice and surface backend errors if wrong.
 	visionHas, visionKnown := llm.Vision(m.modelID)
 	needVision := hasImageRef && visionKnown && !visionHas
-	if m.router != nil && needVision && m.failoverFrom == nil {
-		if prov, model, label := m.router.Route(m.ctx, task, "", "", hasImageRef); prov != nil && model != m.modelID {
+	shouldRoute := m.router != nil && m.failoverFrom == nil && (m.router.Enabled() || needVision)
+	if shouldRoute {
+		prov, model, label := m.router.Route(m.ctx, task, "", "", hasImageRef)
+		if prov != nil && model != m.modelID {
 			m.backend.SetModel(prov, m.compactorFor(prov), m.contextBudgetFor(model))
 			m.provName, m.modelID = prov.Name(), model
-			m.note(label + " (vision needed)")
+			if needVision && !m.router.Enabled() {
+				m.note(label + " (vision needed)")
+			} else {
+				m.note(label)
+			}
+		} else if label != "" && m.router.Enabled() {
+			m.note(label)
 		}
 	}
 

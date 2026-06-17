@@ -193,6 +193,20 @@ func TestPlainPromptRespectsRouterOff(t *testing.T) {
 	}
 }
 
+func TestPlainPromptRoutesWhenRouterOn(t *testing.T) {
+	m := testModel(t)
+	vr := &visionRouter{on: true, prov: llmProvStub{id: "claude-fable-5"}}
+	m.router = vr
+	m.modelID = "openai.gpt-5.5"
+	m.submit("just text, no image")
+	if !vr.called {
+		t.Fatal("router should be consulted for plain top-level prompts when /route is on")
+	}
+	if m.modelID != "claude-fable-5" {
+		t.Fatalf("model = %q, want routed model", m.modelID)
+	}
+}
+
 func TestRenameCommand(t *testing.T) {
 	m := testModel(t)
 	m.command("/rename my project work")

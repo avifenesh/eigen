@@ -957,6 +957,16 @@ func main() {
 		return
 	}
 
+	if router != nil && router.Enabled() {
+		rp, rm, label := router.Route(context.Background(), task, "", "", false)
+		if rp != nil && rm != *model {
+			a.SetLive(rp, llm.NewCompactor(rp), contextBudget(*maxTokens, rp.Name(), rm))
+			*provider, *model = rp.Name(), rm
+			fmt.Fprintln(os.Stderr, "note:", label)
+		} else if label != "" {
+			fmt.Fprintln(os.Stderr, "note:", label)
+		}
+	}
 	sess := a.NewSession()
 	if len(history) > 0 {
 		sess = a.Resume(history)
