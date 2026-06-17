@@ -112,9 +112,17 @@ func (r *Registry) cleanupPluginFiles(rec InstalledPlugin) {
 	if root == "" {
 		root = filepath.Join(r.PluginsDir(), rec.Name)
 	}
-	// Skills, including generated agent skills (tracked in Skills too).
+	// Skills.
 	for _, sd := range rec.Skills {
 		_ = os.RemoveAll(filepath.Join(r.SkillsDir(), sd))
+	}
+	// Native plugin agents.
+	for _, an := range rec.Agents {
+		_ = os.Remove(filepath.Join(r.AgentsDir(), an+".md"))
+		_ = os.Remove(filepath.Join(r.AgentsDir(), an+".md.disabled"))
+		// Legacy installs adapted agents as generated skills; clean that shape
+		// too even if the old record did not list the agent under Skills.
+		_ = os.RemoveAll(filepath.Join(r.SkillsDir(), an))
 	}
 	// Commands.
 	for _, cn := range rec.Commands {
@@ -213,6 +221,24 @@ func (r *Registry) SetEnabled(pluginName string, enabled bool) (bool, error) {
 			_ = os.Rename(parked, active)
 		} else {
 			_ = os.Rename(active, parked)
+		}
+	}
+	// Native agents: park the markdown role file so role discovery skips it.
+	for _, an := range rec.Agents {
+		active := filepath.Join(r.AgentsDir(), an+".md")
+		parked := active + ".disabled"
+		if enabled {
+			_ = os.Rename(parked, active)
+		} else {
+			_ = os.Rename(active, parked)
+		}
+		// Legacy generated-agent-skill fallback.
+		activeSkill := filepath.Join(r.SkillsDir(), an, "SKILL.md")
+		parkedSkill := activeSkill + ".disabled"
+		if enabled {
+			_ = os.Rename(parkedSkill, activeSkill)
+		} else {
+			_ = os.Rename(activeSkill, parkedSkill)
 		}
 	}
 	// Commands: same park-aside trick — the command loader globs commands/*.md,

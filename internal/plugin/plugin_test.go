@@ -399,7 +399,7 @@ func TestInstallPluginWiresComponents(t *testing.T) {
 	}
 }
 
-func TestInstallCodexMarketplaceAndAdaptAgents(t *testing.T) {
+func TestInstallCodexMarketplaceAndMapsAgentsToRoles(t *testing.T) {
 	dir := t.TempDir()
 	market := filepath.Join(dir, "openai-bundled")
 	pluginRoot := filepath.Join(market, "plugins", "browser")
@@ -428,7 +428,7 @@ func TestInstallCodexMarketplaceAndAdaptAgents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("install codex plugin: %v", err)
 	}
-	if len(res.Plugin.Skills) != 2 || len(res.Plugin.Agents) != 1 || res.Plugin.Agents[0] != "browser-agent-qa-tester" {
+	if len(res.Plugin.Skills) != 1 || len(res.Plugin.Agents) != 1 || res.Plugin.Agents[0] != "browser-agent-qa-tester" {
 		t.Fatalf("skills=%v agents=%v", res.Plugin.Skills, res.Plugin.Agents)
 	}
 	if len(res.Plugin.AgentRoles) != 1 || res.Plugin.AgentRoles[0].Kind != "vision" || res.Plugin.AgentRoles[0].Difficulty != "easy" || !res.Plugin.AgentRoles[0].ReadOnly {
@@ -437,12 +437,15 @@ func TestInstallCodexMarketplaceAndAdaptAgents(t *testing.T) {
 	if got := strings.Join(res.Plugin.AgentRoles[0].Tools, ","); got != "read,grep,glob" {
 		t.Fatalf("agent role tools = %q", got)
 	}
-	agentSkill, err := os.ReadFile(filepath.Join(r.SkillsDir(), "browser-agent-qa-tester", "SKILL.md"))
+	agentPrompt, err := os.ReadFile(filepath.Join(r.AgentsDir(), "browser-agent-qa-tester.md"))
 	if err != nil {
-		t.Fatalf("agent skill missing: %v", err)
+		t.Fatalf("agent prompt missing: %v", err)
 	}
-	if !bytes.Contains(agentSkill, []byte("Original agent prompt")) || !bytes.Contains(agentSkill, []byte("browser QA tester")) {
-		t.Fatalf("agent prompt not preserved:\n%s", agentSkill)
+	if bytes.Contains(agentPrompt, []byte("Original agent prompt")) || !bytes.Contains(agentPrompt, []byte("browser QA tester")) {
+		t.Fatalf("agent prompt should be stored natively, not wrapped as a skill:\n%s", agentPrompt)
+	}
+	if _, err := os.Stat(filepath.Join(r.SkillsDir(), "browser-agent-qa-tester")); err == nil {
+		t.Fatal("agent should not be installed as a generated skill")
 	}
 	browserSkill, err := os.ReadFile(filepath.Join(r.SkillsDir(), "browser-control", "SKILL.md"))
 	if err != nil {
@@ -460,12 +463,27 @@ func TestInstallCodexMarketplaceAndAdaptAgents(t *testing.T) {
 	if !strings.Contains(cmd[1].(string), "${EIGEN_PLUGIN_ROOT}") {
 		t.Fatalf("mcp command should use eigen root var: %v", cmd)
 	}
+	if ok, err := r.SetEnabled("browser", false); err != nil || !ok {
+		t.Fatalf("disable browser: ok=%v err=%v", ok, err)
+	}
+	if _, err := os.Stat(filepath.Join(r.AgentsDir(), "browser-agent-qa-tester.md")); err == nil {
+		t.Fatal("disable should park native agent prompt")
+	}
+	if _, err := os.Stat(filepath.Join(r.AgentsDir(), "browser-agent-qa-tester.md.disabled")); err != nil {
+		t.Fatalf("disabled native agent prompt missing: %v", err)
+	}
+	if ok, err := r.SetEnabled("browser", true); err != nil || !ok {
+		t.Fatalf("enable browser: ok=%v err=%v", ok, err)
+	}
+	if _, err := os.Stat(filepath.Join(r.AgentsDir(), "browser-agent-qa-tester.md")); err != nil {
+		t.Fatalf("enable should restore native agent prompt: %v", err)
+	}
 	ok, err := r.Uninstall("browser")
 	if err != nil || !ok {
 		t.Fatalf("uninstall browser: ok=%v err=%v", ok, err)
 	}
-	if _, err := os.Stat(filepath.Join(r.SkillsDir(), "browser-agent-qa-tester")); err == nil {
-		t.Fatal("uninstall should remove generated agent skill")
+	if _, err := os.Stat(filepath.Join(r.AgentsDir(), "browser-agent-qa-tester.md")); err == nil {
+		t.Fatal("uninstall should remove native agent prompt")
 	}
 }
 

@@ -9,9 +9,7 @@ import (
 )
 
 // Components is what a plugin bundle provides, discovered from its on-disk tree
-// (convention dirs + plugin.json overrides). v1 wires Skills, MCPServers, and
-// Hooks; Commands/Agents are counted but not yet wired (no slash-prompt
-// subsystem in eigen yet).
+// (convention dirs + plugin.json overrides).
 type Components struct {
 	Root       string          // plugin root dir (where files were found)
 	Manifest   *PluginManifest // parsed .claude-plugin/plugin.json (may be nil if absent + lenient)
@@ -19,7 +17,7 @@ type Components struct {
 	MCPServers []MCPServer     // .mcp.json (or manifest mcpServers path)
 	Hooks      []HookSpec      // hooks/hooks.json (or manifest hooks path)
 	Commands   []CommandFile   // commands/*.md (Claude slash commands)
-	Agents     []AgentFile     // agents/*.md adapted into Eigen skills at install
+	Agents     []AgentFile     // agents/*.md mapped into Eigen task roles at install
 	Apps       int             // Codex app integrations (not wired)
 }
 
@@ -36,9 +34,8 @@ type SkillFile struct {
 	Content string // raw SKILL.md (frontmatter + body)
 }
 
-// AgentFile is one Claude/Codex subagent markdown file. Eigen does not yet have
-// arbitrary plugin-defined Task roles, so install adapts these into loadable
-// skills that preserve the agent prompt.
+// AgentFile is one Claude/Codex subagent markdown file. Eigen installs these as
+// native task roles while preserving the original markdown prompt.
 type AgentFile struct {
 	Name        string
 	Path        string

@@ -449,11 +449,11 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 		res.Plugin.Commands = append(res.Plugin.Commands, instName)
 	}
 
-	// 5) Adapt Claude/Codex agents into Eigen skills. Eigen does not yet expose
-	// plugin-defined subtask roles, but preserving the agent prompt as a namespaced
-	// skill makes the agent usable immediately and keeps it enable/disable-able.
+	// 5) Install Claude/Codex agents as native Eigen task roles. The original
+	// markdown prompt is preserved in ~/.eigen/agents/<role>.md, while parsed
+	// frontmatter supplies routing and task_group read-only metadata.
 	for _, af := range comps.Agents {
-		content := agentAsSkillContent(pluginName, af)
+		content := af.Content
 		if opts.Scanner != nil {
 			sr, serr := opts.Scanner.Scan(ctx, af.Name, content)
 			if serr != nil {
@@ -468,10 +468,9 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 			}
 		}
 		instName := pluginName + "-agent-" + safeComponentName(af.Name)
-		if err := r.installGeneratedSkill(instName, content, dest, opts.Overwrite); err != nil {
+		if err := r.installAgentFile(instName, content, opts.Overwrite); err != nil {
 			return nil, fmt.Errorf("install agent %q: %w", af.Name, err)
 		}
-		res.Plugin.Skills = append(res.Plugin.Skills, instName)
 		res.Plugin.Agents = append(res.Plugin.Agents, instName)
 		res.Plugin.AgentRoles = append(res.Plugin.AgentRoles, installedAgentRole(instName, af))
 	}
@@ -612,22 +611,19 @@ func (r *Registry) installSkillDir(srcDir, instName, bundleRoot string, overwrit
 	return nil
 }
 
-func (r *Registry) installGeneratedSkill(instName, content, bundleRoot string, overwrite bool) error {
-	dst := filepath.Join(r.SkillsDir(), instName)
+func (r *Registry) installAgentFile(instName, content string, overwrite bool) error {
+	dst := filepath.Join(r.AgentsDir(), instName+".md")
 	if overwrite {
-		_ = os.RemoveAll(dst)
+		_ = os.Remove(dst)
+		_ = os.Remove(dst + ".disabled")
 	}
 	if _, err := os.Stat(dst); err == nil {
-		return fmt.Errorf("skill %q already exists at %s", instName, dst)
+		return fmt.Errorf("agent %q already exists at %s", instName, dst)
 	}
-	if err := os.MkdirAll(dst, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dst, "SKILL.md"), []byte(toEigenRoot(content)), 0o644); err != nil {
-		return err
-	}
-	_ = os.WriteFile(filepath.Join(dst, ".eigen-root"), []byte(bundleRoot+"\n"), 0o644)
-	return nil
+	return os.WriteFile(dst, []byte(toEigenRoot(content)), 0o644)
 }
 
 func installedAgentRole(instName string, af AgentFile) InstalledAgentRole {
@@ -710,32 +706,6 @@ func normalizeAgentToolName(tool string) (string, bool) {
 	}
 }
 
-func agentAsSkillContent(pluginName string, af AgentFile) string {
-	desc := af.Description
-	if desc == "" {
-		desc = "Claude/Codex agent adapted from plugin " + pluginName
-	}
-	return fmt.Sprintf(`---
-name: %s-agent-%s
-description: %s
----
-# %s agent
-
-This skill adapts a Claude/Codex plugin agent for Eigen. When loaded, follow the original agent instructions below as a specialized role. Use Eigen tools normally, and do not bypass Eigen approval or permission gates.
-
-## Original agent prompt
-
-%s
-`, pluginName, safeComponentName(af.Name), yamlQuote(desc), af.Name, af.Content)
-}
-
-func yamlQuote(s string) string {
-	s = strings.ReplaceAll(s, "\n", " ")
-	s = strings.ReplaceAll(s, "\\", "\\\\")
-	s = strings.ReplaceAll(s, "\"", "\\\"")
-	return "\"" + s + "\""
-}
-
 func safeComponentName(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	var b strings.Builder
@@ -768,6 +738,16 @@ func expandRoot(s, root string) string {
 func toEigenRoot(s string) string {
 	s = strings.ReplaceAll(s, pluginRootVar, eigenRootVar)
 	return strings.ReplaceAll(s, codexPluginRootVar, eigenRootVar)
+}
+
+// ExpandInstalledRoot resolves stored ${EIGEN_PLUGIN_ROOT} references for a
+// plugin component at runtime. Installers keep the placeholder on disk so
+// records can move as one bundle; role prompts expand it from InstalledPlugin.Root.
+func ExpandInstalledRoot(s, root string) string {
+	if strings.TrimSpace(root) == "" {
+		return s
+	}
+	return strings.ReplaceAll(s, eigenRootVar, root)
 }
 
 // installCommand writes a plugin slash command to ~/.eigen/commands/<inst>.md,

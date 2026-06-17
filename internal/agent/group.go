@@ -73,11 +73,11 @@ func (a *Agent) TaskGroup(ctx context.Context, subs []GroupSubtask, workers int,
 			return "", fmt.Errorf("task_group: subtask %d has an empty task", i+1)
 		}
 		if s.Role == "" {
-			return "", fmt.Errorf("task_group: subtask %d needs a role (%s) — parallel children must be read-only", i+1, strings.Join(RoleNames(), "/"))
+			return "", fmt.Errorf("task_group: subtask %d needs a role (%s) — parallel children must be read-only", i+1, strings.Join(taskGroupRoleNames(), "/"))
 		}
 		role, ok := LookupRole(s.Role)
 		if !ok {
-			return "", fmt.Errorf("task_group: subtask %d has unknown role %q (available: %s)", i+1, s.Role, strings.Join(RoleNames(), "/"))
+			return "", fmt.Errorf("task_group: subtask %d has unknown role %q (available: %s)", i+1, s.Role, strings.Join(taskGroupRoleNames(), "/"))
 		}
 		if !role.ReadOnly || !a.Tools.Subset(role.Tools...).AllReadOnly() {
 			return "", fmt.Errorf("task_group: role %q is not read-only — parallel mutating subtasks are not supported yet", s.Role)
@@ -176,6 +176,13 @@ func (a *Agent) TaskGroup(ctx context.Context, subs []GroupSubtask, workers int,
 		return report, nil
 	}
 	return report + "\n\n--- synthesis ---\n" + merged, nil
+}
+
+func taskGroupRoleNames() []string {
+	names := append([]string{}, RoleNames()...)
+	names = append(names, PluginRoleNames()...)
+	sort.Strings(names)
+	return names
 }
 
 // synthesizeReports runs a tool-less sub-agent that reads the combined fan-out

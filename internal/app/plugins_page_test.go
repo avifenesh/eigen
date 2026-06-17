@@ -25,10 +25,10 @@ func seedPluginPage(t *testing.T) *pluginpkg.Registry {
 	if err := os.WriteFile(filepath.Join(root, "skills", "demo-skill", "SKILL.md"), []byte("# Demo\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, "skills", "demo-agent-reviewer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "agents"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "skills", "demo-agent-reviewer", "SKILL.md"), []byte("---\nname: demo-agent-reviewer\ndescription: review\n---\nReview carefully.\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "agents", "demo-agent-reviewer.md"), []byte("---\nname: demo-agent-reviewer\ndescription: review\n---\nReview carefully.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, "commands"), 0o755); err != nil {
@@ -49,7 +49,7 @@ func seedPluginPage(t *testing.T) *pluginpkg.Registry {
 		Version:     "1.2.3",
 		Description: "Demo plugin for tests",
 		Root:        filepath.Join(root, "plugins", "demo"),
-		Skills:      []string{"demo-skill", "demo-agent-reviewer"},
+		Skills:      []string{"demo-skill"},
 		Agents:      []string{"demo-agent-reviewer"},
 		Commands:    []string{"demo-review"},
 		MCPServers:  []string{"demo-mcp"},
@@ -78,7 +78,7 @@ func TestPluginsPageRendersProductSurface(t *testing.T) {
 		"my plugins",
 		"demo",
 		"enabled",
-		"2 skill",
+		"1 skill",
 		"1 agent",
 		"task roles",
 		"demo-agent-reviewer",

@@ -1245,13 +1245,13 @@ func TestPaletteIncludesPluginAgentTaskPrefill(t *testing.T) {
 	t.Setenv("HOME", home)
 	reg := plugin.NewRegistryAt(filepath.Join(home, ".eigen"))
 	role := "demo-agent-reviewer"
-	if err := os.MkdirAll(filepath.Join(reg.SkillsDir(), role), 0o755); err != nil {
+	if err := os.MkdirAll(reg.AgentsDir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(reg.SkillsDir(), role, "SKILL.md"), []byte("---\nname: demo-agent-reviewer\ndescription: review\n---\nReview carefully.\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(reg.AgentsDir(), role+".md"), []byte("---\nname: demo-agent-reviewer\ndescription: review\n---\nReview carefully.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := reg.RecordInstall(plugin.InstalledPlugin{Name: "demo", Root: filepath.Join(reg.PluginsDir(), "demo"), Skills: []string{role}, Agents: []string{role}, AgentRoles: []plugin.InstalledAgentRole{{Name: role}}}); err != nil {
+	if err := reg.RecordInstall(plugin.InstalledPlugin{Name: "demo", Root: filepath.Join(reg.PluginsDir(), "demo"), Agents: []string{role}, AgentRoles: []plugin.InstalledAgentRole{{Name: role}}}); err != nil {
 		t.Fatal(err)
 	}
 	m := testModel(t)

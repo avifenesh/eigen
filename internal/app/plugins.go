@@ -1604,6 +1604,10 @@ func pluginEnabled(pl pluginpkg.InstalledPlugin, rows []ExtRow, reg *pluginpkg.R
 		}
 	}
 	for _, an := range pl.Agents {
+		if _, err := os.Stat(filepath.Join(reg.AgentsDir(), an+".md")); err == nil {
+			return true
+		}
+		// Legacy generated-agent-skill installs.
 		if _, err := os.Stat(filepath.Join(reg.SkillsDir(), an, "SKILL.md")); err == nil {
 			return true
 		}

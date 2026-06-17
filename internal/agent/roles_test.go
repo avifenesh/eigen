@@ -14,13 +14,13 @@ func TestLookupRoleBuiltinsCannotBeShadowedByPluginAgents(t *testing.T) {
 	t.Setenv("HOME", home)
 	reg := plugin.NewRegistryAt(filepath.Join(home, ".eigen"))
 	roleName := "researcher"
-	if err := os.MkdirAll(filepath.Join(reg.SkillsDir(), roleName), 0o755); err != nil {
+	if err := os.MkdirAll(reg.AgentsDir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(reg.SkillsDir(), roleName, "SKILL.md"), []byte("malicious shadow"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(reg.AgentsDir(), roleName+".md"), []byte("malicious shadow"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := reg.RecordInstall(plugin.InstalledPlugin{Name: "shadow", Root: filepath.Join(reg.PluginsDir(), "shadow"), Skills: []string{roleName}, Agents: []string{roleName}}); err != nil {
+	if err := reg.RecordInstall(plugin.InstalledPlugin{Name: "shadow", Root: filepath.Join(reg.PluginsDir(), "shadow"), Agents: []string{roleName}}); err != nil {
 		t.Fatal(err)
 	}
 	role, ok := LookupRole(roleName)
@@ -57,17 +57,17 @@ func TestLookupRoleLoadsInstalledPluginAgent(t *testing.T) {
 	t.Setenv("HOME", home)
 	reg := plugin.NewRegistryAt(filepath.Join(home, ".eigen"))
 	agentSkill := "demo-agent-reviewer"
-	if err := os.MkdirAll(filepath.Join(reg.SkillsDir(), agentSkill), 0o755); err != nil {
+	if err := os.MkdirAll(reg.AgentsDir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	prompt := "---\nname: demo-agent-reviewer\ndescription: Review things\n---\nBe a careful plugin agent.\n"
-	if err := os.WriteFile(filepath.Join(reg.SkillsDir(), agentSkill, "SKILL.md"), []byte(prompt), 0o644); err != nil {
+	root := filepath.Join(reg.PluginsDir(), "demo")
+	prompt := "---\nname: demo-agent-reviewer\ndescription: Review things\n---\nBe a careful plugin agent. Read ${EIGEN_PLUGIN_ROOT}/guide.md.\n"
+	if err := os.WriteFile(filepath.Join(reg.AgentsDir(), agentSkill+".md"), []byte(prompt), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := reg.RecordInstall(plugin.InstalledPlugin{
 		Name:   "demo",
-		Root:   filepath.Join(reg.PluginsDir(), "demo"),
-		Skills: []string{agentSkill},
+		Root:   root,
 		Agents: []string{agentSkill},
 		AgentRoles: []plugin.InstalledAgentRole{{
 			Name: agentSkill, Kind: "search", Difficulty: "easy", Tools: []string{"read", "grep"}, ReadOnly: true,
@@ -83,7 +83,7 @@ func TestLookupRoleLoadsInstalledPluginAgent(t *testing.T) {
 	if !role.ReadOnly || role.InheritTools || role.Kind != "search" || role.Difficulty != "easy" || strings.Join(role.Tools, ",") != "read,grep" {
 		t.Fatalf("plugin agent role should honor read-only metadata, got %+v", role)
 	}
-	if !strings.Contains(role.System, "installed plugin agent role") || !strings.Contains(role.System, "Be a careful plugin agent") {
+	if !strings.Contains(role.System, "installed plugin agent role") || !strings.Contains(role.System, "Be a careful plugin agent") || !strings.Contains(role.System, root+"/guide.md") {
 		t.Fatalf("plugin role system prompt missing wrapper/original prompt:\n%s", role.System)
 	}
 

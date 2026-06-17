@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -12,6 +14,7 @@ import (
 	"time"
 
 	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/plugin"
 	"github.com/avifenesh/eigen/internal/tool"
 )
 
@@ -723,6 +726,68 @@ func TestGoalInjectedIntoSystemPerStep(t *testing.T) {
 	}
 	if strings.Contains(cap.system, "CURRENT GOAL") {
 		t.Fatal("cleared goal must not appear in the system prompt")
+	}
+}
+
+func TestInstalledPluginRolesAreInjectedIntoSystemPrompt(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	reg := plugin.NewRegistryAt(filepath.Join(home, ".eigen"))
+	roleName := "demo-agent-reader"
+	if err := os.MkdirAll(reg.AgentsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(reg.AgentsDir(), roleName+".md"), []byte("SECRET ROLE BODY"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.RecordInstall(plugin.InstalledPlugin{
+		Name:   "demo",
+		Root:   filepath.Join(reg.PluginsDir(), "demo"),
+		Agents: []string{roleName},
+		AgentRoles: []plugin.InstalledAgentRole{{
+			Name:        roleName,
+			Description: "Read docs and report concise findings.",
+			Kind:        "general",
+			Difficulty:  "easy",
+			Tools:       []string{"read", "grep"},
+			ReadOnly:    true,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	taskDef := tool.Task(func(context.Context, string, tool.TaskOpts, bool) (string, error) {
+		return "unused", nil
+	})
+	groupDef := tool.TaskGroup(func(context.Context, []tool.GroupSubtaskArg, int, string) (string, error) {
+		return "unused", nil
+	})
+	tools, err := tool.NewRegistry(taskDef, groupDef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cap := &systemCapturingProvider{}
+	a := &Agent{Provider: cap, Tools: tools, Perm: PermAuto}
+	if _, err := a.NewSession().Send(context.Background(), "hi"); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Installed plugin agent roles available for delegation",
+		"task tool with role set to the exact role name",
+		roleName,
+		"Read docs and report concise findings.",
+		"plugin=demo",
+		"kind=general",
+		"difficulty=easy",
+		"read-only",
+		"task_group-ok",
+		"tools=read/grep",
+	} {
+		if !strings.Contains(cap.system, want) {
+			t.Fatalf("system prompt missing plugin role catalog text %q:\n%s", want, cap.system)
+		}
+	}
+	if strings.Contains(cap.system, "SECRET ROLE BODY") {
+		t.Fatalf("role catalog should not inject full plugin-agent prompts:\n%s", cap.system)
 	}
 }
 

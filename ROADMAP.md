@@ -78,7 +78,7 @@ Already shipped:
 - Claude `.claude-plugin` and Codex `.agents/plugins` / `.codex-plugin` format parsing.
 - `url` / `git-subdir` / local marketplace source forms, including real `agent-sh/agentsys`.
 - Skills/MCP/hooks/commands wiring with scanner/rollback safety.
-- Claude/Codex `agents/*.md` are adapted into namespaced Eigen skills.
+- Claude/Codex `agents/*.md` are installed as native Eigen task roles.
 - Custom slash commands from `~/.eigen/commands` and project `.eigen/commands`;
   plugin commands are wired as prefixed commands.
 
@@ -95,12 +95,14 @@ Remaining v1.1 work:
   browsing, pre-install manifest/component preview, scanner-risk history, and
   rollback/result detail display.
 - [x] **Claude/Codex `agents/` compatibility.** Plugin-provided agents are
-  adapted into loadable Eigen skills and exposed as foreground/background
-  `task` roles using the generated agent name. App/chat command palettes surface
-  installed agent roles. Agent frontmatter can provide routing metadata
-  (`kind`, `difficulty`, `model`) and read-only tool metadata; read-only plugin
-  agents are admitted to `task_group`, while mutating/unknown agents inherit
-  normal task tools and stay blocked from parallel fan-out.
+  installed under `~/.eigen/agents/` and exposed as foreground/background
+  `task` roles using the installed role name. App/chat command palettes surface
+  installed agent roles, and the system prompt lists enabled role names plus
+  routing/read-only metadata when `task`/`task_group` are available. Agent
+  frontmatter can provide routing metadata (`kind`, `difficulty`, `model`) and
+  read-only tool metadata; read-only plugin agents are admitted to `task_group`,
+  while mutating/unknown agents inherit normal task tools and stay blocked from
+  parallel fan-out.
 - [x] **Docs + smoke test.** Added fixture coverage for marketplace source
   polymorphism, GitHub PAX tarballs, Codex local marketplaces, Codex plugin
   manifests, and agent adaptation. docs/plugins.md updated.
@@ -252,7 +254,8 @@ CLI marketplace/plugin consume-and-manage shipped:
 - marketplace add/list/remove/delete/enable/disable/update;
 - plugin install/list/remove/delete/enable/disable;
 - Claude `.claude-plugin` and Codex `.agents/plugins` / `.codex-plugin` parsing;
-- skills/MCP/hooks/commands wiring plus basic agents-as-skills adaptation;
+- skills/MCP/hooks/commands wiring plus initial agents-as-skills adaptation
+  (v1.1 now maps plugin agents into native task roles);
 - scanner + rollback safety;
 - agent has no install tool.
 

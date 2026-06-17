@@ -41,7 +41,7 @@ type InstalledPlugin struct {
 	Installed   time.Time            `json:"installed"`
 	Root        string               `json:"root"`             // ~/.eigen/plugins/<name> (bundled files)
 	Skills      []string             `json:"skills,omitempty"` // installed skill dir names (~/.eigen/skills/<n>)
-	Agents      []string             `json:"agents,omitempty"` // agent names adapted into skills
+	Agents      []string             `json:"agents,omitempty"` // installed agent role names (~/.eigen/agents/<n>.md)
 	MCPServers  []string             `json:"mcp_servers,omitempty"`
 	Hooks       int                  `json:"hooks,omitempty"`       // count appended to hooks.json
 	Commands    []string             `json:"commands,omitempty"`    // installed command names (~/.eigen/commands/<n>.md)
@@ -59,7 +59,7 @@ const (
 )
 
 // InstalledAgentRole records metadata parsed from a plugin's agents/*.md
-// frontmatter. The generated Name is the role users pass to task(role: ...).
+// frontmatter. Name is the role users pass to task(role: ...).
 type InstalledAgentRole struct {
 	Name        string   `json:"name"`
 	SourceName  string   `json:"source_name,omitempty"`
@@ -89,8 +89,10 @@ func (r *Registry) pluginsPath() string { return filepath.Join(r.dir, "plugins-i
 // PluginsDir is where plugin bundles are cached: ~/.eigen/plugins/<name>.
 func (r *Registry) PluginsDir() string { return filepath.Join(r.dir, "plugins") }
 
-// SkillsDir / MCPPath / HooksPath are where components are wired (global scope).
+// SkillsDir / AgentsDir / MCPPath / HooksPath are where components are wired
+// (global scope).
 func (r *Registry) SkillsDir() string { return filepath.Join(r.dir, "skills") }
+func (r *Registry) AgentsDir() string { return filepath.Join(r.dir, "agents") }
 func (r *Registry) MCPPath() string   { return filepath.Join(r.dir, "mcp.json") }
 func (r *Registry) HooksPath() string { return filepath.Join(r.dir, "hooks.json") }
 

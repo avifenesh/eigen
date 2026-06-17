@@ -19,6 +19,8 @@ import (
 // exist (see ROADMAP Tier 16).
 type Role struct {
 	Name         string
+	Description  string
+	Plugin       string
 	System       string   // prepended to the sub-agent's system prompt
 	Tools        []string // allowlist; the sub-agent sees only these (all read-only)
 	Kind         string   // default routing kind when the caller gives none
@@ -58,8 +60,9 @@ var builtinRoles = map[string]Role{
 }
 
 // LookupRole returns a built-in or enabled plugin-agent role by name. task_group
-// still validates ReadOnly before launching; plugin-agent roles are intended for
-// foreground/background task delegations because they inherit normal tools.
+// still validates ReadOnly before launching; mutating/unknown plugin-agent roles
+// are intended for foreground/background task delegations because they inherit
+// normal tools and approval gates.
 func LookupRole(name string) (Role, bool) {
 	name = strings.TrimSpace(name)
 	if r, ok := builtinRoles[name]; ok {
@@ -114,15 +117,17 @@ func pluginAgentRoles() []Role {
 		for _, ar := range pl.AgentRoles {
 			meta[strings.ToLower(strings.TrimSpace(ar.Name))] = ar
 		}
-		for _, agentSkill := range pl.Agents {
-			md, err := os.ReadFile(filepath.Join(reg.SkillsDir(), agentSkill, "SKILL.md"))
-			if err != nil {
+		for _, agentRole := range pl.Agents {
+			prompt, ok := pluginAgentPrompt(reg, pl, agentRole)
+			if !ok {
 				continue // disabled or removed
 			}
-			ar := meta[strings.ToLower(strings.TrimSpace(agentSkill))]
+			ar := meta[strings.ToLower(strings.TrimSpace(agentRole))]
 			role := Role{
-				Name:         agentSkill,
-				System:       pluginAgentSystem(agentSkill, pl.Name, string(md)),
+				Name:         agentRole,
+				Description:  ar.Description,
+				Plugin:       pl.Name,
+				System:       pluginAgentSystem(agentRole, pl.Name, prompt),
 				Kind:         ar.Kind,
 				Difficulty:   firstNonEmptyRole(ar.Difficulty, "medium"),
 				Model:        ar.Model,
@@ -140,6 +145,91 @@ func pluginAgentRoles() []Role {
 	}
 	sort.Slice(roles, func(i, j int) bool { return roles[i].Name < roles[j].Name })
 	return roles
+}
+
+// PluginRoleCatalog renders the concrete installed plugin-agent roles for the
+// system prompt. It lists names and routing metadata, not the full prompts; a
+// role's prompt is loaded only when the role is invoked.
+func PluginRoleCatalog(canTask, canTaskGroup bool) string {
+	if !canTask && !canTaskGroup {
+		return ""
+	}
+	roles := pluginAgentRoles()
+	if len(roles) == 0 {
+		return ""
+	}
+	var visible []Role
+	for _, r := range roles {
+		if canTask || (canTaskGroup && r.ReadOnly) {
+			visible = append(visible, r)
+		}
+	}
+	if len(visible) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("Installed plugin agent roles available for delegation:\n")
+	if canTask {
+		b.WriteString("- To use one, call the task tool with role set to the exact role name below and put the run-specific prompt in task.\n")
+	}
+	if canTaskGroup {
+		b.WriteString("- task_group may use only roles marked read-only.\n")
+	}
+	for _, r := range visible {
+		desc := singleLineRole(r.Description)
+		if desc == "" {
+			desc = "plugin-provided agent"
+		}
+		var bits []string
+		if r.Plugin != "" {
+			bits = append(bits, "plugin="+r.Plugin)
+		}
+		if r.Kind != "" {
+			bits = append(bits, "kind="+r.Kind)
+		}
+		if r.Difficulty != "" {
+			bits = append(bits, "difficulty="+r.Difficulty)
+		}
+		if r.Model != "" {
+			bits = append(bits, "model="+r.Model)
+		}
+		if r.ReadOnly {
+			tools := "default read-only tools"
+			if len(r.Tools) > 0 {
+				tools = "tools=" + strings.Join(r.Tools, "/")
+			}
+			bits = append(bits, "read-only", "task_group-ok", tools)
+		} else {
+			bits = append(bits, "task-only", "inherits normal tools and approval gates")
+		}
+		b.WriteString("- " + r.Name + ": " + desc)
+		if len(bits) > 0 {
+			b.WriteString(" (" + strings.Join(bits, "; ") + ")")
+		}
+		b.WriteByte('\n')
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func singleLineRole(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	const max = 180
+	if len(s) > max {
+		return s[:max-3] + "..."
+	}
+	return s
+}
+
+func pluginAgentPrompt(reg *plugin.Registry, pl plugin.InstalledPlugin, role string) (string, bool) {
+	if b, err := os.ReadFile(filepath.Join(reg.AgentsDir(), role+".md")); err == nil {
+		return plugin.ExpandInstalledRoot(string(b), pl.Root), true
+	}
+	// Legacy fallback: early plugin-agent installs adapted agents into generated
+	// skills. Keep those roles working, but new installs use ~/.eigen/agents.
+	if b, err := os.ReadFile(filepath.Join(reg.SkillsDir(), role, "SKILL.md")); err == nil {
+		return plugin.ExpandInstalledRoot(string(b), pl.Root), true
+	}
+	return "", false
 }
 
 func firstNonEmptyRole(a, b string) string {

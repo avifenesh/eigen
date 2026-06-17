@@ -83,16 +83,15 @@ func TestTaskGroupAllowsReadOnlyPluginAgentRole(t *testing.T) {
 	t.Setenv("HOME", home)
 	reg := plugin.NewRegistryAt(filepath.Join(home, ".eigen"))
 	roleName := "demo-agent-reader"
-	if err := os.MkdirAll(filepath.Join(reg.SkillsDir(), roleName), 0o755); err != nil {
+	if err := os.MkdirAll(reg.AgentsDir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(reg.SkillsDir(), roleName, "SKILL.md"), []byte("read-only plugin agent"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(reg.AgentsDir(), roleName+".md"), []byte("read-only plugin agent"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := reg.RecordInstall(plugin.InstalledPlugin{
 		Name:   "demo",
 		Root:   filepath.Join(reg.PluginsDir(), "demo"),
-		Skills: []string{roleName},
 		Agents: []string{roleName},
 		AgentRoles: []plugin.InstalledAgentRole{{
 			Name: roleName, Tools: []string{"read", "grep"}, ReadOnly: true, Difficulty: "trivial",
