@@ -16,12 +16,13 @@ import (
 // and skills pages, so a source can be typed and installed without leaving the
 // app. It mirrors configState's inline editor (no bubbles/textinput dependency).
 type installPrompt struct {
-	active bool
-	label  string // what we're asking for (shown as the prompt)
-	kind   string // "marketplace" | "plugin" | "skill"
-	input  string
-	status string // result/feedback line ("" = none)
-	busy   bool   // an install is running (synchronous; shows "working…")
+	active   bool
+	label    string // what we're asking for (shown as the prompt)
+	kind     string // "marketplace" | "plugin" | "skill"
+	input    string
+	status   string // result/feedback line ("" = none)
+	busy     bool   // an install/fetch is running in a background tea.Cmd
+	busyText string
 }
 
 // open starts the prompt for a given kind.
@@ -36,6 +37,23 @@ func (p *installPrompt) open(kind, label string) {
 func (p *installPrompt) close() {
 	p.active = false
 	p.input = ""
+}
+
+func (p *installPrompt) startBusy(kind, label, input, text string) {
+	p.active = true
+	p.kind = kind
+	p.label = label
+	p.input = input
+	p.status = ""
+	p.busy = true
+	p.busyText = text
+}
+
+func (p *installPrompt) finish(status string) {
+	p.busy = false
+	p.busyText = ""
+	p.close()
+	p.status = status
 }
 
 // key feeds a keystroke to the active prompt. Returns (submitted source, true)
@@ -67,7 +85,11 @@ func (p *installPrompt) key(key string, runes []rune) (string, bool) {
 // render draws the prompt/status line.
 func (p *installPrompt) render() string {
 	if p.busy {
-		return "\n" + sAccent.Render("  installing "+p.input+" … ") + sFaint.Render("(scanning + fetching)")
+		text := p.busyText
+		if text == "" {
+			text = "installing " + p.input + " … (scanning + fetching)"
+		}
+		return "\n" + sAccent.Render("  "+text)
 	}
 	if p.active {
 		return "\n" + sAccent.Render("  "+p.label+": ") + sText.Render(p.input+"▏") + "\n" + sFaint.Render("  enter install · esc cancel")
@@ -79,6 +101,20 @@ func (p *installPrompt) render() string {
 }
 
 // appPluginRegistry builds the plugin registry (global ~/.eigen).
+type installDoneMsg struct {
+	page   Page
+	kind   string
+	status string
+	tab    pluginsTab
+}
+
+type marketplaceRefreshDoneMsg struct {
+	marketName string
+	status     string
+	catalog    []plugin.PluginEntry
+	focus      bool
+}
+
 func appPluginRegistry() (*plugin.Registry, error) { return plugin.NewRegistry() }
 
 // runMarketplaceAdd adds a marketplace catalog by source.
@@ -136,15 +172,63 @@ func splitPluginMarket(src string) (name, market string) {
 	return name, ""
 }
 
+type skillInstallArgs struct {
+	source    string
+	name      string
+	force     bool
+	noScan    bool
+	overwrite bool
+}
+
+func parseSkillInstallInput(input string) (skillInstallArgs, error) {
+	var out skillInstallArgs
+	fields := strings.Fields(input)
+	for i := 0; i < len(fields); i++ {
+		a := fields[i]
+		switch {
+		case a == "--force":
+			out.force = true
+		case a == "--no-scan":
+			out.noScan = true
+		case a == "--overwrite":
+			out.overwrite = true
+		case strings.HasPrefix(a, "--name="):
+			out.name = strings.TrimSpace(strings.TrimPrefix(a, "--name="))
+		case a == "--name":
+			if i+1 >= len(fields) || strings.HasPrefix(fields[i+1], "--") {
+				return out, fmt.Errorf("--name needs a value")
+			}
+			out.name = fields[i+1]
+			i++
+		case strings.HasPrefix(a, "--"):
+			return out, fmt.Errorf("unknown flag %s", a)
+		default:
+			if out.source != "" {
+				return out, fmt.Errorf("unexpected extra argument %q", a)
+			}
+			out.source = a
+		}
+	}
+	if out.source == "" {
+		return out, fmt.Errorf("missing skill source")
+	}
+	return out, nil
+}
+
 // runSkillInstall installs a skill from a path or owner/repo[/sub][@ref],
-// scanning with the app's small model.
-func runSkillInstall(d *Data, source string) string {
+// scanning with the app's small model. The prompt also accepts the safety
+// overrides from the CLI: --force, --no-scan, --overwrite, --name <name>.
+func runSkillInstall(d *Data, input string) string {
+	args, err := parseSkillInstallInput(input)
+	if err != nil {
+		return "skill add failed: " + err.Error()
+	}
 	home, _ := os.UserHomeDir()
-	opts := skill.InstallOptions{Dir: filepath.Join(home, ".eigen", "skills")}
-	if d != nil && d.Small != nil {
+	opts := skill.InstallOptions{Dir: filepath.Join(home, ".eigen", "skills"), Name: args.name, Force: args.force, Overwrite: args.overwrite}
+	if !args.noScan && d != nil && d.Small != nil {
 		opts.Scanner = skill.ProviderScanner{P: d.Small}
 	}
-	res, err := installSkillSource(source, opts)
+	res, err := installSkillSource(args.source, opts)
 	if err != nil {
 		return "skill add failed: " + err.Error()
 	}

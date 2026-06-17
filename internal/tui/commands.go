@@ -114,6 +114,7 @@ func (m *model) command(line string) tea.Cmd {
 		if m.backend == nil {
 			break
 		}
+		m.note("compacting conversation… this can take a moment")
 		m.state = stRunning
 		m.status = "compacting…"
 		m.relayout()

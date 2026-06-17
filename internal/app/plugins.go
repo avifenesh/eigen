@@ -268,24 +268,27 @@ func (p *pluginsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	p.load()
 	key := msg.String()
 
-	// Inline install prompt active: capture text input.
+	// Inline install prompt active: capture text input. Fetch/install/scan runs in
+	// a background tea.Cmd so the page can render a busy line instead of freezing.
 	if p.prompt.active {
+		if p.prompt.busy {
+			return m, nil
+		}
 		if src, ok := p.prompt.key(key, msg.Runes); ok {
-			p.prompt.busy = true
-			var status string
-			switch p.prompt.kind {
+			kind := p.prompt.kind
+			data := m.data
+			switch kind {
 			case "marketplace":
-				status = runMarketplaceAdd(m.data, src)
-				p.tab = pluginsTabMarketplace
+				p.prompt.startBusy(kind, "marketplace", src, "adding marketplace "+src+" … (fetching catalog)")
+				return m, func() tea.Msg {
+					return installDoneMsg{page: PagePlugins, kind: kind, tab: pluginsTabMarketplace, status: runMarketplaceAdd(data, src)}
+				}
 			case "plugin":
-				status = runPluginInstall(m.data, src)
-				p.tab = pluginsTabInstalled
+				p.prompt.startBusy(kind, "plugin", src, "installing plugin "+src+" … (scanning + fetching)")
+				return m, func() tea.Msg {
+					return installDoneMsg{page: PagePlugins, kind: kind, tab: pluginsTabInstalled, status: runPluginInstall(data, src)}
+				}
 			}
-			p.prompt.busy = false
-			p.prompt.close()
-			p.prompt.status = status
-			p.loaded = false
-			p.load()
 		}
 		return m, nil
 	}
@@ -330,16 +333,15 @@ func (p *pluginsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "i": // install a plugin by name from any added marketplace
 		if p.tab == pluginsTabMarketplace && p.catalogFocus {
-			p.installSelectedCatalogPlugin(m)
-			return m, nil
+			return m, p.installSelectedCatalogPlugin(m)
 		}
 		p.prompt.open("plugin", "plugin name[@marketplace]")
 		return m, nil
 	}
 
 	if p.tab == pluginsTabMarketplace && p.catalogFocus {
-		if p.updateCatalog(m, key) {
-			return m, nil
+		if consumed, cmd := p.updateCatalog(m, key); consumed {
+			return m, cmd
 		}
 	}
 
@@ -353,7 +355,7 @@ func (p *pluginsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case pluginsTabInstalled:
 		p.updateInstalled(key)
 	case pluginsTabMarketplace:
-		p.updateMarketplace(key)
+		return m, p.updateMarketplace(key)
 	case pluginsTabExtensions:
 		p.updateExtension(key)
 	}
@@ -439,9 +441,9 @@ func (p *pluginsState) removePlugin(name string) {
 	p.load()
 }
 
-func (p *pluginsState) updateMarketplace(key string) {
+func (p *pluginsState) updateMarketplace(key string) tea.Cmd {
 	if p.list.cursor >= len(p.markets) {
-		return
+		return nil
 	}
 	mk := p.markets[p.list.cursor]
 	switch key {
@@ -449,18 +451,19 @@ func (p *pluginsState) updateMarketplace(key string) {
 		// Refresh + browse this catalog. This mirrors the CLI update path, but keeps
 		// the parsed plugin entries in page state so the marketplace tab can behave
 		// like a real catalog, not just a list of repos.
-		p.refreshMarketplace(mk, true)
+		return p.refreshMarketplace(mk, true)
 	case "enter":
 		if strings.EqualFold(p.catalogMarket, mk.Name) && len(p.catalog) > 0 {
 			p.focusCatalog()
 		} else {
-			p.refreshMarketplace(mk, true)
+			return p.refreshMarketplace(mk, true)
 		}
 	case " ", "space":
 		p.setMarketplaceEnabled(mk.Name, mk.Disabled)
 	case "X", "delete":
 		p.confirm.open("marketplace", mk.Name)
 	}
+	return nil
 }
 
 func (p *pluginsState) setMarketplaceEnabled(name string, enabled bool) {
@@ -513,28 +516,26 @@ func (p *pluginsState) removeMarketplace(name string) {
 	p.load()
 }
 
-func (p *pluginsState) refreshMarketplace(mk pluginpkg.MarketRecord, focus bool) {
-	reg, err := appPluginRegistry()
-	if err != nil {
-		p.err = err.Error()
-		return
+func (p *pluginsState) refreshMarketplace(mk pluginpkg.MarketRecord, focus bool) tea.Cmd {
+	p.prompt.startBusy("marketplace", "marketplace", mk.Name, "refreshing marketplace "+mk.Name+" … (fetching catalog)")
+	return func() tea.Msg {
+		reg, err := appPluginRegistry()
+		if err != nil {
+			return marketplaceRefreshDoneMsg{marketName: mk.Name, status: "refresh failed: " + err.Error()}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		mkt, rec, err := reg.AddMarketplace(ctx, mk.Source, nil)
+		if err != nil {
+			return marketplaceRefreshDoneMsg{marketName: mk.Name, status: "refresh failed: " + err.Error()}
+		}
+		return marketplaceRefreshDoneMsg{
+			marketName: rec.Name,
+			status:     fmt.Sprintf("refreshed marketplace %q — %d plugin(s)", rec.Name, len(mkt.Plugins)),
+			catalog:    append([]pluginpkg.PluginEntry(nil), mkt.Plugins...),
+			focus:      focus,
+		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancel()
-	mkt, rec, err := reg.AddMarketplace(ctx, mk.Source, nil)
-	if err != nil {
-		p.err = err.Error()
-		return
-	}
-	p.catalogMarket = rec.Name
-	p.catalog = append([]pluginpkg.PluginEntry(nil), mkt.Plugins...)
-	p.catalogList.count = len(p.catalog)
-	p.catalogList.cursor, p.catalogList.top = 0, 0
-	p.catalogFocus = focus && len(p.catalog) > 0
-	p.prompt.status = fmt.Sprintf("refreshed marketplace %q — %d plugin(s)", rec.Name, len(mkt.Plugins))
-	p.err = ""
-	p.loaded = false
-	p.load()
 }
 
 func (p *pluginsState) focusCatalog() {
@@ -544,44 +545,43 @@ func (p *pluginsState) focusCatalog() {
 	p.err = ""
 }
 
-func (p *pluginsState) updateCatalog(m *Model, key string) bool {
+func (p *pluginsState) updateCatalog(m *Model, key string) (bool, tea.Cmd) {
 	if len(p.catalog) == 0 {
 		p.catalogFocus = false
-		return false
+		return false, nil
 	}
 	switch key {
 	case "esc", "backspace", "left", "H":
 		p.catalogFocus = false
-		return true
+		return true, nil
 	case "enter", "i":
-		p.installSelectedCatalogPlugin(m)
-		return true
+		return true, p.installSelectedCatalogPlugin(m)
 	}
 	visible := p.catalogVisibleRows(m.height)
 	if p.catalogList.key(key, visible) {
-		return true
+		return true, nil
 	}
-	return false
+	return false, nil
 }
 
-func (p *pluginsState) installSelectedCatalogPlugin(m *Model) {
+func (p *pluginsState) installSelectedCatalogPlugin(m *Model) tea.Cmd {
 	if p.catalogList.cursor < 0 || p.catalogList.cursor >= len(p.catalog) {
-		return
+		return nil
 	}
 	entry := p.catalog[p.catalogList.cursor]
 	market := p.catalogMarket
 	if market == "" && p.list.cursor < len(p.markets) {
 		market = p.markets[p.list.cursor].Name
 	}
-	p.prompt.busy = true
-	p.prompt.input = entry.Name
-	p.prompt.status = ""
-	status := runPluginInstallFrom(m.data, entry.Name, market)
-	p.prompt.busy = false
-	p.prompt.close()
-	p.prompt.status = status
-	p.loaded = false
-	p.load()
+	label := entry.Name
+	if market != "" {
+		label += "@" + market
+	}
+	p.prompt.startBusy("plugin", "plugin", label, "installing plugin "+label+" … (scanning + fetching)")
+	data := m.data
+	return func() tea.Msg {
+		return installDoneMsg{page: PagePlugins, kind: "plugin", tab: pluginsTabInstalled, status: runPluginInstallFrom(data, entry.Name, market)}
+	}
 }
 
 func (p *pluginsState) catalogVisibleRows(h int) int {

@@ -959,6 +959,7 @@ func (s *Session) maybeCompact(ctx context.Context) bool {
 	if target <= 0 {
 		target = triggerAt
 	}
+	a.emit(Event{Kind: EventNote, Text: fmt.Sprintf("context auto-compacting: ~%d tokens (target ~%d)…", before, target)})
 	compacted, err := llm.CompactWith(ctx, a.compactor(), msgs, target)
 	if err != nil {
 		return false
@@ -1178,6 +1179,7 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 			// TUI's overload→failover path, and works for every provider.
 			if llm.IsContextOverflow(err) && !overflowRetried {
 				overflowRetried = true
+				a.emit(Event{Kind: EventNote, Text: "Prompt exceeded the model's context window — compacting and retrying…"})
 				if s.forceCompactOnOverflow(ctx) {
 					a.emit(Event{Kind: EventNote, Text: "Prompt exceeded the model's context window — compacted the conversation and retrying."})
 					// Retry the same step with the shrunk history. Decrementing

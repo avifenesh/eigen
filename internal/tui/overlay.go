@@ -141,6 +141,7 @@ func (m *model) openCompactPrompt() {
 		return
 	}
 	m.openConfirm("compact the conversation now?", func(m *model) tea.Cmd {
+		m.note("compacting conversation… this can take a moment")
 		m.state = stRunning
 		m.status = "compacting…"
 		m.relayout()

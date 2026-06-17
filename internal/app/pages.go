@@ -343,16 +343,19 @@ func (s *skillsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	// Inline install prompt active: capture text input.
+	// Inline install prompt active: capture text input. The install/scan can call a
+	// model or fetch GitHub, so run it as a tea.Cmd and leave a visible busy line
+	// instead of freezing the page.
 	if s.prompt.active {
+		if s.prompt.busy {
+			return m, nil
+		}
 		if src, ok := s.prompt.key(key, msg.Runes); ok {
-			s.prompt.busy = true
-			status := runSkillInstall(m.data, src)
-			s.prompt.busy = false
-			s.prompt.close()
-			s.prompt.status = status
-			m.data.Skills.Rescan()
-			s.list.count = m.data.Skills.Len()
+			s.prompt.startBusy("skill", "skill source", src, "installing skill "+src+" … (scanning + fetching)")
+			data := m.data
+			return m, func() tea.Msg {
+				return installDoneMsg{page: PageSkills, kind: "skill", status: runSkillInstall(data, src)}
+			}
 		}
 		return m, nil
 	}
@@ -361,7 +364,7 @@ func (s *skillsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch key {
 	case "i": // install a skill from a path or owner/repo[/sub][@ref]
-		s.prompt.open("skill", "skill source (path or owner/repo[/sub][@ref])")
+		s.prompt.open("skill", "skill source (path or owner/repo[/sub][@ref]) [--force|--no-scan]")
 	case "enter":
 		skills := m.data.Skills.List()
 		if s.list.cursor < len(skills) {
@@ -404,7 +407,7 @@ func (s *skillsState) view(m *Model, w, h int) string {
 		out += row(i == s.list.cursor, line) + "\n"
 	}
 	out += s.prompt.render()
-	out += "\n" + sFaint.Render("  enter preview · i install (path or owner/repo[@ref])")
+	out += "\n" + sFaint.Render("  enter preview · i install (path or owner/repo[@ref], optional --force/--no-scan)")
 	return out
 }
 

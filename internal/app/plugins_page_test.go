@@ -167,12 +167,20 @@ func TestPluginsPageCanNavigateCatalogAndInstall(t *testing.T) {
 	m := NewAt(testData(), PagePlugins)
 	m.width, m.height = 120, 36
 	m.Update(key("2"))
-	m.Update(key("enter")) // refresh selected marketplace and focus catalog
+	_, cmd := m.Update(key("enter")) // refresh selected marketplace and focus catalog
+	if cmd == nil || !m.plugins.prompt.busy {
+		t.Fatal("enter should start a visible marketplace refresh job")
+	}
+	m.Update(cmd())
 	if !m.plugins.catalogFocus || len(m.plugins.catalog) != 2 {
 		t.Fatalf("enter should focus refreshed catalog, focus=%v catalog=%v", m.plugins.catalogFocus, m.plugins.catalog)
 	}
-	m.Update(key("j"))     // beta
-	m.Update(key("enter")) // install focused catalog plugin
+	m.Update(key("j"))              // beta
+	_, cmd = m.Update(key("enter")) // install focused catalog plugin
+	if cmd == nil || !m.plugins.prompt.busy {
+		t.Fatal("enter on focused catalog should start a visible install job")
+	}
+	m.Update(cmd())
 	if _, ok := reg.InstalledByName("beta"); !ok {
 		t.Fatal("enter on focused marketplace catalog should install selected plugin")
 	}

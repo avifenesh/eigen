@@ -1041,13 +1041,15 @@ func TestCompactCommandRunsAndReports(t *testing.T) {
 	if m.state != stRunning || m.status != "compacting…" {
 		t.Fatalf("/compact should show a compacting state, got state=%v status=%q", m.state, m.status)
 	}
-	before := len(m.blocks)
+	if len(m.blocks) == 0 || !strings.Contains(m.blocks[len(m.blocks)-1].body, "compacting conversation") {
+		t.Fatalf("/compact should add a visible progress note, blocks=%v", m.blocks)
+	}
 	m.Update(compactDoneMsg{before: 10, after: 3, beforeTok: 50000, afterTok: 8000})
 	if m.state != stInput {
 		t.Fatal("compactDone should return to input state")
 	}
-	if len(m.blocks) <= before {
-		t.Fatal("compactDone should push a result note")
+	if len(m.blocks) == 0 {
+		t.Fatal("compactDone should leave a result note")
 	}
 	if !strings.Contains(m.blocks[len(m.blocks)-1].body, "compacted") {
 		t.Fatalf("compact note should report the result, got %q", m.blocks[len(m.blocks)-1].body)

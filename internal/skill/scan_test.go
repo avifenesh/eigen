@@ -38,6 +38,11 @@ func TestProviderScannerSafe(t *testing.T) {
 	if !strings.Contains(p.gotUser, "refactor") || !strings.Contains(p.gotUser, "do good things") {
 		t.Fatalf("scanner should send name+content, got %q", p.gotUser)
 	}
+	for _, want := range []string{"ONLY for supply-chain / prompt-injection risk", "Do NOT grade code quality", "If the text is a normal skill written by the user"} {
+		if !strings.Contains(p.gotSystem, want) {
+			t.Fatalf("scanner prompt should narrow scope with %q; got:\n%s", want, p.gotSystem)
+		}
+	}
 }
 
 func TestProviderScannerRisky(t *testing.T) {

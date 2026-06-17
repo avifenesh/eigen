@@ -13,6 +13,7 @@ import (
 
 	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/feed"
+	pluginpkg "github.com/avifenesh/eigen/internal/plugin"
 	"github.com/avifenesh/eigen/internal/remote"
 )
 
@@ -257,6 +258,34 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Periodic refresh while the app is open: rescan in the background and
 		// re-arm the tick.
 		return m, tea.Batch(m.scanFeed(), feedTick())
+	case installDoneMsg:
+		switch msg.page {
+		case PageSkills:
+			m.skills.prompt.finish(msg.status)
+			if m.data.Skills != nil {
+				m.data.Skills.Rescan()
+				m.skills.list.count = m.data.Skills.Len()
+			}
+		case PagePlugins:
+			m.plugins.prompt.finish(msg.status)
+			if msg.tab != 0 || msg.kind == "plugin" {
+				m.plugins.tab = msg.tab
+			}
+			m.plugins.loaded = false
+			m.plugins.load()
+		}
+		return m, nil
+	case marketplaceRefreshDoneMsg:
+		m.plugins.prompt.finish(msg.status)
+		m.plugins.catalogMarket = msg.marketName
+		m.plugins.catalog = append([]pluginpkg.PluginEntry(nil), msg.catalog...)
+		m.plugins.catalogList.count = len(m.plugins.catalog)
+		m.plugins.catalogList.cursor, m.plugins.catalogList.top = 0, 0
+		m.plugins.catalogFocus = msg.focus && len(m.plugins.catalog) > 0
+		m.plugins.err = ""
+		m.plugins.loaded = false
+		m.plugins.load()
+		return m, nil
 	case consolidateDoneMsg:
 		m.memory.consoling = false
 		m.memory.loaded = false
