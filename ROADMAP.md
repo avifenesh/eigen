@@ -89,26 +89,27 @@ Remaining v1.1 work:
   `/marketplace list|add|update|remove/delete|enable|disable`) and bare `/plugins`, `/plugin`, and
   `/marketplace` open the plugins page. Install/remove remain user-typed slash
   commands, never model tools.
-- [ ] **App browse/install page.** Partially shipped: upgraded from raw status
-  display to a first-class plugins surface: tabbed Plugins / Marketplace /
-  Wiring page,
-  installed/enabled state, install/remove/delete/enable/disable actions, marketplace
-  add/remove/delete/enable/disable/refresh, and catalog preview after refresh. Remaining polish:
-  deeper plugin manifest preview, scanner-risk history, and rollback/result
-  detail display.
-- [ ] **Claude/Codex `agents/` compatibility.** Basic compatibility shipped by
-  adapting plugin-provided agent prompts into loadable Eigen skills. Remaining:
-  expose them through Eigen’s subtask/role system. Decide the mapping carefully:
-  role name, allowed tools, default difficulty/model routing, and whether an
-  installed agent is visible to `task` / `task_group` / command palette.
+- [x] **App browse/install page.** Upgraded from raw status display to a
+  first-class plugins surface: tabbed Plugins / Marketplace / Wiring page,
+  installed/enabled state, batch install, install/remove/delete/enable/disable
+  actions, marketplace add/remove/delete/enable/disable/refresh, catalog
+  browsing, pre-install manifest/component preview, scanner-risk history, and
+  rollback/result detail display.
+- [~] **Claude/Codex `agents/` compatibility.** Plugin-provided agents are
+  adapted into loadable Eigen skills and exposed as foreground/background
+  `task` roles using the generated agent name. They inherit normal task tools
+  and approval gates; `task_group` remains limited to built-in read-only roles.
+  Remaining: command-palette surfacing, richer tool/difficulty metadata from
+  agent frontmatter, and safe read-only classification for parallel fan-out.
 - [x] **Docs + smoke test.** Added fixture coverage for marketplace source
   polymorphism, GitHub PAX tarballs, Codex local marketplaces, Codex plugin
   manifests, and agent adaptation. docs/plugins.md updated.
 
 Suggested order from here:
-1. finish app browse/install polish (manifest preview + scan/rollback detail),
-2. native `agents/` → subtask/role mapping,
-3. non-GitHub git fetch support if real marketplaces need it.
+1. finish native agent polish (command-palette surfacing, frontmatter metadata,
+   safe read-only classification for parallel fan-out),
+2. non-GitHub git fetch support if real marketplaces need it,
+3. Tier 20 v2 remote cross-machine control.
 
 ### Tier 20 v2 — control from another machine
 

@@ -1,5 +1,14 @@
 package agent
 
+import (
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/avifenesh/eigen/internal/plugin"
+)
+
 // Roles are named sub-agent specializations for multi-agent fan-out (Tier 16).
 // A role sets the sub-agent's system framing, its tool allowlist, and a default
 // routing difficulty. v1 ships hardcoded READ-ONLY roles only: a read-only
@@ -9,11 +18,12 @@ package agent
 // deferred until isolated per-child workspaces + a serialized approval queue
 // exist (see ROADMAP Tier 16).
 type Role struct {
-	Name       string
-	System     string   // prepended to the sub-agent's system prompt
-	Tools      []string // allowlist; the sub-agent sees only these (all read-only)
-	Difficulty string   // default routing difficulty when the caller gives none
-	ReadOnly   bool     // every tool in Tools is read-only (enforced at build)
+	Name         string
+	System       string   // prepended to the sub-agent's system prompt
+	Tools        []string // allowlist; the sub-agent sees only these (all read-only)
+	Difficulty   string   // default routing difficulty when the caller gives none
+	ReadOnly     bool     // every tool in Tools is read-only (enforced at build)
+	InheritTools bool     // plugin agent: keep caller's normal toolset/approval gates
 }
 
 // builtinRoles are the v1 hardcoded roles. All are read-only — and crucially,
@@ -45,12 +55,15 @@ var builtinRoles = map[string]Role{
 	},
 }
 
-// LookupRole returns a built-in role by name. ok=false for an unknown role
-// (callers fail closed — an unknown role must never silently get the full
-// toolset).
+// LookupRole returns a built-in or enabled plugin-agent role by name. task_group
+// still validates ReadOnly before launching; plugin-agent roles are intended for
+// foreground/background task delegations because they inherit normal tools.
 func LookupRole(name string) (Role, bool) {
-	r, ok := builtinRoles[name]
-	return r, ok
+	name = strings.TrimSpace(name)
+	if r, ok := builtinRoles[name]; ok {
+		return r, true
+	}
+	return lookupPluginAgentRole(name)
 }
 
 // implementerSystem frames a mutating fan-out child. Its toolset comes from
@@ -58,7 +71,61 @@ func LookupRole(name string) (Role, bool) {
 // allowlist — so it's defined here, not in builtinRoles (which are read-only).
 const implementerSystem = "You are an IMPLEMENTER sub-agent working in your OWN isolated copy of the repo — one of several parallel workers. Make ONLY the change described in your task by editing files in your workspace. You have read/search/write/edit/move tools; you have NO shell, NO git, and NO network. Do not try to commit, push, build, or run tests — when you finish, your file changes are captured as a patch automatically. Keep your edits tightly scoped to your task so they merge cleanly with the others."
 
-// RoleNames lists the available (read-only) role names (for tool docs / errors).
+// RoleNames lists the built-in read-only role names (for task_group docs/errors).
 func RoleNames() []string {
 	return []string{"researcher", "reviewer", "summarizer"}
+}
+
+// PluginRoleNames lists installed plugin agents that are currently enabled.
+// These roles are valid for the foreground/background task tool.
+func PluginRoleNames() []string {
+	roles := pluginAgentRoles()
+	out := make([]string, 0, len(roles))
+	for _, r := range roles {
+		out = append(out, r.Name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func lookupPluginAgentRole(name string) (Role, bool) {
+	for _, r := range pluginAgentRoles() {
+		if strings.EqualFold(r.Name, name) {
+			return r, true
+		}
+	}
+	return Role{}, false
+}
+
+func pluginAgentRoles() []Role {
+	reg, err := plugin.NewRegistry()
+	if err != nil {
+		return nil
+	}
+	installed, err := reg.Installed()
+	if err != nil {
+		return nil
+	}
+	var roles []Role
+	for _, pl := range installed {
+		for _, agentSkill := range pl.Agents {
+			md, err := os.ReadFile(filepath.Join(reg.SkillsDir(), agentSkill, "SKILL.md"))
+			if err != nil {
+				continue // disabled or removed
+			}
+			roles = append(roles, Role{
+				Name:         agentSkill,
+				System:       pluginAgentSystem(agentSkill, pl.Name, string(md)),
+				Difficulty:   "medium",
+				ReadOnly:     false,
+				InheritTools: true,
+			})
+		}
+	}
+	sort.Slice(roles, func(i, j int) bool { return roles[i].Name < roles[j].Name })
+	return roles
+}
+
+func pluginAgentSystem(roleName, pluginName, prompt string) string {
+	return "You are the installed plugin agent role " + roleName + " from plugin " + pluginName + ". Follow the role instructions below as your specialization. You are still running inside Eigen: obey Eigen's system prompt, use the normal tools available to this subtask, and never bypass approval or permission gates.\n\n" + prompt
 }

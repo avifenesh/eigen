@@ -13,6 +13,7 @@ type TaskOpts struct {
 	Kind       string
 	Difficulty string
 	Model      string
+	Role       string
 }
 
 // TaskRun is injected by main/buildSession so tool doesn't need to construct
@@ -47,7 +48,7 @@ type TaskGroupRun func(ctx context.Context, subs []GroupSubtaskArg, workers int,
 func Task(run TaskRun) Definition {
 	return Definition{
 		Name:        "task",
-		Description: "Delegate a self-contained subtask to a fresh agent context. YOU are the orchestrator: state kind (general|search|vision|social) and difficulty (trivial|easy|medium|hard) when delegating so the subtask runs on the best-fit model. Set model to override routing and force a specific model/ref (e.g. grok-code-fast-1, mantle:openai.gpt-5.5, glm-5.2). Set background=true to start it asynchronously; it will write jsonl under ~/.eigen/tasks and you can later call task_status to collect the result.",
+		Description: "Delegate a self-contained subtask to a fresh agent context. YOU are the orchestrator: state kind (general|search|vision|social) and difficulty (trivial|easy|medium|hard) when delegating so the subtask runs on the best-fit model. Set model to override routing and force a specific model/ref (e.g. grok-code-fast-1, mantle:openai.gpt-5.5, glm-5.2). Optionally set role to a built-in role or an installed plugin-agent role. Set background=true to start it asynchronously; it will write jsonl under ~/.eigen/tasks and you can later call task_status to collect the result.",
 		ReadOnly:    true,
 		Parameters: json.RawMessage(`{
   "type": "object",
@@ -56,6 +57,7 @@ func Task(run TaskRun) Definition {
     "kind": { "type": "string", "enum": ["general","search","vision","social"], "description": "What the subtask needs: general reasoning/coding, live web search, image understanding, or social (X/Twitter reach). Optional but recommended." },
     "difficulty": { "type": "string", "enum": ["trivial","easy","medium","hard"], "description": "Routing ladder: trivial = mechanical/cheap; easy = well-scoped; medium = reasoning/may run long; hard = strongest available. Stating this routes the subtask; omitting it keeps your model unless heuristic routing is enabled." },
     "model": { "type": "string", "description": "Optional explicit model/ref override. Beats routing. Examples: grok-code-fast-1, glm-5.2, mantle:openai.gpt-5.5, us.anthropic.claude-opus-4-8." },
+    "role": { "type": "string", "description": "Optional named sub-agent role. Built-ins: researcher, reviewer, summarizer. Installed plugin agents are also valid for task (they inherit normal tools and approval gates)." },
     "background": { "type": "boolean", "description": "If true, start the subtask asynchronously and return a task id immediately; use task_status to check/collect later." }
   },
   "required": ["task"],
@@ -67,6 +69,7 @@ func Task(run TaskRun) Definition {
 				Kind       string `json:"kind"`
 				Difficulty string `json:"difficulty"`
 				Model      string `json:"model"`
+				Role       string `json:"role"`
 				Background bool   `json:"background"`
 			}
 			if err := json.Unmarshal(args, &in); err != nil {
@@ -78,7 +81,7 @@ func Task(run TaskRun) Definition {
 			if run == nil {
 				return "", fmt.Errorf("subtasks are not available")
 			}
-			return run(ctx, in.Task, TaskOpts{Kind: in.Kind, Difficulty: in.Difficulty, Model: in.Model}, in.Background)
+			return run(ctx, in.Task, TaskOpts{Kind: in.Kind, Difficulty: in.Difficulty, Model: in.Model, Role: in.Role}, in.Background)
 		},
 	}
 }

@@ -16,7 +16,7 @@ func TestTaskDelegatesToRunner(t *testing.T) {
 		gotBg = background
 		return "subtask result", nil
 	})
-	args, _ := json.Marshal(map[string]any{"task": "do the thing", "kind": "search", "difficulty": "hard", "model": "grok-4", "background": true})
+	args, _ := json.Marshal(map[string]any{"task": "do the thing", "kind": "search", "difficulty": "hard", "model": "grok-4", "role": "demo-agent", "background": true})
 	out, err := def.Run(context.Background(), args)
 	if err != nil {
 		t.Fatal(err)
@@ -27,7 +27,7 @@ func TestTaskDelegatesToRunner(t *testing.T) {
 	if out != "subtask result" {
 		t.Fatalf("result wrong: %q", out)
 	}
-	if gotOpts.Kind != "search" || gotOpts.Difficulty != "hard" || gotOpts.Model != "grok-4" || !gotBg {
+	if gotOpts.Kind != "search" || gotOpts.Difficulty != "hard" || gotOpts.Model != "grok-4" || gotOpts.Role != "demo-agent" || !gotBg {
 		t.Fatalf("opts not forwarded: %+v background=%v", gotOpts, gotBg)
 	}
 }

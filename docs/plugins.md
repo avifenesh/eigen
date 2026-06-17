@@ -46,11 +46,13 @@ A plugin's components flow into the **global** per-scope configs under `~/.eigen
 | Component | Claude/Codex source | Wired into | Notes |
 |---|---|---|---|
 | Skills | `skills/<n>/SKILL.md`, manifest `skills` path, or root `SKILL.md` | `~/.eigen/skills/<plugin>-<n>/` | namespaced; `${CLAUDE_PLUGIN_ROOT}` / `${CODEX_PLUGIN_ROOT}` rewritten to `${EIGEN_PLUGIN_ROOT}` |
-| Agents | `agents/*.md` or manifest `agents` path | `~/.eigen/skills/<plugin>-agent-<n>/` | adapted into loadable Eigen skills until plugin-defined subtask roles exist |
+| Agents | `agents/*.md` or manifest `agents` path | `~/.eigen/skills/<plugin>-agent-<n>/` + task role | adapted into loadable Eigen skills and exposed as foreground/background `task` roles |
 | Commands | `commands/*.md` or manifest `commands` path | `~/.eigen/commands/<plugin>-<n>.md` | appears as `/<plugin>-<n>` in the TUI |
 | MCP servers | `.mcp.json`, manifest `mcpServers`, or Codex `mcp_servers` | `~/.eigen/mcp.json` | **niche** (gated behind `search_tools`), auto-described, root vars rewritten |
 | Hooks | `hooks/hooks.json` or manifest `hooks` | `~/.eigen/hooks.json` | Claude events mapped (`PostToolUse`→`tool_result`, …) |
 | Codex app integrations | manifest `apps` | not wired yet | counted and warned; app/runtime integration is deferred |
+
+Installed plugin agents can be used with the `task` tool by setting `role` to the generated agent name (for example `next-task-agent-task-discoverer`). They inherit the normal task toolset and approval gates. `task_group` remains restricted to Eigen's built-in read-only roles (`researcher`, `reviewer`, `summarizer`) because plugin agents may be mutating.
 
 The bundle is cached at `~/.eigen/plugins/<name>/` so root placeholders resolve.
 Installs are recorded in `~/.eigen/plugins-installed.json` (with the exact files

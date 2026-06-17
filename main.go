@@ -562,7 +562,12 @@ func main() {
 		if a == nil {
 			return "", fmt.Errorf("subtasks unavailable")
 		}
-		aopts := agent.SubtaskOpts{Kind: opts.Kind, Difficulty: opts.Difficulty, Model: opts.Model}
+		if strings.TrimSpace(opts.Role) != "" {
+			if _, ok := agent.LookupRole(opts.Role); !ok {
+				return "", fmt.Errorf("unknown task role %q (built-ins: %s; installed plugin agents: %s)", opts.Role, strings.Join(agent.RoleNames(), ", "), strings.Join(agent.PluginRoleNames(), ", "))
+			}
+		}
+		aopts := agent.SubtaskOpts{Kind: opts.Kind, Difficulty: opts.Difficulty, Model: opts.Model, Role: opts.Role}
 		if background {
 			return a.SubtaskBackground(ctx, t, aopts)
 		}

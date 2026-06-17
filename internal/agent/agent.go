@@ -646,7 +646,9 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 	extraSystem := a.ExtraSystem
 	if opts.Role != "" {
 		if role, ok := LookupRole(opts.Role); ok {
-			tools = a.Tools.Subset(role.Tools...)
+			if !role.InheritTools {
+				tools = a.Tools.Subset(role.Tools...)
+			}
 			if role.System != "" {
 				if extraSystem != "" {
 					extraSystem = role.System + "\n\n" + extraSystem
