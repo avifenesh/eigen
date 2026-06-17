@@ -44,6 +44,13 @@ func key(s string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 }
 
+func TestClipTextHeight(t *testing.T) {
+	got := clipTextHeight("a\nb\nc\n", 2)
+	if got != "a\nb\n" {
+		t.Fatalf("clipTextHeight = %q", got)
+	}
+}
+
 func TestNewAtAndPageByName(t *testing.T) {
 	m := NewAt(testData(), PagePlugins)
 	if m.active != PagePlugins {

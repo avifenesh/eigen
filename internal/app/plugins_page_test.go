@@ -85,7 +85,7 @@ func TestPluginsPageRendersProductSurface(t *testing.T) {
 	m.plugins.catalogMarket = "core"
 	m.plugins.catalog = []pluginpkg.PluginEntry{{Name: "reviewer", Description: "Review code changes", Category: "coding", Version: "0.1.0", Keywords: []string{"review", "git"}}}
 	v = m.plugins.view(m, 100, 30)
-	for _, want := range []string{"1 plugin catalog", "reviewer", "Review code changes", "coding"} {
+	for _, want := range []string{"1 plugins", "reviewer", "Review code changes", "coding"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("marketplace catalog preview missing %q:\n%s", want, v)
 		}

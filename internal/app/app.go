@@ -288,12 +288,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.plugins.err = ""
 		m.plugins.loaded = false
 		m.plugins.load()
+		if len(msg.catalog) > len(m.plugins.catalog) && strings.HasPrefix(msg.status, "refreshed ") {
+			m.plugins.prompt.status = fmt.Sprintf("%s, %d available", msg.status, len(m.plugins.catalog))
+		}
 		m.plugins.catalogList.count = len(m.plugins.catalog)
 		m.plugins.catalogList.cursor, m.plugins.catalogList.top = 0, 0
 		m.plugins.catalogFocus = msg.focus && len(m.plugins.catalog) > 0
 		return m, nil
 	case pluginPreviewDoneMsg:
-		m.plugins.prompt.finish("preview ready")
+		m.plugins.prompt.finish("")
 		if msg.err != "" {
 			m.plugins.err = msg.err
 			m.plugins.catalogPreview = nil
@@ -642,7 +645,7 @@ func (m *Model) renderRailBox(l appLayout) string {
 // at the true content width (l.inner.w) so its own width math (rules, rows) is
 // exact and never wraps against the gutter.
 func (m *Model) renderContentBox(l appLayout) string {
-	page := m.renderPage(l.inner.w, l.inner.h)
+	page := clipTextHeight(m.renderPage(l.inner.w, l.inner.h), l.inner.h)
 	style := sContentBox.Width(l.inner.w + sContentPadH).Height(l.inner.h)
 	if l.bp == bpNarrow {
 		return lipgloss.NewStyle().Width(l.content.w).Height(l.content.h).Render(page)
@@ -651,6 +654,22 @@ func (m *Model) renderContentBox(l appLayout) string {
 }
 
 // renderInspectorBox renders the right inspector (wide breakpoint).
+func clipTextHeight(s string, h int) string {
+	if h <= 0 || s == "" {
+		return ""
+	}
+	trail := strings.HasSuffix(s, "\n")
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) <= h {
+		return s
+	}
+	out := strings.Join(lines[:h], "\n")
+	if trail {
+		out += "\n"
+	}
+	return out
+}
+
 func (m *Model) renderInspectorBox(l appLayout) string {
 	inner := m.inspectorDetail(l.inspInner.w)
 	return sContentBox.Width(l.inspInner.w + sContentPadH).Height(l.inspInner.h).Render(inner)

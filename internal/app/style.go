@@ -72,7 +72,7 @@ func sectionLabel(label string, w int) string {
 	}
 	lw := lipgloss.Width(label)
 	if lw+2 > w {
-		return sFaint.Render(label)
+		return sFaint.Render(truncate(label, w))
 	}
 	return sFaint.Render(label+" ") + sFaint.Render(strings.Repeat("─", w-lw-1))
 }

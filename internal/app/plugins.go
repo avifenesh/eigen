@@ -563,7 +563,7 @@ func (p *pluginsState) refreshMarketplace(mk pluginpkg.MarketRecord, focus bool)
 		}
 		return marketplaceRefreshDoneMsg{
 			marketName: rec.Name,
-			status:     fmt.Sprintf("refreshed marketplace %q — %d plugin(s)", rec.Name, len(mkt.Plugins)),
+			status:     fmt.Sprintf("refreshed %s: %d total", rec.Name, len(mkt.Plugins)),
 			catalog:    append([]pluginpkg.PluginEntry(nil), mkt.Plugins...),
 			focus:      focus,
 		}
@@ -610,7 +610,11 @@ func (p *pluginsState) updateCatalog(m *Model, key string) (bool, tea.Cmd) {
 		return true, p.previewSelectedCatalogPlugin()
 	}
 	visible := p.catalogVisibleRows(m.height)
+	before := p.catalogList.cursor
 	if p.catalogList.key(key, visible) {
+		if p.catalogList.cursor != before {
+			p.prompt.status = ""
+		}
 		return true, nil
 	}
 	// While focused inside the catalog, consume stray keys so page-jump/destructive
@@ -634,6 +638,7 @@ func catalogPreviewKey(name, market string) string {
 }
 
 func (p *pluginsState) toggleSelectedCatalogPlugin() {
+	p.prompt.status = ""
 	entry, ok := p.selectedCatalogEntry()
 	if !ok || strings.TrimSpace(entry.Name) == "" {
 		return
@@ -808,13 +813,13 @@ func (p *pluginsState) hero(w int) string {
 		fmt.Sprintf("%d installed", len(p.installed)),
 		fmt.Sprintf("%d enabled", enabled),
 		fmt.Sprintf("%d marketplaces", len(p.markets)),
-		fmt.Sprintf("%d wired components", len(p.rows)),
+		fmt.Sprintf("%d MCP/hook wiring", len(p.rows)),
 	}
 	sub := "  " + sText.Render(strings.Join(stats, sFaint.Render(" · ")))
 	if w < 72 {
 		return sub + "\n\n"
 	}
-	return sub + "\n" + sFaint.Render("  Install curated Claude-format plugins, scan their prompts, and manage the MCP/skills/hooks they wire into Eigen.") + "\n\n"
+	return sub + "\n" + sFaint.Render("  Claude/Codex plugins: skills, agents, commands, MCP servers, and hooks.") + "\n\n"
 }
 
 func (p *pluginsState) tabs(w int) string {
@@ -884,6 +889,7 @@ func (p *pluginsState) pluginCard(selected bool, pl pluginpkg.InstalledPlugin, r
 		meta += " · v" + pl.Version
 	}
 	name := sText.Render(pad(truncate(pl.Name, 24), 24))
+	meta = truncate(meta, max(10, w-42))
 	line1 := "◆ " + name + " " + status + "  " + sViolet.Render(meta)
 	if selected {
 		line1 = row(true, line1)
@@ -987,7 +993,7 @@ func (p *pluginsState) viewMarketplace(w, h int) string {
 	}
 	out += p.prompt.render()
 	if p.catalogFocus {
-		out += "\n" + sFaint.Render("  j/k choose · v preview · space mark/unmark · i install marked · enter install current · esc back")
+		out += "\n" + sFaint.Render("  j/k · v preview · space mark · i install marked · enter current · esc")
 	} else {
 		out += "\n" + sFaint.Render("  space enable/disable · a add marketplace · enter open catalog · Shift+U pull updates · i install by name · X delete")
 	}
@@ -1028,27 +1034,26 @@ func (p *pluginsState) marketCard(selected bool, mk pluginpkg.MarketRecord, w in
 func (p *pluginsState) marketDetail(mk pluginpkg.MarketRecord, w, h int) string {
 	var b strings.Builder
 	b.WriteString(sectionLabel("catalog", w) + "\n")
-	if mk.Owner != "" {
-		b.WriteString("  " + sDim.Render("owner ") + mk.Owner + "\n")
+	if !p.catalogFocus {
+		if mk.Owner != "" {
+			b.WriteString("  " + sDim.Render("owner ") + mk.Owner + "\n")
+		}
+		state := "enabled"
+		if mk.Disabled {
+			state = "disabled (not searched by installs/update-all)"
+		}
+		b.WriteString("  " + sDim.Render("state ") + state + "\n")
+		b.WriteString("  " + sDim.Render("source ") + truncate(mk.Source, max(12, w-12)) + "\n")
+		b.WriteString("  " + sDim.Render("install ") + "/plugin install <name>@" + mk.Name + "\n")
 	}
-	state := "enabled"
-	if mk.Disabled {
-		state = "disabled (not searched by installs/update-all)"
-	}
-	b.WriteString("  " + sDim.Render("state ") + state + "\n")
-	b.WriteString("  " + sDim.Render("source ") + truncate(mk.Source, max(12, w-12)) + "\n")
-	b.WriteString("  " + sDim.Render("install ") + "/plugin install <name>@" + mk.Name + "\n")
 	if strings.EqualFold(p.catalogMarket, mk.Name) {
 		if len(p.catalog) == 0 {
 			b.WriteString("  " + sFaint.Render("catalog refreshed; no plugins listed") + "\n")
 		} else {
 			marked := len(p.markedCatalogPlugins())
-			label := fmt.Sprintf("%d plugin catalog", len(p.catalog))
+			label := fmt.Sprintf("%d plugins", len(p.catalog))
 			if marked > 0 {
-				label += fmt.Sprintf("  ·  %d marked", marked)
-			}
-			if p.catalogFocus {
-				label += "  ·  v preview  ·  space mark  ·  i install marked  ·  esc back"
+				label += fmt.Sprintf(" · %d marked", marked)
 			}
 			b.WriteString("\n" + sectionLabel(label, w) + "\n")
 			p.catalogList.count = len(p.catalog)
@@ -1081,18 +1086,18 @@ func (p *pluginsState) marketDetail(mk pluginpkg.MarketRecord, w, h int) string 
 				sel := p.catalog[p.catalogList.cursor]
 				if p.catalogPreview != nil && p.catalogPreviewKey == catalogPreviewKey(sel.Name, mk.Name) {
 					b.WriteString("\n" + p.pluginPreviewBlock(p.catalogPreview, w))
-				} else {
-					b.WriteString("  " + sFaint.Render("v previews manifest/components before install") + "\n")
 				}
 			}
 			if !p.catalogFocus {
-				b.WriteString("  " + sFaint.Render("enter focuses this catalog; then j/k choose, v preview, space mark, i install marked") + "\n")
+				b.WriteString("  " + sFaint.Render("enter focus · Shift+U update installed plugins") + "\n")
 			}
 		}
 	} else {
-		b.WriteString("  " + sFaint.Render("enter fetches this catalog; Shift+U pulls updates for installed plugins too") + "\n")
+		b.WriteString("  " + sFaint.Render("enter fetches this catalog; Shift+U updates installed plugins too") + "\n")
 	}
-	b.WriteString("  " + sFaint.Render("installed plugins are not removed when a marketplace is removed") + "\n")
+	if !p.catalogFocus {
+		b.WriteString("  " + sFaint.Render("installed plugins are not removed when a marketplace is removed") + "\n")
+	}
 	return b.String()
 }
 
@@ -1223,7 +1228,7 @@ func (p *pluginsState) pluginPreviewBlock(pv *pluginpkg.PluginPreview, w int) st
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString(sectionLabel("manifest preview", w) + "\n")
+	b.WriteString(sectionLabel("manifest preview · enter install · esc back", w) + "\n")
 	name := pv.Entry.Name
 	version := pv.Entry.Version
 	desc := pv.Entry.Description
