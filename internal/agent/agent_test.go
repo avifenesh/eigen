@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -998,6 +1000,78 @@ func TestSlowButActiveSubtaskSurvives(t *testing.T) {
 
 // TestForegroundPromotesToBackground proves a still-active subtask that outruns
 // the front window is promoted to the background (returns a bg id, not blocked).
+type promotedErrorThenDoneProv struct {
+	calls      atomic.Int32
+	firstDelay time.Duration
+}
+
+func (p *promotedErrorThenDoneProv) Name() string    { return "promoted-error-then-done" }
+func (p *promotedErrorThenDoneProv) ModelID() string { return "promoted-error-then-done" }
+func (p *promotedErrorThenDoneProv) Complete(ctx context.Context, _ llm.Request) (*llm.Response, error) {
+	if p.calls.Add(1) == 1 {
+		select {
+		case <-time.After(p.firstDelay):
+			return nil, fmt.Errorf("promoted failure")
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return &llm.Response{Text: "PROMOTED_RECOVERED"}, nil
+}
+
+type promotedStallThenDoneProv struct {
+	calls atomic.Int32
+}
+
+func (p *promotedStallThenDoneProv) Name() string    { return "promoted-stall-then-done" }
+func (p *promotedStallThenDoneProv) ModelID() string { return "promoted-stall-then-done" }
+func (p *promotedStallThenDoneProv) Complete(ctx context.Context, _ llm.Request) (*llm.Response, error) {
+	if p.calls.Add(1) == 1 {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return &llm.Response{Text: "PROMOTED_UNSTUCK"}, nil
+}
+
+type promotedUnderpoweredThenDoneProv struct {
+	calls      atomic.Int32
+	firstDelay time.Duration
+}
+
+func (p *promotedUnderpoweredThenDoneProv) Name() string    { return "promoted-underpowered-then-done" }
+func (p *promotedUnderpoweredThenDoneProv) ModelID() string { return "promoted-underpowered-then-done" }
+func (p *promotedUnderpoweredThenDoneProv) Complete(ctx context.Context, _ llm.Request) (*llm.Response, error) {
+	if p.calls.Add(1) == 1 {
+		select {
+		case <-time.After(p.firstDelay):
+			return &llm.Response{Text: "I need a stronger model for this task."}, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return &llm.Response{Text: "PROMOTED_STRONGER_RESULT"}, nil
+}
+
+type promotedErrorThenBlockProv struct {
+	calls      atomic.Int32
+	firstDelay time.Duration
+}
+
+func (p *promotedErrorThenBlockProv) Name() string    { return "promoted-error-then-block" }
+func (p *promotedErrorThenBlockProv) ModelID() string { return "promoted-error-then-block" }
+func (p *promotedErrorThenBlockProv) Complete(ctx context.Context, _ llm.Request) (*llm.Response, error) {
+	if p.calls.Add(1) == 1 {
+		select {
+		case <-time.After(p.firstDelay):
+			return nil, fmt.Errorf("promoted failure")
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
 func TestForegroundPromotesToBackground(t *testing.T) {
 	oldIdle, oldGrace, oldFront := stallIdle, heartbeatGrace, frontWindow
 	stallIdle = 10 * time.Second // long: don't stall an active child
@@ -1041,6 +1115,160 @@ func TestForegroundPromotesToBackground(t *testing.T) {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestPromotedBackgroundEscalatesAfterError(t *testing.T) {
+	oldIdle, oldGrace, oldFront, oldModel := stallIdle, heartbeatGrace, frontWindow, modelMaxWait
+	stallIdle = 10 * time.Second
+	modelMaxWait = 10 * time.Second
+	heartbeatGrace = 0
+	frontWindow = 25 * time.Millisecond
+	defer func() { stallIdle, heartbeatGrace, frontWindow, modelMaxWait = oldIdle, oldGrace, oldFront, oldModel }()
+
+	reg := NewBgRegistry(t.TempDir())
+	prov := &promotedErrorThenDoneProv{firstDelay: 80 * time.Millisecond}
+	a := &Agent{Provider: prov, Tools: mustReg(t), Perm: PermAuto, Bg: reg}
+	out, err := a.SubtaskWith(context.Background(), "promote then retry", SubtaskOpts{Difficulty: "trivial"})
+	if err != nil {
+		t.Fatalf("promotion should return immediately, got err=%v", err)
+	}
+	if !strings.Contains(out, "moved to background") {
+		t.Fatalf("expected promotion message, got %q", out)
+	}
+	id := waitForStatus(t, reg, "done")
+	got := reg.Get(id)
+	if got.Result != "PROMOTED_RECOVERED" || got.Attempts != 2 || !got.Escalated || got.Difficulty != "easy" {
+		t.Fatalf("promoted background task should retry one tier up, got %+v", got)
+	}
+	if prov.calls.Load() != 2 {
+		t.Fatalf("expected exactly two provider calls, got %d", prov.calls.Load())
+	}
+}
+
+func TestPromotedBackgroundEscalatesAfterStall(t *testing.T) {
+	oldIdle, oldGrace, oldFront, oldModel := stallIdle, heartbeatGrace, frontWindow, modelMaxWait
+	stallIdle = 70 * time.Millisecond
+	modelMaxWait = 70 * time.Millisecond
+	heartbeatGrace = 0
+	frontWindow = 20 * time.Millisecond
+	defer func() { stallIdle, heartbeatGrace, frontWindow, modelMaxWait = oldIdle, oldGrace, oldFront, oldModel }()
+
+	reg := NewBgRegistry(t.TempDir())
+	prov := &promotedStallThenDoneProv{}
+	a := &Agent{Provider: prov, Tools: mustReg(t), Perm: PermAuto, Bg: reg}
+	if _, err := a.SubtaskWith(context.Background(), "promote then stall", SubtaskOpts{Difficulty: "easy"}); err != nil {
+		t.Fatalf("promotion should return immediately, got err=%v", err)
+	}
+	id := waitForStatus(t, reg, "done")
+	got := reg.Get(id)
+	if got.Result != "PROMOTED_UNSTUCK" || got.Attempts != 2 || !got.Escalated || got.Difficulty != "medium" {
+		t.Fatalf("promoted stalled task should retry one tier up, got %+v", got)
+	}
+}
+
+func TestPromotedBackgroundEscalatesUnderpoweredResult(t *testing.T) {
+	oldIdle, oldGrace, oldFront, oldModel := stallIdle, heartbeatGrace, frontWindow, modelMaxWait
+	stallIdle = 10 * time.Second
+	modelMaxWait = 10 * time.Second
+	heartbeatGrace = 0
+	frontWindow = 25 * time.Millisecond
+	defer func() { stallIdle, heartbeatGrace, frontWindow, modelMaxWait = oldIdle, oldGrace, oldFront, oldModel }()
+
+	reg := NewBgRegistry(t.TempDir())
+	prov := &promotedUnderpoweredThenDoneProv{firstDelay: 80 * time.Millisecond}
+	a := &Agent{Provider: prov, Tools: mustReg(t), Perm: PermAuto, Bg: reg}
+	if _, err := a.SubtaskWith(context.Background(), "promote underpowered", SubtaskOpts{Difficulty: "easy"}); err != nil {
+		t.Fatalf("promotion should return immediately, got err=%v", err)
+	}
+	id := waitForStatus(t, reg, "done")
+	got := reg.Get(id)
+	if got.Result != "PROMOTED_STRONGER_RESULT" || got.Attempts != 2 || !got.Escalated || got.Difficulty != "medium" {
+		t.Fatalf("promoted underpowered task should retry one tier up, got %+v", got)
+	}
+}
+
+func TestPromotedBackgroundDoesNotEscalateExplicitModel(t *testing.T) {
+	oldIdle, oldGrace, oldFront, oldModel := stallIdle, heartbeatGrace, frontWindow, modelMaxWait
+	stallIdle = 10 * time.Second
+	modelMaxWait = 10 * time.Second
+	heartbeatGrace = 0
+	frontWindow = 25 * time.Millisecond
+	defer func() { stallIdle, heartbeatGrace, frontWindow, modelMaxWait = oldIdle, oldGrace, oldFront, oldModel }()
+
+	reg := NewBgRegistry(t.TempDir())
+	prov := &promotedErrorThenDoneProv{firstDelay: 80 * time.Millisecond}
+	a := &Agent{Provider: prov, Tools: mustReg(t), Perm: PermAuto, Bg: reg}
+	if _, err := a.SubtaskWith(context.Background(), "promote pinned", SubtaskOpts{Difficulty: "trivial", Model: "fixed-model"}); err != nil {
+		t.Fatalf("promotion should return without foreground error: %v", err)
+	}
+	id := waitForStatus(t, reg, "error")
+	got := reg.Get(id)
+	if got.Attempts != 1 || got.Escalated || !strings.Contains(got.Error, "promoted failure") {
+		t.Fatalf("explicit model promoted task should not escalate, got %+v", got)
+	}
+	if prov.calls.Load() != 1 {
+		t.Fatalf("explicit model should make exactly one provider call, got %d", prov.calls.Load())
+	}
+}
+
+func TestPromotedBackgroundParentCancelDoesNotRetry(t *testing.T) {
+	oldIdle, oldGrace, oldFront, oldModel := stallIdle, heartbeatGrace, frontWindow, modelMaxWait
+	stallIdle = 10 * time.Second
+	modelMaxWait = 10 * time.Second
+	heartbeatGrace = 0
+	frontWindow = 25 * time.Millisecond
+	defer func() { stallIdle, heartbeatGrace, frontWindow, modelMaxWait = oldIdle, oldGrace, oldFront, oldModel }()
+
+	reg := NewBgRegistry(t.TempDir())
+	prov := &promotedErrorThenDoneProv{firstDelay: 200 * time.Millisecond}
+	a := &Agent{Provider: prov, Tools: mustReg(t), Perm: PermAuto, Bg: reg}
+	ctx, cancelParent := context.WithCancel(context.Background())
+	if _, err := a.SubtaskWith(ctx, "promote then parent cancel", SubtaskOpts{Difficulty: "trivial"}); err != nil {
+		t.Fatalf("promotion should return without foreground error: %v", err)
+	}
+	tasks := reg.List()
+	if len(tasks) != 1 {
+		t.Fatalf("expected one promoted task, got %d", len(tasks))
+	}
+	cancelParent()
+	waitForSpecificTaskStatus(t, reg, tasks[0].ID, "error")
+	got := reg.Get(tasks[0].ID)
+	if got.Attempts != 1 || got.Escalated || prov.calls.Load() != 1 {
+		t.Fatalf("parent-canceled promoted attempt should not retry, got task=%+v calls=%d", got, prov.calls.Load())
+	}
+}
+
+func TestPromotedBackgroundCancelDuringRetryWins(t *testing.T) {
+	oldIdle, oldGrace, oldFront, oldModel := stallIdle, heartbeatGrace, frontWindow, modelMaxWait
+	stallIdle = 10 * time.Second
+	modelMaxWait = 10 * time.Second
+	heartbeatGrace = 0
+	frontWindow = 25 * time.Millisecond
+	defer func() { stallIdle, heartbeatGrace, frontWindow, modelMaxWait = oldIdle, oldGrace, oldFront, oldModel }()
+
+	dir := t.TempDir()
+	reg := NewBgRegistry(dir)
+	prov := &promotedErrorThenBlockProv{firstDelay: 80 * time.Millisecond}
+	a := &Agent{Provider: prov, Tools: mustReg(t), Perm: PermAuto, Bg: reg}
+	if _, err := a.SubtaskWith(context.Background(), "promote cancel retry", SubtaskOpts{Difficulty: "trivial"}); err != nil {
+		t.Fatalf("promotion should return without foreground error: %v", err)
+	}
+	id := waitForStatus(t, reg, "running")
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && prov.calls.Load() < 2 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if prov.calls.Load() < 2 {
+		t.Fatal("retry attempt never started")
+	}
+	if err := RequestCancel(dir, id); err != nil {
+		t.Fatal(err)
+	}
+	waitForSpecificTaskStatus(t, reg, id, "canceled")
+	got := reg.Get(id)
+	if got.Attempts != 2 || got.Status != "canceled" {
+		t.Fatalf("cancel during promoted retry should win, got %+v", got)
 	}
 }
 

@@ -664,26 +664,53 @@ func (a *Agent) promoteRunning(cctx context.Context, cancel context.CancelFunc, 
 	bg := a.Bg
 	go func() {
 		d := <-ch // the same goroutine started in runChild is still running
+		// Snapshot the first attempt's terminal state before cancel() tears down the
+		// promoted context. A parent interrupt/context-cancel should not be retried,
+		// but an idle-stall cancellation should be eligible for one stronger retry.
+		firstCtxCanceled := cctx.Err() != nil
+		firstCanceled := canceled()
+		firstStalled := stalled()
 		cancel()
+
+		res, err := d.out, d.err
+		canceledNow, stalledNow := firstCanceled, firstStalled
+		var firstSummary string
+		parentCanceled := firstCtxCanceled && !firstStalled && !firstCanceled
+		if next, reason, ok := nextBackgroundEscalation(c.opts, err, res, firstStalled); ok && !firstCanceled && !parentCanceled {
+			firstSummary = backgroundAttemptSummary(reason, err)
+			bg.update(id, func(t *BgTask) {
+				t.LastNote = "attempt 1 " + firstSummary + " → escalating to difficulty " + next.Difficulty
+				t.Escalated = true
+			})
+			// The original promoted attempt has ended and its context is canceled before
+			// retry starts, so the task id still has only one live writer at a time.
+			retry := a.runBackgroundAttempt(id, c.task, next, c.depth, 2, nil, "")
+			res, err = retry.result, retry.err
+			canceledNow, stalledNow = retry.canceled, retry.stalled
+			if err != nil && !canceledNow && firstSummary != "" {
+				err = fmt.Errorf("attempt 1 %s; attempt 2: %w", firstSummary, err)
+			}
+		}
+
 		status := "done"
 		bg.update(id, func(t *BgTask) {
 			t.Finished = time.Now()
 			switch {
-			case d.err != nil && canceled():
+			case err != nil && canceledNow:
 				t.Status, t.Error = "canceled", ""
-			case d.err != nil && stalled():
+			case err != nil && stalledNow:
 				t.Status, t.Error = "error", "stalled (no tool activity for "+idle.String()+")"
-			case d.err != nil:
-				t.Status, t.Error = "error", d.err.Error()
+			case err != nil:
+				t.Status, t.Error = "error", err.Error()
 			default:
-				t.Status, t.Result = "done", d.out
+				t.Status, t.Result = "done", res
 			}
 			status = t.Status
 		})
 		if dir := bg.dir; dir != "" {
 			os.Remove(filepath.Join(dir, id+".cancel"))
 		}
-		a.emitBgFinished(id, status, d.err)
+		a.emitBgFinished(id, status, err)
 	}()
 	a.emit(Event{Kind: EventNote, Text: "subtask still working past " + front.String() + " → moved to background " + id + " (task_status " + id + " to collect; you can keep working)"})
 	return id

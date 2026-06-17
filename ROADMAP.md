@@ -135,12 +135,12 @@ Non-goals for v2:
 ### Tier 7 leftovers — background-task escalation + research bets
 
 Open work:
-- [~] **Background-task escalation.** Direct `task(background=true)` subtasks now
-  retry once at the next difficulty tier when they fail, stall, or explicitly
-  report an underpowered model; explicit model overrides are respected and not
-  escalated. Remaining: extend the same retry handoff to foreground subtasks
-  that were promoted into the background, add richer transcript/attempt UI, and
-  handle context-window failures with split/compact rather than blind reroute.
+- [~] **Background-task escalation.** Direct `task(background=true)` subtasks and
+  foreground subtasks promoted into the background now retry once at the next
+  difficulty tier when they fail, stall, or explicitly report an underpowered
+  model; explicit model overrides are respected and not escalated. Remaining:
+  add richer transcript/attempt UI, and handle context-window failures with
+  split/compact rather than blind reroute.
 - [ ] **Child transcript viewer / promote-to-session.** Useful for debugging
   long delegated work, but not required for escalation v1.
 - [ ] **Ultraplan / adversarial expansion / non-LLM heads.** Parked research
