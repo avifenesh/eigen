@@ -31,6 +31,13 @@ func formatTaskStatus(bg *agent.BgRegistry, id string, all bool) string {
 			line += "  " + t.Where
 		}
 		if t.Status == "running" {
+			if t.Attempts > 1 || t.Escalated {
+				attempt := t.Attempts
+				if attempt < 1 {
+					attempt = 1
+				}
+				line += fmt.Sprintf("  attempt %d", attempt)
+			}
 			if t.Steps > 0 {
 				line += fmt.Sprintf("  step %d", t.Steps)
 			}
@@ -40,6 +47,9 @@ func formatTaskStatus(bg *agent.BgRegistry, id string, all bool) string {
 			line += "  " + time.Since(t.Started).Round(time.Second).String()
 			if t.Canceling {
 				line += "  (cancel requested)"
+			}
+			if t.LastNote != "" {
+				line += "  — " + oneLine(t.LastNote)
 			}
 		}
 		if t.Status == "done" && t.Result != "" {

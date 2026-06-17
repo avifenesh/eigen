@@ -36,7 +36,10 @@ type BgTask struct {
 	Kind       string    `json:"kind,omitempty"`
 	Difficulty string    `json:"difficulty,omitempty"`
 	Model      string    `json:"model,omitempty"` // explicit override, if any
-	Status     string    `json:"status"`          // running | done | error | canceled | lost
+	Role       string    `json:"role,omitempty"`
+	Attempts   int       `json:"attempts,omitempty"`
+	Escalated  bool      `json:"escalated,omitempty"`
+	Status     string    `json:"status"` // running | done | error | canceled | lost
 	Result     string    `json:"result,omitempty"`
 	Error      string    `json:"error,omitempty"`
 	Started    time.Time `json:"started"`
@@ -66,6 +69,13 @@ func (t BgTask) Format() string {
 	base := fmt.Sprintf("%s  %s", t.ID, t.Status)
 	if t.Where != "" {
 		base += "  " + t.Where
+	}
+	if t.Attempts > 1 || t.Escalated {
+		attempt := t.Attempts
+		if attempt < 1 {
+			attempt = 1
+		}
+		base += fmt.Sprintf("  attempt %d", attempt)
 	}
 	if !t.Finished.IsZero() {
 		base += "  finished " + t.Finished.Format(time.RFC3339)
@@ -306,8 +316,9 @@ func (a *Agent) SubtaskBackground(ctx context.Context, task string, opts Subtask
 	host, _ := os.Hostname()
 	rec := &BgTask{
 		ID: id, Task: task, Where: where,
-		Kind: opts.Kind, Difficulty: opts.Difficulty, Model: opts.Model,
-		Status: "running", Started: time.Now(),
+		Kind: opts.Kind, Difficulty: opts.Difficulty, Model: opts.Model, Role: opts.Role,
+		Attempts: 1,
+		Status:   "running", Started: time.Now(),
 		Pid: os.Getpid(), Host: host,
 	}
 	if dir := a.Bg.dir; dir != "" {
@@ -319,38 +330,39 @@ func (a *Agent) SubtaskBackground(ctx context.Context, task string, opts Subtask
 	}
 	a.Bg.put(rec)
 
-	// The background transcript is its own durable artifact: every message the
-	// subtask exchanges is rewritten to <id>.transcript.jsonl (one JSON message
-	// per line, same shape as session files) so the run is observable from
-	// outside the process while it lives and auditable after.
-	if dir := a.Bg.dir; dir != "" {
-		tpath := filepath.Join(dir, id+".transcript.jsonl")
-		sub.Persist = func(msgs []llm.Message) { writeTranscript(tpath, msgs) }
-	}
-
-	// Sanitized event bridge (Tier 12): the subtask stays silent in the
-	// parent transcript, but its tool starts/results, notes, and final usage
-	// update the durable record — bounded by step count (never text deltas),
-	// so the tasks panel can show "step 4 · bash · 40s" live.
-	bg := a.Bg
-	sub.OnEvent = bgEventSink(bg, id, nil)
-
 	go func() {
 		// This is deliberately detached from the caller's context: interrupting the
 		// foreground turn does not cancel it. It still shares the daemon process;
 		// the durable jsonl/transcript make it process-like to the orchestrator:
 		// start, poll, collect.
-		bgCtx, cancel := context.WithTimeout(context.Background(), bgMaxRuntime)
-		defer cancel()
-		bgCtx = context.WithValue(bgCtx, subtaskDepthKey{}, depth+1)
-		canceled := watchCancelMarker(bgCtx, cancel, a.Bg, id)
-		res, err := sub.NewSession().Send(bgCtx, task)
+		attempt := a.runBackgroundAttempt(id, task, opts, depth, 1, sub, where)
+		res, err := attempt.result, attempt.err
+		canceled, stalled := attempt.canceled, attempt.stalled
+		var firstSummary string
+		if next, reason, ok := nextBackgroundEscalation(opts, err, res, stalled); ok && !canceled {
+			firstSummary = backgroundAttemptSummary(reason, err)
+			a.Bg.update(id, func(t *BgTask) {
+				t.LastNote = "attempt 1 " + firstSummary + " → escalating to difficulty " + next.Difficulty
+				t.Escalated = true
+			})
+			// runBackgroundAttempt is synchronous: the first attempt's context has
+			// returned before retry starts, so the same task id never has two live
+			// result writers racing to publish a terminal state.
+			retry := a.runBackgroundAttempt(id, task, next, depth, 2, nil, "")
+			res, err = retry.result, retry.err
+			canceled, stalled = retry.canceled, retry.stalled
+			if err != nil && !canceled && firstSummary != "" {
+				err = fmt.Errorf("attempt 1 %s; attempt 2: %w", firstSummary, err)
+			}
+		}
 		status := "done"
 		a.Bg.update(id, func(t *BgTask) {
 			t.Finished = time.Now()
 			switch {
-			case err != nil && canceled():
+			case err != nil && canceled:
 				t.Status, t.Error = "canceled", ""
+			case err != nil && stalled:
+				t.Status, t.Error = "error", "stalled (no tool activity for "+stallIdle.String()+")"
 			case err != nil:
 				t.Status, t.Error = "error", err.Error()
 			default:
@@ -369,6 +381,110 @@ func (a *Agent) SubtaskBackground(ctx context.Context, task string, opts Subtask
 		label += " (" + where + ")"
 	}
 	return label + " — continue working; check with task_status, or collect when the finish note arrives", nil
+}
+
+type bgAttemptOutcome struct {
+	result   string
+	err      error
+	canceled bool
+	stalled  bool
+	where    string
+}
+
+func (a *Agent) runBackgroundAttempt(id, task string, opts SubtaskOpts, depth, attempt int, sub *Agent, where string) bgAttemptOutcome {
+	if sub == nil {
+		sub, where = a.subAgent(context.Background(), task, opts)
+	}
+	a.Bg.update(id, func(t *BgTask) {
+		t.Where = where
+		t.Kind = opts.Kind
+		t.Difficulty = opts.Difficulty
+		t.Model = opts.Model
+		t.Role = opts.Role
+		t.Attempts = attempt
+		t.Status = "running"
+		t.Error = ""
+		t.Result = ""
+	})
+
+	// The background transcript is its own durable artifact: every message the
+	// subtask exchanges is rewritten to <id>.transcript.jsonl (one JSON message
+	// per line, same shape as session files) so the run is observable from
+	// outside the process while it lives and auditable after. A retry rewrites the
+	// same artifact with the latest attempt's transcript; the task jsonl keeps the
+	// full attempt history/status trail.
+	if dir := a.Bg.dir; dir != "" {
+		tpath := filepath.Join(dir, id+".transcript.jsonl")
+		sub.Persist = func(msgs []llm.Message) { writeTranscript(tpath, msgs) }
+	}
+
+	// Sanitized event bridge (Tier 12) plus heartbeat-based stall detection. The
+	// subtask stays silent in the parent transcript, while task_status gets live
+	// progress and a hung background task can be escalated instead of wedging.
+	hb := newHeartbeat()
+	sub.OnEvent = activitySink(hb, bgEventSink(a.Bg, id, nil))
+	sub.onModelCall = hb.modelStart
+
+	bgCtx, cancel := context.WithTimeout(context.Background(), bgMaxRuntime)
+	defer cancel()
+	bgCtx = context.WithValue(bgCtx, subtaskDepthKey{}, depth+1)
+	canceled := watchCancelMarker(bgCtx, cancel, a.Bg, id)
+	stalled := watchStall(bgCtx, hb, cancel, stallIdle, modelMaxWait, heartbeatGrace)
+	res, err := sub.NewSession().Send(bgCtx, task)
+	return bgAttemptOutcome{result: res, err: err, canceled: canceled(), stalled: stalled(), where: where}
+}
+
+func nextBackgroundEscalation(opts SubtaskOpts, err error, result string, stalled bool) (SubtaskOpts, string, bool) {
+	if strings.TrimSpace(opts.Model) != "" {
+		return opts, "", false
+	}
+	up := escalateDifficulty(opts.Difficulty)
+	if up == opts.Difficulty {
+		return opts, "", false
+	}
+	var reason string
+	switch {
+	case stalled:
+		reason = "stalled"
+	case err != nil:
+		reason = "failed"
+	case reportsUnderpowered(result):
+		reason = "reported underpowered model"
+	default:
+		return opts, "", false
+	}
+	next := opts
+	next.Difficulty = up
+	return next, reason, true
+}
+
+func backgroundAttemptSummary(reason string, err error) string {
+	if err != nil && reason == "failed" {
+		return reason + ": " + truncateForNote(err.Error())
+	}
+	return reason
+}
+
+// reportsUnderpowered is intentionally narrow and checks only the final answer,
+// not streamed partials. Context-window complaints are not retried here: raising
+// difficulty is not guaranteed to increase context, so context overflow needs a
+// separate split/compact strategy rather than a blind stronger-model retry.
+func reportsUnderpowered(s string) bool {
+	lower := strings.ToLower(s)
+	phrases := []string{
+		"underpowered model",
+		"need a stronger model",
+		"needs a stronger model",
+		"stronger model required",
+		"model too weak",
+		"too weak for this task",
+	}
+	for _, p := range phrases {
+		if strings.Contains(lower, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // watchCancelMarker polls for <id>.cancel while the task runs (the
@@ -527,8 +643,9 @@ func (a *Agent) promoteRunning(cctx context.Context, cancel context.CancelFunc, 
 	host, _ := os.Hostname()
 	rec := &BgTask{
 		ID: id, Task: c.task, Where: c.where,
-		Kind: c.opts.Kind, Difficulty: c.opts.Difficulty, Model: c.opts.Model,
-		Status: "running", Started: time.Now(),
+		Kind: c.opts.Kind, Difficulty: c.opts.Difficulty, Model: c.opts.Model, Role: c.opts.Role,
+		Attempts: 1,
+		Status:   "running", Started: time.Now(),
 		Pid: os.Getpid(), Host: host,
 		LastNote: "promoted from foreground (still working past " + front.String() + ")",
 	}

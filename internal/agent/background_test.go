@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -195,6 +197,173 @@ func TestBackgroundProgressBridge(t *testing.T) {
 	}
 }
 
+type bgErrorThenDoneProv struct{ calls atomic.Int32 }
+
+func (p *bgErrorThenDoneProv) ModelID() string { return "test" }
+func (p *bgErrorThenDoneProv) Name() string    { return "test" }
+func (p *bgErrorThenDoneProv) Complete(context.Context, llm.Request) (*llm.Response, error) {
+	if p.calls.Add(1) == 1 {
+		return nil, fmt.Errorf("small model failed")
+	}
+	return &llm.Response{Text: "RECOVERED"}, nil
+}
+
+func TestBackgroundEscalatesAfterError(t *testing.T) {
+	reg := newTestRegistry(t, t.TempDir())
+	a := &Agent{Provider: &bgErrorThenDoneProv{}, Tools: proberRegistry(t), Perm: PermAuto, Bg: reg}
+	if _, err := a.SubtaskBackground(context.Background(), "harder than expected", SubtaskOpts{Difficulty: "trivial"}); err != nil {
+		t.Fatal(err)
+	}
+	id := waitForStatus(t, reg, "done")
+	got := reg.Get(id)
+	if got.Result != "RECOVERED" || got.Attempts != 2 || !got.Escalated || got.Difficulty != "easy" {
+		t.Fatalf("background task should retry one tier up, got %+v", got)
+	}
+	if got.LastNote == "" || !strings.Contains(got.LastNote, "escalating") {
+		t.Fatalf("escalation note missing: %+v", got)
+	}
+}
+
+type bgUnderpoweredThenDoneProv struct{ calls atomic.Int32 }
+
+func (p *bgUnderpoweredThenDoneProv) ModelID() string { return "test" }
+func (p *bgUnderpoweredThenDoneProv) Name() string    { return "test" }
+func (p *bgUnderpoweredThenDoneProv) Complete(context.Context, llm.Request) (*llm.Response, error) {
+	if p.calls.Add(1) == 1 {
+		return &llm.Response{Text: "I need a stronger model for this task."}, nil
+	}
+	return &llm.Response{Text: "STRONGER_RESULT"}, nil
+}
+
+func TestBackgroundEscalatesExplicitUnderpoweredResult(t *testing.T) {
+	reg := newTestRegistry(t, t.TempDir())
+	a := &Agent{Provider: &bgUnderpoweredThenDoneProv{}, Tools: proberRegistry(t), Perm: PermAuto, Bg: reg}
+	if _, err := a.SubtaskBackground(context.Background(), "do it", SubtaskOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	id := waitForStatus(t, reg, "done")
+	got := reg.Get(id)
+	if got.Result != "STRONGER_RESULT" || got.Attempts != 2 || got.Difficulty != "easy" {
+		t.Fatalf("explicit underpowered result should retry, got %+v", got)
+	}
+}
+
+func TestBackgroundDoesNotEscalateExplicitModel(t *testing.T) {
+	reg := newTestRegistry(t, t.TempDir())
+	a := &Agent{Provider: &bgErrorThenDoneProv{}, Tools: proberRegistry(t), Perm: PermAuto, Bg: reg}
+	if _, err := a.SubtaskBackground(context.Background(), "use pinned model", SubtaskOpts{Model: "fixed-model", Difficulty: "trivial"}); err != nil {
+		t.Fatal(err)
+	}
+	id := waitForStatus(t, reg, "error")
+	got := reg.Get(id)
+	if got.Attempts != 1 || got.Escalated || !strings.Contains(got.Error, "small model failed") {
+		t.Fatalf("explicit model should not be escalated, got %+v", got)
+	}
+}
+
+func TestBackgroundDoesNotEscalateAtHard(t *testing.T) {
+	reg := newTestRegistry(t, t.TempDir())
+	a := &Agent{Provider: &bgErrorThenDoneProv{}, Tools: proberRegistry(t), Perm: PermAuto, Bg: reg}
+	if _, err := a.SubtaskBackground(context.Background(), "already max", SubtaskOpts{Difficulty: "hard"}); err != nil {
+		t.Fatal(err)
+	}
+	id := waitForStatus(t, reg, "error")
+	got := reg.Get(id)
+	if got.Attempts != 1 || got.Escalated || got.Difficulty != "hard" {
+		t.Fatalf("hard task should not retry same tier, got %+v", got)
+	}
+}
+
+type bgAlwaysErrorProv struct{ calls atomic.Int32 }
+
+func (p *bgAlwaysErrorProv) ModelID() string { return "test" }
+func (p *bgAlwaysErrorProv) Name() string    { return "test" }
+func (p *bgAlwaysErrorProv) Complete(context.Context, llm.Request) (*llm.Response, error) {
+	return nil, fmt.Errorf("failure %d", p.calls.Add(1))
+}
+
+func TestBackgroundRetryFailurePreservesFirstError(t *testing.T) {
+	reg := newTestRegistry(t, t.TempDir())
+	a := &Agent{Provider: &bgAlwaysErrorProv{}, Tools: proberRegistry(t), Perm: PermAuto, Bg: reg}
+	if _, err := a.SubtaskBackground(context.Background(), "fails twice", SubtaskOpts{Difficulty: "trivial"}); err != nil {
+		t.Fatal(err)
+	}
+	id := waitForStatus(t, reg, "error")
+	got := reg.Get(id)
+	if got.Attempts != 2 || !strings.Contains(got.Error, "attempt 1 failed: failure 1") || !strings.Contains(got.Error, "attempt 2: failure 2") {
+		t.Fatalf("retry failure should keep both errors, got %+v", got)
+	}
+}
+
+type bgErrorThenBlockProv struct{ calls atomic.Int32 }
+
+func (p *bgErrorThenBlockProv) ModelID() string { return "test" }
+func (p *bgErrorThenBlockProv) Name() string    { return "test" }
+func (p *bgErrorThenBlockProv) Complete(ctx context.Context, _ llm.Request) (*llm.Response, error) {
+	if p.calls.Add(1) == 1 {
+		return nil, fmt.Errorf("first failure")
+	}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestBackgroundCancelDuringRetryWins(t *testing.T) {
+	dir := t.TempDir()
+	reg := newTestRegistry(t, dir)
+	prov := &bgErrorThenBlockProv{}
+	a := &Agent{Provider: prov, Tools: proberRegistry(t), Perm: PermAuto, Bg: reg}
+	if _, err := a.SubtaskBackground(context.Background(), "cancel retry", SubtaskOpts{Difficulty: "trivial"}); err != nil {
+		t.Fatal(err)
+	}
+	id := waitForStatus(t, reg, "running")
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && prov.calls.Load() < 2 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if prov.calls.Load() < 2 {
+		t.Fatal("retry attempt never started")
+	}
+	if err := RequestCancel(dir, id); err != nil {
+		t.Fatal(err)
+	}
+	waitForSpecificTaskStatus(t, reg, id, "canceled")
+	got := reg.Get(id)
+	if got.Attempts != 2 || got.Status != "canceled" {
+		t.Fatalf("cancel during retry should win, got %+v", got)
+	}
+}
+
+type bgStallThenDoneProv struct{ calls atomic.Int32 }
+
+func (p *bgStallThenDoneProv) ModelID() string { return "test" }
+func (p *bgStallThenDoneProv) Name() string    { return "test" }
+func (p *bgStallThenDoneProv) Complete(ctx context.Context, _ llm.Request) (*llm.Response, error) {
+	if p.calls.Add(1) == 1 {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return &llm.Response{Text: "UNSTUCK"}, nil
+}
+
+func TestBackgroundEscalatesAfterStall(t *testing.T) {
+	oldIdle, oldGrace, oldModel := stallIdle, heartbeatGrace, modelMaxWait
+	stallIdle = 40 * time.Millisecond
+	modelMaxWait = 40 * time.Millisecond
+	heartbeatGrace = 0
+	defer func() { stallIdle, heartbeatGrace, modelMaxWait = oldIdle, oldGrace, oldModel }()
+
+	reg := newTestRegistry(t, t.TempDir())
+	a := &Agent{Provider: &bgStallThenDoneProv{}, Tools: proberRegistry(t), Perm: PermAuto, Bg: reg}
+	if _, err := a.SubtaskBackground(context.Background(), "unstick", SubtaskOpts{Difficulty: "easy"}); err != nil {
+		t.Fatal(err)
+	}
+	id := waitForStatus(t, reg, "done")
+	got := reg.Get(id)
+	if got.Result != "UNSTUCK" || got.Attempts != 2 || got.Difficulty != "medium" {
+		t.Fatalf("stalled background task should retry one tier up, got %+v", got)
+	}
+}
+
 // slowBgProv blocks until its context dies (cancel-marker test).
 type slowBgProv struct{}
 
@@ -267,6 +436,18 @@ func waitForStatus(t *testing.T, reg *BgRegistry, status string) string {
 	}
 	t.Fatalf("no task reached %q (have: %s)", status, dump)
 	return ""
+}
+
+func waitForSpecificTaskStatus(t *testing.T, reg *BgRegistry, id, status string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if got := reg.Get(id); got != nil && got.Status == status {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("task %s did not reach %q (got %+v)", id, status, reg.Get(id))
 }
 
 func TestTasksDirInstanceScoping(t *testing.T) {
