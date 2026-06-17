@@ -122,6 +122,10 @@ func (h *homeState) view(m *Model, w, _ int) string {
 	s += "  " + stats + "\n"
 	s += sFaint.Render(strings.Repeat("─", min(w, 60))) + "\n\n"
 
+	if obs := homeObserveSignal(d, w); obs != "" {
+		s += obs + "\n"
+	}
+
 	// Working now: live daemon sessions currently active — the command-center
 	// at-a-glance "what's running". Read-only (the cursor walks feed+recent);
 	// act on them from the live/sessions pages or the rail.
@@ -178,6 +182,27 @@ func (h *homeState) view(m *Model, w, _ int) string {
 	}
 	s += "\n" + sFaint.Render("  enter act · space details · x remove · n new · s sessions · p projects")
 	return s
+}
+
+func homeObserveSignal(d *Data, w int) string {
+	if d == nil || d.Observe.Records == 0 {
+		return ""
+	}
+	errs := countTotal(d.Observe.Errors)
+	toolErrs := 0
+	for _, t := range d.Observe.Tools {
+		toolErrs += t.Errors
+	}
+	hookErrs := 0
+	for _, h := range d.Observe.Hooks {
+		hookErrs += h.Errors
+	}
+	routeNotes := d.Observe.Subagents.RouteNotes
+	if errs == 0 && toolErrs == 0 && hookErrs == 0 && routeNotes == 0 {
+		return ""
+	}
+	label := fmt.Sprintf("observe: %d error kind(s), %d tool failure(s), %d hook failure(s), %d route note(s)", errs, toolErrs, hookErrs, routeNotes)
+	return "  " + sWarn.Render(truncate(label, max(20, w-2))) + "\n" + sFaint.Render("  press o for telemetry dashboard") + "\n"
 }
 
 // clickAt handles a content-local click on the home page: select the row, or

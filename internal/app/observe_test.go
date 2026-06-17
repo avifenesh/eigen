@@ -52,6 +52,21 @@ func TestObservePageRendersTelemetry(t *testing.T) {
 	}
 }
 
+func TestHomeSurfacesObserveAttention(t *testing.T) {
+	d := testData()
+	d.Observe = observe.Summary{
+		Records:   10,
+		Errors:    map[string]int{"denied": 1},
+		Tools:     map[string]observe.ToolSummary{"bash": {Calls: 1, Errors: 1}},
+		Subagents: observe.SubagentSummary{RouteNotes: 2},
+	}
+	m := NewAt(d, PageHome)
+	out := m.home.view(m, 90, 30)
+	if !strings.Contains(out, "observe:") || !strings.Contains(out, "press o for telemetry dashboard") {
+		t.Fatalf("home should surface observability attention:\n%s", out)
+	}
+}
+
 func TestObservePageAlias(t *testing.T) {
 	p, ok := PageByName("observability")
 	if !ok || p != PageObserve {
