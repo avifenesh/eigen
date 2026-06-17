@@ -297,6 +297,33 @@ func TestLiveLabelFallsBackToDirThenID(t *testing.T) {
 	}
 }
 
+func TestModelsAndProvidersPagesShowRoutingContext(t *testing.T) {
+	d := testData()
+	d.Config.Route = true
+	m := NewAt(d, PageModels)
+	m.models.rows = []ModelRow{
+		{ID: "fast", Provider: "grok", Window: 128000, Available: true, Tags: "vision"},
+		{ID: "smart", Provider: "codex", Window: 272000, Available: false, Tags: "reasoning search"},
+	}
+	m.models.list.count = len(m.models.rows)
+	out := m.models.view(m, 100, 30)
+	for _, want := range []string{"1 available", "2 providers", "1 reasoning", "1 vision", "selected: grok", "fast"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("models page missing %q:\n%s", want, out)
+		}
+	}
+
+	m.active = PageProviders
+	m.providers.rows = []ProviderRow{{Name: "grok", Available: true, Models: 2, Default: "grok-build"}, {Name: "codex", Models: 1}}
+	m.providers.list.count = len(m.providers.rows)
+	out = m.providers.view(m, 100, 30)
+	for _, want := range []string{"route on", "all credentialed providers", "1/2 available", "3 models", "selected: grok", "grok-build"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("providers page missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestProjectsPageSummaryAndSelectedDetail(t *testing.T) {
 	d := testData()
 	d.Projects = []ProjectRow{

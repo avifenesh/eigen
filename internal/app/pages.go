@@ -429,7 +429,8 @@ func (s *modelsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (s *modelsState) view(m *Model, w, h int) string {
 	out := pageTitle("models", fmt.Sprintf("%d in catalog", len(s.rows)), w)
-	visible := h - 5
+	out += modelsSummaryLine(s.rows, w) + "\n\n"
+	visible := h - 8
 	from, to := s.list.window(visible)
 	for i := from; i < to; i++ {
 		r := s.rows[i]
@@ -446,8 +447,47 @@ func (s *modelsState) view(m *Model, w, h int) string {
 			sFaint.Render(r.Tags))
 		out += row(i == s.list.cursor, line) + "\n"
 	}
+	if s.list.cursor >= 0 && s.list.cursor < len(s.rows) {
+		out += "\n" + modelSelectedDetail(s.rows[s.list.cursor], w) + "\n"
+	}
 	out += "\n" + sFaint.Render("  ● available (credentialed) · default set via /config model")
 	return out
+}
+
+func modelsSummaryLine(rows []ModelRow, w int) string {
+	var available, vision, search, reasoning int
+	providers := map[string]bool{}
+	for _, r := range rows {
+		providers[r.Provider] = true
+		if r.Available {
+			available++
+		}
+		if strings.Contains(r.Tags, "vision") {
+			vision++
+		}
+		if strings.Contains(r.Tags, "search") {
+			search++
+		}
+		if strings.Contains(r.Tags, "reasoning") {
+			reasoning++
+		}
+	}
+	parts := []string{
+		fmt.Sprintf("%d available", available),
+		fmt.Sprintf("%d providers", len(providers)),
+		fmt.Sprintf("%d reasoning", reasoning),
+		fmt.Sprintf("%d vision", vision),
+		fmt.Sprintf("%d search", search),
+	}
+	return sFaint.Render("  " + truncate(strings.Join(parts, "  ·  "), max(20, w-2)))
+}
+
+func modelSelectedDetail(r ModelRow, w int) string {
+	line := fmt.Sprintf("selected: %s · %s · context %dk", r.Provider, r.ID, r.Window/1000)
+	if r.Tags != "" {
+		line += " · " + r.Tags
+	}
+	return sFaint.Render("  " + truncate(line, max(20, w-2)))
 }
 
 // providersState shows credential status per provider.
@@ -467,22 +507,69 @@ func (s *providersState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (s *providersState) view(m *Model, w, h int) string {
-	out := pageTitle("providers", "", w)
-	from, to := s.list.window(h - 5)
+	out := pageTitle("providers", providerSubtitle(m.data), w)
+	out += providersSummaryLine(s.rows, w) + "\n\n"
+	from, to := s.list.window(h - 8)
 	for i := from; i < to; i++ {
 		r := s.rows[i]
-		status := sErr.Render("no credentials")
+		statusText := "missing"
+		status := sErr.Render(statusText)
 		if r.Available {
-			status = sOk.Render("available")
+			statusText = "available"
+			status = sOk.Render(statusText)
+		}
+		defaultModel := r.Default
+		if defaultModel == "" {
+			defaultModel = "(provider default)"
 		}
 		line := fmt.Sprintf("%s %s %s %s",
 			pad(r.Name, 12),
-			pad(status, 16),
-			sViolet.Render(pad(fmt.Sprintf("%d models", r.Models), 10)),
-			sDim.Render("default: "+r.Default))
+			pad(statusText, 11),
+			pad(fmt.Sprintf("%d models", r.Models), 10),
+			"default: "+truncate(defaultModel, max(8, w-42)))
+		line = strings.Replace(line, statusText, status, 1)
 		out += row(i == s.list.cursor, line) + "\n"
 	}
+	if s.list.cursor >= 0 && s.list.cursor < len(s.rows) {
+		out += "\n" + providerSelectedDetail(s.rows[s.list.cursor], w) + "\n"
+	}
+	out += "\n" + sFaint.Render("  credentials external · edit route_providers in config")
 	return out
+}
+
+func providerSubtitle(d *Data) string {
+	if d == nil || !d.Config.Route {
+		return "route off"
+	}
+	if len(d.Config.RouteProviders) == 0 {
+		return "route on · all credentialed providers"
+	}
+	return "route on · " + strings.Join(d.Config.RouteProviders, " ")
+}
+
+func providersSummaryLine(rows []ProviderRow, w int) string {
+	var available, models int
+	for _, r := range rows {
+		models += r.Models
+		if r.Available {
+			available++
+		}
+	}
+	parts := []string{fmt.Sprintf("%d/%d available", available, len(rows)), fmt.Sprintf("%d models", models)}
+	return sFaint.Render("  " + truncate(strings.Join(parts, "  ·  "), max(20, w-2)))
+}
+
+func providerSelectedDetail(r ProviderRow, w int) string {
+	status := "missing credentials"
+	if r.Available {
+		status = "available"
+	}
+	def := r.Default
+	if def == "" {
+		def = "provider default"
+	}
+	line := fmt.Sprintf("selected: %s · %s · %d model(s) · default %s", r.Name, status, r.Models, def)
+	return sFaint.Render("  " + truncate(line, max(20, w-2)))
 }
 
 // memoryState shows global memory as selectable bullets: d deletes one
