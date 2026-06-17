@@ -1065,6 +1065,28 @@ func TestSlowButActiveSubtaskSurvives(t *testing.T) {
 
 // TestForegroundPromotesToBackground proves a still-active subtask that outruns
 // the front window is promoted to the background (returns a bg id, not blocked).
+type promotedOverflowThenDoneProv struct {
+	calls      atomic.Int32
+	firstDelay time.Duration
+}
+
+func (p *promotedOverflowThenDoneProv) Name() string    { return "promoted-overflow-then-done" }
+func (p *promotedOverflowThenDoneProv) ModelID() string { return "promoted-overflow-then-done" }
+func (p *promotedOverflowThenDoneProv) Complete(ctx context.Context, req llm.Request) (*llm.Response, error) {
+	if p.calls.Add(1) == 1 {
+		select {
+		case <-time.After(p.firstDelay):
+			return nil, fmt.Errorf("ValidationException: context window exceeded")
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	if len(req.Messages) == 0 || !strings.Contains(req.Messages[0].Text, "compacted") {
+		return nil, fmt.Errorf("retry did not use compacted prompt")
+	}
+	return &llm.Response{Text: "PROMOTED_CONTEXT_RECOVERED"}, nil
+}
+
 type promotedErrorThenDoneProv struct {
 	calls      atomic.Int32
 	firstDelay time.Duration
@@ -1208,6 +1230,32 @@ func TestPromotedBackgroundEscalatesAfterError(t *testing.T) {
 	}
 	if prov.calls.Load() != 2 {
 		t.Fatalf("expected exactly two provider calls, got %d", prov.calls.Load())
+	}
+}
+
+func TestPromotedBackgroundCompactsContextOverflow(t *testing.T) {
+	oldIdle, oldGrace, oldFront, oldModel := stallIdle, heartbeatGrace, frontWindow, modelMaxWait
+	stallIdle = 10 * time.Second
+	modelMaxWait = 10 * time.Second
+	heartbeatGrace = 0
+	frontWindow = 25 * time.Millisecond
+	defer func() { stallIdle, heartbeatGrace, frontWindow, modelMaxWait = oldIdle, oldGrace, oldFront, oldModel }()
+
+	reg := NewBgRegistry(t.TempDir())
+	prov := &promotedOverflowThenDoneProv{firstDelay: 80 * time.Millisecond}
+	a := &Agent{Provider: prov, Tools: mustReg(t), Perm: PermAuto, Bg: reg, MaxContextTokens: 4000}
+	longTask := "important head " + strings.Repeat("middle detail ", 6000) + " important tail"
+	out, err := a.SubtaskWith(context.Background(), longTask, SubtaskOpts{Difficulty: "medium"})
+	if err != nil {
+		t.Fatalf("promotion should return immediately, got err=%v", err)
+	}
+	if !strings.Contains(out, "moved to background") {
+		t.Fatalf("expected promotion message, got %q", out)
+	}
+	id := waitForStatus(t, reg, "done")
+	got := reg.Get(id)
+	if got.Result != "PROMOTED_CONTEXT_RECOVERED" || got.Attempts != 2 || got.Escalated || got.Difficulty != "medium" {
+		t.Fatalf("promoted context overflow should compact/retry without escalation, got %+v", got)
 	}
 }
 

@@ -380,7 +380,18 @@ func (a *Agent) SubtaskBackground(ctx context.Context, task string, opts Subtask
 		res, err := attempt.result, attempt.err
 		canceled, stalled := attempt.canceled, attempt.stalled
 		var firstSummary string
-		if next, reason, ok := nextBackgroundEscalation(opts, err, res, stalled); ok && !canceled {
+		if compactedTask, reason, ok := a.nextBackgroundContextRetry(context.Background(), task, attempt); ok && !canceled {
+			firstSummary = reason
+			a.Bg.update(id, func(t *BgTask) {
+				t.LastNote = "attempt 1 " + reason
+			})
+			retry := a.runBackgroundAttempt(id, compactedTask, opts, depth, 2, nil, "")
+			res, err = retry.result, retry.err
+			canceled, stalled = retry.canceled, retry.stalled
+			if err != nil && !canceled && firstSummary != "" {
+				err = fmt.Errorf("attempt 1 %s; attempt 2: %w", firstSummary, err)
+			}
+		} else if next, reason, ok := nextBackgroundEscalation(opts, err, res, stalled); ok && !canceled {
 			firstSummary = backgroundAttemptSummary(reason, err)
 			a.Bg.update(id, func(t *BgTask) {
 				t.LastNote = "attempt 1 " + firstSummary + " → escalating to difficulty " + next.Difficulty
@@ -430,6 +441,7 @@ type bgAttemptOutcome struct {
 	canceled bool
 	stalled  bool
 	where    string
+	messages []llm.Message
 }
 
 func (a *Agent) runBackgroundAttempt(id, task string, opts SubtaskOpts, depth, attempt int, sub *Agent, where string) bgAttemptOutcome {
@@ -471,12 +483,118 @@ func (a *Agent) runBackgroundAttempt(id, task string, opts SubtaskOpts, depth, a
 	bgCtx = context.WithValue(bgCtx, subtaskDepthKey{}, depth+1)
 	canceled := watchCancelMarker(bgCtx, cancel, a.Bg, id)
 	stalled := watchStall(bgCtx, hb, cancel, stallIdle, modelMaxWait, heartbeatGrace)
-	res, err := sub.NewSession().Send(bgCtx, task)
-	return bgAttemptOutcome{result: res, err: err, canceled: canceled(), stalled: stalled(), where: where}
+	sess := sub.NewSession()
+	res, err := sess.Send(bgCtx, task)
+	return bgAttemptOutcome{result: res, err: err, canceled: canceled(), stalled: stalled(), where: where, messages: sess.snapshot()}
+}
+
+func (a *Agent) nextBackgroundContextRetry(ctx context.Context, task string, attempt bgAttemptOutcome) (string, string, bool) {
+	if !llm.IsContextOverflow(attempt.err) {
+		return "", "", false
+	}
+	target := backgroundContextRetryTarget(a, attempt.messages)
+	if len(attempt.messages) > 1 {
+		// Use deterministic compaction here rather than another model call: this path
+		// is already recovering from a model context rejection, so the retry should
+		// split/shed locally and avoid a second potentially-too-large compactor call.
+		if compacted, err := llm.CompactWith(ctx, nil, attempt.messages, target); err == nil && llm.EstimateTokens(compacted) < llm.EstimateTokens(attempt.messages) {
+			return compactedBackgroundTask(task, compacted), "exceeded context window; retrying with compacted transcript", true
+		}
+	}
+	compactedTask := compactOversizedTaskText(task, target)
+	if compactedTask == task {
+		return "", "exceeded context window; unable to compact task", false
+	}
+	return compactedTask, "exceeded context window; retrying with compacted task prompt", true
+}
+
+func backgroundContextRetryTarget(a *Agent, msgs []llm.Message) int {
+	budget := a.maxContextTokens()
+	target := 8000
+	if budget > 0 {
+		target = budget / 2
+		if target > 16000 {
+			target = 16000
+		}
+	}
+	if cur := llm.EstimateTokens(msgs); cur > 0 && cur/2 < target {
+		target = cur / 2
+	}
+	if target < 1000 {
+		target = 1000
+	}
+	return target
+}
+
+func compactedBackgroundTask(original string, msgs []llm.Message) string {
+	var b strings.Builder
+	b.WriteString("The previous background subtask attempt exceeded the model context window. Continue from this compacted transcript instead of rerouting to a stronger model. If omitted details are needed, inspect the project/files with tools rather than guessing.\n\n")
+	if strings.TrimSpace(original) != "" {
+		b.WriteString("Original task summary/excerpt:\n")
+		b.WriteString(compactOversizedText(original, 1200))
+		b.WriteString("\n\n")
+	}
+	b.WriteString("Compacted transcript:\n")
+	for _, m := range msgs {
+		label := string(m.Role)
+		if m.Role == llm.RoleTool && m.ToolName != "" {
+			label += "/" + m.ToolName
+		}
+		text := m.Text
+		if text == "" && len(m.ToolCalls) > 0 {
+			var names []string
+			for _, tc := range m.ToolCalls {
+				if tc.Name != "" {
+					names = append(names, tc.Name)
+				}
+			}
+			if len(names) > 0 {
+				text = "tool calls: " + strings.Join(names, ", ")
+			}
+		}
+		if text == "" {
+			continue
+		}
+		b.WriteString("\n[" + label + "]\n")
+		b.WriteString(compactOversizedText(text, 4000))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func compactOversizedTaskText(task string, maxTokens int) string {
+	if strings.TrimSpace(task) == "" {
+		return task
+	}
+	body := compactOversizedText(task, maxTokens*4)
+	if body == task {
+		return task
+	}
+	return "The original background subtask prompt exceeded the model context window and was compacted before retrying. Preserve the user's intent from this head/tail excerpt. If omitted details are needed, inspect the repo/files with tools rather than guessing.\n\n" + body
+}
+
+func compactOversizedText(s string, maxChars int) string {
+	if maxChars < 1000 {
+		maxChars = 1000
+	}
+	r := []rune(s)
+	if len(r) <= maxChars {
+		return s
+	}
+	head := maxChars * 3 / 5
+	tail := maxChars - head
+	if head < 1 {
+		head = 1
+	}
+	if tail < 1 {
+		tail = 1
+	}
+	omitted := len(r) - head - tail
+	return string(r[:head]) + fmt.Sprintf("\n\n[... %d characters omitted from oversized prompt ...]\n\n", omitted) + string(r[len(r)-tail:])
 }
 
 func nextBackgroundEscalation(opts SubtaskOpts, err error, result string, stalled bool) (SubtaskOpts, string, bool) {
-	if strings.TrimSpace(opts.Model) != "" {
+	if strings.TrimSpace(opts.Model) != "" || llm.IsContextOverflow(err) {
 		return opts, "", false
 	}
 	up := escalateDifficulty(opts.Difficulty)
@@ -717,7 +835,18 @@ func (a *Agent) promoteRunning(cctx context.Context, cancel context.CancelFunc, 
 		canceledNow, stalledNow := firstCanceled, firstStalled
 		var firstSummary string
 		parentCanceled := firstCtxCanceled && !firstStalled && !firstCanceled
-		if next, reason, ok := nextBackgroundEscalation(c.opts, err, res, firstStalled); ok && !firstCanceled && !parentCanceled {
+		if compactedTask, reason, ok := a.nextBackgroundContextRetry(context.Background(), c.task, bgAttemptOutcome{err: err, messages: d.messages}); ok && !firstCanceled && !parentCanceled {
+			firstSummary = reason
+			bg.update(id, func(t *BgTask) {
+				t.LastNote = "attempt 1 " + reason
+			})
+			retry := a.runBackgroundAttempt(id, compactedTask, c.opts, c.depth, 2, nil, "")
+			res, err = retry.result, retry.err
+			canceledNow, stalledNow = retry.canceled, retry.stalled
+			if err != nil && !canceledNow && firstSummary != "" {
+				err = fmt.Errorf("attempt 1 %s; attempt 2: %w", firstSummary, err)
+			}
+		} else if next, reason, ok := nextBackgroundEscalation(c.opts, err, res, firstStalled); ok && !firstCanceled && !parentCanceled {
 			firstSummary = backgroundAttemptSummary(reason, err)
 			bg.update(id, func(t *BgTask) {
 				t.LastNote = "attempt 1 " + firstSummary + " → escalating to difficulty " + next.Difficulty

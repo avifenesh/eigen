@@ -140,9 +140,10 @@ Open work:
 - [~] **Background-task escalation.** Direct `task(background=true)` subtasks and
   foreground subtasks promoted into the background now retry once at the next
   difficulty tier when they fail, stall, or explicitly report an underpowered
-  model; explicit model overrides are respected and not escalated. `task_status`
-  verbose mode shows attempt history plus state/transcript paths. Remaining:
-  handle context-window failures with split/compact rather than blind reroute.
+  model; explicit model overrides are respected and not escalated. Context-window
+  failures retry with compacted task/transcript prompts rather than blind model
+  reroute. `task_status` verbose mode shows attempt history plus state/transcript
+  paths.
 - [~] **Child transcript viewer / promote-to-session.** `task_status(verbose=true)`
   exposes transcript/state paths and attempt summaries; `task_status(tail:N)`
   shows the last N transcript messages inline. Remaining: promote-to-session /

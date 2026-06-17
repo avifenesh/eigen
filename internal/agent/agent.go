@@ -569,8 +569,9 @@ type childResultFG struct {
 
 // childDone is a foreground child's terminal result, sent on the run channel.
 type childDone struct {
-	out string
-	err error
+	out      string
+	err      error
+	messages []llm.Message
 }
 
 // runChild runs a child subtask in the foreground with idle-stall detection and
@@ -598,7 +599,7 @@ func (a *Agent) runChild(ctx context.Context, c childRun) childResultFG {
 	sess := c.sub.NewSession()
 	go func() {
 		out, err := sess.Send(cctx, c.task)
-		ch <- childDone{out, err}
+		ch <- childDone{out: out, err: err, messages: sess.snapshot()}
 	}()
 
 	select {

@@ -279,6 +279,58 @@ func (p *bgUnderpoweredThenDoneProv) Complete(context.Context, llm.Request) (*ll
 	return &llm.Response{Text: "STRONGER_RESULT"}, nil
 }
 
+type bgOverflowThenDoneProv struct {
+	calls        atomic.Int32
+	originalTask string
+}
+
+func (p *bgOverflowThenDoneProv) ModelID() string { return "test" }
+func (p *bgOverflowThenDoneProv) Name() string    { return "test" }
+func (p *bgOverflowThenDoneProv) Complete(_ context.Context, req llm.Request) (*llm.Response, error) {
+	if p.calls.Add(1) == 1 {
+		return nil, fmt.Errorf("ValidationException: context window exceeded")
+	}
+	if len(req.Messages) == 0 || !strings.Contains(req.Messages[0].Text, "compacted") {
+		return nil, fmt.Errorf("retry did not use compacted task prompt: %+v", req.Messages)
+	}
+	if strings.Contains(req.Messages[0].Text, p.originalTask) {
+		return nil, fmt.Errorf("retry prompt still contains full oversized task")
+	}
+	return &llm.Response{Text: "CONTEXT_RECOVERED"}, nil
+}
+
+func TestBackgroundCompactsContextOverflowInsteadOfEscalating(t *testing.T) {
+	reg := newTestRegistry(t, t.TempDir())
+	longTask := "important head " + strings.Repeat("middle detail ", 6000) + " important tail"
+	prov := &bgOverflowThenDoneProv{originalTask: longTask}
+	a := &Agent{Provider: prov, Tools: proberRegistry(t), Perm: PermAuto, Bg: reg, MaxContextTokens: 4000}
+	if _, err := a.SubtaskBackground(context.Background(), longTask, SubtaskOpts{Difficulty: "medium", Model: "fixed-model"}); err != nil {
+		t.Fatal(err)
+	}
+	id := waitForStatus(t, reg, "done")
+	got := reg.Get(id)
+	if got.Result != "CONTEXT_RECOVERED" || got.Attempts != 2 || got.Escalated || got.Difficulty != "medium" || got.Model != "fixed-model" {
+		t.Fatalf("context overflow should compact/retry without difficulty escalation, got %+v", got)
+	}
+	if !strings.Contains(got.LastNote, "context window") || !strings.Contains(got.LastNote, "compacted task") {
+		t.Fatalf("context compaction note missing: %+v", got)
+	}
+}
+
+func TestBackgroundContextOverflowDoesNotEscalateWhenCompactionImpossible(t *testing.T) {
+	reg := newTestRegistry(t, t.TempDir())
+	prov := &bgOverflowThenDoneProv{originalTask: "short"}
+	a := &Agent{Provider: prov, Tools: proberRegistry(t), Perm: PermAuto, Bg: reg, MaxContextTokens: 4000}
+	if _, err := a.SubtaskBackground(context.Background(), "short", SubtaskOpts{Difficulty: "trivial"}); err != nil {
+		t.Fatal(err)
+	}
+	id := waitForStatus(t, reg, "error")
+	got := reg.Get(id)
+	if got.Attempts != 1 || got.Escalated || got.Difficulty != "trivial" || !strings.Contains(got.Error, "context window") {
+		t.Fatalf("uncompactable context overflow should not reroute, got %+v", got)
+	}
+}
+
 func TestBackgroundEscalatesExplicitUnderpoweredResult(t *testing.T) {
 	reg := newTestRegistry(t, t.TempDir())
 	a := &Agent{Provider: &bgUnderpoweredThenDoneProv{}, Tools: proberRegistry(t), Perm: PermAuto, Bg: reg}
