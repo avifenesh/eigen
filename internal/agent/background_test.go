@@ -32,6 +32,50 @@ func writeTaskLines(t *testing.T, dir, id string, recs ...BgTask) {
 	}
 }
 
+func TestReadTaskHistorySupportsLargeLinesAndPrettyJSONFallback(t *testing.T) {
+	dir := t.TempDir()
+	big := BgTask{ID: "bg-8-1", Status: "error", Error: strings.Repeat("x", 100000), Started: time.Now()}
+	writeTaskLines(t, dir, "bg-8-1", big)
+	if got, ok := readTaskFile(filepath.Join(dir, "bg-8-1.jsonl")); !ok || got.ID != "bg-8-1" || len(got.Error) != len(big.Error) {
+		t.Fatalf("large task line should parse, ok=%v got=%+v", ok, got)
+	}
+	hist := readTaskHistory(filepath.Join(dir, "bg-8-1.jsonl"))
+	if len(hist) != 1 || len(hist[0].Error) != len(big.Error) {
+		t.Fatalf("large history line should parse, got %+v", hist)
+	}
+
+	prettyPath := filepath.Join(dir, "bg-8-2.jsonl")
+	pretty, err := json.MarshalIndent(BgTask{ID: "bg-8-2", Status: "done", Result: "legacy", Started: time.Now()}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(prettyPath, pretty, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := readTaskFile(prettyPath); !ok || got.ID != "bg-8-2" || got.Result != "legacy" {
+		t.Fatalf("pretty whole-file fallback failed, ok=%v got=%+v", ok, got)
+	}
+	if hist := readTaskHistory(prettyPath); len(hist) != 1 || hist[0].ID != "bg-8-2" {
+		t.Fatalf("pretty history fallback failed: %+v", hist)
+	}
+}
+
+func TestReadTaskHistorySkipsPartialLines(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	writeTaskLines(t, dir, "bg-7-1",
+		BgTask{ID: "bg-7-1", Status: "running", Attempts: 1, Started: now},
+		BgTask{ID: "bg-7-1", Status: "running", Attempts: 2, Escalated: true, Started: now},
+		BgTask{ID: "bg-7-1", Status: "done", Attempts: 2, Result: "ok", Started: now})
+	f, _ := os.OpenFile(filepath.Join(dir, "bg-7-1.jsonl"), os.O_APPEND|os.O_WRONLY, 0o644)
+	f.WriteString(`{"id":"bg-7-1","status":"trunc`)
+	f.Close()
+	hist := readTaskHistory(filepath.Join(dir, "bg-7-1.jsonl"))
+	if len(hist) != 3 || hist[0].Attempts != 1 || hist[1].Attempts != 2 || hist[2].Result != "ok" {
+		t.Fatalf("bad history: %+v", hist)
+	}
+}
+
 func TestLoadBgTasksSkipsTranscriptsAndPartialLines(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()

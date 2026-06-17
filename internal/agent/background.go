@@ -297,6 +297,47 @@ func (r *BgRegistry) List() []BgTask {
 	return out
 }
 
+// History returns the persisted state-change history for a task. If there is
+// no disk store (tests/in-memory embedding), it falls back to the current record.
+func (r *BgRegistry) History(id string) []BgTask {
+	if !bgIDRe.MatchString(id) {
+		return nil
+	}
+	r.mu.Lock()
+	var cur BgTask
+	curOK := false
+	if t, ok := r.tasks[id]; ok {
+		cur = *t
+		curOK = true
+	}
+	dir := r.dir
+	r.mu.Unlock()
+	if dir != "" {
+		if hist := readTaskHistory(filepath.Join(dir, id+".jsonl")); len(hist) > 0 {
+			return hist
+		}
+	}
+	if curOK {
+		return []BgTask{cur}
+	}
+	return nil
+}
+
+// StatePath and TranscriptPath return durable observability paths for a task.
+func (r *BgRegistry) StatePath(id string) string {
+	if r == nil || r.dir == "" || !bgIDRe.MatchString(id) {
+		return ""
+	}
+	return filepath.Join(r.dir, id+".jsonl")
+}
+
+func (r *BgRegistry) TranscriptPath(id string) string {
+	if r == nil || r.dir == "" || !bgIDRe.MatchString(id) {
+		return ""
+	}
+	return filepath.Join(r.dir, id+".transcript.jsonl")
+}
+
 // SubtaskBackground launches task as a DETACHED background delegation: it
 // returns immediately with the task id while the subtask runs on its own
 // context (canceling the calling turn does not kill it; bgMaxRuntime caps it).

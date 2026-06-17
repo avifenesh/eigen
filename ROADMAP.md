@@ -138,11 +138,12 @@ Open work:
 - [~] **Background-task escalation.** Direct `task(background=true)` subtasks and
   foreground subtasks promoted into the background now retry once at the next
   difficulty tier when they fail, stall, or explicitly report an underpowered
-  model; explicit model overrides are respected and not escalated. Remaining:
-  add richer transcript/attempt UI, and handle context-window failures with
-  split/compact rather than blind reroute.
-- [ ] **Child transcript viewer / promote-to-session.** Useful for debugging
-  long delegated work, but not required for escalation v1.
+  model; explicit model overrides are respected and not escalated. `task_status`
+  verbose mode shows attempt history plus state/transcript paths. Remaining:
+  handle context-window failures with split/compact rather than blind reroute.
+- [~] **Child transcript viewer / promote-to-session.** `task_status(verbose=true)`
+  now exposes transcript/state paths and attempt summaries. Remaining: inline
+  transcript tail/viewer and promote-to-session/resume flow.
 - [ ] **Ultraplan / adversarial expansion / non-LLM heads.** Parked research
   items. Pull only when there is a concrete product reason.
 

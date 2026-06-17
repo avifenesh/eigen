@@ -573,11 +573,11 @@ func main() {
 		}
 		return a.SubtaskWith(ctx, t, aopts)
 	}
-	taskStatus := func(ctx context.Context, id string, all bool) (string, error) {
+	taskStatus := func(ctx context.Context, id string, all, verbose bool) (string, error) {
 		if a == nil || a.Bg == nil {
 			return "", fmt.Errorf("background tasks unavailable")
 		}
-		return formatTaskStatus(a.Bg, id, all), nil
+		return formatTaskStatus(a.Bg, id, all, verbose), nil
 	}
 	taskGroup := func(ctx context.Context, subs []tool.GroupSubtaskArg, workers int, synthesize string) (string, error) {
 		if a == nil {

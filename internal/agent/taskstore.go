@@ -95,7 +95,45 @@ func readTaskFile(path string) (BgTask, bool) {
 			return t, true
 		}
 	}
+	// Compatibility fallback: if a future/old writer ever stores a single
+	// whole-file JSON object (possibly pretty-printed) rather than JSONL, keep
+	// task_status from making the task disappear.
+	var t BgTask
+	if json.Unmarshal(bytes.TrimSpace(data), &t) == nil && t.ID != "" {
+		return t, true
+	}
 	return BgTask{}, false
+}
+
+// readTaskHistory parses every complete valid JSON line of a task state file in
+// append order. Malformed/partial lines are ignored; readers use this for
+// verbose task_status attempt timelines while still being robust to mid-append
+// observations.
+func readTaskHistory(path string) []BgTask {
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		return nil
+	}
+	lines := bytes.Split(data, []byte("\n"))
+	out := make([]BgTask, 0, len(lines))
+	for _, raw := range lines {
+		ln := bytes.TrimSpace(raw)
+		if len(ln) == 0 {
+			continue
+		}
+		var t BgTask
+		if json.Unmarshal(ln, &t) == nil && t.ID != "" {
+			out = append(out, t)
+		}
+	}
+	if len(out) == 0 {
+		// Compatibility fallback for a single pretty-printed JSON object.
+		var t BgTask
+		if json.Unmarshal(bytes.TrimSpace(data), &t) == nil && t.ID != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // taskLost reports whether a persisted "running" record's task is actually
