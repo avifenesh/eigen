@@ -15,6 +15,7 @@ import (
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/memory"
+	"github.com/avifenesh/eigen/internal/observe"
 	"github.com/avifenesh/eigen/internal/session"
 	"github.com/avifenesh/eigen/internal/skill"
 	"github.com/avifenesh/eigen/internal/theme"
@@ -2489,6 +2490,34 @@ func TestGoalAutoContinuesAfterTurnDone(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("goal continue prompt missing from transcript: %+v", m.blocks)
+	}
+}
+
+func TestObservePanelCommandRendersTelemetry(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := observe.DefaultPath()
+	lg, err := observe.Open(path, "sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := lg.Wrap(nil)
+	sink(agent.Event{Kind: agent.EventToolResult, ToolName: "bash", IsError: true, Result: "Denied: nope"})
+	sink(agent.Event{Kind: agent.EventNote, Text: "routed → grok (general/trivial)"})
+	sink(agent.Event{Kind: agent.EventDone, Model: "gpt-5.5", InTokens: 9, OutTokens: 2})
+	if err := lg.Close(); err != nil {
+		t.Fatal(err)
+	}
+	m := testModel(t)
+	_ = m.command("/observe")
+	if m.rightTab != rightTabObserve {
+		t.Fatalf("rightTab=%v want observe", m.rightTab)
+	}
+	out := strings.Join(m.observeLines(40), "\n")
+	for _, want := range []string{"events", "errors", "route/system", "models", "gpt-5.5", "tools", "bash", "full:"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("observe panel missing %q:\n%s", want, out)
+		}
 	}
 }
 

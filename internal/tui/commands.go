@@ -69,7 +69,7 @@ func (m *model) openAppPageCmd(page string) tea.Cmd {
 func safeWhileRunning(name string) bool {
 	switch name {
 	case "/effort", "/search", "/fast", "/perm", "/model", "/help", "/goal", "/loop", "/config", "/route",
-		"/skills", "/tools", "/find", "/copy", "/read", "/voice", "/mute", "/dictate", "/talk", "/speak", "/rail", "/changes", "/term", "/tasks", "/shells", "/tray", "/workflow", "/rename", "/background", "/add-dir", "/mouse", "/steer", "/queue", "/ban", "/unban":
+		"/skills", "/tools", "/observe", "/find", "/copy", "/read", "/voice", "/mute", "/dictate", "/talk", "/speak", "/rail", "/changes", "/term", "/tasks", "/shells", "/tray", "/workflow", "/rename", "/background", "/add-dir", "/mouse", "/steer", "/queue", "/ban", "/unban":
 		return true
 	default:
 		// /clear, /compact, /resume, /rebuild, /save, /export, /quit, /exit
@@ -83,7 +83,7 @@ func (m *model) command(line string) tea.Cmd {
 	arg := strings.TrimSpace(strings.TrimPrefix(line, name))
 	switch name {
 	case "/help":
-		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /loop  /route  /review  /voice  /config  /skills  /tools  /plugins  /hooks  /plugin  /marketplace  /add-dir  /find  /copy  /read  /rebuild  /quit")
+		m.note("commands: /help  /resume  /save  /export  /clear  /compact  /model  /effort  /search  /perm  /goal  /loop  /route  /observe  /review  /voice  /config  /skills  /tools  /plugins  /hooks  /plugin  /marketplace  /add-dir  /find  /copy  /read  /rebuild  /quit")
 		m.note("keys: / commands · ctrl+k palette · @ files · ↑↓ history · tab expand · drag-select+copy (ctrl+y) · alt+x mouse off (mark+copy in your terminal) · alt+s switch session · alt+w tray (approvals/notifications; alt+n on non-zellij) · alt+z background the running turn · ctrl+b/alt+b rail · ctrl+g/alt+g panel · ctrl+r right-tab (changes/git/term/tasks) · alt+a perm · alt+r effort · alt+m model · alt+v paste image · alt+t talk · pgup/pgdn scroll")
 		m.note("terminal tab: /term (or ctrl+r to the term tab) opens a REAL shell in the right panel — click it or it's focused on open; your keystrokes (incl. esc/ctrl+c) go to the shell so vim/less/top work; ctrl+g returns keys to the chat, the shell keeps running")
 		m.note("tasks tab: /tasks shows background delegations live (step/tool/elapsed) — click a task to expand its result or progress, click [cancel] to stop a running one; the sidebar shows ⚒ tasks N● while work runs")
@@ -216,6 +216,8 @@ func (m *model) command(line string) tea.Cmd {
 		return m.setRightTab(rightTabTerminal)
 	case "/tasks":
 		return m.setRightTab(rightTabTasks)
+	case "/observe", "/obs":
+		return m.setRightTab(rightTabObserve)
 	case "/shells":
 		return m.setRightTab(rightTabShells)
 	case "/tray":

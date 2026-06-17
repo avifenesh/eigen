@@ -44,6 +44,7 @@ const (
 	actRightTabNext
 	actTerminalTab
 	actTasksTab
+	actObserveTab
 	actGoalPanel
 	actShellsTab
 	actTray
@@ -264,6 +265,13 @@ var actionRegistry = map[actionID]action{
 		enabled: always,
 		run: func(m *model) tea.Cmd {
 			return m.setRightTab(rightTabTasks)
+		},
+	},
+	actObserveTab: {
+		id: actObserveTab, label: "observability panel",
+		enabled: always,
+		run: func(m *model) tea.Cmd {
+			return m.setRightTab(rightTabObserve)
 		},
 	},
 	actGoalPanel: {

@@ -19,6 +19,7 @@ const (
 	rightTabGit
 	rightTabTerminal
 	rightTabTasks
+	rightTabObserve
 	rightTabGoal
 	rightTabShells
 	rightTabNotepad
@@ -34,6 +35,8 @@ func (t rightPanelTab) label() string {
 		return "tasks"
 	case rightTabShells:
 		return "shells"
+	case rightTabObserve:
+		return "observe"
 	case rightTabGoal:
 		return "goal"
 	case rightTabNotepad:
@@ -55,6 +58,8 @@ func (t rightPanelTab) shortLabel() string {
 		return "tsk"
 	case rightTabShells:
 		return "sh"
+	case rightTabObserve:
+		return "obs"
 	case rightTabGoal:
 		return "go"
 	case rightTabNotepad:
@@ -66,6 +71,9 @@ func (t rightPanelTab) shortLabel() string {
 
 func (m *model) rightTabs() []rightPanelTab {
 	tabs := []rightPanelTab{rightTabChanges, rightTabGit, rightTabTerminal, rightTabTasks}
+	if m.rightTab == rightTabObserve {
+		tabs = append(tabs, rightTabObserve)
+	}
 	if m.goalActive() != "" {
 		tabs = append(tabs, rightTabGoal)
 	}
