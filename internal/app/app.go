@@ -150,10 +150,32 @@ func PageByName(name string) (Page, bool) {
 		}
 	}
 	switch name {
-	case "plugin", "plugins", "market", "marketplace", "extension", "extensions":
+	case "plugin", "plugins", "market", "marketplace", "extension", "extensions", "wiring", "hook", "hooks":
 		return PagePlugins, true
 	}
 	return PageHome, false
+}
+
+func newAtPageName(data *Data, pageName string) *Model {
+	page, _ := PageByName(pageName)
+	m := NewAt(data, page)
+	m.applyInitialPageName(pageName)
+	return m
+}
+
+func (m *Model) applyInitialPageName(pageName string) {
+	name := strings.TrimSpace(strings.ToLower(pageName))
+	if m.active != PagePlugins {
+		return
+	}
+	switch name {
+	case "market", "marketplace":
+		m.plugins.setTab(pluginsTabMarketplace)
+	case "extension", "extensions", "wiring":
+		m.plugins.setTab(pluginsTabExtensions)
+	case "hook", "hooks":
+		m.plugins.setTab(pluginsTabHooks)
+	}
 }
 
 func (m *Model) Init() tea.Cmd {
@@ -520,7 +542,7 @@ func (m *Model) contentClick(localX, localY int) (tea.Cmd, bool) {
 	case PageMemory:
 		return m.memory.clickAt(m, localY)
 	case PagePlugins:
-		return m.plugins.clickAt(m, localY)
+		return m.plugins.clickAt(m, localX, localY)
 	}
 	return nil, false
 }
@@ -882,13 +904,15 @@ func Run(data *Data) (Result, error) { return RunAt(data, PageHome) }
 // RunPage opens the app shell at a named page. Unknown names gracefully land on
 // Home so slash-command navigation never bricks the window.
 func RunPage(data *Data, pageName string) (Result, error) {
-	page, _ := PageByName(pageName)
-	return RunAt(data, page)
+	return runModel(newAtPageName(data, pageName))
 }
 
 // RunAt opens the app shell at an initial page and returns the exit intent.
 func RunAt(data *Data, initial Page) (Result, error) {
-	m := NewAt(data, initial)
+	return runModel(NewAt(data, initial))
+}
+
+func runModel(m *Model) (Result, error) {
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	final, err := p.Run()
 	if err != nil {

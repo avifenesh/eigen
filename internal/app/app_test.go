@@ -62,11 +62,14 @@ func TestNewAtAndPageByName(t *testing.T) {
 	if m.active != PagePlugins {
 		t.Fatalf("NewAt(PagePlugins) active = %v", m.active)
 	}
-	for _, name := range []string{"plugins", "plugin", "marketplace", "extensions", "x"} {
+	for _, name := range []string{"plugins", "plugin", "marketplace", "extensions", "wiring", "hooks", "x"} {
 		p, ok := PageByName(name)
 		if !ok || p != PagePlugins {
 			t.Fatalf("PageByName(%q) = %v, %v; want PagePlugins, true", name, p, ok)
 		}
+	}
+	if m := newAtPageName(testData(), "hooks"); m.active != PagePlugins || m.plugins.tab != pluginsTabHooks {
+		t.Fatalf("newAtPageName(hooks) active=%v tab=%v, want plugins hooks", m.active, m.plugins.tab)
 	}
 }
 

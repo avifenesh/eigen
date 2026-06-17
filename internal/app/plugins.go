@@ -185,6 +185,8 @@ type pluginsState struct {
 	prompt            installPrompt
 	confirm           pluginConfirm
 	clicks            clickMap
+	catalogClicks     clickMap
+	tabClicks         pluginTabClickMap
 }
 
 type pluginConfirm struct {
@@ -213,6 +215,7 @@ const (
 	pluginsTabInstalled pluginsTab = iota
 	pluginsTabMarketplace
 	pluginsTabExtensions
+	pluginsTabHooks
 )
 
 func (p *pluginsState) init(*Data) {}
@@ -275,6 +278,8 @@ func (p *pluginsState) syncListCount() {
 		p.list.count = len(p.markets)
 	case pluginsTabExtensions:
 		p.list.count = len(p.rows)
+	case pluginsTabHooks:
+		p.list.count = len(p.hookRows())
 	}
 	p.list.clamp()
 	p.catalogList.count = len(p.catalog)
@@ -364,6 +369,9 @@ func (p *pluginsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "3":
 		p.setTab(pluginsTabExtensions)
 		return m, nil
+	case "4":
+		p.setTab(pluginsTabHooks)
+		return m, nil
 	case "left", "H":
 		p.setTab(maxPluginTab(p.tab - 1))
 		return m, nil
@@ -404,7 +412,7 @@ func (p *pluginsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		p.updateInstalled(key)
 	case pluginsTabMarketplace:
 		return m, p.updateMarketplace(m, key)
-	case pluginsTabExtensions:
+	case pluginsTabExtensions, pluginsTabHooks:
 		p.updateExtension(key)
 	}
 	return m, nil
@@ -416,7 +424,7 @@ func (p *pluginsState) visibleRows(h int) int {
 	if body < 3 {
 		body = 3
 	}
-	if p.tab == pluginsTabExtensions {
+	if p.tab == pluginsTabExtensions || p.tab == pluginsTabHooks {
 		return body
 	}
 	return max(1, body/2)
@@ -770,14 +778,14 @@ func (p *pluginsState) catalogVisibleRows(h int) int {
 }
 
 func (p *pluginsState) updateExtension(key string) {
-	if p.list.cursor >= len(p.rows) {
+	r, ok := p.selectedExtensionRow()
+	if !ok {
 		return
 	}
 	switch key {
 	case " ", "space", "enter":
 		// Toggle the selected extension on/off (persists "disabled": true in its
 		// config file; applies to NEW sessions — running ones keep connected servers).
-		r := p.rows[p.list.cursor]
 		if _, err := toggleDisabled(r.Path, r.Kind, r.Index); err != nil {
 			p.err = err.Error()
 		} else {
@@ -794,10 +802,11 @@ func (p *pluginsState) updateExtension(key string) {
 // extension row, if it's a plugin-installed component (matched by the
 // "<plugin>-" name prefix against the installed-plugins registry).
 func (p *pluginsState) confirmUninstallSelected() {
-	if p.list.cursor >= len(p.rows) {
+	r, ok := p.selectedExtensionRow()
+	if !ok {
 		return
 	}
-	name := p.rows[p.list.cursor].Name
+	name := r.Name
 	reg, err := appPluginRegistry()
 	if err != nil {
 		p.err = err.Error()
@@ -815,10 +824,12 @@ func (p *pluginsState) confirmUninstallSelected() {
 
 func (p *pluginsState) view(m *Model, w, h int) string {
 	p.load()
+	p.clicks.reset()
+	p.catalogClicks.reset()
+	p.tabClicks.reset()
 	out := pageTitle("plugins", "Plugins make Eigen work your way.", w)
 	out += p.hero(w)
-	out += p.tabs(w) + "\n"
-	p.clicks.reset()
+	out += p.tabs(w, lineCount(out)) + "\n"
 	switch p.tab {
 	case pluginsTabInstalled:
 		out += p.viewInstalled(w, h-lineCount(out))
@@ -826,6 +837,8 @@ func (p *pluginsState) view(m *Model, w, h int) string {
 		out += p.viewMarketplace(w, h-lineCount(out))
 	case pluginsTabExtensions:
 		out += p.viewExtensions(w, h-lineCount(out))
+	case pluginsTabHooks:
+		out += p.viewHooks(w, h-lineCount(out))
 	}
 	return out
 }
@@ -838,11 +851,13 @@ func (p *pluginsState) hero(w int) string {
 			enabled++
 		}
 	}
+	hookCount := len(p.hookRows())
 	stats := []string{
 		fmt.Sprintf("%d installed", len(p.installed)),
 		fmt.Sprintf("%d enabled", enabled),
 		fmt.Sprintf("%d marketplaces", len(p.markets)),
 		fmt.Sprintf("%d MCP/hook wiring", len(p.rows)),
+		fmt.Sprintf("%d hooks", hookCount),
 	}
 	sub := "  " + sText.Render(strings.Join(stats, sFaint.Render(" · ")))
 	if w < 72 {
@@ -851,7 +866,7 @@ func (p *pluginsState) hero(w int) string {
 	return sub + "\n" + sFaint.Render("  Claude/Codex plugins: skills, agents, commands, MCP servers, and hooks.") + "\n\n"
 }
 
-func (p *pluginsState) tabs(w int) string {
+func (p *pluginsState) tabs(w, tabLine int) string {
 	tabs := []struct {
 		tab   pluginsTab
 		name  string
@@ -860,21 +875,31 @@ func (p *pluginsState) tabs(w int) string {
 		{pluginsTabInstalled, "Plugins", len(p.installed)},
 		{pluginsTabMarketplace, "Marketplace", len(p.markets)},
 		{pluginsTabExtensions, "Wiring", len(p.rows)},
+		{pluginsTabHooks, "Hooks", len(p.hookRows())},
 	}
 	var parts []string
+	x := 2
 	for i, t := range tabs {
 		label := fmt.Sprintf("%d %s %d", i+1, t.name, t.count)
+		var part string
 		if p.tab == t.tab {
-			parts = append(parts, sAccent.Render("[ ")+sTitle.Render(label)+sAccent.Render(" ]"))
+			part = sAccent.Render("[ ") + sTitle.Render(label) + sAccent.Render(" ]")
 		} else {
-			parts = append(parts, sFaint.Render("  ")+sDim.Render(label)+sFaint.Render("  "))
+			part = sFaint.Render("  ") + sDim.Render(label) + sFaint.Render("  ")
+		}
+		width := lipgloss.Width(part)
+		p.tabClicks.mark(tabLine, x, min(w-1, x+width-1), t.tab)
+		parts = append(parts, part)
+		x += width
+		if i < len(tabs)-1 {
+			x += 2
 		}
 	}
-	line := "  " + strings.Join(parts, "  ")
-	if lipgloss.Width(line) > w {
-		line = truncate(line, w)
+	rendered := "  " + strings.Join(parts, "  ")
+	if lipgloss.Width(rendered) > w {
+		rendered = truncate(rendered, w)
 	}
-	return line + "\n" + sFaint.Render("  1/2/3 tabs · ←/→ or H/L switch · j/k move")
+	return rendered + "\n" + sFaint.Render("  1/2/3/4 tabs · ←/→ or H/L switch · j/k move")
 }
 
 func (p *pluginsState) viewInstalled(w, h int) string {
@@ -890,8 +915,9 @@ func (p *pluginsState) viewInstalled(w, h int) string {
 	reg, _ := appPluginRegistry()
 	for i := from; i < to; i++ {
 		pl := p.installed[i]
-		p.clicks.mark(lineCount(out), i)
-		out += p.pluginCard(i == p.list.cursor, pl, reg, w) + "\n"
+		card := p.pluginCard(i == p.list.cursor, pl, reg, w)
+		markClickBlock(&p.clicks, lineCount(out), i, card)
+		out += card + "\n"
 	}
 	if p.list.cursor < len(p.installed) {
 		out += "\n" + p.pluginDetail(p.installed[p.list.cursor], reg, w)
@@ -1014,11 +1040,13 @@ func (p *pluginsState) viewMarketplace(w, h int) string {
 	from, to := p.list.window(visible)
 	for i := from; i < to; i++ {
 		mk := p.markets[i]
-		p.clicks.mark(lineCount(out), i)
-		out += p.marketCard(i == p.list.cursor, mk, w) + "\n"
+		card := p.marketCard(i == p.list.cursor, mk, w)
+		markClickBlock(&p.clicks, lineCount(out), i, card)
+		out += card + "\n"
 	}
 	if p.list.cursor < len(p.markets) {
-		out += "\n" + p.marketDetail(p.markets[p.list.cursor], w, h-lineCount(out))
+		out += "\n"
+		out += p.marketDetail(p.markets[p.list.cursor], w, h-lineCount(out), lineCount(out))
 	}
 	out += p.confirm.render(w)
 	if p.err != "" {
@@ -1064,7 +1092,7 @@ func (p *pluginsState) marketCard(selected bool, mk pluginpkg.MarketRecord, w in
 	return line1 + "\n" + line2
 }
 
-func (p *pluginsState) marketDetail(mk pluginpkg.MarketRecord, w, h int) string {
+func (p *pluginsState) marketDetail(mk pluginpkg.MarketRecord, w, h, baseLine int) string {
 	var b strings.Builder
 	b.WriteString(sectionLabel("catalog", w) + "\n")
 	if !p.catalogFocus {
@@ -1094,6 +1122,7 @@ func (p *pluginsState) marketDetail(mk pluginpkg.MarketRecord, w, h int) string 
 			from, to := p.catalogList.window(visible)
 			for i := from; i < to; i++ {
 				e := p.catalog[i]
+				rowLine := baseLine + lineCount(b.String())
 				mark := sFaint.Render("○ ")
 				if p.catalogSelected[catalogEntryKey(e)] {
 					mark = sOk.Render("● ")
@@ -1108,7 +1137,9 @@ func (p *pluginsState) marketDetail(mk pluginpkg.MarketRecord, w, h int) string 
 				} else {
 					b.WriteString(row(false, line) + "\n")
 				}
+				p.catalogClicks.mark(rowLine, i)
 				if e.Description != "" && (!p.catalogFocus || i == p.catalogList.cursor) {
+					p.catalogClicks.mark(baseLine+lineCount(b.String()), i)
 					b.WriteString("  " + sDim.Render(truncate(e.Description, max(10, w-6))) + "\n")
 				}
 			}
@@ -1135,9 +1166,31 @@ func (p *pluginsState) marketDetail(mk pluginpkg.MarketRecord, w, h int) string 
 }
 
 func (p *pluginsState) viewExtensions(w, h int) string {
-	out := sectionLabel("wired components", w) + "\n"
-	if len(p.rows) == 0 {
-		out += emptyCard("No extension wiring found", "MCP servers, plugin tools, LSP servers, and hooks appear here.", w)
+	return p.viewExtensionRows(
+		w, h,
+		"wired components",
+		"No extension wiring found",
+		"MCP servers, plugin tools, LSP servers, and hooks appear here.",
+		"space toggle component · X delete owning plugin · a add-marketplace · i install-plugin · R refresh",
+		p.rows,
+	)
+}
+
+func (p *pluginsState) viewHooks(w, h int) string {
+	return p.viewExtensionRows(
+		w, h,
+		"hooks",
+		"No hooks wired",
+		"User and project hooks from .eigen/hooks.json appear here.",
+		"space toggle hook · X delete owning plugin · a add-marketplace · i install-plugin · R refresh",
+		p.hookRows(),
+	)
+}
+
+func (p *pluginsState) viewExtensionRows(w, h int, title, emptyTitle, emptyBody, footer string, rows []ExtRow) string {
+	out := sectionLabel(title, w) + "\n"
+	if len(rows) == 0 {
+		out += emptyCard(emptyTitle, emptyBody, w)
 		out += p.prompt.render()
 		out += "\n" + sFaint.Render("  a add-marketplace · i install-plugin")
 		return out
@@ -1145,7 +1198,7 @@ func (p *pluginsState) viewExtensions(w, h int) string {
 	visible := max(3, h-6)
 	from, to := p.list.window(visible)
 	for i := from; i < to; i++ {
-		r := p.rows[i]
+		r := rows[i]
 		p.clicks.mark(lineCount(out), i)
 		cursor := "  "
 		if i == p.list.cursor {
@@ -1162,22 +1215,31 @@ func (p *pluginsState) viewExtensions(w, h int) string {
 		srcCol := sDim.Render(pad(r.Source, 9))
 		out += cursor + dot + " " + kind + name + srcCol + "\n"
 	}
-	if i := p.list.cursor; i < len(p.rows) {
-		out += "\n" + sFaint.Render("  "+truncate(p.rows[i].Detail, w-6)) + "\n"
+	if i := p.list.cursor; i >= 0 && i < len(rows) {
+		out += "\n" + sFaint.Render("  "+truncate(rows[i].Detail, w-6)) + "\n"
 	}
 	out += p.confirm.render(w)
 	if p.err != "" {
 		out += sErr.Render("  "+truncate(p.err, w-4)) + "\n"
 	}
 	out += p.prompt.render()
-	out += sFaint.Render("  space toggle component · X delete owning plugin · a add-marketplace · i install-plugin · R refresh")
+	out += sFaint.Render("  " + footer)
 	return out
 }
 
 // clickAt selects a rendered card/row. A second click on the selected row
 // performs the primary action for the current tab (toggle for plugins/wiring,
 // refresh for marketplace), matching enter.
-func (p *pluginsState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
+func (p *pluginsState) clickAt(m *Model, localX, localY int) (tea.Cmd, bool) {
+	if tab, ok := p.tabClicks.at(localX, localY); ok {
+		p.setTab(tab)
+		return nil, true
+	}
+	if p.tab == pluginsTabMarketplace {
+		if cmd, ok := p.clickCatalog(m, localY); ok {
+			return cmd, true
+		}
+	}
 	idx, ok := p.clicks.at(localY)
 	if !ok || idx < 0 || idx >= p.list.count {
 		return nil, false
@@ -1189,7 +1251,7 @@ func (p *pluginsState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
 			p.updateInstalled(key)
 		case pluginsTabMarketplace:
 			return p.updateMarketplace(m, key), true
-		case pluginsTabExtensions:
+		case pluginsTabExtensions, pluginsTabHooks:
 			p.updateExtension(key)
 		}
 	} else {
@@ -1199,9 +1261,31 @@ func (p *pluginsState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
 	return nil, true
 }
 
+func (p *pluginsState) clickCatalog(m *Model, localY int) (tea.Cmd, bool) {
+	idx, ok := p.catalogClicks.at(localY)
+	if !ok || idx < 0 || idx >= len(p.catalog) {
+		return nil, false
+	}
+	if !p.catalogFocus {
+		p.focusCatalog()
+		p.catalogList.cursor = idx
+		p.catalogList.clamp()
+		m.contentScroll = 0
+		return nil, true
+	}
+	if p.catalogList.cursor == idx {
+		return p.installSelectedCatalogPlugin(m), true
+	}
+	p.catalogList.cursor = idx
+	p.catalogList.clamp()
+	m.contentScroll = 0
+	p.prompt.status = ""
+	return nil, true
+}
+
 func minPluginTab(tab pluginsTab) pluginsTab {
-	if tab > pluginsTabExtensions {
-		return pluginsTabExtensions
+	if tab > pluginsTabHooks {
+		return pluginsTabHooks
 	}
 	return tab
 }
@@ -1211,6 +1295,74 @@ func maxPluginTab(tab pluginsTab) pluginsTab {
 		return pluginsTabInstalled
 	}
 	return tab
+}
+
+func (p *pluginsState) hookRows() []ExtRow {
+	rows := make([]ExtRow, 0)
+	for _, r := range p.rows {
+		if r.Kind == "hook" {
+			rows = append(rows, r)
+		}
+	}
+	return rows
+}
+
+func (p *pluginsState) extensionRowsForTab() []ExtRow {
+	if p.tab == pluginsTabHooks {
+		return p.hookRows()
+	}
+	return p.rows
+}
+
+func (p *pluginsState) selectedExtensionRow() (ExtRow, bool) {
+	rows := p.extensionRowsForTab()
+	if p.list.cursor < 0 || p.list.cursor >= len(rows) {
+		return ExtRow{}, false
+	}
+	return rows[p.list.cursor], true
+}
+
+type pluginTabClick struct {
+	line   int
+	x0, x1 int
+	tab    pluginsTab
+}
+
+type pluginTabClickMap struct {
+	hits []pluginTabClick
+}
+
+func (c *pluginTabClickMap) reset() {
+	c.hits = nil
+}
+
+func (c *pluginTabClickMap) mark(line, x0, x1 int, tab pluginsTab) {
+	if x1 < x0 || x1 < 0 {
+		return
+	}
+	if x0 < 0 {
+		x0 = 0
+	}
+	c.hits = append(c.hits, pluginTabClick{line: line, x0: x0, x1: x1, tab: tab})
+}
+
+func (c *pluginTabClickMap) at(x, line int) (pluginsTab, bool) {
+	for _, h := range c.hits {
+		if h.line == line && x >= h.x0 && x <= h.x1 {
+			return h.tab, true
+		}
+	}
+	return pluginsTabInstalled, false
+}
+
+func markClickBlock(c *clickMap, start, idx int, block string) {
+	if block == "" {
+		return
+	}
+	lines := strings.Count(block, "\n") + 1
+	for off := 0; off < lines; off++ {
+		c.mark(start+off, idx)
+	}
 }
 
 func pluginCounts(pl pluginpkg.InstalledPlugin) string {

@@ -160,11 +160,11 @@ func (m *Model) inspectorFor() (string, []kv, string) {
 				{"added", dateLabel(mk.Added)},
 				{"updated", dateLabel(mk.Updated)},
 			}, "space enable/disable · enter/U refresh catalog · X delete marketplace"
-		case pluginsTabExtensions:
-			if s.list.cursor < 0 || s.list.cursor >= len(s.rows) {
+		case pluginsTabExtensions, pluginsTabHooks:
+			r, ok := s.selectedExtensionRow()
+			if !ok {
 				return "", nil, ""
 			}
-			r := s.rows[s.list.cursor]
 			state := sOk.Render("enabled")
 			if r.Disabled {
 				state = sDim.Render("disabled")

@@ -89,6 +89,7 @@ var slashCommands = []slashCmd{
 	{"/skills", "list skills, or /skills <name> to preview one"},
 	{"/tools", "list available tools"},
 	{"/plugins", "open the plugins/extensions page"},
+	{"/hooks", "open the hooks wiring view"},
 	{"/plugin", "open plugins page, or manage installed plugins (/plugin list|install|remove|delete|enable|disable)"},
 	{"/marketplace", "open plugins page, or manage marketplaces (/marketplace list|add|update|remove|delete|enable|disable)"},
 	{"/add-dir", "grant the tools another working directory (/add-dir <path>)"},

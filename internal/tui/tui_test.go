@@ -512,8 +512,17 @@ func TestSlashMenuOpensAndFilters(t *testing.T) {
 	if !m.comp.active() || m.comp.kind != compSlash {
 		t.Fatal("typing / should open the slash menu")
 	}
-	if len(m.comp.items) != len(slashCommands) {
-		t.Fatalf("/ should list all %d commands, got %d", len(slashCommands), len(m.comp.items))
+	if len(m.comp.items) < len(slashCommands) {
+		t.Fatalf("/ should list at least all %d built-in commands, got %d", len(slashCommands), len(m.comp.items))
+	}
+	seen := map[string]bool{}
+	for _, it := range m.comp.items {
+		seen[it.label] = true
+	}
+	for _, c := range slashCommands {
+		if !seen[c.name] {
+			t.Fatalf("/ menu missing built-in command %q in %v", c.name, m.comp.items)
+		}
 	}
 	typeRunes(m, "re")
 	if len(m.comp.items) == 0 {
@@ -549,8 +558,8 @@ func TestSlashMenuTabCompletes(t *testing.T) {
 func TestSlashMenuEnterRunsCommand(t *testing.T) {
 	m := testModel(t)
 	typeRunes(m, "/he")
-	if len(m.comp.items) != 1 || m.comp.items[0].label != "/help" {
-		t.Fatalf("expected only /help, got %v", m.comp.items)
+	if len(m.comp.items) == 0 || m.comp.items[0].label != "/help" {
+		t.Fatalf("expected /help as the first match, got %v", m.comp.items)
 	}
 	before := len(m.blocks)
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})

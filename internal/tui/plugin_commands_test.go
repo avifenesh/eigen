@@ -54,13 +54,21 @@ func TestPluginCommandNoPlugins(t *testing.T) {
 }
 
 func TestBarePluginCommandsOpenPluginsPage(t *testing.T) {
-	for _, cmd := range []string{"/plugins", "/plugin", "/marketplace"} {
+	for _, tc := range []struct {
+		cmd  string
+		page string
+	}{
+		{"/plugins", "plugins"},
+		{"/plugin", "plugins"},
+		{"/marketplace", "plugins"},
+		{"/hooks", "hooks"},
+	} {
 		m := testModel(t)
-		if teaCmd := m.command(cmd); teaCmd == nil {
-			t.Fatalf("%s should return a quit command", cmd)
+		if teaCmd := m.command(tc.cmd); teaCmd == nil {
+			t.Fatalf("%s should return a quit command", tc.cmd)
 		}
-		if !m.openApp || m.openAppPage != "plugins" {
-			t.Fatalf("%s should open app plugins page, openApp=%v page=%q", cmd, m.openApp, m.openAppPage)
+		if !m.openApp || m.openAppPage != tc.page {
+			t.Fatalf("%s should open app page %q, openApp=%v page=%q", tc.cmd, tc.page, m.openApp, m.openAppPage)
 		}
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	pluginpkg "github.com/avifenesh/eigen/internal/plugin"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func seedPluginPage(t *testing.T) *pluginpkg.Registry {
@@ -70,6 +71,7 @@ func TestPluginsPageRendersProductSurface(t *testing.T) {
 		"1 Plugins 1",
 		"2 Marketplace 1",
 		"3 Wiring 1",
+		"4 Hooks 0",
 		"my plugins",
 		"demo",
 		"enabled",
@@ -124,6 +126,123 @@ func TestPluginsPageRendersProductSurface(t *testing.T) {
 			t.Fatalf("wiring tab missing %q:\n%s", want, v)
 		}
 	}
+
+	root := filepath.Join(os.Getenv("HOME"), ".eigen")
+	mustWriteAppTest(t, filepath.Join(root, "hooks.json"), `{"hooks":[{"event":"session_stop","command":["echo","done"]}]}`)
+	m.plugins.reload()
+	m.Update(key("4"))
+	v = m.plugins.view(m, 100, 30)
+	for _, want := range []string{"hooks", "session_stop", "hook", "echo done", "space toggle hook"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("hooks tab missing %q:\n%s", want, v)
+		}
+	}
+	if strings.Contains(v, "demo-mcp") {
+		t.Fatalf("hooks tab should not show non-hook wiring:\n%s", v)
+	}
+}
+
+func TestPluginsPageMouseTabsAndHookRows(t *testing.T) {
+	seedPluginPage(t)
+	root := filepath.Join(os.Getenv("HOME"), ".eigen")
+	hooksPath := filepath.Join(root, "hooks.json")
+	mustWriteAppTest(t, hooksPath, `{"hooks":[{"event":"session_start","command":["echo","start"]},{"event":"turn_done","command":["echo","done"]}]}`)
+
+	m := NewAt(testData(), PagePlugins)
+	m.width, m.height = 120, 36
+	l := m.computeLayout()
+	_ = m.plugins.view(m, l.inner.w, l.inner.h)
+	hit, ok := pluginTabHit(&m.plugins, pluginsTabHooks)
+	if !ok {
+		t.Fatal("hooks tab should be in the click map")
+	}
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + hit.x0, Y: l.inner.y + hit.line})
+	if m.plugins.tab != pluginsTabHooks {
+		t.Fatalf("clicking hooks tab should switch tabs, got %v", m.plugins.tab)
+	}
+
+	_ = m.plugins.view(m, l.inner.w, l.inner.h)
+	line := rowLine(&m.plugins.clicks, 1)
+	if line < 0 {
+		t.Fatal("second hook row should be clickable")
+	}
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: l.inner.y + line})
+	if m.plugins.list.cursor != 1 {
+		t.Fatalf("first hook row click should select row 1, got %d", m.plugins.list.cursor)
+	}
+
+	_ = m.plugins.view(m, l.inner.w, l.inner.h)
+	line = rowLine(&m.plugins.clicks, 1)
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: l.inner.y + line})
+	rows := loadHookRows(hooksPath, "user")
+	if len(rows) != 2 || !rows[1].Disabled {
+		t.Fatalf("second hook row click should toggle disabled, got %+v", rows)
+	}
+}
+
+func TestPluginsPageMouseCardsMarkEveryLine(t *testing.T) {
+	seedPluginPage(t)
+	m := NewAt(testData(), PagePlugins)
+	m.width, m.height = 120, 36
+	l := m.computeLayout()
+	_ = m.plugins.view(m, l.inner.w, l.inner.h)
+	if got := clickLineCount(&m.plugins.clicks, 0); got < 2 {
+		t.Fatalf("installed plugin card should mark both rendered lines, got %d", got)
+	}
+
+	m.Update(key("2"))
+	_ = m.plugins.view(m, l.inner.w, l.inner.h)
+	if got := clickLineCount(&m.plugins.clicks, 0); got < 2 {
+		t.Fatalf("marketplace card should mark both rendered lines, got %d", got)
+	}
+}
+
+func TestPluginsMarketplaceCatalogMouseRows(t *testing.T) {
+	seedPluginPage(t)
+	m := NewAt(testData(), PagePlugins)
+	m.width, m.height = 120, 36
+	m.plugins.setTab(pluginsTabMarketplace)
+	m.plugins.catalogMarket = "core"
+	m.plugins.catalog = []pluginpkg.PluginEntry{
+		{Name: "alpha", Description: "first"},
+		{Name: "beta", Description: "second"},
+	}
+	l := m.computeLayout()
+	_ = m.plugins.view(m, l.inner.w, l.inner.h)
+	line := rowLine(&m.plugins.catalogClicks, 1)
+	if line < 0 {
+		t.Fatal("catalog row should be in the click map")
+	}
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: l.inner.y + line})
+	if !m.plugins.catalogFocus || m.plugins.catalogList.cursor != 1 {
+		t.Fatalf("catalog click should focus/select beta, focus=%v cursor=%d", m.plugins.catalogFocus, m.plugins.catalogList.cursor)
+	}
+
+	_ = m.plugins.view(m, l.inner.w, l.inner.h)
+	line = rowLine(&m.plugins.catalogClicks, 1)
+	_, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: l.inner.y + line})
+	if cmd == nil || !m.plugins.prompt.busy {
+		t.Fatal("second catalog row click should start installing the selected plugin")
+	}
+}
+
+func pluginTabHit(p *pluginsState, tab pluginsTab) (pluginTabClick, bool) {
+	for _, hit := range p.tabClicks.hits {
+		if hit.tab == tab {
+			return hit, true
+		}
+	}
+	return pluginTabClick{}, false
+}
+
+func clickLineCount(c *clickMap, idx int) int {
+	count := 0
+	for _, got := range c.line2idx {
+		if got == idx {
+			count++
+		}
+	}
+	return count
 }
 
 func TestAppPaletteSurfacesPluginAgentRoles(t *testing.T) {
