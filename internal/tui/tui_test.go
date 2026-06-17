@@ -62,7 +62,9 @@ REUSABLE:
 // assembles it, but without starting Bubble Tea.
 func testModel(t *testing.T) *model {
 	t.Helper()
-	reg, err := tool.NewRegistry()
+	reg, err := tool.NewRegistry(tool.GoalAchieved(func(context.Context, string) (bool, string, error) {
+		return false, "test judge", nil
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2467,6 +2469,64 @@ func TestGoalSetStartsWorkingImmediately(t *testing.T) {
 	}
 	if m.backend.Goal() != "ship the importer" {
 		t.Fatalf("goal not set: %q", m.backend.Goal())
+	}
+}
+
+func TestGoalAutoContinuesAfterTurnDone(t *testing.T) {
+	m := testModel(t)
+	m.backend.SetGoal("finish the import")
+	m.state = stRunning
+	m.cancel = func() {}
+	m.Update(turnDoneMsg{})
+	if m.state != stRunning {
+		t.Fatal("active goal should immediately start the next turn instead of idling")
+	}
+	found := false
+	for _, b := range m.blocks {
+		if b.kind == blockText && b.role == "user" && strings.Contains(b.body, "CURRENT GOAL is still active") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("goal continue prompt missing from transcript: %+v", m.blocks)
+	}
+}
+
+func TestGoalPanelSurfaceAndEdit(t *testing.T) {
+	m := testModel(t)
+	m.backend.SetGoal("ship the goal UI")
+	if !strings.Contains(m.statusBarView(), "goal active") {
+		t.Fatalf("status bar should surface active goal: %q", m.statusBarView())
+	}
+	if cmd := m.openGoalPanel(); cmd != nil {
+		// goal tab has no background startup command
+		t.Fatal("goal panel should open synchronously")
+	}
+	if m.rightTab != rightTabGoal {
+		t.Fatal("goal panel should select the goal tab")
+	}
+	lines := strings.Join(m.goalLines(8), "\n")
+	if !strings.Contains(lines, "goal active") || !strings.Contains(lines, "ship the goal") || !strings.Contains(lines, "UI") || !strings.Contains(lines, "[edit goal]") {
+		t.Fatalf("goal panel missing active goal/read/edit affordance:\n%s", lines)
+	}
+	// Click the [edit goal] row and accept a replacement value.
+	for y, r := range m.goalRows(m.rightCols() - 4) {
+		if r.kind == grActionEdit {
+			m.goalClick(y + 1) // +1 for panel header
+			break
+		}
+	}
+	if !m.ov.active {
+		t.Fatal("edit click should open the text overlay")
+	}
+	m.ov.value = "ship the goal UI v2"
+	cmd, handled := m.overlayKey("enter")
+	if !handled {
+		t.Fatal("overlay enter should be handled")
+	}
+	_ = cmd
+	if got := m.backend.Goal(); got != "ship the goal UI v2" {
+		t.Fatalf("goal edit did not persist, got %q", got)
 	}
 }
 

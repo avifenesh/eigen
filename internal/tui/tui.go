@@ -429,6 +429,9 @@ func (m *model) Init() tea.Cmd {
 	if m.initialTask != "" {
 		task := m.initialTask
 		cmds = append(cmds, func() tea.Msg { return submitMsg{task} })
+	} else if c := m.maybeStartGoalOnInit(); c != nil {
+		m.note("goal active — starting work")
+		cmds = append(cmds, c)
 	}
 	// A resumed session may carry a goal or loop: arm them from the start.
 	if c := m.scheduleGoalNag(); c != nil {
@@ -1487,6 +1490,10 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				if m.rightTab == rightTabTasks {
 					return m, m.tasksClick(h.localY)
 				}
+				// Goal panel: open the inline edit prompt or clear the goal.
+				if m.rightTab == rightTabGoal {
+					return m, m.goalClick(h.localY)
+				}
 				// A click on a shell row selects/expands it; [kill] stops it.
 				if m.rightTab == rightTabShells {
 					return m, m.shellsClick(h.localY)
@@ -1726,6 +1733,11 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			next := m.queued[0]
 			m.queued = m.queued[1:]
 			return m, m.submit(next)
+		}
+		if cmd := m.maybeContinueGoal(msg.err); cmd != nil {
+			pf := m.pingFlash
+			m.pingFlash = nil
+			return m, tea.Batch(pf, cmd)
 		}
 		m.relayout()
 		pf := m.pingFlash

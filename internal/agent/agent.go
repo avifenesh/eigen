@@ -51,6 +51,10 @@ You have a CORE set of tools always available (above). Many more — browser & d
 
 Call tools as needed; when the task is complete, reply with a short, specific summary of what you did.`
 
+const GoalStartInstruction = "A goal was just set (see CURRENT GOAL in your instructions). Start working toward it now: assess the current state, plan briefly, then take the first concrete actions. When it is fully achieved, call goal_achieved with evidence."
+
+const GoalContinueInstruction = "The CURRENT GOAL is still active and not judge-confirmed yet. Do not idle. Continue working toward it now: assess what remains, take the next concrete actions, and only stop once you can call goal_achieved with concrete evidence and the judge confirms it."
+
 // Approver decides whether a mutating tool call may run in gated mode. It is
 // context-aware so a UI can cancel a pending prompt, and returns an error
 // distinct from a plain "no".

@@ -145,6 +145,9 @@ func (m *model) statusBarParts() []statusSeg {
 		}
 		segs = append(segs, statusSeg{text: seg, style: styleReason})
 	}
+	if goal := m.goalActive(); goal != "" {
+		segs = append(segs, statusSeg{text: "goal active", style: styleAsk.Bold(true), action: actGoalPanel})
+	}
 	if m.loopPrompt != "" {
 		segs = append(segs, statusSeg{text: "loop=" + m.loopEvery.String(), style: styleAsk})
 	}

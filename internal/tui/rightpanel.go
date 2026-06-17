@@ -19,6 +19,7 @@ const (
 	rightTabGit
 	rightTabTerminal
 	rightTabTasks
+	rightTabGoal
 	rightTabShells
 	rightTabNotepad
 )
@@ -33,6 +34,8 @@ func (t rightPanelTab) label() string {
 		return "tasks"
 	case rightTabShells:
 		return "shells"
+	case rightTabGoal:
+		return "goal"
 	case rightTabNotepad:
 		return "notes"
 	default:
@@ -52,6 +55,8 @@ func (t rightPanelTab) shortLabel() string {
 		return "tsk"
 	case rightTabShells:
 		return "sh"
+	case rightTabGoal:
+		return "go"
 	case rightTabNotepad:
 		return "nt"
 	default:
@@ -61,6 +66,9 @@ func (t rightPanelTab) shortLabel() string {
 
 func (m *model) rightTabs() []rightPanelTab {
 	tabs := []rightPanelTab{rightTabChanges, rightTabGit, rightTabTerminal, rightTabTasks}
+	if m.goalActive() != "" {
+		tabs = append(tabs, rightTabGoal)
+	}
 	// The shells tab appears only when the backend can host background shells
 	// AND there are shells to show (keeps the header lean otherwise).
 	if len(m.backendShells()) > 0 {

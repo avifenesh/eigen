@@ -44,6 +44,7 @@ const (
 	actRightTabNext
 	actTerminalTab
 	actTasksTab
+	actGoalPanel
 	actShellsTab
 	actTray
 	actBackgroundTurn
@@ -263,6 +264,14 @@ var actionRegistry = map[actionID]action{
 		enabled: always,
 		run: func(m *model) tea.Cmd {
 			return m.setRightTab(rightTabTasks)
+		},
+	},
+	actGoalPanel: {
+		id:      actGoalPanel,
+		label:   "goal panel",
+		enabled: hasBackend,
+		run: func(m *model) tea.Cmd {
+			return m.openGoalPanel()
 		},
 	},
 	actShellsTab: {

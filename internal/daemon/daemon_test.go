@@ -810,6 +810,70 @@ func TestBgDoneWakesIdleOrchestrator(t *testing.T) {
 	t.Fatal("idle orchestrator was not woken with the finished task's result")
 }
 
+type goalLoopProvider struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (p *goalLoopProvider) Name() string    { return "goal-loop" }
+func (p *goalLoopProvider) ModelID() string { return "goal-loop" }
+func (p *goalLoopProvider) Complete(_ context.Context, req llm.Request) (*llm.Response, error) {
+	p.mu.Lock()
+	p.calls++
+	calls := p.calls
+	p.mu.Unlock()
+	if !strings.Contains(req.System, "CURRENT GOAL") {
+		return &llm.Response{Text: "no goal"}, nil
+	}
+	if calls == 1 {
+		return &llm.Response{Text: "not done yet"}, nil
+	}
+	return &llm.Response{ToolCalls: []llm.ToolCall{{ID: "g1", Name: "goal_achieved", Arguments: json.RawMessage(`{"evidence":"done"}`)}}}, nil
+}
+
+func (p *goalLoopProvider) callCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.calls
+}
+
+func TestGoalSetWakesAndContinuesUntilJudgeClears(t *testing.T) {
+	prov := &goalLoopProvider{}
+	var a *agent.Agent
+	reg, _ := tool.NewRegistry(tool.GoalAchieved(func(context.Context, string) (bool, string, error) {
+		a.SetGoal("")
+		return true, "confirmed", nil
+	}))
+	a = &agent.Agent{Provider: prov, Tools: reg, Perm: agent.PermAuto}
+	s := newSession("goal", "/tmp", "", a)
+	s.setGoal("finish the daemon goal loop")
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if a.CurrentGoal() == "" && prov.callCount() >= 3 {
+			msgs := s.sess.Messages()
+			var sawStart, sawContinue bool
+			for _, m := range msgs {
+				if m.Role != llm.RoleUser {
+					continue
+				}
+				if strings.Contains(m.Text, "A goal was just set") {
+					sawStart = true
+				}
+				if strings.Contains(m.Text, "CURRENT GOAL is still active") {
+					sawContinue = true
+				}
+			}
+			if !sawStart || !sawContinue {
+				t.Fatalf("goal wake should include start and continue prompts, start=%v continue=%v messages=%+v", sawStart, sawContinue, msgs)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("goal loop did not run until judge cleared it; goal=%q calls=%d", a.CurrentGoal(), prov.callCount())
+}
+
 func TestStatsOp(t *testing.T) {
 	sock := filepath.Join(t.TempDir(), "d.sock")
 	host := NewHost()

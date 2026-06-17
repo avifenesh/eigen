@@ -181,6 +181,32 @@ func (s *Session) wakeForBg(id string) {
 	s.send(msg, nil)
 }
 
+func (s *Session) goalJudgeAvailable() bool {
+	if s == nil || s.agent == nil || s.agent.Tools == nil {
+		return false
+	}
+	for _, d := range s.agent.Tools.Definitions() {
+		if d.Name == "goal_achieved" {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Session) wakeForGoalStart() {
+	if !s.goalJudgeAvailable() || strings.TrimSpace(s.agent.CurrentGoal()) == "" {
+		return
+	}
+	s.send(agent.GoalStartInstruction, nil)
+}
+
+func (s *Session) wakeForGoalContinue() {
+	if !s.goalJudgeAvailable() || strings.TrimSpace(s.agent.CurrentGoal()) == "" {
+		return
+	}
+	s.send(agent.GoalContinueInstruction, nil)
+}
+
 // maxReplayEvents bounds the per-session replay buffer — large enough to cover
 // any single in-progress turn's deltas (all a mid-turn attach needs), small
 // enough that a multi-day session can't leak unbounded memory.
@@ -305,6 +331,12 @@ func (s *Session) finishTurn(ctx context.Context, err error) {
 	s.mu.Lock()
 	s.events = nil
 	s.mu.Unlock()
+	if !interrupted && err == nil {
+		// A goal is not permission to go idle. The goal_achieved tool clears it
+		// only after judge confirmation; until then the daemon keeps the hosted
+		// agent moving even if no TUI is attached.
+		s.wakeForGoalContinue()
+	}
 }
 
 // backgroundedNotifyMin is the minimum turn length worth a desktop notification
@@ -533,7 +565,12 @@ func (s *Session) state() *SessionState {
 
 // setPerm/setGoal mutate session state (the agent's setters are mutex-guarded).
 func (s *Session) setPerm(p string) { s.agent.SetPerm(agent.Permission(p)) }
-func (s *Session) setGoal(g string) { s.agent.SetGoal(g) }
+func (s *Session) setGoal(g string) {
+	s.agent.SetGoal(g)
+	if strings.TrimSpace(g) != "" {
+		s.wakeForGoalStart()
+	}
+}
 
 // addDir extends the session's tool sandbox (user-invoked /add-dir grant).
 // Returns the normalized root added; the agent's Policy guards its concurrency.

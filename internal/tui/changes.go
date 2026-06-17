@@ -395,6 +395,9 @@ func (m *model) changesLines(h int) []string {
 	if m.rightTab == rightTabTasks {
 		return m.tasksLines(h)
 	}
+	if m.rightTab == rightTabGoal {
+		return m.goalLines(h)
+	}
 	if m.rightTab == rightTabShells {
 		return m.shellsLines(h)
 	}
