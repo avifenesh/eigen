@@ -138,7 +138,8 @@ func (s *sessionsState) view(m *Model, w, h int) string {
 	if len(d.Sessions) == 0 {
 		return out + sFaint.Render("  none yet — press n to start one")
 	}
-	visible := h - 6
+	out += sessionsSummaryLine(d.Sessions, len(s.visIdx), s.hidden, w) + "\n\n"
+	visible := h - 8
 	from, to := s.list.window(visible)
 	titleW := w - 36
 	if titleW < 16 {
@@ -161,6 +162,9 @@ func (s *sessionsState) view(m *Model, w, h int) string {
 	case s.hidden > 0 && !s.filter.active():
 		out += sFaint.Render(fmt.Sprintf("  … %d older than 7d — a shows all", s.hidden)) + "\n"
 	}
+	if s.list.cursor >= 0 && s.list.cursor < len(s.visIdx) {
+		out += "\n" + sessionSelectedDetail(d.Sessions[s.visIdx[s.list.cursor]], w) + "\n"
+	}
 	out += "\n"
 	switch {
 	case s.confirmDel:
@@ -177,6 +181,39 @@ func (s *sessionsState) view(m *Model, w, h int) string {
 		out += sFaint.Render("  enter resume · n new · / search · s source · a all · e export · d delete")
 	}
 	return out
+}
+
+func sessionsSummaryLine(rows []SessionRow, visible, hidden, w int) string {
+	counts := map[string]int{}
+	for _, r := range rows {
+		counts[r.Source]++
+	}
+	parts := []string{fmt.Sprintf("%d total", len(rows)), fmt.Sprintf("%d visible", visible)}
+	for _, src := range []string{"daemon", "codex", "eigen"} {
+		if counts[src] > 0 {
+			parts = append(parts, fmt.Sprintf("%s %d", src, counts[src]))
+			delete(counts, src)
+		}
+	}
+	for src, n := range counts {
+		if src == "" {
+			src = "unknown"
+		}
+		parts = append(parts, fmt.Sprintf("%s %d", src, n))
+	}
+	if hidden > 0 {
+		parts = append(parts, fmt.Sprintf("%d older hidden", hidden))
+	}
+	return sFaint.Render("  " + truncate(strings.Join(parts, "  ·  "), max(20, w-2)))
+}
+
+func sessionSelectedDetail(r SessionRow, w int) string {
+	dir := r.Dir
+	if dir == "" {
+		dir = "unknown dir"
+	}
+	line := fmt.Sprintf("selected: %s · %s · %d message(s) · %s", r.Source, r.ID, r.Msgs, dir)
+	return sFaint.Render("  " + truncate(line, max(20, w-2)))
 }
 
 // clickAt handles a content-local click: select the row under the cursor, and

@@ -3,6 +3,7 @@ package app
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -293,6 +294,22 @@ func TestLiveLabelFallsBackToDirThenID(t *testing.T) {
 	}
 	if got := liveLabel(daemon.SessionInfo{ID: "s7"}); got != "s7" {
 		t.Errorf("id fallback: %q", got)
+	}
+}
+
+func TestSessionsPageSummaryAndSelectedDetail(t *testing.T) {
+	d := testData()
+	d.Sessions = []SessionRow{
+		{ID: "d1", Title: "daemon work", Source: "daemon", Dir: "/repo", Msgs: 10, Updated: time.Now().UnixNano()},
+		{ID: "c1", Title: "codex work", Source: "codex", Dir: "/repo", Msgs: 5, Updated: time.Now().UnixNano()},
+		{ID: "e1", Title: "eigen work", Source: "eigen", Dir: "/repo", Msgs: 2, Updated: time.Now().UnixNano()},
+	}
+	m := NewAt(d, PageSessions)
+	out := m.sessions.view(m, 100, 32)
+	for _, want := range []string{"3 total", "3 visible", "daemon 1", "codex 1", "eigen 1", "selected: daemon", "d1", "10 message"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("sessions page missing %q:\n%s", want, out)
+		}
 	}
 }
 
