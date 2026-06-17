@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -170,5 +171,70 @@ func TestPipelinePhase2BuildsRawMemoriesFromStage1AndAdHoc(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(p.Store.AdHocNotes(0), "\n"), "manual save") && !strings.Contains(p.Store.Read(), "consolidated") {
 		t.Fatal("phase2 should rewrite MEMORY.md from the merged input")
+	}
+}
+
+func TestPipelineChunkedConsolidationForLargePhase2Input(t *testing.T) {
+	p := fakePipe(t)
+	p.Phase2ChunkBytes = 2048
+	if err := p.Store.Rewrite("## Legacy\n\n" + strings.Repeat("- reusable legacy fact with enough text to force chunking\n", 240)); err != nil {
+		t.Fatal(err)
+	}
+
+	var calls []int
+	p.Consolidate = func(_ context.Context, cur string) (string, error) {
+		calls = append(calls, len(cur))
+		if len(cur) > p.Phase2ChunkBytes {
+			t.Fatalf("consolidate input exceeded chunk limit: got %d want <= %d", len(cur), p.Phase2ChunkBytes)
+		}
+		return "## Consolidated\n- chunk bytes: " + itoa(len(cur)) + "\n", nil
+	}
+
+	did, err := p.MaybeConsolidate(context.Background(), true)
+	if err != nil || !did {
+		t.Fatalf("chunked consolidate: did=%v err=%v", did, err)
+	}
+	if len(calls) < 2 {
+		t.Fatalf("large phase2 input should be split across multiple consolidate calls, got %v", calls)
+	}
+	if !strings.Contains(p.Store.Read(), "chunk bytes") {
+		t.Fatalf("MEMORY.md should contain consolidated chunk output, got:\n%s", p.Store.Read())
+	}
+}
+
+func TestPipelineMarksStage1SelectedOnlyAfterSuccessfulRewrite(t *testing.T) {
+	p := fakePipe(t)
+	if n, err := p.Stage1Sessions(context.Background(), []Session{{ID: "s1", Transcript: "alpha", Watermark: 10}}); err != nil || n != 1 {
+		t.Fatalf("stage1: n=%d err=%v", n, err)
+	}
+
+	p.Consolidate = func(_ context.Context, cur string) (string, error) {
+		return "", errors.New("provider refused")
+	}
+	did, err := p.MaybeConsolidate(context.Background(), true)
+	if err == nil || did {
+		t.Fatalf("failed consolidate should report no rewrite: did=%v err=%v", did, err)
+	}
+	rows, err := p.Index.Stage1Outputs(p.scopeKey(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].SelectedForPhase2 {
+		t.Fatalf("failed phase2 must not mark rows selected, got %+v", rows)
+	}
+
+	p.Consolidate = func(_ context.Context, cur string) (string, error) {
+		return "## Consolidated\n- kept fact\n", nil
+	}
+	did, err = p.MaybeConsolidate(context.Background(), true)
+	if err != nil || !did {
+		t.Fatalf("successful consolidate: did=%v err=%v", did, err)
+	}
+	rows, err = p.Index.Stage1Outputs(p.scopeKey(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || !rows[0].SelectedForPhase2 || rows[0].SelectedForPhase2SourceUpdatedAt != 10 {
+		t.Fatalf("successful phase2 should mark source watermark selected, got %+v", rows)
 	}
 }

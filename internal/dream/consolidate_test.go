@@ -51,6 +51,14 @@ func TestConsolidateFailsClosedOnMassiveShrink(t *testing.T) {
 	}
 }
 
+func TestConsolidateAllowsSectionalPhase2Shrink(t *testing.T) {
+	big := "## Phase 2 chunk 4/8\n\n" + strings.Repeat("- 2026-01-01 — a long detailed note about the build system and its many flags\n", 200)
+	f := &fakeProv{reply: "## Memory\n" + strings.Repeat("- 2026-01-01 — durable fact from this section\n", 8)}
+	if _, err := Consolidate(context.Background(), f, big); err != nil {
+		t.Fatalf("sectional phase2 shrink should be allowed: %v", err)
+	}
+}
+
 func TestConsolidateEmptyMemoryErrors(t *testing.T) {
 	f := &fakeProv{reply: "- x\n"}
 	if _, err := Consolidate(context.Background(), f, "  "); err == nil {

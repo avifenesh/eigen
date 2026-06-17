@@ -75,8 +75,19 @@ func Consolidate(ctx context.Context, p llm.Provider, current string) (string, e
 	if structured == 0 {
 		return "", fmt.Errorf("consolidation output is not structured markdown; keeping current memory")
 	}
-	if len(out) < len(cur)/10 {
-		return "", fmt.Errorf("consolidation shrank memory by >90%% (%d → %d bytes); refusing as likely destructive", len(cur), len(out))
+	shrinkRatio := 10
+	shrinkLabel := ">90%"
+	if isSectionalPhase2Input(cur) {
+		shrinkRatio = 100
+		shrinkLabel = ">99%"
+	}
+	if len(out) < len(cur)/shrinkRatio {
+		return "", fmt.Errorf("consolidation shrank memory by %s (%d → %d bytes); refusing as likely destructive", shrinkLabel, len(cur), len(out))
 	}
 	return out + "\n", nil
+}
+
+func isSectionalPhase2Input(s string) bool {
+	s = strings.TrimSpace(s)
+	return strings.HasPrefix(s, "## Phase 2 chunk ") || strings.HasPrefix(s, "## Phase 2 merge")
 }

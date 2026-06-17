@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -13,6 +14,10 @@ const (
 	JobSummary     = "mem_summary"
 
 	scopeJobKey = "scope"
+
+	defaultPhase2ChunkBytes = 80_000
+	maxPhase2ChunkBytes     = 100_000
+	maxPhase2ChunkDepth     = 4
 )
 
 // Pipeline orchestrates the memory generation stages over a scope: turn new
@@ -38,6 +43,12 @@ type Pipeline struct {
 	// ConsolidateBytes triggers a consolidate when MEMORY.md exceeds this size
 	// (0 = a sane default).
 	ConsolidateBytes int
+
+	// Phase2ChunkBytes bounds each input sent to Consolidate when a legacy
+	// MEMORY.md/raw_memories.md payload is too large for one safe rewrite
+	// (0 = a sane default). This keeps the callback's shrink guard meaningful
+	// per chunk instead of comparing one compact summary against a huge input.
+	Phase2ChunkBytes int
 }
 
 // Stage1Result is the model output for one transcript. RawMemory is the compact
@@ -215,7 +226,7 @@ func (p *Pipeline) MaybeConsolidate(ctx context.Context, force bool) (bool, erro
 	if p.Store == nil || p.Consolidate == nil {
 		return false, nil
 	}
-	cur := p.phase2Input()
+	cur, selected := p.phase2Input()
 	limit := p.ConsolidateBytes
 	if limit <= 0 {
 		limit = 24_000 // ~ a few hundred bullets; keeps MEMORY.md curatable
@@ -227,19 +238,22 @@ func (p *Pipeline) MaybeConsolidate(ctx context.Context, force bool) (bool, erro
 		return false, nil
 	}
 	_ = p.Store.WriteRawMemories(cur)
-	out, err := p.Consolidate(ctx, cur)
+	out, err := p.consolidatePhase2(ctx, cur)
 	if err != nil {
 		return false, err // the callback's shrink/empty guards refused — keep current
 	}
 	if err := p.Store.Rewrite(out); err != nil {
 		return false, err
 	}
+	if p.Index != nil {
+		p.Index.MarkSelectedForPhase2(selected)
+	}
 	return true, nil
 }
 
-func (p *Pipeline) phase2Input() string {
+func (p *Pipeline) phase2Input() (string, []Stage1Output) {
 	if p == nil || p.Store == nil {
-		return ""
+		return "", nil
 	}
 	var b strings.Builder
 	if cur := strings.TrimSpace(p.Store.Read()); cur != "" {
@@ -267,10 +281,122 @@ func (p *Pipeline) phase2Input() string {
 			b.WriteString("\n\n")
 		}
 	}
-	if p.Index != nil {
-		p.Index.MarkSelectedForPhase2(selected)
+	return strings.TrimSpace(b.String()) + "\n", selected
+}
+
+func (p *Pipeline) consolidatePhase2(ctx context.Context, input string) (string, error) {
+	if p == nil || p.Consolidate == nil {
+		return "", fmt.Errorf("memory consolidation unavailable")
 	}
-	return strings.TrimSpace(b.String()) + "\n"
+	limit := p.Phase2ChunkBytes
+	if limit <= 0 {
+		limit = defaultPhase2ChunkBytes
+	}
+	if limit > maxPhase2ChunkBytes {
+		limit = maxPhase2ChunkBytes
+	}
+	if limit < 1024 {
+		limit = 1024
+	}
+	return p.consolidatePhase2Chunked(ctx, strings.TrimSpace(input), limit, 0)
+}
+
+func (p *Pipeline) consolidatePhase2Chunked(ctx context.Context, input string, limit, depth int) (string, error) {
+	if strings.TrimSpace(input) == "" {
+		return "", fmt.Errorf("memory is empty; nothing to consolidate")
+	}
+	if len(input) <= limit {
+		return p.Consolidate(ctx, input)
+	}
+	if depth >= maxPhase2ChunkDepth {
+		return "", fmt.Errorf("phase2 input stayed over %d bytes after %d chunking passes", limit, maxPhase2ChunkDepth)
+	}
+
+	payloadLimit := limit - 512
+	if payloadLimit < 512 {
+		payloadLimit = limit
+	}
+	chunks := splitPhase2Chunks(input, payloadLimit)
+	if len(chunks) <= 1 {
+		return p.Consolidate(ctx, input)
+	}
+
+	var merged []string
+	for i, ch := range chunks {
+		ch = strings.TrimSpace(ch)
+		if ch == "" {
+			continue
+		}
+		chunkInput := fmt.Sprintf("## Phase 2 chunk %d/%d\n\n%s", i+1, len(chunks), ch)
+		out, err := p.Consolidate(ctx, chunkInput)
+		if err != nil {
+			return "", fmt.Errorf("phase2 chunk %d/%d: %w", i+1, len(chunks), err)
+		}
+		out = strings.TrimSpace(out)
+		if out == "" {
+			return "", fmt.Errorf("phase2 chunk %d/%d produced empty output", i+1, len(chunks))
+		}
+		merged = append(merged, fmt.Sprintf("## Consolidated chunk %d/%d\n\n%s", i+1, len(chunks), out))
+	}
+	joined := strings.TrimSpace(strings.Join(merged, "\n\n"))
+	if joined == "" {
+		return "", fmt.Errorf("phase2 chunking produced empty output")
+	}
+	mergeInput := "## Phase 2 merge\n\n" + joined
+	if len(mergeInput) <= limit {
+		return p.Consolidate(ctx, mergeInput)
+	}
+	return p.consolidatePhase2Chunked(ctx, joined, limit, depth+1)
+}
+
+func splitPhase2Chunks(input string, limit int) []string {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return nil
+	}
+	if limit <= 0 || len(input) <= limit {
+		return []string{input}
+	}
+	var chunks []string
+	var b strings.Builder
+	flush := func() {
+		if strings.TrimSpace(b.String()) == "" {
+			b.Reset()
+			return
+		}
+		chunks = append(chunks, strings.TrimSpace(b.String()))
+		b.Reset()
+	}
+	for _, line := range strings.SplitAfter(input, "\n") {
+		for len(line) > limit {
+			if b.Len() > 0 {
+				flush()
+			}
+			head, tail := splitAtRuneBoundary(line, limit)
+			chunks = append(chunks, strings.TrimSpace(head))
+			line = tail
+		}
+		if b.Len() > 0 && b.Len()+len(line) > limit {
+			flush()
+		}
+		b.WriteString(line)
+	}
+	flush()
+	return chunks
+}
+
+func splitAtRuneBoundary(s string, limit int) (string, string) {
+	if limit <= 0 || len(s) <= limit {
+		return s, ""
+	}
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	if cut == 0 {
+		cut = limit
+	}
+	return s[:cut], s[cut:]
 }
 
 // RegenSummary regenerates the small injected memory_summary.md from MEMORY.md. No-op
