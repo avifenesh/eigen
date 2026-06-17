@@ -23,7 +23,7 @@ type TaskRun func(ctx context.Context, task string, opts TaskOpts, background bo
 
 // TaskStatusRun is injected by main/buildSession for querying/collecting
 // background task state.
-type TaskStatusRun func(ctx context.Context, id string, all, verbose bool) (string, error)
+type TaskStatusRun func(ctx context.Context, id string, all, verbose bool, tail int) (string, error)
 
 // GroupSubtaskArg is one child in a task_group fan-out, as the model supplies it.
 type GroupSubtaskArg struct {
@@ -90,14 +90,15 @@ func Task(run TaskRun) Definition {
 func TaskStatus(run TaskStatusRun) Definition {
 	return Definition{
 		Name:        "task_status",
-		Description: "Check background tasks started with task(background=true). With id, returns running/done/error plus result when ready; set verbose=true with an id to include attempt history and transcript paths. Without id or with all=true, lists known background tasks.",
+		Description: "Check background tasks started with task(background=true). With id, returns running/done/error plus result when ready; set verbose=true with an id to include attempt history and transcript paths. Set tail=N with an id to include the last N transcript messages (capped). Without id or with all=true, lists known background tasks.",
 		ReadOnly:    true,
 		Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
     "id": { "type": "string", "description": "Background task id, e.g. bg-142233-1. Omit to list tasks." },
     "all": { "type": "boolean", "description": "List all known background tasks instead of one id." },
-    "verbose": { "type": "boolean", "description": "With id, include attempt history plus state/transcript file paths. With all=true, include transcript paths in the listing." }
+    "verbose": { "type": "boolean", "description": "With id, include attempt history plus state/transcript file paths. With all=true, include transcript paths in the listing." },
+    "tail": { "type": "integer", "minimum": 0, "maximum": 50, "description": "With id, include the last N transcript messages inline (implies verbose). Use a small value, e.g. 6-12." }
   },
   "additionalProperties": false
 }`),
@@ -106,6 +107,7 @@ func TaskStatus(run TaskStatusRun) Definition {
 				ID      string `json:"id"`
 				All     bool   `json:"all"`
 				Verbose bool   `json:"verbose"`
+				Tail    int    `json:"tail"`
 			}
 			if len(args) > 0 {
 				if err := json.Unmarshal(args, &in); err != nil {
@@ -115,7 +117,7 @@ func TaskStatus(run TaskStatusRun) Definition {
 			if run == nil {
 				return "", fmt.Errorf("background tasks are not available")
 			}
-			return run(ctx, in.ID, in.All, in.Verbose)
+			return run(ctx, in.ID, in.All, in.Verbose, in.Tail)
 		},
 	}
 }

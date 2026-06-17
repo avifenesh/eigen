@@ -142,8 +142,9 @@ Open work:
   verbose mode shows attempt history plus state/transcript paths. Remaining:
   handle context-window failures with split/compact rather than blind reroute.
 - [~] **Child transcript viewer / promote-to-session.** `task_status(verbose=true)`
-  now exposes transcript/state paths and attempt summaries. Remaining: inline
-  transcript tail/viewer and promote-to-session/resume flow.
+  exposes transcript/state paths and attempt summaries; `task_status(tail:N)`
+  shows the last N transcript messages inline. Remaining: promote-to-session /
+  resume flow.
 - [ ] **Ultraplan / adversarial expansion / non-LLM heads.** Parked research
   items. Pull only when there is a concrete product reason.
 

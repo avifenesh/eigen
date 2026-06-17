@@ -110,17 +110,17 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		if deps.Agent == nil {
 			return "", fmt.Errorf("subtasks unavailable")
 		}
-		aopts := agent.SubtaskOpts{Kind: opts.Kind, Difficulty: opts.Difficulty, Model: opts.Model}
+		aopts := agent.SubtaskOpts{Kind: opts.Kind, Difficulty: opts.Difficulty, Model: opts.Model, Role: opts.Role}
 		if background {
 			return deps.Agent.SubtaskBackground(ctx, t, aopts)
 		}
 		return deps.Agent.SubtaskWith(ctx, t, aopts)
 	}
-	taskStatus := func(ctx context.Context, id string, all, verbose bool) (string, error) {
+	taskStatus := func(ctx context.Context, id string, all, verbose bool, tail int) (string, error) {
 		if deps.Agent == nil || deps.Agent.Bg == nil {
 			return "", fmt.Errorf("background tasks unavailable")
 		}
-		return formatTaskStatus(deps.Agent.Bg, id, all, verbose), nil
+		return formatTaskStatus(deps.Agent.Bg, id, all, verbose, tail), nil
 	}
 	taskGroup := func(ctx context.Context, subs []tool.GroupSubtaskArg, workers int, synthesize string) (string, error) {
 		if deps.Agent == nil {

@@ -53,13 +53,13 @@ func TestTaskIsReadOnly(t *testing.T) {
 }
 
 func TestTaskStatusTool(t *testing.T) {
-	def := TaskStatus(func(_ context.Context, id string, all, verbose bool) (string, error) {
-		if id != "bg1" || all || !verbose {
-			t.Fatalf("bad status args id=%q all=%v verbose=%v", id, all, verbose)
+	def := TaskStatus(func(_ context.Context, id string, all, verbose bool, tail int) (string, error) {
+		if id != "bg1" || all || !verbose || tail != 7 {
+			t.Fatalf("bad status args id=%q all=%v verbose=%v tail=%d", id, all, verbose, tail)
 		}
 		return "done", nil
 	})
-	out, err := def.Run(context.Background(), json.RawMessage(`{"id":"bg1","verbose":true}`))
+	out, err := def.Run(context.Background(), json.RawMessage(`{"id":"bg1","verbose":true,"tail":7}`))
 	if err != nil || out != "done" {
 		t.Fatalf("out=%q err=%v", out, err)
 	}

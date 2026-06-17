@@ -1,26 +1,37 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
+	"github.com/avifenesh/eigen/internal/llm"
 )
 
 // formatTaskStatus is the textual surface behind the task_status tool.
-func formatTaskStatus(bg *agent.BgRegistry, id string, all, verbose bool) string {
+func formatTaskStatus(bg *agent.BgRegistry, id string, all, verbose bool, tail int) string {
 	if bg == nil {
 		return "background tasks unavailable"
+	}
+	if tail < 0 {
+		tail = 0
+	}
+	if tail > maxTranscriptTail {
+		tail = maxTranscriptTail
 	}
 	if id != "" && !all {
 		t := bg.Get(id)
 		if t == nil {
 			return "no such background task: " + id
 		}
-		if verbose {
-			return formatTaskStatusVerbose(bg, *t)
+		if verbose || tail > 0 {
+			return formatTaskStatusVerbose(bg, *t, tail)
 		}
 		return t.Format()
 	}
@@ -72,13 +83,16 @@ func formatTaskStatus(bg *agent.BgRegistry, id string, all, verbose bool) string
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func formatTaskStatusVerbose(bg *agent.BgRegistry, t agent.BgTask) string {
+const maxTranscriptTail = 50
+
+func formatTaskStatusVerbose(bg *agent.BgRegistry, t agent.BgTask, tail int) string {
 	var b strings.Builder
 	b.WriteString(t.Format())
 	if state := bg.StatePath(t.ID); state != "" {
 		b.WriteString("\n\nstate: " + pathExistLabel(state))
 	}
-	if transcript := bg.TranscriptPath(t.ID); transcript != "" {
+	transcript := bg.TranscriptPath(t.ID)
+	if transcript != "" {
 		b.WriteString("\ntranscript: " + pathExistLabel(transcript))
 	}
 	if hist := bg.History(t.ID); len(hist) > 0 {
@@ -86,6 +100,9 @@ func formatTaskStatusVerbose(bg *agent.BgRegistry, t agent.BgTask) string {
 		for _, a := range summarizeAttempts(hist) {
 			b.WriteString("\n  " + a)
 		}
+	}
+	if tail > 0 && transcript != "" {
+		b.WriteString("\n\n" + formatTranscriptTail(transcript, tail))
 	}
 	return b.String()
 }
@@ -148,6 +165,95 @@ func summarizeAttempts(hist []agent.BgTask) []string {
 	return out
 }
 
+func formatTranscriptTail(path string, n int) string {
+	if n <= 0 {
+		return "transcript tail: disabled"
+	}
+	if n > maxTranscriptTail {
+		n = maxTranscriptTail
+	}
+	msgs, err := readTranscriptTail(path, n)
+	if err != nil {
+		return "transcript tail: " + err.Error()
+	}
+	if len(msgs) == 0 {
+		return fmt.Sprintf("transcript tail (last %d): empty", n)
+	}
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("transcript tail (last %d message(s)):", len(msgs)))
+	for _, m := range msgs {
+		b.WriteString("\n  " + formatTranscriptMessage(m))
+	}
+	return b.String()
+}
+
+func readTranscriptTail(path string, n int) ([]llm.Message, error) {
+	if n <= 0 {
+		return nil, nil
+	}
+	if n > maxTranscriptTail {
+		n = maxTranscriptTail
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	r := bufio.NewReader(f)
+	ring := make([]llm.Message, 0, n)
+	for {
+		line, err := r.ReadBytes('\n')
+		if len(bytes.TrimSpace(line)) > 0 {
+			var msg llm.Message
+			if json.Unmarshal(bytes.TrimSpace(line), &msg) == nil && msg.Role != "" {
+				if len(ring) == n {
+					copy(ring, ring[1:])
+					ring[n-1] = msg
+				} else {
+					ring = append(ring, msg)
+				}
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return ring, err
+		}
+	}
+	return ring, nil
+}
+
+func formatTranscriptMessage(m llm.Message) string {
+	label := string(m.Role)
+	if m.Role == llm.RoleTool {
+		if m.ToolName != "" {
+			label += "/" + m.ToolName
+		} else if m.ToolCallID != "" {
+			label += "/" + m.ToolCallID
+		}
+	}
+	text := m.Text
+	if text == "" && len(m.ToolCalls) > 0 {
+		var names []string
+		for _, tc := range m.ToolCalls {
+			if tc.Name != "" {
+				names = append(names, tc.Name)
+			}
+		}
+		if len(names) > 0 {
+			text = "tool calls: " + strings.Join(names, ", ")
+		}
+	}
+	if text == "" && len(m.Images) > 0 {
+		text = fmt.Sprintf("%d image(s)", len(m.Images))
+	}
+	if text == "" {
+		text = "(empty)"
+	}
+	return label + ": " + oneLineLimit(text, 240)
+}
+
 func pathExistLabel(path string) string {
 	if path == "" {
 		return ""
@@ -158,10 +264,15 @@ func pathExistLabel(path string) string {
 	return path
 }
 
-func oneLine(s string) string {
+func oneLine(s string) string { return oneLineLimit(s, 120) }
+
+func oneLineLimit(s string, limit int) string {
 	s = strings.Join(strings.Fields(s), " ")
-	if len(s) > 120 {
-		return s[:120] + "…"
+	if limit <= 0 {
+		return ""
+	}
+	if len(s) > limit {
+		return s[:limit] + "…"
 	}
 	return s
 }
