@@ -296,6 +296,24 @@ func TestLiveLabelFallsBackToDirThenID(t *testing.T) {
 	}
 }
 
+func TestLivePageSummaryAndSelectedDetail(t *testing.T) {
+	d := testData()
+	d.Daemon = &daemon.Client{}
+	d.Live = []daemon.SessionInfo{
+		{ID: "s1", Title: "build", Dir: "/p", Model: "gpt-5.5", Status: daemon.StatusWorking, Turns: 3, Views: 1, Updated: 1},
+		{ID: "s2", Title: "review", Dir: "/q", Status: daemon.StatusApproval},
+		{ID: "s3", Title: "idle", Dir: "/r", Status: daemon.StatusIdle},
+	}
+	m := NewAt(d, PageLive)
+	m.width, m.height = 110, 32
+	out := m.live.view(m, 90, 28)
+	for _, want := range []string{"3 sessions", "1 working", "1 idle", "1 needs approval", "1 view", "selected: s1", "gpt-5.5", "3 turn"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("live page missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestLivePageAttachResult(t *testing.T) {
 	d := testData()
 	d.Live = []daemon.SessionInfo{{ID: "s1", Title: "t", Dir: "/p", Status: daemon.StatusIdle}}

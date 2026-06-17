@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -132,7 +133,7 @@ func (s *liveState) view(m *Model, w, h int) string {
 		out += sFaint.Render("  n  start a session here") + "\n"
 		return out
 	}
-	out += sFaint.Render(fmt.Sprintf("  %d session(s) in the daemon", len(d.Live))) + "\n\n"
+	out += liveSummaryLine(d.Live, w) + "\n\n"
 	visible := h - 7
 	if visible < 3 {
 		visible = 3
@@ -157,6 +158,9 @@ func (s *liveState) view(m *Model, w, h int) string {
 		s.clicks.mark(lineCount(out), i)
 		out += marker + style.Render(line) + "\n"
 	}
+	if s.list.cursor >= 0 && s.list.cursor < len(d.Live) {
+		out += "\n" + liveSelectedDetail(d.Live[s.list.cursor], w) + "\n"
+	}
 	out += "\n"
 	switch {
 	case s.confirmStop:
@@ -169,4 +173,45 @@ func (s *liveState) view(m *Model, w, h int) string {
 		out += sFaint.Render("  enter attach · n new · i interrupt · x stop")
 	}
 	return out
+}
+
+func liveSummaryLine(live []daemon.SessionInfo, w int) string {
+	var working, approval, errors, idle, views int
+	for _, in := range live {
+		views += in.Views
+		switch in.Status {
+		case daemon.StatusWorking:
+			working++
+		case daemon.StatusApproval:
+			approval++
+		case daemon.StatusError:
+			errors++
+		default:
+			idle++
+		}
+	}
+	parts := []string{
+		sViolet.Render(fmt.Sprintf("%d sessions", len(live))),
+		sOk.Render(fmt.Sprintf("%d working", working)),
+		sFaint.Render(fmt.Sprintf("%d idle", idle)),
+	}
+	if approval > 0 {
+		parts = append(parts, sWarn.Render(fmt.Sprintf("%d needs approval", approval)))
+	}
+	if errors > 0 {
+		parts = append(parts, sErr.Render(fmt.Sprintf("%d errors", errors)))
+	}
+	if views > 0 {
+		parts = append(parts, sAccent.Render(fmt.Sprintf("%d view(s)", views)))
+	}
+	return truncate("  "+strings.Join(parts, sFaint.Render("  ·  ")), w)
+}
+
+func liveSelectedDetail(in daemon.SessionInfo, w int) string {
+	updated := "unknown"
+	if in.Updated > 0 {
+		updated = time.Since(time.Unix(0, in.Updated)).Round(time.Second).String() + " ago"
+	}
+	line := fmt.Sprintf("selected: %s · %s · %d turn(s) · %d view(s) · updated %s", in.ID, in.Model, in.Turns, in.Views, updated)
+	return sFaint.Render("  " + truncate(line, max(20, w-2)))
 }
