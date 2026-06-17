@@ -39,6 +39,32 @@ func TestRunnerFiresMatchingHook(t *testing.T) {
 	}
 }
 
+func TestRunnerObservesHookFailure(t *testing.T) {
+	r := New([]Spec{{Event: OnNote, Command: []string{"/bin/sh", "-c", "exit 7"}}})
+	if r == nil {
+		t.Fatal("runner should exist")
+	}
+	ch := make(chan Observation, 2)
+	r.SetObserver(func(o Observation) { ch <- o })
+	r.Fire(Payload{Event: OnNote, Session: "s1"})
+	var got []Observation
+	deadline := time.After(2 * time.Second)
+	for len(got) < 2 {
+		select {
+		case o := <-ch:
+			got = append(got, o)
+		case <-deadline:
+			t.Fatalf("timed out waiting for hook observations: %+v", got)
+		}
+	}
+	if got[0].Phase != "start" || got[0].Event != OnNote || got[0].CommandHash == "" || got[0].Argc != 3 {
+		t.Fatalf("bad start observation: %+v", got[0])
+	}
+	if got[1].Phase != "done" || got[1].Err == nil || got[1].Duration < 0 {
+		t.Fatalf("bad done observation: %+v", got[1])
+	}
+}
+
 func TestRunnerIgnoresUnregistered(t *testing.T) {
 	r := New([]Spec{{Event: OnNote, Command: []string{"true"}}})
 	// Firing a different event must be a no-op (no panic, no hang).

@@ -8,9 +8,12 @@ package hook
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
@@ -45,12 +48,35 @@ type Payload struct {
 	Text    string `json:"text,omitempty"`
 }
 
+// Observation is metadata about hook execution. It intentionally omits the raw
+// command and stderr/stdout; observers get a hash/argc/status for correlation
+// without leaking hook payloads or paths into the activity log.
+type Observation struct {
+	Event       string
+	Phase       string // "start" | "done"
+	Session     string
+	CommandHash string
+	Argc        int
+	Duration    time.Duration
+	Err         error
+}
+
+type Observer func(Observation)
+
 // hookTimeout bounds a hook process so a hung hook can't leak forever.
 const hookTimeout = 30 * time.Second
 
 // Runner dispatches events to the hooks registered for them.
 type Runner struct {
 	byEvent map[string][]Spec
+	observe Observer
+}
+
+// SetObserver registers a best-effort hook execution observer (observability).
+func (r *Runner) SetObserver(o Observer) {
+	if r != nil {
+		r.observe = o
+	}
 }
 
 // New builds a Runner from specs (ignoring malformed ones: empty event or
@@ -81,16 +107,35 @@ func (r *Runner) Fire(p Payload) {
 	}
 	data, _ := json.Marshal(p)
 	for _, s := range specs {
-		go runOne(s.Command, data)
+		obs := r.observe
+		go runOne(s.Command, data, p, obs)
 	}
 }
 
-func runOne(argv []string, stdin []byte) {
+func runOne(argv []string, stdin []byte, p Payload, obs Observer) {
+	start := time.Now()
+	if obs != nil {
+		obs(Observation{Event: p.Event, Phase: "start", Session: p.Session, CommandHash: commandHash(argv), Argc: len(argv)})
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), hookTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Stdin = bytes.NewReader(stdin)
-	_ = cmd.Run() // best-effort: a hook must never break a turn
+	err := cmd.Run() // best-effort: a hook must never break a turn
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	if obs != nil {
+		obs(Observation{Event: p.Event, Phase: "done", Session: p.Session, CommandHash: commandHash(argv), Argc: len(argv), Duration: time.Since(start), Err: err})
+	}
+}
+
+func commandHash(argv []string) string {
+	if len(argv) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(strings.Join(argv, "\x00")))
+	return fmt.Sprintf("sha256:%x", sum[:8])
 }
 
 // Wrap composes hook firing onto an agent.EventSink: it fires the matching

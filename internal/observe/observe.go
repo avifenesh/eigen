@@ -16,18 +16,21 @@ import (
 	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
+	"github.com/avifenesh/eigen/internal/hook"
 )
 
 // Record is one logged event (a flattened, durable view of agent.Event plus a
 // timestamp and session id).
 type Record struct {
-	Time    string `json:"time"`
-	Session string `json:"session,omitempty"`
-	Kind    string `json:"kind"`
-	Step    int    `json:"step,omitempty"`
-	Tool    string `json:"tool,omitempty"`
-	ToolID  string `json:"tool_id,omitempty"`
-	IsError bool   `json:"is_error,omitempty"`
+	Time     string `json:"time"`
+	Session  string `json:"session,omitempty"`
+	Kind     string `json:"kind"`
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+	Step     int    `json:"step,omitempty"`
+	Tool     string `json:"tool,omitempty"`
+	ToolID   string `json:"tool_id,omitempty"`
+	IsError  bool   `json:"is_error,omitempty"`
 
 	// DurationMS is filled for tool_result (time since matching tool_start) and
 	// done (time since the first observed event in the turn) when known.
@@ -39,7 +42,11 @@ type Record struct {
 	ErrorHash string `json:"error_hash,omitempty"`
 	// NoteKind classifies EventNote text (route/compaction/background/goal/etc.)
 	// without storing the text itself.
-	NoteKind string `json:"note_kind,omitempty"`
+	NoteKind        string `json:"note_kind,omitempty"`
+	HookEvent       string `json:"hook_event,omitempty"`
+	HookPhase       string `json:"hook_phase,omitempty"`
+	HookCommandHash string `json:"hook_command_hash,omitempty"`
+	HookArgc        int    `json:"hook_argc,omitempty"`
 
 	// Bytes of the result/text, not the content itself — the log is metadata
 	// for learning/observability, not a transcript (which is saved separately).
@@ -118,6 +125,8 @@ func (l *Logger) record(e agent.Event) {
 		Time:             now.UTC().Format(time.RFC3339),
 		Session:          l.session,
 		Kind:             kindName(e.Kind),
+		Provider:         e.Provider,
+		Model:            e.Model,
 		Step:             e.Step,
 		Tool:             e.ToolName,
 		ToolID:           e.ToolID,
@@ -222,6 +231,44 @@ func classifyNote(s string) string {
 	default:
 		return "note"
 	}
+}
+
+// HookObserver returns a hook.Observer that logs hook start/done metadata. A nil
+// Logger returns nil so callers can pass it unconditionally.
+func (l *Logger) HookObserver() hook.Observer {
+	if l == nil {
+		return nil
+	}
+	return func(o hook.Observation) { l.recordHook(o) }
+}
+
+func (l *Logger) recordHook(o hook.Observation) {
+	now := time.Now()
+	rec := Record{
+		Time:            now.UTC().Format(time.RFC3339),
+		Session:         firstNonEmpty(o.Session, l.session),
+		Kind:            "hook_" + o.Phase,
+		HookEvent:       o.Event,
+		HookPhase:       o.Phase,
+		HookCommandHash: o.CommandHash,
+		HookArgc:        o.Argc,
+		DurationMS:      o.Duration.Milliseconds(),
+	}
+	if o.Err != nil {
+		rec.IsError = true
+		rec.ErrorKind = classifyError(o.Err.Error())
+		rec.ErrorHash = hashText(o.Err.Error())
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	_ = l.enc.Encode(&rec)
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 func hashText(s string) string {

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/avifenesh/eigen/internal/agent"
+	"github.com/avifenesh/eigen/internal/hook"
 )
 
 func TestLoggerWritesRecords(t *testing.T) {
@@ -23,7 +24,7 @@ func TestLoggerWritesRecords(t *testing.T) {
 	sink(agent.Event{Kind: agent.EventToolStart, Step: 0, ToolName: "bash", ToolID: "tc1"})
 	sink(agent.Event{Kind: agent.EventToolResult, Step: 0, ToolName: "bash", ToolID: "tc1", IsError: true, Result: "Denied: nope"})
 	sink(agent.Event{Kind: agent.EventNote, Text: "routed → grok-code-fast-1 (general/trivial)"})
-	sink(agent.Event{Kind: agent.EventDone, InTokens: 10, OutTokens: 3, CacheReadTokens: 4, CacheWriteTokens: 2})
+	sink(agent.Event{Kind: agent.EventDone, Provider: "codex", Model: "gpt-5.5", InTokens: 10, OutTokens: 3, CacheReadTokens: 4, CacheWriteTokens: 2})
 	lg.Close()
 
 	if forwarded != 4 {
@@ -59,8 +60,32 @@ func TestLoggerWritesRecords(t *testing.T) {
 	if recs[2].Kind != "note" || recs[2].NoteKind != "route" {
 		t.Fatalf("rec2 wrong: %+v", recs[2])
 	}
-	if recs[3].Kind != "done" || recs[3].InTokens != 10 || recs[3].OutTokens != 3 || recs[3].CacheReadTokens != 4 || recs[3].CacheWriteTokens != 2 || recs[3].Goroutines == 0 {
+	if recs[3].Kind != "done" || recs[3].Provider != "codex" || recs[3].Model != "gpt-5.5" || recs[3].InTokens != 10 || recs[3].OutTokens != 3 || recs[3].CacheReadTokens != 4 || recs[3].CacheWriteTokens != 2 || recs[3].Goroutines == 0 {
 		t.Fatalf("rec3 wrong: %+v", recs[3])
+	}
+}
+
+func TestHookObserverAndSummary(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "events.jsonl")
+	lg, err := Open(path, "sess-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	obs := lg.HookObserver()
+	obs(hook.Observation{Event: "session_start", Phase: "start", Session: "sess-2", CommandHash: "sha256:abc", Argc: 2})
+	obs(hook.Observation{Event: "session_start", Phase: "done", Session: "sess-2", CommandHash: "sha256:abc", Argc: 2})
+	lg.Close()
+	s, err := ReadSummary(path, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Hooks["session_start"].Starts != 1 || s.Hooks["session_start"].Done != 1 {
+		t.Fatalf("hook summary wrong: %+v", s.Hooks)
+	}
+	out := FormatSummary(s)
+	if !strings.Contains(out, "hooks:") || !strings.Contains(out, "session_start") {
+		t.Fatalf("summary should include hooks, got:\n%s", out)
 	}
 }
 

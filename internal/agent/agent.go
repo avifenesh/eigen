@@ -86,6 +86,8 @@ type Event struct {
 	ToolArgs json.RawMessage // EventToolStart
 	Result   string          // EventToolResult
 	IsError  bool            // EventToolResult
+	Provider string          // EventDone: provider that produced the final answer
+	Model    string          // EventDone: model id that produced the final answer
 
 	// InTokens/OutTokens: provider-reported usage summed over the turn
 	// (EventDone only; zero when the provider reports none).
@@ -1279,7 +1281,12 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 					}
 					continue
 				}
-				a.emit(Event{Kind: EventDone, Step: step, Text: resp.Text, InTokens: usedIn, OutTokens: usedOut, CacheReadTokens: usedCacheRead, CacheWriteTokens: usedCacheWrite})
+				prov := a.provider()
+				providerName, modelID := "", ""
+				if prov != nil {
+					providerName, modelID = prov.Name(), prov.ModelID()
+				}
+				a.emit(Event{Kind: EventDone, Step: step, Text: resp.Text, Provider: providerName, Model: modelID, InTokens: usedIn, OutTokens: usedOut, CacheReadTokens: usedCacheRead, CacheWriteTokens: usedCacheWrite})
 				return resp.Text, nil // final answer
 			}
 			// Empty turn: no tool call AND no text. A turn that produced

@@ -102,6 +102,9 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 	if herr != nil {
 		fmt.Fprintln(os.Stderr, "eigen: hooks:", herr)
 	}
+	if hookRunner != nil && deps.obsLog != nil {
+		hookRunner.SetObserver(deps.obsLog.HookObserver())
+	}
 
 	router := newAutoRouter(p.Cfg.Route, p.Cfg.RouteProviders, p.Provider)
 	deps.Router = router

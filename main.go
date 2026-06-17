@@ -451,7 +451,7 @@ func main() {
 	// auto-starts if needed; closing the window leaves the session running.
 	// EIGEN_NO_DAEMON=1 keeps the in-process agent (needed by /rebuild's
 	// exec-replace flow and when hacking on the daemon itself).
-	subcommand := flag.Arg(0) == "dream" || flag.Arg(0) == "memory"
+	subcommand := flag.Arg(0) == "dream" || flag.Arg(0) == "memory" || flag.Arg(0) == "observe"
 	if !*printMode && !subcommand && os.Getenv("EIGEN_NO_DAEMON") == "" &&
 		isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd()) {
 		if dc, derr := ensureDaemon(); derr == nil {
@@ -522,6 +522,13 @@ func main() {
 		}
 	}
 
+	// `eigen observe [summary]`: inspect metadata-only observability logs. Keep it
+	// before tool/provider setup so it is fast and never needs credentials/MCP.
+	if flag.Arg(0) == "observe" {
+		runObserveCmd(flag.Args()[1:])
+		return
+	}
+
 	policy := tool.DefaultPolicy()
 	// User-granted extra working dirs (--add-dir, repeatable). AddRoot
 	// re-validates (must be an existing, non-denied dir).
@@ -550,6 +557,9 @@ func main() {
 	hookRunner, herr := hook.Load(hookConfigPath())
 	if herr != nil {
 		fmt.Fprintln(os.Stderr, "eigen: hooks:", herr)
+	}
+	if hookRunner != nil && obsLog != nil {
+		hookRunner.SetObserver(obsLog.HookObserver())
 	}
 	// eventChain composes observability + hooks under a front-end sink.
 	eventChain := func(next agent.EventSink) agent.EventSink {
@@ -1196,6 +1206,39 @@ func printSessions(store *session.Store) {
 func fail(err error) {
 	fmt.Fprintln(os.Stderr, "eigen: "+err.Error())
 	os.Exit(1)
+}
+
+func runObserveCmd(args []string) {
+	cmd := "summary"
+	rest := args
+	if len(args) > 0 {
+		cmd = args[0]
+		rest = args[1:]
+	}
+	switch cmd {
+	case "summary", "stats", "":
+		limit := 5000
+		for _, a := range rest {
+			if strings.HasPrefix(a, "--limit=") {
+				if n, err := strconv.Atoi(strings.TrimPrefix(a, "--limit=")); err == nil && n >= 0 {
+					limit = n
+				}
+			}
+		}
+		path := observe.DefaultPath()
+		s, err := observe.ReadSummary(path, limit)
+		if err != nil {
+			if os.IsNotExist(err) {
+				fmt.Println("no observability log yet at " + path)
+				return
+			}
+			fail(fmt.Errorf("observe summary: %w", err))
+		}
+		fmt.Println(observe.FormatSummary(s))
+	default:
+		fmt.Fprintln(os.Stderr, "usage: eigen observe [summary] [--limit=N]")
+		os.Exit(2)
+	}
 }
 
 // skillDirs returns the directories scanned for SKILL.md skills: the per-user
