@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +11,7 @@ import (
 
 	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/feed"
+	"github.com/avifenesh/eigen/internal/observe"
 	"github.com/avifenesh/eigen/internal/skill"
 	"github.com/avifenesh/eigen/internal/theme"
 )
@@ -294,6 +297,26 @@ func TestLiveLabelFallsBackToDirThenID(t *testing.T) {
 	}
 	if got := liveLabel(daemon.SessionInfo{ID: "s7"}); got != "s7" {
 		t.Errorf("id fallback: %q", got)
+	}
+}
+
+func TestSkillsPageShowsUsageAndReadableColumns(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "frontend-skill"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "frontend-skill", "SKILL.md"), []byte("---\nname: frontend-skill\ndescription: visually strong landing page and app UI work\n---\nBody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d := testData()
+	d.Skills = skill.Discover(dir)
+	d.Observe.Skills = map[string]observe.SkillSummary{"frontend-skill": {Calls: 3}}
+	m := NewAt(d, PageSkills)
+	out := m.skills.view(m, 100, 30)
+	for _, want := range []string{"1 installed", "1 invoked", "frontend-skill", "3x", "selected: frontend-skill", "used 3 time"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("skills page missing %q:\n%s", want, out)
+		}
 	}
 }
 

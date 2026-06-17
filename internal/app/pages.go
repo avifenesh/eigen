@@ -10,6 +10,7 @@ import (
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/dream"
 	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/skill"
 )
 
 // configState shows AND edits the persistent defaults. Fields with a CLOSED
@@ -255,6 +256,7 @@ func (c *configState) view(m *Model, w, h int) string {
 		return out
 	}
 
+	keyW := 18
 	for i, f := range fields {
 		v := config.Get(m.data.Config, f.Key)
 		val := sText.Render(v)
@@ -264,7 +266,7 @@ func (c *configState) view(m *Model, w, h int) string {
 		if c.editing && i == c.list.cursor {
 			val = sAccent.Render(c.input + "▏")
 		}
-		line := sDim.Render(pad(f.Key, 16)) + val
+		line := sDim.Render(pad(truncate(f.Key, keyW-1), keyW)) + val
 		if i == c.list.cursor && c.saved == f.Key {
 			line += sOk.Render("  ✓ saved")
 		}
@@ -393,22 +395,67 @@ func (s *skillsState) view(m *Model, w, h int) string {
 	}
 	skills := m.data.Skills.List()
 	out := pageTitle("skills", fmt.Sprintf("%d discovered", len(skills)), w)
+	out += skillsSummaryLine(m.data, skills, w) + "\n\n"
 	if len(skills) == 0 {
 		out += sFaint.Render("  none — add SKILL.md under ~/.eigen/skills/<name>/ or press i to install") + "\n"
 		out += s.prompt.render()
 		out += "\n" + sFaint.Render("  i install a skill")
 		return out
 	}
-	visible := h - 5
+	visible := h - 8
 	from, to := s.list.window(visible)
+	nameW := 30
 	for i := from; i < to; i++ {
 		sk := skills[i]
-		line := pad(sk.Name, 24) + sDim.Render(truncate(sk.Description, w-28))
+		usage := ""
+		if st, ok := m.data.Observe.Skills[sk.Name]; ok && st.Calls > 0 {
+			usage = sViolet.Render(fmt.Sprintf(" %dx", st.Calls))
+		}
+		line := pad(truncate(sk.Name, nameW-1), nameW) + sDim.Render(truncate(sk.Description, max(8, w-nameW-8))) + usage
 		out += row(i == s.list.cursor, line) + "\n"
+	}
+	if s.list.cursor >= 0 && s.list.cursor < len(skills) {
+		out += "\n" + skillSelectedDetail(m.data, skills[s.list.cursor], w) + "\n"
 	}
 	out += s.prompt.render()
 	out += "\n" + sFaint.Render("  enter preview · i install (path or owner/repo[@ref], optional --force/--no-scan)")
 	return out
+}
+
+func skillsSummaryLine(d *Data, skills []skill.Skill, w int) string {
+	var invoked, errors int
+	if d != nil {
+		for _, st := range d.Observe.Skills {
+			if st.Calls > 0 {
+				invoked++
+				errors += st.Errors
+			}
+		}
+	}
+	parts := []string{fmt.Sprintf("%d installed", len(skills))}
+	if invoked > 0 {
+		parts = append(parts, fmt.Sprintf("%d invoked", invoked))
+	}
+	if errors > 0 {
+		parts = append(parts, fmt.Sprintf("%d errors", errors))
+	}
+	return sFaint.Render("  " + truncate(strings.Join(parts, "  ·  "), max(20, w-2)))
+}
+
+func skillSelectedDetail(d *Data, sk skill.Skill, w int) string {
+	line := fmt.Sprintf("selected: %s", sk.Name)
+	if d != nil {
+		if st, ok := d.Observe.Skills[sk.Name]; ok && st.Calls > 0 {
+			line += fmt.Sprintf(" · used %d time(s)", st.Calls)
+			if st.Errors > 0 {
+				line += fmt.Sprintf(" · %d error(s)", st.Errors)
+			}
+		}
+	}
+	if sk.Path != "" {
+		line += " · " + sk.Path
+	}
+	return sFaint.Render("  " + truncate(line, max(20, w-2)))
 }
 
 // modelsState lists the catalog with availability + capability tags.
