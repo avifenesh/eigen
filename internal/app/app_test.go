@@ -297,6 +297,21 @@ func TestLiveLabelFallsBackToDirThenID(t *testing.T) {
 	}
 }
 
+func TestProjectsPageSummaryAndSelectedDetail(t *testing.T) {
+	d := testData()
+	d.Projects = []ProjectRow{
+		{Name: "eigen", Dir: "/repo/eigen", Sessions: []SessionRow{{ID: "s1"}, {ID: "s2"}}, Updated: time.Now().UnixNano()},
+		{Name: "tools", Dir: "/repo/tools", Sessions: []SessionRow{{ID: "s3"}}, Updated: time.Now().UnixNano()},
+	}
+	m := NewAt(d, PageProjects)
+	out := m.projects.view(m, 100, 32)
+	for _, want := range []string{"2 projects", "3 sessions", "hottest eigen", "selected: eigen", "/repo/eigen"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("projects page missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestSessionsPageSummaryAndSelectedDetail(t *testing.T) {
 	d := testData()
 	d.Sessions = []SessionRow{

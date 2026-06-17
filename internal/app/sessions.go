@@ -364,7 +364,8 @@ func (p *projectsState) view(m *Model, w, h int) string {
 	if len(d.Projects) == 0 {
 		return out + sFaint.Render("  none yet — projects appear as you run sessions in them")
 	}
-	visible := h - 5
+	out += projectsSummaryLine(d.Projects, w) + "\n\n"
+	visible := h - 7
 	from, to := p.list.window(visible)
 	nameW := 24
 	for i := from; i < to; i++ {
@@ -377,8 +378,32 @@ func (p *projectsState) view(m *Model, w, h int) string {
 		p.clicks.mark(lineCount(out), i)
 		out += row(i == p.list.cursor, line) + "\n"
 	}
+	if p.list.cursor >= 0 && p.list.cursor < len(d.Projects) {
+		out += "\n" + projectSelectedDetail(d.Projects[p.list.cursor], w) + "\n"
+	}
 	out += "\n" + sFaint.Render("  enter open project · n new session in project")
 	return out
+}
+
+func projectsSummaryLine(projects []ProjectRow, w int) string {
+	var sessions int
+	var hottest ProjectRow
+	for _, p := range projects {
+		sessions += len(p.Sessions)
+		if len(p.Sessions) > len(hottest.Sessions) {
+			hottest = p
+		}
+	}
+	parts := []string{fmt.Sprintf("%d projects", len(projects)), fmt.Sprintf("%d sessions", sessions)}
+	if hottest.Name != "" {
+		parts = append(parts, fmt.Sprintf("hottest %s (%d)", hottest.Name, len(hottest.Sessions)))
+	}
+	return sFaint.Render("  " + truncate(strings.Join(parts, "  ·  "), max(20, w-2)))
+}
+
+func projectSelectedDetail(p ProjectRow, w int) string {
+	line := fmt.Sprintf("selected: %s · %d session(s) · %s", p.Name, len(p.Sessions), p.Dir)
+	return sFaint.Render("  " + truncate(line, max(20, w-2)))
 }
 
 // clickAt handles a content-local click on the projects page. Outside a
