@@ -282,13 +282,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.plugins.prompt.finish(msg.status)
 		m.plugins.catalogMarket = msg.marketName
 		m.plugins.catalog = append([]pluginpkg.PluginEntry(nil), msg.catalog...)
-		m.plugins.catalogList.count = len(m.plugins.catalog)
-		m.plugins.catalogList.cursor, m.plugins.catalogList.top = 0, 0
-		m.plugins.catalogFocus = msg.focus && len(m.plugins.catalog) > 0
 		m.plugins.catalogSelected = nil
 		m.plugins.err = ""
 		m.plugins.loaded = false
 		m.plugins.load()
+		m.plugins.catalogList.count = len(m.plugins.catalog)
+		m.plugins.catalogList.cursor, m.plugins.catalogList.top = 0, 0
+		m.plugins.catalogFocus = msg.focus && len(m.plugins.catalog) > 0
 		return m, nil
 	case consolidateDoneMsg:
 		m.memory.consoling = false

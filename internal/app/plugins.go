@@ -228,6 +228,7 @@ func (p *pluginsState) load() {
 	} else {
 		p.err = err.Error()
 	}
+	p.filterInstalledCatalog()
 	p.loaded = true
 	p.syncListCount()
 }
@@ -235,6 +236,33 @@ func (p *pluginsState) load() {
 func (p *pluginsState) reload() {
 	p.loaded = false
 	p.load()
+}
+
+func (p *pluginsState) filterInstalledCatalog() {
+	if len(p.catalog) == 0 || len(p.installed) == 0 {
+		return
+	}
+	installed := map[string]bool{}
+	for _, pl := range p.installed {
+		installed[strings.ToLower(strings.TrimSpace(pl.Name))] = true
+	}
+	out := p.catalog[:0]
+	for _, e := range p.catalog {
+		k := strings.ToLower(strings.TrimSpace(e.Name))
+		if k == "" || !installed[k] {
+			out = append(out, e)
+		}
+		if installed[k] && p.catalogSelected != nil {
+			delete(p.catalogSelected, k)
+		}
+	}
+	p.catalog = out
+	if len(p.catalogSelected) == 0 {
+		p.catalogSelected = nil
+	}
+	if len(p.catalog) == 0 {
+		p.catalogFocus = false
+	}
 }
 
 func (p *pluginsState) syncListCount() {
@@ -358,7 +386,7 @@ func (p *pluginsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case pluginsTabInstalled:
 		p.updateInstalled(key)
 	case pluginsTabMarketplace:
-		return m, p.updateMarketplace(key)
+		return m, p.updateMarketplace(m, key)
 	case pluginsTabExtensions:
 		p.updateExtension(key)
 	}
@@ -444,17 +472,16 @@ func (p *pluginsState) removePlugin(name string) {
 	p.load()
 }
 
-func (p *pluginsState) updateMarketplace(key string) tea.Cmd {
+func (p *pluginsState) updateMarketplace(m *Model, key string) tea.Cmd {
 	if p.list.cursor >= len(p.markets) {
 		return nil
 	}
 	mk := p.markets[p.list.cursor]
 	switch key {
 	case "U":
-		// Refresh + browse this catalog. This mirrors the CLI update path, but keeps
-		// the parsed plugin entries in page state so the marketplace tab can behave
-		// like a real catalog, not just a list of repos.
-		return p.refreshMarketplace(mk, true)
+		// Shift+U pulls the marketplace and overwrites any installed plugins from it,
+		// then shows only still-uninstalled catalog entries.
+		return p.updateMarketplaceFromRemote(m, mk, true)
 	case "enter":
 		if strings.EqualFold(p.catalogMarket, mk.Name) && len(p.catalog) > 0 {
 			p.focusCatalog()
@@ -538,6 +565,19 @@ func (p *pluginsState) refreshMarketplace(mk pluginpkg.MarketRecord, focus bool)
 			catalog:    append([]pluginpkg.PluginEntry(nil), mkt.Plugins...),
 			focus:      focus,
 		}
+	}
+}
+
+func (p *pluginsState) updateMarketplaceFromRemote(m *Model, mk pluginpkg.MarketRecord, focus bool) tea.Cmd {
+	if mk.Disabled {
+		p.prompt.status = "marketplace " + mk.Name + " is disabled (enable it first)"
+		return nil
+	}
+	p.prompt.startBusy("marketplace", "marketplace", mk.Name, "pulling marketplace "+mk.Name+" … (updating installed plugins)")
+	data := m.data
+	return func() tea.Msg {
+		name, status, catalog := runMarketplaceUpdate(data, mk)
+		return marketplaceRefreshDoneMsg{marketName: name, status: status, catalog: catalog, focus: focus}
 	}
 }
 
@@ -875,7 +915,7 @@ func (p *pluginsState) viewMarketplace(w, h int) string {
 	if p.catalogFocus {
 		out += "\n" + sFaint.Render("  j/k choose · space mark/unmark · i install marked · enter install current · esc back")
 	} else {
-		out += "\n" + sFaint.Render("  space enable/disable · a add marketplace · enter open catalog · U refresh · i install by name · X delete")
+		out += "\n" + sFaint.Render("  space enable/disable · a add marketplace · enter open catalog · Shift+U pull updates · i install by name · X delete")
 	}
 	return out
 }
@@ -968,7 +1008,7 @@ func (p *pluginsState) marketDetail(mk pluginpkg.MarketRecord, w, h int) string 
 			}
 		}
 	} else {
-		b.WriteString("  " + sFaint.Render("enter/U fetches this catalog and previews installable plugins") + "\n")
+		b.WriteString("  " + sFaint.Render("enter fetches this catalog; Shift+U pulls updates for installed plugins too") + "\n")
 	}
 	b.WriteString("  " + sFaint.Render("installed plugins are not removed when a marketplace is removed") + "\n")
 	return b.String()
@@ -1017,7 +1057,7 @@ func (p *pluginsState) viewExtensions(w, h int) string {
 // clickAt selects a rendered card/row. A second click on the selected row
 // performs the primary action for the current tab (toggle for plugins/wiring,
 // refresh for marketplace), matching enter.
-func (p *pluginsState) clickAt(_ *Model, localY int) (tea.Cmd, bool) {
+func (p *pluginsState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
 	idx, ok := p.clicks.at(localY)
 	if !ok || idx < 0 || idx >= p.list.count {
 		return nil, false
@@ -1028,7 +1068,7 @@ func (p *pluginsState) clickAt(_ *Model, localY int) (tea.Cmd, bool) {
 		case pluginsTabInstalled:
 			p.updateInstalled(key)
 		case pluginsTabMarketplace:
-			p.updateMarketplace(key)
+			return p.updateMarketplace(m, key), true
 		case pluginsTabExtensions:
 			p.updateExtension(key)
 		}

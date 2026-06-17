@@ -199,6 +199,90 @@ func mustWriteAppTest(t *testing.T, path, content string) {
 	}
 }
 
+func TestMarketplaceCatalogHidesInstalledPlugins(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	market := filepath.Join(t.TempDir(), "market")
+	mustWriteAppTest(t, filepath.Join(market, ".claude-plugin", "marketplace.json"), `{
+	  "name": "local-market",
+	  "plugins": [
+	    {"name": "alpha", "source": "./plugins/alpha", "description": "first"},
+	    {"name": "beta", "source": "./plugins/beta", "description": "second"}
+	  ]
+	}`)
+	mustWriteAppTest(t, filepath.Join(market, "plugins", "alpha", ".claude-plugin", "plugin.json"), `{"name":"alpha"}`)
+	mustWriteAppTest(t, filepath.Join(market, "plugins", "alpha", "skills", "main", "SKILL.md"), "---\nname: main\ndescription: alpha\n---\nalpha\n")
+	mustWriteAppTest(t, filepath.Join(market, "plugins", "beta", ".claude-plugin", "plugin.json"), `{"name":"beta"}`)
+	mustWriteAppTest(t, filepath.Join(market, "plugins", "beta", "skills", "main", "SKILL.md"), "---\nname: main\ndescription: beta\n---\nbeta\n")
+	reg := pluginpkg.NewRegistryAt(filepath.Join(home, ".eigen"))
+	if _, _, err := reg.AddMarketplace(context.Background(), market, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.InstallPlugin(context.Background(), "alpha", "", pluginpkg.InstallOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewAt(testData(), PagePlugins)
+	m.width, m.height = 120, 36
+	m.Update(key("2"))
+	_, cmd := m.Update(key("enter"))
+	m.Update(cmd())
+	if len(m.plugins.catalog) != 1 || m.plugins.catalog[0].Name != "beta" {
+		t.Fatalf("catalog should hide installed alpha and show only beta, got %+v", m.plugins.catalog)
+	}
+	v := m.plugins.view(m, 100, 30)
+	if strings.Contains(v, "alpha") || !strings.Contains(v, "beta") {
+		t.Fatalf("rendered catalog should omit installed alpha and show beta:\n%s", v)
+	}
+}
+
+func TestMarketplaceShiftUUpdatesInstalledAndShowsNewPlugins(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	market := filepath.Join(t.TempDir(), "market")
+	manifest := func(withBeta bool) string {
+		plugins := `{"name": "alpha", "source": "./plugins/alpha", "description": "first"}`
+		if withBeta {
+			plugins += `,{"name": "beta", "source": "./plugins/beta", "description": "second"}`
+		}
+		return `{"name":"local-market","plugins":[` + plugins + `]}`
+	}
+	mustWriteAppTest(t, filepath.Join(market, ".claude-plugin", "marketplace.json"), manifest(false))
+	mustWriteAppTest(t, filepath.Join(market, "plugins", "alpha", ".claude-plugin", "plugin.json"), `{"name":"alpha"}`)
+	mustWriteAppTest(t, filepath.Join(market, "plugins", "alpha", "skills", "main", "SKILL.md"), "---\nname: main\ndescription: alpha\n---\nv1\n")
+	mustWriteAppTest(t, filepath.Join(market, "plugins", "beta", ".claude-plugin", "plugin.json"), `{"name":"beta"}`)
+	mustWriteAppTest(t, filepath.Join(market, "plugins", "beta", "skills", "main", "SKILL.md"), "---\nname: main\ndescription: beta\n---\nbeta\n")
+	reg := pluginpkg.NewRegistryAt(filepath.Join(home, ".eigen"))
+	if _, _, err := reg.AddMarketplace(context.Background(), market, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.InstallPlugin(context.Background(), "alpha", "", pluginpkg.InstallOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	mustWriteAppTest(t, filepath.Join(market, ".claude-plugin", "marketplace.json"), manifest(true))
+	mustWriteAppTest(t, filepath.Join(market, "plugins", "alpha", "skills", "main", "SKILL.md"), "---\nname: main\ndescription: alpha\n---\nv2\n")
+
+	m := NewAt(testData(), PagePlugins)
+	m.width, m.height = 120, 36
+	m.Update(key("2"))
+	_, cmd := m.Update(key("U"))
+	if cmd == nil || !m.plugins.prompt.busy {
+		t.Fatal("shift-U should start a visible marketplace update job")
+	}
+	m.Update(cmd())
+	b, err := os.ReadFile(filepath.Join(reg.SkillsDir(), "alpha-main", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "v2") {
+		t.Fatalf("shift-U should overwrite installed alpha files, got:\n%s", b)
+	}
+	if len(m.plugins.catalog) != 1 || m.plugins.catalog[0].Name != "beta" {
+		t.Fatalf("shift-U should add new uninstalled beta to catalog and hide alpha, got %+v", m.plugins.catalog)
+	}
+}
+
 func TestPluginsPageCanMarkCatalogPluginsAndInstallBatch(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

@@ -145,7 +145,7 @@ func runPluginInstallFrom(d *Data, name, market string) string {
 	if err != nil {
 		return "error: " + err.Error()
 	}
-	res, err := installOnePlugin(context.Background(), d, reg, name, market)
+	res, err := installOnePlugin(context.Background(), d, reg, name, market, false)
 	if err != nil {
 		return "install failed: " + err.Error()
 	}
@@ -160,7 +160,7 @@ func runPluginBatchInstall(d *Data, names []string, market string) string {
 	var okNames, failures []string
 	ctx := context.Background()
 	for _, name := range names {
-		res, err := installOnePlugin(ctx, d, reg, name, market)
+		res, err := installOnePlugin(ctx, d, reg, name, market, false)
 		if err != nil {
 			failures = append(failures, name+": "+err.Error())
 			continue
@@ -176,14 +176,52 @@ func runPluginBatchInstall(d *Data, names []string, market string) string {
 	return fmt.Sprintf("⚠ installed %d/%d plugin(s): %s; failed: %s", len(okNames), len(names), strings.Join(okNames, ", "), strings.Join(failures, "; "))
 }
 
-func installOnePlugin(parent context.Context, d *Data, reg *plugin.Registry, name, market string) (*plugin.InstallResult, error) {
-	opts := plugin.InstallOptions{}
+func installOnePlugin(parent context.Context, d *Data, reg *plugin.Registry, name, market string, overwrite bool) (*plugin.InstallResult, error) {
+	opts := plugin.InstallOptions{Overwrite: overwrite}
 	if d != nil && d.Small != nil {
 		opts.Scanner = skill.ProviderScanner{P: d.Small}
 	}
 	ctx, cancel := context.WithTimeout(parent, 120*time.Second)
 	defer cancel()
 	return reg.InstallPlugin(ctx, name, market, opts)
+}
+
+func runMarketplaceUpdate(d *Data, mk plugin.MarketRecord) (marketName, status string, catalog []plugin.PluginEntry) {
+	reg, err := appPluginRegistry()
+	if err != nil {
+		return mk.Name, "update failed: " + err.Error(), nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	mkt, rec, err := reg.AddMarketplace(ctx, mk.Source, nil)
+	if err != nil {
+		return mk.Name, "update failed: " + err.Error(), nil
+	}
+
+	installed, _ := reg.Installed()
+	var updated, failed []string
+	for _, pl := range installed {
+		if !strings.EqualFold(pl.Marketplace, rec.Name) {
+			continue
+		}
+		if _, ok := mkt.Find(pl.Name); !ok {
+			continue
+		}
+		if _, err := installOnePlugin(context.Background(), d, reg, pl.Name, rec.Name, true); err != nil {
+			failed = append(failed, pl.Name+": "+err.Error())
+			continue
+		}
+		updated = append(updated, pl.Name)
+	}
+
+	status = fmt.Sprintf("pulled marketplace %q — %d catalog plugin(s)", rec.Name, len(mkt.Plugins))
+	if len(updated) > 0 {
+		status += fmt.Sprintf(", updated %d installed: %s", len(updated), strings.Join(updated, ", "))
+	}
+	if len(failed) > 0 {
+		status += fmt.Sprintf(", failed %d: %s", len(failed), strings.Join(failed, "; "))
+	}
+	return rec.Name, status, append([]plugin.PluginEntry(nil), mkt.Plugins...)
 }
 
 func formatPluginInstallStatus(res *plugin.InstallResult) string {
