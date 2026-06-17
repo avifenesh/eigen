@@ -35,7 +35,7 @@ func (p *palette) build(m *Model) {
 			name: "go: " + name,
 			hint: "page",
 			run: func(m *Model) tea.Cmd {
-				m.active = page
+				m.setActive(page)
 				return nil
 			},
 		})

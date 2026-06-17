@@ -190,6 +190,17 @@ func TestPluginsPageCanNavigateCatalogAndInstall(t *testing.T) {
 	if v := m.plugins.view(m, 100, 30); !strings.Contains(v, "manifest preview") || !strings.Contains(v, "will install") {
 		t.Fatalf("preview should render manifest/component summary:\n%s", v)
 	}
+	m.height = 16
+	m.contentScroll = 0
+	m.handleContentScrollKey("pgdown")
+	if m.contentScroll == 0 {
+		t.Fatal("long plugin preview should be scrollable with pgdown")
+	}
+	m.setActive(PageHome)
+	if m.contentScroll != 0 {
+		t.Fatal("switching pages should reset generic content scroll")
+	}
+	m.setActive(PagePlugins)
 	m.Update(key("j"))              // beta
 	_, cmd = m.Update(key("enter")) // install focused catalog plugin
 	if cmd == nil || !m.plugins.prompt.busy {

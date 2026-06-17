@@ -46,8 +46,14 @@ func key(s string) tea.KeyMsg {
 
 func TestClipTextHeight(t *testing.T) {
 	got := clipTextHeight("a\nb\nc\n", 2)
-	if got != "a\nb\n" {
+	if got != "a\nb" {
 		t.Fatalf("clipTextHeight = %q", got)
+	}
+	if got := clipTextWindow("a\nb\nc\nd", 2, 1); got != "b\nc" {
+		t.Fatalf("clipTextWindow scrolled = %q", got)
+	}
+	if got := clipTextWindow("a\nb\nc\nd", 2, 99); got != "c\nd" {
+		t.Fatalf("clipTextWindow clamped = %q", got)
 	}
 }
 

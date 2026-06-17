@@ -79,6 +79,7 @@ type Result struct {
 type Model struct {
 	width, height int
 	active        Page
+	contentScroll int // generic vertical scroll over the rendered content page
 	result        Result
 	quitting      bool
 
@@ -111,7 +112,7 @@ func New(data *Data) *Model { return NewAt(data, PageHome) }
 func NewAt(data *Data, initial Page) *Model {
 	m := &Model{data: data}
 	if isKnownPage(initial) {
-		m.active = initial
+		m.setActive(initial)
 	}
 	m.home.init(data)
 	m.projects.init(data)
@@ -344,6 +345,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.capturingInput() {
 			return m.updatePage(msg)
 		}
+		if m.handleContentScrollKey(key) {
+			return m, nil
+		}
 		switch key {
 		case ":", "ctrl+k":
 			m.palette.openPalette(m)
@@ -367,7 +371,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Page quick-jump: g then the page key (or the key alone from home).
 		if p, ok := jumpKey(key, m.active); ok {
-			m.active = p
+			m.setActive(p)
 			return m, nil
 		}
 		// Delegate to the active page.
@@ -405,7 +409,7 @@ func (m *Model) cycle(d int) {
 		}
 	}
 	idx = (idx + d + len(pages)) % len(pages)
-	m.active = pages[idx].page
+	m.setActive(pages[idx].page)
 }
 
 // jumpKey maps a quick-jump key to a page. Plain letter keys jump only from
@@ -422,6 +426,37 @@ func jumpKey(key string, _ Page) (Page, bool) {
 		}
 	}
 	return 0, false
+}
+
+func (m *Model) handleContentScrollKey(key string) bool {
+	l := m.computeLayout()
+	page := m.renderPage(l.inner.w, l.inner.h)
+	pageLines := splitRenderableLines(page)
+	maxScroll := max(0, len(pageLines)-l.inner.h)
+	halfPage := max(1, l.inner.h/2)
+	switch key {
+	case "pgdown", "ctrl+d", "ctrl+f":
+		m.contentScroll = min(maxScroll, m.contentScroll+halfPage)
+	case "pgup", "ctrl+u", "ctrl+b":
+		m.contentScroll = max(0, m.contentScroll-halfPage)
+	case "home":
+		m.contentScroll = 0
+	case "end":
+		m.contentScroll = maxScroll
+	default:
+		return false
+	}
+	return true
+}
+
+func (m *Model) scrollContent(delta int) bool {
+	l := m.computeLayout()
+	page := m.renderPage(l.inner.w, l.inner.h)
+	pageLines := splitRenderableLines(page)
+	maxScroll := max(0, len(pageLines)-l.inner.h)
+	before := m.contentScroll
+	m.contentScroll = min(max(0, m.contentScroll+delta), maxScroll)
+	return m.contentScroll != before
 }
 
 // handleMouse routes a mouse event through the shell hit map. Wave 2 handles
@@ -446,7 +481,7 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	switch h.region {
 	case hitRail:
-		m.active = h.page
+		m.setActive(h.page)
 		return m, nil
 	case hitRailLive:
 		// Click a live session in the rail → attach a view to it.
@@ -455,8 +490,9 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case hitContent:
 		// Page-local row click: the active page maps content-local coords to
-		// an item (select, or open if already selected).
-		if cmd, handled := m.contentClick(h.localX, h.localY); handled {
+		// an item (select, or open if already selected). Account for the generic
+		// content scroll because pages record click maps against their full view.
+		if cmd, handled := m.contentClick(h.localX, h.localY+m.contentScroll); handled {
 			return m, cmd
 		}
 		return m, nil
@@ -489,14 +525,20 @@ func (m *Model) contentClick(localX, localY int) (tea.Cmd, bool) {
 	return nil, false
 }
 
-// contentWheel translates a wheel event over the content panel into list
-// movement on the active page (so scrolling the content scrolls its list).
+// contentWheel scrolls the rendered content first. If the page fits (no generic
+// scroll movement), fall back to the page's list movement so legacy list-only
+// pages still respond to wheel gestures.
 func (m *Model) contentWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	key := "j"
+	delta := 3
+	fallback := "j"
 	if msg.Button == tea.MouseButtonWheelUp {
-		key = "k"
+		delta = -3
+		fallback = "k"
 	}
-	return m.updatePage(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+	if m.scrollContent(delta) {
+		return m, nil
+	}
+	return m.updatePage(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(fallback)})
 }
 
 func (m *Model) updatePage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -608,6 +650,13 @@ func (m *Model) renderTitleBar(l appLayout) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
+func (m *Model) setActive(p Page) {
+	if m.active != p {
+		m.active = p
+		m.contentScroll = 0
+	}
+}
+
 // activeName is the active page's display name.
 func (m *Model) activeName() string {
 	for _, p := range pages {
@@ -645,7 +694,7 @@ func (m *Model) renderRailBox(l appLayout) string {
 // at the true content width (l.inner.w) so its own width math (rules, rows) is
 // exact and never wraps against the gutter.
 func (m *Model) renderContentBox(l appLayout) string {
-	page := clipTextHeight(m.renderPage(l.inner.w, l.inner.h), l.inner.h)
+	page := clipTextWindow(m.renderPage(l.inner.w, l.inner.h), l.inner.h, m.contentScroll)
 	style := sContentBox.Width(l.inner.w + sContentPadH).Height(l.inner.h)
 	if l.bp == bpNarrow {
 		return lipgloss.NewStyle().Width(l.content.w).Height(l.content.h).Render(page)
@@ -654,17 +703,34 @@ func (m *Model) renderContentBox(l appLayout) string {
 }
 
 // renderInspectorBox renders the right inspector (wide breakpoint).
-func clipTextHeight(s string, h int) string {
+func splitRenderableLines(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(strings.TrimRight(s, "\n"), "\n")
+}
+
+func clipTextHeight(s string, h int) string { return clipTextWindow(s, h, 0) }
+
+func clipTextWindow(s string, h, scroll int) string {
 	if h <= 0 || s == "" {
 		return ""
 	}
 	trail := strings.HasSuffix(s, "\n")
-	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	lines := splitRenderableLines(s)
 	if len(lines) <= h {
 		return s
 	}
-	out := strings.Join(lines[:h], "\n")
-	if trail {
+	maxScroll := max(0, len(lines)-h)
+	if scroll < 0 {
+		scroll = 0
+	}
+	if scroll > maxScroll {
+		scroll = maxScroll
+	}
+	end := min(len(lines), scroll+h)
+	out := strings.Join(lines[scroll:end], "\n")
+	if trail && end == len(lines) {
 		out += "\n"
 	}
 	return out
@@ -806,7 +872,7 @@ func (m *Model) renderPage(w, h int) string {
 }
 
 func (m *Model) helpLine() string {
-	base := " tab pages · j/k move · enter open · n new · : palette · q quit"
+	base := " tab pages · j/k move · pg scroll · enter open · n new · : palette · q quit"
 	return sFaint.Render(base)
 }
 

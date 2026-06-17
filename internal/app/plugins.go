@@ -598,6 +598,19 @@ func (p *pluginsState) updateCatalog(m *Model, key string) (bool, tea.Cmd) {
 	switch key {
 	case "esc", "backspace", "left", "H":
 		p.catalogFocus = false
+		m.contentScroll = 0
+		return true, nil
+	case "pgdown", "ctrl+d", "ctrl+f":
+		m.scrollContent(max(1, m.computeLayout().inner.h/2))
+		return true, nil
+	case "pgup", "ctrl+u", "ctrl+b":
+		m.scrollContent(-max(1, m.computeLayout().inner.h/2))
+		return true, nil
+	case "home":
+		m.contentScroll = 0
+		return true, nil
+	case "end":
+		m.scrollContent(1 << 20)
 		return true, nil
 	case " ", "space":
 		p.toggleSelectedCatalogPlugin()
@@ -614,6 +627,7 @@ func (p *pluginsState) updateCatalog(m *Model, key string) (bool, tea.Cmd) {
 	if p.catalogList.key(key, visible) {
 		if p.catalogList.cursor != before {
 			p.prompt.status = ""
+			m.contentScroll = 0
 		}
 		return true, nil
 	}
