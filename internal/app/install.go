@@ -97,8 +97,14 @@ func runMarketplaceAdd(d *Data, source string) string {
 }
 
 // runPluginInstall installs a plugin by name from any added marketplace,
-// scanning with the app's small model.
+// scanning with the app's small model. It accepts the same name@marketplace
+// shorthand as the TUI slash command.
 func runPluginInstall(d *Data, name string) string {
+	pluginName, market := splitPluginMarket(name)
+	return runPluginInstallFrom(d, pluginName, market)
+}
+
+func runPluginInstallFrom(d *Data, name, market string) string {
 	reg, err := appPluginRegistry()
 	if err != nil {
 		return "error: " + err.Error()
@@ -109,7 +115,7 @@ func runPluginInstall(d *Data, name string) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	res, err := reg.InstallPlugin(ctx, name, "", opts)
+	res, err := reg.InstallPlugin(ctx, name, market, opts)
 	if err != nil {
 		return "install failed: " + err.Error()
 	}
@@ -120,6 +126,14 @@ func runPluginInstall(d *Data, name string) string {
 		msg += "  ⚠ scan flags (kept; --force-style)"
 	}
 	return msg
+}
+
+func splitPluginMarket(src string) (name, market string) {
+	name = strings.TrimSpace(src)
+	if i := strings.LastIndexByte(name, '@'); i > 0 && i < len(name)-1 {
+		return strings.TrimSpace(name[:i]), strings.TrimSpace(name[i+1:])
+	}
+	return name, ""
 }
 
 // runSkillInstall installs a skill from a path or owner/repo[/sub][@ref],

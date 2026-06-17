@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -140,6 +141,53 @@ func TestPluginsPageUninstallRequiresConfirmation(t *testing.T) {
 	m.Update(key("y"))
 	if _, ok := reg.InstalledByName("demo"); ok {
 		t.Fatal("confirmed removal should uninstall plugin")
+	}
+}
+
+func TestPluginsPageCanNavigateCatalogAndInstall(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	market := filepath.Join(t.TempDir(), "market")
+	mustWriteAppTest(t, filepath.Join(market, ".claude-plugin", "marketplace.json"), `{
+	  "name": "local-market",
+	  "plugins": [
+	    {"name": "alpha", "source": "./plugins/alpha", "description": "first"},
+	    {"name": "beta", "source": "./plugins/beta", "description": "second"}
+	  ]
+	}`)
+	mustWriteAppTest(t, filepath.Join(market, "plugins", "alpha", ".claude-plugin", "plugin.json"), `{"name":"alpha"}`)
+	mustWriteAppTest(t, filepath.Join(market, "plugins", "alpha", "skills", "main", "SKILL.md"), "---\nname: main\ndescription: alpha\n---\nalpha\n")
+	mustWriteAppTest(t, filepath.Join(market, "plugins", "beta", ".claude-plugin", "plugin.json"), `{"name":"beta"}`)
+	mustWriteAppTest(t, filepath.Join(market, "plugins", "beta", "skills", "main", "SKILL.md"), "---\nname: main\ndescription: beta\n---\nbeta\n")
+	reg := pluginpkg.NewRegistryAt(filepath.Join(home, ".eigen"))
+	if _, _, err := reg.AddMarketplace(context.Background(), market, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewAt(testData(), PagePlugins)
+	m.width, m.height = 120, 36
+	m.Update(key("2"))
+	m.Update(key("enter")) // refresh selected marketplace and focus catalog
+	if !m.plugins.catalogFocus || len(m.plugins.catalog) != 2 {
+		t.Fatalf("enter should focus refreshed catalog, focus=%v catalog=%v", m.plugins.catalogFocus, m.plugins.catalog)
+	}
+	m.Update(key("j"))     // beta
+	m.Update(key("enter")) // install focused catalog plugin
+	if _, ok := reg.InstalledByName("beta"); !ok {
+		t.Fatal("enter on focused marketplace catalog should install selected plugin")
+	}
+	if _, ok := reg.InstalledByName("alpha"); ok {
+		t.Fatal("catalog navigation should have installed beta, not alpha")
+	}
+}
+
+func mustWriteAppTest(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 
