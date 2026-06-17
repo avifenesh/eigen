@@ -338,7 +338,7 @@ func (m *Model) capturingInput() bool {
 		// Type-to-search captures everything (typing "q" extends the query).
 		return m.sessions.filter.searching || m.sessions.confirmDel
 	case PagePlugins:
-		return m.plugins.prompt.active
+		return m.plugins.prompt.active || m.plugins.confirm.active
 	case PageSkills:
 		return m.skills.prompt.active
 	}
@@ -433,6 +433,8 @@ func (m *Model) contentClick(localX, localY int) (tea.Cmd, bool) {
 		return m.config.clickAt(m, localY)
 	case PageMemory:
 		return m.memory.clickAt(m, localY)
+	case PagePlugins:
+		return m.plugins.clickAt(m, localY)
 	}
 	return nil, false
 }

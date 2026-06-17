@@ -1,12 +1,15 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	pluginpkg "github.com/avifenesh/eigen/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -159,15 +162,53 @@ func loadHookRows(path, src string) []ExtRow {
 	return rows
 }
 
-// pluginsState: the extensions page (MCP, plugins, LSP, hooks) — browse, toggle,
-// and install marketplaces/plugins inline.
+// pluginsState is Eigen's Skills & Apps surface: a product page for installed
+// plugins, configured marketplaces, and the raw extension wiring they create.
+// The shape intentionally mirrors Codex desktop's Skills & Apps treatment:
+// header copy, segmented tabs, install affordances, cards, enabled state,
+// and a power-user wiring view.
 type pluginsState struct {
-	list   list
-	rows   []ExtRow
-	loaded bool
-	err    string // last toggle error ("" = none)
-	prompt installPrompt
+	list          list
+	tab           pluginsTab
+	rows          []ExtRow
+	installed     []pluginpkg.InstalledPlugin
+	markets       []pluginpkg.MarketRecord
+	catalogMarket string
+	catalog       []pluginpkg.PluginEntry
+	loaded        bool
+	err           string // last action error/status ("" = none)
+	prompt        installPrompt
+	confirm       pluginConfirm
+	clicks        clickMap
 }
+
+type pluginConfirm struct {
+	active bool
+	kind   string // "plugin" | "marketplace"
+	name   string
+}
+
+func (c *pluginConfirm) open(kind, name string) {
+	*c = pluginConfirm{active: true, kind: kind, name: name}
+}
+
+func (c *pluginConfirm) clear() { *c = pluginConfirm{} }
+
+func (c pluginConfirm) render(w int) string {
+	if !c.active {
+		return ""
+	}
+	msg := fmt.Sprintf("remove %s %q? y confirm · esc cancel", c.kind, c.name)
+	return "\n" + sErr.Render("  "+truncate(msg, w-4))
+}
+
+type pluginsTab int
+
+const (
+	pluginsTabInstalled pluginsTab = iota
+	pluginsTabMarketplace
+	pluginsTabExtensions
+)
 
 func (p *pluginsState) init(*Data) {}
 
@@ -176,8 +217,43 @@ func (p *pluginsState) load() {
 		return
 	}
 	p.rows = loadExtensions()
-	p.list.count = len(p.rows)
+	p.installed = nil
+	p.markets = nil
+	if reg, err := appPluginRegistry(); err == nil {
+		p.installed, _ = reg.Installed()
+		p.markets, _ = reg.Markets()
+	} else {
+		p.err = err.Error()
+	}
 	p.loaded = true
+	p.syncListCount()
+}
+
+func (p *pluginsState) reload() {
+	p.loaded = false
+	p.load()
+}
+
+func (p *pluginsState) syncListCount() {
+	switch p.tab {
+	case pluginsTabInstalled:
+		p.list.count = len(p.installed)
+	case pluginsTabMarketplace:
+		p.list.count = len(p.markets)
+	case pluginsTabExtensions:
+		p.list.count = len(p.rows)
+	}
+	p.list.clamp()
+}
+
+func (p *pluginsState) setTab(tab pluginsTab) {
+	if p.tab == tab {
+		return
+	}
+	p.tab = tab
+	p.list.cursor, p.list.top = 0, 0
+	p.syncListCount()
+	p.err = ""
 }
 
 func (p *pluginsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -192,8 +268,10 @@ func (p *pluginsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			switch p.prompt.kind {
 			case "marketplace":
 				status = runMarketplaceAdd(m.data, src)
+				p.tab = pluginsTabMarketplace
 			case "plugin":
 				status = runPluginInstall(m.data, src)
+				p.tab = pluginsTabInstalled
 			}
 			p.prompt.busy = false
 			p.prompt.close()
@@ -204,41 +282,231 @@ func (p *pluginsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if p.list.key(key, m.height-6) {
+	// Destructive actions require an explicit confirmation key so a stray X or
+	// stale click cannot silently remove plugin wiring or marketplace records.
+	if p.confirm.active {
+		switch key {
+		case "y", "enter":
+			p.applyConfirm()
+		case "esc", "backspace", "n":
+			p.confirm.clear()
+		default:
+			p.confirm.clear()
+		}
 		return m, nil
 	}
+
 	switch key {
+	case "1":
+		p.setTab(pluginsTabInstalled)
+		return m, nil
+	case "2":
+		p.setTab(pluginsTabMarketplace)
+		return m, nil
+	case "3":
+		p.setTab(pluginsTabExtensions)
+		return m, nil
+	case "left", "H":
+		p.setTab(maxPluginTab(p.tab - 1))
+		return m, nil
+	case "right", "L":
+		p.setTab(minPluginTab(p.tab + 1))
+		return m, nil
 	case "R": // manual refresh (capital: bare letters are page-jumps)
-		p.loaded = false
-		p.load()
+		p.reload()
+		p.prompt.status = "refreshed"
+		return m, nil
 	case "a": // add a marketplace catalog
+		p.setTab(pluginsTabMarketplace)
 		p.prompt.open("marketplace", "marketplace (owner/repo[/sub][@ref])")
+		return m, nil
 	case "i": // install a plugin by name from any added marketplace
-		p.prompt.open("plugin", "plugin name to install")
-	case "X", "delete": // uninstall the selected plugin-installed extension's owning plugin
-		p.uninstallSelected(m)
-	case " ", "enter":
-		// Toggle the selected extension on/off (persists "disabled": true in
-		// its config file; applies to NEW sessions — running ones keep their
-		// already-connected servers).
-		if p.list.cursor < len(p.rows) {
-			r := p.rows[p.list.cursor]
-			if _, err := toggleDisabled(r.Path, r.Kind, r.Index); err != nil {
-				p.err = err.Error()
-			} else {
-				p.err = ""
-				p.loaded = false
-				p.load()
-			}
-		}
+		p.prompt.open("plugin", "plugin name[@marketplace]")
+		return m, nil
+	}
+
+	visible := p.visibleRows(m.height)
+	if p.list.key(key, visible) {
+		return m, nil
+	}
+
+	switch p.tab {
+	case pluginsTabInstalled:
+		p.updateInstalled(key)
+	case pluginsTabMarketplace:
+		p.updateMarketplace(key)
+	case pluginsTabExtensions:
+		p.updateExtension(key)
 	}
 	return m, nil
 }
 
-// uninstallSelected removes the plugin that owns the selected extension row, if
-// it's a plugin-installed component (matched by the "<plugin>-" name prefix
-// against the installed-plugins registry).
-func (p *pluginsState) uninstallSelected(m *Model) {
+func (p *pluginsState) visibleRows(h int) int {
+	// Installed/market rows render as two-line cards; extensions render one-line.
+	body := h - 12
+	if body < 3 {
+		body = 3
+	}
+	if p.tab == pluginsTabExtensions {
+		return body
+	}
+	return max(1, body/2)
+}
+
+func (p *pluginsState) applyConfirm() {
+	kind, name := p.confirm.kind, p.confirm.name
+	p.confirm.clear()
+	switch kind {
+	case "plugin":
+		p.removePlugin(name)
+	case "marketplace":
+		p.removeMarketplace(name)
+	}
+}
+
+func (p *pluginsState) updateInstalled(key string) {
+	if p.list.cursor >= len(p.installed) {
+		return
+	}
+	pl := p.installed[p.list.cursor]
+	switch key {
+	case " ", "space", "enter":
+		reg, err := appPluginRegistry()
+		if err != nil {
+			p.err = err.Error()
+			return
+		}
+		enable := !pluginEnabled(pl, p.rows, reg)
+		ok, err := reg.SetEnabled(pl.Name, enable)
+		if err != nil {
+			p.err = err.Error()
+			return
+		}
+		if !ok {
+			p.err = "plugin no longer installed"
+			return
+		}
+		state := "disabled"
+		if enable {
+			state = "enabled"
+		}
+		p.prompt.status = state + " plugin " + pl.Name + " (applies to new sessions)"
+		p.err = ""
+		p.loaded = false
+		p.load()
+	case "X", "delete":
+		p.confirm.open("plugin", pl.Name)
+	}
+}
+
+func (p *pluginsState) removePlugin(name string) {
+	reg, err := appPluginRegistry()
+	if err != nil {
+		p.err = err.Error()
+		return
+	}
+	ok, err := reg.Uninstall(name)
+	if err != nil {
+		p.err = err.Error()
+		return
+	}
+	if !ok {
+		p.err = "plugin no longer installed"
+		return
+	}
+	p.prompt.status = "removed plugin " + name
+	p.err = ""
+	p.loaded = false
+	p.load()
+}
+
+func (p *pluginsState) updateMarketplace(key string) {
+	if p.list.cursor >= len(p.markets) {
+		return
+	}
+	mk := p.markets[p.list.cursor]
+	switch key {
+	case "U", "enter":
+		// Refresh + browse this catalog. This mirrors the CLI update path, but keeps
+		// the parsed plugin entries in page state so the marketplace tab can behave
+		// like a real catalog, not just a list of repos.
+		p.refreshMarketplace(mk)
+	case "X", "delete":
+		p.confirm.open("marketplace", mk.Name)
+	}
+}
+
+func (p *pluginsState) removeMarketplace(name string) {
+	reg, err := appPluginRegistry()
+	if err != nil {
+		p.err = err.Error()
+		return
+	}
+	ok, err := reg.RemoveMarket(name)
+	if err != nil {
+		p.err = err.Error()
+		return
+	}
+	if !ok {
+		p.err = "marketplace no longer present"
+		return
+	}
+	if strings.EqualFold(p.catalogMarket, name) {
+		p.catalogMarket = ""
+		p.catalog = nil
+	}
+	p.prompt.status = "removed marketplace " + name + " (installed plugins unaffected)"
+	p.err = ""
+	p.loaded = false
+	p.load()
+}
+
+func (p *pluginsState) refreshMarketplace(mk pluginpkg.MarketRecord) {
+	reg, err := appPluginRegistry()
+	if err != nil {
+		p.err = err.Error()
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	mkt, rec, err := reg.AddMarketplace(ctx, mk.Source, nil)
+	if err != nil {
+		p.err = err.Error()
+		return
+	}
+	p.catalogMarket = rec.Name
+	p.catalog = append([]pluginpkg.PluginEntry(nil), mkt.Plugins...)
+	p.prompt.status = fmt.Sprintf("refreshed marketplace %q — %d plugin(s)", rec.Name, len(mkt.Plugins))
+	p.err = ""
+	p.loaded = false
+	p.load()
+}
+
+func (p *pluginsState) updateExtension(key string) {
+	if p.list.cursor >= len(p.rows) {
+		return
+	}
+	switch key {
+	case " ", "space", "enter":
+		// Toggle the selected extension on/off (persists "disabled": true in its
+		// config file; applies to NEW sessions — running ones keep connected servers).
+		r := p.rows[p.list.cursor]
+		if _, err := toggleDisabled(r.Path, r.Kind, r.Index); err != nil {
+			p.err = err.Error()
+		} else {
+			p.err = ""
+			p.loaded = false
+			p.load()
+		}
+	case "X", "delete":
+		p.confirmUninstallSelected()
+	}
+}
+
+// confirmUninstallSelected asks to remove the plugin that owns the selected
+// extension row, if it's a plugin-installed component (matched by the
+// "<plugin>-" name prefix against the installed-plugins registry).
+func (p *pluginsState) confirmUninstallSelected() {
 	if p.list.cursor >= len(p.rows) {
 		return
 	}
@@ -251,13 +519,7 @@ func (p *pluginsState) uninstallSelected(m *Model) {
 	installed, _ := reg.Installed()
 	for _, pl := range installed {
 		if strings.HasPrefix(name, pl.Name+"-") || name == pl.Name {
-			if _, err := reg.Uninstall(pl.Name); err != nil {
-				p.err = err.Error()
-			} else {
-				p.prompt.status = "removed plugin " + pl.Name
-				p.loaded = false
-				p.load()
-			}
+			p.confirm.open("plugin", pl.Name)
 			return
 		}
 	}
@@ -266,21 +528,244 @@ func (p *pluginsState) uninstallSelected(m *Model) {
 
 func (p *pluginsState) view(m *Model, w, h int) string {
 	p.load()
-	out := pageTitle("plugins", "mcp servers · plugin tools · lsp · hooks", w)
+	out := pageTitle("plugins", "Plugins make Eigen work your way.", w)
+	out += p.hero(w)
+	out += p.tabs(w) + "\n"
+	p.clicks.reset()
+	switch p.tab {
+	case pluginsTabInstalled:
+		out += p.viewInstalled(w, h-lineCount(out))
+	case pluginsTabMarketplace:
+		out += p.viewMarketplace(w, h-lineCount(out))
+	case pluginsTabExtensions:
+		out += p.viewExtensions(w, h-lineCount(out))
+	}
+	return out
+}
+
+func (p *pluginsState) hero(w int) string {
+	enabled := 0
+	reg, _ := appPluginRegistry()
+	for _, pl := range p.installed {
+		if pluginEnabled(pl, p.rows, reg) {
+			enabled++
+		}
+	}
+	stats := []string{
+		fmt.Sprintf("%d installed", len(p.installed)),
+		fmt.Sprintf("%d enabled", enabled),
+		fmt.Sprintf("%d marketplaces", len(p.markets)),
+		fmt.Sprintf("%d wired components", len(p.rows)),
+	}
+	sub := "  " + sText.Render(strings.Join(stats, sFaint.Render(" · ")))
+	if w < 72 {
+		return sub + "\n\n"
+	}
+	return sub + "\n" + sFaint.Render("  Install curated Claude-format plugins, scan their prompts, and manage the MCP/skills/hooks they wire into Eigen.") + "\n\n"
+}
+
+func (p *pluginsState) tabs(w int) string {
+	tabs := []struct {
+		tab   pluginsTab
+		name  string
+		count int
+	}{
+		{pluginsTabInstalled, "Plugins", len(p.installed)},
+		{pluginsTabMarketplace, "Marketplace", len(p.markets)},
+		{pluginsTabExtensions, "Wiring", len(p.rows)},
+	}
+	var parts []string
+	for i, t := range tabs {
+		label := fmt.Sprintf("%d %s %d", i+1, t.name, t.count)
+		if p.tab == t.tab {
+			parts = append(parts, sAccent.Render("[ ")+sTitle.Render(label)+sAccent.Render(" ]"))
+		} else {
+			parts = append(parts, sFaint.Render("  ")+sDim.Render(label)+sFaint.Render("  "))
+		}
+	}
+	line := "  " + strings.Join(parts, "  ")
+	if lipgloss.Width(line) > w {
+		line = truncate(line, w)
+	}
+	return line + "\n" + sFaint.Render("  1/2/3 tabs · ←/→ or H/L switch · j/k move")
+}
+
+func (p *pluginsState) viewInstalled(w, h int) string {
+	out := sectionLabel("my plugins", w) + "\n"
+	if len(p.installed) == 0 {
+		out += emptyCard("No plugins installed yet", "Add a marketplace, then install a plugin from it.", w)
+		out += p.prompt.render()
+		out += "\n" + sFaint.Render("  a add marketplace · i install plugin · R refresh")
+		return out
+	}
+	visible := max(1, (h-6)/2)
+	from, to := p.list.window(visible)
+	reg, _ := appPluginRegistry()
+	for i := from; i < to; i++ {
+		pl := p.installed[i]
+		p.clicks.mark(lineCount(out), i)
+		out += p.pluginCard(i == p.list.cursor, pl, reg, w) + "\n"
+	}
+	if p.list.cursor < len(p.installed) {
+		out += "\n" + p.pluginDetail(p.installed[p.list.cursor], reg, w)
+	}
+	out += p.confirm.render(w)
+	if p.err != "" {
+		out += sErr.Render("  "+truncate(p.err, w-4)) + "\n"
+	}
+	out += p.prompt.render()
+	out += "\n" + sFaint.Render("  enter/space toggle · i install · X uninstall · a add marketplace · R refresh")
+	return out
+}
+
+func (p *pluginsState) pluginCard(selected bool, pl pluginpkg.InstalledPlugin, reg *pluginpkg.Registry, w int) string {
+	status := sOk.Render("enabled")
+	if reg != nil && !pluginEnabled(pl, p.rows, reg) {
+		status = sDim.Render("disabled")
+	}
+	meta := pluginCounts(pl)
+	if pl.Marketplace != "" {
+		meta += " · from " + pl.Marketplace
+	}
+	if pl.Version != "" {
+		meta += " · v" + pl.Version
+	}
+	name := sText.Render(pad(truncate(pl.Name, 24), 24))
+	line1 := "◆ " + name + " " + status + "  " + sViolet.Render(meta)
+	if selected {
+		line1 = row(true, line1)
+	} else {
+		line1 = row(false, line1)
+	}
+	desc := pl.Description
+	if desc == "" {
+		desc = "no description"
+	}
+	line2 := "  " + sDim.Render(truncate(desc, max(20, w-6)))
+	return line1 + "\n" + line2
+}
+
+func (p *pluginsState) pluginDetail(pl pluginpkg.InstalledPlugin, reg *pluginpkg.Registry, w int) string {
+	var b strings.Builder
+	b.WriteString(sectionLabel("details", w) + "\n")
+	if pl.Description != "" {
+		b.WriteString("  " + sText.Render(wrapTo(pl.Description, w-4, "  ")) + "\n")
+	}
+	state := "enabled"
+	if reg != nil && !pluginEnabled(pl, p.rows, reg) {
+		state = "disabled"
+	}
+	b.WriteString("  " + sDim.Render("state ") + state + sFaint.Render(" · ") + sDim.Render("root ") + truncate(pl.Root, max(12, w-20)) + "\n")
+	parts := pluginComponentNames(pl)
+	if len(parts) > 0 {
+		b.WriteString("  " + sDim.Render("components ") + truncate(strings.Join(parts, " · "), max(20, w-15)) + "\n")
+	}
+	return b.String()
+}
+
+func (p *pluginsState) viewMarketplace(w, h int) string {
+	out := sectionLabel("marketplaces", w) + "\n"
+	if len(p.markets) == 0 {
+		out += emptyCard("No marketplaces added", "Add a Claude-format marketplace repo such as owner/repo.", w)
+		out += p.prompt.render()
+		out += "\n" + sFaint.Render("  a add marketplace · i install by name once added")
+		return out
+	}
+	visible := max(1, (h-6)/2)
+	from, to := p.list.window(visible)
+	for i := from; i < to; i++ {
+		mk := p.markets[i]
+		p.clicks.mark(lineCount(out), i)
+		out += p.marketCard(i == p.list.cursor, mk, w) + "\n"
+	}
+	if p.list.cursor < len(p.markets) {
+		out += "\n" + p.marketDetail(p.markets[p.list.cursor], w)
+	}
+	out += p.confirm.render(w)
+	if p.err != "" {
+		out += sErr.Render("  "+truncate(p.err, w-4)) + "\n"
+	}
+	out += p.prompt.render()
+	out += "\n" + sFaint.Render("  a add marketplace · enter/U refresh selected · i install plugin · X remove · R refresh")
+	return out
+}
+
+func (p *pluginsState) marketCard(selected bool, mk pluginpkg.MarketRecord, w int) string {
+	installed := 0
+	for _, pl := range p.installed {
+		if strings.EqualFold(pl.Marketplace, mk.Name) {
+			installed++
+		}
+	}
+	stamp := dateLabel(mk.Updated)
+	if stamp == "" {
+		added := dateLabel(mk.Added)
+		if added == "" {
+			added = "unknown"
+		}
+		stamp = "added " + added
+	} else {
+		stamp = "updated " + stamp
+	}
+	line1 := "◇ " + sText.Render(pad(truncate(mk.Name, 24), 24)) + " " + sViolet.Render(fmt.Sprintf("%d installed", installed))
+	if selected {
+		line1 = row(true, line1)
+	} else {
+		line1 = row(false, line1)
+	}
+	line2 := "  " + sDim.Render(truncate(mk.Source+" · "+stamp, max(20, w-6)))
+	return line1 + "\n" + line2
+}
+
+func (p *pluginsState) marketDetail(mk pluginpkg.MarketRecord, w int) string {
+	var b strings.Builder
+	b.WriteString(sectionLabel("catalog", w) + "\n")
+	if mk.Owner != "" {
+		b.WriteString("  " + sDim.Render("owner ") + mk.Owner + "\n")
+	}
+	b.WriteString("  " + sDim.Render("source ") + truncate(mk.Source, max(12, w-12)) + "\n")
+	b.WriteString("  " + sDim.Render("install ") + "/plugin install <name>@" + mk.Name + "\n")
+	if strings.EqualFold(p.catalogMarket, mk.Name) {
+		if len(p.catalog) == 0 {
+			b.WriteString("  " + sFaint.Render("catalog refreshed; no plugins listed") + "\n")
+		} else {
+			b.WriteString("\n" + sectionLabel(fmt.Sprintf("%d plugin catalog", len(p.catalog)), w) + "\n")
+			limit := min(len(p.catalog), 6)
+			for _, e := range p.catalog[:limit] {
+				b.WriteString("  " + sText.Render(pad(truncate(e.Name, 22), 22)))
+				meta := catalogEntryMeta(e)
+				if meta != "" {
+					b.WriteString(" " + sViolet.Render(truncate(meta, max(10, w-28))))
+				}
+				if e.Description != "" {
+					b.WriteString("\n    " + sDim.Render(truncate(e.Description, max(10, w-8))))
+				}
+				b.WriteString("\n")
+			}
+			if limit < len(p.catalog) {
+				b.WriteString(sFaint.Render(fmt.Sprintf("  ⋯ %d more", len(p.catalog)-limit)) + "\n")
+			}
+		}
+	} else {
+		b.WriteString("  " + sFaint.Render("enter/U fetches this catalog and previews installable plugins") + "\n")
+	}
+	b.WriteString("  " + sFaint.Render("installed plugins are not removed when a marketplace is removed") + "\n")
+	return b.String()
+}
+
+func (p *pluginsState) viewExtensions(w, h int) string {
+	out := sectionLabel("wired components", w) + "\n"
 	if len(p.rows) == 0 {
-		out += "\n" + sDim.Render("  no extensions configured") + "\n"
-		out += sFaint.Render("  add: ~/.eigen/{mcp,plugins,lsp,hooks}.json (or per-project .eigen/)") + "\n"
+		out += emptyCard("No extension wiring found", "MCP servers, plugin tools, LSP servers, and hooks appear here.", w)
 		out += p.prompt.render()
 		out += "\n" + sFaint.Render("  a add-marketplace · i install-plugin")
 		return out
 	}
-	visible := h - 6
-	if visible < 3 {
-		visible = 3
-	}
-	start := p.list.top
-	for i := start; i < len(p.rows) && i < start+visible; i++ {
+	visible := max(3, h-6)
+	from, to := p.list.window(visible)
+	for i := from; i < to; i++ {
 		r := p.rows[i]
+		p.clicks.mark(lineCount(out), i)
 		cursor := "  "
 		if i == p.list.cursor {
 			cursor = sAccent.Render("▎ ")
@@ -299,12 +784,158 @@ func (p *pluginsState) view(m *Model, w, h int) string {
 	if i := p.list.cursor; i < len(p.rows) {
 		out += "\n" + sFaint.Render("  "+truncate(p.rows[i].Detail, w-6)) + "\n"
 	}
+	out += p.confirm.render(w)
 	if p.err != "" {
 		out += sErr.Render("  "+truncate(p.err, w-4)) + "\n"
 	}
 	out += p.prompt.render()
-	out += sFaint.Render("  space toggle · a add-marketplace · i install-plugin · X uninstall · R refresh")
+	out += sFaint.Render("  space toggle component · X uninstall owning plugin · a add-marketplace · i install-plugin · R refresh")
 	return out
+}
+
+// clickAt selects a rendered card/row. A second click on the selected row
+// performs the primary action for the current tab (toggle for plugins/wiring,
+// refresh for marketplace), matching enter.
+func (p *pluginsState) clickAt(_ *Model, localY int) (tea.Cmd, bool) {
+	idx, ok := p.clicks.at(localY)
+	if !ok || idx < 0 || idx >= p.list.count {
+		return nil, false
+	}
+	if p.list.cursor == idx {
+		key := "enter"
+		switch p.tab {
+		case pluginsTabInstalled:
+			p.updateInstalled(key)
+		case pluginsTabMarketplace:
+			p.updateMarketplace(key)
+		case pluginsTabExtensions:
+			p.updateExtension(key)
+		}
+	} else {
+		p.list.cursor = idx
+		p.err = ""
+	}
+	return nil, true
+}
+
+func minPluginTab(tab pluginsTab) pluginsTab {
+	if tab > pluginsTabExtensions {
+		return pluginsTabExtensions
+	}
+	return tab
+}
+
+func maxPluginTab(tab pluginsTab) pluginsTab {
+	if tab < pluginsTabInstalled {
+		return pluginsTabInstalled
+	}
+	return tab
+}
+
+func pluginCounts(pl pluginpkg.InstalledPlugin) string {
+	var parts []string
+	if len(pl.Skills) > 0 {
+		parts = append(parts, fmt.Sprintf("%d skill", len(pl.Skills)))
+	}
+	if len(pl.Commands) > 0 {
+		parts = append(parts, fmt.Sprintf("%d cmd", len(pl.Commands)))
+	}
+	if len(pl.MCPServers) > 0 {
+		parts = append(parts, fmt.Sprintf("%d mcp", len(pl.MCPServers)))
+	}
+	if pl.Hooks > 0 {
+		parts = append(parts, fmt.Sprintf("%d hook", pl.Hooks))
+	}
+	if len(parts) == 0 {
+		return "metadata only"
+	}
+	return strings.Join(parts, " · ")
+}
+
+func pluginComponentNames(pl pluginpkg.InstalledPlugin) []string {
+	var parts []string
+	if len(pl.Skills) > 0 {
+		parts = append(parts, "skills: "+strings.Join(pl.Skills, ", "))
+	}
+	if len(pl.Commands) > 0 {
+		parts = append(parts, "commands: "+strings.Join(pl.Commands, ", "))
+	}
+	if len(pl.MCPServers) > 0 {
+		parts = append(parts, "mcp: "+strings.Join(pl.MCPServers, ", "))
+	}
+	if pl.Hooks > 0 {
+		parts = append(parts, fmt.Sprintf("%d hook(s)", pl.Hooks))
+	}
+	return parts
+}
+
+func catalogEntryMeta(e pluginpkg.PluginEntry) string {
+	var parts []string
+	if e.Category != "" {
+		parts = append(parts, e.Category)
+	}
+	if e.Version != "" {
+		parts = append(parts, "v"+e.Version)
+	}
+	if len(e.Keywords) > 0 {
+		parts = append(parts, strings.Join(e.Keywords[:min(len(e.Keywords), 3)], ","))
+	}
+	return strings.Join(parts, " · ")
+}
+
+func pluginEnabled(pl pluginpkg.InstalledPlugin, rows []ExtRow, reg *pluginpkg.Registry) bool {
+	seen := false
+	active := false
+	for _, r := range rows {
+		owned := strings.HasPrefix(r.Name, pl.Name+"-") || r.Name == pl.Name
+		if !owned && pl.Root != "" && strings.Contains(r.Detail, pl.Root) {
+			owned = true
+		}
+		if !owned {
+			continue
+		}
+		seen = true
+		if !r.Disabled {
+			active = true
+		}
+	}
+	if active {
+		return true
+	}
+	if reg == nil {
+		return !seen
+	}
+	for _, sd := range pl.Skills {
+		if _, err := os.Stat(filepath.Join(reg.SkillsDir(), sd, "SKILL.md")); err == nil {
+			return true
+		}
+	}
+	for _, cn := range pl.Commands {
+		if _, err := os.Stat(filepath.Join(reg.CommandsDir(), cn+".md")); err == nil {
+			return true
+		}
+	}
+	if seen || len(pl.Skills) > 0 || len(pl.Commands) > 0 || len(pl.MCPServers) > 0 || pl.Hooks > 0 {
+		return false
+	}
+	// If there are no inspectable components, treat the record as enabled: the
+	// registry has no explicit disabled bit, and metadata-only plugins should not
+	// look broken by default.
+	return true
+}
+
+func emptyCard(title, body string, w int) string {
+	if w < 20 {
+		w = 20
+	}
+	return "  " + sTitle.Render(title) + "\n" + "  " + sDim.Render(wrapTo(body, w-4, "  ")) + "\n"
+}
+
+func dateLabel(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format("2006-01-02")
 }
 
 // kindStyle colors an extension kind.

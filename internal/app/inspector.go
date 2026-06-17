@@ -125,19 +125,51 @@ func (m *Model) inspectorFor() (string, []kv, string) {
 
 	case PagePlugins:
 		s := &m.plugins
-		if s.list.cursor < 0 || s.list.cursor >= len(s.rows) {
-			return "", nil, ""
+		s.load()
+		switch s.tab {
+		case pluginsTabInstalled:
+			if s.list.cursor < 0 || s.list.cursor >= len(s.installed) {
+				return "", nil, ""
+			}
+			pl := s.installed[s.list.cursor]
+			reg, _ := appPluginRegistry()
+			state := sOk.Render("enabled")
+			if !pluginEnabled(pl, s.rows, reg) {
+				state = sDim.Render("disabled")
+			}
+			return pl.Name, []kv{
+				{"state", state},
+				{"market", pl.Marketplace},
+				{"version", pl.Version},
+				{"components", pluginCounts(pl)},
+				{"root", pl.Root},
+			}, pl.Description
+		case pluginsTabMarketplace:
+			if s.list.cursor < 0 || s.list.cursor >= len(s.markets) {
+				return "", nil, ""
+			}
+			mk := s.markets[s.list.cursor]
+			return mk.Name, []kv{
+				{"source", mk.Source},
+				{"owner", mk.Owner},
+				{"added", dateLabel(mk.Added)},
+				{"updated", dateLabel(mk.Updated)},
+			}, "enter/U refresh catalog · X remove marketplace"
+		case pluginsTabExtensions:
+			if s.list.cursor < 0 || s.list.cursor >= len(s.rows) {
+				return "", nil, ""
+			}
+			r := s.rows[s.list.cursor]
+			state := sOk.Render("enabled")
+			if r.Disabled {
+				state = sDim.Render("disabled")
+			}
+			return r.Name, []kv{
+				{"kind", r.Kind},
+				{"state", state},
+				{"source", r.Source},
+			}, r.Detail
 		}
-		r := s.rows[s.list.cursor]
-		state := sOk.Render("enabled")
-		if r.Disabled {
-			state = sDim.Render("disabled")
-		}
-		return r.Name, []kv{
-			{"kind", r.Kind},
-			{"state", state},
-			{"source", r.Source},
-		}, r.Detail
 
 	case PageProjects:
 		s := &m.projects

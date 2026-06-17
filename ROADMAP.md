@@ -29,7 +29,7 @@ under “Open work.” The actual unshipped backlog is now much smaller.
 **Actual open backlog:**
 1. Tier 27 v1.1 — plugin/marketplace UX + plugin slash commands + Claude
    `agents/`/subagent prompts.
-2. Tier 20 — phone/pocket mode: outbound notify + remote approve.
+2. Tier 20 v2 — control Eigen from another machine (phone/pocket baseline is done).
 3. Tier 7 leftovers — background-task escalation and bigger planning/research
    experiments.
 
@@ -50,8 +50,8 @@ running executable + exact binary SHA so we can verify this directly.
   Claude `agents/` compatibility.
 
 **Later (parked big bets — pull when wanted):**
-- **Tier 20 — eigen in your pocket.** Outbound notify + remote approve with no
-  inbound port; Telegram is the likely first channel because it already exists.
+- **Tier 20 v2 — control from another machine.** Phone/pocket baseline is done;
+  the remaining product is a safe cross-machine control surface.
 - **Tier 7 leftovers.** Background-task escalation (rerun/hand off failed or
   underpowered background tasks to a bigger model), plus unbuilt planning dreams
   (#13 ultraplan, #23 non-LLM heads, #24-style adversarial expansion if wanted).
@@ -82,21 +82,18 @@ Already shipped:
   plugin commands are wired as prefixed commands.
 
 Remaining v1.1 work:
-- [ ] **Slash command wrappers.** Add chat commands for the existing safe CLI
-  operations:
-  - `/plugin list`
-  - `/plugin install <name>[@marketplace]`
-  - `/plugin remove <name>`
-  - `/plugin enable <name>` / `/plugin disable <name>`
-  - `/marketplace list`
-  - `/marketplace add <owner/repo|url>`
-  - `/marketplace update [name]`
-  These should call the same code paths as the CLI and keep install operations
-  user-confirmed, never model-initiated.
-- [ ] **App browse/install page.** Upgrade the existing plugins page from status
-  display to a real browser: marketplace list, plugin manifest preview,
-  installed/enabled state, install/remove/enable/disable actions, scanner risk
-  display, and rollback result display.
+- [x] **Slash command wrappers.** Chat commands now cover the existing safe CLI
+  operations (`/plugin list|install|remove|enable|disable`,
+  `/marketplace list|add|update|remove`) and bare `/plugins`, `/plugin`, and
+  `/marketplace` open the plugins page. Install/remove remain user-typed slash
+  commands, never model tools.
+- [ ] **App browse/install page.** Partially shipped: upgraded from raw status
+  display to a first-class plugins surface: tabbed Plugins / Marketplace /
+  Wiring page,
+  installed/enabled state, install/remove/enable/disable actions, marketplace
+  add/remove/refresh, and catalog preview after refresh. Remaining polish:
+  deeper plugin manifest preview, scanner-risk history, and rollback/result
+  detail display.
 - [ ] **Claude `agents/` compatibility.** Parse plugin-provided subagent prompt
   definitions and expose them through Eigen’s subtask/role system. Decide the
   mapping carefully: role name, allowed tools, default difficulty/model routing,
@@ -105,34 +102,32 @@ Remaining v1.1 work:
 - [ ] **Docs + smoke test.** One minimal marketplace fixture; one install/remove
   flow; one command-wrapper flow; docs/plugins.md updated.
 
-Suggested order:
-1. slash commands (fastest value, easy tests),
-2. app browse/install page,
-3. `agents/` mapping.
+Suggested order from here:
+1. finish app browse/install polish (manifest preview + scan/rollback detail),
+2. `agents/` mapping,
+3. docs + smoke fixture.
 
-### Tier 20 — eigen in your pocket
+### Tier 20 v2 — control from another machine
 
-**Goal:** be pinged and approve work from a phone without opening an inbound port
-and without requiring Tailscale. This is distinct from Tier 19 remote SSH.
-
-Likely first channel: Telegram, because the outbound long-poll bridge already
-exists and is production-only by design.
+**Goal:** control/approve Eigen from another trusted machine without disturbing
+running local sessions and without opening an unsafe raw daemon listener. The
+phone/pocket baseline is considered done; this v2 is about cross-machine control.
 
 Open work:
-- [ ] **Push “needs you.”** Approval wait, long-turn done, error, and background
-  completion events fan out to the phone channel.
-- [ ] **Remote approve/deny.** A tap routes back into the existing daemon
+- [ ] **Remote control surface.** See running sessions, attach/read recent output,
+  and send user input from another machine.
+- [ ] **Remote approve/deny.** Route decisions back into the existing daemon
   approval queue; fail closed; audit logged.
 - [ ] **Status/recent.** “What’s running?”, “what changed?”, “show recent result”
   for a session.
-- [ ] **Security constraints.** Outbound-only, no raw daemon listener, allowlist
-  enforced, short-lived/signed callback payloads if a relay is introduced,
-  approvals stay strictly gated.
+- [ ] **Security constraints.** Prefer SSH/Tailscale/outbound relay over a raw
+  public listener; allowlist enforced; short-lived/signed callback payloads if a
+  relay is introduced; approvals stay strictly gated.
 
-Non-goals for v1:
-- full chat UI on phone;
-- arbitrary tool execution from phone;
-- bypassing normal approval gates.
+Non-goals for v2:
+- arbitrary unauthenticated daemon access;
+- bypassing normal approval gates;
+- interrupting important prod sessions during setup.
 
 ### Tier 7 leftovers — background-task escalation + research bets
 
@@ -295,7 +290,8 @@ Shipped:
 
 ### Tier 20 — pocket mode
 
-Not shipped; open above.
+Phone/pocket baseline is done; remaining cross-machine control work is tracked
+above as Tier 20 v2.
 
 ### Tier 19 — remote
 
