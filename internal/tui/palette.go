@@ -12,16 +12,18 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/fuzzy"
 )
 
 // paletteCmd is one launchable entry: a label, an optional key hint, and how to
 // run it — either an action id (validated through dispatch) or a slash command.
 type paletteCmd struct {
-	label string
-	hint  string
-	id    actionID // when != actNone, dispatched through m.dispatch
-	slash string   // when id == actNone, run as a command line
+	label   string
+	hint    string
+	id      actionID // when != actNone, dispatched through m.dispatch
+	slash   string   // when id == actNone, run as a command line
+	prefill string   // arbitrary composer prefill (not submitted)
 }
 
 // palette holds the launcher state ("" inactive). query filters the entries;
@@ -37,7 +39,7 @@ type palette struct {
 // order (most-reached first). Actions reuse the registry's gating via dispatch;
 // slash entries cover the rest.
 func (m *model) paletteCatalog() []paletteCmd {
-	return []paletteCmd{
+	cmds := []paletteCmd{
 		{label: "switch session", hint: "alt+s", id: actSwitcher},
 		{label: "new session", id: actNewSession},
 		{label: "home (app shell)", id: actHome},
@@ -85,6 +87,14 @@ func (m *model) paletteCatalog() []paletteCmd {
 		{label: "help", slash: "/help"},
 		{label: "quit", slash: "/quit"},
 	}
+	for _, role := range agent.PluginRoleNames() {
+		cmds = append(cmds, paletteCmd{
+			label:   "plugin agent task: " + strings.ReplaceAll(role, "-", " ") + " · " + role,
+			hint:    "prefill task role",
+			prefill: "Use the task tool with role \"" + role + "\" for: ",
+		})
+	}
+	return cmds
 }
 
 // openPalette opens the fuzzy launcher.
@@ -155,6 +165,12 @@ func (m *model) paletteKey(key string) (tea.Cmd, bool) {
 		}
 		if sel.id != actNone {
 			return m.dispatch(sel.id), true
+		}
+		if sel.prefill != "" {
+			m.ti.SetValue(sel.prefill)
+			m.ti.CursorEnd()
+			m.resizeInput()
+			return nil, true
 		}
 		// Slash entries that take an argument (trailing space) prefill the
 		// input rather than running immediately.

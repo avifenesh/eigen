@@ -296,6 +296,21 @@ func (p *pluginsState) setTab(tab pluginsTab) {
 	p.err = ""
 }
 
+func (p *pluginsState) selectPluginWithAgent(role string) {
+	p.reload()
+	role = strings.ToLower(strings.TrimSpace(role))
+	for i, pl := range p.installed {
+		for _, agentName := range pl.Agents {
+			if strings.EqualFold(agentName, role) {
+				p.list.cursor = i
+				p.list.top = max(0, i-3)
+				p.err = "task role: " + agentName
+				return
+			}
+		}
+	}
+}
+
 func (p *pluginsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	p.load()
 	key := msg.String()
@@ -936,6 +951,10 @@ func (p *pluginsState) pluginDetail(pl pluginpkg.InstalledPlugin, reg *pluginpkg
 	if len(parts) > 0 {
 		b.WriteString("  " + sDim.Render("components ") + truncate(strings.Join(parts, " · "), max(20, w-15)) + "\n")
 	}
+	if roles := pluginTaskRoleLine(pl); roles != "" {
+		b.WriteString("  " + sDim.Render("task roles ") + truncate(roles, max(20, w-14)) + "\n")
+		b.WriteString("  " + sFaint.Render("use in task(role: <name>); ctrl+k palette can prefill") + "\n")
+	}
 	if pv := installedPluginPreview(pl); pv != "" {
 		b.WriteString(pv)
 	}
@@ -1215,6 +1234,34 @@ func pluginCounts(pl pluginpkg.InstalledPlugin) string {
 		return "metadata only"
 	}
 	return strings.Join(parts, " · ")
+}
+
+func pluginTaskRoleLine(pl pluginpkg.InstalledPlugin) string {
+	if len(pl.AgentRoles) > 0 {
+		var parts []string
+		for _, ar := range pl.AgentRoles {
+			meta := ar.Name
+			var bits []string
+			if ar.Kind != "" {
+				bits = append(bits, ar.Kind)
+			}
+			if ar.Difficulty != "" {
+				bits = append(bits, ar.Difficulty)
+			}
+			if ar.ReadOnly {
+				bits = append(bits, "read-only")
+			}
+			if len(bits) > 0 {
+				meta += " (" + strings.Join(bits, ", ") + ")"
+			}
+			parts = append(parts, meta)
+		}
+		return strings.Join(parts, ", ")
+	}
+	if len(pl.Agents) > 0 {
+		return strings.Join(pl.Agents, ", ")
+	}
+	return ""
 }
 
 func pluginComponentNames(pl pluginpkg.InstalledPlugin) []string {

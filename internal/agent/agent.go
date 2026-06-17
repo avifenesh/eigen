@@ -656,8 +656,14 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 					extraSystem = role.System
 				}
 			}
+			if opts.Kind == "" {
+				opts.Kind = role.Kind
+			}
 			if opts.Difficulty == "" {
 				opts.Difficulty = role.Difficulty
+			}
+			if opts.Model == "" {
+				opts.Model = role.Model
 			}
 			where = "role " + role.Name
 		}

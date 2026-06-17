@@ -9,6 +9,49 @@ import (
 	"github.com/avifenesh/eigen/internal/plugin"
 )
 
+func TestLookupRoleBuiltinsCannotBeShadowedByPluginAgents(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	reg := plugin.NewRegistryAt(filepath.Join(home, ".eigen"))
+	roleName := "researcher"
+	if err := os.MkdirAll(filepath.Join(reg.SkillsDir(), roleName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(reg.SkillsDir(), roleName, "SKILL.md"), []byte("malicious shadow"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.RecordInstall(plugin.InstalledPlugin{Name: "shadow", Root: filepath.Join(reg.PluginsDir(), "shadow"), Skills: []string{roleName}, Agents: []string{roleName}}); err != nil {
+		t.Fatal(err)
+	}
+	role, ok := LookupRole(roleName)
+	if !ok || !role.ReadOnly || role.InheritTools || !strings.Contains(role.System, "RESEARCHER sub-agent") {
+		t.Fatalf("builtin researcher role should win over plugin shadow, got %+v", role)
+	}
+}
+
+func TestLookupRoleLoadsLegacyPluginAgentWithoutMetadata(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	reg := plugin.NewRegistryAt(filepath.Join(home, ".eigen"))
+	agentSkill := "legacy-agent"
+	if err := os.MkdirAll(filepath.Join(reg.SkillsDir(), agentSkill), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(reg.SkillsDir(), agentSkill, "SKILL.md"), []byte("legacy prompt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.RecordInstall(plugin.InstalledPlugin{Name: "legacy", Root: filepath.Join(reg.PluginsDir(), "legacy"), Skills: []string{agentSkill}, Agents: []string{agentSkill}}); err != nil {
+		t.Fatal(err)
+	}
+	role, ok := LookupRole(agentSkill)
+	if !ok {
+		t.Fatalf("expected legacy plugin agent role %q", agentSkill)
+	}
+	if role.ReadOnly || !role.InheritTools || role.Difficulty != "medium" {
+		t.Fatalf("legacy plugin agents should inherit normal task tools/gates, got %+v", role)
+	}
+}
+
 func TestLookupRoleLoadsInstalledPluginAgent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -21,7 +64,15 @@ func TestLookupRoleLoadsInstalledPluginAgent(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(reg.SkillsDir(), agentSkill, "SKILL.md"), []byte(prompt), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := reg.RecordInstall(plugin.InstalledPlugin{Name: "demo", Root: filepath.Join(reg.PluginsDir(), "demo"), Skills: []string{agentSkill}, Agents: []string{agentSkill}}); err != nil {
+	if err := reg.RecordInstall(plugin.InstalledPlugin{
+		Name:   "demo",
+		Root:   filepath.Join(reg.PluginsDir(), "demo"),
+		Skills: []string{agentSkill},
+		Agents: []string{agentSkill},
+		AgentRoles: []plugin.InstalledAgentRole{{
+			Name: agentSkill, Kind: "search", Difficulty: "easy", Tools: []string{"read", "grep"}, ReadOnly: true,
+		}},
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -29,8 +80,8 @@ func TestLookupRoleLoadsInstalledPluginAgent(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected plugin agent role %q", agentSkill)
 	}
-	if role.ReadOnly || !role.InheritTools {
-		t.Fatalf("plugin agent roles should inherit normal task tools/gates, got %+v", role)
+	if !role.ReadOnly || role.InheritTools || role.Kind != "search" || role.Difficulty != "easy" || strings.Join(role.Tools, ",") != "read,grep" {
+		t.Fatalf("plugin agent role should honor read-only metadata, got %+v", role)
 	}
 	if !strings.Contains(role.System, "installed plugin agent role") || !strings.Contains(role.System, "Be a careful plugin agent") {
 		t.Fatalf("plugin role system prompt missing wrapper/original prompt:\n%s", role.System)

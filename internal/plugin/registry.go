@@ -34,19 +34,33 @@ type MarketRecord struct {
 // InstalledPlugin records one installed plugin and the files it wrote, so
 // `plugin remove` can cleanly reverse it.
 type InstalledPlugin struct {
-	Name        string        `json:"name"`
-	Marketplace string        `json:"marketplace,omitempty"`
-	Version     string        `json:"version,omitempty"`
-	Description string        `json:"description,omitempty"`
-	Installed   time.Time     `json:"installed"`
-	Root        string        `json:"root"`             // ~/.eigen/plugins/<name> (bundled files)
-	Skills      []string      `json:"skills,omitempty"` // installed skill dir names (~/.eigen/skills/<n>)
-	Agents      []string      `json:"agents,omitempty"` // agent names adapted into skills
-	MCPServers  []string      `json:"mcp_servers,omitempty"`
-	Hooks       int           `json:"hooks,omitempty"`    // count appended to hooks.json
-	Commands    []string      `json:"commands,omitempty"` // installed command names (~/.eigen/commands/<n>.md)
-	Scans       []ScanFinding `json:"scans,omitempty"`    // forced risky scan verdicts kept for audit/UI
-	Warnings    []string      `json:"warnings,omitempty"` // non-fatal install notes (e.g. unsupported Codex apps)
+	Name        string               `json:"name"`
+	Marketplace string               `json:"marketplace,omitempty"`
+	Version     string               `json:"version,omitempty"`
+	Description string               `json:"description,omitempty"`
+	Installed   time.Time            `json:"installed"`
+	Root        string               `json:"root"`             // ~/.eigen/plugins/<name> (bundled files)
+	Skills      []string             `json:"skills,omitempty"` // installed skill dir names (~/.eigen/skills/<n>)
+	Agents      []string             `json:"agents,omitempty"` // agent names adapted into skills
+	MCPServers  []string             `json:"mcp_servers,omitempty"`
+	Hooks       int                  `json:"hooks,omitempty"`       // count appended to hooks.json
+	Commands    []string             `json:"commands,omitempty"`    // installed command names (~/.eigen/commands/<n>.md)
+	AgentRoles  []InstalledAgentRole `json:"agent_roles,omitempty"` // plugin agent role metadata for task/task_group
+	Scans       []ScanFinding        `json:"scans,omitempty"`       // forced risky scan verdicts kept for audit/UI
+	Warnings    []string             `json:"warnings,omitempty"`    // non-fatal install notes (e.g. unsupported Codex apps)
+}
+
+// InstalledAgentRole records metadata parsed from a plugin's agents/*.md
+// frontmatter. The generated Name is the role users pass to task(role: ...).
+type InstalledAgentRole struct {
+	Name        string   `json:"name"`
+	SourceName  string   `json:"source_name,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Kind        string   `json:"kind,omitempty"`
+	Difficulty  string   `json:"difficulty,omitempty"`
+	Model       string   `json:"model,omitempty"`
+	Tools       []string `json:"tools,omitempty"`
+	ReadOnly    bool     `json:"read_only,omitempty"`
 }
 
 // NewRegistry opens the registry rooted at ~/.eigen.

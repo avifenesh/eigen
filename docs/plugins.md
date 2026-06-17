@@ -52,7 +52,7 @@ A plugin's components flow into the **global** per-scope configs under `~/.eigen
 | Hooks | `hooks/hooks.json` or manifest `hooks` | `~/.eigen/hooks.json` | Claude events mapped (`PostToolUse`→`tool_result`, …) |
 | Codex app integrations | manifest `apps` | not wired yet | counted and warned; app/runtime integration is deferred |
 
-Installed plugin agents can be used with the `task` tool by setting `role` to the generated agent name (for example `next-task-agent-task-discoverer`). They inherit the normal task toolset and approval gates. `task_group` remains restricted to Eigen's built-in read-only roles (`researcher`, `reviewer`, `summarizer`) because plugin agents may be mutating.
+Installed plugin agents can be used with the `task` tool by setting `role` to the generated agent name (for example `next-task-agent-task-discoverer`). The app and chat command palettes surface installed agent roles: the app jumps to the owning plugin detail, while the chat palette pre-fills a task-role prompt. Agent frontmatter may provide routing metadata (`kind`, `difficulty`, `model`) and read-only tool metadata (`tools` / `allowed-tools`, `read_only`). Agents without read-only metadata inherit the normal task toolset and approval gates. Agents with a verified read-only allowlist (`read`, `grep`, `glob`, `list`/`ls`, `tree`, `symbols`, `diff`) can also be used in `task_group`; mutating/unknown plugin agents stay blocked from parallel fan-out.
 
 The bundle is cached at `~/.eigen/plugins/<name>/` so root placeholders resolve.
 Installs are recorded in `~/.eigen/plugins-installed.json` (with the exact files

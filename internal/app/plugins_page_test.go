@@ -23,6 +23,12 @@ func seedPluginPage(t *testing.T) *pluginpkg.Registry {
 	if err := os.WriteFile(filepath.Join(root, "skills", "demo-skill", "SKILL.md"), []byte("# Demo\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(root, "skills", "demo-agent-reviewer"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "skills", "demo-agent-reviewer", "SKILL.md"), []byte("---\nname: demo-agent-reviewer\ndescription: review\n---\nReview carefully.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(filepath.Join(root, "commands"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -41,9 +47,11 @@ func seedPluginPage(t *testing.T) *pluginpkg.Registry {
 		Version:     "1.2.3",
 		Description: "Demo plugin for tests",
 		Root:        filepath.Join(root, "plugins", "demo"),
-		Skills:      []string{"demo-skill"},
+		Skills:      []string{"demo-skill", "demo-agent-reviewer"},
+		Agents:      []string{"demo-agent-reviewer"},
 		Commands:    []string{"demo-review"},
 		MCPServers:  []string{"demo-mcp"},
+		AgentRoles:  []pluginpkg.InstalledAgentRole{{Name: "demo-agent-reviewer", SourceName: "reviewer", Kind: "general", Difficulty: "easy", Tools: []string{"read", "grep"}, ReadOnly: true}},
 		Warnings:    []string{"1 Codex app integration(s) not wired yet"},
 		Scans:       []pluginpkg.ScanFinding{{Component: "skill:demo-skill", Reasons: []string{"forced test finding"}}},
 	}); err != nil {
@@ -65,7 +73,10 @@ func TestPluginsPageRendersProductSurface(t *testing.T) {
 		"my plugins",
 		"demo",
 		"enabled",
-		"1 skill",
+		"2 skill",
+		"1 agent",
+		"task roles",
+		"demo-agent-reviewer",
 		"from core",
 		"scan flags",
 		"forced test finding",
@@ -112,6 +123,27 @@ func TestPluginsPageRendersProductSurface(t *testing.T) {
 		if !strings.Contains(v, want) {
 			t.Fatalf("wiring tab missing %q:\n%s", want, v)
 		}
+	}
+}
+
+func TestAppPaletteSurfacesPluginAgentRoles(t *testing.T) {
+	seedPluginPage(t)
+	m := NewAt(testData(), PageHome)
+	m.width, m.height = 120, 36
+	m.palette.openPalette(m)
+	for _, r := range "demo agent reviewer" {
+		m.palette.update(m, string(r), []rune{r})
+	}
+	if len(m.palette.matches) == 0 {
+		t.Fatal("plugin agent role should be searchable in app palette")
+	}
+	idx := m.palette.matches[0]
+	if !strings.Contains(m.palette.cmds[idx].name, "demo-agent-reviewer") {
+		t.Fatalf("top palette match should be plugin agent role, got %q", m.palette.cmds[idx].name)
+	}
+	m.palette.update(m, "enter", nil)
+	if m.active != PagePlugins || m.plugins.tab != pluginsTabInstalled || !strings.Contains(m.plugins.err, "task role") {
+		t.Fatalf("palette role should navigate to plugin detail, active=%v tab=%v err=%q", m.active, m.plugins.tab, m.plugins.err)
 	}
 }
 

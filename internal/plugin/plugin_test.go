@@ -414,7 +414,7 @@ func TestInstallCodexMarketplaceAndAdaptAgents(t *testing.T) {
 	  "mcp_servers": {"browser": {"command": ["node", "${CODEX_PLUGIN_ROOT}/server.js"], "env": {"ROOT": "${CODEX_PLUGIN_ROOT}"}}}
 	}`)
 	mustWrite(t, filepath.Join(pluginRoot, "skills", "control", "SKILL.md"), "---\nname: control\ndescription: control browser\n---\nUse ${CODEX_PLUGIN_ROOT}/scripts/browser.js\n")
-	mustWrite(t, filepath.Join(pluginRoot, "agents", "tester.md"), "---\nname: qa-tester\ndescription: test local web apps\n---\nYou are a browser QA tester.\n")
+	mustWrite(t, filepath.Join(pluginRoot, "agents", "tester.md"), "---\nname: qa-tester\ndescription: test local web apps\nkind: vision\ndifficulty: easy\nallowed-tools: Read, Grep, Glob\nread_only: true\n---\nYou are a browser QA tester.\n")
 	mustWrite(t, filepath.Join(pluginRoot, "server.js"), "// server\n")
 
 	r := NewRegistryAt(filepath.Join(dir, "eigen"))
@@ -427,6 +427,12 @@ func TestInstallCodexMarketplaceAndAdaptAgents(t *testing.T) {
 	}
 	if len(res.Plugin.Skills) != 2 || len(res.Plugin.Agents) != 1 || res.Plugin.Agents[0] != "browser-agent-qa-tester" {
 		t.Fatalf("skills=%v agents=%v", res.Plugin.Skills, res.Plugin.Agents)
+	}
+	if len(res.Plugin.AgentRoles) != 1 || res.Plugin.AgentRoles[0].Kind != "vision" || res.Plugin.AgentRoles[0].Difficulty != "easy" || !res.Plugin.AgentRoles[0].ReadOnly {
+		t.Fatalf("agent role metadata not recorded: %+v", res.Plugin.AgentRoles)
+	}
+	if got := strings.Join(res.Plugin.AgentRoles[0].Tools, ","); got != "read,grep,glob" {
+		t.Fatalf("agent role tools = %q", got)
 	}
 	agentSkill, err := os.ReadFile(filepath.Join(r.SkillsDir(), "browser-agent-qa-tester", "SKILL.md"))
 	if err != nil {
@@ -486,6 +492,26 @@ func TestPreviewPluginReportsManifestAndComponents(t *testing.T) {
 	}
 	if len(pv.Skills) != 1 || pv.Skills[0] != "greet" || len(pv.Commands) != 1 || pv.Commands[0] != "do-it" || len(pv.MCPServers) != 1 || pv.Hooks != 1 {
 		t.Fatalf("preview missing components: %+v", pv)
+	}
+}
+
+func TestAgentReadOnlyMetadataFailsClosed(t *testing.T) {
+	tools, ok := normalizeAgentTools([]string{"Read", "Grep"}, false, false)
+	if !ok || strings.Join(tools, ",") != "read,grep" {
+		t.Fatalf("read-only allowlist should be accepted, tools=%v ok=%v", tools, ok)
+	}
+	if tools, ok := normalizeAgentTools([]string{"Read"}, false, true); ok || len(tools) != 0 {
+		t.Fatalf("explicit read_only:false should not auto-promote, tools=%v ok=%v", tools, ok)
+	}
+	if tools, ok := normalizeAgentTools([]string{"Read", "Write"}, true, true); ok || len(tools) != 0 {
+		t.Fatalf("mutating tool should fail closed even with read_only:true, tools=%v ok=%v", tools, ok)
+	}
+	tools, ok = normalizeAgentTools(nil, true, true)
+	if !ok || strings.Join(tools, ",") != "read,grep,glob,list,tree,symbols,diff" {
+		t.Fatalf("read_only:true with no tools should get safe defaults, tools=%v ok=%v", tools, ok)
+	}
+	if _, ok := normalizeAgentTools([]string{"Skill"}, true, true); ok {
+		t.Fatal("skill tool should not be admitted to plugin read-only task_group roles")
 	}
 }
 

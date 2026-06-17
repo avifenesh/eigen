@@ -21,7 +21,9 @@ type Role struct {
 	Name         string
 	System       string   // prepended to the sub-agent's system prompt
 	Tools        []string // allowlist; the sub-agent sees only these (all read-only)
+	Kind         string   // default routing kind when the caller gives none
 	Difficulty   string   // default routing difficulty when the caller gives none
+	Model        string   // optional default model when the caller gives none
 	ReadOnly     bool     // every tool in Tools is read-only (enforced at build)
 	InheritTools bool     // plugin agent: keep caller's normal toolset/approval gates
 }
@@ -108,22 +110,43 @@ func pluginAgentRoles() []Role {
 	}
 	var roles []Role
 	for _, pl := range installed {
+		meta := map[string]plugin.InstalledAgentRole{}
+		for _, ar := range pl.AgentRoles {
+			meta[strings.ToLower(strings.TrimSpace(ar.Name))] = ar
+		}
 		for _, agentSkill := range pl.Agents {
 			md, err := os.ReadFile(filepath.Join(reg.SkillsDir(), agentSkill, "SKILL.md"))
 			if err != nil {
 				continue // disabled or removed
 			}
-			roles = append(roles, Role{
+			ar := meta[strings.ToLower(strings.TrimSpace(agentSkill))]
+			role := Role{
 				Name:         agentSkill,
 				System:       pluginAgentSystem(agentSkill, pl.Name, string(md)),
-				Difficulty:   "medium",
-				ReadOnly:     false,
-				InheritTools: true,
-			})
+				Kind:         ar.Kind,
+				Difficulty:   firstNonEmptyRole(ar.Difficulty, "medium"),
+				Model:        ar.Model,
+				ReadOnly:     ar.ReadOnly,
+				InheritTools: !ar.ReadOnly,
+			}
+			if ar.ReadOnly {
+				role.Tools = ar.Tools
+				if len(role.Tools) == 0 {
+					role.Tools = []string{"read", "grep", "glob", "list", "tree", "symbols", "diff"}
+				}
+			}
+			roles = append(roles, role)
 		}
 	}
 	sort.Slice(roles, func(i, j int) bool { return roles[i].Name < roles[j].Name })
 	return roles
+}
+
+func firstNonEmptyRole(a, b string) string {
+	if strings.TrimSpace(a) != "" {
+		return a
+	}
+	return b
 }
 
 func pluginAgentSystem(roleName, pluginName, prompt string) string {

@@ -27,11 +27,13 @@ under “Open work.” The actual unshipped backlog is now much smaller.
   disclosure/background shells, Tier 31 custom commands, Tier 32 Codex backend.
 
 **Actual open backlog:**
-1. Tier 27 v1.1 — plugin/marketplace UX + plugin slash commands + Claude
-   `agents/`/subagent prompts.
-2. Tier 20 v2 — control Eigen from another machine (phone/pocket baseline is done).
-3. Tier 7 leftovers — background-task escalation and bigger planning/research
+1. Tier 20 v2 — control Eigen from another machine (phone/pocket baseline is done).
+2. Tier 7 leftovers — background-task escalation and bigger planning/research
    experiments.
+
+**Recently completed:**
+- Tier 27 v1.1 — plugin/marketplace UX + plugin slash commands + Claude/Codex
+  `agents/`/subagent prompt compatibility.
 
 **Operational note:** when rebuilding Eigen, a running daemon keeps executing the
 old binary until the user restarts it. `eigen daemon stats` now exposes the
@@ -42,16 +44,13 @@ running executable + exact binary SHA so we can verify this directly.
 ## Now / Next / Later
 
 **Now (in flight):**
-- Nothing in flight after this audit lands — pick the next item deliberately.
+- Tier 27 v1.1 is complete; no plugin/marketplace work is knowingly in flight.
 
 **Next (queued, well-scoped):**
-- **Tier 27 v1.1 — plugin/marketplace product surface.** CLI v1 shipped; custom
-  commands shipped. Remaining work is the user-facing install/browse surface and
-  Claude `agents/` compatibility.
-
-**Later (parked big bets — pull when wanted):**
 - **Tier 20 v2 — control from another machine.** Phone/pocket baseline is done;
   the remaining product is a safe cross-machine control surface.
+
+**Later (parked big bets — pull when wanted):**
 - **Tier 7 leftovers.** Background-task escalation (rerun/hand off failed or
   underpowered background tasks to a bigger model), plus unbuilt planning dreams
   (#13 ultraplan, #23 non-LLM heads, #24-style adversarial expansion if wanted).
@@ -95,21 +94,21 @@ Remaining v1.1 work:
   actions, marketplace add/remove/delete/enable/disable/refresh, catalog
   browsing, pre-install manifest/component preview, scanner-risk history, and
   rollback/result detail display.
-- [~] **Claude/Codex `agents/` compatibility.** Plugin-provided agents are
+- [x] **Claude/Codex `agents/` compatibility.** Plugin-provided agents are
   adapted into loadable Eigen skills and exposed as foreground/background
-  `task` roles using the generated agent name. They inherit normal task tools
-  and approval gates; `task_group` remains limited to built-in read-only roles.
-  Remaining: command-palette surfacing, richer tool/difficulty metadata from
-  agent frontmatter, and safe read-only classification for parallel fan-out.
+  `task` roles using the generated agent name. App/chat command palettes surface
+  installed agent roles. Agent frontmatter can provide routing metadata
+  (`kind`, `difficulty`, `model`) and read-only tool metadata; read-only plugin
+  agents are admitted to `task_group`, while mutating/unknown agents inherit
+  normal task tools and stay blocked from parallel fan-out.
 - [x] **Docs + smoke test.** Added fixture coverage for marketplace source
   polymorphism, GitHub PAX tarballs, Codex local marketplaces, Codex plugin
   manifests, and agent adaptation. docs/plugins.md updated.
 
-Suggested order from here:
-1. finish native agent polish (command-palette surfacing, frontmatter metadata,
-   safe read-only classification for parallel fan-out),
-2. non-GitHub git fetch support if real marketplaces need it,
-3. Tier 20 v2 remote cross-machine control.
+Suggested next tier:
+1. Tier 20 v2 remote cross-machine control.
+2. If a future real marketplace requires non-GitHub git fetch, add it as a
+   compatibility follow-up rather than reopening Tier 27 v1.1.
 
 ### Tier 20 v2 — control from another machine
 

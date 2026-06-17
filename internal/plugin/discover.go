@@ -44,6 +44,12 @@ type AgentFile struct {
 	Path        string
 	Description string
 	Content     string
+	Kind        string
+	Difficulty  string
+	Model       string
+	Tools       []string
+	ReadOnly    bool
+	ReadOnlySet bool
 }
 
 // MCPServer is one server from a plugin's .mcp.json, normalized to eigen's
@@ -388,7 +394,19 @@ func discoverAgents(root string, m *PluginManifest) ([]AgentFile, error) {
 				continue
 			}
 			seen[name] = true
-			out = append(out, AgentFile{Name: name, Path: file, Description: frontmatterValue(body, "description"), Content: body})
+			readOnly, readOnlySet := frontmatterBoolAny(body, "read_only", "read-only", "readonly", "readOnly")
+			out = append(out, AgentFile{
+				Name:        name,
+				Path:        file,
+				Description: frontmatterValue(body, "description"),
+				Content:     body,
+				Kind:        frontmatterValue(body, "kind"),
+				Difficulty:  frontmatterValue(body, "difficulty"),
+				Model:       frontmatterValue(body, "model"),
+				Tools:       frontmatterListAny(body, "tools", "allowed-tools", "allowed_tools"),
+				ReadOnly:    readOnly,
+				ReadOnlySet: readOnlySet,
+			})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -517,17 +535,48 @@ func frontmatterValue(md, key string) string {
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
 		return ""
 	}
-	prefix := key + ":"
+	prefix := strings.ToLower(key) + ":"
 	for _, line := range lines[1:] {
 		line = strings.TrimSpace(line)
 		if line == "---" {
 			break
 		}
-		if strings.HasPrefix(line, prefix) {
-			return strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, prefix)), `"'`)
+		if strings.HasPrefix(strings.ToLower(line), prefix) {
+			return strings.Trim(strings.TrimSpace(line[len(prefix):]), `"'`)
 		}
 	}
 	return ""
+}
+
+func frontmatterListAny(md string, keys ...string) []string {
+	for _, key := range keys {
+		if v := frontmatterValue(md, key); v != "" {
+			return splitFrontmatterList(v)
+		}
+	}
+	return nil
+}
+
+func splitFrontmatterList(v string) []string {
+	v = strings.TrimSpace(v)
+	v = strings.Trim(v, "[]")
+	var out []string
+	for _, part := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ';' }) {
+		part = strings.Trim(strings.TrimSpace(part), `"'`)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func frontmatterBoolAny(md string, keys ...string) (bool, bool) {
+	for _, key := range keys {
+		if v := strings.ToLower(frontmatterValue(md, key)); v != "" {
+			return v == "true" || v == "yes" || v == "1" || v == "read-only" || v == "readonly", true
+		}
+	}
+	return false, false
 }
 
 // mapHookEvent maps Claude hook event names to eigen's. Unknown events pass

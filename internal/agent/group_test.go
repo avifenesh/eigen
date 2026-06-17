@@ -3,11 +3,14 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/plugin"
 	"github.com/avifenesh/eigen/internal/tool"
 )
 
@@ -72,6 +75,38 @@ func TestRoleSubsetIsReadOnly(t *testing.T) {
 	}
 	if _, ok := a.Tools.Get("write"); !ok {
 		t.Fatal("Subset must not remove tools from the parent registry")
+	}
+}
+
+func TestTaskGroupAllowsReadOnlyPluginAgentRole(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	reg := plugin.NewRegistryAt(filepath.Join(home, ".eigen"))
+	roleName := "demo-agent-reader"
+	if err := os.MkdirAll(filepath.Join(reg.SkillsDir(), roleName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(reg.SkillsDir(), roleName, "SKILL.md"), []byte("read-only plugin agent"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.RecordInstall(plugin.InstalledPlugin{
+		Name:   "demo",
+		Root:   filepath.Join(reg.PluginsDir(), "demo"),
+		Skills: []string{roleName},
+		Agents: []string{roleName},
+		AgentRoles: []plugin.InstalledAgentRole{{
+			Name: roleName, Tools: []string{"read", "grep"}, ReadOnly: true, Difficulty: "trivial",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	a := roleTestAgent(t)
+	out, err := a.TaskGroup(context.Background(), []GroupSubtask{{Task: "read", Role: roleName}}, 1, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "[1] "+roleName) || !strings.Contains(out, "1 subtasks, 1 succeeded") {
+		t.Fatalf("plugin role should run in read-only task_group:\n%s", out)
 	}
 }
 

@@ -469,6 +469,7 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 		}
 		res.Plugin.Skills = append(res.Plugin.Skills, instName)
 		res.Plugin.Agents = append(res.Plugin.Agents, instName)
+		res.Plugin.AgentRoles = append(res.Plugin.AgentRoles, installedAgentRole(instName, af))
 	}
 
 	if comps.Apps > 0 {
@@ -613,6 +614,86 @@ func (r *Registry) installGeneratedSkill(instName, content, bundleRoot string, o
 	}
 	_ = os.WriteFile(filepath.Join(dst, ".eigen-root"), []byte(bundleRoot+"\n"), 0o644)
 	return nil
+}
+
+func installedAgentRole(instName string, af AgentFile) InstalledAgentRole {
+	tools, readOnly := normalizeAgentTools(af.Tools, af.ReadOnly, af.ReadOnlySet)
+	return InstalledAgentRole{
+		Name:        instName,
+		SourceName:  af.Name,
+		Description: af.Description,
+		Kind:        normalizeAgentKind(af.Kind),
+		Difficulty:  normalizeAgentDifficulty(af.Difficulty),
+		Model:       strings.TrimSpace(af.Model),
+		Tools:       tools,
+		ReadOnly:    readOnly,
+	}
+}
+
+func normalizeAgentKind(kind string) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "general", "search", "vision", "social":
+		return strings.ToLower(strings.TrimSpace(kind))
+	default:
+		return ""
+	}
+}
+
+func normalizeAgentDifficulty(d string) string {
+	switch strings.ToLower(strings.TrimSpace(d)) {
+	case "trivial", "easy", "medium", "hard":
+		return strings.ToLower(strings.TrimSpace(d))
+	default:
+		return ""
+	}
+}
+
+// normalizeAgentTools is the task_group trust boundary for plugin agents.
+// Only local, built-in read-only inspection tools are admitted. Prompt-loading
+// or model-calling helpers (skill/review/fetch/websearch) stay out of plugin
+// read-only roles even if their tool definitions are non-mutating, because they
+// can broaden the prompt surface or require approvals.
+func normalizeAgentTools(tools []string, readOnlyFlag, readOnlySet bool) ([]string, bool) {
+	if readOnlySet && !readOnlyFlag {
+		return nil, false
+	}
+	if len(tools) == 0 {
+		if readOnlyFlag {
+			return defaultPluginAgentReadOnlyTools(), true
+		}
+		return nil, false
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, t := range tools {
+		norm, ok := normalizeAgentToolName(t)
+		if !ok {
+			return nil, false
+		}
+		if !seen[norm] {
+			seen[norm] = true
+			out = append(out, norm)
+		}
+	}
+	return out, true
+}
+
+func defaultPluginAgentReadOnlyTools() []string {
+	return []string{"read", "grep", "glob", "list", "tree", "symbols", "diff"}
+}
+
+func normalizeAgentToolName(tool string) (string, bool) {
+	key := strings.ToLower(strings.TrimSpace(tool))
+	key = strings.TrimPrefix(key, "mcp__")
+	key = strings.ReplaceAll(key, "-", "_")
+	switch key {
+	case "read", "grep", "glob", "tree", "symbols", "diff":
+		return key, true
+	case "ls", "list":
+		return "list", true
+	default:
+		return "", false
+	}
 }
 
 func agentAsSkillContent(pluginName string, af AgentFile) string {

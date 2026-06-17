@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/avifenesh/eigen/internal/agent"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -36,6 +37,19 @@ func (p *palette) build(m *Model) {
 			hint: "page",
 			run: func(m *Model) tea.Cmd {
 				m.setActive(page)
+				return nil
+			},
+		})
+	}
+	for _, role := range agent.PluginRoleNames() {
+		role := role
+		p.cmds = append(p.cmds, paletteCmd{
+			name: "plugin agent role: " + strings.ReplaceAll(role, "-", " ") + " · " + role,
+			hint: "role",
+			run: func(m *Model) tea.Cmd {
+				m.setActive(PagePlugins)
+				m.plugins.setTab(pluginsTabInstalled)
+				m.plugins.selectPluginWithAgent(role)
 				return nil
 			},
 		})

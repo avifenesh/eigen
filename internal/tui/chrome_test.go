@@ -15,6 +15,7 @@ import (
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/chat"
 	"github.com/avifenesh/eigen/internal/fuzzy"
+	"github.com/avifenesh/eigen/internal/plugin"
 	"github.com/avifenesh/eigen/internal/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -1236,6 +1237,34 @@ func TestPaletteEnterRunsAction(t *testing.T) {
 	}
 	if !m.ov.active || m.ov.kind != promptText {
 		t.Fatal("running 'rename session' should open the rename prompt")
+	}
+}
+
+func TestPaletteIncludesPluginAgentTaskPrefill(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	reg := plugin.NewRegistryAt(filepath.Join(home, ".eigen"))
+	role := "demo-agent-reviewer"
+	if err := os.MkdirAll(filepath.Join(reg.SkillsDir(), role), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(reg.SkillsDir(), role, "SKILL.md"), []byte("---\nname: demo-agent-reviewer\ndescription: review\n---\nReview carefully.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.RecordInstall(plugin.InstalledPlugin{Name: "demo", Root: filepath.Join(reg.PluginsDir(), "demo"), Skills: []string{role}, Agents: []string{role}, AgentRoles: []plugin.InstalledAgentRole{{Name: role}}}); err != nil {
+		t.Fatal(err)
+	}
+	m := testModel(t)
+	m.openPalette()
+	for _, r := range "plugin agent reviewer" {
+		m.paletteKey(string(r))
+	}
+	if len(m.pal.matches) == 0 || !strings.Contains(m.pal.matches[0].label, role) {
+		t.Fatalf("plugin agent role should be searchable in TUI palette, matches=%v", m.pal.matches)
+	}
+	m.paletteKey("enter")
+	if !strings.Contains(m.ti.Value(), `role "`+role+`"`) {
+		t.Fatalf("plugin agent palette entry should prefill task-role prompt, got %q", m.ti.Value())
 	}
 }
 
