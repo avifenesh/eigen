@@ -14,11 +14,16 @@ func fakePipe(t *testing.T) *Pipeline {
 	t.Cleanup(func() { idx.Close() })
 	return &Pipeline{
 		Store: s, Index: idx, ConsolidateBytes: 50,
-		Stage1: func(_ context.Context, id, tr string) (string, string, string, bool, error) {
+		Stage1: func(_ context.Context, id, tr string) (Stage1Result, bool, error) {
 			if strings.Contains(tr, "trivial") {
-				return "", "", "", false, nil // skip
+				return Stage1Result{}, false, nil // skip
 			}
-			return "# " + tr + "\nsession: " + id + "\n## Reusable\n- fact from " + tr + "\n", "slug-" + tr, "success", true, nil
+			return Stage1Result{
+				RawMemory:      "session: " + id + "\nREUSABLE:\n- fact from " + tr + "\n",
+				RolloutSummary: "# " + tr + "\nsession: " + id + "\n## Reusable\n- fact from " + tr + "\n",
+				RolloutSlug:    "slug-" + tr,
+				Outcome:        "success",
+			}, true, nil
 		},
 		Consolidate: func(_ context.Context, cur string) (string, error) {
 			return "- consolidated (" + itoa(len(cur)) + " bytes)\n", nil
@@ -47,8 +52,18 @@ func TestPipelineStage1IdempotentAndSkip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0].SessionID != "s1" || rows[0].Outcome != "success" || !strings.Contains(rows[0].RawPath, "/raw/") {
+	if len(rows) != 1 || rows[0].SessionID != "s1" || rows[0].Outcome != "success" || !strings.Contains(rows[0].RawPath, "/rollout_summaries/") {
 		t.Fatalf("stage1 should record the raw summary in index.sqlite, got %+v", rows)
+	}
+	stageRows, err := p.Index.Stage1Outputs(p.scopeKey(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stageRows) != 1 || !strings.Contains(stageRows[0].RawMemory, "fact from alpha") || !strings.Contains(stageRows[0].RolloutSummary, "# alpha") {
+		t.Fatalf("stage1_outputs should hold raw memory and rollout summary, got %+v", stageRows)
+	}
+	if strings.Contains(p.Store.Read(), "fact from alpha") {
+		t.Fatal("Stage1 must not append directly to MEMORY.md; Phase2 owns consolidation")
 	}
 	kinds := map[string]bool{}
 	for {
@@ -83,7 +98,7 @@ func TestPipelineStage1IdempotentAndSkip(t *testing.T) {
 func TestPipelineConsolidateAndSummary(t *testing.T) {
 	p := fakePipe(t)
 	// Append enough to MEMORY.md to cross the 50-byte threshold.
-	p.Store.Append(strings.Repeat("padding note ", 10))
+	p.Store.Rewrite("- " + strings.Repeat("padding note ", 10) + "\n")
 	did, err := p.MaybeConsolidate(context.Background(), false)
 	if err != nil || !did {
 		t.Fatalf("should consolidate over threshold: did=%v err=%v", did, err)
@@ -102,7 +117,7 @@ func TestPipelineConsolidateAndSummary(t *testing.T) {
 
 func TestPipelineRunQueuedProcessesOnlyOwnScope(t *testing.T) {
 	p := fakePipe(t)
-	p.Store.Append(strings.Repeat("padding note ", 10))
+	p.Store.Rewrite("- " + strings.Repeat("padding note ", 10) + "\n")
 	scope := p.scopeKey()
 	if err := p.Index.Enqueue(JobSummary, "other-scope", "scope"); err != nil {
 		t.Fatal(err)
@@ -118,11 +133,11 @@ func TestPipelineRunQueuedProcessesOnlyOwnScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(report, "consolidated MEMORY.md") || !strings.Contains(report, "regenerated SUMMARY.md") {
+	if !strings.Contains(report, "consolidated MEMORY.md") || !strings.Contains(report, "regenerated memory_summary.md") {
 		t.Fatalf("queued scope jobs should consolidate and summarize, got %q", report)
 	}
 	if !strings.HasPrefix(strings.TrimSpace(p.Store.Injected()), "SUMMARY:") {
-		t.Fatalf("queued summary job should update injected SUMMARY.md, got %q", p.Store.Injected())
+		t.Fatalf("queued summary job should update injected memory_summary.md, got %q", p.Store.Injected())
 	}
 	j, ok, err := p.Index.ClaimScope("other-scope", 60)
 	if err != nil || !ok || j.Scope != "other-scope" {
@@ -133,7 +148,27 @@ func TestPipelineRunQueuedProcessesOnlyOwnScope(t *testing.T) {
 func TestPipelineRunReport(t *testing.T) {
 	p := fakePipe(t)
 	rep, _ := p.Run(context.Background(), []Session{{ID: "s1", Transcript: "real work here that is long enough", Watermark: 1}})
-	if !strings.Contains(rep, "session summaries") || !strings.Contains(rep, "SUMMARY.md") {
+	if !strings.Contains(rep, "session summaries") || !strings.Contains(rep, "memory_summary.md") {
 		t.Fatalf("run report should mention summaries + summary regen, got %q", rep)
+	}
+}
+
+func TestPipelinePhase2BuildsRawMemoriesFromStage1AndAdHoc(t *testing.T) {
+	p := fakePipe(t)
+	if n, err := p.Stage1Sessions(context.Background(), []Session{{ID: "s1", Transcript: "alpha", Watermark: 10}}); err != nil || n != 1 {
+		t.Fatalf("stage1: n=%d err=%v", n, err)
+	}
+	if err := p.Store.Append("manual save should enter phase2"); err != nil {
+		t.Fatal(err)
+	}
+	if did, err := p.MaybeConsolidate(context.Background(), true); err != nil || !did {
+		t.Fatalf("phase2 consolidate: did=%v err=%v", did, err)
+	}
+	raw := p.Store.readFile(p.Store.RawMemoriesPath())
+	if !strings.Contains(raw, "fact from alpha") || !strings.Contains(raw, "manual save should enter phase2") {
+		t.Fatalf("raw_memories.md should merge Stage1 and ad-hoc inputs, got:\n%s", raw)
+	}
+	if strings.Contains(strings.Join(p.Store.AdHocNotes(0), "\n"), "manual save") && !strings.Contains(p.Store.Read(), "consolidated") {
+		t.Fatal("phase2 should rewrite MEMORY.md from the merged input")
 	}
 }

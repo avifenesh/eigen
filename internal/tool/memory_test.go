@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/avifenesh/eigen/internal/memory"
@@ -143,5 +144,35 @@ func TestMemoryToolBanKind(t *testing.T) {
 	// ban without a title errors.
 	if _, err := def.Run(nil, []byte(`{"kind":"ban","note":"x"}`)); err == nil {
 		t.Fatal("ban without a title should error")
+	}
+}
+
+func TestMemoryToolWorkspaceInspectionActions(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	proj, err := memory.Open("/project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := proj.Append("manual note mentions vector search"); err != nil {
+		t.Fatal(err)
+	}
+	if err := proj.Rewrite("## Reusable\n- build with make build\n"); err != nil {
+		t.Fatal(err)
+	}
+	def := Memory(proj, nil)
+	out, err := def.Run(context.Background(), []byte(`{"action":"list"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "MEMORY.md") || !strings.Contains(out, "extensions/ad_hoc/notes/") {
+		t.Fatalf("list should expose workspace files, got %q", out)
+	}
+	out, err = def.Run(context.Background(), []byte(`{"action":"read","path":"MEMORY.md"}`))
+	if err != nil || !strings.Contains(out, "make build") {
+		t.Fatalf("read should return memory file, out=%q err=%v", out, err)
+	}
+	out, err = def.Run(context.Background(), []byte(`{"action":"search","query":"vector"}`))
+	if err != nil || !strings.Contains(out, "manual note mentions vector search") {
+		t.Fatalf("search should find ad-hoc note, out=%q err=%v", out, err)
 	}
 }

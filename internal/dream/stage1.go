@@ -59,7 +59,7 @@ func (r RolloutSummary) Empty() bool {
 		(len(r.Preferences) == 0 && len(r.Key) == 0 && len(r.Failures) == 0 && len(r.Reusable) == 0)
 }
 
-// Markdown renders the rollout summary as the raw/<ts>-<slug>.md file body.
+// Markdown renders the rollout summary as the rollout_summaries/<ts>-<slug>.md body.
 func (r RolloutSummary) Markdown(sessionID string, when time.Time) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n\n", nonEmpty(r.Title, "(untitled session)"))
@@ -77,6 +77,28 @@ func (r RolloutSummary) Markdown(sessionID string, when time.Time) string {
 	section("Key", r.Key)
 	section("Failures", r.Failures)
 	section("Reusable", r.Reusable)
+	return b.String()
+}
+
+// RawMemory renders the compact durable memory candidate stored in
+// stage1_outputs.raw_memory. It is intentionally denser than the rollout summary
+// while preserving the section labels Phase 2 needs.
+func (r RolloutSummary) RawMemory(sessionID string, when time.Time) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "session: %s\nsource_generated: %s\noutcome: %s\n", sessionID, when.Format("2006-01-02 15:04"), nonEmpty(r.Outcome, "unknown"))
+	section := func(name string, items []string) {
+		if len(items) == 0 {
+			return
+		}
+		fmt.Fprintf(&b, "\n%s:\n", strings.ToUpper(name))
+		for _, it := range items {
+			fmt.Fprintf(&b, "- %s\n", it)
+		}
+	}
+	section("preferences", r.Preferences)
+	section("key", r.Key)
+	section("failures", r.Failures)
+	section("reusable", r.Reusable)
 	return b.String()
 }
 

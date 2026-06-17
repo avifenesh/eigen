@@ -616,12 +616,18 @@ func newTUIDreamPipeline(prov llm.Provider, mem *memory.Store, idx *memory.Index
 	return &memory.Pipeline{
 		Store: mem,
 		Index: idx,
-		Stage1: func(ctx context.Context, sessionID, transcript string) (body, slug, outcome string, ok bool, err error) {
+		Stage1: func(ctx context.Context, sessionID, transcript string) (memory.Stage1Result, bool, error) {
 			r, ok, err := dream.Stage1(ctx, prov, transcript)
 			if err != nil || !ok {
-				return "", "", "", false, err
+				return memory.Stage1Result{}, false, err
 			}
-			return r.Markdown(sessionID, time.Now()), r.Slug(), r.Outcome, true, nil
+			when := time.Now()
+			return memory.Stage1Result{
+				RawMemory:      r.RawMemory(sessionID, when),
+				RolloutSummary: r.Markdown(sessionID, when),
+				RolloutSlug:    r.Slug(),
+				Outcome:        r.Outcome,
+			}, true, nil
 		},
 		Consolidate: func(ctx context.Context, current string) (string, error) {
 			return dream.Consolidate(ctx, prov, current)

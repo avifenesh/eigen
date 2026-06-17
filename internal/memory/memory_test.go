@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAppendAndRead(t *testing.T) {
@@ -22,12 +23,12 @@ func TestAppendAndRead(t *testing.T) {
 	if err := s.Append("the build entrypoint is main.go"); err != nil {
 		t.Fatal(err)
 	}
-	got := s.Read()
+	got := strings.Join(s.AdHocNotes(0), "\n")
 	if !strings.Contains(got, "go test ./...") || !strings.Contains(got, "main.go") {
 		t.Fatalf("notes not persisted:\n%s", got)
 	}
-	if strings.Count(got, "\n- ") != 1 && !strings.HasPrefix(got, "- ") {
-		t.Fatalf("each note should be its own bullet:\n%s", got)
+	if s.Read() != "" {
+		t.Fatalf("manual saves should wait in ad-hoc notes until Phase2, MEMORY.md got %q", s.Read())
 	}
 }
 
@@ -62,6 +63,16 @@ func TestAppendEnqueuesMemoryMaintenance(t *testing.T) {
 	if !kinds[JobConsolidate] || !kinds[JobSummary] {
 		t.Fatalf("manual memory append should enqueue downstream jobs, got %v", kinds)
 	}
+	if err := s.Append("use make build"); err != nil {
+		t.Fatal(err)
+	}
+	j, ok, err := idx.ClaimScope(baseName(s.Dir()), 60)
+	if err != nil || !ok || (j.Kind != JobConsolidate && j.Kind != JobSummary) {
+		t.Fatalf("a later manual save should requeue maintenance after done jobs, got %+v ok=%v err=%v", j, ok, err)
+	}
+	if err := idx.Finish(j, nil); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestSectionEmptyWhenNoNotes(t *testing.T) {
@@ -71,8 +82,11 @@ func TestSectionEmptyWhenNoNotes(t *testing.T) {
 		t.Fatal("no notes should yield an empty section")
 	}
 	_ = s.Append("a note")
-	if !strings.Contains(s.Section(), "a note") {
-		t.Fatal("section should include the note")
+	if s.Section() != "" {
+		t.Fatal("ad-hoc notes should not inject before Phase2 summary")
+	}
+	if notes := s.AdHocNotes(0); len(notes) != 1 || !strings.Contains(notes[0], "a note") {
+		t.Fatalf("ad-hoc note should be saved, got %v", notes)
 	}
 }
 
@@ -84,7 +98,7 @@ func TestSeparateProjectsSeparateFiles(t *testing.T) {
 		t.Fatal("different projects must use different memory files")
 	}
 	_ = a.Append("only in a")
-	if strings.Contains(b.Read(), "only in a") {
+	if strings.Contains(strings.Join(b.AdHocNotes(0), "\n"), "only in a") {
 		t.Fatal("project b should not see project a's notes")
 	}
 }
@@ -93,8 +107,8 @@ func TestAppendCollapsesNewlines(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	s, _ := Open("/p")
 	_ = s.Append("line one\nline two")
-	got := s.Read()
-	if strings.Count(strings.TrimSpace(got), "\n") != 0 {
+	got := strings.Join(s.AdHocNotes(0), "\n")
+	if !strings.Contains(got, "line one line two") {
 		t.Fatalf("a multiline note should collapse to one bullet:\n%s", got)
 	}
 }
@@ -126,7 +140,7 @@ func TestSnapshotAndRewrite(t *testing.T) {
 		t.Fatalf("snapshot of missing file: bak=%q err=%v", bak, err)
 	}
 
-	if err := s.Append("first note"); err != nil {
+	if err := s.Rewrite("- first note\n"); err != nil {
 		t.Fatal(err)
 	}
 	before := s.Read()
@@ -151,7 +165,7 @@ func TestSnapshotAndRewrite(t *testing.T) {
 func TestBackupPruning(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	s, _ := Open("/p")
-	_ = s.Append("note")
+	_ = s.Rewrite("- note\n")
 	// Create more than maxBackups snapshots with distinct names.
 	for i := 0; i < maxBackups+3; i++ {
 		bak := fmt.Sprintf("%s.2026010%d-00000%d.bak", s.Path(), i%9, i)
@@ -171,7 +185,7 @@ func TestAppendRedactsSecrets(t *testing.T) {
 	if err := s.Append("the key is AKIA_REDACTED_EXAMPLE and api_key=redacted-example-secret works"); err != nil {
 		t.Fatal(err)
 	}
-	got := s.Read()
+	got := strings.Join(s.AdHocNotes(0), "\n")
 	if strings.Contains(got, "AKIA_REDACTED_EXAMPLE") || strings.Contains(got, "redacted-example-secret") {
 		t.Fatalf("secrets must be redacted, got %q", got)
 	}
@@ -186,7 +200,7 @@ func TestAppendRedactsSecrets(t *testing.T) {
 func TestSectionStalenessFraming(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	s, _ := Open("/p")
-	_ = s.Append("a fact")
+	_ = s.writeSummary("a fact")
 	sec := s.Section()
 	if !strings.Contains(sec, "may be stale") || !strings.Contains(sec, "not instructions") {
 		t.Fatalf("section should frame notes as possibly stale data: %q", sec)
@@ -205,7 +219,7 @@ func TestGlobalStoreSeparateFromProject(t *testing.T) {
 	}
 	_ = proj.Append("project fact")
 	_ = glob.Append("global rule")
-	if strings.Contains(proj.Read(), "global rule") || strings.Contains(glob.Read(), "project fact") {
+	if strings.Contains(strings.Join(proj.AdHocNotes(0), "\n"), "global rule") || strings.Contains(strings.Join(glob.AdHocNotes(0), "\n"), "project fact") {
 		t.Fatal("global and project notes must not bleed into each other")
 	}
 }
@@ -213,7 +227,7 @@ func TestGlobalStoreSeparateFromProject(t *testing.T) {
 func TestGlobalSectionLabel(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	glob, _ := OpenGlobal()
-	_ = glob.Append("user commits often")
+	_ = glob.writeSummary("user commits often")
 	sec := glob.Section()
 	if !strings.Contains(sec, "Global memory") || !strings.Contains(sec, "cross-project") {
 		t.Fatalf("global section should be labeled as cross-project: %q", sec)
@@ -224,8 +238,8 @@ func TestSectionsCombinesGlobalThenProject(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	proj, _ := Open("/p")
 	glob, _ := OpenGlobal()
-	_ = proj.Append("PROJECTNOTE")
-	_ = glob.Append("GLOBALNOTE")
+	_ = proj.writeSummary("PROJECTNOTE")
+	_ = glob.writeSummary("GLOBALNOTE")
 	combined := Sections(glob, proj)
 	gi := strings.Index(combined, "GLOBALNOTE")
 	pi := strings.Index(combined, "PROJECTNOTE")
@@ -235,5 +249,32 @@ func TestSectionsCombinesGlobalThenProject(t *testing.T) {
 	// Empty stores contribute nothing.
 	if Sections(nil, nil) != "" {
 		t.Fatal("Sections of nil stores should be empty")
+	}
+}
+
+func TestWorkspaceListReadSearch(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	s, _ := Open("/p")
+	if err := s.writeSummary("summary mentions vector index"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddAdHocNote("manual note mentions playwright", time.Unix(1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	files, err := s.ListFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(files, "\n")
+	if !strings.Contains(joined, "memory_summary.md") || !strings.Contains(joined, "extensions/ad_hoc/notes/") {
+		t.Fatalf("workspace files should include summary and ad-hoc note, got %v", files)
+	}
+	content, err := s.ReadRelative("memory_summary.md")
+	if err != nil || !strings.Contains(content, "vector index") {
+		t.Fatalf("read summary: content=%q err=%v", content, err)
+	}
+	hits, err := s.Search("playwright", 10)
+	if err != nil || len(hits) != 1 || !strings.Contains(hits[0].Path, "extensions/ad_hoc/notes/") {
+		t.Fatalf("search should find ad-hoc note, hits=%+v err=%v", hits, err)
 	}
 }

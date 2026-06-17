@@ -41,9 +41,9 @@ func TestRefreshMemorySummaryUpdatesGlobalInjection(t *testing.T) {
 	}
 	sec := gmem.Section()
 	if !strings.Contains(sec, "Keep project summaries short.") {
-		t.Fatalf("global section should inject SUMMARY.md, got %q", sec)
+		t.Fatalf("global section should inject memory_summary.md, got %q", sec)
 	}
 	if strings.Contains(sec, "verbose global note") {
-		t.Fatalf("global section should not inject full MEMORY.md once SUMMARY.md exists: %q", sec)
+		t.Fatalf("global section should not inject full MEMORY.md once memory_summary.md exists: %q", sec)
 	}
 }

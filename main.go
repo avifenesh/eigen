@@ -1337,12 +1337,18 @@ func newMemoryPipeline(prov llm.Provider, mem *memory.Store, idx *memory.Index) 
 	return &memory.Pipeline{
 		Store: mem,
 		Index: idx,
-		Stage1: func(ctx context.Context, sessionID, transcript string) (body, slug, outcome string, ok bool, err error) {
+		Stage1: func(ctx context.Context, sessionID, transcript string) (memory.Stage1Result, bool, error) {
 			r, ok, err := dream.Stage1(ctx, prov, transcript)
 			if err != nil || !ok {
-				return "", "", "", false, err
+				return memory.Stage1Result{}, false, err
 			}
-			return r.Markdown(sessionID, time.Now()), r.Slug(), r.Outcome, true, nil
+			when := time.Now()
+			return memory.Stage1Result{
+				RawMemory:      r.RawMemory(sessionID, when),
+				RolloutSummary: r.Markdown(sessionID, when),
+				RolloutSlug:    r.Slug(),
+				Outcome:        r.Outcome,
+			}, true, nil
 		},
 		Consolidate: func(ctx context.Context, current string) (string, error) {
 			return dream.Consolidate(ctx, prov, current)
@@ -1369,13 +1375,21 @@ func refreshMemorySummary(ctx context.Context, prov llm.Provider, mem *memory.St
 	}
 	pipe := newMemoryPipeline(prov, mem, idx)
 	if idx == nil {
+		if did, err := pipe.MaybeConsolidate(ctx, true); err != nil {
+			return false, err
+		} else if did {
+			return pipe.RegenSummary(ctx)
+		}
 		return pipe.RegenSummary(ctx)
+	}
+	if err := idx.Enqueue(memory.JobConsolidate, memoryScopeKey(mem), "scope"); err != nil {
+		return false, err
 	}
 	if err := idx.Enqueue(memory.JobSummary, memoryScopeKey(mem), "scope"); err != nil {
 		return false, err
 	}
 	report, err := pipe.RunQueued(ctx, 4)
-	return strings.Contains(report, "SUMMARY.md"), err
+	return strings.Contains(report, "memory_summary.md"), err
 }
 
 func runDream(prov llm.Provider, mem, gmem *memory.Store) {
@@ -1438,7 +1452,7 @@ func runDream(prov llm.Provider, mem, gmem *memory.Store) {
 				_ = gmem.Append(n)
 			}
 			if did, serr := refreshMemorySummary(context.Background(), prov, gmem, idx); serr == nil && did {
-				fmt.Printf("global memory: %d new note(s), regenerated SUMMARY.md → %s\n", len(notes), gmem.Dir())
+				fmt.Printf("global memory: %d new note(s), regenerated memory_summary.md → %s\n", len(notes), gmem.Dir())
 			} else {
 				fmt.Printf("global memory: %d new note(s) → %s\n", len(notes), gmem.Dir())
 			}

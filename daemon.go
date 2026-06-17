@@ -878,7 +878,7 @@ func runNightlyDream(host *daemon.Host, prov llm.Provider, gmem *memory.Store) {
 			summaryRefreshed, _ := refreshMemorySummary(context.Background(), prov, gmem, idx)
 			memory.CommitMemory(fmt.Sprintf("dream: global profile — %d new", len(notes)))
 			if summaryRefreshed {
-				fmt.Fprintf(os.Stderr, "eigen daemon: global profile +%d, regenerated SUMMARY.md\n", len(notes))
+				fmt.Fprintf(os.Stderr, "eigen daemon: global profile +%d, regenerated memory_summary.md\n", len(notes))
 			} else {
 				fmt.Fprintf(os.Stderr, "eigen daemon: global profile +%d\n", len(notes))
 			}

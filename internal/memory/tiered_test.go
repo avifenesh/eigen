@@ -38,19 +38,19 @@ func TestInjectsSummaryNotFullMemory(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	s, _ := Open("/p")
-	s.Append("a very long working-memory note that should NOT be injected verbatim")
-	// No SUMMARY.md yet → injects MEMORY.md (no regression).
+	s.Rewrite("a very long working-memory note that should NOT be injected verbatim")
+	// No memory_summary.md yet → injects MEMORY.md (no regression).
 	if !strings.Contains(s.Section(), "should NOT be injected verbatim") {
 		t.Fatal("without a summary, MEMORY.md is injected")
 	}
-	// With SUMMARY.md → only the summary is injected.
+	// With memory_summary.md → only the summary is injected.
 	os.WriteFile(s.SummaryPath(), []byte("tiny summary"), 0o644)
 	sec := s.Section()
 	if !strings.Contains(sec, "tiny summary") {
 		t.Fatalf("summary should be injected, got %q", sec)
 	}
 	if strings.Contains(sec, "should NOT be injected verbatim") {
-		t.Fatal("full MEMORY.md must NOT be injected once a SUMMARY.md exists")
+		t.Fatal("full MEMORY.md must NOT be injected once a memory_summary.md exists")
 	}
 }
 

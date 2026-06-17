@@ -127,6 +127,57 @@ func TestIndexSummaryIdempotencyAndUsage(t *testing.T) {
 	}
 }
 
+func TestIndexStage1OutputsDBFirstAndWatermarkWins(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	idx, _ := OpenIndex()
+	defer idx.Close()
+	row := Stage1Output{
+		Scope:           "p",
+		ThreadID:        "s1",
+		SourceUpdatedAt: 10,
+		RawMemory:       "raw v1",
+		RolloutSummary:  "summary v1",
+		RolloutSlug:     "slug-v1",
+		Outcome:         "success",
+		GeneratedAt:     100,
+	}
+	if err := idx.RecordStage1Output(row); err != nil {
+		t.Fatal(err)
+	}
+	if !idx.Stage1Summarized("p", "s1", 10) {
+		t.Fatal("stage1 output should satisfy idempotency")
+	}
+	stale := row
+	stale.SourceUpdatedAt = 9
+	stale.RawMemory = "stale overwrite"
+	if err := idx.RecordStage1Output(stale); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := idx.Stage1Outputs("p", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].RawMemory != "raw v1" {
+		t.Fatalf("older source_updated_at must not overwrite newer output, got %+v", rows)
+	}
+	fresh := row
+	fresh.SourceUpdatedAt = 11
+	fresh.RawMemory = "raw v2"
+	fresh.RolloutSummary = "summary v2"
+	if err := idx.RecordStage1Output(fresh); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ = idx.Stage1Outputs("p", 0)
+	if rows[0].RawMemory != "raw v2" || rows[0].SelectedForPhase2 || rows[0].SelectedForPhase2SourceUpdatedAt != 0 {
+		t.Fatalf("newer source should update the stage1 output, got %+v", rows[0])
+	}
+	idx.MarkSelectedForPhase2(rows)
+	rows, _ = idx.Stage1Outputs("p", 0)
+	if !rows[0].SelectedForPhase2 || rows[0].SelectedForPhase2SourceUpdatedAt != 11 {
+		t.Fatalf("phase2 selection should be recorded, got %+v", rows[0])
+	}
+}
+
 func TestCommitMemoryGitVersioning(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
