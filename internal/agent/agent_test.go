@@ -1164,6 +1164,18 @@ func TestDriveAutoCompactsBetweenToolSteps(t *testing.T) {
 	if len(notes) == 0 {
 		t.Fatal("auto-compaction should emit a note so the user can see it happened")
 	}
+	var autoNotes, doneNotes int
+	for _, n := range notes {
+		if strings.HasPrefix(n, "context auto-compact") {
+			autoNotes++
+		}
+		if strings.HasPrefix(n, "context auto-compacted:") {
+			doneNotes++
+		}
+	}
+	if autoNotes > 2 || doneNotes > 1 {
+		t.Fatalf("auto-compaction notes should be coalesced per turn, got auto=%d done=%d notes=%v", autoNotes, doneNotes, notes)
+	}
 }
 
 // A reasoning-only turn (no text, no tool call — Codex/gpt-5.x thinking across

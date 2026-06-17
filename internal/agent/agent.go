@@ -933,7 +933,9 @@ const compactTargetFrac = 0.80
 // emits a one-time note suggesting the user refocus or /clear, rather than
 // spinning a summary call every step for negligible gain. It reports whether the
 // session history was replaced and should be persisted.
-func (s *Session) maybeCompact(ctx context.Context) bool {
+func (s *Session) maybeCompact(ctx context.Context) bool { return s.maybeCompactWithNotes(ctx, true) }
+
+func (s *Session) maybeCompactWithNotes(ctx context.Context, announce bool) bool {
 	a := s.a
 	msgs := s.snapshot()
 	before := llm.EstimateTokens(msgs)
@@ -967,7 +969,9 @@ func (s *Session) maybeCompact(ctx context.Context) bool {
 	if target <= 0 {
 		target = triggerAt
 	}
-	a.emit(Event{Kind: EventNote, Text: fmt.Sprintf("context auto-compacting: ~%d tokens (target ~%d)…", before, target)})
+	if announce {
+		a.emit(Event{Kind: EventNote, Text: fmt.Sprintf("context auto-compacting: ~%d tokens (target ~%d)…", before, target)})
+	}
 	compacted, err := llm.CompactWith(ctx, a.compactor(), msgs, target)
 	if err != nil {
 		return false
@@ -975,7 +979,7 @@ func (s *Session) maybeCompact(ctx context.Context) bool {
 	s.lastCompactBefore = before
 	s.lastCompactAfter = llm.EstimateTokens(compacted)
 	s.setMsgs(compacted)
-	if s.lastCompactAfter < before {
+	if announce && s.lastCompactAfter < before {
 		a.emit(Event{Kind: EventNote, Text: fmt.Sprintf("context auto-compacted: ~%d → ~%d tokens", before, s.lastCompactAfter)})
 	}
 	return true
@@ -1081,6 +1085,7 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 	overflowRetried := false              // guard: force-compact-and-retry at most once per step
 	var usedIn, usedOut int               // provider-reported usage, summed over the turn
 	var usedCacheRead, usedCacheWrite int // prompt-cache hits/writes, summed over the turn
+	autoCompactAnnounced := false         // avoid spamming the UI during one tool-heavy turn
 
 	system := systemPrompt
 	if a.ExtraSystem != "" {
@@ -1124,7 +1129,8 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		// Proactive compaction must run before EVERY model request, not only at
 		// the top of a user turn: a single long turn can accumulate enough tool
 		// results to overflow the very next step.
-		if a.maxContextTokens() > 0 && s.maybeCompact(ctx) {
+		if a.maxContextTokens() > 0 && s.maybeCompactWithNotes(ctx, !autoCompactAnnounced) {
+			autoCompactAnnounced = true
 			s.persist()
 		}
 		// Progressive tool disclosure: send core tools' full schemas + the
