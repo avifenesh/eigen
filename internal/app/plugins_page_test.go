@@ -199,6 +199,56 @@ func mustWriteAppTest(t *testing.T, path, content string) {
 	}
 }
 
+func TestPluginsPageCanMarkCatalogPluginsAndInstallBatch(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	market := filepath.Join(t.TempDir(), "market")
+	mustWriteAppTest(t, filepath.Join(market, ".claude-plugin", "marketplace.json"), `{
+	  "name": "local-market",
+	  "plugins": [
+	    {"name": "alpha", "source": "./plugins/alpha", "description": "first"},
+	    {"name": "beta", "source": "./plugins/beta", "description": "second"}
+	  ]
+	}`)
+	mustWriteAppTest(t, filepath.Join(market, "plugins", "alpha", ".claude-plugin", "plugin.json"), `{"name":"alpha"}`)
+	mustWriteAppTest(t, filepath.Join(market, "plugins", "alpha", "skills", "main", "SKILL.md"), "---\nname: main\ndescription: alpha\n---\nalpha\n")
+	mustWriteAppTest(t, filepath.Join(market, "plugins", "beta", ".claude-plugin", "plugin.json"), `{"name":"beta"}`)
+	mustWriteAppTest(t, filepath.Join(market, "plugins", "beta", "skills", "main", "SKILL.md"), "---\nname: main\ndescription: beta\n---\nbeta\n")
+	reg := pluginpkg.NewRegistryAt(filepath.Join(home, ".eigen"))
+	if _, _, err := reg.AddMarketplace(context.Background(), market, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewAt(testData(), PagePlugins)
+	m.width, m.height = 120, 36
+	m.Update(key("2"))
+	_, cmd := m.Update(key("enter"))
+	m.Update(cmd())
+	m.Update(key(" ")) // mark alpha
+	m.Update(key("j"))
+	m.Update(key(" ")) // mark beta
+	if got := m.plugins.markedCatalogPlugins(); len(got) != 2 || got[0] != "alpha" || got[1] != "beta" {
+		t.Fatalf("markedCatalogPlugins = %v", got)
+	}
+	if v := m.plugins.view(m, 100, 30); !strings.Contains(v, "2 marked") || !strings.Contains(v, "●") {
+		t.Fatalf("catalog should render marked plugins:\n%s", v)
+	}
+
+	_, cmd = m.Update(key("i"))
+	if cmd == nil || !m.plugins.prompt.busy {
+		t.Fatal("i should install all marked plugins with a visible busy marker")
+	}
+	m.Update(cmd())
+	for _, name := range []string{"alpha", "beta"} {
+		if _, ok := reg.InstalledByName(name); !ok {
+			t.Fatalf("batch install should install %s", name)
+		}
+	}
+	if len(m.plugins.catalogSelected) != 0 {
+		t.Fatal("batch install completion should clear selected marks")
+	}
+}
+
 func TestPluginsPageToggleInstalledPlugin(t *testing.T) {
 	reg := seedPluginPage(t)
 	m := NewAt(testData(), PagePlugins)

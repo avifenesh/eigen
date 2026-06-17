@@ -35,6 +35,7 @@ eigen plugin remove  <name>       # alias: delete; reverse all wiring + delete b
 In the TUI:
 
 - bare `/plugins`, `/plugin`, or `/marketplace` opens the plugins page;
+- in Marketplace, `enter` opens a catalog, `j/k` moves, `space` marks/unmarks plugins, and `i` installs all marked plugins (or the current one if none are marked);
 - `/plugin list|install|remove|delete|enable|disable` and
   `/marketplace list|add|update|remove|delete|enable|disable` call the same registry paths as the CLI.
 

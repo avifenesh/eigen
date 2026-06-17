@@ -168,20 +168,21 @@ func loadHookRows(path, src string) []ExtRow {
 // header copy, segmented tabs, install affordances, cards, enabled state,
 // and a power-user wiring view.
 type pluginsState struct {
-	list          list
-	tab           pluginsTab
-	rows          []ExtRow
-	installed     []pluginpkg.InstalledPlugin
-	markets       []pluginpkg.MarketRecord
-	catalogMarket string
-	catalog       []pluginpkg.PluginEntry
-	catalogList   list
-	catalogFocus  bool
-	loaded        bool
-	err           string // last action error/status ("" = none)
-	prompt        installPrompt
-	confirm       pluginConfirm
-	clicks        clickMap
+	list            list
+	tab             pluginsTab
+	rows            []ExtRow
+	installed       []pluginpkg.InstalledPlugin
+	markets         []pluginpkg.MarketRecord
+	catalogMarket   string
+	catalog         []pluginpkg.PluginEntry
+	catalogList     list
+	catalogFocus    bool
+	catalogSelected map[string]bool // selected catalog plugin names for batch install
+	loaded          bool
+	err             string // last action error/status ("" = none)
+	prompt          installPrompt
+	confirm         pluginConfirm
+	clicks          clickMap
 }
 
 type pluginConfirm struct {
@@ -260,6 +261,7 @@ func (p *pluginsState) setTab(tab pluginsTab) {
 	p.tab = tab
 	p.list.cursor, p.list.top = 0, 0
 	p.catalogFocus = false
+	p.catalogSelected = nil
 	p.syncListCount()
 	p.err = ""
 }
@@ -333,7 +335,7 @@ func (p *pluginsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "i": // install a plugin by name from any added marketplace
 		if p.tab == pluginsTabMarketplace && p.catalogFocus {
-			return m, p.installSelectedCatalogPlugin(m)
+			return m, p.installMarkedCatalogPlugins(m)
 		}
 		p.prompt.open("plugin", "plugin name[@marketplace]")
 		return m, nil
@@ -348,6 +350,7 @@ func (p *pluginsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	visible := p.visibleRows(m.height)
 	if p.list.key(key, visible) {
 		p.catalogFocus = false
+		p.catalogSelected = nil
 		return m, nil
 	}
 
@@ -554,8 +557,13 @@ func (p *pluginsState) updateCatalog(m *Model, key string) (bool, tea.Cmd) {
 	case "esc", "backspace", "left", "H":
 		p.catalogFocus = false
 		return true, nil
-	case "enter", "i":
+	case " ", "space":
+		p.toggleSelectedCatalogPlugin()
+		return true, nil
+	case "enter":
 		return true, p.installSelectedCatalogPlugin(m)
+	case "i":
+		return true, p.installMarkedCatalogPlugins(m)
 	}
 	visible := p.catalogVisibleRows(m.height)
 	if p.catalogList.key(key, visible) {
@@ -564,15 +572,63 @@ func (p *pluginsState) updateCatalog(m *Model, key string) (bool, tea.Cmd) {
 	return false, nil
 }
 
-func (p *pluginsState) installSelectedCatalogPlugin(m *Model) tea.Cmd {
+func (p *pluginsState) selectedCatalogEntry() (pluginpkg.PluginEntry, bool) {
 	if p.catalogList.cursor < 0 || p.catalogList.cursor >= len(p.catalog) {
+		return pluginpkg.PluginEntry{}, false
+	}
+	return p.catalog[p.catalogList.cursor], true
+}
+
+func catalogEntryKey(e pluginpkg.PluginEntry) string {
+	return strings.ToLower(strings.TrimSpace(e.Name))
+}
+
+func (p *pluginsState) toggleSelectedCatalogPlugin() {
+	entry, ok := p.selectedCatalogEntry()
+	if !ok || strings.TrimSpace(entry.Name) == "" {
+		return
+	}
+	if p.catalogSelected == nil {
+		p.catalogSelected = map[string]bool{}
+	}
+	k := catalogEntryKey(entry)
+	if p.catalogSelected[k] {
+		delete(p.catalogSelected, k)
+	} else {
+		p.catalogSelected[k] = true
+	}
+}
+
+func (p *pluginsState) markedCatalogPlugins() []string {
+	if len(p.catalogSelected) == 0 {
 		return nil
 	}
-	entry := p.catalog[p.catalogList.cursor]
+	var names []string
+	seen := map[string]bool{}
+	for _, e := range p.catalog {
+		k := catalogEntryKey(e)
+		if p.catalogSelected[k] && !seen[k] {
+			names = append(names, e.Name)
+			seen[k] = true
+		}
+	}
+	return names
+}
+
+func (p *pluginsState) catalogMarketName() string {
 	market := p.catalogMarket
 	if market == "" && p.list.cursor < len(p.markets) {
 		market = p.markets[p.list.cursor].Name
 	}
+	return market
+}
+
+func (p *pluginsState) installSelectedCatalogPlugin(m *Model) tea.Cmd {
+	entry, ok := p.selectedCatalogEntry()
+	if !ok {
+		return nil
+	}
+	market := p.catalogMarketName()
 	label := entry.Name
 	if market != "" {
 		label += "@" + market
@@ -581,6 +637,23 @@ func (p *pluginsState) installSelectedCatalogPlugin(m *Model) tea.Cmd {
 	data := m.data
 	return func() tea.Msg {
 		return installDoneMsg{page: PagePlugins, kind: "plugin", tab: pluginsTabInstalled, status: runPluginInstallFrom(data, entry.Name, market)}
+	}
+}
+
+func (p *pluginsState) installMarkedCatalogPlugins(m *Model) tea.Cmd {
+	names := p.markedCatalogPlugins()
+	if len(names) == 0 {
+		return p.installSelectedCatalogPlugin(m)
+	}
+	market := p.catalogMarketName()
+	label := fmt.Sprintf("%d plugins", len(names))
+	if market != "" {
+		label += "@" + market
+	}
+	p.prompt.startBusy("plugin", "plugin", label, fmt.Sprintf("installing %d selected plugin(s) … (scanning + fetching)", len(names)))
+	data := m.data
+	return func() tea.Msg {
+		return installDoneMsg{page: PagePlugins, kind: "plugin", tab: pluginsTabInstalled, status: runPluginBatchInstall(data, names, market)}
 	}
 }
 
@@ -800,7 +873,7 @@ func (p *pluginsState) viewMarketplace(w, h int) string {
 	}
 	out += p.prompt.render()
 	if p.catalogFocus {
-		out += "\n" + sFaint.Render("  j/k choose plugin · enter/i install selected · esc back to marketplaces")
+		out += "\n" + sFaint.Render("  j/k choose · space mark/unmark · i install marked · enter install current · esc back")
 	} else {
 		out += "\n" + sFaint.Render("  space enable/disable · a add marketplace · enter open catalog · U refresh · i install by name · X delete")
 	}
@@ -855,9 +928,13 @@ func (p *pluginsState) marketDetail(mk pluginpkg.MarketRecord, w, h int) string 
 		if len(p.catalog) == 0 {
 			b.WriteString("  " + sFaint.Render("catalog refreshed; no plugins listed") + "\n")
 		} else {
+			marked := len(p.markedCatalogPlugins())
 			label := fmt.Sprintf("%d plugin catalog", len(p.catalog))
+			if marked > 0 {
+				label += fmt.Sprintf("  ·  %d marked", marked)
+			}
 			if p.catalogFocus {
-				label += "  ·  enter/i install  ·  esc back"
+				label += "  ·  space mark  ·  i install marked  ·  esc back"
 			}
 			b.WriteString("\n" + sectionLabel(label, w) + "\n")
 			p.catalogList.count = len(p.catalog)
@@ -865,7 +942,11 @@ func (p *pluginsState) marketDetail(mk pluginpkg.MarketRecord, w, h int) string 
 			from, to := p.catalogList.window(visible)
 			for i := from; i < to; i++ {
 				e := p.catalog[i]
-				line := sText.Render(pad(truncate(e.Name, 22), 22))
+				mark := sFaint.Render("○ ")
+				if p.catalogSelected[catalogEntryKey(e)] {
+					mark = sOk.Render("● ")
+				}
+				line := mark + sText.Render(pad(truncate(e.Name, 22), 22))
 				meta := catalogEntryMeta(e)
 				if meta != "" {
 					line += " " + sViolet.Render(truncate(meta, max(10, w-28)))
@@ -883,7 +964,7 @@ func (p *pluginsState) marketDetail(mk pluginpkg.MarketRecord, w, h int) string 
 				b.WriteString(sFaint.Render(fmt.Sprintf("  showing %d-%d of %d", from+1, to, len(p.catalog))) + "\n")
 			}
 			if !p.catalogFocus {
-				b.WriteString("  " + sFaint.Render("enter focuses this catalog; then j/k to choose and enter/i to install") + "\n")
+				b.WriteString("  " + sFaint.Render("enter focuses this catalog; then j/k choose, space mark, i install marked") + "\n")
 			}
 		}
 	} else {

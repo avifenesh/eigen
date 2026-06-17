@@ -268,6 +268,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case PagePlugins:
 			m.plugins.prompt.finish(msg.status)
+			if msg.kind == "plugin" {
+				m.plugins.catalogSelected = nil
+			}
 			if msg.tab != 0 || msg.kind == "plugin" {
 				m.plugins.tab = msg.tab
 			}
@@ -282,6 +285,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.plugins.catalogList.count = len(m.plugins.catalog)
 		m.plugins.catalogList.cursor, m.plugins.catalogList.top = 0, 0
 		m.plugins.catalogFocus = msg.focus && len(m.plugins.catalog) > 0
+		m.plugins.catalogSelected = nil
 		m.plugins.err = ""
 		m.plugins.loaded = false
 		m.plugins.load()

@@ -145,16 +145,48 @@ func runPluginInstallFrom(d *Data, name, market string) string {
 	if err != nil {
 		return "error: " + err.Error()
 	}
+	res, err := installOnePlugin(context.Background(), d, reg, name, market)
+	if err != nil {
+		return "install failed: " + err.Error()
+	}
+	return formatPluginInstallStatus(res)
+}
+
+func runPluginBatchInstall(d *Data, names []string, market string) string {
+	reg, err := appPluginRegistry()
+	if err != nil {
+		return "error: " + err.Error()
+	}
+	var okNames, failures []string
+	ctx := context.Background()
+	for _, name := range names {
+		res, err := installOnePlugin(ctx, d, reg, name, market)
+		if err != nil {
+			failures = append(failures, name+": "+err.Error())
+			continue
+		}
+		okNames = append(okNames, res.Plugin.Name)
+	}
+	if len(failures) == 0 {
+		return fmt.Sprintf("✓ installed %d plugin(s): %s", len(okNames), strings.Join(okNames, ", "))
+	}
+	if len(okNames) == 0 {
+		return fmt.Sprintf("install failed for %d plugin(s): %s", len(failures), strings.Join(failures, "; "))
+	}
+	return fmt.Sprintf("⚠ installed %d/%d plugin(s): %s; failed: %s", len(okNames), len(names), strings.Join(okNames, ", "), strings.Join(failures, "; "))
+}
+
+func installOnePlugin(parent context.Context, d *Data, reg *plugin.Registry, name, market string) (*plugin.InstallResult, error) {
 	opts := plugin.InstallOptions{}
 	if d != nil && d.Small != nil {
 		opts.Scanner = skill.ProviderScanner{P: d.Small}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 120*time.Second)
 	defer cancel()
-	res, err := reg.InstallPlugin(ctx, name, market, opts)
-	if err != nil {
-		return "install failed: " + err.Error()
-	}
+	return reg.InstallPlugin(ctx, name, market, opts)
+}
+
+func formatPluginInstallStatus(res *plugin.InstallResult) string {
 	pl := res.Plugin
 	msg := fmt.Sprintf("✓ installed %q — %d skill(s), %d agent(s), %d command(s), %d mcp, %d hook(s)",
 		pl.Name, len(pl.Skills), len(pl.Agents), len(pl.Commands), len(pl.MCPServers), pl.Hooks)
