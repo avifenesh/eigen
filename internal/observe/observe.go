@@ -30,6 +30,7 @@ type Record struct {
 	Step     int    `json:"step,omitempty"`
 	Tool     string `json:"tool,omitempty"`
 	ToolID   string `json:"tool_id,omitempty"`
+	Skill    string `json:"skill,omitempty"`
 	IsError  bool   `json:"is_error,omitempty"`
 
 	// DurationMS is filled for tool_result (time since matching tool_start) and
@@ -75,6 +76,7 @@ type Logger struct {
 	session           string
 	enc               *json.Encoder
 	toolStart         map[string]time.Time
+	skillStart        map[string]string
 	turnStart         time.Time
 	lastRuntimeSample time.Time
 }
@@ -92,7 +94,7 @@ func Open(path, session string) (*Logger, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Logger{f: f, session: session, enc: json.NewEncoder(f), toolStart: map[string]time.Time{}}, nil
+	return &Logger{f: f, session: session, enc: json.NewEncoder(f), toolStart: map[string]time.Time{}, skillStart: map[string]string{}}, nil
 }
 
 // DefaultPath is ~/.eigen/observe/events.jsonl.
@@ -145,12 +147,23 @@ func (l *Logger) record(e agent.Event) {
 	}
 	switch e.Kind {
 	case agent.EventToolStart:
-		l.toolStart[toolKey(e)] = now
+		key := toolKey(e)
+		l.toolStart[key] = now
+		if e.ToolName == "skill" {
+			rec.Skill = skillNameFromArgs(e.ToolArgs)
+			if rec.Skill != "" {
+				l.skillStart[key] = rec.Skill
+			}
+		}
 	case agent.EventToolResult:
 		key := toolKey(e)
 		if started, ok := l.toolStart[key]; ok {
 			rec.DurationMS = now.Sub(started).Milliseconds()
 			delete(l.toolStart, key)
+		}
+		if skillName, ok := l.skillStart[key]; ok {
+			rec.Skill = skillName
+			delete(l.skillStart, key)
 		}
 		if e.IsError {
 			rec.ErrorKind = classifyError(e.Result)
@@ -162,6 +175,7 @@ func (l *Logger) record(e agent.Event) {
 		}
 		l.turnStart = time.Time{}
 		l.toolStart = map[string]time.Time{}
+		l.skillStart = map[string]string{}
 	case agent.EventNote:
 		rec.NoteKind = classifyNote(e.Text)
 	}
@@ -183,6 +197,19 @@ func toolKey(e agent.Event) string {
 		return e.ToolID
 	}
 	return fmt.Sprintf("%d:%s", e.Step, e.ToolName)
+}
+
+func skillNameFromArgs(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var in struct {
+		Name string `json:"name"`
+	}
+	if json.Unmarshal(raw, &in) != nil {
+		return ""
+	}
+	return strings.TrimSpace(in.Name)
 }
 
 func (l *Logger) shouldSampleRuntime(now time.Time, e agent.Event) bool {

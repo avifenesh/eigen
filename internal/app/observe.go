@@ -25,6 +25,7 @@ func (s *observeState) sync(d *Data) {
 		count += len(d.Observe.Models)
 		count += len(d.Observe.Tools)
 		count += len(d.Observe.Hooks)
+		count += len(d.Observe.Skills)
 	}
 	if count < 1 {
 		count = 1
@@ -52,6 +53,7 @@ func (s *observeState) view(m *Model, w, h int) string {
 	out += observeCounts("errors", obs.Errors, w, func(v string) string { return sErr.Render(v) })
 	out += observeCounts("route / system notes", obs.Notes, w, func(v string) string { return sAccent.Render(v) })
 	out += observeModels(obs, w)
+	out += observeSkills(obs, w)
 	out += observeTools(obs, w)
 	out += observeHooks(obs, w)
 	out += observeRuntime(obs, w)
@@ -65,6 +67,7 @@ func observeHero(s observe.Summary, w int) string {
 		fmt.Sprintf("events %d", s.Records),
 		fmt.Sprintf("models %d", len(s.Models)),
 		fmt.Sprintf("tools %d", len(s.Tools)),
+		fmt.Sprintf("skills %d", len(s.Skills)),
 		fmt.Sprintf("errors %d", countTotal(s.Errors)),
 	}
 	if s.Subagents.Total() > 0 {
@@ -131,6 +134,22 @@ func observeModels(s observe.Summary, w int) string {
 		m := s.Models[k]
 		line := fmt.Sprintf("%s turns=%d tokens=%d/%d cache=%d/%d avg=%dms", pad(truncate(k, 28), 28), m.Turns, m.InTokens, m.OutTokens, m.CacheReadTokens, m.CacheWriteTokens, avg64(m.DurationMS, m.Turns))
 		out += "  " + truncate(line, w-2) + "\n"
+	}
+	return out + "\n"
+}
+
+func observeSkills(s observe.Summary, w int) string {
+	if len(s.Skills) == 0 {
+		return ""
+	}
+	out := "  " + sectionLabel("skill invocations", min(w, 70)-2) + "\n"
+	for _, k := range sortedKeys(s.Skills) {
+		sk := s.Skills[k]
+		status := sOk.Render(fmt.Sprintf("calls=%d", sk.Calls))
+		if sk.Errors > 0 {
+			status = sErr.Render(fmt.Sprintf("calls=%d errors=%d", sk.Calls, sk.Errors))
+		}
+		out += "  " + pad(truncate(k, 26), 28) + status + sDim.Render(fmt.Sprintf(" avg=%dms", avg64(sk.DurationMS, sk.Calls))) + "\n"
 	}
 	return out + "\n"
 }

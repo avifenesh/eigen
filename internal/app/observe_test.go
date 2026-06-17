@@ -20,7 +20,8 @@ func TestObservePageRendersTelemetry(t *testing.T) {
 			"bash":       {Calls: 2, Errors: 1, DurationMS: 500},
 			"task_group": {Calls: 1, DurationMS: 1000},
 		},
-		Hooks: map[string]observe.HookSummary{"session_start": {Starts: 1, Done: 1, DurationMS: 20}},
+		Hooks:  map[string]observe.HookSummary{"session_start": {Starts: 1, Done: 1, DurationMS: 20}},
+		Skills: map[string]observe.SkillSummary{"frontend-skill": {Calls: 2, DurationMS: 30}},
 		Subagents: observe.SubagentSummary{
 			GroupCalls:      1,
 			BackgroundNotes: 1,
@@ -39,6 +40,8 @@ func TestObservePageRendersTelemetry(t *testing.T) {
 		"route / system notes",
 		"model / token usage",
 		"gpt-5.5",
+		"skill invocations",
+		"frontend-skill",
 		"tool calls",
 		"bash",
 		"hooks",

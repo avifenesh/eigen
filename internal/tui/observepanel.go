@@ -45,6 +45,18 @@ func (m *model) observeLines(h int) []string {
 			add(ansiTrunc(fmt.Sprintf("%s %d turn %d/%d tok", k, m.Turns, m.InTokens, m.OutTokens), contentW))
 		}
 	}
+	if len(s.Skills) > 0 {
+		add("")
+		add(styleSel.Bold(true).Render("skills"))
+		for _, k := range sortedObserveKeys(s.Skills) {
+			sk := s.Skills[k]
+			line := fmt.Sprintf("%s calls=%d", k, sk.Calls)
+			if sk.Errors > 0 {
+				line += fmt.Sprintf(" errors=%d", sk.Errors)
+			}
+			add(ansiTrunc(line, contentW))
+		}
+	}
 	if len(s.Tools) > 0 {
 		add("")
 		add(styleSel.Bold(true).Render("tools"))

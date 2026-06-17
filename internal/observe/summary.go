@@ -18,6 +18,7 @@ type Summary struct {
 	Errors    map[string]int
 	Notes     map[string]int
 	Hooks     map[string]HookSummary
+	Skills    map[string]SkillSummary
 	Models    map[string]ModelSummary
 	Subagents SubagentSummary
 	Runtime   RuntimeSummary
@@ -32,6 +33,12 @@ type ToolSummary struct {
 type HookSummary struct {
 	Starts     int
 	Done       int
+	Errors     int
+	DurationMS int64
+}
+
+type SkillSummary struct {
+	Calls      int
 	Errors     int
 	DurationMS int64
 }
@@ -105,6 +112,7 @@ func summarize(records []Record) Summary {
 		Errors: map[string]int{},
 		Notes:  map[string]int{},
 		Hooks:  map[string]HookSummary{},
+		Skills: map[string]SkillSummary{},
 		Models: map[string]ModelSummary{},
 	}
 	for _, r := range records {
@@ -126,6 +134,7 @@ func summarize(records []Record) Summary {
 			st.DurationMS += r.DurationMS
 			s.Tools[r.Tool] = st
 			accumulateSubagentTool(&s.Subagents, r)
+			accumulateSkill(&s, r)
 		}
 		if r.NoteKind != "" {
 			s.Notes[r.NoteKind]++
@@ -190,6 +199,19 @@ func summarize(records []Record) Summary {
 	return s
 }
 
+func accumulateSkill(s *Summary, r Record) {
+	if r.Tool != "skill" || r.Skill == "" {
+		return
+	}
+	st := s.Skills[r.Skill]
+	st.Calls++
+	if r.IsError {
+		st.Errors++
+	}
+	st.DurationMS += r.DurationMS
+	s.Skills[r.Skill] = st
+}
+
 func accumulateSubagentTool(s *SubagentSummary, r Record) {
 	switch r.Tool {
 	case "task":
@@ -223,6 +245,13 @@ func FormatSummary(s Summary) string {
 	writeTop(&b, "events", s.ByKind, 8)
 	writeTop(&b, "errors", s.Errors, 8)
 	writeTop(&b, "notes", s.Notes, 8)
+	if len(s.Skills) > 0 {
+		b.WriteString("\nskills:\n")
+		for _, k := range sortedKeys(s.Skills) {
+			st := s.Skills[k]
+			fmt.Fprintf(&b, "  %s  calls=%d errors=%d avg_ms=%d\n", k, st.Calls, st.Errors, safeDiv64(st.DurationMS, st.Calls))
+		}
+	}
 	if s.Subagents.Total() > 0 || s.Subagents.BackgroundDone > 0 || s.Subagents.RouteNotes > 0 {
 		fmt.Fprintf(&b, "\nsubagents/spawns:\n")
 		fmt.Fprintf(&b, "  task=%d/%d task_group=%d/%d mutating=%d/%d status=%d promote=%d/%d bg_done=%d bg_notes=%d route_notes=%d\n",

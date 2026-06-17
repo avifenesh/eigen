@@ -76,6 +76,8 @@ func TestHookObserverAndSummary(t *testing.T) {
 	obs(hook.Observation{Event: "session_start", Phase: "start", Session: "sess-2", CommandHash: "sha256:abc", Argc: 2})
 	obs(hook.Observation{Event: "session_start", Phase: "done", Session: "sess-2", CommandHash: "sha256:abc", Argc: 2})
 	sink := lg.Wrap(nil)
+	sink(agent.Event{Kind: agent.EventToolStart, ToolName: "skill", ToolID: "skill-1", ToolArgs: json.RawMessage(`{"name":"frontend-skill"}`)})
+	sink(agent.Event{Kind: agent.EventToolResult, ToolName: "skill", ToolID: "skill-1", Result: "loaded"})
 	sink(agent.Event{Kind: agent.EventToolResult, ToolName: "task", Result: "ok"})
 	sink(agent.Event{Kind: agent.EventToolResult, ToolName: "task_group", IsError: true, Result: "failed"})
 	sink(agent.Event{Kind: agent.EventBgDone, Text: "background finished"})
@@ -90,8 +92,11 @@ func TestHookObserverAndSummary(t *testing.T) {
 	if s.Subagents.TaskCalls != 1 || s.Subagents.GroupCalls != 1 || s.Subagents.GroupErrors != 1 || s.Subagents.BackgroundDone != 1 {
 		t.Fatalf("subagent summary wrong: %+v", s.Subagents)
 	}
+	if s.Skills["frontend-skill"].Calls != 1 || s.Skills["frontend-skill"].Errors != 0 {
+		t.Fatalf("skill summary wrong: %+v", s.Skills)
+	}
 	out := FormatSummary(s)
-	if !strings.Contains(out, "hooks:") || !strings.Contains(out, "session_start") || !strings.Contains(out, "subagents/spawns") {
+	if !strings.Contains(out, "hooks:") || !strings.Contains(out, "session_start") || !strings.Contains(out, "subagents/spawns") || !strings.Contains(out, "skills:") || !strings.Contains(out, "frontend-skill") {
 		t.Fatalf("summary should include hooks/subagents, got:\n%s", out)
 	}
 }
