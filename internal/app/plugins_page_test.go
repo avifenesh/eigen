@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/avifenesh/eigen/internal/llm"
 	pluginpkg "github.com/avifenesh/eigen/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -53,7 +54,9 @@ func seedPluginPage(t *testing.T) *pluginpkg.Registry {
 		Commands:    []string{"demo-review"},
 		MCPServers:  []string{"demo-mcp"},
 		AgentRoles:  []pluginpkg.InstalledAgentRole{{Name: "demo-agent-reviewer", SourceName: "reviewer", Kind: "general", Difficulty: "easy", Tools: []string{"read", "grep"}, ReadOnly: true}},
-		Warnings:    []string{"1 Codex app integration(s) not wired yet"},
+		ScanStatus:  pluginpkg.ScanStatusForced,
+		ScanCount:   1,
+		Warnings:    []string{"forced install: security scan reported risky components", "1 Codex app integration(s) not wired yet"},
 		Scans:       []pluginpkg.ScanFinding{{Component: "skill:demo-skill", Reasons: []string{"forced test finding"}}},
 	}); err != nil {
 		t.Fatal(err)
@@ -80,7 +83,10 @@ func TestPluginsPageRendersProductSurface(t *testing.T) {
 		"task roles",
 		"demo-agent-reviewer",
 		"from core",
+		"scan verdict",
+		"forced install",
 		"scan flags",
+		"security scan reported risky components",
 		"forced test finding",
 	} {
 		if !strings.Contains(v, want) {
@@ -139,6 +145,88 @@ func TestPluginsPageRendersProductSurface(t *testing.T) {
 	}
 	if strings.Contains(v, "demo-mcp") {
 		t.Fatalf("hooks tab should not show non-hook wiring:\n%s", v)
+	}
+}
+
+type pluginPageScanProvider struct {
+	riskyNames map[string]bool
+}
+
+func (p pluginPageScanProvider) Name() string    { return "plugin-page-scan" }
+func (p pluginPageScanProvider) ModelID() string { return "plugin-page-scan" }
+func (p pluginPageScanProvider) Complete(_ context.Context, req llm.Request) (*llm.Response, error) {
+	text := ""
+	if len(req.Messages) > 0 {
+		text = req.Messages[len(req.Messages)-1].Text
+	}
+	for name := range p.riskyNames {
+		if strings.Contains(text, "Skill name: "+name+"\n") {
+			return &llm.Response{Text: "VERDICT: RISKY\nREASONS:\n- command risky"}, nil
+		}
+	}
+	return &llm.Response{Text: "VERDICT: SAFE"}, nil
+}
+
+func TestPluginsPageSurfacesScanResultsAndRollback(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	market := filepath.Join(t.TempDir(), "market")
+	mustWriteAppTest(t, filepath.Join(market, ".claude-plugin", "marketplace.json"), `{
+	  "name": "local-market",
+	  "plugins": [
+	    {"name": "alpha", "source": "./plugins/alpha", "description": "first"},
+	    {"name": "beta", "source": "./plugins/beta", "description": "second"}
+	  ]
+	}`)
+	for _, name := range []string{"alpha", "beta"} {
+		mustWriteAppTest(t, filepath.Join(market, "plugins", name, ".claude-plugin", "plugin.json"), `{"name":"`+name+`"}`)
+		mustWriteAppTest(t, filepath.Join(market, "plugins", name, "skills", "main", "SKILL.md"), "---\nname: main\ndescription: "+name+"\n---\n"+name+"\n")
+		mustWriteAppTest(t, filepath.Join(market, "plugins", name, "commands", "do-it.md"), "do it\n")
+	}
+	reg := pluginpkg.NewRegistryAt(filepath.Join(home, ".eigen"))
+	if _, _, err := reg.AddMarketplace(context.Background(), market, nil); err != nil {
+		t.Fatal(err)
+	}
+	data := testData()
+	data.Small = pluginPageScanProvider{riskyNames: map[string]bool{"do-it": true}}
+
+	status := runPluginInstall(data, "alpha --force")
+	for _, want := range []string{"despite scan flags", "result:", "scan verdict: forced install", "scan flag command:do-it", "warning: forced install"} {
+		if !strings.Contains(status, want) {
+			t.Fatalf("forced install status missing %q:\n%s", want, status)
+		}
+	}
+	rec, ok := reg.InstalledByName("alpha")
+	if !ok {
+		t.Fatal("forced install should record alpha")
+	}
+	if rec.ScanStatus != pluginpkg.ScanStatusForced || rec.ScanCount != 2 || len(rec.Scans) != 1 {
+		t.Fatalf("forced install should persist scan details, got %+v", rec)
+	}
+	if len(rec.Warnings) == 0 || !strings.Contains(rec.Warnings[0], "forced install") {
+		t.Fatalf("forced install warning should be recorded, got %+v", rec.Warnings)
+	}
+
+	m := NewAt(data, PagePlugins)
+	m.width, m.height = 120, 36
+	v := m.plugins.view(m, 100, 30)
+	for _, want := range []string{"scan forced", "scan verdict", "forced install", "forced scan flags", "command risky"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("plugins page missing forced scan detail %q:\n%s", want, v)
+		}
+	}
+
+	status = runPluginInstall(data, "beta")
+	for _, want := range []string{"install failed for \"beta\"", "rolled back/no plugin recorded", "command risky"} {
+		if !strings.Contains(status, want) {
+			t.Fatalf("rollback status missing %q:\n%s", want, status)
+		}
+	}
+	if _, ok := reg.InstalledByName("beta"); ok {
+		t.Fatal("failed install should not record beta")
+	}
+	if _, err := os.Stat(filepath.Join(reg.SkillsDir(), "beta-main")); err == nil {
+		t.Fatal("failed install should roll back beta skill files")
 	}
 }
 

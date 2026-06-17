@@ -308,6 +308,9 @@ func TestInstallPluginWiresComponents(t *testing.T) {
 	if len(res.Plugin.Skills) != 1 || res.Plugin.Skills[0] != "toolbox-greet" {
 		t.Fatalf("skills = %v", res.Plugin.Skills)
 	}
+	if res.Plugin.ScanStatus != ScanStatusClean || res.Plugin.ScanCount != 2 {
+		t.Fatalf("scan metadata = %q/%d, want clean/2", res.Plugin.ScanStatus, res.Plugin.ScanCount)
+	}
 	smd := filepath.Join(dir, "skills", "toolbox-greet", "SKILL.md")
 	b, err := os.ReadFile(smd)
 	if err != nil {
@@ -566,8 +569,14 @@ func TestInstallPluginBlocksRiskyUnlessForced(t *testing.T) {
 	if len(res.Scans) == 0 {
 		t.Fatal("forced install should still surface the risky verdict")
 	}
+	if res.Plugin.ScanStatus != ScanStatusForced || res.Plugin.ScanCount != 2 {
+		t.Fatalf("forced install scan metadata = %q/%d, want forced/2", res.Plugin.ScanStatus, res.Plugin.ScanCount)
+	}
+	if len(res.Warnings) == 0 || !strings.Contains(res.Warnings[0], "forced install") {
+		t.Fatalf("forced install should surface a warning, got %+v", res.Warnings)
+	}
 	rec, ok := r.InstalledByName("toolbox")
-	if !ok || len(rec.Scans) == 0 {
+	if !ok || len(rec.Scans) == 0 || rec.ScanStatus != ScanStatusForced || len(rec.Warnings) == 0 {
 		t.Fatalf("forced scan findings should be recorded for UI audit: ok=%v rec=%+v", ok, rec)
 	}
 }

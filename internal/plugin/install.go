@@ -380,6 +380,7 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 		Name: pluginName, Marketplace: mkt, Version: version,
 		Description: desc, Root: dest,
 	}
+	scanCount := 0
 	committed := false
 	defer func() {
 		if !committed {
@@ -394,6 +395,7 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 			if serr != nil {
 				return nil, fmt.Errorf("scan skill %q: %w", sf.Name, serr)
 			}
+			scanCount++
 			if !sr.Safe {
 				res.Scans = append(res.Scans, ScanFinding{Component: "skill:" + sf.Name, Reasons: sr.Reasons})
 				if !opts.Force {
@@ -432,6 +434,7 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 			if serr != nil {
 				return nil, fmt.Errorf("scan command %q: %w", cf.Name, serr)
 			}
+			scanCount++
 			if !sr.Safe {
 				res.Scans = append(res.Scans, ScanFinding{Component: "command:" + cf.Name, Reasons: sr.Reasons})
 				if !opts.Force {
@@ -456,6 +459,7 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 			if serr != nil {
 				return nil, fmt.Errorf("scan agent %q: %w", af.Name, serr)
 			}
+			scanCount++
 			if !sr.Safe {
 				res.Scans = append(res.Scans, ScanFinding{Component: "agent:" + af.Name, Reasons: sr.Reasons})
 				if !opts.Force {
@@ -475,6 +479,16 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 	if comps.Apps > 0 {
 		res.Warnings = append(res.Warnings, fmt.Sprintf("%d Codex app integration(s) not wired yet", comps.Apps))
 	}
+	switch {
+	case opts.Scanner == nil:
+		res.Plugin.ScanStatus = ScanStatusSkipped
+	case len(res.Scans) > 0:
+		res.Plugin.ScanStatus = ScanStatusForced
+		res.Warnings = append([]string{"forced install: security scan reported risky components"}, res.Warnings...)
+	default:
+		res.Plugin.ScanStatus = ScanStatusClean
+	}
+	res.Plugin.ScanCount = scanCount
 	res.Plugin.Scans = append([]ScanFinding(nil), res.Scans...)
 	res.Plugin.Warnings = append([]string(nil), res.Warnings...)
 

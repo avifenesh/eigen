@@ -390,7 +390,7 @@ func (p *pluginsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if p.tab == pluginsTabMarketplace && p.catalogFocus {
 			return m, p.installMarkedCatalogPlugins(m)
 		}
-		p.prompt.open("plugin", "plugin name[@marketplace]")
+		p.prompt.open("plugin", "plugin name[@marketplace] [--force|--overwrite|--no-scan]")
 		return m, nil
 	}
 
@@ -943,6 +943,7 @@ func (p *pluginsState) pluginCard(selected bool, pl pluginpkg.InstalledPlugin, r
 	if pl.Version != "" {
 		meta += " · v" + pl.Version
 	}
+	meta += " · " + pluginScanBadge(pl)
 	name := sText.Render(pad(truncate(pl.Name, 24), 24))
 	meta = truncate(meta, max(10, w-42))
 	line1 := "◆ " + name + " " + status + "  " + sViolet.Render(meta)
@@ -973,6 +974,7 @@ func (p *pluginsState) pluginDetail(pl pluginpkg.InstalledPlugin, reg *pluginpkg
 	if pl.Version != "" {
 		b.WriteString("  " + sDim.Render("version ") + pl.Version + "\n")
 	}
+	b.WriteString("  " + sDim.Render("scan verdict ") + pluginScanVerdict(pl) + "\n")
 	parts := pluginComponentNames(pl)
 	if len(parts) > 0 {
 		b.WriteString("  " + sDim.Render("components ") + truncate(strings.Join(parts, " · "), max(20, w-15)) + "\n")
@@ -988,7 +990,7 @@ func (p *pluginsState) pluginDetail(pl pluginpkg.InstalledPlugin, reg *pluginpkg
 		b.WriteString("  " + sWarn.Render("warning ") + sDim.Render(truncate(warn, max(20, w-12))) + "\n")
 	}
 	if len(pl.Scans) > 0 {
-		b.WriteString("\n" + sectionLabel("scan flags", w) + "\n")
+		b.WriteString("\n" + sectionLabel("forced scan flags", w) + "\n")
 		for _, sf := range pl.Scans {
 			b.WriteString("  " + sWarn.Render(sf.Component) + "\n")
 			for _, reason := range sf.Reasons {
@@ -1386,6 +1388,54 @@ func pluginCounts(pl pluginpkg.InstalledPlugin) string {
 		return "metadata only"
 	}
 	return strings.Join(parts, " · ")
+}
+
+func pluginInstallCounts(pl pluginpkg.InstalledPlugin) string {
+	return fmt.Sprintf("%d skill(s), %d agent(s), %d command(s), %d MCP server(s), %d hook(s)",
+		len(pl.Skills), len(pl.Agents), len(pl.Commands), len(pl.MCPServers), pl.Hooks)
+}
+
+func pluginScanBadge(pl pluginpkg.InstalledPlugin) string {
+	switch pluginScanStatus(pl) {
+	case pluginpkg.ScanStatusClean:
+		return "scan clean"
+	case pluginpkg.ScanStatusForced:
+		return "scan forced"
+	case pluginpkg.ScanStatusSkipped:
+		return "scan skipped"
+	default:
+		return "scan unknown"
+	}
+}
+
+func pluginScanVerdict(pl pluginpkg.InstalledPlugin) string {
+	switch pluginScanStatus(pl) {
+	case pluginpkg.ScanStatusClean:
+		if pl.ScanCount > 0 {
+			return fmt.Sprintf("clean (%d component(s) checked)", pl.ScanCount)
+		}
+		return "clean"
+	case pluginpkg.ScanStatusForced:
+		if pl.ScanCount > 0 {
+			return fmt.Sprintf("forced install: %d flagged, %d checked", len(pl.Scans), pl.ScanCount)
+		}
+		return fmt.Sprintf("forced install: %d flagged", len(pl.Scans))
+	case pluginpkg.ScanStatusSkipped:
+		return "skipped (no scanner used)"
+	default:
+		return "not recorded"
+	}
+}
+
+func pluginScanStatus(pl pluginpkg.InstalledPlugin) string {
+	status := strings.TrimSpace(pl.ScanStatus)
+	if status != "" {
+		return status
+	}
+	if len(pl.Scans) > 0 {
+		return pluginpkg.ScanStatusForced
+	}
+	return ""
 }
 
 func pluginTaskRoleLine(pl pluginpkg.InstalledPlugin) string {

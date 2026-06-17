@@ -46,9 +46,17 @@ type InstalledPlugin struct {
 	Hooks       int                  `json:"hooks,omitempty"`       // count appended to hooks.json
 	Commands    []string             `json:"commands,omitempty"`    // installed command names (~/.eigen/commands/<n>.md)
 	AgentRoles  []InstalledAgentRole `json:"agent_roles,omitempty"` // plugin agent role metadata for task/task_group
+	ScanStatus  string               `json:"scan_status,omitempty"` // clean, forced, skipped; old records may be empty
+	ScanCount   int                  `json:"scan_count,omitempty"`  // number of components checked during install
 	Scans       []ScanFinding        `json:"scans,omitempty"`       // forced risky scan verdicts kept for audit/UI
 	Warnings    []string             `json:"warnings,omitempty"`    // non-fatal install notes (e.g. unsupported Codex apps)
 }
+
+const (
+	ScanStatusClean   = "clean"
+	ScanStatusForced  = "forced"
+	ScanStatusSkipped = "skipped"
+)
 
 // InstalledAgentRole records metadata parsed from a plugin's agents/*.md
 // frontmatter. The generated Name is the role users pass to task(role: ...).

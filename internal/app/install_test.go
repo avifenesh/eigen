@@ -69,6 +69,24 @@ func TestParseSkillInstallInputFlags(t *testing.T) {
 	}
 }
 
+func TestParsePluginInstallInputFlags(t *testing.T) {
+	got, err := parsePluginInstallInput("reviewer@core --force --overwrite --no-scan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.name != "reviewer" || got.marketplace != "core" || !got.force || !got.overwrite || !got.noScan {
+		t.Fatalf("parsePluginInstallInput inline = %+v", got)
+	}
+
+	got, err = parsePluginInstallInput("--marketplace core reviewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.name != "reviewer" || got.marketplace != "core" {
+		t.Fatalf("parsePluginInstallInput flag = %+v", got)
+	}
+}
+
 func TestSkillsInstallRunsInBackgroundWithBusyMarker(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
