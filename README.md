@@ -24,6 +24,32 @@ Use Eigen when you need:
 - plugin/skill/command compatibility with Claude- and Codex-style ecosystems;
 - local telemetry for errors, tools, model/token usage, hooks, route decisions, subagents, and runtime health.
 
+## Requirements
+
+Eigen is **Linux-first** and targets local terminal workflows.
+
+Core (always needed):
+
+- **Go** — the toolchain version is pinned in `go.mod`; building/testing Eigen needs only Go.
+- **git** — used for provenance/orientation, diffs, worktrees, and memory.
+- **ripgrep (`rg`)** — used for search, glob, and retrieval indexing.
+- **bash** — used by the shell tool.
+
+Building Eigen itself does **not** require Rust, Node, or any desktop tooling.
+
+Optional, only for the bundled harness capabilities you choose to install (see
+[Built-in harness helpers](#built-in-harness-helpers) and
+[`internal/harness/embedded/README.md`](internal/harness/embedded/README.md)):
+
+- **Rust/Cargo** — to build the `computer-use-linux` and `agent-workspace-linux` binaries via `eigen harness install`.
+- **Node ≥ 18** + **Google Chrome/Chromium** — for the Chrome bridge.
+- **Real-desktop computer-use** (`computer_use_*`): `ydotool`, `gnome-screenshot` (or an xdg-desktop-portal screencast), `gdbus`, `gsettings`; per-WM helpers `xprop`/`i3-msg`/`hyprctl` as applicable.
+- **Isolated workspace sandbox** (`workspace_*`): `Xvfb`, `xauth`, `xdpyinfo`, `xdotool`, `tmux`, `bwrap`, `setsid`, and `import` (ImageMagick) or `scrot`.
+
+Other features degrade gracefully when their tool is absent: `gh` (GitHub feed),
+`systemctl`/`crontab` (scheduling), `wl-paste`/`xclip`/`pngpaste` (clipboard
+images), `python3` + `kokoro_onnx` (TTS).
+
 ## Installation
 
 Eigen currently builds from source.
@@ -133,7 +159,11 @@ Eigen's Go binary embeds the source for the optional harness helpers:
 - `orientation`, a native Go provenance/history engine used to answer “why does this code exist?” without a separate skill package or Node runtime;
 - `chrome-bridge`, a connector-only Chrome extension/native-host/MCP bridge for acting on the user's already-logged-in Chrome without embedding a chat UI.
 
-They are not required for normal CLI use. To install them intentionally, run:
+They are not required for normal CLI use, and they are **first-party Eigen
+components** (same author), not third-party code. Each carries its own MIT
+license and an origin/runtime-needs summary lives in
+[`internal/harness/embedded/README.md`](internal/harness/embedded/README.md).
+To install them intentionally, run:
 
 ```bash
 eigen harness install

@@ -7,7 +7,7 @@ description = "Isolated Linux desktop workspaces for AI agents."
 keywords = ["mcp", "linux", "desktop", "automation", "workspace"]
 categories = ["command-line-utilities", "development-tools"]
 # Not published to crates.io: this package still uses git dependencies
-# (`gpui` is pinned to git here, and `gpui_platform` is not available on
+# (`gpui`/`gpui_platform` come from the Zed repo and are not available on
 # crates.io), which `cargo publish` rejects. Release-on-tag ships prebuilt
 # binaries plus .sha256 sidecars via GitHub Releases
 # (.github/workflows/release.yml) and the npm wrapper. Flip this to publish
@@ -17,8 +17,11 @@ publish = false
 [dependencies]
 mimalloc = { version = "0.1", default-features = false }
 anyhow = "1.0"
-gpui = { git = "https://github.com/zed-industries/zed", branch = "main", default-features = false, features = ["font-kit", "wayland", "x11"] }
-gpui_platform = { git = "https://github.com/zed-industries/zed", branch = "main", default-features = false, features = ["wayland", "x11"] }
+# Pinned to an explicit Zed revision (not `branch = "main"`) so public clones
+# build reproducibly; `gpui_platform` is not on crates.io. Bump the rev
+# deliberately and re-run `cargo update -p gpui` to refresh Cargo.lock.
+gpui = { git = "https://github.com/zed-industries/zed", rev = "df9c9f055e55c891e627ffe17cce51ac9e20c648", default-features = false, features = ["font-kit", "wayland", "x11"] }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "df9c9f055e55c891e627ffe17cce51ac9e20c648", default-features = false, features = ["wayland", "x11"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 rmcp = { version = "1.5.0", features = ["transport-io"] }
 schemars = "1.0"

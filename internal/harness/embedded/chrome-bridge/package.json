@@ -1,8 +1,10 @@
 {
-  "name": "agent-chrome-bridge",
+  "name": "eigen-chrome-bridge",
   "version": "0.5.0-eigen",
   "private": true,
   "description": "Eigen-bundled Chrome connector: extension, native messaging host, broker, and MCP tools (no chat UI).",
+  "license": "MIT",
+  "author": "Avi Fenesh",
   "type": "commonjs",
   "scripts": {
     "mcp": "node bin/mcp-server.js",
