@@ -57,6 +57,9 @@ func (s *Set) scan() {
 			if err != nil || sk.Name == "" {
 				continue
 			}
+			if isBuiltInCapabilitySkill(sk.Name) {
+				continue
+			}
 			if _, dup := byName[sk.Name]; dup {
 				continue
 			}
@@ -66,6 +69,13 @@ func (s *Set) scan() {
 	}
 	s.order = order
 	s.byName = byName
+}
+
+func isBuiltInCapabilitySkill(name string) bool {
+	// get-oriented was promoted into Eigen's native orientation harness. Keep any
+	// legacy SKILL.md on disk from being advertised/loaded as a separate skill so
+	// agents use the built-in `eigen orientation ...` capability instead.
+	return normalizeName(name) == "get-oriented"
 }
 
 // Rescan re-reads the source directories so skills added since construction

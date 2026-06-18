@@ -1,6 +1,0 @@
-# Eigen orientation allowlist — one cwd PREFIX per line.
-# Orientation only ingests sessions for listed project roots unless a harness hook
-# explicitly passes allowUnlisted=true.
-#
-# Example:
-# /home/you/projects

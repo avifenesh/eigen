@@ -130,7 +130,7 @@ Eigen's Go binary embeds the source for the optional harness helpers:
 
 - `computer-use-linux` for real desktop computer-use tools (`computer_use_*` MCP group);
 - `agent-workspace-linux` for isolated scratch desktop workspaces (`workspace_*` MCP group);
-- `orientation`, the provenance/history engine used to answer “why does this code exist?” without a separate skill package.
+- `orientation`, a native Go provenance/history engine used to answer “why does this code exist?” without a separate skill package or Node runtime.
 
 They are not required for normal CLI use. To install them intentionally, run:
 
@@ -142,7 +142,7 @@ eigen computer-use install
 eigen workspace install
 ```
 
-The install step builds the bundled Rust desktop sources with Cargo, copies helper binaries into `~/.local/bin`, installs the bundled orientation engine under `~/.eigen/orientation`, writes a small `orientation` wrapper, and installs Eigen orientation hooks that call that wrapper. Eigen auto-registers installed desktop helpers as built-in MCP servers on the next run. This removes the previous requirement for separate `~/projects/computer-use-linux`, `~/projects/agent-workspace-linux`, or standalone orientation/get-oriented package checkouts.
+The install step builds the bundled Rust desktop sources with Cargo, copies helper binaries into `~/.local/bin`, initializes the native Go orientation state under `~/.eigen/orientation`, writes a small `orientation` wrapper, and installs Eigen orientation hooks that call that wrapper. Eigen auto-registers installed desktop helpers as built-in MCP servers on the next run. This removes the previous requirement for separate `~/projects/computer-use-linux`, `~/projects/agent-workspace-linux`, standalone orientation/get-oriented package checkouts, or a Node-based orientation runtime.
 
 Orientation can also be run through Eigen directly:
 

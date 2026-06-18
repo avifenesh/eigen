@@ -1851,7 +1851,7 @@ func reportOrientationHelper() {
 		fmt.Printf("  orientation: available → %s (history/provenance engine)\n", harness.OrientationHome())
 		return
 	}
-	fmt.Println("  orientation: not installed (bundled source available; installs orientation wrapper)")
+	fmt.Println("  orientation: not installed (native Go capability available; install writes wrapper + hooks)")
 }
 
 func installOrientationHarness() {

@@ -3,7 +3,6 @@ package harness
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -28,7 +27,7 @@ func TestInstallOrientationWritesEngineAndWrapper(t *testing.T) {
 	if err := InstallOrientation("/opt/eigen/bin/eigen", dst); err != nil {
 		t.Fatal(err)
 	}
-	for _, rel := range []string{"consume.js", "hook.js", "state.js", "projects.txt"} {
+	for _, rel := range []string{"projects.txt"} {
 		if _, err := os.Stat(filepath.Join(home, ".eigen", "orientation", rel)); err != nil {
 			t.Fatalf("orientation install missing %s: %v", rel, err)
 		}
@@ -51,9 +50,6 @@ func TestInstallOrientationWritesEngineAndWrapper(t *testing.T) {
 }
 
 func TestOrientationHooksInstallUsesHarnessWrapper(t *testing.T) {
-	if _, err := exec.LookPath("node"); err != nil {
-		t.Skip("node not available")
-	}
 	home := t.TempDir()
 	dst := filepath.Join(home, ".local", "bin")
 	t.Setenv("HOME", home)
@@ -68,7 +64,7 @@ func TestOrientationHooksInstallUsesHarnessWrapper(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := string(b)
-	if !strings.Contains(got, filepath.Join(home, ".local", "bin", "orientation")) || !strings.Contains(got, "hook --runtime") {
+	if !strings.Contains(got, filepath.Join(home, ".local", "bin", "orientation")) || !strings.Contains(got, "hook") || !strings.Contains(got, "--runtime") {
 		t.Fatalf("hooks should call orientation wrapper, got:\n%s", got)
 	}
 	if strings.Contains(got, "hook.js") || strings.Contains(got, "ORIENTATION_ENGINE_DIR") {

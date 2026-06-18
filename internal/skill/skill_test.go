@@ -39,6 +39,23 @@ func TestDiscoverAndCatalog(t *testing.T) {
 	}
 }
 
+func TestDiscoverSkipsBuiltInOrientationSkill(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "get-oriented", "Use orientation history.", "# legacy get-oriented body")
+	writeSkill(t, dir, "alpha", "Use alpha.", "# alpha")
+
+	set := Discover(dir)
+	if set.Len() != 1 {
+		t.Fatalf("legacy get-oriented skill should be skipped, got names %v", set.Names())
+	}
+	if _, ok := set.Get("get-oriented"); ok {
+		t.Fatal("get-oriented must not be loadable as a separate skill")
+	}
+	if !strings.Contains(set.Catalog(), "alpha") || strings.Contains(set.Catalog(), "get-oriented") {
+		t.Fatalf("catalog should include alpha only:\n%s", set.Catalog())
+	}
+}
+
 func TestBodyStripsFrontmatter(t *testing.T) {
 	dir := t.TempDir()
 	writeSkill(t, dir, "alpha", "desc", "# Alpha\nthe instructions")
