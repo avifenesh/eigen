@@ -159,13 +159,13 @@ func (v *visionRouter) Route(_ context.Context, _, _, _ string, hasImage bool) (
 	return v.prov, "claude-fable-5", "routed → claude-fable-5 (vision/medium)"
 }
 
-func TestImageForcesVisionRouteWhenRouterOff(t *testing.T) {
+func TestImageDoesNotAutoSwitchTopLevelModel(t *testing.T) {
 	m := testModel(t)
 	vr := &visionRouter{on: false, prov: llmProvStub{id: "claude-fable-5"}}
 	m.router = vr
 	// A model the catalog POSITIVELY marks blind (probed: xAI returns 400
-	// "Image inputs are not supported" for composer). Routing fails closed,
-	// so only a known-blind id forces the vision route — NOT unknown ids.
+	// "Image inputs are not supported" for composer). The top-level model is
+	// still explicit: Eigen warns, but it must not auto-switch to another model.
 	m.modelID = "grok-composer-2.5-fast"
 
 	// Write a real (tiny) png so the image reference resolves.
@@ -174,11 +174,11 @@ func TestImageForcesVisionRouteWhenRouterOff(t *testing.T) {
 	os.WriteFile(png, []byte("\x89PNG\r\n\x1a\nfakedata"), 0o644)
 
 	m.submit("describe " + png)
-	if !vr.called {
-		t.Fatal("router must be consulted when an image needs vision")
+	if vr.called {
+		t.Fatal("top-level image prompt must not invoke router; main model is explicit")
 	}
-	if m.modelID != "claude-fable-5" {
-		t.Fatalf("model = %q, want vision model", m.modelID)
+	if m.modelID != "grok-composer-2.5-fast" {
+		t.Fatalf("model = %q, want user's explicit model", m.modelID)
 	}
 }
 
@@ -193,17 +193,17 @@ func TestPlainPromptRespectsRouterOff(t *testing.T) {
 	}
 }
 
-func TestPlainPromptRoutesWhenRouterOn(t *testing.T) {
+func TestPlainPromptDoesNotRouteTopLevelWhenRouterOn(t *testing.T) {
 	m := testModel(t)
 	vr := &visionRouter{on: true, prov: llmProvStub{id: "claude-fable-5"}}
 	m.router = vr
 	m.modelID = "openai.gpt-5.5"
 	m.submit("just text, no image")
-	if !vr.called {
-		t.Fatal("router should be consulted for plain top-level prompts when /route is on")
+	if vr.called {
+		t.Fatal("/route on must not route the top-level orchestrator turn")
 	}
-	if m.modelID != "claude-fable-5" {
-		t.Fatalf("model = %q, want routed model", m.modelID)
+	if m.modelID != "openai.gpt-5.5" {
+		t.Fatalf("model = %q, want user's explicit model", m.modelID)
 	}
 }
 
@@ -227,9 +227,7 @@ func TestRenameCommand(t *testing.T) {
 }
 
 func TestUnknownModelDoesNotForceVisionRoute(t *testing.T) {
-	// Fail CLOSED for routing: an UNCATALOGED id must stay on the user's
-	// model even with an image attached — only a positive "blind" verdict
-	// routes away.
+	// Unknown ids stay on the user's explicit model even with an image attached.
 	m := testModel(t)
 	vr := &visionRouter{on: false, prov: llmProvStub{id: "claude-fable-5"}}
 	m.router = vr

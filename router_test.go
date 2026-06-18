@@ -32,14 +32,14 @@ func TestAutoRouterProviders(t *testing.T) {
 	}
 }
 
-func TestAutoRouterRouteTrueWidensDefaultProviderSet(t *testing.T) {
+func TestAutoRouterDelegatedRouteWidensDefaultProviderSet(t *testing.T) {
 	t.Setenv("XAI_API_KEY", "test-key")
 	t.Setenv("GLM_API_KEY", "test-key")
 	t.Setenv("EIGEN_CODEX_AUTH", t.TempDir()+"/missing-auth.json")
 	r := newAutoRouter(true, nil, "codex")
 	p, model, label := r.Route(context.Background(), "rename this file", "", "trivial", false)
 	if p == nil {
-		t.Fatal("route=true with empty route_providers should roam all credentialed providers, not stay stuck on current")
+		t.Fatal("delegated route with empty route_providers should roam all credentialed providers, not stay stuck on current")
 	}
 	if model == "gpt-5.5" || strings.TrimSpace(model) == "" {
 		t.Fatalf("trivial task should route away from current codex default, got %q (%s)", model, label)

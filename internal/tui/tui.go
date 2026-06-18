@@ -804,29 +804,14 @@ func (m *model) submit(task string) tea.Cmd {
 	m.streamedText = false
 	m.idleGen++ // invalidate any pending idle-dream timer
 
-	// Routing: when /route is on, every top-level turn is eligible for the
-	// heuristic router. Even when /route is off, an image attached to a known-blind
-	// model forces a vision-capable hop; otherwise the image would be silently
-	// dropped or rejected by the backend.
+	// The top-level model is the user's explicit choice. `/route` applies to the
+	// main model's delegated subagents/tools, not to the orchestrator turn itself.
+	// If the user attaches an image while using a known-blind model, surface that
+	// fact instead of silently switching models.
 	hasImageRef := referencesImage(task) || len(m.pendingImages) > 0
-	// Capability routing fails CLOSED: only force-hop for images when the catalog
-	// POSITIVELY says the active model is blind — unknown ids stay on the user's
-	// choice and surface backend errors if wrong.
-	visionHas, visionKnown := llm.Vision(m.modelID)
-	needVision := hasImageRef && visionKnown && !visionHas
-	shouldRoute := m.router != nil && m.failoverFrom == nil && (m.router.Enabled() || needVision)
-	if shouldRoute {
-		prov, model, label := m.router.Route(m.ctx, task, "", "", hasImageRef)
-		if prov != nil && model != m.modelID {
-			m.backend.SetModel(prov, m.compactorFor(prov), m.contextBudgetFor(model))
-			m.provName, m.modelID = prov.Name(), model
-			if needVision && !m.router.Enabled() {
-				m.note(label + " (vision needed)")
-			} else {
-				m.note(label)
-			}
-		} else if label != "" && m.router.Enabled() {
-			m.note(label)
+	if hasImageRef {
+		if visionHas, visionKnown := llm.Vision(m.modelID); visionKnown && !visionHas {
+			m.note("image attached but current model is marked non-vision; switch /model explicitly or delegate a vision subtask")
 		}
 	}
 
@@ -1995,8 +1980,8 @@ type Options struct {
 	// LoopPrompt/LoopEvery restore a resumed session's idle loop (see /loop).
 	LoopPrompt string
 	LoopEvery  time.Duration
-	// Router is the opt-in auto-router; /route toggles it and the top-level turn
-	// routes through it. Nil disables the /route command.
+	// Router is the opt-in auto-router for delegated subtasks. The top-level
+	// orchestrator model is the user's explicit choice. Nil disables /route.
 	Router Router
 	// EventWrap, if set, wraps the agent event sink (e.g. observability logging)
 	// before the TUI's own handler. Identity when nil.
@@ -2014,8 +1999,8 @@ type Options struct {
 	InputMode string
 }
 
-// Router is the auto-router surface the TUI needs: toggle, status, and routing
-// a top-level prompt to a provider+model. Implemented by main's autoRouter.
+// Router is the auto-router surface the TUI needs for status/toggling. Actual
+// routing happens inside delegated task/subagent calls, not top-level turns.
 type Router interface {
 	Enabled() bool
 	SetEnabled(bool)

@@ -48,10 +48,10 @@ type Config struct {
 	TelegramAllow []int64  `json:"telegram_allow,omitempty"`
 	SkillsDirs    []string `json:"skills_dirs"`
 
-	// Route enables the opt-in auto-router: per task, pick the cheapest model
-	// that can do it well (ties → stronger → faster). RouteProviders is the
-	// provider allowlist for CROSS-provider routing (canonical names, e.g.
-	// "converse grok glm"); empty = route only within the current provider.
+	// Route enables the opt-in auto-router for delegated subtasks: pick the
+	// cheapest model that can do the subtask well (ties → stronger → faster). The
+	// main/orchestrator model stays explicit. RouteProviders restricts cross-
+	// provider routing; empty = all credentialed providers.
 	Route          bool     `json:"route"`
 	RouteProviders []string `json:"route_providers"`
 
@@ -307,7 +307,7 @@ func View(c Config) string {
 	fmt.Fprintf(&b, "%-14s = %d\n", "front_window_min", c.FrontWindowMin)
 	fmt.Fprintf(&b, "%-14s = %d\n", "stall_idle_min", c.StallIdleMin)
 	fmt.Fprintf(&b, "%-14s = %t\n", "route", c.Route)
-	rp := "(all credentialed providers when route=true)"
+	rp := "(all credentialed providers for delegated subtasks)"
 	if len(c.RouteProviders) > 0 {
 		rp = strings.Join(c.RouteProviders, " ")
 	}

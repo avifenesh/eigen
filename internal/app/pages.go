@@ -586,12 +586,12 @@ func (s *providersState) view(m *Model, w, h int) string {
 
 func providerSubtitle(d *Data) string {
 	if d == nil || !d.Config.Route {
-		return "route off"
+		return "subtask route off"
 	}
 	if len(d.Config.RouteProviders) == 0 {
-		return "route on · all credentialed providers"
+		return "subtask route on · all credentialed providers"
 	}
-	return "route on · " + strings.Join(d.Config.RouteProviders, " ")
+	return "subtask route on · " + strings.Join(d.Config.RouteProviders, " ")
 }
 
 func providersSummaryLine(rows []ProviderRow, w int) string {

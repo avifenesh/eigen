@@ -44,13 +44,12 @@ func (r *autoRouter) Enabled() bool {
 	return r.enabled
 }
 
-// route picks a provider+model for a task. Returns (provider, modelID, label)
-// or (nil, "", "") to keep the current model. Routing is ORCHESTRATOR-DRIVEN:
-// an explicitly stated kind/difficulty (the main model's delegation decision)
-// always routes, as does an attached image (capability need). Unstated tasks
-// route only when the heuristic auto-router is enabled (/route on) — by
-// default the orchestrator model keeps unscoped work itself, so routing is
-// a per-decision act, never an always-on static classifier.
+// Route picks a provider+model for a delegated task. Returns (provider, modelID,
+// label) or (nil, "", "") to keep the current delegate model. Routing is
+// ORCHESTRATOR-DRIVEN: explicitly stated kind/difficulty (the main model's
+// delegation decision) always routes, as does a vision subtask capability need.
+// Unstated delegated tasks route only when heuristic auto-routing is enabled
+// (/route on). The top-level/orchestrator model itself is never changed here.
 func (r *autoRouter) Route(ctx context.Context, prompt, kind, difficulty string, hasImage bool) (llm.Provider, string, string) {
 	r.mu.Lock()
 	enabled := r.enabled
@@ -101,11 +100,10 @@ func (r *autoRouter) Route(ctx context.Context, prompt, kind, difficulty string,
 
 func (r *autoRouter) routeCandidates(widen bool, current string, providers []string) []string {
 	if widen && len(providers) == 0 {
-		// Route=true or explicit orchestration should actually roam to the best
-		// credentialed tier by default. The old empty allowlist meant "current
-		// provider only", which made route=true a near no-op when the current
-		// provider had no cheaper/stronger alternatives. Set route_providers to a
-		// concrete list to restrict this behavior.
+		// Delegated routing should actually roam to the best credentialed tier by
+		// default. The old empty allowlist meant "current provider only", which made
+		// route=true a near no-op when the current provider had no cheaper/stronger
+		// alternatives. Set route_providers to a concrete list to restrict this.
 		return llm.AllCredentialedModels()
 	}
 	return llm.RouteCandidates(current, providers)
