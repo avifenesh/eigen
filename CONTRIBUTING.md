@@ -60,3 +60,9 @@ Include:
 - OS/terminal details when relevant;
 - whether the daemon was running;
 - sanitized logs or observe summaries, not secrets or full transcripts.
+
+## Code of conduct
+
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By
+participating, you agree to uphold it. Report unacceptable behavior through the
+channel listed in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

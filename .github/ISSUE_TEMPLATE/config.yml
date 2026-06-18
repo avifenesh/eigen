@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/avifenesh/eigen/security/advisories/new
+    about: Please report security issues privately, not as a public issue. See SECURITY.md.
+  - name: Question / discussion
+    url: https://github.com/avifenesh/eigen/discussions
+    about: Ask usage questions or discuss ideas here instead of opening an issue.
