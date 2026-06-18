@@ -4,8 +4,7 @@ import "os"
 
 // ProviderAvailable reports whether a provider has reachable credentials, so
 // the router only ever picks models it can actually construct. It mirrors each
-// provider's own credential resolution (cheaply — no network), and treats the
-// mantle/converse Bedrock pair as available when AWS creds resolve.
+// provider's own credential resolution (cheaply — no network).
 func ProviderAvailable(provider string) bool {
 	switch canonicalProvider(provider) {
 	case "codex":
@@ -21,10 +20,10 @@ func ProviderAvailable(provider string) bool {
 		}
 		return false
 	case "mantle":
-		// Bedrock mantle uses the same AWS creds as converse.
-		return awsAvailable()
+		// NewMantle accepts only the Bedrock bearer token.
+		return os.Getenv("AWS_BEARER_TOKEN_BEDROCK") != ""
 	case "converse":
-		return awsAvailable()
+		return converseAvailable()
 	case "anthropic":
 		if firstNonEmpty(os.Getenv("ANTHROPIC_API_KEY"), os.Getenv("EIGEN_ANTHROPIC_API_KEY")) != "" {
 			return true
@@ -48,11 +47,14 @@ func ProviderAvailable(provider string) bool {
 	return false
 }
 
-func awsAvailable() bool {
-	if os.Getenv("AWS_ACCESS_KEY_ID") != "" {
+// converseAvailable mirrors NewConverse: a Bedrock bearer token, or SigV4
+// creds resolvable for the converse profile (EIGEN_CONVERSE_PROFILE / AWS_PROFILE / aviary).
+func converseAvailable() bool {
+	if os.Getenv("AWS_BEARER_TOKEN_BEDROCK") != "" {
 		return true
 	}
-	_, err := loadAWSCreds(firstNonEmpty(os.Getenv("AWS_PROFILE"), "default"))
+	profile := firstNonEmpty(os.Getenv("EIGEN_CONVERSE_PROFILE"), os.Getenv("AWS_PROFILE"), "aviary")
+	_, err := loadAWSCreds(profile)
 	return err == nil
 }
 
