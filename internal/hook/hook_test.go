@@ -142,3 +142,87 @@ func TestLoad(t *testing.T) {
 		t.Fatal("malformed config should error")
 	}
 }
+
+func TestSpecMatchesToolMatchers(t *testing.T) {
+	tests := []struct {
+		name string
+		spec Spec
+		p    Payload
+		want bool
+	}{
+		{
+			name: "literal matcher matches same tool",
+			spec: Spec{Event: OnToolStart, Matcher: "write"},
+			p:    Payload{Event: OnToolStart, Tool: "write"},
+			want: true,
+		},
+		{
+			name: "literal matcher rejects different tool",
+			spec: Spec{Event: OnToolStart, Matcher: "write"},
+			p:    Payload{Event: OnToolStart, Tool: "read"},
+			want: false,
+		},
+		{
+			name: "matcher is anchored to full tool name",
+			spec: Spec{Event: OnToolStart, Matcher: "write"},
+			p:    Payload{Event: OnToolStart, Tool: "write_file"},
+			want: false,
+		},
+		{
+			name: "empty matcher matches any tool",
+			spec: Spec{Event: OnToolStart},
+			p:    Payload{Event: OnToolStart, Tool: "read"},
+			want: true,
+		},
+		{
+			name: "regex matcher matches first alternative",
+			spec: Spec{Event: OnToolStart, Matcher: "edit|write"},
+			p:    Payload{Event: OnToolStart, Tool: "edit"},
+			want: true,
+		},
+		{
+			name: "regex matcher matches second alternative",
+			spec: Spec{Event: OnToolStart, Matcher: "edit|write"},
+			p:    Payload{Event: OnToolStart, Tool: "write"},
+			want: true,
+		},
+		{
+			name: "regex matcher rejects other tool",
+			spec: Spec{Event: OnToolStart, Matcher: "edit|write"},
+			p:    Payload{Event: OnToolStart, Tool: "read"},
+			want: false,
+		},
+		{
+			name: "invalid regex falls back to literal mismatch",
+			spec: Spec{Event: OnToolStart, Matcher: "("},
+			p:    Payload{Event: OnToolStart, Tool: "write"},
+			want: false,
+		},
+		{
+			name: "invalid regex falls back to literal match",
+			spec: Spec{Event: OnToolStart, Matcher: "("},
+			p:    Payload{Event: OnToolStart, Tool: "("},
+			want: true,
+		},
+		{
+			name: "matcher ignored without tool payload",
+			spec: Spec{Event: OnTurnDone, Matcher: "write"},
+			p:    Payload{Event: OnTurnDone},
+			want: true,
+		},
+		{
+			name: "matcher ignored for non-tool event",
+			spec: Spec{Event: OnNote, Matcher: "write"},
+			p:    Payload{Event: OnNote, Tool: "read"},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := specMatches(tt.spec, tt.p); got != tt.want {
+				t.Fatalf("specMatches() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

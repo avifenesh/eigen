@@ -64,10 +64,11 @@ type MCPServer struct {
 
 // HookSpec is one hook event→command mapping, normalized from the Claude hooks
 // shape (event → matcher groups → command actions) into eigen's flat
-// (event, command) spec. Matchers are dropped (eigen hooks fire per event).
+// (event, command, matcher) spec. Matchers apply to tool events.
 type HookSpec struct {
 	Event   string
 	Command []string
+	Matcher string
 }
 
 // Discover reads the plugin tree at root and returns its components. lenient
@@ -358,7 +359,7 @@ func discoverHooks(root string, m *PluginManifest) ([]HookSpec, error) {
 				if strings.TrimSpace(h.Command) == "" {
 					continue
 				}
-				out = append(out, HookSpec{Event: mapHookEvent(ev), Command: splitCmd(h.Command)})
+				out = append(out, HookSpec{Event: mapHookEvent(ev), Command: splitCmd(h.Command), Matcher: group.Matcher})
 			}
 		}
 	}

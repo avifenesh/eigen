@@ -83,10 +83,14 @@ func (r *Registry) addHooks(hooks []HookSpec, bundleRoot string) (int, error) {
 		for i := range cmd {
 			cmd[i] = expandRoot(cmd[i], bundleRoot)
 		}
-		list = append(list, jsonObj{
+		entry := jsonObj{
 			"event":   h.Event,
 			"command": toAnySlice(cmd),
-		})
+		}
+		if h.Matcher != "" {
+			entry["matcher"] = h.Matcher
+		}
+		list = append(list, entry)
 	}
 	root["hooks"] = list
 	return len(hooks), writeObj(r.HooksPath(), root)

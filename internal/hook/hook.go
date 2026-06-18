@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -30,11 +31,12 @@ const (
 	OnNote          = "note"
 )
 
-// Spec is one configured hook: run Command when Event fires. Command is argv
-// (no shell); the payload JSON is written to the process's stdin.
+// Spec is one configured hook: run Command when Event fires. Matcher filters
+// tool events by name. Command is argv (no shell); payload JSON goes to stdin.
 type Spec struct {
 	Event    string   `json:"event"`
 	Command  []string `json:"command"`
+	Matcher  string   `json:"matcher,omitempty"`
 	Disabled bool     `json:"disabled,omitempty"` // kept in config, not fired
 }
 
@@ -107,9 +109,23 @@ func (r *Runner) Fire(p Payload) {
 	}
 	data, _ := json.Marshal(p)
 	for _, s := range specs {
+		if !specMatches(s, p) {
+			continue
+		}
 		obs := r.observe
 		go runOne(s.Command, data, p, obs)
 	}
+}
+
+func specMatches(s Spec, p Payload) bool {
+	if s.Matcher == "" || (p.Event != OnToolStart && p.Event != OnToolResult) {
+		return true
+	}
+	ok, err := regexp.MatchString("^(?:"+s.Matcher+")$", p.Tool)
+	if err != nil {
+		return p.Tool == s.Matcher
+	}
+	return ok
 }
 
 func runOne(argv []string, stdin []byte, p Payload, obs Observer) {
