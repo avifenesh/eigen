@@ -28,6 +28,7 @@ type Skill struct {
 type Set struct {
 	mu     sync.RWMutex
 	dirs   []string
+	extra  []string // explicit --skill paths (files or dirs), re-included on Rescan
 	order  []string
 	byName map[string]Skill
 }
@@ -67,6 +68,25 @@ func (s *Set) scan() {
 			byName[sk.Name] = sk
 		}
 	}
+	// Re-include explicit --skill paths (files or dirs outside the scanned roots)
+	// so a Rescan doesn't drop them.
+	for _, p := range s.extra {
+		files, err := skillFilesFromPath(p)
+		if err != nil {
+			continue
+		}
+		for _, path := range files {
+			sk, err := parse(path)
+			if err != nil || sk.Name == "" || isBuiltInCapabilitySkill(sk.Name) {
+				continue
+			}
+			if _, dup := byName[sk.Name]; dup {
+				continue
+			}
+			order = append(order, sk.Name)
+			byName[sk.Name] = sk
+		}
+	}
 	s.order = order
 	s.byName = byName
 }
@@ -87,7 +107,79 @@ func (s *Set) Rescan() {
 	s.scan()
 }
 
-// List returns the skills in discovery order.
+// AddPath registers a skill from an explicit path (the `--skill` flag): either a
+// SKILL.md file directly, or a directory that contains SKILL.md, or a directory
+// whose children contain */SKILL.md. Unlike Discover (which scans configured
+// roots), this loads exactly what the user named, so a one-off skill outside the
+// standard skill dirs is usable without installing it. Later AddPath calls do
+// not override an already-registered name (first wins, matching Discover). The
+// path is also remembered so Rescan keeps it. Returns the names added.
+func (s *Set) AddPath(path string) ([]string, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, fmt.Errorf("empty skill path")
+	}
+	files, err := skillFilesFromPath(path)
+	if err != nil {
+		return nil, err
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no SKILL.md found at %q", path)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var added []string
+	for _, f := range files {
+		sk, err := parse(f)
+		if err != nil || sk.Name == "" {
+			continue
+		}
+		if isBuiltInCapabilitySkill(sk.Name) {
+			continue
+		}
+		if _, dup := s.byName[sk.Name]; dup {
+			continue
+		}
+		if s.byName == nil {
+			s.byName = map[string]Skill{}
+		}
+		s.order = append(s.order, sk.Name)
+		s.byName[sk.Name] = sk
+		added = append(added, sk.Name)
+	}
+	// Remember the explicit paths so Rescan re-includes them.
+	s.extra = append(s.extra, path)
+	return added, nil
+}
+
+// skillFilesFromPath resolves an explicit --skill path to the SKILL.md file(s)
+// it names: a SKILL.md file → itself; a dir with SKILL.md → that file; otherwise
+// a dir with */SKILL.md children → those files.
+func skillFilesFromPath(path string) ([]string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		if filepath.Base(path) == "SKILL.md" {
+			return []string{path}, nil
+		}
+		return nil, fmt.Errorf("not a SKILL.md file: %q", path)
+	}
+	// Directory: prefer a SKILL.md directly inside it.
+	if direct := filepath.Join(path, "SKILL.md"); fileExists(direct) {
+		return []string{direct}, nil
+	}
+	// Otherwise treat it as a parent of skill dirs (*/SKILL.md).
+	matches, _ := filepath.Glob(filepath.Join(path, "*", "SKILL.md"))
+	sort.Strings(matches)
+	return matches, nil
+}
+
+func fileExists(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && !info.IsDir()
+}
+
 func (s *Set) List() []Skill {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

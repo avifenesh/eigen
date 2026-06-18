@@ -232,3 +232,85 @@ func TestSaveRejectsBadName(t *testing.T) {
 		t.Fatal("empty name should be rejected")
 	}
 }
+
+func TestAddPathFromSkillFile(t *testing.T) {
+	src := t.TempDir()
+	writeSkill(t, src, "custom-one", "Use for custom one things.", "# One\ndo one")
+	set := Discover(t.TempDir()) // empty discovery dir
+	if set.Len() != 0 {
+		t.Fatalf("expected empty set, got %d", set.Len())
+	}
+	added, err := set.AddPath(filepath.Join(src, "custom-one", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("AddPath(file): %v", err)
+	}
+	if len(added) != 1 || added[0] != "custom-one" {
+		t.Fatalf("added = %v, want [custom-one]", added)
+	}
+	if _, ok := set.Get("custom-one"); !ok {
+		t.Fatal("custom-one should be resolvable after AddPath")
+	}
+	if body, err := set.Body("custom-one"); err != nil || !strings.Contains(body, "do one") {
+		t.Fatalf("Body after AddPath: %q err=%v", body, err)
+	}
+}
+
+func TestAddPathFromSkillDir(t *testing.T) {
+	src := t.TempDir()
+	writeSkill(t, src, "custom-two", "Use for custom two.", "# Two\ndo two")
+	set := Discover(t.TempDir())
+	// Point at the skill DIRECTORY (contains SKILL.md), not the file.
+	added, err := set.AddPath(filepath.Join(src, "custom-two"))
+	if err != nil {
+		t.Fatalf("AddPath(dir): %v", err)
+	}
+	if len(added) != 1 || added[0] != "custom-two" {
+		t.Fatalf("added = %v, want [custom-two]", added)
+	}
+}
+
+func TestAddPathFromParentDir(t *testing.T) {
+	src := t.TempDir()
+	writeSkill(t, src, "a-skill", "Use for a.", "# A")
+	writeSkill(t, src, "b-skill", "Use for b.", "# B")
+	set := Discover(t.TempDir())
+	// Point at the PARENT of multiple skill dirs (*/SKILL.md).
+	added, err := set.AddPath(src)
+	if err != nil {
+		t.Fatalf("AddPath(parent): %v", err)
+	}
+	if len(added) != 2 {
+		t.Fatalf("added = %v, want 2 skills", added)
+	}
+}
+
+func TestAddPathDedupAndRescanPersists(t *testing.T) {
+	disc := t.TempDir()
+	writeSkill(t, disc, "alpha", "Use for alpha.", "# Alpha")
+	src := t.TempDir()
+	writeSkill(t, src, "alpha", "A different alpha.", "# Other") // same name → dup, skipped
+	writeSkill(t, src, "gamma", "Use for gamma.", "# Gamma")     // new → added
+	set := Discover(disc)
+	added, err := set.AddPath(src)
+	if err != nil {
+		t.Fatalf("AddPath: %v", err)
+	}
+	if len(added) != 1 || added[0] != "gamma" {
+		t.Fatalf("added = %v, want only [gamma] (alpha is a dup)", added)
+	}
+	// Rescan must keep the explicit gamma (re-included from s.extra).
+	set.Rescan()
+	if _, ok := set.Get("gamma"); !ok {
+		t.Fatal("gamma should survive Rescan (explicit --skill path remembered)")
+	}
+	if _, ok := set.Get("alpha"); !ok {
+		t.Fatal("alpha should still be present after Rescan")
+	}
+}
+
+func TestAddPathMissing(t *testing.T) {
+	set := Discover(t.TempDir())
+	if _, err := set.AddPath(filepath.Join(t.TempDir(), "nope")); err == nil {
+		t.Fatal("AddPath on a missing path should error")
+	}
+}

@@ -144,6 +144,8 @@ func main() {
 	flag.Var(&wfVars, "var", "workflow variable k=v for `eigen run` (repeatable)")
 	var addDirs multiFlag
 	flag.Var(&addDirs, "add-dir", "grant the tools an extra working directory beyond the session root (repeatable)")
+	var skillPaths multiFlag
+	flag.Var(&skillPaths, "skill", "load a skill from an explicit path (a SKILL.md file or a directory containing one), beyond the configured skill dirs (repeatable)")
 	flag.Parse()
 
 	// Resolve the daemon instance (flag wins, then $EIGEN_INSTANCE) ONCE, before
@@ -270,6 +272,13 @@ func main() {
 	}
 
 	skills := skill.Discover(skillDirs()...)
+	for _, p := range skillPaths {
+		if added, err := skills.AddPath(p); err != nil {
+			fmt.Fprintf(os.Stderr, "eigen: --skill %s: %v\n", p, err)
+		} else if len(added) == 0 {
+			fmt.Fprintf(os.Stderr, "eigen: --skill %s: no new skills loaded (already present or empty)\n", p)
+		}
+	}
 	if *listSkills {
 		printSkills(skills)
 		return

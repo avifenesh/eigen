@@ -214,6 +214,17 @@ Useful environment variables:
 - `EIGEN_INSTANCE=dev` — use the development daemon/socket namespace.
 - `EIGEN_NO_DAEMON=1` — run a foreground daemonless session.
 - `EIGEN_THEME=<name>` — select a theme before startup.
+- `EIGEN_SKILLS_DIRS=a:b` — extra colon-separated directories scanned for `*/SKILL.md` skills.
+
+Skills are discovered from `~/.eigen/skills` and the project's `.eigen/skills`.
+To load a one-off skill from anywhere without installing it, pass `--skill`
+(repeatable) — it accepts a `SKILL.md` file, a directory containing one, or a
+parent directory of skill dirs:
+
+```bash
+eigen --skill ./path/to/my-skill/SKILL.md "use my skill"
+eigen --skill ./path/to/skills-dir      # a dir of */SKILL.md
+```
 
 ## Built-in harness helpers
 
