@@ -1,8 +1,11 @@
 package harness
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -15,6 +18,61 @@ func TestEmbeddedComponentsContainCargoManifests(t *testing.T) {
 		if len(c.Binaries) == 0 {
 			t.Fatalf("%s has no install binaries", name)
 		}
+	}
+}
+
+func TestInstallOrientationWritesEngineAndWrapper(t *testing.T) {
+	home := t.TempDir()
+	dst := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := InstallOrientation("/opt/eigen/bin/eigen", dst); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{"consume.js", "hook.js", "state.js", "projects.txt"} {
+		if _, err := os.Stat(filepath.Join(home, ".eigen", "orientation", rel)); err != nil {
+			t.Fatalf("orientation install missing %s: %v", rel, err)
+		}
+	}
+	wrapper := filepath.Join(dst, "orientation")
+	b, err := os.ReadFile(wrapper)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(b); !strings.Contains(got, "eigen orientation") || !strings.Contains(got, "/opt/eigen/bin/eigen") {
+		t.Fatalf("wrapper should delegate to eigen orientation, got:\n%s", got)
+	}
+	info, err := os.Stat(filepath.Join(home, ".eigen", "orientation"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Fatalf("orientation home mode = %v, want 0700", info.Mode().Perm())
+	}
+}
+
+func TestOrientationHooksInstallUsesHarnessWrapper(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node not available")
+	}
+	home := t.TempDir()
+	dst := filepath.Join(home, ".local", "bin")
+	t.Setenv("HOME", home)
+	if err := InstallOrientation("/opt/eigen/bin/eigen", dst); err != nil {
+		t.Fatal(err)
+	}
+	if err := InstallOrientationHooks(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(home, ".eigen", "hooks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	if !strings.Contains(got, filepath.Join(home, ".local", "bin", "orientation")) || !strings.Contains(got, "hook --runtime") {
+		t.Fatalf("hooks should call orientation wrapper, got:\n%s", got)
+	}
+	if strings.Contains(got, "hook.js") || strings.Contains(got, "ORIENTATION_ENGINE_DIR") {
+		t.Fatalf("hooks should not hard-code node hook.js engine commands, got:\n%s", got)
 	}
 }
 

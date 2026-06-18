@@ -23,8 +23,9 @@ gate: build vet test
 	@test -z "$$(gofmt -l . | grep -v '^vendor/')" || (echo "gofmt needed:"; gofmt -l .; exit 1)
 	@echo "gate: OK"
 
-# Build/install Eigen-bundled helper binaries for the full local harness
-# (computer-use-linux + agent-workspace-linux). Requires Rust/Cargo only here.
+# Build/install Eigen-bundled helpers for the full local harness
+# (orientation + computer-use-linux + agent-workspace-linux). Requires Rust/Cargo
+# only for the desktop helpers.
 harness: build
 	$(EIGEN) harness install
 

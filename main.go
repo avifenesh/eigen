@@ -192,6 +192,10 @@ func main() {
 		runHarnessCmd(flag.Arg(1))
 		return
 	}
+	if flag.Arg(0) == "orientation" {
+		runOrientationCmd(flag.Args()[1:])
+		return
+	}
 	// `eigen computer-use <status|install>`: manage the built-in Linux
 	// computer-use MCP server.
 	if flag.Arg(0) == "computer-use" || flag.Arg(0) == "computer" {
@@ -1821,8 +1825,10 @@ func runHarnessCmd(sub string) {
 		fmt.Println("eigen harness helpers:")
 		reportHelper("computer-use", mcp.ComputerUseBinary(), "computer-use-linux", "computer_use MCP server")
 		reportHelper("workspace", mcp.WorkspaceBinary(), "agent-workspace-linux", "workspace MCP server")
-		fmt.Println("install: eigen harness install  # builds bundled helper sources into ~/.local/bin")
+		reportOrientationHelper()
+		fmt.Println("install: eigen harness install  # installs orientation and builds bundled desktop helpers")
 	case "install", "build":
+		installOrientationHarness()
 		installHarnessComponent("computer-use")
 		installHarnessComponent("workspace")
 		fmt.Println("harness helpers installed. Restart eigen/daemon to auto-register their MCP tools.")
@@ -1840,6 +1846,27 @@ func reportHelper(label, path, binary, desc string) {
 	fmt.Printf("  %s: not installed (bundled source available; installs %s)\n", label, binary)
 }
 
+func reportOrientationHelper() {
+	if harness.OrientationInstalled() {
+		fmt.Printf("  orientation: available → %s (history/provenance engine)\n", harness.OrientationHome())
+		return
+	}
+	fmt.Println("  orientation: not installed (bundled source available; installs orientation wrapper)")
+}
+
+func installOrientationHarness() {
+	exe, _ := os.Executable()
+	home, _ := os.UserHomeDir()
+	dst := filepath.Join(home, ".local", "bin")
+	if err := harness.InstallOrientation(exe, dst); err != nil {
+		fail(err)
+	}
+	fmt.Fprintf(os.Stderr, "installed orientation → %s\n", harness.OrientationHome())
+	if err := harness.InstallOrientationHooks(context.Background()); err != nil {
+		fmt.Fprintln(os.Stderr, "orientation hooks not installed:", err)
+	}
+}
+
 func installHarnessComponent(name string) {
 	c := harness.Components[name]
 	fmt.Fprintf(os.Stderr, "building %s from Eigen-bundled source…\n", c.Description)
@@ -1854,6 +1881,12 @@ func installHarnessComponent(name string) {
 // runComputerUseCmd implements `eigen computer-use <status|install>`: the
 // built-in Linux Computer Use MCP server. The source is embedded in eigen; Rust
 // is required only when explicitly installing the helper binary.
+func runOrientationCmd(args []string) {
+	if err := harness.RunOrientation(context.Background(), args); err != nil {
+		fail(err)
+	}
+}
+
 func runComputerUseCmd(sub string) {
 	switch sub {
 	case "", "status":

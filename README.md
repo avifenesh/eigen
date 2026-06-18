@@ -75,7 +75,7 @@ What happens:
 ## Feature highlights
 
 - Persistent local daemon with session attach/resume.
-- Bundled harness helper sources for Linux Computer Use and isolated agent workspaces; install them with `eigen harness install` instead of maintaining sibling checkouts.
+- Bundled harness helper sources for Linux Computer Use, isolated agent workspaces, and orientation/provenance history; install them with `eigen harness install` instead of maintaining sibling checkouts or a separate orientation skill package.
 - TUI/app pages for live work, projects, sessions, config, models, providers, observability, memory, crons, machines, and plugins.
 - Structured observability for tool failures, model/token usage, skills, hooks, subagents, route decisions, and runtime pressure.
 - Background subtasks and task groups with route-aware model selection.
@@ -126,21 +126,30 @@ Useful environment variables:
 
 ## Built-in harness helpers
 
-Eigen's Go binary embeds the source for the optional Linux desktop helpers:
+Eigen's Go binary embeds the source for the optional harness helpers:
 
 - `computer-use-linux` for real desktop computer-use tools (`computer_use_*` MCP group);
-- `agent-workspace-linux` for isolated scratch desktop workspaces (`workspace_*` MCP group).
+- `agent-workspace-linux` for isolated scratch desktop workspaces (`workspace_*` MCP group);
+- `orientation`, the provenance/history engine used to answer “why does this code exist?” without a separate skill package.
 
 They are not required for normal CLI use. To install them intentionally, run:
 
 ```bash
 eigen harness install
 # or one at a time:
+eigen orientation install
 eigen computer-use install
 eigen workspace install
 ```
 
-The install step builds the bundled Rust sources with Cargo and copies the helper binaries into `~/.local/bin`, where Eigen auto-registers them as built-in MCP servers on the next run. This removes the previous requirement for separate `~/projects/computer-use-linux` or `~/projects/agent-workspace-linux` checkouts.
+The install step builds the bundled Rust desktop sources with Cargo, copies helper binaries into `~/.local/bin`, installs the bundled orientation engine under `~/.eigen/orientation`, writes a small `orientation` wrapper, and installs Eigen orientation hooks that call that wrapper. Eigen auto-registers installed desktop helpers as built-in MCP servers on the next run. This removes the previous requirement for separate `~/projects/computer-use-linux`, `~/projects/agent-workspace-linux`, or standalone orientation/get-oriented package checkouts.
+
+Orientation can also be run through Eigen directly:
+
+```bash
+eigen orientation provenance "$PWD" internal/app/app.go
+eigen orientation related "$PWD" internal/app/app.go
+```
 
 ## Development
 
