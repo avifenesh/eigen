@@ -56,7 +56,7 @@ func Task(run TaskRun) Definition {
   "properties": {
     "task": { "type": "string", "description": "Complete, self-contained instructions for the subtask. The subtask cannot see this conversation." },
     "kind": { "type": "string", "enum": ["general","search","vision","social"], "description": "What the subtask needs: general reasoning/coding, live web search, image understanding, or social (X/Twitter reach). Optional but recommended." },
-    "difficulty": { "type": "string", "enum": ["trivial","easy","medium","hard"], "description": "Routing ladder: trivial = mechanical/cheap; easy = well-scoped; medium = reasoning/may run long; hard = strongest available. Stating this routes the subtask; omitting it keeps your model unless heuristic routing is enabled." },
+    "difficulty": { "type": "string", "enum": ["trivial","easy","medium","hard"], "description": "Routing ladder: trivial = mechanical/cheap; easy = well-scoped; medium = reasoning/may run long; hard = strongest available. Stating this routes the subtask; omitting it keeps your model unless model-assessed routing is enabled." },
     "model": { "type": "string", "description": "Optional explicit model/ref override. Beats routing. Examples: grok-code-fast-1, glm-5.2, mantle:openai.gpt-5.5, us.anthropic.claude-opus-4-8." },
     "role": { "type": "string", "description": "Optional named sub-agent role. Built-ins: researcher, reviewer, summarizer. Installed plugin agents are also valid for task (they inherit normal tools and approval gates)." },
     "background": { "type": "boolean", "description": "If true, start the subtask asynchronously and return a task id immediately; use task_status to check/collect later." }

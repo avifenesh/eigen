@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/avifenesh/eigen/internal/llm"
 )
 
 func TestAutoRouterDisabledReturnsNothing(t *testing.T) {
@@ -32,11 +35,18 @@ func TestAutoRouterProviders(t *testing.T) {
 	}
 }
 
+func testAssessor(kind llm.TaskKind, difficulty llm.Difficulty, frontend bool) routeAssessor {
+	return func(context.Context, string, bool, []string) (routeAssessment, error) {
+		return routeAssessment{Kind: kind, Difficulty: difficulty, Frontend: frontend, Assessor: "fake-small"}, nil
+	}
+}
+
 func TestAutoRouterDelegatedRouteWidensDefaultProviderSet(t *testing.T) {
 	t.Setenv("XAI_API_KEY", "test-key")
 	t.Setenv("GLM_API_KEY", "test-key")
 	t.Setenv("EIGEN_CODEX_AUTH", t.TempDir()+"/missing-auth.json")
 	r := newAutoRouter(true, nil, "codex")
+	r.assessor = testAssessor(llm.TaskGeneral, llm.DiffTrivial, false)
 	p, model, label := r.Route(context.Background(), "rename this file", "", "trivial", false)
 	if p == nil {
 		t.Fatal("delegated route with empty route_providers should roam all credentialed providers, not stay stuck on current")
@@ -53,12 +63,59 @@ func TestAutoRouterRouteProvidersRestrictDefaultWidening(t *testing.T) {
 	t.Setenv("XAI_API_KEY", "test-key")
 	t.Setenv("GLM_API_KEY", "test-key")
 	r := newAutoRouter(true, []string{"grok"}, "grok")
+	r.assessor = testAssessor(llm.TaskGeneral, llm.DiffTrivial, false)
 	p, model, label := r.Route(context.Background(), "rename this file", "", "trivial", false)
 	if p == nil {
 		t.Fatalf("restricted route should still find grok candidate: %s", label)
 	}
 	if !strings.HasPrefix(model, "grok-") {
 		t.Fatalf("route_providers should restrict routing to grok, got %q (%s)", model, label)
+	}
+}
+
+func TestAutoRouterUsesModelAssessmentNotPromptWords(t *testing.T) {
+	t.Setenv("XAI_API_KEY", "test-key")
+	r := newAutoRouter(true, nil, "grok")
+	r.assessor = testAssessor(llm.TaskSearch, llm.DiffHard, false)
+	p, _, label := r.Route(context.Background(), "rename this file", "", "", false)
+	if p == nil {
+		t.Fatalf("model assessment should drive routing, got no provider: %s", label)
+	}
+	for _, want := range []string{"search", "hard", "assessed by fake-small"} {
+		if !strings.Contains(label, want) {
+			t.Fatalf("route label should reflect model assessment %q, got %q", want, label)
+		}
+	}
+	if strings.Contains(label, "trivial") {
+		t.Fatalf("route must not use wording heuristic for 'rename', got %q", label)
+	}
+}
+
+func TestAutoRouterSkipsWhenModelAssessorUnavailable(t *testing.T) {
+	t.Setenv("XAI_API_KEY", "test-key")
+	r := newAutoRouter(true, nil, "grok")
+	r.assessor = func(context.Context, string, bool, []string) (routeAssessment, error) {
+		return routeAssessment{}, errors.New("classifier offline")
+	}
+	p, _, label := r.Route(context.Background(), "rename this file", "", "", false)
+	if p != nil {
+		t.Fatal("router should not fall back to wording heuristics when model assessment fails")
+	}
+	if !strings.Contains(label, "assessor unavailable") || !strings.Contains(label, "classifier offline") {
+		t.Fatalf("bad skip label: %q", label)
+	}
+}
+
+func TestParseRouteAssessment(t *testing.T) {
+	a, err := parseRouteAssessment("```json\n{\"kind\":\"vision\",\"level\":\"easy\",\"frontend\":true}\n```")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Kind != llm.TaskVision || a.Difficulty != llm.DiffEasy || !a.Frontend {
+		t.Fatalf("bad assessment: %+v", a)
+	}
+	if _, err := parseRouteAssessment(`{"kind":"general","difficulty":"tiny"}`); err == nil {
+		t.Fatal("invalid difficulty should fail closed")
 	}
 }
 

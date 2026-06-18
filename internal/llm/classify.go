@@ -2,15 +2,10 @@ package llm
 
 import "strings"
 
-// Classify infers a task's routing profile from the prompt text and whether
-// images are attached. It is the FALLBACK path: the orchestrator can state a
-// subtask's kind/difficulty explicitly (authoritative); when it doesn't — and
-// for the top-level turn — these heuristics produce a reasonable default.
-//
-// Vision is detected reliably (an image is attached). Search and difficulty are
-// keyword/length heuristics: deliberately conservative — when unsure they lean
-// toward "general" and "medium" so the router never under-powers a task it
-// can't read well.
+// Classify is a legacy deterministic classifier retained for tests and any
+// non-routing callers that want a cheap default. The production router does not
+// use this wording heuristic for /route; unstated delegated subtasks are assessed
+// by a small model instead.
 func Classify(prompt string, hasImage bool) (TaskKind, Difficulty) {
 	return classifyKind(prompt, hasImage), classifyDifficulty(prompt)
 }

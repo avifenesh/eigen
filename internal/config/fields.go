@@ -34,7 +34,7 @@ func Fields() []Field {
 		{Key: "idle_minutes", Desc: "minutes of idle before dreaming kicks in (default 5)"},
 		{Key: "front_window_min", Desc: "minutes a subtask runs in the foreground before it's promoted to the background (default 2; 0 = default)"},
 		{Key: "stall_idle_min", Desc: "minutes a subagent may go with no tool call before it's considered hung and stopped (default 2; 0 = default)"},
-		{Key: "route", Desc: "auto-router for delegated subtasks; the main model stays explicit (/route toggles live)", Options: []string{"true", "false"}},
+		{Key: "route", Desc: "model-assessed router for delegated subtasks; the main model stays explicit (/route toggles live)", Options: []string{"true", "false"}},
 		{Key: "route_providers", Desc: "providers subtask routing may roam across (space-separated); empty = all credentialed providers", Dynamic: "providers", Multi: true},
 		{Key: "observe", Desc: "structured activity log at ~/.eigen/observe (metadata only — no content)", Options: []string{"true", "false"}},
 		{Key: "local_background", Desc: "route background chores (titling, dreaming, compaction, scans) to a LOCAL model (EIGEN_LLAMA_BASE_URL) when it's up AND ready — saves frontier budget; opt-in, falls back when the local model is busy/absent", Options: []string{"true", "false"}},

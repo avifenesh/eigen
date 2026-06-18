@@ -399,10 +399,10 @@ func (m *model) command(line string) tea.Cmd {
 			m.note(fmt.Sprintf("routing: %s (%s) — main model stays explicit; task-tool delegations route when enabled, and stated task kind/difficulty always routes", status, scope))
 		case "on":
 			m.router.SetEnabled(true)
-			m.note("heuristic routing ON for delegated subtasks — main model stays explicit; empty route_providers means all credentialed providers")
+			m.note("model-assessed routing ON for delegated subtasks — main model stays explicit; empty route_providers means all credentialed providers")
 		case "off":
 			m.router.SetEnabled(false)
-			m.note("heuristic routing OFF — routing still happens when YOU state kind/difficulty on a task delegation")
+			m.note("model-assessed routing OFF — routing still happens when YOU state kind/difficulty on a task delegation")
 		default:
 			m.push(&block{kind: blockNote, isErr: true, body: sb("usage: /route on|off  (cross-provider scope: /config route_providers <list>)")})
 		}

@@ -48,8 +48,9 @@ type Config struct {
 	TelegramAllow []int64  `json:"telegram_allow,omitempty"`
 	SkillsDirs    []string `json:"skills_dirs"`
 
-	// Route enables the opt-in auto-router for delegated subtasks: pick the
-	// cheapest model that can do the subtask well (ties → stronger → faster). The
+	// Route enables the opt-in model-assessed router for delegated subtasks: a
+	// small model assesses missing kind/difficulty, then the user's tier chain
+	// picks the cheapest capable model (ties → stronger → faster). The
 	// main/orchestrator model stays explicit. RouteProviders restricts cross-
 	// provider routing; empty = all credentialed providers.
 	Route          bool     `json:"route"`

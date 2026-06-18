@@ -2,26 +2,38 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/avifenesh/eigen/internal/llm"
 )
 
 // autoRouter implements the opt-in per-task model router. It is the glue
-// between the pure policy (llm.Route), classification (llm.Classify /
-// orchestrator-stated kind+difficulty), candidate detection (llm.RouteCandidates),
-// and provider construction (llm.New). Constructed providers are cached so
-// repeated routing to the same model is cheap.
+// between the pure policy (llm.Route), small-model/orchestrator routing
+// assessment, candidate detection (llm.RouteCandidates), and provider
+// construction (llm.New). Constructed providers are cached so repeated routing
+// to the same model is cheap.
 type autoRouter struct {
 	mu        sync.Mutex
 	enabled   bool
 	providers []string // cross-provider allowlist (canonical); empty = current only
 	current   string   // the user's base provider (always a candidate)
 	cache     map[string]llm.Provider
+	assessor  routeAssessor
 }
+
+type routeAssessment struct {
+	Kind       llm.TaskKind
+	Difficulty llm.Difficulty
+	Frontend   bool
+	Assessor   string
+}
+
+type routeAssessor func(context.Context, string, bool, []string) (routeAssessment, error)
 
 func newAutoRouter(enabled bool, providers []string, current string) *autoRouter {
 	return &autoRouter{
@@ -48,42 +60,63 @@ func (r *autoRouter) Enabled() bool {
 // label) or (nil, "", "") to keep the current delegate model. Routing is
 // ORCHESTRATOR-DRIVEN: explicitly stated kind/difficulty (the main model's
 // delegation decision) always routes, as does a vision subtask capability need.
-// Unstated delegated tasks route only when heuristic auto-routing is enabled
-// (/route on). The top-level/orchestrator model itself is never changed here.
+// Unstated delegated tasks route only when /route is enabled, and then a small
+// model assesses the subtask level/capabilities; routing is not keyword-based.
+// The top-level/orchestrator model itself is never changed here.
 func (r *autoRouter) Route(ctx context.Context, prompt, kind, difficulty string, hasImage bool) (llm.Provider, string, string) {
 	r.mu.Lock()
 	enabled := r.enabled
 	providers := append([]string(nil), r.providers...)
 	current := r.current
+	assessor := r.assessor
 	r.mu.Unlock()
 
-	// Kind/difficulty: orchestrator-stated wins; else classify the prompt.
+	// Kind/difficulty: orchestrator-stated wins. If /route is on and the
+	// delegation did not state both fields, ask a small model to assess the
+	// missing routing fields. Do NOT keyword-classify the prompt for routing:
+	// routing should be a model decision that feeds the user's tier chain.
 	k, kExplicit := llm.ParseTaskKind(kind)
 	d, dExplicit := llm.ParseDifficulty(difficulty)
 	explicit := kExplicit || dExplicit
 	if !enabled && !hasImage && !explicit {
 		return nil, "", ""
 	}
-	ck, cd := llm.Classify(prompt, hasImage)
-	if !kExplicit {
-		k = ck
-	}
-	if !dExplicit {
-		d = cd
-	}
-	// An attached image always forces vision regardless of stated kind.
-	if hasImage {
-		k = llm.TaskVision
-	}
 
 	candidates := r.routeCandidates(enabled || explicit || hasImage, current, providers)
 	if len(candidates) == 0 {
 		return nil, "", "route skipped: no credentialed candidate models"
 	}
+	assessment := routeAssessment{Kind: k, Difficulty: d, Frontend: false, Assessor: "orchestrator"}
+	if hasImage {
+		assessment.Kind = llm.TaskVision
+	}
+	if enabled && (!kExplicit || !dExplicit) {
+		var a routeAssessment
+		var err error
+		if assessor != nil {
+			a, err = assessor(ctx, prompt, hasImage, candidates)
+		} else {
+			a, err = r.assessRoute(ctx, prompt, hasImage, candidates)
+		}
+		if err != nil {
+			return nil, "", fmt.Sprintf("route skipped: assessor unavailable (%v)", err)
+		}
+		assessment = a
+		if kExplicit {
+			assessment.Kind = k
+		}
+		if dExplicit {
+			assessment.Difficulty = d
+		}
+	}
+	// An attached image always forces vision regardless of stated/assessed kind.
+	if hasImage {
+		assessment.Kind = llm.TaskVision
+	}
 	chosen, ok := llm.Route(llm.RouteRequest{
-		Kind:       k,
-		Difficulty: d,
-		Frontend:   llm.IsFrontend(prompt),
+		Kind:       assessment.Kind,
+		Difficulty: assessment.Difficulty,
+		Frontend:   assessment.Frontend,
 		Candidates: candidates,
 	})
 	if !ok {
@@ -94,8 +127,90 @@ func (r *autoRouter) Route(ctx context.Context, prompt, kind, difficulty string,
 	if err != nil {
 		return nil, "", fmt.Sprintf("route skipped: %s unavailable (%v)", chosen, err)
 	}
-	label := fmt.Sprintf("routed → %s (%s/%s)", chosen, kindName(k), diffName(d))
+	source := "model-assessed"
+	if assessment.Assessor != "" {
+		source = "assessed by " + assessment.Assessor
+	}
+	if explicit && (!enabled || (kExplicit && dExplicit)) {
+		source = "orchestrator-stated"
+	}
+	label := fmt.Sprintf("routed → %s (%s/%s; %s)", chosen, kindName(assessment.Kind), diffName(assessment.Difficulty), source)
 	return prov, chosen, label
+}
+
+func (r *autoRouter) assessRoute(ctx context.Context, prompt string, hasImage bool, candidates []string) (routeAssessment, error) {
+	assessorModel, ok := llm.Route(llm.RouteRequest{Kind: llm.TaskGeneral, Difficulty: llm.DiffTrivial, Candidates: candidates})
+	if !ok || assessorModel == "" {
+		return routeAssessment{}, fmt.Errorf("no small model candidate")
+	}
+	prov, err := r.providerFor(assessorModel)
+	if err != nil {
+		return routeAssessment{}, err
+	}
+	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	resp, err := prov.Complete(cctx, llm.Request{
+		System: `You are Eigen's routing assessor. Classify a delegated subtask for model routing. Do not solve the task. Return ONLY compact JSON with keys: kind, difficulty, frontend.
+kind must be one of: general, search, vision, social.
+difficulty must be one of: trivial, easy, medium, hard.
+frontend must be true only for UI/visual/frontend/design work.`,
+		Messages: []llm.Message{{Role: llm.RoleUser, Text: routeAssessmentPrompt(prompt, hasImage)}},
+	})
+	if err != nil {
+		return routeAssessment{}, err
+	}
+	a, err := parseRouteAssessment(resp.Text)
+	if err != nil {
+		return routeAssessment{}, err
+	}
+	a.Assessor = assessorModel
+	if hasImage {
+		a.Kind = llm.TaskVision
+	}
+	return a, nil
+}
+
+func routeAssessmentPrompt(prompt string, hasImage bool) string {
+	const max = 6000
+	if len([]rune(prompt)) > max {
+		r := []rune(prompt)
+		prompt = string(r[:max/2]) + "\n\n[... middle omitted for routing assessment ...]\n\n" + string(r[len(r)-max/2:])
+	}
+	img := "false"
+	if hasImage {
+		img = "true"
+	}
+	return "has_image: " + img + "\n\nsubtask:\n" + prompt
+}
+
+func parseRouteAssessment(text string) (routeAssessment, error) {
+	start := strings.Index(text, "{")
+	end := strings.LastIndex(text, "}")
+	if start < 0 || end < start {
+		return routeAssessment{}, fmt.Errorf("no JSON object in assessor output")
+	}
+	var raw struct {
+		Kind       string `json:"kind"`
+		Difficulty string `json:"difficulty"`
+		Level      string `json:"level"`
+		Frontend   bool   `json:"frontend"`
+	}
+	if err := json.Unmarshal([]byte(text[start:end+1]), &raw); err != nil {
+		return routeAssessment{}, err
+	}
+	k, ok := llm.ParseTaskKind(raw.Kind)
+	if !ok {
+		return routeAssessment{}, fmt.Errorf("invalid kind %q", raw.Kind)
+	}
+	diff := raw.Difficulty
+	if diff == "" {
+		diff = raw.Level
+	}
+	d, ok := llm.ParseDifficulty(diff)
+	if !ok {
+		return routeAssessment{}, fmt.Errorf("invalid difficulty %q", diff)
+	}
+	return routeAssessment{Kind: k, Difficulty: d, Frontend: raw.Frontend}, nil
 }
 
 func (r *autoRouter) routeCandidates(widen bool, current string, providers []string) []string {
