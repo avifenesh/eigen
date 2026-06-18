@@ -1,13 +1,16 @@
-// Package retrieve provides semantic retrieval over a project's files (Tier 18
-// #2): an embedder turns code/text into vectors, a per-project on-disk index
-// stores them, and a query finds the most similar chunks by cosine. Context is
-// RETRIEVED on demand (the `retrieve` tool) instead of pasted whole — the main
-// remaining token-efficiency lever.
+// Package retrieve provides semantic + lexical retrieval over a project's files
+// (Tier 18 #2): a per-project on-disk index stores chunked file content, BM25
+// ranks it lexically (always available — no embedder needed), and when an
+// embedder is configured the chunks are also vectorized and search FUSES BM25
+// with cosine similarity (Reciprocal Rank Fusion). Context is RETRIEVED on
+// demand (the `retrieve` tool) instead of pasted whole — the main remaining
+// token-efficiency lever.
 //
-// v1 scope (deliberately small): brute-force cosine (project scale = thousands
-// of chunks, no ANN needed), line-window chunking with overlap (robust, no AST
-// dependency), incremental by file mtime+size, lazy build on first retrieve.
-// Deferred: reranker, session/memory indexing, AST chunking, ANN.
+// v1 scope: brute-force cosine (project scale = thousands of chunks, no ANN
+// needed), line-window chunking with overlap (robust, no AST dependency),
+// incremental by file mtime+size, lazy build on first retrieve. BM25 gives a
+// working floor with zero setup. Deferred: reranker, session/memory indexing,
+// AST chunking, ANN.
 package retrieve
 
 import (
@@ -15,7 +18,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,6 +62,7 @@ type Index struct {
 	emb    llm.Embedder
 	chunks []Chunk
 	files  map[string]fileMeta
+	bm25   *bm25Index // lexical index, lazily (re)built from chunks on Search
 }
 
 // Result is a retrieval hit.
@@ -71,12 +74,12 @@ type Result struct {
 	Score   float32
 }
 
-// Open prepares the index for root using emb. It loads any persisted index;
-// the caller calls Sync() to (incrementally) bring it up to date before Search.
+// Open prepares the index for root. emb may be nil: with no embedder, the
+// index still chunks every file and answers via BM25 lexical ranking (the
+// always-available floor); with an embedder, chunks are also vectorized and
+// Search fuses BM25 + cosine. The caller calls Sync() to (incrementally) bring
+// it up to date before Search.
 func Open(root string, emb llm.Embedder) (*Index, error) {
-	if emb == nil {
-		return nil, fmt.Errorf("no embedder configured (set EIGEN_EMBED_BASE_URL / run the embedder)")
-	}
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
@@ -86,8 +89,15 @@ func Open(root string, emb llm.Embedder) (*Index, error) {
 	}
 	home, _ := os.UserHomeDir()
 	h := sha256.Sum256([]byte(abs))
+	// The embedder model is part of the index identity. With no embedder we use
+	// a distinct "bm25" model tag so a lexical-only index and a vector index for
+	// the same project never clobber each other's vectors on disk.
+	model := "bm25"
+	if emb != nil {
+		model = emb.ModelID()
+	}
 	dir := filepath.Join(home, ".eigen", "index", hex.EncodeToString(h[:8]))
-	idx := &Index{root: abs, dir: dir, model: emb.ModelID(), emb: emb, files: map[string]fileMeta{}}
+	idx := &Index{root: abs, dir: dir, model: model, emb: emb, files: map[string]fileMeta{}}
 	idx.load() // best-effort; a missing/corrupt index just rebuilds
 	return idx, nil
 }
@@ -165,6 +175,7 @@ func (idx *Index) Sync(ctx context.Context) (int, error) {
 			}
 		}
 		idx.chunks = keep
+		idx.bm25 = nil // corpus changed → rebuild lexical index lazily on next Search
 		for rel := range idx.files {
 			if !live[rel] {
 				delete(idx.files, rel)
@@ -211,26 +222,35 @@ func (idx *Index) embedFile(ctx context.Context, rel string) error {
 		idx.files[rel] = fileMeta{ModTime: fi.ModTime().Unix(), Size: fi.Size()}
 		return nil
 	}
-	texts := make([]string, len(chunks))
-	for i, c := range chunks {
-		// Prefix the path so the embedding captures location context.
-		texts[i] = rel + "\n" + c.Text
-	}
-	vecs, err := idx.emb.Embed(ctx, texts)
-	if err != nil {
-		return err
-	}
-	for i := range chunks {
-		chunks[i].Vector = vecs[i]
+	// Embed only when an embedder is configured; otherwise the chunks carry no
+	// vector and BM25 alone ranks them. If embedding FAILS (embedder configured
+	// but unreachable — e.g. the default localhost service isn't running), index
+	// the chunks lexically (no vector) rather than dropping the file, so BM25
+	// still covers it. A later edit re-triggers an embed attempt.
+	if idx.emb != nil {
+		texts := make([]string, len(chunks))
+		for i, c := range chunks {
+			// Prefix the path so the embedding captures location context.
+			texts[i] = rel + "\n" + c.Text
+		}
+		if vecs, err := idx.emb.Embed(ctx, texts); err == nil && len(vecs) == len(chunks) {
+			for i := range chunks {
+				chunks[i].Vector = vecs[i]
+			}
+		}
 	}
 	idx.chunks = append(idx.chunks, chunks...)
+	idx.bm25 = nil // corpus changed → rebuild lexical index lazily on next Search
 	idx.files[rel] = fileMeta{ModTime: fi.ModTime().Unix(), Size: fi.Size()}
 	return nil
 }
 
-// Search embeds the query and returns the top-k chunks by cosine similarity.
-// Results are re-validated against disk (a chunk from a since-edited file is
-// dropped) so a hit always reflects current content.
+// Search returns the top-k chunks for query, fusing lexical (BM25) and, when an
+// embedder is configured, semantic (cosine) rankings via Reciprocal Rank Fusion
+// (RRF). With no embedder it is pure BM25. RRF is rank-based, so it needs no
+// score normalization between the two very different score scales. Results are
+// re-validated against disk (a chunk from a since-edited file is dropped) so a
+// hit always reflects current content.
 func (idx *Index) Search(ctx context.Context, query string, k int) ([]Result, error) {
 	if k <= 0 {
 		k = 8
@@ -238,31 +258,80 @@ func (idx *Index) Search(ctx context.Context, query string, k int) ([]Result, er
 	if len(idx.chunks) == 0 {
 		return nil, nil
 	}
-	qv, err := idx.emb.Embed(ctx, []string{query})
-	if err != nil || len(qv) == 0 {
-		return nil, err
+
+	// Lexical ranking (always available): (re)build the BM25 index lazily.
+	if idx.bm25 == nil {
+		idx.bm25 = buildBM25(idx.chunks)
 	}
-	type scored struct {
-		c     Chunk
-		score float32
+	lexRank := idx.bm25.rank(query)
+
+	// Semantic ranking (only when an embedder is configured AND chunks carry
+	// vectors). An embedder failure here is non-fatal: fall back to BM25.
+	var vecRank []int
+	if idx.emb != nil {
+		if qv, err := idx.emb.Embed(ctx, []string{query}); err == nil && len(qv) > 0 {
+			type scored struct {
+				i     int
+				score float32
+			}
+			hits := make([]scored, 0, len(idx.chunks))
+			for i, c := range idx.chunks {
+				if len(c.Vector) == 0 {
+					continue
+				}
+				hits = append(hits, scored{i, llm.CosineSim(qv[0], c.Vector)})
+			}
+			sort.Slice(hits, func(a, b int) bool { return hits[a].score > hits[b].score })
+			vecRank = make([]int, len(hits))
+			for j, h := range hits {
+				vecRank[j] = h.i
+			}
+		}
 	}
-	hits := make([]scored, 0, len(idx.chunks))
-	for _, c := range idx.chunks {
-		hits = append(hits, scored{c, llm.CosineSim(qv[0], c.Vector)})
-	}
-	sort.Slice(hits, func(i, j int) bool { return hits[i].score > hits[j].score })
+
+	order, fused := fuseRRF(lexRank, vecRank, len(idx.chunks))
 	out := make([]Result, 0, k)
-	for _, h := range hits {
+	for _, ci := range order {
 		if len(out) >= k {
 			break
 		}
-		snip, ok := idx.validate(h.c)
+		c := idx.chunks[ci]
+		snip, ok := idx.validate(c)
 		if !ok {
 			continue // file changed/gone since indexing — skip stale hit
 		}
-		out = append(out, Result{Path: h.c.Path, Start: h.c.Start, End: h.c.End, Snippet: snip, Score: h.score})
+		out = append(out, Result{Path: c.Path, Start: c.Start, End: c.End, Snippet: snip, Score: float32(fused[ci])})
 	}
 	return out, nil
+}
+
+// fuseRRF merges two ranked index lists by Reciprocal Rank Fusion: each list
+// contributes 1/(rrfK+rank) to a chunk's fused score; chunks are then ordered
+// by the sum. A chunk present in only one list still ranks. rrfK=60 is the
+// standard constant. When vecRank is nil (no embedder), this returns lexRank
+// order unchanged. Returns the ordering plus the fused score per chunk index.
+func fuseRRF(lexRank, vecRank []int, n int) ([]int, map[int]float64) {
+	const rrfK = 60.0
+	score := make(map[int]float64, n)
+	add := func(list []int) {
+		for rank, ci := range list {
+			score[ci] += 1.0 / (rrfK + float64(rank))
+		}
+	}
+	add(lexRank)
+	add(vecRank)
+	order := make([]int, 0, len(score))
+	for ci := range score {
+		order = append(order, ci)
+	}
+	sort.Slice(order, func(a, b int) bool {
+		sa, sb := score[order[a]], score[order[b]]
+		if sa != sb {
+			return sa > sb
+		}
+		return order[a] < order[b] // stable tiebreak by chunk index
+	})
+	return order, score
 }
 
 // validate re-reads the chunk's lines from disk; returns the current text and

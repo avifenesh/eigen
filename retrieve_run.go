@@ -29,13 +29,13 @@ func retrieveRunner(dir string) tool.RetrieveRun {
 		defer mu.Unlock()
 		if idx == nil {
 			if tried {
-				return "", fmt.Errorf("retrieval unavailable (embedder not configured/reachable)")
+				return "", fmt.Errorf("retrieval unavailable")
 			}
 			tried = true
-			emb, ok := llm.NewEmbedder()
-			if !ok {
-				return "", fmt.Errorf("retrieval unavailable (set EIGEN_EMBED_BASE_URL / run the embedder)")
-			}
+			// An embedder is OPTIONAL: when none is configured/reachable, open a
+			// lexical-only (BM25) index so `retrieve` still works. With an
+			// embedder, Search fuses BM25 + cosine.
+			emb, _ := llm.NewEmbedder()
 			opened, err := retrieve.Open(dir, emb)
 			if err != nil {
 				return "", fmt.Errorf("retrieval unavailable: %w", err)

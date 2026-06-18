@@ -155,9 +155,11 @@ Open work:
 ### retrieve (semantic search) — deferred enhancements
 
 v1 semantic `retrieve` is shipped (Tier 18); `internal/retrieve` indexes project
-files with line-window chunks and brute-force cosine. Parked upgrades:
+files with line-window chunks. Lexical **BM25** ranking is shipped as the
+zero-setup floor (works with no embedder); when an embedder IS configured,
+search fuses BM25 + cosine via Reciprocal Rank Fusion. Parked upgrades:
 
-- reranker pass over brute-force cosine hits;
+- reranker pass over the fused hits;
 - index session transcripts and memory, not just project files;
 - AST-aware chunking for code (split on declarations, not fixed windows);
 - ANN / approximate-nearest-neighbor index to replace brute-force cosine at repo
