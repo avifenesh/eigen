@@ -7,6 +7,32 @@ Eigen is a terminal-first coding agent for Go/Linux workstations: a CLI, TUI, da
 
 Use it when you want a local agent loop you can inspect, resume, route across models, extend with skills/plugins, and keep under normal approval gates instead of a stateless one-shot wrapper.
 
+## What this is (and what it isn't)
+
+Eigen is an **opinionated personal project**. I built it for my own needs, and it's
+shaped end to end by how I like to work — not by an attempt to compete with any
+particular agent or assistant.
+
+The thing I actually wanted was **one agent that mixes different providers and
+models in a single awareness**, plus the specific features I kept wishing I had:
+resumable local sessions, routing delegated work to whatever model fits while my
+chosen main model stays in charge, durable memory, real observability, and the
+desktop/browser/orientation tooling bundled in.
+
+So, to be upfront:
+
+- It's **built for me first.** Defaults, tradeoffs, and priorities reflect my
+  workflow (terminal-first, Linux, local-first).
+- It's **shared in case it's useful.** If you find it good and it makes you
+  happy, wonderful — use it, fork it, take ideas from it.
+- It's **not a competitor pitch.** I'm not claiming to be better than anything
+  else; I just built what I needed and decided to make it public.
+- **No promises of support or stability.** Expect opinionated choices and
+  occasional churn. Issues and PRs are welcome (see below), but the roadmap
+  follows what I need.
+
+If that sounds like your kind of tool, great. If not, that's completely fine.
+
 ## Quick proof signals
 
 - Go module: `github.com/avifenesh/eigen`
