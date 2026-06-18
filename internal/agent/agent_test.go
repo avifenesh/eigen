@@ -1325,7 +1325,11 @@ func TestPromotedBackgroundDoesNotEscalateExplicitModel(t *testing.T) {
 	}
 }
 
-func TestPromotedBackgroundParentCancelDoesNotRetry(t *testing.T) {
+func TestPromotedBackgroundSurvivesParentCancel(t *testing.T) {
+	// Regression: a child promoted to the background runs on a context DETACHED
+	// from the parent turn. Cancelling the parent after promotion must NOT kill
+	// the promoted task (the old bug: the child died with "context canceled" the
+	// moment the spawning tool call returned, because cctx descended from ctx).
 	oldIdle, oldGrace, oldFront, oldModel := stallIdle, heartbeatGrace, frontWindow, modelMaxWait
 	stallIdle = 10 * time.Second
 	modelMaxWait = 10 * time.Second
@@ -1344,11 +1348,15 @@ func TestPromotedBackgroundParentCancelDoesNotRetry(t *testing.T) {
 	if len(tasks) != 1 {
 		t.Fatalf("expected one promoted task, got %d", len(tasks))
 	}
+	// Cancel the parent turn — the detached promoted task must keep running.
 	cancelParent()
-	waitForSpecificTaskStatus(t, reg, tasks[0].ID, "error")
+	waitForSpecificTaskStatus(t, reg, tasks[0].ID, "done")
 	got := reg.Get(tasks[0].ID)
-	if got.Attempts != 1 || got.Escalated || prov.calls.Load() != 1 {
-		t.Fatalf("parent-canceled promoted attempt should not retry, got task=%+v calls=%d", got, prov.calls.Load())
+	if got.Result != "PROMOTED_RECOVERED" || got.Attempts != 2 || !got.Escalated {
+		t.Fatalf("promoted task must survive parent cancel and finish (escalate→done), got %+v", got)
+	}
+	if prov.calls.Load() != 2 {
+		t.Fatalf("expected two provider calls (error then retry), got %d", prov.calls.Load())
 	}
 }
 

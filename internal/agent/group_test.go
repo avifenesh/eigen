@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/plugin"
@@ -270,5 +271,81 @@ func TestTaskGroupEscalatesOnError(t *testing.T) {
 	}
 	if !strings.Contains(out, "escalated") {
 		t.Fatalf("report should note the escalation:\n%s", out)
+	}
+}
+
+// slowFinishProvider stays "active" (one read-only tool call) until it has run
+// long enough for the group's front window to promote it, then finishes. Used
+// to prove a promoted group child survives the group returning (which fires the
+// group's deferred context cancel).
+type slowFinishProvider struct {
+	mu       sync.Mutex
+	started  time.Time
+	minAlive time.Duration
+	reply    string
+}
+
+func (p *slowFinishProvider) Name() string    { return "slow-finish" }
+func (p *slowFinishProvider) ModelID() string { return "slow-finish" }
+func (p *slowFinishProvider) Complete(ctx context.Context, _ llm.Request) (*llm.Response, error) {
+	p.mu.Lock()
+	if p.started.IsZero() {
+		p.started = time.Now()
+	}
+	alive := time.Since(p.started)
+	p.mu.Unlock()
+	if alive < p.minAlive {
+		// Keep working: one tool call, after a short pause that also lets the
+		// context-cancel (if any) be observed.
+		select {
+		case <-time.After(15 * time.Millisecond):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		return &llm.Response{ToolCalls: []llm.ToolCall{{ID: "c", Name: "read", Arguments: json.RawMessage(`{}`)}}}, nil
+	}
+	return &llm.Response{Text: p.reply}, nil
+}
+
+// TestTaskGroupPromotedChildSurvivesGroupReturn is the group-path regression for
+// the detached-context fix: a child that outruns the front window is promoted to
+// the background, and the group returns immediately (firing its deferred
+// cancel). The promoted child must KEEP running on its detached context and
+// finish — not die with "context canceled" the moment the group call returns.
+func TestTaskGroupPromotedChildSurvivesGroupReturn(t *testing.T) {
+	oldIdle, oldGrace, oldFront := stallIdle, heartbeatGrace, frontWindow
+	stallIdle = 10 * time.Second // long: an actively-working child isn't a stall
+	heartbeatGrace = 0
+	frontWindow = 30 * time.Millisecond // short: promote quickly
+	defer func() { stallIdle, heartbeatGrace, frontWindow = oldIdle, oldGrace, oldFront }()
+
+	reg, err := tool.NewRegistry(roTool("read"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bg := NewBgRegistry(t.TempDir())
+	// Child stays active ~120ms (well past the 30ms front window), then finishes.
+	prov := &slowFinishProvider{minAlive: 120 * time.Millisecond, reply: "GROUP_CHILD_DONE"}
+	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto, Bg: bg}
+
+	out, gerr := a.TaskGroup(context.Background(), []GroupSubtask{
+		{Task: "long read-only scan", Role: "researcher"},
+	}, 1, "")
+	if gerr != nil {
+		t.Fatalf("group should return without error: %v", gerr)
+	}
+	if !strings.Contains(out, "moved to background") {
+		t.Fatalf("a child past the front window should be promoted:\n%s", out)
+	}
+	tasks := bg.List()
+	if len(tasks) != 1 {
+		t.Fatalf("expected one promoted task, got %d", len(tasks))
+	}
+	// The group has returned (its deferred cancel fired). The detached child
+	// must still finish successfully rather than be canceled.
+	waitForSpecificTaskStatus(t, bg, tasks[0].ID, "done")
+	got := bg.Get(tasks[0].ID)
+	if got.Result != "GROUP_CHILD_DONE" {
+		t.Fatalf("promoted group child must survive group return and finish, got %+v", got)
 	}
 }

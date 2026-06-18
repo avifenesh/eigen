@@ -824,8 +824,10 @@ func (a *Agent) promoteRunning(cctx context.Context, cancel context.CancelFunc, 
 	go func() {
 		d := <-ch // the same goroutine started in runChild is still running
 		// Snapshot the first attempt's terminal state before cancel() tears down the
-		// promoted context. A parent interrupt/context-cancel should not be retried,
-		// but an idle-stall cancellation should be eligible for one stronger retry.
+		// promoted context. cctx is detached from the parent turn, so cctx.Err()
+		// here means the bgMaxRuntime deadline (or stall/cancel) fired — not a
+		// parent interrupt. A deadline-exhausted run should not be retried; an
+		// idle-stall cancellation is eligible for one stronger retry.
 		firstCtxCanceled := cctx.Err() != nil
 		firstCanceled := canceled()
 		firstStalled := stalled()
@@ -834,7 +836,10 @@ func (a *Agent) promoteRunning(cctx context.Context, cancel context.CancelFunc, 
 		res, err := d.out, d.err
 		canceledNow, stalledNow := firstCanceled, firstStalled
 		var firstSummary string
-		parentCanceled := firstCtxCanceled && !firstStalled && !firstCanceled
+		// deadlineExhausted: the detached context ended on its own (bgMaxRuntime)
+		// without a stall or an explicit cancel marker — don't burn a retry on it.
+		deadlineExhausted := firstCtxCanceled && !firstStalled && !firstCanceled
+		parentCanceled := deadlineExhausted
 		if compactedTask, reason, ok := a.nextBackgroundContextRetry(context.Background(), c.task, bgAttemptOutcome{err: err, messages: d.messages}); ok && !firstCanceled && !parentCanceled {
 			firstSummary = reason
 			bg.update(id, func(t *BgTask) {

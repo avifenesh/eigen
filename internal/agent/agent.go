@@ -588,8 +588,18 @@ func (a *Agent) runChild(ctx context.Context, c childRun) childResultFG {
 	// Snapshot the tunables once at run start so a later config change can't
 	// race this run's watchdog.
 	idle, modelWait, front := stallIdle, modelMaxWait, frontWindow
-	cctx := context.WithValue(ctx, subtaskDepthKey{}, c.depth+1)
-	cctx, cancel := context.WithCancel(cctx)
+	// The child runs on a context DETACHED from the parent turn — rooted at
+	// Background (not a descendant of ctx), depth-tagged, and capped at
+	// bgMaxRuntime. This detachment is what lets a PROMOTED child outlive the
+	// turn that spawned it: if cctx were derived from ctx, the parent turn
+	// ending (or a parent group's `defer cancel()` deadline) would cancel the
+	// just-"backgrounded" child the instant the tool call returned — which is
+	// exactly the "context canceled" bug promotion is supposed to avoid. A
+	// parent interrupt is still honored WHILE the child is in the foreground
+	// window, via the explicit ctx.Done() case below; once promoted, the parent
+	// can no longer kill it.
+	base := context.WithValue(context.Background(), subtaskDepthKey{}, c.depth+1)
+	cctx, cancel := context.WithTimeout(base, bgMaxRuntime)
 
 	hb := newHeartbeat()
 	// Install a settable relay ONCE so promotion can re-point the sinks without
@@ -616,23 +626,35 @@ func (a *Agent) runChild(ctx context.Context, c childRun) childResultFG {
 		if d.err != nil && stalled() {
 			return childResultFG{err: fmt.Errorf("subtask stalled (no tool activity for %s) and was stopped; try a smaller scope or background it", idle)}
 		}
-		if d.err != nil && cctx.Err() == context.Canceled && ctx.Err() != nil {
-			return childResultFG{err: ctx.Err()} // parent interrupted
-		}
 		return childResultFG{out: d.out, err: d.err}
+	case <-ctx.Done():
+		// Parent turn interrupted/canceled before the front window elapsed.
+		// cctx is detached from ctx, so cancel() here is what actually stops the
+		// child; then drain ch so the goroutine doesn't outlive us.
+		cancel()
+		<-ch
+		return childResultFG{err: ctx.Err()}
 	case <-time.After(front):
-		// Still working past the front window → promote to background. The
-		// child keeps running on cctx (NOT cancelled); the bg registry adopts
-		// the in-flight goroutine so the orchestrator can task_status/cancel.
+		// Still working past the front window → promote to background. cctx is
+		// already detached from the parent, so the child keeps running after
+		// this turn returns; the bg registry adopts the in-flight goroutine so
+		// the orchestrator can task_status/cancel it.
 		id := a.promoteRunning(cctx, cancel, c, rl, ch, stalled, idle, front)
 		if id == "" {
-			// No bg registry: fall back to blocking (idle-stall still applies).
-			d := <-ch
-			cancel()
-			if d.err != nil && stalled() {
-				return childResultFG{err: fmt.Errorf("subtask stalled (no tool activity for %s) and was stopped", idle)}
+			// No bg registry: fall back to blocking. Idle-stall still applies,
+			// and a parent interrupt still aborts the (detached) child.
+			select {
+			case d := <-ch:
+				cancel()
+				if d.err != nil && stalled() {
+					return childResultFG{err: fmt.Errorf("subtask stalled (no tool activity for %s) and was stopped", idle)}
+				}
+				return childResultFG{out: d.out, err: d.err}
+			case <-ctx.Done():
+				cancel()
+				<-ch
+				return childResultFG{err: ctx.Err()}
 			}
-			return childResultFG{out: d.out, err: d.err}
 		}
 		return childResultFG{promoted: id}
 	}
