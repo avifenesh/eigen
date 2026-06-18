@@ -40,6 +40,15 @@ func TestDefaultModel(t *testing.T) {
 	if DefaultModel("") != "openai.gpt-5.5" {
 		t.Fatal("empty-provider default wrong")
 	}
+	if DefaultModel("codex") != "gpt-5.5" {
+		t.Fatal("codex default wrong")
+	}
+	if DefaultModel("anthropic") != "claude-sonnet-4-5-20250929" {
+		t.Fatal("native anthropic default wrong")
+	}
+	if DefaultModel("claude-code") != "claude-sonnet-4-5-20250929" {
+		t.Fatal("claude-code default wrong")
+	}
 }
 
 func TestModels(t *testing.T) {
@@ -79,6 +88,18 @@ func TestLookupCapabilities(t *testing.T) {
 	// llama local present.
 	if l, ok := Lookup("local"); !ok || l.Provider != "llama" {
 		t.Fatalf("llama local should be catalogued: %+v (ok=%v)", l, ok)
+	}
+	// Native Anthropic entries resolve to the native provider (not Bedrock
+	// converse) — exact-id lookup must not collide with the us.anthropic.* ids.
+	if a, ok := Lookup("claude-sonnet-4-5-20250929"); !ok || a.Provider != "anthropic" {
+		t.Fatalf("native anthropic sonnet should map to provider anthropic: %+v (ok=%v)", a, ok)
+	}
+	if a, ok := Lookup("claude-opus-4-1-20250805"); !ok || a.Provider != "anthropic" || !a.Cache {
+		t.Fatalf("native anthropic opus should map to provider anthropic: %+v (ok=%v)", a, ok)
+	}
+	// The Bedrock converse opus id still resolves to converse (no cross-contamination).
+	if o, ok := Lookup("us.anthropic.claude-opus-4-8"); !ok || o.Provider != "converse" {
+		t.Fatalf("bedrock opus must stay converse: %+v (ok=%v)", o, ok)
 	}
 }
 

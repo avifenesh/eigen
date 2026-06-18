@@ -98,6 +98,16 @@ var Catalog = []ModelInfo{
 	// (session titling, dreaming, skill vulnerability scans).
 	{ID: "us.anthropic.claude-haiku-4-5-20251001-v1:0", Provider: "converse", ContextWindow: 200000, Cache: true, Vision: true},
 
+	// Native Anthropic Messages API (api.anthropic.com) — distinct backend from
+	// the Bedrock converse `us.anthropic.*` ids above. Reachable via
+	// ANTHROPIC_API_KEY or Claude Code OAuth. Default native model is
+	// claude-sonnet-4-5-20250929. Capabilities mirror the converse Claude line.
+	{ID: "claude-opus-4-1-20250805", Provider: "anthropic", ContextWindow: 200000,
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
+	{ID: "claude-sonnet-4-5-20250929", Provider: "anthropic", ContextWindow: 200000,
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, ThinkingBudget: 8192, EffortLevels: []string{"off", "low", "medium", "high", "xhigh"}, Vision: true},
+	{ID: "claude-3-5-haiku-20241022", Provider: "anthropic", ContextWindow: 200000, Cache: true, Vision: true},
+
 	// Local llama (OpenAI-compatible server). Window is modest by default.
 	{ID: "local", Provider: "llama", ContextWindow: 40000},
 
@@ -143,9 +153,13 @@ var defaultModelByProvider = map[string]string{
 	"":                 "openai.gpt-5.5",
 	"mantle":           "openai.gpt-5.5",
 	"bedrock-mantle":   "openai.gpt-5.5",
+	"codex":            "gpt-5.5",
 	"converse":         "us.anthropic.claude-opus-4-8",
 	"bedrock-converse": "us.anthropic.claude-opus-4-8",
 	"claude":           "us.anthropic.claude-opus-4-8",
+	"anthropic":        "claude-sonnet-4-5-20250929",
+	"ant":              "claude-sonnet-4-5-20250929",
+	"claude-code":      "claude-sonnet-4-5-20250929",
 	"llama":            "local",
 	"local":            "local",
 	"grok":             "grok-build",

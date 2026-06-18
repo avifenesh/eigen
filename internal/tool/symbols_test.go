@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,6 +12,9 @@ import (
 
 func runSymbols(t *testing.T, dir string, args any) (string, error) {
 	t.Helper()
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("ripgrep not installed")
+	}
 	b, _ := json.Marshal(args)
 	return Symbols(NewPolicy(dir)).Run(context.Background(), b)
 }

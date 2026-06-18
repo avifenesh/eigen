@@ -152,6 +152,17 @@ Open work:
 - [ ] **Ultraplan / adversarial expansion / non-LLM heads.** Parked research
   items. Pull only when there is a concrete product reason.
 
+### retrieve (semantic search) — deferred enhancements
+
+v1 semantic `retrieve` is shipped (Tier 18); `internal/retrieve` indexes project
+files with line-window chunks and brute-force cosine. Parked upgrades:
+
+- reranker pass over brute-force cosine hits;
+- index session transcripts and memory, not just project files;
+- AST-aware chunking for code (split on declarations, not fixed windows);
+- ANN / approximate-nearest-neighbor index to replace brute-force cosine at repo
+  scale.
+
 ### Reliability watchlist (no active build unless it reproduces)
 
 - **Codex stream failures.** Pre-output `response.failed` server errors are now
