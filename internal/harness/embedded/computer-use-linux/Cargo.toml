@@ -1,0 +1,45 @@
+[package]
+name = "computer-use-linux"
+version = "0.2.8"
+edition = "2021"
+authors = ["Eigen Contributors"]
+license = "MIT"
+description = "Linux desktop control over MCP — AT-SPI accessibility tree, multi-compositor window targeting (GNOME, KWin, Hyprland, i3, COSMIC), screencast portal screenshots, and ydotool input synthesis. Wayland-first, X11 best-effort."
+homepage = "https://github.com/agent-sh/computer-use-linux"
+repository = "https://github.com/agent-sh/computer-use-linux"
+documentation = "https://github.com/agent-sh/computer-use-linux#readme"
+keywords = ["mcp", "computer-use", "accessibility", "gnome", "wayland"]
+categories = ["accessibility", "command-line-utilities", "os::linux-apis"]
+
+[[bin]]
+name = "computer-use-linux"
+path = "src/main.rs"
+
+[[bin]]
+name = "computer-use-linux-cosmic"
+path = "src/bin/computer-use-linux-cosmic.rs"
+
+[dependencies]
+mimalloc = { version = "0.1", default-features = false }
+anyhow = "1.0.102"
+atspi = { version = "0.29.0", features = ["tokio"] }
+base64 = "0.22.1"
+evdev = "0.13.2"
+cosmic-protocols = { version = "0.2.0", default-features = false, features = ["client"] }
+futures-util = "0.3.32"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+rmcp = { version = "1.5.0", features = ["transport-io"] }
+schemars = "1.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+tokio = { version = "1.51.1", features = ["macros", "process", "rt", "time"] }
+wayland-client = "0.31.11"
+wayland-protocols = { version = "0.32.9", features = ["client", "staging"] }
+xkeysym = "0.2.1"
+zbus = "5.14.0"
+
+[profile.release]
+codegen-units = 1
+opt-level = 3
+lto = "fat"
+strip = "symbols"

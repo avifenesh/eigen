@@ -32,6 +32,7 @@ import (
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/dream"
+	"github.com/avifenesh/eigen/internal/harness"
 	"github.com/avifenesh/eigen/internal/hook"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/lsp"
@@ -185,6 +186,18 @@ func main() {
 		return
 	}
 
+	// `eigen harness <status|install>`: manage Eigen-bundled helper binaries
+	// (computer-use + isolated workspace) from embedded source.
+	if flag.Arg(0) == "harness" {
+		runHarnessCmd(flag.Arg(1))
+		return
+	}
+	// `eigen computer-use <status|install>`: manage the built-in Linux
+	// computer-use MCP server.
+	if flag.Arg(0) == "computer-use" || flag.Arg(0) == "computer" {
+		runComputerUseCmd(flag.Arg(1))
+		return
+	}
 	// `eigen workspace <status|build>`: manage the built-in agent-workspace
 	// capability (detect/build the binary), then exit.
 	if flag.Arg(0) == "workspace" {
@@ -1802,10 +1815,67 @@ func hookConfigPath() string {
 	return filepath.Join(home, ".eigen", "hooks.json")
 }
 
-// runWorkspaceCmd implements `eigen workspace <status|build>`: the built-in
+func runHarnessCmd(sub string) {
+	switch sub {
+	case "", "status":
+		fmt.Println("eigen harness helpers:")
+		reportHelper("computer-use", mcp.ComputerUseBinary(), "computer-use-linux", "computer_use MCP server")
+		reportHelper("workspace", mcp.WorkspaceBinary(), "agent-workspace-linux", "workspace MCP server")
+		fmt.Println("install: eigen harness install  # builds bundled helper sources into ~/.local/bin")
+	case "install", "build":
+		installHarnessComponent("computer-use")
+		installHarnessComponent("workspace")
+		fmt.Println("harness helpers installed. Restart eigen/daemon to auto-register their MCP tools.")
+	default:
+		fmt.Fprintf(os.Stderr, "usage: eigen harness <status|install>\n")
+		os.Exit(2)
+	}
+}
+
+func reportHelper(label, path, binary, desc string) {
+	if path != "" {
+		fmt.Printf("  %s: available → %s (%s)\n", label, path, desc)
+		return
+	}
+	fmt.Printf("  %s: not installed (bundled source available; installs %s)\n", label, binary)
+}
+
+func installHarnessComponent(name string) {
+	c := harness.Components[name]
+	fmt.Fprintf(os.Stderr, "building %s from Eigen-bundled source…\n", c.Description)
+	home, _ := os.UserHomeDir()
+	dst := filepath.Join(home, ".local", "bin")
+	if err := harness.Install(context.Background(), name, dst); err != nil {
+		fail(err)
+	}
+	fmt.Fprintf(os.Stderr, "installed %s → %s\n", name, dst)
+}
+
+// runComputerUseCmd implements `eigen computer-use <status|install>`: the
+// built-in Linux Computer Use MCP server. The source is embedded in eigen; Rust
+// is required only when explicitly installing the helper binary.
+func runComputerUseCmd(sub string) {
+	switch sub {
+	case "", "status":
+		if bin := mcp.ComputerUseBinary(); bin != "" {
+			fmt.Println("computer use: available →", bin)
+			fmt.Println("(auto-registered as the `computer_use` MCP server; real Linux desktop control)")
+		} else {
+			fmt.Println("computer use: not installed")
+			fmt.Println("install: `eigen computer-use install` or `eigen harness install` (builds Eigen-bundled source)")
+		}
+	case "install", "build":
+		installHarnessComponent("computer-use")
+	default:
+		fmt.Fprintf(os.Stderr, "usage: eigen computer-use <status|install>\n")
+		os.Exit(2)
+	}
+}
+
+// runWorkspaceCmd implements `eigen workspace <status|install>`: the built-in
 // agent-workspace capability (isolated Linux desktop / computer-use). status
-// reports whether the binary is present; build compiles it from a local
-// agent-workspace-linux cargo checkout into ~/.local/bin.
+// reports whether the binary is present; install builds Eigen's embedded
+// agent-workspace-linux source into ~/.local/bin.
 func runWorkspaceCmd(sub string) {
 	switch sub {
 	case "", "status":
@@ -1814,12 +1884,12 @@ func runWorkspaceCmd(sub string) {
 			fmt.Println("(auto-registered as the `workspace` MCP server; 27 curated tools)")
 		} else {
 			fmt.Println("agent workspace: not installed")
-			fmt.Println("install: `eigen workspace build` (from a cargo checkout) or drop the binary at ~/.local/bin/agent-workspace-linux")
+			fmt.Println("install: `eigen workspace install` or `eigen harness install` (builds Eigen-bundled source)")
 		}
-	case "build":
-		buildWorkspace()
+	case "install", "build":
+		installHarnessComponent("workspace")
 	default:
-		fmt.Fprintf(os.Stderr, "usage: eigen workspace <status|build>\n")
+		fmt.Fprintf(os.Stderr, "usage: eigen workspace <status|install>\n")
 		os.Exit(2)
 	}
 }
@@ -1830,8 +1900,8 @@ func runWorkspaceCmd(sub string) {
 func runChromeCmd() {
 	script, node := mcp.ChromeBridge()
 	if script == "" {
-		fmt.Println("chrome bridge: not found")
-		fmt.Println("install: clone agent-chrome-bridge to ~/projects/agent-chrome-bridge (load the unpacked extension + register the native host per its README), or set EIGEN_CHROME_BRIDGE to its dir")
+		fmt.Println("chrome bridge: not configured")
+		fmt.Println("set EIGEN_CHROME_BRIDGE to an intentionally installed agent-chrome-bridge dir or mcp-server.js path")
 		return
 	}
 	if node == "" {
@@ -1843,50 +1913,6 @@ func runChromeCmd() {
 	fmt.Println("chrome bridge: available →", script)
 	fmt.Println("node:", node)
 	fmt.Println("(auto-registered as the `chrome` MCP server; drives your real logged-in Chrome — 32 tools incl. screenshot)")
-}
-
-// buildWorkspace compiles agent-workspace-linux from a local cargo checkout
-// (EIGEN_WORKSPACE_SRC or ~/projects/agent-workspace-linux) and installs the
-// binary to ~/.local/bin.
-func buildWorkspace() {
-	src := os.Getenv("EIGEN_WORKSPACE_SRC")
-	if src == "" {
-		home, _ := os.UserHomeDir()
-		src = filepath.Join(home, "projects", "agent-workspace-linux")
-	}
-	if _, err := os.Stat(filepath.Join(src, "Cargo.toml")); err != nil {
-		fail(fmt.Errorf("no cargo checkout at %s (set EIGEN_WORKSPACE_SRC)", src))
-	}
-	if _, err := exec.LookPath("cargo"); err != nil {
-		fail(fmt.Errorf("cargo not found — install Rust to build the workspace"))
-	}
-	fmt.Fprintln(os.Stderr, "building agent-workspace-linux (release) from", src, "…")
-	cmd := exec.Command("cargo", "build", "--release")
-	cmd.Dir = src
-	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
-	if err := cmd.Run(); err != nil {
-		fail(fmt.Errorf("cargo build: %w", err))
-	}
-	home, _ := os.UserHomeDir()
-	dst := filepath.Join(home, ".local", "bin", "agent-workspace-linux")
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		fail(err)
-	}
-	binSrc := filepath.Join(src, "target", "release", "agent-workspace-linux")
-	if err := copyExecutable(binSrc, dst); err != nil {
-		fail(fmt.Errorf("install %s → %s: %w", binSrc, dst, err))
-	}
-	fmt.Fprintln(os.Stderr, "installed →", dst)
-	fmt.Fprintln(os.Stderr, "the `workspace` server will auto-register on the next run.")
-}
-
-// copyExecutable copies src to dst with 0755.
-func copyExecutable(src, dst string) error {
-	in, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(dst, in, 0o755)
 }
 
 // importResume loads a resumed conversation: by store id, the 'eigen'

@@ -1,0 +1,14 @@
+{
+  "uuid": "computer-use-linux@avifenesh.dev",
+  "name": "Linux Computer Use Window Control",
+  "description": "Local GNOME Shell window listing and focus bridge for Linux Computer Use MCP.",
+  "shell-version": [
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "50"
+  ],
+  "version": 1
+}

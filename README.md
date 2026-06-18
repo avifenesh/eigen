@@ -75,6 +75,7 @@ What happens:
 ## Feature highlights
 
 - Persistent local daemon with session attach/resume.
+- Bundled harness helper sources for Linux Computer Use and isolated agent workspaces; install them with `eigen harness install` instead of maintaining sibling checkouts.
 - TUI/app pages for live work, projects, sessions, config, models, providers, observability, memory, crons, machines, and plugins.
 - Structured observability for tool failures, model/token usage, skills, hooks, subagents, route decisions, and runtime pressure.
 - Background subtasks and task groups with route-aware model selection.
@@ -123,6 +124,24 @@ Useful environment variables:
 - `EIGEN_NO_DAEMON=1` — run a foreground daemonless session.
 - `EIGEN_THEME=<name>` — select a theme before startup.
 
+## Built-in harness helpers
+
+Eigen's Go binary embeds the source for the optional Linux desktop helpers:
+
+- `computer-use-linux` for real desktop computer-use tools (`computer_use_*` MCP group);
+- `agent-workspace-linux` for isolated scratch desktop workspaces (`workspace_*` MCP group).
+
+They are not required for normal CLI use. To install them intentionally, run:
+
+```bash
+eigen harness install
+# or one at a time:
+eigen computer-use install
+eigen workspace install
+```
+
+The install step builds the bundled Rust sources with Cargo and copies the helper binaries into `~/.local/bin`, where Eigen auto-registers them as built-in MCP servers on the next run. This removes the previous requirement for separate `~/projects/computer-use-linux` or `~/projects/agent-workspace-linux` checkouts.
+
 ## Development
 
 ```bash
@@ -131,6 +150,7 @@ make test       # go test ./...
 make vet        # go vet ./...
 make gate       # build + vet + test + gofmt check
 make race       # focused race tests for daemon/agent packages
+make harness    # optional: install bundled computer-use + workspace helpers
 ```
 
 Before opening a PR, run:

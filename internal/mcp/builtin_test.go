@@ -6,7 +6,44 @@ import (
 	"testing"
 )
 
+func isolateComputerUse(t *testing.T) { t.Setenv("EIGEN_COMPUTER_USE_BIN", "/nonexistent") }
+
+func TestWithBuiltinServersAddsComputerUse(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "computer-use-linux")
+	os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755)
+	t.Setenv("EIGEN_COMPUTER_USE_BIN", bin)
+	t.Setenv("EIGEN_WORKSPACE_BIN", "/nonexistent")
+	t.Setenv("EIGEN_CHROME_BRIDGE", "/nonexistent")
+
+	got := withBuiltinServers(nil)
+	if len(got) != 1 || got[0].Name != "computer_use" {
+		t.Fatalf("computer_use should be auto-added, got %+v", got)
+	}
+	if got[0].Command[0] != bin || got[0].Command[1] != "mcp" {
+		t.Fatalf("command should use detected computer-use binary, got %v", got[0].Command)
+	}
+	if len(got[0].Tools) != len(computerUseTools) {
+		t.Fatalf("computer-use allowlist should apply, got %d", len(got[0].Tools))
+	}
+}
+
+func TestComputerUseUserWins(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "computer-use-linux")
+	os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755)
+	t.Setenv("EIGEN_COMPUTER_USE_BIN", bin)
+	t.Setenv("EIGEN_WORKSPACE_BIN", "/nonexistent")
+	t.Setenv("EIGEN_CHROME_BRIDGE", "/nonexistent")
+	user := []serverConfig{{Name: "computer_use", Command: []string{"my-computer-use"}}}
+	got := withBuiltinServers(user)
+	if len(got) != 1 || got[0].Command[0] != "my-computer-use" {
+		t.Fatalf("user's computer_use config must win, got %+v", got)
+	}
+}
+
 func TestWithBuiltinServersAddsWorkspace(t *testing.T) {
+	isolateComputerUse(t)
 	// Point the locator at a fake executable so detection succeeds.
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "agent-workspace-linux")
@@ -27,6 +64,7 @@ func TestWithBuiltinServersAddsWorkspace(t *testing.T) {
 }
 
 func TestWithBuiltinServersUserWins(t *testing.T) {
+	isolateComputerUse(t)
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "agent-workspace-linux")
 	os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755)
@@ -43,7 +81,26 @@ func TestWithBuiltinServersUserWins(t *testing.T) {
 	}
 }
 
+func TestHarnessBinariesIgnorePATHUnlessExplicit(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"computer-use-linux", "agent-workspace-linux"} {
+		p := filepath.Join(dir, name)
+		os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755)
+	}
+	t.Setenv("PATH", dir)
+	t.Setenv("EIGEN_COMPUTER_USE_BIN", "")
+	t.Setenv("EIGEN_WORKSPACE_BIN", "")
+	t.Setenv("HOME", t.TempDir())
+	if got := ComputerUseBinary(); got != "" {
+		t.Fatalf("computer-use PATH binary should not auto-register: %q", got)
+	}
+	if got := WorkspaceBinary(); got != "" {
+		t.Fatalf("workspace PATH binary should not auto-register: %q", got)
+	}
+}
+
 func TestWithBuiltinServersAbsentBinary(t *testing.T) {
+	isolateComputerUse(t)
 	t.Setenv("EIGEN_WORKSPACE_BIN", "/nonexistent/binary")
 	t.Setenv("EIGEN_CHROME_BRIDGE", "/nonexistent")
 	got := withBuiltinServers(nil)
@@ -69,7 +126,17 @@ func TestIsExecutable(t *testing.T) {
 	}
 }
 
+func TestChromeBridgeDoesNotDependOnSiblingCheckout(t *testing.T) {
+	isolateComputerUse(t)
+	t.Setenv("EIGEN_WORKSPACE_BIN", "/nonexistent")
+	t.Setenv("EIGEN_CHROME_BRIDGE", "")
+	if script, _ := ChromeBridge(); script != "" {
+		t.Fatalf("chrome bridge should require explicit configuration, got %q", script)
+	}
+}
+
 func TestWithBuiltinServersAddsChrome(t *testing.T) {
+	isolateComputerUse(t)
 	dir := t.TempDir()
 	// A fake bridge: <dir>/bin/mcp-server.js + a fake node binary.
 	os.MkdirAll(filepath.Join(dir, "bin"), 0o755)
@@ -94,6 +161,7 @@ func TestWithBuiltinServersAddsChrome(t *testing.T) {
 }
 
 func TestChromeBridgeUserWins(t *testing.T) {
+	isolateComputerUse(t)
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "bin"), 0o755)
 	os.WriteFile(filepath.Join(dir, "bin", "mcp-server.js"), []byte("//"), 0o644)
@@ -111,6 +179,7 @@ func TestChromeBridgeUserWins(t *testing.T) {
 }
 
 func TestChromeBridgeAbsentNode(t *testing.T) {
+	isolateComputerUse(t)
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "bin"), 0o755)
 	os.WriteFile(filepath.Join(dir, "bin", "mcp-server.js"), []byte("//"), 0o644)

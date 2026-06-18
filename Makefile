@@ -1,7 +1,7 @@
 EIGEN := bin/eigen
 PKGS := ./...
 
-.PHONY: build vet test race fmt gate perf perf-soak perf-bench stats clean
+.PHONY: build vet test race fmt gate harness perf perf-soak perf-bench stats clean
 
 build:
 	go build -o $(EIGEN) .
@@ -22,6 +22,11 @@ fmt:
 gate: build vet test
 	@test -z "$$(gofmt -l . | grep -v '^vendor/')" || (echo "gofmt needed:"; gofmt -l .; exit 1)
 	@echo "gate: OK"
+
+# Build/install Eigen-bundled helper binaries for the full local harness
+# (computer-use-linux + agent-workspace-linux). Requires Rust/Cargo only here.
+harness: build
+	$(EIGEN) harness install
 
 # Tier 23 performance + resource-health guard.
 #  - soak: session/attach/detach churn must not leak goroutines or sessions.

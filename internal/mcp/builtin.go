@@ -27,6 +27,16 @@ var workspaceTools = []string{
 	"workspace_cleanup_stale",
 }
 
+// computerUseTools is the Linux computer-use MCP server allowlist. Unlike the
+// isolated workspace server, these tools act on the user's REAL desktop, so the
+// descriptions/annotations from the server still drive approval decisions.
+var computerUseTools = []string{
+	"doctor", "setup_accessibility", "setup_window_targeting",
+	"list_apps", "list_windows", "focused_window", "get_app_state", "screenshot",
+	"activate_window", "click", "drag", "scroll", "press_key", "type_text",
+	"perform_action", "set_value",
+}
+
 // chromeBridgeTools is the full agent-chrome-bridge tool set — control of the
 // user's REAL, already-open, logged-in Chrome (their tabs/sessions), which a
 // throwaway Playwright browser can't do. Includes the tab-lock tools (dormant
@@ -56,8 +66,9 @@ func withBuiltinServers(user []serverConfig) []serverConfig {
 	// configured them without one — so workspace/chrome are always clearly
 	// described at Level-0 even if the user's mcp.json entry omits it.
 	builtinDesc := map[string]string{
-		"workspace": "isolated Linux desktop sandbox: launch apps, control a GUI/X11 session, run a browser, click/type, screenshot — a safe scratch machine separate from the user's real desktop",
-		"chrome":    "drive the user's REAL logged-in Chrome (their tabs, sessions, cookies) via the bridge extension: open/read/navigate tabs, click & type, extract page content, screenshot",
+		"workspace":    "isolated Linux desktop sandbox: launch apps, control a GUI/X11 session, run a browser, click/type, screenshot — a safe scratch machine separate from the user's real desktop",
+		"computer_use": "control the user's REAL Linux desktop via accessibility, screenshots, windows, clicks, keys, typing, scrolling, and semantic UI actions",
+		"chrome":       "drive the user's REAL logged-in Chrome (their tabs, sessions, cookies) via the bridge extension: open/read/navigate tabs, click & type, extract page content, screenshot",
 	}
 	for i := range user {
 		if strings.TrimSpace(user[i].Description) == "" {
@@ -73,6 +84,16 @@ func withBuiltinServers(user []serverConfig) []serverConfig {
 				Description: "isolated Linux desktop sandbox: launch apps, control a GUI/X11 session, run a browser, click/type, screenshot — a safe scratch machine separate from the user's real desktop",
 				Command:     []string{bin, "mcp", "--headless"},
 				Tools:       workspaceTools,
+			})
+		}
+	}
+	if !have["computer_use"] {
+		if bin := ComputerUseBinary(); bin != "" {
+			user = append(user, serverConfig{
+				Name:        "computer_use",
+				Description: "control the user's REAL Linux desktop via accessibility, screenshots, windows, clicks, keys, typing, scrolling, and semantic UI actions",
+				Command:     []string{bin, "mcp"},
+				Tools:       computerUseTools,
 			})
 		}
 	}
@@ -92,12 +113,12 @@ func withBuiltinServers(user []serverConfig) []serverConfig {
 	return user
 }
 
-// ChromeBridge locates the agent-chrome-bridge MCP server script and a node
-// runtime to run it. Script: EIGEN_CHROME_BRIDGE (a script path or the repo
-// dir), then ~/projects/agent-chrome-bridge/bin/mcp-server.js. Node:
+// ChromeBridge locates the optional agent-chrome-bridge MCP server script and a
+// node runtime to run it. Unlike Eigen's bundled harness helpers, this bridge is
+// not embedded because it requires a browser extension/native-host install; it
+// is registered only when explicitly configured with EIGEN_CHROME_BRIDGE. Node:
 // EIGEN_NODE_BIN, then PATH, then common nvm/local locations (the daemon's
-// minimal PATH often lacks an nvm node). Returns ("","") when either is absent
-// (the built-in is simply not registered).
+// minimal PATH often lacks an nvm node). Returns ("","") when either is absent.
 func ChromeBridge() (script, node string) {
 	script = chromeBridgeScript()
 	if script == "" {
@@ -121,12 +142,6 @@ func chromeBridgeScript() string {
 			return cand
 		}
 		return ""
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		p := filepath.Join(home, "projects", "agent-chrome-bridge", "bin", "mcp-server.js")
-		if isExecutableOrFile(p) {
-			return p
-		}
 	}
 	return ""
 }
@@ -173,18 +188,36 @@ func isExecutableOrFile(p string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// WorkspaceBinary locates the agent-workspace-linux binary: an explicit
-// override, then PATH, then the conventional ~/.local/bin install location.
-// Returns "" when not found (the built-in is simply not registered).
+// ComputerUseBinary locates Eigen's installed computer-use-linux helper. To keep
+// the harness self-contained, auto-detection uses only the explicit override or
+// Eigen's install location (~/.local/bin); arbitrary PATH binaries are ignored
+// unless the user opts in with EIGEN_COMPUTER_USE_BIN.
+func ComputerUseBinary() string {
+	if p := os.Getenv("EIGEN_COMPUTER_USE_BIN"); p != "" {
+		if isExecutable(p) {
+			return p
+		}
+		return ""
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		p := filepath.Join(home, ".local", "bin", "computer-use-linux")
+		if isExecutable(p) {
+			return p
+		}
+	}
+	return ""
+}
+
+// WorkspaceBinary locates Eigen's installed agent-workspace-linux helper. To
+// keep the harness self-contained, auto-detection uses only the explicit
+// override or Eigen's install location (~/.local/bin); arbitrary PATH binaries
+// are ignored unless the user opts in with EIGEN_WORKSPACE_BIN.
 func WorkspaceBinary() string {
 	if p := os.Getenv("EIGEN_WORKSPACE_BIN"); p != "" {
 		if isExecutable(p) {
 			return p
 		}
 		return ""
-	}
-	if p, err := exec.LookPath("agent-workspace-linux"); err == nil {
-		return p
 	}
 	if home, err := os.UserHomeDir(); err == nil {
 		p := filepath.Join(home, ".local", "bin", "agent-workspace-linux")
