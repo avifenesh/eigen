@@ -22,8 +22,7 @@ func (r *Registry) addMCPServer(name string, s MCPServer, bundleRoot string, ent
 	}
 	servers, _ := root["servers"].([]any)
 
-	// Build the eigen server entry: single `command` array (command + args),
-	// `env`, `description`. Rewrite the Claude root placeholder to OUR env ref.
+	// Build the eigen server entry and rewrite plugin-root placeholders to OUR env ref.
 	cmd := append([]string{}, s.Command...)
 	cmd = append(cmd, s.Args...)
 	for i := range cmd {
@@ -47,6 +46,12 @@ func (r *Registry) addMCPServer(name string, s MCPServer, bundleRoot string, ent
 	}
 	if len(cmd) > 0 {
 		srv["command"] = toAnySlice(cmd)
+	}
+	if strings.TrimSpace(s.URL) != "" {
+		srv["url"] = toEigenRoot(s.URL)
+	}
+	if strings.TrimSpace(s.Type) != "" {
+		srv["type"] = s.Type
 	}
 
 	// Replace any existing server of this name; else append.

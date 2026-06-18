@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,10 +16,11 @@ type Components struct {
 	Manifest   *PluginManifest // parsed .claude-plugin/plugin.json (may be nil if absent + lenient)
 	Skills     []SkillFile     // skills/<name>/SKILL.md
 	MCPServers []MCPServer     // .mcp.json (or manifest mcpServers path)
+	AppServers []MCPServer     // Codex apps normalized as MCP servers
 	Hooks      []HookSpec      // hooks/hooks.json (or manifest hooks path)
 	Commands   []CommandFile   // commands/*.md (Claude slash commands)
 	Agents     []AgentFile     // agents/*.md mapped into Eigen task roles at install
-	Apps       int             // Codex app integrations (not wired)
+	Apps       int             // Codex app integration count (wired where parseable)
 }
 
 // CommandFile is one slash-command markdown file from a plugin's commands/ dir.
@@ -117,7 +119,9 @@ func Discover(root string, lenient bool) (*Components, error) {
 		return nil, err
 	}
 	c.Agents = agents
-	c.Apps = countPathField(root, c.Manifest, "apps")
+	appServers, _ := discoverApps(root, c.Manifest)
+	c.AppServers = appServers
+	c.Apps = max(len(appServers), countPathField(root, c.Manifest, "apps"))
 	return c, nil
 }
 
@@ -267,6 +271,82 @@ func discoverMCP(root string, m *PluginManifest) ([]MCPServer, error) {
 			Name: name, Command: cmd, Args: args,
 			Env: s.Env, URL: s.URL, Type: s.Type, Description: s.Description,
 		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+func discoverApps(root string, m *PluginManifest) ([]MCPServer, error) {
+	if m == nil || len(strings.TrimSpace(string(m.Apps))) == 0 {
+		return nil, nil
+	}
+	raw := m.Apps
+	paths, err := resolveComponentPaths(root, raw, "apps")
+	if err != nil {
+		return nil, err
+	}
+
+	var out []MCPServer
+	seen := map[string]bool{}
+	add := func(name string, s rawMCPServer) {
+		name = strings.TrimSpace(name)
+		if name == "" || seen[name] {
+			return
+		}
+		cmd, args := parseCommandAndArgs(s.Command, s.Args)
+		if len(cmd) == 0 && strings.TrimSpace(s.URL) == "" {
+			return
+		}
+		seen[name] = true
+		out = append(out, MCPServer{
+			Name: name, Command: cmd, Args: args,
+			Env: s.Env, URL: s.URL, Type: s.Type, Description: s.Description,
+		})
+	}
+	addMCPObject := func(data []byte) {
+		for name, s := range parseMCPServers(data) {
+			add(name, s)
+		}
+	}
+
+	if len(paths) > 0 {
+		for _, path := range paths {
+			info, err := os.Stat(path)
+			if err != nil || info.IsDir() || strings.ToLower(filepath.Ext(path)) != ".json" {
+				continue
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			addMCPObject(data)
+		}
+	} else if isJSONObject(raw) {
+		addMCPObject(raw)
+	} else if isJSONArray(raw) {
+		var arr []json.RawMessage
+		if err := json.Unmarshal(raw, &arr); err == nil {
+			for i, item := range arr {
+				if !isJSONObject(item) {
+					continue
+				}
+				var name struct {
+					Name string `json:"name"`
+				}
+				if err := json.Unmarshal(item, &name); err != nil {
+					continue
+				}
+				var s rawMCPServer
+				if err := json.Unmarshal(item, &s); err != nil {
+					continue
+				}
+				serverName := strings.TrimSpace(name.Name)
+				if serverName == "" {
+					serverName = fmt.Sprintf("app-%d", i)
+				}
+				add(serverName, s)
+			}
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil

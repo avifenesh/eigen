@@ -487,6 +487,82 @@ func TestInstallCodexMarketplaceAndMapsAgentsToRoles(t *testing.T) {
 	}
 }
 
+func TestCodexAppsAreDiscoveredAndWiredAsMCPServers(t *testing.T) {
+	dir := t.TempDir()
+	market := filepath.Join(dir, "codex-market")
+	pluginRoot := filepath.Join(market, "plugins", "appbox")
+	mustWrite(t, filepath.Join(market, ".agents", "plugins", "marketplace.json"), `{
+	  "name": "codex-market",
+	  "owner": {"name": "Jane"},
+	  "plugins": [{"name": "appbox", "source": {"source": "local", "path": "./plugins/appbox"}}]
+	}`)
+	mustWrite(t, filepath.Join(pluginRoot, ".codex-plugin", "plugin.json"), `{
+	  "name": "appbox",
+	  "version": "1.0.0",
+	  "apps": "./apps.json"
+	}`)
+	mustWrite(t, filepath.Join(pluginRoot, "apps.json"), `{
+	  "mcpServers": {
+	    "browser": {
+	      "command": ["node", "${CODEX_PLUGIN_ROOT}/app-server.js"],
+	      "env": {"APP_ROOT": "${CODEX_PLUGIN_ROOT}"},
+	      "description": "browser app tools"
+	    }
+	  }
+	}`)
+	mustWrite(t, filepath.Join(pluginRoot, "app-server.js"), "// app mcp server\n")
+
+	comps, err := Discover(pluginRoot, false)
+	if err != nil {
+		t.Fatalf("discover: %v", err)
+	}
+	if comps.Apps != 1 || len(comps.AppServers) != 1 || comps.AppServers[0].Name != "browser" {
+		t.Fatalf("apps=%d appServers=%+v", comps.Apps, comps.AppServers)
+	}
+
+	r := NewRegistryAt(filepath.Join(dir, "eigen"))
+	if _, _, err := r.AddMarketplace(context.Background(), market, nil); err != nil {
+		t.Fatalf("add marketplace: %v", err)
+	}
+	pv, err := r.PreviewPlugin(context.Background(), "appbox", "", nil)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if pv.Apps != 0 || len(pv.Warnings) != 0 || len(pv.MCPServers) != 1 || pv.MCPServers[0] != "app-browser" {
+		t.Fatalf("preview should show wired app as mcp server without warnings: %+v", pv)
+	}
+
+	res, err := r.InstallPlugin(context.Background(), "appbox", "", InstallOptions{})
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if len(res.Warnings) != 0 {
+		t.Fatalf("fully wired app should not warn, got %v", res.Warnings)
+	}
+	if len(res.Plugin.MCPServers) != 1 || res.Plugin.MCPServers[0] != "appbox-app-browser" {
+		t.Fatalf("installed mcp servers = %v", res.Plugin.MCPServers)
+	}
+
+	mcp, _ := readObj(r.MCPPath())
+	servers, _ := mcp["servers"].([]any)
+	if len(servers) != 1 {
+		t.Fatalf("want 1 mcp server, got %d", len(servers))
+	}
+	srv := servers[0].(jsonObj)
+	if srv["name"] != "appbox-app-browser" || srv["description"] != "browser app tools" {
+		t.Fatalf("bad app server entry: %+v", srv)
+	}
+	cmd := srv["command"].([]any)
+	if len(cmd) != 2 || cmd[0] != "node" || !strings.Contains(cmd[1].(string), "${EIGEN_PLUGIN_ROOT}") {
+		t.Fatalf("app mcp command should use eigen root var: %v", cmd)
+	}
+	env := srv["env"].(jsonObj)
+	bundle := filepath.Join(r.PluginsDir(), "appbox")
+	if env["EIGEN_PLUGIN_ROOT"] != bundle || env["APP_ROOT"] != "${EIGEN_PLUGIN_ROOT}" {
+		t.Fatalf("bad app mcp env: %+v", env)
+	}
+}
+
 func mustWrite(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

@@ -42,7 +42,7 @@ type InstallOptions struct {
 type InstallResult struct {
 	Plugin   InstalledPlugin
 	Scans    []ScanFinding // per-component scan verdicts (RISKY ones, when forced)
-	Warnings []string      // non-fatal notes (e.g. Codex app integrations not wired yet)
+	Warnings []string      // non-fatal notes (e.g. app integrations that could not be wired)
 }
 
 // ScanFinding is one component's risky scan verdict (surfaced to the user).
@@ -316,10 +316,13 @@ func buildPluginPreview(entry PluginEntry, mkt string, comps *Components) *Plugi
 	for _, s := range comps.MCPServers {
 		pv.MCPServers = append(pv.MCPServers, s.Name)
 	}
+	for _, s := range comps.AppServers {
+		pv.MCPServers = append(pv.MCPServers, "app-"+s.Name)
+	}
 	pv.Hooks = len(comps.Hooks)
-	pv.Apps = comps.Apps
-	if comps.Apps > 0 {
-		pv.Warnings = append(pv.Warnings, fmt.Sprintf("%d Codex app integration(s) not wired yet", comps.Apps))
+	pv.Apps = max(0, comps.Apps-len(comps.AppServers))
+	if pv.Apps > 0 {
+		pv.Warnings = append(pv.Warnings, fmt.Sprintf("%d Codex app integration(s) could not be wired as MCP servers", pv.Apps))
 	}
 	return pv
 }
@@ -418,6 +421,13 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 		}
 		res.Plugin.MCPServers = append(res.Plugin.MCPServers, name)
 	}
+	for _, s := range comps.AppServers {
+		name := pluginName + "-app-" + s.Name
+		if err := r.addMCPServer(name, s, dest, entry); err != nil {
+			return nil, fmt.Errorf("wire app mcp %q: %w", s.Name, err)
+		}
+		res.Plugin.MCPServers = append(res.Plugin.MCPServers, name)
+	}
 
 	// 3) Wire hooks (${ROOT}-expanded) into hooks.json.
 	if n, err := r.addHooks(comps.Hooks, dest); err != nil {
@@ -475,8 +485,8 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 		res.Plugin.AgentRoles = append(res.Plugin.AgentRoles, installedAgentRole(instName, af))
 	}
 
-	if comps.Apps > 0 {
-		res.Warnings = append(res.Warnings, fmt.Sprintf("%d Codex app integration(s) not wired yet", comps.Apps))
+	if unwiredApps := comps.Apps - len(comps.AppServers); unwiredApps > 0 {
+		res.Warnings = append(res.Warnings, fmt.Sprintf("%d Codex app integration(s) could not be wired as MCP servers", unwiredApps))
 	}
 	switch {
 	case opts.Scanner == nil:

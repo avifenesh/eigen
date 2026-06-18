@@ -162,7 +162,7 @@ type PluginManifest struct {
 	Hooks           json.RawMessage `json:"hooks,omitempty"`       // default hooks/hooks.json
 	MCPServers      json.RawMessage `json:"mcpServers,omitempty"`  // default .mcp.json
 	MCPServersSnake json.RawMessage `json:"mcp_servers,omitempty"` // Codex legacy/wrapped spelling
-	Apps            json.RawMessage `json:"apps,omitempty"`        // Codex app integrations (reported, not wired)
+	Apps            json.RawMessage `json:"apps,omitempty"`        // Codex app integrations (wired as MCP servers when parseable)
 }
 
 // ParseMarketplace parses a marketplace.json byte slice, validating the minimum
