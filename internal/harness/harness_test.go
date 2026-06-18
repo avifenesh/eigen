@@ -20,6 +20,19 @@ func TestEmbeddedComponentsContainCargoManifests(t *testing.T) {
 	}
 }
 
+func TestChromeConnectorBackgroundHandlesSpaceAndNativeHostDisconnect(t *testing.T) {
+	b, err := SourceFS.ReadFile("embedded/chrome-bridge/extension/background.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	for _, want := range []string{"function cdpKeyDescriptor", "type: 'char'", "text: descriptor.text", "chrome.runtime.lastError", "Native host has exited", "cdpKeyCharEvent", "nativeDisconnectLastErrorHandled"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("background.js missing %q", want)
+		}
+	}
+}
+
 func TestInstallChromeBridgeWritesConnectorOnlyFiles(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

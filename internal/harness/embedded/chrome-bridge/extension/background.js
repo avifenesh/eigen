@@ -27,6 +27,16 @@ function connectNative() {
   });
 
   port.onDisconnect.addListener(() => {
+    // Reading runtime.lastError is required: Chrome records an "Unchecked
+    // runtime.lastError: Native host has exited" extension error if a native
+    // messaging port disconnects and the callback never inspects the error.
+    // Reloading/upgrading the connector intentionally tears down the old native
+    // host, so consume the diagnostic and reconnect instead of surfacing it as
+    // an extension failure.
+    const lastError = chrome.runtime.lastError;
+    if (lastError && lastError.message) {
+      console.warn(`native host disconnected: ${lastError.message}`);
+    }
     port = null;
     scheduleReconnect();
   });
@@ -113,6 +123,10 @@ async function bridgeInfo(params = {}) {
       version: manifest.version,
       backgroundVersion: BRIDGE_VERSION,
       manifestVersion: manifest.manifest_version,
+      features: {
+        cdpKeyCharEvent: true,
+        nativeDisconnectLastErrorHandled: true,
+      },
     },
     contentScript: {
       ok: false,
@@ -668,17 +682,88 @@ function resolveCdpModifiers(params) {
   return bits;
 }
 
+function cdpKeyDescriptor(params, modifiers) {
+  const rawKey = String(params.key);
+  const alias = rawKey.toLowerCase().trim();
+  let key = rawKey;
+  let code = params.code || rawKey;
+  let text = '';
+  let windowsVirtualKeyCode = 0;
+
+  if (rawKey === ' ' || alias === 'space' || alias === 'spacebar') {
+    key = ' ';
+    code = params.code || 'Space';
+    text = ' ';
+    windowsVirtualKeyCode = 32;
+  } else if ([...rawKey].length === 1 && rawKey >= ' ' && rawKey !== '\u007f') {
+    text = rawKey;
+    const upper = rawKey.toUpperCase();
+    if (/^[A-Z]$/.test(upper)) {
+      code = params.code || `Key${upper}`;
+      windowsVirtualKeyCode = upper.charCodeAt(0);
+    } else if (/^[0-9]$/.test(rawKey)) {
+      code = params.code || `Digit${rawKey}`;
+      windowsVirtualKeyCode = rawKey.charCodeAt(0);
+    }
+  } else {
+    const named = {
+      enter: ['Enter', 'Enter', 13],
+      return: ['Enter', 'Enter', 13],
+      tab: ['Tab', 'Tab', 9],
+      escape: ['Escape', 'Escape', 27],
+      esc: ['Escape', 'Escape', 27],
+      backspace: ['Backspace', 'Backspace', 8],
+      delete: ['Delete', 'Delete', 46],
+      arrowleft: ['ArrowLeft', 'ArrowLeft', 37],
+      left: ['ArrowLeft', 'ArrowLeft', 37],
+      arrowup: ['ArrowUp', 'ArrowUp', 38],
+      up: ['ArrowUp', 'ArrowUp', 38],
+      arrowright: ['ArrowRight', 'ArrowRight', 39],
+      right: ['ArrowRight', 'ArrowRight', 39],
+      arrowdown: ['ArrowDown', 'ArrowDown', 40],
+      down: ['ArrowDown', 'ArrowDown', 40],
+    }[alias];
+    if (named) {
+      [key, code, windowsVirtualKeyCode] = named;
+      code = params.code || code;
+    }
+  }
+
+  // Printable characters should produce a CDP `char` event in addition to the
+  // keydown/up pair. Without this, focused text editors receive a Space keydown
+  // but do not insert an actual space, which made browser notepad-style pages
+  // collapse "a b" into "ab".
+  if (modifiers & (CDP_MODIFIER_BITS.ctrl | CDP_MODIFIER_BITS.meta | CDP_MODIFIER_BITS.alt)) {
+    text = '';
+  }
+
+  const event = { key, code, modifiers };
+  if (windowsVirtualKeyCode) {
+    event.windowsVirtualKeyCode = windowsVirtualKeyCode;
+    event.nativeVirtualKeyCode = windowsVirtualKeyCode;
+  }
+  return { event, text, key, code };
+}
+
 async function cdpKey(params) {
   const tab = await resolveTab(params);
   assertTabGuard(tab, params);
   if (!params.key) throw new Error('key is required');
-  const key = String(params.key);
   const modifiers = resolveCdpModifiers(params);
+  const descriptor = cdpKeyDescriptor(params, modifiers);
   await withDebugger(tab.id, async (target) => {
-    await cdpSend(target, 'Input.dispatchKeyEvent', { type: 'rawKeyDown', key, code: params.code || key, modifiers });
-    await cdpSend(target, 'Input.dispatchKeyEvent', { type: 'keyUp', key, code: params.code || key, modifiers });
+    await cdpSend(target, 'Input.dispatchKeyEvent', { ...descriptor.event, type: 'rawKeyDown' });
+    if (descriptor.text) {
+      await cdpSend(target, 'Input.dispatchKeyEvent', {
+        ...descriptor.event,
+        type: 'char',
+        text: descriptor.text,
+        unmodifiedText: descriptor.text,
+      });
+    }
+    await cdpSend(target, 'Input.dispatchKeyEvent', { ...descriptor.event, type: 'keyUp' });
   });
-  return { tab: tabSummary(tab), pressed: true, key, modifiers };
+  return { tab: tabSummary(tab), pressed: true, key: descriptor.key, code: descriptor.code, modifiers };
 }
 
 async function cdpType(params) {
