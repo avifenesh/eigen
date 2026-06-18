@@ -185,6 +185,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		return deps.Agent.JudgeGoal(ctx, judge, evidence)
 	}
 	reviewRun := router.crossReviewer(func() string { return effectiveModel(p.Provider, p.Model) })
+	planRun := router.councilRunner(func() string { return effectiveModel(p.Provider, p.Model) })
 
 	// Backgrounded shells: bash background=true / on-demand detach. The registry
 	// is shared by the bash, bash_output and kill_shell tools and the agent.
@@ -201,7 +202,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		tool.TaskGroup(taskGroup), tool.TaskGroupMutating(taskGroupMut),
 		tool.Retrieve(retrieveRunner(p.Dir)),
 		tool.GenerateImage(imageGenRunner(p.Dir)),
-		tool.GoalAchieved(goalJudge), tool.Review(reviewRun),
+		tool.GoalAchieved(goalJudge), tool.Review(reviewRun), tool.Plan(planRun),
 		tool.WebSearch(), // always available: keyless chain, keyed/SearXNG preferred
 	}
 	builtin := map[string]bool{}
