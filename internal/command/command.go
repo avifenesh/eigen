@@ -22,13 +22,14 @@ import (
 
 // Command is one custom slash command parsed from a markdown file.
 type Command struct {
-	Name        string // slash name (file basename sans .md), e.g. "review"
-	Description string // frontmatter description (shown in the menu)
-	ArgHint     string // frontmatter argument-hint (shown after the name)
-	Model       string // frontmatter model: run this command on a specific model
-	Body        string // the prompt template (frontmatter stripped)
-	Path        string // source file
-	Scope       string // "project" or "user"
+	Name         string   // slash name (file basename sans .md), e.g. "review"
+	Description  string   // frontmatter description (shown in the menu)
+	ArgHint      string   // frontmatter argument-hint (shown after the name)
+	Model        string   // frontmatter model: run this command on a specific model
+	AllowedTools []string // frontmatter allowed-tools: restrict the turn to these tools
+	Body         string   // the prompt template (frontmatter stripped)
+	Path         string   // source file
+	Scope        string   // "project" or "user"
 }
 
 // Dirs returns the command directories in precedence order: project first
@@ -116,8 +117,8 @@ func (s *Set) Len() int { return len(s.order) }
 var fmKey = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9_-]*):[ \t]*(.*)$`)
 
 // parse splits optional leading "--- … ---" frontmatter and returns the command.
-// description, argument-hint, and model are read; other keys (allowed-tools,
-// codex-description, …) are tolerated and ignored.
+// description, argument-hint, model, and allowed-tools are read; other keys
+// (codex-description, …) are tolerated and ignored.
 func parse(name, content string) Command {
 	c := Command{Name: name}
 	body := content
@@ -145,6 +146,8 @@ func parse(name, content string) Command {
 					c.ArgHint = val
 				case "model":
 					c.Model = val
+				case "allowed-tools", "allowed_tools", "allowedtools":
+					c.AllowedTools = splitToolList(val)
 				}
 			}
 			body = strings.Join(lines[end+1:], "\n")
@@ -155,6 +158,24 @@ func parse(name, content string) Command {
 		c.Description = "custom command"
 	}
 	return c
+}
+
+// splitToolList parses a frontmatter allowed-tools value: a comma-separated
+// list of tool names (Claude form, e.g. "Read, Write, Bash(git:*)"). Whitespace
+// is trimmed and empty entries dropped; argument scopes like "(git:*)" are kept
+// verbatim here and normalized at enforcement time.
+func splitToolList(val string) []string {
+	parts := strings.Split(val, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // argTokens splits an argument string into whitespace-separated tokens, honoring

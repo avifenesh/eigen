@@ -178,7 +178,7 @@ func (s *Session) wakeForBg(id string) {
 	}
 	msg := "Your background task " + id + " finished. Here is its result:\n\n" + result +
 		"\n\nContinue: incorporate this and proceed, or report back if it completes your work."
-	s.send(msg, nil)
+	s.send(msg, nil, nil)
 }
 
 func (s *Session) goalJudgeAvailable() bool {
@@ -197,14 +197,14 @@ func (s *Session) wakeForGoalStart() {
 	if !s.goalJudgeAvailable() || strings.TrimSpace(s.agent.CurrentGoal()) == "" {
 		return
 	}
-	s.send(agent.GoalStartInstruction, nil)
+	s.send(agent.GoalStartInstruction, nil, nil)
 }
 
 func (s *Session) wakeForGoalContinue() {
 	if !s.goalJudgeAvailable() || strings.TrimSpace(s.agent.CurrentGoal()) == "" {
 		return
 	}
-	s.send(agent.GoalContinueInstruction, nil)
+	s.send(agent.GoalContinueInstruction, nil, nil)
 }
 
 // maxReplayEvents bounds the per-session replay buffer — large enough to cover
@@ -239,7 +239,7 @@ func (s *Session) attach() (replay []agent.Event, live <-chan agent.Event, detac
 
 // send runs a turn on the session (one at a time). It returns immediately;
 // progress arrives via events. A turn already running is rejected.
-func (s *Session) send(task string, images []llm.Image) bool {
+func (s *Session) send(task string, images []llm.Image, allowTools []string) bool {
 	s.mu.Lock()
 	if s.running {
 		s.mu.Unlock()
@@ -253,6 +253,9 @@ func (s *Session) send(task string, images []llm.Image) bool {
 	s.mu.Unlock()
 
 	sess := s.sess
+	// Per-turn allowed-tools (a slash command's allowed-tools): the agent
+	// consumes and clears it for exactly this turn.
+	sess.SetTurnTools(allowTools)
 	go s.runTurn(ctx, func() (string, error) { return sess.SendWith(ctx, task, images) })
 	return true
 }

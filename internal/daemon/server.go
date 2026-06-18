@@ -284,7 +284,7 @@ func (s *Server) handle(conn net.Conn) {
 				send(Response{Type: "error", Error: "no such session"})
 				continue
 			}
-			if sess.send(req.Text, req.Images) {
+			if sess.send(req.Text, req.Images, req.AllowTools) {
 				send(Response{Type: "ok"})
 				continue
 			}

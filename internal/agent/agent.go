@@ -259,6 +259,44 @@ type Session struct {
 	// next turn. This is the "steer, don't queue-to-end" contract.
 	steerMu sync.Mutex
 	steer   []llm.Message
+
+	// allowTools, when non-empty, restricts the turn to this set of tool names
+	// (a slash command's `allowed-tools` frontmatter). It is consumed at the
+	// START of drive() and cleared at the end, so it scopes exactly one turn:
+	// only these tools are offered to the model and only these may dispatch.
+	// Guarded by allowMu (set from the UI goroutine before Send).
+	allowMu    sync.Mutex
+	allowTools []string
+}
+
+// SetTurnTools restricts the NEXT turn to the given tool names (a slash
+// command's `allowed-tools`). Empty/nil clears the restriction. The set is
+// consumed and cleared by drive() so it never leaks into a later turn.
+func (s *Session) SetTurnTools(names []string) {
+	s.allowMu.Lock()
+	if len(names) == 0 {
+		s.allowTools = nil
+	} else {
+		s.allowTools = append([]string(nil), names...)
+	}
+	s.allowMu.Unlock()
+}
+
+// turnTools returns the active per-turn allowlist (a copy), or nil.
+func (s *Session) turnTools() []string {
+	s.allowMu.Lock()
+	defer s.allowMu.Unlock()
+	if len(s.allowTools) == 0 {
+		return nil
+	}
+	return append([]string(nil), s.allowTools...)
+}
+
+// clearTurnTools drops the per-turn allowlist (called at end of drive()).
+func (s *Session) clearTurnTools() {
+	s.allowMu.Lock()
+	s.allowTools = nil
+	s.allowMu.Unlock()
 }
 
 // Steer injects a message into a RUNNING turn: it's appended to the
@@ -1148,6 +1186,8 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("agent: nil tools")
 	}
 	s.persist()
+	defer s.clearTurnTools()       // per-turn allowed-tools never leak into a later turn
+	allow := s.turnTools()         // nil = unrestricted; non-empty = command's allowed-tools
 	disclose := a.Tools.HasNiche() // progressive tool disclosure when any niche tools exist
 	emptyTurns := 0
 	reasoningOnlyTurns := 0               // consecutive reason-only turns (thinking across turns; bounded so a never-acting model can't spin forever)
@@ -1223,6 +1263,12 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 					sys += "\n- " + l
 				}
 			}
+		}
+		// Per-turn allowed-tools (a slash command's `allowed-tools`): offer only
+		// the permitted tools to the model. Enforcement is belt-and-suspenders —
+		// dispatch also denies a non-allowed call below.
+		if len(allow) > 0 {
+			specs = filterSpecs(specs, allow)
 		}
 		req := llm.Request{
 			System: sys,
@@ -1376,7 +1422,7 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		// before ever parallelizing this loop.
 		for _, tc := range resp.ToolCalls {
 			a.emit(Event{Kind: EventToolStart, Step: step, ToolName: tc.Name, ToolID: tc.ID, ToolArgs: tc.Arguments})
-			result, isErr := a.dispatch(ctx, tc)
+			result, isErr := a.dispatch(ctx, tc, allow)
 			a.emit(Event{Kind: EventToolResult, Step: step, ToolName: tc.Name, ToolID: tc.ID, Result: result.Text, IsError: isErr})
 			// Append the tool result and dedupe older identical outputs in one
 			// locked step (DedupeToolResults mutates earlier entries in place).
@@ -1430,10 +1476,52 @@ func (a *Agent) emit(e Event) {
 	}
 }
 
+// normalizeToolName lowercases a tool name and strips any Claude-style argument
+// scope, so an allowed-tools entry like "Bash(git:*)" or "Read" matches the
+// registered tool name ("bash", "read"). Hyphens/underscores are unified too
+// (e.g. "MultiEdit" stays, "task-group" → "task_group").
+func normalizeToolName(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexByte(s, '('); i >= 0 {
+		s = s[:i]
+	}
+	s = strings.ToLower(strings.TrimSpace(s))
+	return strings.ReplaceAll(s, "-", "_")
+}
+
+// toolAllowed reports whether name is permitted by the allowlist (case- and
+// scope-insensitive). An empty allowlist means unrestricted (callers guard).
+func toolAllowed(name string, allow []string) bool {
+	n := normalizeToolName(name)
+	for _, a := range allow {
+		if normalizeToolName(a) == n {
+			return true
+		}
+	}
+	return false
+}
+
+// filterSpecs returns the subset of specs whose name is in the allowlist
+// (normalized match). Used to offer a slash command's allowed-tools only.
+func filterSpecs(specs []llm.ToolSpec, allow []string) []llm.ToolSpec {
+	out := specs[:0:0]
+	for _, sp := range specs {
+		if toolAllowed(sp.Name, allow) {
+			out = append(out, sp)
+		}
+	}
+	return out
+}
+
 // dispatch runs one tool call, enforcing the permission posture, and returns the
 // result (or an error string) to feed back to the model plus whether it failed.
-func (a *Agent) dispatch(ctx context.Context, tc llm.ToolCall) (tool.Result, bool) {
+// allow, when non-empty, is the per-turn allowed-tools allowlist: a call to a
+// tool outside it is denied (belt-and-suspenders with the spec filtering).
+func (a *Agent) dispatch(ctx context.Context, tc llm.ToolCall, allow []string) (tool.Result, bool) {
 	errResult := func(s string) (tool.Result, bool) { return tool.Result{Text: s}, true }
+	if len(allow) > 0 && !toolAllowed(tc.Name, allow) {
+		return errResult(fmt.Sprintf("Denied: tool %q is not in this command's allowed-tools.", tc.Name))
+	}
 	def, ok := a.Tools.Get(tc.Name)
 	if !ok {
 		return errResult(fmt.Sprintf("Error: unknown tool %q", tc.Name))

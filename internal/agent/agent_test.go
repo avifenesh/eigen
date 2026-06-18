@@ -1621,3 +1621,105 @@ func TestReasoningOnlyTurnsBounded(t *testing.T) {
 		t.Fatalf("want a reasoning-only-bound error, got %v", err)
 	}
 }
+
+func TestTurnToolsHelpers(t *testing.T) {
+	allow := []string{"Read", "Bash(git:*)", "task-group"}
+	if !toolAllowed("read", allow) {
+		t.Fatal("read should be allowed (case-insensitive)")
+	}
+	if !toolAllowed("bash", allow) {
+		t.Fatal("bash should be allowed (scope stripped)")
+	}
+	if !toolAllowed("task_group", allow) {
+		t.Fatal("task_group should match task-group (hyphen/underscore unified)")
+	}
+	if toolAllowed("write", allow) {
+		t.Fatal("write must NOT be allowed")
+	}
+	specs := []llm.ToolSpec{{Name: "read"}, {Name: "write"}, {Name: "bash"}}
+	got := filterSpecs(specs, allow)
+	if len(got) != 2 {
+		t.Fatalf("filterSpecs kept %d, want 2 (read+bash)", len(got))
+	}
+	for _, sp := range got {
+		if sp.Name == "write" {
+			t.Fatal("filterSpecs must drop write")
+		}
+	}
+}
+
+func TestSetTurnToolsRestrictsAndClears(t *testing.T) {
+	read := callTool("read")
+	read.ReadOnly = true
+	write := callTool("write") // mutating
+	reg, err := tool.NewRegistry(read, write)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Turn 1: restrict to {read}. The model is offered only `read`, and a
+	// `write` call is denied even though perm is Auto.
+	prov := &mockProvider{replies: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "c1", Name: "write", Arguments: json.RawMessage(`{}`)}}},
+		{Text: "turn1 done"},
+	}}
+	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto}
+	s := a.NewSession()
+	s.SetTurnTools([]string{"read"})
+	out, err := s.Send(context.Background(), "do it")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "turn1 done" {
+		t.Fatalf("got %q", out)
+	}
+	// Offered specs must have excluded write.
+	if names := specNames(prov.seen[0].Tools); contains(names, "write") || !contains(names, "read") {
+		t.Fatalf("turn1 specs = %v, want only read", names)
+	}
+	// The write call must have been denied (fed back as an error tool result).
+	last := prov.seen[1]
+	denied := false
+	for _, m := range last.Messages {
+		if m.Role == llm.RoleTool && strings.Contains(m.Text, "not in this command's allowed-tools") {
+			denied = true
+		}
+	}
+	if !denied {
+		t.Fatal("write should have been denied by the per-turn allowlist")
+	}
+
+	// Turn 2: allowlist must have CLEARED — write is offered again and runs.
+	prov.replies = []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "c2", Name: "write", Arguments: json.RawMessage(`{}`)}}},
+		{Text: "turn2 done"},
+	}
+	prov.i = 0
+	prov.seen = nil
+	out, err = s.Send(context.Background(), "again")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "turn2 done" {
+		t.Fatalf("turn2 got %q", out)
+	}
+	if names := specNames(prov.seen[0].Tools); !contains(names, "write") {
+		t.Fatalf("turn2 specs = %v, want write offered again (allowlist cleared)", names)
+	}
+}
+
+func specNames(specs []llm.ToolSpec) []string {
+	out := make([]string, 0, len(specs))
+	for _, s := range specs {
+		out = append(out, s.Name)
+	}
+	return out
+}
+
+func contains(ss []string, want string) bool {
+	for _, s := range ss {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}

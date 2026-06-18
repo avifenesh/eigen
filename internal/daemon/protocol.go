@@ -40,6 +40,9 @@ type Request struct {
 	AddDir string `json:"add_dir,omitempty"`
 	// kill-shell: the backgrounded shell id to stop
 	Shell string `json:"shell,omitempty"`
+	// input: per-turn allowed-tools (a slash command's allowed-tools); restricts
+	// just the turn this input starts.
+	AllowTools []string `json:"allow_tools,omitempty"`
 }
 
 // Response is a daemon→view message. Type discriminates the payload.

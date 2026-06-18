@@ -241,9 +241,11 @@ func (c *Client) Attach(id string, handler func(e WireEvent, replay bool)) error
 	return err
 }
 
-// Input sends a user message (with optional images) to a session.
-func (c *Client) Input(id, text string, images []llm.Image) error {
-	_, err := c.request(Request{Op: "input", ID: id, Text: text, Images: images})
+// Input sends a user message (with optional images) to a session. allowTools,
+// when non-empty, restricts just this turn to those tool names (a slash
+// command's allowed-tools).
+func (c *Client) Input(id, text string, images []llm.Image, allowTools []string) error {
+	_, err := c.request(Request{Op: "input", ID: id, Text: text, Images: images, AllowTools: allowTools})
 	return err
 }
 

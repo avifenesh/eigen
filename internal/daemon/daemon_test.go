@@ -166,7 +166,7 @@ func TestClientEndToEnd(t *testing.T) {
 	if err := c.Attach(id, func(e WireEvent, replay bool) { events <- e }); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Input(id, "hi", nil); err != nil {
+	if err := c.Input(id, "hi", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.After(3 * time.Second)
@@ -230,7 +230,7 @@ func TestInterruptEmitsTerminalNote(t *testing.T) {
 	s := newSession("x", "/tmp", "m", a)
 	_, live, detach := s.attach()
 	defer detach()
-	if !s.send("go", nil) {
+	if !s.send("go", nil, nil) {
 		t.Fatal("send should start")
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -314,7 +314,7 @@ func TestApprovalRoundTripOverSocket(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Input(id, "do the thing", nil); err != nil {
+	if err := c.Input(id, "do the thing", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	// The blocked tool call must surface as an approval event.
@@ -373,7 +373,7 @@ func TestApprovalDenied(t *testing.T) {
 			dones <- e
 		}
 	})
-	c.Input(id, "go", nil)
+	c.Input(id, "go", nil, nil)
 	var ap WireEvent
 	select {
 	case ap = <-approvals:
@@ -472,7 +472,7 @@ func TestTurnPanicDoesNotCrashDaemonEmitsError(t *testing.T) {
 	s := newSession("x", "/tmp", "m", a)
 	_, live, detach := s.attach()
 	defer detach()
-	if !s.send("go", nil) {
+	if !s.send("go", nil, nil) {
 		t.Fatal("send should start")
 	}
 	deadline := time.After(2 * time.Second)
@@ -537,7 +537,7 @@ func TestStateReportsRunning(t *testing.T) {
 	if s.state().Running {
 		t.Fatal("a fresh session should not be running")
 	}
-	if !s.send("go", nil) {
+	if !s.send("go", nil, nil) {
 		t.Fatal("send should start the turn")
 	}
 	// The blocking provider holds the turn open: state must report running.
@@ -680,7 +680,7 @@ func TestBackgroundedTurnNotifies(t *testing.T) {
 
 	// No views attached: a finished turn should notify.
 	s := mk()
-	if !s.send("go", nil) {
+	if !s.send("go", nil, nil) {
 		t.Fatal("send should start")
 	}
 	waitIdle(t, s)
@@ -695,7 +695,7 @@ func TestBackgroundedTurnNotifies(t *testing.T) {
 	s2 := mk()
 	_, _, detach := s2.attach()
 	defer detach()
-	if !s2.send("go", nil) {
+	if !s2.send("go", nil, nil) {
 		t.Fatal("send should start")
 	}
 	waitIdle(t, s2)

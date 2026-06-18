@@ -129,6 +129,10 @@ func (l *Local) Tools() []ToolInfo {
 
 func (l *Local) Provider() llm.Provider { return l.a.Provider }
 
+// SetTurnTools restricts the next turn to the given tool names (slash command
+// allowed-tools); the agent consumes and clears it per turn.
+func (l *Local) SetTurnTools(names []string) { l.s.SetTurnTools(names) }
+
 // Shells lists the agent's backgrounded bash shells.
 func (l *Local) Shells() []ShellInfo {
 	if l.a.Shells == nil {

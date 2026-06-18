@@ -86,6 +86,10 @@ type Backend interface {
 	// Tools lists registered tools (for /tools). Empty when unknown.
 	Tools() []ToolInfo
 
+	// SetTurnTools restricts the NEXT Send to the given tool names (a slash
+	// command's allowed-tools); empty clears. Scoped to one turn by the agent.
+	SetTurnTools([]string)
+
 	// Shells lists the backgrounded bash shells (the shells panel). Empty when
 	// none or unsupported. KillShell stops one by id (returns false if unknown
 	// or already stopped).

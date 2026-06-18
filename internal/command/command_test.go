@@ -28,6 +28,9 @@ You are the System Prompt Curator. Do the work for: $ARGUMENTS
 	if c.Model != "claude-opus-4" {
 		t.Fatalf("model = %q, want claude-opus-4", c.Model)
 	}
+	if len(c.AllowedTools) != 2 || c.AllowedTools[0] != "Read" || c.AllowedTools[1] != "Write" {
+		t.Fatalf("allowed-tools = %v, want [Read Write]", c.AllowedTools)
+	}
 	if strings.Contains(c.Body, "---") || strings.Contains(c.Body, "allowed-tools") {
 		t.Fatalf("frontmatter leaked into body: %q", c.Body)
 	}

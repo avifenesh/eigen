@@ -707,6 +707,12 @@ func (m *model) runCustomCommand(name, arg string) tea.Cmd {
 			m.note(name + ": model → " + m.modelID)
 		}
 	}
+	// Honor `allowed-tools` frontmatter: restrict THIS turn to the listed tools
+	// (the agent enforces it and clears it after the turn).
+	if len(c.AllowedTools) > 0 {
+		m.backend.SetTurnTools(c.AllowedTools)
+		m.note(name + ": tools → " + strings.Join(c.AllowedTools, ", "))
+	}
 	return m.submit(prompt)
 }
 

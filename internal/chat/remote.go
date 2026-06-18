@@ -30,6 +30,10 @@ type Remote struct {
 	lastText string
 	lastErr  error // daemon-side turn error (from the terminal note)
 
+	// turnTools is the per-turn allowed-tools allowlist for the NEXT Send (a
+	// slash command's allowed-tools); consumed and cleared by Send.
+	turnTools []string
+
 	// detached: the view left (session hop / window close). Blocked Sends
 	// return, events are dropped, and ctx cancellation must NOT interrupt the
 	// daemon-side turn (it keeps running without us).
@@ -122,7 +126,7 @@ func (r *Remote) Send(ctx context.Context, task string, images []llm.Image) (str
 	r.mu.Lock()
 	r.turnDone = ch
 	r.mu.Unlock()
-	if err := r.c.Input(r.id, task, images); err != nil {
+	if err := r.c.Input(r.id, task, images, r.takeTurnTools()); err != nil {
 		r.mu.Lock()
 		r.turnDone = nil
 		r.mu.Unlock()
@@ -248,6 +252,27 @@ func (r *Remote) Tools() []ToolInfo {
 		out = append(out, ToolInfo{Name: t.Name, ReadOnly: t.ReadOnly})
 	}
 	return out
+}
+
+// SetTurnTools stages a per-turn allowed-tools allowlist for the next Send; it
+// rides along on the input request and the daemon applies it to just that turn.
+func (r *Remote) SetTurnTools(names []string) {
+	r.mu.Lock()
+	if len(names) == 0 {
+		r.turnTools = nil
+	} else {
+		r.turnTools = append([]string(nil), names...)
+	}
+	r.mu.Unlock()
+}
+
+// takeTurnTools returns and clears the staged per-turn allowlist.
+func (r *Remote) takeTurnTools() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t := r.turnTools
+	r.turnTools = nil
+	return t
 }
 
 // Shells lists the daemon session's backgrounded bash shells (from the snapshot).
