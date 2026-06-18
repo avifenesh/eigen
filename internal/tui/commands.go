@@ -697,6 +697,16 @@ func (m *model) runCustomCommand(name, arg string) tea.Cmd {
 		m.note(name + ": empty command body")
 		return nil
 	}
+	// Honor a command's `model:` frontmatter: switch the live model before the
+	// turn (same resolution path as /model). Best-effort — a bad model id notes
+	// the failure and the command still runs on the current model.
+	if c.Model != "" && c.Model != m.modelID {
+		if errStr := m.switchModelTo("", c.Model); errStr != "" {
+			m.note(name + ": " + errStr + " — running on " + m.modelID)
+		} else {
+			m.note(name + ": model → " + m.modelID)
+		}
+	}
 	return m.submit(prompt)
 }
 

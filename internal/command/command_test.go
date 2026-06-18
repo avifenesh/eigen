@@ -25,6 +25,9 @@ You are the System Prompt Curator. Do the work for: $ARGUMENTS
 	if c.ArgHint != "[role description or --improve path]" {
 		t.Fatalf("arg-hint = %q", c.ArgHint)
 	}
+	if c.Model != "claude-opus-4" {
+		t.Fatalf("model = %q, want claude-opus-4", c.Model)
+	}
 	if strings.Contains(c.Body, "---") || strings.Contains(c.Body, "allowed-tools") {
 		t.Fatalf("frontmatter leaked into body: %q", c.Body)
 	}

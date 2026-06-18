@@ -60,6 +60,37 @@ func (m *model) cycleEffort() tea.Cmd {
 	return m.showFlash("effort · " + m.backend.Effort())
 }
 
+// switchModelTo performs a live model switch to the given provider/model id,
+// reusing the exact /model resolution + SetModel path. It returns an error
+// string (empty on success) so callers can surface failures their own way. The
+// provider name/id can be a ref (provider:id), an explicit provider, or a bare
+// id reconciled against the catalog — mirroring the /model command forms.
+func (m *model) switchModelTo(provName, id string) string {
+	if m.newProvider == nil {
+		return "model switching unavailable"
+	}
+	prov := provName
+	if prov == "" {
+		prov = m.provName
+	}
+	if tag, bare := llm.ParseRef(id); tag != "" {
+		prov, id = tag, bare
+	} else {
+		prov = llm.ResolveProvider(prov, id)
+	}
+	np, err := m.newProvider(prov, id)
+	if err != nil {
+		return "switch failed: " + err.Error()
+	}
+	m.backend.SetModel(np, m.compactorFor(np), m.contextBudgetFor(id))
+	m.provName, m.modelID = prov, id
+	// A manual switch takes precedence over any overload failover window.
+	m.failoverFrom = nil
+	m.failoverLeft = 0
+	m.saveMeta()
+	return ""
+}
+
 // cycleModel switches to the next model in the catalog (wrapping) — the
 // keyboard shortcut (ctrl+o) for fast model changes, equivalent to /model. The
 // provider is reconciled from the catalog so it never desyncs.

@@ -25,6 +25,7 @@ type Command struct {
 	Name        string // slash name (file basename sans .md), e.g. "review"
 	Description string // frontmatter description (shown in the menu)
 	ArgHint     string // frontmatter argument-hint (shown after the name)
+	Model       string // frontmatter model: run this command on a specific model
 	Body        string // the prompt template (frontmatter stripped)
 	Path        string // source file
 	Scope       string // "project" or "user"
@@ -115,7 +116,7 @@ func (s *Set) Len() int { return len(s.order) }
 var fmKey = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9_-]*):[ \t]*(.*)$`)
 
 // parse splits optional leading "--- … ---" frontmatter and returns the command.
-// Only description + argument-hint are read; other keys (allowed-tools, model,
+// description, argument-hint, and model are read; other keys (allowed-tools,
 // codex-description, …) are tolerated and ignored.
 func parse(name, content string) Command {
 	c := Command{Name: name}
@@ -142,6 +143,8 @@ func parse(name, content string) Command {
 					c.Description = val
 				case "argument-hint", "argument_hint", "arg-hint":
 					c.ArgHint = val
+				case "model":
+					c.Model = val
 				}
 			}
 			body = strings.Join(lines[end+1:], "\n")
