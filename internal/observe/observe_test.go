@@ -110,6 +110,33 @@ func TestHookObserverAndSummary(t *testing.T) {
 	}
 }
 
+func TestLoggerCloseIsIdempotentAndDropsLateEvents(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "events.jsonl")
+	lg, err := Open(path, "sess-close")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := lg.Wrap(nil)
+	sink(agent.Event{Kind: agent.EventNote, Text: "before close"})
+	if err := lg.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := lg.Close(); err != nil {
+		t.Fatalf("second close should be harmless: %v", err)
+	}
+	// Late async events can arrive during shutdown; observability should drop
+	// them instead of encoding to a closed file or racing Close.
+	sink(agent.Event{Kind: agent.EventNote, Text: "after close"})
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(b), "\n") != 1 {
+		t.Fatalf("late event after Close should be dropped, got log:\n%s", b)
+	}
+}
+
 func TestNilLoggerIsNoop(t *testing.T) {
 	var lg *Logger // nil
 	var got int

@@ -723,6 +723,9 @@ func (s *memoryState) clampDetailScroll(lineN, visible int) {
 func (s *memoryState) scrollDetail(m *Model, delta int) {
 	l := m.computeLayout()
 	w, visible := l.inner.w, l.inner.h-5
+	if m.data != nil && m.data.GlobalMem != nil {
+		visible-- // path row in detailView
+	}
 	if w <= 0 {
 		w = m.width
 	}
@@ -937,12 +940,19 @@ func (s *memoryState) detailView(m *Model, w, h int) string {
 		n = 0
 	}
 	sub := fmt.Sprintf("note %d/%d", n, len(s.bullets))
+	path := ""
 	if m.data.GlobalMem != nil {
-		sub += " · " + m.data.GlobalMem.Path()
+		path = m.data.GlobalMem.Path()
 	}
 	out := pageTitle("memory", sub, w)
+	if path != "" {
+		out += sFaint.Render("  path: "+truncate(path, max(12, w-8))) + "\n"
+	}
 	lines := memoryDetailLines(s.selectedNote(), w)
 	visible := h - 5
+	if path != "" {
+		visible--
+	}
 	if visible < 1 {
 		visible = 1
 	}

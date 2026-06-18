@@ -148,6 +148,9 @@ func (l *Logger) record(e agent.Event) {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.enc == nil {
+		return
+	}
 	if l.turnStart.IsZero() {
 		l.turnStart = now
 	}
@@ -367,6 +370,9 @@ func (l *Logger) recordHook(o hook.Observation) {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.enc == nil {
+		return
+	}
 	_ = l.enc.Encode(&rec)
 }
 
@@ -387,10 +393,18 @@ func hashText(s string) string {
 
 // Close flushes and closes the log file.
 func (l *Logger) Close() error {
-	if l == nil || l.f == nil {
+	if l == nil {
 		return nil
 	}
-	return l.f.Close()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.f == nil {
+		return nil
+	}
+	err := l.f.Close()
+	l.f = nil
+	l.enc = nil
+	return err
 }
 
 func kindName(k agent.EventKind) string {

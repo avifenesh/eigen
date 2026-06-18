@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // layoutModel builds a minimal app Model with loaded-enough data for layout.
@@ -87,11 +88,14 @@ func TestViewLineWidthsWithinTerminal(t *testing.T) {
 	// Rendered lines must never exceed the terminal width, or the terminal
 	// wraps and breaks hit-testing.
 	for _, size := range []struct{ w, h int }{{80, 30}, {120, 30}, {160, 30}, {80, 6}, {50, 8}} {
-		m := layoutModel(t, size.w, size.h)
-		v := m.View()
-		for i, ln := range strings.Split(v, "\n") {
-			if lw := lipgloss.Width(ln); lw > size.w {
-				t.Fatalf("w=%d h=%d line %d width %d exceeds terminal:\n%q", size.w, size.h, i, lw, ln)
+		for _, p := range pages {
+			m := layoutModel(t, size.w, size.h)
+			m.active = p.page
+			v := m.View()
+			for i, ln := range strings.Split(v, "\n") {
+				if lw := lipgloss.Width(ln); lw > size.w {
+					t.Fatalf("page=%s w=%d h=%d line %d width %d exceeds terminal:\n%q", p.name, size.w, size.h, i, lw, ln)
+				}
 			}
 		}
 	}
@@ -104,6 +108,12 @@ func TestTruncateIsDisplayWidthSafe(t *testing.T) {
 	}
 	if !strings.HasSuffix(got, "⋯") {
 		t.Fatalf("truncated string should end with ellipsis: %q", got)
+	}
+
+	styled := sErr.Render("abcdef")
+	got = truncate(styled, 4)
+	if lipgloss.Width(got) > 4 || ansi.Strip(got) != "abc⋯" {
+		t.Fatalf("truncate should preserve ANSI safely, width=%d plain=%q raw=%q", lipgloss.Width(got), ansi.Strip(got), got)
 	}
 }
 

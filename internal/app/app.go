@@ -87,7 +87,8 @@ type Result struct {
 type Model struct {
 	width, height int
 	active        Page
-	contentScroll int // generic vertical scroll over the rendered content page
+	pendingG      bool // true after a standalone "g", making the next key a page jump
+	contentScroll int  // generic vertical scroll over the rendered content page
 	result        Result
 	quitting      bool
 
@@ -377,7 +378,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A page in text-entry mode (config editor) gets every key except
 		// ctrl+c — q/:/tab/letters must type, not quit/jump.
 		if m.capturingInput() {
+			m.pendingG = false
 			return m.updatePage(msg)
+		}
+		if m.pendingG {
+			m.pendingG = false
+			if p, ok := jumpKey("g"+key, m.active); ok {
+				m.setActive(p)
+				return m, nil
+			}
 		}
 		if m.handleContentScrollKey(key) {
 			return m, nil
@@ -390,6 +399,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.result = Result{Action: ActionQuit}
 			m.quitting = true
 			return m, tea.Quit
+		case "g":
+			m.pendingG = true
+			return m, nil
 		case "tab", "shift+tab", "[", "]":
 			d := 1
 			if key == "shift+tab" || key == "[" {
@@ -447,13 +459,15 @@ func (m *Model) cycle(d int) {
 }
 
 // jumpKey maps a quick-jump key to a page. Plain letter keys jump only from
-// pages that don't need text input (all of v1's pages are lists, so letters
-// are safe; pages that later take input will consume keys before this).
-func jumpKey(key string, _ Page) (Page, bool) {
+// pages that don't need text input (home only for bare letters; everywhere
+// else uses g<key> so page-local actions like sessions' s/e still work).
+func jumpKey(key string, active Page) (Page, bool) {
 	for _, p := range pages {
-		if key == "g"+p.key || key == p.key {
-			// 'g'-prefixed always jumps; bare letter jumps too in v1.
-			if key == p.key && strings.ContainsAny(p.key, "jk") {
+		if key == "g"+p.key {
+			return p.page, true
+		}
+		if active == PageHome && key == p.key {
+			if strings.ContainsAny(p.key, "jk") {
 				return 0, false // j/k reserved for list movement
 			}
 			return p.page, true
@@ -504,6 +518,9 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.palette.open {
 		return m, nil
 	}
+	// Any pointer interaction cancels a pending keyboard prefix; otherwise a
+	// stray `g`, click, then later page key would jump unexpectedly.
+	m.pendingG = false
 	l := m.computeLayout()
 	h := m.hitTest(msg.X, msg.Y)
 	// Wheel: scroll the page list when over the content, ignored elsewhere.
@@ -707,6 +724,7 @@ func (m *Model) renderTitleBar(l appLayout) string {
 }
 
 func (m *Model) setActive(p Page) {
+	m.pendingG = false
 	if m.active != p {
 		m.active = p
 		m.contentScroll = 0

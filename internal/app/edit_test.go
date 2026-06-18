@@ -315,8 +315,10 @@ func TestMemoryEnterOpensScrollableNote(t *testing.T) {
 		t.Fatal("enter should open the selected memory note")
 	}
 	v := m.memory.view(m, 70, 10)
-	if !strings.Contains(v, m.data.GlobalMem.Path()) {
-		t.Fatalf("detail view should show the actual memory file path:\n%s", v)
+	pathPrefix := m.data.GlobalMem.Path()
+	pathPrefix = pathPrefix[:min(len(pathPrefix), 20)]
+	if !strings.Contains(v, "path:") || !strings.Contains(v, pathPrefix) {
+		t.Fatalf("detail view should show the memory file path context:\n%s", v)
 	}
 	if !strings.Contains(v, "detail line 0") {
 		t.Fatalf("detail view should show the note body:\n%s", v)

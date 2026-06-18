@@ -92,10 +92,12 @@ func TestAppNavigation(t *testing.T) {
 	if m.active != PageConfig {
 		t.Fatalf("tab should cycle to config, on %v", m.active)
 	}
-	// Jump home.
+	// From non-home pages, use the advertised g-prefix jump so page-local
+	// single-letter actions remain available.
+	m.Update(key("g"))
 	m.Update(key("h"))
 	if m.active != PageHome {
-		t.Fatal("h should jump home")
+		t.Fatal("g h should jump home")
 	}
 }
 
@@ -104,10 +106,68 @@ func TestGPrefixedJumpKeysMatchAdvertisedMissionStrip(t *testing.T) {
 	m.width, m.height = 100, 30
 	for _, p := range pages {
 		m.active = PageHome
-		m.Update(key("g" + p.key))
+		m.Update(key("g"))
+		m.Update(key(p.key))
 		if m.active != p.page {
 			t.Fatalf("g%s should jump to %s, got %s", p.key, p.name, m.activeName())
 		}
+	}
+}
+
+func TestGPrefixFallsThroughForNonPageKeys(t *testing.T) {
+	m := New(testData())
+	m.width, m.height = 100, 30
+	m.active = PageSessions
+	m.Update(key("g"))
+	m.Update(key("j"))
+	if m.active != PageSessions {
+		t.Fatalf("g then non-page key should not jump, got %s", m.activeName())
+	}
+	if m.pendingG {
+		t.Fatal("g prefix should clear after a non-page key")
+	}
+	if m.sessions.list.cursor != 1 {
+		t.Fatalf("non-page key after g should still reach the page, cursor=%d", m.sessions.list.cursor)
+	}
+}
+
+func TestInputCaptureClearsStaleGPrefix(t *testing.T) {
+	m := New(testData())
+	m.width, m.height = 100, 30
+	m.active = PageConfig
+	m.config.editing = true
+	m.pendingG = true
+	m.Update(key("x"))
+	if m.pendingG {
+		t.Fatal("input-owned keys should clear a stale g prefix")
+	}
+	if m.active != PageConfig {
+		t.Fatalf("input-owned x should not jump to plugins, got %s", m.activeName())
+	}
+}
+
+func TestBarePageKeysDoNotStealPageLocalActions(t *testing.T) {
+	m := New(testData())
+	m.width, m.height = 100, 30
+	m.active = PageSessions
+
+	m.Update(key("s"))
+	if m.active != PageSessions {
+		t.Fatalf("sessions source filter key should stay on sessions, got %s", m.activeName())
+	}
+	if m.sessions.filter.source != "daemon" {
+		t.Fatalf("sessions s key should cycle source filter, got %q", m.sessions.filter.source)
+	}
+
+	m.Update(key("e"))
+	if m.active != PageSessions {
+		t.Fatalf("sessions export key should not jump to machines, got %s", m.activeName())
+	}
+
+	m.Update(key("g"))
+	m.Update(key("e"))
+	if m.active != PageMachines {
+		t.Fatalf("g e should still jump to machines, got %s", m.activeName())
 	}
 }
 

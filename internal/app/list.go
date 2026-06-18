@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // list is a minimal selectable list with j/k movement and a window that
@@ -116,6 +117,7 @@ func pageTitle(title, sub string, w int) string {
 	if rw < 1 {
 		rw = 1
 	}
+	t = truncate(t, rw)
 	rule := sFaint.Render(strings.Repeat("─", rw))
 	return t + "\n" + rule + "\n"
 }
@@ -130,30 +132,16 @@ func row(selected bool, text string) string {
 	return " " + sRowDim.Render(text)
 }
 
-// truncate cuts s to display width with an ellipsis, preserving UTF-8 rune
-// boundaries and never returning a string wider than w cells.
+// truncate cuts s to display width with an ellipsis, preserving UTF-8 and ANSI
+// escape boundaries and never returning a string wider than w cells.
 func truncate(s string, w int) string {
 	if w <= 0 {
 		return ""
 	}
-	if lipgloss.Width(s) <= w {
+	if ansi.StringWidth(s) <= w {
 		return s
 	}
-	if w == 1 {
-		return "⋯"
-	}
-	limit := w - 1 // reserve one cell for the ellipsis
-	var b strings.Builder
-	used := 0
-	for _, r := range s {
-		rw := lipgloss.Width(string(r))
-		if used+rw > limit {
-			break
-		}
-		b.WriteRune(r)
-		used += rw
-	}
-	return b.String() + "⋯"
+	return ansi.Truncate(s, w, "⋯")
 }
 
 // pad right-pads s to width (for column alignment).
