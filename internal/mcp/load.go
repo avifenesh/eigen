@@ -169,11 +169,14 @@ func wrap(client *Client, server, gist string, sp ToolSpec) tool.Definition {
 	// attach the file so the model can see it. Gated by tool name so an
 	// ordinary tool that happens to return a "path" field isn't slurped.
 	attachShot := strings.Contains(toolName, "screenshot") || strings.Contains(toolName, "observe")
+	capName, capDesc := toolCapability(server, toolName, desc)
 	return tool.Definition{
-		Name:        name,
-		Description: desc,
-		Parameters:  params,
-		ReadOnly:    readOnly,
+		Name:           name,
+		Description:    desc,
+		Parameters:     params,
+		ReadOnly:       readOnly,
+		Capability:     capName,
+		CapabilityDesc: capDesc,
 		// Progressive disclosure: MCP tools are niche (schema withheld from each
 		// request) and grouped by their server, so the model browses the server
 		// then opens a tool via search_tools instead of paying for every schema.
@@ -188,6 +191,66 @@ func wrap(client *Client, server, gist string, sp ToolSpec) tool.Definition {
 			return tool.Result{Text: res.Text, Images: res.Images}, err
 		},
 	}
+}
+
+func toolCapability(server, toolName, desc string) (string, string) {
+	server = strings.ToLower(sanitize(server))
+	name := strings.ToLower(sanitize(toolName))
+	switch server {
+	case "computer_use":
+		switch name {
+		case "doctor":
+			return "diagnostics", "health checks for the real desktop connector"
+		case "setup_accessibility", "setup_window_targeting":
+			return "accessibility", "enable/verify accessibility and window targeting for real desktop control"
+		case "list_apps", "list_windows", "focused_window", "get_app_state", "activate_window":
+			return "windows", "inspect apps/windows/focus and activate real desktop windows"
+		case "screenshot":
+			return "screen", "capture the user's real desktop or a targeted window"
+		case "click", "drag", "scroll", "press_key", "type_text":
+			return "input", "send pointer, keyboard, scroll, and text input to the real desktop"
+		case "perform_action", "set_value":
+			return "semantic-actions", "use accessibility semantics to invoke controls or set values"
+		}
+	case "workspace":
+		switch name {
+		case "workspace_start", "workspace_stop", "workspace_status", "workspace_list", "workspace_doctor", "workspace_cleanup_stale":
+			return "lifecycle", "start, stop, inspect, and clean isolated workspaces"
+		case "workspace_run_in_terminal", "workspace_terminal_read", "workspace_terminal_input":
+			return "terminal", "run commands and interact with workspace terminals"
+		case "workspace_launch_app", "workspace_run_app", "workspace_wait_app", "workspace_kill_app", "workspace_read_app_log":
+			return "apps", "launch, monitor, stop, and read logs from GUI apps in the sandbox"
+		case "workspace_observe", "workspace_screenshot", "workspace_list_windows", "workspace_events":
+			return "screen", "observe screenshots, windows, and events in the isolated desktop"
+		case "workspace_open_browser", "workspace_browser_navigate", "workspace_browser_snapshot", "workspace_browser_click", "workspace_browser_targets":
+			return "browser", "open and drive the sandbox browser"
+		case "workspace_click", "workspace_key", "workspace_type_text", "workspace_paste_text":
+			return "input", "send pointer and keyboard input inside the isolated desktop"
+		}
+	case "chrome":
+		switch {
+		case name == "chrome_health" || name == "chrome_action_log":
+			return "diagnostics", "bridge health and sanitized action logs"
+		case name == "chrome_lock_tab" || name == "chrome_unlock_tab" || name == "chrome_locks":
+			return "locks", "coordinate tab ownership across agents"
+		case strings.Contains(name, "tab") || name == "chrome_reload" || name == "chrome_back" || name == "chrome_forward":
+			return "tabs", "list, create, select, close, and navigate browser tabs/history"
+		case name == "chrome_snapshot" || name == "chrome_find" || name == "chrome_extract_links" || name == "chrome_extract_tables" || name == "chrome_read_article" || name == "chrome_get_network":
+			return "page-read", "read page structure, links, tables, articles, and network observations"
+		case name == "chrome_navigate" || name == "chrome_click" || name == "chrome_type" || name == "chrome_scroll":
+			return "page-actions", "navigate and interact with the current Chrome page"
+		case strings.HasPrefix(name, "chrome_wait_"):
+			return "waiting", "wait for selectors, text, or idle page state"
+		case name == "chrome_screenshot":
+			return "screenshots", "capture Chrome screenshots"
+		case strings.HasPrefix(name, "chrome_cdp_") || name == "chrome_get_console":
+			return "cdp", "low-level Chrome DevTools Protocol actions and console inspection"
+		}
+	}
+	if desc != "" {
+		return "other", "other " + server + " tools"
+	}
+	return "", ""
 }
 
 // slimSchema strips JSON-Schema metadata that costs tokens on every request

@@ -21,6 +21,13 @@ func nicheGroupDef(name, group, desc string) Definition {
 	return d
 }
 
+func nicheCapDef(name, group, cap, desc string) Definition {
+	d := nicheGroupDef(name, group, desc)
+	d.Capability = cap
+	d.CapabilityDesc = cap + " capability"
+	return d
+}
+
 func names(s []llm.ToolSpec) []string {
 	var o []string
 	for _, x := range s {
@@ -32,8 +39,8 @@ func names(s []llm.ToolSpec) []string {
 func TestProgressiveDisclosure(t *testing.T) {
 	reg, _ := NewRegistry(
 		Definition{Name: "read", Description: "read a file", Run: func(context.Context, json.RawMessage) (string, error) { return "", nil }},
-		nicheGroupDef("chrome_click", "chrome", "click an element in the browser"),
-		nicheGroupDef("chrome_navigate", "chrome", "go to a URL"),
+		nicheCapDef("chrome_click", "chrome", "page-actions", "click an element in the browser"),
+		nicheCapDef("chrome_navigate", "chrome", "page-actions", "go to a URL"),
 		nicheDef("generate_image", "make an image from a prompt"), // ungrouped niche
 	)
 	// Core specs (nothing unlocked): only the non-niche tool.
@@ -54,16 +61,23 @@ func TestProgressiveDisclosure(t *testing.T) {
 	}
 
 	st := SearchTools(func() *Registry { return reg }, nil)
-	// Level 1: search a group name → tool NAMES, no unlock, no schemas dumped.
+	// Level 1: search a group name → capability categories, no tool-name menu,
+	// no unlock, no schemas dumped.
 	out, _ := st.Run(context.Background(), []byte(`{"query":"chrome"}`))
-	if !strings.Contains(out, "chrome_click") || !strings.Contains(out, "chrome_navigate") {
-		t.Fatalf("group browse should list the tool names, got %q", out)
+	if !strings.Contains(out, "page-actions") {
+		t.Fatalf("group browse should list capabilities, got %q", out)
 	}
-	if strings.Contains(out, "args:") {
-		t.Fatalf("group browse should NOT dump schemas, got %q", out)
+	if strings.Contains(out, "chrome_click") || strings.Contains(out, "args:") {
+		t.Fatalf("group browse should NOT dump tool names or schemas, got %q", out)
 	}
 
-	// Level 2: search a keyword → full schema + unlock.
+	// Level 2: search group + capability → tool names, still no schemas/unlock.
+	outCap, _ := st.Run(context.Background(), []byte(`{"query":"chrome page-actions"}`))
+	if !strings.Contains(outCap, "chrome_click") || !strings.Contains(outCap, "chrome_navigate") || strings.Contains(outCap, "args:") {
+		t.Fatalf("capability browse should list tool names only, got %q", outCap)
+	}
+
+	// Level 3: search a keyword → full schema + unlock.
 	var unlocked []string
 	st2 := SearchTools(func() *Registry { return reg }, func(n []string) { unlocked = append(unlocked, n...) })
 	out2, _ := st2.Run(context.Background(), []byte(`{"query":"navigate"}`))
@@ -79,10 +93,21 @@ func TestProgressiveDisclosure(t *testing.T) {
 	}
 }
 
+func TestGroupCapabilityBrowseAcceptsSpacedGroupAlias(t *testing.T) {
+	reg, _ := NewRegistry(
+		nicheCapDef("computer_use_setup_accessibility", "computer_use", "accessibility", "set up desktop accessibility"),
+	)
+	st := SearchTools(func() *Registry { return reg }, nil)
+	out, _ := st.Run(context.Background(), []byte(`{"query":"computer use accessibility"}`))
+	if !strings.Contains(out, "computer_use_setup_accessibility") || strings.Contains(out, "args:") {
+		t.Fatalf("spaced group alias should browse capability tool names only, got %q", out)
+	}
+}
+
 func TestEmptySearchListsGroups(t *testing.T) {
 	reg, _ := NewRegistry(
 		Definition{Name: "read", Description: "r", Run: func(context.Context, json.RawMessage) (string, error) { return "", nil }},
-		nicheGroupDef("workspace_click", "workspace", "click"),
+		nicheCapDef("workspace_click", "workspace", "input", "click"),
 	)
 	st := SearchTools(func() *Registry { return reg }, nil)
 	out, _ := st.Run(context.Background(), []byte(`{"query":""}`))

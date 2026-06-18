@@ -43,6 +43,13 @@ type Definition struct {
 	// carry the same GroupDesc; the first non-empty one wins.
 	GroupDesc string
 
+	// Capability is an optional Level-1 category inside a niche group. It lets
+	// search_tools show what a server can do (accessibility, windows, screenshots,
+	// browser navigation, terminals, etc.) without dumping every concrete tool
+	// name or schema at once.
+	Capability     string
+	CapabilityDesc string
+
 	// Run executes the tool with raw JSON arguments and returns its textual result.
 	// Text-only tools (the vast majority) implement this.
 	Run func(ctx context.Context, args json.RawMessage) (string, error)
@@ -172,6 +179,15 @@ type NicheGroup struct {
 	Gist  string
 }
 
+// NicheCapability summarizes a Level-1 category inside a niche group. It is a
+// middle disclosure layer: enough for the model to know capabilities exist,
+// cheap enough not to expose every concrete tool/schema in the prompt.
+type NicheCapability struct {
+	Name  string
+	Count int
+	Gist  string
+}
+
 // GroupCatalog returns the hierarchical Level-0 catalog: one entry per niche
 // GROUP (e.g. an MCP server) plus any ungrouped niche tools listed by name.
 // unlocked tools/groups are omitted. This is what rides in the system prompt —
@@ -212,8 +228,57 @@ func (r *Registry) GroupCatalog(unlocked map[string]bool) (groups []NicheGroup, 
 	return groups, loose
 }
 
-// GroupTools returns "name — first line" for every niche tool in a group (the
-// Level-1 reveal: search_tools <group>). Empty if the group is unknown.
+// GroupCapabilities returns the Level-1 capability categories for a niche
+// group. Empty means the group has no category metadata and should fall back to
+// listing concrete tool names.
+func (r *Registry) GroupCapabilities(group string) []NicheCapability {
+	g := strings.ToLower(strings.TrimSpace(group))
+	count := map[string]int{}
+	gist := map[string]string{}
+	order := []string{}
+	seen := map[string]bool{}
+	for _, name := range r.order {
+		d := r.byName[name]
+		if !d.Niche || strings.ToLower(d.Group) != g || d.Capability == "" {
+			continue
+		}
+		cap := strings.ToLower(strings.TrimSpace(d.Capability))
+		if cap == "" {
+			continue
+		}
+		if !seen[cap] {
+			seen[cap] = true
+			order = append(order, cap)
+		}
+		count[cap]++
+		if gist[cap] == "" && d.CapabilityDesc != "" {
+			gist[cap] = d.CapabilityDesc
+		}
+	}
+	out := make([]NicheCapability, 0, len(order))
+	for _, cap := range order {
+		out = append(out, NicheCapability{Name: cap, Count: count[cap], Gist: gist[cap]})
+	}
+	return out
+}
+
+// GroupCapabilityTools returns "name — first line" for every niche tool in a
+// group/capability pair. Empty if unknown.
+func (r *Registry) GroupCapabilityTools(group, capability string) []string {
+	g := strings.ToLower(strings.TrimSpace(group))
+	cap := strings.ToLower(strings.TrimSpace(capability))
+	var out []string
+	for _, name := range r.order {
+		d := r.byName[name]
+		if d.Niche && strings.ToLower(d.Group) == g && strings.ToLower(d.Capability) == cap {
+			out = append(out, d.Name+" — "+firstLine(d.Description))
+		}
+	}
+	return out
+}
+
+// GroupTools returns "name — first line" for every niche tool in a group. It is
+// now a fallback when the group has no capability categories.
 func (r *Registry) GroupTools(group string) []string {
 	g := strings.ToLower(strings.TrimSpace(group))
 	var out []string
@@ -244,6 +309,18 @@ func (r *Registry) GroupNames() []string {
 // (case-insensitive substring; empty query matches all niche tools). A query
 // equal to a GROUP name matches that whole group. Used by search_tools.
 func (r *Registry) MatchNiche(query string) []Definition {
+	return r.matchNiche(query, "")
+}
+
+// MatchNicheInGroup is a scoped variant for queries such as
+// `search_tools "computer_use screenshot"`: only tools in the named group are
+// eligible, so the model can drill down without accidentally opening a similar
+// tool from another server.
+func (r *Registry) MatchNicheInGroup(group, query string) []Definition {
+	return r.matchNiche(query, strings.ToLower(strings.TrimSpace(group)))
+}
+
+func (r *Registry) matchNiche(query, group string) []Definition {
 	q := strings.ToLower(strings.TrimSpace(query))
 	var out []Definition
 	for _, name := range r.order {
@@ -251,10 +328,15 @@ func (r *Registry) MatchNiche(query string) []Definition {
 		if !d.Niche {
 			continue
 		}
+		if group != "" && strings.ToLower(d.Group) != group {
+			continue
+		}
 		if q == "" ||
 			strings.Contains(strings.ToLower(d.Name), q) ||
 			strings.Contains(strings.ToLower(d.Description), q) ||
-			(d.Group != "" && strings.Contains(strings.ToLower(d.Group), q)) {
+			(d.Group != "" && strings.Contains(strings.ToLower(d.Group), q)) ||
+			(d.Capability != "" && strings.Contains(strings.ToLower(d.Capability), q)) ||
+			(d.CapabilityDesc != "" && strings.Contains(strings.ToLower(d.CapabilityDesc), q)) {
 			out = append(out, d)
 		}
 	}

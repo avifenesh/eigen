@@ -49,7 +49,7 @@ Tools worth reaching for (beyond read/edit/grep):
 - generate_image creates images from a text prompt (diagrams, mockups, assets) saved into the project.
 - review gets an independent cross-vendor critique of a plan/diff before you commit to it.
 
-You have a CORE set of tools always available (above). Many more — browser & desktop automation, project-specific integrations, language-server queries — are not loaded by default to save context; they're listed by name under "MORE TOOLS" when present. When a task needs a capability the core tools don't cover, call search_tools with a keyword to get the full tool(s) and make them callable. Don't assume a capability is missing without searching.
+You have a CORE set of tools always available (above). Many more — browser & desktop automation, project-specific integrations, language-server queries — are not loaded by default to save context; they're listed as capability groups under "MORE TOOLS" when present. When a task needs a capability the core tools don't cover, call search_tools with the group name to see capability categories (for example accessibility/windows/screen/input), then search_tools with a category or specific keyword/tool name to open only the needed schema(s). Don't assume a capability is missing without searching.
 
 Call tools as needed; when the task is complete, reply with a short, specific summary of what you did.`
 

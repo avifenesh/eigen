@@ -8,6 +8,28 @@ import (
 
 func isolateComputerUse(t *testing.T) { t.Setenv("EIGEN_COMPUTER_USE_BIN", "/nonexistent") }
 
+func TestBuiltInToolCapabilities(t *testing.T) {
+	cases := []struct {
+		server, tool string
+		cap          string
+	}{
+		{"computer_use", "setup_accessibility", "accessibility"},
+		{"computer_use", "screenshot", "screen"},
+		{"computer_use", "perform_action", "semantic-actions"},
+		{"workspace", "workspace_terminal_read", "terminal"},
+		{"workspace", "workspace_browser_click", "browser"},
+		{"chrome", "chrome_tabs", "tabs"},
+		{"chrome", "chrome_read_article", "page-read"},
+		{"chrome", "chrome_cdp_click", "cdp"},
+	}
+	for _, tc := range cases {
+		cap, desc := toolCapability(tc.server, tc.tool, "desc")
+		if cap != tc.cap || desc == "" {
+			t.Fatalf("toolCapability(%s,%s) = %q/%q, want %q with desc", tc.server, tc.tool, cap, desc, tc.cap)
+		}
+	}
+}
+
 func TestWithBuiltinServersAddsComputerUse(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "computer-use-linux")
