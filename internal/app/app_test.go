@@ -99,6 +99,18 @@ func TestAppNavigation(t *testing.T) {
 	}
 }
 
+func TestGPrefixedJumpKeysMatchAdvertisedMissionStrip(t *testing.T) {
+	m := New(testData())
+	m.width, m.height = 100, 30
+	for _, p := range pages {
+		m.active = PageHome
+		m.Update(key("g" + p.key))
+		if m.active != p.page {
+			t.Fatalf("g%s should jump to %s, got %s", p.key, p.name, m.activeName())
+		}
+	}
+}
+
 func TestAppResumeFromSessions(t *testing.T) {
 	m := New(testData())
 	m.width, m.height = 100, 30
@@ -172,6 +184,12 @@ func TestViewRendersAllPages(t *testing.T) {
 		}
 		if !strings.Contains(v, "eigen") {
 			t.Fatalf("page %s missing rail", p.name)
+		}
+		if !strings.Contains(v, p.purpose) {
+			t.Fatalf("page %s missing purpose copy %q", p.name, p.purpose)
+		}
+		if !strings.Contains(v, p.action) {
+			t.Fatalf("page %s missing action copy %q", p.name, p.action)
 		}
 	}
 }

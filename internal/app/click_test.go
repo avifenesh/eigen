@@ -3,6 +3,7 @@ package app
 // Tests for the Tier 10 Wave 3 page-local content clicks.
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/avifenesh/eigen/internal/daemon"
@@ -20,6 +21,10 @@ func rowLine(c *clickMap, idx int) int {
 	return -1
 }
 
+func contentLineY(m *Model, l appLayout, line int) int {
+	return l.inner.y + m.contentMissionHeight(l.inner.w) + line
+}
+
 func TestSessionsClickSelectsThenOpens(t *testing.T) {
 	d := feedData()
 	m := New(d)
@@ -33,7 +38,7 @@ func TestSessionsClickSelectsThenOpens(t *testing.T) {
 	if line < 0 {
 		t.Fatal("sessions row 1 should be in the click map")
 	}
-	absY := l.inner.y + line
+	absY := contentLineY(m, l, line)
 	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: absY})
 	if m.sessions.list.cursor != 1 {
 		t.Fatalf("first click should select row 1, got cursor=%d", m.sessions.list.cursor)
@@ -44,7 +49,7 @@ func TestSessionsClickSelectsThenOpens(t *testing.T) {
 	// Re-render (cursor moved) and click the same row again → opens (quits).
 	_ = m.sessions.view(m, l.inner.w, l.inner.h)
 	line = rowLine(&m.sessions.clicks, 1)
-	absY = l.inner.y + line
+	absY = contentLineY(m, l, line)
 	_, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: absY})
 	if !m.quitting || cmd == nil {
 		t.Fatal("second click on the selected session should open it (quit)")
@@ -69,7 +74,7 @@ func TestHomeClickFeedItemOpens(t *testing.T) {
 	if line < 0 {
 		t.Fatal("home feed item 0 should be in the click map")
 	}
-	absY := l.inner.y + line
+	absY := contentLineY(m, l, line)
 	m.home.list.cursor = 0 // pre-select so the click activates
 	_, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: absY})
 	if !m.quitting || cmd == nil {
@@ -95,10 +100,31 @@ func TestProjectsClickDrillsIn(t *testing.T) {
 		t.Fatal("project 0 should be in the click map")
 	}
 	m.projects.list.cursor = 0 // pre-select so the click drills in
-	absY := l.inner.y + line
+	absY := contentLineY(m, l, line)
 	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: absY})
 	if !m.projects.inside {
 		t.Fatal("clicking the selected project should drill into it")
+	}
+}
+
+func TestMissionStripClickIsNoopAndPinned(t *testing.T) {
+	d := feedData()
+	m := New(d)
+	m.width, m.height = 120, 30
+	m.active = PageSessions
+	l := m.computeLayout()
+	v := m.View()
+	if !strings.Contains(v, "focus: resume or export history") || !strings.Contains(v, "next: resume session") {
+		t.Fatalf("sessions view should show the pinned mission strip:\n%s", v)
+	}
+	before := m.sessions.list.cursor
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: l.inner.y})
+	if m.sessions.list.cursor != before || m.quitting {
+		t.Fatalf("clicking mission strip should be a no-op, cursor %d -> %d quitting=%v", before, m.sessions.list.cursor, m.quitting)
+	}
+	m.scrollContent(5)
+	if v := m.View(); !strings.Contains(v, "focus: resume or export history") {
+		t.Fatalf("mission strip should stay pinned after scroll:\n%s", v)
 	}
 }
 
@@ -142,7 +168,7 @@ func TestHomeClickWithLiveSection(t *testing.T) {
 		t.Fatal("feed item 0 should still be in the click map with a live section")
 	}
 	m.home.list.cursor = 0
-	_, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: l.inner.y + line})
+	_, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: contentLineY(m, l, line)})
 	if !m.quitting || cmd == nil || m.result.Action != ActionOpenChat {
 		t.Fatalf("clicking the mapped feed line should open the feed item's chat, got action=%v quitting=%v", m.result.Action, m.quitting)
 	}

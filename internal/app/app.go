@@ -36,25 +36,31 @@ const (
 	PagePlugins
 )
 
-// pageNames in rail order.
-var pages = []struct {
-	page Page
-	name string
-	key  string // quick-jump key (from home / with g prefix)
-}{
-	{PageHome, "home", "h"},
-	{PageLive, "live", "l"},
-	{PageProjects, "projects", "p"},
-	{PageMachines, "machines", "e"},
-	{PageSessions, "sessions", "s"},
-	{PageConfig, "config", "c"},
-	{PageSkills, "skills", "k"},
-	{PageModels, "models", "m"},
-	{PageProviders, "providers", "v"},
-	{PageObserve, "observe", "o"},
-	{PageMemory, "memory", "y"},
-	{PageCrons, "crons", "r"},
-	{PagePlugins, "plugins", "x"},
+// pageSpec describes one app view in rail order. The short purpose/action text
+// is intentionally product copy, not test-only metadata: it keeps every page's
+// mission visible in the shell chrome even when the page body is scrolled.
+type pageSpec struct {
+	page    Page
+	name    string
+	key     string // quick-jump key (from home / with g prefix)
+	purpose string // compact view mission, shown in the title/status chrome
+	action  string // best next action/habit for this view
+}
+
+var pages = []pageSpec{
+	{PageHome, "home", "h", "priorities and recent work", "act or start"},
+	{PageLive, "live", "l", "running daemon sessions", "attach / interrupt"},
+	{PageProjects, "projects", "p", "work grouped by repo", "open project"},
+	{PageMachines, "machines", "e", "remote Eigen endpoints", "open remote"},
+	{PageSessions, "sessions", "s", "resume or export history", "resume session"},
+	{PageConfig, "config", "c", "defaults for new sessions", "edit safely"},
+	{PageSkills, "skills", "k", "skills plus invocation use", "preview/install"},
+	{PageModels, "models", "m", "model catalog and route fit", "inspect model"},
+	{PageProviders, "providers", "v", "credentialed route candidates", "verify route pool"},
+	{PageObserve, "observe", "o", "errors, usage, routes, hooks", "debug telemetry"},
+	{PageMemory, "memory", "y", "durable project/global notes", "read/consolidate"},
+	{PageCrons, "crons", "r", "timers and scheduled jobs", "trigger/refresh"},
+	{PagePlugins, "plugins", "x", "plugins, wiring, hooks", "manage extensions"},
 }
 
 // Action is what the app asks main to do after it exits.
@@ -458,10 +464,11 @@ func jumpKey(key string, _ Page) (Page, bool) {
 
 func (m *Model) handleContentScrollKey(key string) bool {
 	l := m.computeLayout()
-	page := m.renderPage(l.inner.w, l.inner.h)
+	bodyH := m.contentBodyHeight(l)
+	page := m.renderPage(l.inner.w, bodyH)
 	pageLines := splitRenderableLines(page)
-	maxScroll := max(0, len(pageLines)-l.inner.h)
-	halfPage := max(1, l.inner.h/2)
+	maxScroll := max(0, len(pageLines)-bodyH)
+	halfPage := max(1, bodyH/2)
 	switch key {
 	case "pgdown", "ctrl+d", "ctrl+f":
 		m.contentScroll = min(maxScroll, m.contentScroll+halfPage)
@@ -479,9 +486,10 @@ func (m *Model) handleContentScrollKey(key string) bool {
 
 func (m *Model) scrollContent(delta int) bool {
 	l := m.computeLayout()
-	page := m.renderPage(l.inner.w, l.inner.h)
+	bodyH := m.contentBodyHeight(l)
+	page := m.renderPage(l.inner.w, bodyH)
 	pageLines := splitRenderableLines(page)
-	maxScroll := max(0, len(pageLines)-l.inner.h)
+	maxScroll := max(0, len(pageLines)-bodyH)
 	before := m.contentScroll
 	m.contentScroll = min(max(0, m.contentScroll+delta), maxScroll)
 	return m.contentScroll != before
@@ -496,6 +504,7 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.palette.open {
 		return m, nil
 	}
+	l := m.computeLayout()
 	h := m.hitTest(msg.X, msg.Y)
 	// Wheel: scroll the page list when over the content, ignored elsewhere.
 	if tea.MouseEvent(msg).IsWheel() {
@@ -518,9 +527,14 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case hitContent:
 		// Page-local row click: the active page maps content-local coords to
-		// an item (select, or open if already selected). Account for the generic
-		// content scroll because pages record click maps against their full view.
-		if cmd, handled := m.contentClick(h.localX, h.localY+m.contentScroll); handled {
+		// an item (select, or open if already selected). Account for the pinned
+		// mission row plus generic content scroll because pages record click maps
+		// against their own full view, not the shell-added chrome.
+		localY := h.localY - m.contentMissionHeight(l.inner.w)
+		if localY < 0 {
+			return m, nil
+		}
+		if cmd, handled := m.contentClick(h.localX, localY+m.contentScroll); handled {
 			return m, cmd
 		}
 		return m, nil
@@ -669,10 +683,22 @@ func padLeft(s string, n int) string {
 }
 
 // renderTitleBar draws the top bar: product mark + the active page breadcrumb
-// on the left, quick context on the right.
+// on the left, quick context on the right. Wider terminals also show the active
+// page's mission so every surface has a persistent, high-signal headline even
+// when its list content is scrolled.
 func (m *Model) renderTitleBar(l appLayout) string {
 	left := sTitle.Render(" eigen ") + sFaint.Render("›") + " " + sText.Render(m.activeName())
-	right := sFaint.Render(m.titleStats() + " ")
+	if purpose := m.activePurpose(); purpose != "" && l.title.w >= 72 {
+		left += sFaint.Render(" · " + purpose)
+	}
+	rightText := m.titleStats()
+	if action := m.activeAction(); action != "" && l.title.w >= 96 {
+		rightText += " · " + action
+	}
+	right := sFaint.Render(rightText + " ")
+	if lipgloss.Width(left)+lipgloss.Width(right)+1 > l.title.w {
+		left = sTitle.Render(" eigen ") + sFaint.Render("›") + " " + sText.Render(m.activeName())
+	}
 	gap := l.title.w - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
@@ -687,14 +713,61 @@ func (m *Model) setActive(p Page) {
 	}
 }
 
-// activeName is the active page's display name.
-func (m *Model) activeName() string {
+func (m *Model) activeSpec() (pageSpec, bool) {
 	for _, p := range pages {
 		if p.page == m.active {
-			return p.name
+			return p, true
 		}
 	}
+	return pageSpec{}, false
+}
+
+// activeName is the active page's display name.
+func (m *Model) activeName() string {
+	if p, ok := m.activeSpec(); ok {
+		return p.name
+	}
 	return ""
+}
+
+func (m *Model) activePurpose() string {
+	if p, ok := m.activeSpec(); ok {
+		return p.purpose
+	}
+	return ""
+}
+
+func (m *Model) activeAction() string {
+	if p, ok := m.activeSpec(); ok {
+		return p.action
+	}
+	return ""
+}
+
+func (m *Model) contentMissionHeight(w int) int {
+	if m.contentMissionLine(w) == "" {
+		return 0
+	}
+	return 1
+}
+
+func (m *Model) contentBodyHeight(l appLayout) int {
+	return max(1, l.inner.h-m.contentMissionHeight(l.inner.w))
+}
+
+func (m *Model) contentMissionLine(w int) string {
+	p, ok := m.activeSpec()
+	if !ok || p.purpose == "" || w < 42 {
+		return ""
+	}
+	line := "focus: " + p.purpose
+	if p.action != "" {
+		line += " · next: " + p.action
+	}
+	if p.key != "" && w >= 64 {
+		line += " · jump: g" + p.key
+	}
+	return sFaint.Render(truncate(line, w))
 }
 
 // titleStats is a compact right-aligned context line for the title bar.
@@ -724,7 +797,11 @@ func (m *Model) renderRailBox(l appLayout) string {
 // at the true content width (l.inner.w) so its own width math (rules, rows) is
 // exact and never wraps against the gutter.
 func (m *Model) renderContentBox(l appLayout) string {
-	page := clipTextWindow(m.renderPage(l.inner.w, l.inner.h), l.inner.h, m.contentScroll)
+	bodyH := m.contentBodyHeight(l)
+	page := clipTextWindow(m.renderPage(l.inner.w, bodyH), bodyH, m.contentScroll)
+	if mission := m.contentMissionLine(l.inner.w); mission != "" {
+		page = mission + "\n" + page
+	}
 	style := sContentBox.Width(l.inner.w + sContentPadH).Height(l.inner.h)
 	if l.bp == bpNarrow {
 		return lipgloss.NewStyle().Width(l.content.w).Height(l.content.h).Render(page)
@@ -775,6 +852,10 @@ func (m *Model) renderInspectorBox(l appLayout) string {
 func (m *Model) renderStatusBar(l appLayout) string {
 	help := m.helpLine()
 	w := lipgloss.Width(help)
+	if w > l.status.w {
+		help = sFaint.Render(truncate(m.helpLineText(), l.status.w))
+		w = lipgloss.Width(help)
+	}
 	if w < l.status.w {
 		help += sFaint.Render(strings.Repeat(" ", l.status.w-w))
 	}
@@ -903,10 +984,15 @@ func (m *Model) renderPage(w, h int) string {
 	return ""
 }
 
-func (m *Model) helpLine() string {
+func (m *Model) helpLineText() string {
 	base := " tab pages · j/k move · pg scroll · enter open · n new · : palette · q quit"
-	return sFaint.Render(base)
+	if purpose := m.activePurpose(); purpose != "" {
+		base += " · focus: " + purpose
+	}
+	return base
 }
+
+func (m *Model) helpLine() string { return sFaint.Render(m.helpLineText()) }
 
 // Run opens the app shell and returns the exit intent.
 func Run(data *Data) (Result, error) { return RunAt(data, PageHome) }

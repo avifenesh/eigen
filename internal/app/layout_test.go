@@ -86,14 +86,24 @@ func TestLayoutInspectorOnlyWhenWide(t *testing.T) {
 func TestViewLineWidthsWithinTerminal(t *testing.T) {
 	// Rendered lines must never exceed the terminal width, or the terminal
 	// wraps and breaks hit-testing.
-	for _, w := range []int{80, 120, 160} {
-		m := layoutModel(t, w, 30)
+	for _, size := range []struct{ w, h int }{{80, 30}, {120, 30}, {160, 30}, {80, 6}, {50, 8}} {
+		m := layoutModel(t, size.w, size.h)
 		v := m.View()
 		for i, ln := range strings.Split(v, "\n") {
-			if lw := lipgloss.Width(ln); lw > w {
-				t.Fatalf("w=%d line %d width %d exceeds terminal:\n%q", w, i, lw, ln)
+			if lw := lipgloss.Width(ln); lw > size.w {
+				t.Fatalf("w=%d h=%d line %d width %d exceeds terminal:\n%q", size.w, size.h, i, lw, ln)
 			}
 		}
+	}
+}
+
+func TestTruncateIsDisplayWidthSafe(t *testing.T) {
+	got := truncate("界界界abcdef", 5)
+	if lipgloss.Width(got) > 5 {
+		t.Fatalf("truncate should respect display width, width=%d string=%q", lipgloss.Width(got), got)
+	}
+	if !strings.HasSuffix(got, "⋯") {
+		t.Fatalf("truncated string should end with ellipsis: %q", got)
 	}
 }
 

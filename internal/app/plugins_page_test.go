@@ -246,7 +246,7 @@ func TestPluginsPageMouseTabsAndHookRows(t *testing.T) {
 	if !ok {
 		t.Fatal("hooks tab should be in the click map")
 	}
-	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + hit.x0, Y: l.inner.y + hit.line})
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + hit.x0, Y: contentLineY(m, l, hit.line)})
 	if m.plugins.tab != pluginsTabHooks {
 		t.Fatalf("clicking hooks tab should switch tabs, got %v", m.plugins.tab)
 	}
@@ -256,14 +256,14 @@ func TestPluginsPageMouseTabsAndHookRows(t *testing.T) {
 	if line < 0 {
 		t.Fatal("second hook row should be clickable")
 	}
-	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: l.inner.y + line})
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: contentLineY(m, l, line)})
 	if m.plugins.list.cursor != 1 {
 		t.Fatalf("first hook row click should select row 1, got %d", m.plugins.list.cursor)
 	}
 
 	_ = m.plugins.view(m, l.inner.w, l.inner.h)
 	line = rowLine(&m.plugins.clicks, 1)
-	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: l.inner.y + line})
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: contentLineY(m, l, line)})
 	rows := loadHookRows(hooksPath, "user")
 	if len(rows) != 2 || !rows[1].Disabled {
 		t.Fatalf("second hook row click should toggle disabled, got %+v", rows)
@@ -303,14 +303,14 @@ func TestPluginsMarketplaceCatalogMouseRows(t *testing.T) {
 	if line < 0 {
 		t.Fatal("catalog row should be in the click map")
 	}
-	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: l.inner.y + line})
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: contentLineY(m, l, line)})
 	if !m.plugins.catalogFocus || m.plugins.catalogList.cursor != 1 {
 		t.Fatalf("catalog click should focus/select beta, focus=%v cursor=%d", m.plugins.catalogFocus, m.plugins.catalogList.cursor)
 	}
 
 	_ = m.plugins.view(m, l.inner.w, l.inner.h)
 	line = rowLine(&m.plugins.catalogClicks, 1)
-	_, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: l.inner.y + line})
+	_, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: contentLineY(m, l, line)})
 	if cmd == nil || !m.plugins.prompt.busy {
 		t.Fatal("second catalog row click should start installing the selected plugin")
 	}

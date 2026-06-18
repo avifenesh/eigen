@@ -130,16 +130,30 @@ func row(selected bool, text string) string {
 	return " " + sRowDim.Render(text)
 }
 
-// truncate cuts s to width with an ellipsis.
+// truncate cuts s to display width with an ellipsis, preserving UTF-8 rune
+// boundaries and never returning a string wider than w cells.
 func truncate(s string, w int) string {
-	if w <= 1 || lipgloss.Width(s) <= w {
+	if w <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= w {
 		return s
 	}
-	r := []rune(s)
-	if len(r) <= w-1 {
-		return s
+	if w == 1 {
+		return "⋯"
 	}
-	return string(r[:w-1]) + "⋯"
+	limit := w - 1 // reserve one cell for the ellipsis
+	var b strings.Builder
+	used := 0
+	for _, r := range s {
+		rw := lipgloss.Width(string(r))
+		if used+rw > limit {
+			break
+		}
+		b.WriteRune(r)
+		used += rw
+	}
+	return b.String() + "⋯"
 }
 
 // pad right-pads s to width (for column alignment).
