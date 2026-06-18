@@ -49,6 +49,7 @@ func (s *observeState) view(m *Model, w, h int) string {
 	}
 	obs := d.Observe
 	out += observeHero(obs, w)
+	out += observeRoutes(obs, w)
 	out += observeSubagents(obs, w)
 	out += observeCounts("errors", obs.Errors, w, func(v string) string { return sErr.Render(v) })
 	out += observeCounts("route / system notes", obs.Notes, w, func(v string) string { return sAccent.Render(v) })
@@ -79,6 +80,29 @@ func observeHero(s observe.Summary, w int) string {
 	}
 	line := "  " + strings.Join(parts, sFaint.Render("  ·  "))
 	return truncate(line, w) + "\n\n"
+}
+
+func observeRoutes(s observe.Summary, w int) string {
+	r := s.Routes
+	if r.Routed == 0 && r.Skipped == 0 {
+		return ""
+	}
+	out := "  " + sectionLabel("routing decisions", min(w, 70)-2) + "\n"
+	status := sOk.Render(fmt.Sprintf("%d routed", r.Routed))
+	if r.Skipped > 0 {
+		status += "  " + sErr.Render(fmt.Sprintf("%d skipped", r.Skipped))
+	}
+	out += "  " + status + sDim.Render(fmt.Sprintf(" · %d model-assessed · %d orchestrator-stated", r.Assessed, r.Orchestrator)) + "\n"
+	if len(r.ByModel) > 0 {
+		out += "  " + sDim.Render("models: "+inlineCounts(r.ByModel, 4)) + "\n"
+	}
+	if len(r.ByDifficulty) > 0 {
+		out += "  " + sDim.Render("difficulty: "+inlineCounts(r.ByDifficulty, 4)) + "\n"
+	}
+	if len(r.SkipReasons) > 0 {
+		out += "  " + sDim.Render("skips: "+inlineCounts(r.SkipReasons, 4)) + "\n"
+	}
+	return out + "\n"
 }
 
 func observeSubagents(s observe.Summary, w int) string {
@@ -215,6 +239,21 @@ func nonZeroCounts(m map[string]int) []countItem {
 		return items[i].v > items[j].v
 	})
 	return items
+}
+
+func inlineCounts(m map[string]int, limit int) string {
+	if len(m) == 0 {
+		return ""
+	}
+	keys := sortedKeys(m)
+	if limit > 0 && len(keys) > limit {
+		keys = keys[:limit]
+	}
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%d", k, m[k]))
+	}
+	return strings.Join(parts, " ")
 }
 
 func countTotal(m map[string]int) int {

@@ -44,6 +44,12 @@ type Record struct {
 	// NoteKind classifies EventNote text (route/compaction/background/goal/etc.)
 	// without storing the text itself.
 	NoteKind        string `json:"note_kind,omitempty"`
+	RouteStatus     string `json:"route_status,omitempty"` // routed | skipped
+	RouteModel      string `json:"route_model,omitempty"`
+	RouteKind       string `json:"route_kind,omitempty"`
+	RouteDifficulty string `json:"route_difficulty,omitempty"`
+	RouteAssessor   string `json:"route_assessor,omitempty"`
+	RouteSkipReason string `json:"route_skip_reason,omitempty"`
 	HookEvent       string `json:"hook_event,omitempty"`
 	HookPhase       string `json:"hook_phase,omitempty"`
 	HookCommandHash string `json:"hook_command_hash,omitempty"`
@@ -178,6 +184,9 @@ func (l *Logger) record(e agent.Event) {
 		l.skillStart = map[string]string{}
 	case agent.EventNote:
 		rec.NoteKind = classifyNote(e.Text)
+		if rec.NoteKind == "route" {
+			applyRouteNote(&rec, e.Text)
+		}
 	}
 	if l.shouldSampleRuntime(now, e) {
 		var ms runtime.MemStats
@@ -257,6 +266,76 @@ func classifyNote(s string) string {
 		return "error"
 	default:
 		return "note"
+	}
+}
+
+func applyRouteNote(rec *Record, note string) {
+	p := strings.ToLower(note)
+	if strings.Contains(p, "route skipped") {
+		rec.RouteStatus = "skipped"
+		rec.RouteSkipReason = classifyRouteSkip(note)
+		return
+	}
+	idx := strings.Index(note, "routed →")
+	if idx < 0 {
+		idx = strings.Index(note, "routed ->")
+	}
+	if idx < 0 {
+		return
+	}
+	rec.RouteStatus = "routed"
+	frag := strings.TrimSpace(note[idx:])
+	frag = strings.TrimPrefix(frag, "routed →")
+	frag = strings.TrimPrefix(frag, "routed ->")
+	frag = strings.TrimSpace(frag)
+	open := strings.Index(frag, "(")
+	if open < 0 {
+		fields := strings.Fields(frag)
+		if len(fields) > 0 {
+			rec.RouteModel = fields[0]
+		}
+		return
+	}
+	rec.RouteModel = strings.TrimSpace(frag[:open])
+	close := strings.Index(frag[open+1:], ")")
+	if close < 0 {
+		return
+	}
+	inside := frag[open+1 : open+1+close]
+	parts := strings.SplitN(inside, ";", 2)
+	kd := strings.SplitN(strings.TrimSpace(parts[0]), "/", 2)
+	if len(kd) == 2 {
+		rec.RouteKind = strings.TrimSpace(kd[0])
+		rec.RouteDifficulty = strings.TrimSpace(kd[1])
+	}
+	if len(parts) == 2 {
+		source := strings.TrimSpace(parts[1])
+		switch {
+		case strings.HasPrefix(source, "assessed by "):
+			rec.RouteAssessor = strings.TrimSpace(strings.TrimPrefix(source, "assessed by "))
+		case source == "model-assessed":
+			rec.RouteAssessor = "model-assessed"
+		case source == "orchestrator-stated":
+			rec.RouteAssessor = "orchestrator"
+		default:
+			rec.RouteAssessor = source
+		}
+	}
+}
+
+func classifyRouteSkip(note string) string {
+	p := strings.ToLower(note)
+	switch {
+	case strings.Contains(p, "assessor unavailable"):
+		return "assessor_unavailable"
+	case strings.Contains(p, "no credentialed"):
+		return "no_credentialed_candidates"
+	case strings.Contains(p, "no capable"):
+		return "no_capable_candidate"
+	case strings.Contains(p, "unavailable"):
+		return "model_unavailable"
+	default:
+		return "other"
 	}
 }
 

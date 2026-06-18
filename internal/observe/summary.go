@@ -20,6 +20,7 @@ type Summary struct {
 	Hooks     map[string]HookSummary
 	Skills    map[string]SkillSummary
 	Models    map[string]ModelSummary
+	Routes    RouteSummary
 	Subagents SubagentSummary
 	Runtime   RuntimeSummary
 }
@@ -50,6 +51,17 @@ type ModelSummary struct {
 	CacheReadTokens  int
 	CacheWriteTokens int
 	DurationMS       int64
+}
+
+type RouteSummary struct {
+	Routed       int
+	Skipped      int
+	Assessed     int
+	Orchestrator int
+	ByModel      map[string]int
+	ByKind       map[string]int
+	ByDifficulty map[string]int
+	SkipReasons  map[string]int
 }
 
 type SubagentSummary struct {
@@ -114,6 +126,7 @@ func summarize(records []Record) Summary {
 		Hooks:  map[string]HookSummary{},
 		Skills: map[string]SkillSummary{},
 		Models: map[string]ModelSummary{},
+		Routes: RouteSummary{ByModel: map[string]int{}, ByKind: map[string]int{}, ByDifficulty: map[string]int{}, SkipReasons: map[string]int{}},
 	}
 	for _, r := range records {
 		s.Records++
@@ -143,6 +156,7 @@ func summarize(records []Record) Summary {
 			}
 			if r.NoteKind == "route" {
 				s.Subagents.RouteNotes++
+				accumulateRoute(&s.Routes, r)
 			}
 		}
 		if r.Kind == "background_done" {
@@ -199,6 +213,34 @@ func summarize(records []Record) Summary {
 	return s
 }
 
+func accumulateRoute(s *RouteSummary, r Record) {
+	switch r.RouteStatus {
+	case "routed":
+		s.Routed++
+		if r.RouteModel != "" {
+			s.ByModel[r.RouteModel]++
+		}
+		if r.RouteKind != "" {
+			s.ByKind[r.RouteKind]++
+		}
+		if r.RouteDifficulty != "" {
+			s.ByDifficulty[r.RouteDifficulty]++
+		}
+		if r.RouteAssessor == "" || r.RouteAssessor == "orchestrator" {
+			s.Orchestrator++
+		} else {
+			s.Assessed++
+		}
+	case "skipped":
+		s.Skipped++
+		reason := r.RouteSkipReason
+		if reason == "" {
+			reason = "unknown"
+		}
+		s.SkipReasons[reason]++
+	}
+}
+
 func accumulateSkill(s *Summary, r Record) {
 	if r.Tool != "skill" || r.Skill == "" {
 		return
@@ -245,6 +287,14 @@ func FormatSummary(s Summary) string {
 	writeTop(&b, "events", s.ByKind, 8)
 	writeTop(&b, "errors", s.Errors, 8)
 	writeTop(&b, "notes", s.Notes, 8)
+	if s.Routes.Routed > 0 || s.Routes.Skipped > 0 {
+		b.WriteString("\nrouting decisions:\n")
+		fmt.Fprintf(&b, "  routed=%d skipped=%d assessed=%d orchestrator=%d\n", s.Routes.Routed, s.Routes.Skipped, s.Routes.Assessed, s.Routes.Orchestrator)
+		writeInlineCounts(&b, "  models", s.Routes.ByModel)
+		writeInlineCounts(&b, "  kinds", s.Routes.ByKind)
+		writeInlineCounts(&b, "  difficulty", s.Routes.ByDifficulty)
+		writeInlineCounts(&b, "  skips", s.Routes.SkipReasons)
+	}
 	if len(s.Skills) > 0 {
 		b.WriteString("\nskills:\n")
 		for _, k := range sortedKeys(s.Skills) {
@@ -287,6 +337,17 @@ func FormatSummary(s Summary) string {
 		fmt.Fprintf(&b, "\nruntime max: alloc=%s heap_inuse=%s heap_sys=%s goroutines=%d\n", bytesHuman(s.Runtime.MaxMemAllocBytes), bytesHuman(s.Runtime.MaxHeapInuseBytes), bytesHuman(s.Runtime.MaxHeapSysBytes), s.Runtime.MaxGoroutines)
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func writeInlineCounts(b *strings.Builder, title string, m map[string]int) {
+	if len(m) == 0 {
+		return
+	}
+	var parts []string
+	for _, k := range sortedKeys(m) {
+		parts = append(parts, fmt.Sprintf("%s=%d", k, m[k]))
+	}
+	fmt.Fprintf(b, "%s: %s\n", title, strings.Join(parts, " "))
 }
 
 func writeTop(b *strings.Builder, title string, m map[string]int, n int) {

@@ -2505,7 +2505,7 @@ func TestObservePanelCommandRendersTelemetry(t *testing.T) {
 	sink(agent.Event{Kind: agent.EventToolStart, ToolName: "skill", ToolID: "skill-1", ToolArgs: json.RawMessage(`{"name":"frontend-skill"}`)})
 	sink(agent.Event{Kind: agent.EventToolResult, ToolName: "skill", ToolID: "skill-1", Result: "loaded"})
 	sink(agent.Event{Kind: agent.EventToolResult, ToolName: "bash", IsError: true, Result: "Denied: nope"})
-	sink(agent.Event{Kind: agent.EventNote, Text: "routed → grok (general/trivial)"})
+	sink(agent.Event{Kind: agent.EventNote, Text: "routed → grok (general/trivial; assessed by glm-5.2)"})
 	sink(agent.Event{Kind: agent.EventDone, Model: "gpt-5.5", InTokens: 9, OutTokens: 2})
 	if err := lg.Close(); err != nil {
 		t.Fatal(err)
@@ -2516,7 +2516,7 @@ func TestObservePanelCommandRendersTelemetry(t *testing.T) {
 		t.Fatalf("rightTab=%v want observe", m.rightTab)
 	}
 	out := strings.Join(m.observeLines(40), "\n")
-	for _, want := range []string{"events", "errors", "route/system", "models", "gpt-5.5", "skills", "frontend-skill", "tools", "bash", "full:"} {
+	for _, want := range []string{"events", "errors", "routing decision", "route/system", "models", "gpt-5.5", "skills", "frontend-skill", "tools", "bash", "full:"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("observe panel missing %q:\n%s", want, out)
 		}
@@ -2626,7 +2626,7 @@ func (f *fakeRouter) Route(_ context.Context, _, _, _ string, _ bool) (llm.Provi
 	if !f.on || f.prov == nil {
 		return nil, "", ""
 	}
-	return f.prov, f.model, "routed → " + f.model + " (general/medium)"
+	return f.prov, f.model, "routed → " + f.model + " (general/medium; assessed by test)"
 }
 
 func TestRouteCommandToggles(t *testing.T) {

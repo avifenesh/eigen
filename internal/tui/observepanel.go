@@ -29,6 +29,12 @@ func (m *model) observeLines(h int) []string {
 	}
 	add := func(s string) { lines = append(lines, changesPad(s, pw)) }
 	add(styleAsk.Bold(true).Render(fmt.Sprintf("events %d", s.Records)) + dim(" · ") + styleAccent.Render(fmt.Sprintf("errors %d", sumCounts(s.Errors))) + dim(" · ") + styleAccent.Render(fmt.Sprintf("tools %d", len(s.Tools))))
+	if s.Routes.Routed > 0 || s.Routes.Skipped > 0 {
+		add("")
+		add(styleSel.Bold(true).Render("routing decisions"))
+		add(styleUser.Render(fmt.Sprintf("routed %d  skipped %d", s.Routes.Routed, s.Routes.Skipped)))
+		add(dim(fmt.Sprintf("model-assessed %d  orchestrator %d", s.Routes.Assessed, s.Routes.Orchestrator)))
+	}
 	if s.Subagents.Total() > 0 || s.Subagents.BackgroundDone > 0 || s.Subagents.RouteNotes > 0 {
 		add("")
 		add(styleSel.Bold(true).Render("subagents / spawns"))

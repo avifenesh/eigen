@@ -15,6 +15,7 @@ func TestObservePageRendersTelemetry(t *testing.T) {
 		ByKind:  map[string]int{"tool_result": 4, "done": 2},
 		Errors:  map[string]int{"denied": 1},
 		Notes:   map[string]int{"route": 2, "background": 1},
+		Routes:  observe.RouteSummary{Routed: 1, Skipped: 1, Assessed: 1, ByModel: map[string]int{"grok-code-fast-1": 1}, ByKind: map[string]int{"general": 1}, ByDifficulty: map[string]int{"trivial": 1}, SkipReasons: map[string]int{"assessor_unavailable": 1}},
 		Models:  map[string]observe.ModelSummary{"gpt-5.5": {Turns: 2, InTokens: 100, OutTokens: 25, CacheReadTokens: 70, CacheWriteTokens: 10, DurationMS: 2000}},
 		Tools: map[string]observe.ToolSummary{
 			"bash":       {Calls: 2, Errors: 1, DurationMS: 500},
@@ -34,6 +35,10 @@ func TestObservePageRendersTelemetry(t *testing.T) {
 	for _, want := range []string{
 		"observe",
 		"events 12",
+		"routing decisions",
+		"1 routed",
+		"1 skipped",
+		"grok-code-fast-1",
 		"subagents / spawning",
 		"task_group",
 		"errors",

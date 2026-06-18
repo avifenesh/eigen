@@ -23,11 +23,12 @@ func TestLoggerWritesRecords(t *testing.T) {
 	sink := lg.Wrap(func(agent.Event) { forwarded++ })
 	sink(agent.Event{Kind: agent.EventToolStart, Step: 0, ToolName: "bash", ToolID: "tc1"})
 	sink(agent.Event{Kind: agent.EventToolResult, Step: 0, ToolName: "bash", ToolID: "tc1", IsError: true, Result: "Denied: nope"})
-	sink(agent.Event{Kind: agent.EventNote, Text: "routed → grok-code-fast-1 (general/trivial)"})
+	sink(agent.Event{Kind: agent.EventNote, Text: "task → routed → grok-code-fast-1 (general/trivial; assessed by glm-5.2)"})
+	sink(agent.Event{Kind: agent.EventNote, Text: "route skipped: assessor unavailable (classifier offline)"})
 	sink(agent.Event{Kind: agent.EventDone, Provider: "codex", Model: "gpt-5.5", InTokens: 10, OutTokens: 3, CacheReadTokens: 4, CacheWriteTokens: 2})
 	lg.Close()
 
-	if forwarded != 4 {
+	if forwarded != 5 {
 		t.Fatalf("sink should forward to next, got %d", forwarded)
 	}
 	f, _ := os.Open(path)
@@ -41,8 +42,8 @@ func TestLoggerWritesRecords(t *testing.T) {
 		}
 		recs = append(recs, r)
 	}
-	if len(recs) != 4 {
-		t.Fatalf("want 4 records, got %d", len(recs))
+	if len(recs) != 5 {
+		t.Fatalf("want 5 records, got %d", len(recs))
 	}
 	if recs[0].Kind != "tool_start" || recs[0].Tool != "bash" || recs[0].ToolID != "tc1" || recs[0].Session != "sess-1" {
 		t.Fatalf("rec0 wrong: %+v", recs[0])
@@ -57,11 +58,14 @@ func TestLoggerWritesRecords(t *testing.T) {
 	if recs[1].Goroutines == 0 || recs[1].MemAllocBytes == 0 {
 		t.Fatalf("rec1 should include runtime sample: %+v", recs[1])
 	}
-	if recs[2].Kind != "note" || recs[2].NoteKind != "route" {
+	if recs[2].Kind != "note" || recs[2].NoteKind != "route" || recs[2].RouteStatus != "routed" || recs[2].RouteModel != "grok-code-fast-1" || recs[2].RouteKind != "general" || recs[2].RouteDifficulty != "trivial" || recs[2].RouteAssessor != "glm-5.2" {
 		t.Fatalf("rec2 wrong: %+v", recs[2])
 	}
-	if recs[3].Kind != "done" || recs[3].Provider != "codex" || recs[3].Model != "gpt-5.5" || recs[3].InTokens != 10 || recs[3].OutTokens != 3 || recs[3].CacheReadTokens != 4 || recs[3].CacheWriteTokens != 2 || recs[3].Goroutines == 0 {
+	if recs[3].Kind != "note" || recs[3].RouteStatus != "skipped" || recs[3].RouteSkipReason != "assessor_unavailable" {
 		t.Fatalf("rec3 wrong: %+v", recs[3])
+	}
+	if recs[4].Kind != "done" || recs[4].Provider != "codex" || recs[4].Model != "gpt-5.5" || recs[4].InTokens != 10 || recs[4].OutTokens != 3 || recs[4].CacheReadTokens != 4 || recs[4].CacheWriteTokens != 2 || recs[4].Goroutines == 0 {
+		t.Fatalf("rec4 wrong: %+v", recs[4])
 	}
 }
 
@@ -80,6 +84,8 @@ func TestHookObserverAndSummary(t *testing.T) {
 	sink(agent.Event{Kind: agent.EventToolResult, ToolName: "skill", ToolID: "skill-1", Result: "loaded"})
 	sink(agent.Event{Kind: agent.EventToolResult, ToolName: "task", Result: "ok"})
 	sink(agent.Event{Kind: agent.EventToolResult, ToolName: "task_group", IsError: true, Result: "failed"})
+	sink(agent.Event{Kind: agent.EventNote, Text: "task → routed → grok-code-fast-1 (general/trivial; assessed by glm-5.2)"})
+	sink(agent.Event{Kind: agent.EventNote, Text: "route skipped: assessor unavailable (classifier offline)"})
 	sink(agent.Event{Kind: agent.EventBgDone, Text: "background finished"})
 	lg.Close()
 	s, err := ReadSummary(path, 0)
@@ -95,8 +101,11 @@ func TestHookObserverAndSummary(t *testing.T) {
 	if s.Skills["frontend-skill"].Calls != 1 || s.Skills["frontend-skill"].Errors != 0 {
 		t.Fatalf("skill summary wrong: %+v", s.Skills)
 	}
+	if s.Routes.Routed != 1 || s.Routes.Skipped != 1 || s.Routes.Assessed != 1 || s.Routes.SkipReasons["assessor_unavailable"] != 1 {
+		t.Fatalf("route summary wrong: %+v", s.Routes)
+	}
 	out := FormatSummary(s)
-	if !strings.Contains(out, "hooks:") || !strings.Contains(out, "session_start") || !strings.Contains(out, "subagents/spawns") || !strings.Contains(out, "skills:") || !strings.Contains(out, "frontend-skill") {
+	if !strings.Contains(out, "hooks:") || !strings.Contains(out, "session_start") || !strings.Contains(out, "subagents/spawns") || !strings.Contains(out, "skills:") || !strings.Contains(out, "frontend-skill") || !strings.Contains(out, "routing decisions:") || !strings.Contains(out, "assessor_unavailable") {
 		t.Fatalf("summary should include hooks/subagents, got:\n%s", out)
 	}
 }
