@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Eigen Chrome Connector",
+  "version": "0.5.0",
+  "description": "Connector-only bridge between Eigen MCP tools and the user's Chrome session.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4id3o4a4IfrlMNGyhXt8KXNChDhZjMUWNed3YlOOMz+Iv9WPko7VOZoYYAo/lDRfh8x8s7wMXTILvOC7F/dODAxBvw3QH76xrXCSQFdmlGu7VW8bArGp6KNskay8SiW/KUQathGP70ZCP4Rj0dxG/wu4PX/NIc0XPKAFAv/w9uvBZjjTwr9E4c2UNO7I1bWl+iZ9pfDaO/2mYBo06F4j6Z8Q715ZQBnXQpl9vZqvJhZ926l3wdaIhwlZvzR3D9RQmKxJcff514kQbdQPexTiM7+S2srwiLas7s9PjKRJNtLnB8yiRneInoCB0IETDlOycP+7GTS106CvhvnAeW9wiwIDAQAB",
+  "permissions": [
+    "activeTab",
+    "debugger",
+    "nativeMessaging",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Eigen Chrome Connector"
+  }
+}

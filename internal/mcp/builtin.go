@@ -113,12 +113,12 @@ func withBuiltinServers(user []serverConfig) []serverConfig {
 	return user
 }
 
-// ChromeBridge locates the optional agent-chrome-bridge MCP server script and a
-// node runtime to run it. Unlike Eigen's bundled harness helpers, this bridge is
-// not embedded because it requires a browser extension/native-host install; it
-// is registered only when explicitly configured with EIGEN_CHROME_BRIDGE. Node:
-// EIGEN_NODE_BIN, then PATH, then common nvm/local locations (the daemon's
-// minimal PATH often lacks an nvm node). Returns ("","") when either is absent.
+// ChromeBridge locates Eigen's connector-only Chrome bridge MCP script and a
+// node runtime to run it. The bridge source is bundled in the harness; detection
+// uses EIGEN_CHROME_BRIDGE as an explicit override or Eigen's install location
+// ~/.eigen/chrome-bridge. Node: EIGEN_NODE_BIN, then PATH, then common nvm/local
+// locations (the daemon's minimal PATH often lacks an nvm node). Returns
+// ("","") when either is absent.
 func ChromeBridge() (script, node string) {
 	script = chromeBridgeScript()
 	if script == "" {
@@ -133,7 +133,7 @@ func ChromeBridge() (script, node string) {
 
 func chromeBridgeScript() string {
 	if p := os.Getenv("EIGEN_CHROME_BRIDGE"); p != "" {
-		// Accept either the server script directly or the repo directory.
+		// Accept either the server script directly or the installed bridge dir.
 		if filepath.Base(p) == "mcp-server.js" && isExecutableOrFile(p) {
 			return p
 		}
@@ -142,6 +142,12 @@ func chromeBridgeScript() string {
 			return cand
 		}
 		return ""
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		cand := filepath.Join(home, ".eigen", "chrome-bridge", "bin", "mcp-server.js")
+		if isExecutableOrFile(cand) {
+			return cand
+		}
 	}
 	return ""
 }

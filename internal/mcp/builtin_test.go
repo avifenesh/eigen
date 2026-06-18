@@ -128,10 +128,29 @@ func TestIsExecutable(t *testing.T) {
 
 func TestChromeBridgeDoesNotDependOnSiblingCheckout(t *testing.T) {
 	isolateComputerUse(t)
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("EIGEN_WORKSPACE_BIN", "/nonexistent")
 	t.Setenv("EIGEN_CHROME_BRIDGE", "")
 	if script, _ := ChromeBridge(); script != "" {
 		t.Fatalf("chrome bridge should require explicit configuration, got %q", script)
+	}
+}
+
+func TestChromeBridgeFindsEigenInstalledConnector(t *testing.T) {
+	isolateComputerUse(t)
+	home := t.TempDir()
+	dir := filepath.Join(home, ".eigen", "chrome-bridge", "bin")
+	os.MkdirAll(dir, 0o755)
+	script := filepath.Join(dir, "mcp-server.js")
+	os.WriteFile(script, []byte("// fake"), 0o644)
+	node := filepath.Join(home, "node")
+	os.WriteFile(node, []byte("#!/bin/sh\n"), 0o755)
+	t.Setenv("HOME", home)
+	t.Setenv("EIGEN_CHROME_BRIDGE", "")
+	t.Setenv("EIGEN_NODE_BIN", node)
+	gotScript, gotNode := ChromeBridge()
+	if gotScript != script || gotNode != node {
+		t.Fatalf("ChromeBridge installed = %q %q, want %q %q", gotScript, gotNode, script, node)
 	}
 }
 

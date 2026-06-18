@@ -18,7 +18,7 @@ import (
 // Cargo/Rust/system desktop packages are still only touched when the user
 // explicitly runs an install/build command.
 //
-//go:embed embedded/computer-use-linux/** embedded/agent-workspace-linux/**
+//go:embed embedded/computer-use-linux/** embedded/agent-workspace-linux/** embedded/chrome-bridge/**
 var SourceFS embed.FS
 
 type Component struct {

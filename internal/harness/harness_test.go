@@ -20,6 +20,45 @@ func TestEmbeddedComponentsContainCargoManifests(t *testing.T) {
 	}
 }
 
+func TestInstallChromeBridgeWritesConnectorOnlyFiles(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	extDir, manifests, extID, err := InstallChromeBridge()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if extID != "pfcpgdlnhaagndelcbdpopojfgalmbkf" {
+		t.Fatalf("extension id = %q", extID)
+	}
+	if len(manifests) != 2 {
+		t.Fatalf("want chrome+chromium manifests, got %v", manifests)
+	}
+	for _, rel := range []string{"bin/mcp-server.js", "bin/broker.js", "bin/native-host.js", "lib/tool-registry.js", "extension/background.js", "extension/content-bridge.js", "extension/manifest.json"} {
+		if _, err := os.Stat(filepath.Join(home, ".eigen", "chrome-bridge", rel)); err != nil {
+			t.Fatalf("chrome connector install missing %s: %v", rel, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(extDir, "sidepanel")); !os.IsNotExist(err) {
+		t.Fatalf("connector-only extension must not install sidepanel chat, err=%v", err)
+	}
+	manifest, err := os.ReadFile(filepath.Join(extDir, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"sidePanel", "side_panel", "tts"} {
+		if strings.Contains(string(manifest), forbidden) {
+			t.Fatalf("connector manifest contains chat permission %q:\n%s", forbidden, manifest)
+		}
+	}
+	hostManifest, err := os.ReadFile(manifests[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(hostManifest), extID) || !strings.Contains(string(hostManifest), filepath.Join(home, ".eigen", "chrome-bridge", "bin", "native-host.js")) {
+		t.Fatalf("native host manifest wrong:\n%s", hostManifest)
+	}
+}
+
 func TestInstallOrientationWritesEngineAndWrapper(t *testing.T) {
 	home := t.TempDir()
 	dst := t.TempDir()

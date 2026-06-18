@@ -1,0 +1,16 @@
+{
+  "name": "agent-chrome-bridge",
+  "version": "0.5.0-eigen",
+  "private": true,
+  "description": "Eigen-bundled Chrome connector: extension, native messaging host, broker, and MCP tools (no chat UI).",
+  "type": "commonjs",
+  "scripts": {
+    "mcp": "node bin/mcp-server.js",
+    "broker": "node bin/broker.js",
+    "doctor": "node scripts/doctor.js",
+    "extension:id": "node scripts/extension-id.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

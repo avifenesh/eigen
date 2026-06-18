@@ -1825,10 +1825,12 @@ func runHarnessCmd(sub string) {
 		fmt.Println("eigen harness helpers:")
 		reportHelper("computer-use", mcp.ComputerUseBinary(), "computer-use-linux", "computer_use MCP server")
 		reportHelper("workspace", mcp.WorkspaceBinary(), "agent-workspace-linux", "workspace MCP server")
+		reportChromeHelper()
 		reportOrientationHelper()
-		fmt.Println("install: eigen harness install  # installs orientation and builds bundled desktop helpers")
+		fmt.Println("install: eigen harness install  # installs orientation, Chrome connector, and bundled desktop helpers")
 	case "install", "build":
 		installOrientationHarness()
+		installChromeHarness()
 		installHarnessComponent("computer-use")
 		installHarnessComponent("workspace")
 		fmt.Println("harness helpers installed. Restart eigen/daemon to auto-register their MCP tools.")
@@ -1844,6 +1846,14 @@ func reportHelper(label, path, binary, desc string) {
 		return
 	}
 	fmt.Printf("  %s: not installed (bundled source available; installs %s)\n", label, binary)
+}
+
+func reportChromeHelper() {
+	if harness.ChromeBridgeInstalled() {
+		fmt.Printf("  chrome: available → %s (connector-only bridge)\n", harness.ChromeBridgeMCPScript())
+		return
+	}
+	fmt.Println("  chrome: not installed (connector-only bridge source bundled; install writes native host + extension files)")
 }
 
 func reportOrientationHelper() {
@@ -1865,6 +1875,19 @@ func installOrientationHarness() {
 	if err := harness.InstallOrientationHooks(context.Background()); err != nil {
 		fmt.Fprintln(os.Stderr, "orientation hooks not installed:", err)
 	}
+}
+
+func installChromeHarness() {
+	extensionDir, manifests, extensionID, err := harness.InstallChromeBridge()
+	if err != nil {
+		fail(err)
+	}
+	fmt.Fprintf(os.Stderr, "installed chrome connector → %s\n", harness.ChromeBridgeHome())
+	fmt.Fprintf(os.Stderr, "chrome extension id: %s\n", extensionID)
+	for _, p := range manifests {
+		fmt.Fprintf(os.Stderr, "native host manifest: %s\n", p)
+	}
+	fmt.Fprintf(os.Stderr, "load unpacked extension from: %s\n", extensionDir)
 }
 
 func installHarnessComponent(name string) {
@@ -1927,25 +1950,34 @@ func runWorkspaceCmd(sub string) {
 	}
 }
 
-// runChromeCmd implements `eigen chrome [status]`: reports whether the
-// agent-chrome-bridge MCP server (control of the user's REAL logged-in Chrome
-// via an MV3 extension) is detected and auto-registered.
+// runChromeCmd implements `eigen chrome <status|install>` for the connector-only
+// Chrome bridge (extension + native messaging host + MCP connector, no chat UI).
 func runChromeCmd() {
-	script, node := mcp.ChromeBridge()
-	if script == "" {
-		fmt.Println("chrome bridge: not configured")
-		fmt.Println("set EIGEN_CHROME_BRIDGE to an intentionally installed agent-chrome-bridge dir or mcp-server.js path")
-		return
+	sub := flag.Arg(1)
+	switch sub {
+	case "", "status":
+		script, node := mcp.ChromeBridge()
+		if script == "" {
+			fmt.Println("chrome connector: not installed")
+			fmt.Println("install: `eigen chrome install` or `eigen harness install`")
+			return
+		}
+		if node == "" {
+			fmt.Println("chrome connector: installed, but no node runtime")
+			fmt.Println("script:", script)
+			fmt.Println("set EIGEN_NODE_BIN to a node executable (the daemon's PATH may miss an nvm install)")
+			return
+		}
+		fmt.Println("chrome connector: available →", script)
+		fmt.Println("node:", node)
+		fmt.Println("extension:", harness.ChromeBridgeExtensionDir())
+		fmt.Println("(auto-registered as the `chrome` MCP server; connector only, no side-panel chat)")
+	case "install", "build":
+		installChromeHarness()
+	default:
+		fmt.Fprintf(os.Stderr, "usage: eigen chrome <status|install>\n")
+		os.Exit(2)
 	}
-	if node == "" {
-		fmt.Println("chrome bridge: found, but no node runtime")
-		fmt.Println("script:", script)
-		fmt.Println("set EIGEN_NODE_BIN to a node executable (the daemon's PATH may miss an nvm install)")
-		return
-	}
-	fmt.Println("chrome bridge: available →", script)
-	fmt.Println("node:", node)
-	fmt.Println("(auto-registered as the `chrome` MCP server; drives your real logged-in Chrome — 32 tools incl. screenshot)")
 }
 
 // importResume loads a resumed conversation: by store id, the 'eigen'

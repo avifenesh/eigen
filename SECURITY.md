@@ -25,7 +25,7 @@ Useful report details:
 
 - Do not commit credentials, `.env` files, provider auth files, custom provider files with inline API keys, transcripts, screenshots, or `~/.eigen` runtime data.
 - Project-local repositories must not be able to change Eigen's credential or permission posture through `.env` files.
-- Bundled harness helpers (`orientation`, `computer-use-linux`, `agent-workspace-linux`) are installed only by explicit user action (`eigen harness install`, `eigen orientation install`, `eigen computer-use install`, or `eigen workspace install`).
+- Bundled harness helpers (`orientation`, connector-only `chrome-bridge`, `computer-use-linux`, `agent-workspace-linux`) are installed only by explicit user action (`eigen harness install`, `eigen orientation install`, `eigen chrome install`, `eigen computer-use install`, or `eigen workspace install`).
 - Plugin installs and destructive plugin operations must remain explicit user actions.
 - Observability should record metadata, counts, durations, and hashes rather than raw sensitive payloads.
 - Remote-control features should fail closed and avoid unauthenticated public daemon access.
