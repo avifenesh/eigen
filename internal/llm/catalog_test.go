@@ -43,6 +43,7 @@ func TestDefaultModel(t *testing.T) {
 }
 
 func TestModels(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	models := Models()
 	if len(models) != len(Catalog) {
 		t.Fatalf("Models() returned %d, want %d", len(models), len(Catalog))

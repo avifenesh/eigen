@@ -68,6 +68,7 @@ What happens:
 - **App/TUI**: terminal dashboards for sessions, projects, config, models, providers, observe, memory, plugins, machines, and scheduled jobs.
 - **Tools**: file, shell, search, subtask, observe, plugin, and integration capabilities exposed to the model through approval-aware tool calls.
 - **Routing**: optional delegated-work routing. The main model remains the explicit user choice; `/route` only affects delegated subtasks.
+- **Custom providers**: add OpenAI-compatible chat/responses endpoints or Anthropic-compatible endpoints, each with its own explicit model catalog, from the app Providers page.
 - **Memory**: durable project/global notes injected as compact context, with local storage under `~/.eigen/memory`.
 - **Plugins**: Claude/Codex-style plugin bundles for skills, commands, MCP servers, hooks, and task roles.
 
@@ -89,7 +90,32 @@ The primary config file is:
 ~/.eigen/config.json
 ```
 
-Common fields include provider/model defaults, routing options, permission mode, theme, and provider-specific settings. Keep credentials in trusted user-level config or supported provider files; do not commit `.env`, `.eigen`, token files, or generated transcripts.
+Common fields include provider/model defaults, routing options, permission mode, theme, and provider-specific settings.
+
+Custom provider catalogs live in:
+
+```text
+~/.eigen/providers.json
+```
+
+The Providers page in `eigen app` can add a provider without hand-editing JSON. Press `a` on the Providers page and define the protocol (`openai` chat/completions, OpenAI `responses`, or `anthropic`), endpoint, API-key environment variable (or leave it blank for an explicit no-auth local endpoint), and the exact model names Eigen should show. Keep credentials in environment variables or trusted user-level config; do not commit `.env`, `.eigen`, token files, custom provider files with inline keys, or generated transcripts.
+
+Example custom provider catalog:
+
+```json
+{
+  "providers": [
+    {
+      "name": "localai",
+      "type": "openai",
+      "api": "chat",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "no_auth": true,
+      "models": [{ "name": "local-qwen", "id": "qwen-wire", "context_window": 128000 }]
+    }
+  ]
+}
+```
 
 Useful environment variables:
 

@@ -36,7 +36,8 @@ func knownProvider(name string) bool {
 	case "mantle", "converse", "anthropic", "codex", "llama", "grok", "glm":
 		return true
 	}
-	return false
+	_, ok := customProviderByName(name)
+	return ok
 }
 
 // Ref renders the one-field form: just the model when the id self-tags (the

@@ -1,9 +1,6 @@
 package llm
 
-import (
-	"fmt"
-	"strings"
-)
+import "strings"
 
 // New selects a provider by name. Empty defaults to mantle (Bedrock GPT-5.5).
 // The (provider, model) pair is reconciled against the catalog first, so a
@@ -41,6 +38,6 @@ func New(provider, model string) (Provider, error) {
 	case "glm", "zhipu", "z.ai":
 		return NewGLM(model)
 	default:
-		return nil, fmt.Errorf("unknown provider %q (want: mantle | llama | converse | anthropic | codex | grok | glm)", provider)
+		return newCustomProvider(provider, model)
 	}
 }

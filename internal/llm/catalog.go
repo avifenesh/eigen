@@ -156,7 +156,15 @@ var defaultModelByProvider = map[string]string{
 }
 
 // DefaultModel returns the model id a provider uses when none is specified.
-func DefaultModel(provider string) string { return defaultModelByProvider[provider] }
+func DefaultModel(provider string) string {
+	if m := defaultModelByProvider[provider]; m != "" {
+		return m
+	}
+	if p, ok := customProviderByName(provider); ok && len(p.Models) > 0 {
+		return normalizeCustomModel(p.Models[0]).Name
+	}
+	return ""
+}
 
 // ResolveProvider reconciles a (provider, model) pair against the catalog so a
 // known model is never sent to the wrong backend. If the model is a known
@@ -208,10 +216,13 @@ func canonicalProvider(p string) string {
 }
 
 // Models returns the known catalog entries in a stable order, so callers (e.g.
-// the TUI `/model` picker) can present the models a user may switch to.
+// the TUI `/model` picker) can present the models a user may switch to. Built-in
+// curated models come first, followed by user-added provider catalogs from
+// ~/.eigen/providers.json.
 func Models() []ModelInfo {
 	out := make([]ModelInfo, len(Catalog))
 	copy(out, Catalog)
+	out = append(out, customModels()...)
 	return out
 }
 
@@ -223,12 +234,12 @@ func Lookup(model string) (ModelInfo, bool) {
 		return ModelInfo{}, false
 	}
 	_, model = ParseRef(model) // tag-blind: capability lookup is about the id
-	for _, m := range Catalog {
+	for _, m := range Models() {
 		if m.ID == model {
 			return m, true
 		}
 	}
-	for _, m := range Catalog {
+	for _, m := range Models() {
 		if strings.HasPrefix(model, m.ID) || strings.HasPrefix(m.ID, model) {
 			return m, true
 		}

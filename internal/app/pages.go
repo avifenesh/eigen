@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -541,6 +542,45 @@ func modelSelectedDetail(r ModelRow, w int) string {
 type providersState struct {
 	list list
 	rows []ProviderRow
+
+	adding    bool
+	addCursor int
+	editing   bool
+	input     string
+	draft     providerDraft
+	err       string
+	saved     string
+}
+
+type providerDraft struct {
+	Name          string
+	Type          string
+	API           string
+	BaseURL       string
+	APIKeyEnv     string
+	Version       string
+	ModelName     string
+	ModelID       string
+	ContextWindow string
+}
+
+type providerAddField struct {
+	Key     string
+	Label   string
+	Help    string
+	Options []string
+}
+
+var providerAddFields = []providerAddField{
+	{Key: "type", Label: "type", Help: "wire protocol: openai-compatible or anthropic", Options: []string{"openai", "anthropic"}},
+	{Key: "api", Label: "openai api", Help: "OpenAI-compatible endpoint kind", Options: []string{"chat", "responses"}},
+	{Key: "name", Label: "provider name", Help: "short unique provider tag, e.g. openrouter or lab"},
+	{Key: "base_url", Label: "base url", Help: "OpenAI root like https://host/v1 or Anthropic root like https://host/v1"},
+	{Key: "api_key_env", Label: "api key env", Help: "env var containing the key; blank allows no-auth local endpoints"},
+	{Key: "version", Label: "anthropic version", Help: "optional; default 2023-06-01"},
+	{Key: "model_name", Label: "model name", Help: "Eigen alias shown in model picker, e.g. local-qwen"},
+	{Key: "model_id", Label: "wire model id", Help: "id sent to the endpoint; blank uses model name"},
+	{Key: "context_window", Label: "context window", Help: "tokens; blank uses a safe default"},
 }
 
 func (s *providersState) init(*Data) {
@@ -549,11 +589,220 @@ func (s *providersState) init(*Data) {
 }
 
 func (s *providersState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	s.list.key(msg.String(), m.height-6)
+	key := msg.String()
+	if s.adding {
+		return s.updateAdd(m, msg)
+	}
+	s.err, s.saved = "", ""
+	if s.list.key(key, m.height-6) {
+		return m, nil
+	}
+	if key == "a" {
+		s.startAdd()
+		return m, nil
+	}
 	return m, nil
 }
 
+func (s *providersState) startAdd() {
+	s.adding = true
+	s.addCursor = 0
+	s.editing = false
+	s.input = ""
+	s.err = ""
+	s.saved = ""
+	s.draft = providerDraft{Type: "openai", API: "chat", APIKeyEnv: "OPENAI_API_KEY", ContextWindow: "128000"}
+}
+
+func (s *providersState) updateAdd(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	fields := s.visibleAddFields()
+	if len(fields) == 0 {
+		return m, nil
+	}
+	if s.addCursor >= len(fields) {
+		s.addCursor = len(fields) - 1
+	}
+	if s.editing {
+		s.err, s.saved = "", ""
+		switch key {
+		case "esc":
+			s.editing, s.input = false, ""
+		case "enter":
+			s.setDraft(fields[s.addCursor].Key, strings.TrimSpace(s.input))
+			s.editing, s.input = false, ""
+		case "backspace":
+			if len(s.input) > 0 {
+				s.input = s.input[:len(s.input)-1]
+			}
+		default:
+			if len(msg.Runes) > 0 {
+				s.input += string(msg.Runes)
+			} else if key == "space" || key == " " {
+				s.input += " "
+			}
+		}
+		return m, nil
+	}
+	if key == "esc" || key == "q" {
+		s.adding, s.err = false, ""
+		return m, nil
+	}
+	if key == "s" {
+		s.saveDraft(m)
+		return m, nil
+	}
+	if key == "up" || key == "k" || key == "ctrl+p" {
+		if s.addCursor > 0 {
+			s.addCursor--
+		}
+		return m, nil
+	}
+	if key == "down" || key == "j" || key == "ctrl+n" {
+		if s.addCursor < len(fields)-1 {
+			s.addCursor++
+		}
+		return m, nil
+	}
+	field := fields[s.addCursor]
+	if (key == " " || key == "space") && len(field.Options) > 0 {
+		cur := s.draftValue(field.Key)
+		idx := 0
+		for i, opt := range field.Options {
+			if opt == cur {
+				idx = i
+				break
+			}
+		}
+		s.setDraft(field.Key, field.Options[(idx+1)%len(field.Options)])
+		return m, nil
+	}
+	if key == "enter" {
+		if len(field.Options) > 0 {
+			// Closed fields cycle on enter too: less modal state for this small form.
+			s.updateAdd(m, tea.KeyMsg{Type: tea.KeySpace})
+			return m, nil
+		}
+		s.editing = true
+		s.input = s.draftValue(field.Key)
+		return m, nil
+	}
+	return m, nil
+}
+
+func (s *providersState) visibleAddFields() []providerAddField {
+	out := make([]providerAddField, 0, len(providerAddFields))
+	for _, f := range providerAddFields {
+		if s.draft.Type != "anthropic" && f.Key == "version" {
+			continue
+		}
+		if s.draft.Type == "anthropic" && f.Key == "api" {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+func (s *providersState) draftValue(key string) string {
+	switch key {
+	case "type":
+		return s.draft.Type
+	case "api":
+		return s.draft.API
+	case "name":
+		return s.draft.Name
+	case "base_url":
+		return s.draft.BaseURL
+	case "api_key_env":
+		return s.draft.APIKeyEnv
+	case "version":
+		return s.draft.Version
+	case "model_name":
+		return s.draft.ModelName
+	case "model_id":
+		return s.draft.ModelID
+	case "context_window":
+		return s.draft.ContextWindow
+	}
+	return ""
+}
+
+func (s *providersState) setDraft(key, value string) {
+	s.err, s.saved = "", ""
+	switch key {
+	case "type":
+		s.draft.Type = value
+		if value == "anthropic" && s.draft.APIKeyEnv == "OPENAI_API_KEY" {
+			s.draft.APIKeyEnv = "ANTHROPIC_API_KEY"
+		}
+		if value == "openai" && s.draft.APIKeyEnv == "ANTHROPIC_API_KEY" {
+			s.draft.APIKeyEnv = "OPENAI_API_KEY"
+		}
+	case "api":
+		s.draft.API = value
+	case "name":
+		s.draft.Name = value
+	case "base_url":
+		s.draft.BaseURL = value
+	case "api_key_env":
+		s.draft.APIKeyEnv = value
+	case "version":
+		s.draft.Version = value
+	case "model_name":
+		s.draft.ModelName = value
+	case "model_id":
+		s.draft.ModelID = value
+	case "context_window":
+		s.draft.ContextWindow = value
+	}
+}
+
+func (s *providersState) saveDraft(m *Model) {
+	win := 0
+	if strings.TrimSpace(s.draft.ContextWindow) != "" {
+		n, err := strconv.Atoi(strings.TrimSpace(s.draft.ContextWindow))
+		if err != nil || n < 0 {
+			s.err = "context_window must be a non-negative integer"
+			return
+		}
+		win = n
+	}
+	apiKeyEnv := strings.TrimSpace(s.draft.APIKeyEnv)
+	p := llm.CustomProvider{
+		Name:      strings.TrimSpace(s.draft.Name),
+		Type:      strings.TrimSpace(s.draft.Type),
+		API:       strings.TrimSpace(s.draft.API),
+		BaseURL:   strings.TrimSpace(s.draft.BaseURL),
+		APIKeyEnv: apiKeyEnv,
+		NoAuth:    apiKeyEnv == "",
+		Version:   strings.TrimSpace(s.draft.Version),
+		Models: []llm.CustomModel{{
+			Name:          strings.TrimSpace(s.draft.ModelName),
+			ID:            strings.TrimSpace(s.draft.ModelID),
+			ContextWindow: win,
+		}},
+	}
+	if err := llm.UpsertCustomProvider(p); err != nil {
+		s.err = err.Error()
+		return
+	}
+	if cps, err := llm.LoadCustomProviders(); err == nil {
+		m.data.CustomProviders = cps
+	}
+	s.rows = Providers()
+	s.list.count = len(s.rows)
+	m.models.rows = Models()
+	m.models.list.count = len(m.models.rows)
+	s.adding = false
+	s.saved = "provider " + p.Name + " added"
+	s.err = ""
+}
+
 func (s *providersState) view(m *Model, w, h int) string {
+	if s.adding {
+		return s.viewAdd(w, h)
+	}
 	out := pageTitle("providers", providerSubtitle(m.data), w)
 	out += providersSummaryLine(s.rows, w) + "\n\n"
 	from, to := s.list.window(h - 8)
@@ -580,11 +829,61 @@ func (s *providersState) view(m *Model, w, h int) string {
 	if s.list.cursor >= 0 && s.list.cursor < len(s.rows) {
 		out += "\n" + providerSelectedDetail(s.rows[s.list.cursor], w) + "\n"
 	}
-	out += "\n" + sFaint.Render("  credentials external · edit route_providers in config")
+	if s.saved != "" {
+		out += "\n" + sOk.Render("  "+s.saved)
+	}
+	if s.err != "" {
+		out += "\n" + sErr.Render("  "+truncate(s.err, max(20, w-2)))
+	}
+	out += "\n" + sFaint.Render("  a add custom provider · credentials external · edit route_providers in config")
+	return out
+}
+
+func (s *providersState) viewAdd(w, h int) string {
+	out := pageTitle("add provider", "custom OpenAI-compatible or Anthropic endpoint", w)
+	fields := s.visibleAddFields()
+	if len(fields) == 0 {
+		return out
+	}
+	out += sFaint.Render("  enter edit/cycle · space cycle choices · s save · esc cancel") + "\n\n"
+	visible := h - 8
+	if visible < 1 {
+		visible = len(fields)
+	}
+	from := 0
+	if s.addCursor >= visible {
+		from = s.addCursor - visible + 1
+	}
+	to := min(len(fields), from+visible)
+	for i := from; i < to; i++ {
+		f := fields[i]
+		val := s.draftValue(f.Key)
+		if s.editing && i == s.addCursor {
+			val = s.input + "▌"
+		}
+		if val == "" {
+			val = "(blank)"
+		}
+		choiceHint := ""
+		if len(f.Options) > 0 {
+			choiceHint = sDim.Render("  [" + strings.Join(f.Options, "/") + "]")
+		}
+		line := fmt.Sprintf("%s = %s%s", pad(f.Label, 18), truncate(val, max(8, w-28)), choiceHint)
+		out += row(i == s.addCursor, line) + "\n"
+	}
+	if s.addCursor >= 0 && s.addCursor < len(fields) {
+		out += "\n" + sFaint.Render("  "+wrapText(fields[s.addCursor].Help, max(20, w-4))) + "\n"
+	}
+	if s.err != "" {
+		out += sErr.Render("  "+truncate(s.err, max(20, w-2))) + "\n"
+	}
 	return out
 }
 
 func providerSubtitle(d *Data) string {
+	if d != nil && d.CustomErr != "" {
+		return "custom provider catalog error: " + d.CustomErr
+	}
 	if d == nil || !d.Config.Route {
 		return "subtask route off"
 	}
@@ -616,6 +915,12 @@ func providerSelectedDetail(r ProviderRow, w int) string {
 		def = "provider default"
 	}
 	line := fmt.Sprintf("selected: %s · %s · %d model(s) · default %s", r.Name, status, r.Models, def)
+	if r.Custom {
+		line += " · custom " + r.Type
+		if r.BaseURL != "" {
+			line += " · " + r.BaseURL
+		}
+	}
 	return sFaint.Render("  " + truncate(line, max(20, w-2)))
 }
 

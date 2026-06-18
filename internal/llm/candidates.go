@@ -42,6 +42,9 @@ func ProviderAvailable(provider string) bool {
 	case "llama":
 		return os.Getenv("EIGEN_LLAMA_BASE_URL") != ""
 	}
+	if p, ok := customProviderByName(provider); ok {
+		return customProviderAvailable(p)
+	}
 	return false
 }
 
@@ -80,7 +83,7 @@ func RouteCandidates(currentProvider string, allowed []string) []string {
 	}
 
 	var out []string
-	for _, m := range Catalog {
+	for _, m := range Models() {
 		if ok(m.Provider) {
 			out = append(out, m.ID)
 		}
@@ -95,7 +98,7 @@ func RouteCandidates(currentProvider string, allowed []string) []string {
 func AllCredentialedModels() []string {
 	avail := map[string]bool{}
 	var out []string
-	for _, m := range Catalog {
+	for _, m := range Models() {
 		cp := canonicalProvider(m.Provider)
 		v, seen := avail[cp]
 		if !seen {

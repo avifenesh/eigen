@@ -23,7 +23,7 @@ Useful report details:
 
 ## Security expectations
 
-- Do not commit credentials, `.env` files, provider auth files, transcripts, screenshots, or `~/.eigen` runtime data.
+- Do not commit credentials, `.env` files, provider auth files, custom provider files with inline API keys, transcripts, screenshots, or `~/.eigen` runtime data.
 - Project-local repositories must not be able to change Eigen's credential or permission posture through `.env` files.
 - Plugin installs and destructive plugin operations must remain explicit user actions.
 - Observability should record metadata, counts, durations, and hashes rather than raw sensitive payloads.

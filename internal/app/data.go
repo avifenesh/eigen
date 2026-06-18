@@ -78,6 +78,10 @@ type Data struct {
 	Observe     observe.Summary
 	ObserveErr  string
 	ObservePath string
+
+	// CustomProviders are user-added provider catalogs from ~/.eigen/providers.json.
+	CustomProviders []llm.CustomProvider
+	CustomErr       string
 }
 
 // projectDirs returns the known project directories, most recent first.
@@ -164,6 +168,11 @@ func Load() *Data {
 	d.Feed, d.FeedFresh = feed.Load() // instant (cache); app refreshes async
 	d.Machines = remote.Machines()    // saved hosts + ~/.ssh/config (auto-detect)
 	d.ObservePath = observe.DefaultPath()
+	if cps, err := llm.LoadCustomProviders(); err == nil {
+		d.CustomProviders = cps
+	} else if !os.IsNotExist(err) {
+		d.CustomErr = err.Error()
+	}
 	if s, err := observe.ReadSummary(d.ObservePath, 5000); err == nil {
 		d.Observe = s
 	} else if !os.IsNotExist(err) {
@@ -220,11 +229,11 @@ type ModelRow struct {
 	Tags      string // capability tags (search/vision/reasoning…)
 }
 
-// Models lists the catalog with availability.
+// Models lists the built-in catalog plus user-added provider catalogs with availability.
 func Models() []ModelRow {
 	avail := map[string]bool{}
 	var out []ModelRow
-	for _, m := range llm.Catalog {
+	for _, m := range llm.Models() {
 		cp := m.Provider
 		v, seen := avail[cp]
 		if !seen {
@@ -261,13 +270,16 @@ type ProviderRow struct {
 	Available bool
 	Default   string // default model
 	Models    int
+	Type      string
+	BaseURL   string
+	Custom    bool
 }
 
-// Providers summarizes provider credential status from the catalog.
+// Providers summarizes provider credential status from built-in and user-added catalogs.
 func Providers() []ProviderRow {
 	counts := map[string]int{}
 	order := []string{}
-	for _, m := range llm.Catalog {
+	for _, m := range llm.Models() {
 		if counts[m.Provider] == 0 {
 			order = append(order, m.Provider)
 		}
@@ -275,14 +287,36 @@ func Providers() []ProviderRow {
 	}
 	var out []ProviderRow
 	for _, p := range order {
-		out = append(out, ProviderRow{
+		row := ProviderRow{
 			Name:      p,
 			Available: llm.ProviderAvailable(p),
 			Default:   llm.DefaultModel(p),
 			Models:    counts[p],
-		})
+		}
+		if cp, ok := customProviderByName(p); ok {
+			row.Custom = true
+			row.Type = cp.Type
+			if cp.API != "" {
+				row.Type += "/" + cp.API
+			}
+			row.BaseURL = cp.BaseURL
+		}
+		out = append(out, row)
 	}
 	return out
+}
+
+func customProviderByName(name string) (llm.CustomProvider, bool) {
+	providers, err := llm.LoadCustomProviders()
+	if err != nil {
+		return llm.CustomProvider{}, false
+	}
+	for _, p := range providers {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return llm.CustomProvider{}, false
 }
 
 // feedItems returns the renderable feed: dismissed items filtered out.

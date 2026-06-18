@@ -758,7 +758,7 @@ func configOptionsHint(f config.Field) string {
 	switch f.Dynamic {
 	case "providers":
 		var names []string
-		for _, p := range llm.Catalog {
+		for _, p := range llm.Models() {
 			seen := false
 			for _, n := range names {
 				if n == p.Provider {

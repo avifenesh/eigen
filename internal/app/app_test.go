@@ -431,6 +431,55 @@ func TestSkillsPageShowsUsageAndReadableColumns(t *testing.T) {
 	}
 }
 
+func TestProvidersAddCustomProviderUpdatesCatalog(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m := New(testData())
+	m.width, m.height = 120, 30
+	m.active = PageProviders
+	m.providers.rows = Providers()
+	m.providers.list.count = len(m.providers.rows)
+
+	m.Update(key("a"))
+	if !m.providers.adding {
+		t.Fatal("a should open add-provider form")
+	}
+	set := func(field, value string) {
+		fields := m.providers.visibleAddFields()
+		for i, f := range fields {
+			if f.Key == field {
+				m.providers.addCursor = i
+				m.providers.setDraft(field, value)
+				return
+			}
+		}
+		t.Fatalf("field %s not visible", field)
+	}
+	set("name", "localai")
+	set("base_url", "http://127.0.0.1:11434/v1")
+	set("api_key_env", "")
+	set("model_name", "local-qwen")
+	set("model_id", "qwen-wire")
+	set("context_window", "32000")
+	m.Update(key("s"))
+	if m.providers.adding || m.providers.saved == "" {
+		t.Fatalf("save should close form and show saved message, adding=%v saved=%q err=%q", m.providers.adding, m.providers.saved, m.providers.err)
+	}
+	foundProvider, foundModel := false, false
+	for _, r := range m.providers.rows {
+		if r.Name == "localai" && r.Custom && r.Models == 1 && r.Default == "local-qwen" {
+			foundProvider = true
+		}
+	}
+	for _, r := range m.models.rows {
+		if r.ID == "local-qwen" && r.Provider == "localai" && r.Window == 32000 {
+			foundModel = true
+		}
+	}
+	if !foundProvider || !foundModel {
+		t.Fatalf("custom provider/model not reflected: providers=%+v models=%+v", m.providers.rows, m.models.rows)
+	}
+}
+
 func TestModelsAndProvidersPagesShowRoutingContext(t *testing.T) {
 	d := testData()
 	d.Config.Route = true
