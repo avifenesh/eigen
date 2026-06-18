@@ -6,23 +6,28 @@ import (
 )
 
 func TestRedactPatterns(t *testing.T) {
+	awsExample := "AKIA" + "IOSFODNN7EXAMPLE"
+	ghExample := "ghp_" + "abcdefghijklmnopqrstuvwxyz123456"
+	skExample := "sk-proj-" + "abcdefghijklmnop123"
+	pemExample := "-----BEGIN RSA" + " PRIVATE KEY-----\nMIIB\n-----END RSA" + " PRIVATE KEY-----"
+
 	cases := []struct {
 		in       string
 		mustLose []string // substrings that must NOT survive
 		mustKeep []string // substrings that must survive
 	}{
 		{
-			in:       "use AKIA_REDACTED_EXAMPLE for s3",
-			mustLose: []string{"AKIA_REDACTED_EXAMPLE"},
+			in:       "use " + awsExample + " for s3",
+			mustLose: []string{awsExample},
 			mustKeep: []string{"for s3"},
 		},
 		{
-			in:       "gh token ghp_REDACTED_EXAMPLE",
-			mustLose: []string{"ghp_REDACTED_EXAMPLE"},
+			in:       "gh token " + ghExample,
+			mustLose: []string{ghExample},
 		},
 		{
-			in:       "OPENAI sk_REDACTED_EXAMPLE",
-			mustLose: []string{"sk_REDACTED_EXAMPLE"},
+			in:       "OPENAI " + skExample,
+			mustLose: []string{skExample},
 		},
 		{
 			in:       "export GLM_API_KEY=d41d8cd98f00b204e9800998ecf8427e",
@@ -35,7 +40,7 @@ func TestRedactPatterns(t *testing.T) {
 			mustKeep: []string{"Bearer"},
 		},
 		{
-			in:       "BEGIN_RSA_PRIVATE_KEY_TEST_MARKER\nMIIB\nEND_RSA_PRIVATE_KEY_TEST_MARKER",
+			in:       pemExample,
 			mustLose: []string{"MIIB"},
 		},
 		{

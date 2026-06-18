@@ -80,21 +80,29 @@ func TestLoadProjectShadowsUser(t *testing.T) {
 	}
 }
 
-// Load a REAL agentsys command file if present, proving the format runs as-is.
-func TestLoadRealAgentsysCommandIfPresent(t *testing.T) {
-	real := "<user-home>/.claude/plugins/cache/agentsys/system-prompt-curator/2.0.1/commands"
-	if _, err := os.Stat(real); err != nil {
-		t.Skip("agentsys cache not present")
+func TestLoadAgentsysStyleCommandFixture(t *testing.T) {
+	dir := t.TempDir()
+	body := `---
+description: Create or improve production-grade system prompts
+argument-hint: "[role description or --improve path]"
+allowed-tools: Read, Write
+model: claude-opus-4
+---
+
+You are the System Prompt Curator. Do the work for: $ARGUMENTS
+`
+	if err := os.WriteFile(filepath.Join(dir, "system-prompt-curator.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	s := Load(real)
-	if s.Len() == 0 {
-		t.Fatal("expected to load the real agentsys command")
+	s := Load(dir)
+	if s.Len() != 1 {
+		t.Fatalf("want one fixture command, got %d", s.Len())
 	}
 	c := s.All()[0]
-	if c.Description == "" || c.Body == "" {
-		t.Fatalf("real command parsed empty: %+v", c)
+	if c.Description != "Create or improve production-grade system prompts" || c.ArgHint != "[role description or --improve path]" || c.Body == "" {
+		t.Fatalf("fixture command parsed wrong: %+v", c)
 	}
-	if strings.Contains(c.Body, "\n---\n") {
-		t.Fatal("frontmatter leaked into real command body")
+	if strings.Contains(c.Body, "\n---\n") || strings.Contains(c.Body, "allowed-tools") {
+		t.Fatalf("frontmatter leaked into command body: %q", c.Body)
 	}
 }

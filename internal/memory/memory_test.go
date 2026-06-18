@@ -182,11 +182,13 @@ func TestBackupPruning(t *testing.T) {
 func TestAppendRedactsSecrets(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	s, _ := Open("/p")
-	if err := s.Append("the key is AKIA_REDACTED_EXAMPLE and api_key=redacted-example-secret works"); err != nil {
+	awsExample := "AKIA" + "IOSFODNN7EXAMPLE"
+	secretValue := "abcdef" + "123456789012"
+	if err := s.Append("the key is " + awsExample + " and api_key=" + secretValue + " works"); err != nil {
 		t.Fatal(err)
 	}
 	got := strings.Join(s.AdHocNotes(0), "\n")
-	if strings.Contains(got, "AKIA_REDACTED_EXAMPLE") || strings.Contains(got, "redacted-example-secret") {
+	if strings.Contains(got, awsExample) || strings.Contains(got, secretValue) {
 		t.Fatalf("secrets must be redacted, got %q", got)
 	}
 	if !strings.Contains(got, Redacted) {

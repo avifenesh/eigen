@@ -1,0 +1,137 @@
+# Eigen
+
+[![CI](https://github.com/avifenesh/eigen/actions/workflows/ci.yml/badge.svg)](https://github.com/avifenesh/eigen/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/avifenesh/eigen.svg)](https://pkg.go.dev/github.com/avifenesh/eigen)
+
+Eigen is a terminal-first coding agent for Go/Linux workstations: a CLI, TUI, daemon, plugin system, and observability dashboard built around long-running local sessions.
+
+Use it when you want a local agent loop you can inspect, resume, route across models, extend with skills/plugins, and keep under normal approval gates instead of a stateless one-shot wrapper.
+
+## Quick proof signals
+
+- Go module: `github.com/avifenesh/eigen`
+- Main verification command: `make gate` (`go build`, `go vet`, `go test ./...`, gofmt check)
+- Local-first runtime: daemon socket, transcripts, memory, plugins, and config live under `~/.eigen`
+- Safety posture: project-local `.env` files are ignored; credentials are loaded from trusted user config, not from untrusted repos
+
+## Why this project
+
+Use Eigen when you need:
+
+- a persistent coding-agent daemon with resumable sessions;
+- a TUI/app surface for live sessions, projects, models, providers, memory, plugins, crons, and observability;
+- model routing for delegated work while preserving the user-selected main model;
+- plugin/skill/command compatibility with Claude- and Codex-style ecosystems;
+- local telemetry for errors, tools, model/token usage, hooks, route decisions, subagents, and runtime health.
+
+## Installation
+
+Eigen currently builds from source.
+
+```bash
+git clone https://github.com/avifenesh/eigen.git
+cd eigen
+make build
+./bin/eigen --help
+```
+
+For a user-local install:
+
+```bash
+install -Dm755 ./bin/eigen "$HOME/.local/bin/eigen"
+eigen --help
+```
+
+## Quick start
+
+```bash
+# Run one task in the current repo.
+eigen "summarize the project layout"
+
+# Open the terminal app dashboard.
+eigen app
+
+# Run the full local quality gate before committing.
+make gate
+```
+
+What happens:
+
+1. `eigen` loads defaults from `~/.eigen/config.json` and credentials from trusted user-level config.
+2. Interactive sessions attach to the local daemon unless daemonless mode is requested.
+3. Session transcripts, memory, plugin wiring, hooks, and observability data stay local under `~/.eigen`.
+
+## Core concepts
+
+- **Session**: a resumable conversation and tool-use loop.
+- **Daemon**: the long-lived local host for sessions (`eigen daemon`), normally reached through a Unix socket.
+- **App/TUI**: terminal dashboards for sessions, projects, config, models, providers, observe, memory, plugins, machines, and scheduled jobs.
+- **Tools**: file, shell, search, subtask, observe, plugin, and integration capabilities exposed to the model through approval-aware tool calls.
+- **Routing**: optional delegated-work routing. The main model remains the explicit user choice; `/route` only affects delegated subtasks.
+- **Memory**: durable project/global notes injected as compact context, with local storage under `~/.eigen/memory`.
+- **Plugins**: Claude/Codex-style plugin bundles for skills, commands, MCP servers, hooks, and task roles.
+
+## Feature highlights
+
+- Persistent local daemon with session attach/resume.
+- TUI/app pages for live work, projects, sessions, config, models, providers, observability, memory, crons, machines, and plugins.
+- Structured observability for tool failures, model/token usage, skills, hooks, subagents, route decisions, and runtime pressure.
+- Background subtasks and task groups with route-aware model selection.
+- Plugin marketplace support for Claude/Codex-style bundles.
+- Custom slash commands from user and project command directories.
+- Approval-aware safety model for risky tool actions.
+
+## Configuration
+
+The primary config file is:
+
+```text
+~/.eigen/config.json
+```
+
+Common fields include provider/model defaults, routing options, permission mode, theme, and provider-specific settings. Keep credentials in trusted user-level config or supported provider files; do not commit `.env`, `.eigen`, token files, or generated transcripts.
+
+Useful environment variables:
+
+- `EIGEN_INSTANCE=dev` — use the development daemon/socket namespace.
+- `EIGEN_NO_DAEMON=1` — run a foreground daemonless session.
+- `EIGEN_THEME=<name>` — select a theme before startup.
+
+## Development
+
+```bash
+make build      # compile ./bin/eigen
+make test       # go test ./...
+make vet        # go vet ./...
+make gate       # build + vet + test + gofmt check
+make race       # focused race tests for daemon/agent packages
+```
+
+Before opening a PR, run:
+
+```bash
+make gate
+```
+
+## Limitations / tradeoffs
+
+- Eigen is currently optimized for local Linux terminal workflows.
+- Provider credentials and model access are user-supplied; the repo does not include hosted model access.
+- Some app pages reflect local machine state (`~/.eigen`, systemd user timers, SSH config) and may show less data on a fresh install.
+- Remote control is intentionally constrained; raw unauthenticated daemon networking is not a goal.
+
+## Docs
+
+- [Plugins and marketplaces](docs/plugins.md)
+- [Memory system plan](docs/memory-system.md)
+- [Roadmap](ROADMAP.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+
+## Contributing
+
+Bug reports, focused fixes, tests, and documentation improvements are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), run `make gate`, and keep credentials or local runtime artifacts out of commits.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

@@ -1,5 +1,15 @@
 /bin/
+/dist/
+/coverage.out
+
+# local credentials/config; never commit project-local env files
 .env
+.env.*
+!.env.example
+/.eigen/
+
+# local QA evidence can contain private session titles, paths, or screenshots
+/docs/quality/
 
 # design-system scratch mocks
 .design-mock/
