@@ -7,17 +7,44 @@ Eigen is a terminal-first coding agent for Go/Linux workstations: a CLI, TUI, da
 
 Use it when you want a local agent loop you can inspect, resume, route across models, extend with skills/plugins, and keep under normal approval gates instead of a stateless one-shot wrapper.
 
+![Eigen home page](docs/images/app-home.png)
+
 ## What this is (and what it isn't)
 
-Eigen is an **opinionated personal project**. I built it for my own needs, and it's
-shaped end to end by how I like to work — not by an attempt to compete with any
-particular agent or assistant.
+Eigen is an **opinionated personal project**. I built it for my own needs, and
+it's shaped end to end by how I like to work — not by an attempt to compete with
+any particular agent or assistant.
 
-The thing I actually wanted was **one agent that mixes different providers and
-models in a single awareness**, plus the specific features I kept wishing I had:
-resumable local sessions, routing delegated work to whatever model fits while my
-chosen main model stays in charge, durable memory, real observability, and the
-desktop/browser/orientation tooling bundled in.
+It starts from the CLI, but I wanted it to be **a bit more than a CLI** — a
+*home base* I open and live in. So `eigen app` gives it a homepage: a place that
+greets me, surfaces what to act on, and lets me jump between everything from one
+rail.
+
+The thing I actually wanted was **one agent that holds all my providers in a
+single awareness** and lets me move freely between them — Bedrock, hosted
+Claude, OpenAI-compatible endpoints, local models — and then **route work
+between them**: keep my chosen main model in charge while delegated subtasks get
+fed to whatever model fits the job.
+
+On top of that, the features I kept wishing I had, all in one place:
+
+- **Providers in one view** — every credentialed provider/model as a route
+  candidate, switchable without hand-editing JSON.
+- **Routing** — delegate subtasks to a cheaper/faster/stronger model while the
+  main model stays my explicit choice.
+- **Memory** — durable project/global notes that carry across sessions, not a
+  goldfish that forgets every restart.
+- **Dreaming** — background consolidation of memory (the bit I borrowed from how
+  I think about Claude-style reflection) so notes get distilled, not just piled
+  up.
+- **A proactive feed** — the home `act on` list that looks at git/GitHub/memory
+  and *gives me ideas and next steps*, instead of waiting for a prompt.
+- **Observability** — local telemetry for errors, token/model usage, routes,
+  hooks, and subagents, so I can see what the thing actually did.
+
+I want it to feel like **one coherent whole** — something that can think a
+little *with* me and hand me a starting point — not just a wrapper that shells
+out to a model.
 
 So, to be upfront:
 
@@ -32,6 +59,18 @@ So, to be upfront:
   follows what I need.
 
 If that sounds like your kind of tool, great. If not, that's completely fine.
+
+### A look around
+
+Your providers, side by side — Bedrock, hosted Claude, OpenAI-compatible, and
+local endpoints as switchable route candidates:
+
+![Eigen providers page](docs/images/app-providers.png)
+
+The model catalog with route fit — context windows, capability tags
+(reasoning/vision/search), and which models are credentialed:
+
+![Eigen models page](docs/images/app-models.png)
 
 ## Quick proof signals
 
