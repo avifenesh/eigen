@@ -67,6 +67,40 @@
         <div id="inspector" class="inspector-body">Tool calls, diffs, approvals, and workspace context will land here.</div>
       </aside>
     </div>
+
+
+    <div id="new-session-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="new-session-title">
+      <form id="new-session-form" class="modal-card">
+        <div class="modal-head">
+          <div>
+            <div id="new-session-title" class="modal-title">New Eigen session</div>
+            <div class="modal-copy">Choose a workspace and launch a daemon-backed desktop session.</div>
+          </div>
+          <button id="new-session-close" class="ghost compact" type="button">Esc</button>
+        </div>
+        <label class="field">
+          <span>Workspace directory</span>
+          <input id="session-dir" autocomplete="off" placeholder="Current directory" />
+        </label>
+        <label class="field">
+          <span>Model</span>
+          <input id="session-model" autocomplete="off" placeholder="Default configured model" />
+        </label>
+        <label class="field">
+          <span>Permission mode</span>
+          <select id="session-perm">
+            <option value="gated">gated — ask before mutating tools</option>
+            <option value="auto">auto — allow autonomous tool use</option>
+          </select>
+        </label>
+        <div id="new-session-error" class="modal-error hidden"></div>
+        <div class="modal-actions">
+          <button id="new-session-cancel" class="ghost" type="button">Cancel</button>
+          <button class="primary" type="submit">Create session</button>
+        </div>
+      </form>
+    </div>
+
     <script src="/app.js"></script>
   </body>
 </html>

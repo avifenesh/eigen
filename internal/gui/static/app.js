@@ -25,6 +25,14 @@ const permSelect = $('perm-select');
 const searchSelect = $('search-select');
 const searchControl = $('search-control');
 const fastToggle = $('fast-toggle');
+const newSessionModal = $('new-session-modal');
+const newSessionForm = $('new-session-form');
+const newSessionClose = $('new-session-close');
+const newSessionCancel = $('new-session-cancel');
+const newSessionError = $('new-session-error');
+const sessionDirInput = $('session-dir');
+const sessionModelInput = $('session-model');
+const sessionPermInput = $('session-perm');
 
 function desktop() {
   if (!window.go) return null;
@@ -68,9 +76,12 @@ async function getSessions() {
   return api('/api/sessions');
 }
 
-async function createSession() {
-  if (hasDesktopBridge()) return {id: await desktop().NewSession('', '', '')};
-  return api('/api/sessions', {method: 'POST', body: JSON.stringify({})});
+async function createSession(opts = {}) {
+  const dir = opts.dir || '';
+  const model = opts.model || '';
+  const perm = opts.perm || '';
+  if (hasDesktopBridge()) return {id: await desktop().NewSession(dir, model, perm)};
+  return api('/api/sessions', {method: 'POST', body: JSON.stringify({dir, model, perm})});
 }
 
 async function getState(id) {
@@ -541,10 +552,35 @@ function formatApprovalArgs(approval) {
   return args;
 }
 
-$('new-session').onclick = async () => {
-  const out = await createSession();
-  await refreshSessions();
-  await openSession(out.id || out.ID || out);
+$('new-session').onclick = () => openNewSessionModal();
+
+newSessionClose.onclick = () => closeNewSessionModal();
+newSessionCancel.onclick = () => closeNewSessionModal();
+newSessionModal.addEventListener('click', (e) => {
+  if (e.target === newSessionModal) closeNewSessionModal();
+});
+
+newSessionForm.onsubmit = async (e) => {
+  e.preventDefault();
+  setModalError('');
+  const submit = newSessionForm.querySelector('[type="submit"]');
+  submit.disabled = true;
+  submit.textContent = 'Creating…';
+  try {
+    const out = await createSession({
+      dir: sessionDirInput.value.trim(),
+      model: sessionModelInput.value.trim(),
+      perm: sessionPermInput.value,
+    });
+    closeNewSessionModal();
+    await refreshSessions();
+    await openSession(out.id || out.ID || out);
+  } catch (err) {
+    setModalError(err.message || String(err));
+  } finally {
+    submit.disabled = false;
+    submit.textContent = 'Create session';
+  }
 };
 
 $('interrupt').onclick = async () => {
@@ -620,6 +656,28 @@ inputEl.addEventListener('keydown', (e) => {
     $('composer').requestSubmit();
   }
 });
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !newSessionModal.classList.contains('hidden')) closeNewSessionModal();
+});
+
+function openNewSessionModal() {
+  setModalError('');
+  sessionDirInput.value = '';
+  sessionModelInput.value = '';
+  sessionPermInput.value = 'gated';
+  newSessionModal.classList.remove('hidden');
+  setTimeout(() => sessionDirInput.focus(), 0);
+}
+
+function closeNewSessionModal() {
+  newSessionModal.classList.add('hidden');
+}
+
+function setModalError(message) {
+  newSessionError.textContent = message;
+  newSessionError.classList.toggle('hidden', !message);
+}
 
 function updateComposerState(running) {
   const hasSession = !!state.active;
