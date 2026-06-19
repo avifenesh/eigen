@@ -274,6 +274,8 @@ function updateInspector(snap) {
       <div class="kv"><span>shells</span><strong>${escapeHtml(shells.length || 0)}</strong></div>
     </div>
     ${pendingApprovals.length ? `<div class="inspector-card"><div class="card-label">Pending approvals</div>${pendingApprovals.map(approvalSummaryHTML).join('')}</div>` : ''}
+    ${shells.length ? `<div class="inspector-card"><div class="card-label">Background shells</div>${shells.slice(0, 6).map(shellSummaryHTML).join('')}</div>` : ''}
+    ${tools.length ? `<div class="inspector-card"><div class="card-label">Available tools</div>${tools.slice(0, 10).map(toolSummaryHTML).join('')}${tools.length > 10 ? `<div class="small-copy">+${escapeHtml(tools.length - 10)} more tools</div>` : ''}</div>` : ''}
     ${goal ? `<div class="inspector-card"><div class="card-label">Goal</div><div class="small-copy">${escapeHtml(goal)}</div></div>` : ''}
     ${roots.length ? `<div class="inspector-card"><div class="card-label">Workspace roots</div>${roots.slice(0, 4).map(r => `<div class="path-row">${escapeHtml(shortPath(r))}</div>`).join('')}</div>` : ''}
   `;
@@ -310,6 +312,25 @@ function rememberApproval(approval) {
 
 function approvalSummaryHTML(a) {
   return `<div class="approval-mini"><div><strong>${escapeHtml(a.tool)}</strong><span>${escapeHtml(a.id)}</span></div><div class="approval-mini-actions"><button class="primary compact" data-approval-id="${escapeAttr(a.id)}" data-approval-action="allow">Approve</button><button class="ghost compact" data-approval-id="${escapeAttr(a.id)}" data-approval-action="deny">Deny</button></div></div>`;
+}
+
+function shellSummaryHTML(raw) {
+  const id = raw.id || raw.ID || '';
+  const command = raw.command || raw.Command || '';
+  const status = raw.status || raw.Status || 'unknown';
+  const exitCode = raw.exit_code ?? raw.ExitCode;
+  const lastLine = raw.last_line || raw.LastLine || '';
+  return `<div class="shell-mini">
+    <div class="shell-mini-head"><strong>${escapeHtml(id || command || 'shell')}</strong><span class="shell-status ${escapeAttr(status)}">${escapeHtml(status)}${exitCode ? ` · ${escapeHtml(exitCode)}` : ''}</span></div>
+    ${command ? `<div class="shell-command">${escapeHtml(command)}</div>` : ''}
+    ${lastLine ? `<div class="shell-last">${escapeHtml(lastLine)}</div>` : ''}
+  </div>`;
+}
+
+function toolSummaryHTML(raw) {
+  const name = raw.name || raw.Name || '';
+  const readOnly = raw.read_only ?? raw.ReadOnly;
+  return `<div class="tool-mini"><span>${escapeHtml(name)}</span><strong>${readOnly ? 'read' : 'write'}</strong></div>`;
 }
 
 function renderTimeline(messages) {

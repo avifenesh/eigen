@@ -646,3 +646,64 @@ textarea:disabled {
   color: #ffc1c8;
   background: rgba(255,143,155,.09);
 }
+
+/* Inspector shell/tool summaries */
+.shell-mini {
+  border-top: 1px solid rgba(255,255,255,.045);
+  padding: 9px 0;
+}
+.shell-mini:first-of-type { border-top: 0; }
+.shell-mini-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+.shell-mini-head strong {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shell-status {
+  color: var(--muted);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  font-weight: 800;
+}
+.shell-status.running { color: var(--accent); border-color: rgba(98,240,183,.24); }
+.shell-status.exited { color: var(--faint); }
+.shell-command,
+.shell-last {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  margin-top: 5px;
+}
+.shell-last { color: var(--faint); }
+.tool-mini {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0;
+  border-top: 1px solid rgba(255,255,255,.035);
+}
+.tool-mini:first-of-type { border-top: 0; }
+.tool-mini span {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-mini strong {
+  color: var(--faint);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
