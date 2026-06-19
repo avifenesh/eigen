@@ -31,6 +31,26 @@
             <div id="meta" class="meta">Live daemon workspace</div>
           </div>
           <div class="actions">
+            <label class="control-pill model-pill" id="model-control">model
+              <input id="model-input" list="model-presets" placeholder="model id" />
+              <datalist id="model-presets">
+                <option value="openai.gpt-5.5"></option>
+                <option value="claude-opus-4-8"></option>
+                <option value="us.anthropic.claude-opus-4-8"></option>
+                <option value="glm-5.2"></option>
+              </datalist>
+            </label>
+            <label class="control-pill optional" id="effort-control">effort
+              <select id="effort-select">
+                <option value="">default</option>
+                <option value="none">none</option>
+                <option value="low">low</option>
+                <option value="medium">medium</option>
+                <option value="high">high</option>
+                <option value="xhigh">xhigh</option>
+                <option value="max">max</option>
+              </select>
+            </label>
             <label class="control-pill">perm
               <select id="perm-select">
                 <option value="gated">gated</option>

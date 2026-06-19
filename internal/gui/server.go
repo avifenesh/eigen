@@ -211,6 +211,10 @@ func (h *handler) session(w http.ResponseWriter, r *http.Request) {
 		requirePost(w, r, func() error { return h.svc.Resend(id) })
 	case "clear":
 		requirePost(w, r, func() error { return h.svc.Clear(id) })
+	case "model":
+		h.setting(w, r, func(v string) error { return h.svc.SetModel(id, v) })
+	case "effort":
+		h.setting(w, r, func(v string) error { return h.svc.SetEffort(id, v) })
 	case "perm":
 		h.setting(w, r, func(v string) error { return h.svc.SetPerm(id, v) })
 	case "search":

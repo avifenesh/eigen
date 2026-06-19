@@ -76,6 +76,12 @@ func (a *DesktopApp) Interrupt(id string) error { return a.svc.Interrupt(id) }
 func (a *DesktopApp) Resend(id string) error    { return a.svc.Resend(id) }
 func (a *DesktopApp) Clear(id string) error     { return a.svc.Clear(id) }
 func (a *DesktopApp) Remove(id string) error    { return a.svc.Remove(id) }
+func (a *DesktopApp) SetModel(id, model string) error {
+	return a.svc.SetModel(id, model)
+}
+func (a *DesktopApp) SetEffort(id, effort string) error {
+	return a.svc.SetEffort(id, effort)
+}
 func (a *DesktopApp) SetPerm(id, perm string) error {
 	return a.svc.SetPerm(id, perm)
 }

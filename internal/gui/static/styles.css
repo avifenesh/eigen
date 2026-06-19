@@ -548,3 +548,25 @@ textarea:disabled {
   border-color: rgba(98,240,183,.42);
   box-shadow: 0 0 0 3px rgba(98,240,183,.07);
 }
+
+
+/* Model / effort controls */
+.model-pill {
+  min-width: 230px;
+}
+.model-pill input {
+  width: 155px;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  background: transparent;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+.model-pill input::placeholder { color: var(--faint); }
+@media (max-width: 1320px) {
+  .model-pill { min-width: 170px; }
+  .model-pill input { width: 105px; }
+}

@@ -21,6 +21,9 @@ const inspectorEl = $('inspector');
 const inputEl = $('input');
 const sendEl = $('send');
 const jumpLatestEl = $('jump-latest');
+const modelInput = $('model-input');
+const effortSelect = $('effort-select');
+const effortControl = $('effort-control');
 const permSelect = $('perm-select');
 const searchSelect = $('search-select');
 const searchControl = $('search-control');
@@ -135,6 +138,8 @@ async function sessionAction(id, action) {
 
 async function sessionSetting(id, setting, value) {
   if (hasDesktopBridge()) {
+    if (setting === 'model') return desktop().SetModel(id, value);
+    if (setting === 'effort') return desktop().SetEffort(id, value);
     if (setting === 'perm') return desktop().SetPerm(id, value);
     if (setting === 'search') return desktop().SetSearch(id, value);
     if (setting === 'fast') return desktop().SetFast(id, !!value);
@@ -229,10 +234,15 @@ function applyState(id, snap, opts = {}) {
 }
 
 function updateControls(snap) {
+  const model = snap.model || snap.Model || '';
+  const effort = snap.effort || snap.Effort || '';
   const perm = snap.perm || snap.Perm || 'gated';
   const search = snap.search || snap.Search || '';
   const fast = !!(snap.fast || snap.Fast);
   const fastOK = !!(snap.fast_ok || snap.FastOK);
+  if (modelInput && document.activeElement !== modelInput) modelInput.value = model;
+  if (effortSelect) effortSelect.value = effort || '';
+  effortControl?.classList.toggle('hidden', !effort && !state.active);
   if (permSelect) permSelect.value = perm === 'auto' ? 'auto' : 'gated';
   if (searchSelect) searchSelect.value = search || 'off';
   searchControl?.classList.toggle('hidden', !search);
@@ -656,6 +666,27 @@ $('clear').onclick = async () => {
   if (!state.active) return;
   if (!confirm('Clear this session transcript?')) return;
   await sessionAction(state.active, 'clear');
+  await refreshActiveState({force: true});
+};
+
+modelInput.addEventListener('change', async () => {
+  if (!state.active) return;
+  const value = modelInput.value.trim();
+  if (!value) return;
+  await sessionSetting(state.active, 'model', value);
+  await refreshActiveState({force: true});
+});
+
+modelInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    modelInput.blur();
+  }
+});
+
+effortSelect.onchange = async () => {
+  if (!state.active) return;
+  await sessionSetting(state.active, 'effort', effortSelect.value);
   await refreshActiveState({force: true});
 };
 
