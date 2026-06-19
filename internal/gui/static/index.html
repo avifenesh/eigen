@@ -16,7 +16,10 @@
             <div id="daemon" class="subtle">connecting…</div>
           </div>
         </div>
-        <button id="new-session" class="primary">New session</button>
+        <div class="rail-actions">
+          <button id="new-session" class="primary">New session</button>
+          <button id="profile-button" class="ghost rail-secondary" type="button">Profile</button>
+        </div>
         <div class="rail-head">Sessions</div>
         <div id="sessions" class="sessions"></div>
       </aside>
@@ -97,6 +100,30 @@
         <div class="modal-actions">
           <button id="new-session-cancel" class="ghost" type="button">Cancel</button>
           <button class="primary" type="submit">Create session</button>
+        </div>
+      </form>
+    </div>
+
+
+
+    <div id="profile-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="profile-title">
+      <form id="profile-form" class="modal-card profile-card">
+        <div class="modal-head">
+          <div>
+            <div id="profile-title" class="modal-title">Profile & personalization</div>
+            <div class="modal-copy">Edit USER.md — the global prompt Eigen injects to personalize every session.</div>
+          </div>
+          <button id="profile-close" class="ghost compact" type="button">Esc</button>
+        </div>
+        <label class="field">
+          <span>How Eigen should understand you</span>
+          <textarea id="profile-text" class="profile-text" rows="10" placeholder="Example: I prefer concise summaries, direct tradeoffs, and premium UI polish. Ask before destructive actions."></textarea>
+        </label>
+        <div id="profile-error" class="modal-error hidden"></div>
+        <div class="modal-actions">
+          <button id="profile-clear" class="ghost danger" type="button">Clear</button>
+          <button id="profile-cancel" class="ghost" type="button">Cancel</button>
+          <button class="primary" type="submit">Save profile</button>
         </div>
       </form>
     </div>

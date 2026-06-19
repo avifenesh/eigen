@@ -33,6 +33,14 @@ const newSessionError = $('new-session-error');
 const sessionDirInput = $('session-dir');
 const sessionModelInput = $('session-model');
 const sessionPermInput = $('session-perm');
+const profileButton = $('profile-button');
+const profileModal = $('profile-modal');
+const profileForm = $('profile-form');
+const profileClose = $('profile-close');
+const profileCancel = $('profile-cancel');
+const profileClear = $('profile-clear');
+const profileError = $('profile-error');
+const profileText = $('profile-text');
 
 function desktop() {
   if (!window.go) return null;
@@ -74,6 +82,17 @@ async function getHealth() {
 async function getSessions() {
   if (hasDesktopBridge()) return desktop().Sessions();
   return api('/api/sessions');
+}
+
+async function getUserProfile() {
+  if (hasDesktopBridge()) return desktop().UserProfile();
+  const out = await api('/api/profile');
+  return out.profile || '';
+}
+
+async function saveUserProfile(profile) {
+  if (hasDesktopBridge()) return desktop().WriteUserProfile(profile);
+  return api('/api/profile', {method: 'POST', body: JSON.stringify({profile})});
 }
 
 async function createSession(opts = {}) {
@@ -583,6 +602,34 @@ newSessionForm.onsubmit = async (e) => {
   }
 };
 
+profileButton.onclick = () => openProfileModal();
+profileClose.onclick = () => closeProfileModal();
+profileCancel.onclick = () => closeProfileModal();
+profileModal.addEventListener('click', (e) => {
+  if (e.target === profileModal) closeProfileModal();
+});
+profileClear.onclick = () => {
+  profileText.value = '';
+  profileText.focus();
+};
+
+profileForm.onsubmit = async (e) => {
+  e.preventDefault();
+  setProfileError('');
+  const submit = profileForm.querySelector('[type="submit"]');
+  submit.disabled = true;
+  submit.textContent = 'Saving…';
+  try {
+    await saveUserProfile(profileText.value);
+    closeProfileModal();
+  } catch (err) {
+    setProfileError(err.message || String(err));
+  } finally {
+    submit.disabled = false;
+    submit.textContent = 'Save profile';
+  }
+};
+
 $('interrupt').onclick = async () => {
   if (!state.active) return;
   await sessionAction(state.active, 'interrupt');
@@ -658,7 +705,9 @@ inputEl.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !newSessionModal.classList.contains('hidden')) closeNewSessionModal();
+  if (e.key !== 'Escape') return;
+  if (!newSessionModal.classList.contains('hidden')) closeNewSessionModal();
+  if (!profileModal.classList.contains('hidden')) closeProfileModal();
 });
 
 function openNewSessionModal() {
@@ -677,6 +726,28 @@ function closeNewSessionModal() {
 function setModalError(message) {
   newSessionError.textContent = message;
   newSessionError.classList.toggle('hidden', !message);
+}
+
+async function openProfileModal() {
+  setProfileError('');
+  profileText.value = 'Loading…';
+  profileModal.classList.remove('hidden');
+  try {
+    profileText.value = await getUserProfile();
+    profileText.focus();
+  } catch (err) {
+    profileText.value = '';
+    setProfileError(err.message || String(err));
+  }
+}
+
+function closeProfileModal() {
+  profileModal.classList.add('hidden');
+}
+
+function setProfileError(message) {
+  profileError.textContent = message;
+  profileError.classList.toggle('hidden', !message);
 }
 
 function updateComposerState(running) {

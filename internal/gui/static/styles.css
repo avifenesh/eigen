@@ -520,3 +520,31 @@ textarea:disabled {
   gap: 10px;
   margin-top: 18px;
 }
+
+/* Profile editor */
+.rail-actions {
+  display: grid;
+  gap: 8px;
+}
+.rail-secondary {
+  width: 100%;
+}
+.profile-card {
+  width: min(680px, 100%);
+}
+.field textarea.profile-text {
+  width: 100%;
+  min-height: 260px;
+  resize: vertical;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  outline: none;
+  background: rgba(255,255,255,.035);
+  color: var(--text);
+  padding: 13px 14px;
+  line-height: 1.5;
+}
+.field textarea.profile-text:focus {
+  border-color: rgba(98,240,183,.42);
+  box-shadow: 0 0 0 3px rgba(98,240,183,.07);
+}

@@ -97,6 +97,7 @@ func Handler(svc *Service) http.Handler {
 func (h *handler) routes(mux *http.ServeMux) {
 	mux.Handle("/", http.FileServer(http.FS(StaticAssets())))
 	mux.HandleFunc("/api/health", h.health)
+	mux.HandleFunc("/api/profile", h.profile)
 	mux.HandleFunc("/api/sessions", h.sessions)
 	mux.HandleFunc("/api/sessions/", h.session)
 }
@@ -108,6 +109,25 @@ func (h *handler) health(w http.ResponseWriter, r *http.Request) {
 	}
 	v, err := h.svc.Health()
 	writeJSON(w, v, err)
+}
+
+func (h *handler) profile(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		v, err := h.svc.UserProfile()
+		writeJSON(w, map[string]string{"profile": v}, err)
+	case http.MethodPost:
+		var in struct {
+			Profile string `json:"profile"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true}, h.svc.WriteUserProfile(in.Profile))
+	default:
+		methodNotAllowed(w)
+	}
 }
 
 func (h *handler) sessions(w http.ResponseWriter, r *http.Request) {

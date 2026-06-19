@@ -85,6 +85,10 @@ func (a *DesktopApp) SetSearch(id, mode string) error {
 func (a *DesktopApp) SetFast(id string, on bool) error {
 	return a.svc.SetFast(id, on)
 }
+func (a *DesktopApp) UserProfile() (string, error) { return a.svc.UserProfile() }
+func (a *DesktopApp) WriteUserProfile(content string) error {
+	return a.svc.WriteUserProfile(content)
+}
 
 // Subscribe streams daemon events into the Wails runtime event bus as
 // "gui:event". Only one active session stream is needed for the current

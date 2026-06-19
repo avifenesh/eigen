@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/avifenesh/eigen/internal/daemon"
+	"github.com/avifenesh/eigen/internal/memory"
 )
 
 // EnsureDaemon returns a connected daemon client, starting the daemon first when
@@ -148,6 +149,26 @@ func (s *Service) SetSearch(id, mode string) error {
 }
 func (s *Service) SetFast(id string, on bool) error {
 	return s.withClient(func(c *daemon.Client) error { return c.SetFast(id, on) })
+}
+
+// UserProfile returns the global USER.md personalization prompt used by Eigen
+// memory injection. The GUI exposes this as a first-class profile editor.
+func (s *Service) UserProfile() (string, error) {
+	gm, err := memory.OpenGlobal()
+	if err != nil {
+		return "", err
+	}
+	return gm.UserProfile(), nil
+}
+
+// WriteUserProfile replaces the global USER.md personalization prompt. Empty
+// content removes the file, matching memory.Store.WriteUserProfile semantics.
+func (s *Service) WriteUserProfile(content string) error {
+	gm, err := memory.OpenGlobal()
+	if err != nil {
+		return err
+	}
+	return gm.WriteUserProfile(content)
 }
 
 func (s *Service) client() (*daemon.Client, error) { return EnsureDaemon(s.ensure) }
