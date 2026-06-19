@@ -16,6 +16,10 @@ const metaEl = $('meta');
 const daemonEl = $('daemon');
 const inspectorEl = $('inspector');
 const inputEl = $('input');
+const permSelect = $('perm-select');
+const searchSelect = $('search-select');
+const searchControl = $('search-control');
+const fastToggle = $('fast-toggle');
 
 function desktop() {
   if (!window.go) return null;
@@ -94,6 +98,18 @@ async function sessionAction(id, action) {
   return api(`/api/sessions/${encodeURIComponent(id)}/${action}`, {method: 'POST', body: '{}'});
 }
 
+async function sessionSetting(id, setting, value) {
+  if (hasDesktopBridge()) {
+    if (setting === 'perm') return desktop().SetPerm(id, value);
+    if (setting === 'search') return desktop().SetSearch(id, value);
+    if (setting === 'fast') return desktop().SetFast(id, !!value);
+  }
+  return api(`/api/sessions/${encodeURIComponent(id)}/${setting}`, {
+    method: 'POST',
+    body: JSON.stringify({value}),
+  });
+}
+
 async function boot() {
   await waitForDesktopBridge();
   await refreshHealth();
@@ -168,9 +184,45 @@ function applyState(id, snap, opts = {}) {
   metaEl.textContent = `${provider} · ${model} · perm=${perm}${running ? ' · running' : ''}`;
   const messages = snap.messages || snap.Messages || [];
   const beforeMessages = before?.messages || before?.Messages || [];
+  updateControls(snap);
+  updateInspector(snap);
   if (opts.force || messagesSignature(messages) !== messagesSignature(beforeMessages)) {
     renderTimeline(messages);
   }
+}
+
+function updateControls(snap) {
+  const perm = snap.perm || snap.Perm || 'gated';
+  const search = snap.search || snap.Search || '';
+  const fast = !!(snap.fast || snap.Fast);
+  const fastOK = !!(snap.fast_ok || snap.FastOK);
+  if (permSelect) permSelect.value = perm === 'auto' ? 'auto' : 'gated';
+  if (searchSelect) searchSelect.value = search || 'off';
+  searchControl?.classList.toggle('hidden', !search);
+  fastToggle?.classList.toggle('hidden', !fastOK);
+  fastToggle?.classList.toggle('active', fast);
+  if (fastToggle) fastToggle.textContent = fast ? 'Fast on' : 'Fast';
+}
+
+function updateInspector(snap) {
+  if (inspectorEl.querySelector?.('.approval')) return;
+  const roots = snap.roots || snap.Roots || [];
+  const shells = snap.shells || snap.Shells || [];
+  const tools = snap.tools || snap.Tools || [];
+  const tokens = snap.tokens || snap.Tokens || 0;
+  const maxTokens = snap.max_tokens || snap.MaxTokens || 0;
+  const goal = snap.goal || snap.Goal || '';
+  inspectorEl.innerHTML = `
+    <div class="inspector-card">
+      <div class="card-label">Context</div>
+      <div class="kv"><span>tokens</span><strong>${escapeHtml(tokens)}${maxTokens ? ` / ${escapeHtml(maxTokens)}` : ''}</strong></div>
+      <div class="kv"><span>roots</span><strong>${escapeHtml(roots.length || 0)}</strong></div>
+      <div class="kv"><span>tools</span><strong>${escapeHtml(tools.length || 0)}</strong></div>
+      <div class="kv"><span>shells</span><strong>${escapeHtml(shells.length || 0)}</strong></div>
+    </div>
+    ${goal ? `<div class="inspector-card"><div class="card-label">Goal</div><div class="small-copy">${escapeHtml(goal)}</div></div>` : ''}
+    ${roots.length ? `<div class="inspector-card"><div class="card-label">Workspace roots</div>${roots.slice(0, 4).map(r => `<div class="path-row">${escapeHtml(shortPath(r))}</div>`).join('')}</div>` : ''}
+  `;
 }
 
 function renderTimeline(messages) {
@@ -322,6 +374,33 @@ $('interrupt').onclick = async () => {
 $('resend').onclick = async () => {
   if (!state.active) return;
   await sessionAction(state.active, 'resend');
+};
+
+$('clear').onclick = async () => {
+  if (!state.active) return;
+  if (!confirm('Clear this session transcript?')) return;
+  await sessionAction(state.active, 'clear');
+  await refreshActiveState({force: true});
+};
+
+permSelect.onchange = async () => {
+  if (!state.active) return;
+  await sessionSetting(state.active, 'perm', permSelect.value);
+  await refreshActiveState({force: true});
+};
+
+searchSelect.onchange = async () => {
+  if (!state.active) return;
+  await sessionSetting(state.active, 'search', searchSelect.value);
+  await refreshActiveState({force: true});
+};
+
+fastToggle.onclick = async () => {
+  if (!state.active) return;
+  const snap = state.state || {};
+  const next = !(snap.fast || snap.Fast);
+  await sessionSetting(state.active, 'fast', next);
+  await refreshActiveState({force: true});
 };
 
 $('composer').onsubmit = async (e) => {

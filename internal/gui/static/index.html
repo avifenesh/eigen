@@ -23,13 +23,28 @@
 
       <main class="workspace">
         <header class="topbar">
-          <div>
+          <div class="session-heading">
             <div id="title" class="title">Select a session</div>
             <div id="meta" class="meta">Live daemon workspace</div>
           </div>
           <div class="actions">
-            <button id="interrupt" class="ghost">Interrupt</button>
-            <button id="resend" class="ghost">Resend</button>
+            <label class="control-pill">perm
+              <select id="perm-select">
+                <option value="gated">gated</option>
+                <option value="auto">auto</option>
+              </select>
+            </label>
+            <label class="control-pill optional" id="search-control">search
+              <select id="search-select">
+                <option value="off">off</option>
+                <option value="auto">auto</option>
+                <option value="on">on</option>
+              </select>
+            </label>
+            <button id="fast-toggle" class="ghost optional" type="button">Fast</button>
+            <button id="clear" class="ghost danger" type="button">Clear</button>
+            <button id="interrupt" class="ghost" type="button">Interrupt</button>
+            <button id="resend" class="ghost" type="button">Resend</button>
           </div>
         </header>
 

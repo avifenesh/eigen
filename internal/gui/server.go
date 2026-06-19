@@ -191,9 +191,41 @@ func (h *handler) session(w http.ResponseWriter, r *http.Request) {
 		requirePost(w, r, func() error { return h.svc.Resend(id) })
 	case "clear":
 		requirePost(w, r, func() error { return h.svc.Clear(id) })
+	case "perm":
+		h.setting(w, r, func(v string) error { return h.svc.SetPerm(id, v) })
+	case "search":
+		h.setting(w, r, func(v string) error { return h.svc.SetSearch(id, v) })
+	case "fast":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		var in struct {
+			Value bool `json:"value"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true}, h.svc.SetFast(id, in.Value))
 	default:
 		writeError(w, http.StatusNotFound, fmt.Errorf("unknown session action %q", action))
 	}
+}
+
+func (h *handler) setting(w http.ResponseWriter, r *http.Request, fn func(string) error) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var in struct {
+		Value string `json:"value"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true}, fn(in.Value))
 }
 
 func (h *handler) events(w http.ResponseWriter, r *http.Request, id string) {

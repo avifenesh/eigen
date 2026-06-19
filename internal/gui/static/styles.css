@@ -128,7 +128,7 @@ button { cursor: pointer; }
 .workspace {
   min-width: 0;
   display: grid;
-  grid-template-rows: 76px 1fr auto;
+  grid-template-rows: auto 1fr auto;
 }
 .topbar {
   display: flex;
@@ -214,4 +214,87 @@ textarea:focus { border-color: rgba(98,240,183,.38); box-shadow: 0 0 0 3px rgba(
 @media (max-width: 1100px) {
   .shell { grid-template-columns: 250px minmax(0, 1fr); }
   .inspector { display: none; }
+}
+
+
+/* Desktop controls + inspector cards */
+.hidden { display: none !important; }
+.topbar {
+  gap: 18px;
+  min-height: 86px;
+}
+.session-heading { min-width: 0; }
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.control-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 0 8px 0 10px;
+  color: var(--faint);
+  background: rgba(255,255,255,.025);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-weight: 700;
+}
+.control-pill select {
+  appearance: none;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  background: transparent;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+.control-pill option { background: var(--surface-2); color: var(--text); }
+.control-pill:focus-within { border-color: rgba(98,240,183,.38); }
+.ghost.active { color: var(--accent); border-color: rgba(98,240,183,.38); background: rgba(98,240,183,.08); }
+.ghost.danger:hover { color: var(--danger); border-color: rgba(255,143,155,.34); }
+.inspector-card {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px;
+  margin-bottom: 12px;
+  background: rgba(255,255,255,.022);
+}
+.card-label {
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  font-size: 11px;
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+.kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 6px 0;
+  border-top: 1px solid rgba(255,255,255,.04);
+}
+.kv:first-of-type { border-top: 0; }
+.kv span, .small-copy, .path-row { color: var(--muted); }
+.kv strong { color: var(--text); font-weight: 650; }
+.small-copy { font-size: 13px; line-height: 1.5; }
+.path-row {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  padding: 4px 0;
+}
+@media (max-width: 1280px) {
+  .actions .optional { display: none; }
 }

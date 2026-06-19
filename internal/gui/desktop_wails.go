@@ -76,6 +76,15 @@ func (a *DesktopApp) Interrupt(id string) error { return a.svc.Interrupt(id) }
 func (a *DesktopApp) Resend(id string) error    { return a.svc.Resend(id) }
 func (a *DesktopApp) Clear(id string) error     { return a.svc.Clear(id) }
 func (a *DesktopApp) Remove(id string) error    { return a.svc.Remove(id) }
+func (a *DesktopApp) SetPerm(id, perm string) error {
+	return a.svc.SetPerm(id, perm)
+}
+func (a *DesktopApp) SetSearch(id, mode string) error {
+	return a.svc.SetSearch(id, mode)
+}
+func (a *DesktopApp) SetFast(id string, on bool) error {
+	return a.svc.SetFast(id, on)
+}
 
 // Subscribe streams daemon events into the Wails runtime event bus as
 // "gui:event". Only one active session stream is needed for the current
