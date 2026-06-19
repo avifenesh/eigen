@@ -3,6 +3,8 @@ const state = {
   active: null,
   source: null,
   state: null,
+  poll: null,
+  streaming: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -69,12 +71,32 @@ async function openSession(id) {
   state.active = id;
   renderSessions();
   if (state.source) state.source.close();
+  if (state.poll) clearInterval(state.poll);
   const snap = await api(`/api/sessions/${encodeURIComponent(id)}/state`);
+  applyState(id, snap, {force: true});
+  connectEvents(id);
+  state.poll = setInterval(() => refreshActiveState({force: !state.streaming}), 2200);
+}
+
+async function refreshActiveState(opts = {}) {
+  if (!state.active) return;
+  try {
+    const snap = await api(`/api/sessions/${encodeURIComponent(state.active)}/state`);
+    applyState(state.active, snap, opts);
+  } catch (err) {
+    inspectorEl.textContent = `State refresh failed: ${err.message}`;
+  }
+}
+
+function applyState(id, snap, opts = {}) {
+  const before = state.state;
   state.state = snap;
   titleEl.textContent = snap.title || id;
   metaEl.textContent = `${snap.provider || 'provider'} · ${snap.model || 'model'} · perm=${snap.perm || 'gated'}${snap.running ? ' · running' : ''}`;
-  renderTimeline(snap.messages || []);
-  connectEvents(id);
+  const messages = snap.messages || [];
+  if (opts.force || messagesSignature(messages) !== messagesSignature(before?.messages || [])) {
+    renderTimeline(messages);
+  }
 }
 
 function renderTimeline(messages) {
@@ -93,14 +115,27 @@ function renderTimeline(messages) {
 }
 
 function connectEvents(id) {
+  state.streaming = false;
+  if (!window.EventSource) {
+    inspectorEl.textContent = 'Live stream unavailable. Using state polling.';
+    return;
+  }
   const es = new EventSource(`/api/sessions/${encodeURIComponent(id)}/events`);
   state.source = es;
+  es.addEventListener('ready', () => {
+    state.streaming = true;
+    inspectorEl.textContent = 'Live event stream connected.';
+  });
   es.addEventListener('event', (msg) => {
+    state.streaming = true;
     const ev = JSON.parse(msg.data);
     appendEvent(ev.event, ev.replay);
   });
   es.addEventListener('error', () => {
-    inspectorEl.textContent = 'Event stream disconnected. Session state will refresh on the next action.';
+    state.streaming = false;
+    es.close();
+    if (state.source === es) state.source = null;
+    inspectorEl.textContent = 'Live stream unavailable in this shell. Using state polling.';
   });
 }
 

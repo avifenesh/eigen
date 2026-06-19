@@ -7,7 +7,7 @@ build:
 	go build -o $(EIGEN) .
 
 gui-desktop:
-	go build -tags 'wails dev webkit2_41' -o bin/eigen-gui .
+	go build -tags 'wails production webkit2_41' -o bin/eigen-gui .
 
 vet:
 	go vet $(PKGS)
