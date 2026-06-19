@@ -28,6 +28,9 @@ type Host struct {
 	sessions   map[string]*Session
 	seq        int
 	persistDir string
+	// builder rebuilds a cold/unloaded session's agent on demand. The socket
+	// server installs it from Listen, and Restore stores it for resurrected rows.
+	builder Builder
 	// switchModel rebuilds a provider+compactor+budget for a live /model
 	// switch, injected by package main (which owns provider construction).
 	switchModel ModelSwitcher
@@ -128,6 +131,9 @@ func NewHost() *Host {
 func NewPersistentHost(dir string) *Host {
 	return &Host{sessions: map[string]*Session{}, persistDir: dir, started: time.Now()}
 }
+
+// SetBuilder installs the session builder used to rehydrate unloaded sessions.
+func (h *Host) SetBuilder(b Builder) { h.builder = b }
 
 // SetBgCount injects a reporter for the in-memory background-task record count
 // (the BgRegistry lives in package main / the agent layer).
@@ -230,6 +236,10 @@ func (h *Host) Add(dir, model string, a *agent.Agent) *Session {
 	id := fmt.Sprintf("s%d", h.seq)
 	s := newSession(id, dir, model, a)
 	s.notify = h.notify
+	if a != nil {
+		s.coldPerm = string(a.CurrentPerm())
+		s.coldGoal = a.CurrentGoal()
+	}
 	h.sessions[id] = s
 	h.mu.Unlock()
 	h.enablePersist(s)
@@ -238,7 +248,7 @@ func (h *Host) Add(dir, model string, a *agent.Agent) *Session {
 
 // enablePersist hooks continuous transcript + meta saving onto a session.
 func (h *Host) enablePersist(s *Session) {
-	if h.persistDir == "" {
+	if h.persistDir == "" || s.agent == nil {
 		return
 	}
 	dir := h.persistDir
@@ -246,14 +256,169 @@ func (h *Host) enablePersist(s *Session) {
 	// The agent's Persist hook runs in the agent goroutine after every
 	// appended message — the same continuous autosave as the local chat.
 	s.agent.Persist = func(msgs []llm.Message) {
-		if err := transcript.Save(transcriptPath(dir, s.ID), msgs); err != nil {
+		s.persistMu.Lock()
+		err := transcript.Save(transcriptPath(dir, s.ID), msgs)
+		s.persistMu.Unlock()
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "eigen daemon: persist %s: %v\n", s.ID, err)
 			return
 		}
 		h.maybeTitle(s, msgs)
+		s.rememberHistorySummary(msgs)
 	}
 	s.onAttach = func() { h.saveSessionMeta(s) } // persist LastAttached
+	s.onInactive = func() { h.UnloadIfInactive(s.ID) }
 	h.saveSessionMeta(s)
+}
+
+// rememberHistorySummary stores just enough transcript metadata to list a cold
+// session without keeping its full []llm.Message in heap.
+func (s *Session) rememberHistorySummary(msgs []llm.Message) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.turns = len(msgs)
+	if s.fallbackTitle == "" {
+		for _, m := range msgs {
+			if m.Role == llm.RoleUser && strings.TrimSpace(m.Text) != "" {
+				s.fallbackTitle = snippet(m.Text, 48)
+				break
+			}
+		}
+	}
+}
+
+// hydrateLocked reopens an unloaded session. s.loadMu must be held by the
+// caller so a racing detach/finish cannot unload between hydration and the
+// operation that needs the live agent.
+func (h *Host) hydrateLocked(s *Session) error {
+	s.mu.Lock()
+	if s.agent != nil && s.sess != nil {
+		s.mu.Unlock()
+		return nil
+	}
+	dir, model := s.Dir, s.Model
+	perm, goal := s.coldPerm, s.coldGoal
+	roots := append([]string(nil), s.coldRoots...)
+	s.mu.Unlock()
+	if h.builder == nil {
+		return fmt.Errorf("session %s is unloaded and no builder is installed", s.ID)
+	}
+	a, closeFn, err := h.builder(dir, model)
+	if err != nil {
+		return err
+	}
+	if model == "" && a.Provider != nil {
+		model = a.Provider.ModelID()
+	}
+	if perm != "" {
+		a.SetPerm(agent.Permission(perm))
+	}
+	if goal != "" {
+		a.SetGoal(goal)
+	}
+	for _, root := range roots {
+		if _, err := a.AddDir(root); err != nil {
+			fmt.Fprintf(os.Stderr, "eigen daemon: hydrate %s: drop added dir %s: %v\n", s.ID, root, err)
+		}
+	}
+	var history []llm.Message
+	if h.persistDir != "" {
+		history, _ = transcript.Load(transcriptPath(h.persistDir, s.ID))
+	}
+	var as *agent.Session
+	if len(history) > 0 {
+		as = a.Resume(history)
+	} else {
+		as = a.NewSession()
+	}
+	s.mu.Lock()
+	s.Model = model
+	s.bindAgent(a, as)
+	s.onClose = closeFn
+	s.status = StatusIdle
+	s.running = false
+	s.cancel = nil
+	s.approvals = nil
+	s.events = nil
+	s.turns = len(history)
+	s.coldRoots = nil
+	s.mu.Unlock()
+	s.rememberHistorySummary(history)
+	h.enablePersist(s)
+	h.maybeTitle(s, history)
+	return nil
+}
+
+// Hydrate ensures a session has a live agent. Most callers should hold the
+// session's loadMu across their immediate operation; this helper is for tests
+// and low-risk control paths.
+func (h *Host) Hydrate(id string) error {
+	s := h.Get(id)
+	if s == nil {
+		return fmt.Errorf("no such session")
+	}
+	s.loadMu.Lock()
+	defer s.loadMu.Unlock()
+	return h.hydrateLocked(s)
+}
+
+// UnloadIfInactive closes a session's heavyweight resources when it has no
+// attached views and no turn in flight. The durable transcript/meta stay on
+// disk, and Hydrate reopens the session on demand.
+func (h *Host) UnloadIfInactive(id string) bool {
+	s := h.Get(id)
+	if s == nil {
+		return false
+	}
+	s.loadMu.Lock()
+	defer s.loadMu.Unlock()
+
+	s.mu.Lock()
+	if s.agent == nil || s.sess == nil || s.running || len(s.subs) > 0 || sessionHasRunningShells(s.agent) {
+		s.mu.Unlock()
+		return false
+	}
+	s.mu.Unlock()
+
+	s.flush()
+
+	s.mu.Lock()
+	if s.agent == nil || s.sess == nil || s.running || len(s.subs) > 0 || sessionHasRunningShells(s.agent) {
+		s.mu.Unlock()
+		return false
+	}
+	history := s.sess.Messages()
+	s.turns = len(history)
+	s.fallbackTitle = ""
+	for _, m := range history {
+		if m.Role == llm.RoleUser && strings.TrimSpace(m.Text) != "" {
+			s.fallbackTitle = snippet(m.Text, 48)
+			break
+		}
+	}
+	s.coldPerm = string(s.agent.CurrentPerm())
+	s.coldGoal = s.agent.CurrentGoal()
+	s.coldRoots = nil
+	if roots := s.agent.Roots(); len(roots) > 1 {
+		s.coldRoots = append([]string(nil), roots[1:]...)
+	}
+	closeFn := s.onClose
+	s.agent = nil
+	s.sess = nil
+	s.onClose = nil
+	s.events = nil
+	s.approvals = nil
+	s.cancel = nil
+	s.status = StatusIdle
+	s.mu.Unlock()
+	if closeFn != nil {
+		closeFn()
+	}
+	return true
+}
+
+func sessionHasRunningShells(a *agent.Agent) bool {
+	return a != nil && a.Shells != nil && a.Shells.RunningCount() > 0
 }
 
 // saveSessionMeta snapshots a session's resurrect state (call after mutations).
@@ -262,19 +427,28 @@ func (h *Host) saveSessionMeta(s *Session) {
 		return
 	}
 	s.mu.Lock()
+	perm, goal := s.coldPerm, s.coldGoal
+	var roots []string
+	if s.agent != nil {
+		perm = string(s.agent.CurrentPerm())
+		goal = s.agent.CurrentGoal()
+		if rs := s.agent.Roots(); len(rs) > 1 {
+			roots = append([]string(nil), rs[1:]...)
+		}
+	} else {
+		roots = append([]string(nil), s.coldRoots...)
+	}
 	m := persistMeta{
 		ID:    s.ID,
 		Dir:   s.Dir,
 		Model: s.Model,
 		Title: s.title,
-		Perm:  string(s.agent.Perm),
-		Goal:  s.agent.CurrentGoal(),
+		Perm:  perm,
+		Goal:  goal,
 	}
 	// Persist user-granted extra roots (everything past the primary, which is
 	// the session Dir that build() already roots at).
-	if roots := s.agent.Roots(); len(roots) > 1 {
-		m.AddedRoots = append([]string(nil), roots[1:]...)
-	}
+	m.AddedRoots = roots
 	if !s.lastAttached.IsZero() {
 		m.LastAttached = s.lastAttached.Unix()
 	}
@@ -282,57 +456,44 @@ func (h *Host) saveSessionMeta(s *Session) {
 	saveMeta(h.persistDir, m)
 }
 
-// Restore resurrects persisted sessions: for each saved meta it rebuilds the
-// agent (rooted at the session's dir) with build, resumes the saved history,
-// and re-registers under the SAME id so views reattach where they were. A
-// session whose agent fails to build (e.g. credentials gone) is skipped and
-// kept on disk. Returns how many sessions were restored.
+// Restore resurrects persisted sessions as cold rows: it loads only metadata
+// plus a tiny transcript summary for listing/title backfill, but does NOT build
+// providers, tools, MCP servers, LSPs, or full live agents. Attach/input/state
+// rehydrates the session under the SAME id when needed. Returns how many rows
+// were restored.
 func (h *Host) Restore(build Builder) int {
 	if h.persistDir == "" {
 		return 0
 	}
+	h.builder = build
 	restored := 0
 	for _, p := range loadPersisted(h.persistDir) {
-		a, closeFn, err := build(p.meta.Dir, p.meta.Model)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "eigen daemon: restore %s: %v\n", p.meta.ID, err)
-			continue
-		}
-		if p.meta.Perm != "" {
-			a.SetPerm(agent.Permission(p.meta.Perm))
-		}
-		if p.meta.Goal != "" {
-			a.SetGoal(p.meta.Goal)
-		}
-		// Re-apply user-granted extra roots; AddDir re-validates (existence +
-		// not-denied), so a vanished or now-sensitive path silently drops.
-		for _, root := range p.meta.AddedRoots {
-			if _, err := a.AddDir(root); err != nil {
-				fmt.Fprintf(os.Stderr, "eigen daemon: restore %s: drop added dir %s: %v\n", p.meta.ID, root, err)
-			}
-		}
-		s := newSession(p.meta.ID, p.meta.Dir, p.meta.Model, a)
+		s := newColdSession(p.meta.ID, p.meta.Dir, p.meta.Model)
 		s.notify = h.notify
 		s.title = p.meta.Title
+		s.coldPerm = p.meta.Perm
+		s.coldGoal = p.meta.Goal
+		s.coldRoots = append([]string(nil), p.meta.AddedRoots...)
 		if p.meta.LastAttached > 0 {
 			s.lastAttached = time.Unix(p.meta.LastAttached, 0) // survives restart
 		}
-		s.onClose = closeFn
-		if len(p.history) > 0 {
-			s.sess = a.Resume(p.history)
-		}
+		s.onAttach = func() { h.saveSessionMeta(s) } // persist LastAttached
+		s.onInactive = func() { h.UnloadIfInactive(s.ID) }
+		s.rememberHistorySummary(p.history)
 		h.mu.Lock()
 		h.sessions[s.ID] = s
 		if n := idNum(s.ID); n > h.seq {
 			h.seq = n // new sessions continue after the restored ids
 		}
 		h.mu.Unlock()
-		h.enablePersist(s)
 		// Backfill titles for sessions that never got one (titler failed or
 		// the daemon died before the async title landed): maybeTitle no-ops
 		// when already titled, so this is cheap for the rest.
 		h.maybeTitle(s, p.history)
 		restored++
+	}
+	if restored > 0 {
+		runtime.GC()
 	}
 	return restored
 }
@@ -342,6 +503,12 @@ func (h *Host) Get(id string) *Session {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.sessions[id]
+}
+
+func (h *Host) isCurrent(id string, s *Session) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.sessions[id] == s
 }
 
 // Shutdown releases every session's resources (interrupting in-flight turns,
@@ -356,18 +523,22 @@ func (h *Host) Shutdown() {
 	h.sessions = map[string]*Session{}
 	h.mu.Unlock()
 	for _, s := range sessions {
+		s.loadMu.Lock()
 		// Lossless shutdown: first persist the current in-memory transcript,
 		// then cancel any in-flight turn, wait briefly for it to unwind, and
 		// persist again. The agent loop's normal persist() only fires at its
 		// save points; without this shutdown flush, a stop/restart can silently
 		// drop a turn in flight or a /model switch applied only in memory.
-		s.flush()
-		s.interrupt()
-		s.waitUntilIdle(2 * time.Second)
-		s.flush()
+		if s.agent != nil && s.sess != nil {
+			s.flush()
+			s.interrupt()
+			s.waitUntilIdle(2 * time.Second)
+			s.flush()
+		}
 		if s.onClose != nil {
 			s.onClose()
 		}
+		s.loadMu.Unlock()
 	}
 }
 
@@ -380,24 +551,40 @@ func (h *Host) Shutdown() {
 // a session with any history or a running turn.
 func (h *Host) PruneEmpty() []string {
 	h.mu.Lock()
-	var victims []*Session
-	for id, s := range h.sessions {
-		if s.running {
-			continue // never prune a session mid-turn
-		}
-		if s.sess != nil && len(s.sess.Messages()) > 0 {
-			continue
-		}
-		delete(h.sessions, id)
-		victims = append(victims, s)
+	candidates := make([]*Session, 0, len(h.sessions))
+	for _, s := range h.sessions {
+		candidates = append(candidates, s)
 	}
 	h.mu.Unlock()
 	var pruned []string
-	for _, s := range victims {
-		s.interrupt()
+	for _, s := range candidates {
+		s.loadMu.Lock()
+		s.mu.Lock()
+		running := s.running
+		turns := s.turns
+		if s.sess != nil {
+			turns = len(s.sess.Messages())
+		}
+		s.mu.Unlock()
+		if running || turns > 0 {
+			s.loadMu.Unlock()
+			continue // never prune a non-empty session or one mid-turn
+		}
+		h.mu.Lock()
+		if h.sessions[s.ID] != s {
+			h.mu.Unlock()
+			s.loadMu.Unlock()
+			continue
+		}
+		delete(h.sessions, s.ID)
+		h.mu.Unlock()
+		if s.agent != nil {
+			s.interrupt()
+		}
 		if s.onClose != nil {
 			s.onClose()
 		}
+		s.loadMu.Unlock()
 		if h.persistDir != "" {
 			removePersisted(h.persistDir, s.ID)
 		}
@@ -411,12 +598,22 @@ func (h *Host) PruneEmpty() []string {
 func (h *Host) Remove(id string) bool {
 	h.mu.Lock()
 	s := h.sessions[id]
-	delete(h.sessions, id)
 	h.mu.Unlock()
 	if s == nil {
 		return false
 	}
-	s.interrupt()
+	s.loadMu.Lock()
+	defer s.loadMu.Unlock()
+	h.mu.Lock()
+	if h.sessions[id] != s {
+		h.mu.Unlock()
+		return false
+	}
+	delete(h.sessions, id)
+	h.mu.Unlock()
+	if s.agent != nil {
+		s.interrupt()
+	}
 	if s.onClose != nil {
 		s.onClose()
 	}

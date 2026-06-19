@@ -34,6 +34,7 @@ func SocketPath() string {
 // own the socket; a second bind fails, which the caller treats as "already
 // running".
 func Listen(sockPath string, host *Host, build Builder) (*Server, error) {
+	host.SetBuilder(build)
 	if sockPath == "" {
 		sockPath = SocketPath()
 	}
@@ -102,6 +103,25 @@ func (s *Server) handle(conn net.Conn) {
 		}
 	}()
 
+	withLiveSession := func(id string, fn func(*Session)) {
+		sess := s.host.Get(id)
+		if sess == nil {
+			send(Response{Type: "error", Error: "no such session"})
+			return
+		}
+		sess.loadMu.Lock()
+		defer sess.loadMu.Unlock()
+		if !s.host.isCurrent(id, sess) {
+			send(Response{Type: "error", Error: "no such session"})
+			return
+		}
+		if err := s.host.hydrateLocked(sess); err != nil {
+			send(Response{Type: "error", Error: err.Error()})
+			return
+		}
+		fn(sess)
+	}
+
 	sc := bufio.NewScanner(conn)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for sc.Scan() {
@@ -134,6 +154,9 @@ func (s *Server) handle(conn net.Conn) {
 				s.host.saveSessionMeta(sess)
 			}
 			send(Response{Type: "ok", ID: sess.ID})
+			// A newly-created daemon row should not keep providers/MCP/LSP resident
+			// until a view/input actually uses it.
+			s.host.UnloadIfInactive(sess.ID)
 		case "remove":
 			if s.host.Remove(req.ID) {
 				send(Response{Type: "ok"})
@@ -143,134 +166,107 @@ func (s *Server) handle(conn net.Conn) {
 		case "prune":
 			send(Response{Type: "ok", Pruned: s.host.PruneEmpty()})
 		case "state":
-			sess := s.host.Get(req.ID)
-			if sess == nil {
-				send(Response{Type: "error", Error: "no such session"})
-				continue
-			}
-			send(Response{Type: "state", ID: sess.ID, State: sess.state()})
+			withLiveSession(req.ID, func(sess *Session) {
+				send(Response{Type: "state", ID: sess.ID, State: sess.state()})
+			})
 		case "set":
-			sess := s.host.Get(req.ID)
-			if sess == nil {
-				send(Response{Type: "error", Error: "no such session"})
-				continue
-			}
-			switch {
-			case req.Perm != "":
-				sess.setPerm(req.Perm)
-			case req.Goal != nil:
-				sess.setGoal(*req.Goal)
-			case req.Title != nil:
-				sess.SetTitle(*req.Title)
-			case req.Effort != "":
-				if !sess.setEffort(req.Effort) {
-					send(Response{Type: "error", Error: "effort not supported (or unknown level)"})
-					continue
+			withLiveSession(req.ID, func(sess *Session) {
+				switch {
+				case req.Perm != "":
+					sess.setPerm(req.Perm)
+				case req.Goal != nil:
+					sess.setGoal(*req.Goal)
+				case req.Title != nil:
+					sess.SetTitle(*req.Title)
+				case req.Effort != "":
+					if !sess.setEffort(req.Effort) {
+						send(Response{Type: "error", Error: "effort not supported (or unknown level)"})
+						return
+					}
+				case req.Search != "":
+					if !sess.setSearch(req.Search) {
+						send(Response{Type: "error", Error: "search not supported (or unknown mode)"})
+						return
+					}
+				case req.Fast != nil:
+					if !sess.setFast(*req.Fast) {
+						send(Response{Type: "error", Error: "fast mode not supported on this model"})
+						return
+					}
+				case req.Model != "":
+					if s.host.switchModel == nil {
+						send(Response{Type: "error", Error: "model switching unavailable"})
+						return
+					}
+					p, c, budget, err := s.host.switchModel(sess.Dir, req.Model)
+					if err != nil {
+						send(Response{Type: "error", Error: err.Error()})
+						return
+					}
+					sess.setModel(req.Model, p, c, budget)
+				default:
+					send(Response{Type: "error", Error: "set: nothing to set"})
+					return
 				}
-			case req.Search != "":
-				if !sess.setSearch(req.Search) {
-					send(Response{Type: "error", Error: "search not supported (or unknown mode)"})
-					continue
-				}
-			case req.Fast != nil:
-				if !sess.setFast(*req.Fast) {
-					send(Response{Type: "error", Error: "fast mode not supported on this model"})
-					continue
-				}
-			case req.Model != "":
-				if s.host.switchModel == nil {
-					send(Response{Type: "error", Error: "model switching unavailable"})
-					continue
-				}
-				p, c, budget, err := s.host.switchModel(sess.Dir, req.Model)
+				s.host.saveSessionMeta(sess) // durable: survives daemon restart
+				send(Response{Type: "ok"})
+			})
+		case "add-dir":
+			withLiveSession(req.ID, func(sess *Session) {
+				root, err := sess.addDir(req.AddDir)
 				if err != nil {
 					send(Response{Type: "error", Error: err.Error()})
-					continue
+					return
 				}
-				sess.setModel(req.Model, p, c, budget)
-			default:
-				send(Response{Type: "error", Error: "set: nothing to set"})
-				continue
-			}
-			s.host.saveSessionMeta(sess) // durable: survives daemon restart
-			send(Response{Type: "ok"})
-		case "add-dir":
-			sess := s.host.Get(req.ID)
-			if sess == nil {
-				send(Response{Type: "error", Error: "no such session"})
-				continue
-			}
-			root, err := sess.addDir(req.AddDir)
-			if err != nil {
-				send(Response{Type: "error", Error: err.Error()})
-				continue
-			}
-			s.host.saveSessionMeta(sess) // persist the added root across restart
-			send(Response{Type: "ok", Root: root})
+				s.host.saveSessionMeta(sess) // persist the added root across restart
+				send(Response{Type: "ok", Root: root})
+			})
 		case "kill-shell":
-			sess := s.host.Get(req.ID)
-			if sess == nil {
-				send(Response{Type: "error", Error: "no such session"})
-				continue
-			}
-			send(Response{Type: "ok", Killed: sess.killShell(req.Shell)})
+			withLiveSession(req.ID, func(sess *Session) {
+				send(Response{Type: "ok", Killed: sess.killShell(req.Shell)})
+			})
 		case "detach-bash":
-			sess := s.host.Get(req.ID)
-			if sess == nil {
-				send(Response{Type: "error", Error: "no such session"})
-				continue
-			}
-			send(Response{Type: "ok", Detached: sess.detachBash()})
+			withLiveSession(req.ID, func(sess *Session) {
+				send(Response{Type: "ok", Detached: sess.detachBash()})
+			})
 		case "clear":
-			sess := s.host.Get(req.ID)
-			if sess == nil {
-				send(Response{Type: "error", Error: "no such session"})
-				continue
-			}
-			if len(req.History) > 0 {
-				// Reset-to-history: the /resume command loads a transcript
-				// into this session (replaces the conversation).
-				sess.clear()
-				sess.resume(req.History)
-			} else {
-				sess.clear()
-			}
-			s.host.saveSessionMeta(sess)
-			send(Response{Type: "ok"})
-		case "resend":
-			sess := s.host.Get(req.ID)
-			if sess == nil {
-				send(Response{Type: "error", Error: "no such session"})
-				continue
-			}
-			if !sess.resend() {
-				send(Response{Type: "error", Error: "session busy"})
-				continue
-			}
-			send(Response{Type: "ok"})
-		case "compact":
-			sess := s.host.Get(req.ID)
-			if sess == nil {
-				send(Response{Type: "error", Error: "no such session"})
-				continue
-			}
-			before, after, err := sess.compact(context.Background(), req.Target)
-			if err != nil {
-				send(Response{Type: "error", Error: err.Error()})
-				continue
-			}
-			send(Response{Type: "compacted", Before: before, After: after})
-		case "approve":
-			sess := s.host.Get(req.ID)
-			if sess == nil {
-				send(Response{Type: "error", Error: "no such session"})
-				continue
-			}
-			if sess.answer(req.Approval, req.Allow) {
+			withLiveSession(req.ID, func(sess *Session) {
+				if len(req.History) > 0 {
+					// Reset-to-history: the /resume command loads a transcript
+					// into this session (replaces the conversation).
+					sess.clear()
+					sess.resume(req.History)
+				} else {
+					sess.clear()
+				}
+				s.host.saveSessionMeta(sess)
 				send(Response{Type: "ok"})
-			} else {
-				send(Response{Type: "error", Error: "no such pending approval"})
-			}
+			})
+		case "resend":
+			withLiveSession(req.ID, func(sess *Session) {
+				if !sess.resend() {
+					send(Response{Type: "error", Error: "session busy"})
+					return
+				}
+				send(Response{Type: "ok"})
+			})
+		case "compact":
+			withLiveSession(req.ID, func(sess *Session) {
+				before, after, err := sess.compact(context.Background(), req.Target)
+				if err != nil {
+					send(Response{Type: "error", Error: err.Error()})
+					return
+				}
+				send(Response{Type: "compacted", Before: before, After: after})
+			})
+		case "approve":
+			withLiveSession(req.ID, func(sess *Session) {
+				if sess.answer(req.Approval, req.Allow) {
+					send(Response{Type: "ok"})
+				} else {
+					send(Response{Type: "error", Error: "no such pending approval"})
+				}
+			})
 		case "interrupt":
 			if sess := s.host.Get(req.ID); sess != nil {
 				sess.interrupt()
@@ -279,49 +275,44 @@ func (s *Server) handle(conn net.Conn) {
 				send(Response{Type: "error", Error: "no such session"})
 			}
 		case "input":
-			sess := s.host.Get(req.ID)
-			if sess == nil {
-				send(Response{Type: "error", Error: "no such session"})
-				continue
-			}
-			if sess.send(req.Text, req.Images, req.AllowTools) {
-				send(Response{Type: "ok"})
-				continue
-			}
-			// A turn is already running → steer it (inject between tool-call
-			// rounds) instead of rejecting "busy".
-			if sess.steer(req.Text, req.Images) {
-				send(Response{Type: "ok", Steered: true})
-				continue
-			}
-			send(Response{Type: "error", Error: "session busy"})
+			withLiveSession(req.ID, func(sess *Session) {
+				if sess.send(req.Text, req.Images, req.AllowTools) {
+					send(Response{Type: "ok"})
+					return
+				}
+				// A turn is already running → steer it (inject between tool-call
+				// rounds) instead of rejecting "busy".
+				if sess.steer(req.Text, req.Images) {
+					send(Response{Type: "ok", Steered: true})
+					return
+				}
+				send(Response{Type: "error", Error: "session busy"})
+			})
 		case "attach":
-			sess := s.host.Get(req.ID)
-			if sess == nil {
-				send(Response{Type: "error", Error: "no such session"})
-				continue
-			}
 			if detach != nil {
 				detach() // one attachment per connection
+				detach = nil
 			}
-			replay, live, d := sess.attach()
-			detach = d
-			send(Response{Type: "attached", ID: sess.ID})
-			for _, e := range replay {
-				send(Response{Type: "event", Event: wireEvent(e), Replay: true})
-			}
-			// A view attaching mid-wait must still see outstanding approvals
-			// (their broadcast happened before this attach).
-			for _, p := range sess.pendingList() {
-				send(Response{Type: "event", Event: &WireEvent{Kind: "approval", ToolName: p.Tool, Text: p.Tool + " " + p.Args, Result: p.ID}})
-			}
-			// Stream live events for this session on a goroutine; the read loop
-			// continues so the view can still send input/interrupt.
-			go func() {
-				for e := range live {
-					send(Response{Type: "event", Event: wireEvent(e)})
+			withLiveSession(req.ID, func(sess *Session) {
+				replay, live, d := sess.attach()
+				detach = d
+				send(Response{Type: "attached", ID: sess.ID})
+				for _, e := range replay {
+					send(Response{Type: "event", Event: wireEvent(e), Replay: true})
 				}
-			}()
+				// A view attaching mid-wait must still see outstanding approvals
+				// (their broadcast happened before this attach).
+				for _, p := range sess.pendingList() {
+					send(Response{Type: "event", Event: &WireEvent{Kind: "approval", ToolName: p.Tool, Text: p.Tool + " " + p.Args, Result: p.ID}})
+				}
+				// Stream live events for this session on a goroutine; the read loop
+				// continues so the view can still send input/interrupt.
+				go func() {
+					for e := range live {
+						send(Response{Type: "event", Event: wireEvent(e)})
+					}
+				}()
+			})
 		default:
 			send(Response{Type: "error", Error: "unknown op: " + req.Op})
 		}

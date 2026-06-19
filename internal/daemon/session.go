@@ -50,12 +50,23 @@ type Session struct {
 	Dir   string
 	Model string
 
-	mu      sync.Mutex
-	agent   *agent.Agent
-	sess    *agent.Session
-	status  Status
-	title   string
-	updated time.Time
+	mu        sync.Mutex
+	loadMu    sync.Mutex // serializes unload/rehydrate with operations that need a live agent
+	persistMu sync.Mutex // serializes transcript writes that share a fixed tmp path
+	agent     *agent.Agent
+	sess      *agent.Session
+	status    Status
+	title     string
+	updated   time.Time
+
+	// Cold-session metadata kept after an inactive session unloads its agent and
+	// transcript from memory. The daemon can still list the row cheaply and later
+	// rehydrate from disk when a view/input needs it again.
+	turns         int
+	fallbackTitle string
+	coldPerm      string
+	coldGoal      string
+	coldRoots     []string
 
 	// lastAttached: when a view last attached — "last used by ME" for list
 	// ordering (transcript mtime lies; the titler touches files).
@@ -79,10 +90,11 @@ type Session struct {
 	// surfaced in the daemon stats for token-efficiency visibility.
 	cumIn, cumOut, cumCacheRead, cumCacheWrite int64
 
-	cancel  context.CancelFunc // cancels the in-flight turn (interrupt)
-	running bool
-	titling bool   // a title request is already in flight
-	onClose func() // releases the session's external resources (MCP/LSP/observe)
+	cancel     context.CancelFunc // cancels the in-flight turn (interrupt)
+	running    bool
+	titling    bool   // a title request is already in flight
+	onClose    func() // releases the session's external resources (MCP/LSP/observe)
+	onInactive func() // host hook: unload cold resources once idle + detached
 
 	// gated-permission approvals awaiting a view's verdict
 	approvals   map[string]*pendingApproval
@@ -97,26 +109,41 @@ func newSession(id, dir, model string, a *agent.Agent) *Session {
 	if model == "" && a != nil && a.Provider != nil {
 		model = a.Provider.ModelID()
 	}
-	s := &Session{
+	s := newColdSession(id, dir, model)
+	s.bindAgent(a, nil)
+	return s
+}
+
+func newColdSession(id, dir, model string) *Session {
+	return &Session{
 		ID:      id,
 		Dir:     dir,
 		Model:   model,
-		agent:   a,
-		sess:    a.NewSession(),
 		status:  StatusIdle,
 		updated: time.Now(),
 		subs:    map[int]chan agent.Event{},
 	}
-	// Fan out agent events to all attached views + record for replay,
-	// composing the agent's host wrap (observability + hooks) so those run
-	// in the daemon — sessions are observable with zero or many views.
+}
+
+// bindAgent installs a freshly-built agent into this hosted session and wires
+// daemon event fan-out + approvals. sess may be a resumed transcript; nil means
+// start a new empty agent session.
+func (s *Session) bindAgent(a *agent.Agent, sess *agent.Session) {
+	s.agent = a
+	if sess != nil {
+		s.sess = sess
+	} else {
+		s.sess = a.NewSession()
+	}
+	// Fan out agent events to all attached views + record for replay, composing
+	// the agent's host wrap (observability + hooks) so those run in the daemon —
+	// sessions are observable with zero or many views.
 	if a.EventWrap != nil {
 		a.OnEvent = a.EventWrap(s.dispatch)
 	} else {
 		a.OnEvent = s.dispatch
 	}
 	s.installApprover()
-	return s
 }
 
 // dispatch records an event and fans it out to attached views.
@@ -149,17 +176,13 @@ func (s *Session) dispatch(e agent.Event) {
 		s.events = append([]agent.Event(nil), s.events[drop:]...)
 	}
 	s.updated = time.Now()
-	subs := make([]chan agent.Event, 0, len(s.subs))
 	for _, ch := range s.subs {
-		subs = append(subs, ch)
-	}
-	s.mu.Unlock()
-	for _, ch := range subs {
 		select {
 		case ch <- e:
 		default: // a slow view must not stall the agent loop; it can resync
 		}
 	}
+	s.mu.Unlock()
 	if wakeID != "" {
 		s.wakeForBg(wakeID)
 	}
@@ -228,12 +251,19 @@ func (s *Session) attach() (replay []agent.Event, live <-chan agent.Event, detac
 		hook() // persist LastAttached (outside the lock — it re-enters)
 	}
 	return replay, ch, func() {
+		var inactive func()
 		s.mu.Lock()
 		if c, ok := s.subs[id]; ok {
 			delete(s.subs, id)
 			close(c)
 		}
+		if len(s.subs) == 0 && !s.running {
+			inactive = s.onInactive
+		}
 		s.mu.Unlock()
+		if inactive != nil {
+			inactive()
+		}
 	}
 }
 
@@ -340,6 +370,16 @@ func (s *Session) finishTurn(ctx context.Context, err error) {
 		// agent moving even if no TUI is attached.
 		s.wakeForGoalContinue()
 	}
+	// If the turn is now idle with no attached views, let the host unload the
+	// heavyweight agent/tool resources. The hook re-checks running/views because
+	// goal continuation or a racing attach may have made the session active again.
+	s.mu.Lock()
+	inactive := len(s.subs) == 0 && !s.running
+	onInactive := s.onInactive
+	s.mu.Unlock()
+	if inactive && onInactive != nil {
+		onInactive()
+	}
 }
 
 // backgroundedNotifyMin is the minimum turn length worth a desktop notification
@@ -390,7 +430,10 @@ func (s *Session) waitUntilIdle(timeout time.Duration) bool {
 func (s *Session) flush() {
 	s.mu.Lock()
 	sess := s.sess
-	persist := s.agent.Persist
+	var persist func([]llm.Message)
+	if s.agent != nil {
+		persist = s.agent.Persist
+	}
 	s.mu.Unlock()
 	if sess == nil || persist == nil {
 		return
@@ -409,13 +452,21 @@ func (s *Session) info() SessionInfo {
 	title := s.title
 	if title == "" {
 		// Display fallback while the model title hasn't landed (or failed):
-		// a snippet of the first user message beats "(untitled)".
-		for _, m := range s.sess.Messages() {
-			if m.Role == llm.RoleUser && strings.TrimSpace(m.Text) != "" {
-				title = snippet(m.Text, 48)
-				break
+		// a snippet of the first user message beats "(untitled)". Cold sessions
+		// keep that snippet in fallbackTitle after unloading their transcript.
+		title = s.fallbackTitle
+		if title == "" && s.sess != nil {
+			for _, m := range s.sess.Messages() {
+				if m.Role == llm.RoleUser && strings.TrimSpace(m.Text) != "" {
+					title = snippet(m.Text, 48)
+					break
+				}
 			}
 		}
+	}
+	turns := s.turns
+	if s.sess != nil {
+		turns = len(s.sess.Messages())
 	}
 	return SessionInfo{
 		ID:      s.ID,
@@ -423,7 +474,7 @@ func (s *Session) info() SessionInfo {
 		Dir:     s.Dir,
 		Model:   s.Model,
 		Status:  s.status,
-		Turns:   len(s.sess.Messages()),
+		Turns:   turns,
 		Views:   len(s.subs),
 		Updated: s.updated.UnixNano(),
 	}
@@ -527,7 +578,12 @@ func (s *Session) state() *SessionState {
 	model := s.Model
 	title := s.title
 	running := s.running
+	coldPerm := s.coldPerm
+	coldGoal := s.coldGoal
 	s.mu.Unlock()
+	if a == nil || sess == nil {
+		return &SessionState{Title: title, Model: model, Perm: coldPerm, Goal: coldGoal, Running: running}
+	}
 	st := &SessionState{
 		Messages:  sess.Messages(),
 		Tokens:    sess.Tokens(),
@@ -625,6 +681,14 @@ func (s *Session) compact(ctx context.Context, target int) (int, int, error) {
 func (s *Session) resume(history []llm.Message) {
 	s.mu.Lock()
 	s.sess = s.agent.Resume(history)
+	s.turns = len(history)
+	s.fallbackTitle = ""
+	for _, m := range history {
+		if m.Role == llm.RoleUser && strings.TrimSpace(m.Text) != "" {
+			s.fallbackTitle = snippet(m.Text, 48)
+			break
+		}
+	}
 	s.mu.Unlock()
 	// Persist immediately so the resumed history survives a restart even
 	// before the first turn runs.
@@ -638,6 +702,8 @@ func (s *Session) clear() {
 	s.mu.Lock()
 	s.sess = s.agent.NewSession()
 	s.events = nil // a fresh attach replays nothing
+	s.turns = 0
+	s.fallbackTitle = ""
 	s.mu.Unlock()
 	// /clear is user-visible state, not just in-memory UI state. Persist the
 	// empty transcript immediately so a daemon restart cannot resurrect the old

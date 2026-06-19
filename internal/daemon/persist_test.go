@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -109,6 +110,182 @@ func TestPersistAcrossDaemonRestart(t *testing.T) {
 	}
 }
 
+func TestInactivePersistentSessionUnloadsAndHydratesOnDemand(t *testing.T) {
+	persistDir := t.TempDir()
+	sock := filepath.Join(t.TempDir(), "d.sock")
+	var builds, closes atomic.Int32
+	build := func(_, _ string) (*agent.Agent, func(), error) {
+		builds.Add(1)
+		reg, _ := tool.NewRegistry()
+		return &agent.Agent{Provider: echoProvider{}, Tools: reg, Perm: agent.PermAuto}, func() { closes.Add(1) }, nil
+	}
+
+	h := NewPersistentHost(persistDir)
+	srv, err := Listen(sock, h, build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve()
+	defer srv.Close()
+
+	c, err := Dial(sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := c.NewSession("/tmp/proj", "m", "auto", []llm.Message{{Role: llm.RoleUser, Text: "cold hello"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && closes.Load() < 1 {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if builds.Load() != 1 || closes.Load() != 1 {
+		t.Fatalf("new idle session should build then unload once, builds=%d closes=%d", builds.Load(), closes.Load())
+	}
+	s := h.Get(id)
+	if s == nil {
+		t.Fatal("session missing after creation")
+	}
+	isCold := func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.agent == nil && s.sess == nil
+	}
+	isLive := func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.agent != nil && s.sess != nil
+	}
+	if !isCold() {
+		t.Fatal("idle session should be cold after creation")
+	}
+	infos, err := c.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(infos) != 1 || infos[0].Turns != 1 || infos[0].Title != "cold hello" {
+		t.Fatalf("cold row should list from summary metadata, got %+v", infos)
+	}
+
+	st, err := c.State(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Messages) != 1 || st.Messages[0].Text != "cold hello" {
+		t.Fatalf("hydrate-on-state should reload transcript, got %+v", st.Messages)
+	}
+	if builds.Load() != 2 || closes.Load() != 1 || !isLive() {
+		t.Fatalf("state should hydrate without closing active resources, builds=%d closes=%d live=%v", builds.Load(), closes.Load(), isLive())
+	}
+	if !h.UnloadIfInactive(id) {
+		t.Fatal("manual inactive unload should close the hydrated session")
+	}
+	if builds.Load() != 2 || closes.Load() != 2 || !isCold() {
+		t.Fatalf("manual unload mismatch: builds=%d closes=%d live=%v", builds.Load(), closes.Load(), isLive())
+	}
+
+	if err := c.Attach(id, func(WireEvent, bool) {}); err != nil {
+		t.Fatal(err)
+	}
+	if builds.Load() != 3 || closes.Load() != 2 || !isLive() {
+		t.Fatalf("attach should rehydrate and keep resources while view is attached: builds=%d closes=%d live=%v", builds.Load(), closes.Load(), isLive())
+	}
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if closes.Load() == 3 && isCold() {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("closing the last view should unload resources, builds=%d closes=%d live=%v", builds.Load(), closes.Load(), isLive())
+}
+
+func TestColdSessionConcurrentUseAndUnload(t *testing.T) {
+	persistDir := t.TempDir()
+	sock := filepath.Join(t.TempDir(), "d.sock")
+	build := func(_, _ string) (*agent.Agent, func(), error) {
+		reg, _ := tool.NewRegistry()
+		return &agent.Agent{Provider: echoProvider{}, Tools: reg, Perm: agent.PermAuto}, func() {}, nil
+	}
+	h := NewPersistentHost(persistDir)
+	srv, err := Listen(sock, h, build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve()
+	defer srv.Close()
+	c, err := Dial(sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := c.NewSession("/tmp/proj", "m", "auto", []llm.Message{{Role: llm.RoleUser, Text: "seed"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = c.Close()
+
+	var wg sync.WaitGroup
+	for worker := 0; worker < 6; worker++ {
+		worker := worker
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 20; i++ {
+				switch (worker + i) % 4 {
+				case 0:
+					cc, err := Dial(sock)
+					if err == nil {
+						_, _ = cc.State(id)
+						_ = cc.Close()
+					}
+				case 1:
+					cc, err := Dial(sock)
+					if err == nil {
+						_ = cc.Attach(id, func(WireEvent, bool) {})
+						_ = cc.Close()
+					}
+				case 2:
+					cc, err := Dial(sock)
+					if err == nil {
+						_ = cc.Input(id, "turn", nil, nil) // busy is fine; race-free is the assertion
+						_ = cc.Close()
+					}
+				case 3:
+					h.UnloadIfInactive(id)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	waitIdle := func() {
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) && h.AnyRunning() {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if h.AnyRunning() {
+			t.Fatal("session stayed running after stress")
+		}
+	}
+	waitIdle()
+
+	cc, err := Dial(sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cc.Close()
+	st, err := cc.State(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Messages) == 0 || st.Messages[0].Text != "seed" {
+		t.Fatalf("session should remain rehydratable after concurrent use/unload, got %+v", st.Messages)
+	}
+}
+
 func TestRemoveDeletesPersistedFiles(t *testing.T) {
 	persistDir := t.TempDir()
 	h := NewPersistentHost(persistDir)
@@ -135,19 +312,33 @@ func transcript_save_probe(dir, id string) error {
 	return os.WriteFile(transcriptPath(dir, id), []byte(`{"Role":"user","Text":"x"}`+"\n"), 0o644)
 }
 
-func TestRestoreSkipsBrokenBuilds(t *testing.T) {
+func TestRestoreDoesNotBuildUntilHydrate(t *testing.T) {
 	persistDir := t.TempDir()
 	saveMeta(persistDir, persistMeta{ID: "s1", Dir: "/gone", Model: "m"})
 	h := NewPersistentHost(persistDir)
+	var builds atomic.Int32
 	n := h.Restore(func(_, _ string) (*agent.Agent, func(), error) {
+		builds.Add(1)
 		return nil, nil, context.DeadlineExceeded // any error
 	})
-	if n != 0 {
-		t.Fatal("broken build must not restore")
+	if n != 1 {
+		t.Fatalf("restore should keep the cold row without building, got %d", n)
 	}
-	// Files stay on disk for a later attempt.
+	if builds.Load() != 0 {
+		t.Fatalf("restore should not build inactive sessions, builds=%d", builds.Load())
+	}
+	if s := h.Get("s1"); s == nil || s.agent != nil {
+		t.Fatalf("restored session should be present but cold, got %+v", s)
+	}
+	if err := h.Hydrate("s1"); err == nil {
+		t.Fatal("hydrate should surface the deferred build failure")
+	}
+	if builds.Load() != 1 {
+		t.Fatalf("hydrate should build exactly once, builds=%d", builds.Load())
+	}
+	// Files stay on disk for a later successful hydrate attempt.
 	if _, err := os.Stat(metaPath(persistDir, "s1")); err != nil {
-		t.Fatal("failed restore must keep the persisted files")
+		t.Fatal("failed hydrate must keep the persisted files")
 	}
 }
 
@@ -431,6 +622,12 @@ func TestRestoreReappliesAddedRootsAndDropsInvalid(t *testing.T) {
 	s := h.Get("s1")
 	if s == nil {
 		t.Fatal("session not restored")
+	}
+	if s.agent != nil {
+		t.Fatal("restored idle sessions should start cold/unloaded")
+	}
+	if err := h.Hydrate("s1"); err != nil {
+		t.Fatal(err)
 	}
 	roots := s.agent.Roots()
 	// primary + good (gone is dropped on re-validation).

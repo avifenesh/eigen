@@ -16,9 +16,9 @@ import (
 // Persist hook — the same continuous-autosave mechanism the local chat uses),
 // with a sidecar <id>.meta.json recording what the daemon needs to resurrect
 // the session on restart: its dir, model, perm, goal, title. Killing the
-// daemon therefore loses nothing: the next start rebuilds each session's
-// agent (per dir, via the injected Builder) and resumes its history under the
-// SAME id, so views reattach exactly where they were.
+// daemon therefore loses nothing: the next start restores each session as a
+// cold row under the SAME id, and rebuilds/resumes the agent only when a view
+// or input actually needs it.
 
 // SessionsDir is where daemon session transcripts live.
 func SessionsDir() string {
