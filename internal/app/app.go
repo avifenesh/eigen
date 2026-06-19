@@ -34,6 +34,7 @@ const (
 	PageMemory
 	PageCrons
 	PagePlugins
+	PageProfile
 )
 
 // pageSpec describes one app view in rail order. The short purpose/action text
@@ -61,6 +62,7 @@ var pages = []pageSpec{
 	{PageMemory, "memory", "y", "durable project/global notes", "read/consolidate"},
 	{PageCrons, "crons", "r", "timers and scheduled jobs", "trigger/refresh"},
 	{PagePlugins, "plugins", "x", "plugins, wiring, hooks", "manage extensions"},
+	{PageProfile, "profile", "f", "usage and personalization prompt", "edit prompt"},
 }
 
 // Action is what the app asks main to do after it exits.
@@ -106,6 +108,7 @@ type Model struct {
 	memory    memoryState
 	crons     cronsState
 	plugins   pluginsState
+	profile   profileState
 
 	data        *Data // loaded app data (sessions, projects, config…)
 	titledPolls int
@@ -136,6 +139,7 @@ func NewAt(data *Data, initial Page) *Model {
 	m.memory.init(data)
 	m.crons.init(data)
 	m.plugins.init(data)
+	m.profile.init(data)
 	return m
 }
 
@@ -165,6 +169,8 @@ func PageByName(name string) (Page, bool) {
 		return PagePlugins, true
 	case "observe", "observability", "obs", "usage", "telemetry", "errors":
 		return PageObserve, true
+	case "profile", "me", "personalization", "personalisation":
+		return PageProfile, true
 	}
 	return PageHome, false
 }
@@ -441,6 +447,8 @@ func (m *Model) capturingInput() bool {
 		return m.plugins.prompt.active || m.plugins.confirm.active || m.plugins.catalogFocus
 	case PageSkills:
 		return m.skills.prompt.active
+	case PageProfile:
+		return m.profile.editing
 	}
 	return false
 }
@@ -580,6 +588,8 @@ func (m *Model) contentClick(localX, localY int) (tea.Cmd, bool) {
 		return m.memory.clickAt(m, localY)
 	case PagePlugins:
 		return m.plugins.clickAt(m, localX, localY)
+	case PageProfile:
+		return m.profile.clickAt(m, localY)
 	}
 	return nil, false
 }
@@ -628,6 +638,8 @@ func (m *Model) updatePage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.crons.update(m, msg)
 	case PagePlugins:
 		return m.plugins.update(m, msg)
+	case PageProfile:
+		return m.profile.update(m, msg)
 	}
 	return m, nil
 }
@@ -998,6 +1010,8 @@ func (m *Model) renderPage(w, h int) string {
 		return m.crons.view(m, w, h)
 	case PagePlugins:
 		return m.plugins.view(m, w, h)
+	case PageProfile:
+		return m.profile.view(m, w, h)
 	}
 	return ""
 }

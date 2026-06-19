@@ -236,6 +236,27 @@ func TestGlobalSectionLabel(t *testing.T) {
 	}
 }
 
+func TestGlobalUserProfile(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	glob, _ := OpenGlobal()
+	if err := glob.WriteUserProfile("I prefer concise summaries"); err != nil {
+		t.Fatal(err)
+	}
+	if got := glob.UserProfile(); !strings.Contains(got, "I prefer concise summaries") {
+		t.Fatalf("profile not persisted: %q", got)
+	}
+	sec := glob.Section()
+	if !strings.Contains(sec, "User profile") || !strings.Contains(sec, "I prefer concise summaries") {
+		t.Fatalf("global section should inject user profile: %q", sec)
+	}
+	if err := glob.WriteUserProfile(" "); err != nil {
+		t.Fatal(err)
+	}
+	if got := glob.UserProfile(); got != "" {
+		t.Fatalf("empty profile write should clear USER.md, got %q", got)
+	}
+}
+
 func TestSectionsCombinesGlobalThenProject(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	proj, _ := Open("/p")
