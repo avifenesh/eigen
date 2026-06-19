@@ -15,11 +15,11 @@ import (
 func Patch(policy *Policy) Definition {
 	return Definition{
 		Name:        "apply_patch",
-		Description: "Apply a unified diff (git/diff -u style) across one or more files. Supports creating (--- /dev/null) and deleting (+++ /dev/null) files. All hunks must apply or nothing is written.",
+		Description: "Apply a patch across one or more files. Accepts unified diffs (git/diff -u style) and the common *** Begin Patch / *** Update File agent patch format. Supports creating/deleting files. All hunks must apply or nothing is written.",
 		Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
-    "patch": { "type": "string", "description": "The unified diff text." }
+    "patch": { "type": "string", "description": "The patch text: either a unified diff or *** Begin Patch agent patch." }
   },
   "required": ["patch"],
   "additionalProperties": false
@@ -54,16 +54,31 @@ type filePatch struct {
 // lines it produces (context+added), plus the 1-based old start for a hint.
 type patchHunk struct {
 	oldStart int
+	anchors  []string
 	oldLines []string
 	newLines []string
 }
 
 func (f filePatch) creating() bool { return f.oldPath == "/dev/null" }
 func (f filePatch) deleting() bool { return f.newPath == "/dev/null" }
+func (f filePatch) renaming() bool { return !f.creating() && !f.deleting() && f.oldPath != f.newPath }
 
-// parsePatch parses a unified diff into per-file patches.
+// parsePatch parses a unified diff into per-file patches. It also accepts the
+// Codex/OpenAI-style wrapper (*** Begin Patch / *** Update File / *** End
+// Patch) because models frequently emit that syntax even when asked for a raw
+// unified diff.
 func parsePatch(patch string) ([]filePatch, error) {
 	lines := strings.Split(patch, "\n")
+	for _, ln := range lines {
+		if strings.TrimSpace(ln) == "" {
+			continue
+		}
+		if ln == "*** Begin Patch" {
+			return parseAgentPatch(lines)
+		}
+		break
+	}
+
 	var files []filePatch
 	var cur *filePatch
 	var hunk *patchHunk
@@ -115,6 +130,140 @@ func parsePatch(patch string) ([]filePatch, error) {
 		default:
 			// diff/index/other metadata or a trailing blank: end any open hunk.
 			flushHunk()
+		}
+	}
+	flushFile()
+	return files, nil
+}
+
+// parseAgentPatch parses the patch envelope used by Codex/OpenAI-style agents:
+//
+//	*** Begin Patch
+//	*** Update File: path
+//	@@
+//	-old
+//	+new
+//	*** End Patch
+//
+// The body is hunk-like: context lines may be prefixed with a space or left
+// bare. File actions are lowered into the same filePatch structure used for
+// unified diffs, preserving all-or-nothing application semantics.
+func parseAgentPatch(lines []string) ([]filePatch, error) {
+	var files []filePatch
+	var cur *filePatch
+	var hunk *patchHunk
+	mode := ""
+
+	flushHunk := func() {
+		if cur != nil && hunk != nil {
+			if len(hunk.oldLines) > 0 || len(hunk.newLines) > 0 {
+				cur.hunks = append(cur.hunks, *hunk)
+			}
+			hunk = nil
+		}
+	}
+	flushFile := func() {
+		flushHunk()
+		if cur != nil {
+			files = append(files, *cur)
+			cur = nil
+		}
+	}
+	startHunk := func() {
+		if cur == nil {
+			return
+		}
+		flushHunk()
+		hunk = &patchHunk{oldStart: 1}
+	}
+	ensureHunk := func() {
+		if hunk == nil {
+			startHunk()
+		}
+	}
+	appendContext := func(line string) {
+		if cur == nil || mode == "delete" {
+			return
+		}
+		ensureHunk()
+		hunk.oldLines = append(hunk.oldLines, line)
+		hunk.newLines = append(hunk.newLines, line)
+	}
+	appendOld := func(line string) {
+		if cur == nil || mode != "update" {
+			return
+		}
+		ensureHunk()
+		hunk.oldLines = append(hunk.oldLines, line)
+	}
+	appendNew := func(line string) {
+		if cur == nil || mode == "delete" {
+			return
+		}
+		ensureHunk()
+		hunk.newLines = append(hunk.newLines, line)
+	}
+
+	for _, ln := range lines {
+		switch {
+		case ln == "*** Begin Patch":
+			continue
+		case ln == "*** End Patch":
+			flushFile()
+			return files, nil
+		case strings.HasPrefix(ln, "*** Update File:"):
+			flushFile()
+			p := strings.TrimSpace(strings.TrimPrefix(ln, "*** Update File:"))
+			cur = &filePatch{oldPath: p, newPath: p}
+			mode = "update"
+		case strings.HasPrefix(ln, "*** Add File:"):
+			flushFile()
+			p := strings.TrimSpace(strings.TrimPrefix(ln, "*** Add File:"))
+			cur = &filePatch{oldPath: "/dev/null", newPath: p}
+			mode = "add"
+			startHunk()
+		case strings.HasPrefix(ln, "*** Delete File:"):
+			flushFile()
+			p := strings.TrimSpace(strings.TrimPrefix(ln, "*** Delete File:"))
+			cur = &filePatch{oldPath: p, newPath: "/dev/null"}
+			mode = "delete"
+		case strings.HasPrefix(ln, "*** Move to:") || strings.HasPrefix(ln, "*** Rename to:"):
+			if cur == nil || mode != "update" {
+				return nil, fmt.Errorf("move/rename outside update file section")
+			}
+			if strings.HasPrefix(ln, "*** Move to:") {
+				cur.newPath = strings.TrimSpace(strings.TrimPrefix(ln, "*** Move to:"))
+			} else {
+				cur.newPath = strings.TrimSpace(strings.TrimPrefix(ln, "*** Rename to:"))
+			}
+		case strings.HasPrefix(ln, "***"):
+			return nil, fmt.Errorf("unsupported agent patch directive %q", ln)
+		case strings.HasPrefix(ln, "@@"):
+			if cur == nil {
+				return nil, fmt.Errorf("hunk before any file header")
+			}
+			if hunk == nil {
+				startHunk()
+			}
+			if n, err := parseHunkStart(ln); err == nil {
+				hunk.oldStart = n
+			}
+			if anchor := strings.TrimSpace(strings.Trim(ln, "@")); anchor != "" && !strings.HasPrefix(anchor, "-") {
+				hunk.anchors = append(hunk.anchors, anchor)
+			}
+		case strings.HasPrefix(ln, "\\"):
+			// "\ No newline at end of file" — ignore.
+		case ln == "" && cur == nil:
+			continue
+		case len(ln) > 0 && ln[0] == '+':
+			appendNew(ln[1:])
+		case len(ln) > 0 && ln[0] == '-':
+			appendOld(ln[1:])
+		case len(ln) > 0 && ln[0] == ' ':
+			appendContext(ln[1:])
+		default:
+			// Agent-patch context lines are commonly bare (unlike unified diffs).
+			appendContext(ln)
 		}
 	}
 	flushFile()
@@ -177,8 +326,16 @@ func applyPatch(policy *Policy, files []filePatch) (string, error) {
 		}
 		switch {
 		case f.deleting():
+			if _, err := os.Stat(resolved); err != nil {
+				return "", fmt.Errorf("apply_patch: %s: %w", target, err)
+			}
 			results = append(results, result{path: resolved, delete: true})
 		case f.creating():
+			if _, err := os.Stat(resolved); err == nil {
+				return "", fmt.Errorf("apply_patch: %s already exists", target)
+			} else if !os.IsNotExist(err) {
+				return "", fmt.Errorf("apply_patch: %s: %w", target, err)
+			}
 			var added []string
 			for _, h := range f.hunks {
 				added = append(added, h.newLines...)
@@ -208,6 +365,21 @@ func applyPatch(policy *Policy, files []filePatch) (string, error) {
 			return "", err
 		}
 	}
+	for _, f := range files {
+		if !f.creating() && !f.deleting() && f.oldPath != f.newPath {
+			oldResolved, err := policy.Resolve(f.oldPath)
+			if err != nil {
+				return "", err
+			}
+			newResolved, err := policy.Resolve(f.newPath)
+			if err != nil {
+				return "", err
+			}
+			if oldResolved != newResolved {
+				_ = os.Remove(oldResolved)
+			}
+		}
+	}
 	return fmt.Sprintf("applied patch to %d file(s)", len(results)), nil
 }
 
@@ -215,7 +387,7 @@ func applyPatch(policy *Policy, files []filePatch) (string, error) {
 func applyHunks(content string, hunks []patchHunk) (string, error) {
 	lines := strings.Split(content, "\n")
 	for hi, h := range hunks {
-		at := findBlock(lines, h.oldLines, h.oldStart-1)
+		at := findHunk(lines, h)
 		if at < 0 {
 			return "", fmt.Errorf("hunk %d does not apply (context not found)", hi+1)
 		}
@@ -225,36 +397,124 @@ func applyHunks(content string, hunks []patchHunk) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
+func findHunk(lines []string, h patchHunk) int {
+	matches := findBlockMatches(lines, h.oldLines)
+	if len(matches) == 0 {
+		if len(h.oldLines) == 0 {
+			return clampIndex(h.oldStart-1, len(lines))
+		}
+		return -1
+	}
+	hint := h.oldStart - 1
+	if len(h.anchors) == 0 {
+		for _, at := range matches {
+			if at == hint {
+				return at
+			}
+		}
+		return matches[0]
+	}
+	best, bestScore := -1, -1
+	for _, at := range matches {
+		score := anchorScore(lines, h.anchors, at)
+		if score > bestScore || (score == bestScore && closerToHint(at, best, hint)) {
+			best, bestScore = at, score
+		}
+	}
+	return best
+}
+
+func anchorScore(lines, anchors []string, at int) int {
+	if len(anchors) == 0 {
+		return 0
+	}
+	score := 0
+	last := -1
+	for _, anchor := range anchors {
+		found := -1
+		for i := 0; i <= at && i < len(lines); i++ {
+			if lines[i] == anchor {
+				found = i
+			}
+		}
+		if found >= 0 {
+			score++
+			last = found
+		}
+	}
+	if last >= 0 {
+		// Prefer matches closer to the deepest anchor, but keep the primary score
+		// as the number of anchors found.
+		score = score*100000 - (at - last)
+	}
+	return score
+}
+
+func closerToHint(a, b, hint int) bool {
+	if b < 0 {
+		return true
+	}
+	if hint < 0 {
+		return a < b
+	}
+	ad := a - hint
+	if ad < 0 {
+		ad = -ad
+	}
+	bd := b - hint
+	if bd < 0 {
+		bd = -bd
+	}
+	if ad == bd {
+		return a < b
+	}
+	return ad < bd
+}
+
+func clampIndex(n, max int) int {
+	if n < 0 {
+		return 0
+	}
+	if n > max {
+		return max
+	}
+	return n
+}
+
+func findBlockMatches(lines, old []string) []int {
+	if len(old) == 0 {
+		return []int{0}
+	}
+	var out []int
+	for at := 0; at+len(old) <= len(lines); at++ {
+		ok := true
+		for i := range old {
+			if lines[at+i] != old[i] {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			out = append(out, at)
+		}
+	}
+	return out
+}
+
 // findBlock returns the index where old occurs contiguously in lines, preferring
 // the hint position; -1 if not found. An empty old block inserts at the hint.
 func findBlock(lines, old []string, hint int) int {
-	if len(old) == 0 {
-		if hint < 0 {
-			return 0
+	matches := findBlockMatches(lines, old)
+	if len(matches) == 0 {
+		if len(old) == 0 {
+			return clampIndex(hint, len(lines))
 		}
-		if hint > len(lines) {
-			return len(lines)
-		}
-		return hint
+		return -1
 	}
-	match := func(at int) bool {
-		if at < 0 || at+len(old) > len(lines) {
-			return false
-		}
-		for i := range old {
-			if lines[at+i] != old[i] {
-				return false
-			}
-		}
-		return true
-	}
-	if match(hint) {
-		return hint
-	}
-	for at := 0; at+len(old) <= len(lines); at++ {
-		if match(at) {
+	for _, at := range matches {
+		if at == hint {
 			return at
 		}
 	}
-	return -1
+	return matches[0]
 }
