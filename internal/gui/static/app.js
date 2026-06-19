@@ -500,6 +500,7 @@ function toolCardHTML(tool) {
   const args = pretty(tool.args);
   const result = String(tool.result || '');
   const status = tool.status || 'running';
+  const renderedResult = result ? renderToolResult(result, tool.isError) : '';
   return `
     <div class="tool-card-head">
       <div>
@@ -509,7 +510,7 @@ function toolCardHTML(tool) {
       <span class="tool-status ${escapeAttr(status)}">${escapeHtml(status)}</span>
     </div>
     ${args ? `<details class="tool-section" open><summary>Arguments</summary><pre>${escapeHtml(args)}</pre></details>` : ''}
-    ${result ? `<details class="tool-section" open><summary>${tool.isError ? 'Error' : 'Result'}</summary><pre>${escapeHtml(compactToolResult(result))}</pre></details>` : ''}
+    ${renderedResult}
   `;
 }
 
@@ -534,6 +535,31 @@ function compactToolResult(text) {
   return `${s.slice(0, 7800)}
 
 … ${s.length - 7800} more characters`;
+}
+
+function renderToolResult(result, isError) {
+  const label = isError ? 'Error' : isUnifiedDiff(result) ? 'Diff' : 'Result';
+  if (isUnifiedDiff(result)) {
+    return `<details class="tool-section diff-section" open><summary>${label}</summary><div class="diff-view">${renderUnifiedDiff(result)}</div></details>`;
+  }
+  return `<details class="tool-section" open><summary>${label}</summary><pre>${escapeHtml(compactToolResult(result))}</pre></details>`;
+}
+
+function isUnifiedDiff(text) {
+  const s = String(text || '');
+  return /(^|\n)diff --git /.test(s) || /(^|\n)@@ [-+0-9, ]+@@/.test(s) || (/^--- /m.test(s) && /^\+\+\+ /m.test(s));
+}
+
+function renderUnifiedDiff(text) {
+  return compactToolResult(text).split('\n').map(line => {
+    let cls = 'ctx';
+    if (line.startsWith('diff --git')) cls = 'file';
+    else if (line.startsWith('@@')) cls = 'hunk';
+    else if (line.startsWith('+++') || line.startsWith('---')) cls = 'meta';
+    else if (line.startsWith('+')) cls = 'add';
+    else if (line.startsWith('-')) cls = 'del';
+    return `<div class="diff-line ${cls}"><span class="diff-prefix">${escapeHtml(line.slice(0, 1) || ' ')}</span><code>${escapeHtml(line)}</code></div>`;
+  }).join('');
 }
 
 function scrollToVisible(el) {

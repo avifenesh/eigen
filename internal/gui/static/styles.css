@@ -608,3 +608,41 @@ textarea:disabled {
 @media (max-width: 760px) {
   .system-grid { grid-template-columns: 1fr; }
 }
+
+/* Diff viewer inside tool cards */
+.diff-section .diff-view {
+  max-height: 420px;
+  overflow: auto;
+  border-top: 1px solid rgba(255,255,255,.045);
+  background: rgba(0,0,0,.16);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.diff-line {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  min-width: max-content;
+  color: #b8cbc5;
+}
+.diff-line code {
+  padding: 0 12px 0 0;
+  white-space: pre;
+}
+.diff-prefix {
+  color: var(--faint);
+  text-align: center;
+  user-select: none;
+}
+.diff-line.file,
+.diff-line.hunk,
+.diff-line.meta {
+  color: var(--accent-2);
+  background: rgba(159,217,255,.055);
+}
+.diff-line.add {
+  color: #bfffe1;
+  background: rgba(98,240,183,.09);
+}
+.diff-line.del {
+  color: #ffc1c8;
+  background: rgba(255,143,155,.09);
+}
