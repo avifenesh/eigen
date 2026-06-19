@@ -24,6 +24,11 @@ type Definition struct {
 	// ReadOnly marks tools that never mutate state; they auto-run even in gated mode.
 	ReadOnly bool
 
+	// Disabled marks a tool constructed for this session but intentionally omitted
+	// from the registry (for example, git-only tools when the root is not a git
+	// worktree). A disabled tool is not advertised and cannot be dispatched.
+	Disabled bool
+
 	// Niche marks a tool whose full JSON schema is withheld from the model by
 	// default (progressive disclosure): it's listed by name+description in the
 	// system prompt, and the model unlocks its full spec on demand via the
@@ -115,6 +120,9 @@ type Registry struct {
 func NewRegistry(defs ...Definition) (*Registry, error) {
 	r := &Registry{byName: make(map[string]Definition, len(defs))}
 	for _, d := range defs {
+		if d.Disabled {
+			continue
+		}
 		if d.Name == "" {
 			return nil, fmt.Errorf("tool with empty name")
 		}

@@ -6,13 +6,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strings"
 )
 
 // Diff returns the git-diff tool: show the working-tree diff (optionally for a
 // single path). Read-only, so it auto-runs. Useful for the agent to review the
 // changes it has made before summarizing.
 func Diff(policy *Policy) Definition {
-	return Definition{
+	return diff(policy, true)
+}
+
+func diff(policy *Policy, advertise bool) Definition {
+	d := Definition{
 		Name:        "diff",
 		Description: "Show the git diff of the working tree (uncommitted changes). Optionally limit to a path. Read-only.",
 		ReadOnly:    true,
@@ -25,6 +30,9 @@ func Diff(policy *Policy) Definition {
   "additionalProperties": false
 }`),
 		Run: func(ctx context.Context, args json.RawMessage) (string, error) {
+			if !isGitRepo(ctx, policy.Dir()) {
+				return "diff is disabled: this session root is not inside a git repository", nil
+			}
 			var in struct {
 				Path   string `json:"path"`
 				Staged bool   `json:"staged"`
@@ -32,7 +40,7 @@ func Diff(policy *Policy) Definition {
 			if err := json.Unmarshal(args, &in); err != nil {
 				return "", fmt.Errorf("invalid arguments: %w", err)
 			}
-			cmdArgs := []string{"diff"}
+			cmdArgs := []string{"-C", policy.Dir(), "diff"}
 			if in.Staged {
 				cmdArgs = append(cmdArgs, "--staged")
 			}
@@ -59,4 +67,14 @@ func Diff(policy *Policy) Definition {
 			return out.String(), nil
 		},
 	}
+	if advertise && !isGitRepo(context.Background(), policy.Dir()) {
+		d.Disabled = true
+	}
+	return d
+}
+
+func isGitRepo(ctx context.Context, dir string) bool {
+	cmd := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--is-inside-work-tree")
+	out, err := cmd.Output()
+	return err == nil && strings.TrimSpace(string(out)) == "true"
 }

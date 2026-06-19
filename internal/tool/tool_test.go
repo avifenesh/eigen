@@ -6,6 +6,21 @@ import (
 	"testing"
 )
 
+func TestRegistrySkipsDisabledTools(t *testing.T) {
+	disabled := Definition{Name: "off", Disabled: true}
+	enabled := Definition{Name: "on", Run: func(context.Context, json.RawMessage) (string, error) { return "ok", nil }}
+	reg, err := NewRegistry(disabled, enabled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := reg.Get("off"); ok {
+		t.Fatal("disabled tool should be omitted")
+	}
+	if _, ok := reg.Get("on"); !ok {
+		t.Fatal("enabled tool should be registered")
+	}
+}
+
 func TestRegistrySubsetAndReadOnly(t *testing.T) {
 	ro := Definition{Name: "read", ReadOnly: true, Parameters: json.RawMessage(`{"type":"object"}`),
 		Run: func(context.Context, json.RawMessage) (string, error) { return "", nil }}

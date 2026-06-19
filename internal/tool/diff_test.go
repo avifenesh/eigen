@@ -50,6 +50,31 @@ func TestDiffShowsWorkingTreeChanges(t *testing.T) {
 	}
 }
 
+func TestDiffDisabledOutsideGitRepo(t *testing.T) {
+	dir := t.TempDir()
+	d := Diff(NewPolicy(dir))
+	if !d.Disabled {
+		t.Fatal("diff should be disabled outside repos")
+	}
+	reg, err := NewRegistry(d, Read(NewPolicy(dir)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := reg.Get("diff"); ok {
+		t.Fatal("disabled diff should not be registered or advertised")
+	}
+	if _, ok := reg.Get("read"); !ok {
+		t.Fatal("enabled tools should still register")
+	}
+	out, err := d.Run(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "disabled") || !strings.Contains(out, "not inside a git repository") {
+		t.Fatalf("non-git diff should return a disabled notice, got %q", out)
+	}
+}
+
 func TestDiffNoChanges(t *testing.T) {
 	dir := t.TempDir()
 	gitInit(t, dir)
@@ -64,7 +89,7 @@ func TestDiffNoChanges(t *testing.T) {
 }
 
 func TestDiffIsReadOnly(t *testing.T) {
-	if !Diff(NewPolicy(t.TempDir())).ReadOnly {
+	if !diff(NewPolicy(t.TempDir()), false).ReadOnly {
 		t.Fatal("diff should be read-only")
 	}
 }
