@@ -6,6 +6,7 @@ const state = {
   poll: null,
   streaming: false,
   desktopEvents: false,
+  userPinnedBottom: true,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -16,6 +17,8 @@ const metaEl = $('meta');
 const daemonEl = $('daemon');
 const inspectorEl = $('inspector');
 const inputEl = $('input');
+const sendEl = $('send');
+const jumpLatestEl = $('jump-latest');
 const permSelect = $('perm-select');
 const searchSelect = $('search-select');
 const searchControl = $('search-control');
@@ -182,6 +185,7 @@ function applyState(id, snap, opts = {}) {
   const perm = snap.perm || snap.Perm || 'gated';
   const running = snap.running || snap.Running;
   metaEl.textContent = `${provider} · ${model} · perm=${perm}${running ? ' · running' : ''}`;
+  updateComposerState(running);
   const messages = snap.messages || snap.Messages || [];
   const beforeMessages = before?.messages || before?.Messages || [];
   updateControls(snap);
@@ -237,7 +241,7 @@ function renderTimeline(messages) {
     return;
   }
   for (const m of messages) appendMessage(m.role || m.Role || 'message', m.text || m.Text || '');
-  timelineEl.scrollTop = timelineEl.scrollHeight;
+  scrollToBottom();
 }
 
 function closeLiveStream() {
@@ -334,6 +338,7 @@ function appendEvent(e, replay) {
 }
 
 function appendDelta(role, text) {
+  const pinned = isPinnedToBottom();
   let last = timelineEl.lastElementChild;
   if (!last || !last.classList.contains('assistant') || last.dataset.streaming !== '1') {
     last = document.createElement('article');
@@ -343,15 +348,16 @@ function appendDelta(role, text) {
     timelineEl.appendChild(last);
   }
   last.querySelector('.content').textContent += text;
-  timelineEl.scrollTop = timelineEl.scrollHeight;
+  settleScroll(pinned);
 }
 
 function appendEventBlock(cls, label, text) {
+  const pinned = isPinnedToBottom();
   const el = document.createElement('article');
   el.className = `event ${cls}`;
   el.innerHTML = `<div class="kind">${escapeHtml(label)}</div><div class="content">${escapeHtml(text)}</div>`;
   timelineEl.appendChild(el);
-  timelineEl.scrollTop = timelineEl.scrollHeight;
+  settleScroll(pinned);
 }
 
 window.answerApproval = async (approval, allow) => {
@@ -405,12 +411,33 @@ fastToggle.onclick = async () => {
 
 $('composer').onsubmit = async (e) => {
   e.preventDefault();
+  if (!state.active) return;
+  const running = !!(state.state?.running || state.state?.Running);
+  if (running && !inputEl.value.trim()) {
+    await sessionAction(state.active, 'interrupt');
+    return;
+  }
   const text = inputEl.value.trim();
-  if (!text || !state.active) return;
+  if (!text) return;
   appendMessage('user', text);
+  scrollToBottom();
   inputEl.value = '';
+  autoGrowInput();
+  updateSendAvailability();
   await sendInput(state.active, text);
 };
+
+jumpLatestEl.onclick = () => scrollToBottom();
+
+timelineEl.addEventListener('scroll', () => {
+  state.userPinnedBottom = isPinnedToBottom();
+  jumpLatestEl.classList.toggle('hidden', state.userPinnedBottom);
+});
+
+inputEl.addEventListener('input', () => {
+  autoGrowInput();
+  updateSendAvailability();
+});
 
 inputEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -418,6 +445,49 @@ inputEl.addEventListener('keydown', (e) => {
     $('composer').requestSubmit();
   }
 });
+
+function updateComposerState(running) {
+  const hasSession = !!state.active;
+  inputEl.disabled = !hasSession;
+  inputEl.placeholder = !hasSession
+    ? 'Create or select a session to begin…'
+    : running
+      ? 'Steer the running turn, or press Stop with an empty composer…'
+      : 'Ask Eigen to build, inspect, fix, or explain…';
+  if (sendEl) {
+    sendEl.textContent = running && !inputEl.value.trim() ? 'Stop' : 'Send';
+    sendEl.classList.toggle('stop', running && !inputEl.value.trim());
+  }
+  updateSendAvailability();
+}
+
+function updateSendAvailability() {
+  if (!sendEl) return;
+  const running = !!(state.state?.running || state.state?.Running);
+  sendEl.disabled = !state.active || (!running && !inputEl.value.trim());
+  sendEl.textContent = running && !inputEl.value.trim() ? 'Stop' : 'Send';
+  sendEl.classList.toggle('stop', running && !inputEl.value.trim());
+}
+
+function autoGrowInput() {
+  inputEl.style.height = '0px';
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 170) + 'px';
+}
+
+function isPinnedToBottom() {
+  return timelineEl.scrollHeight - timelineEl.scrollTop - timelineEl.clientHeight < 80;
+}
+
+function scrollToBottom() {
+  timelineEl.scrollTop = timelineEl.scrollHeight;
+  state.userPinnedBottom = true;
+  jumpLatestEl?.classList.add('hidden');
+}
+
+function settleScroll(wasPinned) {
+  if (wasPinned || state.userPinnedBottom) scrollToBottom();
+  else jumpLatestEl?.classList.remove('hidden');
+}
 
 function sessionID(s) { return s.id || s.ID; }
 function sessionStatus(s) { return s.status || s.Status; }
@@ -440,4 +510,6 @@ function pretty(v) {
 function escapeHtml(s) { return String(s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
 function escapeAttr(s) { return escapeHtml(s).replace(/`/g, '&#96;'); }
 
+updateComposerState(false);
+autoGrowInput();
 boot();

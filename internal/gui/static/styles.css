@@ -126,6 +126,7 @@ button { cursor: pointer; }
 .badge.error { color: var(--danger); }
 
 .workspace {
+  position: relative;
   min-width: 0;
   display: grid;
   grid-template-rows: auto 1fr auto;
@@ -297,4 +298,36 @@ textarea:focus { border-color: rgba(98,240,183,.38); box-shadow: 0 0 0 3px rgba(
 }
 @media (max-width: 1280px) {
   .actions .optional { display: none; }
+}
+
+/* Streaming ergonomics */
+.jump-latest {
+  position: absolute;
+  right: 24px;
+  bottom: 92px;
+  z-index: 10;
+  border: 1px solid rgba(98,240,183,.32);
+  border-radius: 999px;
+  background: rgba(13,20,22,.92);
+  color: var(--accent);
+  padding: 8px 12px;
+  font-weight: 700;
+  box-shadow: 0 12px 28px rgba(0,0,0,.28);
+}
+.send:disabled {
+  cursor: default;
+  opacity: .46;
+  box-shadow: none;
+}
+.send.stop {
+  background: var(--danger);
+  color: #180407;
+  box-shadow: 0 12px 30px rgba(255,143,155,.10);
+}
+textarea:disabled {
+  opacity: .58;
+  cursor: default;
+}
+@media (max-width: 1100px) {
+  .jump-latest { right: 24px; }
 }
