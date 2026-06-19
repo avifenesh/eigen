@@ -1,0 +1,258 @@
+package gui
+
+import (
+	"context"
+	"embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"net"
+	"net/http"
+	"os/exec"
+	"runtime"
+	"strings"
+	"time"
+)
+
+//go:embed static/*
+var staticFS embed.FS
+
+// ServeOptions configures the development/browser preview for the GUI. The
+// desktop shell will use the same Service directly; this server is the thin
+// browser-facing adapter and a fast way to validate the UI while the native
+// wrapper is still being added.
+type ServeOptions struct {
+	Addr string // default 127.0.0.1:0
+	Open bool
+}
+
+type Server struct {
+	HTTP *http.Server
+	URL  string
+}
+
+// Serve starts a local-only HTTP/SSE adapter for the GUI service.
+func Serve(ctx context.Context, svc *Service, opts ServeOptions) (*Server, error) {
+	addr := strings.TrimSpace(opts.Addr)
+	if addr == "" {
+		addr = "127.0.0.1:0"
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	if !isLocalAddr(ln.Addr().String()) {
+		_ = ln.Close()
+		return nil, fmt.Errorf("gui server refuses non-local bind %q", ln.Addr().String())
+	}
+	mux := http.NewServeMux()
+	h := &handler{svc: svc}
+	h.routes(mux)
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	out := &Server{HTTP: srv, URL: "http://" + ln.Addr().String()}
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	}()
+	go func() {
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			fmt.Println("eigen gui server:", err)
+		}
+	}()
+	if opts.Open {
+		go openBrowser(out.URL)
+	}
+	return out, nil
+}
+
+func isLocalAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+type handler struct{ svc *Service }
+
+func (h *handler) routes(mux *http.ServeMux) {
+	sub, _ := fs.Sub(staticFS, "static")
+	mux.Handle("/", http.FileServer(http.FS(sub)))
+	mux.HandleFunc("/api/health", h.health)
+	mux.HandleFunc("/api/sessions", h.sessions)
+	mux.HandleFunc("/api/sessions/", h.session)
+}
+
+func (h *handler) health(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	v, err := h.svc.Health()
+	writeJSON(w, v, err)
+}
+
+func (h *handler) sessions(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		v, err := h.svc.Sessions()
+		writeJSON(w, v, err)
+	case http.MethodPost:
+		var in struct {
+			Dir   string `json:"dir"`
+			Model string `json:"model"`
+			Perm  string `json:"perm"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil && err.Error() != "EOF" {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		id, err := h.svc.NewSession(in.Dir, in.Model, in.Perm)
+		writeJSON(w, map[string]string{"id": id}, err)
+	default:
+		methodNotAllowed(w)
+	}
+}
+
+func (h *handler) session(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/sessions/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		writeError(w, http.StatusNotFound, fmt.Errorf("session id required"))
+		return
+	}
+	id := parts[0]
+	action := "state"
+	if len(parts) > 1 && parts[1] != "" {
+		action = parts[1]
+	}
+	switch action {
+	case "state":
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w)
+			return
+		}
+		v, err := h.svc.State(id)
+		writeJSON(w, v, err)
+	case "events":
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w)
+			return
+		}
+		h.events(w, r, id)
+	case "input":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		var in struct {
+			Text string `json:"text"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		steered, err := h.svc.Input(id, in.Text)
+		writeJSON(w, map[string]bool{"steered": steered}, err)
+	case "approve":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		var in struct {
+			Approval string `json:"approval"`
+			Allow    bool   `json:"allow"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true}, h.svc.Approve(id, in.Approval, in.Allow))
+	case "interrupt":
+		requirePost(w, r, func() error { return h.svc.Interrupt(id) })
+	case "resend":
+		requirePost(w, r, func() error { return h.svc.Resend(id) })
+	case "clear":
+		requirePost(w, r, func() error { return h.svc.Clear(id) })
+	default:
+		writeError(w, http.StatusNotFound, fmt.Errorf("unknown session action %q", action))
+	}
+}
+
+func (h *handler) events(w http.ResponseWriter, r *http.Request, id string) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("streaming unsupported"))
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	stream, events, err := h.svc.Events(r.Context(), id)
+	if err != nil {
+		writeSSE(w, "error", map[string]string{"error": err.Error()})
+		flusher.Flush()
+		return
+	}
+	defer stream.Close()
+	writeSSE(w, "ready", map[string]string{"id": id})
+	flusher.Flush()
+	for ev := range events {
+		writeSSE(w, "event", ev)
+		flusher.Flush()
+	}
+}
+
+func requirePost(w http.ResponseWriter, r *http.Request, fn func() error) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true}, fn())
+}
+
+func writeJSON(w http.ResponseWriter, v any, err error) {
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, code int, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+}
+
+func methodNotAllowed(w http.ResponseWriter) {
+	writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+}
+
+func writeSSE(w http.ResponseWriter, event string, v any) {
+	b, _ := json.Marshal(v)
+	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)
+}
+
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		if p, err := exec.LookPath("xdg-open"); err == nil {
+			cmd = exec.Command(p, url)
+		} else if p, err := exec.LookPath("gio"); err == nil {
+			cmd = exec.Command(p, "open", url)
+		}
+	}
+	if cmd != nil {
+		_ = cmd.Start()
+	}
+}

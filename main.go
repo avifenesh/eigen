@@ -222,6 +222,13 @@ func main() {
 		return
 	}
 
+	// `eigen gui`: start the first graphical app shell. This is intentionally
+	// daemon-backed from day one; the terminal UI is just another view.
+	if flag.Arg(0) == "gui" {
+		runGUICmd(flag.Args()[1:])
+		return
+	}
+
 	// `eigen daemon [status|stop]`: run / inspect / stop the long-lived session
 	// host (the real app). Windows attach to it as views; sessions keep running
 	// with no window.
