@@ -16,7 +16,6 @@ type profileState struct {
 	input   string
 	status  string
 	err     string
-	clicks  clickMap
 }
 
 func (s *profileState) init(*Data) {}
