@@ -44,6 +44,12 @@ const profileCancel = $('profile-cancel');
 const profileClear = $('profile-clear');
 const profileError = $('profile-error');
 const profileText = $('profile-text');
+const systemButton = $('system-button');
+const systemModal = $('system-modal');
+const systemClose = $('system-close');
+const systemCancel = $('system-cancel');
+const systemRefresh = $('system-refresh');
+const systemBody = $('system-body');
 
 function desktop() {
   if (!window.go) return null;
@@ -584,11 +590,12 @@ function formatApprovalArgs(approval) {
 $('new-session').onclick = () => openNewSessionModal();
 
 function handleRailAction(e) {
-  const target = e.target?.closest?.('#new-session, #profile-button');
+  const target = e.target?.closest?.('#new-session, #profile-button, #system-button');
   if (!target) return;
   e.preventDefault();
   if (target.id === 'new-session') openNewSessionModal();
   if (target.id === 'profile-button') openProfileModal();
+  if (target.id === 'system-button') openSystemModal();
 }
 
 document.addEventListener('pointerdown', handleRailAction, true);
@@ -625,6 +632,13 @@ newSessionForm.onsubmit = async (e) => {
 };
 
 profileButton.onclick = () => openProfileModal();
+systemButton.onclick = () => openSystemModal();
+systemClose.onclick = () => closeSystemModal();
+systemCancel.onclick = () => closeSystemModal();
+systemRefresh.onclick = () => renderSystemHealth();
+systemModal.addEventListener('click', (e) => {
+  if (e.target === systemModal) closeSystemModal();
+});
 profileClose.onclick = () => closeProfileModal();
 profileCancel.onclick = () => closeProfileModal();
 profileModal.addEventListener('click', (e) => {
@@ -751,6 +765,7 @@ function handleGlobalShortcut(e) {
   if (e.key !== 'Escape') return;
   if (!newSessionModal.classList.contains('hidden')) closeNewSessionModal();
   if (!profileModal.classList.contains('hidden')) closeProfileModal();
+  if (!systemModal.classList.contains('hidden')) closeSystemModal();
 }
 
 document.addEventListener('keydown', handleGlobalShortcut, true);
@@ -796,6 +811,66 @@ function closeProfileModal() {
 function setProfileError(message) {
   profileError.textContent = message;
   profileError.classList.toggle('hidden', !message);
+}
+
+async function openSystemModal() {
+  systemModal.classList.remove('hidden');
+  await renderSystemHealth();
+}
+
+function closeSystemModal() {
+  systemModal.classList.add('hidden');
+}
+
+async function renderSystemHealth() {
+  systemBody.innerHTML = '<div class="modal-copy">Loading daemon health…</div>';
+  try {
+    const h = await getHealth();
+    const st = h.stats || h.Stats || {};
+    const rows = [
+      ['daemon', h.ok ? 'connected' : 'offline'],
+      ['socket', h.socket || h.Socket || ''],
+      ['version', st.version || st.Version || ''],
+      ['executable', st.executable || st.Executable || ''],
+      ['revision', st.vcs_revision || st.VCSRevision || ''],
+      ['uptime', formatDuration(st.uptime_sec || st.UptimeSec || 0)],
+      ['sessions', st.sessions ?? st.Sessions ?? 0],
+      ['views', st.views ?? st.Views ?? 0],
+      ['running turns', st.running_turns ?? st.RunningTurns ?? 0],
+      ['background tasks', st.bg_tasks ?? st.BgTasks ?? 0],
+      ['goroutines', st.goroutines ?? st.Goroutines ?? 0],
+      ['heap', formatBytes(st.heap_alloc_b || st.HeapAllocB || 0)],
+      ['rss', formatBytes(st.rss_b || st.RSSB || 0)],
+      ['input tokens', st.input_tokens ?? st.InputTokens ?? 0],
+      ['output tokens', st.output_tokens ?? st.OutputTokens ?? 0],
+      ['cache read', st.cache_read_tokens ?? st.CacheReadTokens ?? 0],
+      ['cache write', st.cache_write_tokens ?? st.CacheWriteTokens ?? 0],
+    ];
+    systemBody.innerHTML = rows.filter(([, v]) => v !== '').map(([k, v]) => `
+      <div class="system-row"><span>${escapeHtml(k)}</span><strong>${escapeHtml(v)}</strong></div>
+    `).join('') + (h.error || h.Error ? `<div class="modal-error">${escapeHtml(h.error || h.Error)}</div>` : '');
+  } catch (err) {
+    systemBody.innerHTML = `<div class="modal-error">${escapeHtml(err.message || String(err))}</div>`;
+  }
+}
+
+function formatBytes(n) {
+  n = Number(n || 0);
+  if (n < 1024) return `${n} B`;
+  const units = ['KiB', 'MiB', 'GiB', 'TiB'];
+  let i = -1;
+  do { n /= 1024; i++; } while (n >= 1024 && i < units.length - 1);
+  return `${n.toFixed(n >= 10 ? 1 : 2)} ${units[i]}`;
+}
+
+function formatDuration(sec) {
+  sec = Number(sec || 0);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  if (h) return `${h}h ${m}m`;
+  if (m) return `${m}m ${s}s`;
+  return `${s}s`;
 }
 
 function updateComposerState(running) {

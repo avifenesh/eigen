@@ -19,6 +19,7 @@
         <div class="rail-actions">
           <button id="new-session" class="primary" onclick="window.openNewSessionModal?.()">New session</button>
           <button id="profile-button" class="ghost rail-secondary" type="button" onclick="window.openProfileModal?.()">Profile</button>
+          <button id="system-button" class="ghost rail-secondary" type="button" onclick="window.openSystemModal?.()">System</button>
         </div>
         <div class="rail-head">Sessions</div>
         <div id="sessions" class="sessions"></div>
@@ -146,6 +147,27 @@
           <button class="primary" type="submit">Save profile</button>
         </div>
       </form>
+    </div>
+
+
+
+    <div id="system-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="system-title">
+      <div class="modal-card system-card">
+        <div class="modal-head">
+          <div>
+            <div id="system-title" class="modal-title">System & daemon</div>
+            <div class="modal-copy">Local daemon health, runtime identity, hosted sessions, and token usage.</div>
+          </div>
+          <button id="system-close" class="ghost compact" type="button">Esc</button>
+        </div>
+        <div id="system-body" class="system-grid">
+          <div class="modal-copy">Loading daemon health…</div>
+        </div>
+        <div class="modal-actions">
+          <button id="system-refresh" class="ghost" type="button">Refresh</button>
+          <button id="system-cancel" class="primary" type="button">Done</button>
+        </div>
+      </div>
     </div>
 
     <script src="/app.js"></script>

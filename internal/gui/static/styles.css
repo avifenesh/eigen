@@ -570,3 +570,41 @@ textarea:disabled {
   .model-pill { min-width: 170px; }
   .model-pill input { width: 105px; }
 }
+
+
+/* System / daemon modal */
+.system-card { width: min(760px, 100%); }
+.system-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 520px;
+  overflow: auto;
+}
+.system-row {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,.022);
+  min-width: 0;
+}
+.system-row span {
+  display: block;
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: .11em;
+  font-size: 10px;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+.system-row strong {
+  display: block;
+  color: var(--text);
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .system-grid { grid-template-columns: 1fr; }
+}
