@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/avifenesh/eigen/internal/tool"
@@ -47,12 +48,18 @@ type mcpConfig struct {
 
 const connectTimeout = 15 * time.Second
 
-// LoadTools reads an mcp.json config, connects to each server, and returns its
-// tools wrapped as eigen tool Definitions (named "<server>_<tool>"), plus the
-// live clients (which the caller must keep alive and Close on exit). A missing
-// config file yields no tools and no error; a server that fails to connect is
-// reported in errs but does not abort the others.
-func LoadTools(ctx context.Context, path string) (defs []tool.Definition, clients []*Client, errs []error) {
+// Handle is a per-session MCP resource returned by LoadTools. It may represent
+// a lazily-started server; callers should keep it for the session lifetime and
+// Close it when the session exits.
+type Handle interface{ Close() error }
+
+// LoadTools reads an mcp.json config and returns its tools wrapped as eigen
+// tool Definitions (named "<server>_<tool>"). Servers are probed briefly to
+// learn their tool schemas, then closed; the long-lived MCP subprocess is
+// started lazily on first tool invocation. A missing config file yields no
+// tools and no error; a server that fails to probe is reported in errs but does
+// not abort the others.
+func LoadTools(ctx context.Context, path string) (defs []tool.Definition, clients []Handle, errs []error) {
 	var cfg mcpConfig
 	if data, err := os.ReadFile(path); err != nil {
 		if !os.IsNotExist(err) {
@@ -78,27 +85,30 @@ func LoadTools(ctx context.Context, path string) (defs []tool.Definition, client
 		}
 		cctx, cancel := context.WithTimeout(ctx, connectTimeout)
 		env := serverEnv(sc.Env)
-		client, err := Connect(cctx, expandCommand(sc.Command, env), env)
+		command := expandCommand(sc.Command, env)
+		probe, err := Connect(cctx, command, env)
 		cancel()
 		if err != nil {
 			errs = append(errs, fmt.Errorf("mcp %q: %w", sc.Name, err))
 			continue
 		}
 		lctx, cancel := context.WithTimeout(ctx, connectTimeout)
-		specs, err := client.ListTools(lctx)
+		specs, err := probe.ListTools(lctx)
 		cancel()
 		if err != nil {
 			errs = append(errs, fmt.Errorf("mcp %q: list tools: %w", sc.Name, err))
-			client.Close()
+			_ = probe.Close()
 			continue
 		}
-		clients = append(clients, client)
 		// Group description (Level-0 frontmatter): config description wins, else
 		// the server's own MCP instructions, else a warning + generic gist.
 		gist := strings.TrimSpace(sc.Description)
 		if gist == "" {
-			gist = firstSentence(client.Instructions())
+			gist = firstSentence(probe.Instructions())
 		}
+		_ = probe.Close()
+		client := newLazyClient(sc.Name, command, env)
+		clients = append(clients, client)
 		if gist == "" {
 			gist = sc.Name + " MCP server"
 			fmt.Fprintf(os.Stderr, "eigen: mcp %q has no description — add \"description\" in mcp.json so the model knows what it's for\n", sc.Name)
@@ -108,7 +118,7 @@ func LoadTools(ctx context.Context, path string) (defs []tool.Definition, client
 			if !toolAllowed(sc, sp.Name) {
 				continue
 			}
-			defs = append(defs, wrap(client, sc.Name, gist, sp))
+			defs = append(defs, wrapLazy(client, sc.Name, gist, sp))
 			kept++
 		}
 		if len(sc.Tools) > 0 || len(sc.ExcludeTools) > 0 {
@@ -116,6 +126,76 @@ func LoadTools(ctx context.Context, path string) (defs []tool.Definition, client
 		}
 	}
 	return defs, clients, errs
+}
+
+// lazyClient owns a per-session MCP server that is started only when one of
+// its tools is actually invoked. LoadTools still probes each server once to
+// learn schemas for search_tools, but those probe processes are closed before
+// the session starts serving turns.
+type lazyClient struct {
+	name    string
+	command []string
+	env     []string
+	connect func(context.Context, []string, []string) (*Client, error)
+
+	mu     sync.Mutex
+	client *Client
+	closed bool
+}
+
+func newLazyClient(name string, command, env []string) *lazyClient {
+	return &lazyClient{name: name, command: append([]string(nil), command...), env: append([]string(nil), env...), connect: Connect}
+}
+
+func (c *lazyClient) get(ctx context.Context) (*Client, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return nil, fmt.Errorf("mcp %q: client closed", c.name)
+	}
+	if c.client != nil {
+		return c.client, nil
+	}
+	cctx, cancel := context.WithTimeout(ctx, connectTimeout)
+	client, err := c.connect(cctx, c.command, c.env)
+	cancel()
+	if err != nil {
+		return nil, fmt.Errorf("mcp %q: %w", c.name, err)
+	}
+	c.client = client
+	return client, nil
+}
+
+func (c *lazyClient) CallToolRich(ctx context.Context, name string, args json.RawMessage) (ToolResult, error) {
+	client, err := c.get(ctx)
+	if err != nil {
+		return ToolResult{}, err
+	}
+	return client.CallToolRich(ctx, name, args)
+}
+
+func (c *lazyClient) Close() error {
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return nil
+	}
+	c.closed = true
+	client := c.client
+	c.client = nil
+	c.mu.Unlock()
+	if client != nil {
+		return client.Close()
+	}
+	return nil
+}
+
+// started reports whether the long-lived server has been opened. Tests use it
+// to prove LoadTools returns lazy handles; production only relies on Close.
+func (c *lazyClient) started() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.client != nil
 }
 
 // toolAllowed applies the per-server allowlist/excludelist to a server-declared
@@ -147,8 +227,20 @@ func toolAllowed(sc serverConfig, name string) bool {
 	return true
 }
 
+type toolCaller interface {
+	CallToolRich(ctx context.Context, name string, args json.RawMessage) (ToolResult, error)
+}
+
 // wrap turns an MCP ToolSpec into an eigen tool.Definition backed by the client.
 func wrap(client *Client, server, gist string, sp ToolSpec) tool.Definition {
+	return wrapCaller(client, server, gist, sp)
+}
+
+func wrapLazy(client *lazyClient, server, gist string, sp ToolSpec) tool.Definition {
+	return wrapCaller(client, server, gist, sp)
+}
+
+func wrapCaller(client toolCaller, server, gist string, sp ToolSpec) tool.Definition {
 	params := slimSchema(sp.InputSchema)
 	if len(params) == 0 {
 		params = json.RawMessage(`{"type":"object","additionalProperties":true}`)

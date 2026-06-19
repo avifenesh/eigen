@@ -173,6 +173,130 @@ func TestWrapMapsReadOnlyHint(t *testing.T) {
 	}
 }
 
+func TestLazyClientStartsOnFirstToolCall(t *testing.T) {
+	starts := 0
+	lc := &lazyClient{
+		name:    "srv",
+		command: []string{"fake"},
+		connect: func(context.Context, []string, []string) (*Client, error) {
+			starts++
+			return newTestClient(t), nil
+		},
+	}
+	sp := ToolSpec{Name: "echo", Description: "echo text", InputSchema: json.RawMessage(`{"type":"object"}`)}
+	d := wrapLazy(lc, "srv", "srv gist", sp)
+	if starts != 0 || lc.started() {
+		t.Fatalf("lazy client started before invocation: starts=%d started=%v", starts, lc.started())
+	}
+	res, err := d.Invoke(context.Background(), json.RawMessage(`{"x":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Text != `called echo with {"x":1}` {
+		t.Fatalf("unexpected result: %q", res.Text)
+	}
+	if starts != 1 || !lc.started() {
+		t.Fatalf("lazy client should start exactly once after first invocation: starts=%d started=%v", starts, lc.started())
+	}
+	firstCtx, cancelFirst := context.WithCancel(context.Background())
+	cancelFirst()
+	if _, err := d.Invoke(firstCtx, json.RawMessage(`{"x":"cancelled"}`)); err == nil {
+		t.Fatal("cancelled tool context should cancel the tool call")
+	}
+	if _, err := d.Invoke(context.Background(), json.RawMessage(`{"x":2}`)); err != nil {
+		t.Fatal(err)
+	}
+	if starts != 1 {
+		t.Fatalf("lazy client should reuse the MCP connection, starts=%d", starts)
+	}
+	if err := lc.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if lc.started() {
+		t.Fatal("lazy client should not report a live client after Close")
+	}
+}
+
+func TestLazyClientConcurrentFirstGetStartsOnce(t *testing.T) {
+	starts := 0
+	lc := &lazyClient{
+		name:    "srv",
+		command: []string{"fake"},
+		connect: func(context.Context, []string, []string) (*Client, error) {
+			starts++
+			time.Sleep(20 * time.Millisecond)
+			return newTestClient(t), nil
+		},
+	}
+	defer lc.Close()
+	const n = 16
+	type result struct {
+		client *Client
+		err    error
+	}
+	resCh := make(chan result, n)
+	for i := 0; i < n; i++ {
+		go func() {
+			client, err := lc.get(context.Background())
+			resCh <- result{client: client, err: err}
+		}()
+	}
+	var first *Client
+	for i := 0; i < n; i++ {
+		res := <-resCh
+		if res.err != nil {
+			t.Fatal(res.err)
+		}
+		if first == nil {
+			first = res.client
+		} else if first != res.client {
+			t.Fatal("concurrent first gets returned different MCP clients")
+		}
+	}
+	if starts != 1 {
+		t.Fatalf("concurrent first gets should share one MCP connection, starts=%d", starts)
+	}
+}
+
+func TestLazyClientCloseAndFailedConnect(t *testing.T) {
+	closed := &lazyClient{
+		name:    "srv",
+		command: []string{"fake"},
+		connect: func(context.Context, []string, []string) (*Client, error) {
+			t.Fatal("closed lazy client must not connect")
+			return nil, nil
+		},
+	}
+	if err := closed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := closed.CallToolRich(context.Background(), "echo", nil); err == nil {
+		t.Fatal("get after Close should fail")
+	}
+
+	starts := 0
+	failing := &lazyClient{
+		name:    "srv",
+		command: []string{"fake"},
+		connect: func(context.Context, []string, []string) (*Client, error) {
+			starts++
+			return nil, context.DeadlineExceeded
+		},
+	}
+	if _, err := failing.CallToolRich(context.Background(), "echo", nil); err == nil {
+		t.Fatal("failed connect should surface an error")
+	}
+	if failing.started() {
+		t.Fatal("failed connect should not leave a cached client")
+	}
+	if _, err := failing.CallToolRich(context.Background(), "echo", nil); err == nil {
+		t.Fatal("failed connect should be retryable and fail again")
+	}
+	if starts != 2 {
+		t.Fatalf("failed connects should not be cached permanently, starts=%d", starts)
+	}
+}
+
 func TestCallTool(t *testing.T) {
 	c := newTestClient(t)
 	defer c.Close()

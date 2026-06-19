@@ -29,7 +29,7 @@ type sessionDeps struct {
 	Router     *autoRouter
 	Mem        *memory.Store // project memory (rooted at dir)
 	GlobalMem  *memory.Store
-	mcpClients []*mcp.Client
+	mcpClients []mcp.Handle
 	lspMgr     *lsp.Manager
 	obsLog     *observe.Logger
 
