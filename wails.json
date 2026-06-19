@@ -2,6 +2,15 @@
   "$schema": "https://wails.io/schemas/config.v2.json",
   "name": "Eigen",
   "outputfilename": "eigen",
+  "author": {
+    "name": "avifenesh"
+  },
+  "info": {
+    "companyName": "Eigen",
+    "productName": "Eigen",
+    "productVersion": "0.1.0",
+    "comments": "Local-first Eigen desktop app"
+  },
   "build:tags": "wails webkit2_41",
   "frontend:dir": "internal/gui/static",
   "frontend:install": "",

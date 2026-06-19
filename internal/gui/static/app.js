@@ -573,6 +573,18 @@ function formatApprovalArgs(approval) {
 
 $('new-session').onclick = () => openNewSessionModal();
 
+function handleRailAction(e) {
+  const target = e.target?.closest?.('#new-session, #profile-button');
+  if (!target) return;
+  e.preventDefault();
+  if (target.id === 'new-session') openNewSessionModal();
+  if (target.id === 'profile-button') openProfileModal();
+}
+
+document.addEventListener('pointerdown', handleRailAction, true);
+document.addEventListener('mousedown', handleRailAction, true);
+
+
 newSessionClose.onclick = () => closeNewSessionModal();
 newSessionCancel.onclick = () => closeNewSessionModal();
 newSessionModal.addEventListener('click', (e) => {
@@ -704,11 +716,16 @@ inputEl.addEventListener('keydown', (e) => {
   }
 });
 
-document.addEventListener('keydown', (e) => {
+function handleGlobalShortcut(e) {
   if (e.key !== 'Escape') return;
   if (!newSessionModal.classList.contains('hidden')) closeNewSessionModal();
   if (!profileModal.classList.contains('hidden')) closeProfileModal();
-});
+}
+
+document.addEventListener('keydown', handleGlobalShortcut, true);
+
+window.openNewSessionModal = openNewSessionModal;
+window.openProfileModal = openProfileModal;
 
 function openNewSessionModal() {
   setModalError('');
