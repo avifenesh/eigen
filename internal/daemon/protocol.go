@@ -96,22 +96,30 @@ type DaemonStats struct {
 // SessionState is the snapshot a remote chat UI needs to render history and
 // status: the conversation plus model/perm/goal/budget/tools.
 type SessionState struct {
-	Messages  []llm.Message `json:"messages"`
-	Tokens    int           `json:"tokens"`
-	Title     string        `json:"title,omitempty"`
-	Model     string        `json:"model"`
-	Provider  string        `json:"provider"`
-	MaxTokens int           `json:"max_tokens"`
-	Perm      string        `json:"perm"`
-	Goal      string        `json:"goal"`
-	Effort    string        `json:"effort,omitempty"`  // "" = unsupported
-	Search    string        `json:"search,omitempty"`  // "" = unsupported
-	Fast      bool          `json:"fast,omitempty"`    // fast/priority service tier active
-	FastOK    bool          `json:"fast_ok,omitempty"` // model supports a fast tier (segment shown)
-	Running   bool          `json:"running,omitempty"` // a turn is in flight right now
-	Tools     []ToolInfo    `json:"tools,omitempty"`
-	Roots     []string      `json:"roots,omitempty"`  // tool sandbox allowed dirs (primary first)
-	Shells    []ShellInfo   `json:"shells,omitempty"` // backgrounded bash shells
+	Messages  []llm.Message  `json:"messages"`
+	Tokens    int            `json:"tokens"`
+	Title     string         `json:"title,omitempty"`
+	Model     string         `json:"model"`
+	Provider  string         `json:"provider"`
+	MaxTokens int            `json:"max_tokens"`
+	Perm      string         `json:"perm"`
+	Goal      string         `json:"goal"`
+	Effort    string         `json:"effort,omitempty"`  // "" = unsupported
+	Search    string         `json:"search,omitempty"`  // "" = unsupported
+	Fast      bool           `json:"fast,omitempty"`    // fast/priority service tier active
+	FastOK    bool           `json:"fast_ok,omitempty"` // model supports a fast tier (segment shown)
+	Running   bool           `json:"running,omitempty"` // a turn is in flight right now
+	Tools     []ToolInfo     `json:"tools,omitempty"`
+	Roots     []string       `json:"roots,omitempty"`   // tool sandbox allowed dirs (primary first)
+	Shells    []ShellInfo    `json:"shells,omitempty"`  // backgrounded bash shells
+	Pending   []ApprovalInfo `json:"pending,omitempty"` // gated tool approvals awaiting a view
+}
+
+// ApprovalInfo is a gated tool call awaiting user approval.
+type ApprovalInfo struct {
+	ID   string `json:"id"`
+	Tool string `json:"tool"`
+	Args string `json:"args"`
 }
 
 // ShellInfo mirrors chat.ShellInfo over the wire (backgrounded bash shells).

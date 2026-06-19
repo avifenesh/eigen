@@ -619,6 +619,9 @@ func (s *Session) state() *SessionState {
 			st.Shells = append(st.Shells, ShellInfo{ID: sh.ID, Command: sh.Command, Status: sh.Status, ExitCode: sh.ExitCode, LastLine: sh.LastLine})
 		}
 	}
+	for _, p := range s.pendingList() {
+		st.Pending = append(st.Pending, ApprovalInfo{ID: p.ID, Tool: p.Tool, Args: p.Args})
+	}
 	return st
 }
 

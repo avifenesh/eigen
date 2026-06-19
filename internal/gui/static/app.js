@@ -7,6 +7,7 @@ const state = {
   streaming: false,
   desktopEvents: false,
   userPinnedBottom: true,
+  approvals: {},
 };
 
 const $ = (id) => document.getElementById(id);
@@ -189,10 +190,11 @@ function applyState(id, snap, opts = {}) {
   const messages = snap.messages || snap.Messages || [];
   const beforeMessages = before?.messages || before?.Messages || [];
   updateControls(snap);
-  updateInspector(snap);
   if (opts.force || messagesSignature(messages) !== messagesSignature(beforeMessages)) {
     renderTimeline(messages);
   }
+  syncPendingApprovals(snap.pending || snap.Pending || []);
+  updateInspector(snap);
 }
 
 function updateControls(snap) {
@@ -209,7 +211,7 @@ function updateControls(snap) {
 }
 
 function updateInspector(snap) {
-  if (inspectorEl.querySelector?.('.approval')) return;
+  const pendingApprovals = Object.values(state.approvals).filter(a => a.status === 'pending');
   const roots = snap.roots || snap.Roots || [];
   const shells = snap.shells || snap.Shells || [];
   const tools = snap.tools || snap.Tools || [];
@@ -224,9 +226,43 @@ function updateInspector(snap) {
       <div class="kv"><span>tools</span><strong>${escapeHtml(tools.length || 0)}</strong></div>
       <div class="kv"><span>shells</span><strong>${escapeHtml(shells.length || 0)}</strong></div>
     </div>
+    ${pendingApprovals.length ? `<div class="inspector-card"><div class="card-label">Pending approvals</div>${pendingApprovals.map(approvalSummaryHTML).join('')}</div>` : ''}
     ${goal ? `<div class="inspector-card"><div class="card-label">Goal</div><div class="small-copy">${escapeHtml(goal)}</div></div>` : ''}
     ${roots.length ? `<div class="inspector-card"><div class="card-label">Workspace roots</div>${roots.slice(0, 4).map(r => `<div class="path-row">${escapeHtml(shortPath(r))}</div>`).join('')}</div>` : ''}
   `;
+  for (const button of inspectorEl.querySelectorAll('[data-approval-action]')) {
+    button.addEventListener('click', () => answerApproval(button.dataset.approvalId, button.dataset.approvalAction === 'allow'));
+  }
+}
+
+function syncPendingApprovals(pending) {
+  const seen = new Set();
+  for (const p of pending) {
+    const approval = normalizeApproval(p);
+    if (!approval.id) continue;
+    seen.add(approval.id);
+    rememberApproval(approval);
+    ensureApprovalCard(approval);
+  }
+  for (const [id, approval] of Object.entries(state.approvals)) {
+    if (approval.status === 'pending' && !seen.has(id)) setApprovalStatus(id, 'resolved');
+  }
+}
+
+function normalizeApproval(raw) {
+  const id = raw.id || raw.ID || raw.result || raw.Result || '';
+  const tool = raw.tool || raw.Tool || raw.ToolName || 'tool';
+  const args = raw.args || raw.Args || raw.text || raw.Text || raw.tool_args || raw.ToolArgs || '';
+  return {id, tool, args: typeof args === 'string' ? args : pretty(args), status: raw.status || 'pending'};
+}
+
+function rememberApproval(approval) {
+  const prev = state.approvals[approval.id];
+  state.approvals[approval.id] = {...approval, status: prev?.status || approval.status || 'pending'};
+}
+
+function approvalSummaryHTML(a) {
+  return `<div class="approval-mini"><div><strong>${escapeHtml(a.tool)}</strong><span>${escapeHtml(a.id)}</span></div><div class="approval-mini-actions"><button class="primary compact" data-approval-id="${escapeAttr(a.id)}" data-approval-action="allow">Approve</button><button class="ghost compact" data-approval-id="${escapeAttr(a.id)}" data-approval-action="deny">Deny</button></div></div>`;
 }
 
 function renderTimeline(messages) {
@@ -319,14 +355,14 @@ function appendEvent(e, replay) {
   if (kind === 'tool_start') return appendEventBlock('tool', `tool · ${e.tool || e.ToolName || ''}`, pretty(e.tool_args || e.ToolArgs));
   if (kind === 'tool_result') return appendEventBlock('tool', `result · ${e.tool || e.ToolName || ''}`, e.result || e.Result || '');
   if (kind === 'approval') {
-    appendEventBlock('approval', `approval · ${e.tool || e.ToolName || ''}`, e.text || e.Text || '');
-    inspectorEl.innerHTML = `
-      <div class="approval">
-        <div class="panel-title">Approval requested</div>
-        <p>${escapeHtml(e.text || e.Text || e.tool || e.ToolName || 'tool call')}</p>
-        <button class="primary" onclick="answerApproval('${escapeAttr(e.result || e.Result)}', true)">Approve</button>
-        <button class="ghost" onclick="answerApproval('${escapeAttr(e.result || e.Result)}', false)">Deny</button>
-      </div>`;
+    const approval = normalizeApproval({
+      id: e.result || e.Result,
+      tool: e.tool || e.ToolName,
+      args: e.text || e.Text || e.tool_args || e.ToolArgs,
+    });
+    rememberApproval(approval);
+    ensureApprovalCard(approval);
+    updateInspector(state.state || {});
     return;
   }
   if (kind === 'done') {
@@ -360,11 +396,50 @@ function appendEventBlock(cls, label, text) {
   settleScroll(pinned);
 }
 
-window.answerApproval = async (approval, allow) => {
-  if (!state.active) return;
+async function answerApproval(approval, allow) {
+  if (!state.active || !approval) return;
+  setApprovalStatus(approval, allow ? 'approved' : 'denied');
   await approveCall(state.active, approval, allow);
-  inspectorEl.textContent = allow ? 'Approved.' : 'Denied.';
-};
+  updateInspector(state.state || {});
+}
+
+function ensureApprovalCard(approval) {
+  if (!approval.id || timelineEl.querySelector(`[data-approval-card="${cssEscape(approval.id)}"]`)) return;
+  timelineEl.classList.remove('empty');
+  const pinned = isPinnedToBottom();
+  const el = document.createElement('article');
+  el.className = 'event approval approval-card';
+  el.dataset.approvalCard = approval.id;
+  el.innerHTML = `
+    <div class="kind">Approval · ${escapeHtml(approval.tool)}</div>
+    <div class="content approval-content">${escapeHtml(formatApprovalArgs(approval))}</div>
+    <div class="approval-actions">
+      <button class="primary" type="button" data-action="allow">Approve</button>
+      <button class="ghost" type="button" data-action="deny">Deny</button>
+      <span class="approval-state">pending</span>
+    </div>`;
+  el.querySelector('[data-action="allow"]').addEventListener('click', () => answerApproval(approval.id, true));
+  el.querySelector('[data-action="deny"]').addEventListener('click', () => answerApproval(approval.id, false));
+  timelineEl.appendChild(el);
+  settleScroll(pinned);
+}
+
+function setApprovalStatus(id, status) {
+  if (state.approvals[id]) state.approvals[id].status = status;
+  const card = timelineEl.querySelector(`[data-approval-card="${cssEscape(id)}"]`);
+  if (!card) return;
+  card.dataset.status = status;
+  const label = card.querySelector('.approval-state');
+  if (label) label.textContent = status;
+  for (const btn of card.querySelectorAll('button')) btn.disabled = status !== 'pending';
+}
+
+function formatApprovalArgs(approval) {
+  const args = String(approval.args || '').trim();
+  if (!args) return approval.tool;
+  if (args.startsWith(approval.tool + ' ')) return args.slice(approval.tool.length + 1);
+  return args;
+}
 
 $('new-session').onclick = async () => {
   const out = await createSession();
@@ -509,6 +584,10 @@ function pretty(v) {
 }
 function escapeHtml(s) { return String(s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
 function escapeAttr(s) { return escapeHtml(s).replace(/`/g, '&#96;'); }
+function cssEscape(s) {
+  if (window.CSS?.escape) return window.CSS.escape(String(s));
+  return String(s).replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+}
 
 updateComposerState(false);
 autoGrowInput();
