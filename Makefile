@@ -1,10 +1,13 @@
 EIGEN := bin/eigen
 PKGS := ./...
 
-.PHONY: build vet test race fmt gate harness perf perf-soak perf-bench stats clean
+.PHONY: build gui-desktop vet test race fmt gate harness perf perf-soak perf-bench stats clean
 
 build:
 	go build -o $(EIGEN) .
+
+gui-desktop:
+	go build -tags 'wails dev webkit2_41' -o bin/eigen-gui .
 
 vet:
 	go vet $(PKGS)

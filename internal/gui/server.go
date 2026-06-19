@@ -79,9 +79,23 @@ func isLocalAddr(addr string) bool {
 
 type handler struct{ svc *Service }
 
-func (h *handler) routes(mux *http.ServeMux) {
+// StaticAssets returns the embedded frontend assets rooted at internal/gui/static.
+func StaticAssets() fs.FS {
 	sub, _ := fs.Sub(staticFS, "static")
-	mux.Handle("/", http.FileServer(http.FS(sub)))
+	return sub
+}
+
+// Handler returns the browser-facing API/static handler used by both `eigen gui`
+// preview mode and the Wails asset server fallback.
+func Handler(svc *Service) http.Handler {
+	mux := http.NewServeMux()
+	h := &handler{svc: svc}
+	h.routes(mux)
+	return mux
+}
+
+func (h *handler) routes(mux *http.ServeMux) {
+	mux.Handle("/", http.FileServer(http.FS(StaticAssets())))
 	mux.HandleFunc("/api/health", h.health)
 	mux.HandleFunc("/api/sessions", h.sessions)
 	mux.HandleFunc("/api/sessions/", h.session)
