@@ -8,6 +8,7 @@ const state = {
   desktopEvents: false,
   userPinnedBottom: true,
   approvals: {},
+  tools: {},
 };
 
 const $ = (id) => document.getElementById(id);
@@ -352,8 +353,8 @@ function appendEvent(e, replay) {
   const kind = e.kind || e.Kind || 'event';
   if (kind === 'text') return appendDelta('assistant', e.text || e.Text || '');
   if (kind === 'reasoning') return appendEventBlock('reasoning', 'reasoning', e.text || e.Text || '');
-  if (kind === 'tool_start') return appendEventBlock('tool', `tool · ${e.tool || e.ToolName || ''}`, pretty(e.tool_args || e.ToolArgs));
-  if (kind === 'tool_result') return appendEventBlock('tool', `result · ${e.tool || e.ToolName || ''}`, e.result || e.Result || '');
+  if (kind === 'tool_start') return ensureToolCard(e);
+  if (kind === 'tool_result') return finishToolCard(e);
   if (kind === 'approval') {
     const approval = normalizeApproval({
       id: e.result || e.Result,
@@ -394,6 +395,105 @@ function appendEventBlock(cls, label, text) {
   el.innerHTML = `<div class="kind">${escapeHtml(label)}</div><div class="content">${escapeHtml(text)}</div>`;
   timelineEl.appendChild(el);
   settleScroll(pinned);
+}
+
+
+function ensureToolCard(e) {
+  const tool = normalizeToolEvent(e);
+  state.tools[tool.id] = {...tool, status: 'running'};
+  const existing = timelineEl.querySelector(`[data-tool-card="${cssEscape(tool.id)}"]`);
+  if (existing) return updateToolCard(existing, state.tools[tool.id]);
+  timelineEl.classList.remove('empty');
+  const pinned = isPinnedToBottom();
+  const el = document.createElement('article');
+  el.className = 'event tool tool-card';
+  el.dataset.toolCard = tool.id;
+  el.innerHTML = toolCardHTML(state.tools[tool.id]);
+  timelineEl.appendChild(el);
+  wireToolCard(el);
+  settleScroll(pinned);
+}
+
+function finishToolCard(e) {
+  const tool = normalizeToolEvent(e);
+  const prev = state.tools[tool.id] || tool;
+  const next = {...prev, ...tool, status: tool.isError ? 'error' : 'done'};
+  state.tools[tool.id] = next;
+  let el = timelineEl.querySelector(`[data-tool-card="${cssEscape(tool.id)}"]`);
+  if (!el) {
+    timelineEl.classList.remove('empty');
+    const pinned = isPinnedToBottom();
+    el = document.createElement('article');
+    el.className = 'event tool tool-card';
+    el.dataset.toolCard = tool.id;
+    timelineEl.appendChild(el);
+    updateToolCard(el, next);
+    wireToolCard(el);
+    settleScroll(pinned);
+    return;
+  }
+  updateToolCard(el, next);
+}
+
+function normalizeToolEvent(e) {
+  const tool = e.tool || e.ToolName || 'tool';
+  const toolID = e.tool_id || e.ToolID || e.id || e.ID || '';
+  const step = e.step || e.Step || '';
+  const id = toolID || `${step}:${tool}:${Object.keys(state.tools).length}`;
+  return {
+    id,
+    tool,
+    step,
+    args: e.tool_args || e.ToolArgs || '',
+    result: e.result || e.Result || '',
+    isError: !!(e.is_error || e.IsError),
+  };
+}
+
+function toolCardHTML(tool) {
+  const args = pretty(tool.args);
+  const result = String(tool.result || '');
+  const status = tool.status || 'running';
+  return `
+    <div class="tool-card-head">
+      <div>
+        <div class="kind">Tool · ${escapeHtml(tool.tool)}</div>
+        <div class="tool-id">${escapeHtml(tool.id)}${tool.step ? ` · step ${escapeHtml(tool.step)}` : ''}</div>
+      </div>
+      <span class="tool-status ${escapeAttr(status)}">${escapeHtml(status)}</span>
+    </div>
+    ${args ? `<details class="tool-section" open><summary>Arguments</summary><pre>${escapeHtml(args)}</pre></details>` : ''}
+    ${result ? `<details class="tool-section" open><summary>${tool.isError ? 'Error' : 'Result'}</summary><pre>${escapeHtml(compactToolResult(result))}</pre></details>` : ''}
+  `;
+}
+
+function updateToolCard(el, tool) {
+  el.dataset.status = tool.status || 'running';
+  if (tool.isError) el.dataset.error = 'true';
+  el.innerHTML = toolCardHTML(tool);
+  wireToolCard(el);
+}
+
+function wireToolCard(el) {
+  for (const details of el.querySelectorAll('details')) {
+    details.addEventListener('toggle', () => {
+      if (details.open) scrollToVisible(details);
+    });
+  }
+}
+
+function compactToolResult(text) {
+  const s = String(text || '');
+  if (s.length <= 8000) return s;
+  return `${s.slice(0, 7800)}
+
+… ${s.length - 7800} more characters`;
+}
+
+function scrollToVisible(el) {
+  const rect = el.getBoundingClientRect();
+  const parent = timelineEl.getBoundingClientRect();
+  if (rect.bottom > parent.bottom) timelineEl.scrollTop += rect.bottom - parent.bottom + 24;
 }
 
 async function answerApproval(approval, allow) {
