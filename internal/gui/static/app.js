@@ -5,6 +5,7 @@ const state = {
   state: null,
   poll: null,
   streaming: false,
+  desktopEvents: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -15,6 +16,27 @@ const metaEl = $('meta');
 const daemonEl = $('daemon');
 const inspectorEl = $('inspector');
 const inputEl = $('input');
+
+function desktop() {
+  if (!window.go) return null;
+  if (window.go.gui?.DesktopApp) return window.go.gui.DesktopApp;
+  for (const pkg of Object.values(window.go)) {
+    if (pkg?.DesktopApp) return pkg.DesktopApp;
+  }
+  return null;
+}
+
+function hasDesktopBridge() {
+  return !!desktop();
+}
+
+async function waitForDesktopBridge() {
+  for (let i = 0; i < 20; i++) {
+    if (hasDesktopBridge()) return true;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  return false;
+}
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -27,7 +49,53 @@ async function api(path, opts = {}) {
   return data;
 }
 
+async function getHealth() {
+  if (hasDesktopBridge()) return desktop().Health();
+  return api('/api/health');
+}
+
+async function getSessions() {
+  if (hasDesktopBridge()) return desktop().Sessions();
+  return api('/api/sessions');
+}
+
+async function createSession() {
+  if (hasDesktopBridge()) return {id: await desktop().NewSession('', '', '')};
+  return api('/api/sessions', {method: 'POST', body: JSON.stringify({})});
+}
+
+async function getState(id) {
+  if (hasDesktopBridge()) return desktop().State(id);
+  return api(`/api/sessions/${encodeURIComponent(id)}/state`);
+}
+
+async function sendInput(id, text) {
+  if (hasDesktopBridge()) return {steered: await desktop().Input(id, text)};
+  return api(`/api/sessions/${encodeURIComponent(id)}/input`, {
+    method: 'POST',
+    body: JSON.stringify({text}),
+  });
+}
+
+async function approveCall(id, approval, allow) {
+  if (hasDesktopBridge()) return desktop().Approve(id, approval, allow);
+  return api(`/api/sessions/${encodeURIComponent(id)}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({approval, allow}),
+  });
+}
+
+async function sessionAction(id, action) {
+  if (hasDesktopBridge()) {
+    if (action === 'interrupt') return desktop().Interrupt(id);
+    if (action === 'resend') return desktop().Resend(id);
+    if (action === 'clear') return desktop().Clear(id);
+  }
+  return api(`/api/sessions/${encodeURIComponent(id)}/${action}`, {method: 'POST', body: '{}'});
+}
+
 async function boot() {
+  await waitForDesktopBridge();
   await refreshHealth();
   await refreshSessions();
   setInterval(refreshSessions, 3500);
@@ -35,8 +103,8 @@ async function boot() {
 
 async function refreshHealth() {
   try {
-    const h = await api('/api/health');
-    daemonEl.textContent = h.ok ? 'daemon connected' : 'daemon offline';
+    const h = await getHealth();
+    daemonEl.textContent = h.ok ? (hasDesktopBridge() ? 'desktop connected' : 'daemon connected') : 'daemon offline';
   } catch (err) {
     daemonEl.textContent = 'daemon error';
   }
@@ -44,9 +112,9 @@ async function refreshHealth() {
 
 async function refreshSessions() {
   try {
-    state.sessions = await api('/api/sessions');
+    state.sessions = await getSessions();
     renderSessions();
-    if (!state.active && state.sessions.length) openSession(state.sessions[0].id);
+    if (!state.active && state.sessions.length) openSession(sessionID(state.sessions[0]));
   } catch (err) {
     sessionsEl.innerHTML = `<div class="session"><div class="session-title">${escapeHtml(err.message)}</div></div>`;
   }
@@ -55,14 +123,15 @@ async function refreshSessions() {
 function renderSessions() {
   sessionsEl.innerHTML = '';
   for (const s of state.sessions) {
+    const id = sessionID(s);
     const row = document.createElement('button');
-    row.className = `session ${state.active === s.id ? 'active' : ''}`;
+    row.className = `session ${state.active === id ? 'active' : ''}`;
     row.innerHTML = `
-      <div class="session-title">${escapeHtml(s.title || s.id)}</div>
-      <div class="badge ${s.status === 'error' ? 'error' : ''}">${escapeHtml(s.status || 'idle')}</div>
-      <div class="session-dir">${escapeHtml(shortPath(s.dir || ''))}</div>
+      <div class="session-title">${escapeHtml(s.title || s.Title || id)}</div>
+      <div class="badge ${sessionStatus(s) === 'error' ? 'error' : ''}">${escapeHtml(sessionStatus(s) || 'idle')}</div>
+      <div class="session-dir">${escapeHtml(shortPath(s.dir || s.Dir || ''))}</div>
     `;
-    row.onclick = () => openSession(s.id);
+    row.onclick = () => openSession(id);
     sessionsEl.appendChild(row);
   }
 }
@@ -70,9 +139,9 @@ function renderSessions() {
 async function openSession(id) {
   state.active = id;
   renderSessions();
-  if (state.source) state.source.close();
+  closeLiveStream();
   if (state.poll) clearInterval(state.poll);
-  const snap = await api(`/api/sessions/${encodeURIComponent(id)}/state`);
+  const snap = await getState(id);
   applyState(id, snap, {force: true});
   connectEvents(id);
   state.poll = setInterval(() => refreshActiveState({force: !state.streaming}), 2200);
@@ -81,7 +150,7 @@ async function openSession(id) {
 async function refreshActiveState(opts = {}) {
   if (!state.active) return;
   try {
-    const snap = await api(`/api/sessions/${encodeURIComponent(state.active)}/state`);
+    const snap = await getState(state.active);
     applyState(state.active, snap, opts);
   } catch (err) {
     inspectorEl.textContent = `State refresh failed: ${err.message}`;
@@ -91,10 +160,15 @@ async function refreshActiveState(opts = {}) {
 function applyState(id, snap, opts = {}) {
   const before = state.state;
   state.state = snap;
-  titleEl.textContent = snap.title || id;
-  metaEl.textContent = `${snap.provider || 'provider'} · ${snap.model || 'model'} · perm=${snap.perm || 'gated'}${snap.running ? ' · running' : ''}`;
-  const messages = snap.messages || [];
-  if (opts.force || messagesSignature(messages) !== messagesSignature(before?.messages || [])) {
+  titleEl.textContent = snap.title || snap.Title || id;
+  const provider = snap.provider || snap.Provider || 'provider';
+  const model = snap.model || snap.Model || 'model';
+  const perm = snap.perm || snap.Perm || 'gated';
+  const running = snap.running || snap.Running;
+  metaEl.textContent = `${provider} · ${model} · perm=${perm}${running ? ' · running' : ''}`;
+  const messages = snap.messages || snap.Messages || [];
+  const beforeMessages = before?.messages || before?.Messages || [];
+  if (opts.force || messagesSignature(messages) !== messagesSignature(beforeMessages)) {
     renderTimeline(messages);
   }
 }
@@ -114,8 +188,42 @@ function renderTimeline(messages) {
   timelineEl.scrollTop = timelineEl.scrollHeight;
 }
 
+function closeLiveStream() {
+  state.streaming = false;
+  if (state.source) {
+    state.source.close();
+    state.source = null;
+  }
+  if (state.desktopEvents && window.runtime?.EventsOff) {
+    window.runtime.EventsOff('gui:ready');
+    window.runtime.EventsOff('gui:event');
+    state.desktopEvents = false;
+  }
+  if (hasDesktopBridge() && desktop().Unsubscribe) {
+    desktop().Unsubscribe().catch(() => {});
+  }
+}
+
 function connectEvents(id) {
   state.streaming = false;
+  if (hasDesktopBridge() && window.runtime?.EventsOn && desktop().Subscribe) {
+    window.runtime.EventsOff?.('gui:ready');
+    window.runtime.EventsOff?.('gui:event');
+    window.runtime.EventsOn('gui:ready', () => {
+      state.streaming = true;
+      inspectorEl.textContent = 'Desktop event stream connected.';
+    });
+    window.runtime.EventsOn('gui:event', (ev) => {
+      state.streaming = true;
+      appendEvent(ev.event || ev.Event, ev.replay || ev.Replay);
+    });
+    state.desktopEvents = true;
+    desktop().Subscribe(id).catch((err) => {
+      state.streaming = false;
+      inspectorEl.textContent = `Desktop stream unavailable: ${err}. Using state polling.`;
+    });
+    return;
+  }
   if (!window.EventSource) {
     inspectorEl.textContent = 'Live stream unavailable. Using state polling.';
     return;
@@ -147,30 +255,30 @@ function appendMessage(role, text) {
 }
 
 function appendEvent(e, replay) {
-  if (replay) return;
+  if (replay || !e) return;
   timelineEl.classList.remove('empty');
-  const kind = e.kind || 'event';
-  if (kind === 'text') return appendDelta('assistant', e.text || '');
-  if (kind === 'reasoning') return appendEventBlock('reasoning', 'reasoning', e.text || '');
-  if (kind === 'tool_start') return appendEventBlock('tool', `tool · ${e.tool || ''}`, pretty(e.tool_args));
-  if (kind === 'tool_result') return appendEventBlock('tool', `result · ${e.tool || ''}`, e.result || '');
+  const kind = e.kind || e.Kind || 'event';
+  if (kind === 'text') return appendDelta('assistant', e.text || e.Text || '');
+  if (kind === 'reasoning') return appendEventBlock('reasoning', 'reasoning', e.text || e.Text || '');
+  if (kind === 'tool_start') return appendEventBlock('tool', `tool · ${e.tool || e.ToolName || ''}`, pretty(e.tool_args || e.ToolArgs));
+  if (kind === 'tool_result') return appendEventBlock('tool', `result · ${e.tool || e.ToolName || ''}`, e.result || e.Result || '');
   if (kind === 'approval') {
-    appendEventBlock('approval', `approval · ${e.tool || ''}`, e.text || '');
+    appendEventBlock('approval', `approval · ${e.tool || e.ToolName || ''}`, e.text || e.Text || '');
     inspectorEl.innerHTML = `
       <div class="approval">
         <div class="panel-title">Approval requested</div>
-        <p>${escapeHtml(e.text || e.tool || 'tool call')}</p>
-        <button class="primary" onclick="answerApproval('${escapeAttr(e.result)}', true)">Approve</button>
-        <button class="ghost" onclick="answerApproval('${escapeAttr(e.result)}', false)">Deny</button>
+        <p>${escapeHtml(e.text || e.Text || e.tool || e.ToolName || 'tool call')}</p>
+        <button class="primary" onclick="answerApproval('${escapeAttr(e.result || e.Result)}', true)">Approve</button>
+        <button class="ghost" onclick="answerApproval('${escapeAttr(e.result || e.Result)}', false)">Deny</button>
       </div>`;
     return;
   }
   if (kind === 'done') {
     refreshSessions();
-    if (state.active) setTimeout(() => openSession(state.active), 250);
+    if (state.active) setTimeout(() => refreshActiveState({force: true}), 250);
     return;
   }
-  if (kind === 'note') return appendEventBlock('event', 'note', e.text || '');
+  if (kind === 'note') return appendEventBlock('event', 'note', e.text || e.Text || '');
 }
 
 function appendDelta(role, text) {
@@ -196,27 +304,24 @@ function appendEventBlock(cls, label, text) {
 
 window.answerApproval = async (approval, allow) => {
   if (!state.active) return;
-  await api(`/api/sessions/${encodeURIComponent(state.active)}/approve`, {
-    method: 'POST',
-    body: JSON.stringify({approval, allow}),
-  });
+  await approveCall(state.active, approval, allow);
   inspectorEl.textContent = allow ? 'Approved.' : 'Denied.';
 };
 
 $('new-session').onclick = async () => {
-  const out = await api('/api/sessions', {method: 'POST', body: JSON.stringify({})});
+  const out = await createSession();
   await refreshSessions();
-  await openSession(out.id);
+  await openSession(out.id || out.ID || out);
 };
 
 $('interrupt').onclick = async () => {
   if (!state.active) return;
-  await api(`/api/sessions/${encodeURIComponent(state.active)}/interrupt`, {method: 'POST', body: '{}'});
+  await sessionAction(state.active, 'interrupt');
 };
 
 $('resend').onclick = async () => {
   if (!state.active) return;
-  await api(`/api/sessions/${encodeURIComponent(state.active)}/resend`, {method: 'POST', body: '{}'});
+  await sessionAction(state.active, 'resend');
 };
 
 $('composer').onsubmit = async (e) => {
@@ -225,10 +330,7 @@ $('composer').onsubmit = async (e) => {
   if (!text || !state.active) return;
   appendMessage('user', text);
   inputEl.value = '';
-  await api(`/api/sessions/${encodeURIComponent(state.active)}/input`, {
-    method: 'POST',
-    body: JSON.stringify({text}),
-  });
+  await sendInput(state.active, text);
 };
 
 inputEl.addEventListener('keydown', (e) => {
@@ -238,6 +340,13 @@ inputEl.addEventListener('keydown', (e) => {
   }
 });
 
+function sessionID(s) { return s.id || s.ID; }
+function sessionStatus(s) { return s.status || s.Status; }
+function messagesSignature(messages) {
+  if (!messages.length) return '0';
+  const last = messages[messages.length - 1];
+  return `${messages.length}:${last.role || last.Role}:${(last.text || last.Text || '').length}`;
+}
 function shortPath(p) {
   const home = '~';
   const parts = p.split('/').filter(Boolean);
