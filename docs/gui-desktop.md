@@ -66,6 +66,7 @@ The GUI currently includes:
 Before shipping GUI changes, run:
 
 ```bash
+make gui-smoke
 node --check internal/gui/static/app.js
 GOTMPDIR=/run/user/1000/eigen-gotmp go test ./...
 GOTMPDIR=/run/user/1000/eigen-gotmp go build -tags 'wails production webkit2_41' .

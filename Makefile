@@ -1,7 +1,7 @@
 EIGEN := bin/eigen
 PKGS := ./...
 
-.PHONY: build gui-run gui-desktop vet test race fmt gate harness perf perf-soak perf-bench stats clean
+.PHONY: build gui-run gui-smoke gui-desktop vet test race fmt gate harness perf perf-soak perf-bench stats clean
 
 build:
 	go build -o $(EIGEN) .
@@ -11,6 +11,9 @@ gui-run:
 
 gui-desktop:
 	go build -tags 'wails production webkit2_41' -o bin/eigen-gui .
+
+gui-smoke:
+	scripts/gui-smoke.sh
 
 vet:
 	go vet $(PKGS)
