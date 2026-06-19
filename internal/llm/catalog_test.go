@@ -80,9 +80,9 @@ func TestLookupCapabilities(t *testing.T) {
 	if !ok || !o.Cache || !o.Context1M {
 		t.Fatalf("opus-4-8 capabilities wrong: %+v (ok=%v)", o, ok)
 	}
-	// Mantle GPT: effort-style reasoning (capped to medium), no cache/1M.
+	// Mantle GPT: effort-style reasoning, no cache/1M.
 	g, ok := Lookup("openai.gpt-5.5")
-	if !ok || !g.Reasoning || g.Effort != "medium" || g.Cache || g.Context1M {
+	if !ok || !g.Reasoning || g.Effort != "medium" || g.Cache || g.Context1M || len(g.EffortLevels) != 5 || g.EffortLevels[4] != "xhigh" {
 		t.Fatalf("gpt-5.5 capabilities wrong: %+v (ok=%v)", g, ok)
 	}
 	// llama local present.

@@ -64,13 +64,13 @@ type ModelInfo struct {
 // Catalog is the set of models eigen knows about. It is additive: an unknown
 // model simply falls back to provider defaults.
 var Catalog = []ModelInfo{
-	// Bedrock "mantle" (OpenAI-family). Effort-style reasoning (high is stable;
-	// xhigh stalls mid-task on mantle — see mantle.go). Vision PROBED 2026-06-13:
-	// 256x256 red PNG as Responses input_image → gpt-5.5 and gpt-5.4 both
-	// answered "red" through the mantle gateway (gpt-5.5 needed a retry past a
-	// transient 500; tiny 8x8 images can confuse the model — send real sizes).
+	// Bedrock "mantle" (OpenAI-family). Effort-style reasoning; GPT accepts
+	// none|low|medium|high|xhigh (max remains Anthropic-only). Vision PROBED
+	// 2026-06-13: 256x256 red PNG as Responses input_image → gpt-5.5 and gpt-5.4
+	// both answered "red" through the mantle gateway (gpt-5.5 needed a retry past
+	// a transient 500; tiny 8x8 images can confuse the model — send real sizes).
 	// "openai.gpt-5" itself 404s on mantle now (kept for non-mantle aliasing).
-	{ID: "openai.gpt-5.5", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "medium", EffortLevels: []string{"none", "low", "medium"}, Vision: true},
+	{ID: "openai.gpt-5.5", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "medium", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, Vision: true},
 	{ID: "openai.gpt-5.4", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, Vision: true},
 	{ID: "openai.gpt-5", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, Vision: true},
 

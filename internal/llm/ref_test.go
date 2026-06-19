@@ -99,8 +99,8 @@ func TestModelEffortLevelsPerCatalog(t *testing.T) {
 		model string
 		want  []string
 	}{
-		// mantle GPT capped to medium (user policy): none|low|medium
-		{"openai.gpt-5.5", []string{"none", "low", "medium"}},
+		// mantle GPT: none|low|medium|high|xhigh (max remains Anthropic-only)
+		{"openai.gpt-5.5", []string{"none", "low", "medium", "high", "xhigh"}},
 		// Anthropic adaptive opus on Bedrock (verified live):
 		// low..xhigh|max — auto and minimal rejected
 		{"us.anthropic.claude-opus-4-8", []string{"low", "medium", "high", "xhigh", "max"}},
@@ -149,8 +149,8 @@ func TestSetEffortRespectsModelCatalog(t *testing.T) {
 	if !m.SetEffort("none") {
 		t.Error("gpt-5.5 must accept none")
 	}
-	if m.SetEffort("xhigh") {
-		t.Error("gpt-5.5 must reject xhigh (capped to medium)")
+	if !m.SetEffort("xhigh") {
+		t.Error("gpt-5.5 must accept xhigh")
 	}
 	if !m.SetEffort("medium") {
 		t.Error("gpt-5.5 must accept medium")
