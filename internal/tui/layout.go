@@ -140,7 +140,7 @@ func (m *model) hitTest(x, y int) hit {
 			// Sidebar rows resolve in the click handler via sidebarRowAt
 			// (nav rows carry their own action; no [x] close affordance —
 			// the sidebar IS the chrome).
-			if r, ok := m.sidebarRowAt(ly); ok {
+			if r, ok := m.sidebarRowAt(ly, l.leftRail.h); ok {
 				a = r.action
 			}
 		} else if panelCloseAt(lx, ly, l.leftRail.w-1) { // rail's last col is the separator

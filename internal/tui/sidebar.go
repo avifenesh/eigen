@@ -100,8 +100,9 @@ func (m *model) sidebarVisible() bool {
 	return m.width >= railMinTerminalWidth
 }
 
-// sidebarRows builds the row model. The renderer (sidebarLines) and the click
-// hit-test (sidebarRowAt) both walk exactly this.
+// sidebarRows builds the full row model. sidebarVisibleRows windows the session
+// rows when the embedded rail overflows, and both the renderer and hit-test use
+// that visible model so geometry cannot drift.
 func (m *model) sidebarRows() []sidebarRow {
 	rows := []sidebarRow{
 		{kind: sbBrand},
@@ -147,6 +148,76 @@ func (m *model) sidebarRows() []sidebarRow {
 	return rows
 }
 
+// sidebarSessionsHeaderIndex returns the full sidebar-row index of the embedded
+// sessions header, or -1 when the sidebar has no sessions section.
+func (m *model) sidebarSessionsHeaderIndex() int {
+	for i, r := range m.sidebarRows() {
+		if r.kind == sbSessionsHeader {
+			return i
+		}
+	}
+	return -1
+}
+
+// sidebarSessionViewportHeight is how many rail rows fit below the fixed
+// sessions header in a sidebar of height h.
+func (m *model) sidebarSessionViewportHeight(h int) int {
+	hdr := m.sidebarSessionsHeaderIndex()
+	if hdr < 0 {
+		return 0
+	}
+	visible := h - (hdr + 1)
+	if visible < 0 {
+		return 0
+	}
+	return visible
+}
+
+// sidebarSessionAreaAt reports whether a local sidebar y is inside the
+// sessions section (the header or its scrollable rows).
+func (m *model) sidebarSessionAreaAt(localY, h int) bool {
+	hdr := m.sidebarSessionsHeaderIndex()
+	return hdr >= 0 && localY >= hdr && localY < h
+}
+
+// sidebarVisibleRows returns the rows currently visible in a sidebar of height
+// h. All chrome above the sessions header stays fixed; only the embedded rail
+// rows below that header scroll.
+func (m *model) sidebarVisibleRows(h int) []sidebarRow {
+	if h <= 0 {
+		return nil
+	}
+	rows := m.sidebarRows()
+	hdr := -1
+	for i, r := range rows {
+		if r.kind == sbSessionsHeader {
+			hdr = i
+			break
+		}
+	}
+	if hdr < 0 {
+		if len(rows) > h {
+			return rows[:h]
+		}
+		return rows
+	}
+	prefixEnd := hdr + 1 // keep the sessions header fixed
+	if prefixEnd >= h {
+		return rows[:h]
+	}
+	railRows := rows[prefixEnd:]
+	visible := h - prefixEnd
+	start := m.clampRailScroll(visible)
+	end := start + visible
+	if end > len(railRows) {
+		end = len(railRows)
+	}
+	out := make([]sidebarRow, 0, prefixEnd+end-start)
+	out = append(out, rows[:prefixEnd]...)
+	out = append(out, railRows[start:end]...)
+	return out
+}
+
 // tasksBadge is the sidebar's background-tasks row label: "" when no tasks
 // exist (no noise), a running count while work is in flight, or the latest
 // terminal state so a finish stays noticeable until viewed.
@@ -190,10 +261,10 @@ func (m *model) sidebarStatusRows() []sidebarRow {
 	return rows
 }
 
-// sidebarRowAt maps a sidebar-local y to its row (no header offset — row 0 is
-// the title row).
-func (m *model) sidebarRowAt(localY int) (sidebarRow, bool) {
-	rows := m.sidebarRows()
+// sidebarRowAt maps a sidebar-local y to its visible row (no header offset —
+// row 0 is the title row), honoring the session-area scroll offset.
+func (m *model) sidebarRowAt(localY, h int) (sidebarRow, bool) {
+	rows := m.sidebarVisibleRows(h)
 	if localY < 0 || localY >= len(rows) {
 		return sidebarRow{}, false
 	}
@@ -211,10 +282,7 @@ func (m *model) sidebarLines(h int) []string {
 	}
 	grouped := m.railGrouped()
 	lines := make([]string, 0, h)
-	for _, r := range m.sidebarRows() {
-		if len(lines) >= h {
-			break
-		}
+	for _, r := range m.sidebarVisibleRows(h) {
 		switch r.kind {
 		case sbBrand:
 			lines = append(lines, railPad(m.brandMark()+styleAccent.Bold(true).Render(" eigen"), rw))

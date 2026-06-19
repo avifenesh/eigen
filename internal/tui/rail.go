@@ -234,6 +234,50 @@ func (m *model) railRows() []railRow {
 	return rows
 }
 
+// clampScrollOffset clamps a list scroll offset so the final page is full when
+// possible. visible is the number of list rows available below any fixed header.
+func clampScrollOffset(offset, total, visible int) int {
+	if visible <= 0 || total <= visible {
+		return 0
+	}
+	maxScroll := total - visible
+	if offset < 0 {
+		return 0
+	}
+	if offset > maxScroll {
+		return maxScroll
+	}
+	return offset
+}
+
+// clampRailScroll keeps the shared rail/session-list scroll valid as sessions
+// are added/removed, projects collapse, or the terminal is resized.
+func (m *model) clampRailScroll(visible int) int {
+	m.railScroll = clampScrollOffset(m.railScroll, len(m.railRows()), visible)
+	return m.railScroll
+}
+
+// scrollRail moves the rail/session-list viewport by delta rows.
+func (m *model) scrollRail(delta, visible int) {
+	m.railScroll = clampScrollOffset(m.railScroll+delta, len(m.railRows()), visible)
+}
+
+// visibleRailRows returns the rail rows currently visible in a list window of
+// visible rows (excluding fixed headers). It also clamps m.railScroll.
+func (m *model) visibleRailRows(visible int) []railRow {
+	rows := m.railRows()
+	if visible <= 0 || len(rows) == 0 {
+		m.clampRailScroll(visible)
+		return nil
+	}
+	start := m.clampRailScroll(visible)
+	end := start + visible
+	if end > len(rows) {
+		end = len(rows)
+	}
+	return rows[start:end]
+}
+
 // railGlyph maps a session status to its rail glyph; working sessions animate
 // (frame advanced by the rail tick) so liveness is visible at a glance.
 func (m *model) railGlyph(status string) string {
@@ -367,6 +411,9 @@ func statusRank(s string) int {
 // (when they span projects); the current session is marked; status glyphs use
 // the shared ●○◆✗ language with an animated spinner for working.
 func (m *model) railLines(h int) []string {
+	if h <= 0 {
+		return nil
+	}
 	cur := ""
 	if sl := m.railLister(); sl != nil {
 		cur = sl.SessionID()
@@ -375,12 +422,10 @@ func (m *model) railLines(h int) []string {
 	contentW := railContentW(rw)
 	grouped := m.railGrouped()
 	lines := make([]string, 0, h)
-	// Header row for the rail, with a visible close affordance.
+	// Header row for the rail, with a visible close affordance. The session list
+	// below it is independently scrollable when it overflows the rail height.
 	lines = append(lines, railPad(panelTitleLine("sessions", contentW, true), rw))
-	for _, r := range m.railRows() {
-		if len(lines) >= h {
-			break
-		}
+	for _, r := range m.visibleRailRows(h - 1) {
 		if r.header {
 			lines = append(lines, railPad(m.railHeaderLabel(r.dir, contentW), rw))
 			continue
@@ -498,11 +543,12 @@ func (m *model) transcriptBand() string {
 	return b.String()
 }
 
-// railRowAt maps a rail-local y to the row model built by railRows.
-// Row 0 is the "sessions" panel header; rows start at 1.
-func (m *model) railRowAt(localY int) (railRow, bool) {
+// railRowAt maps a rail-local y to the row model built by railRows, honoring
+// the current rail scroll offset. Row 0 is the fixed "sessions" panel header;
+// rows start at 1.
+func (m *model) railRowAt(localY, railH int) (railRow, bool) {
 	rows := m.railRows()
-	idx := localY - 1 // row 0 is the panel header
+	idx := localY - 1 + m.clampRailScroll(railH-1) // row 0 is the panel header
 	if idx < 0 || idx >= len(rows) {
 		return railRow{}, false
 	}

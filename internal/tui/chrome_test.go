@@ -1633,6 +1633,73 @@ func TestSidebarClickNavStatusAndRailRows(t *testing.T) {
 	}
 }
 
+func TestSidebarSessionAreaScrolls(t *testing.T) {
+	m := switcherModel(t)
+	sb := m.backend.(*switchBackend)
+	sb.id = "s0"
+	sb.entries = nil
+	for i := 0; i < 20; i++ {
+		sb.entries = append(sb.entries, chat.SessionEntry{
+			ID:     "s" + itoa(i),
+			Title:  "session-" + itoa(i),
+			Dir:    "/tmp/only",
+			Status: "idle",
+			Turns:  1,
+		})
+	}
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.refreshRail()
+	l := m.computeLayout()
+	visible := m.sidebarVisibleRows(m.vp.Height)
+	hdr := -1
+	for i, r := range visible {
+		if r.kind == sbSessionsHeader {
+			hdr = i
+			break
+		}
+	}
+	if hdr < 0 || hdr+1 >= len(visible) {
+		t.Fatalf("expected visible sessions header and at least one session row, rows=%+v height=%d", visible, m.vp.Height)
+	}
+	firstBefore, ok := m.sidebarRowAt(hdr+1, m.vp.Height)
+	if !ok || firstBefore.kind != sbRail || firstBefore.rail.header {
+		t.Fatalf("first visible session row should be a session, got %+v ok=%v", firstBefore, ok)
+	}
+	idBefore := m.railEntries[firstBefore.rail.entry].ID
+	vpBefore := m.vp.YOffset
+
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown, X: 1, Y: l.leftRail.y + hdr + 1})
+	if m.railScroll == 0 {
+		t.Fatal("wheel down over the sidebar sessions area should advance the session scroll")
+	}
+	if m.vp.YOffset != vpBefore {
+		t.Fatal("wheel over the sidebar sessions area must not scroll the transcript viewport")
+	}
+	firstAfter, ok := m.sidebarRowAt(hdr+1, m.vp.Height)
+	if !ok || firstAfter.kind != sbRail || firstAfter.rail.header {
+		t.Fatalf("after scroll first visible row should still be a session, got %+v ok=%v", firstAfter, ok)
+	}
+	idAfter := m.railEntries[firstAfter.rail.entry].ID
+	if idAfter == idBefore {
+		t.Fatalf("session scroll did not change the visible row: still %s", idAfter)
+	}
+
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp, X: 1, Y: l.leftRail.y + hdr + 1})
+	if m.railScroll != 0 {
+		t.Fatalf("wheel up should return the session scroll to top, got %d", m.railScroll)
+	}
+	m.scrollRail(3, m.sidebarSessionViewportHeight(m.vp.Height))
+	firstAfter, _ = m.sidebarRowAt(hdr+1, m.vp.Height)
+	idAfter = m.railEntries[firstAfter.rail.entry].ID
+	_, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: l.leftRail.y + hdr + 1})
+	if m.switchTo != idAfter {
+		t.Fatalf("click after scroll should hop to the visible session %q, got %q", idAfter, m.switchTo)
+	}
+	if cmd == nil {
+		t.Fatal("clicking a non-current scrolled session should return a quit command")
+	}
+}
+
 func TestSidebarShowsTodosAsSection(t *testing.T) {
 	m := testModel(t)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})

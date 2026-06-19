@@ -328,6 +328,7 @@ type model struct {
 	railOn        bool
 	railEntries   []chat.SessionEntry
 	railCollapsed map[string]bool
+	railScroll    int // first visible rail row in the left rail / sidebar sessions section
 	railSpin      int
 	brandTick     int    // advances while working → animates the λ mark + loader
 	lastTitle     string // last terminal-title string written (throttle: skip no-op rewrites)
@@ -1426,7 +1427,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 					// Sidebar rows: nav actions resolved in hitTest (handled
 					// above); here handle the embedded rail rows — project
 					// headers collapse, session rows hop.
-					if r, ok := m.sidebarRowAt(h.localY); ok {
+					if r, ok := m.sidebarRowAt(h.localY, m.vp.Height); ok {
 						switch {
 						case r.kind == sbSessionsHeader:
 							// Collapse-all / expand-all toggle on the header.
@@ -1446,7 +1447,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 				// A click on a project header toggles its collapse; a click on
 				// a session row hops the window there (same path as the
 				// switcher's enter — Detach keeps the daemon turn alive).
-				if r, ok := m.railRowAt(h.localY); ok {
+				if r, ok := m.railRowAt(h.localY, m.vp.Height); ok {
 					if r.header {
 						m.toggleRailProject(r.dir)
 						return m, nil
@@ -1558,8 +1559,29 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			return m, nil
 		}
 		if tea.MouseEvent(msg).IsWheel() {
-			// Wheel over right-panel tabs scrolls that panel, not the transcript.
-			if h := m.hitTest(msg.X, msg.Y); h.region == regRightPanel {
+			delta := 0
+			switch msg.Button {
+			case tea.MouseButtonWheelUp:
+				delta = -3
+			case tea.MouseButtonWheelDown:
+				delta = 3
+			}
+			// Wheel over the left rail/sidebar scrolls the sessions list, not the
+			// transcript behind it. In sidebar mode only the sessions section (its
+			// header + rows) is scrollable; the nav/status chrome above stays fixed.
+			if h := m.hitTest(msg.X, msg.Y); h.region == regLeftRail {
+				if delta != 0 {
+					if m.sidebarVisible() {
+						if m.sidebarSessionAreaAt(h.localY, m.vp.Height) {
+							m.scrollRail(delta, m.sidebarSessionViewportHeight(m.vp.Height))
+						}
+					} else {
+						m.scrollRail(delta, m.vp.Height-1)
+					}
+				}
+				return m, nil
+			} else if h.region == regRightPanel {
+				// Wheel over right-panel tabs scrolls that panel, not the transcript.
 				switch m.rightTab {
 				case rightTabChanges:
 					switch msg.Button {
