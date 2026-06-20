@@ -17,6 +17,7 @@ func TestGUIPhaseSummaryIsMachineReadable(t *testing.T) {
 		FullRepoGate            string   `json:"full_repo_gate"`
 		ReleasePTYSoakGate      string   `json:"release_pty_soak_gate"`
 		GUIStaticCheck          string   `json:"gui_static_check"`
+		GUIWailsCheck           string   `json:"gui_wails_check"`
 		GUIBrowserSmoke         string   `json:"gui_browser_smoke"`
 		Implemented             []string `json:"implemented"`
 		NotOwnedPreexisting     []string `json:"not_owned_preexisting_staged"`
@@ -39,6 +40,9 @@ func TestGUIPhaseSummaryIsMachineReadable(t *testing.T) {
 	}
 	if s.GUIStaticCheck != "node --check internal/gui/static/app.js" {
 		t.Fatalf("GUI static check = %q", s.GUIStaticCheck)
+	}
+	if s.GUIWailsCheck != "go test -tags 'wails production webkit2_41' ./internal/gui -count=1" {
+		t.Fatalf("GUI Wails check = %q", s.GUIWailsCheck)
 	}
 	if s.GUIBrowserSmoke != "scripts/gui-smoke.sh" {
 		t.Fatalf("GUI browser smoke = %q", s.GUIBrowserSmoke)

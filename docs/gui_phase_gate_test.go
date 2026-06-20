@@ -19,6 +19,7 @@ func TestGUICurrentSurfaceGateDocumentsAcceptance(t *testing.T) {
 		"scripts/verify-gui-phase.sh",
 		"go test ./... -count=1",
 		"go test . ./docs ./internal/app ./internal/feed ./internal/gui ./internal/tui -count=1",
+		"go test -tags 'wails production webkit2_41' ./internal/gui -count=1",
 		"node --check internal/gui/static/app.js",
 		"scripts/gui-smoke.sh",
 		"go test . -run 'TestPTYReleaseAppShellLongerSoak' -count=1",

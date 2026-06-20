@@ -29,6 +29,7 @@ The gate substance was established and landed before final acceptance. It includ
 
 - `go test ./... -count=1`;
 - GUI package tests including `internal/gui`, `internal/app`, and `internal/tui`;
+- Wails-tag native GUI compile/test: `go test -tags 'wails production webkit2_41' ./internal/gui -count=1`;
 - `node --check internal/gui/static/app.js`;
 - `scripts/gui-smoke.sh` native/browser GUI launch smoke;
 - smoke-tagged PTY binary tests;

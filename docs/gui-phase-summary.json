@@ -20,7 +20,8 @@
     "docs parity matrix, evidence map, phase gate, delivery notes, and test guards",
     "native/browser GUI static, API, local-only server, and smoke coverage",
     "explicit app-side mutating page workflow evidence for config, skills, memory, plugins, marketplace, and providers",
-    "explicit accessibility and keyboard parity audit for app shell, chat TUI, and native/browser GUI seams"
+    "explicit accessibility and keyboard parity audit for app shell, chat TUI, and native/browser GUI seams",
+    "Wails-tag native GUI compile/test in enforced phase gate"
   ],
   "not_owned_preexisting_staged": [
     "internal/command/command_test.go",
@@ -29,5 +30,6 @@
   ],
   "remaining_before_full_goal": [],
   "gui_static_check": "node --check internal/gui/static/app.js",
-  "gui_browser_smoke": "scripts/gui-smoke.sh"
+  "gui_browser_smoke": "scripts/gui-smoke.sh",
+  "gui_wails_check": "go test -tags 'wails production webkit2_41' ./internal/gui -count=1"
 }

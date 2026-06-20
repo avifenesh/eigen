@@ -17,6 +17,7 @@ func TestGUIFinalReviewResolutionAnswersBlockers(t *testing.T) {
 		"No functional blocker from the prior review was reclassified as incomplete maintenance work",
 		"Blocker 2: gate circularity check",
 		"does **not** change `scripts/verify-gui-phase.sh` or `.github/workflows/gui-phase.yml`",
+		"go test -tags 'wails production webkit2_41' ./internal/gui -count=1",
 		"Blocker 3: evidence commit boundary check",
 		"Default branch `origin/main`",
 		"27863744643",

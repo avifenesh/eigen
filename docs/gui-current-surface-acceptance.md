@@ -28,7 +28,7 @@ The shipped desktop GUI surfaces are:
 - Main GUI phase gate: `27863744643`, `success`, `push`, `headBranch=main`, `headSha=8b2c6f7040f28a27c634e6ccb3a3fbc0bee7a1d9`, URL `https://github.com/avifenesh/eigen/actions/runs/27863744643`.
 - Main CI: `27863744647`, `success`, `push`, `headBranch=main`, `headSha=8b2c6f7040f28a27c634e6ccb3a3fbc0bee7a1d9`, URL `https://github.com/avifenesh/eigen/actions/runs/27863744647`.
 - Clean detached local verification from `origin/main`: `bash scripts/verify-gui-phase.sh` and `go test ./... -count=1` both passed.
-- `scripts/verify-gui-phase.sh` validates the shipped surfaces by running the full Go suite, focused GUI package tests including native GUI/app/TUI packages, JS syntax checking, native GUI browser smoke, smoke-tagged PTY binary tests, shuffle tests, race tests, release app shell PTY soak, and repeated chat/app PTY smoke tests.
+- `scripts/verify-gui-phase.sh` validates the shipped surfaces by running the full Go suite, focused GUI package tests including native GUI/app/TUI packages, Wails-tag native GUI compile/test (`go test -tags 'wails production webkit2_41' ./internal/gui -count=1`), JS syntax checking, native GUI browser smoke, smoke-tagged PTY binary tests, shuffle tests, race tests, release app shell PTY soak, and repeated chat/app PTY smoke tests.
 
 ## Acceptance statement
 
