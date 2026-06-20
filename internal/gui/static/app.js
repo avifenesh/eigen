@@ -300,6 +300,7 @@ function updateDesktopOverview(snap = {}) {
 
 function setFeature(feature) {
   state.feature = feature || 'chat';
+  document.body.dataset.feature = state.feature;
   for (const btn of featureNav?.querySelectorAll('[data-feature]') || []) {
     btn.classList.toggle('active', btn.dataset.feature === state.feature);
   }
@@ -315,10 +316,12 @@ function renderFeatureWorkspace() {
   if (!featureWorkspace) return;
   const snap = state.state || {};
   if (state.feature === 'chat') {
+    desktopOverview?.classList.remove('hidden');
     featureWorkspace.classList.add('hidden');
     timelineEl.classList.remove('hidden');
     return;
   }
+  desktopOverview?.classList.add('hidden');
   timelineEl.classList.add('hidden');
   featureWorkspace.classList.remove('hidden');
   const roots = snap.roots || snap.Roots || [];

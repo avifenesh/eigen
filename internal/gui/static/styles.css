@@ -149,8 +149,8 @@ button { cursor: pointer; }
 .workspace {
   position: relative;
   min-width: 0;
-  display: grid;
-  grid-template-rows: auto 1fr auto;
+  display: flex;
+  flex-direction: column;
 }
 .topbar {
   display: flex;
@@ -162,13 +162,16 @@ button { cursor: pointer; }
 .title { font-size: 18px; font-weight: 650; letter-spacing: -0.025em; }
 .actions { display: flex; gap: 8px; }
 .desktop-overview {
+  flex: 0 0 auto;
   display: grid;
-  grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(120px, .8fr));
+  grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(120px,.8fr));
   gap: 10px;
-  padding: 18px 22px 0;
+  padding: 12px 22px 0;
 }
 .overview-card {
   min-width: 0;
+  height: 96px;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 18px;
   padding: 13px 14px;
@@ -198,12 +201,13 @@ button { cursor: pointer; }
 }
 .metric-copy { color: var(--muted); font-size: 12px; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .feature-workspace {
+  flex: 1 1 auto;
+  min-height: 0;
   margin: 16px 22px 0;
   border: 1px solid var(--line);
   border-radius: 22px;
   background: rgba(255,255,255,.018);
-  overflow: hidden;
-  min-height: 220px;
+  overflow: auto;
 }
 .feature-head {
   display: flex;
