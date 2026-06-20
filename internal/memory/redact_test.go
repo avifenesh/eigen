@@ -6,28 +6,23 @@ import (
 )
 
 func TestRedactPatterns(t *testing.T) {
-	awsExample := "AKIA" + "IOSFODNN7EXAMPLE"
-	ghExample := "ghp_" + "abcdefghijklmnopqrstuvwxyz123456"
-	skExample := "sk-proj-" + "abcdefghijklmnop123"
-	pemExample := "-----BEGIN RSA" + " PRIVATE KEY-----\nMIIB\n-----END RSA" + " PRIVATE KEY-----"
-
 	cases := []struct {
 		in       string
 		mustLose []string // substrings that must NOT survive
 		mustKeep []string // substrings that must survive
 	}{
 		{
-			in:       "use " + awsExample + " for s3",
-			mustLose: []string{awsExample},
+			in:       "use AKIAIOSFODNN7EXAMPLE for s3",
+			mustLose: []string{"AKIAIOSFODNN7EXAMPLE"},
 			mustKeep: []string{"for s3"},
 		},
 		{
-			in:       "gh token " + ghExample,
-			mustLose: []string{ghExample},
+			in:       "gh token ghp_abcdefghijklmnopqrstuvwxyz123456",
+			mustLose: []string{"ghp_abcdefghijklmnopqrstuvwxyz123456"},
 		},
 		{
-			in:       "OPENAI " + skExample,
-			mustLose: []string{skExample},
+			in:       "OPENAI sk-proj-abcdefghijklmnop123",
+			mustLose: []string{"sk-proj-abcdefghijklmnop123"},
 		},
 		{
 			in:       "export GLM_API_KEY=d41d8cd98f00b204e9800998ecf8427e",
@@ -40,7 +35,7 @@ func TestRedactPatterns(t *testing.T) {
 			mustKeep: []string{"Bearer"},
 		},
 		{
-			in:       pemExample,
+			in:       "-----BEGIN RSA PRIVATE KEY-----\nMIIB\n-----END RSA PRIVATE KEY-----",
 			mustLose: []string{"MIIB"},
 		},
 		{
