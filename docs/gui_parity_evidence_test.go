@@ -58,6 +58,7 @@ func TestGUIParityEvidenceMentionsKeyRegressionTests(t *testing.T) {
 		"TestTUIEveryRightPanelTabGoldenSnapshotTokens",
 		"TestTUISlashCommandJourneyFromComposer",
 		"TestPremiumInteractionViewSoak",
+		"TestAgentBackgroundShellToolJourneySettlesResources",
 		"TestCLISmokeVersionAndTheme",
 		"TestProductionSmokeCommandsFailExplicitly",
 		"Independent review blockers",

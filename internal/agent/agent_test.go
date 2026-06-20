@@ -1723,3 +1723,74 @@ func contains(ss []string, want string) bool {
 	}
 	return false
 }
+
+func TestAgentBackgroundShellToolJourneySettlesResources(t *testing.T) {
+	if testing.Short() {
+		t.Skip("background shell journey uses real subprocesses")
+	}
+
+	shells := tool.NewShellRegistry()
+	bash := tool.BashWithShells(nil, shells, nil)
+	bashOut := tool.BashOutput(shells)
+	kill := tool.KillShell(shells)
+	reg, err := tool.NewRegistry(bash, bashOut, kill)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prov := &mockProvider{replies: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "c1", Name: "bash", Arguments: json.RawMessage(`{"command":"printf start; sleep 2; printf done","background":true}`)}}},
+		{ToolCalls: []llm.ToolCall{{ID: "c2", Name: "bash_output", Arguments: json.RawMessage(`{"id":"shell-1"}`)}}},
+		{ToolCalls: []llm.ToolCall{{ID: "c3", Name: "kill_shell", Arguments: json.RawMessage(`{"id":"shell-1"}`)}}},
+		{Text: "background shell journey complete"},
+	}}
+	var events []Event
+	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto, Shells: shells, OnEvent: func(e Event) { events = append(events, e) }}
+
+	out, err := a.Run(context.Background(), "start a background shell, poll it, then stop it")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "background shell journey complete" {
+		t.Fatalf("unexpected final answer: %q", out)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for shells.RunningCount() > 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if shells.RunningCount() > 0 {
+		shells.KillByID("shell-1")
+		t.Fatal("background shell should settle after kill_shell")
+	}
+	if strings.Contains(shells.StatusBlock(), "still running") {
+		t.Fatalf("no running shells should remain in status block, got %q", shells.StatusBlock())
+	}
+	for _, want := range []string{"bash", "bash_output", "kill_shell"} {
+		if !sawToolEvent(events, want) {
+			t.Fatalf("event stream missing tool %s: %+v", want, events)
+		}
+	}
+	lastReq := prov.seen[len(prov.seen)-1]
+	for _, want := range []string{"started background shell shell-1", "shell-1", "killing shell-1"} {
+		if !requestContains(lastReq, want) {
+			t.Fatalf("final request missing %q in messages: %+v", want, lastReq.Messages)
+		}
+	}
+}
+
+func sawToolEvent(events []Event, toolName string) bool {
+	for _, e := range events {
+		if e.ToolName == toolName && (e.Kind == EventToolStart || e.Kind == EventToolResult) {
+			return true
+		}
+	}
+	return false
+}
+
+func requestContains(req llm.Request, want string) bool {
+	for _, m := range req.Messages {
+		if strings.Contains(m.Text, want) {
+			return true
+		}
+	}
+	return false
+}
