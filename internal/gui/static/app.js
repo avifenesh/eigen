@@ -16,6 +16,7 @@ const state = {
   tools: {},
   feature: 'chat',
   turnTokens: {in: 0, out: 0},
+  observe: null,
   // rendered timeline model: maps a stable key -> node so polling can update
   // in place instead of rebuilding the whole transcript (which flickered and
   // destroyed the streaming assistant message).
@@ -140,6 +141,10 @@ async function renameSession(id, title) {
 async function deleteSession(id) {
   if (hasDesktopBridge() && desktop().Remove) return desktop().Remove(id);
   return api('/api/sessions', {method: 'DELETE', body: JSON.stringify({id})});
+}
+async function getObserve(limit = 5000) {
+  if (hasDesktopBridge() && desktop().Observe) return desktop().Observe(limit);
+  return api(`/api/observe?limit=${encodeURIComponent(limit)}`);
 }
 
 /* ---------------- Boot / sessions ---------------- */
@@ -268,6 +273,7 @@ function formatTokens(n) {
   if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
   return String(n);
 }
+function sumCounts(m = {}) { return Object.values(m || {}).reduce((n, v) => n + Number(v || 0), 0); }
 
 function updateControls(snap) {
   const model = snap.model || snap.Model || '';
@@ -307,6 +313,7 @@ function setFeature(feature) {
   for (const btn of featureNav?.querySelectorAll('[data-feature]') || []) {
     btn.classList.toggle('active', btn.dataset.feature === feature);
   }
+  if (feature === 'observe' && !state.observe) refreshObserve({force: false});
   renderFeatureStage();
 }
 
@@ -711,6 +718,29 @@ function toolSummaryHTML(raw) {
 /* ---------------- Feature stage (non-chat surfaces) ---------------- */
 function compactActionButton(label, attrs = '') { return `<button class="ghost compact" type="button" ${attrs}>${escapeHtml(label)}</button>`; }
 
+function observeCells() {
+  const o = state.observe || {};
+  const s = o.summary || o.Summary || {};
+  const recs = s.records ?? s.Records ?? 0;
+  const errs = sumCounts(s.errors || s.Errors);
+  const models = Object.keys(s.models || s.Models || {});
+  const tools = Object.keys(s.tools || s.Tools || {});
+  const routes = s.routes || s.Routes || {};
+  const rt = s.runtime || s.Runtime || {};
+  const runtimeStr = [
+    rt.max_goroutines || rt.MaxGoroutines ? `${rt.max_goroutines || rt.MaxGoroutines} max goroutines` : '',
+    rt.max_mem_alloc_bytes || rt.MaxMemAllocBytes ? `${formatBytes(rt.max_mem_alloc_bytes || rt.MaxMemAllocBytes)} max alloc` : '',
+  ].filter(Boolean).join(' · ') || 'Runtime samples appear after observed turns.';
+  const status = o.enabled === false || o.Enabled === false ? 'disabled' : (o.missing || o.Missing ? 'no log yet' : 'enabled · metadata-only');
+  return [
+    ['Telemetry', `${recs} events · ${errs} errors · ${status}`, compactActionButton('Refresh', 'data-feature-action="refresh-observe"')],
+    ['Source', o.path || o.Path || '~/.eigen/observe/events.jsonl', compactActionButton('Open system', 'data-feature-action="system"')],
+    ['Models / tools', `${models.length} models · ${tools.length} tools observed`, compactActionButton('Refresh', 'data-feature-action="refresh-observe"')],
+    ['Routing', `${routes.routed ?? routes.Routed ?? 0} routed · ${routes.skipped ?? routes.Skipped ?? 0} skipped · ${routes.assessed ?? routes.Assessed ?? 0} assessed`, compactActionButton('Refresh', 'data-feature-action="refresh-observe"')],
+    ['Runtime pressure', runtimeStr, compactActionButton('Open system', 'data-feature-action="system"')],
+  ];
+}
+
 function renderFeatureStage() {
   if (state.feature === 'chat' || !featureStage) return;
   const snap = state.state || {};
@@ -725,11 +755,12 @@ function renderFeatureStage() {
       ['Workspace roots', roots.length ? roots.map(shortPath).join(' · ') : 'No roots reported.', compactActionButton('Open system', 'data-feature-action="system"')],
     ]],
     tools: ['Tools', 'Inspect and operate the automation surface.', tools.length ? tools.slice(0, 9).map(t => [t.name || t.Name || 'tool', (t.read_only ?? t.ReadOnly) ? 'read-only' : 'mutating', `${compactActionButton('Allow next turn', `data-feature-action="allow-tool" data-tool-name="${escapeAttr(t.name || t.Name || 'tool')}"`)}`]) : [['Tool registry', 'No registry payload yet.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
-    shells: ['Shells', 'Track and control background commands.', shells.length ? shells.slice(0, 9).map(s => { const status = s.status || s.Status || 'unknown'; const id = s.id || s.ID || ''; const kill = status === 'running' ? ` ${compactActionButton('Kill', `data-feature-action="kill-shell" data-shell-id="${escapeAttr(id)}"`)}` : ''; return [id || s.command || 'shell', `${status} ${s.last_line || s.LastLine || ''}`, `${compactActionButton('Poll', `data-feature-action="poll-shell" data-shell-id="${escapeAttr(id)}"`)}${kill}`]; }) : [['No background shells', 'Background commands appear here with status and controls.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
+    shells: ['Shells', 'Track and control background commands.', shells.length ? shells.slice(0, 9).map(s => { const status = s.status || s.Status || 'unknown'; const id = s.id || s.ID || ''; const kill = status === 'running' ? ` ${compactActionButton('Kill', `data-feature-action="kill-shell" data-shell-id="${escapeAttr(id)}"`)}` : ''; return [id || s.command || 'shell', `${status} ${s.last_line || s.LastLine || ''}`, `${compactActionButton('Poll', `data-feature-action="poll-shell" data-shell-id="${escapeAttr(id)}"`)}${kill}`]; }).concat([['Foreground bash', 'Detach the bash command running in the current turn into the background.', compactActionButton('Detach foreground bash', 'data-feature-action="detach-bash"')]]) : [['No background shells', 'Background commands appear here with status and controls.', compactActionButton('Refresh', 'data-feature-action="refresh"')], ['Foreground bash', 'Detach the bash command running in the current turn into the background.', compactActionButton('Detach foreground bash', 'data-feature-action="detach-bash"')]]],
     approvals: ['Approvals', 'Handle gated tool calls deliberately.', pending.length ? pending.map(p => [p.tool || 'approval', p.id || p.ID || 'pending', `${compactActionButton('Approve', `data-feature-action="approve" data-approval-id="${escapeAttr(p.id || p.ID || p.result || '')}"`)} ${compactActionButton('Deny', `data-feature-action="deny" data-approval-id="${escapeAttr(p.id || p.ID || p.result || '')}"`)}`]) : [['No pending approvals', 'Gated operations request approval here.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
     memory: ['Memory', 'Keep durable context visible.', [['Goal', snap.goal || snap.Goal || 'No active goal.', `${compactActionButton('Set from composer', 'data-feature-action="set-goal"')} ${compactActionButton('Compact', 'data-feature-action="compact"')}`], ['Roots', roots.length ? roots.map(shortPath).join(' · ') : 'No roots reported.', `${compactActionButton('Add current dir', 'data-feature-action="add-dir"')} ${compactActionButton('Open system', 'data-feature-action="system"')}`], ['Profile', 'Edit USER.md global personalization.', compactActionButton('Edit profile', 'data-feature-action="profile"')]]],
     plugins: ['Plugins', 'Manage extension capability.', [['Available tools', `${tools.length || 0} tools from skills, plugins, and built-ins.`, compactActionButton('Refresh', 'data-feature-action="refresh"')], ['Marketplace', 'Install/update/disable/rollback via the app shell.', compactActionButton('Open system', 'data-feature-action="system"')], ['Agent roles', 'Plugin roles surface through the tool list.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
     config: ['Config', 'Tune model, effort, permission, search, fast.', [['Model', modelInput?.value || snap.model || snap.Model || 'default', compactActionButton('Apply model', 'data-feature-action="apply-model"')], ['Permission', permSelect?.value || snap.perm || snap.Perm || 'gated', compactActionButton('Apply perm', 'data-feature-action="apply-perm"')], ['Search / fast', `${searchSelect?.value || snap.search || 'off'} · ${fastToggle?.classList.contains('active') ? 'fast on' : 'fast off'}`, `${compactActionButton('Apply search', 'data-feature-action="apply-search"')} ${compactActionButton('Toggle fast', 'data-feature-action="toggle-fast"')}`]]],
+    observe: ['Observe', 'Live observability: event counts, tool/model usage, routing, runtime pressure.', observeCells()],
   };
   const [title, copy, cells] = featureMap[state.feature] || featureMap.changes;
   const cellsHTML = cells.map(([k, v, action]) => `<div class="feature-cell"><strong>${escapeHtml(k)}</strong><span>${escapeHtml(v)}</span>${action ? `<div class="feature-actions">${action}</div>` : ''}</div>`).join('');
@@ -741,6 +772,7 @@ function renderFeatureStage() {
 async function runFeatureAction(btn) {
   const action = btn.dataset.featureAction;
   if (action === 'refresh') return refreshActiveState({force: true});
+  if (action === 'refresh-observe') return refreshObserve({force: true});
   if (action === 'system') return openSystemModal();
   if (action === 'profile') return openProfileModal();
   if (action === 'goto-config') return setFeature('config');
@@ -775,6 +807,15 @@ async function applySettingFromFeature(setting, value) {
   if (!state.active) return;
   await sessionSetting(state.active, setting, value);
   await refreshActiveState({force: true});
+}
+async function refreshObserve(opts = {}) {
+  try {
+    state.observe = await getObserve(5000);
+    if (opts.force || state.feature === 'observe') renderFeatureStage();
+  } catch (err) {
+    state.observe = {enabled: true, error: err.message || String(err), summary: {records: 0}};
+    if (state.feature === 'observe') renderFeatureStage();
+  }
 }
 async function sendAllowedToolTurn(toolName) {
   if (!state.active || !toolName) return;
@@ -970,8 +1011,28 @@ async function renderSystemHealth() {
   try {
     const h = await getHealth();
     const st = h.stats || h.Stats || {};
-    const rows = [['daemon', h.ok ? 'connected' : 'offline'], ['socket', h.socket || h.Socket || ''], ['version', st.version || st.Version || ''], ['uptime', formatDuration(st.uptime_sec || st.UptimeSec || 0)], ['sessions', st.sessions ?? st.Sessions ?? 0], ['running turns', st.running_turns ?? st.RunningTurns ?? 0], ['goroutines', st.goroutines ?? st.Goroutines ?? 0], ['heap', formatBytes(st.heap_alloc_b || st.HeapAllocB || 0)], ['rss', formatBytes(st.rss_b || st.RSSB || 0)]];
-    systemBody.innerHTML = rows.filter(([, v]) => v !== '').map(([k, v]) => `<div class="system-row"><span>${escapeHtml(k)}</span><strong>${escapeHtml(v)}</strong></div>`).join('') + (h.error || h.Error ? `<div class="modal-error">${escapeHtml(h.error || h.Error)}</div>` : '');
+    const rows = [
+      ['daemon', h.ok ? 'connected' : 'offline'],
+      ['socket', h.socket || h.Socket || ''],
+      ['version', st.version || st.Version || ''],
+      ['vcs revision', st.vcs_revision || st.VCSRevision || ''],
+      ['vcs modified', st.vcs_modified || st.VCSModified ? 'yes' : ''],
+      ['uptime', formatDuration(st.uptime_sec || st.UptimeSec || 0)],
+      ['sessions', st.sessions ?? st.Sessions ?? 0],
+      ['views', st.views ?? st.Views ?? 0],
+      ['running turns', st.running_turns ?? st.RunningTurns ?? 0],
+      ['bg tasks', st.bg_tasks ?? st.BgTasks ?? 0],
+      ['goroutines', st.goroutines ?? st.Goroutines ?? 0],
+      ['heap alloc', formatBytes(st.heap_alloc_b || st.HeapAllocB || 0)],
+      ['heap sys', formatBytes(st.heap_sys_b || st.HeapSysB || 0)],
+      ['rss', formatBytes(st.rss_b || st.RSSB || 0)],
+      ['num gc', st.num_gc || st.NumGC || 0],
+      ['input tokens', st.input_tokens || st.InputTokens || 0],
+      ['output tokens', st.output_tokens || st.OutputTokens || 0],
+      ['cache read', st.cache_read_tokens || st.CacheReadTokens || 0],
+      ['cache write', st.cache_write_tokens || st.CacheWriteTokens || 0],
+    ];
+    systemBody.innerHTML = rows.filter(([, v]) => v !== '' && v !== 0).map(([k, v]) => `<div class="system-row"><span>${escapeHtml(k)}</span><strong title="${escapeAttr(String(v))}">${escapeHtml(String(v))}</strong></div>`).join('') + (h.error || h.Error ? `<div class="modal-error">${escapeHtml(h.error || h.Error)}</div>` : '');
   } catch (err) { systemBody.innerHTML = `<div class="modal-error">${escapeHtml(err.message || String(err))}</div>`; }
 }
 
