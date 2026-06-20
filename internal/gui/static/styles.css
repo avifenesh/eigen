@@ -220,6 +220,8 @@ button { cursor: pointer; }
 .feature-cell:nth-child(3n) { border-right: 0; }
 .feature-cell strong { display: block; color: var(--text); margin-bottom: 6px; }
 .feature-cell span { color: var(--muted); font-size: 13px; }
+.feature-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+.feature-actions .ghost { color: var(--text); border-color: rgba(98,240,183,.2); }
 .feature-empty { padding: 22px; color: var(--muted); }
 .timeline {
   min-height: 0;

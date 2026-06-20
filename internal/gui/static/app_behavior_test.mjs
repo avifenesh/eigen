@@ -95,7 +95,7 @@ function makeContext() {
       let data = {};
       if (path === '/api/health') data = {ok: true, stats: {version: 'test'}};
       else if (path === '/api/sessions') data = [{id: 's1', title: 'Session 1', status: 'idle', dir: '/tmp/project'}];
-      else if (String(path).includes('/state')) data = {title: 'Session 1', provider: 'mock', model: 'm1', perm: 'gated', messages: [], pending: [], shells: [], tools: [], roots: []};
+      else if (String(path).includes('/state')) data = {title: 'Session 1', provider: 'mock', model: 'm1', perm: 'gated', search: 'off', fast_ok: true, messages: [], pending: [{id: 'ap1', tool: 'bash', args: 'echo ok'}], shells: [{id: 'sh1', command: 'sleep 10', status: 'running', last_line: 'tick'}], tools: [{name: 'bash', read_only: false}, {name: 'read', read_only: true}], roots: ['/tmp/project'], goal: 'ship gui'};
       else if (path === '/api/profile') data = {profile: 'hello'};
       return {ok: true, statusText: 'OK', text: async () => JSON.stringify(data)};
     },
@@ -153,7 +153,24 @@ assert.equal(document.getElementById('timeline').classList.contains('hidden'), t
 assert.match(document.getElementById('feature-workspace').innerHTML, /Tools|automation surface|read-only|mutating/, 'tools surface renders desktop feature content');
 assert.equal(document.getElementById('overview-surface').textContent, 'tools', 'overview follows selected feature');
 ctx.setFeature('config');
-assert.match(document.getElementById('feature-workspace').innerHTML, /Config|Permission|Search \/ fast/, 'config surface renders controls summary');
+assert.match(document.getElementById('feature-workspace').innerHTML, /Config|Permission|Search \/ fast|Apply model|Toggle fast/, 'config surface renders interactive controls summary');
+document.getElementById('model-input').value = 'glm-5.2';
+await ctx.runFeatureAction({dataset: {featureAction: 'apply-model'}});
+assert(apiLog.some(x => String(x.path).includes('/model') && String(x.opts?.body || '').includes('glm-5.2')), 'config apply model calls settings API');
+await ctx.runFeatureAction({dataset: {featureAction: 'apply-perm'}});
+assert(apiLog.some(x => String(x.path).includes('/perm')), 'config apply perm calls settings API');
+await ctx.runFeatureAction({dataset: {featureAction: 'toggle-fast'}});
+assert(apiLog.some(x => String(x.path).includes('/fast')), 'config toggle fast calls settings API');
+ctx.setFeature('approvals');
+assert.match(document.getElementById('feature-workspace').innerHTML, /Approvals|Approve|Deny/, 'approvals surface renders controls');
+await ctx.runFeatureAction({dataset: {featureAction: 'approve', approvalId: 'ap1'}});
+assert(apiLog.some(x => String(x.path).includes('/approve') && String(x.opts?.body || '').includes('true')), 'approval action calls approve API');
+ctx.setFeature('tools');
+await ctx.runFeatureAction({dataset: {featureAction: 'insert-tool', toolName: 'bash'}});
+assert.match(document.getElementById('input').value, /Use bash to /, 'tool action inserts composer command');
+ctx.setFeature('plugins');
+await ctx.runFeatureAction({dataset: {featureAction: 'insert-command', command: '/plugins'}});
+assert.match(document.getElementById('input').value, /\/plugins/, 'plugin action inserts slash command');
 ctx.setFeature('chat');
 assert.equal(document.getElementById('timeline').classList.contains('hidden'), false, 'chat feature restores timeline');
 
