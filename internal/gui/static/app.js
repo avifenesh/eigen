@@ -366,7 +366,10 @@ function renderFeatureWorkspace() {
     ]],
   };
   const [title, copy, cells] = featureMap[state.feature] || featureMap.changes;
-  featureWorkspace.innerHTML = `<div class="feature-head"><div><div class="feature-title">${escapeHtml(title)}</div><div class="feature-copy">${escapeHtml(copy)}</div></div><button class="ghost compact" type="button" data-feature-close>Back to chat</button></div><div class="feature-grid">${cells.map(([k, v, action]) => `<div class="feature-cell"><strong>${escapeHtml(k)}</strong><span>${escapeHtml(v)}</span>${action ? `<div class="feature-actions">${action}</div>` : ''}</div>`).join('')}</div>`;
+  const cellsHTML = cells.map(([k, v, action], i) => `<div class="feature-cell feature-cell-${i + 1}"><strong>${escapeHtml(k)}</strong><span>${escapeHtml(v)}</span>${action ? `<div class="feature-actions">${action}</div>` : ''}</div>`).join('');
+  const featureClass = `feature-surface feature-${escapeAttr(state.feature)}`;
+  const heroMetric = state.feature === 'tools' ? `${tools.length || '—'} tools` : state.feature === 'shells' ? `${shells.length} running` : state.feature === 'approvals' ? `${pending.length} pending` : state.feature === 'memory' ? `${roots.length} roots` : state.feature === 'config' ? (modelInput?.value || 'model') : state.feature;
+  featureWorkspace.innerHTML = `<div class="${featureClass}"><div class="feature-head"><div><div class="feature-title">${escapeHtml(title)}</div><div class="feature-copy">${escapeHtml(copy)}</div></div><button class="ghost compact" type="button" data-feature-close>Back to chat</button></div><div class="feature-composition"><aside class="feature-hero"><div class="hero-label">${escapeHtml(state.feature)}</div><div class="hero-metric">${escapeHtml(heroMetric)}</div><div class="hero-copy">Live desktop controls backed by the daemon API.</div></aside><div class="feature-grid">${cellsHTML}</div></div></div>`;
   featureWorkspace.querySelector('[data-feature-close]')?.addEventListener('click', () => setFeature('chat'));
   featureWorkspace.querySelectorAll('[data-feature-action]').forEach(btn => btn.addEventListener('click', () => runFeatureAction(btn)));
 }
