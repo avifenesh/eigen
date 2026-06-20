@@ -41,9 +41,10 @@ This backlog translates the remaining full-goal criteria into concrete next work
    - Provider custom-catalog add and routing context are covered.
    - Evidence map: `docs/gui-mutating-pages-evidence.md`.
 
-5. **Chat TUI end-to-end agent turn with tools**
-   - Fake provider + fake tool registry flow that renders tool start/output, todo updates, changes panel, and final assistant answer in one journey.
-   - Verify no render-path subprocesses or unexpected goroutines during the flow.
+5. **Chat TUI end-to-end agent turn with tools** — model-level evidence added
+   - Deterministic TUI journey (`TestTUIToolTurnDrivesPlanChangesAndTaskPanels`) submits a chat turn, receives reasoning/todo/edit/tool-result/text/done events, updates transcript, plan panel, changes panel, tasks tab, and verifies fitted right-panel rendering.
+   - Render-path subprocess/goroutine protection is covered by `TestPremiumInteractionViewSoak`, `TestTUILiveLoopResourceMeasurement`, and `TestRenderSoakDoesNotSpawnWorkOrLeakGoroutines`.
+   - Remaining optional hardening: PTY-level local-provider tool turn through the compiled binary.
 
 6. **Accessibility/keyboard audit**
    - Ensure every clickable action has keyboard parity.

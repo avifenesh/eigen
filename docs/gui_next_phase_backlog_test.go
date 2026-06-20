@@ -23,6 +23,7 @@ func TestGUINextPhaseBacklogKeepsFullGoalActionable(t *testing.T) {
 		"Longer live binary soak",
 		"TestPTYReleaseAppShellLongerSoak",
 		"TestAgentBackgroundShellToolJourneySettlesResources",
+		"TestTUIToolTurnDrivesPlanChangesAndTaskPanels",
 		"Richer visual review artifacts",
 		"TestAppLiveSessionsPluginsGoldenSnapshotTokens",
 		"TestTUIRightPanelPremiumSurfaceGoldenSnapshotTokens",
