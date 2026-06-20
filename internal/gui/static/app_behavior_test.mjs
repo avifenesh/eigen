@@ -53,7 +53,13 @@ class Element {
     if (sel === '[data-action="deny"]') return this._deny || (this._deny = new Element('button'));
     return null;
   }
-  querySelectorAll(sel) { return []; }
+  querySelectorAll(sel) {
+    if (sel === '[data-tool-card]') return this.children.filter(child => child.dataset?.toolCard);
+    return [];
+  }
+  matches(sel) {
+    return sel === '[data-tool-card]' ? !!this.dataset?.toolCard : false;
+  }
   addEventListener(type, cb) { (this.eventHandlers[type] ||= []).push(cb); }
   dispatchEvent(type, ev = {}) { for (const cb of this.eventHandlers[type] || []) cb(ev); }
   closest() { return this; }
@@ -95,7 +101,7 @@ function makeContext() {
       let data = {};
       if (path === '/api/health') data = {ok: true, stats: {version: 'test'}};
       else if (path === '/api/sessions') data = [{id: 's1', title: 'Session 1', status: 'idle', dir: '/tmp/project'}];
-      else if (String(path).includes('/state')) data = {title: 'Session 1', provider: 'mock', model: 'm1', perm: 'gated', search: 'off', fast_ok: true, messages: [], pending: [{id: 'ap1', tool: 'bash', args: 'echo ok'}], shells: [{id: 'sh1', command: 'sleep 10', status: 'running', last_line: 'tick'}], tools: [{name: 'bash', read_only: false}, {name: 'read', read_only: true}], roots: ['/tmp/project'], goal: 'ship gui'};
+      else if (String(path).includes('/state')) data = {title: 'Session 1', provider: 'mock', model: 'm1', perm: 'gated', effort: 'medium', search: 'auto', fast_ok: true, messages: [], pending: [{id: 'ap1', tool: 'bash', args: 'echo ok'}], shells: [{id: 'sh1', command: 'sleep 10', status: 'running', last_line: 'tick'}, {id: 'sh0', command: 'true', status: 'exited', exit_code: 0, last_line: 'done'}], tools: [{name: 'bash', read_only: false}, {name: 'read', read_only: true}], roots: ['/tmp/project'], goal: 'ship gui'};
       else if (path === '/api/profile') data = {profile: 'hello'};
       return {ok: true, statusText: 'OK', text: async () => JSON.stringify(data)};
     },
@@ -113,6 +119,15 @@ function makeContext() {
   return {ctx, document, intervals, timeouts, eventSourceInstances, apiLog};
 }
 
+function assertContainsAll(html, wants, label) {
+  for (const want of wants) {
+    assert.ok(String(html).includes(want), `${label} missing ${want}`);
+  }
+}
+
+const indexHTML = fs.readFileSync('internal/gui/static/index.html', 'utf8');
+const stylesCSS = fs.readFileSync('internal/gui/static/styles.css', 'utf8');
+
 async function loadApp() {
   const env = makeContext();
   const code = fs.readFileSync('internal/gui/static/app.js', 'utf8');
@@ -129,7 +144,14 @@ const {ctx, document, intervals, eventSourceInstances, apiLog} = env;
 assert.equal(document.getElementById('daemon').textContent, 'daemon connected');
 assert.equal(document.getElementById('sessions').children.length, 1, 'session rail renders fetched sessions');
 ctx.updateDesktopOverview({});
-assert.equal(document.getElementById('overview-surface').textContent, 'chat', 'desktop overview starts on chat surface');
+assert.equal(document.getElementById('overview-surface').textContent, 'home', 'desktop overview starts on home surface');
+ctx.renderFeatureWorkspace();
+let homeHTML = document.getElementById('feature-workspace').innerHTML;
+assertContainsAll(homeHTML, ['home-surface', 'Every Eigen desktop page, one jump away.', 'Available desktop pages', 'non-truncated directory'], 'home page');
+for (const [id, title] of [['chat', 'Chat'], ['changes', 'Changes'], ['tools', 'Tools'], ['shells', 'Shells'], ['approvals', 'Approvals'], ['memory', 'Memory'], ['plugins', 'Plugins'], ['config', 'Config']]) {
+  assert.ok(homeHTML.includes(`data-home-feature="${id}"`), `home missing tile target ${id}`);
+  assert.ok(homeHTML.includes(`surface-tile-title">${title}</span>`), `home missing tile title ${title}`);
+}
 
 const beforeOpenSources = eventSourceInstances.length;
 const beforeOpenIntervals = intervals.length;
@@ -148,22 +170,35 @@ ctx.appendEvent({kind: 'tool_start', tool: 'edit', tool_id: 't1', tool_args: '{"
 ctx.appendEvent({kind: 'tool_result', tool: 'edit', tool_id: 't1', result: 'diff --git a/x b/x\n@@ -1 +1 @@\n-old\n+new'});
 assert.match(document.getElementById('timeline').innerHTML + document.getElementById('timeline').children.map?.(x => x.innerHTML).join(''), /diff|Tool|edit/i);
 
+ctx.setFeature('home');
+assert.equal(document.getElementById('timeline').classList.contains('hidden'), true, 'home hides chat timeline');
+assert.equal(document.getElementById('desktop-overview').classList.contains('hidden'), false, 'home keeps overview visible');
+homeHTML = document.getElementById('feature-workspace').innerHTML;
+assertContainsAll(homeHTML, ['Available desktop pages', 'Chat', 'Changes', 'Tools', 'Shells', 'Approvals', 'Memory', 'Plugins', 'Config'], 'home directory');
+assert.match(indexHTML, /id="feature-nav"[\s\S]*data-feature="home"[\s\S]*data-feature="chat"/, 'static shell includes Home before Chat');
+assert.match(stylesCSS, /\.feature-nav\s*\{[\s\S]*grid-template-columns:\s*1fr;/, 'feature nav uses single full-width column to avoid truncating labels');
+assert.match(stylesCSS, /\.overview-card\s*\{[\s\S]*min-height:\s*96px;[\s\S]*overflow:\s*visible;/, 'overview cards grow instead of silently clipping wrapped text');
+assert.match(stylesCSS, /\.system-row strong\s*\{[^}]*overflow-wrap:\s*anywhere;/s, 'system modal long values wrap instead of truncating');
+for (const id of ['clear', 'interrupt', 'resend']) assert.ok(indexHTML.includes(`id="${id}"`), `topbar missing ${id} control hook`);
 ctx.setFeature('tools');
 assert.equal(document.getElementById('timeline').classList.contains('hidden'), true, 'feature workspace hides chat timeline');
 assert.match(document.getElementById('feature-workspace').innerHTML, /Tools|automation surface|Allow tool turn|Inspect runtime|Allow bash/, 'tools surface renders dense desktop feature controls');
 assert.equal(document.getElementById('overview-surface').textContent, 'tools', 'overview follows selected feature');
-for (const [feature, pattern] of [
-  ['changes', /Changes|Working tree|Latest diff|Review queue/],
-  ['tools', /Tools|automation surface|Allow tool turn|Inspect runtime|Allow bash/],
-  ['shells', /Shells|SHELLS|Foreground bash|Process safety/],
-  ['approvals', /Approvals|No pending approvals|Decision path|Permission posture/],
-  ['memory', /Memory|Set goal|Compact now|Add directory/],
-  ['plugins', /Plugins|Available tools|Marketplace|Agent roles/],
-  ['config', /Config|Permission|Search \/ fast|Apply model|Toggle fast/],
-]) {
+assert.match(stylesCSS, /@media \(max-width: 1280px\)[\s\S]*\.actions \.optional \{ display: none; \}/, 'optional topbar controls hide only at the narrow breakpoint');
+assert.doesNotMatch(stylesCSS, /\.actions \#(?:clear|interrupt|resend)[\s\S]*display:\s*none/, 'run controls are not permanently hidden by CSS');
+const featureExpectations = {
+  changes: ['Changes', 'Diff rendering', 'Tool history', 'Focus latest tool', 'Workspace roots'],
+  tools: ['Tools', 'bash', 'mutating', 'read', 'read-only', 'Allow next turn', 'Inspect'],
+  shells: ['Shells', 'sh1', 'running tick', 'Poll', 'Kill'],
+  approvals: ['Approvals', 'bash', 'ap1', 'Approve', 'Deny'],
+  memory: ['Memory', 'Goal', 'ship gui', 'Set from composer', 'Compact', 'Add current dir', 'Edit profile'],
+  plugins: ['Plugins', 'Available tools', '2 tools exposed', 'Marketplace', 'Agent roles'],
+  config: ['Config', 'Model', 'Permission', 'Search / fast', 'Apply model', 'Apply perm', 'Apply search', 'Toggle fast'],
+};
+for (const [feature, wants] of Object.entries(featureExpectations)) {
   ctx.setFeature(feature);
   assert.equal(document.getElementById('timeline').classList.contains('hidden'), true, `${feature} hides chat timeline`);
-  assert.match(document.getElementById('feature-workspace').innerHTML, pattern, `${feature} surface renders shipped controls`);
+  assertContainsAll(document.getElementById('feature-workspace').innerHTML, wants, `${feature} surface`);
 }
 ctx.setFeature('config');
 document.getElementById('model-input').value = 'glm-5.2';
@@ -181,6 +216,8 @@ ctx.setFeature('tools');
 await ctx.runFeatureAction({dataset: {featureAction: 'allow-tool', toolName: 'bash'}});
 assert(apiLog.some(x => String(x.path).includes('/input') && String(x.opts?.body || '').includes('bash')), 'tool action sends allow-tools input API');
 ctx.setFeature('shells');
+assertContainsAll(document.getElementById('feature-workspace').innerHTML, ['1 running · 2 total', 'exited'], 'shells metrics');
+assert.match(ctx.shellSummaryHTML({id: 'sh0', status: 'exited', exit_code: 0}), /exited · 0/, 'shell summaries show successful exit code 0');
 await ctx.runFeatureAction({dataset: {featureAction: 'kill-shell', shellId: 'sh1'}});
 assert(apiLog.some(x => String(x.path).includes('/kill-shell') && String(x.opts?.body || '').includes('sh1')), 'shell action calls kill-shell API');
 ctx.setFeature('memory');
@@ -192,7 +229,11 @@ assert(apiLog.some(x => String(x.path).includes('/compact')), 'memory action cal
 ctx.setFeature('plugins');
 assert.match(document.getElementById('feature-workspace').innerHTML, /Plugins|Available tools|Marketplace|Agent roles/, 'plugins surface renders desktop capability controls');
 ctx.setFeature('changes');
-assert.match(document.getElementById('feature-workspace').innerHTML, /Changes|Working tree|Latest diff|Review queue/, 'changes surface renders repository review controls');
+assert.match(document.getElementById('feature-workspace').innerHTML, /Changes|Diff rendering|Tool history|Workspace roots/, 'changes surface renders repository review controls');
+ctx.ensureToolCard({tool: 'bash', tool_id: 'latest-tool', tool_args: '{}'});
+ctx.setFeature('changes');
+await ctx.runFeatureAction({dataset: {featureAction: 'focus-latest-tool'}});
+assert.equal(document.getElementById('timeline').classList.contains('hidden'), false, 'focus latest tool returns to chat before scrolling');
 ctx.setFeature('chat');
 assert.equal(document.getElementById('timeline').classList.contains('hidden'), false, 'chat feature restores timeline');
 

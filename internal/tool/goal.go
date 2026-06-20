@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // GoalJudge verifies a goal-achievement claim and clears the goal when
@@ -46,10 +47,14 @@ func GoalAchieved(judge GoalJudge) Definition {
 			if err != nil {
 				return "", err
 			}
-			if achieved {
-				return "Goal CONFIRMED achieved and cleared. Judge: " + reason, nil
+			reason = strings.TrimSpace(reason)
+			if reason == "" {
+				reason = "the judge did not provide a specific reason"
 			}
-			return "Goal NOT confirmed. Judge: " + reason + " — continue working or refine the evidence.", nil
+			if achieved {
+				return "Goal CONFIRMED achieved and cleared.\n" + reason, nil
+			}
+			return "Goal NOT confirmed.\n" + reason + "\nRetry goal_achieved only after closing every listed gap and including concrete evidence.", nil
 		},
 	}
 }
