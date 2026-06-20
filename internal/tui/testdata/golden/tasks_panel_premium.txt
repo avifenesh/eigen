@@ -1,0 +1,8 @@
+λ eigen
+right panel
+nothing running
+task(background=true)
+[tsk]
+⏺ speak
+▶ read
+voice

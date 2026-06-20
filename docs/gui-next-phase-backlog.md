@@ -25,9 +25,11 @@ This backlog translates the remaining full-goal criteria into concrete next work
    - Existing runtime/resource coverage remains in PTY/resource tests (`TestPTYReleaseAppShellLongerSoak`, chat PTY smoke, render/live-loop resource tests).
    - Added command-executing agent shell journey (`TestAgentBackgroundShellToolJourneySettlesResources`) for a real background bash subprocess, bash_output polling, kill_shell cleanup, zero remaining running shells, file-descriptor baseline/delta settling when `/proc/self/fd` is available, and UI-facing event/request propagation.
 
-3. **Richer visual review artifacts**
-   - Expand stable token goldens into full ANSI/text snapshots or visual screenshots for representative desktop widths.
-   - Cover app home/live/sessions/plugins/config and TUI composer/transcript/tasks/shells/notepad/terminal.
+3. **Richer visual review artifacts** — substantially complete
+   - Expanded stable token goldens for representative desktop widths.
+   - Added app live/sessions/plugins marketplace+wiring snapshot tokens (`TestAppLiveSessionsPluginsGoldenSnapshotTokens`) beyond the existing home/palette/every-page goldens.
+   - Added TUI task/shell/notepad premium surface snapshot tokens (`TestTUIRightPanelPremiumSurfaceGoldenSnapshotTokens`) beyond the existing composer/transcript/git/right-tab goldens.
+   - Remaining: optional pixel-review/video package if final acceptance requires richer artifacts than PNG screenshots plus ANSI/token goldens.
 
 ## P1 — feature-depth and UX polish
 

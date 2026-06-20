@@ -1,0 +1,10 @@
+eigen › live
+eigen
+live sessions
+3 sessions
+1 working
+1 idle
+1 needs approval
+selected: s1
+gpt-5.5
+3 turn

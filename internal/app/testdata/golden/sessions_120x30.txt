@@ -1,0 +1,11 @@
+eigen › sessions
+eigen
+sessions
+3 total
+3 visible
+daemon 1
+codex 1
+eigen 1
+selected: daemon
+d1
+10 message

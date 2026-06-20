@@ -96,3 +96,17 @@ func TestTUIRightPanelGitGoldenSnapshotTokens(t *testing.T) {
 	m.gitCacheAt = time.Now()
 	assertTUIGoldenContains(t, "testdata/golden/right_panel_git.txt", m.View())
 }
+
+func TestTUIRightPanelPremiumSurfaceGoldenSnapshotTokens(t *testing.T) {
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	m.setRightTab(rightTabTasks)
+	assertTUIGoldenContains(t, "testdata/golden/tasks_panel_premium.txt", m.View())
+	m.setRightTab(rightTabShells)
+	assertTUIGoldenContains(t, "testdata/golden/shells_panel_premium.txt", m.View())
+
+	m.setRightTab(rightTabNotepad)
+	typeRunes(m, "phase notes")
+	assertTUIGoldenContains(t, "testdata/golden/notepad_panel_premium.txt", m.View())
+}
