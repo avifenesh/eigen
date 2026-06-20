@@ -290,6 +290,10 @@ function setFeature(feature) {
   renderFeatureWorkspace();
 }
 
+function compactActionButton(label, attrs = '') {
+  return `<button class="ghost compact" type="button" ${attrs}>${escapeHtml(label)}</button>`;
+}
+
 function renderFeatureWorkspace() {
   if (!featureWorkspace) return;
   const snap = state.state || {};
@@ -306,32 +310,71 @@ function renderFeatureWorkspace() {
   const pending = snap.pending || snap.Pending || [];
   const featureMap = {
     changes: ['Changes', 'Review edits, diffs, and tool output before they disappear into the transcript.', [
-      ['Diff rendering', 'Unified diffs are highlighted inline with add/delete/hunk lanes.'],
-      ['Tool history', `${Object.keys(state.tools).length} streamed tool cards tracked in this session.`],
-      ['Workspace roots', roots.length ? roots.map(shortPath).join(' · ') : 'No roots reported yet.'],
+      ['Diff rendering', 'Unified diffs are highlighted inline with add/delete/hunk lanes.', compactActionButton('Refresh state', 'data-feature-action="refresh"')],
+      ['Tool history', `${Object.keys(state.tools).length} streamed tool cards tracked in this session.`, compactActionButton('Focus latest tool', 'data-feature-action="focus-latest-tool"')],
+      ['Workspace roots', roots.length ? roots.map(shortPath).join(' · ') : 'No roots reported yet.', compactActionButton('Open system', 'data-feature-action="system"')],
     ]],
-    tools: ['Tools', 'Inspect the automation surface Eigen can use for this session.', tools.length ? tools.slice(0, 9).map(t => [t.name || t.Name || 'tool', (t.read_only ?? t.ReadOnly) ? 'read-only' : 'mutating']) : [['No tools loaded', 'Tool registry will appear after session state arrives.']]],
-    shells: ['Shells', 'Track background commands and process lifecycle without leaving the desktop.', shells.length ? shells.slice(0, 9).map(s => [s.id || s.ID || s.command || s.Command || 'shell', `${s.status || s.Status || 'unknown'} ${s.last_line || s.LastLine || ''}`]) : [['No background shells', 'Shells launched by tools appear here with status and last output.']]],
-    approvals: ['Approvals', 'Handle gated tool calls deliberately with visible status and arguments.', pending.length ? pending.map(p => [p.tool || p.Tool || 'approval', p.id || p.ID || p.result || p.Result || 'pending']) : [['No pending approvals', 'Gated operations will request approval here and in the timeline.']]],
+    tools: ['Tools', 'Inspect and operate the automation surface Eigen can use for this session.', tools.length ? tools.slice(0, 9).map(t => [t.name || t.Name || 'tool', (t.read_only ?? t.ReadOnly) ? 'read-only' : 'mutating', compactActionButton('Insert', `data-feature-action="insert-tool" data-tool-name="${escapeAttr(t.name || t.Name || 'tool')}"`)]) : [['No tools loaded', 'Tool registry will appear after session state arrives.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
+    shells: ['Shells', 'Track and control background commands without leaving the desktop.', shells.length ? shells.slice(0, 9).map(s => [s.id || s.ID || s.command || s.Command || 'shell', `${s.status || s.Status || 'unknown'} ${s.last_line || s.LastLine || ''}`, compactActionButton('Poll', `data-feature-action="poll-shell" data-shell-id="${escapeAttr(s.id || s.ID || '')}"`)]) : [['No background shells', 'Shells launched by tools appear here with status and last output.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
+    approvals: ['Approvals', 'Handle gated tool calls deliberately with visible status and arguments.', pending.length ? pending.map(p => [p.tool || p.Tool || 'approval', p.id || p.ID || p.result || p.Result || 'pending', `${compactActionButton('Approve', `data-feature-action="approve" data-approval-id="${escapeAttr(p.id || p.ID || p.result || p.Result || '')}"`)} ${compactActionButton('Deny', `data-feature-action="deny" data-approval-id="${escapeAttr(p.id || p.ID || p.result || p.Result || '')}"`)}`]) : [['No pending approvals', 'Gated operations will request approval here and in the timeline.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
     memory: ['Memory', 'Keep durable context visible while planning and editing.', [
-      ['Goal', snap.goal || snap.Goal || 'No active goal reported by daemon state.'],
-      ['Roots', roots.length ? roots.map(shortPath).join(' · ') : 'No roots reported yet.'],
-      ['Profile', 'Use the Profile modal to edit global personalization.'],
+      ['Goal', snap.goal || snap.Goal || 'No active goal reported by daemon state.', compactActionButton('Refresh', 'data-feature-action="refresh"')],
+      ['Roots', roots.length ? roots.map(shortPath).join(' · ') : 'No roots reported yet.', compactActionButton('Open system', 'data-feature-action="system"')],
+      ['Profile', 'Use the Profile modal to edit global personalization.', compactActionButton('Edit profile', 'data-feature-action="profile"')],
     ]],
     plugins: ['Plugins', 'Manage extension capability from the desktop context.', [
-      ['Available tools', `${tools.length || 0} tools exposed by skills, plugins, and built-ins.`],
-      ['Marketplace', 'Open plugins in the app shell for install, update, disable, and rollback flows.'],
-      ['Agent roles', 'Plugin-provided roles surface through the same command infrastructure.'],
+      ['Available tools', `${tools.length || 0} tools exposed by skills, plugins, and built-ins.`, compactActionButton('Refresh', 'data-feature-action="refresh"')],
+      ['Marketplace', 'Open plugins in the app shell for install, update, disable, and rollback flows.', compactActionButton('Insert /plugins', 'data-feature-action="insert-command" data-command="/plugins"')],
+      ['Agent roles', 'Plugin-provided roles surface through the same command infrastructure.', compactActionButton('Insert /agents', 'data-feature-action="insert-command" data-command="/agents"')],
     ]],
     config: ['Config', 'Tune model, effort, permissions, search, and fast mode for the active session.', [
-      ['Model', modelInput?.value || snap.model || snap.Model || 'default'],
-      ['Permission', permSelect?.value || snap.perm || snap.Perm || 'gated'],
-      ['Search / fast', `${searchSelect?.value || snap.search || snap.Search || 'off'} · ${fastToggle?.classList.contains('active') ? 'fast on' : 'fast off'}`],
+      ['Model', modelInput?.value || snap.model || snap.Model || 'default', compactActionButton('Apply model', 'data-feature-action="apply-model"')],
+      ['Permission', permSelect?.value || snap.perm || snap.Perm || 'gated', compactActionButton('Apply perm', 'data-feature-action="apply-perm"')],
+      ['Search / fast', `${searchSelect?.value || snap.search || snap.Search || 'off'} · ${fastToggle?.classList.contains('active') ? 'fast on' : 'fast off'}`, `${compactActionButton('Apply search', 'data-feature-action="apply-search"')} ${compactActionButton('Toggle fast', 'data-feature-action="toggle-fast"')}`],
     ]],
   };
   const [title, copy, cells] = featureMap[state.feature] || featureMap.changes;
-  featureWorkspace.innerHTML = `<div class="feature-head"><div><div class="feature-title">${escapeHtml(title)}</div><div class="feature-copy">${escapeHtml(copy)}</div></div><button class="ghost compact" type="button" data-feature-close>Back to chat</button></div><div class="feature-grid">${cells.map(([k, v]) => `<div class="feature-cell"><strong>${escapeHtml(k)}</strong><span>${escapeHtml(v)}</span></div>`).join('')}</div>`;
+  featureWorkspace.innerHTML = `<div class="feature-head"><div><div class="feature-title">${escapeHtml(title)}</div><div class="feature-copy">${escapeHtml(copy)}</div></div><button class="ghost compact" type="button" data-feature-close>Back to chat</button></div><div class="feature-grid">${cells.map(([k, v, action]) => `<div class="feature-cell"><strong>${escapeHtml(k)}</strong><span>${escapeHtml(v)}</span>${action ? `<div class="feature-actions">${action}</div>` : ''}</div>`).join('')}</div>`;
   featureWorkspace.querySelector('[data-feature-close]')?.addEventListener('click', () => setFeature('chat'));
+  featureWorkspace.querySelectorAll('[data-feature-action]').forEach(btn => btn.addEventListener('click', () => runFeatureAction(btn)));
+}
+
+async function runFeatureAction(btn) {
+  const action = btn.dataset.featureAction;
+  if (action === 'refresh') return refreshActiveState({force: true});
+  if (action === 'system') return openSystemModal();
+  if (action === 'profile') return openProfileModal();
+  if (action === 'insert-command') return insertComposerText(btn.dataset.command || '');
+  if (action === 'insert-tool') return insertComposerText(`Use ${btn.dataset.toolName || 'tool'} to `);
+  if (action === 'focus-latest-tool') {
+    const last = timelineEl.querySelector('[data-tool-card]:last-of-type');
+    if (last) scrollToVisible(last);
+    return;
+  }
+  if (!state.active) return;
+  if (action === 'approve' || action === 'deny') return answerApproval(btn.dataset.approvalId, action === 'approve');
+  if (action === 'apply-model') return applySettingFromFeature('model', modelInput?.value?.trim());
+  if (action === 'apply-perm') return applySettingFromFeature('perm', permSelect?.value || 'gated');
+  if (action === 'apply-search') return applySettingFromFeature('search', searchSelect?.value || 'off');
+  if (action === 'toggle-fast') {
+    const snap = state.state || {};
+    return applySettingFromFeature('fast', !(snap.fast || snap.Fast));
+  }
+  if (action === 'poll-shell') return refreshActiveState({force: true});
+}
+
+async function applySettingFromFeature(setting, value) {
+  if (!state.active) return;
+  await sessionSetting(state.active, setting, value);
+  await refreshActiveState({force: true});
+}
+
+function insertComposerText(text) {
+  if (!text || !inputEl) return;
+  inputEl.value = `${inputEl.value || ''}${text}`;
+  inputEl.focus();
+  autoGrowInput();
+  updateSendAvailability();
 }
 
 function updateInspector(snap) {
