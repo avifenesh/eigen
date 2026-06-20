@@ -61,7 +61,7 @@ func TestHandlerStaticAndAPIContracts(t *testing.T) {
 	}
 
 	_, _, app := get("/app.js")
-	for _, want := range []string{"function renderFeatureWorkspace", "async function runFeatureAction", "async function applySettingFromFeature", "function insertComposerText", "function setFeature", "function renderUnifiedDiff", "function shellSummaryHTML", "async function openSystemModal", "connectEvents", "desktop().Subscribe"} {
+	for _, want := range []string{"function renderFeatureWorkspace", "async function runFeatureAction", "async function applySettingFromFeature", "async function sendAllowedToolTurn", "function setFeature", "function renderUnifiedDiff", "function shellSummaryHTML", "async function openSystemModal", "connectEvents", "desktop().Subscribe"} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("app.js missing %q", want)
 		}

@@ -166,11 +166,17 @@ assert.match(document.getElementById('feature-workspace').innerHTML, /Approvals|
 await ctx.runFeatureAction({dataset: {featureAction: 'approve', approvalId: 'ap1'}});
 assert(apiLog.some(x => String(x.path).includes('/approve') && String(x.opts?.body || '').includes('true')), 'approval action calls approve API');
 ctx.setFeature('tools');
-await ctx.runFeatureAction({dataset: {featureAction: 'insert-tool', toolName: 'bash'}});
-assert.match(document.getElementById('input').value, /Use bash to /, 'tool action inserts composer command');
-ctx.setFeature('plugins');
-await ctx.runFeatureAction({dataset: {featureAction: 'insert-command', command: '/plugins'}});
-assert.match(document.getElementById('input').value, /\/plugins/, 'plugin action inserts slash command');
+await ctx.runFeatureAction({dataset: {featureAction: 'allow-tool', toolName: 'bash'}});
+assert(apiLog.some(x => String(x.path).includes('/input') && String(x.opts?.body || '').includes('bash')), 'tool action sends allow-tools input API');
+ctx.setFeature('shells');
+await ctx.runFeatureAction({dataset: {featureAction: 'kill-shell', shellId: 'sh1'}});
+assert(apiLog.some(x => String(x.path).includes('/kill-shell') && String(x.opts?.body || '').includes('sh1')), 'shell action calls kill-shell API');
+ctx.setFeature('memory');
+document.getElementById('input').value = 'ship gui';
+await ctx.runFeatureAction({dataset: {featureAction: 'set-goal'}});
+assert(apiLog.some(x => String(x.path).includes('/goal') && String(x.opts?.body || '').includes('ship gui')), 'memory action calls goal API');
+await ctx.runFeatureAction({dataset: {featureAction: 'compact'}});
+assert(apiLog.some(x => String(x.path).includes('/compact')), 'memory action calls compact API');
 ctx.setFeature('chat');
 assert.equal(document.getElementById('timeline').classList.contains('hidden'), false, 'chat feature restores timeline');
 

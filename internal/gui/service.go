@@ -100,6 +100,10 @@ func (s *Service) State(id string) (*daemon.SessionState, error) {
 // Input sends user text to a session. It returns whether the daemon treated the
 // input as a mid-turn steer instead of starting a fresh turn.
 func (s *Service) Input(id, text string) (bool, error) {
+	return s.InputWithTools(id, text, nil)
+}
+
+func (s *Service) InputWithTools(id, text string, allowTools []string) (bool, error) {
 	if strings.TrimSpace(id) == "" {
 		return false, fmt.Errorf("session id required")
 	}
@@ -111,6 +115,9 @@ func (s *Service) Input(id, text string) (bool, error) {
 		return false, err
 	}
 	defer c.Close()
+	if len(allowTools) > 0 {
+		return false, c.Input(id, text, nil, allowTools)
+	}
 	return c.SteerInput(id, text, nil)
 }
 
@@ -134,6 +141,41 @@ func (s *Service) Clear(id string) error {
 }
 func (s *Service) Remove(id string) error {
 	return s.withClient(func(c *daemon.Client) error { return c.Remove(id) })
+}
+func (s *Service) KillShell(id, shellID string) (bool, error) {
+	c, err := s.client()
+	if err != nil {
+		return false, err
+	}
+	defer c.Close()
+	return c.KillShell(id, shellID)
+}
+func (s *Service) DetachBash(id string) (bool, error) {
+	c, err := s.client()
+	if err != nil {
+		return false, err
+	}
+	defer c.Close()
+	return c.DetachBash(id)
+}
+func (s *Service) Compact(id string, target int) (int, int, error) {
+	c, err := s.client()
+	if err != nil {
+		return 0, 0, err
+	}
+	defer c.Close()
+	return c.Compact(id, target)
+}
+func (s *Service) SetGoal(id, goal string) error {
+	return s.withClient(func(c *daemon.Client) error { return c.SetGoal(id, goal) })
+}
+func (s *Service) AddDir(id, path string) (string, error) {
+	c, err := s.client()
+	if err != nil {
+		return "", err
+	}
+	defer c.Close()
+	return c.AddDir(id, path)
 }
 func (s *Service) SetPerm(id, perm string) error {
 	return s.withClient(func(c *daemon.Client) error { return c.SetPerm(id, perm) })

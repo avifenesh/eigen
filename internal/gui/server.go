@@ -183,13 +183,14 @@ func (h *handler) session(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var in struct {
-			Text string `json:"text"`
+			Text       string   `json:"text"`
+			AllowTools []string `json:"allow_tools"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		steered, err := h.svc.Input(id, in.Text)
+		steered, err := h.svc.InputWithTools(id, in.Text, in.AllowTools)
 		writeJSON(w, map[string]bool{"steered": steered}, err)
 	case "approve":
 		if r.Method != http.MethodPost {
@@ -211,6 +212,57 @@ func (h *handler) session(w http.ResponseWriter, r *http.Request) {
 		requirePost(w, r, func() error { return h.svc.Resend(id) })
 	case "clear":
 		requirePost(w, r, func() error { return h.svc.Clear(id) })
+	case "kill-shell":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		var in struct {
+			Shell string `json:"shell"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		killed, err := h.svc.KillShell(id, in.Shell)
+		writeJSON(w, map[string]bool{"killed": killed}, err)
+	case "detach-bash":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		detached, err := h.svc.DetachBash(id)
+		writeJSON(w, map[string]bool{"detached": detached}, err)
+	case "compact":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		var in struct {
+			Target int `json:"target"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil && err.Error() != "EOF" {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		before, after, err := h.svc.Compact(id, in.Target)
+		writeJSON(w, map[string]int{"before": before, "after": after}, err)
+	case "goal":
+		h.setting(w, r, func(v string) error { return h.svc.SetGoal(id, v) })
+	case "add-dir":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		var in struct {
+			Path string `json:"path"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		root, err := h.svc.AddDir(id, in.Path)
+		writeJSON(w, map[string]string{"root": root}, err)
 	case "model":
 		h.setting(w, r, func(v string) error { return h.svc.SetModel(id, v) })
 	case "effort":

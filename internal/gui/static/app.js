@@ -126,11 +126,11 @@ async function getState(id) {
   return api(`/api/sessions/${encodeURIComponent(id)}/state`);
 }
 
-async function sendInput(id, text) {
-  if (hasDesktopBridge()) return {steered: await desktop().Input(id, text)};
+async function sendInput(id, text, allowTools = []) {
+  if (hasDesktopBridge()) return {steered: await desktop().Input(id, text, allowTools)};
   return api(`/api/sessions/${encodeURIComponent(id)}/input`, {
     method: 'POST',
-    body: JSON.stringify({text}),
+    body: JSON.stringify({text, allow_tools: allowTools}),
   });
 }
 
@@ -158,11 +158,28 @@ async function sessionSetting(id, setting, value) {
     if (setting === 'perm') return desktop().SetPerm(id, value);
     if (setting === 'search') return desktop().SetSearch(id, value);
     if (setting === 'fast') return desktop().SetFast(id, !!value);
+    if (setting === 'goal') return desktop().SetGoal(id, value);
   }
   return api(`/api/sessions/${encodeURIComponent(id)}/${setting}`, {
     method: 'POST',
     body: JSON.stringify({value}),
   });
+}
+async function killShell(id, shell) {
+  if (hasDesktopBridge()) return desktop().KillShell(id, shell);
+  return api(`/api/sessions/${encodeURIComponent(id)}/kill-shell`, {method: 'POST', body: JSON.stringify({shell})});
+}
+async function detachBash(id) {
+  if (hasDesktopBridge()) return desktop().DetachBash(id);
+  return api(`/api/sessions/${encodeURIComponent(id)}/detach-bash`, {method: 'POST'});
+}
+async function compactSession(id, target = 0) {
+  if (hasDesktopBridge()) return desktop().Compact(id, target);
+  return api(`/api/sessions/${encodeURIComponent(id)}/compact`, {method: 'POST', body: JSON.stringify({target})});
+}
+async function addDir(id, path) {
+  if (hasDesktopBridge()) return desktop().AddDir(id, path);
+  return api(`/api/sessions/${encodeURIComponent(id)}/add-dir`, {method: 'POST', body: JSON.stringify({path})});
 }
 
 async function boot() {
@@ -314,18 +331,18 @@ function renderFeatureWorkspace() {
       ['Tool history', `${Object.keys(state.tools).length} streamed tool cards tracked in this session.`, compactActionButton('Focus latest tool', 'data-feature-action="focus-latest-tool"')],
       ['Workspace roots', roots.length ? roots.map(shortPath).join(' · ') : 'No roots reported yet.', compactActionButton('Open system', 'data-feature-action="system"')],
     ]],
-    tools: ['Tools', 'Inspect and operate the automation surface Eigen can use for this session.', tools.length ? tools.slice(0, 9).map(t => [t.name || t.Name || 'tool', (t.read_only ?? t.ReadOnly) ? 'read-only' : 'mutating', compactActionButton('Insert', `data-feature-action="insert-tool" data-tool-name="${escapeAttr(t.name || t.Name || 'tool')}"`)]) : [['No tools loaded', 'Tool registry will appear after session state arrives.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
-    shells: ['Shells', 'Track and control background commands without leaving the desktop.', shells.length ? shells.slice(0, 9).map(s => [s.id || s.ID || s.command || s.Command || 'shell', `${s.status || s.Status || 'unknown'} ${s.last_line || s.LastLine || ''}`, compactActionButton('Poll', `data-feature-action="poll-shell" data-shell-id="${escapeAttr(s.id || s.ID || '')}"`)]) : [['No background shells', 'Shells launched by tools appear here with status and last output.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
+    tools: ['Tools', 'Inspect and operate the automation surface Eigen can use for this session.', tools.length ? tools.slice(0, 9).map(t => [t.name || t.Name || 'tool', (t.read_only ?? t.ReadOnly) ? 'read-only' : 'mutating', `${compactActionButton('Allow next turn', `data-feature-action="allow-tool" data-tool-name="${escapeAttr(t.name || t.Name || 'tool')}"`)} ${compactActionButton('Inspect', 'data-feature-action="system"')}`]) : [['No tools loaded', 'Tool registry will appear after session state arrives.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
+    shells: ['Shells', 'Track and control background commands without leaving the desktop.', shells.length ? shells.slice(0, 9).map(s => [s.id || s.ID || s.command || s.Command || 'shell', `${s.status || s.Status || 'unknown'} ${s.last_line || s.LastLine || ''}`, `${compactActionButton('Poll', `data-feature-action="poll-shell" data-shell-id="${escapeAttr(s.id || s.ID || '')}"`)} ${compactActionButton('Kill', `data-feature-action="kill-shell" data-shell-id="${escapeAttr(s.id || s.ID || '')}"`)}`]) : [['No background shells', 'Shells launched by tools appear here with status and last output.', compactActionButton('Detach foreground bash', 'data-feature-action="detach-bash"')]]],
     approvals: ['Approvals', 'Handle gated tool calls deliberately with visible status and arguments.', pending.length ? pending.map(p => [p.tool || p.Tool || 'approval', p.id || p.ID || p.result || p.Result || 'pending', `${compactActionButton('Approve', `data-feature-action="approve" data-approval-id="${escapeAttr(p.id || p.ID || p.result || p.Result || '')}"`)} ${compactActionButton('Deny', `data-feature-action="deny" data-approval-id="${escapeAttr(p.id || p.ID || p.result || p.Result || '')}"`)}`]) : [['No pending approvals', 'Gated operations will request approval here and in the timeline.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
     memory: ['Memory', 'Keep durable context visible while planning and editing.', [
-      ['Goal', snap.goal || snap.Goal || 'No active goal reported by daemon state.', compactActionButton('Refresh', 'data-feature-action="refresh"')],
-      ['Roots', roots.length ? roots.map(shortPath).join(' · ') : 'No roots reported yet.', compactActionButton('Open system', 'data-feature-action="system"')],
+      ['Goal', snap.goal || snap.Goal || 'No active goal reported by daemon state.', `${compactActionButton('Set from composer', 'data-feature-action="set-goal"')} ${compactActionButton('Compact', 'data-feature-action="compact"')}`],
+      ['Roots', roots.length ? roots.map(shortPath).join(' · ') : 'No roots reported yet.', `${compactActionButton('Add current dir', 'data-feature-action="add-dir"')} ${compactActionButton('Open system', 'data-feature-action="system"')}`],
       ['Profile', 'Use the Profile modal to edit global personalization.', compactActionButton('Edit profile', 'data-feature-action="profile"')],
     ]],
     plugins: ['Plugins', 'Manage extension capability from the desktop context.', [
       ['Available tools', `${tools.length || 0} tools exposed by skills, plugins, and built-ins.`, compactActionButton('Refresh', 'data-feature-action="refresh"')],
-      ['Marketplace', 'Open plugins in the app shell for install, update, disable, and rollback flows.', compactActionButton('Insert /plugins', 'data-feature-action="insert-command" data-command="/plugins"')],
-      ['Agent roles', 'Plugin-provided roles surface through the same command infrastructure.', compactActionButton('Insert /agents', 'data-feature-action="insert-command" data-command="/agents"')],
+      ['Marketplace', 'Plugin install/update/disable/rollback flows are available through the app shell while this desktop tracks live capability.', compactActionButton('Open system', 'data-feature-action="system"')],
+      ['Agent roles', 'Plugin-provided roles surface through the same command infrastructure and available tool list.', compactActionButton('Refresh capabilities', 'data-feature-action="refresh"')],
     ]],
     config: ['Config', 'Tune model, effort, permissions, search, and fast mode for the active session.', [
       ['Model', modelInput?.value || snap.model || snap.Model || 'default', compactActionButton('Apply model', 'data-feature-action="apply-model"')],
@@ -344,8 +361,6 @@ async function runFeatureAction(btn) {
   if (action === 'refresh') return refreshActiveState({force: true});
   if (action === 'system') return openSystemModal();
   if (action === 'profile') return openProfileModal();
-  if (action === 'insert-command') return insertComposerText(btn.dataset.command || '');
-  if (action === 'insert-tool') return insertComposerText(`Use ${btn.dataset.toolName || 'tool'} to `);
   if (action === 'focus-latest-tool') {
     const last = timelineEl.querySelector('[data-tool-card]:last-of-type');
     if (last) scrollToVisible(last);
@@ -353,6 +368,24 @@ async function runFeatureAction(btn) {
   }
   if (!state.active) return;
   if (action === 'approve' || action === 'deny') return answerApproval(btn.dataset.approvalId, action === 'approve');
+  if (action === 'allow-tool') return sendAllowedToolTurn(btn.dataset.toolName || '');
+  if (action === 'kill-shell') {
+    await killShell(state.active, btn.dataset.shellId || '');
+    return refreshActiveState({force: true});
+  }
+  if (action === 'detach-bash') {
+    await detachBash(state.active);
+    return refreshActiveState({force: true});
+  }
+  if (action === 'compact') {
+    await compactSession(state.active, 0);
+    return refreshActiveState({force: true});
+  }
+  if (action === 'set-goal') return applySettingFromFeature('goal', inputEl?.value?.trim() || '');
+  if (action === 'add-dir') {
+    await addDir(state.active, '.');
+    return refreshActiveState({force: true});
+  }
   if (action === 'apply-model') return applySettingFromFeature('model', modelInput?.value?.trim());
   if (action === 'apply-perm') return applySettingFromFeature('perm', permSelect?.value || 'gated');
   if (action === 'apply-search') return applySettingFromFeature('search', searchSelect?.value || 'off');
@@ -369,12 +402,15 @@ async function applySettingFromFeature(setting, value) {
   await refreshActiveState({force: true});
 }
 
-function insertComposerText(text) {
-  if (!text || !inputEl) return;
-  inputEl.value = `${inputEl.value || ''}${text}`;
-  inputEl.focus();
+async function sendAllowedToolTurn(toolName) {
+  if (!state.active || !toolName) return;
+  const text = inputEl?.value?.trim() || `Use ${toolName} for the current task.`;
+  appendMessage('user', text);
+  scrollToBottom();
+  inputEl.value = '';
   autoGrowInput();
   updateSendAvailability();
+  await sendInput(state.active, text, [toolName]);
 }
 
 function updateInspector(snap) {
