@@ -26,17 +26,30 @@ func TestGoalAchievedTool(t *testing.T) {
 
 	// Rejected verdict tells the model why it was not approved and what to do next.
 	rejected := GoalAchieved(func(context.Context, string) (bool, string, error) {
-		return false, "Home page is missing a full page directory", nil
+		return false, "Judge summary: Missing home page.\nGaps:\n1. [missing_work] Home directory\n   Observed: no Home page\n   Needed: all pages listed\n   Next step: add a Home surface", nil
 	})
 	out, err = rejected.Run(context.Background(), json.RawMessage(`{"evidence":"trust me"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Goal NOT confirmed", "Why not approved", "Home page is missing", "Next step"} {
+	for _, want := range []string{"Goal NOT confirmed", "Judge summary", "Gaps:", "Home directory", "Next step", "Retry goal_achieved only after closing every listed gap"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("rejected output missing %q: %s", want, out)
 		}
 	}
+
+	t.Run("empty rejection reason gets fallback", func(t *testing.T) {
+		emptyReason := GoalAchieved(func(context.Context, string) (bool, string, error) {
+			return false, "   ", nil
+		})
+		out, err := emptyReason.Run(context.Background(), json.RawMessage(`{"evidence":"trust me"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out, "the judge did not provide a specific reason") {
+			t.Fatalf("empty rejection reason should get fallback: %s", out)
+		}
+	})
 
 	// Errors propagate; empty evidence rejected; nil judge errors.
 	failing := GoalAchieved(func(context.Context, string) (bool, string, error) {

@@ -171,8 +171,8 @@ button { cursor: pointer; }
 }
 .overview-card {
   min-width: 0;
-  height: 96px;
-  overflow: hidden;
+  min-height: 96px;
+  overflow: visible;
   border: 1px solid var(--line);
   border-radius: 18px;
   padding: 13px 14px;
@@ -427,12 +427,6 @@ textarea:focus { border-color: rgba(98,240,183,.38); box-shadow: 0 0 0 3px rgba(
   gap: 8px;
   justify-content: flex-end;
 }
-.actions .optional,
-.actions #clear,
-.actions #interrupt,
-.actions #resend {
-  display: none;
-}
 .control-pill {
   display: inline-flex;
   align-items: center;
@@ -463,6 +457,7 @@ textarea:focus { border-color: rgba(98,240,183,.38); box-shadow: 0 0 0 3px rgba(
 .control-pill:focus-within { border-color: rgba(98,240,183,.38); }
 .ghost.active { color: var(--accent); border-color: rgba(98,240,183,.38); background: rgba(98,240,183,.08); }
 .ghost.danger:hover { color: var(--danger); border-color: rgba(255,143,155,.34); }
+.focused-tool { border-color: rgba(101,214,170,.5) !important; box-shadow: 0 0 0 3px rgba(101,214,170,.08); }
 .inspector-card {
   border: 1px solid var(--line);
   border-radius: 16px;
