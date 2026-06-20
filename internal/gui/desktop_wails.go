@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/avifenesh/eigen/internal/daemon"
+	"github.com/avifenesh/eigen/internal/memory"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -110,6 +111,12 @@ func (a *DesktopApp) SetFast(id string, on bool) error {
 func (a *DesktopApp) UserProfile() (string, error) { return a.svc.UserProfile() }
 func (a *DesktopApp) WriteUserProfile(content string) error {
 	return a.svc.WriteUserProfile(content)
+}
+func (a *DesktopApp) ProjectMemory(dir string) (MemoryWorkspace, error) {
+	return a.svc.ProjectMemory(dir)
+}
+func (a *DesktopApp) SearchProjectMemory(dir, query string) ([]memory.SearchHit, error) {
+	return a.svc.SearchProjectMemory(dir, query)
 }
 
 // Subscribe streams daemon events into the Wails runtime event bus as

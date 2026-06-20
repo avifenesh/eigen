@@ -99,6 +99,7 @@ func (h *handler) routes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/health", h.health)
 	mux.HandleFunc("/api/observe", h.observe)
 	mux.HandleFunc("/api/profile", h.profile)
+	mux.HandleFunc("/api/memory", h.memory)
 	mux.HandleFunc("/api/sessions", h.sessions)
 	mux.HandleFunc("/api/sessions/", h.session)
 }
@@ -145,6 +146,21 @@ func (h *handler) profile(w http.ResponseWriter, r *http.Request) {
 	default:
 		methodNotAllowed(w)
 	}
+}
+
+func (h *handler) memory(w http.ResponseWriter, r *http.Request) {
+	dir := strings.TrimSpace(r.URL.Query().Get("dir"))
+	if dir == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("dir query parameter required"))
+		return
+	}
+	if strings.TrimSpace(r.URL.Query().Get("q")) != "" {
+		hits, err := h.svc.SearchProjectMemory(dir, r.URL.Query().Get("q"))
+		writeJSON(w, map[string]any{"hits": hits}, err)
+		return
+	}
+	v, err := h.svc.ProjectMemory(dir)
+	writeJSON(w, v, err)
 }
 
 func (h *handler) sessions(w http.ResponseWriter, r *http.Request) {
