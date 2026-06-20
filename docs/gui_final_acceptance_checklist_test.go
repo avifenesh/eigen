@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestGUIFinalAcceptanceChecklistTracksBlockers(t *testing.T) {
+func TestGUIFinalAcceptanceChecklistTracksCIStatus(t *testing.T) {
 	b, err := os.ReadFile("gui-final-acceptance-checklist.md")
 	if err != nil {
 		t.Fatal(err)
@@ -15,11 +15,12 @@ func TestGUIFinalAcceptanceChecklistTracksBlockers(t *testing.T) {
 	for _, want := range []string{
 		"scripts/verify-gui-phase.sh",
 		".github/workflows/gui-phase.yml",
-		"Green CI run evidence",
-		"commit SHA plus run URL or run ID",
-		"HTTP 404: workflow gui-phase.yml not found on the default branch",
-		"Docs completion reconciliation",
-		"`goal_achieved` would contradict repository evidence",
+		"Green GitHub Actions evidence for PR #3",
+		"27859059893",
+		"https://github.com/avifenesh/eigen/actions/runs/27859059893",
+		"42c8a08f8b4752495f42e6a5aafc6aa0ae8c4077",
+		"observed status: success",
+		"Final-claim status",
 		"human-attested",
 		"CI does not yet regenerate screenshots",
 	} {

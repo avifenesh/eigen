@@ -70,6 +70,8 @@ func TestGUIParityEvidenceMentionsKeyRegressionTests(t *testing.T) {
 		"TestPTYChatTUISmokeQuit",
 		"CI enforcement",
 		"TestGUIPhaseWorkflowRunsVerificationScript",
+		"27859059893",
+		"42c8a08f8b4752495f42e6a5aafc6aa0ae8c4077",
 		"scripts/verify-gui-phase.sh",
 		"go test ./... -count=1",
 		"go test . ./docs ./internal/app ./internal/feed ./internal/tui -count=1",

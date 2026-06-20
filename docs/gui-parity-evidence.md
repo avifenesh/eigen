@@ -29,7 +29,7 @@ Eigen's premium desktop surface is delivered in phases across the app shell (`in
 | App PTY navigation soak | Real app shell loops through every page plus repeated palette/quick-jump navigation under a pseudo-terminal, including a release-binary longer soak with bounded goroutine checks. | `.:TestPTYAppShellNavigationSoak`, `.:TestPTYReleaseAppShellLongerSoak` |
 | Chat TUI PTY smoke | Real chat TUI starts under a pseudo-terminal with a fake local provider, renders the premium shell, exits via keyboard interrupt, and checks goroutine bounds. | `.:TestPTYChatTUISmokeQuit` |
 | Slash menu determinism | Built-in slash menu test is isolated from user/project custom commands. | `internal/tui:TestSlashMenuOpensAndFilters` |
-| CI enforcement | GitHub Actions runs the full GUI phase gate on pull requests and pushes to `main` under Xvfb with xterm/tmux installed. | `.github/workflows/gui-phase.yml`, `scripts/verify-gui-phase.sh`, `docs:TestGUIPhaseWorkflowRunsVerificationScript` |
+| CI enforcement | GitHub Actions runs the full GUI phase gate on pull requests and pushes to `main` under Xvfb with xterm/tmux installed; PR #3 has a green `GUI phase gate` run `27859059893` at head SHA `42c8a08f8b4752495f42e6a5aafc6aa0ae8c4077`. | `.github/workflows/gui-phase.yml`, `scripts/verify-gui-phase.sh`, `docs:TestGUIPhaseWorkflowRunsVerificationScript`, `https://github.com/avifenesh/eigen/actions/runs/27859059893` |
 
 ## Verification commands
 

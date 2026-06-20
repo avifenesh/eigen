@@ -1,6 +1,6 @@
 # GUI final acceptance checklist
 
-This checklist records the current status of the persistent GUI desktop-app goal after the latest independent review.
+This checklist records the current status of the persistent GUI desktop-app goal after the latest independent review and CI unblock work.
 
 ## Completed evidence
 
@@ -9,7 +9,13 @@ This checklist records the current status of the persistent GUI desktop-app goal
 - GUI package shuffle/race gates pass.
 - Smoke-tag root suite and repeated PTY smoke suite pass.
 - Release-binary PTY longer soak passes: `TestPTYReleaseAppShellLongerSoak`.
-- CI workflow exists: `.github/workflows/gui-phase.yml`, running `xvfb-run -a scripts/verify-gui-phase.sh`.
+- CI workflow exists and is green for this phase: `.github/workflows/gui-phase.yml`, running `xvfb-run -a scripts/verify-gui-phase.sh`.
+- Green GitHub Actions evidence for PR #3:
+  - workflow: `GUI phase gate`;
+  - run ID: `27859059893`;
+  - run URL: `https://github.com/avifenesh/eigen/actions/runs/27859059893`;
+  - head SHA: `42c8a08f8b4752495f42e6a5aafc6aa0ae8c4077`;
+  - observed status: success via `gh run watch 27859059893 --exit-status`.
 - Repo-local desktop screenshots exist and are valid PNGs with decoded dimensions:
   - `docs/artifacts/gui/release-app-shell.png`
   - `docs/artifacts/gui/chat-tui-shell.png`
@@ -17,16 +23,11 @@ This checklist records the current status of the persistent GUI desktop-app goal
   - release app shell: `agent-workspace:screenshot-release`, `[screensho1:eigen-release*]`, `"avifenesh" 04:13 20-Jun-26`;
   - chat TUI shell: `agent-workspace:screenshot-chat`, `[screensho1:eigen-smoke.test*]`, `"avifenesh" 04:15 20-Jun-26`.
 
-## Remaining blockers before calling `goal_achieved`
+## Final-claim status
 
-1. **Green CI run evidence**
-   - Need a specific successful GitHub Actions run for `.github/workflows/gui-phase.yml` on the target commit.
-   - Required evidence: commit SHA plus run URL or run ID.
-   - Current live check: local HEAD is `6a87330886df61fbdd8f304d807f4dec21b886eb`; `gh run list --workflow gui-phase.yml --limit 5` returned `HTTP 404: workflow gui-phase.yml not found on the default branch`, so this blocker is still open until the workflow is pushed/landed and a green run exists.
+The green-CI blocker for this GUI phase is resolved by run `27859059893` on head SHA `42c8a08f8b4752495f42e6a5aafc6aa0ae8c4077`.
 
-2. **Docs completion reconciliation**
-   - Docs that currently describe the goal as non-final/persistent must be reconciled before claiming completion.
-   - Until then, `goal_achieved` would contradict repository evidence.
+This checklist is still phase-scoped: the persistent product goal should only be claimed when the evidence in `docs/gui-phase-gate.md` and `docs/gui-parity-evidence.md` is accepted as sufficient for the current desktop-app parity phase, or after any newly requested broader parity rows are added and gated.
 
 ## Screenshot evidence caveat
 
