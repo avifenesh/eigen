@@ -119,10 +119,11 @@ func (s *Service) InputWithTools(id, text string, allowTools []string) (bool, er
 		return false, err
 	}
 	defer c.Close()
-	if len(allowTools) > 0 {
-		return false, c.Input(id, text, nil, allowTools)
-	}
-	return c.SteerInput(id, text, nil)
+	// Always use the general Input path (which starts a turn when idle, or
+	// steers when a turn is running). SteerInput is a narrower "inject into
+	// running turn" API; using it for the primary send path caused messages
+	// to be accepted but the agent to stay idle (no new turn started).
+	return false, c.Input(id, text, nil, allowTools)
 }
 
 func (s *Service) Approve(id, approvalID string, allow bool) error {

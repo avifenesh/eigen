@@ -65,13 +65,13 @@
           </div>
           <div class="status-right">
             <label class="status-pill" title="Model id"><span>model</span>
-              <input id="model-input" list="model-presets" placeholder="default" spellcheck="false" />
-              <datalist id="model-presets">
-                <option value="openai.gpt-5.5"></option>
-                <option value="claude-opus-4-8"></option>
-                <option value="us.anthropic.claude-opus-4-8"></option>
-                <option value="glm-5.2"></option>
-              </datalist>
+              <select id="model-input">
+                <option value="">default</option>
+                <option value="openai.gpt-5.5">openai.gpt-5.5</option>
+                <option value="claude-opus-4-8">claude-opus-4-8</option>
+                <option value="us.anthropic.claude-opus-4-8">us.anthropic.claude-opus-4-8</option>
+                <option value="glm-5.2">glm-5.2</option>
+              </select>
             </label>
             <label class="status-pill" title="Permission mode"><span>perm</span>
               <select id="perm-select">

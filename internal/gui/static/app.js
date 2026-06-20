@@ -110,9 +110,18 @@ async function createSession(opts = {}) {
   return hasDesktopBridge() ? {id: await desktop().NewSession(dir, model, perm)} : api('/api/sessions', {method: 'POST', body: JSON.stringify({dir, model, perm})});
 }
 async function getState(id) { return hasDesktopBridge() ? desktop().State(id) : api(`/api/sessions/${encodeURIComponent(id)}/state`); }
-async function sendInput(id, text, allowTools = []) {
-  if (hasDesktopBridge()) return {steered: await desktop().Input(id, text, allowTools)};
-  return api(`/api/sessions/${encodeURIComponent(id)}/input`, {method: 'POST', body: JSON.stringify({text, allow_tools: allowTools})});
+async function sendInput(id, text, allowTools = null) {
+  if (hasDesktopBridge()) {
+    // Do not pass an empty array for allowTools — the Wails variadic binding would
+    // interpret it as an explicit empty allow-list (no tools), causing the agent
+    // to receive the message but do nothing (idle turn, no visible response).
+    if (allowTools && allowTools.length > 0) {
+      return {steered: await desktop().Input(id, text, allowTools)};
+    }
+    return {steered: await desktop().Input(id, text)};
+  }
+  const payload = allowTools && allowTools.length ? {text, allow_tools: allowTools} : {text};
+  return api(`/api/sessions/${encodeURIComponent(id)}/input`, {method: 'POST', body: JSON.stringify(payload)});
 }
 async function approveCall(id, approval, allow) { return hasDesktopBridge() ? desktop().Approve(id, approval, allow) : api(`/api/sessions/${encodeURIComponent(id)}/approve`, {method: 'POST', body: JSON.stringify({approval, allow})}); }
 async function sessionAction(id, action) {
@@ -311,7 +320,9 @@ function updateControls(snap) {
   const fast = !!(snap.fast || snap.Fast);
   const fastOK = !!(snap.fast_ok || snap.FastOK);
   if (modelInput && document.activeElement !== modelInput) modelInput.value = model;
-  if (effortSelect) effortSelect.value = effort || '';
+  // Do not blank the effort select if the backend reports no effort (common for
+  // models that don't expose it). Preserve the user's last choice.
+  if (effortSelect && effort) effortSelect.value = effort;
   if (permSelect) permSelect.value = perm === 'auto' ? 'auto' : 'gated';
   if (searchSelect) searchSelect.value = search || 'off';
   searchControl?.classList.toggle('hidden', !search);
@@ -742,6 +753,7 @@ function shellSummaryHTML(raw) {
 }
 function toolSummaryHTML(raw) {
   const name = raw.name || raw.Name || '', readOnly = raw.read_only ?? raw.ReadOnly;
+  if (!name || /[\/\\]|\.(png|jpg|ico|md)$|^\d+$/i.test(name)) return ''; // filter garbage/paths/hashes
   return `<div class="tool-mini"><span>${escapeHtml(name)}</span><strong>${readOnly ? 'read' : 'write'}</strong></div>`;
 }
 
@@ -819,7 +831,7 @@ function renderFeatureStage() {
       ['Tool history', `${Object.keys(state.tools).length} tool calls tracked this session.`, compactActionButton('Back to chat', 'data-feature-action="goto-chat"')],
       ['Workspace roots', roots.length ? roots.map(shortPath).join(' · ') : 'No roots reported.', compactActionButton('Open system', 'data-feature-action="system"')],
     ]],
-    tools: ['Tools', 'Inspect and operate the automation surface.', tools.length ? tools.slice(0, 9).map(t => [t.name || t.Name || 'tool', (t.read_only ?? t.ReadOnly) ? 'read-only' : 'mutating', `${compactActionButton('Allow next turn', `data-feature-action="allow-tool" data-tool-name="${escapeAttr(t.name || t.Name || 'tool')}"`)}`]) : [['Tool registry', 'No registry payload yet.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
+    tools: ['Tools', 'Inspect and operate the automation surface.', tools.length ? tools.slice(0, 9).filter(t => { const n = t.name || t.Name || ''; return n && !/[\/\\]|\.(png|jpg|ico|md)$|^\d+$/i.test(n); }).map(t => [t.name || t.Name || 'tool', (t.read_only ?? t.ReadOnly) ? 'read-only' : 'mutating', `${compactActionButton('Allow next turn', `data-feature-action="allow-tool" data-tool-name="${escapeAttr(t.name || t.Name || 'tool')}"`)}`]) : [['Tool registry', 'No registry payload yet.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
     shells: ['Shells', 'Track and control background commands.', shells.length ? shells.slice(0, 9).map(s => { const status = s.status || s.Status || 'unknown'; const id = s.id || s.ID || ''; const kill = status === 'running' ? ` ${compactActionButton('Kill', `data-feature-action="kill-shell" data-shell-id="${escapeAttr(id)}"`)}` : ''; return [id || s.command || 'shell', `${status} ${s.last_line || s.LastLine || ''}`, `${compactActionButton('Poll', `data-feature-action="poll-shell" data-shell-id="${escapeAttr(id)}"`)}${kill}`]; }).concat([['Foreground bash', 'Detach the bash command running in the current turn into the background.', compactActionButton('Detach foreground bash', 'data-feature-action="detach-bash"')]]) : [['No background shells', 'Background commands appear here with status and controls.', compactActionButton('Refresh', 'data-feature-action="refresh"')], ['Foreground bash', 'Detach the bash command running in the current turn into the background.', compactActionButton('Detach foreground bash', 'data-feature-action="detach-bash"')]]],
     approvals: ['Approvals', 'Handle gated tool calls deliberately.', pending.length ? pending.map(p => [p.tool || 'approval', p.id || p.ID || 'pending', `${compactActionButton('Approve', `data-feature-action="approve" data-approval-id="${escapeAttr(p.id || p.ID || p.result || '')}"`)} ${compactActionButton('Deny', `data-feature-action="deny" data-approval-id="${escapeAttr(p.id || p.ID || p.result || '')}"`)}`]) : [['No pending approvals', 'Gated operations request approval here.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
     memory: ['Memory', 'Project memory workspace: durable notes, bans, and files.', memoryCells()],
