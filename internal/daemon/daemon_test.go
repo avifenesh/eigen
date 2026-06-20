@@ -128,9 +128,10 @@ func TestDaemonSecondListenFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go srv.Serve()
 	defer srv.Close()
 	// A second daemon on the same live socket must fail ("already running").
+	// Listen binds the socket before Serve starts accepting, so no goroutine is
+	// needed here; avoiding one also keeps the focused race gate deterministic.
 	if _, err := Listen(sock, NewHost(), testBuilder); err == nil {
 		t.Fatal("second Listen should fail while the first is live")
 	}
