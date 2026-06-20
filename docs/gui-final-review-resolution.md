@@ -19,7 +19,7 @@ No functional blocker from the prior review was demoted to future scope.
 | App-side mutating page evidence was scattered. | Evidence blocker. | Added `docs/gui-mutating-pages-evidence.md` mapping config/skills/memory/plugins/providers mutating workflows to tests. |
 | Keyboard/accessibility parity evidence was scattered. | Evidence blocker. | Added `docs/gui-accessibility-keyboard-audit.md` mapping keyboard paths and accessibility seams to tests. |
 
-Items listed as future scope are not prior functional blockers. They are future expansion policy choices: new surfaces/features added after this milestone, optional richer pixel/video/focus-ring packages, and full WCAG certification.
+Items listed as future scope are not prior functional blockers. They are future expansion policy choices: new surfaces/features added after this milestone, optional richer pixel/video/focus-ring packages, and full WCAG certification. The prior blocker was overclaiming accessibility language, not a discovered missing focus indicator or WCAG failure; that was resolved by scoping `docs/gui-accessibility-keyboard-audit.md` as keyboard-parity evidence and explicitly not a full WCAG conformance audit.
 
 ## Blocker 2: gate circularity check
 
@@ -37,7 +37,7 @@ The gate substance was established and landed before PR #5. It includes real beh
 - release app shell longer PTY soak;
 - repeated chat/app PTY smoke tests.
 
-PR #5 only reconciles acceptance documentation and docs guard tests. It does not weaken the enforced gate.
+PR #5 only reconciles acceptance documentation and docs guard tests. It does not weaken the enforced gate. The executable gate script does not read `docs/gui-phase-summary.json`, `docs/gui-current-surface-acceptance.md`, or `docs/gui-final-review-resolution.md`; only docs unit tests read those files to prevent evidence drift. The gate verdict is driven by Go tests, JS syntax checking, native GUI smoke, PTY smoke/soak tests, shuffle tests, and race tests.
 
 ## Blocker 3: evidence commit boundary check
 
@@ -60,10 +60,12 @@ M docs/gui_phase_gate_test.go
 M docs/gui_phase_summary_test.go
 ```
 
-Because PR #5 does not change production code, test logic outside docs, workflow files, or the gate script, the `ce860ca...` functional evidence transfers to PR #5 for behavior. PR #5 also has its own green PR checks:
+Primary evidence for PR #5 is direct PR-head CI, not transfer: PR #5 head `13511d538fa4d4e4d4e05444b2eb4c30edb1fdd2` has green checks:
 
-- GUI phase gate `27863260532`, success;
-- CI `27863260578`, success.
+- GUI phase gate `27863458976`, success;
+- CI `27863458971`, success.
+
+Corroborating evidence: `origin/main` is exactly `ce860ca339ad6d50d7945ad0b8c37bef22113a93`, and `merge-base(origin/main, HEAD)` is the same SHA. Since PR #5 changes only docs/docs tests relative to that merge base, the functional main evidence remains unchanged while PR #5 directly proves the reconciled docs and existing gates pass.
 
 After PR #5 merges, the acceptance document should be considered fully current only after the merge SHA has green main CI/GUI runs or after confirming the merge delta remains documentation-only and docs tests pass.
 

@@ -34,6 +34,7 @@ Out-of-scope future expansion, not a blocker for this current-surface milestone:
 - Main GUI phase gate: `27862913334`, `success`, `push`, `headBranch=main`, `headSha=ce860ca339ad6d50d7945ad0b8c37bef22113a93`, URL `https://github.com/avifenesh/eigen/actions/runs/27862913334`.
 - Main CI: `27862913354`, `success`, `push`, `headBranch=main`, `headSha=ce860ca339ad6d50d7945ad0b8c37bef22113a93`, URL `https://github.com/avifenesh/eigen/actions/runs/27862913354`.
 - Clean detached local verification from `origin/main`: `bash scripts/verify-gui-phase.sh` and `go test ./... -count=1` both passed.
+- `scripts/verify-gui-phase.sh` validates the shipped surfaces by running the full Go suite, focused GUI package tests including native GUI/app/TUI packages, JS syntax checking, native GUI browser smoke, smoke-tagged PTY binary tests, shuffle tests, race tests, release app shell PTY soak, and repeated chat/app PTY smoke tests.
 
 ## Acceptance statement
 
