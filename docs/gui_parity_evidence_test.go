@@ -24,6 +24,8 @@ func TestGUIParityEvidenceMentionsKeyRegressionTests(t *testing.T) {
 		"TestProvidersAddCustomProviderUpdatesCatalog",
 		"TestAppCodeDerivedFeatureInventoryHasJourneyEvidence",
 		"TestTUICodeDerivedFeatureInventoryHasJourneyEvidence",
+		"TestAppObjectiveUIQualityMetrics",
+		"TestTUIObjectiveUIQualityMetrics",
 		"TestServeRejectsNonLocalBind",
 		"TestHandlerStaticAndAPIContracts",
 		"TestServiceValidationErrors",
