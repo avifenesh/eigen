@@ -1,6 +1,6 @@
-# GUI accessibility and keyboard audit
+# GUI keyboard parity evidence
 
-This audit records keyboard parity for the premium app shell, native/browser GUI shell, and chat TUI. It is scoped to the current shipped surfaces and automated evidence.
+This is a keyboard-parity evidence map, not a full WCAG conformance audit. It records keyboard parity for the premium app shell, native/browser GUI shell, and chat TUI. It is scoped to the current shipped surfaces and automated evidence.
 
 ## Principles
 

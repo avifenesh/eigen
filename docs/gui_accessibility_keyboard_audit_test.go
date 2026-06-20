@@ -13,6 +13,7 @@ func TestGUIAccessibilityKeyboardAuditMapsParityEvidence(t *testing.T) {
 	}
 	s := string(b)
 	for _, want := range []string{
+		"keyboard-parity evidence map, not a full WCAG conformance audit",
 		"Every clickable TUI chrome action dispatches through the same validated action registry",
 		"model picker",
 		"permission picker",

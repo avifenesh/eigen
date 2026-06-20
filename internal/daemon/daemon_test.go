@@ -134,6 +134,8 @@ func TestDaemonSecondListenFails(t *testing.T) {
 	// needed here; avoiding one also keeps the focused race gate deterministic.
 	if _, err := Listen(sock, NewHost(), testBuilder); err == nil {
 		t.Fatal("second Listen should fail while the first is live")
+	} else if err.Error() != "daemon already running" {
+		t.Fatalf("second Listen should fail as already running, got %v", err)
 	}
 }
 
