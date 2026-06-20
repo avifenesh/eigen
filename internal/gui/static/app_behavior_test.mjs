@@ -46,6 +46,7 @@ class Element {
   get lastElementChild() { return this.children[this.children.length - 1] || null; }
   querySelector(sel) {
     if (sel === '.content') return this._content || (this._content = new Element('div'));
+    if (sel === '[data-feature-close]') return this._featureClose || (this._featureClose = new Element('button'));
     if (sel === '.approval-state') return this._approvalState || (this._approvalState = new Element('span'));
     if (sel === '[type="submit"]') return this._submit || (this._submit = new Element('button'));
     if (sel === '[data-action="allow"]') return this._allow || (this._allow = new Element('button'));
@@ -127,6 +128,8 @@ const {ctx, document, intervals, eventSourceInstances, apiLog} = env;
 
 assert.equal(document.getElementById('daemon').textContent, 'daemon connected');
 assert.equal(document.getElementById('sessions').children.length, 1, 'session rail renders fetched sessions');
+ctx.updateDesktopOverview({});
+assert.equal(document.getElementById('overview-surface').textContent, 'chat', 'desktop overview starts on chat surface');
 
 const beforeOpenSources = eventSourceInstances.length;
 const beforeOpenIntervals = intervals.length;
@@ -144,6 +147,15 @@ assert.equal(eventSourceInstances.length, beforeOpenSources + 3, 'switching sess
 ctx.appendEvent({kind: 'tool_start', tool: 'edit', tool_id: 't1', tool_args: '{"path":"x"}'});
 ctx.appendEvent({kind: 'tool_result', tool: 'edit', tool_id: 't1', result: 'diff --git a/x b/x\n@@ -1 +1 @@\n-old\n+new'});
 assert.match(document.getElementById('timeline').innerHTML + document.getElementById('timeline').children.map?.(x => x.innerHTML).join(''), /diff|Tool|edit/i);
+
+ctx.setFeature('tools');
+assert.equal(document.getElementById('timeline').classList.contains('hidden'), true, 'feature workspace hides chat timeline');
+assert.match(document.getElementById('feature-workspace').innerHTML, /Tools|automation surface|read-only|mutating/, 'tools surface renders desktop feature content');
+assert.equal(document.getElementById('overview-surface').textContent, 'tools', 'overview follows selected feature');
+ctx.setFeature('config');
+assert.match(document.getElementById('feature-workspace').innerHTML, /Config|Permission|Search \/ fast/, 'config surface renders controls summary');
+ctx.setFeature('chat');
+assert.equal(document.getElementById('timeline').classList.contains('hidden'), false, 'chat feature restores timeline');
 
 ctx.ensureApprovalCard({id: 'a1', tool: 'bash', args: 'echo ok', status: 'pending'});
 ctx.setApprovalStatus('a1', 'approved');

@@ -54,21 +54,21 @@ func TestHandlerStaticAndAPIContracts(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("/ status=%d", status)
 	}
-	for _, want := range []string{"id=\"new-session\"", "id=\"timeline\"", "id=\"model-input\"", "id=\"profile-modal\"", "id=\"system-modal\""} {
+	for _, want := range []string{"id=\"new-session\"", "id=\"feature-nav\"", "id=\"desktop-overview\"", "id=\"feature-workspace\"", "id=\"timeline\"", "id=\"model-input\"", "id=\"profile-modal\"", "id=\"system-modal\""} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("index missing %q", want)
 		}
 	}
 
 	_, _, app := get("/app.js")
-	for _, want := range []string{"function renderUnifiedDiff", "function shellSummaryHTML", "async function openSystemModal", "connectEvents", "desktop().Subscribe"} {
+	for _, want := range []string{"function renderFeatureWorkspace", "function setFeature", "function renderUnifiedDiff", "function shellSummaryHTML", "async function openSystemModal", "connectEvents", "desktop().Subscribe"} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("app.js missing %q", want)
 		}
 	}
 
 	_, _, css := get("/styles.css")
-	for _, want := range []string{".diff-view", ".shell-mini", ".system-card", ".approval-card", ".tool-card"} {
+	for _, want := range []string{".feature-nav", ".desktop-overview", ".feature-workspace", ".diff-view", ".shell-mini", ".system-card", ".approval-card", ".tool-card"} {
 		if !strings.Contains(css, want) {
 			t.Fatalf("styles.css missing %q", want)
 		}
