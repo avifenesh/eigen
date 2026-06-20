@@ -19,6 +19,15 @@ This matrix tracks the product surfaces that must stay covered while Eigen moves
 | crons | Inspect scheduled/background automation. | `internal/app:TestAppProvidersModelsCronsFeatureJourneys`, `internal/app:TestAppEveryPageKeyboardJourney`, `internal/app:TestAppEveryPageQuickJumpJourney`, `internal/app:TestViewFitsAllPagesAcrossSizes`, `internal/app:TestViewLineWidthsWithinTerminal` |
 | plugins | Browse marketplaces, installed plugins, toggle installed plugin state, and inspect extension wiring. | `internal/app:TestAppPluginsPageFeatureJourney`, `internal/app:TestAppEveryPageKeyboardJourney`, `internal/app:TestAppEveryPageQuickJumpJourney`, `internal/app:TestAppPaletteVisualContract`, `internal/app:TestAppKeyboardE2ENavigatePaletteAndOpen` |
 
+## Native/browser desktop GUI shell
+
+| Surface | User journey | Automated evidence |
+| --- | --- | --- |
+| local-only server | Launch browser/debug GUI without exposing the daemon-backed API off-machine. | `internal/gui:TestServeRejectsNonLocalBind`, `scripts/gui-smoke.sh` |
+| static premium shell | Serve the desktop HTML/JS/CSS bundle containing new-session/profile/system modals, timeline, model/effort controls, tool cards, approval cards, shell summaries, and diff rendering. | `internal/gui:TestHandlerStaticAndAPIContracts`, `scripts/gui-smoke.sh`, `node --check internal/gui/static/app.js` |
+| service validation | Reject empty session IDs and empty input before reaching the daemon. | `internal/gui:TestServiceValidationErrors` |
+| event streaming adapter | Stop stream writers cleanly on context cancel or closed event channels. | `internal/gui:TestStreamJSONLinesStopsOnContextOrClosedEvents` |
+
 ## Chat TUI panels and flows
 
 | Surface | User journey | Automated evidence |
@@ -43,5 +52,5 @@ This matrix tracks the product surfaces that must stay covered while Eigen moves
 - The broad verification command remains:
 
 ```bash
-go test . ./docs ./internal/app ./internal/feed ./internal/tui -count=1
+go test . ./docs ./internal/app ./internal/feed ./internal/gui ./internal/tui -count=1
 ```

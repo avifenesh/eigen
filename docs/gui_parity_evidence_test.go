@@ -13,6 +13,10 @@ func TestGUIParityEvidenceMentionsKeyRegressionTests(t *testing.T) {
 	}
 	s := string(b)
 	for _, want := range []string{
+		"TestServeRejectsNonLocalBind",
+		"TestHandlerStaticAndAPIContracts",
+		"TestServiceValidationErrors",
+		"TestStreamJSONLinesStopsOnContextOrClosedEvents",
 		"TestAppPremiumShellVisualContract",
 		"TestAppHomeGoldenSnapshotTokens",
 		"TestAppEveryPageGoldenSnapshotTokens",
@@ -79,9 +83,9 @@ func TestGUIParityEvidenceMentionsKeyRegressionTests(t *testing.T) {
 		"42c8a08f8b4752495f42e6a5aafc6aa0ae8c4077",
 		"scripts/verify-gui-phase.sh",
 		"go test ./... -count=1",
-		"go test . ./docs ./internal/app ./internal/feed ./internal/tui -count=1",
+		"go test . ./docs ./internal/app ./internal/feed ./internal/gui ./internal/tui -count=1",
 		"go test -tags smoke . -count=1",
-		"go test ./docs ./internal/app ./internal/feed ./internal/tui -shuffle=on -count=1",
+		"go test ./docs ./internal/app ./internal/feed ./internal/gui ./internal/tui -shuffle=on -count=1",
 		"go test -race ./internal/app ./internal/feed ./internal/tui -count=1",
 		"go test . -run 'TestPTYReleaseAppShellLongerSoak' -count=1",
 		"go test -tags smoke . -run",

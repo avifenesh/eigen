@@ -23,9 +23,10 @@ func TestGUIPhaseGatePreventsPrematureFullGoalClaim(t *testing.T) {
 		"release smoke commands now fail explicitly",
 		"notepad dirty notes flush on quit",
 		"not, by this document's own criteria, enough to claim the full persistent goal",
+		"native/browser desktop GUI local-only server",
 		"scripts/verify-gui-phase.sh",
 		"go test ./... -count=1",
-		"go test . ./docs ./internal/app ./internal/feed ./internal/tui -count=1",
+		"go test . ./docs ./internal/app ./internal/feed ./internal/gui ./internal/tui -count=1",
 		"go test . -run 'TestPTYReleaseAppShellLongerSoak' -count=1",
 		"go test -tags smoke . -run",
 	} {

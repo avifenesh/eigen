@@ -30,8 +30,8 @@ Expanded commands:
 
 ```bash
 go test ./... -count=1
-go test . ./docs ./internal/app ./internal/feed ./internal/tui -count=1
-go test ./docs ./internal/app ./internal/feed ./internal/tui -shuffle=on -count=1
+go test . ./docs ./internal/app ./internal/feed ./internal/gui ./internal/tui -count=1
+go test ./docs ./internal/app ./internal/feed ./internal/gui ./internal/tui -shuffle=on -count=1
 go test -race ./internal/app ./internal/feed ./internal/tui -count=1
 go test -tags smoke . -count=1
 go test . -run 'TestPTYReleaseAppShellLongerSoak' -count=1

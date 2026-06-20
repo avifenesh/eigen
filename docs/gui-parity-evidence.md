@@ -1,11 +1,12 @@
 # GUI parity evidence
 
-Eigen's premium desktop surface is delivered in phases across the app shell (`internal/app`) and chat TUI (`internal/tui`). This file is a living evidence map: every row names the product contract and the automated test that proves it today.
+Eigen's premium desktop surface is delivered in phases across the native/browser desktop GUI (`internal/gui`), app shell (`internal/app`), and chat TUI (`internal/tui`). This file is a living evidence map: every row names the product contract and the automated test that proves it today.
 
 ## Current automated evidence
 
 | Area | Product contract | Evidence |
 | --- | --- | --- |
+| Native/browser desktop GUI shell | Daemon-backed GUI preview stays local-only, serves static premium desktop assets, exposes health/session/profile APIs, validates service inputs before daemon calls, and stops event streaming cleanly. | `internal/gui:TestServeRejectsNonLocalBind`, `internal/gui:TestHandlerStaticAndAPIContracts`, `internal/gui:TestServiceValidationErrors`, `internal/gui:TestStreamJSONLinesStopsOnContextOrClosedEvents`, `scripts/gui-smoke.sh` |
 | App shell visual premium | Wide app renders the premium sidebar/content shell, not classic header buttons; every page keeps shell/page/help golden tokens; key pages and home activity sections are visible, including richer live/sessions/plugins snapshot tokens. | `internal/app:TestAppPremiumShellVisualContract`, `internal/app:TestAppHomeGoldenSnapshotTokens`, `internal/app:TestAppEveryPageGoldenSnapshotTokens`, `internal/app:TestAppPaletteGoldenSnapshotTokens`, `internal/app:TestAppLiveSessionsPluginsGoldenSnapshotTokens` |
 | App command palette | App command palette filters/renders as a Base-painted overlay and can launch pages. | `internal/app:TestAppPaletteVisualContract`, `internal/app:TestAppKeyboardE2ENavigatePaletteAndOpen` |
 | App canvas ownership | App owns the full terminal rectangle; rows are Base-painted and exact terminal size; app render soak uses GC+settled goroutine polling for bounded-growth checks. | `internal/app:TestAppViewPaintsFullCanvas`, `internal/app:TestAppRenderSoakPaintsAndDoesNotLeakGoroutines` |
@@ -46,9 +47,9 @@ Equivalent expanded commands:
 
 ```bash
 go test ./... -count=1
-go test . ./docs ./internal/app ./internal/feed ./internal/tui -count=1
+go test . ./docs ./internal/app ./internal/feed ./internal/gui ./internal/tui -count=1
 go test -tags smoke . -count=1
-go test ./docs ./internal/app ./internal/feed ./internal/tui -shuffle=on -count=1
+go test ./docs ./internal/app ./internal/feed ./internal/gui ./internal/tui -shuffle=on -count=1
 go test -race ./internal/app ./internal/feed ./internal/tui -count=1
 go test . -run 'TestPTYReleaseAppShellLongerSoak' -count=1
 go test -tags smoke . -run 'TestPTYChatTUISmokeQuit|TestPTYAppShellNavigationSoak|TestPTYSmokeAppShellKeyboardNavigation|TestPTYSmokeVersionCommand' -count=5
@@ -61,7 +62,7 @@ See `docs/gui-phase-gate.md` for the explicit non-final phase gate. See `docs/gu
 ## Completed in this phase
 
 - Real terminal/desktop harness evidence: release app shell and chat TUI were exercised in an isolated X11 desktop terminal, with screenshots documented in `docs/gui-screenshot-artifacts.md`.
-- Feature parity matrix: every current app page and major TUI panel/flow is mapped to automated journey evidence in `docs/gui-feature-parity.md`.
+- Feature parity matrix: current native/browser GUI shell seams, every app page, and major TUI panel/flow are mapped to automated journey evidence in `docs/gui-feature-parity.md`.
 - Longer release-binary soak: `TestPTYReleaseAppShellLongerSoak` runs a release binary under PTY, repeats app navigation, exits cleanly, and checks bounded goroutine growth.
 - Visual snapshots/goldens: app pages, richer live/sessions/plugins surfaces, TUI right-panel tabs, premium task/shell/notepad surfaces, central TUI states, and desktop screenshots have stable token/artifact evidence.
 - CI enforcement: `.github/workflows/gui-phase.yml` runs `scripts/verify-gui-phase.sh` under Xvfb.

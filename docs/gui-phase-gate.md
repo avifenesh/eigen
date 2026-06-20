@@ -16,9 +16,9 @@ Expanded commands:
 
 ```bash
 go test ./... -count=1
-go test . ./docs ./internal/app ./internal/feed ./internal/tui -count=1
+go test . ./docs ./internal/app ./internal/feed ./internal/gui ./internal/tui -count=1
 go test -tags smoke . -count=1
-go test ./docs ./internal/app ./internal/feed ./internal/tui -shuffle=on -count=1
+go test ./docs ./internal/app ./internal/feed ./internal/gui ./internal/tui -shuffle=on -count=1
 go test -race ./internal/app ./internal/feed ./internal/tui -count=1
 go test . -run 'TestPTYReleaseAppShellLongerSoak' -count=1
 go test -tags smoke . -run 'TestPTYChatTUISmokeQuit|TestPTYAppShellNavigationSoak|TestPTYSmokeAppShellKeyboardNavigation|TestPTYSmokeVersionCommand' -count=5
@@ -26,6 +26,7 @@ go test -tags smoke . -run 'TestPTYChatTUISmokeQuit|TestPTYAppShellNavigationSoa
 
 It covers:
 
+- native/browser desktop GUI local-only server, static shell/API contracts, service validation, and stream shutdown seams;
 - app shell canvas ownership, visual contracts, all-page keyboard journeys, and PTY navigation soak;
 - chat TUI composer/transcript journeys, right-panel journeys, and PTY startup/quit smoke;
 - resource-safety regressions for app render, TUI render/live-loop, git panel subprocesses, file completion, feed/model/GitHub cancellation;

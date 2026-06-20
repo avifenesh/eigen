@@ -15,6 +15,7 @@ func TestGUIFeatureParityMatrixCoversAppPagesAndTUIPanels(t *testing.T) {
 	s := string(b)
 	for _, surface := range []string{
 		"home", "live", "projects", "machines", "sessions", "config", "skills", "models", "providers", "memory", "crons", "plugins",
+		"local-only server", "static premium shell", "service validation", "event streaming adapter",
 		"transcript", "composer", "plan", "left rail", "changes tab", "git tab", "terminal tab", "notepad tab", "tasks tab", "shells tab", "command palette", "app return",
 	} {
 		row := regexp.MustCompile(`(?m)^\| ` + regexp.QuoteMeta(surface) + ` \|.*\|.*Test[^|]*\|$`)
@@ -22,7 +23,7 @@ func TestGUIFeatureParityMatrixCoversAppPagesAndTUIPanels(t *testing.T) {
 			t.Fatalf("feature parity matrix missing tested row for %q", surface)
 		}
 	}
-	if !strings.Contains(s, "go test . ./docs ./internal/app ./internal/feed ./internal/tui -count=1") {
+	if !strings.Contains(s, "go test . ./docs ./internal/app ./internal/feed ./internal/gui ./internal/tui -count=1") {
 		t.Fatal("feature parity matrix missing broad verification command")
 	}
 }
@@ -54,6 +55,24 @@ func TestGUIFeatureParityMatrixRequiresAppFeatureJourneys(t *testing.T) {
 		}
 	}
 
+}
+
+func TestGUIFeatureParityMatrixRequiresDesktopShellJourneys(t *testing.T) {
+	b, err := os.ReadFile("gui-feature-parity.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	for surface, testName := range map[string]string{
+		"local-only server":       "TestServeRejectsNonLocalBind",
+		"static premium shell":    "TestHandlerStaticAndAPIContracts",
+		"service validation":      "TestServiceValidationErrors",
+		"event streaming adapter": "TestStreamJSONLinesStopsOnContextOrClosedEvents",
+	} {
+		if !strings.Contains(s, surface) || !strings.Contains(s, testName) {
+			t.Fatalf("desktop GUI surface %q must cite feature journey %s", surface, testName)
+		}
+	}
 }
 
 func TestGUIFeatureParityMatrixRequiresTUIFeatureJourneys(t *testing.T) {
