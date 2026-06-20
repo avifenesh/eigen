@@ -46,9 +46,11 @@ This backlog translates the remaining full-goal criteria into concrete next work
    - Render-path subprocess/goroutine protection is covered by `TestPremiumInteractionViewSoak`, `TestTUILiveLoopResourceMeasurement`, and `TestRenderSoakDoesNotSpawnWorkOrLeakGoroutines`.
    - Remaining optional hardening: PTY-level local-provider tool turn through the compiled binary.
 
-6. **Accessibility/keyboard audit**
-   - Ensure every clickable action has keyboard parity.
-   - Verify focus/focused-row visual language is consistent and non-brand.
+6. **Accessibility/keyboard audit** — evidence mapped
+   - Every current clickable TUI chrome action dispatches through the shared validated action registry and has a documented keyboard path.
+   - App shell, chat TUI, and native/browser GUI seams are mapped to automated keyboard/accessibility evidence.
+   - Evidence map: `docs/gui-accessibility-keyboard-audit.md`.
+   - Remaining optional hardening: pixel/video focus-ring review and browser tab-order/ARIA automation when the browser GUI becomes the primary desktop surface.
 
 ## P2 — release readiness
 

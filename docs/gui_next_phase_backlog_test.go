@@ -29,6 +29,7 @@ func TestGUINextPhaseBacklogKeepsFullGoalActionable(t *testing.T) {
 		"TestTUIRightPanelPremiumSurfaceGoldenSnapshotTokens",
 		"Chat TUI end-to-end agent turn with tools",
 		"Accessibility/keyboard audit",
+		"docs/gui-accessibility-keyboard-audit.md",
 		"Clean-tree delivery gate",
 		"Independent final review",
 		"goal_achieved",

@@ -19,7 +19,8 @@
     "release-safe smoke hook behavior and smoke-tagged PTY helper coverage",
     "docs parity matrix, evidence map, phase gate, delivery notes, and test guards",
     "native/browser GUI static, API, local-only server, and smoke coverage",
-    "explicit app-side mutating page workflow evidence for config, skills, memory, plugins, marketplace, and providers"
+    "explicit app-side mutating page workflow evidence for config, skills, memory, plugins, marketplace, and providers",
+    "explicit accessibility and keyboard parity audit for app shell, chat TUI, and native/browser GUI seams"
   ],
   "not_owned_preexisting_staged": [
     "internal/command/command_test.go",

@@ -13,6 +13,8 @@ func TestGUIParityEvidenceMentionsKeyRegressionTests(t *testing.T) {
 	}
 	s := string(b)
 	for _, want := range []string{
+		"docs/gui-accessibility-keyboard-audit.md",
+		"TestGUIAccessibilityKeyboardAuditMapsParityEvidence",
 		"docs/gui-mutating-pages-evidence.md",
 		"TestConfigMultiSelectRouteProviders",
 		"TestSkillsInstallRunsInBackgroundWithBusyMarker",
