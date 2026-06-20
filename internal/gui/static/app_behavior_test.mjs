@@ -68,18 +68,20 @@ class Element {
   _findBy(sel, all) {
     const out = [];
     const tokens = String(sel).trim().split(/\s+/); // descendant combinators
+    let first = null;
     const walk = (el, depth) => {
       for (const c of el.children) {
         if (matches(c, tokens[depth])) {
-          if (depth === tokens.length - 1) { if (all) out.push(c); else return c; }
+          if (depth === tokens.length - 1) { if (all) out.push(c); else if (!first) first = c; }
           else { const deeper = walk(c, depth + 1); if (deeper && !all) return deeper; }
         }
-        const deeper = walk(c, depth); if (deeper && !all) return deeper;
+        if (all || !first) { const deeper = walk(c, depth); if (deeper && !all && !first) first = deeper; }
+        if (!all && first) return first;
       }
       return null;
     };
     walk(this, 0);
-    return all ? out : (out[0] || null);
+    return all ? out : (first || null);
   }
   addEventListener(t, cb) { (this.eventHandlers[t] ||= []).push(cb); }
   dispatchEvent(t, ev = {}) { for (const cb of this.eventHandlers[t] || []) cb(ev); }
@@ -149,7 +151,11 @@ function makeContext() {
         arr.messages.push({role: 'user', text: body.text});
         arr.running = true;
         data = {steered: false};
-      } else if (String(path).includes('/model') || String(path).includes('/perm') || String(path).includes('/effort') || String(path).includes('/search') || String(path).includes('/fast') || String(path).includes('/goal')) {
+      } else if (String(path).includes('/model') || String(path).includes('/perm') || String(path).includes('/effort') || String(path).includes('/search') || String(path).includes('/fast') || String(path).includes('/goal') || String(path).includes('/title')) {
+        data = {ok: true};
+      } else if (path === '/api/sessions' && opts.method === 'DELETE') {
+        const body = JSON.parse(opts.body || '{}');
+        delete stateDB[body.id];
         data = {ok: true};
       }
       return {ok: true, statusText: 'OK', text: async () => JSON.stringify(data)};
@@ -159,6 +165,7 @@ function makeContext() {
     setTimeout: (cb, ms) => { timeouts.push({cb, ms}); queueMicrotask(cb); return timeouts.length; },
     clearTimeout: () => {},
     confirm: () => true,
+    prompt: (msg, def) => def !== undefined ? `renamed-${def}` : 'a-new-goal',
     navigator: {clipboard: {writeText: async () => {}}},
     JSON, CSS: {escape: s => String(s)},
   };
@@ -191,7 +198,7 @@ assert.match(indexHTML, /id="status-indicator"/, 'shell has a working indicator'
 assert.match(indexHTML, /id="feature-stage"/, 'shell has a separate feature stage so it never competes with chat layout');
 assert.match(indexHTML, /id="rail-toggle"/, 'shell has a closable sidebar toggle');
 assert.match(stylesCSS, /\.workspace\s*\{[\s\S]*grid-template-rows:\s*var\(--topbar-height\)\s+var\(--statusbar-height\)\s+minmax\(0, 1fr\);/, 'workspace uses a correct 3-row layout so composer can never be pushed off-canvas');
-assert.match(stylesCSS, /\.chat-stage\s*\{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\)\s+auto;/, 'chat stage pins the composer below the scroll area');
+assert.match(stylesCSS, /\.chat-stage\s*\{[\s\S]*grid-template-rows:\s*auto\s+minmax\(0, 1fr\)\s+auto;/, 'chat stage pins the composer below the scroll area (goal bar + timeline + composer)');
 assert.doesNotMatch(stylesCSS, /backdrop-filter/, 'removed GPU-heavy backdrop-filter that caused scroll lag');
 
 /* ---------- Markdown rendering ---------- */
@@ -259,6 +266,31 @@ ctx.setFeature('shells');
 await ctx.runFeatureAction({dataset: {featureAction: 'kill-shell', shellId: 'sh1'}});
 assert(apiLog.some(x => String(x.path).includes('/kill-shell') && String(x.opts?.body || '').includes('sh1')), 'shell kill calls the kill-shell API');
 ctx.setFeature('chat');
+
+/* ---------- Goal bar + token usage + rename/delete (real backend wiring) ---------- */
+// Goal bar appears when the session has a goal (s1 has goal 'ship gui').
+assert.equal(document.getElementById('goal-bar').classList.contains('hidden'), false, 'goal bar shows when session has a goal');
+assert.match(document.getElementById('goal-text').textContent, /ship gui/, 'goal bar shows the session goal');
+assert.match(indexHTML, /id="goal-bar"/, 'shell has a goal bar');
+assert.match(indexHTML, /id="token-usage"/, 'shell has a turn token-usage indicator');
+assert.match(indexHTML, /id="rename-session"/, 'shell has a rename-session control');
+assert.match(indexHTML, /id="delete-session"/, 'shell has a delete-session control');
+
+// Token usage accumulates from streamed events.
+ctx.appendEvent({kind: 'text', text: 'hi', in_toks: 100, out_toks: 50});
+assert.equal(document.getElementById('token-usage').classList.contains('hidden'), false, 'token usage shows once events carry token counts');
+const tuIn = document.getElementById('token-usage').querySelector('.tu-in');
+assert.ok(tuIn && /100/.test(tuIn.textContent), 'token usage reflects input tokens');
+
+// Rename calls the title API.
+await document.getElementById('rename-session').onclick({preventDefault(){}});
+await new Promise(r => setTimeout(r, 0));
+assert(apiLog.some(x => String(x.path).includes('/title') && String(x.opts?.body || '').includes('renamed-')), 'rename posts to the session title API');
+
+// Goal clear calls the goal API with empty value.
+await document.getElementById('goal-clear').onclick({preventDefault(){}});
+await new Promise(r => setTimeout(r, 0));
+assert(apiLog.some(x => String(x.path).includes('/goal') && String(x.opts?.body || '').includes('"value":""')), 'goal clear posts empty goal to the goal API');
 
 assert(apiLog.some(x => x.path === '/api/health'), 'health API called');
 assert(apiLog.some(x => x.path === '/api/sessions'), 'sessions API called');

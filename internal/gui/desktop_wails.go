@@ -90,6 +90,7 @@ func (a *DesktopApp) Compact(id string, target int) (map[string]int, error) {
 	return map[string]int{"before": before, "after": after}, err
 }
 func (a *DesktopApp) SetGoal(id, goal string) error          { return a.svc.SetGoal(id, goal) }
+func (a *DesktopApp) SetTitle(id, title string) error        { return a.svc.SetTitle(id, title) }
 func (a *DesktopApp) AddDir(id, path string) (string, error) { return a.svc.AddDir(id, path) }
 func (a *DesktopApp) SetModel(id, model string) error {
 	return a.svc.SetModel(id, model)

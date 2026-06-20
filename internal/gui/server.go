@@ -164,6 +164,19 @@ func (h *handler) sessions(w http.ResponseWriter, r *http.Request) {
 		}
 		id, err := h.svc.NewSession(in.Dir, in.Model, in.Perm)
 		writeJSON(w, map[string]string{"id": id}, err)
+	case http.MethodDelete:
+		var in struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil && err.Error() != "EOF" {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if strings.TrimSpace(in.ID) == "" {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("session id required"))
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true}, h.svc.Remove(in.ID))
 	default:
 		methodNotAllowed(w)
 	}
@@ -266,6 +279,8 @@ func (h *handler) session(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]int{"before": before, "after": after}, err)
 	case "goal":
 		h.setting(w, r, func(v string) error { return h.svc.SetGoal(id, v) })
+	case "title":
+		h.setting(w, r, func(v string) error { return h.svc.SetTitle(id, v) })
 	case "add-dir":
 		if r.Method != http.MethodPost {
 			methodNotAllowed(w)

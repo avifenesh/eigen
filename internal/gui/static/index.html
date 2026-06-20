@@ -46,6 +46,8 @@
             <div id="meta" class="meta">Live daemon workspace</div>
           </div>
           <div class="topbar-actions">
+            <button id="rename-session" class="ghost" type="button" title="Rename session">Rename</button>
+            <button id="delete-session" class="ghost danger" type="button" title="Delete session">Delete</button>
             <button id="clear" class="ghost" type="button">Clear</button>
             <button id="interrupt" class="ghost hidden" type="button">Interrupt</button>
             <button id="resend" class="ghost" type="button">Resend</button>
@@ -58,6 +60,7 @@
               <span class="status-dot"></span>
             </span>
             <span id="status-text" class="status-text">No session</span>
+            <span id="token-usage" class="token-usage hidden" title="Token usage this turn"><span class="tu-in">↑0</span><span class="tu-out">↓0</span></span>
           </div>
           <div class="status-right">
             <label class="status-pill" title="Model id"><span>model</span>
@@ -95,6 +98,12 @@
         </div>
 
         <section id="chat-stage" class="chat-stage">
+          <div id="goal-bar" class="goal-bar hidden">
+            <span class="goal-label">Goal</span>
+            <span id="goal-text" class="goal-text"></span>
+            <button id="goal-edit" class="ghost compact" type="button" title="Edit goal">Edit</button>
+            <button id="goal-clear" class="ghost compact" type="button" title="Clear goal">Clear</button>
+          </div>
           <div id="timeline" class="timeline empty">
             <div class="empty-state">
               <div class="empty-title">Eigen GUI starts here.</div>
