@@ -1262,8 +1262,8 @@ func TestPromotedBackgroundCompactsContextOverflow(t *testing.T) {
 
 func TestPromotedBackgroundEscalatesAfterStall(t *testing.T) {
 	oldIdle, oldGrace, oldFront, oldModel := stallIdle, heartbeatGrace, frontWindow, modelMaxWait
-	stallIdle = 70 * time.Millisecond
-	modelMaxWait = 70 * time.Millisecond
+	stallIdle = 150 * time.Millisecond
+	modelMaxWait = 150 * time.Millisecond
 	heartbeatGrace = 0
 	frontWindow = 20 * time.Millisecond
 	defer func() { stallIdle, heartbeatGrace, frontWindow, modelMaxWait = oldIdle, oldGrace, oldFront, oldModel }()
