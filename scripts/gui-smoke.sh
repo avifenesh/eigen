@@ -69,9 +69,13 @@ if not isinstance(health.get('ok'), bool):
 if health.get('ok') and not health.get('stats'):
     raise SystemExit('/api/health: connected daemon returned no stats')
 
-sessions = get_json('/api/sessions')
-if not isinstance(sessions, list):
-    raise SystemExit('/api/sessions: expected list')
+sessions_payload = get_json('/api/sessions')
+if isinstance(sessions_payload, list):
+    sessions = sessions_payload
+elif isinstance(sessions_payload, dict) and isinstance(sessions_payload.get('sessions'), list):
+    sessions = sessions_payload['sessions']
+else:
+    raise SystemExit('/api/sessions: expected list or {sessions: list}')
 
 profile = get_json('/api/profile')
 if 'profile' not in profile or not isinstance(profile['profile'], str):
