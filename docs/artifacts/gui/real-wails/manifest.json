@@ -35,6 +35,16 @@
       "surface": "memory",
       "screenshot": "docs/artifacts/gui/real-wails/memory.png",
       "required_evidence": ["Eigen", "Memory", "Inspector"]
+    },
+    {
+      "surface": "plugins",
+      "screenshot": "docs/artifacts/gui/real-wails/plugins.png",
+      "required_evidence": ["Eigen", "Plugins", "Available tools", "Marketplace", "Inspector"]
+    },
+    {
+      "surface": "config",
+      "screenshot": "docs/artifacts/gui/real-wails/config.png",
+      "required_evidence": ["Eigen", "Config", "Model", "Permission", "Search", "Inspector"]
     }
   ]
 }
