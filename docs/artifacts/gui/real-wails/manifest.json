@@ -4,7 +4,7 @@
   "window_title": "Eigen",
   "window_class": "Eigen",
   "window_geometry": "1320x900",
-  "workspace_screenshot_size": "1440x1000",
+  "workspace_screenshot_size": "1320x900 client-area crop",
   "captures": [
     {
       "surface": "chat",

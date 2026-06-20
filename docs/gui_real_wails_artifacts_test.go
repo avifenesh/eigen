@@ -37,7 +37,7 @@ func TestGUIRealWailsArtifactBundle(t *testing.T) {
 		"go run -tags 'wails production webkit2_41' . --instance dev gui",
 		"Eigen",
 		"1320x900",
-		"1440x1000",
+		"1320x900",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("real Wails manifest missing provenance token %q", want)
@@ -69,11 +69,11 @@ func TestGUIRealWailsArtifactBundle(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s screenshot is not a PNG: %v", c.Surface, err)
 		}
-		if got := img.Bounds().Dx(); got != 1440 {
-			t.Fatalf("%s width=%d want 1440", c.Surface, got)
+		if got := img.Bounds().Dx(); got != 1320 {
+			t.Fatalf("%s width=%d want 1320", c.Surface, got)
 		}
-		if got := img.Bounds().Dy(); got != 1000 {
-			t.Fatalf("%s height=%d want 1000", c.Surface, got)
+		if got := img.Bounds().Dy(); got != 900 {
+			t.Fatalf("%s height=%d want 900", c.Surface, got)
 		}
 		if countPNGColors(img, 6000) < 1000 {
 			t.Fatalf("%s screenshot has too little visual detail/color variance", c.Surface)
