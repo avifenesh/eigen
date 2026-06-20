@@ -150,7 +150,7 @@ assert.match(document.getElementById('timeline').innerHTML + document.getElement
 
 ctx.setFeature('tools');
 assert.equal(document.getElementById('timeline').classList.contains('hidden'), true, 'feature workspace hides chat timeline');
-assert.match(document.getElementById('feature-workspace').innerHTML, /Tools|automation surface|read-only|mutating/, 'tools surface renders desktop feature content');
+assert.match(document.getElementById('feature-workspace').innerHTML, /Tools|automation surface|Allow tool turn|Inspect runtime|Allow bash/, 'tools surface renders dense desktop feature controls');
 assert.equal(document.getElementById('overview-surface').textContent, 'tools', 'overview follows selected feature');
 ctx.setFeature('config');
 assert.match(document.getElementById('feature-workspace').innerHTML, /Config|Permission|Search \/ fast|Apply model|Toggle fast/, 'config surface renders interactive controls summary');
