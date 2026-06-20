@@ -3,6 +3,7 @@ package transcript
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/avifenesh/eigen/internal/llm"
@@ -142,5 +143,48 @@ func TestSaveRotatesBackupGenerations(t *testing.T) {
 	}
 	if _, err := os.Stat(path + ".bak.5"); !os.IsNotExist(err) {
 		t.Fatalf("only five backup generations should be kept, stat .bak.5 err=%v", err)
+	}
+}
+
+func TestSaveConcurrentWritersLeaveCompleteTranscriptAndNoTemps(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "concurrent.eigen.jsonl")
+	const writers = 16
+	const rounds = 25
+	errCh := make(chan error, writers)
+	for w := 0; w < writers; w++ {
+		w := w
+		go func() {
+			for r := 0; r < rounds; r++ {
+				msgs := []llm.Message{
+					{Role: llm.RoleUser, Text: "writer" + string(rune('A'+w))},
+					{Role: llm.RoleAssistant, Text: "round" + string(rune('A'+r%26)) + strings.Repeat("x", 4096)},
+				}
+				if err := Save(path, msgs); err != nil {
+					errCh <- err
+					return
+				}
+			}
+			errCh <- nil
+		}()
+	}
+	for i := 0; i < writers; i++ {
+		if err := <-errCh; err != nil {
+			t.Fatal(err)
+		}
+	}
+	msgs, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 || msgs[0].Role != llm.RoleUser || msgs[1].Role != llm.RoleAssistant {
+		t.Fatalf("current transcript should be one complete save, got %#v", msgs)
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "*.tmp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("temporary files leaked after concurrent saves: %v", matches)
 	}
 }
