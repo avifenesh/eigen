@@ -300,7 +300,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			v = "eigen"
 		}
 		m.machines.installMsg = "installed " + v + " ✓ — enter to see its sessions"
-		m.data.Machines = remote.Machines() // refresh row state
+		if refreshed := remote.Machines(); len(refreshed) > 0 {
+			m.data.Machines = refreshed // refresh row state without erasing test/in-memory machines
+		}
 		// If we're inside the drill-in, re-fetch the now-installed machine's
 		// sessions so they appear without leaving the view.
 		if m.machines.inside && m.machines.mach == msg.mach && msg.mach < len(m.data.Machines) {
