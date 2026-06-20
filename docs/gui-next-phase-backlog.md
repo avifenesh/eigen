@@ -33,19 +33,24 @@ This backlog translates the remaining full-goal criteria into concrete next work
 
 ## P1 — feature-depth and UX polish
 
-4. **Per-feature E2E workflows for app-side mutating pages**
-   - Config multi-select provider save.
-   - Skills install prompt success/failure UI.
-   - Memory delete/consolidate flows with confirmation/error states.
-   - Plugin marketplace install/remove/disable with realistic catalog data.
+4. **Per-feature E2E workflows for app-side mutating pages** — evidence mapped
+   - Config free-text, enum, dropdown, and route-provider multi-select save flows are covered.
+   - Skills install prompt parsing/cancel/success/busy UI is covered.
+   - Memory delete/consolidate/detail-reader flows with confirmation/error states are covered.
+   - Plugin marketplace install/remove/disable/update/batch/rollback flows with realistic catalog data are covered.
+   - Provider custom-catalog add and routing context are covered.
+   - Evidence map: `docs/gui-mutating-pages-evidence.md`.
 
-5. **Chat TUI end-to-end agent turn with tools**
-   - Fake provider + fake tool registry flow that renders tool start/output, todo updates, changes panel, and final assistant answer in one journey.
-   - Verify no render-path subprocesses or unexpected goroutines during the flow.
+5. **Chat TUI end-to-end agent turn with tools** — model-level evidence added
+   - Deterministic TUI journey (`TestTUIToolTurnDrivesPlanChangesAndTaskPanels`) submits a chat turn, receives reasoning/todo/edit/tool-result/text/done events, updates transcript, plan panel, changes panel, tasks tab, and verifies fitted right-panel rendering.
+   - Render-path subprocess/goroutine protection is covered by `TestPremiumInteractionViewSoak`, `TestTUILiveLoopResourceMeasurement`, and `TestRenderSoakDoesNotSpawnWorkOrLeakGoroutines`.
+   - Remaining optional hardening: PTY-level local-provider tool turn through the compiled binary.
 
-6. **Accessibility/keyboard audit**
-   - Ensure every clickable action has keyboard parity.
-   - Verify focus/focused-row visual language is consistent and non-brand.
+6. **Accessibility/keyboard audit** — evidence mapped
+   - Every current clickable TUI chrome action dispatches through the shared validated action registry and has a documented keyboard path.
+   - App shell, chat TUI, and native/browser GUI seams are mapped to automated keyboard/accessibility evidence.
+   - Evidence map: `docs/gui-accessibility-keyboard-audit.md`.
+   - Remaining optional hardening: pixel/video focus-ring review and browser tab-order/ARIA automation when the browser GUI becomes the primary desktop surface.
 
 ## P2 — release readiness
 

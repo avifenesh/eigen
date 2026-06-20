@@ -13,6 +13,15 @@ func TestGUIParityEvidenceMentionsKeyRegressionTests(t *testing.T) {
 	}
 	s := string(b)
 	for _, want := range []string{
+		"docs/gui-accessibility-keyboard-audit.md",
+		"TestGUIAccessibilityKeyboardAuditMapsParityEvidence",
+		"docs/gui-mutating-pages-evidence.md",
+		"TestConfigMultiSelectRouteProviders",
+		"TestSkillsInstallRunsInBackgroundWithBusyMarker",
+		"TestMemoryDeleteWithConfirm",
+		"TestPluginsPageCanNavigateCatalogAndInstall",
+		"TestPluginsPageSurfacesScanResultsAndRollback",
+		"TestProvidersAddCustomProviderUpdatesCatalog",
 		"TestServeRejectsNonLocalBind",
 		"TestHandlerStaticAndAPIContracts",
 		"TestServiceValidationErrors",
@@ -64,6 +73,7 @@ func TestGUIParityEvidenceMentionsKeyRegressionTests(t *testing.T) {
 		"TestTUIRightPanelPremiumSurfaceGoldenSnapshotTokens",
 		"TestTUISlashCommandJourneyFromComposer",
 		"TestPremiumInteractionViewSoak",
+		"TestTUIToolTurnDrivesPlanChangesAndTaskPanels",
 		"TestAgentBackgroundShellToolJourneySettlesResources",
 		"TestSaveConcurrentWritersLeaveCompleteTranscriptAndNoTemps",
 		"TestCLISmokeVersionAndTheme",
