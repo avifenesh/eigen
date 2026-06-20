@@ -71,6 +71,24 @@ func TestJudgeGoalRejectedKeepsGoal(t *testing.T) {
 	}
 }
 
+func TestJudgePromptAsksForActionableRejection(t *testing.T) {
+	a := &Agent{}
+	a.SetGoal("ship the parser")
+	j := &scriptedJudge{reply: "NOT ACHIEVED: add a failing parser fixture for comments"}
+	_, reason, err := a.JudgeGoal(context.Background(), j, "go test green")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(reason, "parser fixture") {
+		t.Fatalf("rejection reason should be surfaced unchanged: %q", reason)
+	}
+	for _, want := range []string{"actionable", "missing/broken evidence", "feature", "test", "artifact", "quality bar"} {
+		if !strings.Contains(j.asked, want) {
+			t.Fatalf("judge prompt should demand actionable rejection detail %q; prompt:\n%s", want, j.asked)
+		}
+	}
+}
+
 func TestJudgeGoalFailsClosed(t *testing.T) {
 	a := &Agent{}
 	a.SetGoal("g")

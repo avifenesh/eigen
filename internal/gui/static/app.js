@@ -9,8 +9,19 @@ const state = {
   userPinnedBottom: true,
   approvals: {},
   tools: {},
-  feature: 'chat',
+  feature: 'home',
 };
+
+const surfaces = [
+  {id: 'chat', title: 'Chat', copy: 'Primary conversation, streamed tool calls, approvals, and steering composer.', meta: 'workbench'},
+  {id: 'changes', title: 'Changes', copy: 'Review diffs, tool results, and workspace roots before they disappear into context.', meta: 'review'},
+  {id: 'tools', title: 'Tools', copy: 'Inspect available tools and start scoped allow-tool turns.', meta: 'automation'},
+  {id: 'shells', title: 'Shells', copy: 'Track background commands, detach foreground bash, and stop runaway processes.', meta: 'processes'},
+  {id: 'approvals', title: 'Approvals', copy: 'Handle gated mutating tool calls with visible arguments and decisions.', meta: 'gates'},
+  {id: 'memory', title: 'Memory', copy: 'Keep goal, roots, profile, compaction, and durable context close at hand.', meta: 'context'},
+  {id: 'plugins', title: 'Plugins', copy: 'Inspect tools, marketplace capability, and plugin-provided agent roles.', meta: 'extensions'},
+  {id: 'config', title: 'Config', copy: 'Tune model, effort, permission, search, and fast mode for this session.', meta: 'settings'},
+];
 
 const $ = (id) => document.getElementById(id);
 const sessionsEl = $('sessions');
@@ -291,7 +302,7 @@ function updateDesktopOverview(snap = {}) {
   const maxTokens = snap.max_tokens || snap.MaxTokens || 0;
   const tools = snap.tools || snap.Tools || [];
   const shells = snap.shells || snap.Shells || [];
-  overviewSurface.textContent = state.feature;
+  overviewSurface.textContent = state.feature === 'home' ? 'home' : state.feature;
   overviewContext.textContent = state.active ? `${titleEl.textContent || state.active} · ${metaEl.textContent || 'session'}` : 'Select a session to inspect live context.';
   overviewTokens.textContent = maxTokens ? `${tokens}/${maxTokens}` : String(tokens || 0);
   overviewTools.textContent = String(tools.length || 0);
@@ -299,7 +310,8 @@ function updateDesktopOverview(snap = {}) {
 }
 
 function setFeature(feature) {
-  state.feature = feature || 'chat';
+  const known = feature === 'home' || surfaces.some(s => s.id === feature);
+  state.feature = known ? feature : 'home';
   document.body.dataset.feature = state.feature;
   for (const btn of featureNav?.querySelectorAll('[data-feature]') || []) {
     btn.classList.toggle('active', btn.dataset.feature === state.feature);
@@ -319,6 +331,13 @@ function renderFeatureWorkspace() {
     desktopOverview?.classList.add('hidden');
     featureWorkspace.classList.add('hidden');
     timelineEl.classList.remove('hidden');
+    return;
+  }
+  if (state.feature === 'home') {
+    desktopOverview?.classList.remove('hidden');
+    timelineEl.classList.add('hidden');
+    featureWorkspace.classList.remove('hidden');
+    renderHomeWorkspace(snap);
     return;
   }
   desktopOverview?.classList.add('hidden');
@@ -369,9 +388,43 @@ function renderFeatureWorkspace() {
   const cellsHTML = cells.map(([k, v, action], i) => `<div class="feature-cell feature-cell-${i + 1}"><strong>${escapeHtml(k)}</strong><span>${escapeHtml(v)}</span>${action ? `<div class="feature-actions">${action}</div>` : ''}</div>`).join('');
   const featureClass = `feature-surface feature-${escapeAttr(state.feature)}`;
   const heroMetric = state.feature === 'tools' ? `${tools.length || '—'} tools` : state.feature === 'shells' ? `${shells.length} running` : state.feature === 'approvals' ? `${pending.length} pending` : state.feature === 'memory' ? `${roots.length} roots` : state.feature === 'config' ? (modelInput?.value || 'model') : state.feature;
-  featureWorkspace.innerHTML = `<div class="${featureClass}"><div class="feature-head"><div><div class="feature-title">${escapeHtml(title)}</div><div class="feature-copy">${escapeHtml(copy)}</div></div><button class="ghost compact" type="button" data-feature-close>Back to chat</button></div><div class="feature-composition"><aside class="feature-hero"><div class="hero-label">${escapeHtml(state.feature)}</div><div class="hero-metric">${escapeHtml(heroMetric)}</div><div class="hero-copy">Live desktop controls backed by the daemon API.</div></aside><div class="feature-grid">${cellsHTML}</div></div></div>`;
-  featureWorkspace.querySelector('[data-feature-close]')?.addEventListener('click', () => setFeature('chat'));
+  featureWorkspace.innerHTML = `<div class="${featureClass}"><div class="feature-head"><div><div class="feature-title">${escapeHtml(title)}</div><div class="feature-copy">${escapeHtml(copy)}</div></div><button class="ghost compact" type="button" data-feature-close>Back home</button></div><div class="feature-composition"><aside class="feature-hero"><div class="hero-label">${escapeHtml(state.feature)}</div><div class="hero-metric">${escapeHtml(heroMetric)}</div><div class="hero-copy">Live desktop controls backed by the daemon API.</div></aside><div class="feature-grid">${cellsHTML}</div></div></div>`;
+  featureWorkspace.querySelector('[data-feature-close]')?.addEventListener('click', () => setFeature('home'));
   featureWorkspace.querySelectorAll('[data-feature-action]').forEach(btn => btn.addEventListener('click', () => runFeatureAction(btn)));
+}
+
+function renderHomeWorkspace(snap = {}) {
+  const roots = snap.roots || snap.Roots || [];
+  const tools = snap.tools || snap.Tools || [];
+  const shells = snap.shells || snap.Shells || [];
+  const pending = snap.pending || snap.Pending || [];
+  const tiles = surfaces.map(surface => `
+    <button class="surface-tile" type="button" data-home-feature="${escapeAttr(surface.id)}">
+      <span class="surface-tile-meta">${escapeHtml(surface.meta)}</span>
+      <span class="surface-tile-title">${escapeHtml(surface.title)}</span>
+      <span class="surface-tile-copy">${escapeHtml(surface.copy)}</span>
+    </button>`).join('');
+  featureWorkspace.innerHTML = `
+    <div class="home-surface">
+      <div class="home-hero">
+        <div>
+          <div class="hero-label">Home</div>
+          <div class="home-title">Every Eigen desktop page, one jump away.</div>
+          <div class="home-copy">Use Home as the non-truncated directory for the GUI: start in Chat, inspect Changes, operate Tools and Shells, handle Approvals, manage Memory, Plugins, and Config.</div>
+        </div>
+        <div class="home-status-grid" aria-label="Session status summary">
+          <div><span>tokens</span><strong>${escapeHtml(snap.tokens || snap.Tokens || 0)}${snap.max_tokens || snap.MaxTokens ? ` / ${escapeHtml(snap.max_tokens || snap.MaxTokens)}` : ''}</strong></div>
+          <div><span>tools</span><strong>${escapeHtml(tools.length || 0)}</strong></div>
+          <div><span>shells</span><strong>${escapeHtml(shells.length || 0)}</strong></div>
+          <div><span>approvals</span><strong>${escapeHtml(pending.length || 0)}</strong></div>
+          <div><span>roots</span><strong>${escapeHtml(roots.length || 0)}</strong></div>
+        </div>
+      </div>
+      <div class="surface-directory" aria-label="Available desktop pages">
+        ${tiles}
+      </div>
+    </div>`;
+  featureWorkspace.querySelectorAll?.('[data-home-feature]').forEach(btn => btn.addEventListener('click', () => setFeature(btn.dataset.homeFeature)));
 }
 
 async function runFeatureAction(btn) {

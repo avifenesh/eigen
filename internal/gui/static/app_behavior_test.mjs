@@ -129,7 +129,9 @@ const {ctx, document, intervals, eventSourceInstances, apiLog} = env;
 assert.equal(document.getElementById('daemon').textContent, 'daemon connected');
 assert.equal(document.getElementById('sessions').children.length, 1, 'session rail renders fetched sessions');
 ctx.updateDesktopOverview({});
-assert.equal(document.getElementById('overview-surface').textContent, 'chat', 'desktop overview starts on chat surface');
+assert.equal(document.getElementById('overview-surface').textContent, 'home', 'desktop overview starts on home surface');
+ctx.renderFeatureWorkspace();
+assert.match(document.getElementById('feature-workspace').innerHTML, /Every Eigen desktop page|Chat|Changes|Tools|Shells|Approvals|Memory|Plugins|Config/, 'home page lists every available desktop page without relying on truncated rail labels');
 
 const beforeOpenSources = eventSourceInstances.length;
 const beforeOpenIntervals = intervals.length;
@@ -148,16 +150,20 @@ ctx.appendEvent({kind: 'tool_start', tool: 'edit', tool_id: 't1', tool_args: '{"
 ctx.appendEvent({kind: 'tool_result', tool: 'edit', tool_id: 't1', result: 'diff --git a/x b/x\n@@ -1 +1 @@\n-old\n+new'});
 assert.match(document.getElementById('timeline').innerHTML + document.getElementById('timeline').children.map?.(x => x.innerHTML).join(''), /diff|Tool|edit/i);
 
+ctx.setFeature('home');
+assert.equal(document.getElementById('timeline').classList.contains('hidden'), true, 'home hides chat timeline');
+assert.equal(document.getElementById('desktop-overview').classList.contains('hidden'), false, 'home keeps overview visible');
+assert.match(document.getElementById('feature-workspace').innerHTML, /Available desktop pages|Chat|Changes|Tools|Shells|Approvals|Memory|Plugins|Config/, 'home renders the full page directory');
 ctx.setFeature('tools');
 assert.equal(document.getElementById('timeline').classList.contains('hidden'), true, 'feature workspace hides chat timeline');
 assert.match(document.getElementById('feature-workspace').innerHTML, /Tools|automation surface|Allow tool turn|Inspect runtime|Allow bash/, 'tools surface renders dense desktop feature controls');
 assert.equal(document.getElementById('overview-surface').textContent, 'tools', 'overview follows selected feature');
 for (const [feature, pattern] of [
-  ['changes', /Changes|Working tree|Latest diff|Review queue/],
+  ['changes', /Changes|Diff rendering|Tool history|Workspace roots/],
   ['tools', /Tools|automation surface|Allow tool turn|Inspect runtime|Allow bash/],
   ['shells', /Shells|SHELLS|Foreground bash|Process safety/],
   ['approvals', /Approvals|No pending approvals|Decision path|Permission posture/],
-  ['memory', /Memory|Set goal|Compact now|Add directory/],
+  ['memory', /Memory|Goal|Roots|Profile|Set from composer|Compact|Add current dir/],
   ['plugins', /Plugins|Available tools|Marketplace|Agent roles/],
   ['config', /Config|Permission|Search \/ fast|Apply model|Toggle fast/],
 ]) {
@@ -192,7 +198,7 @@ assert(apiLog.some(x => String(x.path).includes('/compact')), 'memory action cal
 ctx.setFeature('plugins');
 assert.match(document.getElementById('feature-workspace').innerHTML, /Plugins|Available tools|Marketplace|Agent roles/, 'plugins surface renders desktop capability controls');
 ctx.setFeature('changes');
-assert.match(document.getElementById('feature-workspace').innerHTML, /Changes|Working tree|Latest diff|Review queue/, 'changes surface renders repository review controls');
+assert.match(document.getElementById('feature-workspace').innerHTML, /Changes|Diff rendering|Tool history|Workspace roots/, 'changes surface renders repository review controls');
 ctx.setFeature('chat');
 assert.equal(document.getElementById('timeline').classList.contains('hidden'), false, 'chat feature restores timeline');
 

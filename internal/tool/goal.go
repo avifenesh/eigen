@@ -49,7 +49,7 @@ func GoalAchieved(judge GoalJudge) Definition {
 			if achieved {
 				return "Goal CONFIRMED achieved and cleared. Judge: " + reason, nil
 			}
-			return "Goal NOT confirmed. Judge: " + reason + " — continue working or refine the evidence.", nil
+			return "Goal NOT confirmed.\nWhy not approved: " + reason + "\nNext step: fix the missing/broken item above or gather the specific evidence the judge named, then retry goal_achieved.", nil
 		},
 	}
 }

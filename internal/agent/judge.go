@@ -25,7 +25,8 @@ CLAIMED EVIDENCE:
 Rules:
 - Only count what the evidence demonstrates; do not assume unstated work.
 - Partial progress, plans, or "almost done" are NOT achieved.
-- Reply with EXACTLY one line: "ACHIEVED: <one-sentence reason>" or "NOT ACHIEVED: <one-sentence reason>".`
+- If rejecting, explain why in actionable terms: name the missing/broken evidence, feature, test, artifact, or quality bar the agent should fix next.
+- Reply with EXACTLY one line: "ACHIEVED: <one-sentence reason>" or "NOT ACHIEVED: <one-sentence actionable reason>".`
 
 // JudgeGoal asks judge whether evidence demonstrates the agent's current goal
 // is achieved. On a confirmed verdict it clears the goal and returns

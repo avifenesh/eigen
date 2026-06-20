@@ -24,16 +24,18 @@ func TestGoalAchievedTool(t *testing.T) {
 		t.Fatalf("confirmed output wrong: %q", out)
 	}
 
-	// Rejected verdict tells the model to continue.
+	// Rejected verdict tells the model why it was not approved and what to do next.
 	rejected := GoalAchieved(func(context.Context, string) (bool, string, error) {
-		return false, "no proof", nil
+		return false, "Home page is missing a full page directory", nil
 	})
 	out, err = rejected.Run(context.Background(), json.RawMessage(`{"evidence":"trust me"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "NOT confirmed") || !strings.Contains(out, "no proof") {
-		t.Fatalf("rejected output wrong: %q", out)
+	for _, want := range []string{"Goal NOT confirmed", "Why not approved", "Home page is missing", "Next step"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("rejected output missing %q: %s", want, out)
+		}
 	}
 
 	// Errors propagate; empty evidence rejected; nil judge errors.
