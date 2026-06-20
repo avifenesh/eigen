@@ -77,8 +77,15 @@ func saveSuggestCache(items []Item) {
 // scanSuggest returns model suggestions: the cached set while it's fresh
 // (its own TTL, slower than the feed tick), a fresh model call when stale.
 // Failure-isolated: an erroring model or unparseable output falls back to the
-// stale cache (better yesterday's good ideas than none).
-func scanSuggest(dirs []string, s Suggester) []Item {
+// stale cache (better yesterday's good ideas than none). It inherits the app
+// lifetime context so closing the app cancels the in-flight model request.
+func scanSuggest(parent context.Context, dirs []string, s Suggester) []Item {
+	if parent == nil {
+		parent = context.Background()
+	}
+	if parent.Err() != nil {
+		return nil
+	}
 	if s == nil {
 		return nil
 	}
@@ -104,7 +111,7 @@ Your ENTIRE reply must be a single JSON array, no prose, no code fences. Each el
 {"title":"<≤60 chars, start with the project name>","detail":"<≤70 chars, why this matters>","dir":"<the project dir exactly as given>","task":"<instructions for an agent session: investigate briefly, then TAKE the first concrete step (write the test, scaffold the feature gate, draft the PR/design) rather than only asking questions; stop and ask only where a decision is genuinely the user's>"}
 
 If nothing is worth suggesting, reply [].`
-	ctx, cancel := context.WithTimeout(context.Background(), suggestTimeout)
+	ctx, cancel := context.WithTimeout(parent, suggestTimeout)
 	defer cancel()
 	out, err := s(ctx, system, ctxt)
 	if err != nil {

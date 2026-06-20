@@ -93,6 +93,8 @@ type Model struct {
 	contentScroll int  // generic vertical scroll over the rendered content page
 	result        Result
 	quitting      bool
+	ctx           context.Context
+	cancel        context.CancelFunc
 
 	// page state
 	home      homeState
@@ -123,7 +125,8 @@ func New(data *Data) *Model { return NewAt(data, PageHome) }
 // callers keep landing on Home, while chat slash commands can return directly
 // to a product surface such as Plugins.
 func NewAt(data *Data, initial Page) *Model {
-	m := &Model{data: data}
+	ctx, cancel := context.WithCancel(context.Background())
+	m := &Model{data: data, ctx: ctx, cancel: cancel}
 	if isKnownPage(initial) {
 		m.setActive(initial)
 	}
@@ -202,7 +205,7 @@ func (m *Model) Init() tea.Cmd {
 	// and poll to refresh the view as titles land.
 	var cmds []tea.Cmd
 	if m.data.Store != nil && m.data.Titler != nil {
-		m.data.Store.TitleUntitled(context.Background(), m.data.Titler, 60)
+		m.data.Store.TitleUntitled(m.ctx, m.data.Titler, 60)
 		cmds = append(cmds, titleTick())
 	}
 	if m.data.Daemon != nil {
@@ -223,7 +226,17 @@ func (m *Model) Init() tea.Cmd {
 func (m *Model) scanFeed() tea.Cmd {
 	dirs := m.data.projectDirs()
 	suggest := m.data.suggester()
-	return func() tea.Msg { return feedMsg{feed.Scan(dirs, suggest)} }
+	ctx := m.ctx
+	return func() tea.Msg { return feedMsg{feed.Scan(ctx, dirs, suggest)} }
+}
+
+func (m *Model) quitWith(r Result) (tea.Model, tea.Cmd) {
+	m.result = r
+	m.quitting = true
+	if m.cancel != nil {
+		m.cancel()
+	}
+	return m, tea.Quit
 }
 
 // feedRefreshEvery is how often an open app rescans the feed (matches the
@@ -377,9 +390,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if key == "ctrl+c" {
-			m.result = Result{Action: ActionQuit}
-			m.quitting = true
-			return m, tea.Quit
+			return m.quitWith(Result{Action: ActionQuit})
 		}
 		// A page in text-entry mode (config editor) gets every key except
 		// ctrl+c — q/:/tab/letters must type, not quit/jump.
@@ -402,9 +413,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.palette.openPalette(m)
 			return m, nil
 		case "q":
-			m.result = Result{Action: ActionQuit}
-			m.quitting = true
-			return m, tea.Quit
+			return m.quitWith(Result{Action: ActionQuit})
 		case "g":
 			m.pendingG = true
 			return m, nil
@@ -547,9 +556,7 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case hitRailLive:
 		// Click a live session in the rail → attach a view to it.
-		m.result = Result{Action: ActionAttach, SessionID: h.liveID}
-		m.quitting = true
-		return m, tea.Quit
+		return m.quitWith(Result{Action: ActionAttach, SessionID: h.liveID})
 	case hitContent:
 		// Page-local row click: the active page maps content-local coords to
 		// an item (select, or open if already selected). Account for the pinned
@@ -683,7 +690,7 @@ func (m *Model) View() string {
 	if m.palette.open {
 		out = m.overlayPalette(out, l)
 	}
-	return out + "\n" + status
+	return paintBase(out+"\n"+status, m.width, m.height)
 }
 
 // overlayPalette draws the command palette over the composed view (near the
@@ -881,6 +888,9 @@ func (m *Model) renderInspectorBox(l appLayout) string {
 // renderStatusBar draws the bottom help/status bar.
 func (m *Model) renderStatusBar(l appLayout) string {
 	help := m.helpLine()
+	if lipgloss.Width(help) > l.status.w {
+		help = truncate(help, l.status.w)
+	}
 	w := lipgloss.Width(help)
 	if w > l.status.w {
 		help = sFaint.Render(truncate(m.helpLineText(), l.status.w))

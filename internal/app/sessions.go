@@ -88,14 +88,10 @@ func (s *sessionsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key {
 	case "enter":
 		if r := cur(); r != nil {
-			m.result = openAction(*r)
-			m.quitting = true
-			return m, tea.Quit
+			return m.quitWith(openAction(*r))
 		}
 	case "n":
-		m.result = Result{Action: ActionOpenChat}
-		m.quitting = true
-		return m, tea.Quit
+		return m.quitWith(Result{Action: ActionOpenChat})
 	case "d":
 		if cur() != nil {
 			s.confirmDel = true
@@ -230,9 +226,8 @@ func (s *sessionsState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
 	}
 	if s.list.cursor == idx {
 		// Second click on the selected row → open it.
-		m.result = openAction(d.Sessions[s.visIdx[idx]])
-		m.quitting = true
-		return tea.Quit, true
+		_, cmd := m.quitWith(openAction(d.Sessions[s.visIdx[idx]]))
+		return cmd, true
 	}
 	s.list.cursor = idx
 	s.notice = ""
@@ -300,19 +295,13 @@ func (p *projectsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			switch {
 			case c < p.feedN:
 				it := pf[c]
-				m.result = Result{Action: ActionOpenChat, Dir: it.Dir, Task: it.Task}
-				m.quitting = true
-				return m, tea.Quit
+				return m.quitWith(Result{Action: ActionOpenChat, Dir: it.Dir, Task: it.Task})
 			case c-p.feedN < len(proj.Sessions):
 				r := proj.Sessions[c-p.feedN]
-				m.result = openAction(r)
-				m.quitting = true
-				return m, tea.Quit
+				return m.quitWith(openAction(r))
 			}
 		case "n":
-			m.result = Result{Action: ActionOpenChat, Dir: proj.Dir}
-			m.quitting = true
-			return m, tea.Quit
+			return m.quitWith(Result{Action: ActionOpenChat, Dir: proj.Dir})
 		}
 		return m, nil
 	}
@@ -328,9 +317,7 @@ func (p *projectsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "n":
 		if p.list.cursor < len(m.data.Projects) {
-			m.result = Result{Action: ActionOpenChat, Dir: m.data.Projects[p.list.cursor].Dir}
-			m.quitting = true
-			return m, tea.Quit
+			return m.quitWith(Result{Action: ActionOpenChat, Dir: m.data.Projects[p.list.cursor].Dir})
 		}
 	}
 	return m, nil
@@ -421,9 +408,8 @@ func (p *projectsState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
 			return nil, false
 		}
 		if p.inner.cursor == idx {
-			m.result = openAction(proj.Sessions[idx])
-			m.quitting = true
-			return tea.Quit, true
+			_, cmd := m.quitWith(openAction(proj.Sessions[idx]))
+			return cmd, true
 		}
 		p.inner.cursor = idx
 		return nil, true

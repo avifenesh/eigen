@@ -58,8 +58,24 @@ func TestParseSuggestionsCaps(t *testing.T) {
 
 func TestScanSuggestNilSuggester(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	if items := scanSuggest([]string{t.TempDir()}, nil); items != nil {
+	if items := scanSuggest(context.Background(), []string{t.TempDir()}, nil); items != nil {
 		t.Fatal("nil suggester must disable the source")
+	}
+}
+
+func TestScanSuggestCanceledSkipsModel(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := gitRepo(t)
+	writeAndCommit(t, dir, "a.txt", "hello")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	called := false
+	s := func(context.Context, string, string) (string, error) {
+		called = true
+		return `[]`, nil
+	}
+	if items := scanSuggest(ctx, []string{dir}, s); len(items) != 0 || called {
+		t.Fatalf("canceled scan should skip the model (items=%d called=%v)", len(items), called)
 	}
 }
 
@@ -73,7 +89,7 @@ func TestScanSuggestEndToEnd(t *testing.T) {
 		gotSystem, gotPrompt = system, prompt
 		return `[{"title":"x: follow up","detail":"d","dir":"` + dir + `","task":"do the follow-up"}]`, nil
 	}
-	items := scanSuggest([]string{dir}, s)
+	items := scanSuggest(context.Background(), []string{dir}, s)
 	if len(items) != 1 || items[0].Kind != "suggest" || items[0].Dir != dir {
 		t.Fatalf("items: %+v", items)
 	}
@@ -105,7 +121,7 @@ func TestScanSuggestModelErrorIsolated(t *testing.T) {
 	dir := gitRepo(t)
 	writeAndCommit(t, dir, "a.txt", "hello")
 	s := func(context.Context, string, string) (string, error) { return "", fmt.Errorf("boom") }
-	if items := scanSuggest([]string{dir}, s); len(items) != 0 {
+	if items := scanSuggest(context.Background(), []string{dir}, s); len(items) != 0 {
 		t.Fatal("a failing model must yield nothing, not an error")
 	}
 }
@@ -115,7 +131,7 @@ func TestScanSuggestNoContextSkipsModel(t *testing.T) {
 	called := false
 	s := func(context.Context, string, string) (string, error) { called = true; return "[]", nil }
 	// No git repos → no context → the model is never bothered.
-	if items := scanSuggest([]string{t.TempDir()}, s); len(items) != 0 || called {
+	if items := scanSuggest(context.Background(), []string{t.TempDir()}, s); len(items) != 0 || called {
 		t.Fatalf("no context should skip the model (called=%v)", called)
 	}
 }
@@ -136,11 +152,11 @@ func TestSuggestCacheReusedWhileFresh(t *testing.T) {
 		return `[{"title":"x: idea","detail":"d","dir":"` + dir + `","task":"do it"}]`, nil
 	}
 	// First scan: model called, cached.
-	if items := scanSuggest([]string{dir}, s); len(items) != 1 || calls != 1 {
+	if items := scanSuggest(context.Background(), []string{dir}, s); len(items) != 1 || calls != 1 {
 		t.Fatalf("first scan: items=%d calls=%d", len(items), calls)
 	}
 	// Second scan within the TTL: cache served, model NOT called again.
-	if items := scanSuggest([]string{dir}, s); len(items) != 1 || calls != 1 {
+	if items := scanSuggest(context.Background(), []string{dir}, s); len(items) != 1 || calls != 1 {
 		t.Fatalf("fresh cache should skip the model: items=%d calls=%d", len(items), calls)
 	}
 }
@@ -159,7 +175,7 @@ func TestSuggestStaleCacheBeatsFailure(t *testing.T) {
 	os.WriteFile(suggestCachePath(), b, 0o644)
 	// The model fails → the stale cache is served rather than nothing.
 	s := func(context.Context, string, string) (string, error) { return "", fmt.Errorf("model down") }
-	items := scanSuggest([]string{dir}, s)
+	items := scanSuggest(context.Background(), []string{dir}, s)
 	if len(items) != 1 || items[0].Title != "old idea" {
 		t.Fatalf("stale cache should be served on model failure: %+v", items)
 	}

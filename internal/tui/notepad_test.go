@@ -59,6 +59,59 @@ func TestNotepadEditPersistReload(t *testing.T) {
 	}
 }
 
+func TestNotepadTabSwitchFlushesDirtyNotes(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.setRightTab(rightTabNotepad)
+	m.notepad.focused = true
+	m.notepadType("ship notes before switching tabs")
+	if !m.notepad.dirty {
+		t.Fatal("typing should mark the notepad dirty")
+	}
+
+	m.setRightTab(rightTabChanges)
+	if m.notepad.focused {
+		t.Fatal("switching away should release notepad focus")
+	}
+	if m.notepad.dirty {
+		t.Fatal("switching away should flush dirty notes")
+	}
+	data, err := os.ReadFile(notepadPath(m.notepadSessionID()))
+	if err != nil {
+		t.Fatalf("tab switch should persist notes: %v", err)
+	}
+	if got := strings.TrimSpace(string(data)); got != "ship notes before switching tabs" {
+		t.Fatalf("persisted note = %q", got)
+	}
+}
+
+func TestNotepadQuitFlushesDirtyNotes(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.setRightTab(rightTabNotepad)
+	m.notepad.focused = true
+	m.notepadType("save before quit")
+	if !m.notepad.dirty {
+		t.Fatal("typing should mark the notepad dirty")
+	}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd == nil {
+		t.Fatal("ctrl+c should quit")
+	}
+	if m.notepad.dirty {
+		t.Fatal("quit should flush dirty notes")
+	}
+	data, err := os.ReadFile(notepadPath(m.notepadSessionID()))
+	if err != nil {
+		t.Fatalf("quit should persist notes: %v", err)
+	}
+	if got := strings.TrimSpace(string(data)); got != "save before quit" {
+		t.Fatalf("persisted note = %q", got)
+	}
+}
+
 func TestNotepadBackspaceJoinsLines(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	m := testModel(t)

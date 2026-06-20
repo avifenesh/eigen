@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/avifenesh/eigen/internal/daemon"
 )
@@ -67,9 +68,7 @@ func (s *liveState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key {
 	case "enter":
 		if in := cur(); in != nil {
-			m.result = Result{Action: ActionAttach, SessionID: in.ID, Dir: in.Dir}
-			m.quitting = true
-			return m, tea.Quit
+			return m.quitWith(Result{Action: ActionAttach, SessionID: in.ID, Dir: in.Dir})
 		}
 	case "n":
 		if d.Daemon != nil {
@@ -78,9 +77,7 @@ func (s *liveState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				s.notice = "new failed: " + err.Error()
 			} else {
-				m.result = Result{Action: ActionAttach, SessionID: id}
-				m.quitting = true
-				return m, tea.Quit
+				return m.quitWith(Result{Action: ActionAttach, SessionID: id})
 			}
 		}
 	case "i":
@@ -110,9 +107,8 @@ func (s *liveState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
 	}
 	if s.list.cursor == idx {
 		in := d.Live[idx]
-		m.result = Result{Action: ActionAttach, SessionID: in.ID, Dir: in.Dir}
-		m.quitting = true
-		return tea.Quit, true
+		_, cmd := m.quitWith(Result{Action: ActionAttach, SessionID: in.ID, Dir: in.Dir})
+		return cmd, true
 	}
 	s.list.cursor = idx
 	s.notice = ""
@@ -146,7 +142,7 @@ func (s *liveState) view(m *Model, w, h int) string {
 		marker := "  "
 		style := sRowDim
 		if i == s.list.cursor {
-			marker = sAccent.Render("▸ ")
+			marker = lipgloss.NewStyle().Foreground(cSel).Render("▎ ")
 			style = sRowSel
 		}
 		label := liveLabel(in)

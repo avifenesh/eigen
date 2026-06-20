@@ -272,6 +272,10 @@ func main() {
 		return
 	}
 
+	if smokeHandled := runSmokeCommand(flag.Arg(0)); smokeHandled {
+		return
+	}
+
 	// `eigen remote <install|...>`: bootstrap/manage eigen on remote hosts.
 	if flag.Arg(0) == "remote" {
 		runRemoteCmd(flag.Args()[1:])

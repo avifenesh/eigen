@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"sync/atomic"
 	"time"
 )
 
@@ -14,21 +15,29 @@ const ghTimeout = 8 * time.Second
 // maxGHItems caps GitHub suggestions per category.
 const maxGHItems = 4
 
+var ghCommandCount atomic.Int64
+
 // scanGitHub asks `gh` for the user's actionable GitHub state: review
 // requests (the world is waiting on you) and assigned open issues. Quietly
 // returns nothing when gh is absent or unauthenticated.
-func scanGitHub() []Item {
+func scanGitHub(ctx context.Context) []Item {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return nil
+	}
 	if _, err := exec.LookPath("gh"); err != nil {
 		return nil
 	}
 	var items []Item
-	items = append(items, ghSearch(
+	items = append(items, ghSearch(ctx,
 		"prs", []string{"--review-requested", "@me", "--state", "open"},
 		"review requested",
 		"Review this pull request: %s (%s). Use `gh pr view %d --repo %s` and `gh pr diff %d --repo %s` "+
 			"to read it, then give me a critique: real issues first, style nits last, and a clear "+
 			"approve/request-changes recommendation.")...)
-	items = append(items, ghSearch(
+	items = append(items, ghSearch(ctx,
 		"issues", []string{"--assignee", "@me", "--state", "open"},
 		"assigned issue",
 		"Work on this GitHub issue assigned to me: %s (%s). Read it with `gh issue view %d --repo %s` "+
@@ -49,11 +58,18 @@ type ghResult struct {
 
 // ghSearch runs one gh search and maps results to feed items. taskFmt is
 // templated with (title, repo, number, repo, number, repo).
-func ghSearch(what string, args []string, label, taskFmt string) []Item {
-	ctx, cancel := context.WithTimeout(context.Background(), ghTimeout)
+func ghSearch(parent context.Context, what string, args []string, label, taskFmt string) []Item {
+	if parent == nil {
+		parent = context.Background()
+	}
+	if parent.Err() != nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(parent, ghTimeout)
 	defer cancel()
 	full := append([]string{"search", what},
 		append(args, "--json", "number,title,url,repository", "--limit", fmt.Sprint(maxGHItems))...)
+	ghCommandCount.Add(1)
 	out, err := exec.CommandContext(ctx, "gh", full...).Output()
 	if err != nil {
 		return nil

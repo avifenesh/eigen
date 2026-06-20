@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/avifenesh/eigen/internal/command"
@@ -207,7 +209,10 @@ func (m *model) compMenuView() string {
 const (
 	maxIndexedFiles = 20000
 	fileIdxTTL      = 10 * time.Second
+	fileIdxBudget   = 40 * time.Millisecond
 )
+
+var fileIndexWalkCount atomic.Int64
 
 // skipDir names directories never worth walking for @file completion.
 var skipDir = map[string]bool{
@@ -263,9 +268,17 @@ func (m *model) fileMatches(token string) []string {
 // indexFiles walks root, returning project-relative file paths (skipping VCS and
 // build directories), bounded by maxIndexedFiles.
 func indexFiles(root string) []string {
+	fileIndexWalkCount.Add(1)
 	var files []string
+	deadline := time.Now().Add(fileIdxBudget)
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if time.Now().After(deadline) {
+			return fs.SkipAll
+		}
 		if err != nil {
+			if errors.Is(err, fs.SkipAll) {
+				return err
+			}
 			return nil
 		}
 		if d.IsDir() {

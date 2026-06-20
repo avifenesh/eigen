@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -216,6 +217,18 @@ func TestAppQuit(t *testing.T) {
 	}
 }
 
+func TestAppQuitCancelsBackgroundWork(t *testing.T) {
+	m := New(testData())
+	m.width, m.height = 100, 30
+	if m.ctx.Err() != nil {
+		t.Fatal("new app context should start live")
+	}
+	m.Update(key("q"))
+	if err := m.ctx.Err(); err != context.Canceled {
+		t.Fatalf("quit should cancel app context, got %v", err)
+	}
+}
+
 func TestGroupProjects(t *testing.T) {
 	rows := []SessionRow{
 		{ID: "1", Dir: "/a", Updated: 5},
@@ -315,6 +328,38 @@ func TestPaletteOpenFilterRun(t *testing.T) {
 	}
 	if m.active != PageModels {
 		t.Fatalf("palette should have navigated to models, on %v", m.active)
+	}
+}
+
+func TestPaletteQuitCancelsBackgroundWork(t *testing.T) {
+	m := New(testData())
+	m.width, m.height = 100, 30
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
+	for _, r := range "quit" {
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil || m.result.Action != ActionQuit {
+		t.Fatalf("palette quit should return quit action, got result=%+v cmd=%v", m.result, cmd)
+	}
+	if err := m.ctx.Err(); err != context.Canceled {
+		t.Fatalf("palette quit should cancel app context, got %v", err)
+	}
+}
+
+func TestPaletteNewSessionCancelsBackgroundWork(t *testing.T) {
+	m := New(testData())
+	m.width, m.height = 100, 30
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
+	for _, r := range "new" {
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil || m.result.Action != ActionOpenChat {
+		t.Fatalf("palette new session should open chat, got result=%+v cmd=%v", m.result, cmd)
+	}
+	if err := m.ctx.Err(); err != context.Canceled {
+		t.Fatalf("palette new session should cancel app context, got %v", err)
 	}
 }
 
