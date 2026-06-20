@@ -18,10 +18,12 @@ This backlog translates the remaining full-goal criteria into concrete next work
    - Chat TUI shell artifact: `docs/artifacts/gui/chat-tui-shell.png` (source capture path: `/run/user/1000/agent-workspace-linux/default/artifacts/gui/chat-tui-shell.png`).
    - Remaining: optional richer recordings/pixel-review packages if final acceptance requires more than the current screenshot artifacts.
 
-2. **Longer live binary soak**
+2. **Longer live binary soak** — in progress
    - Extend from smoke-length PTY tests to a longer real-binary loop.
    - Exercise app page navigation, chat composer, right panels, background tasks, shells, and exit.
-   - Record goroutine/subprocess/file-descriptor bounds or equivalent process-level metrics.
+   - Completed deterministic premium TUI interaction/view soak (`TestPremiumInteractionViewSoak`) for chat composer, mention completion, submitted turn rendering, right-panel tabs, notepad, tasks empty state, changes empty state, and repeated composer edits; this intentionally avoids claiming runtime leak coverage because it does not execute Bubble Tea commands.
+   - Existing runtime/resource coverage remains in PTY/resource tests (`TestPTYReleaseAppShellLongerSoak`, chat PTY smoke, render/live-loop resource tests).
+   - Remaining: add a true command-executing stream/teatest or PTY-level chat soak for background tasks/shells and process-level file-descriptor/subprocess bounds.
 
 3. **Richer visual review artifacts**
    - Expand stable token goldens into full ANSI/text snapshots or visual screenshots for representative desktop widths.
