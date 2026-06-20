@@ -105,6 +105,14 @@ func Save(path string, msgs []llm.Message) error {
 	}
 	rotateBackups(path)
 	if err := os.Rename(tmpPath, path); err != nil {
+		if os.IsNotExist(err) {
+			// A concurrent save to the same transcript may already have renamed this
+			// temp file away. Treat that as benign only when the destination now
+			// exists; callers that need ordering must serialize at a higher layer.
+			if _, statErr := os.Stat(path); statErr == nil {
+				return nil
+			}
+		}
 		os.Remove(tmpPath)
 		return err
 	}
