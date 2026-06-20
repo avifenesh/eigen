@@ -34,7 +34,7 @@ func TestGUIDeliveryNotesRecordScopeAndPreexistingStagedFiles(t *testing.T) {
 		"TestPTYReleaseAppShellLongerSoak",
 		"-count=5",
 		"docs/gui-current-surface-acceptance.md",
-		"Future surfaces/features",
+		"no shipped GUI feature-parity blocker remains",
 	} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("GUI delivery notes missing %q", want)

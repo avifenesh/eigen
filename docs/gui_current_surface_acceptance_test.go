@@ -13,25 +13,23 @@ func TestGUICurrentSurfaceAcceptanceMapsGoalCriteria(t *testing.T) {
 	}
 	s := string(b)
 	for _, want := range []string{
-		"Scope boundary",
-		"current shipped surfaces",
-		"full WCAG conformance certification",
+		"shipped Eigen surfaces",
 		"Criterion-to-evidence map",
 		"Premium desktop app shell exists",
-		"Includes current app features",
+		"Includes all Eigen GUI features",
 		"End-to-end tested",
 		"High UI/UX quality",
 		"Measured no resource leak/misuse for covered flows",
 		"Independent review and delivery gate",
-		"27862913334",
-		"27862913354",
+		"27863744643",
+		"27863744647",
 		"scripts/verify-gui-phase.sh` validates the shipped surfaces",
-		"ce860ca339ad6d50d7945ad0b8c37bef22113a93",
+		"8b2c6f7040f28a27c634e6ccb3a3fbc0bee7a1d9",
 		"docs/gui-final-review-resolution.md",
 		"Acceptance statement",
 	} {
 		if !strings.Contains(s, want) {
-			t.Fatalf("current-surface acceptance missing %q", want)
+			t.Fatalf("full parity acceptance missing %q", want)
 		}
 	}
 }

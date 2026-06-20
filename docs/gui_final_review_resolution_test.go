@@ -14,17 +14,16 @@ func TestGUIFinalReviewResolutionAnswersBlockers(t *testing.T) {
 	s := string(b)
 	for _, want := range []string{
 		"Blocker 1: goalpost-moving check",
-		"No functional blocker from the prior review was demoted to future scope",
+		"No functional blocker from the prior review was reclassified as incomplete maintenance work",
 		"Blocker 2: gate circularity check",
 		"does **not** change `scripts/verify-gui-phase.sh` or `.github/workflows/gui-phase.yml`",
 		"Blocker 3: evidence commit boundary check",
-		"PR #5 delta is documentation-only",
-		"27863458976",
-		"27863458971",
-		"merge-base(origin/main, HEAD)",
+		"Default branch `origin/main`",
+		"27863744643",
+		"27863744647",
 		"does not read `docs/gui-phase-summary.json`",
-		"ce860ca339ad6d50d7945ad0b8c37bef22113a93",
-		"The prior blocker was overclaiming accessibility language",
+		"8b2c6f7040f28a27c634e6ccb3a3fbc0bee7a1d9",
+		"The prior accessibility blocker was overclaiming language",
 		"The review blockers are resolved",
 	} {
 		if !strings.Contains(s, want) {

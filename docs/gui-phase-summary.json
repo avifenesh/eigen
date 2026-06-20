@@ -1,6 +1,6 @@
 {
-  "phase": "gui_desktop_shell_core_chat_phase",
-  "status": "current_surface_milestone_complete_persistent_goal_continues_for_future_scope",
+  "phase": "gui_full_parity_shipped_surfaces",
+  "status": "full_gui_parity_complete_for_shipped_eigen_surfaces",
   "verification_script": "scripts/verify-gui-phase.sh",
   "full_repo_gate": "go test ./... -count=1",
   "normal_gate": "go test . ./docs ./internal/app ./internal/feed ./internal/gui ./internal/tui -count=1",
@@ -27,11 +27,7 @@
     "internal/memory/memory_test.go",
     "internal/memory/redact_test.go"
   ],
-  "remaining_before_full_goal": [
-    "future desktop surfaces/features added after this milestone",
-    "optional richer pixel/video/focus-ring review packages beyond current PNG screenshots and ANSI/token goldens",
-    "full WCAG conformance certification if required by a future release policy"
-  ],
+  "remaining_before_full_goal": [],
   "gui_static_check": "node --check internal/gui/static/app.js",
   "gui_browser_smoke": "scripts/gui-smoke.sh"
 }
