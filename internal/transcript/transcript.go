@@ -74,37 +74,38 @@ func Detect(path string) Source {
 // concurrent reader never sees a truncated transcript — this file is the
 // durable record of the conversation.
 func Save(path string, msgs []llm.Message) error {
-	tmp := path + ".tmp"
-	f, err := os.Create(tmp)
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
 	}
+	tmpPath := tmp.Name()
+	f := tmp
 	w := bufio.NewWriter(f)
 	enc := json.NewEncoder(w)
 	for _, m := range msgs {
 		if err := enc.Encode(m); err != nil {
 			f.Close()
-			os.Remove(tmp)
+			os.Remove(tmpPath)
 			return err
 		}
 	}
 	if err := w.Flush(); err != nil {
 		f.Close()
-		os.Remove(tmp)
+		os.Remove(tmpPath)
 		return err
 	}
 	if err := f.Sync(); err != nil {
 		f.Close()
-		os.Remove(tmp)
+		os.Remove(tmpPath)
 		return err
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(tmp)
+		os.Remove(tmpPath)
 		return err
 	}
 	rotateBackups(path)
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
 		return err
 	}
 	// Best-effort directory fsync makes the rename durable across sudden power
