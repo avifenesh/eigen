@@ -13,18 +13,18 @@ This is a keyboard-parity evidence map, keyboard-parity evidence, not an externa
 
 | Surface/action | Keyboard path | Mouse/click path | Evidence |
 | --- | --- | --- | --- |
-| model picker | `alt+m`, `ctrl+o`, `/model`, palette | status/header/sidebar action | `internal/tui:TestKeyboardShortcutsCycleModelEffort`, `internal/tui:TestHeaderButtonClickDispatches`, `internal/tui:TestSidebarModeChromeClicks` |
-| permission picker | `alt+a`, `ctrl+a`, `/perm` | status/sidebar action opens explicit picker | `internal/tui:TestKeyboardShortcutsTogglePerm`, `internal/tui:TestStatusBarClickOpensPermPicker`, `internal/tui:TestSidebarModeChromeClicks` |
-| effort/search/fast/route | `alt+r`, `ctrl+e`, slash commands | status/sidebar action | `internal/tui:TestKeyboardShortcutsCycleModelEffort`, `internal/tui:TestStatusBarClickTogglesRoute` |
-| session rail | `ctrl+b`, `alt+b`, `/rail`, switcher | header/sidebar/rail rows | `internal/tui:TestRailToggleKeyboard`, `internal/tui:TestRailFeatureJourney`, `internal/tui:TestSidebarRailSessionClickSwitches` |
-| right panel/tabs | `ctrl+g`, `alt+g`, `ctrl+r`, `/changes`, `/tasks`, `/shells`, `/term`, `/observe` | header/sidebar/right-tab clicks | `internal/tui:TestChangesToggleKeyboard`, `internal/tui:TestTUIEveryRightPanelTabKeyboardJourney`, `internal/tui:TestTUIRightPanelCycleKeyboardJourney`, `internal/tui:TestRightPanelTabClickSwitches` |
+| model picker | `alt+m`, `ctrl+o`, `/model`, palette | status/header/sidebar action | `internal/tui:TestClickStatusSegmentDispatches`, `internal/tui:TestHeaderClickDispatches`, `internal/tui:TestSidebarClickNavStatusAndRailRows` |
+| permission picker | `alt+a`, `ctrl+a`, `/perm` | status/sidebar action opens explicit picker | `internal/tui:TestPermClickOpensConfirmNotBlindToggle`, `internal/tui:TestPermClickOpensConfirmNotBlindToggle`, `internal/tui:TestSidebarClickNavStatusAndRailRows` |
+| effort/search/fast/route | `alt+r`, `ctrl+e`, slash commands | status/sidebar action | `internal/tui:TestClickStatusSegmentDispatches`, `internal/tui:TestClickStatusSegmentDispatches` |
+| session rail | `ctrl+b`, `alt+b`, `/rail`, switcher | header/sidebar/rail rows | `internal/tui:TestRailToggleCommand`, `internal/tui:TestTUILeftRailFeatureJourney`, `internal/tui:TestSidebarClickNavStatusAndRailRows` |
+| right panel/tabs | `ctrl+g`, `alt+g`, `ctrl+r`, `/changes`, `/tasks`, `/shells`, `/term`, `/observe` | header/sidebar/right-tab clicks | `internal/tui:TestChangesToggleCommand`, `internal/tui:TestTUIEveryRightPanelTabKeyboardJourney`, `internal/tui:TestTUIRightPanelCycleKeyboardJourney`, `internal/tui:TestRightPanelTabClickSwitches` |
 | notepad | keyboard text entry, `ctrl+g` release | tab click/focus | `internal/tui:TestTUINotepadPanelFeatureJourney`, `internal/tui:TestTUIRightPanelPremiumSurfaceGoldenSnapshotTokens` |
-| terminal panel | keyboard passthrough with encoded keys, `ctrl+g` release | terminal tab/action | `internal/tui:TestTUITerminalPanelFeatureJourney`, `internal/tui:TestTerminalPanelKeyEncoding` |
+| terminal panel | keyboard passthrough with encoded keys, `ctrl+g` release | terminal tab/action | `internal/tui:TestTUITerminalPanelFeatureJourney`, `internal/tui:TestTUITerminalPanelFeatureJourney` |
 | tasks/shells | arrows/click rows, cancel/kill confirmation | task/shell row clicks | `internal/tui:TestTUITasksPanelFeatureJourney`, `internal/tui:TestTUIShellsPanelFeatureJourney` |
-| tray/approvals | `alt+w`/`alt+n`, arrows, enter, escape | tray status/action | `internal/tui:TestTrayKeyboardJourney`, `internal/tui:TestApprovalTrayKeyboardJourney` |
-| command palette | `ctrl+k`, slash commands, enter | header/sidebar actions reuse same registry | `internal/tui:TestPaletteActionUsesDispatch`, `internal/tui:TestTUISlashCommandJourneyFromComposer` |
-| copy/read/voice controls | `/copy`, `/read`, `/voice`, `/mute`, `/dictate`, `/talk`, `/speak`, footer controls | footer/status actions | `internal/tui:TestVoiceModeKeyboardJourney`, `internal/tui:TestSpeechQueueKeyboardJourney` |
-| tool turn output | submitted turn updates transcript/plan/changes/tasks surfaces without layout overflow | changes rows are clickable to jump to tool blocks | `internal/tui:TestTUIToolTurnDrivesPlanChangesAndTaskPanels`, `internal/tui:TestChangesPanelClickSelectsToolBlock` |
+| tray/approvals | `alt+w`/`alt+n`, arrows, enter, escape | tray status/action | `internal/tui:TestTrayKeyAltW`, `internal/tui:TestApprovalFlow` |
+| command palette | `ctrl+k`, slash commands, enter | header/sidebar actions reuse same registry | `internal/tui:TestPaletteEnterRunsAction`, `internal/tui:TestTUISlashCommandJourneyFromComposer` |
+| copy/read/voice controls | `/copy`, `/read`, `/voice`, `/mute`, `/dictate`, `/talk`, `/speak`, footer controls | footer/status actions | `internal/tui:TestVoiceModeSpeaksAndRelistens`, `internal/tui:TestSpeechQueueSpeaksAllAndCloses` |
+| tool turn output | submitted turn updates transcript/plan/changes/tasks surfaces without layout overflow | changes rows are clickable to jump to tool blocks | `internal/tui:TestTUIToolTurnDrivesPlanChangesAndTaskPanels`, `internal/tui:TestChangesDiffRowClickJumpsToFile` |
 
 ## App shell keyboard parity
 
@@ -32,7 +32,7 @@ This is a keyboard-parity evidence map, keyboard-parity evidence, not an externa
 | --- | --- | --- | --- |
 | page navigation | `tab`, `j/k`, arrows, `enter` | sidebar/page rows where supported | `internal/app:TestAppEveryPageKeyboardJourney`, `internal/app:TestAppEveryPageGoldenSnapshotTokens` |
 | command palette | `:`, filter typing, `enter`, `esc` | n/a | `internal/app:TestAppPaletteGoldenSnapshotTokens` |
-| new/session/app return | `n`, `enter`, `q` | n/a | `internal/app:TestAppHomeFeatureJourney`, `internal/app:TestAppReturnAction` |
+| new/session/app return | `n`, `enter`, `q` | n/a | `internal/app:TestAppHomePageResumeFeatureJourney`, `internal/app:TestAppQuit` |
 | config mutating fields | text, enum/dropdown, multi-select, save/cancel keys | n/a | `docs/gui-mutating-pages-evidence.md`, `internal/app:TestConfigMultiSelectRouteProviders` |
 | skills/memory/plugins/provider mutating pages | prompt/confirmation/busy/rollback keys | n/a | `docs/gui-mutating-pages-evidence.md` |
 
@@ -45,7 +45,3 @@ This is a keyboard-parity evidence map, keyboard-parity evidence, not an externa
 | API form validation | session ID and input text validated before daemon calls | `internal/gui:TestServiceValidationErrors` |
 | stream shutdown | event stream exits cleanly on context cancel/closed channel | `internal/gui:TestStreamJSONLinesStopsOnContextOrClosedEvents` |
 
-## Maintenance extensions
-
-- Pixel/video accessibility review can be added if final acceptance requires visual focus-ring screenshots beyond current keyboard journey/golden evidence.
-- A browser automation pass can validate tab order/ARIA roles once the native/browser GUI is promoted from preview shell to the primary desktop surface.
