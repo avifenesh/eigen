@@ -64,7 +64,13 @@ func TestPersistAcrossDaemonRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	c1.Close()
-	srv1.Close() // "kill" the daemon (files stay)
+	if err := srv1.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Wait until the first server has stopped accepting on the old listener.
+	// On slower CI runners, immediately reusing the same socket path can leave
+	// handler/listener cleanup racing t.TempDir's RemoveAll.
+	time.Sleep(20 * time.Millisecond)
 
 	// Daemon #2: restore.
 	h2 := NewPersistentHost(persistDir)
