@@ -4,11 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Eigen</title>
-    <link rel="stylesheet" href="/styles.css?v=feature-composition" />
+    <link rel="stylesheet" href="/styles.css?v=real-chat" />
   </head>
   <body>
     <div id="app" class="shell">
-      <button id="rail-toggle" class="rail-toggle" type="button" aria-label="Toggle sidebar" aria-expanded="true">☰</button>
+      <button id="rail-toggle" class="rail-toggle" type="button" aria-label="Toggle sidebar" aria-expanded="true" aria-controls="sidebar">
+        <span class="rail-toggle-bar"></span><span class="rail-toggle-bar"></span><span class="rail-toggle-bar"></span>
+      </button>
       <aside class="rail" id="sidebar">
         <div class="brand">
           <div class="mark">λ</div>
@@ -22,32 +24,44 @@
           <button id="profile-button" class="ghost rail-secondary" type="button" onclick="window.openProfileModal?.()">Profile</button>
           <button id="system-button" class="ghost rail-secondary" type="button" onclick="window.openSystemModal?.()">System</button>
         </div>
-        <div class="rail-head">Desktop</div>
         <nav id="feature-nav" class="feature-nav" aria-label="Eigen desktop surfaces">
-          <button class="feature-link active" type="button" data-feature="home">Home</button>
-          <button class="feature-link" type="button" data-feature="chat">Chat</button>
-          <button class="feature-link" type="button" data-feature="changes">Changes</button>
-          <button class="feature-link" type="button" data-feature="tools">Tools</button>
-          <button class="feature-link" type="button" data-feature="shells">Shells</button>
-          <button class="feature-link" type="button" data-feature="approvals">Approvals</button>
-          <button class="feature-link" type="button" data-feature="memory">Memory</button>
-          <button class="feature-link" type="button" data-feature="plugins">Plugins</button>
-          <button class="feature-link" type="button" data-feature="config">Config</button>
-          <button class="feature-link" type="button" data-feature="observe">Observe</button>
+          <button class="feature-link active" type="button" data-feature="chat"><span class="feature-link-icon">✎</span>Chat</button>
+          <button class="feature-link" type="button" data-feature="changes"><span class="feature-link-icon">△</span>Changes</button>
+          <button class="feature-link" type="button" data-feature="tools"><span class="feature-link-icon">⚙</span>Tools</button>
+          <button class="feature-link" type="button" data-feature="shells"><span class="feature-link-icon">▸</span>Shells</button>
+          <button class="feature-link" type="button" data-feature="approvals"><span class="feature-link-icon">⚑</span>Approvals</button>
+          <button class="feature-link" type="button" data-feature="memory"><span class="feature-link-icon">♢</span>Memory</button>
+          <button class="feature-link" type="button" data-feature="plugins"><span class="feature-link-icon">⊞</span>Plugins</button>
+          <button class="feature-link" type="button" data-feature="config"><span class="feature-link-icon">◁</span>Config</button>
+          <button class="feature-link" type="button" data-feature="observe"><span class="feature-link-icon">◉</span>Observe</button>
         </nav>
         <div class="rail-head">Sessions</div>
         <div id="sessions" class="sessions"></div>
       </aside>
 
-      <main class="workspace">
+      <main class="workspace" data-feature="chat">
         <header class="topbar">
           <div class="session-heading">
             <div id="title" class="title">Select a session</div>
             <div id="meta" class="meta">Live daemon workspace</div>
           </div>
-          <div class="actions">
-            <label class="control-pill model-pill" id="model-control">model
-              <input id="model-input" list="model-presets" placeholder="model id" />
+          <div class="topbar-actions">
+            <button id="clear" class="ghost" type="button">Clear</button>
+            <button id="interrupt" class="ghost hidden" type="button">Interrupt</button>
+            <button id="resend" class="ghost" type="button">Resend</button>
+          </div>
+        </header>
+
+        <div id="status-bar" class="status-bar">
+          <div class="status-left">
+            <span id="status-indicator" class="status-indicator idle" title="Session status">
+              <span class="status-dot"></span>
+            </span>
+            <span id="status-text" class="status-text">No session</span>
+          </div>
+          <div class="status-right">
+            <label class="status-pill" title="Model id"><span>model</span>
+              <input id="model-input" list="model-presets" placeholder="default" spellcheck="false" />
               <datalist id="model-presets">
                 <option value="openai.gpt-5.5"></option>
                 <option value="claude-opus-4-8"></option>
@@ -55,77 +69,50 @@
                 <option value="glm-5.2"></option>
               </datalist>
             </label>
-            <label class="control-pill optional" id="effort-control">effort
-              <select id="effort-select">
-                <option value="">default</option>
-                <option value="none">none</option>
-                <option value="low">low</option>
-                <option value="medium">medium</option>
-                <option value="high">high</option>
-                <option value="xhigh">xhigh</option>
-                <option value="max">max</option>
-              </select>
-            </label>
-            <label class="control-pill">perm
+            <label class="status-pill" title="Permission mode"><span>perm</span>
               <select id="perm-select">
                 <option value="gated">gated</option>
                 <option value="auto">auto</option>
               </select>
             </label>
-            <label class="control-pill optional" id="search-control">search
+            <label class="status-pill optional" id="effort-control" title="Reasoning effort"><span>effort</span>
+              <select id="effort-select">
+                <option value="">default</option>
+                <option value="low">low</option>
+                <option value="medium">medium</option>
+                <option value="high">high</option>
+              </select>
+            </label>
+            <label class="status-pill optional hidden" id="search-control" title="Search mode"><span>search</span>
               <select id="search-select">
                 <option value="off">off</option>
                 <option value="auto">auto</option>
                 <option value="on">on</option>
               </select>
             </label>
-            <button id="fast-toggle" class="ghost optional" type="button">Fast</button>
-            <button id="clear" class="ghost danger" type="button">Clear</button>
-            <button id="interrupt" class="ghost" type="button">Interrupt</button>
-            <button id="resend" class="ghost" type="button">Resend</button>
+            <button id="fast-toggle" class="status-pill-button optional hidden" type="button">Fast</button>
           </div>
-        </header>
+        </div>
 
-        <section id="desktop-overview" class="desktop-overview" aria-label="Desktop workspace overview">
-          <div class="overview-card primary-plane">
-            <div class="metric-label">active surface</div>
-            <div id="overview-surface" class="metric-value">chat</div>
-            <div id="overview-context" class="metric-copy">Select a session to inspect live context.</div>
+        <section id="chat-stage" class="chat-stage">
+          <div id="timeline" class="timeline empty">
+            <div class="empty-state">
+              <div class="empty-title">Eigen GUI starts here.</div>
+              <div class="empty-copy">Open or create a session. Send a message and watch tool calls, diffs, and approvals stream into the timeline.</div>
+            </div>
           </div>
-          <div class="overview-card">
-            <div class="metric-label">tokens</div>
-            <div id="overview-tokens" class="metric-value">0</div>
-            <div class="metric-copy">budget and transcript pressure</div>
-          </div>
-          <div class="overview-card">
-            <div class="metric-label">tools</div>
-            <div id="overview-tools" class="metric-value">0</div>
-            <div class="metric-copy">available automation surface</div>
-          </div>
-          <div class="overview-card">
-            <div class="metric-label">shells</div>
-            <div id="overview-shells" class="metric-value">0</div>
-            <div class="metric-copy">background process lifecycle</div>
-          </div>
-        </section>
-        <section id="feature-workspace" class="feature-workspace hidden" aria-live="polite"></section>
-
-        <section id="timeline" class="timeline empty">
-          <div class="empty-state">
-            <div class="empty-title">Eigen GUI starts here.</div>
-            <div class="empty-copy">Open or create a session. The agent stream will become an inspectable activity timeline.</div>
-          </div>
+          <button id="jump-latest" class="jump-latest hidden" type="button">↓ Latest</button>
+          <form id="composer" class="composer">
+            <textarea id="input" rows="1" placeholder="Ask Eigen to build, inspect, fix, or explain…"></textarea>
+            <button id="send" class="send" type="submit">Send</button>
+          </form>
         </section>
 
-        <button id="jump-latest" class="jump-latest hidden" type="button">↓ Latest</button>
-        <form id="composer" class="composer">
-          <textarea id="input" rows="1" placeholder="Ask Eigen to build, inspect, fix, or explain…"></textarea>
-          <button id="send" class="send" type="submit">Send</button>
-        </form>
+        <section id="feature-stage" class="feature-stage hidden" aria-live="polite"></section>
       </main>
 
       <aside class="inspector">
-        <div class="panel-title">Inspector</div>
+        <div class="panel-title">Context</div>
         <div id="inspector" class="inspector-body">Tool calls, diffs, approvals, and workspace context will land here.</div>
       </aside>
     </div>
@@ -163,8 +150,6 @@
       </form>
     </div>
 
-
-
     <div id="profile-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="profile-title">
       <form id="profile-form" class="modal-card profile-card">
         <div class="modal-head">
@@ -187,8 +172,6 @@
       </form>
     </div>
 
-
-
     <div id="system-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="system-title">
       <div class="modal-card system-card">
         <div class="modal-head">
@@ -208,6 +191,6 @@
       </div>
     </div>
 
-    <script src="/app.js?v=feature-composition"></script>
+    <script src="/app.js?v=real-chat"></script>
   </body>
 </html>
