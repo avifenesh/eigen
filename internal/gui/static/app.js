@@ -9,6 +9,7 @@ const state = {
   userPinnedBottom: true,
   approvals: {},
   tools: {},
+  feature: 'chat',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -50,6 +51,14 @@ const systemClose = $('system-close');
 const systemCancel = $('system-cancel');
 const systemRefresh = $('system-refresh');
 const systemBody = $('system-body');
+const featureNav = $('feature-nav');
+const featureWorkspace = $('feature-workspace');
+const desktopOverview = $('desktop-overview');
+const overviewSurface = $('overview-surface');
+const overviewContext = $('overview-context');
+const overviewTokens = $('overview-tokens');
+const overviewTools = $('overview-tools');
+const overviewShells = $('overview-shells');
 
 function desktop() {
   if (!window.go) return null;
@@ -237,6 +246,8 @@ function applyState(id, snap, opts = {}) {
   }
   syncPendingApprovals(snap.pending || snap.Pending || []);
   updateInspector(snap);
+  updateDesktopOverview(snap);
+  renderFeatureWorkspace();
 }
 
 function updateControls(snap) {
@@ -255,6 +266,72 @@ function updateControls(snap) {
   fastToggle?.classList.toggle('hidden', !fastOK);
   fastToggle?.classList.toggle('active', fast);
   if (fastToggle) fastToggle.textContent = fast ? 'Fast on' : 'Fast';
+}
+
+function updateDesktopOverview(snap = {}) {
+  if (!overviewSurface) return;
+  const tokens = snap.tokens || snap.Tokens || 0;
+  const maxTokens = snap.max_tokens || snap.MaxTokens || 0;
+  const tools = snap.tools || snap.Tools || [];
+  const shells = snap.shells || snap.Shells || [];
+  overviewSurface.textContent = state.feature;
+  overviewContext.textContent = state.active ? `${titleEl.textContent || state.active} · ${metaEl.textContent || 'session'}` : 'Select a session to inspect live context.';
+  overviewTokens.textContent = maxTokens ? `${tokens}/${maxTokens}` : String(tokens || 0);
+  overviewTools.textContent = String(tools.length || 0);
+  overviewShells.textContent = String(shells.length || 0);
+}
+
+function setFeature(feature) {
+  state.feature = feature || 'chat';
+  for (const btn of featureNav?.querySelectorAll('[data-feature]') || []) {
+    btn.classList.toggle('active', btn.dataset.feature === state.feature);
+  }
+  updateDesktopOverview(state.state || {});
+  renderFeatureWorkspace();
+}
+
+function renderFeatureWorkspace() {
+  if (!featureWorkspace) return;
+  const snap = state.state || {};
+  if (state.feature === 'chat') {
+    featureWorkspace.classList.add('hidden');
+    timelineEl.classList.remove('hidden');
+    return;
+  }
+  timelineEl.classList.add('hidden');
+  featureWorkspace.classList.remove('hidden');
+  const roots = snap.roots || snap.Roots || [];
+  const tools = snap.tools || snap.Tools || [];
+  const shells = snap.shells || snap.Shells || [];
+  const pending = snap.pending || snap.Pending || [];
+  const featureMap = {
+    changes: ['Changes', 'Review edits, diffs, and tool output before they disappear into the transcript.', [
+      ['Diff rendering', 'Unified diffs are highlighted inline with add/delete/hunk lanes.'],
+      ['Tool history', `${Object.keys(state.tools).length} streamed tool cards tracked in this session.`],
+      ['Workspace roots', roots.length ? roots.map(shortPath).join(' · ') : 'No roots reported yet.'],
+    ]],
+    tools: ['Tools', 'Inspect the automation surface Eigen can use for this session.', tools.length ? tools.slice(0, 9).map(t => [t.name || t.Name || 'tool', (t.read_only ?? t.ReadOnly) ? 'read-only' : 'mutating']) : [['No tools loaded', 'Tool registry will appear after session state arrives.']]],
+    shells: ['Shells', 'Track background commands and process lifecycle without leaving the desktop.', shells.length ? shells.slice(0, 9).map(s => [s.id || s.ID || s.command || s.Command || 'shell', `${s.status || s.Status || 'unknown'} ${s.last_line || s.LastLine || ''}`]) : [['No background shells', 'Shells launched by tools appear here with status and last output.']]],
+    approvals: ['Approvals', 'Handle gated tool calls deliberately with visible status and arguments.', pending.length ? pending.map(p => [p.tool || p.Tool || 'approval', p.id || p.ID || p.result || p.Result || 'pending']) : [['No pending approvals', 'Gated operations will request approval here and in the timeline.']]],
+    memory: ['Memory', 'Keep durable context visible while planning and editing.', [
+      ['Goal', snap.goal || snap.Goal || 'No active goal reported by daemon state.'],
+      ['Roots', roots.length ? roots.map(shortPath).join(' · ') : 'No roots reported yet.'],
+      ['Profile', 'Use the Profile modal to edit global personalization.'],
+    ]],
+    plugins: ['Plugins', 'Manage extension capability from the desktop context.', [
+      ['Available tools', `${tools.length || 0} tools exposed by skills, plugins, and built-ins.`],
+      ['Marketplace', 'Open plugins in the app shell for install, update, disable, and rollback flows.'],
+      ['Agent roles', 'Plugin-provided roles surface through the same command infrastructure.'],
+    ]],
+    config: ['Config', 'Tune model, effort, permissions, search, and fast mode for the active session.', [
+      ['Model', modelInput?.value || snap.model || snap.Model || 'default'],
+      ['Permission', permSelect?.value || snap.perm || snap.Perm || 'gated'],
+      ['Search / fast', `${searchSelect?.value || snap.search || snap.Search || 'off'} · ${fastToggle?.classList.contains('active') ? 'fast on' : 'fast off'}`],
+    ]],
+  };
+  const [title, copy, cells] = featureMap[state.feature] || featureMap.changes;
+  featureWorkspace.innerHTML = `<div class="feature-head"><div><div class="feature-title">${escapeHtml(title)}</div><div class="feature-copy">${escapeHtml(copy)}</div></div><button class="ghost compact" type="button" data-feature-close>Back to chat</button></div><div class="feature-grid">${cells.map(([k, v]) => `<div class="feature-cell"><strong>${escapeHtml(k)}</strong><span>${escapeHtml(v)}</span></div>`).join('')}</div>`;
+  featureWorkspace.querySelector('[data-feature-close]')?.addEventListener('click', () => setFeature('chat'));
 }
 
 function updateInspector(snap) {
@@ -647,6 +724,11 @@ function handleRailAction(e) {
 
 document.addEventListener('pointerdown', handleRailAction, true);
 document.addEventListener('mousedown', handleRailAction, true);
+featureNav?.addEventListener('click', (e) => {
+  const btn = e.target?.closest?.('[data-feature]');
+  if (!btn) return;
+  setFeature(btn.dataset.feature);
+});
 
 
 newSessionClose.onclick = () => closeNewSessionModal();

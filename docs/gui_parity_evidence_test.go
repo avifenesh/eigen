@@ -100,6 +100,7 @@ func TestGUIParityEvidenceMentionsKeyRegressionTests(t *testing.T) {
 		"go test . ./docs ./internal/app ./internal/feed ./internal/gui ./internal/tui -count=1",
 		"go test -tags 'wails production webkit2_41' ./internal/gui -count=1",
 		"node --check internal/gui/static/app.js",
+		"multi-surface desktop workspace",
 		"node internal/gui/static/app_behavior_test.mjs",
 		"scripts/gui-smoke.sh",
 		"go test -tags smoke . -count=1",

@@ -21,6 +21,17 @@
           <button id="profile-button" class="ghost rail-secondary" type="button" onclick="window.openProfileModal?.()">Profile</button>
           <button id="system-button" class="ghost rail-secondary" type="button" onclick="window.openSystemModal?.()">System</button>
         </div>
+        <div class="rail-head">Desktop</div>
+        <nav id="feature-nav" class="feature-nav" aria-label="Eigen desktop surfaces">
+          <button class="feature-link active" type="button" data-feature="chat">Chat</button>
+          <button class="feature-link" type="button" data-feature="changes">Changes</button>
+          <button class="feature-link" type="button" data-feature="tools">Tools</button>
+          <button class="feature-link" type="button" data-feature="shells">Shells</button>
+          <button class="feature-link" type="button" data-feature="approvals">Approvals</button>
+          <button class="feature-link" type="button" data-feature="memory">Memory</button>
+          <button class="feature-link" type="button" data-feature="plugins">Plugins</button>
+          <button class="feature-link" type="button" data-feature="config">Config</button>
+        </nav>
         <div class="rail-head">Sessions</div>
         <div id="sessions" class="sessions"></div>
       </aside>
@@ -71,6 +82,30 @@
             <button id="resend" class="ghost" type="button">Resend</button>
           </div>
         </header>
+
+        <section id="desktop-overview" class="desktop-overview" aria-label="Desktop workspace overview">
+          <div class="overview-card primary-plane">
+            <div class="metric-label">active surface</div>
+            <div id="overview-surface" class="metric-value">chat</div>
+            <div id="overview-context" class="metric-copy">Select a session to inspect live context.</div>
+          </div>
+          <div class="overview-card">
+            <div class="metric-label">tokens</div>
+            <div id="overview-tokens" class="metric-value">0</div>
+            <div class="metric-copy">budget and transcript pressure</div>
+          </div>
+          <div class="overview-card">
+            <div class="metric-label">tools</div>
+            <div id="overview-tools" class="metric-value">0</div>
+            <div class="metric-copy">available automation surface</div>
+          </div>
+          <div class="overview-card">
+            <div class="metric-label">shells</div>
+            <div id="overview-shells" class="metric-value">0</div>
+            <div class="metric-copy">background process lifecycle</div>
+          </div>
+        </section>
+        <section id="feature-workspace" class="feature-workspace hidden" aria-live="polite"></section>
 
         <section id="timeline" class="timeline empty">
           <div class="empty-state">

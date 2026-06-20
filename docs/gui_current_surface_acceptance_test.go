@@ -16,6 +16,7 @@ func TestGUICurrentSurfaceAcceptanceMapsGoalCriteria(t *testing.T) {
 		"shipped Eigen surfaces",
 		"Criterion-to-evidence map",
 		"Premium desktop app shell exists",
+		"multi-surface desktop workspace",
 		"Includes all Eigen GUI features",
 		"TestAppCodeDerivedFeatureInventoryHasJourneyEvidence",
 		"TestTUICodeDerivedFeatureInventoryHasJourneyEvidence",
