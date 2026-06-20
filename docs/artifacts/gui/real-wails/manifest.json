@@ -1,0 +1,40 @@
+{
+  "source": "actual running Wails app captured from isolated X11 workspace",
+  "launch_command": "go run -tags 'wails production webkit2_41' . --instance dev gui",
+  "window_title": "Eigen",
+  "window_class": "Eigen",
+  "window_geometry": "1320x900",
+  "workspace_screenshot_size": "1440x1000",
+  "captures": [
+    {
+      "surface": "chat",
+      "screenshot": "docs/artifacts/gui/real-wails/chat.png",
+      "required_evidence": ["Eigen", "desktop connected", "New session", "Chat", "model", "Inspector"]
+    },
+    {
+      "surface": "changes",
+      "screenshot": "docs/artifacts/gui/real-wails/changes.png",
+      "required_evidence": ["Eigen", "Changes", "Back to chat", "Inspector"]
+    },
+    {
+      "surface": "tools",
+      "screenshot": "docs/artifacts/gui/real-wails/tools.png",
+      "required_evidence": ["Eigen", "Tools", "Available tools", "Inspector"]
+    },
+    {
+      "surface": "shells",
+      "screenshot": "docs/artifacts/gui/real-wails/shells.png",
+      "required_evidence": ["Eigen", "Shells", "Detach foreground bash", "Inspector"]
+    },
+    {
+      "surface": "approvals",
+      "screenshot": "docs/artifacts/gui/real-wails/approvals.png",
+      "required_evidence": ["Eigen", "Approvals", "Inspector"]
+    },
+    {
+      "surface": "memory",
+      "screenshot": "docs/artifacts/gui/real-wails/memory.png",
+      "required_evidence": ["Eigen", "Memory", "Inspector"]
+    }
+  ]
+}
