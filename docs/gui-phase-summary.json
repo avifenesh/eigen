@@ -1,6 +1,6 @@
 {
   "phase": "gui_desktop_shell_core_chat_phase",
-  "status": "phase_complete_not_full_goal",
+  "status": "current_surface_milestone_complete_persistent_goal_continues_for_future_scope",
   "verification_script": "scripts/verify-gui-phase.sh",
   "full_repo_gate": "go test ./... -count=1",
   "normal_gate": "go test . ./docs ./internal/app ./internal/feed ./internal/gui ./internal/tui -count=1",
@@ -28,9 +28,9 @@
     "internal/memory/redact_test.go"
   ],
   "remaining_before_full_goal": [
-    "continue deeper desktop parity beyond this phase as product scope expands",
-    "consider richer pixel/ANSI full snapshots if final acceptance requires visual diff artifacts",
-    "run broader project delivery gates from a clean tree before merging/releasing"
+    "future desktop surfaces/features added after this milestone",
+    "optional richer pixel/video/focus-ring review packages beyond current PNG screenshots and ANSI/token goldens",
+    "full WCAG conformance certification if required by a future release policy"
   ],
   "gui_static_check": "node --check internal/gui/static/app.js",
   "gui_browser_smoke": "scripts/gui-smoke.sh"

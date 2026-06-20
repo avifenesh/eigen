@@ -1,9 +1,10 @@
 # GUI delivery notes
 
-This phase changes the app shell, chat TUI, feed cancellation, PTY smoke harness, and GUI evidence docs.
+This milestone changes the native/browser GUI shell, app shell, chat TUI, feed cancellation, PTY smoke harness, and GUI evidence docs.
 
-## Scope changed by this GUI phase
+## Scope changed by this GUI milestone
 
+- `internal/gui`: local-only native/browser GUI server, static shell/API contracts, JS syntax check, and browser smoke gate.
 - `internal/app`: app lifetime cancellation, Base canvas painting, every-page and feature-specific journeys, visual goldens, resource soaks, PTY app smoke support.
 - `internal/tui`: notepad persistence, git panel render-safety, file completion bounds, composer/plan/rail/right-panel feature journeys, visual goldens, resource/race checks, PTY chat smoke support.
 - `internal/feed`: cancellation-aware feed/GitHub/model suggestion scans.
@@ -42,4 +43,4 @@ go test -tags smoke . -run 'TestPTYChatTUISmokeQuit|TestPTYAppShellNavigationSoa
 
 ## Current completion status
 
-This is a strong GUI phase suitable for review. It is not a final claim that the persistent full-parity desktop-app goal is complete; see `docs/gui-phase-gate.md` for remaining final-goal criteria, `docs/gui-next-phase-backlog.md` for actionable next work, and `docs/gui-phase-summary.json` for a machine-readable handoff.
+The current shipped-surface GUI milestone is accepted in `docs/gui-current-surface-acceptance.md`. Future surfaces/features, optional pixel/video/focus-ring packages, and full WCAG certification remain future scope unless a later release policy requires them.

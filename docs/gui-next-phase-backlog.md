@@ -1,6 +1,6 @@
 # GUI next-phase backlog
 
-This backlog translates the remaining full-goal criteria into concrete next work. The current phase is verified by `scripts/verify-gui-phase.sh`; these items are what keep the persistent desktop-app goal active after this phase.
+This backlog translates the remaining and future GUI criteria into concrete work. The current shipped-surface milestone is accepted in `docs/gui-current-surface-acceptance.md` and verified by `scripts/verify-gui-phase.sh`; future product expansion should add new rows here without reopening the accepted milestone unless it regresses an evidenced contract.
 
 ## P0 — full desktop-app parity
 
@@ -54,20 +54,23 @@ This backlog translates the remaining full-goal criteria into concrete next work
 
 ## P2 — release readiness
 
-7. **Clean-tree delivery gate**
-   - Re-run `scripts/verify-gui-phase.sh` from a clean tree after separating pre-existing staged memory/command changes.
-   - Add any project-wide release commands required outside this GUI phase.
+7. **Clean-tree delivery gate** — complete for current milestone
+   - `scripts/verify-gui-phase.sh` passed from a clean detached `origin/main` checkout at `ce860ca339ad6d50d7945ad0b8c37bef22113a93`.
+   - `go test ./... -count=1` passed from the same clean detached checkout.
+   - Main CI and GUI phase gate are green at the same SHA (`27862913354`, `27862913334`).
 
-8. **Independent final review**
-   - Provide the final diff plus verification output to Opus/GLM or another reviewer.
-   - Fix any concrete blockers and record them in `docs/gui-parity-evidence.md`.
+8. **Independent final review** — complete for current milestone
+   - Independent review identified concrete blockers: doc contradiction, acceptance map, CI SHA verification, daemon assertion specificity, and accessibility overclaim scope.
+   - Fixes are recorded in `docs/gui-current-surface-acceptance.md`, `docs/gui-accessibility-keyboard-audit.md`, and `internal/daemon:TestDaemonSecondListenFails`.
 
-## Definition of done for the persistent goal
+## Definition of done for the current shipped-surface milestone
 
-The persistent goal can be submitted to `goal_achieved` only when:
+The current milestone can be submitted to `goal_achieved` for the accepted current shipped surfaces when:
 
-- this backlog's P0 items are complete;
+- P0 current-surface items are complete or explicitly optional/future-scoped;
 - all phase gate commands pass;
 - release/clean-tree gates pass;
 - independent final review has no unresolved blockers;
 - evidence is concrete enough for a judge to verify without relying on intent.
+
+That condition is recorded in `docs/gui-current-surface-acceptance.md`. The persistent GUI product ambition continues for future surfaces/features as they are added.

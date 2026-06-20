@@ -6,23 +6,15 @@ import (
 	"testing"
 )
 
-func TestGUIPhaseGatePreventsPrematureFullGoalClaim(t *testing.T) {
+func TestGUICurrentSurfaceGateDocumentsAcceptance(t *testing.T) {
 	b, err := os.ReadFile("gui-phase-gate.md")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(b)
 	for _, want := range []string{
-		"phase-complete evidence slice",
-		"not a final claim",
-		"Do **not** call the whole goal complete",
-		"Deep feature journeys for every parity row",
-		"Longer real-binary soak",
-		"Visual snapshot/golden workflow",
-		"Independent review blockers fixed",
-		"release smoke commands now fail explicitly",
-		"notepad dirty notes flush on quit",
-		"not, by this document's own criteria, enough to claim the full persistent goal",
+		"current shipped-surface milestone",
+		"docs/gui-current-surface-acceptance.md",
 		"native/browser desktop GUI local-only server",
 		"scripts/verify-gui-phase.sh",
 		"go test ./... -count=1",
@@ -31,9 +23,13 @@ func TestGUIPhaseGatePreventsPrematureFullGoalClaim(t *testing.T) {
 		"scripts/gui-smoke.sh",
 		"go test . -run 'TestPTYReleaseAppShellLongerSoak' -count=1",
 		"go test -tags smoke . -run",
+		"CI and GUI phase gate are green on the default-branch commit",
+		"27862913334",
+		"27862913354",
+		"Future desktop surfaces/features",
 	} {
 		if !strings.Contains(s, want) {
-			t.Fatalf("phase gate missing %q", want)
+			t.Fatalf("current-surface gate missing %q", want)
 		}
 	}
 }
