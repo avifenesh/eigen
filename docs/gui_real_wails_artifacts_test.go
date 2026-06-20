@@ -43,7 +43,7 @@ func TestGUIRealWailsArtifactBundle(t *testing.T) {
 			t.Fatalf("real Wails manifest missing provenance token %q", want)
 		}
 	}
-	wantSurfaces := map[string]bool{"chat": true, "changes": true, "tools": true, "shells": true, "approvals": true, "memory": true}
+	wantSurfaces := map[string]bool{"chat": true, "changes": true, "tools": true, "shells": true, "approvals": true, "memory": true, "plugins": true, "config": true}
 	if len(manifest.Captures) != len(wantSurfaces) {
 		t.Fatalf("captures=%d want %d", len(manifest.Captures), len(wantSurfaces))
 	}
