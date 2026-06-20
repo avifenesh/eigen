@@ -334,9 +334,21 @@ function renderFeatureWorkspace() {
       ['Tool history', `${Object.keys(state.tools).length} streamed tool cards tracked in this session.`, compactActionButton('Focus latest tool', 'data-feature-action="focus-latest-tool"')],
       ['Workspace roots', roots.length ? roots.map(shortPath).join(' · ') : 'No roots reported yet.', compactActionButton('Open system', 'data-feature-action="system"')],
     ]],
-    tools: ['Tools', 'Inspect and operate the automation surface Eigen can use for this session.', tools.length ? tools.slice(0, 9).map(t => [t.name || t.Name || 'tool', (t.read_only ?? t.ReadOnly) ? 'read-only' : 'mutating', `${compactActionButton('Allow next turn', `data-feature-action="allow-tool" data-tool-name="${escapeAttr(t.name || t.Name || 'tool')}"`)} ${compactActionButton('Inspect', 'data-feature-action="system"')}`]) : [['No tools loaded', 'Tool registry will appear after session state arrives.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
-    shells: ['Shells', 'Track and control background commands without leaving the desktop.', shells.length ? shells.slice(0, 9).map(s => [s.id || s.ID || s.command || s.Command || 'shell', `${s.status || s.Status || 'unknown'} ${s.last_line || s.LastLine || ''}`, `${compactActionButton('Poll', `data-feature-action="poll-shell" data-shell-id="${escapeAttr(s.id || s.ID || '')}"`)} ${compactActionButton('Kill', `data-feature-action="kill-shell" data-shell-id="${escapeAttr(s.id || s.ID || '')}"`)}`]) : [['No background shells', 'Shells launched by tools appear here with status and last output.', compactActionButton('Detach foreground bash', 'data-feature-action="detach-bash"')]]],
-    approvals: ['Approvals', 'Handle gated tool calls deliberately with visible status and arguments.', pending.length ? pending.map(p => [p.tool || p.Tool || 'approval', p.id || p.ID || p.result || p.Result || 'pending', `${compactActionButton('Approve', `data-feature-action="approve" data-approval-id="${escapeAttr(p.id || p.ID || p.result || p.Result || '')}"`)} ${compactActionButton('Deny', `data-feature-action="deny" data-approval-id="${escapeAttr(p.id || p.ID || p.result || p.Result || '')}"`)}`]) : [['No pending approvals', 'Gated operations will request approval here and in the timeline.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
+    tools: ['Tools', 'Inspect and operate the automation surface Eigen can use for this session.', tools.length ? tools.slice(0, 9).map(t => [t.name || t.Name || 'tool', (t.read_only ?? t.ReadOnly) ? 'read-only' : 'mutating', `${compactActionButton('Allow next turn', `data-feature-action="allow-tool" data-tool-name="${escapeAttr(t.name || t.Name || 'tool')}"`)} ${compactActionButton('Inspect', 'data-feature-action="system"')}`]) : [
+      ['Tool registry', 'No registry payload yet. Refresh pulls live daemon capability into this surface.', compactActionButton('Refresh tools', 'data-feature-action="refresh"')],
+      ['Allow tool turn', 'Start a scoped turn that grants exactly one named tool instead of opening broad permissions.', compactActionButton('Allow bash', 'data-feature-action="allow-tool" data-tool-name="bash"')],
+      ['Inspect runtime', 'Open the system modal to inspect daemon, model, and desktop bridge state.', compactActionButton('Open system', 'data-feature-action="system"')],
+    ]],
+    shells: ['Shells', 'Track and control background commands without leaving the desktop.', shells.length ? shells.slice(0, 9).map(s => [s.id || s.ID || s.command || s.Command || 'shell', `${s.status || s.Status || 'unknown'} ${s.last_line || s.LastLine || ''}`, `${compactActionButton('Poll', `data-feature-action="poll-shell" data-shell-id="${escapeAttr(s.id || s.ID || '')}"`)} ${compactActionButton('Kill', `data-feature-action="kill-shell" data-shell-id="${escapeAttr(s.id || s.ID || '')}"`)}`]) : [
+      ['No background shells', 'Shells launched by tools appear here with status, last output, and kill controls.', compactActionButton('Refresh shells', 'data-feature-action="refresh"')],
+      ['Foreground bash', 'Detach a foreground bash session back into managed background lifecycle.', compactActionButton('Detach foreground bash', 'data-feature-action="detach-bash"')],
+      ['Process safety', 'Shell controls route through the daemon so cleanup and FD settling remain measured.', compactActionButton('Open system', 'data-feature-action="system"')],
+    ]],
+    approvals: ['Approvals', 'Handle gated tool calls deliberately with visible status and arguments.', pending.length ? pending.map(p => [p.tool || p.Tool || 'approval', p.id || p.ID || p.result || p.Result || 'pending', `${compactActionButton('Approve', `data-feature-action="approve" data-approval-id="${escapeAttr(p.id || p.ID || p.result || p.Result || '')}"`)} ${compactActionButton('Deny', `data-feature-action="deny" data-approval-id="${escapeAttr(p.id || p.ID || p.result || p.Result || '')}"`)}`]) : [
+      ['No pending approvals', 'Gated operations will request approval here with the tool name and arguments visible.', compactActionButton('Refresh approvals', 'data-feature-action="refresh"')],
+      ['Decision path', 'Approve and deny buttons call the same daemon approval API as transcript cards.', compactActionButton('Open system', 'data-feature-action="system"')],
+      ['Permission posture', 'Use Config to switch between ask-first and trusted workflows per session.', compactActionButton('Go to config', 'data-feature-action="goto-config"')],
+    ]],
     memory: ['Memory', 'Keep durable context visible while planning and editing.', [
       ['Goal', snap.goal || snap.Goal || 'No active goal reported by daemon state.', `${compactActionButton('Set from composer', 'data-feature-action="set-goal"')} ${compactActionButton('Compact', 'data-feature-action="compact"')}`],
       ['Roots', roots.length ? roots.map(shortPath).join(' · ') : 'No roots reported yet.', `${compactActionButton('Add current dir', 'data-feature-action="add-dir"')} ${compactActionButton('Open system', 'data-feature-action="system"')}`],
@@ -364,6 +376,7 @@ async function runFeatureAction(btn) {
   if (action === 'refresh') return refreshActiveState({force: true});
   if (action === 'system') return openSystemModal();
   if (action === 'profile') return openProfileModal();
+  if (action === 'goto-config') return setFeature('config');
   if (action === 'focus-latest-tool') {
     const last = timelineEl.querySelector('[data-tool-card]:last-of-type');
     if (last) scrollToVisible(last);
