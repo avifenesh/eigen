@@ -22,6 +22,8 @@ func TestGUIParityEvidenceMentionsKeyRegressionTests(t *testing.T) {
 		"TestPluginsPageCanNavigateCatalogAndInstall",
 		"TestPluginsPageSurfacesScanResultsAndRollback",
 		"TestProvidersAddCustomProviderUpdatesCatalog",
+		"TestAppCodeDerivedFeatureInventoryHasJourneyEvidence",
+		"TestTUICodeDerivedFeatureInventoryHasJourneyEvidence",
 		"TestServeRejectsNonLocalBind",
 		"TestHandlerStaticAndAPIContracts",
 		"TestServiceValidationErrors",

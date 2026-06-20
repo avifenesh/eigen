@@ -17,6 +17,8 @@ func TestGUICurrentSurfaceAcceptanceMapsGoalCriteria(t *testing.T) {
 		"Criterion-to-evidence map",
 		"Premium desktop app shell exists",
 		"Includes all Eigen GUI features",
+		"TestAppCodeDerivedFeatureInventoryHasJourneyEvidence",
+		"TestTUICodeDerivedFeatureInventoryHasJourneyEvidence",
 		"End-to-end tested",
 		"High UI/UX quality",
 		"Measured no resource leak/misuse for covered flows",
