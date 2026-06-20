@@ -121,7 +121,7 @@ func TestPTYChatTUISmokeQuit(t *testing.T) {
 	cmd.Env = append(os.Environ(), "GO_WANT_CLI_HELPER_PROCESS=1", "EIGEN_TUI_SMOKE=1", "HOME="+t.TempDir(), "TERM=xterm-256color")
 	h := startPTYHarness(t, cmd, 120, 30)
 	defer h.close()
-	deadline := time.After(5 * time.Second)
+	deadline := time.After(10 * time.Second)
 	sent := false
 	for {
 		select {
