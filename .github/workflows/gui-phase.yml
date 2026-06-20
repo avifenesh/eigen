@@ -1,0 +1,23 @@
+name: GUI phase gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  gui-phase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install PTY/smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xterm tmux xvfb
+      - name: Run GUI phase gate
+        run: xvfb-run -a scripts/verify-gui-phase.sh

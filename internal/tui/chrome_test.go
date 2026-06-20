@@ -844,6 +844,81 @@ func TestGitSummaryForRepo(t *testing.T) {
 	}
 }
 
+func TestGitLinesUsesCachedSummary(t *testing.T) {
+	dir := t.TempDir()
+	runGit(t, dir, "init")
+	runGit(t, dir, "config", "user.email", "a@example.com")
+	runGit(t, dir, "config", "user.name", "A")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "a.txt")
+	runGit(t, dir, "commit", "-m", "init")
+
+	m := testModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(old)
+
+	gitPanelCommandCount.Store(0)
+	m.gitLines(12)
+	if got := gitPanelCommandCount.Load(); got != 0 {
+		t.Fatalf("git render must not spawn commands before Update refresh, got %d", got)
+	}
+	m.refreshGitSummary()
+	first := gitPanelCommandCount.Load()
+	if first == 0 {
+		t.Fatal("Update-owned refresh should collect a summary")
+	}
+	for i := 0; i < 10; i++ {
+		m.gitLines(12)
+	}
+	if got := gitPanelCommandCount.Load(); got != first {
+		t.Fatalf("cached git renders should not spawn more git commands: first=%d after=%d", first, got)
+	}
+}
+
+func TestGitSummaryRefreshesOnUpdateEventsOnly(t *testing.T) {
+	dir := t.TempDir()
+	runGit(t, dir, "init")
+	runGit(t, dir, "config", "user.email", "a@example.com")
+	runGit(t, dir, "config", "user.name", "A")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "a.txt")
+	runGit(t, dir, "commit", "-m", "init")
+	m := testModel(t)
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(old)
+	gitPanelCommandCount.Store(0)
+	m.setRightTab(rightTabGit)
+	first := gitPanelCommandCount.Load()
+	if first == 0 {
+		t.Fatal("switching to git should refresh once")
+	}
+	m.gitLines(12)
+	if got := gitPanelCommandCount.Load(); got != first {
+		t.Fatalf("render should not refresh git summary: first=%d after=%d", first, got)
+	}
+	m.Update(turnDoneMsg{})
+	if got := gitPanelCommandCount.Load(); got <= first {
+		t.Fatalf("turnDone while git tab visible should refresh summary: first=%d after=%d", first, got)
+	}
+}
+
 func TestGitSummaryNoRepo(t *testing.T) {
 	s := gitSummaryFor(t.TempDir())
 	if s.Repo {

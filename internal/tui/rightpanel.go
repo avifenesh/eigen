@@ -109,7 +109,15 @@ func (m *model) setRightTab(t rightPanelTab) tea.Cmd {
 	if prev == rightTabTerminal && t != rightTabTerminal {
 		m.term.focused = false
 	}
+	if prev == rightTabNotepad && t != rightTabNotepad {
+		m.saveNotepad()
+		m.notepad.focused = false
+	}
 	m.relayout()
+	if t == rightTabGit {
+		m.refreshGitSummary()
+		return nil
+	}
 	if t == rightTabTerminal {
 		m.term.focused = true
 		return m.startTerm(m.termRows())

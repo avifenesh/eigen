@@ -510,6 +510,17 @@ func TestMouseDragMultiLineCopies(t *testing.T) {
 // --- slash autocomplete -----------------------------------------------------
 
 func TestSlashMenuOpensAndFilters(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // isolate user custom commands
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.Chdir(dir); err != nil { // isolate project .eigen/commands
+		t.Fatal(err)
+	}
+	defer os.Chdir(old)
+
 	m := testModel(t)
 	typeRunes(m, "/")
 	if !m.comp.active() || m.comp.kind != compSlash {
@@ -699,6 +710,60 @@ func TestMentionEnterInserts(t *testing.T) {
 	}
 	if want := "README.md "; m.ti.Value() != want {
 		t.Fatalf("enter on a mention should insert the path, got %q", m.ti.Value())
+	}
+}
+
+func TestMentionFileIndexCachesBetweenKeystrokes(t *testing.T) {
+	dir := t.TempDir()
+	for _, rel := range []string{"src/main.go", "src/mapper.go", "README.md"} {
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(old)
+
+	m := testModel(t)
+	fileIndexWalkCount.Store(0)
+	m.ti.SetValue("look @m")
+	m.refreshCompletion()
+	if got := fileIndexWalkCount.Load(); got != 1 {
+		t.Fatalf("first mention should walk once, got %d", got)
+	}
+	m.ti.SetValue("look @ma")
+	m.refreshCompletion()
+	m.ti.SetValue("look @mai")
+	m.refreshCompletion()
+	if got := fileIndexWalkCount.Load(); got != 1 {
+		t.Fatalf("typing within TTL should reuse the file index, got %d walks", got)
+	}
+}
+
+func TestIndexFilesIsTimeBudgeted(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < maxIndexedFiles+2000; i++ {
+		p := filepath.Join(dir, fmt.Sprintf("f%05d.txt", i))
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	start := time.Now()
+	files := indexFiles(dir)
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("indexFiles should be bounded, took %s for %d files", elapsed, len(files))
+	}
+	if len(files) > maxIndexedFiles {
+		t.Fatalf("indexFiles returned %d files > cap %d", len(files), maxIndexedFiles)
 	}
 }
 

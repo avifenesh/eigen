@@ -343,17 +343,22 @@ type model struct {
 	// files touched in the last edit-producing run (click a file = jump to its
 	// tool block). Hidden when the last run made no edits or the terminal is
 	// too narrow (degrades before the rail).
-	changesOn       bool
-	rightTab        rightPanelTab // selected right panel tab (changes/git/terminal)
-	term            termState     // embedded PTY terminal tab state
-	tasks           tasksState    // background-tasks tab state (Tier 12)
-	shells          shellsState   // background-shells tab state
-	notepad         notepadState  // freeform per-session scratch pad tab (Tier 21)
-	tasksDir        string        // background-task store dir (tests isolate it)
-	changesCache    []fileChange  // memoized last-run change index
-	changesCacheSig string        // transcript signature the cache was built for
-	changesVw       changesView   // memoized inline-diff view (lines + file map)
-	changesScroll   int           // changes tab scroll offset (wheel)
+	changesOn bool
+	rightTab  rightPanelTab // selected right panel tab (changes/git/terminal)
+	// git tab summary is cached so View() never spawns git subprocesses on every
+	// render/spinner frame; refresh is time-bounded from Update-driven tab access.
+	gitCacheDir     string
+	gitCacheAt      time.Time
+	gitCache        gitSummary
+	term            termState    // embedded PTY terminal tab state
+	tasks           tasksState   // background-tasks tab state (Tier 12)
+	shells          shellsState  // background-shells tab state
+	notepad         notepadState // freeform per-session scratch pad tab (Tier 21)
+	tasksDir        string       // background-task store dir (tests isolate it)
+	changesCache    []fileChange // memoized last-run change index
+	changesCacheSig string       // transcript signature the cache was built for
+	changesVw       changesView  // memoized inline-diff view (lines + file map)
+	changesScroll   int          // changes tab scroll offset (wheel)
 
 	// Panel resizing (drag the rail's separator / the right panel's left
 	// edge). railW/rightW are the user-set widths (0 = the defaults);
@@ -900,6 +905,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		}
 		m.ti.SetWidth(msg.Width - 2)
 		m.relayout()
+		m.refreshGitSummaryIfVisible()
 		// Reshape the embedded terminal to the new panel height (Update-owned).
 		if m.term.started && !m.term.exited {
 			m.ensureTermSize(m.termRows())
@@ -937,6 +943,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 			return m, nil
 		}
 		if msg.String() == "ctrl+c" {
+			m.saveNotepad()
 			// Autosave already happens continuously via the agent's Persist hook;
 			// only save here when idle (no turn running) to avoid racing the
 			// agent goroutine that owns the session during a turn.
@@ -1668,6 +1675,7 @@ func (m *model) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
 		return m, m.startListening(true)
 
 	case turnDoneMsg:
+		m.refreshGitSummaryIfVisible()
 		if msg.err != nil {
 			// Defensive: a "session busy" error means another view's turn was
 			// still running when this Send raced in (the attachedRunning queue

@@ -1,0 +1,5 @@
+eigen
+session
+perm=auto
+inspect src/main.go
+Summary: main is important

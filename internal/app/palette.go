@@ -56,14 +56,12 @@ func (p *palette) build(m *Model) {
 	}
 	p.cmds = append(p.cmds,
 		paletteCmd{name: "new session", hint: "action", run: func(m *Model) tea.Cmd {
-			m.result = Result{Action: ActionOpenChat}
-			m.quitting = true
-			return tea.Quit
+			_, cmd := m.quitWith(Result{Action: ActionOpenChat})
+			return cmd
 		}},
 		paletteCmd{name: "quit", hint: "action", run: func(m *Model) tea.Cmd {
-			m.result = Result{Action: ActionQuit}
-			m.quitting = true
-			return tea.Quit
+			_, cmd := m.quitWith(Result{Action: ActionQuit})
+			return cmd
 		}},
 	)
 }

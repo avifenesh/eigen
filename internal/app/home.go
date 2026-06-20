@@ -65,19 +65,13 @@ func (h *homeState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// A feed item: open a chat rooted at its project with the task
 			// pre-submitted — the one-keystroke session starter.
 			it := h.feed[c]
-			m.result = Result{Action: ActionOpenChat, Dir: it.Dir, Task: it.Task}
-			m.quitting = true
-			return m, tea.Quit
+			return m.quitWith(Result{Action: ActionOpenChat, Dir: it.Dir, Task: it.Task})
 		case c-h.feedN < h.sessionN:
 			r := m.data.Sessions[c-h.feedN]
-			m.result = openAction(r)
-			m.quitting = true
-			return m, tea.Quit
+			return m.quitWith(openAction(r))
 		}
 	case "n":
-		m.result = Result{Action: ActionOpenChat}
-		m.quitting = true
-		return m, tea.Quit
+		return m.quitWith(Result{Action: ActionOpenChat})
 	case "d", "x":
 		// Remove the selected feed item (dismiss: stops appearing for 2 weeks,
 		// or until its content changes — e.g. the dirty-file count moves).
@@ -223,14 +217,14 @@ func (h *homeState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
 	switch {
 	case idx < h.feedN:
 		it := h.feed[idx]
-		m.result = Result{Action: ActionOpenChat, Dir: it.Dir, Task: it.Task}
+		_, cmd := m.quitWith(Result{Action: ActionOpenChat, Dir: it.Dir, Task: it.Task})
+		return cmd, true
 	case idx-h.feedN < h.sessionN:
-		m.result = openAction(m.data.Sessions[idx-h.feedN])
+		_, cmd := m.quitWith(openAction(m.data.Sessions[idx-h.feedN]))
+		return cmd, true
 	default:
 		return nil, true
 	}
-	m.quitting = true
-	return tea.Quit, true
 }
 
 // renderTask renders the full task text of an expanded feed item, wrapped and

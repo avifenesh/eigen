@@ -1,0 +1,9 @@
+eigen › plugins
+eigen
+plugins
+installed
+marketplace
+wiring
+demo
+wired components
+demo-mcp

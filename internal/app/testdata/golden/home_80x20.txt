@@ -1,0 +1,11 @@
+λ eigen
+home
+live
+sessions
+projects
+providers
+models
+plugins
+scanning for things to act on
+recent
+q quit

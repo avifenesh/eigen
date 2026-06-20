@@ -9,10 +9,13 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 const gitPanelTimeout = 2 * time.Second
+
+var gitPanelCommandCount atomic.Int64
 
 type gitSummary struct {
 	Dir       string
@@ -28,7 +31,7 @@ type gitSummary struct {
 }
 
 func (m *model) gitLines(h int) []string {
-	s := gitSummaryFor(m.sessionDir())
+	s := m.gitSummaryCached()
 	pw := m.rightCols()
 	lines := make([]string, 0, h)
 	lines = append(lines, changesPad(m.rightPanelTitleLine(pw-2), pw))
@@ -70,6 +73,29 @@ func (m *model) gitLines(h int) []string {
 		lines = append(lines, changesPad("", pw))
 	}
 	return lines
+}
+
+func (m *model) gitSummaryCached() gitSummary {
+	dir := m.sessionDir()
+	if dir == m.gitCacheDir && !m.gitCacheAt.IsZero() {
+		return m.gitCache
+	}
+	// View() can call gitLines(); never spawn git from the render path. Return a
+	// cheap placeholder until Update-owned events refresh the cache.
+	return gitSummary{Dir: dir}
+}
+
+func (m *model) refreshGitSummaryIfVisible() {
+	if m.rightTab == rightTabGit && m.changesOn {
+		m.refreshGitSummary()
+	}
+}
+
+func (m *model) refreshGitSummary() {
+	dir := m.sessionDir()
+	m.gitCacheDir = dir
+	m.gitCacheAt = time.Now()
+	m.gitCache = gitSummaryFor(dir)
 }
 
 func gitSummaryFor(dir string) gitSummary {
@@ -125,6 +151,7 @@ func gitSummaryFor(dir string) gitSummary {
 }
 
 func gitPanelIn(dir string, args ...string) (string, error) {
+	gitPanelCommandCount.Add(1)
 	ctx, cancel := context.WithTimeout(context.Background(), gitPanelTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", args...)

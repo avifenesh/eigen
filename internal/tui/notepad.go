@@ -134,6 +134,9 @@ func (m *model) notepadKey(key string, msg tea.KeyMsg) (tea.Cmd, bool) {
 	}
 	n := &m.notepad
 	switch key {
+	case "ctrl+c":
+		m.saveNotepad()
+		return tea.Quit, true
 	case "ctrl+g", "esc":
 		n.focused = false
 		m.saveNotepad()

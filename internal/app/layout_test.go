@@ -117,6 +117,29 @@ func TestTruncateIsDisplayWidthSafe(t *testing.T) {
 	}
 }
 
+func TestViewFitsAllPagesAcrossSizes(t *testing.T) {
+	widths := []int{48, 60, 72, 80, 100, 129, 130, 160}
+	heights := []int{8, 10, 14, 20, 30}
+	for _, w := range widths {
+		for _, h := range heights {
+			for _, p := range pages {
+				m := layoutModel(t, w, h)
+				m.active = p.page
+				v := m.View()
+				lines := strings.Split(v, "\n")
+				if len(lines) > h {
+					t.Fatalf("page=%s size=%dx%d rendered %d rows > height:\n%s", p.name, w, h, len(lines), v)
+				}
+				for i, ln := range lines {
+					if lw := lipgloss.Width(ln); lw > w {
+						t.Fatalf("page=%s size=%dx%d line %d width %d > width:\n%q", p.name, w, h, i, lw, ln)
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestViewHasFramedChrome(t *testing.T) {
 	m := layoutModel(t, 120, 30)
 	v := m.View()

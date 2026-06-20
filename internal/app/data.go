@@ -146,6 +146,12 @@ func (d *Data) reloadSessions() {
 	d.Projects = groupProjects(rows)
 }
 
+// LoadEmpty returns deterministic, side-effect-free app data for smoke tests
+// and other callers that need to exercise the shell without reading user state.
+func LoadEmpty() *Data {
+	return &Data{Config: config.Config{}, Skills: skill.Discover()}
+}
+
 // Load gathers the app's data. Failures degrade (a page shows "unavailable")
 // rather than failing the app.
 func Load() *Data {

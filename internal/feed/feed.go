@@ -10,6 +10,7 @@
 package feed
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -73,15 +74,29 @@ func save(f Feed) {
 // feed (also cached). Order: git (actionable now) → memory (your own intent)
 // → github (the world's asks) → model suggestions (what you probably want or
 // missed). Each scanner is bounded and failure-isolated; suggest is nil-safe
-// (no small model = no suggestions).
-func Scan(projectDirs []string, suggest Suggester) Feed {
+// (no small model = no suggestions). If ctx is canceled, the scan stops before
+// launching later/more expensive sources and does not overwrite the cache.
+func Scan(ctx context.Context, projectDirs []string, suggest Suggester) Feed {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	var items []Item
-	items = append(items, scanGit(projectDirs)...)
-	items = append(items, scanMemory(projectDirs)...)
-	items = append(items, scanGitHub()...)
-	items = append(items, scanSuggest(projectDirs, suggest)...)
+	if ctx.Err() == nil {
+		items = append(items, scanGit(projectDirs)...)
+	}
+	if ctx.Err() == nil {
+		items = append(items, scanMemory(projectDirs)...)
+	}
+	if ctx.Err() == nil {
+		items = append(items, scanGitHub(ctx)...)
+	}
+	if ctx.Err() == nil {
+		items = append(items, scanSuggest(ctx, projectDirs, suggest)...)
+	}
 	f := Feed{Items: rank(items), Scanned: time.Now()}
-	save(f)
+	if ctx.Err() == nil {
+		save(f)
+	}
 	return f
 }
 

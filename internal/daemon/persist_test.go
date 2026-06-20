@@ -64,7 +64,9 @@ func TestPersistAcrossDaemonRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	c1.Close()
-	srv1.Close() // "kill" the daemon (files stay)
+	if err := srv1.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Daemon #2: restore.
 	h2 := NewPersistentHost(persistDir)

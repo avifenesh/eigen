@@ -122,9 +122,7 @@ func (s *machinesState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "n":
 		// New session on the highlighted machine (skip the list).
 		if s.list.cursor < len(m.data.Machines) {
-			m.result = Result{Action: ActionRemote, Host: m.data.Machines[s.list.cursor].Name}
-			m.quitting = true
-			return m, tea.Quit
+			return m.quitWith(Result{Action: ActionRemote, Host: m.data.Machines[s.list.cursor].Name})
 		}
 	}
 	return m, nil
@@ -167,22 +165,16 @@ func (s *machinesState) updateInside(m *Model, key string, visible int) (tea.Mod
 		return m, installMachine(s.mach, mc.SSH, exe)
 	case "n":
 		// New session on this machine.
-		m.result = Result{Action: ActionRemote, Host: mc.Name}
-		m.quitting = true
-		return m, tea.Quit
+		return m.quitWith(Result{Action: ActionRemote, Host: mc.Name})
 	case "enter":
 		if s.loading {
 			return m, nil
 		}
 		if s.inner.cursor < len(s.sessions) {
-			m.result = Result{Action: ActionRemote, Host: mc.Name, SessionID: s.sessions[s.inner.cursor].ID}
-			m.quitting = true
-			return m, tea.Quit
+			return m.quitWith(Result{Action: ActionRemote, Host: mc.Name, SessionID: s.sessions[s.inner.cursor].ID})
 		}
 		// No sessions → enter starts a new one.
-		m.result = Result{Action: ActionRemote, Host: mc.Name}
-		m.quitting = true
-		return m, tea.Quit
+		return m.quitWith(Result{Action: ActionRemote, Host: mc.Name})
 	}
 	return m, nil
 }
@@ -220,9 +212,10 @@ func (s *machinesState) view(m *Model, w, h int) string {
 		} else if strings.Contains(s.installMsg, "installed") {
 			tone = sOk
 		}
+		msgW := max(20, w-4)
 		// Wrap the message across the content width so a full ssh error is
 		// readable (don't truncate — the whole point is diagnosing failures).
-		out += "\n" + tone.Render(wrapTo(s.installMsg, w-4, "  "))
+		out += "\n" + tone.Render(wrapTo(s.installMsg, msgW, "  "))
 	}
 	out += "\n" + sFaint.Render("  enter open machine (see its sessions) · i install eigen here · n new session")
 	return out
@@ -333,9 +326,8 @@ func (s *machinesState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
 		}
 		if s.inner.cursor == idx {
 			mc := m.data.Machines[s.mach]
-			m.result = Result{Action: ActionRemote, Host: mc.Name, SessionID: s.sessions[idx].ID}
-			m.quitting = true
-			return tea.Quit, true
+			_, cmd := m.quitWith(Result{Action: ActionRemote, Host: mc.Name, SessionID: s.sessions[idx].ID})
+			return cmd, true
 		}
 		s.inner.cursor = idx
 		return nil, true
