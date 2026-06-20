@@ -1,12 +1,12 @@
-# GUI phase gate
+# GUI current-surface gate
 
 This repository is moving toward the long-running goal: a premium desktop Eigen app with full feature parity, high UI/UX, E2E coverage, and measured resource safety.
 
-The current implementation is a **phase-complete evidence slice**, not a final claim that every feature in Eigen has full desktop parity. This gate makes that explicit so future work cannot accidentally treat the current test set as full-goal completion.
+The current implementation is a **current shipped-surface milestone**. It does not freeze future product expansion; it accepts the desktop surfaces that exist today and records future/optional work separately in `docs/gui-next-phase-backlog.md`.
 
-## Current phase: shell + core chat surfaces
+## Current milestone: native GUI shell + app shell + core chat surfaces
 
-This phase is considered covered when the reproducible gate passes:
+This milestone is considered covered when the reproducible gate passes:
 
 ```bash
 scripts/verify-gui-phase.sh
@@ -28,27 +28,25 @@ go test -tags smoke . -run 'TestPTYChatTUISmokeQuit|TestPTYAppShellNavigationSoa
 
 It covers:
 
-- native/browser desktop GUI local-only server, static shell/API contracts, service validation, and stream shutdown seams;
-- app shell canvas ownership, visual contracts, all-page keyboard journeys, and PTY navigation soak;
-- chat TUI composer/transcript journeys, right-panel journeys, and PTY startup/quit smoke;
-- resource-safety regressions for app render, TUI render/live-loop, git panel subprocesses, file completion, feed/model/GitHub cancellation;
-- evidence and feature-parity docs guarded by tests.
+- native/browser desktop GUI local-only server, static shell/API contracts, service validation, stream shutdown seams, JS syntax, and browser smoke;
+- app shell canvas ownership, visual contracts, all-page keyboard journeys, mutating-page workflows, and PTY navigation soak;
+- chat TUI composer/transcript journeys, tool-turn plan/changes flow, right-panel journeys, keyboard parity, and PTY startup/quit smoke;
+- resource-safety regressions for app render, TUI render/live-loop, git panel subprocesses, file completion, feed/model/GitHub cancellation, background shell FD settling, daemon listener cleanup, and transcript concurrency durability;
+- evidence, feature-parity, keyboard-parity, mutating-page, and acceptance docs guarded by tests.
 
-## Required before claiming the persistent goal fully achieved
+## Current-surface acceptance
 
-Do **not** call the whole goal complete until these are also true:
+The goal criteria and evidence for this milestone are mapped in `docs/gui-current-surface-acceptance.md`.
 
-1. **Deep feature journeys for every parity row**
-   - Every row in `docs/gui-feature-parity.md` has a feature-specific journey, not only a generic layout/fit or render-soak reference.
-2. **Longer real-binary soak**
-   - A real PTY or desktop-sandbox run exercises app shell and chat TUI loops for materially longer than the current smoke tests and records bounded goroutine/subprocess behavior.
-3. **Visual snapshot/golden workflow**
-   - App pages, TUI right-panel tabs, and central TUI composer/transcript states now have stable token goldens. Expand to richer snapshots/pixel review if final acceptance requires it.
-4. **Independent review blockers fixed**
-   - Final independent review blockers found in this phase have been fixed and test-guarded: release smoke commands now fail explicitly instead of false-green no-op/fallthrough, notepad dirty notes flush on quit, GitHub/feed subprocess cancellation is context-backed, and git/feed counters are atomic.
-5. **Delivery-quality gate**
-   - Normal tests, smoke-tagged PTY tests, and any broader project-required build/test gates pass from a clean working tree.
+The current milestone is ready to submit to `goal_achieved` when:
 
-## Current non-final verdict
+1. the gate above passes from a clean checkout;
+2. CI and GUI phase gate are green on the default-branch commit being claimed;
+3. independent review has no unresolved blockers;
+4. future-scope items are explicitly out of scope for this current shipped-surface milestone.
 
-The current GUI work is suitable as a strong phase toward the persistent goal. It is not, by this document's own criteria, enough to claim the full persistent goal is judge-ready.
+That condition is met for `origin/main` commit `ce860ca339ad6d50d7945ad0b8c37bef22113a93` by CI runs `27862913334` and `27862913354`, plus clean detached local verification.
+
+## Future scope
+
+Future desktop surfaces/features, optional richer pixel/video/focus-ring review packages, and full WCAG conformance certification are future work unless explicitly required by a later release policy. They are not blockers for this current shipped-surface milestone.

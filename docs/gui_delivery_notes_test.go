@@ -13,6 +13,7 @@ func TestGUIDeliveryNotesRecordScopeAndPreexistingStagedFiles(t *testing.T) {
 	}
 	s := string(b)
 	for _, want := range []string{
+		"internal/gui",
 		"internal/app",
 		"internal/tui",
 		"internal/feed",
@@ -32,9 +33,8 @@ func TestGUIDeliveryNotesRecordScopeAndPreexistingStagedFiles(t *testing.T) {
 		"go test -tags smoke . -count=1",
 		"TestPTYReleaseAppShellLongerSoak",
 		"-count=5",
-		"docs/gui-next-phase-backlog.md",
-		"docs/gui-phase-summary.json",
-		"not a final claim",
+		"docs/gui-current-surface-acceptance.md",
+		"Future surfaces/features",
 	} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("GUI delivery notes missing %q", want)

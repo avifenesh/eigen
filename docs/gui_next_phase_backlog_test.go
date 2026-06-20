@@ -33,7 +33,7 @@ func TestGUINextPhaseBacklogKeepsFullGoalActionable(t *testing.T) {
 		"Clean-tree delivery gate",
 		"Independent final review",
 		"goal_achieved",
-		"P0 items are complete",
+		"P0 current-surface items are complete",
 	} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("next-phase backlog missing %q", want)

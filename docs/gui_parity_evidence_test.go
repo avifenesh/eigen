@@ -102,8 +102,10 @@ func TestGUIParityEvidenceMentionsKeyRegressionTests(t *testing.T) {
 		"go test . -run 'TestPTYReleaseAppShellLongerSoak' -count=1",
 		"go test -tags smoke . -run",
 		"-count=5",
+		"docs/gui-current-surface-acceptance.md",
 		"docs/gui-phase-gate.md",
 		"docs/gui-delivery-notes.md",
+		"docs/gui-next-phase-backlog.md",
 		"Remaining gaps before claiming full persistent goal",
 	} {
 		if !strings.Contains(s, want) {
