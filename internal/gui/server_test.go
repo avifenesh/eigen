@@ -50,37 +50,25 @@ func TestHandlerStaticAndAPIContracts(t *testing.T) {
 		t.Fatalf("health should report offline daemon with socket/error, got %+v", health)
 	}
 
-	status, ctype, body = get("/api/observe?limit=25")
-	if status != http.StatusOK || !strings.Contains(ctype, "application/json") {
-		t.Fatalf("/api/observe status=%d content-type=%q body=%s", status, ctype, body)
-	}
-	var obs ObserveSnapshot
-	if err := json.Unmarshal([]byte(body), &obs); err != nil {
-		t.Fatal(err)
-	}
-	if obs.Path == "" || obs.Limit != 25 {
-		t.Fatalf("observe snapshot should include source path and requested limit, got %+v", obs)
-	}
-
 	status, _, body = get("/")
 	if status != http.StatusOK {
 		t.Fatalf("/ status=%d", status)
 	}
-	for _, want := range []string{"id=\"new-session\"", "id=\"feature-nav\"", "data-feature=\"home\"", "data-feature=\"chat\"", "id=\"desktop-overview\"", "id=\"feature-workspace\"", "id=\"timeline\"", "id=\"model-input\"", "id=\"profile-modal\"", "id=\"system-modal\""} {
+	for _, want := range []string{"id=\"rail-toggle\"", "id=\"new-session\"", "id=\"feature-nav\"", "data-feature=\"chat\"", "id=\"chat-stage\"", "id=\"status-bar\"", "id=\"status-indicator\"", "id=\"composer\"", "id=\"feature-stage\"", "id=\"timeline\"", "id=\"model-input\"", "id=\"profile-modal\"", "id=\"system-modal\""} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("index missing %q", want)
 		}
 	}
 
 	_, _, app := get("/app.js")
-	for _, want := range []string{"function renderFeatureWorkspace", "function renderHomeWorkspace", "function observeCells", "async function refreshObserve", "async function getObserve", "Every Eigen desktop page", "async function runFeatureAction", "async function applySettingFromFeature", "async function sendAllowedToolTurn", "function setFeature", "function renderUnifiedDiff", "function shellSummaryHTML", "async function openSystemModal", "connectEvents", "desktop().Subscribe"} {
+	for _, want := range []string{"function renderMarkdown", "function renderTimeline", "function renderFeatureStage", "async function runFeatureAction", "function setFeature", "function renderUnifiedDiff", "function shellSummaryHTML", "async function openSystemModal", "connectEvents", "desktop().Subscribe"} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("app.js missing %q", want)
 		}
 	}
 
 	_, _, css := get("/styles.css")
-	for _, want := range []string{".rail-toggle", "body.rail-collapsed", ".feature-nav", ".home-surface", ".surface-directory", ".surface-tile", ".desktop-overview", ".feature-workspace", ".diff-view", ".shell-mini", ".system-card", ".approval-card", ".tool-card", ".feature-observe"} {
+	for _, want := range []string{".rail-toggle", "body.rail-collapsed", ".feature-nav", ".workspace", ".chat-stage", ".status-bar", ".status-indicator", ".composer", ".feature-stage", ".code-block", ".diff-view", ".shell-mini", ".system-card", ".system-row", ".approval-card", ".tool-card"} {
 		if !strings.Contains(css, want) {
 			t.Fatalf("styles.css missing %q", want)
 		}
