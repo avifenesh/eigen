@@ -316,7 +316,7 @@ function renderFeatureWorkspace() {
   if (!featureWorkspace) return;
   const snap = state.state || {};
   if (state.feature === 'chat') {
-    desktopOverview?.classList.remove('hidden');
+    desktopOverview?.classList.add('hidden');
     featureWorkspace.classList.add('hidden');
     timelineEl.classList.remove('hidden');
     return;
