@@ -8,7 +8,8 @@
   </head>
   <body>
     <div id="app" class="shell">
-      <aside class="rail">
+      <button id="rail-toggle" class="rail-toggle" type="button" aria-label="Toggle sidebar" aria-expanded="true">☰</button>
+      <aside class="rail" id="sidebar">
         <div class="brand">
           <div class="mark">λ</div>
           <div>
@@ -32,6 +33,7 @@
           <button class="feature-link" type="button" data-feature="memory">Memory</button>
           <button class="feature-link" type="button" data-feature="plugins">Plugins</button>
           <button class="feature-link" type="button" data-feature="config">Config</button>
+          <button class="feature-link" type="button" data-feature="observe">Observe</button>
         </nav>
         <div class="rail-head">Sessions</div>
         <div id="sessions" class="sessions"></div>

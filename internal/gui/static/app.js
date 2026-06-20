@@ -21,6 +21,7 @@ const surfaces = [
   {id: 'memory', title: 'Memory', copy: 'Keep goal, roots, profile, compaction, and durable context close at hand.', meta: 'context'},
   {id: 'plugins', title: 'Plugins', copy: 'Inspect tools, marketplace capability, and plugin-provided agent roles.', meta: 'extensions'},
   {id: 'config', title: 'Config', copy: 'Tune model, effort, permission, search, and fast mode for this session.', meta: 'settings'},
+  {id: 'observe', title: 'Observe', copy: 'Daemon health, runtime pressure, streams, shell lifecycle, and resource telemetry.', meta: 'telemetry'},
 ];
 
 const $ = (id) => document.getElementById(id);
@@ -70,6 +71,7 @@ const overviewContext = $('overview-context');
 const overviewTokens = $('overview-tokens');
 const overviewTools = $('overview-tools');
 const overviewShells = $('overview-shells');
+const railToggle = $('rail-toggle');
 
 function desktop() {
   if (!window.go) return null;
@@ -111,6 +113,11 @@ async function getHealth() {
 async function getSessions() {
   if (hasDesktopBridge()) return desktop().Sessions();
   return api('/api/sessions');
+}
+
+async function getObserve(limit = 5000) {
+  if (hasDesktopBridge() && desktop().Observe) return desktop().Observe(limit);
+  return api(`/api/observe?limit=${encodeURIComponent(limit)}`);
 }
 
 async function getUserProfile() {
@@ -204,8 +211,11 @@ async function boot() {
 async function refreshHealth() {
   try {
     const h = await getHealth();
+    state.health = h;
     daemonEl.textContent = h.ok ? (hasDesktopBridge() ? 'desktop connected' : 'daemon connected') : 'daemon offline';
+    if (state.feature === 'observe') renderFeatureWorkspace();
   } catch (err) {
+    state.health = {ok: false, error: err.message || String(err)};
     daemonEl.textContent = 'daemon error';
   }
 }
@@ -276,6 +286,7 @@ function applyState(id, snap, opts = {}) {
   syncPendingApprovals(snap.pending || snap.Pending || []);
   updateInspector(snap);
   updateDesktopOverview(snap);
+  if (state.feature === 'observe') refreshObserve({force: false});
   renderFeatureWorkspace();
 }
 
@@ -335,6 +346,9 @@ function renderFeatureWorkspace() {
     timelineEl.classList.remove('hidden');
     return;
   }
+  if (state.feature === 'observe' && !state.observe) {
+    refreshObserve({force: false});
+  }
   if (state.feature === 'home') {
     desktopOverview?.classList.remove('hidden');
     timelineEl.classList.add('hidden');
@@ -391,6 +405,7 @@ function renderFeatureWorkspace() {
       ['Permission', permSelect?.value || snap.perm || snap.Perm || 'gated', compactActionButton('Apply perm', 'data-feature-action="apply-perm"')],
       ['Search / fast', `${searchSelect?.value || snap.search || snap.Search || 'off'} · ${fastToggle?.classList.contains('active') ? 'fast on' : 'fast off'}`, `${compactActionButton('Apply search', 'data-feature-action="apply-search"')} ${compactActionButton('Toggle fast', 'data-feature-action="toggle-fast"')}`],
     ]],
+    observe: ['Observe', 'Watch daemon health, stream status, runtime pressure, and current-session operational signals.', observeCells(snap)],
   };
   const [title, copy, cells] = featureMap[state.feature] || featureMap.changes;
   const cellsHTML = cells.map(([k, v, action], i) => `<div class="feature-cell feature-cell-${i + 1}"><strong>${escapeHtml(k)}</strong><span>${escapeHtml(v)}</span>${action ? `<div class="feature-actions">${action}</div>` : ''}</div>`).join('');
@@ -435,12 +450,42 @@ function renderHomeWorkspace(snap = {}) {
   featureWorkspace.querySelectorAll('[data-home-feature]').forEach(btn => btn.addEventListener('click', () => setFeature(btn.dataset.homeFeature)));
 }
 
+
+function observeCells(snap = {}) {
+  const shells = snap.shells || snap.Shells || [];
+  const pending = snap.pending || snap.Pending || [];
+  const tools = snap.tools || snap.Tools || [];
+  const observe = state.observe || {};
+  const summary = observe.summary || observe.Summary || {};
+  const stats = state.health?.stats || state.health?.Stats || {};
+  const errors = sumCounts(summary.errors || summary.Errors);
+  const records = summary.records ?? summary.Records ?? 0;
+  const models = Object.keys(summary.models || summary.Models || {}).length;
+  const obsTools = Object.keys(summary.tools || summary.Tools || {}).length;
+  const runtime = summary.runtime || summary.Runtime || {};
+  const runtimeCopy = [
+    runtime.max_goroutines || runtime.MaxGoroutines ? `${runtime.max_goroutines || runtime.MaxGoroutines} max goroutines` : '',
+    runtime.max_mem_alloc_bytes || runtime.MaxMemAllocBytes ? `${formatBytes(runtime.max_mem_alloc_bytes || runtime.MaxMemAllocBytes)} max alloc` : '',
+    stats.goroutines || stats.Goroutines ? `${stats.goroutines || stats.Goroutines} live goroutines` : '',
+  ].filter(Boolean).join(' · ') || 'Runtime samples appear after observed turns.';
+  return [
+    ['Telemetry', `${records} events · ${errors} errors · ${observe.enabled === false || observe.Enabled === false ? 'disabled' : 'enabled'} · ${observe.missing || observe.Missing ? 'no log yet' : 'metadata-only'}`, compactActionButton('Refresh telemetry', 'data-feature-action="refresh-observe"')],
+    ['Source', observe.path || observe.Path || '~/.eigen/observe/events.jsonl', compactActionButton('Open system', 'data-feature-action="system"')],
+    ['Models / tools', `${models} models · ${obsTools} observed tools · ${tools.length} available now`, compactActionButton('Refresh state', 'data-feature-action="refresh"')],
+    ['Routing', observeRoutesCopy(summary), compactActionButton('Refresh telemetry', 'data-feature-action="refresh-observe"')],
+    ['Runtime pressure', runtimeCopy, compactActionButton('Open system', 'data-feature-action="system"')],
+    ['Session signals', `${pending.length} approvals · ${shellCount(shells, 'running')}/${shells.length} shells · ${tools.length} tools`, compactActionButton('Go to shells', 'data-feature-action="goto-shells"')],
+  ];
+}
+
 async function runFeatureAction(btn) {
   const action = btn.dataset.featureAction;
   if (action === 'refresh') return refreshActiveState({force: true});
+  if (action === 'refresh-observe') return refreshObserve({force: true});
   if (action === 'system') return openSystemModal();
   if (action === 'profile') return openProfileModal();
   if (action === 'goto-config') return setFeature('config');
+  if (action === 'goto-shells') return setFeature('shells');
   if (action === 'focus-latest-tool') {
     const cards = collectToolCards();
     const last = cards[cards.length - 1];
@@ -488,6 +533,16 @@ function collectToolCards() {
   const direct = timelineEl.querySelectorAll?.('[data-tool-card]') || [];
   if (direct.length) return [...direct];
   return (timelineEl.children || []).filter?.(child => child.matches?.('[data-tool-card]')) || [];
+}
+
+async function refreshObserve(opts = {}) {
+  try {
+    state.observe = await getObserve(5000);
+    if (opts.force || state.feature === 'observe') renderFeatureWorkspace();
+  } catch (err) {
+    state.observe = {enabled: true, path: '~/.eigen/observe/events.jsonl', error: err.message || String(err), summary: {records: 0}};
+    if (state.feature === 'observe') renderFeatureWorkspace();
+  }
 }
 
 async function applySettingFromFeature(setting, value) {
@@ -784,7 +839,7 @@ function toolCardHTML(tool) {
       </div>
       <span class="tool-status ${escapeAttr(status)}">${escapeHtml(status)}</span>
     </div>
-    ${args ? `<details class="tool-section" open><summary>Arguments</summary><pre>${escapeHtml(args)}</pre></details>` : ''}
+    ${args ? `<details class="tool-section"><summary>Arguments</summary><pre>${escapeHtml(args)}</pre></details>` : ''}
     ${renderedResult}
   `;
 }
@@ -817,7 +872,7 @@ function renderToolResult(result, isError) {
   if (isUnifiedDiff(result)) {
     return `<details class="tool-section diff-section" open><summary>${label}</summary><div class="diff-view">${renderUnifiedDiff(result)}</div></details>`;
   }
-  return `<details class="tool-section" open><summary>${label}</summary><pre>${escapeHtml(compactToolResult(result))}</pre></details>`;
+  return `<details class="tool-section"><summary>${label}</summary><pre>${escapeHtml(compactToolResult(result))}</pre></details>`;
 }
 
 function isUnifiedDiff(text) {
@@ -841,6 +896,7 @@ function scrollToVisible(el) {
   const rect = el.getBoundingClientRect();
   const parent = timelineEl.getBoundingClientRect();
   if (rect.bottom > parent.bottom) timelineEl.scrollTop += rect.bottom - parent.bottom + 24;
+  if (rect.top < parent.top) timelineEl.scrollTop -= parent.top - rect.top + 24;
 }
 
 async function answerApproval(approval, allow) {
@@ -901,6 +957,8 @@ function handleRailAction(e) {
 
 document.addEventListener('pointerdown', handleRailAction, true);
 document.addEventListener('mousedown', handleRailAction, true);
+railToggle?.addEventListener('click', () => toggleRailCollapsed());
+
 featureNav?.addEventListener('click', (e) => {
   const btn = e.target?.closest?.('[data-feature]');
   if (!btn) return;
@@ -1068,6 +1126,11 @@ inputEl.addEventListener('keydown', (e) => {
 });
 
 function handleGlobalShortcut(e) {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+    e.preventDefault();
+    toggleRailCollapsed();
+    return;
+  }
   if (e.key !== 'Escape') return;
   if (!newSessionModal.classList.contains('hidden')) closeNewSessionModal();
   if (!profileModal.classList.contains('hidden')) closeProfileModal();
@@ -1158,6 +1221,31 @@ async function renderSystemHealth() {
   } catch (err) {
     systemBody.innerHTML = `<div class="modal-error">${escapeHtml(err.message || String(err))}</div>`;
   }
+}
+
+function observeRoutesCopy(summary = {}) {
+  const routes = summary.routes || summary.Routes || {};
+  const routed = routes.routed ?? routes.Routed ?? 0;
+  const skipped = routes.skipped ?? routes.Skipped ?? 0;
+  const assessed = routes.assessed ?? routes.Assessed ?? 0;
+  const topModel = topCount(routes.by_model || routes.ByModel);
+  const skip = topCount(routes.skip_reasons || routes.SkipReasons);
+  return [`${routed} routed`, `${skipped} skipped`, `${assessed} assessed`, topModel && `model ${topModel}`, skip && `skip ${skip}`].filter(Boolean).join(' · ') || 'No routing records yet.';
+}
+
+function topCount(m = {}) {
+  const entries = Object.entries(m || {}).sort((a, b) => Number(b[1]) - Number(a[1]));
+  return entries.length ? `${entries[0][0]}:${entries[0][1]}` : '';
+}
+
+function sumCounts(m = {}) {
+  return Object.values(m || {}).reduce((n, v) => n + Number(v || 0), 0);
+}
+
+function toggleRailCollapsed(force) {
+  const collapsed = force === undefined ? !document.body.classList.contains('rail-collapsed') : !!force;
+  document.body.classList.toggle('rail-collapsed', collapsed);
+  railToggle?.setAttribute?.('aria-expanded', collapsed ? 'false' : 'true');
 }
 
 function formatBytes(n) {

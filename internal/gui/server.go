@@ -97,6 +97,7 @@ func Handler(svc *Service) http.Handler {
 func (h *handler) routes(mux *http.ServeMux) {
 	mux.Handle("/", http.FileServer(http.FS(StaticAssets())))
 	mux.HandleFunc("/api/health", h.health)
+	mux.HandleFunc("/api/observe", h.observe)
 	mux.HandleFunc("/api/profile", h.profile)
 	mux.HandleFunc("/api/sessions", h.sessions)
 	mux.HandleFunc("/api/sessions/", h.session)
@@ -108,6 +109,22 @@ func (h *handler) health(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := h.svc.Health()
+	writeJSON(w, v, err)
+}
+
+func (h *handler) observe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	limit := 5000
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		var parsed int
+		if _, err := fmt.Sscanf(raw, "%d", &parsed); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	v, err := h.svc.Observe(limit)
 	writeJSON(w, v, err)
 }
 
