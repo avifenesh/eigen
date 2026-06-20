@@ -43,7 +43,7 @@ func TestGUIPhaseSummaryIsMachineReadable(t *testing.T) {
 	if s.GUIBrowserSmoke != "scripts/gui-smoke.sh" {
 		t.Fatalf("GUI browser smoke = %q", s.GUIBrowserSmoke)
 	}
-	if len(s.Implemented) < 8 {
+	if len(s.Implemented) < 9 {
 		t.Fatalf("implemented list too short: %v", s.Implemented)
 	}
 	if len(s.NotOwnedPreexisting) != 3 {

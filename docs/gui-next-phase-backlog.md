@@ -33,11 +33,13 @@ This backlog translates the remaining full-goal criteria into concrete next work
 
 ## P1 — feature-depth and UX polish
 
-4. **Per-feature E2E workflows for app-side mutating pages**
-   - Config multi-select provider save.
-   - Skills install prompt success/failure UI.
-   - Memory delete/consolidate flows with confirmation/error states.
-   - Plugin marketplace install/remove/disable with realistic catalog data.
+4. **Per-feature E2E workflows for app-side mutating pages** — evidence mapped
+   - Config free-text, enum, dropdown, and route-provider multi-select save flows are covered.
+   - Skills install prompt parsing/cancel/success/busy UI is covered.
+   - Memory delete/consolidate/detail-reader flows with confirmation/error states are covered.
+   - Plugin marketplace install/remove/disable/update/batch/rollback flows with realistic catalog data are covered.
+   - Provider custom-catalog add and routing context are covered.
+   - Evidence map: `docs/gui-mutating-pages-evidence.md`.
 
 5. **Chat TUI end-to-end agent turn with tools**
    - Fake provider + fake tool registry flow that renders tool start/output, todo updates, changes panel, and final assistant answer in one journey.

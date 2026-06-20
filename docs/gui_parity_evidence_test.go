@@ -13,6 +13,13 @@ func TestGUIParityEvidenceMentionsKeyRegressionTests(t *testing.T) {
 	}
 	s := string(b)
 	for _, want := range []string{
+		"docs/gui-mutating-pages-evidence.md",
+		"TestConfigMultiSelectRouteProviders",
+		"TestSkillsInstallRunsInBackgroundWithBusyMarker",
+		"TestMemoryDeleteWithConfirm",
+		"TestPluginsPageCanNavigateCatalogAndInstall",
+		"TestPluginsPageSurfacesScanResultsAndRollback",
+		"TestProvidersAddCustomProviderUpdatesCatalog",
 		"TestServeRejectsNonLocalBind",
 		"TestHandlerStaticAndAPIContracts",
 		"TestServiceValidationErrors",
