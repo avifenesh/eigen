@@ -21,6 +21,7 @@ type Server struct {
 	build   Builder
 	ln      net.Listener
 	sockPth string
+	wg      sync.WaitGroup
 }
 
 // SocketPath is the daemon socket (~/.eigen/daemon.sock for the default
@@ -63,13 +64,18 @@ func (s *Server) Serve() error {
 		if err != nil {
 			return err
 		}
-		go s.handle(conn)
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.handle(conn)
+		}()
 	}
 }
 
 // Close stops the server and removes the socket.
 func (s *Server) Close() error {
 	err := s.ln.Close()
+	s.wg.Wait()
 	_ = os.Remove(s.sockPth)
 	return err
 }
