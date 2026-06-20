@@ -62,8 +62,9 @@ func (a *DesktopApp) setContext(ctx context.Context) {
 	a.mu.Unlock()
 }
 
-func (a *DesktopApp) Health() (Health, error)                 { return a.svc.Health() }
-func (a *DesktopApp) Sessions() ([]daemon.SessionInfo, error) { return a.svc.Sessions() }
+func (a *DesktopApp) Health() (Health, error)                    { return a.svc.Health() }
+func (a *DesktopApp) Observe(limit int) (ObserveSnapshot, error) { return a.svc.Observe(limit) }
+func (a *DesktopApp) Sessions() ([]daemon.SessionInfo, error)    { return a.svc.Sessions() }
 func (a *DesktopApp) NewSession(dir, model, perm string) (string, error) {
 	return a.svc.NewSession(dir, model, perm)
 }

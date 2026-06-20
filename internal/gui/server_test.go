@@ -50,6 +50,18 @@ func TestHandlerStaticAndAPIContracts(t *testing.T) {
 		t.Fatalf("health should report offline daemon with socket/error, got %+v", health)
 	}
 
+	status, ctype, body = get("/api/observe?limit=25")
+	if status != http.StatusOK || !strings.Contains(ctype, "application/json") {
+		t.Fatalf("/api/observe status=%d content-type=%q body=%s", status, ctype, body)
+	}
+	var obs ObserveSnapshot
+	if err := json.Unmarshal([]byte(body), &obs); err != nil {
+		t.Fatal(err)
+	}
+	if obs.Path == "" || obs.Limit != 25 {
+		t.Fatalf("observe snapshot should include source path and requested limit, got %+v", obs)
+	}
+
 	status, _, body = get("/")
 	if status != http.StatusOK {
 		t.Fatalf("/ status=%d", status)
@@ -61,14 +73,14 @@ func TestHandlerStaticAndAPIContracts(t *testing.T) {
 	}
 
 	_, _, app := get("/app.js")
-	for _, want := range []string{"function renderFeatureWorkspace", "function renderHomeWorkspace", "Every Eigen desktop page", "async function runFeatureAction", "async function applySettingFromFeature", "async function sendAllowedToolTurn", "function setFeature", "function renderUnifiedDiff", "function shellSummaryHTML", "async function openSystemModal", "connectEvents", "desktop().Subscribe"} {
+	for _, want := range []string{"function renderFeatureWorkspace", "function renderHomeWorkspace", "function observeCells", "async function refreshObserve", "async function getObserve", "Every Eigen desktop page", "async function runFeatureAction", "async function applySettingFromFeature", "async function sendAllowedToolTurn", "function setFeature", "function renderUnifiedDiff", "function shellSummaryHTML", "async function openSystemModal", "connectEvents", "desktop().Subscribe"} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("app.js missing %q", want)
 		}
 	}
 
 	_, _, css := get("/styles.css")
-	for _, want := range []string{".feature-nav", ".home-surface", ".surface-directory", ".surface-tile", ".desktop-overview", ".feature-workspace", ".diff-view", ".shell-mini", ".system-card", ".approval-card", ".tool-card"} {
+	for _, want := range []string{".rail-toggle", "body.rail-collapsed", ".feature-nav", ".home-surface", ".surface-directory", ".surface-tile", ".desktop-overview", ".feature-workspace", ".diff-view", ".shell-mini", ".system-card", ".approval-card", ".tool-card", ".feature-observe"} {
 		if !strings.Contains(css, want) {
 			t.Fatalf("styles.css missing %q", want)
 		}

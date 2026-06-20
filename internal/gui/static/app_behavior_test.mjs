@@ -35,8 +35,6 @@ class Element {
     this.scrollTop = 0;
     this.scrollHeight = 1000;
     this.clientHeight = 500;
-    this.scrollHeight = 1000;
-    this.scrollHeight = 1000;
   }
   get className() { return this._className; }
   set className(v) { this._className = String(v || ''); this.classList.set = new Set(this._className.split(/\s+/).filter(Boolean)); }
@@ -60,6 +58,8 @@ class Element {
   matches(sel) {
     return sel === '[data-tool-card]' ? !!this.dataset?.toolCard : false;
   }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
+  getAttribute(name) { return this.attributes[name]; }
   addEventListener(type, cb) { (this.eventHandlers[type] ||= []).push(cb); }
   dispatchEvent(type, ev = {}) { for (const cb of this.eventHandlers[type] || []) cb(ev); }
   closest() { return this; }
@@ -76,6 +76,8 @@ class Document {
     return this.elements.get(id);
   }
   createElement(tag) { return new Element(tag); }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
+  getAttribute(name) { return this.attributes[name]; }
   addEventListener(type, cb) { (this.eventHandlers[type] ||= []).push(cb); }
 }
 
@@ -99,7 +101,8 @@ function makeContext() {
     fetch: async (path, opts = {}) => {
       apiLog.push({path, opts});
       let data = {};
-      if (path === '/api/health') data = {ok: true, stats: {version: 'test'}};
+      if (path === '/api/health') data = {ok: true, socket: 'test', stats: {version: 'test', goroutines: 3, heap_alloc_b: 1024, rss_b: 2048}};
+      else if (String(path).includes('/observe')) data = {enabled: true, path: '/tmp/eigen-observe/events.jsonl', limit: 5000, summary: {records: 42, errors: {tool: 2}, models: {'gpt': {requests: 4}}, tools: {bash: {calls: 3}}, routes: {routed: 5, skipped: 1, assessed: 2, by_model: {'gpt': 5}, skip_reasons: {cached: 1}}, runtime: {max_goroutines: 8, max_mem_alloc_bytes: 4096}}};
       else if (path === '/api/sessions') data = [{id: 's1', title: 'Session 1', status: 'idle', dir: '/tmp/project'}];
       else if (String(path).includes('/state')) data = {title: 'Session 1', provider: 'mock', model: 'm1', perm: 'gated', effort: 'medium', search: 'auto', fast_ok: true, messages: [], pending: [{id: 'ap1', tool: 'bash', args: 'echo ok'}], shells: [{id: 'sh1', command: 'sleep 10', status: 'running', last_line: 'tick'}, {id: 'sh0', command: 'true', status: 'exited', exit_code: 0, last_line: 'done'}], tools: [{name: 'bash', read_only: false}, {name: 'read', read_only: true}], roots: ['/tmp/project'], goal: 'ship gui'};
       else if (path === '/api/profile') data = {profile: 'hello'};
@@ -177,8 +180,16 @@ homeHTML = document.getElementById('feature-workspace').innerHTML;
 assertContainsAll(homeHTML, ['Available desktop pages', 'Chat', 'Changes', 'Tools', 'Shells', 'Approvals', 'Memory', 'Plugins', 'Config'], 'home directory');
 assert.match(indexHTML, /id="feature-nav"[\s\S]*data-feature="home"[\s\S]*data-feature="chat"/, 'static shell includes Home before Chat');
 assert.match(stylesCSS, /\.feature-nav\s*\{[\s\S]*grid-template-columns:\s*1fr;/, 'feature nav uses single full-width column to avoid truncating labels');
-assert.match(stylesCSS, /\.overview-card\s*\{[\s\S]*min-height:\s*96px;[\s\S]*overflow:\s*visible;/, 'overview cards grow instead of silently clipping wrapped text');
+assert.match(stylesCSS, /\.overview-card\s*\{[\s\S]*min-height:\s*76px;[\s\S]*overflow:\s*visible;/, 'overview cards grow instead of silently clipping wrapped text');
 assert.match(stylesCSS, /\.system-row strong\s*\{[^}]*overflow-wrap:\s*anywhere;/s, 'system modal long values wrap instead of truncating');
+assert.match(indexHTML, /id="rail-toggle"[\s\S]*aria-label="Toggle sidebar"/, 'shell has closable sidebar toggle');
+assert.match(indexHTML, /data-feature="observe"/, 'shell exposes observability surface');
+assert.match(stylesCSS, /body\.rail-collapsed \.shell/, 'collapsed sidebar changes layout columns');
+assert.match(stylesCSS, /\.workspace\s*\{[\s\S]*grid-template-rows:\s*var\(--topbar-height\) auto minmax\(0, 1fr\) auto;/, 'workspace gives timeline a bounded scroll row');
+assert.match(stylesCSS, /\.timeline\s*\{[\s\S]*overflow-y:\s*auto;/, 'chat timeline owns vertical scrolling');
+assert.match(stylesCSS, /\.sessions\s*\{[\s\S]*overflow-y:\s*auto;/, 'sessions rail owns vertical scrolling');
+assert.match(stylesCSS, /\.composer\s*\{[\s\S]*position:\s*sticky;[\s\S]*bottom:\s*0;/, 'chat composer stays available at bottom while chat scrolls');
+assert.match(stylesCSS, /--topbar-height:\s*56px;/, 'top header is thin');
 for (const id of ['clear', 'interrupt', 'resend']) assert.ok(indexHTML.includes(`id="${id}"`), `topbar missing ${id} control hook`);
 ctx.setFeature('tools');
 assert.equal(document.getElementById('timeline').classList.contains('hidden'), true, 'feature workspace hides chat timeline');
@@ -194,6 +205,7 @@ const featureExpectations = {
   memory: ['Memory', 'Goal', 'ship gui', 'Set from composer', 'Compact', 'Add current dir', 'Edit profile'],
   plugins: ['Plugins', 'Available tools', '2 tools exposed', 'Marketplace', 'Agent roles'],
   config: ['Config', 'Model', 'Permission', 'Search / fast', 'Apply model', 'Apply perm', 'Apply search', 'Toggle fast'],
+  observe: ['Observe', 'Telemetry', '0 events', 'enabled', 'Models / tools', 'Routing', 'Runtime pressure', 'Session signals'],
 };
 for (const [feature, wants] of Object.entries(featureExpectations)) {
   ctx.setFeature(feature);
@@ -218,6 +230,9 @@ assert(apiLog.some(x => String(x.path).includes('/input') && String(x.opts?.body
 ctx.setFeature('shells');
 assertContainsAll(document.getElementById('feature-workspace').innerHTML, ['1 running · 2 total', 'exited'], 'shells metrics');
 assert.match(ctx.shellSummaryHTML({id: 'sh0', status: 'exited', exit_code: 0}), /exited · 0/, 'shell summaries show successful exit code 0');
+ctx.setFeature('observe');
+await ctx.refreshObserve({force: true});
+assertContainsAll(document.getElementById('feature-workspace').innerHTML, ['Observe', 'Telemetry', '42 events', '2 errors', '/tmp/eigen-observe/events.jsonl', 'Models / tools', 'Routing', 'Runtime pressure', 'Session signals'], 'observe surface');
 await ctx.runFeatureAction({dataset: {featureAction: 'kill-shell', shellId: 'sh1'}});
 assert(apiLog.some(x => String(x.path).includes('/kill-shell') && String(x.opts?.body || '').includes('sh1')), 'shell action calls kill-shell API');
 ctx.setFeature('memory');
@@ -234,12 +249,19 @@ ctx.ensureToolCard({tool: 'bash', tool_id: 'latest-tool', tool_args: '{}'});
 ctx.setFeature('changes');
 await ctx.runFeatureAction({dataset: {featureAction: 'focus-latest-tool'}});
 assert.equal(document.getElementById('timeline').classList.contains('hidden'), false, 'focus latest tool returns to chat before scrolling');
+assert.equal(document.body.dataset.feature, 'chat', 'focus latest tool highlights in chat, not on Changes');
 ctx.setFeature('chat');
 assert.equal(document.getElementById('timeline').classList.contains('hidden'), false, 'chat feature restores timeline');
+assert.equal(document.getElementById('composer').classList.contains('hidden'), false, 'chat composer remains available on chat surface');
+ctx.toggleRailCollapsed(true);
+assert.equal(document.body.classList.contains('rail-collapsed'), true, 'sidebar can collapse');
+assert.equal(document.getElementById('rail-toggle').getAttribute('aria-expanded'), 'false', 'sidebar toggle exposes collapsed state');
 
 ctx.ensureApprovalCard({id: 'a1', tool: 'bash', args: 'echo ok', status: 'pending'});
 ctx.setApprovalStatus('a1', 'approved');
 
+assert.match(ctx.renderToolResult('diff --git a/x b/x\n@@ -1 +1 @@\n-old\n+new'), /diff-section[\s\S]*open[\s\S]*diff-view/, 'diff results open visibly by default');
+assert.doesNotMatch(ctx.toolCardHTML({tool: 'read', id: 't2', status: 'done', args: '{}', result: 'plain text'}), /<details class="tool-section" open><summary>Arguments/, 'non-diff tool arguments are collapsed to reduce noise');
 ctx.openProfileModal();
 await Promise.resolve();
 await Promise.resolve();

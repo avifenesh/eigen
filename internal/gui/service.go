@@ -10,8 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/memory"
+	"github.com/avifenesh/eigen/internal/observe"
 )
 
 // EnsureDaemon returns a connected daemon client, starting the daemon first when
@@ -193,6 +195,32 @@ func (s *Service) SetFast(id string, on bool) error {
 	return s.withClient(func(c *daemon.Client) error { return c.SetFast(id, on) })
 }
 
+// Observe returns a compact metadata-only telemetry summary for the GUI Observe
+// surface. Missing logs are non-fatal so a fresh install still renders a useful
+// empty state with the source path and CLI hint.
+func (s *Service) Observe(limit int) (ObserveSnapshot, error) {
+	if limit <= 0 {
+		limit = 5000
+	}
+	path := observe.DefaultPath()
+	out := ObserveSnapshot{Enabled: config.Load().ObserveEnabled(), Path: path, Limit: limit}
+	if path == "" {
+		out.Error = "observe path unavailable"
+		return out, nil
+	}
+	summary, err := observe.ReadSummary(path, limit)
+	if err != nil {
+		if os.IsNotExist(err) {
+			out.Missing = true
+			return out, nil
+		}
+		out.Error = err.Error()
+		return out, nil
+	}
+	out.Summary = summary
+	return out, nil
+}
+
 // UserProfile returns the global USER.md personalization prompt used by Eigen
 // memory injection. The GUI exposes this as a first-class profile editor.
 func (s *Service) UserProfile() (string, error) {
@@ -299,6 +327,15 @@ type Health struct {
 	Socket string              `json:"socket"`
 	Error  string              `json:"error,omitempty"`
 	Stats  *daemon.DaemonStats `json:"stats,omitempty"`
+}
+
+type ObserveSnapshot struct {
+	Enabled bool            `json:"enabled"`
+	Path    string          `json:"path"`
+	Limit   int             `json:"limit"`
+	Missing bool            `json:"missing,omitempty"`
+	Error   string          `json:"error,omitempty"`
+	Summary observe.Summary `json:"summary"`
 }
 
 type StreamEvent struct {
