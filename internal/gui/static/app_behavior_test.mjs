@@ -152,8 +152,20 @@ ctx.setFeature('tools');
 assert.equal(document.getElementById('timeline').classList.contains('hidden'), true, 'feature workspace hides chat timeline');
 assert.match(document.getElementById('feature-workspace').innerHTML, /Tools|automation surface|Allow tool turn|Inspect runtime|Allow bash/, 'tools surface renders dense desktop feature controls');
 assert.equal(document.getElementById('overview-surface').textContent, 'tools', 'overview follows selected feature');
+for (const [feature, pattern] of [
+  ['changes', /Changes|Working tree|Latest diff|Review queue/],
+  ['tools', /Tools|automation surface|Allow tool turn|Inspect runtime|Allow bash/],
+  ['shells', /Shells|SHELLS|Foreground bash|Process safety/],
+  ['approvals', /Approvals|No pending approvals|Decision path|Permission posture/],
+  ['memory', /Memory|Set goal|Compact now|Add directory/],
+  ['plugins', /Plugins|Available tools|Marketplace|Agent roles/],
+  ['config', /Config|Permission|Search \/ fast|Apply model|Toggle fast/],
+]) {
+  ctx.setFeature(feature);
+  assert.equal(document.getElementById('timeline').classList.contains('hidden'), true, `${feature} hides chat timeline`);
+  assert.match(document.getElementById('feature-workspace').innerHTML, pattern, `${feature} surface renders shipped controls`);
+}
 ctx.setFeature('config');
-assert.match(document.getElementById('feature-workspace').innerHTML, /Config|Permission|Search \/ fast|Apply model|Toggle fast/, 'config surface renders interactive controls summary');
 document.getElementById('model-input').value = 'glm-5.2';
 await ctx.runFeatureAction({dataset: {featureAction: 'apply-model'}});
 assert(apiLog.some(x => String(x.path).includes('/model') && String(x.opts?.body || '').includes('glm-5.2')), 'config apply model calls settings API');
@@ -177,6 +189,10 @@ await ctx.runFeatureAction({dataset: {featureAction: 'set-goal'}});
 assert(apiLog.some(x => String(x.path).includes('/goal') && String(x.opts?.body || '').includes('ship gui')), 'memory action calls goal API');
 await ctx.runFeatureAction({dataset: {featureAction: 'compact'}});
 assert(apiLog.some(x => String(x.path).includes('/compact')), 'memory action calls compact API');
+ctx.setFeature('plugins');
+assert.match(document.getElementById('feature-workspace').innerHTML, /Plugins|Available tools|Marketplace|Agent roles/, 'plugins surface renders desktop capability controls');
+ctx.setFeature('changes');
+assert.match(document.getElementById('feature-workspace').innerHTML, /Changes|Working tree|Latest diff|Review queue/, 'changes surface renders repository review controls');
 ctx.setFeature('chat');
 assert.equal(document.getElementById('timeline').classList.contains('hidden'), false, 'chat feature restores timeline');
 
