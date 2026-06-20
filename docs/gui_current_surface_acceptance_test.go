@@ -25,6 +25,7 @@ func TestGUICurrentSurfaceAcceptanceMapsGoalCriteria(t *testing.T) {
 		"27863744647",
 		"scripts/verify-gui-phase.sh` validates the shipped surfaces",
 		"go test -tags 'wails production webkit2_41' ./internal/gui -count=1",
+		"node internal/gui/static/app_behavior_test.mjs",
 		"8b2c6f7040f28a27c634e6ccb3a3fbc0bee7a1d9",
 		"docs/gui-final-review-resolution.md",
 		"Acceptance statement",
