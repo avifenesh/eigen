@@ -100,6 +100,7 @@ func (h *handler) routes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/observe", h.observe)
 	mux.HandleFunc("/api/profile", h.profile)
 	mux.HandleFunc("/api/memory", h.memory)
+	mux.HandleFunc("/api/skills", h.skills)
 	mux.HandleFunc("/api/sessions", h.sessions)
 	mux.HandleFunc("/api/sessions/", h.session)
 }
@@ -160,6 +161,16 @@ func (h *handler) memory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := h.svc.ProjectMemory(dir)
+	writeJSON(w, v, err)
+}
+
+func (h *handler) skills(w http.ResponseWriter, r *http.Request) {
+	if name := strings.TrimSpace(r.URL.Query().Get("name")); name != "" {
+		body, err := h.svc.SkillBody(name)
+		writeJSON(w, map[string]string{"name": name, "body": body}, err)
+		return
+	}
+	v, err := h.svc.Skills()
 	writeJSON(w, v, err)
 }
 
