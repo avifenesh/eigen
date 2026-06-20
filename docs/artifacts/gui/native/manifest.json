@@ -1,0 +1,92 @@
+{
+  "surfaces": [
+    {
+      "surface": "chat",
+      "html": "docs/artifacts/gui/native/chat.html",
+      "screenshot": "docs/artifacts/gui/native/chat.png",
+      "required_text": [
+        "Chat",
+        "Build and verify the native GUI desktop app.",
+        "Native desktop workspace verified.",
+        "Send"
+      ]
+    },
+    {
+      "surface": "changes",
+      "html": "docs/artifacts/gui/native/changes.html",
+      "screenshot": "docs/artifacts/gui/native/changes.png",
+      "required_text": [
+        "Changes",
+        "Review diffs, tool history, and workspace roots before they disappear into context.",
+        "Refresh state",
+        "Focus latest tool"
+      ]
+    },
+    {
+      "surface": "tools",
+      "html": "docs/artifacts/gui/native/tools.html",
+      "screenshot": "docs/artifacts/gui/native/tools.png",
+      "required_text": [
+        "Tools",
+        "Inspect and operate the automation surface with allow-tool scoped turns.",
+        "Allow next turn",
+        "Inspect"
+      ]
+    },
+    {
+      "surface": "shells",
+      "html": "docs/artifacts/gui/native/shells.html",
+      "screenshot": "docs/artifacts/gui/native/shells.png",
+      "required_text": [
+        "Shells",
+        "Track and control background commands with kill and detach lifecycle controls.",
+        "Poll",
+        "Kill"
+      ]
+    },
+    {
+      "surface": "approvals",
+      "html": "docs/artifacts/gui/native/approvals.html",
+      "screenshot": "docs/artifacts/gui/native/approvals.png",
+      "required_text": [
+        "Approvals",
+        "Approve or deny gated operations with visible status and arguments.",
+        "Approve",
+        "Deny"
+      ]
+    },
+    {
+      "surface": "memory",
+      "html": "docs/artifacts/gui/native/memory.html",
+      "screenshot": "docs/artifacts/gui/native/memory.png",
+      "required_text": [
+        "Memory",
+        "Set goals, compact context, add directories, and edit durable profile context.",
+        "Set from composer",
+        "Compact"
+      ]
+    },
+    {
+      "surface": "plugins",
+      "html": "docs/artifacts/gui/native/plugins.html",
+      "screenshot": "docs/artifacts/gui/native/plugins.png",
+      "required_text": [
+        "Plugins",
+        "Inspect plugin-provided capability and agent-role surfaces.",
+        "Refresh capabilities",
+        "Open system"
+      ]
+    },
+    {
+      "surface": "config",
+      "html": "docs/artifacts/gui/native/config.html",
+      "screenshot": "docs/artifacts/gui/native/config.png",
+      "required_text": [
+        "Config",
+        "Tune model, effort, permissions, search, and fast mode directly.",
+        "Apply model",
+        "Apply perm"
+      ]
+    }
+  ]
+}

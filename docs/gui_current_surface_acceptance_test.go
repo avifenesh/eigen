@@ -22,6 +22,7 @@ func TestGUICurrentSurfaceAcceptanceMapsGoalCriteria(t *testing.T) {
 		"TestTUICodeDerivedFeatureInventoryHasJourneyEvidence",
 		"End-to-end tested",
 		"High UI/UX quality",
+		"TestGUINativeVisualArtifactBundle",
 		"TestAppObjectiveUIQualityMetrics",
 		"TestTUIObjectiveUIQualityMetrics",
 		"Measured no resource leak/misuse for covered flows",

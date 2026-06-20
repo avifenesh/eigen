@@ -24,6 +24,8 @@ func TestGUIParityEvidenceMentionsKeyRegressionTests(t *testing.T) {
 		"TestProvidersAddCustomProviderUpdatesCatalog",
 		"TestAppCodeDerivedFeatureInventoryHasJourneyEvidence",
 		"TestTUICodeDerivedFeatureInventoryHasJourneyEvidence",
+		"docs/artifacts/gui/native/manifest.json",
+		"TestGUINativeVisualArtifactBundle",
 		"TestAppObjectiveUIQualityMetrics",
 		"TestTUIObjectiveUIQualityMetrics",
 		"TestServeRejectsNonLocalBind",
