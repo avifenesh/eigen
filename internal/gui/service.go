@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/memory"
 	"github.com/avifenesh/eigen/internal/observe"
+	"github.com/avifenesh/eigen/internal/skill"
 )
 
 // EnsureDaemon returns a connected daemon client, starting the daemon first when
@@ -276,6 +278,39 @@ func (s *Service) SearchProjectMemory(dir, query string) ([]memory.SearchHit, er
 		return nil, fmt.Errorf("memory workspace unavailable")
 	}
 	return store.Search(query, 50)
+}
+
+// skillDirs mirrors main.skillDirs: the dirs scanned for SKILL.md skills.
+func skillDirs() []string {
+	home, _ := os.UserHomeDir()
+	dirs := []string{
+		filepath.Join(home, ".eigen", "skills"),
+		filepath.Join(".eigen", "skills"),
+	}
+	if extra := os.Getenv("EIGEN_SKILLS_DIRS"); extra != "" {
+		dirs = append(dirs, strings.Split(extra, ":")...)
+	}
+	return dirs
+}
+
+// Skills discovers installed SKILL.md skills from the standard skill dirs and
+// returns them for the GUI Skills surface. Discovery is best-effort: missing
+// dirs simply yield fewer skills.
+func (s *Service) Skills() ([]skill.Skill, error) {
+	set := skill.Discover(skillDirs()...)
+	return set.List(), nil
+}
+
+// SkillBody returns the full SKILL.md body for a named skill.
+func (s *Service) SkillBody(name string) (string, error) {
+	if strings.TrimSpace(name) == "" {
+		return "", fmt.Errorf("skill name required")
+	}
+	set := skill.Discover(skillDirs()...)
+	if _, ok := set.Get(name); !ok {
+		return "", fmt.Errorf("skill %q not found", name)
+	}
+	return set.Body(name)
 }
 
 func (s *Service) client() (*daemon.Client, error) { return EnsureDaemon(s.ensure) }

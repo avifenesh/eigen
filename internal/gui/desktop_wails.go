@@ -8,6 +8,7 @@ import (
 
 	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/memory"
+	"github.com/avifenesh/eigen/internal/skill"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -118,6 +119,8 @@ func (a *DesktopApp) ProjectMemory(dir string) (MemoryWorkspace, error) {
 func (a *DesktopApp) SearchProjectMemory(dir, query string) ([]memory.SearchHit, error) {
 	return a.svc.SearchProjectMemory(dir, query)
 }
+func (a *DesktopApp) Skills() ([]skill.Skill, error)        { return a.svc.Skills() }
+func (a *DesktopApp) SkillBody(name string) (string, error) { return a.svc.SkillBody(name) }
 
 // Subscribe streams daemon events into the Wails runtime event bus as
 // "gui:event". Only one active session stream is needed for the current

@@ -17,9 +17,9 @@ import (
 
 // Skill is one discovered skill (frontmatter only; the body is read on demand).
 type Skill struct {
-	Name        string
-	Description string
-	Path        string // path to the SKILL.md file
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Path        string `json:"path"` // path to the SKILL.md file
 }
 
 // Set is an ordered, name-keyed collection of discovered skills. It remembers

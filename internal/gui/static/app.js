@@ -19,6 +19,8 @@ const state = {
   observe: null,
   memory: null,
   memoryQuery: '',
+  skills: null,
+  skillView: null,
   // rendered timeline model: maps a stable key -> node so polling can update
   // in place instead of rebuilding the whole transcript (which flickered and
   // destroyed the streaming assistant message).
@@ -160,6 +162,15 @@ async function searchProjectMemory(dir, query) {
   if (hasDesktopBridge() && desktop().SearchProjectMemory) return desktop().SearchProjectMemory(dir, query);
   const out = await api(`/api/memory?dir=${encodeURIComponent(dir)}&q=${encodeURIComponent(query)}`);
   return out.hits || [];
+}
+async function getSkills() {
+  if (hasDesktopBridge() && desktop().Skills) return desktop().Skills();
+  return api('/api/skills');
+}
+async function getSkillBody(name) {
+  if (hasDesktopBridge() && desktop().SkillBody) return desktop().SkillBody(name);
+  const out = await api(`/api/skills?name=${encodeURIComponent(name)}`);
+  return out.body || '';
 }
 
 /* ---------------- Boot / sessions ---------------- */
@@ -332,6 +343,7 @@ function setFeature(feature) {
   }
   if (feature === 'observe' && !state.observe) refreshObserve({force: false});
   if (feature === 'memory' && !state.memory) refreshMemory({force: false});
+  if (feature === 'skills' && !state.skills) refreshSkills({force: false});
   renderFeatureStage();
 }
 
@@ -780,6 +792,20 @@ function memoryCells() {
   ];
 }
 
+function skillCells() {
+  const s = state.skills || {};
+  if (s.error) return [['Skills', s.error, compactActionButton('Retry', 'data-feature-action="refresh-skills"')]];
+  if (s.view) {
+    return [
+      [s.view, `${(s.body || '').length} chars in SKILL.md`, compactActionButton('Back to list', 'data-feature-action="skills-back"')],
+      ['Body', (s.body || '').slice(0, 800) + ((s.body || '').length > 800 ? '…' : ''), ''],
+    ];
+  }
+  const list = s.list || [];
+  if (!list.length) return [['No skills', 'No SKILL.md skills discovered in ~/.eigen/skills or .eigen/skills.', compactActionButton('Refresh', 'data-feature-action="refresh-skills"')]];
+  return list.slice(0, 9).map(k => [k.name || k.Name || 'skill', (k.description || k.Description || '').slice(0, 140) || 'No description.', compactActionButton('View', `data-feature-action="view-skill" data-skill-name="${escapeAttr(k.name || k.Name || '')}"`)]).concat([['Registry', `${list.length} skill(s) discovered`, compactActionButton('Refresh', 'data-feature-action="refresh-skills"')]]);
+}
+
 function renderFeatureStage() {
   if (state.feature === 'chat' || !featureStage) return;
   const snap = state.state || {};
@@ -797,6 +823,7 @@ function renderFeatureStage() {
     shells: ['Shells', 'Track and control background commands.', shells.length ? shells.slice(0, 9).map(s => { const status = s.status || s.Status || 'unknown'; const id = s.id || s.ID || ''; const kill = status === 'running' ? ` ${compactActionButton('Kill', `data-feature-action="kill-shell" data-shell-id="${escapeAttr(id)}"`)}` : ''; return [id || s.command || 'shell', `${status} ${s.last_line || s.LastLine || ''}`, `${compactActionButton('Poll', `data-feature-action="poll-shell" data-shell-id="${escapeAttr(id)}"`)}${kill}`]; }).concat([['Foreground bash', 'Detach the bash command running in the current turn into the background.', compactActionButton('Detach foreground bash', 'data-feature-action="detach-bash"')]]) : [['No background shells', 'Background commands appear here with status and controls.', compactActionButton('Refresh', 'data-feature-action="refresh"')], ['Foreground bash', 'Detach the bash command running in the current turn into the background.', compactActionButton('Detach foreground bash', 'data-feature-action="detach-bash"')]]],
     approvals: ['Approvals', 'Handle gated tool calls deliberately.', pending.length ? pending.map(p => [p.tool || 'approval', p.id || p.ID || 'pending', `${compactActionButton('Approve', `data-feature-action="approve" data-approval-id="${escapeAttr(p.id || p.ID || p.result || '')}"`)} ${compactActionButton('Deny', `data-feature-action="deny" data-approval-id="${escapeAttr(p.id || p.ID || p.result || '')}"`)}`]) : [['No pending approvals', 'Gated operations request approval here.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
     memory: ['Memory', 'Project memory workspace: durable notes, bans, and files.', memoryCells()],
+    skills: ['Skills', 'Installed SKILL.md skills the agent can load on demand.', skillCells()],
     plugins: ['Plugins', 'Manage extension capability.', [['Available tools', `${tools.length || 0} tools from skills, plugins, and built-ins.`, compactActionButton('Refresh', 'data-feature-action="refresh"')], ['Marketplace', 'Install/update/disable/rollback via the app shell.', compactActionButton('Open system', 'data-feature-action="system"')], ['Agent roles', 'Plugin roles surface through the tool list.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
     config: ['Config', 'Tune model, effort, permission, search, fast.', [['Model', modelInput?.value || snap.model || snap.Model || 'default', compactActionButton('Apply model', 'data-feature-action="apply-model"')], ['Permission', permSelect?.value || snap.perm || snap.Perm || 'gated', compactActionButton('Apply perm', 'data-feature-action="apply-perm"')], ['Search / fast', `${searchSelect?.value || snap.search || 'off'} · ${fastToggle?.classList.contains('active') ? 'fast on' : 'fast off'}`, `${compactActionButton('Apply search', 'data-feature-action="apply-search"')} ${compactActionButton('Toggle fast', 'data-feature-action="toggle-fast"')}`]]],
     observe: ['Observe', 'Live observability: event counts, tool/model usage, routing, runtime pressure.', observeCells()],
@@ -813,6 +840,9 @@ async function runFeatureAction(btn) {
   if (action === 'refresh') return refreshActiveState({force: true});
   if (action === 'refresh-observe') return refreshObserve({force: true});
   if (action === 'refresh-memory') return refreshMemory({force: true});
+  if (action === 'refresh-skills') { state.skillView = null; return refreshSkills({force: true}); }
+  if (action === 'skills-back') { state.skillView = null; return refreshSkills({force: true}); }
+  if (action === 'view-skill') { state.skillView = btn.dataset.skillName || ''; return refreshSkills({force: true}); }
   if (action === 'clear-memory-search') { state.memoryQuery = ''; return refreshMemory({force: true}); }
   if (action === 'memory-search') { state.memoryQuery = prompt('Search project memory', state.memoryQuery || '') || ''; return refreshMemory({force: true}); }
   if (action === 'system') return openSystemModal();
@@ -873,6 +903,19 @@ async function refreshMemory(opts = {}) {
   } catch (err) {
     state.memory = {dir, error: err.message || String(err)};
     if (state.feature === 'memory') renderFeatureStage();
+  }
+}
+async function refreshSkills(opts = {}) {
+  try {
+    if (state.skillView) {
+      state.skills = {view: state.skillView, body: await getSkillBody(state.skillView)};
+    } else {
+      state.skills = {list: await getSkills()};
+    }
+    if (opts.force || state.feature === 'skills') renderFeatureStage();
+  } catch (err) {
+    state.skills = {error: err.message || String(err)};
+    if (state.feature === 'skills') renderFeatureStage();
   }
 }
 async function sendAllowedToolTurn(toolName) {
