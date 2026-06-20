@@ -37,4 +37,4 @@ Out-of-scope future expansion, not a blocker for this current-surface milestone:
 
 ## Acceptance statement
 
-For the accepted current shipped surfaces above, the GUI milestone is complete and judgeable. Future product expansion should open new backlog items instead of reopening this milestone unless it regresses one of the evidenced contracts.
+For the accepted current shipped surfaces above, the GUI milestone is complete and judgeable. The final review blocker mapping is recorded in `docs/gui-final-review-resolution.md`. Future product expansion should open new backlog items instead of reopening this milestone unless it regresses one of the evidenced contracts.

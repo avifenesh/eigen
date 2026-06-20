@@ -26,6 +26,7 @@ func TestGUICurrentSurfaceAcceptanceMapsGoalCriteria(t *testing.T) {
 		"27862913334",
 		"27862913354",
 		"ce860ca339ad6d50d7945ad0b8c37bef22113a93",
+		"docs/gui-final-review-resolution.md",
 		"Acceptance statement",
 	} {
 		if !strings.Contains(s, want) {
