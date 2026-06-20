@@ -443,8 +443,8 @@ func (p *bgStallThenDoneProv) Complete(ctx context.Context, _ llm.Request) (*llm
 
 func TestBackgroundEscalatesAfterStall(t *testing.T) {
 	oldIdle, oldGrace, oldModel := stallIdle, heartbeatGrace, modelMaxWait
-	stallIdle = 40 * time.Millisecond
-	modelMaxWait = 40 * time.Millisecond
+	stallIdle = 120 * time.Millisecond
+	modelMaxWait = 120 * time.Millisecond
 	heartbeatGrace = 0
 	defer func() { stallIdle, heartbeatGrace, modelMaxWait = oldIdle, oldGrace, oldModel }()
 
