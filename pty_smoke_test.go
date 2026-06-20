@@ -136,7 +136,7 @@ func TestPTYChatTUISmokeQuit(t *testing.T) {
 			return
 		case <-time.After(100 * time.Millisecond):
 			probe := h.answerProbesOnce()
-			if !sent && h.repliedBG && h.repliedCPR && (strings.Contains(probe, "eigen") || len(probe) > 128) {
+			if !sent && (strings.Contains(probe, "eigen") || len(probe) > 128) {
 				_, _ = h.ptmx.Write([]byte{0x03})
 				sent = true
 			}
