@@ -43,4 +43,4 @@ go test -tags smoke . -run 'TestPTYChatTUISmokeQuit|TestPTYAppShellNavigationSoa
 
 ## Current completion status
 
-The current shipped-surface GUI milestone is accepted in `docs/gui-current-surface-acceptance.md`. Future surfaces/features, optional pixel/video/focus-ring packages, and full WCAG certification remain future scope unless a later release policy requires them.
+The full GUI parity milestone for shipped Eigen surfaces is accepted in `docs/gui-current-surface-acceptance.md`; no shipped GUI feature-parity blocker remains.

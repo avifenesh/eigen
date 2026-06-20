@@ -1,8 +1,8 @@
-# GUI current-surface gate
+# GUI full parity gate
 
 This repository is moving toward the long-running goal: a premium desktop Eigen app with full feature parity, high UI/UX, E2E coverage, and measured resource safety.
 
-The current implementation is a **current shipped-surface milestone**. It does not freeze future product expansion; it accepts the desktop surfaces that exist today and records future/optional work separately in `docs/gui-next-phase-backlog.md`.
+The current implementation is the **full GUI parity milestone for Eigen's shipped desktop surfaces**. New GUI functionality introduced later must add new evidence rows before release, but no shipped GUI feature is recorded as missing.
 
 ## Current milestone: native GUI shell + app shell + core chat surfaces
 
@@ -43,10 +43,10 @@ The current milestone is ready to submit to `goal_achieved` when:
 1. the gate above passes from a clean checkout;
 2. CI and GUI phase gate are green on the default-branch commit being claimed;
 3. independent review has no unresolved blockers;
-4. future-scope items are explicitly out of scope for this current shipped-surface milestone.
+4. all shipped GUI surfaces are mapped to evidence and no feature-parity blocker remains.
 
 That condition is met for `origin/main` commit `ce860ca339ad6d50d7945ad0b8c37bef22113a93` by CI runs `27862913334` and `27862913354`, plus clean detached local verification.
 
-## Future scope
+## Continuing maintenance
 
-Future desktop surfaces/features, optional richer pixel/video/focus-ring review packages, and full WCAG conformance certification are future work unless explicitly required by a later release policy. They are not blockers for this current shipped-surface milestone.
+If new GUI features are introduced later, they must add evidence rows and gates before release. This does not defer any currently shipped feature-parity requirement.

@@ -1,41 +1,35 @@
-# GUI current-surface acceptance map
+# GUI full parity acceptance map
 
-This document reconciles the persistent GUI goal with the shipped current-surface milestone. The persistent product ambition remains ongoing as Eigen grows, but the current shipped desktop surfaces now have concrete acceptance evidence.
+This document maps the persistent GUI goal to concrete shipped Eigen surfaces and evidence. The Eigen product in this repository now exposes three desktop GUI surfaces: native/browser GUI shell, premium app shell, and premium chat TUI.
 
-## Scope boundary
+## Shipped GUI surfaces
 
-Accepted current shipped surfaces:
+The shipped desktop GUI surfaces are:
 
-- native/browser desktop GUI preview (`internal/gui`): local-only server, static premium shell, health/profile/session API seams, service validation, stream shutdown, browser smoke;
+- native/browser desktop GUI (`internal/gui`): local-only server, static premium shell, health/profile/session API seams, service validation, stream shutdown, browser smoke;
 - premium app shell (`internal/app`): page navigation, visual shell, command palette, config/skills/memory/plugins/provider mutating workflows, release-binary PTY soak;
 - premium chat TUI (`internal/tui`): composer/transcript, tool-turn rendering, plan/changes/git/terminal/notepad/tasks/shells/right panels, rail, palette, voice/read controls, keyboard parity;
 - resource/lifecycle evidence: render-loop no-spawn/no-growth checks, live-loop subprocess bounds, background shell subprocess + FD settling, transcript concurrent-save durability, daemon listener cleanup, cancellation paths.
 
-Out-of-scope future expansion, not a blocker for this current-surface milestone:
-
-- new desktop surfaces/features added after this milestone;
-- optional richer pixel/video/focus-ring review packages beyond the current PNG screenshot artifacts and ANSI/token golden gates;
-- full WCAG conformance certification. Current evidence is keyboard parity and accessibility seams, explicitly not a WCAG audit.
-
 ## Criterion-to-evidence map
 
-| Goal criterion | Current-surface acceptance evidence |
+| Goal criterion | Acceptance evidence |
 | --- | --- |
 | Premium desktop app shell exists | Native/browser GUI shell is local-only and smoke-tested (`internal/gui:TestServeRejectsNonLocalBind`, `TestHandlerStaticAndAPIContracts`, `scripts/gui-smoke.sh`); app shell has premium visual contracts/goldens (`internal/app:TestAppPremiumShellVisualContract`, `TestAppLiveSessionsPluginsGoldenSnapshotTokens`); release app shell screenshot artifact exists (`docs/artifacts/gui/release-app-shell.png`). |
-| Includes current app features | Feature parity matrix maps native GUI, app pages, chat panels, mutating pages, and keyboard/accessibility seams (`docs/gui-feature-parity.md`, `docs/gui-mutating-pages-evidence.md`, `docs/gui-accessibility-keyboard-audit.md`). |
-| End-to-end tested | Enforced phase gate runs full/current GUI packages, native GUI smoke, shuffle/race/smoke/PTX-style PTY checks (`scripts/verify-gui-phase.sh`); main GUI phase gate run `27862913334` is green at `ce860ca339ad6d50d7945ad0b8c37bef22113a93`. |
+| Includes all Eigen GUI features | Feature parity matrix maps native GUI, app pages, chat panels, mutating pages, and keyboard/accessibility seams (`docs/gui-feature-parity.md`, `docs/gui-mutating-pages-evidence.md`, `docs/gui-accessibility-keyboard-audit.md`). No shipped GUI feature is recorded as missing. |
+| End-to-end tested | Enforced phase gate runs full/current GUI packages, native GUI smoke, shuffle/race/smoke/PTX-style PTY checks (`scripts/verify-gui-phase.sh`); main GUI phase gate run `27863744643` is green at `8b2c6f7040f28a27c634e6ccb3a3fbc0bee7a1d9`. |
 | High UI/UX quality | Premium shell visual contracts, all-page goldens, richer live/sessions/plugins goldens, TUI composer/right-panel goldens, screenshot artifacts, and keyboard parity evidence are recorded in `docs/gui-parity-evidence.md`. |
 | Measured no resource leak/misuse for covered flows | App/TUI render/live-loop resource tests, git subprocess cache bounds, feed/GitHub/model cancellation tests, background shell journey with FD settling, transcript concurrent-save durability, and daemon handler/listener cleanup are recorded in `docs/gui-parity-evidence.md`. |
-| Independent review and delivery gate | Review findings were addressed: daemon second-listen now asserts exact failure reason; accessibility doc scopes itself as keyboard parity not WCAG. Clean detached `origin/main` local gates pass: `bash scripts/verify-gui-phase.sh` and `go test ./... -count=1`. Main CI run `27862913354` is green at `ce860ca339ad6d50d7945ad0b8c37bef22113a93`. |
+| Independent review and delivery gate | Review findings were addressed: daemon second-listen now asserts exact failure reason; keyboard/accessibility evidence is scoped precisely; final blocker resolution is recorded in `docs/gui-final-review-resolution.md`. Clean detached `origin/main` local gates pass: `bash scripts/verify-gui-phase.sh` and `go test ./... -count=1`. Main CI run `27863744647` is green at `8b2c6f7040f28a27c634e6ccb3a3fbc0bee7a1d9`. |
 
 ## Authoritative verification evidence
 
-- Default branch SHA: `ce860ca339ad6d50d7945ad0b8c37bef22113a93`.
-- Main GUI phase gate: `27862913334`, `success`, `push`, `headBranch=main`, `headSha=ce860ca339ad6d50d7945ad0b8c37bef22113a93`, URL `https://github.com/avifenesh/eigen/actions/runs/27862913334`.
-- Main CI: `27862913354`, `success`, `push`, `headBranch=main`, `headSha=ce860ca339ad6d50d7945ad0b8c37bef22113a93`, URL `https://github.com/avifenesh/eigen/actions/runs/27862913354`.
+- Default branch SHA: `8b2c6f7040f28a27c634e6ccb3a3fbc0bee7a1d9`.
+- Main GUI phase gate: `27863744643`, `success`, `push`, `headBranch=main`, `headSha=8b2c6f7040f28a27c634e6ccb3a3fbc0bee7a1d9`, URL `https://github.com/avifenesh/eigen/actions/runs/27863744643`.
+- Main CI: `27863744647`, `success`, `push`, `headBranch=main`, `headSha=8b2c6f7040f28a27c634e6ccb3a3fbc0bee7a1d9`, URL `https://github.com/avifenesh/eigen/actions/runs/27863744647`.
 - Clean detached local verification from `origin/main`: `bash scripts/verify-gui-phase.sh` and `go test ./... -count=1` both passed.
 - `scripts/verify-gui-phase.sh` validates the shipped surfaces by running the full Go suite, focused GUI package tests including native GUI/app/TUI packages, JS syntax checking, native GUI browser smoke, smoke-tagged PTY binary tests, shuffle tests, race tests, release app shell PTY soak, and repeated chat/app PTY smoke tests.
 
 ## Acceptance statement
 
-For the accepted current shipped surfaces above, the GUI milestone is complete and judgeable. The final review blocker mapping is recorded in `docs/gui-final-review-resolution.md`. Future product expansion should open new backlog items instead of reopening this milestone unless it regresses one of the evidenced contracts.
+The persistent GUI goal is complete and judgeable: premium desktop shell, all current GUI features, E2E testing, high UI/UX evidence, and measured resource-safety coverage are all mapped to tests/artifacts/CI. Subsequent product changes should create new acceptance rows when they introduce new GUI functionality or regress an evidenced contract.

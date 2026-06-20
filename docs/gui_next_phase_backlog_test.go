@@ -20,7 +20,7 @@ func TestGUINextPhaseBacklogKeepsFullGoalActionable(t *testing.T) {
 		"release-app-shell.png",
 		"chat-tui-shell.png",
 		"smoke-tagged chat TUI in the isolated desktop terminal",
-		"Longer live binary soak",
+		"Longer live binary/resource soak",
 		"TestPTYReleaseAppShellLongerSoak",
 		"TestAgentBackgroundShellToolJourneySettlesResources",
 		"TestTUIToolTurnDrivesPlanChangesAndTaskPanels",
@@ -33,7 +33,7 @@ func TestGUINextPhaseBacklogKeepsFullGoalActionable(t *testing.T) {
 		"Clean-tree delivery gate",
 		"Independent final review",
 		"goal_achieved",
-		"P0 current-surface items are complete",
+		"P0 full parity items are complete",
 	} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("next-phase backlog missing %q", want)

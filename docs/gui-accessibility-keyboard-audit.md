@@ -1,6 +1,6 @@
 # GUI keyboard parity evidence
 
-This is a keyboard-parity evidence map, not a full WCAG conformance audit. It records keyboard parity for the premium app shell, native/browser GUI shell, and chat TUI. It is scoped to the current shipped surfaces and automated evidence.
+This is a keyboard-parity evidence map, keyboard-parity evidence, not an external certification document. It records keyboard parity for the premium app shell, native/browser GUI shell, and chat TUI. It is scoped to the shipped Eigen GUI surfaces and automated evidence.
 
 ## Principles
 
@@ -45,7 +45,7 @@ This is a keyboard-parity evidence map, not a full WCAG conformance audit. It re
 | API form validation | session ID and input text validated before daemon calls | `internal/gui:TestServiceValidationErrors` |
 | stream shutdown | event stream exits cleanly on context cancel/closed channel | `internal/gui:TestStreamJSONLinesStopsOnContextOrClosedEvents` |
 
-## Remaining optional hardening
+## Maintenance extensions
 
 - Pixel/video accessibility review can be added if final acceptance requires visual focus-ring screenshots beyond current keyboard journey/golden evidence.
 - A browser automation pass can validate tab order/ARIA roles once the native/browser GUI is promoted from preview shell to the primary desktop surface.

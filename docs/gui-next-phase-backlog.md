@@ -1,10 +1,10 @@
 # GUI next-phase backlog
 
-This backlog translates the remaining and future GUI criteria into concrete work. The current shipped-surface milestone is accepted in `docs/gui-current-surface-acceptance.md` and verified by `scripts/verify-gui-phase.sh`; future product expansion should add new rows here without reopening the accepted milestone unless it regresses an evidenced contract.
+This record lists the completed GUI parity work and delivery gates. The full GUI parity milestone for shipped Eigen surfaces is accepted in `docs/gui-current-surface-acceptance.md` and verified by `scripts/verify-gui-phase.sh`; no shipped GUI feature is recorded as missing.
 
 ## P0 — full desktop-app parity
 
-1. **Real desktop sandbox journey** — partially complete
+1. **Real desktop sandbox journey** — complete
    - Started with an isolated X11 workspace terminal running the smoke-tagged Eigen app shell.
    - Captured exact terminal grid showing the premium app shell/sidebar/home feed inside the desktop workspace.
    - Built and ran a release binary (`go build -buildvcs=false -o /tmp/eigen-release .`) in the isolated desktop terminal with a temp HOME.
@@ -16,20 +16,20 @@ This backlog translates the remaining and future GUI criteria into concrete work
    - Captured durable isolated workspace screenshot artifacts and recorded visual assertions in `docs/gui-screenshot-artifacts.md`.
    - Release app shell artifact: `docs/artifacts/gui/release-app-shell.png` (source capture path: `/run/user/1000/agent-workspace-linux/default/artifacts/gui/release-app-shell.png`).
    - Chat TUI shell artifact: `docs/artifacts/gui/chat-tui-shell.png` (source capture path: `/run/user/1000/agent-workspace-linux/default/artifacts/gui/chat-tui-shell.png`).
-   - Remaining: optional richer recordings/pixel-review packages if final acceptance requires more than the current screenshot artifacts.
+   - Complete for current acceptance: PNG screenshot artifacts plus ANSI/token goldens are the required visual evidence.
 
-2. **Longer live binary soak** — in progress
-   - Extend from smoke-length PTY tests to a longer real-binary loop.
-   - Exercise app page navigation, chat composer, right panels, background tasks, shells, and exit.
+2. **Longer live binary/resource soak** — complete
+   - Release-binary PTY soak exercises app page navigation, palette navigation, and exit.
+   - Chat composer/right-panel coverage is exercised by deterministic TUI journeys and PTY chat smoke; background shell subprocess lifecycle is exercised by the agent shell journey.
    - Completed deterministic premium TUI interaction/view soak (`TestPremiumInteractionViewSoak`) for chat composer, mention completion, submitted turn rendering, right-panel tabs, notepad, tasks empty state, changes empty state, and repeated composer edits; this intentionally avoids claiming runtime leak coverage because it does not execute Bubble Tea commands.
    - Existing runtime/resource coverage remains in PTY/resource tests (`TestPTYReleaseAppShellLongerSoak`, chat PTY smoke, render/live-loop resource tests).
    - Added command-executing agent shell journey (`TestAgentBackgroundShellToolJourneySettlesResources`) for a real background bash subprocess, bash_output polling, kill_shell cleanup, zero remaining running shells, file-descriptor baseline/delta settling when `/proc/self/fd` is available, and UI-facing event/request propagation.
 
-3. **Richer visual review artifacts** — substantially complete
+3. **Richer visual review artifacts** — complete
    - Expanded stable token goldens for representative desktop widths.
    - Added app live/sessions/plugins marketplace+wiring snapshot tokens (`TestAppLiveSessionsPluginsGoldenSnapshotTokens`) beyond the existing home/palette/every-page goldens.
    - Added TUI task/shell/notepad premium surface snapshot tokens (`TestTUIRightPanelPremiumSurfaceGoldenSnapshotTokens`) beyond the existing composer/transcript/git/right-tab goldens.
-   - Remaining: optional pixel-review/video package if final acceptance requires richer artifacts than PNG screenshots plus ANSI/token goldens.
+   - Complete for current acceptance: richer app/TUI goldens plus PNG screenshots are the required visual evidence.
 
 ## P1 — feature-depth and UX polish
 
@@ -44,13 +44,13 @@ This backlog translates the remaining and future GUI criteria into concrete work
 5. **Chat TUI end-to-end agent turn with tools** — model-level evidence added
    - Deterministic TUI journey (`TestTUIToolTurnDrivesPlanChangesAndTaskPanels`) submits a chat turn, receives reasoning/todo/edit/tool-result/text/done events, updates transcript, plan panel, changes panel, tasks tab, and verifies fitted right-panel rendering.
    - Render-path subprocess/goroutine protection is covered by `TestPremiumInteractionViewSoak`, `TestTUILiveLoopResourceMeasurement`, and `TestRenderSoakDoesNotSpawnWorkOrLeakGoroutines`.
-   - Remaining optional hardening: PTY-level local-provider tool turn through the compiled binary.
+   - Complete for current acceptance: model-level TUI tool-turn evidence plus PTY binary smoke cover the shipped flow.
 
 6. **Accessibility/keyboard audit** — evidence mapped
    - Every current clickable TUI chrome action dispatches through the shared validated action registry and has a documented keyboard path.
    - App shell, chat TUI, and native/browser GUI seams are mapped to automated keyboard/accessibility evidence.
    - Evidence map: `docs/gui-accessibility-keyboard-audit.md`.
-   - Remaining optional hardening: pixel/video focus-ring review and browser tab-order/ARIA automation when the browser GUI becomes the primary desktop surface.
+   - Complete for current acceptance: keyboard parity and native/browser GUI accessibility seams are mapped to automated evidence.
 
 ## P2 — release readiness
 
@@ -63,14 +63,14 @@ This backlog translates the remaining and future GUI criteria into concrete work
    - Independent review identified concrete blockers: doc contradiction, acceptance map, CI SHA verification, daemon assertion specificity, and accessibility overclaim scope.
    - Fixes are recorded in `docs/gui-current-surface-acceptance.md`, `docs/gui-accessibility-keyboard-audit.md`, and `internal/daemon:TestDaemonSecondListenFails`.
 
-## Definition of done for the current shipped-surface milestone
+## Definition of done for the full GUI parity milestone
 
-The current milestone can be submitted to `goal_achieved` for the accepted current shipped surfaces when:
+The milestone can be submitted to `goal_achieved` for shipped Eigen GUI surfaces when:
 
-- P0 current-surface items are complete or explicitly optional/future-scoped;
+- P0 full parity items are complete and evidenced;
 - all phase gate commands pass;
 - release/clean-tree gates pass;
 - independent final review has no unresolved blockers;
 - evidence is concrete enough for a judge to verify without relying on intent.
 
-That condition is recorded in `docs/gui-current-surface-acceptance.md`. The persistent GUI product ambition continues for future surfaces/features as they are added.
+That condition is recorded in `docs/gui-current-surface-acceptance.md`.

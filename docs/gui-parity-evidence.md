@@ -62,7 +62,7 @@ go test -tags smoke . -run 'TestPTYChatTUISmokeQuit|TestPTYAppShellNavigationSoa
 
 ## Phase gate and remaining gaps
 
-See `docs/gui-current-surface-acceptance.md` for the current shipped-surface acceptance map and CI evidence. See `docs/gui-phase-gate.md` for the reproducible current-surface gate. See `docs/gui-delivery-notes.md` for milestone scope and pre-existing staged files that are not owned by this GUI work. See `docs/gui-next-phase-backlog.md` for future-scope work beyond the accepted milestone.
+See `docs/gui-current-surface-acceptance.md` for the full GUI parity acceptance map and CI evidence. See `docs/gui-phase-gate.md` for the reproducible full parity gate. See `docs/gui-delivery-notes.md` for milestone scope. See `docs/gui-next-phase-backlog.md` for the completed backlog and delivery gates.
 
 ## Completed in this phase
 

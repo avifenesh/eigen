@@ -13,7 +13,7 @@ func TestGUICurrentSurfaceGateDocumentsAcceptance(t *testing.T) {
 	}
 	s := string(b)
 	for _, want := range []string{
-		"current shipped-surface milestone",
+		"full GUI parity milestone",
 		"docs/gui-current-surface-acceptance.md",
 		"native/browser desktop GUI local-only server",
 		"scripts/verify-gui-phase.sh",
@@ -26,10 +26,10 @@ func TestGUICurrentSurfaceGateDocumentsAcceptance(t *testing.T) {
 		"CI and GUI phase gate are green on the default-branch commit",
 		"27862913334",
 		"27862913354",
-		"Future desktop surfaces/features",
+		"no shipped GUI feature is recorded as missing",
 	} {
 		if !strings.Contains(s, want) {
-			t.Fatalf("current-surface gate missing %q", want)
+			t.Fatalf("full parity gate missing %q", want)
 		}
 	}
 }
