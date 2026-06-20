@@ -141,6 +141,7 @@ function makeContext() {
       else if (path === '/api/sessions') data = [{id: 's1', title: 'Session 1', status: 'idle', dir: '/tmp/project'}];
       else if (path === '/api/profile') data = {profile: 'hello'};
       else if (String(path).includes('/observe')) data = {enabled: true, path: '/tmp/events.jsonl', limit: 5000, summary: {records: 7, errors: {tool: 1}, models: {gpt: {turns: 2}}, tools: {bash: {calls: 3}}, routes: {routed: 4, skipped: 1, assessed: 2}, runtime: {max_goroutines: 9}}};
+      else if (String(path).includes('/memory')) data = {dir: '/tmp/project', memory: '# notes\n', bans: [{title: 'no push', rule: 'never push'}], notes: ['a note'], files: ['MEMORY.md', 'bans.md']};
       else if (String(path).includes('/state')) {
         const id = String(path).split('/').slice(-2, -1)[0];
         data = JSON.parse(JSON.stringify(stateDB[id] || stateDB.s1));
@@ -272,6 +273,10 @@ assert(apiLog.some(x => String(x.path).includes('/detach-bash')), 'detach-bash c
 ctx.setFeature('observe');
 // Observe feature loads telemetry via getObserve when first shown.
 assert.match(document.getElementById('feature-stage').innerHTML, /Observe|Telemetry|events/i, 'observe surface renders telemetry cells');
+ctx.setFeature('memory');
+// Memory feature loads the project memory workspace.
+await new Promise(r => setTimeout(r, 0));
+assert.match(document.getElementById('feature-stage').innerHTML, /MEMORY\.md|Bans|Ad-hoc notes/i, 'memory surface renders the project workspace cells');
 ctx.setFeature('chat');
 
 /* ---------- Goal bar + token usage + rename/delete (real backend wiring) ---------- */

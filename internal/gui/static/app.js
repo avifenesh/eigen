@@ -17,6 +17,8 @@ const state = {
   feature: 'chat',
   turnTokens: {in: 0, out: 0},
   observe: null,
+  memory: null,
+  memoryQuery: '',
   // rendered timeline model: maps a stable key -> node so polling can update
   // in place instead of rebuilding the whole transcript (which flickered and
   // destroyed the streaming assistant message).
@@ -146,6 +148,19 @@ async function getObserve(limit = 5000) {
   if (hasDesktopBridge() && desktop().Observe) return desktop().Observe(limit);
   return api(`/api/observe?limit=${encodeURIComponent(limit)}`);
 }
+function sessionDir() {
+  const roots = state.state?.roots || state.state?.Roots || [];
+  return roots[0] || '';
+}
+async function getProjectMemory(dir) {
+  if (hasDesktopBridge() && desktop().ProjectMemory) return desktop().ProjectMemory(dir);
+  return api(`/api/memory?dir=${encodeURIComponent(dir)}`);
+}
+async function searchProjectMemory(dir, query) {
+  if (hasDesktopBridge() && desktop().SearchProjectMemory) return desktop().SearchProjectMemory(dir, query);
+  const out = await api(`/api/memory?dir=${encodeURIComponent(dir)}&q=${encodeURIComponent(query)}`);
+  return out.hits || [];
+}
 
 /* ---------------- Boot / sessions ---------------- */
 async function boot() {
@@ -192,6 +207,8 @@ async function openSession(id) {
   state.rendered.clear();
   state.tools = {};
   state.approvals = {};
+  state.memory = null;
+  state.memoryQuery = '';
   timelineEl.innerHTML = '';
   renderSessions();
   closeLiveStream();
@@ -314,6 +331,7 @@ function setFeature(feature) {
     btn.classList.toggle('active', btn.dataset.feature === feature);
   }
   if (feature === 'observe' && !state.observe) refreshObserve({force: false});
+  if (feature === 'memory' && !state.memory) refreshMemory({force: false});
   renderFeatureStage();
 }
 
@@ -741,6 +759,27 @@ function observeCells() {
   ];
 }
 
+function memoryCells() {
+  const m = state.memory || {};
+  if (m.error) return [['Workspace', m.error, compactActionButton('Retry', 'data-feature-action="refresh-memory"')]];
+  if (m.hits) {
+    const list = (m.hits || []).slice(0, 8).map(h => [h.path || h.Path, h.line || h.Line, '']).concat(m.hits.length === 0 ? [['No matches', `No memory matches “${state.memoryQuery}”.`, '']] : []);
+    return list.concat([['Search', `Querying “${state.memoryQuery}”`, compactActionButton('Clear search', 'data-feature-action="clear-memory-search"')]]);
+  }
+  const memLen = (m.memory || '').length;
+  const bans = m.bans || [];
+  const notes = m.notes || [];
+  const files = m.files || [];
+  return [
+    ['MEMORY.md', memLen ? `${memLen} chars of durable project notes` : 'Empty — no project memory yet.', compactActionButton('Refresh', 'data-feature-action="refresh-memory"')],
+    ['Bans', bans.length ? `${bans.length} hard prohibition(s)` : 'No bans recorded.', compactActionButton('Refresh', 'data-feature-action="refresh-memory"')],
+    ['Ad-hoc notes', notes.length ? `${notes.length} recent note(s)` : 'No ad-hoc notes.', compactActionButton('Refresh', 'data-feature-action="refresh-memory"')],
+    ['Files', files.length ? `${files.length} workspace file(s)` : 'No memory files.', compactActionButton('Search memory', 'data-feature-action="memory-search"')],
+    ['Profile', 'Edit the global USER.md personalization.', compactActionButton('Edit profile', 'data-feature-action="profile"')],
+    ['Goal', (state.state?.goal || state.state?.Goal || 'No active goal.') + '', `${compactActionButton('Set goal', 'data-feature-action="set-goal"')} ${compactActionButton('Compact', 'data-feature-action="compact"')}`],
+  ];
+}
+
 function renderFeatureStage() {
   if (state.feature === 'chat' || !featureStage) return;
   const snap = state.state || {};
@@ -757,7 +796,7 @@ function renderFeatureStage() {
     tools: ['Tools', 'Inspect and operate the automation surface.', tools.length ? tools.slice(0, 9).map(t => [t.name || t.Name || 'tool', (t.read_only ?? t.ReadOnly) ? 'read-only' : 'mutating', `${compactActionButton('Allow next turn', `data-feature-action="allow-tool" data-tool-name="${escapeAttr(t.name || t.Name || 'tool')}"`)}`]) : [['Tool registry', 'No registry payload yet.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
     shells: ['Shells', 'Track and control background commands.', shells.length ? shells.slice(0, 9).map(s => { const status = s.status || s.Status || 'unknown'; const id = s.id || s.ID || ''; const kill = status === 'running' ? ` ${compactActionButton('Kill', `data-feature-action="kill-shell" data-shell-id="${escapeAttr(id)}"`)}` : ''; return [id || s.command || 'shell', `${status} ${s.last_line || s.LastLine || ''}`, `${compactActionButton('Poll', `data-feature-action="poll-shell" data-shell-id="${escapeAttr(id)}"`)}${kill}`]; }).concat([['Foreground bash', 'Detach the bash command running in the current turn into the background.', compactActionButton('Detach foreground bash', 'data-feature-action="detach-bash"')]]) : [['No background shells', 'Background commands appear here with status and controls.', compactActionButton('Refresh', 'data-feature-action="refresh"')], ['Foreground bash', 'Detach the bash command running in the current turn into the background.', compactActionButton('Detach foreground bash', 'data-feature-action="detach-bash"')]]],
     approvals: ['Approvals', 'Handle gated tool calls deliberately.', pending.length ? pending.map(p => [p.tool || 'approval', p.id || p.ID || 'pending', `${compactActionButton('Approve', `data-feature-action="approve" data-approval-id="${escapeAttr(p.id || p.ID || p.result || '')}"`)} ${compactActionButton('Deny', `data-feature-action="deny" data-approval-id="${escapeAttr(p.id || p.ID || p.result || '')}"`)}`]) : [['No pending approvals', 'Gated operations request approval here.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
-    memory: ['Memory', 'Keep durable context visible.', [['Goal', snap.goal || snap.Goal || 'No active goal.', `${compactActionButton('Set from composer', 'data-feature-action="set-goal"')} ${compactActionButton('Compact', 'data-feature-action="compact"')}`], ['Roots', roots.length ? roots.map(shortPath).join(' · ') : 'No roots reported.', `${compactActionButton('Add current dir', 'data-feature-action="add-dir"')} ${compactActionButton('Open system', 'data-feature-action="system"')}`], ['Profile', 'Edit USER.md global personalization.', compactActionButton('Edit profile', 'data-feature-action="profile"')]]],
+    memory: ['Memory', 'Project memory workspace: durable notes, bans, and files.', memoryCells()],
     plugins: ['Plugins', 'Manage extension capability.', [['Available tools', `${tools.length || 0} tools from skills, plugins, and built-ins.`, compactActionButton('Refresh', 'data-feature-action="refresh"')], ['Marketplace', 'Install/update/disable/rollback via the app shell.', compactActionButton('Open system', 'data-feature-action="system"')], ['Agent roles', 'Plugin roles surface through the tool list.', compactActionButton('Refresh', 'data-feature-action="refresh"')]]],
     config: ['Config', 'Tune model, effort, permission, search, fast.', [['Model', modelInput?.value || snap.model || snap.Model || 'default', compactActionButton('Apply model', 'data-feature-action="apply-model"')], ['Permission', permSelect?.value || snap.perm || snap.Perm || 'gated', compactActionButton('Apply perm', 'data-feature-action="apply-perm"')], ['Search / fast', `${searchSelect?.value || snap.search || 'off'} · ${fastToggle?.classList.contains('active') ? 'fast on' : 'fast off'}`, `${compactActionButton('Apply search', 'data-feature-action="apply-search"')} ${compactActionButton('Toggle fast', 'data-feature-action="toggle-fast"')}`]]],
     observe: ['Observe', 'Live observability: event counts, tool/model usage, routing, runtime pressure.', observeCells()],
@@ -773,6 +812,9 @@ async function runFeatureAction(btn) {
   const action = btn.dataset.featureAction;
   if (action === 'refresh') return refreshActiveState({force: true});
   if (action === 'refresh-observe') return refreshObserve({force: true});
+  if (action === 'refresh-memory') return refreshMemory({force: true});
+  if (action === 'clear-memory-search') { state.memoryQuery = ''; return refreshMemory({force: true}); }
+  if (action === 'memory-search') { state.memoryQuery = prompt('Search project memory', state.memoryQuery || '') || ''; return refreshMemory({force: true}); }
   if (action === 'system') return openSystemModal();
   if (action === 'profile') return openProfileModal();
   if (action === 'goto-config') return setFeature('config');
@@ -815,6 +857,22 @@ async function refreshObserve(opts = {}) {
   } catch (err) {
     state.observe = {enabled: true, error: err.message || String(err), summary: {records: 0}};
     if (state.feature === 'observe') renderFeatureStage();
+  }
+}
+async function refreshMemory(opts = {}) {
+  const dir = sessionDir();
+  if (!dir) { state.memory = {error: 'Open a session to inspect its project memory.'}; if (state.feature === 'memory') renderFeatureStage(); return; }
+  try {
+    if (state.memoryQuery) {
+      const hits = await searchProjectMemory(dir, state.memoryQuery);
+      state.memory = {dir, hits};
+    } else {
+      state.memory = await getProjectMemory(dir);
+    }
+    if (opts.force || state.feature === 'memory') renderFeatureStage();
+  } catch (err) {
+    state.memory = {dir, error: err.message || String(err)};
+    if (state.feature === 'memory') renderFeatureStage();
   }
 }
 async function sendAllowedToolTurn(toolName) {

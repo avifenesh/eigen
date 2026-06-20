@@ -716,14 +716,14 @@ func (s *Store) Search(query string, limit int) ([]SearchHit, error) {
 
 // SearchHit is one memory search result.
 type SearchHit struct {
-	Path string
-	Line string
+	Path string `json:"path"`
+	Line string `json:"line"`
 }
 
 // Ban is one banned behavior: a short title + the rule body.
 type Ban struct {
-	Title string
-	Rule  string
+	Title string `json:"title"`
+	Rule  string `json:"rule"`
 }
 
 // AddBan adds or updates (by title) a hard prohibition in bans.md — the

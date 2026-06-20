@@ -244,6 +244,40 @@ func (s *Service) WriteUserProfile(content string) error {
 	return gm.WriteUserProfile(content)
 }
 
+// ProjectMemory returns a read-only snapshot of a project's memory workspace
+// (MEMORY.md, bans, ad-hoc notes, file listing) rooted at dir. The GUI Memory
+// surface uses this to browse durable context without leaving the app. A
+// missing/uninitialized workspace is non-fatal (returns an empty snapshot).
+func (s *Service) ProjectMemory(dir string) (MemoryWorkspace, error) {
+	out := MemoryWorkspace{Dir: dir}
+	store, err := memory.Open(dir)
+	if err != nil || store == nil {
+		out.Error = "memory workspace unavailable"
+		if err != nil {
+			out.Error = err.Error()
+		}
+		return out, nil
+	}
+	out.Memory = store.Read()
+	out.Bans = store.ListBans()
+	if notes := store.AdHocNotes(50); len(notes) > 0 {
+		out.Notes = notes
+	}
+	if files, err := store.ListFiles(); err == nil {
+		out.Files = files
+	}
+	return out, nil
+}
+
+// SearchProjectMemory searches a project's memory workspace and returns hits.
+func (s *Service) SearchProjectMemory(dir, query string) ([]memory.SearchHit, error) {
+	store, err := memory.Open(dir)
+	if err != nil || store == nil {
+		return nil, fmt.Errorf("memory workspace unavailable")
+	}
+	return store.Search(query, 50)
+}
+
 func (s *Service) client() (*daemon.Client, error) { return EnsureDaemon(s.ensure) }
 
 func (s *Service) withClient(fn func(*daemon.Client) error) error {
@@ -345,4 +379,15 @@ type StreamEvent struct {
 	Event  daemon.WireEvent `json:"event"`
 	Replay bool             `json:"replay"`
 	At     time.Time        `json:"at"`
+}
+
+// MemoryWorkspace is a read-only snapshot of a project's memory workspace for
+// the GUI Memory surface.
+type MemoryWorkspace struct {
+	Dir    string       `json:"dir"`
+	Memory string       `json:"memory"`
+	Bans   []memory.Ban `json:"bans"`
+	Notes  []string     `json:"notes"`
+	Files  []string     `json:"files"`
+	Error  string       `json:"error,omitempty"`
 }
