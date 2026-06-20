@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1743,6 +1744,7 @@ func TestAgentBackgroundShellToolJourneySettlesResources(t *testing.T) {
 		{ToolCalls: []llm.ToolCall{{ID: "c3", Name: "kill_shell", Arguments: json.RawMessage(`{"id":"shell-1"}`)}}},
 		{Text: "background shell journey complete"},
 	}}
+	fdBefore, fdOK := countOpenFDsForTest(t)
 	var events []Event
 	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto, Shells: shells, OnEvent: func(e Event) { events = append(events, e) }}
 
@@ -1763,6 +1765,19 @@ func TestAgentBackgroundShellToolJourneySettlesResources(t *testing.T) {
 	}
 	if strings.Contains(shells.StatusBlock(), "still running") {
 		t.Fatalf("no running shells should remain in status block, got %q", shells.StatusBlock())
+	}
+	if fdOK {
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			fdAfter, ok := countOpenFDsForTest(t)
+			if !ok || fdAfter <= fdBefore+2 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("background shell journey leaked file descriptors: before=%d after=%d", fdBefore, fdAfter)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
 	}
 	for _, want := range []string{"bash", "bash_output", "kill_shell"} {
 		if !sawToolEvent(events, want) {
@@ -1793,4 +1808,16 @@ func requestContains(req llm.Request, want string) bool {
 		}
 	}
 	return false
+}
+
+func countOpenFDsForTest(t *testing.T) (int, bool) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		return 0, false
+	}
+	entries, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		return 0, false
+	}
+	return len(entries), true
 }

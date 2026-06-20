@@ -23,8 +23,7 @@ This backlog translates the remaining full-goal criteria into concrete next work
    - Exercise app page navigation, chat composer, right panels, background tasks, shells, and exit.
    - Completed deterministic premium TUI interaction/view soak (`TestPremiumInteractionViewSoak`) for chat composer, mention completion, submitted turn rendering, right-panel tabs, notepad, tasks empty state, changes empty state, and repeated composer edits; this intentionally avoids claiming runtime leak coverage because it does not execute Bubble Tea commands.
    - Existing runtime/resource coverage remains in PTY/resource tests (`TestPTYReleaseAppShellLongerSoak`, chat PTY smoke, render/live-loop resource tests).
-   - Added command-executing agent shell journey (`TestAgentBackgroundShellToolJourneySettlesResources`) for a real background bash subprocess, bash_output polling, kill_shell cleanup, zero remaining running shells, and UI-facing event/request propagation.
-   - Remaining: add process-level file-descriptor baseline/delta assertions once CI runner `/proc/self/fd` behavior is stable for this package.
+   - Added command-executing agent shell journey (`TestAgentBackgroundShellToolJourneySettlesResources`) for a real background bash subprocess, bash_output polling, kill_shell cleanup, zero remaining running shells, file-descriptor baseline/delta settling when `/proc/self/fd` is available, and UI-facing event/request propagation.
 
 3. **Richer visual review artifacts**
    - Expand stable token goldens into full ANSI/text snapshots or visual screenshots for representative desktop widths.
