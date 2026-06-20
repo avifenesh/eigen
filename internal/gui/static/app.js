@@ -15,6 +15,7 @@ const state = {
   approvals: {},
   tools: {},
   feature: 'chat',
+  turnTokens: {in: 0, out: 0},
   // rendered timeline model: maps a stable key -> node so polling can update
   // in place instead of rebuilding the whole transcript (which flickered and
   // destroyed the streaming assistant message).
@@ -66,6 +67,9 @@ const chatStage = $('chat-stage');
 const workspaceEl = $('workspace');
 const statusIndicator = $('status-indicator');
 const statusText = $('status-text');
+const tokenUsage = $('token-usage');
+const goalBar = $('goal-bar');
+const goalText = $('goal-text');
 const interruptBtn = $('interrupt');
 
 /* ---------------- Desktop bridge / API ---------------- */
@@ -129,6 +133,14 @@ async function killShell(id, shell) { return hasDesktopBridge() ? desktop().Kill
 async function detachBash(id) { return hasDesktopBridge() ? desktop().DetachBash(id) : api(`/api/sessions/${encodeURIComponent(id)}/detach-bash`, {method: 'POST'}); }
 async function compactSession(id, target = 0) { return hasDesktopBridge() ? desktop().Compact(id, target) : api(`/api/sessions/${encodeURIComponent(id)}/compact`, {method: 'POST', body: JSON.stringify({target})}); }
 async function addDir(id, path) { return hasDesktopBridge() ? desktop().AddDir(id, path) : api(`/api/sessions/${encodeURIComponent(id)}/add-dir`, {method: 'POST', body: JSON.stringify({path})}); }
+async function renameSession(id, title) {
+  if (hasDesktopBridge() && desktop().SetTitle) return desktop().SetTitle(id, title);
+  return api(`/api/sessions/${encodeURIComponent(id)}/title`, {method: 'POST', body: JSON.stringify({value: title})});
+}
+async function deleteSession(id) {
+  if (hasDesktopBridge() && desktop().Remove) return desktop().Remove(id);
+  return api('/api/sessions', {method: 'DELETE', body: JSON.stringify({id})});
+}
 
 /* ---------------- Boot / sessions ---------------- */
 async function boot() {
@@ -219,9 +231,42 @@ function applyState(id, snap, opts = {}) {
     renderTimeline(messages);
   }
   setStatus(running ? 'running' : 'idle', running ? 'Agent working…' : (state.active ? 'Ready' : 'No session'));
+  updateGoalBar(snap);
   syncPendingApprovals(snap.pending || snap.Pending || []);
   updateInspector(snap);
   renderFeatureStage();
+}
+
+function updateGoalBar(snap) {
+  const goal = (snap.goal || snap.Goal || '').trim();
+  if (!goalBar) return;
+  if (goal) {
+    goalText.textContent = goal;
+    goalBar.classList.remove('hidden');
+  } else {
+    goalBar.classList.add('hidden');
+  }
+}
+
+function updateTokenUsage() {
+  if (!tokenUsage) return;
+  const {in: ti, out: to} = state.turnTokens;
+  if (ti || to) {
+    tokenUsage.classList.remove('hidden');
+    let inEl = tokenUsage.querySelector('.tu-in');
+    if (!inEl) { inEl = document.createElement('span'); inEl.className = 'tu-in'; tokenUsage.appendChild(inEl); }
+    let outEl = tokenUsage.querySelector('.tu-out');
+    if (!outEl) { outEl = document.createElement('span'); outEl.className = 'tu-out'; tokenUsage.appendChild(outEl); }
+    inEl.textContent = `↑${formatTokens(ti)}`;
+    outEl.textContent = `↓${formatTokens(to)}`;
+  } else {
+    tokenUsage.classList.add('hidden');
+  }
+}
+function formatTokens(n) {
+  n = Number(n || 0);
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
+  return String(n);
 }
 
 function updateControls(snap) {
@@ -244,6 +289,15 @@ function updateControls(snap) {
 function setStatus(level, text) {
   statusIndicator.className = `status-indicator ${level}`;
   statusText.textContent = text;
+}
+let flashTimer = null;
+function flashStatus(msg, isError = false) {
+  statusText.textContent = msg;
+  if (flashTimer) clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => {
+    const running = !!(state.state?.running || state.state?.Running);
+    setStatus(running ? 'running' : (isError ? 'error' : 'idle'), running ? 'Agent working…' : 'Ready');
+  }, 3500);
 }
 
 /* ---------------- Feature routing ---------------- */
@@ -415,6 +469,14 @@ function appendEvent(e, replay) {
   if (replay || !e) return;
   timelineEl.classList.remove('empty');
   const kind = e.kind || e.Kind || 'event';
+  // Token accounting: every event may carry incremental token usage.
+  const inT = Number(e.in_toks || e.InToks || 0);
+  const outT = Number(e.out_toks || e.OutToks || 0);
+  if (inT || outT) {
+    state.turnTokens.in += inT;
+    state.turnTokens.out += outT;
+    updateTokenUsage();
+  }
   if (kind === 'text') return appendDelta('assistant', e.text || e.Text || '');
   if (kind === 'reasoning') return appendEventBlock('reasoning', 'reasoning', e.text || e.Text || '');
   if (kind === 'tool_start') return ensureToolCard(e);
@@ -693,7 +755,14 @@ async function runFeatureAction(btn) {
   if (action === 'allow-tool') return sendAllowedToolTurn(btn.dataset.toolName || '');
   if (action === 'kill-shell') { await killShell(state.active, btn.dataset.shellId || ''); return refreshActiveState({force: true}); }
   if (action === 'detach-bash') { await detachBash(state.active); return refreshActiveState({force: true}); }
-  if (action === 'compact') { await compactSession(state.active, 0); return refreshActiveState({force: true}); }
+  if (action === 'compact') {
+    try {
+      const res = await compactSession(state.active, 0);
+      const before = res?.before ?? res?.Before, after = res?.after ?? res?.After;
+      if (before !== undefined && after !== undefined) flashStatus(`Compacted ${before} → ${after} messages`);
+    } catch (err) { flashStatus(`Compact failed: ${err.message}`, true); }
+    return refreshActiveState({force: true});
+  }
   if (action === 'set-goal') return applySettingFromFeature('goal', inputEl?.value?.trim() || '');
   if (action === 'add-dir') { await addDir(state.active, '.'); return refreshActiveState({force: true}); }
   if (action === 'apply-model') return applySettingFromFeature('model', modelInput?.value?.trim());
@@ -735,6 +804,8 @@ $('composer').onsubmit = async (e) => {
   inputEl.value = '';
   autoGrowInput();
   updateSendAvailability();
+  state.turnTokens = {in: 0, out: 0};
+  updateTokenUsage();
   setStatus('running', 'Sending…');
   try {
     await sendInput(state.active, text);
@@ -804,6 +875,43 @@ document.addEventListener('click', (e) => {
 $('interrupt').onclick = async () => { if (state.active) { await sessionAction(state.active, 'interrupt'); setStatus('idle', 'Interrupting…'); } };
 $('resend').onclick = async () => { if (state.active) await sessionAction(state.active, 'resend'); };
 $('clear').onclick = async () => { if (!state.active) return; if (!confirm('Clear this session transcript?')) return; await sessionAction(state.active, 'clear'); state.rendered.clear(); timelineEl.innerHTML = ''; await refreshActiveState({force: true}); };
+$('rename-session').onclick = async () => {
+  if (!state.active) return;
+  const cur = titleEl.textContent || '';
+  const name = prompt('Rename session', cur);
+  if (name === null || name.trim() === cur) return;
+  try { await renameSession(state.active, name.trim()); await refreshSessions(); await refreshActiveState({force: true}); }
+  catch (err) { alert(`Rename failed: ${err.message}`); }
+};
+$('delete-session').onclick = async () => {
+  if (!state.active) return;
+  if (!confirm('Delete this session? This cannot be undone.')) return;
+  const id = state.active;
+  state.active = null;
+  try { await deleteSession(id); state.rendered.clear(); timelineEl.innerHTML = ''; await refreshSessions(); if (state.sessions.length) openSession(sessionID(state.sessions[0])); else applyEmptyState(); }
+  catch (err) { state.active = id; alert(`Delete failed: ${err.message}`); }
+};
+$('goal-edit').onclick = async () => {
+  if (!state.active) return;
+  const cur = (state.state?.goal || state.state?.Goal || '').trim();
+  const g = prompt('Set the session goal', cur);
+  if (g === null) return;
+  await sessionSetting(state.active, 'goal', g.trim());
+  await refreshActiveState({force: true});
+};
+$('goal-clear').onclick = async () => {
+  if (!state.active) return;
+  await sessionSetting(state.active, 'goal', '');
+  await refreshActiveState({force: true});
+};
+function applyEmptyState() {
+  titleEl.textContent = 'Select a session';
+  metaEl.textContent = 'Live daemon workspace';
+  timelineEl.innerHTML = `<div class="empty-state"><div class="empty-title">No session.</div><div class="empty-copy">Create a new session to begin.</div></div>`;
+  goalBar.classList.add('hidden');
+  tokenUsage.classList.add('hidden');
+  updateComposerState(false);
+}
 modelInput.addEventListener('change', async () => { if (!state.active) return; const v = modelInput.value.trim(); if (v) { await sessionSetting(state.active, 'model', v); await refreshActiveState({force: true}); } });
 modelInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); modelInput.blur(); } });
 effortSelect.onchange = async () => { if (state.active) { await sessionSetting(state.active, 'effort', effortSelect.value); await refreshActiveState({force: true}); } };

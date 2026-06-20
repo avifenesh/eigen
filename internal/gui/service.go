@@ -171,6 +171,9 @@ func (s *Service) Compact(id string, target int) (int, int, error) {
 func (s *Service) SetGoal(id, goal string) error {
 	return s.withClient(func(c *daemon.Client) error { return c.SetGoal(id, goal) })
 }
+func (s *Service) SetTitle(id, title string) error {
+	return s.withClient(func(c *daemon.Client) error { return c.SetTitle(id, title) })
+}
 func (s *Service) AddDir(id, path string) (string, error) {
 	c, err := s.client()
 	if err != nil {
