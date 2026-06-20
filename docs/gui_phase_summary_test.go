@@ -16,6 +16,8 @@ func TestGUIPhaseSummaryIsMachineReadable(t *testing.T) {
 		VerificationScript      string   `json:"verification_script"`
 		FullRepoGate            string   `json:"full_repo_gate"`
 		ReleasePTYSoakGate      string   `json:"release_pty_soak_gate"`
+		GUIStaticCheck          string   `json:"gui_static_check"`
+		GUIBrowserSmoke         string   `json:"gui_browser_smoke"`
 		Implemented             []string `json:"implemented"`
 		NotOwnedPreexisting     []string `json:"not_owned_preexisting_staged"`
 		RemainingBeforeFullGoal []string `json:"remaining_before_full_goal"`
@@ -34,6 +36,12 @@ func TestGUIPhaseSummaryIsMachineReadable(t *testing.T) {
 	}
 	if s.ReleasePTYSoakGate != "go test . -run 'TestPTYReleaseAppShellLongerSoak' -count=1" {
 		t.Fatalf("release PTY soak gate = %q", s.ReleasePTYSoakGate)
+	}
+	if s.GUIStaticCheck != "node --check internal/gui/static/app.js" {
+		t.Fatalf("GUI static check = %q", s.GUIStaticCheck)
+	}
+	if s.GUIBrowserSmoke != "scripts/gui-smoke.sh" {
+		t.Fatalf("GUI browser smoke = %q", s.GUIBrowserSmoke)
 	}
 	if len(s.Implemented) < 8 {
 		t.Fatalf("implemented list too short: %v", s.Implemented)

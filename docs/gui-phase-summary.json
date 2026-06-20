@@ -17,7 +17,8 @@
     "chat TUI visual goldens for central states and right-panel tabs",
     "resource checks for app/TUI render loops, TUI live loop, git subprocess cache, file index bounds, feed/GitHub/model cancellation",
     "release-safe smoke hook behavior and smoke-tagged PTY helper coverage",
-    "docs parity matrix, evidence map, phase gate, delivery notes, and test guards"
+    "docs parity matrix, evidence map, phase gate, delivery notes, and test guards",
+    "native/browser GUI static, API, local-only server, and smoke coverage"
   ],
   "not_owned_preexisting_staged": [
     "internal/command/command_test.go",
@@ -29,5 +30,7 @@
     "consider richer pixel/ANSI full snapshots if final acceptance requires visual diff artifacts",
     "run broader project delivery gates from a clean tree before merging/releasing",
     "complete docs/gui-next-phase-backlog.md P0 items before calling goal_achieved"
-  ]
+  ],
+  "gui_static_check": "node --check internal/gui/static/app.js",
+  "gui_browser_smoke": "scripts/gui-smoke.sh"
 }
