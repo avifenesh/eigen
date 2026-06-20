@@ -68,14 +68,28 @@ func (a *DesktopApp) NewSession(dir, model, perm string) (string, error) {
 	return a.svc.NewSession(dir, model, perm)
 }
 func (a *DesktopApp) State(id string) (*daemon.SessionState, error) { return a.svc.State(id) }
-func (a *DesktopApp) Input(id, text string) (bool, error)           { return a.svc.Input(id, text) }
+func (a *DesktopApp) Input(id, text string, allowTools ...[]string) (bool, error) {
+	var allow []string
+	if len(allowTools) > 0 {
+		allow = allowTools[0]
+	}
+	return a.svc.InputWithTools(id, text, allow)
+}
 func (a *DesktopApp) Approve(id, approval string, allow bool) error {
 	return a.svc.Approve(id, approval, allow)
 }
-func (a *DesktopApp) Interrupt(id string) error { return a.svc.Interrupt(id) }
-func (a *DesktopApp) Resend(id string) error    { return a.svc.Resend(id) }
-func (a *DesktopApp) Clear(id string) error     { return a.svc.Clear(id) }
-func (a *DesktopApp) Remove(id string) error    { return a.svc.Remove(id) }
+func (a *DesktopApp) Interrupt(id string) error                { return a.svc.Interrupt(id) }
+func (a *DesktopApp) Resend(id string) error                   { return a.svc.Resend(id) }
+func (a *DesktopApp) Clear(id string) error                    { return a.svc.Clear(id) }
+func (a *DesktopApp) Remove(id string) error                   { return a.svc.Remove(id) }
+func (a *DesktopApp) KillShell(id, shell string) (bool, error) { return a.svc.KillShell(id, shell) }
+func (a *DesktopApp) DetachBash(id string) (bool, error)       { return a.svc.DetachBash(id) }
+func (a *DesktopApp) Compact(id string, target int) (map[string]int, error) {
+	before, after, err := a.svc.Compact(id, target)
+	return map[string]int{"before": before, "after": after}, err
+}
+func (a *DesktopApp) SetGoal(id, goal string) error          { return a.svc.SetGoal(id, goal) }
+func (a *DesktopApp) AddDir(id, path string) (string, error) { return a.svc.AddDir(id, path) }
 func (a *DesktopApp) SetModel(id, model string) error {
 	return a.svc.SetModel(id, model)
 }
