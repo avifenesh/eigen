@@ -66,11 +66,14 @@
   });
 
   // Refresh the static state snapshot when a turn ends (token counts, pending).
+  // Capture the id and bail if it changed before the RPC resolves, so a late
+  // State(A) response can't clobber sess after the view switched to session B.
   $effect(() => {
     if (store && store.running === false && sessionId) {
-      Bridge.State(sessionId)
+      const id = sessionId;
+      Bridge.State(id)
         .then((s) => {
-          if (s) sess = s;
+          if (s && id === sessionId) sess = s;
         })
         .catch(() => {});
     }

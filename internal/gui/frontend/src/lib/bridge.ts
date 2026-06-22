@@ -9,6 +9,7 @@ import type {
   CompactResultDTO,
   ImageDTO,
   MemoryDTO,
+  SkillsDTO,
 } from "$lib/types";
 
 export const Bridge = {
@@ -52,4 +53,9 @@ export const Bridge = {
   AppendMemory: (scope: string, note: string): Promise<void> => B.AppendMemory(scope, note),
   WriteUserProfile: (content: string): Promise<void> => B.WriteUserProfile(content),
   MemoryBackups: (scope: string): Promise<string[]> => B.MemoryBackups(scope),
+  // skills
+  Skills: (): Promise<SkillsDTO | null> => B.Skills(),
+  SkillBody: (name: string): Promise<string> => B.SkillBody(name),
+  AcceptSkill: (name: string): Promise<string> => B.AcceptSkill(name),
+  RejectSkill: (name: string): Promise<void> => B.RejectSkill(name),
 };

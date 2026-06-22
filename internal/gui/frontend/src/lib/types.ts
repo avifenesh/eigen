@@ -115,3 +115,12 @@ export type MemoryDTO = {
   project: MemoryScopeDTO | null;
   global: MemoryScopeDTO | null;
 };
+
+export type SkillDTO = {
+  name: string;
+  description: string;
+  path: string;
+  source: string; // "user" | "project" | "extra"
+};
+export type SkillProposalDTO = { name: string; description: string; path: string };
+export type SkillsDTO = { skills: SkillDTO[]; proposals: SkillProposalDTO[] };

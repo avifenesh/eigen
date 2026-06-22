@@ -28,18 +28,26 @@
     scope === "project" ? (data?.project ?? null) : (data?.global ?? null),
   );
 
+  // alive guard: a late Bridge.Memory() resolution must not write after unmount
+  // or after a newer load() started.
+  let loadSeq = 0;
   async function load() {
+    const seq = ++loadSeq;
     loading = true;
     try {
-      data = await Bridge.Memory();
+      const d = await Bridge.Memory();
+      if (seq === loadSeq) data = d;
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      if (seq === loadSeq) toasts.error(e instanceof Error ? e.message : String(e));
     } finally {
-      loading = false;
+      if (seq === loadSeq) loading = false;
     }
   }
   $effect(() => {
     load();
+    return () => {
+      loadSeq++;
+    };
   });
 
   async function saveNote() {
