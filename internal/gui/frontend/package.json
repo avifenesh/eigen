@@ -8,7 +8,8 @@
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
-    "@wailsio/runtime": "3.0.0-alpha.94"
+    "@wailsio/runtime": "3.0.0-alpha.94",
+    "marked": "^18.0.5"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.1.2",

@@ -14,6 +14,7 @@
   import type { SessionStateDTO } from "$lib/types";
   import Composer from "$lib/components/Composer.svelte";
   import ToolCallCard from "$lib/components/ToolCallCard.svelte";
+  import Markdown from "$lib/components/Markdown.svelte";
   import Badge from "$lib/components/Badge.svelte";
   import Button from "$lib/components/Button.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
@@ -136,11 +137,15 @@
               <ToolCallCard {block} />
             {:else if block.kind === "note"}
               <div class="msg msg--note">{block.text}</div>
-            {:else}
-              <div class="msg msg--{block.kind === 'reasoning' ? 'reasoning' : 'text'}">
-                {#if block.kind === "reasoning"}<span class="msg__tag">reasoning</span>{/if}
+            {:else if block.kind === "reasoning"}
+              <div class="msg msg--reasoning">
+                <span class="msg__tag">reasoning</span>
                 {block.text}
               </div>
+            {:else}
+              <!-- Completed assistant prose renders as Markdown (sans; fenced
+                   code delegates to CodeBlock). -->
+              <div class="msg msg--text"><Markdown source={block.text} /></div>
             {/if}
           {/each}
           {#if store?.live}
