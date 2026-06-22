@@ -12,6 +12,7 @@
   import Observe from "./views/Observe.svelte";
   import Memory from "./views/Memory.svelte";
   import Skills from "./views/Skills.svelte";
+  import Agents from "./views/Agents.svelte";
 
   // Root lifecycle: start the daemon health stream; its teardown runs on unmount.
   onMount(() => {
@@ -41,6 +42,8 @@
           <Memory />
         {:else if router.route === "skills"}
           <Skills />
+        {:else if router.route === "agents"}
+          <Agents />
         {:else}
           <EmptyState glyph="λ" title={router.route} line="This view is coming soon." />
         {/if}

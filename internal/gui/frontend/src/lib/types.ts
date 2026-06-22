@@ -124,3 +124,36 @@ export type SkillDTO = {
 };
 export type SkillProposalDTO = { name: string; description: string; path: string };
 export type SkillsDTO = { skills: SkillDTO[]; proposals: SkillProposalDTO[] };
+
+export type BgTaskDTO = {
+  id: string;
+  task: string;
+  where?: string;
+  kind?: string;
+  difficulty?: string;
+  model?: string;
+  role?: string;
+  attempts?: number;
+  escalated?: boolean;
+  status: string; // running | done | error | canceled | lost
+  result?: string;
+  error?: string;
+  startedMs: number;
+  finishedMs?: number;
+  pid?: number;
+  host?: string;
+  steps?: number;
+  lastTool?: string;
+  lastNote?: string;
+  inTokens?: number;
+  outTokens?: number;
+  updatedMs?: number;
+  canceling?: boolean;
+};
+export type AgentsDTO = {
+  tasks: BgTaskDTO[];
+  running: number;
+  done: number;
+  errored: number;
+  dir: string;
+};

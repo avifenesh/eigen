@@ -29,14 +29,21 @@
   let scrollTop = $state(0);
   let viewportH = $state(0);
   let pinned = $state(true);
+  let pinRaf = 0;
 
-  // Measured heights by index; falls back to the estimate until a row reports.
-  // Trimmed to items.length so a long list replaced by a short one drops stale
-  // trailing heights (keeps the array tight; heightAt guards the live index).
-  let measured = $state<number[]>([]);
+  function keyOf(item: T, index: number): string | number {
+    return key ? key(item, index) : index;
+  }
+
+  // Measured heights keyed by item identity (NOT array index), so a splice or
+  // reorder of `items` (e.g. the transcript CAP eviction) keeps each row's real
+  // height instead of mis-attributing a neighbour's. Falls back to the estimate
+  // until a row reports. Pruned to live keys so evicted rows don't accumulate.
+  let measured = $state<Map<string | number, number>>(new Map());
 
   function heightAt(i: number): number {
-    return (measured[i] || estimateHeight) + gap;
+    const h = measured.get(keyOf(items[i], i));
+    return (h || estimateHeight) + gap;
   }
 
   // Cumulative offsets — recomputed when items or measurements change. For the
@@ -98,40 +105,56 @@
     return () => ro.disconnect();
   });
 
-  // Keep stale trailing heights from outliving a shrunk list.
+  // Prune measured heights for keys no longer present, so an evicted/replaced
+  // list doesn't grow the map unbounded.
   $effect(() => {
-    if (measured.length > items.length) measured.length = items.length;
+    if (measured.size <= items.length) return;
+    const live = new Set(items.map((it, i) => keyOf(it, i)));
+    for (const k of measured.keys()) {
+      if (!live.has(k)) measured.delete(k);
+    }
   });
 
   // Pin-to-bottom: when content grows (or a row remeasures taller) and the user
   // hasn't scrolled up, stay glued to the latest. transform/opacity-free — a
   // direct scrollTop write on the next frame, so no layout thrash mid-stream.
+  // The rAF handle is cancelled on cleanup so a frame queued just before unmount
+  // never fires against a torn-down viewport.
   $effect(() => {
     void totalH; // re-run as content grows
-    if (pin && pinned) requestAnimationFrame(scrollToBottom);
+    if (pin && pinned) {
+      cancelAnimationFrame(pinRaf);
+      pinRaf = requestAnimationFrame(scrollToBottom);
+    }
+    return () => cancelAnimationFrame(pinRaf);
   });
 
-  // Measure a rendered row and store its real height (drives next layout pass).
-  function measure(node: HTMLElement, index: number) {
+  // Measure a rendered row and store its real height keyed by item identity
+  // (drives the next layout pass). A reactive param keeps the key current if a
+  // row's identity changes in place.
+  function measure(node: HTMLElement, k: string | number) {
+    let curKey = k;
     const apply = () => {
       const h = node.offsetHeight;
-      if (h > 0 && measured[index] !== h) measured[index] = h;
+      if (h > 0 && measured.get(curKey) !== h) measured.set(curKey, h);
     };
     apply();
     const ro = new ResizeObserver(apply);
     ro.observe(node);
-    return { destroy: () => ro.disconnect() };
-  }
-
-  function keyOf(item: T, index: number): string | number {
-    return key ? key(item, index) : index;
+    return {
+      update(nk: string | number) {
+        curKey = nk;
+        apply();
+      },
+      destroy: () => ro.disconnect(),
+    };
   }
 </script>
 
 <div class="vlist" bind:this={viewport} onscroll={onScroll}>
   <div class="vlist__sizer" style="height:{totalH}px">
     {#each windowItems as w (keyOf(w.item, w.index))}
-      <div class="vlist__row" style="transform:translateY({w.top}px)" use:measure={w.index}>
+      <div class="vlist__row" style="transform:translateY({w.top}px)" use:measure={keyOf(w.item, w.index)}>
         {@render row(w.item, w.index)}
       </div>
     {/each}

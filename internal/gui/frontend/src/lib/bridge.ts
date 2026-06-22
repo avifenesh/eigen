@@ -10,6 +10,7 @@ import type {
   ImageDTO,
   MemoryDTO,
   SkillsDTO,
+  AgentsDTO,
 } from "$lib/types";
 
 export const Bridge = {
@@ -58,4 +59,8 @@ export const Bridge = {
   SkillBody: (name: string): Promise<string> => B.SkillBody(name),
   AcceptSkill: (name: string): Promise<string> => B.AcceptSkill(name),
   RejectSkill: (name: string): Promise<void> => B.RejectSkill(name),
+  // agents
+  Agents: (): Promise<AgentsDTO | null> => B.Agents(),
+  CancelAgent: (id: string): Promise<void> => B.CancelAgent(id),
+  AgentTranscript: (id: string): Promise<string> => B.AgentTranscript(id),
 };
