@@ -157,3 +157,16 @@ export type AgentsDTO = {
   errored: number;
   dir: string;
 };
+
+export type RolloutDTO = { index: number; text: string; outcome?: string };
+export type ConsolidationDTO = { path: string; label: string; whenMs: number; bytes: number };
+export type DreamingScopeDTO = {
+  scope: string;
+  rollouts: RolloutDTO[];
+  consolidations: ConsolidationDTO[];
+  currentBytes: number;
+};
+export type DreamingDTO = {
+  project: DreamingScopeDTO | null;
+  global: DreamingScopeDTO | null;
+};
