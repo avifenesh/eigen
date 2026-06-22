@@ -1,0 +1,49 @@
+// Single stable import point for the generated Wails bindings. Views/stores
+// import from here, never the deep generated path, so a regen or path change
+// touches one file. The generated bindings are untyped JS; we layer typed DTO
+// shapes on top via $lib/types.
+import * as B from "$bindings/github.com/avifenesh/eigen/internal/gui/bridge";
+import type {
+  SessionInfoDTO,
+  SessionStateDTO,
+  CompactResultDTO,
+  ImageDTO,
+} from "$lib/types";
+
+export const Bridge = {
+  // health
+  Ping: (): Promise<void> => B.Ping(),
+  Stats: (): Promise<unknown> => B.Stats(),
+  // sessions
+  Sessions: (): Promise<SessionInfoDTO[]> => B.Sessions(),
+  NewSession: (dir: string, model: string, perm: string): Promise<string> =>
+    B.NewSession(dir, model, perm),
+  RemoveSession: (id: string): Promise<void> => B.RemoveSession(id),
+  PruneSessions: (): Promise<string[]> => B.PruneSessions(),
+  State: (id: string): Promise<SessionStateDTO | null> => B.State(id),
+  // turn I/O
+  SendInput: (id: string, text: string, images: ImageDTO[], allowTools: string[]): Promise<void> =>
+    B.SendInput(id, text, images, allowTools),
+  Interrupt: (id: string): Promise<void> => B.Interrupt(id),
+  Resend: (id: string): Promise<void> => B.Resend(id),
+  Approve: (id: string, approvalID: string, allow: boolean): Promise<void> =>
+    B.Approve(id, approvalID, allow),
+  // maintenance
+  Compact: (id: string, target: number): Promise<CompactResultDTO> => B.Compact(id, target),
+  Clear: (id: string): Promise<void> => B.Clear(id),
+  // settings (return fresh state)
+  SetModel: (id: string, model: string): Promise<SessionStateDTO | null> => B.SetModel(id, model),
+  SetPerm: (id: string, perm: string): Promise<SessionStateDTO | null> => B.SetPerm(id, perm),
+  SetGoal: (id: string, goal: string): Promise<SessionStateDTO | null> => B.SetGoal(id, goal),
+  SetTitle: (id: string, title: string): Promise<SessionStateDTO | null> => B.SetTitle(id, title),
+  SetEffort: (id: string, level: string): Promise<SessionStateDTO | null> => B.SetEffort(id, level),
+  SetSearch: (id: string, mode: string): Promise<SessionStateDTO | null> => B.SetSearch(id, mode),
+  SetFast: (id: string, on: boolean): Promise<SessionStateDTO | null> => B.SetFast(id, on),
+  // streaming
+  Subscribe: (id: string): Promise<void> => B.Subscribe(id),
+  Unsubscribe: (id: string): Promise<void> => B.Unsubscribe(id),
+  // sandbox
+  AddDir: (id: string, path: string): Promise<string> => B.AddDir(id, path),
+  KillShell: (id: string, shellID: string): Promise<boolean> => B.KillShell(id, shellID),
+  DetachBash: (id: string): Promise<boolean> => B.DetachBash(id),
+};
