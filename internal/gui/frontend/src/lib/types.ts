@@ -95,3 +95,23 @@ export type DaemonStats = {
 };
 
 export type HealthDTO = { ok: boolean; error?: string };
+
+export type MemoryNoteDTO = { index: number; text: string };
+export type MemoryScopeDTO = {
+  scope: string;
+  dir: string;
+  path: string;
+  summary: string;
+  hasSummary: boolean;
+  notes: MemoryNoteDTO[];
+  noteCount: number;
+  bans: string;
+  profile?: string;
+  adHoc: MemoryNoteDTO[];
+  backups: number;
+  bytes: number;
+};
+export type MemoryDTO = {
+  project: MemoryScopeDTO | null;
+  global: MemoryScopeDTO | null;
+};

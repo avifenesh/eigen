@@ -11,8 +11,12 @@
 import { on, ev } from "$lib/events";
 import type { StreamEventDTO, WireEventDTO, MessageDTO } from "$lib/types";
 
-export type TextBlock = { kind: "text" | "reasoning"; step: number; text: string };
+// uid is a monotonic per-block identity used for stable keying in the view, so
+// the CAP splice (which shifts array indices) never forces a full re-render or
+// remount of the heavy tool/markdown rows.
+export type TextBlock = { uid: number; kind: "text" | "reasoning"; step: number; text: string };
 export type ToolBlock = {
+  uid: number;
   kind: "tool";
   id: string;
   name: string;
@@ -21,7 +25,7 @@ export type ToolBlock = {
   isError?: boolean;
   done: boolean;
 };
-export type NoteBlock = { kind: "note"; text: string };
+export type NoteBlock = { uid: number; kind: "note"; text: string };
 export type Block = TextBlock | ToolBlock | NoteBlock;
 
 const CAP = 2000;
@@ -40,6 +44,8 @@ export function createTranscript(sessionId: string) {
   let rafId = 0;
   let disposed = false;
   let off: (() => void) | null = null;
+  let uidSeq = 0;
+  const nextUid = () => ++uidSeq;
 
   function pushHistory(b: Block) {
     history.push(b);
@@ -71,7 +77,7 @@ export function createTranscript(sessionId: string) {
     if (disposed || !pendingText) return;
     if (!live || live.kind !== pendingKind || live.step !== pendingStep) {
       commitLive();
-      live = { kind: pendingKind, step: pendingStep, text: pendingText };
+      live = { uid: nextUid(), kind: pendingKind, step: pendingStep, text: pendingText };
     } else {
       live = { ...live, text: live.text + pendingText };
     }
@@ -97,7 +103,7 @@ export function createTranscript(sessionId: string) {
         flush();
         commitLive();
         resetPending();
-        pushHistory({ kind: "tool", id: e.toolId ?? "", name: e.tool ?? "", args: e.toolArgs ?? "", done: false });
+        pushHistory({ uid: nextUid(), kind: "tool", id: e.toolId ?? "", name: e.tool ?? "", args: e.toolArgs ?? "", done: false });
         break;
       case "tool_result": {
         for (let i = history.length - 1; i >= 0; i--) {
@@ -119,7 +125,7 @@ export function createTranscript(sessionId: string) {
         flush();
         commitLive();
         resetPending();
-        pushHistory({ kind: "note", text: e.text ?? "" });
+        pushHistory({ uid: nextUid(), kind: "note", text: e.text ?? "" });
         break;
     }
   }
@@ -139,7 +145,7 @@ export function createTranscript(sessionId: string) {
     },
     // seed history from a Bridge.State snapshot (newest CAP messages).
     seed(messages: MessageDTO[], isRunning: boolean) {
-      history = mapMessages(messages).slice(-CAP);
+      history = mapMessages(messages, nextUid).slice(-CAP);
       truncated = messages.length > CAP;
       running = isRunning;
     },
@@ -167,8 +173,10 @@ export function createTranscript(sessionId: string) {
 }
 
 // mapMessages turns the daemon's full llm.Message history into renderable
-// blocks: assistant tool calls + their results collapse into ToolBlocks.
-function mapMessages(messages: MessageDTO[]): Block[] {
+// blocks: assistant tool calls + their results collapse into ToolBlocks. uid
+// is assigned from the supplied generator so seeded blocks share the store's
+// monotonic identity space with streamed ones.
+function mapMessages(messages: MessageDTO[], uid: () => number): Block[] {
   const out: Block[] = [];
   let step = 0;
   for (const m of messages) {
@@ -180,14 +188,14 @@ function mapMessages(messages: MessageDTO[]): Block[] {
         existing.isError = m.toolError;
         existing.done = true;
       } else {
-        out.push({ kind: "tool", id, name: m.toolName ?? "tool", args: "", result: m.text, isError: m.toolError, done: true });
+        out.push({ uid: uid(), kind: "tool", id, name: m.toolName ?? "tool", args: "", result: m.text, isError: m.toolError, done: true });
       }
       continue;
     }
-    if (m.reasoning) out.push({ kind: "reasoning", step, text: m.reasoning });
-    if (m.text) out.push({ kind: "text", step, text: m.text });
+    if (m.reasoning) out.push({ uid: uid(), kind: "reasoning", step, text: m.reasoning });
+    if (m.text) out.push({ uid: uid(), kind: "text", step, text: m.text });
     for (const tc of m.toolCalls ?? []) {
-      out.push({ kind: "tool", id: tc.id, name: tc.name, args: tc.args, done: false });
+      out.push({ uid: uid(), kind: "tool", id: tc.id, name: tc.name, args: tc.args, done: false });
     }
     step++;
   }

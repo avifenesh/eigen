@@ -10,6 +10,7 @@
   import Home from "./views/Home.svelte";
   import Chat from "./views/Chat.svelte";
   import Observe from "./views/Observe.svelte";
+  import Memory from "./views/Memory.svelte";
 
   // Root lifecycle: start the daemon health stream; its teardown runs on unmount.
   onMount(() => {
@@ -35,6 +36,8 @@
           <Chat param={router.param} />
         {:else if router.route === "observe"}
           <Observe />
+        {:else if router.route === "memory"}
+          <Memory />
         {:else}
           <EmptyState glyph="λ" title={router.route} line="This view is coming soon." />
         {/if}

@@ -8,6 +8,7 @@
   // points back at the trigger. Motion is a brief fade+rise (transform/opacity
   // only); reduced-motion collapses it to a plain fade.
   import type { Snippet } from "svelte";
+  import { onDestroy } from "svelte";
 
   let {
     text,
@@ -21,6 +22,8 @@
 
   let open = $state(false);
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // Cancel any pending open-delay timer on unmount.
+  onDestroy(() => clearTimeout(timer));
   const tipId = `tt-${Math.random().toString(36).slice(2, 9)}`;
 
   function schedule() {

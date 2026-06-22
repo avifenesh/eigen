@@ -8,6 +8,7 @@ import type {
   SessionStateDTO,
   CompactResultDTO,
   ImageDTO,
+  MemoryDTO,
 } from "$lib/types";
 
 export const Bridge = {
@@ -46,4 +47,9 @@ export const Bridge = {
   AddDir: (id: string, path: string): Promise<string> => B.AddDir(id, path),
   KillShell: (id: string, shellID: string): Promise<boolean> => B.KillShell(id, shellID),
   DetachBash: (id: string): Promise<boolean> => B.DetachBash(id),
+  // memory
+  Memory: (): Promise<MemoryDTO | null> => B.Memory(),
+  AppendMemory: (scope: string, note: string): Promise<void> => B.AppendMemory(scope, note),
+  WriteUserProfile: (content: string): Promise<void> => B.WriteUserProfile(content),
+  MemoryBackups: (scope: string): Promise<string[]> => B.MemoryBackups(scope),
 };

@@ -15,6 +15,7 @@
   import Composer from "$lib/components/Composer.svelte";
   import ToolCallCard from "$lib/components/ToolCallCard.svelte";
   import Markdown from "$lib/components/Markdown.svelte";
+  import VirtualList from "$lib/components/VirtualList.svelte";
   import Badge from "$lib/components/Badge.svelte";
   import Button from "$lib/components/Button.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
@@ -27,8 +28,6 @@
 
   let store = $state<Transcript | null>(null);
   let sess = $state<SessionStateDTO | null>(null);
-  let scroller = $state<HTMLDivElement | undefined>(undefined);
-  let pinned = $state(true);
 
   // Per-session lifecycle. Re-runs when sessionId changes; cleanup tears the
   // previous session down completely before the next is set up.
@@ -77,21 +76,12 @@
     }
   });
 
-  // Pin-to-bottom unless the user scrolled up.
-  function onScroll() {
-    if (!scroller) return;
-    const gap = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
-    pinned = gap < 48;
-  }
-  $effect(() => {
-    // touch reactive deps so this runs on stream growth
-    void store?.history.length;
-    void store?.live?.text;
-    if (pinned && scroller) {
-      requestAnimationFrame(() => {
-        if (scroller) scroller.scrollTop = scroller.scrollHeight;
-      });
-    }
+  // The rendered transcript: completed history plus the in-flight live block,
+  // as one keyed list fed to VirtualList (windowed; only visible rows mount).
+  const rows = $derived.by(() => {
+    const h = store?.history ?? [];
+    const live = store?.live;
+    return live ? [...h, live] : h;
   });
 
   const online = $derived(daemon.status === "online");
@@ -127,38 +117,40 @@
 {:else}
   <div class="chat">
     <div class="chat__main">
-      <div class="chat__scroll selectable" bind:this={scroller} onscroll={onScroll}>
-        <div class="chat__thread">
-          {#if store?.truncated}
-            <div class="chat__earlier">Showing the most recent messages.</div>
-          {/if}
-          {#each store?.history ?? [] as block, i (i)}
-            {#if block.kind === "tool"}
-              <ToolCallCard {block} />
-            {:else if block.kind === "note"}
-              <div class="msg msg--note">{block.text}</div>
-            {:else if block.kind === "reasoning"}
-              <div class="msg msg--reasoning">
-                <span class="msg__tag">reasoning</span>
-                {block.text}
-              </div>
-            {:else}
-              <!-- Completed assistant prose renders as Markdown (sans; fenced
-                   code delegates to CodeBlock). -->
-              <div class="msg msg--text"><Markdown source={block.text} /></div>
-            {/if}
-          {/each}
-          {#if store?.live}
-            <div class="msg msg--{store.live.kind === 'reasoning' ? 'reasoning' : 'text'} msg--live">
-              {#if store.live.kind === "reasoning"}<span class="msg__tag">reasoning</span>{/if}
-              {store.live.text}
+      <div class="chat__scroll selectable">
+        {#if store?.truncated}
+          <div class="chat__earlier">Showing the most recent messages.</div>
+        {/if}
+        <VirtualList items={rows} estimateHeight={120} pin key={(b) => b.uid}>
+          {#snippet row(block)}
+            {@const isLive = block === store?.live}
+            <div class="chat__row">
+              {#if block.kind === "tool"}
+                <ToolCallCard {block} />
+              {:else if block.kind === "note"}
+                <div class="msg msg--note">{block.text}</div>
+              {:else if block.kind === "reasoning"}
+                <div class="msg msg--reasoning" class:msg--live={isLive}>
+                  <span class="msg__tag">reasoning</span>
+                  {block.text}
+                </div>
+              {:else if isLive}
+                <!-- The in-flight assistant block streams as plain text for
+                     speed; it finalizes to Markdown once committed to history. -->
+                <div class="msg msg--text msg--live">{block.text}</div>
+              {:else}
+                <!-- Completed assistant prose renders as Markdown (sans; fenced
+                     code delegates to CodeBlock). -->
+                <div class="msg msg--text"><Markdown source={block.text} /></div>
+              {/if}
             </div>
-          {/if}
-          {#if store?.running}
-            <div class="chat__working"><StatusDot state="working" size={7} /> working…</div>
-          {/if}
-        </div>
+          {/snippet}
+        </VirtualList>
       </div>
+
+      {#if store?.running}
+        <div class="chat__working"><StatusDot state="working" size={7} /> working…</div>
+      {/if}
 
       <div class="chat__composer">
         <Composer
@@ -244,20 +236,23 @@
     flex-direction: column;
     min-width: 0;
   }
+  /* The scroll region hosts VirtualList, which owns its own internal scroll +
+     pin-to-bottom. We give it a bounded height to window against. */
   .chat__scroll {
     flex: 1;
-    overflow-y: auto;
     min-height: 0;
-  }
-  .chat__thread {
-    max-width: 820px;
-    margin: 0 auto;
-    padding: var(--sp-8) var(--sp-8) var(--sp-6);
     display: flex;
     flex-direction: column;
-    gap: var(--sp-5);
+    position: relative;
+  }
+  /* Each virtual row is full-width; the content centers to a readable measure. */
+  .chat__row {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: var(--sp-3) var(--sp-8);
   }
   .chat__earlier {
+    flex: none;
     text-align: center;
     color: var(--text-faint);
     font-size: var(--fs-label);
@@ -296,9 +291,14 @@
     padding-left: var(--sp-5);
   }
   .chat__working {
+    flex: none;
     display: flex;
     align-items: center;
     gap: var(--sp-3);
+    max-width: 820px;
+    width: 100%;
+    margin: 0 auto;
+    padding: var(--sp-2) var(--sp-8);
     color: var(--working);
     font-size: var(--fs-body-sm);
   }

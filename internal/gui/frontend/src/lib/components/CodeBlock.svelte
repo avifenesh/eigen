@@ -4,10 +4,14 @@
   // language label and a copy affordance; the body is mono on --syn-bg with a
   // cheap regex-based tint (no highlighter dependency), horizontal scroll for
   // long lines, and a capped height with vertical scroll. Purely presentational.
+  import { onDestroy } from "svelte";
+
   let { code, lang }: { code: string; lang?: string } = $props();
 
   let copied = $state(false);
   let copyTimer: ReturnType<typeof setTimeout> | undefined;
+  // Cancel the one-shot reset on unmount so it never writes to a detached state.
+  onDestroy(() => clearTimeout(copyTimer));
 
   async function copy() {
     try {
