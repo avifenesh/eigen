@@ -12,6 +12,7 @@ import type {
   SkillsDTO,
   AgentsDTO,
   DreamingDTO,
+  RoutingDTO,
 } from "$lib/types";
 
 export const Bridge = {
@@ -68,4 +69,6 @@ export const Bridge = {
   Dreaming: (): Promise<DreamingDTO | null> => B.Dreaming(),
   ConsolidationContent: (path: string): Promise<string> => B.ConsolidationContent(path),
   CurrentMemory: (scope: string): Promise<string> => B.CurrentMemory(scope),
+  // routing
+  Routing: (): Promise<RoutingDTO | null> => B.Routing(),
 };

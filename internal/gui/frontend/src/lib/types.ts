@@ -170,3 +170,19 @@ export type DreamingDTO = {
   project: DreamingScopeDTO | null;
   global: DreamingScopeDTO | null;
 };
+
+export type ModelDTO = {
+  id: string;
+  provider: string;
+  contextWindow: number;
+  cache: boolean;
+  context1m: boolean;
+  reasoning: boolean;
+  effort?: string;
+  effortLevels?: string[];
+  thinkingBudget?: number;
+  search?: boolean;
+  available: boolean;
+};
+export type ProviderDTO = { name: string; credentialed: boolean; modelCount: number };
+export type RoutingDTO = { models: ModelDTO[]; providers: ProviderDTO[] };
