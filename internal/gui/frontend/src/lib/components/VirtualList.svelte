@@ -30,10 +30,23 @@
   let viewportH = $state(0);
   let pinned = $state(true);
   let pinRaf = 0;
+  // rAF coalescing for scroll reads, and accumulated scroll-anchor compensation
+  // (see measure()). Both are cancelled on teardown.
+  let scrollRaf = 0;
+  let anchorDelta = 0;
+  let anchorRaf = 0;
 
   function keyOf(item: T, index: number): string | number {
     return key ? key(item, index) : index;
   }
+
+  // key → index, so a row that remeasures can tell whether it sits above the
+  // current scroll position (and therefore needs anchor compensation).
+  const indexByKey = $derived.by(() => {
+    const m = new Map<string | number, number>();
+    for (let i = 0; i < items.length; i++) m.set(keyOf(items[i], i), i);
+    return m;
+  });
 
   // Measured heights keyed by item identity (NOT array index), so a splice or
   // reorder of `items` (e.g. the transcript CAP eviction) keeps each row's real
@@ -81,13 +94,21 @@
     return out;
   });
 
+  // Coalesce scroll events to one read per frame. A fast wheel/trackpad fires
+  // scroll far more than 60Hz; doing the offset binary-search + window rebuild
+  // on every event is what made scrolling (especially up, where rows also
+  // remeasure) feel slow. One rAF-batched read per frame keeps it smooth.
   function onScroll() {
-    if (!viewport) return;
-    scrollTop = viewport.scrollTop;
-    if (pin) {
-      const gap = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
-      pinned = gap < 48;
-    }
+    if (!viewport || scrollRaf) return;
+    scrollRaf = requestAnimationFrame(() => {
+      scrollRaf = 0;
+      if (!viewport) return;
+      scrollTop = viewport.scrollTop;
+      if (pin) {
+        const gap = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+        pinned = gap < 48;
+      }
+    });
   }
 
   function scrollToBottom() {
@@ -102,7 +123,13 @@
       for (const e of entries) viewportH = e.contentRect.height;
     });
     ro.observe(viewport);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      cancelAnimationFrame(scrollRaf);
+      cancelAnimationFrame(anchorRaf);
+      scrollRaf = 0;
+      anchorRaf = 0;
+    };
   });
 
   // Prune measured heights for keys no longer present, so an evicted/replaced
@@ -136,7 +163,29 @@
     let curKey = k;
     const apply = () => {
       const h = node.offsetHeight;
-      if (h > 0 && measured.get(curKey) !== h) measured.set(curKey, h);
+      const prev = measured.get(curKey);
+      if (h > 0 && prev !== h) {
+        // Scroll-anchor compensation: if this row sits ABOVE the current scroll
+        // position, its height change shifts every row below it — including the
+        // viewport content — making the list jump (the "scroll up is slow/janky"
+        // symptom, where off-screen rows above first get their real height). Add
+        // the delta to scrollTop so what the user is looking at stays put.
+        const idx = indexByKey.get(curKey);
+        if (prev !== undefined && idx !== undefined && offsets[idx] < scrollTop) {
+          anchorDelta += h - prev;
+          if (!anchorRaf) {
+            anchorRaf = requestAnimationFrame(() => {
+              anchorRaf = 0;
+              if (viewport && anchorDelta !== 0) {
+                viewport.scrollTop += anchorDelta;
+                scrollTop = viewport.scrollTop;
+              }
+              anchorDelta = 0;
+            });
+          }
+        }
+        measured.set(curKey, h);
+      }
     };
     apply();
     const ro = new ResizeObserver(apply);

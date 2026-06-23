@@ -1140,14 +1140,35 @@
     background: var(--bg-raised);
     color: var(--text-primary);
     border-radius: var(--r-sm);
-    padding: var(--sp-2) var(--sp-3);
+    /* room for the custom chevron on the right */
+    padding: var(--sp-2) var(--sp-7) var(--sp-2) var(--sp-3);
     font: var(--fw-regular) var(--fs-body-sm) / 1 var(--font-sans);
     outline: none;
     cursor: pointer;
+    /* webkit2gtk paints native selects white without this — reset + own chevron */
+    -webkit-appearance: none;
+    appearance: none;
+    color-scheme: dark;
+    background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+      linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+    background-position:
+      calc(100% - 14px) center,
+      calc(100% - 9px) center;
+    background-size:
+      5px 5px,
+      5px 5px;
+    background-repeat: no-repeat;
+  }
+  .set__ctl:hover {
+    border-color: var(--border-strong);
   }
   .set__ctl:focus-visible {
     border-color: var(--border-brand-faint);
     box-shadow: var(--shadow-focus);
+  }
+  .set__ctl option {
+    background: var(--bg-overlay);
+    color: var(--text-primary);
   }
   /* A compact switch styled from tokens; the track tints brand when on. */
   .set__toggle {

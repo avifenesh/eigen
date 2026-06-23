@@ -304,10 +304,42 @@
     font: var(--fw-regular) var(--fs-body-sm) / 1 var(--font-sans);
     outline: none;
   }
+  /* Without appearance:none, webkit2gtk paints the native select widget — a
+     white control that ignores the dark background above. Reset it and draw our
+     own chevron so the closed control matches the design system. (The popped-up
+     option list is still OS-drawn; the control is what the user sees at rest.) */
+  .select {
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+    padding-right: var(--sp-8);
+    background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+      linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+    background-position:
+      calc(100% - 16px) 13px,
+      calc(100% - 11px) 13px;
+    background-size:
+      5px 5px,
+      5px 5px;
+    background-repeat: no-repeat;
+    color-scheme: dark;
+  }
+  .select:hover {
+    border-color: var(--border-strong);
+  }
   .select:focus-visible,
   .input:focus-visible {
     border-color: var(--border-brand-faint);
     box-shadow: var(--shadow-focus);
+  }
+  .select:focus-visible {
+    background-image: linear-gradient(45deg, transparent 50%, var(--brand) 50%),
+      linear-gradient(135deg, var(--brand) 50%, transparent 50%);
+  }
+  /* Dark-tint the OS option list where the engine honors it. */
+  .select option {
+    background: var(--bg-overlay);
+    color: var(--text-primary);
   }
   .input::placeholder {
     color: var(--text-ghost);
