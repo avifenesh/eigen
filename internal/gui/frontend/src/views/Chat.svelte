@@ -27,6 +27,13 @@
   // Resolve the session to show: route param, else the newest session.
   const sessionId = $derived(param ?? sessions.list[0]?.id ?? "");
 
+  // A routed session that no longer exists (removed/pruned while open here):
+  // param pins a concrete id, sessions have loaded, but it's not in the list.
+  // Without this guard Chat would render a live composer over a dead session.
+  const missing = $derived(
+    !!param && sessions.loaded && !sessions.list.some((s) => s.id === param),
+  );
+
   let store = $state<Transcript | null>(null);
   let sess = $state<SessionStateDTO | null>(null);
 
@@ -34,7 +41,7 @@
   // previous session down completely before the next is set up.
   $effect(() => {
     const id = sessionId;
-    if (!id) {
+    if (!id || missing) {
       store = null;
       sess = null;
       return;
@@ -42,25 +49,40 @@
     let alive = true;
     const t = createTranscript(id);
 
-    Bridge.Subscribe(id).catch((e) => toasts.error("subscribe: " + (e instanceof Error ? e.message : String(e))));
-    Bridge.State(id)
-      .then((s) => {
-        if (!alive || !s) return;
-        sess = s;
-        t.seed(s.messages, s.running ?? false);
-      })
-      .catch((e) => toasts.error("state: " + (e instanceof Error ? e.message : String(e))));
+    // attach: (re)open the backend pump for this session and (re)seed the
+    // transcript from the authoritative State snapshot. The frontend event
+    // listener is registered ONCE in t.start() on a stable event name, so this
+    // is safe to call again on reconnect without double-subscribing.
+    function attach() {
+      Bridge.Subscribe(id).catch((e) => toasts.error("subscribe: " + (e instanceof Error ? e.message : String(e))));
+      Bridge.State(id)
+        .then((s) => {
+          if (!alive || !s) return;
+          sess = s;
+          t.seed(s.messages, s.running ?? false);
+        })
+        .catch((e) => toasts.error("state: " + (e instanceof Error ? e.message : String(e))));
+    }
+
+    attach();
     t.start();
     store = t;
 
     // The daemon signals view-close if the connection drops underneath us.
     const offClosed = on(ev.sessionClosed(id), () => {
-      if (alive) toasts.info("session stream closed");
+      if (alive) toasts.info("session stream closed — reconnecting…");
+    });
+    // When the daemon comes back, the old pump is gone (its connection died);
+    // re-attach so the stream and the running/idle state recover rather than
+    // wedging on a stale "working" snapshot. Remover runs in this cleanup.
+    const offReconnect = daemon.onReconnect(() => {
+      if (alive) attach();
     });
 
     return () => {
       alive = false;
       offClosed();
+      offReconnect();
       t.dispose();
       Bridge.Unsubscribe(id).catch(() => {});
     };
@@ -310,7 +332,13 @@
   ];
 </script>
 
-{#if !sessionId}
+{#if missing}
+  <EmptyState glyph="▶" title="Session no longer exists" line="It was removed or pruned. Pick another session or start a new one.">
+    {#snippet action()}
+      <Button variant="primary" onclick={() => router.go("sessions")}>All sessions</Button>
+    {/snippet}
+  </EmptyState>
+{:else if !sessionId}
   <EmptyState glyph="▶" title="No session selected" line="Start one from Home, or pick a session.">
     {#snippet action()}
       <Button variant="primary" onclick={() => router.go("home")}>Go to Home</Button>

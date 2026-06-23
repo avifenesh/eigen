@@ -7,6 +7,10 @@ function createSessions() {
   let list = $state<SessionInfoDTO[]>([]);
   let loading = $state(false);
   let error = $state<string | null>(null);
+  // True once a refresh has successfully completed at least once — lets views
+  // distinguish "no sessions" from "not loaded yet" (e.g. Chat deciding whether
+  // a routed session id is genuinely gone vs. simply not fetched).
+  let loaded = $state(false);
 
   // Monotonic guard: many callers refresh concurrently (Home $effect, Live's
   // 2s poll, onReconnect, per-action refreshes). Without it an older snapshot
@@ -20,6 +24,7 @@ function createSessions() {
       if (seq !== loadSeq) return; // a newer refresh superseded this one
       list = next;
       error = null;
+      loaded = true;
     } catch (e) {
       if (seq !== loadSeq) return;
       error = e instanceof Error ? e.message : String(e);
@@ -37,6 +42,9 @@ function createSessions() {
     },
     get error() {
       return error;
+    },
+    get loaded() {
+      return loaded;
     },
     get count() {
       return list.length;
