@@ -16,6 +16,7 @@ import type {
   ObserveSummaryDTO,
   CronsDTO,
   PluginsDTO,
+  ConfigDTO,
 } from "$lib/types";
 
 export const Bridge = {
@@ -84,4 +85,7 @@ export const Bridge = {
   SetMarketEnabled: (name: string, enabled: boolean): Promise<boolean> => B.SetMarketEnabled(name, enabled),
   RemoveMarketplace: (name: string): Promise<boolean> => B.RemoveMarketplace(name),
   RemovePlugin: (name: string): Promise<boolean> => B.RemovePlugin(name),
+  // config
+  Config: (): Promise<ConfigDTO | null> => B.Config(),
+  SetConfig: (key: string, value: string): Promise<string> => B.SetConfig(key, value),
 };

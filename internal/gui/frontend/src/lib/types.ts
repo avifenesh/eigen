@@ -258,6 +258,15 @@ export type MarketplaceDTO = {
 };
 export type PluginsDTO = { plugins: InstalledPluginDTO[]; marketplaces: MarketplaceDTO[] };
 
+export type ConfigFieldDTO = {
+  key: string;
+  desc: string;
+  value: string;
+  options?: string[];
+  multi?: boolean;
+};
+export type ConfigDTO = { fields: ConfigFieldDTO[]; path: string };
+
 export type ObserveSummaryDTO = {
   records: number;
   byKind: CountDTO[];
