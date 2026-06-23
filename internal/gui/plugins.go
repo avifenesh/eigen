@@ -1,0 +1,112 @@
+package gui
+
+import (
+	"sort"
+
+	"github.com/avifenesh/eigen/internal/plugin"
+)
+
+// Plugins bridge layer. Surfaces the installed plugins + configured
+// marketplaces from the local plugin registry (~/.eigen). Read-only listing
+// plus the safe management ops the user-command layer already allows: enable/
+// disable/remove a marketplace, remove an installed plugin. Installing a plugin
+// is intentionally NOT exposed (untrusted bundle code is scanned at install via
+// the CLI; the agent/GUI must not auto-install).
+
+type InstalledPluginDTO struct {
+	Name        string   `json:"name"`
+	Marketplace string   `json:"marketplace,omitempty"`
+	Version     string   `json:"version,omitempty"`
+	Description string   `json:"description,omitempty"`
+	InstalledMs int64    `json:"installedMs"`
+	Skills      []string `json:"skills,omitempty"`
+	Agents      []string `json:"agents,omitempty"`
+	MCPServers  []string `json:"mcpServers,omitempty"`
+	Commands    []string `json:"commands,omitempty"`
+	Hooks       int      `json:"hooks,omitempty"`
+	ScanStatus  string   `json:"scanStatus,omitempty"`
+	ScanCount   int      `json:"scanCount,omitempty"`
+	Warnings    []string `json:"warnings,omitempty"`
+}
+
+type MarketplaceDTO struct {
+	Name     string `json:"name"`
+	Source   string `json:"source"`
+	Owner    string `json:"owner,omitempty"`
+	Disabled bool   `json:"disabled"`
+	AddedMs  int64  `json:"addedMs"`
+}
+
+// PluginsDTO is the plugin/marketplace snapshot.
+type PluginsDTO struct {
+	Plugins      []InstalledPluginDTO `json:"plugins"`
+	Marketplaces []MarketplaceDTO     `json:"marketplaces"`
+}
+
+// Plugins returns installed plugins + configured marketplaces.
+func (b *Bridge) Plugins() (*PluginsDTO, error) {
+	reg, err := plugin.NewRegistry()
+	if err != nil {
+		return nil, err
+	}
+	installed, err := reg.Installed()
+	if err != nil {
+		return nil, err
+	}
+	markets, err := reg.Markets()
+	if err != nil {
+		return nil, err
+	}
+
+	plugins := make([]InstalledPluginDTO, 0, len(installed))
+	for _, p := range installed {
+		plugins = append(plugins, InstalledPluginDTO{
+			Name: p.Name, Marketplace: p.Marketplace, Version: p.Version,
+			Description: p.Description, InstalledMs: p.Installed.UnixMilli(),
+			Skills: p.Skills, Agents: p.Agents, MCPServers: p.MCPServers,
+			Commands: p.Commands, Hooks: p.Hooks,
+			ScanStatus: p.ScanStatus, ScanCount: p.ScanCount, Warnings: p.Warnings,
+		})
+	}
+	sort.Slice(plugins, func(i, j int) bool { return plugins[i].Name < plugins[j].Name })
+
+	mkts := make([]MarketplaceDTO, 0, len(markets))
+	for _, m := range markets {
+		mkts = append(mkts, MarketplaceDTO{
+			Name: m.Name, Source: m.Source, Owner: m.Owner,
+			Disabled: m.Disabled, AddedMs: m.Added.UnixMilli(),
+		})
+	}
+	sort.Slice(mkts, func(i, j int) bool { return mkts[i].Name < mkts[j].Name })
+
+	return &PluginsDTO{Plugins: plugins, Marketplaces: mkts}, nil
+}
+
+// SetMarketEnabled enables/disables a marketplace (kept in the registry either
+// way; disabled markets are ignored for installs/update-all).
+func (b *Bridge) SetMarketEnabled(name string, enabled bool) (bool, error) {
+	reg, err := plugin.NewRegistry()
+	if err != nil {
+		return false, err
+	}
+	return reg.SetMarketEnabled(name, enabled)
+}
+
+// RemoveMarketplace removes a marketplace from the registry.
+func (b *Bridge) RemoveMarketplace(name string) (bool, error) {
+	reg, err := plugin.NewRegistry()
+	if err != nil {
+		return false, err
+	}
+	return reg.RemoveMarket(name)
+}
+
+// RemovePlugin fully uninstalls a plugin: reverses its wiring (skills, agents,
+// mcp, hooks, commands) and removes its files, not just the registry record.
+func (b *Bridge) RemovePlugin(name string) (bool, error) {
+	reg, err := plugin.NewRegistry()
+	if err != nil {
+		return false, err
+	}
+	return reg.Uninstall(name)
+}

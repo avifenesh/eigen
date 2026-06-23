@@ -218,6 +218,22 @@ export type SubagentStatsDTO = {
   mutatingErrors: number;
   backgroundDone: number;
 };
+export type CronDTO = {
+  name: string;
+  kind: string; // "timer" | "crontab"
+  next: string;
+  last: string;
+  active: boolean;
+  command: string;
+  unit?: string;
+};
+export type CronsDTO = {
+  crons: CronDTO[];
+  timers: number;
+  crontab: number;
+  systemdAvail: boolean;
+};
+
 export type ObserveSummaryDTO = {
   records: number;
   byKind: CountDTO[];

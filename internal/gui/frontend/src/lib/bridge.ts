@@ -14,6 +14,7 @@ import type {
   DreamingDTO,
   RoutingDTO,
   ObserveSummaryDTO,
+  CronsDTO,
 } from "$lib/types";
 
 export const Bridge = {
@@ -74,4 +75,7 @@ export const Bridge = {
   Routing: (): Promise<RoutingDTO | null> => B.Routing(),
   // observe (historical log summary; live KPIs come from the daemon stats stream)
   ObserveSummary: (limit: number): Promise<ObserveSummaryDTO | null> => B.ObserveSummary(limit),
+  // crons
+  Crons: (): Promise<CronsDTO | null> => B.Crons(),
+  SetTimer: (unit: string, verb: string): Promise<void> => B.SetTimer(unit, verb),
 };

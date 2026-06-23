@@ -113,6 +113,17 @@
       toasts.error(e instanceof Error ? e.message : String(e));
     }
   }
+  // Resolve a gated approval; surface failures (a dropped daemon between gate
+  // and click) instead of swallowing them, then refresh so the card clears.
+  async function approve(approvalID: string, allow: boolean) {
+    if (!sessionId) return;
+    try {
+      await Bridge.Approve(sessionId, approvalID, allow);
+      refreshState();
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   const pct = $derived(
     sess && sess.maxTokens > 0 ? Math.min(100, Math.round((sess.tokens / sess.maxTokens) * 100)) : 0,
@@ -216,16 +227,8 @@
             <div class="approve">
               <div class="approve__tool">{ap.tool}</div>
               <div class="approve__actions">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onclick={() => Bridge.Approve(sessionId, ap.id, true).catch(() => {})}>Allow</Button
-                >
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onclick={() => Bridge.Approve(sessionId, ap.id, false).catch(() => {})}>Deny</Button
-                >
+                <Button variant="primary" size="sm" onclick={() => approve(ap.id, true)}>Allow</Button>
+                <Button variant="danger" size="sm" onclick={() => approve(ap.id, false)}>Deny</Button>
               </div>
             </div>
           {/each}
