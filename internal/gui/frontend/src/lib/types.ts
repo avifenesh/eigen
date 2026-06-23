@@ -158,7 +158,7 @@ export type AgentsDTO = {
   dir: string;
 };
 
-export type RolloutDTO = { index: number; text: string; outcome?: string };
+export type RolloutDTO = { index: number; text: string; outcome?: string; whenMs?: number };
 export type ConsolidationDTO = { path: string; label: string; whenMs: number; bytes: number };
 export type DreamingScopeDTO = {
   scope: string;

@@ -139,9 +139,13 @@
       {:else if tok.type === "hr"}
         <hr class="md-hr" />
       {:else if tok.type === "html"}
-        <!-- Raw HTML from the model: emit its literal text (auto-escaped). -->
-        {#if (tok as Tokens.HTML).text.trim()}
-          <p class="md-p">{(tok as Tokens.HTML).text}</p>
+        {@const raw = (tok as Tokens.HTML).text}
+        {@const trimmed = raw.trim()}
+        <!-- Raw HTML from the model: emit its literal text (auto-escaped),
+             preserving newlines so multi-line markup reads as written. A token
+             that is purely an HTML comment is source noise — skip it. -->
+        {#if trimmed && !/^<!--[\s\S]*-->$/.test(trimmed)}
+          <pre class="md-rawhtml">{raw.replace(/\n+$/, "")}</pre>
         {/if}
       {:else if tok.type === "space"}
         <!-- intentional blank: paragraph rhythm comes from CSS margins -->
@@ -272,6 +276,24 @@
     color: var(--syn-text);
     white-space: break-spaces;
     word-break: break-word;
+  }
+
+  /* RAW HTML BLOCK — model emitted literal markup we won't trust to the DOM.
+     Show it verbatim on the mono surface, wrapping long lines but keeping the
+     authored line breaks intact (pre-wrap, not pre). */
+  .md :global(.md-rawhtml) {
+    margin: var(--sp-5) 0;
+    font-family: var(--font-mono);
+    font-size: var(--fs-code-sm);
+    line-height: var(--lh-snug);
+    background: var(--bg-inset);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--r-sm);
+    padding: var(--sp-3) var(--sp-4);
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    overflow-x: auto;
   }
 
   /* LINKS — accent, underline-on-intent; opened in the system browser. */

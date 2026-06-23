@@ -152,12 +152,18 @@
     </figcaption>
 
     <div class="diff__scroll" class:diff__scroll--clipped={isLarge && !expanded}>
-      <table class="diff__table">
+      <!-- role="presentation" on the <table> drops the implicit table semantics:
+           this is preformatted code, not tabular data, so a screen reader reads
+           the line text rather than announcing rows/columns (the role cascades
+           to the required-owned tr/td descendants per ARIA). The +/− sign lives
+           in an aria-hidden gutter, so each changed line carries an sr-only
+           "added"/"removed" prefix to expose the change kind non-visually. -->
+      <table class="diff__table" role="presentation">
         <tbody>
           {#each visibleRows as row (row.id)}
             {#if row.kind === "hunk"}
-              <tr class="diff__row diff__row--hunk">
-                <td class="diff__gutter" aria-hidden="true"></td>
+              <tr class="diff__row diff__row--hunk" aria-hidden="true">
+                <td class="diff__gutter"></td>
                 <td class="diff__line diff__line--hunk">
                   <span class="diff__hunk-range">{hunkRange(row.text)}</span>
                   {#if hunkLabel(row.text)}
@@ -166,14 +172,19 @@
                 </td>
               </tr>
             {:else if row.kind === "meta"}
-              <tr class="diff__row diff__row--meta">
-                <td class="diff__gutter" aria-hidden="true"></td>
+              <tr class="diff__row diff__row--meta" aria-hidden="true">
+                <td class="diff__gutter"></td>
                 <td class="diff__line diff__line--meta">{row.text}</td>
               </tr>
             {:else}
               <tr class="diff__row diff__row--{row.kind}">
                 <td class="diff__gutter" aria-hidden="true">{row.sign}</td>
-                <td class="diff__line">{row.text}</td>
+                <td class="diff__line">
+                  {#if row.kind === "add"}
+                    <span class="diff__sr">added </span>
+                  {:else if row.kind === "del"}
+                    <span class="diff__sr">removed </span>
+                  {/if}{row.text}</td>
               </tr>
             {/if}
           {/each}
@@ -304,6 +315,23 @@
   .diff__copy-icon {
     font-size: 12px;
     line-height: 1;
+  }
+
+  /* Visually-hidden change-kind prefix — announced to screen readers only, so a
+     SR user hears "added"/"removed" where a sighted user sees the +/− gutter.
+     Standard clip pattern; not display:none, which would drop it from the
+     accessibility tree. */
+  .diff__sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
   }
 
   /* ── Diff body (MONO — the permitted code surface) ─────────────────────── */

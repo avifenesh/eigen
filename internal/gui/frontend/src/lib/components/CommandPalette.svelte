@@ -26,6 +26,9 @@
   let query = $state("");
   let active = $state(0);
   let input = $state<HTMLInputElement | undefined>(undefined);
+  // Row elements keyed by their `items` index so we can scroll the active one
+  // into view when arrowing past the height-capped (max-height 64vh) window.
+  let rows = $state<Record<number, HTMLElement>>({});
 
   function go(route: Route) {
     router.go(route);
@@ -140,6 +143,13 @@
     if (active >= items.length) active = Math.max(0, items.length - 1);
   });
 
+  // The list is height-capped, so arrowing past the visible window has to drag
+  // the viewport along. Track `active` and pull its row into view; "nearest"
+  // keeps already-visible rows put and respects the OS reduced-motion setting.
+  $effect(() => {
+    rows[active]?.scrollIntoView({ block: "nearest" });
+  });
+
   function show() {
     open = true;
     query = "";
@@ -151,6 +161,21 @@
   }
   function run(i: Item) {
     void i.run();
+  }
+  // Register a row element under its `items` index and drop the entry when the
+  // row unmounts (filter shrinks the set) so `rows` never holds stale nodes.
+  function track(el: HTMLElement, index: number) {
+    rows[index] = el;
+    return {
+      update(next: number) {
+        if (next !== index) delete rows[index];
+        rows[next] = el;
+        index = next;
+      },
+      destroy() {
+        if (rows[index] === el) delete rows[index];
+      },
+    };
   }
 
   function onWinKey(e: KeyboardEvent) {
@@ -214,6 +239,7 @@
                points here via aria-activedescendant. onmousedown (not click)
                keeps the input from blurring before the action fires. -->
           <div
+            use:track={g.index}
             id={`pal-opt-${g.index}`}
             class="pal__row"
             class:pal__row--active={g.index === active}

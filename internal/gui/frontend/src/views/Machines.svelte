@@ -151,11 +151,11 @@
   {:else}
     <div class="mx__scroll">
       <div class="mx__grid">
-        {#each machines as m (m.name)}
+        {#each machines as m (`${m.name}|${m.ssh}`)}
           <Card interactive onclick={() => drill(m)} title={`Dial ${m.ssh} for live sessions`}>
             <div class="mc">
               <div class="mc__top">
-                <span class="mc__name">{m.name}</span>
+                <span class="mc__name">{m.name || m.ssh || "—"}</span>
                 <div class="mc__tags">
                   {#if m.saved}<Badge tone="brand">saved</Badge>{/if}
                   {#if m.detected}<Badge tone="info">detected</Badge>{/if}
@@ -180,9 +180,9 @@
   {/if}
 </div>
 
-<Sheet open={openMachine !== null} label={openMachine ? `${openMachine.name} sessions` : "Remote sessions"} width={520} onclose={closeDrill}>
+<Sheet open={openMachine !== null} label={openMachine ? `${openMachine.name || openMachine.ssh} sessions` : "Remote sessions"} width={520} onclose={closeDrill}>
   {#snippet title()}
-    <h2 class="mx__sheet-title">{openMachine?.name ?? ""}</h2>
+    <h2 class="mx__sheet-title">{openMachine ? openMachine.name || openMachine.ssh : ""}</h2>
     {#if openMachine}<Badge tone="info">remote</Badge>{/if}
   {/snippet}
   {#if openMachine}

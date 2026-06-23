@@ -257,12 +257,16 @@
           <section class="mem__side-section">
             <div class="mem__section-head">
               <h2 class="mem__section-title">User profile</h2>
+              <Badge tone="brand">USER.md</Badge>
               {#if !editingProfile}
                 <Button variant="link" size="sm" onclick={startProfile}>Edit</Button>
               {/if}
             </div>
+            <p class="mem__helper">
+              Your durable personalization prompt — eigen keeps it current as it learns; your own additions sit alongside.
+            </p>
             {#if editingProfile}
-              <textarea bind:value={profileDraft} class="mem__textarea selectable" rows="6" placeholder="Durable personalization prompt…"></textarea>
+              <textarea bind:value={profileDraft} class="mem__textarea selectable" rows="6" placeholder="Add your own notes — eigen keeps the rest current…"></textarea>
               <div class="mem__compose-actions">
                 <Button variant="ghost" size="sm" onclick={() => (editingProfile = false)}>Cancel</Button>
                 <Button variant="primary" size="sm" loading={savingProfile} onclick={saveProfile}>Save</Button>
@@ -270,7 +274,7 @@
             {:else if current.profile}
               <Card><div class="mem__profile selectable"><Markdown source={current.profile} /></div></Card>
             {:else}
-              <p class="mem__empty-note">No profile set. <button class="mem__inline-link" onclick={startProfile}>Add one.</button></p>
+              <p class="mem__empty-note">Nothing learned yet. <button class="mem__inline-link" onclick={startProfile}>Add your own.</button></p>
             {/if}
           </section>
         {/if}
@@ -528,6 +532,12 @@
     color: var(--text-muted);
     font-size: var(--fs-body-sm);
     margin: 0;
+  }
+  .mem__helper {
+    margin: 0;
+    color: var(--text-faint);
+    font-size: var(--fs-label);
+    line-height: var(--lh-snug);
   }
   .mem__inline-link {
     border: none;

@@ -97,7 +97,17 @@
     const c: string[] = [];
     if (m.cache) c.push("cache");
     if (m.context1m) c.push("1M");
-    if (m.reasoning) c.push(m.effort ? `effort:${m.effort}` : "reasoning");
+    if (m.reasoning) {
+      // Reasoning models carry a closed effort ladder (e.g. low..max) — show its
+      // range rather than the single default so the catalog matches Chat's
+      // effort selector. Fall back to the default, then a bare "reasoning".
+      const levels = m.effortLevels;
+      if (levels && levels.length > 1) c.push(`effort: ${levels[0]}–${levels[levels.length - 1]}`);
+      else if (levels && levels.length === 1) c.push(`effort: ${levels[0]}`);
+      else if (m.effort) c.push(`effort: ${m.effort}`);
+      else c.push("reasoning");
+      if (m.thinkingBudget && m.thinkingBudget > 0) c.push(`think ${win(m.thinkingBudget)}`);
+    }
     if (m.search) c.push("search");
     if (m.vision) c.push("vision");
     if (m.social) c.push("social");

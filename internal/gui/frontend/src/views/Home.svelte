@@ -76,6 +76,13 @@
   }
 
   async function actOn(it: FeedItemDTO) {
+    // A task-less item is fundamentally a link, not work: StartFromFeed would
+    // create the session then send nothing, leaving an orphan empty session per
+    // click. Open the URL instead; only start a session when there's a task.
+    if (!it.task) {
+      openURL(it.url);
+      return;
+    }
     acting[it.key] = true;
     try {
       const id = await Bridge.StartFromFeed(it.dir ?? "", it.task);
@@ -158,7 +165,7 @@
               {#if it.dirName}<Badge tone="neutral" truncate>{it.dirName}</Badge>{/if}
               <span class="fc__spacer"></span>
               {#if it.url}<Button variant="ghost" size="sm" onclick={() => openURL(it.url)}>Open</Button>{/if}
-              <Button variant="secondary" size="sm" loading={acting[it.key]} onclick={() => actOn(it)}>Start →</Button>
+              {#if it.task}<Button variant="secondary" size="sm" loading={acting[it.key]} onclick={() => actOn(it)}>Start →</Button>{/if}
             </div>
           </div>
         {/each}

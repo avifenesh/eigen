@@ -47,6 +47,14 @@ export function createTranscript(sessionId: string) {
   // (which carries the pending approvals) even though the turn stays "running"
   // while the daemon blocks waiting for the user's decision.
   let approvalSeq = $state(0);
+  // Latest token count streamed mid-turn. sess.tokens only refreshes on
+  // refreshState() (turn end / approval), so the dock context ring freezes
+  // then jumps during a long turn; this carries the live count through the
+  // seam so the view can drive pct/nearLimit without waiting for the turn to
+  // end. Prefer outTokens (grows as the model streams), fall back to inTokens.
+  // Cleared at turn end (`done`) so a stale figure never bleeds into the next
+  // idle window.
+  let liveTokens = $state(0);
 
   let pendingText = "";
   let pendingKind: "text" | "reasoning" = "text";
@@ -95,6 +103,12 @@ export function createTranscript(sessionId: string) {
   }
 
   function onEvent(e: WireEventDTO) {
+    // Stream-token signal (GUI-061): any event MAY carry inTokens/outTokens.
+    // Keep the latest live count so the dock context ring updates mid-turn
+    // instead of jumping at turn end. outTokens is the figure that grows while
+    // the model streams; fall back to inTokens when only that is present.
+    if (e.outTokens != null) liveTokens = e.outTokens;
+    else if (e.inTokens != null) liveTokens = e.inTokens;
     switch (e.kind) {
       case "text":
       case "reasoning": {
@@ -130,6 +144,9 @@ export function createTranscript(sessionId: string) {
         commitLive();
         resetPending();
         running = false;
+        // Turn over: the view refetches sess.tokens via refreshState(), so the
+        // live override is no longer authoritative — clear it.
+        liveTokens = 0;
         break;
       case "note":
         flush();
@@ -163,8 +180,26 @@ export function createTranscript(sessionId: string) {
     get approvalSeq() {
       return approvalSeq;
     },
+    // Latest token count streamed during the in-flight turn (0 when idle / no
+    // streamed count yet). Lets the dock context ring update live instead of
+    // freezing until refreshState(). 0 means "fall back to sess.tokens".
+    get liveTokens() {
+      return liveTokens;
+    },
     // seed history from a Bridge.State snapshot (newest CAP messages).
+    // Called on first mount AND on every daemon reconnect (the view re-attaches
+    // and the daemon replays its event buffer through the listener). The replay
+    // rebuilds the live block from deltas, so the in-flight turn must start from
+    // a clean slate: drop any half-streamed `live` block, the pending coalescer,
+    // and a queued flush — otherwise the orphaned live text + the seeded history
+    // (which already contains it) + the replay all show the same reply twice.
     seed(messages: MessageDTO[], isRunning: boolean) {
+      live = null;
+      resetPending();
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
       history = mapMessages(messages, nextUid).slice(-CAP);
       truncated = messages.length > CAP;
       running = isRunning;

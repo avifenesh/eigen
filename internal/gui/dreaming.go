@@ -22,15 +22,16 @@ type RolloutDTO struct {
 	Index   int    `json:"index"`
 	Text    string `json:"text"`
 	Outcome string `json:"outcome,omitempty"`
+	WhenMs  int64  `json:"whenMs"` // best-effort from the filename's 20060102-150405 stamp, else 0
 }
 
 // ConsolidationDTO is one memory snapshot (a .bak), newest first. The frontend
 // can request a diff of this snapshot vs the current memory via MemoryDiff.
 type ConsolidationDTO struct {
-	Path      string `json:"path"`
-	Label     string `json:"label"`     // human timestamp parsed from the filename
-	WhenMs    int64  `json:"whenMs"`    // best-effort from filename, else mtime
-	Bytes     int    `json:"bytes"`
+	Path   string `json:"path"`
+	Label  string `json:"label"`  // human timestamp parsed from the filename
+	WhenMs int64  `json:"whenMs"` // best-effort from filename, else mtime
+	Bytes  int    `json:"bytes"`
 }
 
 // DreamingScopeDTO is the dreaming history for one scope.
@@ -51,14 +52,14 @@ func dreamScope(s *memory.Store, scope string) *DreamingScopeDTO {
 	if s == nil {
 		return &DreamingScopeDTO{Scope: scope}
 	}
-	rawRollouts := s.RawSummaries(60)
+	rawRollouts := rolloutFiles(s, 60)
 	rollouts := make([]RolloutDTO, 0, len(rawRollouts))
 	for i, r := range rawRollouts {
-		t := strings.TrimSpace(r)
+		t := strings.TrimSpace(r.text)
 		if t == "" {
 			continue
 		}
-		rollouts = append(rollouts, RolloutDTO{Index: i, Text: t, Outcome: parseOutcome(t)})
+		rollouts = append(rollouts, RolloutDTO{Index: i, Text: t, Outcome: parseOutcome(t), WhenMs: r.whenMs})
 	}
 	// Newest rollout first for the timeline.
 	for i, j := 0, len(rollouts)-1; i < j; i, j = i+1, j-1 {
@@ -98,6 +99,61 @@ func parseOutcome(s string) string {
 		}
 	}
 	return ""
+}
+
+// rolloutFile pairs a rollout summary's body with the time recovered from its
+// filename stamp. RawSummaries() drops filenames, so we re-glob the same dirs
+// to keep the content↔timestamp pairing without touching the memory package.
+type rolloutFile struct {
+	text   string
+	whenMs int64
+}
+
+// rolloutFiles mirrors Store.RawSummaries' glob/sort/limit (Codex-shaped
+// rollout_summaries/ + legacy raw/, chronological by filename) but retains each
+// file's path so we can parse its 20060102-150405 stamp for the timeline.
+func rolloutFiles(s *memory.Store, limit int) []rolloutFile {
+	if s == nil {
+		return nil
+	}
+	rawDir := s.RawDir()
+	if rawDir == "" {
+		return nil
+	}
+	legacyRawDir := filepath.Join(filepath.Dir(rawDir), "raw")
+	var matches []string
+	for _, dir := range []string{legacyRawDir, rawDir} {
+		ms, _ := filepath.Glob(filepath.Join(dir, "*.md"))
+		matches = append(matches, ms...)
+	}
+	sort.Strings(matches) // timestamp prefix sorts chronologically
+	if limit > 0 && len(matches) > limit {
+		matches = matches[len(matches)-limit:]
+	}
+	out := make([]rolloutFile, 0, len(matches))
+	for _, m := range matches {
+		b, err := os.ReadFile(m)
+		if err != nil {
+			continue
+		}
+		out = append(out, rolloutFile{text: string(b), whenMs: parseRolloutStamp(m)})
+	}
+	return out
+}
+
+// parseRolloutStamp recovers unix millis from a rollout filename's leading
+// 20060102-150405 stamp (e.g. 20060102-150405-some-slug.md), else 0.
+func parseRolloutStamp(path string) int64 {
+	base := filepath.Base(path)
+	base = strings.TrimSuffix(base, ".md")
+	const layout = "20060102-150405"
+	if len(base) < len(layout) {
+		return 0
+	}
+	if t, err := time.ParseInLocation(layout, base[:len(layout)], time.Local); err == nil {
+		return t.UnixMilli()
+	}
+	return 0
 }
 
 // parseBakStamp turns MEMORY.md.20060102-150405.bak into a label + unix millis.

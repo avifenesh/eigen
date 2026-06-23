@@ -320,8 +320,13 @@
     return h;
   }
   // Split into lines for diff bodies; a sole trailing newline is dropped so we
-  // don't emit a spurious empty trailing change line.
+  // don't emit a spurious empty trailing change line. An empty string is zero
+  // lines (not [""]) — a pure insertion (empty old_string) or empty write must
+  // emit no del/add line and a "0" side in the @@ header, so editHunk/writeDiff
+  // (which derive their counts from .length) stay honest and DiffView's diffstat
+  // doesn't report a phantom change.
   function splitLines(s: string): string[] {
+    if (s === "") return [];
     return s.replace(/\n$/, "").split("\n");
   }
 

@@ -150,7 +150,10 @@
                   <div class="roll">
                     <div class="roll__head">
                       <span class="roll__title">{title(r.text)}</span>
-                      {#if r.outcome}<Badge tone={outcomeTone(r.outcome)}>{r.outcome}</Badge>{/if}
+                      <div class="roll__meta">
+                        {#if r.whenMs}<span class="roll__when">{relTime(r.whenMs)}</span>{/if}
+                        {#if r.outcome}<Badge tone={outcomeTone(r.outcome)}>{r.outcome}</Badge>{/if}
+                      </div>
                     </div>
                     <div class="roll__body selectable"><Markdown source={r.text} /></div>
                   </div>
@@ -414,6 +417,16 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--sp-4);
+  }
+  .roll__meta {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+  }
+  .roll__when {
+    font-size: var(--fs-label);
+    color: var(--text-muted);
   }
   .roll__title {
     font-weight: var(--fw-semibold);

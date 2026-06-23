@@ -159,6 +159,25 @@
       toasts.error(e instanceof Error ? e.message : String(e));
     }
   }
+  // Background the turn's foreground shell so a turn wedged on a long-running
+  // command is freed WITHOUT killing it (vs. Interrupt, which kills the turn).
+  // The backgrounded shell then shows up in the shells dock — refresh so it
+  // lands without waiting for the next State trigger.
+  let detaching = $state(false);
+  async function detachBash() {
+    if (!sessionId || detaching) return;
+    detaching = true;
+    try {
+      const ok = await Bridge.DetachBash(sessionId);
+      if (ok) toasts.info("backgrounded the shell — turn freed");
+      else toasts.info("no foreground shell to background");
+      refreshState();
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      detaching = false;
+    }
+  }
   // Resolve a gated approval; surface failures (a dropped daemon between gate
   // and click) instead of swallowing them, then refresh so the card clears.
   async function approve(approvalID: string, allow: boolean) {
@@ -455,6 +474,15 @@
         <div class="chat__working">
           <StatusDot state="working" size={7} pulse />
           <span class="chat__working-label">working…</span>
+          <!-- Detach-bash: free a turn stuck on a long shell by backgrounding it
+               (it reappears in the shells dock) — distinct from interrupt, which
+               kills the whole turn. -->
+          <button
+            class="chat__detach"
+            onclick={detachBash}
+            disabled={detaching || !online}
+            title={online ? "Background the running shell to free this turn (without killing it)" : "daemon offline"}
+          >detach shell</button>
         </div>
       {/if}
 
@@ -992,6 +1020,32 @@
     50% {
       opacity: 0.55;
     }
+  }
+  /* Detach-bash control: a quiet inline link beside the working indicator, not
+     an alarm. Reads as secondary text until hovered, then warms. */
+  .chat__detach {
+    margin-left: auto;
+    border: none;
+    background: transparent;
+    padding: 0;
+    color: var(--text-muted);
+    font: var(--fw-medium) var(--fs-label) / 1 var(--font-sans);
+    cursor: pointer;
+    border-radius: var(--r-xs);
+    transition: color var(--dur-fast) var(--ease-out);
+  }
+  .chat__detach:hover:not(:disabled) {
+    color: var(--text-primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .chat__detach:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .chat__detach:disabled {
+    color: var(--text-ghost);
+    cursor: not-allowed;
   }
 
   .chat__composer {

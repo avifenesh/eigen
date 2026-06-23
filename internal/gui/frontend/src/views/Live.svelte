@@ -11,7 +11,7 @@
   import { toasts } from "$lib/stores/toasts.svelte";
   import { now } from "$lib/stores/clock.svelte";
   import { sessionDot } from "$lib/status";
-  import type { SessionInfoDTO } from "$lib/types";
+  import type { SessionInfoDTO, ApprovalInfo } from "$lib/types";
   import Button from "$lib/components/Button.svelte";
   import Badge from "$lib/components/Badge.svelte";
   import StatusDot from "$lib/components/StatusDot.svelte";
@@ -23,6 +23,15 @@
   let removing = $state<Record<string, boolean>>({});
   // Per-id inline-confirm latch for the destructive Remove action.
   let confirmRemove = $state<Record<string, boolean>>({});
+  // Inline approval resolution: for an `approval` row the user can expand a
+  // gate right here (fetch State → Allow/Deny via Bridge.Approve) instead of
+  // round-tripping through Chat. Per-id: which row is expanded, the pending
+  // approvals fetched for it, a fetch-in-flight flag, and per-approval acting.
+  let gateOpen = $state<Record<string, boolean>>({});
+  let gatePending = $state<Record<string, ApprovalInfo[]>>({});
+  let gateLoading = $state<Record<string, boolean>>({});
+  let gateError = $state<Record<string, string>>({});
+  let acting = $state<Record<string, boolean>>({});
 
   // Poll the shared store while mounted. A self-scheduling timeout (not a
   // re-running interval) refreshes ~every 2s; cleanup clears the pending timer.
@@ -126,6 +135,57 @@
       delete removing[s.id];
     }
   }
+
+  // Open the inline approval gate for a row: fetch its State, pull the pending
+  // approvals. If the gate has nothing resolvable (state gone, no pending), fall
+  // back to opening Chat — the gate lives there too. Keeps the user one click
+  // from resolving the block without leaving Live.
+  async function openGate(s: SessionInfoDTO) {
+    gateOpen[s.id] = true;
+    gateLoading[s.id] = true;
+    delete gateError[s.id];
+    try {
+      const st = await Bridge.State(s.id);
+      const pending = st?.pending ?? [];
+      if (pending.length === 0) {
+        // Nothing inline to resolve (raced away, or gate not exposed) — defer
+        // to Chat where the live stream + gate render.
+        closeGate(s.id);
+        open(s);
+        return;
+      }
+      gatePending[s.id] = pending;
+    } catch (e) {
+      gateError[s.id] = e instanceof Error ? e.message : String(e);
+    } finally {
+      delete gateLoading[s.id];
+    }
+  }
+
+  function closeGate(id: string) {
+    delete gateOpen[id];
+    delete gatePending[id];
+    delete gateLoading[id];
+    delete gateError[id];
+  }
+
+  // Resolve a single gated approval inline. On success refresh the store (the
+  // row's status flips off `approval` once the daemon clears the gate) and drop
+  // the gate; surface failures rather than swallowing them.
+  async function decide(s: SessionInfoDTO, approvalID: string, allow: boolean) {
+    const key = `${s.id}:${approvalID}`;
+    acting[key] = true;
+    try {
+      await Bridge.Approve(s.id, approvalID, allow);
+      toasts.info(allow ? "approved" : "denied");
+      closeGate(s.id);
+      await sessions.refresh();
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      delete acting[key];
+    }
+  }
 </script>
 
 <div class="live">
@@ -158,6 +218,7 @@
   {:else}
     <div class="live__list">
       {#each ordered as s (s.id)}
+        <div class="lcell" class:lcell--gated={gateOpen[s.id]}>
         <div class="lrow" class:lrow--working={s.status === "working"} class:lrow--approval={s.status === "approval"}>
           <StatusDot state={sessionDot(s.status)} size={9} pulse={isLive(s)} />
           <button class="lrow__main" onclick={() => open(s)} title="Open session">
@@ -172,6 +233,13 @@
           <span class="lrow__turns tnum">{s.turns} turn{s.turns === 1 ? "" : "s"}</span>
           <span class="lrow__when">{rel(s.updated)}</span>
           <div class="lrow__actions">
+            {#if s.status === "approval"}
+              {#if gateOpen[s.id]}
+                <Button variant="ghost" size="sm" onclick={() => closeGate(s.id)}>Close</Button>
+              {:else}
+                <Button variant="primary" size="sm" onclick={() => openGate(s)}>Approve…</Button>
+              {/if}
+            {/if}
             <Button variant="ghost" size="sm" onclick={() => open(s)}>Open</Button>
             {#if isLive(s)}
               <Button variant="ghost" size="sm" loading={interrupting[s.id]} onclick={() => interrupt(s)}>Interrupt</Button>
@@ -183,6 +251,32 @@
               <Button variant="ghost" size="sm" onclick={() => (confirmRemove[s.id] = true)}>Remove</Button>
             {/if}
           </div>
+        </div>
+        {#if gateOpen[s.id]}
+          <div class="gate">
+            {#if gateLoading[s.id]}
+              <div class="gate__status">Loading approval…</div>
+            {:else if gateError[s.id]}
+              <div class="gate__status gate__status--error">{gateError[s.id]}</div>
+              <div class="gate__retry">
+                <Button variant="secondary" size="sm" onclick={() => openGate(s)}>Retry</Button>
+                <Button variant="ghost" size="sm" onclick={() => open(s)}>Open in Chat</Button>
+              </div>
+            {:else}
+              {#each gatePending[s.id] ?? [] as ap (ap.id)}
+                {@const key = `${s.id}:${ap.id}`}
+                <div class="gate__item">
+                  <div class="gate__tool">{ap.tool}</div>
+                  {#if ap.args}<div class="gate__args selectable" title={ap.args}>{ap.args}</div>{/if}
+                  <div class="gate__actions">
+                    <Button variant="primary" size="sm" loading={acting[key]} onclick={() => decide(s, ap.id, true)}>Allow</Button>
+                    <Button variant="danger" size="sm" loading={acting[key]} onclick={() => decide(s, ap.id, false)}>Deny</Button>
+                  </div>
+                </div>
+              {/each}
+            {/if}
+          </div>
+        {/if}
         </div>
       {/each}
     </div>
@@ -256,6 +350,21 @@
     to {
       background-position: -200% 0;
     }
+  }
+  /* A cell wraps the row plus its (optional) inline approval gate so the gate
+     tucks directly under the row it belongs to and they share one outline when
+     expanded. */
+  .lcell {
+    display: flex;
+    flex-direction: column;
+  }
+  .lcell--gated {
+    border-radius: var(--r-md);
+    box-shadow: 0 0 0 1px var(--warn-bg);
+  }
+  .lcell--gated .lrow {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
   }
   .lrow {
     display: flex;
@@ -353,6 +462,56 @@
     flex: none;
     display: flex;
     align-items: center;
+    gap: var(--sp-2);
+  }
+  /* ── inline approval gate ─────────────────────────────────────────────
+     Lives under an `approval` row when expanded. Warn register (matches the
+     row's left edge + badge) so it reads as "something is waiting on you". */
+  .gate {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    padding: var(--sp-4) var(--sp-5);
+    background: var(--warn-bg);
+    border: 1px solid var(--border-hairline);
+    border-top: none;
+    border-left: 2px solid var(--warn);
+    border-bottom-left-radius: var(--r-md);
+    border-bottom-right-radius: var(--r-md);
+  }
+  .gate__status {
+    font-size: var(--fs-label);
+    color: var(--text-muted);
+  }
+  .gate__status--error {
+    color: var(--error);
+  }
+  .gate__retry {
+    display: flex;
+    gap: var(--sp-2);
+  }
+  .gate__item {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+  }
+  .gate__tool {
+    flex: none;
+    font: var(--fw-medium) var(--fs-body-sm) / 1.2 var(--font-mono, var(--font-sans));
+    color: var(--text-primary);
+  }
+  .gate__args {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--fs-micro);
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .gate__actions {
+    flex: none;
+    display: flex;
     gap: var(--sp-2);
   }
   @media (prefers-reduced-motion: reduce) {
