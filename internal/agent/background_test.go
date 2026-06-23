@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -388,6 +389,69 @@ func TestBackgroundRetryFailurePreservesFirstError(t *testing.T) {
 	got := reg.Get(id)
 	if got.Attempts != 2 || !strings.Contains(got.Error, "attempt 1 failed: failure 1") || !strings.Contains(got.Error, "attempt 2: failure 2") {
 		t.Fatalf("retry failure should keep both errors, got %+v", got)
+	}
+}
+
+// bgDeadlineCaptureProv fails the first call then succeeds, recording the
+// context deadline each attempt runs under — used to prove all attempts of one
+// task share a SINGLE task-level deadline (APP-026) rather than each getting a
+// fresh bgMaxRuntime.
+type bgDeadlineCaptureProv struct {
+	mu        sync.Mutex
+	calls     int
+	deadlines []time.Time
+}
+
+func (p *bgDeadlineCaptureProv) ModelID() string { return "test" }
+func (p *bgDeadlineCaptureProv) Name() string    { return "test" }
+func (p *bgDeadlineCaptureProv) Complete(ctx context.Context, _ llm.Request) (*llm.Response, error) {
+	p.mu.Lock()
+	p.calls++
+	n := p.calls
+	dl, _ := ctx.Deadline()
+	p.deadlines = append(p.deadlines, dl)
+	p.mu.Unlock()
+	if n == 1 {
+		// Spend measurable wall-time so a per-attempt fresh bgMaxRuntime (the
+		// bug) would push attempt 2's deadline visibly later than attempt 1's.
+		time.Sleep(250 * time.Millisecond)
+		return nil, fmt.Errorf("small model failed")
+	}
+	return &llm.Response{Text: "RECOVERED"}, nil
+}
+
+func TestBackgroundAttemptsShareOneTaskDeadline(t *testing.T) {
+	reg := newTestRegistry(t, t.TempDir())
+	prov := &bgDeadlineCaptureProv{}
+	a := &Agent{Provider: prov, Tools: proberRegistry(t), Perm: PermAuto, Bg: reg}
+	if _, err := a.SubtaskBackground(context.Background(), "retry shares deadline", SubtaskOpts{Difficulty: "trivial"}); err != nil {
+		t.Fatal(err)
+	}
+	id := waitForStatus(t, reg, "done")
+	if got := reg.Get(id); got.Attempts != 2 {
+		t.Fatalf("expected an escalation retry, got %+v", got)
+	}
+	prov.mu.Lock()
+	defer prov.mu.Unlock()
+	if len(prov.deadlines) != 2 {
+		t.Fatalf("expected 2 attempt deadlines, got %d", len(prov.deadlines))
+	}
+	// Both attempts derive from the SAME task-level deadline, so their absolute
+	// deadlines are effectively identical. The bug — a per-attempt fresh
+	// bgMaxRuntime — would put attempt 2's deadline later than attempt 1's by
+	// roughly the time attempt 1 spent running (the 250ms sleep above), so a
+	// tight bound discriminates the shared deadline from the per-attempt one.
+	skew := prov.deadlines[1].Sub(prov.deadlines[0])
+	if skew < 0 {
+		skew = -skew
+	}
+	if skew > 50*time.Millisecond {
+		t.Fatalf("attempts should share one task deadline; skew=%s (attempt 1 %s, attempt 2 %s)",
+			skew, prov.deadlines[0], prov.deadlines[1])
+	}
+	// Sanity: the shared deadline is bounded by bgMaxRuntime from task start.
+	if until := time.Until(prov.deadlines[0]); until > bgMaxRuntime+time.Minute {
+		t.Fatalf("task deadline exceeds bgMaxRuntime: %s out", until)
 	}
 }
 

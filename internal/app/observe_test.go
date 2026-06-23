@@ -60,6 +60,40 @@ func TestObservePageRendersTelemetry(t *testing.T) {
 	}
 }
 
+func TestObserveJKScrollContent(t *testing.T) {
+	d := testData()
+	d.Observe = observe.Summary{
+		Records: 99,
+		ByKind:  map[string]int{"tool_result": 9, "done": 8, "assistant": 7, "user": 6},
+		Errors:  map[string]int{"denied": 3, "timeout": 2},
+		Notes:   map[string]int{"route": 4, "background": 3},
+		Models: map[string]observe.ModelSummary{
+			"gpt-5.5": {Turns: 2, InTokens: 100}, "fast": {Turns: 1}, "claude": {Turns: 3}, "grok": {Turns: 1},
+		},
+		Tools:  map[string]observe.ToolSummary{"bash": {Calls: 2}, "read": {Calls: 5}, "edit": {Calls: 3}, "grep": {Calls: 4}},
+		Hooks:  map[string]observe.HookSummary{"session_start": {Done: 1}, "pre_tool": {Done: 2}},
+		Skills: map[string]observe.SkillSummary{"frontend": {Calls: 2}, "backend": {Calls: 1}},
+	}
+	m := NewAt(d, PageObserve)
+	// A short viewport guarantees the rendered page overflows, so scroll is live.
+	m.width, m.height = 80, 14
+	if m.contentScroll != 0 {
+		t.Fatalf("contentScroll should start at 0, got %d", m.contentScroll)
+	}
+	m.Update(key("j"))
+	if m.contentScroll != 1 {
+		t.Fatalf("j should scroll content down one line, got %d", m.contentScroll)
+	}
+	m.Update(key("j"))
+	if m.contentScroll != 2 {
+		t.Fatalf("second j should scroll to 2, got %d", m.contentScroll)
+	}
+	m.Update(key("k"))
+	if m.contentScroll != 1 {
+		t.Fatalf("k should scroll content up one line, got %d", m.contentScroll)
+	}
+}
+
 func TestHomeSurfacesObserveAttention(t *testing.T) {
 	d := testData()
 	d.Observe = observe.Summary{

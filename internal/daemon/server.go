@@ -304,6 +304,13 @@ func (s *Server) handle(conn net.Conn) {
 				detach = d
 				send(Response{Type: "attached", ID: sess.ID})
 				for _, e := range replay {
+					// Approvals are re-sent canonically from pendingList() below
+					// (outstanding only, no duplicates). Skipping them here avoids
+					// delivering the same approval twice on a mid-wait attach and
+					// avoids replaying already-resolved approvals as still pending.
+					if e.Kind == agent.EventApproval {
+						continue
+					}
 					send(Response{Type: "event", Event: wireEvent(e), Replay: true})
 				}
 				// A view attaching mid-wait must still see outstanding approvals

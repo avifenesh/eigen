@@ -386,11 +386,13 @@ func PatchStat(patch []byte) string {
 	return fmt.Sprintf("%d file(s), +%d −%d", files, adds, dels)
 }
 
-// oneScreen caps a child's answer to a short excerpt for the report.
+// oneScreen caps a child's answer to a short excerpt for the report. Counts
+// runes (not bytes) so a multibyte rune is never split into invalid UTF-8.
 func oneScreen(s string) string {
 	const max = 600
-	if len(s) > max {
-		return s[:max] + "…"
+	r := []rune(s)
+	if len(r) > max {
+		return string(r[:max]) + "…"
 	}
 	return s
 }

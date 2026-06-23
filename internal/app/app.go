@@ -595,6 +595,16 @@ func (m *Model) contentClick(localX, localY int) (tea.Cmd, bool) {
 		return m.config.clickAt(m, localY)
 	case PageMemory:
 		return m.memory.clickAt(m, localY)
+	case PageSkills:
+		return m.skills.clickAt(m, localY)
+	case PageModels:
+		return m.models.clickAt(m, localY)
+	case PageProviders:
+		return m.providers.clickAt(m, localY)
+	case PageObserve:
+		return m.observe.clickAt(m, localY)
+	case PageCrons:
+		return m.crons.clickAt(m, localY)
 	case PagePlugins:
 		return m.plugins.clickAt(m, localX, localY)
 	case PageProfile:

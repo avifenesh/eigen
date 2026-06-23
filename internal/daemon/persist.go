@@ -41,6 +41,13 @@ type persistMeta struct {
 	// AddedRoots are extra tool-sandbox dirs the user granted via /add-dir.
 	// Re-applied on restore (re-validated — invalid/vanished paths drop).
 	AddedRoots []string `json:"added_roots,omitempty"`
+	// Cumulative token usage over the session's lifetime, summed from each turn's
+	// EventDone. Persisted so the prompt-cache hit ratio (CacheRead vs In) in the
+	// daemon stats survives a restart instead of collapsing to 0% and re-climbing.
+	CumIn         int64 `json:"cum_in,omitempty"`
+	CumOut        int64 `json:"cum_out,omitempty"`
+	CumCacheRead  int64 `json:"cum_cache_read,omitempty"`
+	CumCacheWrite int64 `json:"cum_cache_write,omitempty"`
 }
 
 func transcriptPath(dir, id string) string { return filepath.Join(dir, id+".jsonl") }

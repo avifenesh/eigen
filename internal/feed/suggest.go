@@ -12,6 +12,8 @@ package feed
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -49,23 +51,48 @@ func suggestCachePath() string {
 	return filepath.Join(home, ".eigen", "feed-suggest.json")
 }
 
-// suggestCache is the persisted suggest state.
+// suggestCache is the persisted suggest state. Dirs is a signature of the dir
+// set the cached items were generated for: when the current set differs (a
+// project was added or removed) the cache is stale even within the TTL, so we
+// never keep showing suggestions for a project that's no longer tracked.
 type suggestCache struct {
 	Items   []Item    `json:"items"`
 	Scanned time.Time `json:"scanned"`
+	Dirs    string    `json:"dirs"`
 }
 
-func loadSuggestCache() (suggestCache, bool) {
+// dirsSignature hashes the sorted, de-duplicated dir set so cache validity is
+// independent of the order or repetition the caller passes dirs in.
+func dirsSignature(dirs []string) string {
+	uniq := make([]string, 0, len(dirs))
+	seen := make(map[string]bool, len(dirs))
+	for _, d := range dirs {
+		if seen[d] {
+			continue
+		}
+		seen[d] = true
+		uniq = append(uniq, d)
+	}
+	sort.Strings(uniq)
+	h := sha256.Sum256([]byte(strings.Join(uniq, "\x00")))
+	return hex.EncodeToString(h[:8])
+}
+
+// loadSuggestCache returns the persisted cache and whether it is still fresh
+// for the given dirs. It's stale once the TTL elapses OR the dir set changed —
+// a removed project must not keep surfacing its old cached suggestions.
+func loadSuggestCache(dirs []string) (suggestCache, bool) {
 	var c suggestCache
 	b, err := os.ReadFile(suggestCachePath())
 	if err != nil || json.Unmarshal(b, &c) != nil {
 		return suggestCache{}, false
 	}
-	return c, time.Since(c.Scanned) < suggestTTL
+	fresh := time.Since(c.Scanned) < suggestTTL && c.Dirs == dirsSignature(dirs)
+	return c, fresh
 }
 
-func saveSuggestCache(items []Item) {
-	b, err := json.Marshal(suggestCache{Items: items, Scanned: time.Now()})
+func saveSuggestCache(items []Item, dirs []string) {
+	b, err := json.Marshal(suggestCache{Items: items, Scanned: time.Now(), Dirs: dirsSignature(dirs)})
 	if err != nil {
 		return
 	}
@@ -74,6 +101,24 @@ func saveSuggestCache(items []Item) {
 	if os.WriteFile(tmp, b, 0o644) == nil {
 		_ = os.Rename(tmp, suggestCachePath())
 	}
+}
+
+// keepKnownDirs drops cached items rooted at a dir no longer in the current
+// set, so stale-cache fallbacks (model error, empty dedup batch) can't resurrect
+// suggestions for a removed project. Items with no dir ("" = root at CWD) are
+// kept — they aren't tied to a tracked project.
+func keepKnownDirs(items []Item, dirs []string) []Item {
+	known := make(map[string]bool, len(dirs))
+	for _, d := range dirs {
+		known[d] = true
+	}
+	out := items[:0:0]
+	for _, it := range items {
+		if it.Dir == "" || known[it.Dir] {
+			out = append(out, it)
+		}
+	}
+	return out
 }
 
 // scanSuggest returns model suggestions: the cached set while it's fresh
@@ -91,13 +136,16 @@ func scanSuggest(parent context.Context, dirs []string, s Suggester) []Item {
 	if s == nil {
 		return nil
 	}
-	cached, fresh := loadSuggestCache()
+	cached, fresh := loadSuggestCache(dirs)
 	if fresh {
 		return cached.Items
 	}
+	// The cache is stale (TTL elapsed or the dir set changed). Any fallback to
+	// these items must not carry suggestions for projects no longer tracked.
+	stale := keepKnownDirs(cached.Items, dirs)
 	ctxt := suggestContext(dirs)
 	if ctxt == "" {
-		return cached.Items
+		return stale
 	}
 	system := `You are a JSON-only suggestion engine inside a developer's personal dashboard. You receive a snapshot of their projects (recent commits, working-tree state, README intro, notes). Propose up to 3 genuinely useful next actions. Be bold — these are offers the user can clear with one keystroke, so a sharp guess beats a safe restatement.
 
@@ -117,22 +165,22 @@ If nothing is worth suggesting, reply [].`
 	defer cancel()
 	out, err := s(ctx, system, ctxt)
 	if err != nil {
-		return cached.Items // stale beats nothing
+		return stale // stale beats nothing
 	}
 	items := parseSuggestions(out, dirs)
 	if items == nil {
-		return cached.Items
+		return stale
 	}
 	// Drop ideas we've recently surfaced (this run or earlier) or that the user
 	// dismissed, so the model can't re-propose the same thing scan after scan.
 	items = dedupSuggestions(items)
 	// If dedup emptied a batch the model actually produced, keep the prior cache
 	// rather than flipping the feed to nothing.
-	if len(items) == 0 && len(cached.Items) > 0 {
-		return cached.Items
+	if len(items) == 0 && len(stale) > 0 {
+		return stale
 	}
 	recordSeenSuggest(items)
-	saveSuggestCache(items)
+	saveSuggestCache(items, dirs)
 	return items
 }
 

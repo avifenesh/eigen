@@ -6,6 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/avifenesh/eigen/internal/daemon"
 )
 
 func TestInspectorSessionsDetail(t *testing.T) {
@@ -49,6 +51,50 @@ func TestInspectorEmptyHint(t *testing.T) {
 	m.home.list.cursor = 0
 	if d := m.inspectorDetail(30); strings.Contains(d, "select an item") || !strings.Contains(d, "fix the parser") {
 		t.Fatalf("home should inspect the selected row, got:\n%s", d)
+	}
+}
+
+func TestInspectorLiveDetail(t *testing.T) {
+	d := testData()
+	d.Live = []daemon.SessionInfo{
+		{ID: "live-1", Title: "build feature", Dir: "/home/u/proj-a", Model: "opus", Status: daemon.StatusWorking, Turns: 3, Views: 1, Updated: 2000},
+	}
+	m := New(d)
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.active = PageLive
+	out := m.inspectorDetail(30)
+	if strings.Contains(out, "select an item") {
+		t.Fatalf("live inspector should show the highlighted session, got the hint:\n%s", out)
+	}
+	if !strings.Contains(out, "build feature") || !strings.Contains(out, "model") || !strings.Contains(out, "opus") {
+		t.Fatalf("live inspector should show the session label and model:\n%s", out)
+	}
+}
+
+func TestInspectorConfigDetail(t *testing.T) {
+	m := New(testData())
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.active = PageConfig
+	m.config.init(m.data)
+	out := m.inspectorDetail(30)
+	if strings.Contains(out, "select an item") {
+		t.Fatalf("config inspector should show the selected field, got the hint:\n%s", out)
+	}
+	if !strings.Contains(out, "value") || !strings.Contains(out, "type") {
+		t.Fatalf("config inspector should show value and type rows:\n%s", out)
+	}
+}
+
+func TestInspectorProfileDetail(t *testing.T) {
+	m := New(testData())
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.active = PageProfile
+	out := m.inspectorDetail(30)
+	if strings.Contains(out, "select an item") {
+		t.Fatalf("profile inspector should show usage totals, got the hint:\n%s", out)
+	}
+	if !strings.Contains(out, "sessions") || !strings.Contains(out, "projects") {
+		t.Fatalf("profile inspector should show usage totals:\n%s", out)
 	}
 }
 

@@ -183,7 +183,7 @@ type anthropicTool struct {
 }
 
 // anthropicContent is one block in a message's content array (text / image /
-// tool_use / tool_result). Only the fields for the active type are set.
+// thinking / tool_use / tool_result). Only the fields for the active type are set.
 type anthropicContent struct {
 	Type      string             `json:"type"`
 	Text      string             `json:"text,omitempty"`
@@ -194,6 +194,13 @@ type anthropicContent struct {
 	ToolUseID string             `json:"tool_use_id,omitempty"` // tool_result
 	Content   any                `json:"content,omitempty"`     // tool_result: string, or []anthropicContent (text+image)
 	IsError   bool               `json:"is_error,omitempty"`    // tool_result
+	// Thinking + Signature carry an interleaved-thinking block. With the
+	// interleaved-thinking beta enabled, Anthropic returns a signed thinking
+	// block on a turn that also uses tools, and expects that exact signed block
+	// echoed back (preceding the tool_use) on the next request — dropping it
+	// loses chain-of-thought and is rejected under strict signature validation.
+	Thinking  string `json:"thinking,omitempty"`  // thinking
+	Signature string `json:"signature,omitempty"` // thinking
 }
 
 // anthropicImageSrc is the base64 image source for an "image" content block.
@@ -221,11 +228,13 @@ type anthropicRequest struct {
 
 type anthropicReply struct {
 	Content []struct {
-		Type  string          `json:"type"`
-		Text  string          `json:"text"`
-		ID    string          `json:"id"`
-		Name  string          `json:"name"`
-		Input json.RawMessage `json:"input"`
+		Type      string          `json:"type"`
+		Text      string          `json:"text"`
+		ID        string          `json:"id"`
+		Name      string          `json:"name"`
+		Input     json.RawMessage `json:"input"`
+		Thinking  string          `json:"thinking"`  // thinking block
+		Signature string          `json:"signature"` // thinking block (interleaved)
 	} `json:"content"`
 	StopReason string `json:"stop_reason"`
 	Usage      struct {
@@ -305,7 +314,14 @@ func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error
 		case "text":
 			out.Text += blk.Text
 		case "thinking":
-			out.Reasoning += blk.Text
+			out.Reasoning += blk.Thinking
+			// Capture the signature so the signed thinking block can be
+			// re-emitted on the next assistant turn (interleaved thinking +
+			// tool use requires the prior signed block back). ReasoningEncrypted
+			// is the neutral carrier for the opaque blob to echo back.
+			if blk.Signature != "" {
+				out.ReasoningEncrypted = blk.Signature
+			}
 		case "tool_use":
 			out.ToolCalls = append(out.ToolCalls, ToolCall{
 				ID:        blk.ID,
@@ -355,6 +371,7 @@ func (a *Anthropic) Stream(ctx context.Context, req Request, sink StreamSink) (*
 	byIndex := map[int]*partialBlock{}
 	var order []int
 	var text, reasoning strings.Builder
+	var reasoningSig string // signature of the thinking block (interleaved)
 	var usage Usage
 	var stopReason string
 
@@ -384,6 +401,7 @@ func (a *Anthropic) Stream(ctx context.Context, req Request, sink StreamSink) (*
 				Type        string `json:"type"`
 				Text        string `json:"text"`
 				Thinking    string `json:"thinking"`
+				Signature   string `json:"signature"`
 				PartialJSON string `json:"partial_json"`
 				StopReason  string `json:"stop_reason"`
 			} `json:"delta"`
@@ -430,6 +448,10 @@ func (a *Anthropic) Stream(ctx context.Context, req Request, sink StreamSink) (*
 				if sink != nil {
 					sink(StreamChunk{Kind: ChunkReasoning, Text: ev.Delta.Thinking})
 				}
+			case "signature_delta":
+				// The thinking block's signature arrives as its own delta after
+				// the thinking text; capture it to re-emit the signed block.
+				reasoningSig += ev.Delta.Signature
 			case "input_json_delta":
 				if p := byIndex[ev.Index]; p != nil {
 					p.args.WriteString(ev.Delta.PartialJSON)
@@ -452,7 +474,7 @@ func (a *Anthropic) Stream(ctx context.Context, req Request, sink StreamSink) (*
 		return nil, fmt.Errorf("anthropic response truncated (max_tokens): refusing possibly-truncated output")
 	}
 
-	out := &Response{Text: text.String(), Reasoning: reasoning.String(), Usage: usage}
+	out := &Response{Text: text.String(), Reasoning: reasoning.String(), ReasoningEncrypted: reasoningSig, Usage: usage}
 	for _, idx := range order {
 		p := byIndex[idx]
 		if p == nil || p.kind != "tool_use" {
@@ -567,6 +589,19 @@ func anthropicMessages(req Request) []anthropicMessage {
 		case RoleAssistant:
 			flush()
 			var content []anthropicContent
+			// Re-emit the prior signed thinking block FIRST (it must precede
+			// tool_use). With interleaved thinking enabled, Anthropic expects the
+			// exact signed block back on a turn that uses tools; without the
+			// signature the API can reject it, so only re-emit when both the
+			// reasoning text and its signature were captured. ReasoningEncrypted
+			// carries the signature (see Complete/Stream).
+			if m.ReasoningEncrypted != "" && strings.TrimSpace(m.Reasoning) != "" {
+				content = append(content, anthropicContent{
+					Type:      "thinking",
+					Thinking:  m.Reasoning,
+					Signature: m.ReasoningEncrypted,
+				})
+			}
 			if strings.TrimSpace(m.Text) != "" {
 				content = append(content, anthropicContent{Type: "text", Text: m.Text})
 			}

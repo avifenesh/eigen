@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 )
 
@@ -71,6 +72,60 @@ func TestBM25NoMatchRanksEmpty(t *testing.T) {
 	bi := buildBM25([]Chunk{{Path: "a.go", Text: "alpha beta gamma"}})
 	if r := bi.rank("nonexistent zzzzz"); len(r) != 0 {
 		t.Fatalf("a query with no shared terms should rank nothing, got %v", r)
+	}
+}
+
+// TestBM25RankMatchesFullScan pins the inverted-index rank to the same answer a
+// brute-force scan (score over every chunk) produces: only chunks sharing a
+// query term may score, and the order must agree (ties broken by chunk index).
+func TestBM25RankMatchesFullScan(t *testing.T) {
+	chunks := []Chunk{
+		{Path: "a.go", Text: "func parseConfig() { loadDefaults() }"},
+		{Path: "b.go", Text: "the parser reads the config file and validates it"},
+		{Path: "c.go", Text: "completely unrelated networking retry loop"},
+		{Path: "d.go", Text: "config config config parse parse default default"},
+		{Path: "e.go", Text: "// no shared vocabulary whatsoever zzzz"},
+	}
+	bi := buildBM25(chunks)
+	const query = "parse the config defaults"
+	got := bi.rank(query)
+
+	// Reference: full scan via score over all chunks, same tiebreak as rank.
+	terms := tokenize(query)
+	type sc struct {
+		i int
+		s float64
+	}
+	var scored []sc
+	for i := range chunks {
+		if s := bi.score(i, terms); s > 0 {
+			scored = append(scored, sc{i, s})
+		}
+	}
+	sort.Slice(scored, func(a, b int) bool {
+		if scored[a].s != scored[b].s {
+			return scored[a].s > scored[b].s
+		}
+		return scored[a].i < scored[b].i
+	})
+	want := make([]int, len(scored))
+	for j, x := range scored {
+		want[j] = x.i
+	}
+
+	if len(got) != len(want) {
+		t.Fatalf("rank len %d (%v) != full-scan len %d (%v)", len(got), got, len(want), want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("inverted-index rank %v != full-scan %v", got, want)
+		}
+	}
+	// Chunk c (no shared term) must never appear.
+	for _, ci := range got {
+		if ci == 2 {
+			t.Fatalf("chunk with no shared query term should not rank, got %v", got)
+		}
 	}
 }
 

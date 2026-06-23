@@ -72,6 +72,8 @@ type Session struct {
 	// ordering (transcript mtime lies; the titler touches files).
 	lastAttached time.Time
 	onAttach     func() // host hook: persist meta when a view attaches
+	onTokens     func() // host hook: persist meta when cumulative tokens change (turn done)
+	onClear      func() // host hook: purge transcript backups after /clear (so recovery can't resurrect)
 
 	// notify, when set, fires a desktop notification when a turn finishes with
 	// NO views attached — i.e. the user backgrounded the turn (left the window
@@ -160,6 +162,13 @@ func (s *Session) dispatch(e agent.Event) {
 		s.cumCacheRead += int64(e.CacheReadTokens)
 		s.cumCacheWrite += int64(e.CacheWriteTokens)
 	}
+	// Persist the updated lifetime token tallies after a turn finishes so the
+	// cache-hit ratio in stats survives a restart (fired outside the lock —
+	// saveSessionMeta re-enters s.mu).
+	var onTokens func()
+	if e.Kind == agent.EventDone {
+		onTokens = s.onTokens
+	}
 	wakeID := ""
 	if e.Kind == agent.EventBgDone && !s.running {
 		// A background task this session spawned finished while the orchestrator
@@ -183,6 +192,9 @@ func (s *Session) dispatch(e agent.Event) {
 		}
 	}
 	s.mu.Unlock()
+	if onTokens != nil {
+		onTokens()
+	}
 	if wakeID != "" {
 		s.wakeForBg(wakeID)
 	}
@@ -710,8 +722,12 @@ func (s *Session) clear() {
 	s.mu.Unlock()
 	// /clear is user-visible state, not just in-memory UI state. Persist the
 	// empty transcript immediately so a daemon restart cannot resurrect the old
-	// conversation.
+	// conversation — then purge the rotated backups, or transcript.Load's
+	// corruption-recovery would resurrect the cleared conversation from a .bak.
 	s.flush()
+	if s.onClear != nil {
+		s.onClear()
+	}
 }
 
 // resend retries the last user turn (the /resend command) — runs like send.

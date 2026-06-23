@@ -238,7 +238,7 @@ func formatGroupReport(results []childResult) string {
 		}
 		res := r.result
 		if len(res) > maxGroupResultBytes {
-			res = res[:maxGroupResultBytes] + "\n  …[truncated]"
+			res = tool.TruncateUTF8(res, maxGroupResultBytes) + "\n  …[truncated]"
 		}
 		// Indent each result line so the report stays scannable.
 		for _, line := range strings.Split(strings.TrimRight(res, "\n"), "\n") {

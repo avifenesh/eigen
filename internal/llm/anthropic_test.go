@@ -48,6 +48,64 @@ func TestAnthropicMessagesGroupsToolResults(t *testing.T) {
 	}
 }
 
+// TestAnthropicMessagesReEmitsSignedThinking is the regression for APP-046:
+// with interleaved thinking + tool use, the prior signed thinking block must be
+// echoed back on the assistant turn, preceding the tool_use, or Anthropic loses
+// the chain of thought (and can reject it under strict signature validation).
+func TestAnthropicMessagesReEmitsSignedThinking(t *testing.T) {
+	msgs := anthropicMessages(Request{
+		Messages: []Message{
+			{Role: RoleUser, Text: "do it"},
+			{
+				Role:               RoleAssistant,
+				Text:               "let me read that",
+				Reasoning:          "I should read the file first",
+				ReasoningEncrypted: "sig-abc",
+				ToolCalls:          []ToolCall{{ID: "t1", Name: "read", Arguments: json.RawMessage(`{"path":"a"}`)}},
+			},
+			{Role: RoleTool, ToolCallID: "t1", Text: "contents"},
+		},
+	})
+	// user(text), assistant(thinking + text + tool_use), user(tool_result).
+	if len(msgs) != 3 {
+		t.Fatalf("got %d messages, want 3: %+v", len(msgs), msgs)
+	}
+	asst := msgs[1]
+	if asst.Role != "assistant" || len(asst.Content) != 3 {
+		t.Fatalf("assistant turn should have thinking + text + tool_use: %+v", asst)
+	}
+	// The signed thinking block must be FIRST (preceding text and tool_use).
+	if asst.Content[0].Type != "thinking" {
+		t.Fatalf("first block must be thinking, got %q: %+v", asst.Content[0].Type, asst.Content[0])
+	}
+	if asst.Content[0].Thinking != "I should read the file first" || asst.Content[0].Signature != "sig-abc" {
+		t.Errorf("thinking block wrong: %+v", asst.Content[0])
+	}
+	if asst.Content[1].Type != "text" || asst.Content[2].Type != "tool_use" {
+		t.Errorf("text then tool_use should follow the thinking block: %+v", asst.Content)
+	}
+
+	// Reasoning WITHOUT a captured signature must NOT be re-emitted as a
+	// thinking block (an unsigned thinking block is rejected); the assistant
+	// turn falls back to text + tool_use only.
+	unsigned := anthropicMessages(Request{
+		Messages: []Message{
+			{Role: RoleUser, Text: "do it"},
+			{
+				Role:      RoleAssistant,
+				Text:      "ok",
+				Reasoning: "thought without a signature",
+				ToolCalls: []ToolCall{{ID: "t1", Name: "read", Arguments: json.RawMessage(`{}`)}},
+			},
+		},
+	})
+	for _, c := range unsigned[1].Content {
+		if c.Type == "thinking" {
+			t.Fatalf("unsigned reasoning must not emit a thinking block: %+v", unsigned[1].Content)
+		}
+	}
+}
+
 func TestAnthropicMessagesSkipsEmptyAssistant(t *testing.T) {
 	// A reasoning-only assistant turn (no text, no tool calls) must not become
 	// an empty content array (the API rejects it).
@@ -149,6 +207,7 @@ func TestAnthropicStreamEmitsIncrementalText(t *testing.T) {
 		// Thinking delta on its own block.
 		write("event: content_block_start\ndata: " + `{"type":"content_block_start","index":1,"content_block":{"type":"thinking","thinking":""}}` + "\n\n")
 		write("event: content_block_delta\ndata: " + `{"type":"content_block_delta","index":1,"delta":{"type":"thinking_delta","thinking":"hmm"}}` + "\n\n")
+		write("event: content_block_delta\ndata: " + `{"type":"content_block_delta","index":1,"delta":{"type":"signature_delta","signature":"sig-xyz"}}` + "\n\n")
 		write("event: content_block_stop\ndata: " + `{"type":"content_block_stop","index":1}` + "\n\n")
 		// Tool use: input streamed as partial JSON.
 		write("event: content_block_start\ndata: " + `{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"tu_1","name":"read"}}` + "\n\n")
@@ -193,6 +252,11 @@ func TestAnthropicStreamEmitsIncrementalText(t *testing.T) {
 	}
 	if resp.Reasoning != "hmm" {
 		t.Fatalf("resp.Reasoning = %q, want hmm", resp.Reasoning)
+	}
+	// The thinking block's signature must be captured (interleaved thinking) so
+	// the signed block can be re-emitted on the next turn.
+	if resp.ReasoningEncrypted != "sig-xyz" {
+		t.Fatalf("resp.ReasoningEncrypted = %q, want sig-xyz", resp.ReasoningEncrypted)
 	}
 	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].ID != "tu_1" || resp.ToolCalls[0].Name != "read" {
 		t.Fatalf("tool call wrong: %+v", resp.ToolCalls)

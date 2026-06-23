@@ -368,6 +368,137 @@ func TestCustomReasoningModelAppliesEffort(t *testing.T) {
 	})
 }
 
+// TestCustomOpenAIResponsesStreams is the regression for APP-044 (Responses
+// half): a user-defined openai_responses provider must implement Streamer and
+// forward SSE deltas as they arrive — without Stream the agent's Streamer check
+// fails and the turn blocks with no deltas (dead-air UX).
+func TestCustomOpenAIResponsesStreams(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var seenStream bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Stream bool `json:"stream"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		seenStream = body.Stream
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl := w.(interface{ Flush() })
+		write := func(s string) { _, _ = w.Write([]byte(s)); fl.Flush() }
+		write(`data: {"type":"response.output_text.delta","delta":"Hel"}` + "\n\n")
+		write(`data: {"type":"response.output_text.delta","delta":"lo"}` + "\n\n")
+		write(`data: {"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":4,"output_tokens":2}}}` + "\n\n")
+	}))
+	defer srv.Close()
+	if err := UpsertCustomProvider(CustomProvider{
+		Name: "streamresp", Type: "openai", API: "responses", BaseURL: srv.URL + "/v1", NoAuth: true,
+		Models: []CustomModel{{Name: "stream-r", ID: "wire-r"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := New("streamresp", "stream-r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sp, ok := p.(Streamer)
+	if !ok {
+		t.Fatal("custom openai_responses provider must implement Streamer")
+	}
+	var chunks []string
+	resp, err := sp.Stream(context.Background(),
+		Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}},
+		func(c StreamChunk) {
+			if c.Kind == ChunkText {
+				chunks = append(chunks, c.Text)
+			}
+		})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if !seenStream {
+		t.Fatal("Stream must POST stream:true to /responses")
+	}
+	if len(chunks) != 2 || chunks[0] != "Hel" || chunks[1] != "lo" {
+		t.Fatalf("text chunks = %v, want [Hel lo]", chunks)
+	}
+	if resp.Text != "Hello" {
+		t.Fatalf("resp.Text = %q, want Hello", resp.Text)
+	}
+	if resp.Usage.InputTokens != 4 || resp.Usage.OutputTokens != 2 {
+		t.Fatalf("usage wrong: %+v", resp.Usage)
+	}
+}
+
+// TestCustomAnthropicStreams is the regression for APP-044 (Anthropic half): a
+// user-defined anthropic provider must implement Streamer and forward native
+// Messages SSE deltas (text/thinking) as they arrive, assembling the final
+// Response from the block/delta/stop events.
+func TestCustomAnthropicStreams(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var seenStream bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Stream bool `json:"stream"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		seenStream = body.Stream
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl := w.(interface{ Flush() })
+		write := func(s string) { _, _ = w.Write([]byte(s)); fl.Flush() }
+		write("event: message_start\ndata: " + `{"type":"message_start","message":{"usage":{"input_tokens":9,"cache_read_input_tokens":2}}}` + "\n\n")
+		write("event: content_block_start\ndata: " + `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}` + "\n\n")
+		write("event: content_block_delta\ndata: " + `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hel"}}` + "\n\n")
+		write("event: content_block_delta\ndata: " + `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"lo"}}` + "\n\n")
+		write("event: content_block_stop\ndata: " + `{"type":"content_block_stop","index":0}` + "\n\n")
+		write("event: content_block_start\ndata: " + `{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tu_1","name":"read"}}` + "\n\n")
+		write("event: content_block_delta\ndata: " + `{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"path\":"}}` + "\n\n")
+		write("event: content_block_delta\ndata: " + `{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\"a\"}"}}` + "\n\n")
+		write("event: content_block_stop\ndata: " + `{"type":"content_block_stop","index":1}` + "\n\n")
+		write("event: message_delta\ndata: " + `{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":5}}` + "\n\n")
+		write("event: message_stop\ndata: " + `{"type":"message_stop"}` + "\n\n")
+	}))
+	defer srv.Close()
+	if err := UpsertCustomProvider(CustomProvider{
+		Name: "streamant", Type: "ant", BaseURL: srv.URL + "/v1", NoAuth: true,
+		Models: []CustomModel{{Name: "stream-ant", ID: "claude-wire"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := New("streamant", "stream-ant")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sp, ok := p.(Streamer)
+	if !ok {
+		t.Fatal("custom anthropic provider must implement Streamer")
+	}
+	var chunks []string
+	resp, err := sp.Stream(context.Background(),
+		Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}},
+		func(c StreamChunk) {
+			if c.Kind == ChunkText {
+				chunks = append(chunks, c.Text)
+			}
+		})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if !seenStream {
+		t.Fatal("Stream must POST stream:true to /messages")
+	}
+	if len(chunks) != 2 || chunks[0] != "Hel" || chunks[1] != "lo" {
+		t.Fatalf("text chunks = %v, want [Hel lo]", chunks)
+	}
+	if resp.Text != "Hello" {
+		t.Fatalf("resp.Text = %q, want Hello", resp.Text)
+	}
+	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].ID != "tu_1" || string(resp.ToolCalls[0].Arguments) != `{"path":"a"}` {
+		t.Fatalf("tool call wrong: %+v", resp.ToolCalls)
+	}
+	if resp.Usage.InputTokens != 9 || resp.Usage.OutputTokens != 5 || resp.Usage.CacheReadTokens != 2 {
+		t.Fatalf("usage wrong: %+v", resp.Usage)
+	}
+}
+
 func TestCustomProviderRejectsDuplicateModelAcrossProviders(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	if err := UpsertCustomProvider(CustomProvider{Name: "one", Type: "openai", BaseURL: "http://127.0.0.1:1/v1", NoAuth: true, Models: []CustomModel{{Name: "shared"}}}); err != nil {

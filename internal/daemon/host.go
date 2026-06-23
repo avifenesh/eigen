@@ -267,6 +267,8 @@ func (h *Host) enablePersist(s *Session) {
 		s.rememberHistorySummary(msgs)
 	}
 	s.onAttach = func() { h.saveSessionMeta(s) } // persist LastAttached
+	s.onTokens = func() { h.saveSessionMeta(s) } // persist cumulative tokens on turn done
+	s.onClear = func() { transcript.ClearBackups(transcriptPath(dir, s.ID)) } // purge backups after /clear
 	s.onInactive = func() { h.UnloadIfInactive(s.ID) }
 	h.saveSessionMeta(s)
 }
@@ -445,6 +447,12 @@ func (h *Host) saveSessionMeta(s *Session) {
 		Title: s.title,
 		Perm:  perm,
 		Goal:  goal,
+		// Carry the lifetime token tallies so the cache-hit ratio in stats
+		// survives a restart instead of resetting to 0.
+		CumIn:         s.cumIn,
+		CumOut:        s.cumOut,
+		CumCacheRead:  s.cumCacheRead,
+		CumCacheWrite: s.cumCacheWrite,
 	}
 	// Persist user-granted extra roots (everything past the primary, which is
 	// the session Dir that build() already roots at).
@@ -474,6 +482,12 @@ func (h *Host) Restore(build Builder) int {
 		s.coldPerm = p.meta.Perm
 		s.coldGoal = p.meta.Goal
 		s.coldRoots = append([]string(nil), p.meta.AddedRoots...)
+		// Restore lifetime token tallies so the cache-hit ratio in stats picks up
+		// where it left off rather than collapsing to 0% after a restart.
+		s.cumIn = p.meta.CumIn
+		s.cumOut = p.meta.CumOut
+		s.cumCacheRead = p.meta.CumCacheRead
+		s.cumCacheWrite = p.meta.CumCacheWrite
 		if p.meta.LastAttached > 0 {
 			s.lastAttached = time.Unix(p.meta.LastAttached, 0) // survives restart
 		}

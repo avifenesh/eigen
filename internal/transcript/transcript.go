@@ -162,10 +162,23 @@ func Load(path string) ([]llm.Message, error) {
 	if err == nil && len(msgs) > 0 {
 		return msgs, nil
 	}
+	// Primary is missing, unreadable, or yields zero messages — fall back to the
+	// newest readable backup. NOTE: a deliberately-emptied transcript (e.g.
+	// /clear) must also purge its backups (see ClearBackups), otherwise this
+	// recovery would resurrect the cleared conversation.
 	if recovered, ok := recoverFromBackup(path); ok {
 		return recovered, nil
 	}
 	return msgs, err
+}
+
+// ClearBackups removes all rotated backup generations for a transcript. Call it
+// alongside a deliberate Save([]) (e.g. /clear) so Load's corruption-recovery
+// cannot resurrect the just-cleared conversation from a stale .bak.
+func ClearBackups(path string) {
+	for gen := 0; gen < transcriptBackupGenerations; gen++ {
+		_ = os.Remove(backupPath(path, gen))
+	}
 }
 
 // loadJSONL decodes one eigen-native JSONL file into messages.

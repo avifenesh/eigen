@@ -166,7 +166,7 @@ func TestSuggestStaleCacheBeatsFailure(t *testing.T) {
 	dir := gitRepo(t)
 	writeAndCommit(t, dir, "a.txt", "hello")
 	// Seed an EXPIRED cache directly.
-	saveSuggestCache([]Item{{Kind: "suggest", Title: "old idea", Task: "t"}})
+	saveSuggestCache([]Item{{Kind: "suggest", Title: "old idea", Task: "t"}}, []string{dir})
 	var c suggestCache
 	b, _ := os.ReadFile(suggestCachePath())
 	_ = json.Unmarshal(b, &c)
@@ -213,6 +213,40 @@ func TestScanSuggestDedupAcrossRuns(t *testing.T) {
 	items = scanSuggest(context.Background(), []string{dir}, s)
 	if len(items) != 1 || items[0].Title != "x: fresh idea" {
 		t.Fatalf("new idea should surface, got %+v", items)
+	}
+}
+
+func TestSuggestCacheStaleWhenDirsChange(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	a := gitRepo(t)
+	b := gitRepo(t)
+	writeAndCommit(t, a, "a.txt", "hello")
+	writeAndCommit(t, b, "b.txt", "hello")
+	calls := 0
+	// The model only ever proposes an idea rooted at project a.
+	s := func(context.Context, string, string) (string, error) {
+		calls++
+		return `[{"title":"a: idea","detail":"d","dir":"` + a + `","task":"do it"}]`, nil
+	}
+	// First scan over {a, b}: model called, idea for a cached.
+	if items := scanSuggest(context.Background(), []string{a, b}, s); len(items) != 1 || calls != 1 {
+		t.Fatalf("first scan: items=%d calls=%d", len(items), calls)
+	}
+	// Project a is removed. Even within the TTL the cache is stale because the
+	// dir set changed, so the model is consulted again — and the cached idea for
+	// the now-removed dir must not leak through any fallback.
+	s2 := func(context.Context, string, string) (string, error) {
+		calls++
+		return `[]`, nil // model proposes nothing for the remaining set
+	}
+	items := scanSuggest(context.Background(), []string{b}, s2)
+	if calls != 2 {
+		t.Fatalf("changed dir set should re-consult the model, calls=%d", calls)
+	}
+	for _, it := range items {
+		if it.Dir == a {
+			t.Fatalf("suggestion for removed project must not survive: %+v", items)
+		}
 	}
 }
 

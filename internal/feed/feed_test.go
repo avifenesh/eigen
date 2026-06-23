@@ -44,6 +44,37 @@ func TestScanGitDirty(t *testing.T) {
 	}
 }
 
+func TestDirtyFilesCountsRenameAsOne(t *testing.T) {
+	dir := gitRepo(t)
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	os.WriteFile(filepath.Join(dir, "old.txt"), []byte("hello\n"), 0o644)
+	run("add", ".")
+	run("commit", "-qm", "init")
+	// A rename is one logical change; -z spells it across two NUL fields.
+	run("mv", "old.txt", "new.txt")
+	// Plus one untracked file → two dirty files total.
+	os.WriteFile(filepath.Join(dir, "u.txt"), []byte("x"), 0o644)
+	if n := dirtyFiles(dir); n != 2 {
+		t.Fatalf("rename + untracked should count as 2 files, got %d", n)
+	}
+}
+
+func TestDirtyFilesNewlineInPath(t *testing.T) {
+	dir := gitRepo(t)
+	// A single path containing a newline is one file, not two lines.
+	os.WriteFile(filepath.Join(dir, "a\nb.txt"), []byte("x"), 0o644)
+	if n := dirtyFiles(dir); n != 1 {
+		t.Fatalf("newline-containing path is one file, got %d", n)
+	}
+}
+
 func TestScanGitCleanRepoQuiet(t *testing.T) {
 	dir := gitRepo(t)
 	if items := scanGit([]string{dir}); len(items) != 0 {
