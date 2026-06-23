@@ -64,7 +64,18 @@
   const online = $derived(daemon.status === "online");
   const offline = $derived(daemon.status === "offline");
   const footState = $derived(online ? "online" : offline ? "offline" : "connecting");
-  const version = $derived(daemon.stats?.version ?? "");
+  // Daemon version when known, else this gui binary's own. A mismatch (daemon
+  // built from a different revision than the running GUI) is surfaced so a stale
+  // daemon isn't mistaken for the current build.
+  const version = $derived(daemon.daemonVersion || daemon.guiVersion);
+  const mismatch = $derived(daemon.versionMismatch);
+  const versionTitle = $derived(
+    mismatch
+      ? `version mismatch — daemon ${daemon.daemonVersion}, gui ${daemon.guiVersion}`
+      : version
+        ? `eigen ${version}`
+        : "",
+  );
 </script>
 
 <nav class="rail" aria-label="Primary">
@@ -105,7 +116,11 @@
   <div class="rail__foot rail__foot--{footState}" title={`Daemon ${footState}`}>
     <span class="rail__foot-dot" aria-hidden="true"></span>
     <span class="rail__foot-status">{footState}</span>
-    {#if version}<span class="rail__foot-version tnum">{version}</span>{/if}
+    {#if version}
+      <span class="rail__foot-version tnum" class:rail__foot-version--mismatch={mismatch} title={versionTitle}>
+        {version}{#if mismatch}<span class="rail__foot-warn" aria-hidden="true"> ⚠</span>{/if}
+      </span>
+    {/if}
   </div>
 </nav>
 
@@ -396,6 +411,13 @@
     margin-left: auto;
     color: var(--text-faint);
     letter-spacing: var(--ls-normal);
+  }
+  /* A daemon/gui version mismatch is worth noticing — warn-tinted, not ghosted. */
+  .rail__foot-version--mismatch {
+    color: var(--warn);
+  }
+  .rail__foot-warn {
+    color: var(--warn);
   }
 
   @media (prefers-reduced-motion: reduce) {

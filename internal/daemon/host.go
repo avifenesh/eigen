@@ -209,7 +209,7 @@ func (h *Host) Stats() DaemonStats {
 		Views:            views,
 		RunningTurns:     running,
 		GoVersion:        runtime.Version(),
-		Version:          llm.Version,
+		Version:          llm.FullVersion(),
 		Executable:       exe,
 		BinarySHA256:     sha,
 		VCSRevision:      rev,

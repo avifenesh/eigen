@@ -11,6 +11,7 @@ import (
 
 	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/feed"
+	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -225,6 +226,14 @@ func (b *Bridge) Stats() (*daemon.DaemonStats, error) {
 		return nil, err
 	}
 	return c.Stats()
+}
+
+// GUIVersion returns the build-stamped version of THIS gui binary (the one the
+// desktop shell is running), independent of the daemon's version. The frontend
+// compares it against DaemonStats.version to flag a daemon/gui mismatch — they
+// can diverge when the daemon was started from an older build than the GUI.
+func (b *Bridge) GUIVersion() string {
+	return llm.FullVersion()
 }
 
 // ---- session lifecycle ----

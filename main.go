@@ -170,7 +170,7 @@ func main() {
 	}
 
 	if *showVersion {
-		fmt.Println("eigen", llm.Version)
+		fmt.Println("eigen", llm.FullVersion())
 		return
 	}
 
@@ -261,7 +261,7 @@ func main() {
 	// `eigen version`: print version (used by `eigen remote install` to verify
 	// a freshly-installed remote binary; mirrors the --version flag).
 	if flag.Arg(0) == "version" {
-		fmt.Println("eigen", llm.Version)
+		fmt.Println("eigen", llm.FullVersion())
 		return
 	}
 

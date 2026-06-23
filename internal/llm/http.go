@@ -12,7 +12,9 @@ import (
 	"time"
 )
 
-// Version is eigen's version, reported in the User-Agent of provider requests.
+// Version is eigen's base semantic version, reported in the User-Agent of
+// provider requests and as the headline version everywhere. FullVersion()
+// (version.go) annotates it with the build's git revision.
 const Version = "0.1.0"
 
 const (

@@ -26,6 +26,8 @@ export const Bridge = {
   // health
   Ping: (): Promise<void> => B.Ping(),
   Stats: (): Promise<unknown> => B.Stats(),
+  // version of THIS gui binary (compared against daemon version for mismatch)
+  GUIVersion: (): Promise<string> => B.GUIVersion(),
   // sessions
   Sessions: (): Promise<SessionInfoDTO[]> => B.Sessions(),
   NewSession: (dir: string, model: string, perm: string): Promise<string> =>

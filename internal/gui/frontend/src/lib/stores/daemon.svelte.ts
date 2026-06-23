@@ -11,9 +11,16 @@ type Status = "connecting" | "online" | "offline";
 function createDaemon() {
   let status = $state<Status>("connecting");
   let stats = $state<DaemonStats | null>(null);
+  // The version of THIS gui binary, fetched once on start. Compared against
+  // stats.version (the daemon's) so the chrome can flag a daemon/gui mismatch
+  // (daemon started from an older build than the running GUI).
+  let guiVersion = $state("");
   const reconnectCbs = new Set<() => void>();
 
   function start(): () => void {
+    Bridge.GUIVersion()
+      .then((v) => (guiVersion = v))
+      .catch(() => {});
     const offStats = on<DaemonStats>(ev.daemonStats, (data) => {
       stats = data;
       if (status !== "online") {
@@ -46,6 +53,19 @@ function createDaemon() {
     },
     get stats() {
       return stats;
+    },
+    // This gui binary's own version.
+    get guiVersion() {
+      return guiVersion;
+    },
+    // The daemon's reported version (empty until first stats event).
+    get daemonVersion() {
+      return stats?.version ?? "";
+    },
+    // True when both versions are known and differ — surfaced as a warning in
+    // the chrome so a stale daemon vs fresh GUI (or vice-versa) is visible.
+    get versionMismatch() {
+      return !!guiVersion && !!stats?.version && guiVersion !== stats.version;
     },
     start,
     // Register a callback fired whenever the daemon transitions back to online.
