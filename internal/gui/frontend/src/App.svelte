@@ -16,6 +16,7 @@
   import Dreaming from "./views/Dreaming.svelte";
   import Routing from "./views/Routing.svelte";
   import Crons from "./views/Crons.svelte";
+  import Plugins from "./views/Plugins.svelte";
 
   // Root lifecycle: start the daemon health stream; its teardown runs on unmount.
   onMount(() => {
@@ -53,6 +54,8 @@
           <Routing />
         {:else if router.route === "crons"}
           <Crons />
+        {:else if router.route === "plugins"}
+          <Plugins />
         {:else}
           <EmptyState glyph="λ" title={router.route} line="This view is coming soon." />
         {/if}

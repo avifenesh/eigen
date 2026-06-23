@@ -15,6 +15,7 @@ import type {
   RoutingDTO,
   ObserveSummaryDTO,
   CronsDTO,
+  PluginsDTO,
 } from "$lib/types";
 
 export const Bridge = {
@@ -78,4 +79,9 @@ export const Bridge = {
   // crons
   Crons: (): Promise<CronsDTO | null> => B.Crons(),
   SetTimer: (unit: string, verb: string): Promise<void> => B.SetTimer(unit, verb),
+  // plugins
+  Plugins: (): Promise<PluginsDTO | null> => B.Plugins(),
+  SetMarketEnabled: (name: string, enabled: boolean): Promise<boolean> => B.SetMarketEnabled(name, enabled),
+  RemoveMarketplace: (name: string): Promise<boolean> => B.RemoveMarketplace(name),
+  RemovePlugin: (name: string): Promise<boolean> => B.RemovePlugin(name),
 };

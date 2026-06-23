@@ -234,6 +234,30 @@ export type CronsDTO = {
   systemdAvail: boolean;
 };
 
+export type InstalledPluginDTO = {
+  name: string;
+  marketplace?: string;
+  version?: string;
+  description?: string;
+  installedMs: number;
+  skills?: string[];
+  agents?: string[];
+  mcpServers?: string[];
+  commands?: string[];
+  hooks?: number;
+  scanStatus?: string;
+  scanCount?: number;
+  warnings?: string[];
+};
+export type MarketplaceDTO = {
+  name: string;
+  source: string;
+  owner?: string;
+  disabled: boolean;
+  addedMs: number;
+};
+export type PluginsDTO = { plugins: InstalledPluginDTO[]; marketplaces: MarketplaceDTO[] };
+
 export type ObserveSummaryDTO = {
   records: number;
   byKind: CountDTO[];
