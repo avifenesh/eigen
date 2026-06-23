@@ -19,6 +19,7 @@ import type {
   ConfigDTO,
   FeedDTO,
   FeedItemDTO,
+  MachinesDTO,
 } from "$lib/types";
 
 export const Bridge = {
@@ -97,4 +98,9 @@ export const Bridge = {
   FeedFor: (dir: string): Promise<FeedItemDTO[]> => B.FeedFor(dir),
   StartFromFeed: (dir: string, task: string): Promise<string> => B.StartFromFeed(dir, task),
   DismissFeed: (key: string): Promise<void> => B.DismissFeed(key),
+  // machines / remote
+  Machines: (): Promise<MachinesDTO | null> => B.Machines(),
+  RemoteSessions: (target: string): Promise<SessionInfoDTO[]> => B.RemoteSessions(target),
+  // sessions
+  ExportSession: (id: string): Promise<string> => B.ExportSession(id),
 };

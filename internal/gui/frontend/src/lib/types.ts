@@ -279,6 +279,18 @@ export type FeedItemDTO = {
 };
 export type FeedDTO = { items: FeedItemDTO[]; scannedMs: number; fresh: boolean };
 
+export type MachineDTO = {
+  name: string;
+  ssh: string;
+  addr?: string;
+  dir?: string;
+  model?: string;
+  perm?: string;
+  saved: boolean;
+  detected: boolean;
+};
+export type MachinesDTO = { machines: MachineDTO[] };
+
 export type ObserveSummaryDTO = {
   records: number;
   byKind: CountDTO[];

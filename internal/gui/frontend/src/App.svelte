@@ -15,8 +15,12 @@
   import Memory from "./views/Memory.svelte";
   import Skills from "./views/Skills.svelte";
   import Agents from "./views/Agents.svelte";
+  import Live from "./views/Live.svelte";
+  import Sessions from "./views/Sessions.svelte";
   import Dreaming from "./views/Dreaming.svelte";
   import Routing from "./views/Routing.svelte";
+  import Machines from "./views/Machines.svelte";
+  import Profile from "./views/Profile.svelte";
   import Crons from "./views/Crons.svelte";
   import Plugins from "./views/Plugins.svelte";
   import Config from "./views/Config.svelte";
@@ -55,10 +59,18 @@
           <Skills />
         {:else if router.route === "agents"}
           <Agents />
+        {:else if router.route === "live"}
+          <Live />
+        {:else if router.route === "sessions"}
+          <Sessions />
         {:else if router.route === "dreaming"}
           <Dreaming />
         {:else if router.route === "routing"}
           <Routing />
+        {:else if router.route === "machines"}
+          <Machines />
+        {:else if router.route === "profile"}
+          <Profile />
         {:else if router.route === "crons"}
           <Crons />
         {:else if router.route === "plugins"}
