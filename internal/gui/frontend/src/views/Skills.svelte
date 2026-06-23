@@ -11,6 +11,7 @@
   import Badge from "$lib/components/Badge.svelte";
   import Markdown from "$lib/components/Markdown.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import { trapFocus } from "$lib/actions";
 
   let data = $state<SkillsDTO | null>(null);
   let loading = $state(true);
@@ -227,7 +228,7 @@
     onclick={closePreview}
     onkeydown={(e) => (e.key === "Enter" || e.key === " ") && closePreview()}
   ></div>
-  <div class="sheet" role="dialog" aria-modal="true" aria-label="{openSkill.name} preview">
+  <div class="sheet" role="dialog" aria-modal="true" tabindex="-1" use:trapFocus aria-label="{openSkill.name} preview">
     <header class="sheet__head">
       <div class="sheet__title-wrap">
         <h2 class="sheet__title">{openSkill.name}</h2>

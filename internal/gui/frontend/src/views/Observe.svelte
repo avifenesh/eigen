@@ -458,4 +458,10 @@
   .tbl__err {
     color: var(--error);
   }
+  @media (prefers-reduced-motion: reduce) {
+    .cache__bar span,
+    .obs__tab {
+      transition: none;
+    }
+  }
 </style>

@@ -8,6 +8,8 @@
   import { Bridge } from "$lib/bridge";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { now } from "$lib/stores/clock.svelte";
+  import { taskDot } from "$lib/status";
+  import { trapFocus } from "$lib/actions";
   import type { AgentsDTO, BgTaskDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
   import Button from "$lib/components/Button.svelte";
@@ -72,12 +74,6 @@
     return all.filter((t) => t.status === filter);
   });
 
-  function dotState(s: string): "working" | "ok" | "error" | "idle" {
-    if (s === "running") return "working";
-    if (s === "done") return "ok";
-    if (s === "error" || s === "lost") return "error";
-    return "idle";
-  }
   function tone(s: string): "brand" | "success" | "error" | "warn" | "neutral" {
     if (s === "running") return "brand";
     if (s === "done") return "success";
@@ -180,7 +176,7 @@
               <div class="ag">
                 <div class="ag__main">
                   <div class="ag__top">
-                    <StatusDot state={dotState(t.status)} size={8} pulse={t.status === "running"} />
+                    <StatusDot state={taskDot(t.status)} size={8} pulse={t.status === "running"} />
                     <span class="ag__id tnum">{t.id}</span>
                     <Badge tone={tone(t.status)}>{t.canceling ? "canceling" : t.status}</Badge>
                     {#if t.role}<Badge tone="info">{t.role}</Badge>{/if}
@@ -231,10 +227,10 @@
     onclick={closeTranscript}
     onkeydown={(e) => (e.key === "Enter" || e.key === " ") && closeTranscript()}
   ></div>
-  <div class="sheet" role="dialog" aria-modal="true" aria-label="Task {openTask.id} transcript">
+  <div class="sheet" role="dialog" aria-modal="true" tabindex="-1" use:trapFocus aria-label="Task {openTask.id} transcript">
     <header class="sheet__head">
       <div class="sheet__title-wrap">
-        <StatusDot state={dotState(openTask.status)} size={8} pulse={openTask.status === "running"} />
+        <StatusDot state={taskDot(openTask.status)} size={8} pulse={openTask.status === "running"} />
         <h2 class="sheet__title tnum">{openTask.id}</h2>
         <Badge tone={tone(openTask.status)}>{openTask.status}</Badge>
       </div>

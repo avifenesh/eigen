@@ -70,8 +70,8 @@
     acting["m:" + name] = true;
     confirming = null;
     try {
-      await Bridge.RemoveMarketplace(name);
-      toasts.info(`removed marketplace ${name}`);
+      const ok = await Bridge.RemoveMarketplace(name);
+      toasts.info(ok ? `removed marketplace ${name}` : `${name} not found`);
       await load();
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : String(e));

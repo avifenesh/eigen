@@ -8,6 +8,7 @@
   import { daemon } from "$lib/stores/daemon.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { Bridge } from "$lib/bridge";
+  import { sessionDot } from "$lib/status";
   import Card from "$lib/components/Card.svelte";
   import Button from "$lib/components/Button.svelte";
   import Badge from "$lib/components/Badge.svelte";
@@ -85,7 +86,7 @@
         <Card interactive onclick={() => router.go("chat", s.id)} title={s.dir}>
           <div class="sc">
             <div class="sc__top">
-              <StatusDot state={s.status === "running" ? "working" : "idle"} size={7} />
+              <StatusDot state={sessionDot(s.status)} size={7} />
               <span class="sc__title">{s.title || "untitled session"}</span>
               <button class="sc__x" title="Remove session" onclick={(e) => remove(s.id, e)} aria-label="Remove">×</button>
             </div>

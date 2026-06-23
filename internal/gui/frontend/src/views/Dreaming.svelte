@@ -15,6 +15,7 @@
   import DiffView from "$lib/components/DiffView.svelte";
   import VirtualList from "$lib/components/VirtualList.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import { trapFocus } from "$lib/actions";
 
   let data = $state<DreamingDTO | null>(null);
   let scope = $state<"project" | "global">("project");
@@ -186,7 +187,7 @@
     onclick={closeDiff}
     onkeydown={(e) => (e.key === "Enter" || e.key === " ") && closeDiff()}
   ></div>
-  <div class="sheet" role="dialog" aria-modal="true" aria-label="Consolidation diff">
+  <div class="sheet" role="dialog" aria-modal="true" tabindex="-1" use:trapFocus aria-label="Consolidation diff">
     <header class="sheet__head">
       <div class="sheet__title-wrap">
         <h2 class="sheet__title">Consolidation diff</h2>

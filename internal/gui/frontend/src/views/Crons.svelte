@@ -83,7 +83,7 @@
                     <div class="cron__top">
                       <StatusDot state={c.active ? "ok" : "idle"} size={7} />
                       <span class="cron__name">{c.name}</span>
-                      <Badge tone={c.active ? "success" : "neutral"}>{c.active ? "active" : "inactive"}</Badge>
+                      <Badge tone={c.active ? "success" : "neutral"}>{c.active ? "scheduled" : "no next run"}</Badge>
                     </div>
                     <div class="cron__cmd selectable">{c.command}</div>
                     <div class="cron__times">
