@@ -17,25 +17,29 @@
   // Local working copy of values so inputs are editable before commit.
   let values = $state<Record<string, string>>({});
 
+  // alive: false once this view unmounts, so a late load()/commit() resolution
+  // can't write to orphaned $state or fire a toast after nav-away.
+  let alive = true;
   let loadSeq = 0;
   async function load() {
     const seq = ++loadSeq;
     loading = true;
     try {
       const d = await Bridge.Config();
-      if (seq === loadSeq && d) {
+      if (alive && seq === loadSeq && d) {
         data = d;
         values = Object.fromEntries(d.fields.map((f) => [f.key, f.value]));
       }
     } catch (e) {
-      if (seq === loadSeq) toasts.error(e instanceof Error ? e.message : String(e));
+      if (alive && seq === loadSeq) toasts.error(e instanceof Error ? e.message : String(e));
     } finally {
-      if (seq === loadSeq) loading = false;
+      if (alive && seq === loadSeq) loading = false;
     }
   }
   $effect(() => {
     load();
     return () => {
+      alive = false;
       loadSeq++;
     };
   });
@@ -49,6 +53,7 @@
     saving[key] = true;
     try {
       const stored = await Bridge.SetConfig(key, value);
+      if (!alive) return;
       values[key] = stored;
       if (data) {
         const f = data.fields.find((x) => x.key === key);
@@ -56,6 +61,7 @@
       }
       toasts.success(`${key} saved`);
     } catch (e) {
+      if (!alive) return;
       // Reject: revert to the stored value and surface why.
       if (data) {
         const f = data.fields.find((x) => x.key === key);
@@ -63,7 +69,7 @@
       }
       toasts.error(e instanceof Error ? e.message : String(e));
     } finally {
-      delete saving[key];
+      if (alive) delete saving[key];
     }
   }
 
