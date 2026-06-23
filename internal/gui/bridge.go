@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/avifenesh/eigen/internal/daemon"
+	"github.com/avifenesh/eigen/internal/feed"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -25,17 +26,27 @@ type Bridge struct {
 	app    *application.App
 	ensure func() (*daemon.Client, error)
 
+	// Proactive-feed inputs (the home base's "act on" surface). suggest is the
+	// LLM suggester (nil = suggestions off; git/github/memory signals still
+	// flow); dirs supplies the project universe to scan. Both injected by main
+	// so the bridge owns no model/provider construction.
+	suggest feed.Suggester
+	dirs    func() []string
+
 	mu       sync.Mutex
 	ctrl     *daemon.Client
 	pumps    map[string]*sessionPump
 	closing  bool
 	pollStop chan struct{}
+	feedStop chan struct{}
+	lastFeed feed.Feed // most-recent scan, so DismissFeed can rebuild an Item from its key
 }
 
 // NewBridge constructs the bridge. ensure connects to (and lazily spawns) the
-// daemon — wired to main.ensureDaemon.
-func NewBridge(ensure func() (*daemon.Client, error)) *Bridge {
-	return &Bridge{ensure: ensure, pumps: map[string]*sessionPump{}}
+// daemon; suggest + dirs power the proactive feed (both may be nil/empty — the
+// feed then yields only signal-derived items or nothing).
+func NewBridge(ensure func() (*daemon.Client, error), suggest feed.Suggester, dirs func() []string) *Bridge {
+	return &Bridge{ensure: ensure, suggest: suggest, dirs: dirs, pumps: map[string]*sessionPump{}}
 }
 
 // SetApp wires the Wails app for event emission. Called from the bootstrap
@@ -50,9 +61,12 @@ func (b *Bridge) ServiceStartup(_ context.Context, _ application.ServiceOptions)
 	}
 	b.mu.Lock()
 	b.pollStop = make(chan struct{})
+	b.feedStop = make(chan struct{})
 	stop := b.pollStop
+	feedStop := b.feedStop
 	b.mu.Unlock()
 	go b.healthLoop(stop)
+	go b.feedLoop(feedStop)
 	return nil
 }
 
@@ -172,10 +186,15 @@ func (b *Bridge) Shutdown() {
 	b.ctrl = nil
 	stop := b.pollStop
 	b.pollStop = nil
+	feedStop := b.feedStop
+	b.feedStop = nil
 	b.mu.Unlock()
 
 	if stop != nil {
 		close(stop)
+	}
+	if feedStop != nil {
+		close(feedStop)
 	}
 	for _, p := range pumps {
 		p.stopOnce.Do(func() { close(p.stop) })

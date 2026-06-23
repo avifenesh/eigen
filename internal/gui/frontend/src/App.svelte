@@ -3,6 +3,7 @@
   import { router } from "$lib/router.svelte";
   import { daemon } from "$lib/stores/daemon.svelte";
   import { sessions } from "$lib/stores/sessions.svelte";
+  import { feed } from "$lib/stores/feed.svelte";
   import Rail from "$lib/components/Rail.svelte";
   import TopBar from "$lib/components/TopBar.svelte";
   import ToastHost from "$lib/components/ToastHost.svelte";
@@ -22,9 +23,13 @@
 
   // Root lifecycle: start the daemon health stream; its teardown runs on unmount.
   onMount(() => {
-    const stop = daemon.start();
+    const stopDaemon = daemon.start();
+    const stopFeed = feed.start();
     sessions.refresh();
-    return stop;
+    return () => {
+      stopDaemon();
+      stopFeed();
+    };
   });
 
   // Refresh the session list whenever the daemon comes (back) online. Scoped to

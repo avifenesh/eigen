@@ -1,21 +1,65 @@
 <script lang="ts">
-  // Home — the session board. Live sessions as actionable cards; a hero action
-  // to start one. This is the "home base": open it and act. (The proactive feed
-  // card variant arrives once a Bridge.Feed op exists — until then the board
-  // shows real sessions, never a dead surface.)
+  // Home — the home base, NOT a session list. Opening it answers, top to
+  // bottom: what should I act on, what's live right now, where did I leave off.
+  // Five zones, each rendering independently so a slow/empty one never blanks
+  // the page: cockpit (greeting + live stats) · Act On (proactive feed) ·
+  // Ideas (LLM suggestions) · Working now (live sessions) · Resume (recent).
   import { sessions } from "$lib/stores/sessions.svelte";
-  import { router } from "$lib/router.svelte";
   import { daemon } from "$lib/stores/daemon.svelte";
+  import { feed } from "$lib/stores/feed.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
-  import { Bridge } from "$lib/bridge";
+  import { router } from "$lib/router.svelte";
   import { sessionDot } from "$lib/status";
-  import Card from "$lib/components/Card.svelte";
+  import { Bridge } from "$lib/bridge";
+  import type { FeedItemDTO, SessionInfoDTO } from "$lib/types";
   import Button from "$lib/components/Button.svelte";
   import Badge from "$lib/components/Badge.svelte";
   import StatusDot from "$lib/components/StatusDot.svelte";
-  import EmptyState from "$lib/components/EmptyState.svelte";
 
   let starting = $state(false);
+  let acting = $state<Record<string, boolean>>({});
+
+  $effect(() => {
+    sessions.refresh();
+  });
+
+  const stats = $derived(daemon.stats);
+  const cacheHit = $derived(
+    stats && (stats.input_tokens ?? 0) > 0
+      ? Math.round(((stats.cache_read_tokens ?? 0) / (stats.input_tokens ?? 1)) * 100)
+      : 0,
+  );
+
+  // Live sessions = working or awaiting approval; recent = everything else.
+  const live = $derived(sessions.list.filter((s) => s.status === "working" || s.status === "approval"));
+  const recent = $derived(sessions.list.slice(0, 6));
+
+  function greeting(): string {
+    const h = new Date().getHours();
+    if (h < 5) return "Burning the midnight oil";
+    if (h < 12) return "Good morning";
+    if (h < 18) return "Good afternoon";
+    return "Good evening";
+  }
+
+  function kindGlyph(kind: string): string {
+    switch (kind) {
+      case "git": return "±";
+      case "github": return "◉";
+      case "memory": return "↺";
+      case "suggest": return "✧";
+      default: return "•";
+    }
+  }
+  function kindTone(kind: string): "warn" | "info" | "brand" | "success" | "neutral" {
+    switch (kind) {
+      case "git": return "warn";
+      case "github": return "info";
+      case "memory": return "brand";
+      case "suggest": return "success";
+      default: return "neutral";
+    }
+  }
 
   async function startSession() {
     starting = true;
@@ -30,14 +74,16 @@
     }
   }
 
-  async function remove(id: string, ev: MouseEvent) {
-    ev.stopPropagation();
+  async function actOn(it: FeedItemDTO) {
+    acting[it.key] = true;
     try {
-      await Bridge.RemoveSession(id);
+      const id = await Bridge.StartFromFeed(it.dir ?? "", it.task);
       await sessions.refresh();
-      toasts.info("session removed");
+      router.go("chat", id);
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      delete acting[it.key];
     }
   }
 
@@ -50,151 +96,438 @@
     if (h < 24) return `${h}h ago`;
     return `${Math.floor(h / 24)}d ago`;
   }
-
   function base(dir: string): string {
-    const p = dir.replace(/\/$/, "").split("/");
-    return p[p.length - 1] || dir;
+    const p = (dir ?? "").replace(/\/$/, "").split("/");
+    return p[p.length - 1] || dir || "";
+  }
+  function openSession(s: SessionInfoDTO) {
+    router.go("chat", s.id);
   }
 </script>
 
 <div class="home selectable">
-  <header class="home__hero">
-    <div>
-      <h1 class="home__greet">Your agent, everywhere.</h1>
-      <p class="home__sub">
-        {sessions.count} session{sessions.count === 1 ? "" : "s"} · daemon {daemon.status}
-      </p>
+  <!-- ZONE 1 · COCKPIT -->
+  <header class="cockpit">
+    <div class="cockpit__lede">
+      <h1 class="cockpit__greet">{greeting()}.</h1>
+      <p class="cockpit__sub">Your agent, everywhere — here's what's worth your attention.</p>
     </div>
     <Button variant="primary" size="lg" loading={starting} onclick={startSession}>Start a session</Button>
   </header>
 
-  {#if sessions.loading && sessions.count === 0}
-    <div class="home__grid">
-      {#each Array(3) as _, i (i)}
-        <div class="skeleton"></div>
-      {/each}
+  <button class="strip" onclick={() => router.go("observe")} title="Open Observe">
+    <div class="strip__stat"><span class="strip__v tnum">{stats?.sessions ?? sessions.count}</span><span class="strip__l">sessions</span></div>
+    <div class="strip__sep"></div>
+    <div class="strip__stat"><span class="strip__v tnum" class:strip__v--live={(stats?.running_turns ?? 0) > 0}>{stats?.running_turns ?? 0}</span><span class="strip__l">running</span></div>
+    <div class="strip__sep"></div>
+    <div class="strip__stat"><span class="strip__v tnum">{stats?.bg_tasks ?? 0}</span><span class="strip__l">agents</span></div>
+    <div class="strip__sep"></div>
+    <div class="strip__stat"><span class="strip__v tnum">{cacheHit}%</span><span class="strip__l">cache hit</span></div>
+  </button>
+
+  <!-- ZONE 2 · ACT ON (the proactive feed) -->
+  <section class="zone">
+    <div class="zone__head">
+      <h2 class="zone__title">Act on</h2>
+      {#if feed.actOn.length > 0}<span class="zone__n tnum">{feed.actOn.length}</span>{/if}
     </div>
-  {:else if sessions.count === 0}
-    <EmptyState glyph="◆" title="No sessions yet" line="Start one and it shows up here — resumable, durable, always live.">
-      {#snippet action()}
-        <Button variant="primary" loading={starting} onclick={startSession}>Start a session</Button>
-      {/snippet}
-    </EmptyState>
-  {:else}
-    <div class="home__grid">
-      {#each sessions.list as s (s.id)}
-        <Card interactive onclick={() => router.go("chat", s.id)} title={s.dir}>
-          <div class="sc">
-            <div class="sc__top">
-              <StatusDot state={sessionDot(s.status)} size={7} />
-              <span class="sc__title">{s.title || "untitled session"}</span>
-              <button class="sc__x" title="Remove session" onclick={(e) => remove(s.id, e)} aria-label="Remove">×</button>
+    {#if feed.actOn.length === 0}
+      <p class="zone__empty">
+        {feed.fresh ? "Nothing loose to act on — clean tree, no open work." : "Scanning your projects for things to act on…"}
+      </p>
+    {:else}
+      <div class="cards">
+        {#each feed.actOn as it (it.key)}
+          <div class="fc fc--{kindTone(it.kind)}">
+            <div class="fc__head">
+              <span class="fc__glyph">{kindGlyph(it.kind)}</span>
+              <span class="fc__title">{it.title}</span>
+              <button class="fc__x" title="Dismiss" aria-label="Dismiss" onclick={() => feed.dismiss(it.key)}>×</button>
             </div>
-            <div class="sc__dir">{base(s.dir)}</div>
-            <div class="sc__meta">
-              {#if s.model}<Badge tone="brand">{s.model}</Badge>{/if}
-              <span class="sc__msgs tnum">{s.turns} turn{s.turns === 1 ? "" : "s"}</span>
-              <span class="sc__when">{rel(s.updated)}</span>
+            {#if it.detail}<p class="fc__detail">{it.detail}</p>{/if}
+            <div class="fc__foot">
+              {#if it.dirName}<Badge tone="neutral" truncate>{it.dirName}</Badge>{/if}
+              <span class="fc__spacer"></span>
+              <Button variant="secondary" size="sm" loading={acting[it.key]} onclick={() => actOn(it)}>Start →</Button>
             </div>
           </div>
-        </Card>
-      {/each}
-    </div>
+        {/each}
+      </div>
+    {/if}
+  </section>
+
+  <!-- ZONE 3 · IDEAS (LLM suggestions) -->
+  {#if feed.ideas.length > 0}
+    <section class="zone">
+      <div class="zone__head">
+        <h2 class="zone__title">Ideas</h2>
+        <Badge tone="success">suggested</Badge>
+      </div>
+      <div class="cards">
+        {#each feed.ideas as it (it.key)}
+          <div class="fc fc--success">
+            <div class="fc__head">
+              <span class="fc__glyph">✧</span>
+              <span class="fc__title">{it.title}</span>
+              <button class="fc__x" title="Dismiss" aria-label="Dismiss" onclick={() => feed.dismiss(it.key)}>×</button>
+            </div>
+            {#if it.detail}<p class="fc__detail">{it.detail}</p>{/if}
+            <div class="fc__foot">
+              {#if it.dirName}<Badge tone="neutral" truncate>{it.dirName}</Badge>{/if}
+              <span class="fc__spacer"></span>
+              <Button variant="ghost" size="sm" loading={acting[it.key]} onclick={() => actOn(it)}>Explore →</Button>
+            </div>
+          </div>
+        {/each}
+      </div>
+    </section>
   {/if}
+
+  <!-- ZONE 4 · WORKING NOW -->
+  {#if live.length > 0}
+    <section class="zone">
+      <div class="zone__head">
+        <h2 class="zone__title">Working now</h2>
+        <span class="zone__n tnum">{live.length}</span>
+      </div>
+      <div class="live">
+        {#each live as s (s.id)}
+          <button class="lr" onclick={() => openSession(s)}>
+            <StatusDot state={sessionDot(s.status)} size={8} pulse={s.status === "working" || s.status === "approval"} />
+            <span class="lr__title">{s.title || "untitled session"}</span>
+            {#if s.status === "approval"}<Badge tone="warn">needs approval</Badge>{/if}
+            <span class="lr__dir">{base(s.dir)}</span>
+            {#if s.model}<Badge tone="neutral" truncate>{s.model}</Badge>{/if}
+          </button>
+        {/each}
+      </div>
+    </section>
+  {/if}
+
+  <!-- ZONE 5 · RESUME -->
+  <section class="zone">
+    <div class="zone__head">
+      <h2 class="zone__title">Resume</h2>
+      <Button variant="link" size="sm" onclick={() => router.go("sessions")}>All sessions</Button>
+    </div>
+    {#if sessions.loading && sessions.count === 0}
+      <div class="rows">{#each Array(4) as _, i (i)}<div class="row-skel"></div>{/each}</div>
+    {:else if recent.length === 0}
+      <p class="zone__empty">No sessions yet — start one above.</p>
+    {:else}
+      <div class="rows">
+        {#each recent as s (s.id)}
+          <button class="row" onclick={() => openSession(s)}>
+            <StatusDot state={sessionDot(s.status)} size={6} />
+            <span class="row__title">{s.title || "untitled session"}</span>
+            <span class="row__dir">{base(s.dir)}</span>
+            <span class="row__meta tnum">{s.turns} turn{s.turns === 1 ? "" : "s"}</span>
+            <span class="row__when">{rel(s.updated)}</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
+  </section>
 </div>
 
 <style>
   .home {
     height: 100%;
     overflow-y: auto;
-    padding: var(--sp-9) var(--sp-10);
+    padding: var(--sp-9) var(--sp-10) var(--sp-10);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-9);
+    max-width: 1080px;
   }
-  .home__hero {
+
+  /* ZONE 1 · cockpit */
+  .cockpit {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--sp-6);
-    margin-bottom: var(--sp-9);
   }
-  .home__greet {
+  .cockpit__greet {
     margin: 0;
     font: var(--fw-bold) var(--fs-display) / var(--lh-tight) var(--font-display);
     letter-spacing: var(--ls-display);
     color: var(--text-primary);
   }
-  .home__sub {
+  .cockpit__sub {
     margin: var(--sp-3) 0 0;
     color: var(--text-muted);
     font-size: var(--fs-body-sm);
   }
-  .home__grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: var(--sp-5);
+  .strip {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-6);
+    padding: var(--sp-5) var(--sp-7);
+    background: var(--bg-well);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--r-lg);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color var(--dur-fast) var(--ease-out);
   }
-  .skeleton {
-    height: 108px;
-    border-radius: var(--r-md);
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: shimmer 1.4s ease-in-out infinite;
+  .strip:hover {
+    border-color: var(--border-subtle);
   }
-  @keyframes shimmer {
-    to {
-      background-position: -200% 0;
-    }
+  .strip:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
   }
-  @media (prefers-reduced-motion: reduce) {
-    .skeleton {
-      animation: none;
-    }
-  }
-  .sc {
-    padding: var(--sp-5);
+  .strip__stat {
     display: flex;
     flex-direction: column;
+    gap: var(--sp-1);
+  }
+  .strip__v {
+    font: var(--fw-bold) var(--fs-h1) / 1 var(--font-display);
+    color: var(--text-primary);
+  }
+  .strip__v--live {
+    color: var(--working);
+  }
+  .strip__l {
+    font-size: var(--fs-micro);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+  }
+  .strip__sep {
+    width: 1px;
+    align-self: stretch;
+    background: var(--divider);
+  }
+
+  /* zones */
+  .zone {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-5);
+  }
+  .zone__head {
+    display: flex;
+    align-items: center;
     gap: var(--sp-4);
   }
-  .sc__top {
+  .zone__title {
+    margin: 0;
+    font: var(--fw-semibold) var(--fs-label) / 1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--text-faint);
+  }
+  .zone__n {
+    font-size: var(--fs-label);
+    color: var(--text-ghost);
+  }
+  .zone__empty {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--fs-body-sm);
+  }
+
+  /* ZONE 2/3 · feed cards */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: var(--sp-5);
+  }
+  .fc {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    padding: var(--sp-5);
+    background: var(--bg-raised);
+    border: 1px solid var(--border-hairline);
+    border-left: 2px solid var(--border-subtle);
+    border-radius: var(--r-md);
+    transition:
+      background var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out),
+      transform var(--dur-fast) var(--ease-out);
+  }
+  .fc:hover {
+    background: var(--bg-raised-2);
+    transform: translateY(-1px);
+  }
+  .fc--warn {
+    border-left-color: var(--warn);
+  }
+  .fc--info {
+    border-left-color: var(--info);
+  }
+  .fc--brand {
+    border-left-color: var(--brand);
+  }
+  .fc--success {
+    border-left-color: var(--success);
+  }
+  .fc--neutral {
+    border-left-color: var(--border-strong);
+  }
+  .fc__head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-3);
+  }
+  .fc__glyph {
+    color: var(--text-secondary);
+    font-size: var(--fs-body);
+  }
+  .fc__title {
+    flex: 1;
+    font-weight: var(--fw-semibold);
+    font-size: var(--fs-body-sm);
+    color: var(--text-primary);
+    line-height: var(--lh-snug);
+  }
+  .fc__x {
+    border: none;
+    background: transparent;
+    color: var(--text-ghost);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 0 var(--sp-1);
+    border-radius: var(--r-xs);
+  }
+  .fc__x:hover {
+    color: var(--text-primary);
+    background: var(--state-hover);
+  }
+  .fc__detail {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: var(--lh-snug);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .fc__foot {
     display: flex;
     align-items: center;
     gap: var(--sp-3);
+    margin-top: var(--sp-2);
   }
-  .sc__title {
+  .fc__spacer {
     flex: 1;
-    font-weight: var(--fw-semibold);
-    font-size: var(--fs-body);
+  }
+
+  /* ZONE 4 · working now */
+  .live {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+  }
+  .lr {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    padding: var(--sp-4) var(--sp-5);
+    background: var(--bg-raised);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--r-md);
+    cursor: pointer;
+    text-align: left;
+    transition: background var(--dur-fast) var(--ease-out);
+  }
+  .lr:hover {
+    background: var(--bg-raised-2);
+  }
+  .lr:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .lr__title {
+    font-weight: var(--fw-medium);
+    font-size: var(--fs-body-sm);
+    color: var(--text-primary);
+  }
+  .lr__dir {
+    margin-left: auto;
+    font-size: var(--fs-label);
+    color: var(--text-muted);
+  }
+
+  /* ZONE 5 · resume rows */
+  .rows {
+    display: flex;
+    flex-direction: column;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    padding: var(--sp-4) var(--sp-3);
+    border: none;
+    border-bottom: 1px solid var(--divider);
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    transition: background var(--dur-fast) var(--ease-out);
+  }
+  .row:last-child {
+    border-bottom: none;
+  }
+  .row:hover {
+    background: var(--state-hover);
+  }
+  .row:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .row__title {
+    flex: 1;
+    font-size: var(--fs-body-sm);
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .sc__x {
-    border: none;
-    background: transparent;
-    color: var(--text-ghost);
-    cursor: pointer;
-    font-size: 16px;
-    line-height: 1;
-    padding: 0 var(--sp-1);
-    border-radius: var(--r-xs);
-  }
-  .sc__x:hover {
-    color: var(--error);
-    background: var(--error-bg);
-  }
-  .sc__dir {
-    font-size: var(--fs-body-sm);
+  .row__dir {
+    font-size: var(--fs-label);
     color: var(--text-muted);
   }
-  .sc__meta {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-4);
+  .row__meta {
     font-size: var(--fs-label);
     color: var(--text-ghost);
+    min-width: 64px;
+    text-align: right;
   }
-  .sc__msgs {
-    margin-left: auto;
+  .row__when {
+    font-size: var(--fs-label);
+    color: var(--text-faint);
+    min-width: 64px;
+    text-align: right;
+  }
+  .row-skel {
+    height: 34px;
+    border-bottom: 1px solid var(--divider);
+    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
+    background-size: 200% 100%;
+    animation: home-shimmer 1.4s ease-in-out infinite;
+  }
+  @keyframes home-shimmer {
+    to {
+      background-position: -200% 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fc,
+    .lr,
+    .row,
+    .strip {
+      transition: none;
+    }
+    .row-skel {
+      animation: none;
+    }
   }
 </style>

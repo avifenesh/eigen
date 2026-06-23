@@ -9,6 +9,7 @@ export const ev = {
   sessionClosed: (id: string) => `eigen:session:${id}:closed`,
   daemonStats: "eigen:daemon:stats",
   daemonHealth: "eigen:daemon:health",
+  feed: "eigen:feed",
 };
 
 // on subscribes to a Wails event and hands the typed payload to the callback,

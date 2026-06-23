@@ -5,6 +5,7 @@
   import { router, type Route } from "$lib/router.svelte";
   import { sessions } from "$lib/stores/sessions.svelte";
   import { daemon } from "$lib/stores/daemon.svelte";
+  import { feed } from "$lib/stores/feed.svelte";
 
   type Item = { route: Route; label: string; glyph: string };
   type Zone = { name: string; items: Item[] };
@@ -16,6 +17,8 @@
         { route: "home", label: "Home", glyph: "◆" },
         { route: "chat", label: "Chat", glyph: "▶" },
         { route: "agents", label: "Agents", glyph: "⋔" },
+        { route: "live", label: "Live", glyph: "◐" },
+        { route: "sessions", label: "Sessions", glyph: "≡" },
       ],
     },
     {
@@ -31,17 +34,23 @@
       items: [
         { route: "observe", label: "Observe", glyph: "◉" },
         { route: "routing", label: "Routing", glyph: "⇄" },
+        { route: "machines", label: "Machines", glyph: "⊟" },
         { route: "crons", label: "Crons", glyph: "◷" },
         { route: "plugins", label: "Plugins", glyph: "⊞" },
+        { route: "profile", label: "Profile", glyph: "◑" },
         { route: "config", label: "Config", glyph: "⚙" },
       ],
     },
   ];
 
+  // Home surfaces the proactive-feed "act on" count (what needs attention),
+  // not the raw session total — the rail nudges toward action.
   function badge(route: Route): number {
-    if (route === "home") return sessions.count;
+    if (route === "home") return feed.actOn.length;
     if (route === "chat") return daemon.stats?.running_turns ?? 0;
     if (route === "agents") return daemon.stats?.bg_tasks ?? 0;
+    if (route === "live") return sessions.list.filter((s) => s.status === "working" || s.status === "approval").length;
+    if (route === "sessions") return sessions.count;
     return 0;
   }
 </script>

@@ -1,9 +1,14 @@
 package main
 
 import (
+	"context"
 	"embed"
+	"os"
 
+	"github.com/avifenesh/eigen/internal/feed"
 	"github.com/avifenesh/eigen/internal/gui"
+	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/session"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -18,7 +23,7 @@ var guiAssets embed.FS
 // caller owns the bridge so it can Shutdown on BOTH the normal and error exit
 // paths (no orphan pumps/goroutines/daemon views).
 func buildGUIApp() (*application.App, *gui.Bridge) {
-	bridge := gui.NewBridge(ensureDaemon)
+	bridge := gui.NewBridge(ensureDaemon, guiSuggester(), guiProjectDirs)
 	app := application.New(application.Options{
 		Name:        "eigen",
 		Description: "Eigen desktop GUI",
@@ -35,4 +40,70 @@ func buildGUIApp() (*application.App, *gui.Bridge) {
 		URL:              "/",
 	})
 	return app, bridge
+}
+
+// guiSuggester adapts a suggestion model into the proactive feed's Suggester.
+// Mirrors the TUI: EIGEN_SUGGEST_MODEL, else glm-5.1 (mid-tier, mostly-idle
+// quota), else the usual small model; nil only if none can be built — the feed
+// then yields just git/github/memory signals (no LLM ideas).
+func guiSuggester() feed.Suggester {
+	prov := guiSuggestProvider()
+	if prov == nil {
+		return nil
+	}
+	return func(ctx context.Context, system, prompt string) (string, error) {
+		resp, err := prov.Complete(ctx, llm.Request{
+			System:   system,
+			Messages: []llm.Message{{Role: llm.RoleUser, Text: prompt}},
+		})
+		if err != nil {
+			return "", err
+		}
+		return resp.Text, nil
+	}
+}
+
+func guiSuggestProvider() llm.Provider {
+	if id := os.Getenv("EIGEN_SUGGEST_MODEL"); id != "" {
+		if p, err := llm.New("", id); err == nil {
+			return p
+		}
+	}
+	if llm.ProviderAvailable("glm") {
+		if p, err := llm.New("glm", "glm-5.1"); err == nil {
+			return p
+		}
+	}
+	return smallProvider(nil)
+}
+
+// guiProjectDirs returns the distinct working dirs across saved sessions
+// (newest-first), the universe the feed scans for loose ends.
+func guiProjectDirs() []string {
+	store, err := session.Open()
+	if err != nil || store == nil {
+		if wd, e := os.Getwd(); e == nil {
+			return []string{wd}
+		}
+		return nil
+	}
+	_ = store.Discover()
+	seen := map[string]bool{}
+	var dirs []string
+	for _, m := range store.List() {
+		if m.Cwd == "" || seen[m.Cwd] {
+			continue
+		}
+		if st, e := os.Stat(m.Cwd); e != nil || !st.IsDir() {
+			continue
+		}
+		seen[m.Cwd] = true
+		dirs = append(dirs, m.Cwd)
+	}
+	if len(dirs) == 0 {
+		if wd, e := os.Getwd(); e == nil {
+			dirs = append(dirs, wd)
+		}
+	}
+	return dirs
 }

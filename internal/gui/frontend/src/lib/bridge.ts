@@ -17,6 +17,8 @@ import type {
   CronsDTO,
   PluginsDTO,
   ConfigDTO,
+  FeedDTO,
+  FeedItemDTO,
 } from "$lib/types";
 
 export const Bridge = {
@@ -88,4 +90,9 @@ export const Bridge = {
   // config
   Config: (): Promise<ConfigDTO | null> => B.Config(),
   SetConfig: (key: string, value: string): Promise<string> => B.SetConfig(key, value),
+  // proactive feed
+  Feed: (): Promise<FeedDTO | null> => B.Feed(),
+  FeedFor: (dir: string): Promise<FeedItemDTO[]> => B.FeedFor(dir),
+  StartFromFeed: (dir: string, task: string): Promise<string> => B.StartFromFeed(dir, task),
+  DismissFeed: (key: string): Promise<void> => B.DismissFeed(key),
 };

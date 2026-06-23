@@ -267,6 +267,18 @@ export type ConfigFieldDTO = {
 };
 export type ConfigDTO = { fields: ConfigFieldDTO[]; path: string };
 
+export type FeedItemDTO = {
+  key: string;
+  kind: string; // git | github | memory | suggest
+  title: string;
+  detail?: string;
+  dir?: string;
+  dirName?: string;
+  task: string;
+  url?: string;
+};
+export type FeedDTO = { items: FeedItemDTO[]; scannedMs: number; fresh: boolean };
+
 export type ObserveSummaryDTO = {
   records: number;
   byKind: CountDTO[];
