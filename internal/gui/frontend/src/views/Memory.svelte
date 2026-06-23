@@ -24,8 +24,22 @@
   let profileDraft = $state("");
   let savingProfile = $state(false);
 
+  // Bans (banthis hard-prohibition layer). The Go MemoryScopeDTO already parses
+  // bans.md into structured title/rule blocks under `banList`; the shared TS
+  // type still only carries the raw `bans` blob, so narrow to read the typed
+  // array here without touching another agent's types.ts.
+  type BanDTO = { title: string; rule: string };
+  let addingBan = $state(false);
+  let banTitle = $state("");
+  let banRule = $state("");
+  let savingBan = $state(false);
+  let removingBan = $state<string | null>(null);
+
   const current = $derived<MemoryScopeDTO | null>(
     scope === "project" ? (data?.project ?? null) : (data?.global ?? null),
+  );
+  const bans = $derived<BanDTO[]>(
+    ((current as (MemoryScopeDTO & { banList?: BanDTO[] }) | null)?.banList ?? []),
   );
 
   // alive guard: a late Bridge.Memory() resolution must not write after unmount
@@ -64,6 +78,37 @@
       toasts.error(e instanceof Error ? e.message : String(e));
     } finally {
       saving = false;
+    }
+  }
+
+  async function addBan() {
+    const title = banTitle.trim();
+    const rule = banRule.trim();
+    if (!title || !rule) return;
+    savingBan = true;
+    try {
+      const replaced = await Bridge.AddBan(scope, title, rule);
+      banTitle = "";
+      banRule = "";
+      addingBan = false;
+      toasts.success(replaced ? "ban updated" : "ban added");
+      await load();
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      savingBan = false;
+    }
+  }
+  async function removeBan(title: string) {
+    removingBan = title;
+    try {
+      const removed = await Bridge.RemoveBan(scope, title);
+      if (removed) toasts.success("ban removed");
+      await load();
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      removingBan = null;
     }
   }
 
@@ -146,7 +191,7 @@
     <div class="mem__loading">
       {#each Array(3) as _, i (i)}<div class="mem__skel"></div>{/each}
     </div>
-  {:else if !current || (current.noteCount === 0 && current.adHoc.length === 0 && !current.summary && !current.bans && !current.profile)}
+  {:else if !current || (current.noteCount === 0 && current.adHoc.length === 0 && !current.summary && bans.length === 0 && !current.profile)}
     <EmptyState glyph="❖" title="No {scope} memory yet" line="Notes you save — or the agent distills — live here and carry across sessions.">
       {#snippet action()}
         <Button variant="primary" onclick={() => (composing = true)}>Add the first note</Button>
@@ -230,15 +275,79 @@
           </section>
         {/if}
 
-        {#if current.bans}
-          <section class="mem__side-section">
-            <div class="mem__section-head">
-              <h2 class="mem__section-title">Banned behaviors</h2>
-              <Badge tone="error">enforced</Badge>
+        <section class="mem__side-section">
+          <div class="mem__section-head">
+            <h2 class="mem__section-title">Banned behaviors</h2>
+            {#if bans.length > 0}<Badge tone="error">enforced</Badge>{/if}
+            {#if !addingBan}
+              <Button variant="link" size="sm" onclick={() => (addingBan = true)}>Add</Button>
+            {/if}
+          </div>
+
+          {#if addingBan}
+            <div class="mem__ban-form">
+              <input
+                bind:value={banTitle}
+                class="mem__input selectable"
+                type="text"
+                placeholder="Short title"
+                aria-label="Ban title"
+              />
+              <textarea
+                bind:value={banRule}
+                class="mem__textarea selectable"
+                rows="3"
+                placeholder={`What the agent must not do (${scope} scope)…`}
+                aria-label="Ban rule"
+              ></textarea>
+              <div class="mem__compose-actions">
+                <Button variant="ghost" size="sm" onclick={() => ((addingBan = false), (banTitle = ""), (banRule = ""))}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={savingBan}
+                  disabled={banTitle.trim().length === 0 || banRule.trim().length === 0}
+                  onclick={addBan}
+                >
+                  Save ban
+                </Button>
+              </div>
             </div>
-            <Card><div class="mem__bans selectable"><Markdown source={current.bans} /></div></Card>
-          </section>
-        {/if}
+          {/if}
+
+          {#if bans.length > 0}
+            <ul class="mem__bans-list">
+              {#each bans as ban (ban.title)}
+                <li class="mem__ban">
+                  <Card>
+                    <div class="mem__ban-row">
+                      <div class="mem__ban-text selectable">
+                        <h3 class="mem__ban-title">{ban.title}</h3>
+                        <p class="mem__ban-rule">{ban.rule}</p>
+                      </div>
+                      <button
+                        class="mem__ban-remove"
+                        type="button"
+                        title="Remove ban"
+                        aria-label={`Remove ban: ${ban.title}`}
+                        disabled={removingBan === ban.title}
+                        onclick={() => removeBan(ban.title)}
+                      >
+                        {removingBan === ban.title ? "…" : "✕"}
+                      </button>
+                    </div>
+                  </Card>
+                </li>
+              {/each}
+            </ul>
+          {:else if !addingBan}
+            <p class="mem__empty-note">
+              No bans in this scope. <button class="mem__inline-link" onclick={() => (addingBan = true)}>Add one.</button>
+            </p>
+          {/if}
+        </section>
 
         <section class="mem__side-section">
           <div class="mem__section-head"><h2 class="mem__section-title">Scope</h2></div>
@@ -394,8 +503,7 @@
   }
   .mem__summary,
   .mem__note,
-  .mem__profile,
-  .mem__bans {
+  .mem__profile {
     padding: var(--sp-5);
     font-size: var(--fs-body-sm);
     line-height: var(--lh-prose);
@@ -432,6 +540,85 @@
   .mem__inline-link:hover {
     color: var(--accent-bright);
     text-decoration: underline;
+  }
+  .mem__input {
+    width: 100%;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-md);
+    background: var(--bg-raised);
+    color: var(--text-primary);
+    font: var(--fw-regular) var(--fs-body-sm) / var(--lh-snug) var(--font-sans);
+    padding: var(--sp-3) var(--sp-4);
+    outline: none;
+  }
+  .mem__input:focus {
+    border-color: var(--border-brand-faint);
+  }
+  .mem__ban-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+  }
+  .mem__bans-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+  }
+  .mem__ban-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-4);
+    padding: var(--sp-5);
+  }
+  .mem__ban-text {
+    flex: 1;
+    min-width: 0;
+  }
+  .mem__ban-title {
+    margin: 0 0 var(--sp-2);
+    font: var(--fw-semibold) var(--fs-body-sm) / var(--lh-snug) var(--font-sans);
+    color: var(--text-primary);
+  }
+  .mem__ban-rule {
+    margin: 0;
+    font-size: var(--fs-body-sm);
+    line-height: var(--lh-prose);
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+  }
+  .mem__ban-remove {
+    flex: none;
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--text-ghost);
+    cursor: pointer;
+    font-size: var(--fs-body-sm);
+    line-height: 1;
+    transition:
+      background var(--dur-fast) var(--ease-out),
+      color var(--dur-fast) var(--ease-out);
+  }
+  .mem__ban-remove:hover {
+    background: var(--error-bg);
+    color: var(--error);
+  }
+  .mem__ban-remove:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .mem__ban-remove:disabled {
+    cursor: default;
+    color: var(--text-faint);
+    background: transparent;
   }
   .mem__side {
     width: 300px;

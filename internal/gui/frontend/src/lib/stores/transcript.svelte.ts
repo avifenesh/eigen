@@ -30,6 +30,12 @@ export type Block = TextBlock | ToolBlock | NoteBlock;
 
 const CAP = 2000;
 
+// Event kinds that imply an in-flight TURN — receiving one live (non-replay)
+// is sufficient to flip an IDLE session to "running". Everything else the
+// daemon emits (`note`, `bg_done`, `done`, and the `unknown` fallback) is a
+// display/wake/lifecycle signal and must NOT resurrect an idle session.
+const TURN_KINDS = new Set<string>(["text", "reasoning", "tool_start", "tool_result", "approval"]);
+
 export type Transcript = ReturnType<typeof createTranscript>;
 
 export function createTranscript(sessionId: string) {
@@ -167,10 +173,13 @@ export function createTranscript(sessionId: string) {
     start() {
       off = on<StreamEventDTO>(ev.sessionEvent(sessionId), (m) => {
         if (disposed) return;
-        // Live (non-replay) deltas mean a turn is in flight; replayed buffer
-        // events must NOT flip an idle session to "running" (running is owned by
-        // the State() seed + the `done` event). `done` always clears it.
-        if (!m.replay && m.event.kind !== "done") running = true;
+        // Only kinds that imply an in-flight TURN may flip an idle session to
+        // "running". Wake/lifecycle kinds (`bg_done`, `note`, `done`, unknown)
+        // must NOT: e.g. the daemon's `bg_done` background-task wake would
+        // otherwise resurrect an IDLE session. Replayed buffer events never flip
+        // it either (`running` is owned by the State() seed). `done` always
+        // clears it (handled in onEvent).
+        if (!m.replay && TURN_KINDS.has(m.event.kind)) running = true;
         onEvent(m.event);
       });
     },

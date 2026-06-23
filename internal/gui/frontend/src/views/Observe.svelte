@@ -11,7 +11,7 @@
   import Card from "$lib/components/Card.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
 
-  type Tab = "overview" | "routes" | "tools" | "models" | "hooks" | "errors";
+  type Tab = "overview" | "routes" | "tools" | "models" | "hooks" | "subagents" | "errors";
   let tab = $state<Tab>("overview");
 
   const s = $derived(daemon.stats);
@@ -81,6 +81,7 @@
     { key: "tools", label: "Tools" },
     { key: "models", label: "Models" },
     { key: "hooks", label: "Hooks" },
+    { key: "subagents", label: "Subagents" },
     { key: "errors", label: "Errors" },
   ];
 
@@ -279,6 +280,57 @@
           </table>
         </Card>
       {/if}
+    {:else if tab === "subagents"}
+      {@const sa = summary.subagents}
+      <div class="obs__single">
+        <section class="obs__kpis">
+          <Card live={sa.taskCalls > 0}>
+            <div class="kpi">
+              <div class="kpi__v tnum" class:kpi__v--live={sa.taskCalls > 0}>{k(sa.taskCalls)}</div>
+              <div class="kpi__l">task calls</div>
+            </div>
+          </Card>
+          <Card live={sa.groupCalls > 0}>
+            <div class="kpi">
+              <div class="kpi__v tnum" class:kpi__v--live={sa.groupCalls > 0}>{k(sa.groupCalls)}</div>
+              <div class="kpi__l">group calls</div>
+            </div>
+          </Card>
+          <Card live={sa.mutatingCalls > 0}>
+            <div class="kpi">
+              <div class="kpi__v tnum" class:kpi__v--live={sa.mutatingCalls > 0}>{k(sa.mutatingCalls)}</div>
+              <div class="kpi__l">mutating calls</div>
+            </div>
+          </Card>
+          <Card live={sa.backgroundDone > 0}>
+            <div class="kpi">
+              <div class="kpi__v tnum" class:kpi__v--live={sa.backgroundDone > 0}>{k(sa.backgroundDone)}</div>
+              <div class="kpi__l">background done</div>
+            </div>
+          </Card>
+        </section>
+        <Card>
+          <div class="panel">
+            <div class="panel__title">delegation</div>
+            <dl class="kv">
+              <dt>task calls</dt>
+              <dd class="tnum">{(sa.taskCalls).toLocaleString()}</dd>
+              <dt>task errors</dt>
+              <dd class="tnum" class:tbl__err={sa.taskErrors > 0}>{sa.taskErrors}</dd>
+              <dt>group calls</dt>
+              <dd class="tnum">{(sa.groupCalls).toLocaleString()}</dd>
+              <dt>group errors</dt>
+              <dd class="tnum" class:tbl__err={sa.groupErrors > 0}>{sa.groupErrors}</dd>
+              <dt>mutating calls</dt>
+              <dd class="tnum">{(sa.mutatingCalls).toLocaleString()}</dd>
+              <dt>mutating errors</dt>
+              <dd class="tnum" class:tbl__err={sa.mutatingErrors > 0}>{sa.mutatingErrors}</dd>
+              <dt>background dispatched</dt>
+              <dd class="tnum">{(sa.backgroundDone).toLocaleString()}</dd>
+            </dl>
+          </div>
+        </Card>
+      </div>
     {:else if tab === "errors"}
       {#if summary.errors.length === 0}
         <EmptyState glyph="✓" title="No errors recorded" line="The observability log shows a clean run." />

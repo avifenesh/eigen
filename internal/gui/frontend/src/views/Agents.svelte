@@ -123,6 +123,111 @@
     openTask = null;
     transcript = "";
   }
+
+  // The transcript on disk is a .jsonl: one JSON message per line, same shape as
+  // session files (Go llm.Message — capitalized field names, no omitempty). Parse
+  // it line-by-line into role/content cards rather than dumping the whole blob as
+  // one JSON code surface. JSON.parse is guarded per line so a single truncated/
+  // corrupt line degrades to a raw entry instead of losing the whole transcript.
+  type TxToolCall = { id: string; name: string; args: string };
+  type TxEntry = {
+    i: number;
+    role: string;
+    text: string;
+    reasoning: string;
+    toolCalls: TxToolCall[];
+    toolName: string;
+    toolError: boolean;
+    raw?: string; // set only when the line failed to parse — shown verbatim
+  };
+
+  // Bound the rendered card count so a very long transcript can't unspool an
+  // unbounded DOM in the sheet. We keep the tail (most recent exchanges) and
+  // note how many earlier lines were elided.
+  const TX_MAX = 200;
+
+  function str(v: unknown): string {
+    return typeof v === "string" ? v : "";
+  }
+  function asArgs(v: unknown): string {
+    if (v == null) return "";
+    if (typeof v === "string") return v;
+    try {
+      return JSON.stringify(v, null, 2);
+    } catch {
+      return "";
+    }
+  }
+  // Read a field case-tolerantly: the Go encoder emits capitalized keys (Role,
+  // Text, …), but tolerate lowercased keys too in case the on-disk shape shifts.
+  function field(o: Record<string, unknown>, ...keys: string[]): unknown {
+    for (const k of keys) {
+      if (o[k] != null) return o[k];
+      const lc = k.charAt(0).toLowerCase() + k.slice(1);
+      if (o[lc] != null) return o[lc];
+    }
+    return undefined;
+  }
+
+  const txEntries = $derived.by<TxEntry[]>(() => {
+    const src = transcript ?? "";
+    if (!src.trim()) return [];
+    const out: TxEntry[] = [];
+    let i = 0;
+    for (const line of src.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const idx = i++;
+      try {
+        const o = JSON.parse(trimmed) as Record<string, unknown>;
+        const rawCalls = field(o, "ToolCalls");
+        const toolCalls: TxToolCall[] = Array.isArray(rawCalls)
+          ? rawCalls.map((c) => {
+              const cc = (c ?? {}) as Record<string, unknown>;
+              return {
+                id: str(field(cc, "ID", "Id")),
+                name: str(field(cc, "Name")),
+                args: asArgs(field(cc, "Arguments", "Args")),
+              };
+            })
+          : [];
+        out.push({
+          i: idx,
+          role: str(field(o, "Role")) || "message",
+          text: str(field(o, "Text")),
+          reasoning: str(field(o, "Reasoning")),
+          toolCalls,
+          toolName: str(field(o, "ToolName")),
+          toolError: field(o, "ToolError") === true,
+        });
+      } catch {
+        // Tolerate a bad line: keep it as a verbatim entry rather than dropping
+        // the surrounding transcript or throwing.
+        out.push({
+          i: idx,
+          role: "unparsed",
+          text: "",
+          reasoning: "",
+          toolCalls: [],
+          toolName: "",
+          toolError: false,
+          raw: trimmed,
+        });
+      }
+    }
+    return out;
+  });
+
+  const txTotal = $derived(txEntries.length);
+  // Tail-bounded view: render at most TX_MAX cards, keeping the most recent.
+  const txShown = $derived(txTotal > TX_MAX ? txEntries.slice(txTotal - TX_MAX) : txEntries);
+  const txElided = $derived(Math.max(0, txTotal - txShown.length));
+
+  function roleTone(role: string): "neutral" | "brand" | "success" | "warn" | "error" | "info" {
+    if (role === "tool") return "info";
+    if (role === "unparsed") return "warn";
+    return "neutral";
+  }
   function onkeydown(e: KeyboardEvent) {
     if (e.key === "Escape" && openTask) closeTranscript();
   }
@@ -253,7 +358,40 @@
     <div class="sheet__body selectable">
       {#if transcriptLoading}
         <div class="sheet__loading">Loading…</div>
+      {:else if txShown.length > 0}
+        <!-- Parsed .jsonl: one role/content card per message line. Tail-bounded
+             so a long run can't unspool an unbounded DOM in the sheet. -->
+        {#if txElided > 0}
+          <div class="tx__elided">{txElided.toLocaleString()} earlier {txElided === 1 ? "message" : "messages"} hidden — showing the most recent {txShown.length.toLocaleString()}.</div>
+        {/if}
+        <ol class="tx">
+          {#each txShown as m (m.i)}
+            <li class="tx__msg" class:tx__msg--error={m.toolError || m.role === "unparsed"}>
+              <div class="tx__head">
+                <Badge tone={roleTone(m.role)}>{m.role}</Badge>
+                {#if m.toolName}<span class="tx__toolname">{m.toolName}</span>{/if}
+                {#if m.toolError}<Badge tone="error">error</Badge>{/if}
+              </div>
+              {#if m.reasoning}
+                <div class="tx__reasoning"><span class="tx__tag">reasoning</span>{m.reasoning}</div>
+              {/if}
+              {#if m.text}
+                <div class="tx__text">{m.text}</div>
+              {/if}
+              {#each m.toolCalls as c (c.id || c.name)}
+                <div class="tx__call">
+                  <span class="tx__call-name">{c.name || "tool"}</span>
+                  {#if c.args}<pre class="tx__call-args">{c.args}</pre>{/if}
+                </div>
+              {/each}
+              {#if m.raw}
+                <pre class="tx__raw" title="This line could not be parsed as JSON">{m.raw}</pre>
+              {/if}
+            </li>
+          {/each}
+        </ol>
       {:else if transcript}
+        <!-- Snapshot exists but parsed to nothing usable — show it verbatim. -->
         <CodeBlock code={transcript} lang="json" />
       {:else}
         <p class="agents__empty-note">No transcript snapshot on disk for this task.</p>
@@ -520,6 +658,93 @@
   .sheet__loading {
     color: var(--text-muted);
     font-size: var(--fs-body-sm);
+  }
+
+  /* ── parsed transcript ─────────────────────────────────────────────────── */
+  .tx__elided {
+    font-size: var(--fs-label);
+    color: var(--text-faint);
+    text-align: center;
+    padding-bottom: var(--sp-4);
+  }
+  .tx {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+  }
+  .tx__msg {
+    border: 1px solid var(--border-hairline);
+    border-left: 2px solid var(--border-subtle);
+    border-radius: var(--r-sm);
+    background: var(--bg-raised);
+    padding: var(--sp-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+  }
+  .tx__msg--error {
+    border-left-color: var(--error);
+  }
+  .tx__head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+  }
+  .tx__toolname {
+    font: var(--fw-regular) var(--fs-code-sm) / 1 var(--font-mono);
+    color: var(--text-secondary);
+  }
+  .tx__tag {
+    display: block;
+    font-size: var(--fs-micro);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--text-faint);
+    margin-bottom: var(--sp-2);
+  }
+  .tx__reasoning {
+    color: var(--text-muted);
+    font-size: var(--fs-body-sm);
+    line-height: var(--lh-snug);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .tx__text {
+    color: var(--text-primary);
+    font-size: var(--fs-body-sm);
+    line-height: var(--lh-snug);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .tx__call {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+  }
+  .tx__call-name {
+    font: var(--fw-medium) var(--fs-code-sm) / 1 var(--font-mono);
+    color: var(--info);
+  }
+  .tx__call-args,
+  .tx__raw {
+    margin: 0;
+    background: var(--syn-bg);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--r-xs);
+    padding: var(--sp-3);
+    max-height: 220px;
+    overflow: auto;
+    font: var(--fw-regular) var(--fs-code-sm) / var(--lh-code) var(--font-mono);
+    color: var(--syn-text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .tx__raw {
+    color: var(--text-muted);
   }
   @keyframes scrim-in {
     from {

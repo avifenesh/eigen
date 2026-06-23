@@ -28,19 +28,46 @@
     children: Snippet;
   } = $props();
 
-  // The trigger anchor we measure to place the panel beneath it.
+  // The trigger anchor we measure to place the panel beneath (or above) it, and
+  // the panel itself so we can measure its rendered height and flip when it
+  // would overflow the bottom of the viewport.
   let anchor: HTMLDivElement | undefined = $state(undefined);
-  let pos = $state<{ top: number; left: number; right: number }>({ top: 0, left: 0, right: 0 });
+  let panel: HTMLDivElement | undefined = $state(undefined);
+  // `top` anchors the panel's top edge; when flipped, `bottom` anchors its
+  // bottom edge to just above the trigger instead (only one is set at a time).
+  let pos = $state<{ top: number | null; bottom: number | null; left: number; right: number }>({
+    top: 0,
+    bottom: null,
+    left: 0,
+    right: 0,
+  });
+
+  const GAP = 6;
 
   function place() {
     if (!anchor) return;
     const r = anchor.getBoundingClientRect();
-    pos = {
-      top: r.bottom + 6,
-      left: r.left,
-      right: window.innerWidth - r.right,
-    };
+    // Below the trigger by default; clamp left/right to the trigger edges.
+    const left = r.left;
+    const right = window.innerWidth - r.right;
+
+    // If we already know the rendered panel height and it would overflow the
+    // bottom while there's more room above, flip to anchor above the trigger.
+    const panelHeight = panel?.offsetHeight ?? 0;
+    const overflowsBelow = r.bottom + GAP + panelHeight > window.innerHeight;
+    const roomAbove = r.top - GAP;
+    const flip = panelHeight > 0 && overflowsBelow && roomAbove > window.innerHeight - r.bottom;
+
+    pos = flip
+      ? { top: null, bottom: window.innerHeight - r.top + GAP, left, right }
+      : { top: r.bottom + GAP, bottom: null, left, right };
   }
+
+  // After the panel renders we finally know its real height, so re-run
+  // placement to flip above the trigger if it would clip off the bottom edge.
+  $effect(() => {
+    if (open && panel) place();
+  });
 
   function toggle() {
     if (!open) place();
@@ -74,13 +101,16 @@
     onkeydown={(e) => e.key === "Enter" && close()}
   ></div>
   <div
+    bind:this={panel}
     class="pop"
     class:pop--fixedw={width != null}
     role="dialog"
     aria-modal="true"
     tabindex="-1"
     aria-label={label}
-    style="top:{pos.top}px; {align === 'end'
+    style="{pos.bottom != null
+      ? `bottom:${pos.bottom}px`
+      : `top:${pos.top}px`}; {align === 'end'
       ? `right:${pos.right}px`
       : `left:${pos.left}px`}; {width != null ? `--pop-w:${width}px` : ''}"
     use:trapFocus

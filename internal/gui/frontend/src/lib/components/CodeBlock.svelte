@@ -13,6 +13,57 @@
   // Cancel the one-shot reset on unmount so it never writes to a detached state.
   onDestroy(() => clearTimeout(copyTimer));
 
+  // ── Huge-blob guard ─────────────────────────────────────────────────────────
+  // Tool results are stored uncapped, so a full-page extract or a base64 payload
+  // can be tens of thousands of lines / megabytes. The regex tint walks the whole
+  // string, and {@html} forces the browser to lay out every line — together that
+  // freezes the UI on a single result. So: above either threshold we render only
+  // a head slice (tinted to highlight just that slice) behind a "show full"
+  // expander. The full highlight is opted into on demand, never up front.
+  const MAX_LINES = 2000;
+  const MAX_BYTES = 200_000;
+
+  // Cheap measurements: byte length (UTF-8) and a line count derived from it.
+  // Both are needed because either dimension alone can blow up the renderer.
+  const byteLen = $derived(new Blob([code ?? ""]).size);
+  const lineCount = $derived.by(() => {
+    const src = code ?? "";
+    if (src === "") return 0;
+    let n = 1;
+    for (let i = 0; i < src.length; i++) if (src.charCodeAt(i) === 10) n++;
+    return n;
+  });
+  const tooLarge = $derived(lineCount > MAX_LINES || byteLen > MAX_BYTES);
+
+  // User opt-in to the full, uncapped highlight. Reset whenever the source
+  // changes so a freshly-swapped huge blob re-collapses instead of inheriting
+  // the previous result's "expanded" choice.
+  let expanded = $state(false);
+  $effect(() => {
+    code; // track the source
+    expanded = false;
+  });
+
+  // What actually gets tinted + rendered: the whole thing when small or when the
+  // user expanded, otherwise just the head slice.
+  const rendered = $derived(tooLarge && !expanded ? headSlice(code ?? "") : (code ?? ""));
+
+  function headSlice(src: string): string {
+    let cut = src.length;
+    let seen = 0;
+    for (let i = 0; i < src.length; i++) {
+      if (src.charCodeAt(i) === 10) {
+        seen++;
+        if (seen >= MAX_LINES) {
+          cut = i;
+          break;
+        }
+      }
+    }
+    // Also honor the byte cap so a few mega-long lines can't slip through.
+    return src.slice(0, Math.min(cut, MAX_BYTES));
+  }
+
   async function copy() {
     try {
       await navigator.clipboard.writeText(code);
@@ -45,7 +96,7 @@
   // Tokenize on comments+strings boundaries (kept verbatim, just tinted), then
   // tint keywords/numbers only in the remaining plain segments.
   const html = $derived.by(() => {
-    const src = code ?? "";
+    const src = rendered;
     const splitter = new RegExp(`${COMMENT.source}|${STRING.source}`, "g");
     let out = "";
     let last = 0;
@@ -80,7 +131,22 @@
       <span class="code__copy-label">{copied ? "copied" : "copy"}</span>
     </button>
   </div>
-  <pre class="code__body selectable"><code>{@html html}</code></pre>
+  <pre class="code__body selectable" class:code__body--capped={tooLarge && !expanded}><code>{@html html}</code></pre>
+  {#if tooLarge}
+    <button
+      class="code__expand"
+      onclick={() => (expanded = !expanded)}
+      aria-expanded={expanded}
+    >
+      {#if expanded}
+        <span class="code__expand-icon" aria-hidden="true">▲</span>
+        <span>collapse</span>
+      {:else}
+        <span class="code__expand-icon" aria-hidden="true">▾</span>
+        <span>show full ({lineCount.toLocaleString()} lines)</span>
+      {/if}
+    </button>
+  {/if}
 </div>
 
 <style>
@@ -147,6 +213,48 @@
   }
   .code__body code {
     font: inherit;
+  }
+  /* CAPPED — a huge blob is shown head-only; a faint bottom fade hints there's
+     more below, and the expander beneath opts into the full highlight. The fade
+     is a flat scrim (not teal — nothing here is "alive"), purely a depth cue. */
+  .code__body--capped {
+    position: relative;
+    -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent);
+  }
+  /* EXPANDER — sans chrome, like the copy affordance: a quiet faint control that
+     warms to muted on hover. Full-width so it reads as a seam under the slice. */
+  .code__expand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+    width: 100%;
+    padding: var(--sp-3) var(--sp-4);
+    border: none;
+    border-top: 1px solid var(--border-hairline);
+    background: var(--bg-raised);
+    color: var(--text-muted);
+    cursor: pointer;
+    font: var(--fw-medium) var(--fs-micro) / 1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    transition:
+      background var(--dur-fast) var(--ease-out),
+      color var(--dur-fast) var(--ease-out);
+  }
+  .code__expand:hover {
+    background: var(--state-hover);
+    color: var(--text-primary);
+  }
+  .code__expand:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .code__expand-icon {
+    font-size: 9px;
+    line-height: 1;
+    color: var(--text-faint);
   }
   /* TINT CLASSES */
   .code__body :global(.t-kw) {

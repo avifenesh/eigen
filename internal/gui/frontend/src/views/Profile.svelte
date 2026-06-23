@@ -1,8 +1,9 @@
 <script lang="ts">
-  // Profile — identity + usage. Top: lifetime/usage stats stitched from the live
-  // daemon.stats stream plus the historical ObserveSummary log (sessions, turns,
-  // tokens in/out, cache-hit %, errors), then a "top models" table from the
-  // summary. Below: the GLOBAL user profile editor (USER.md) — the durable
+  // Profile — identity + usage. Top: usage KPIs. Lifetime figures (turns,
+  // tokens in/out, cache-hit %, errors) come from the DURABLE ObserveSummary
+  // log so they survive daemon restarts; the only live daemon.stats counter is
+  // the session count, labeled "since daemon start". Then a "top models" table
+  // from the summary. Below: the GLOBAL user profile editor (USER.md) — the durable
   // personalization prompt — read from Bridge.Memory().global.profile and saved
   // via Bridge.WriteUserProfile. Same backing file as Memory's global-scope
   // editor; living here keeps identity in one place.
@@ -66,15 +67,31 @@
     };
   });
 
-  // Usage rollups. Live token totals come from the daemon stats stream; turns
-  // and errors come from the historical observability log (records ≈ turns).
-  const inTokens = $derived(stats?.input_tokens ?? 0);
-  const outTokens = $derived(stats?.output_tokens ?? 0);
+  // Usage rollups. Token totals + cache-hit are TRUE LIFETIME figures summed
+  // from the durable observability log (summary.models[*]) — the daemon.stats
+  // stream is volatile and resets on every daemon restart, so it must not drive
+  // lifetime KPIs. Turns and errors likewise come from the historical log
+  // (records ≈ turns).
+  const modelTotals = $derived(
+    (summary?.models ?? []).reduce(
+      (acc, m) => {
+        acc.in += m.inTokens;
+        acc.out += m.outTokens;
+        acc.cacheRead += m.cacheReadTokens;
+        return acc;
+      },
+      { in: 0, out: 0, cacheRead: 0 },
+    ),
+  );
+  const inTokens = $derived(modelTotals.in);
+  const outTokens = $derived(modelTotals.out);
   const cacheHit = $derived(
-    inTokens > 0 ? Math.round(((stats?.cache_read_tokens ?? 0) / inTokens) * 100) : 0,
+    inTokens > 0 ? Math.round((modelTotals.cacheRead / inTokens) * 100) : 0,
   );
   const turns = $derived(summary?.records ?? 0);
   const errorCount = $derived((summary?.errors ?? []).reduce((n, e) => n + e.count, 0));
+  // Live, volatile counter — explicitly labeled "since daemon start" in the UI
+  // so it's never mistaken for a lifetime tally.
   const sessionCount = $derived(stats?.sessions ?? 0);
 
   function k(n: number): string {
@@ -114,7 +131,7 @@
         {#if summaryLoading}<span class="pf__note">loading log…</span>{/if}
       </div>
       <div class="pf__kpis">
-        <Card><div class="kpi"><div class="kpi__v tnum">{sessionCount}</div><div class="kpi__l">sessions</div></div></Card>
+        <Card><div class="kpi"><div class="kpi__v tnum">{sessionCount}</div><div class="kpi__l">sessions <span class="kpi__qual">since daemon start</span></div></div></Card>
         <Card><div class="kpi"><div class="kpi__v tnum">{turns}</div><div class="kpi__l">turns logged</div></div></Card>
         <Card><div class="kpi"><div class="kpi__v tnum">{k(inTokens)}</div><div class="kpi__l">tokens in</div></div></Card>
         <Card><div class="kpi"><div class="kpi__v tnum">{k(outTokens)}</div><div class="kpi__l">tokens out</div></div></Card>
@@ -270,6 +287,16 @@
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: var(--ls-eyebrow);
+  }
+  /* Qualifier on volatile counters (e.g. "since daemon start") — quieter than
+     the label so the durable lifetime KPIs read as the primary figures. */
+  .kpi__qual {
+    display: block;
+    margin-top: var(--sp-2);
+    color: var(--text-faint);
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: var(--fs-micro);
   }
   .pf__skel {
     height: 96px;

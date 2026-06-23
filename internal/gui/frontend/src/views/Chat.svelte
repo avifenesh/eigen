@@ -11,7 +11,7 @@
   import { router } from "$lib/router.svelte";
   import { on, ev } from "$lib/events";
   import { createTranscript, type Transcript } from "$lib/stores/transcript.svelte";
-  import type { SessionStateDTO, ModelDTO } from "$lib/types";
+  import type { SessionStateDTO, ModelDTO, ImageDTO } from "$lib/types";
   import Composer from "$lib/components/Composer.svelte";
   import ToolCallCard from "$lib/components/ToolCallCard.svelte";
   import Markdown from "$lib/components/Markdown.svelte";
@@ -123,15 +123,17 @@
   // ── turn I/O ──────────────────────────────────────────────────────────────
   // Steer routing: mid-turn input is injected into the running turn (steered)
   // rather than queued as a fresh turn. When idle it sends normally as before.
-  async function send(text: string) {
+  // Images (composer attachments) ride along on both paths; starter chips call
+  // send(text) with none, so the param defaults to an empty list.
+  async function send(text: string, images: ImageDTO[] = []) {
     if (!sessionId) return;
     try {
       if (store?.running) {
-        const steered = await Bridge.SteerInput(sessionId, text, []);
+        const steered = await Bridge.SteerInput(sessionId, text, images);
         if (steered) toasts.info("steered into the running turn");
-        else await Bridge.SendInput(sessionId, text, [], []);
+        else await Bridge.SendInput(sessionId, text, images, []);
       } else {
-        await Bridge.SendInput(sessionId, text, [], []);
+        await Bridge.SendInput(sessionId, text, images, []);
       }
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : String(e));
@@ -321,6 +323,29 @@
     if (!sessionId) return;
     menuOpen = false;
     await run(() => Bridge.Resend(sessionId));
+  }
+
+  // ── approval args ───────────────────────────────────────────────────────
+  // Each pending approval carries the raw tool args (a JSON blob from the
+  // daemon). Surface them under the tool name so the user sees WHAT they are
+  // allowing rather than approving blind. Pretty-print when it parses as JSON,
+  // else show the raw string. Collapsed to a short preview by default; an
+  // expandable map (keyed by approval id) toggles the full scrollable block.
+  // The map is a $state object — Svelte 5 proxies it, so in-place writes stay
+  // reactive and no teardown is needed (no listeners/timers/observers here).
+  let argsOpen = $state<Record<string, boolean>>({});
+  function toggleArgs(id: string) {
+    argsOpen[id] = !argsOpen[id];
+  }
+  function prettyArgs(raw: string): string {
+    const s = (raw ?? "").trim();
+    if (!s) return "";
+    try {
+      const v = JSON.parse(s);
+      return JSON.stringify(v, null, 2);
+    } catch {
+      return s;
+    }
   }
 
   // ── empty-session starters ──────────────────────────────────────────────
@@ -696,8 +721,22 @@
         <div class="dock__group dock__group--approve">
           <div class="dock__label">awaiting approval</div>
           {#each sess.pending as ap (ap.id)}
+            {@const args = prettyArgs(ap.args)}
+            {@const open = argsOpen[ap.id] ?? false}
             <div class="approve">
               <div class="approve__tool">{ap.tool}</div>
+              {#if args}
+                <!-- What you are allowing: the tool's args. Collapsed to a
+                     truncated preview; expand for the full scrollable block. -->
+                <div class="approve__args" class:approve__args--open={open}>
+                  <pre class="approve__args-pre selectable">{args}</pre>
+                  <button
+                    class="approve__args-toggle"
+                    onclick={() => toggleArgs(ap.id)}
+                    aria-expanded={open}
+                  >{open ? "show less" : "show full args"}</button>
+                </div>
+              {/if}
               <div class="approve__actions">
                 <Button variant="primary" size="sm" onclick={() => approve(ap.id, true)}>Allow</Button>
                 <Button variant="danger" size="sm" onclick={() => approve(ap.id, false)}>Deny</Button>
@@ -1322,6 +1361,58 @@
   .approve__tool {
     font-weight: var(--fw-semibold);
     font-size: var(--fs-body-sm);
+  }
+  /* WHAT you are allowing: the tool args. A quiet inset code well, collapsed to
+     a short preview with a fade so a large blob doesn't shove the Allow/Deny
+     buttons off-screen; the toggle expands it into a scrollable block. Mono is
+     permitted here — it's code, like CodeBlock/DiffView. */
+  .approve__args {
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--r-sm);
+    background: var(--bg-inset);
+    overflow: hidden;
+  }
+  .approve__args-pre {
+    margin: 0;
+    padding: var(--sp-3) var(--sp-4);
+    max-height: 4.2em;
+    overflow: hidden;
+    font: var(--fw-regular) var(--fs-code-sm) / var(--lh-code) var(--font-mono);
+    color: var(--text-secondary);
+    tab-size: var(--tab-size);
+    white-space: pre-wrap;
+    word-break: break-word;
+    /* Fade the clipped tail so the truncation reads as intentional. */
+    mask-image: linear-gradient(180deg, #000 60%, transparent 100%);
+    -webkit-mask-image: linear-gradient(180deg, #000 60%, transparent 100%);
+  }
+  .approve__args--open .approve__args-pre {
+    max-height: 220px;
+    overflow: auto;
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+  .approve__args-toggle {
+    display: block;
+    width: 100%;
+    border: none;
+    border-top: 1px solid var(--border-hairline);
+    background: transparent;
+    padding: var(--sp-2) var(--sp-4);
+    text-align: left;
+    cursor: pointer;
+    color: var(--text-muted);
+    font: var(--fw-medium) var(--fs-micro) / 1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    transition: color var(--dur-fast) var(--ease-out);
+  }
+  .approve__args-toggle:hover {
+    color: var(--text-primary);
+  }
+  .approve__args-toggle:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
   }
   .approve__actions {
     display: flex;

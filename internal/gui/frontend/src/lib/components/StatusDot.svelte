@@ -2,19 +2,48 @@
   // A small status indicator. `working` gently breathes with a warm glow;
   // any state can opt into a quiet breathing pulse via `pulse`. The dot is
   // perfectly round at any size and stills entirely under reduced-motion.
+  //
+  // The dot is decorative by default (aria-hidden) — in most views adjacent
+  // text already carries the state. But where the dot is the ONLY state
+  // carrier, the color alone is invisible to screen readers. Pass `label` to
+  // announce the state: `label` (truthy string) promotes the dot to
+  // role="img" with that aria-label and drops aria-hidden; `label={true}`
+  // uses the sensible default for the current state; omitting it (or false)
+  // keeps the dot hidden.
+  type DotState = "working" | "idle" | "ok" | "warn" | "error";
   let {
     state = "idle",
     size = 8,
     pulse = false,
+    label = false,
   }: {
-    state?: "working" | "idle" | "ok" | "warn" | "error";
+    state?: DotState;
     size?: number;
     pulse?: boolean;
+    label?: string | boolean;
   } = $props();
 
   const dotState = $derived(state);
   const isWorking = $derived(dotState === "working");
   const breathing = $derived(pulse || isWorking);
+
+  // Default-per-state announcement, used when `label={true}` is passed.
+  const defaultLabels: Record<DotState, string> = {
+    working: "Working",
+    idle: "Idle",
+    ok: "OK",
+    warn: "Warning",
+    error: "Error",
+  };
+  // Resolve the spoken label: an explicit string wins; `true` falls back to
+  // the per-state default; anything falsy leaves the dot decorative.
+  const ariaLabel = $derived(
+    typeof label === "string" && label.length > 0
+      ? label
+      : label === true
+        ? defaultLabels[dotState]
+        : null,
+  );
 </script>
 
 <span
@@ -22,7 +51,9 @@
   class:dot--breathe={breathing}
   class:dot--glow={isWorking}
   style="--dot-size:{size}px"
-  aria-hidden="true"
+  role={ariaLabel ? "img" : undefined}
+  aria-label={ariaLabel ?? undefined}
+  aria-hidden={ariaLabel ? undefined : "true"}
 ></span>
 
 <style>

@@ -9,6 +9,7 @@
   import { feed } from "$lib/stores/feed.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { Bridge } from "$lib/bridge";
+  import { trapFocus } from "$lib/actions";
 
   type Group = "Actions" | "Views" | "Sessions";
   type Item = {
@@ -189,7 +190,7 @@
     onclick={hide}
     onkeydown={(e) => e.key === "Enter" && hide()}
   ></div>
-  <div class="pal" role="dialog" aria-modal="true" aria-label="Command palette">
+  <div class="pal" role="dialog" aria-modal="true" aria-label="Command palette" use:trapFocus>
     <input
       bind:this={input}
       bind:value={query}

@@ -6,6 +6,8 @@
   // Mono lives ONLY inside the diff body (the permitted code surface); the
   // diffstat, toggle, and hunk-range chrome are all sans.
 
+  import { onDestroy } from "svelte";
+
   type Kind = "add" | "del" | "ctx" | "hunk" | "meta";
   interface Row {
     id: number;
@@ -15,6 +17,24 @@
   }
 
   let { patch }: { patch: string } = $props();
+
+  // ── Copy raw diff ──────────────────────────────────────────────────────────
+  // Mirrors CodeBlock's copy affordance: a 1.4s confirm with an onDestroy timer
+  // cleanup so the one-shot reset never writes to a detached state (leak contract).
+  let copied = $state(false);
+  let copyTimer: ReturnType<typeof setTimeout> | undefined;
+  onDestroy(() => clearTimeout(copyTimer));
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(patch ?? "");
+      copied = true;
+      clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => (copied = false), 1400);
+    } catch {
+      // Clipboard denied — leave the label unchanged rather than lie.
+    }
+  }
 
   // ── Parse ────────────────────────────────────────────────────────────────
   // One pass: classify every line. File headers (---/+++/diff/index) read as
@@ -118,6 +138,17 @@
           ></span>
         </span>
       {/if}
+      <button
+        type="button"
+        class="diff__copy"
+        class:diff__copy--lead={additions + deletions === 0}
+        onclick={copy}
+        title="Copy diff to clipboard"
+        aria-label="Copy diff"
+      >
+        <span class="diff__copy-icon" aria-hidden="true">{copied ? "✓" : "⧉"}</span>
+        <span class="diff__copy-label">{copied ? "copied" : "copy"}</span>
+      </button>
     </figcaption>
 
     <div class="diff__scroll" class:diff__scroll--clipped={isLarge && !expanded}>
@@ -238,6 +269,41 @@
   .diff__bar-del {
     background: var(--error);
     min-width: 2px;
+  }
+
+  /* Copy affordance — sans chrome, mirrors CodeBlock. Sits after the bar; when
+     there are no counts (no bar) it takes the auto margin to stay far-right. */
+  .diff__copy {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin-left: var(--sp-3);
+    height: 20px;
+    padding: 0 var(--sp-3);
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    border-radius: var(--r-xs);
+    cursor: pointer;
+    font: var(--fw-medium) var(--fs-micro) / 1 var(--font-sans);
+    transition:
+      background var(--dur-fast) var(--ease-out),
+      color var(--dur-fast) var(--ease-out);
+  }
+  .diff__copy--lead {
+    margin-left: auto;
+  }
+  .diff__copy:hover {
+    background: var(--state-hover);
+    color: var(--text-primary);
+  }
+  .diff__copy:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .diff__copy-icon {
+    font-size: 12px;
+    line-height: 1;
   }
 
   /* ── Diff body (MONO — the permitted code surface) ─────────────────────── */
@@ -391,7 +457,8 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .diff__toggle {
+    .diff__toggle,
+    .diff__copy {
       transition: none;
     }
   }

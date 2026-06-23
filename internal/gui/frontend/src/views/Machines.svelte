@@ -161,6 +161,11 @@
       <p class="mx__remote-err-title">Couldn't reach this host</p>
       <p class="mx__remote-err-line">{remoteError}</p>
       <p class="mx__remote-err-hint">The host may be offline or have no eigen daemon running. Install with <code class="mx__code">eigen remote install</code>.</p>
+      {#if openMachine}
+        <div class="mx__remote-err-action">
+          <Button variant="secondary" onclick={() => drill(openMachine!)}>Retry</Button>
+        </div>
+      {/if}
     </div>
   {:else if remote.length === 0}
     <p class="mx__sheet-empty">No active sessions on this host.</p>
@@ -366,6 +371,9 @@
     margin: 0;
     font-size: var(--fs-label);
     color: var(--text-muted);
+  }
+  .mx__remote-err-action {
+    margin-top: var(--sp-2);
   }
   .mx__sheet-empty {
     color: var(--text-muted);
