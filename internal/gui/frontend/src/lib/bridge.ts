@@ -35,6 +35,8 @@ export const Bridge = {
   // turn I/O
   SendInput: (id: string, text: string, images: ImageDTO[], allowTools: string[]): Promise<void> =>
     B.SendInput(id, text, images, allowTools),
+  SteerInput: (id: string, text: string, images: ImageDTO[]): Promise<boolean> =>
+    B.SteerInput(id, text, images),
   Interrupt: (id: string): Promise<void> => B.Interrupt(id),
   Resend: (id: string): Promise<void> => B.Resend(id),
   Approve: (id: string, approvalID: string, allow: boolean): Promise<void> =>

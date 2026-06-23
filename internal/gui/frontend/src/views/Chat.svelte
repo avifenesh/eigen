@@ -11,7 +11,7 @@
   import { router } from "$lib/router.svelte";
   import { on, ev } from "$lib/events";
   import { createTranscript, type Transcript } from "$lib/stores/transcript.svelte";
-  import type { SessionStateDTO } from "$lib/types";
+  import type { SessionStateDTO, ModelDTO } from "$lib/types";
   import Composer from "$lib/components/Composer.svelte";
   import ToolCallCard from "$lib/components/ToolCallCard.svelte";
   import Markdown from "$lib/components/Markdown.svelte";
@@ -20,6 +20,7 @@
   import Button from "$lib/components/Button.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import StatusDot from "$lib/components/StatusDot.svelte";
+  import Popover from "$lib/components/Popover.svelte";
 
   let { param }: { param?: string } = $props();
 
@@ -97,10 +98,19 @@
 
   const online = $derived(daemon.status === "online");
 
+  // ── turn I/O ──────────────────────────────────────────────────────────────
+  // Steer routing: mid-turn input is injected into the running turn (steered)
+  // rather than queued as a fresh turn. When idle it sends normally as before.
   async function send(text: string) {
     if (!sessionId) return;
     try {
-      await Bridge.SendInput(sessionId, text, [], []);
+      if (store?.running) {
+        const steered = await Bridge.SteerInput(sessionId, text, []);
+        if (steered) toasts.info("steered into the running turn");
+        else await Bridge.SendInput(sessionId, text, [], []);
+      } else {
+        await Bridge.SendInput(sessionId, text, [], []);
+      }
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : String(e));
     }
@@ -128,6 +138,166 @@
   const pct = $derived(
     sess && sess.maxTokens > 0 ? Math.min(100, Math.round((sess.tokens / sess.maxTokens) * 100)) : 0,
   );
+  // Near-context-limit nudge: surface only once we're genuinely close and the
+  // max is known, so it reads as a real prompt to compact rather than chrome.
+  const nearLimit = $derived(sess != null && sess.maxTokens > 0 && sess.tokens / sess.maxTokens > 0.85);
+
+  // ── settings panel: capability-gated mutators ──────────────────────────────
+  // Each mutator returns the FRESH state — assign it to `sess` so the dock
+  // badges reconcile in place without a round-trip through refreshState().
+  function applyState(s: SessionStateDTO | null) {
+    if (s && sessionId) sess = s;
+  }
+  async function run<T>(fn: () => Promise<T>): Promise<T | undefined> {
+    try {
+      return await fn();
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : String(e));
+      return undefined;
+    }
+  }
+
+  let settingsOpen = $state(false);
+  let menuOpen = $state(false);
+  // Routing model ids load once when the settings panel first opens.
+  let models = $state<ModelDTO[]>([]);
+  let modelsLoaded = $state(false);
+  // The current model's own effort ladder (when reasoning is supported), so the
+  // effort selector offers exactly what the model takes rather than a guess.
+  const EFFORT_FALLBACK = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+  const effortLevels = $derived.by(() => {
+    const m = models.find((x) => x.id === sess?.model);
+    const lv = m?.effortLevels;
+    return lv && lv.length > 0 ? lv : EFFORT_FALLBACK;
+  });
+  // Search modes: a model either takes them or not; offer off + the common
+  // provider modes when search is active on the session.
+  const SEARCH_MODES = ["off", "auto", "on"];
+
+  async function loadModels() {
+    if (modelsLoaded) return;
+    modelsLoaded = true;
+    const r = await run(() => Bridge.Routing());
+    if (r?.models) models = r.models;
+  }
+  $effect(() => {
+    if (settingsOpen) loadModels();
+  });
+
+  async function onModel(e: Event) {
+    const v = (e.currentTarget as HTMLSelectElement).value;
+    if (!sessionId || v === sess?.model) return;
+    applyState(await run(() => Bridge.SetModel(sessionId, v)) ?? null);
+  }
+  async function onPerm() {
+    if (!sessionId) return;
+    const next = sess?.perm === "auto" ? "gated" : "auto";
+    applyState(await run(() => Bridge.SetPerm(sessionId, next)) ?? null);
+  }
+  async function onEffort(e: Event) {
+    const v = (e.currentTarget as HTMLSelectElement).value;
+    if (!sessionId) return;
+    applyState(await run(() => Bridge.SetEffort(sessionId, v)) ?? null);
+  }
+  async function onSearch(e: Event) {
+    const v = (e.currentTarget as HTMLSelectElement).value;
+    if (!sessionId) return;
+    applyState(await run(() => Bridge.SetSearch(sessionId, v)) ?? null);
+  }
+  async function onFast() {
+    if (!sessionId) return;
+    applyState(await run(() => Bridge.SetFast(sessionId, !sess?.fast)) ?? null);
+  }
+
+  // ── goal + title editing ────────────────────────────────────────────────
+  let editingGoal = $state(false);
+  let goalDraft = $state("");
+  let editingTitle = $state(false);
+  let titleDraft = $state("");
+  // The title shown when the session hasn't been explicitly named.
+  const derivedTitle = $derived(sessions.list.find((s) => s.id === sessionId)?.title || "untitled session");
+
+  function startGoal() {
+    goalDraft = sess?.goal ?? "";
+    editingGoal = true;
+  }
+  async function commitGoal() {
+    editingGoal = false;
+    if (!sessionId) return;
+    const next = goalDraft.trim();
+    if (next === (sess?.goal ?? "")) return;
+    applyState(await run(() => Bridge.SetGoal(sessionId, next)) ?? null);
+  }
+  function startTitle() {
+    titleDraft = sess?.title ?? "";
+    editingTitle = true;
+  }
+  async function commitTitle() {
+    editingTitle = false;
+    if (!sessionId) return;
+    const next = titleDraft.trim();
+    if (next === (sess?.title ?? "")) return;
+    applyState(await run(() => Bridge.SetTitle(sessionId, next)) ?? null);
+  }
+
+  // ── sandbox / roots ───────────────────────────────────────────────────────
+  let dirDraft = $state("");
+  let addingDir = $state(false);
+  async function addDir() {
+    const path = dirDraft.trim();
+    if (!sessionId || !path || addingDir) return;
+    addingDir = true;
+    const root = await run(() => Bridge.AddDir(sessionId, path));
+    addingDir = false;
+    if (root !== undefined) {
+      dirDraft = "";
+      toasts.info("added " + root);
+      refreshState();
+    }
+  }
+
+  // ── shells ────────────────────────────────────────────────────────────────
+  async function killShell(shellID: string) {
+    if (!sessionId) return;
+    const ok = await run(() => Bridge.KillShell(sessionId, shellID));
+    if (ok) refreshState();
+  }
+
+  // ── session menu: compact / clear / resend ─────────────────────────────────
+  let compacting = $state(false);
+  let confirmClear = $state(false);
+  async function compact() {
+    if (!sessionId || compacting) return;
+    compacting = true;
+    const res = await run(() => Bridge.Compact(sessionId, 0));
+    compacting = false;
+    if (res) {
+      toasts.info(`compacted ${res.before.toLocaleString()}→${res.after.toLocaleString()}`);
+      refreshState();
+    }
+    menuOpen = false;
+  }
+  async function clearSession() {
+    if (!sessionId) return;
+    confirmClear = false;
+    menuOpen = false;
+    const r = await run(() => Bridge.Clear(sessionId));
+    // The transcript re-seeds on the next State; mirror cleared state now.
+    if (r !== undefined) refreshState();
+  }
+  async function resend() {
+    if (!sessionId) return;
+    menuOpen = false;
+    await run(() => Bridge.Resend(sessionId));
+  }
+
+  // ── empty-session starters ──────────────────────────────────────────────
+  const isEmpty = $derived(sess != null && sess.messages.length === 0 && !store?.running);
+  const starters = [
+    "Give me a tour of this codebase.",
+    "What changed in the last few commits?",
+    "Find and explain the riskiest function here.",
+  ];
 </script>
 
 {#if !sessionId}
@@ -140,38 +310,59 @@
   <div class="chat">
     <div class="chat__main">
       <div class="chat__scroll selectable">
-        {#if store?.truncated}
-          <div class="chat__earlier">Showing the most recent messages.</div>
-        {/if}
-        <VirtualList items={rows} estimateHeight={120} pin key={(b) => b.uid}>
-          {#snippet row(block)}
-            {@const isLive = block === store?.live}
-            <div class="chat__row">
-              {#if block.kind === "tool"}
-                <ToolCallCard {block} />
-              {:else if block.kind === "note"}
-                <div class="msg msg--note">{block.text}</div>
-              {:else if block.kind === "reasoning"}
-                <div class="msg msg--reasoning" class:msg--live={isLive}>
-                  <span class="msg__tag">reasoning</span>
-                  {block.text}
-                </div>
-              {:else if isLive}
-                <!-- The in-flight assistant block streams as plain text for
-                     speed; it finalizes to Markdown once committed to history. -->
-                <div class="msg msg--text msg--live">{block.text}</div>
-              {:else}
-                <!-- Completed assistant prose renders as Markdown (sans; fenced
-                     code delegates to CodeBlock). -->
-                <div class="msg msg--text"><Markdown source={block.text} /></div>
-              {/if}
+        {#if isEmpty}
+          <!-- Warm starter state: a one-line prompt + clickable example chips
+               that send straight into the session. Replaced by the transcript
+               the moment the first message lands. -->
+          <div class="starter">
+            <div class="starter__title">Ready when you are.</div>
+            <div class="starter__line">Ask anything, or start from one of these:</div>
+            <div class="starter__chips">
+              {#each starters as s (s)}
+                <button class="chip" disabled={!online} title={online ? "Send this" : "daemon offline"} onclick={() => send(s)}>
+                  {s}
+                </button>
+              {/each}
             </div>
-          {/snippet}
-        </VirtualList>
+          </div>
+        {:else}
+          {#if store?.truncated}
+            <div class="chat__earlier">Showing the most recent messages.</div>
+          {/if}
+          <VirtualList items={rows} estimateHeight={120} pin key={(b) => b.uid}>
+            {#snippet row(block)}
+              {@const isLive = block === store?.live}
+              <div class="chat__row">
+                {#if block.kind === "tool"}
+                  <ToolCallCard {block} />
+                {:else if block.kind === "note"}
+                  <div class="msg msg--note">{block.text}</div>
+                {:else if block.kind === "reasoning"}
+                  <div class="msg msg--reasoning" class:msg--live={isLive}>
+                    <span class="msg__tag">reasoning</span>
+                    {block.text}
+                  </div>
+                {:else if isLive}
+                  <!-- The in-flight assistant block streams as plain text for
+                       speed; it finalizes to Markdown once committed to history.
+                       A subtle caret trails the live text while it streams. -->
+                  <div class="msg msg--text msg--live">{block.text}<span class="caret" aria-hidden="true"></span></div>
+                {:else}
+                  <!-- Completed assistant prose renders as Markdown (sans; fenced
+                       code delegates to CodeBlock). -->
+                  <div class="msg msg--text"><Markdown source={block.text} /></div>
+                {/if}
+              </div>
+            {/snippet}
+          </VirtualList>
+        {/if}
       </div>
 
       {#if store?.running}
-        <div class="chat__working"><StatusDot state="working" size={7} /> working…</div>
+        <div class="chat__working">
+          <StatusDot state="working" size={7} pulse />
+          <span class="chat__working-label">working…</span>
+        </div>
       {/if}
 
       <div class="chat__composer">
@@ -200,11 +391,91 @@
             <span class="dock__pct tnum">{pct}%</span>
           </div>
           <div class="dock__sub tnum">{sess.tokens.toLocaleString()} / {sess.maxTokens.toLocaleString()}</div>
+          {#if nearLimit}
+            <button class="dock__nudge" onclick={compact} disabled={compacting} title="Compact the conversation to free context">
+              near context limit — compact?
+            </button>
+          {/if}
         </div>
       {/if}
 
+      <!-- STATUS + SETTINGS: the read-only pills double as the trigger for an
+           anchored settings panel where each capability is editable. -->
       <div class="dock__group">
-        <div class="dock__label">status</div>
+        <div class="dock__head">
+          <span class="dock__label">status</span>
+          <Popover label="Session settings" align="end" width={272} bind:open={settingsOpen}>
+            {#snippet trigger(toggle)}
+              <Button variant="ghost" size="sm" onclick={toggle} title="Session settings">edit</Button>
+            {/snippet}
+            <div class="set">
+              <div class="set__row">
+                <label class="set__label" for="set-model">model</label>
+                <select id="set-model" class="set__ctl" value={sess?.model ?? ""} onchange={onModel}>
+                  {#if models.length === 0}
+                    <option value={sess?.model ?? ""}>{sess?.model || "—"}</option>
+                  {:else}
+                    {#each models as m (m.id)}
+                      <option value={m.id} disabled={!m.available}>{m.id}{m.available ? "" : " (unavailable)"}</option>
+                    {/each}
+                  {/if}
+                </select>
+              </div>
+
+              <div class="set__row">
+                <span class="set__label">permissions</span>
+                <button
+                  class="set__toggle"
+                  role="switch"
+                  aria-checked={sess?.perm === "auto"}
+                  onclick={onPerm}
+                  title="Toggle auto-approve vs gated approvals"
+                >
+                  <span class="set__toggle-track"><span class="set__toggle-knob"></span></span>
+                  <span class="set__toggle-text">{sess?.perm === "auto" ? "auto" : "gated"}</span>
+                </button>
+              </div>
+
+              {#if sess?.effort}
+                <div class="set__row">
+                  <label class="set__label" for="set-effort">effort</label>
+                  <select id="set-effort" class="set__ctl" value={sess.effort} onchange={onEffort}>
+                    {#each effortLevels as lv (lv)}
+                      <option value={lv}>{lv}</option>
+                    {/each}
+                  </select>
+                </div>
+              {/if}
+
+              {#if sess?.search}
+                <div class="set__row">
+                  <label class="set__label" for="set-search">search</label>
+                  <select id="set-search" class="set__ctl" value={sess.search} onchange={onSearch}>
+                    {#each SEARCH_MODES as mode (mode)}
+                      <option value={mode}>{mode}</option>
+                    {/each}
+                  </select>
+                </div>
+              {/if}
+
+              {#if sess?.fastOk}
+                <div class="set__row">
+                  <span class="set__label">fast tier</span>
+                  <button
+                    class="set__toggle"
+                    role="switch"
+                    aria-checked={sess.fast ?? false}
+                    onclick={onFast}
+                    title="Route eligible turns to the fast tier"
+                  >
+                    <span class="set__toggle-track"><span class="set__toggle-knob"></span></span>
+                    <span class="set__toggle-text">{sess.fast ? "on" : "off"}</span>
+                  </button>
+                </div>
+              {/if}
+            </div>
+          </Popover>
+        </div>
         <div class="dock__pills">
           <Badge tone={sess?.perm === "auto" ? "warn" : "neutral"}>{sess?.perm || "gated"}</Badge>
           {#if sess?.effort}<Badge tone="info">effort: {sess.effort}</Badge>{/if}
@@ -213,12 +484,159 @@
         </div>
       </div>
 
-      {#if sess?.goal}
-        <div class="dock__group">
-          <div class="dock__label">goal</div>
+      <!-- TITLE: inline rename; empty reverts to the derived session title. -->
+      <div class="dock__group">
+        <div class="dock__head">
+          <span class="dock__label">title</span>
+          {#if !editingTitle}
+            <Button variant="ghost" size="sm" onclick={startTitle} title="Rename session">rename</Button>
+          {/if}
+        </div>
+        {#if editingTitle}
+          <!-- svelte-ignore a11y_autofocus -->
+          <input
+            class="dock__input"
+            bind:value={titleDraft}
+            placeholder={derivedTitle}
+            autofocus
+            onblur={commitTitle}
+            onkeydown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); commitTitle(); }
+              else if (e.key === "Escape") { editingTitle = false; }
+            }}
+          />
+        {:else}
+          <div class="dock__value dock__value--soft">{sess?.title || derivedTitle}</div>
+        {/if}
+      </div>
+
+      <!-- GOAL: editable; empty clears it. -->
+      <div class="dock__group">
+        <div class="dock__head">
+          <span class="dock__label">goal</span>
+          {#if !editingGoal}
+            <Button variant="ghost" size="sm" onclick={startGoal} title={sess?.goal ? "Edit goal" : "Set a goal"}>
+              {sess?.goal ? "edit" : "set"}
+            </Button>
+          {/if}
+        </div>
+        {#if editingGoal}
+          <!-- svelte-ignore a11y_autofocus -->
+          <textarea
+            class="dock__input dock__input--area"
+            bind:value={goalDraft}
+            rows="3"
+            placeholder="What should this session accomplish? (empty clears)"
+            autofocus
+            onblur={commitGoal}
+            onkeydown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commitGoal(); }
+              else if (e.key === "Escape") { editingGoal = false; }
+            }}
+          ></textarea>
+        {:else if sess?.goal}
           <div class="dock__goal">{sess.goal}</div>
+        {:else}
+          <div class="dock__empty">No goal set.</div>
+        {/if}
+      </div>
+
+      <!-- WORKING DIRS: the sandbox roots, primary first, with an add control. -->
+      {#if sess}
+        <div class="dock__group">
+          <div class="dock__label">working dirs</div>
+          {#if sess.roots && sess.roots.length > 0}
+            <ul class="roots">
+              {#each sess.roots as root, i (root)}
+                <li class="roots__item" class:roots__item--primary={i === 0}>
+                  <span class="roots__path" title={root}>{root}</span>
+                  {#if i === 0}<span class="roots__tag">primary</span>{/if}
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <div class="dock__empty">No directories.</div>
+          {/if}
+          <div class="dock__addrow">
+            <input
+              class="dock__input"
+              bind:value={dirDraft}
+              placeholder="Add directory…"
+              onkeydown={(e) => e.key === "Enter" && addDir()}
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={addingDir}
+              disabled={dirDraft.trim().length === 0}
+              title={dirDraft.trim() ? "Add this directory to the sandbox" : "Enter a path first"}
+              onclick={addDir}
+            >Add</Button>
+          </div>
         </div>
       {/if}
+
+      <!-- SHELLS: live background shells, with a per-shell kill control. -->
+      {#if sess?.shells && sess.shells.length > 0}
+        <div class="dock__group">
+          <div class="dock__label">shells</div>
+          <ul class="shells">
+            {#each sess.shells as sh (sh.id)}
+              <li class="shell">
+                <div class="shell__top">
+                  <code class="shell__cmd" title={sh.command}>{sh.command}</code>
+                  <Button variant="danger" size="sm" onclick={() => killShell(sh.id)} title="Kill this shell">Kill</Button>
+                </div>
+                <div class="shell__meta">
+                  <Badge tone={sh.status === "running" ? "info" : sh.exit_code === 0 ? "success" : "error"}>
+                    {sh.status}{sh.status !== "running" ? ` · exit ${sh.exit_code}` : ""}
+                  </Badge>
+                </div>
+                {#if sh.last_line}<div class="shell__line" title={sh.last_line}>{sh.last_line}</div>{/if}
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+
+      <!-- SESSION MENU: maintenance actions, anchored. -->
+      <div class="dock__group">
+        <div class="dock__head">
+          <span class="dock__label">session</span>
+          <Popover label="Session actions" align="end" bind:open={menuOpen}>
+            {#snippet trigger(toggle)}
+              <Button variant="icon" size="sm" onclick={toggle} title="Session actions">⋯</Button>
+            {/snippet}
+            <div class="menu">
+              <button class="menu__item" onclick={compact} disabled={compacting}>
+                <span class="menu__glyph" aria-hidden="true">⊟</span>
+                <span class="menu__label">Compact context</span>
+                <span class="menu__hint">free tokens</span>
+              </button>
+              <button class="menu__item" onclick={resend}>
+                <span class="menu__glyph" aria-hidden="true">↻</span>
+                <span class="menu__label">Resend last turn</span>
+                <span class="menu__hint">retry</span>
+              </button>
+              {#if confirmClear}
+                <div class="menu__confirm">
+                  <span class="menu__confirm-q">Clear all messages?</span>
+                  <div class="menu__confirm-actions">
+                    <Button variant="danger" size="sm" onclick={clearSession} title="Clear the conversation">Clear</Button>
+                    <Button variant="ghost" size="sm" onclick={() => (confirmClear = false)}>Cancel</Button>
+                  </div>
+                </div>
+              {:else}
+                <button class="menu__item menu__item--danger" onclick={() => (confirmClear = true)}>
+                  <span class="menu__glyph" aria-hidden="true">⌫</span>
+                  <span class="menu__label">Clear conversation</span>
+                  <span class="menu__hint">destructive</span>
+                </button>
+              {/if}
+            </div>
+          </Popover>
+        </div>
+      </div>
 
       {#if sess?.pending && sess.pending.length > 0}
         <div class="dock__group dock__group--approve">
@@ -272,6 +690,65 @@
     font-size: var(--fs-label);
     padding: var(--sp-3);
   }
+
+  /* ── empty-session starter ─────────────────────────────────────────────── */
+  .starter {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-4);
+    max-width: 820px;
+    width: 100%;
+    margin: 0 auto;
+    padding: var(--sp-9) var(--sp-8);
+    text-align: center;
+  }
+  .starter__title {
+    font: var(--fw-semibold) var(--fs-h2) / var(--lh-tight) var(--font-display);
+    letter-spacing: var(--ls-heading);
+    color: var(--text-primary);
+  }
+  .starter__line {
+    font-size: var(--fs-body-sm);
+    color: var(--text-muted);
+  }
+  .starter__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+    justify-content: center;
+    margin-top: var(--sp-3);
+  }
+  .chip {
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-raised);
+    color: var(--text-secondary);
+    border-radius: var(--r-full);
+    padding: var(--sp-3) var(--sp-5);
+    font: var(--fw-medium) var(--fs-body-sm) / 1 var(--font-sans);
+    cursor: pointer;
+    transition:
+      background var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out),
+      color var(--dur-fast) var(--ease-out);
+  }
+  .chip:hover:not(:disabled) {
+    background: var(--bg-raised-2);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+  }
+  .chip:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .chip:disabled {
+    color: var(--text-ghost);
+    cursor: not-allowed;
+  }
+
   .msg {
     font: var(--fw-regular) var(--fs-body) / var(--lh-prose) var(--font-sans);
     color: var(--text-primary);
@@ -304,6 +781,29 @@
     border-left: 2px solid var(--border-brand-faint);
     padding-left: var(--sp-5);
   }
+  /* A slim blinking caret trailing the live stream — a quiet sign of presence.
+     Inline so it sits right after the last glyph; stilled under reduced-motion. */
+  .caret {
+    display: inline-block;
+    width: 2px;
+    height: 1.05em;
+    margin-left: 1px;
+    vertical-align: text-bottom;
+    background: var(--brand);
+    border-radius: 1px;
+    animation: caret-blink 1.1s steps(1, end) infinite;
+  }
+  @keyframes caret-blink {
+    0%,
+    50% {
+      opacity: 1;
+    }
+    50.01%,
+    100% {
+      opacity: 0;
+    }
+  }
+
   .chat__working {
     flex: none;
     display: flex;
@@ -316,6 +816,21 @@
     color: var(--working);
     font-size: var(--fs-body-sm);
   }
+  /* The label gently breathes in sympathy with the dot — opacity only, so no
+     reflow; stilled under reduced-motion. */
+  .chat__working-label {
+    animation: work-breathe var(--breath) var(--ease-inout) infinite;
+  }
+  @keyframes work-breathe {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.55;
+    }
+  }
+
   .chat__composer {
     flex: none;
     max-width: 820px;
@@ -334,6 +849,16 @@
     flex-direction: column;
     gap: var(--sp-7);
   }
+  .dock__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-4);
+    margin-bottom: var(--sp-3);
+  }
+  .dock__head .dock__label {
+    margin-bottom: 0;
+  }
   .dock__label {
     font-size: var(--fs-micro);
     text-transform: uppercase;
@@ -347,10 +872,18 @@
     color: var(--text-primary);
     word-break: break-all;
   }
+  .dock__value--soft {
+    font-weight: var(--fw-medium);
+    color: var(--text-secondary);
+  }
   .dock__sub {
     font-size: var(--fs-label);
     color: var(--text-muted);
     margin-top: var(--sp-2);
+  }
+  .dock__empty {
+    font-size: var(--fs-label);
+    color: var(--text-ghost);
   }
   .dock__ring {
     display: flex;
@@ -375,6 +908,31 @@
     font-size: var(--fs-label);
     color: var(--text-secondary);
   }
+  /* The context nudge: a quiet warm prompt, not an alarm. Reads as a link. */
+  .dock__nudge {
+    margin-top: var(--sp-3);
+    border: none;
+    background: transparent;
+    padding: 0;
+    text-align: left;
+    color: var(--working);
+    font: var(--fw-medium) var(--fs-label) / var(--lh-snug) var(--font-sans);
+    cursor: pointer;
+    border-radius: var(--r-xs);
+  }
+  .dock__nudge:hover:not(:disabled) {
+    color: var(--brand-bright);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .dock__nudge:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .dock__nudge:disabled {
+    color: var(--text-ghost);
+    cursor: not-allowed;
+  }
   .dock__pills {
     display: flex;
     flex-wrap: wrap;
@@ -385,6 +943,288 @@
     color: var(--text-secondary);
     line-height: var(--lh-snug);
   }
+
+  /* Inline edit fields in the dock — proportional sans, never mono. */
+  .dock__input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-raised);
+    color: var(--text-primary);
+    border-radius: var(--r-sm);
+    padding: var(--sp-3) var(--sp-4);
+    font: var(--fw-regular) var(--fs-body-sm) / var(--lh-snug) var(--font-sans);
+    outline: none;
+    transition:
+      border-color var(--dur-fast) var(--ease-out),
+      box-shadow var(--dur-fast) var(--ease-out);
+  }
+  .dock__input:focus-visible {
+    border-color: var(--border-brand-faint);
+    box-shadow: var(--shadow-focus);
+  }
+  .dock__input::placeholder {
+    color: var(--text-ghost);
+  }
+  .dock__input--area {
+    resize: vertical;
+    min-height: 56px;
+  }
+  .dock__addrow {
+    display: flex;
+    gap: var(--sp-3);
+    margin-top: var(--sp-3);
+    align-items: stretch;
+  }
+  .dock__addrow .dock__input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* ── roots ─────────────────────────────────────────────────────────────── */
+  .roots {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+  }
+  .roots__item {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    font-size: var(--fs-label);
+    color: var(--text-muted);
+  }
+  .roots__item--primary {
+    color: var(--text-secondary);
+  }
+  .roots__path {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+    text-align: left;
+  }
+  .roots__tag {
+    flex: none;
+    font-size: var(--fs-micro);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--brand);
+  }
+
+  /* ── shells ────────────────────────────────────────────────────────────── */
+  .shells {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+  }
+  .shell {
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--r-sm);
+    background: var(--bg-raised);
+    padding: var(--sp-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+  }
+  .shell__top {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+  .shell__cmd {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: var(--fw-regular) var(--fs-code-sm) / 1.2 var(--font-mono);
+    color: var(--text-primary);
+  }
+  .shell__meta {
+    display: flex;
+  }
+  .shell__line {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: var(--fw-regular) var(--fs-code-sm) / var(--lh-snug) var(--font-mono);
+    color: var(--text-muted);
+  }
+
+  /* ── settings panel ────────────────────────────────────────────────────── */
+  .set {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-5);
+  }
+  .set__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-5);
+  }
+  .set__label {
+    font-size: var(--fs-label);
+    color: var(--text-secondary);
+    flex: none;
+  }
+  .set__ctl {
+    flex: 1;
+    min-width: 0;
+    max-width: 170px;
+    box-sizing: border-box;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-raised);
+    color: var(--text-primary);
+    border-radius: var(--r-sm);
+    padding: var(--sp-2) var(--sp-3);
+    font: var(--fw-regular) var(--fs-body-sm) / 1 var(--font-sans);
+    outline: none;
+    cursor: pointer;
+  }
+  .set__ctl:focus-visible {
+    border-color: var(--border-brand-faint);
+    box-shadow: var(--shadow-focus);
+  }
+  /* A compact switch styled from tokens; the track tints brand when on. */
+  .set__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-3);
+    border: none;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font: var(--fw-medium) var(--fs-label) / 1 var(--font-sans);
+  }
+  .set__toggle:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+    border-radius: var(--r-xs);
+  }
+  .set__toggle-track {
+    position: relative;
+    width: 30px;
+    height: 16px;
+    border-radius: var(--r-full);
+    background: var(--bg-inset);
+    border: 1px solid var(--border-subtle);
+    transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+  }
+  .set__toggle-knob {
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 12px;
+    height: 12px;
+    border-radius: var(--r-full);
+    background: var(--text-muted);
+    transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+  }
+  .set__toggle[aria-checked="true"] .set__toggle-track {
+    background: var(--state-selected);
+    border-color: var(--border-brand);
+  }
+  .set__toggle[aria-checked="true"] .set__toggle-knob {
+    transform: translateX(14px);
+    background: var(--brand);
+  }
+  .set__toggle-text {
+    min-width: 3ch;
+    text-align: left;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .set__toggle-track,
+    .set__toggle-knob {
+      transition: none;
+    }
+  }
+
+  /* ── session menu ──────────────────────────────────────────────────────── */
+  .menu {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    min-width: 200px;
+  }
+  .menu__item {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    width: 100%;
+    padding: var(--sp-3) var(--sp-4);
+    border: none;
+    background: transparent;
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    text-align: left;
+    color: var(--text-secondary);
+    font: var(--fw-medium) var(--fs-body-sm) / 1 var(--font-sans);
+  }
+  .menu__item:hover:not(:disabled) {
+    background: var(--state-hover);
+    color: var(--text-primary);
+  }
+  .menu__item:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .menu__item:disabled {
+    color: var(--text-ghost);
+    cursor: not-allowed;
+  }
+  .menu__item--danger {
+    color: var(--error);
+  }
+  .menu__item--danger:hover:not(:disabled) {
+    background: var(--error-bg);
+    color: var(--error);
+  }
+  .menu__glyph {
+    width: 16px;
+    text-align: center;
+    color: var(--text-ghost);
+  }
+  .menu__item--danger .menu__glyph {
+    color: var(--error);
+  }
+  .menu__label {
+    flex: 1;
+  }
+  .menu__hint {
+    font-size: var(--fs-micro);
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+  }
+  .menu__confirm {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    padding: var(--sp-4);
+    border-radius: var(--r-sm);
+    background: var(--error-bg);
+    border: 1px solid var(--error);
+  }
+  .menu__confirm-q {
+    font-size: var(--fs-body-sm);
+    color: var(--text-primary);
+  }
+  .menu__confirm-actions {
+    display: flex;
+    gap: var(--sp-3);
+  }
+
   .dock__group--approve {
     background: var(--warn-bg);
     border: 1px solid var(--warn);
