@@ -151,6 +151,9 @@
   });
 
   function show() {
+    // Announce so any other top-level overlay (the Shortcuts sheet) can step
+    // aside — only one keyboard-grabbing surface should own the screen at once.
+    dispatchEvent(new CustomEvent("eigen:overlay", { detail: "palette" }));
     open = true;
     query = "";
     active = 0;
@@ -186,9 +189,18 @@
       hide();
     }
   }
+  // Another overlay opened (Shortcuts sheet) — yield the screen so we never
+  // stack underneath it grabbing focus.
+  function onOverlay(e: Event) {
+    if ((e as CustomEvent).detail !== "palette") hide();
+  }
   $effect(() => {
     addEventListener("keydown", onWinKey);
-    return () => removeEventListener("keydown", onWinKey);
+    addEventListener("eigen:overlay", onOverlay);
+    return () => {
+      removeEventListener("keydown", onWinKey);
+      removeEventListener("eigen:overlay", onOverlay);
+    };
   });
 
   function onListKey(e: KeyboardEvent) {

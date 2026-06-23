@@ -31,14 +31,13 @@
 <svelte:window {onkeydown} />
 
 {#if open}
-  <div
-    class="sheet__scrim"
-    role="button"
-    tabindex="-1"
-    aria-label="Close"
-    onclick={onclose}
-    onkeydown={(e) => e.key === "Enter" && onclose()}
-  ></div>
+  <!-- Decorative click-catcher only: the accessible ways to close are the
+       header Close button and Escape (handled on window), and trapFocus keeps
+       focus inside the dialog so the scrim never receives keyboard focus.
+       role="presentation" drops it from the a11y tree; the click handler needs
+       no keyboard pair because its behavior is fully duplicated above. -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="sheet__scrim" role="presentation" onclick={onclose}></div>
   <div
     class="sheet"
     role="dialog"

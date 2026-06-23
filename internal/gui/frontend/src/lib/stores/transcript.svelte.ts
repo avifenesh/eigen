@@ -243,26 +243,40 @@ export function createTranscript(sessionId: string) {
 // blocks: assistant tool calls + their results collapse into ToolBlocks. uid
 // is assigned from the supplied generator so seeded blocks share the store's
 // monotonic identity space with streamed ones.
+//
+// Two perf guards (GUI-018) for large sessions:
+//   - matching a `tool`-role result back to its call uses a Map<toolId,block>
+//     built during the pass, not an out.find() linear scan (O(N) not O(N^2));
+//   - the daemon returns the FULL uncapped transcript but the view only keeps
+//     the last CAP blocks, so we map at most the last CAP*2 messages — enough
+//     to comfortably fill the window even when every message is a single block
+//     (the seed slices to CAP afterward; truncated stays driven by raw length).
 function mapMessages(messages: MessageDTO[], uid: () => number): Block[] {
+  const window = messages.length > CAP * 2 ? messages.slice(-CAP * 2) : messages;
   const out: Block[] = [];
+  const byToolId = new Map<string, ToolBlock>();
   let step = 0;
-  for (const m of messages) {
+  for (const m of window) {
     if (m.role === "tool") {
       const id = m.toolCallId ?? "";
-      const existing = out.find((b) => b.kind === "tool" && b.id === id) as ToolBlock | undefined;
+      const existing = byToolId.get(id);
       if (existing) {
         existing.result = m.text;
         existing.isError = m.toolError;
         existing.done = true;
       } else {
-        out.push({ uid: uid(), kind: "tool", id, name: m.toolName ?? "tool", args: "", result: m.text, isError: m.toolError, done: true });
+        const block: ToolBlock = { uid: uid(), kind: "tool", id, name: m.toolName ?? "tool", args: "", result: m.text, isError: m.toolError, done: true };
+        byToolId.set(id, block);
+        out.push(block);
       }
       continue;
     }
     if (m.reasoning) out.push({ uid: uid(), kind: "reasoning", step, text: m.reasoning });
     if (m.text) out.push({ uid: uid(), kind: "text", step, text: m.text });
     for (const tc of m.toolCalls ?? []) {
-      out.push({ uid: uid(), kind: "tool", id: tc.id, name: tc.name, args: tc.args, done: false });
+      const block: ToolBlock = { uid: uid(), kind: "tool", id: tc.id, name: tc.name, args: tc.args, done: false };
+      byToolId.set(tc.id, block);
+      out.push(block);
     }
     step++;
   }

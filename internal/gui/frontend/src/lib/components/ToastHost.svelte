@@ -18,12 +18,28 @@
 
   // Svelte JS transitions do not honour prefers-reduced-motion on their own,
   // so we gate the durations to 0 when the user has asked to reduce motion.
-  const reduceMotion =
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const enterMs = reduceMotion ? 0 : ENTER_MS;
-  const exitMs = reduceMotion ? 0 : EXIT_MS;
+  // Stay live: the OS setting can flip at runtime, so we hold the query and
+  // re-read it on every 'change' rather than snapshotting once at mount.
+  const motionQuery =
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia("(prefers-reduced-motion: reduce)")
+      : null;
+
+  let reduceMotion = $state(motionQuery?.matches ?? false);
+
+  $effect(() => {
+    if (!motionQuery) return;
+    const onChange = (e: MediaQueryListEvent) => {
+      reduceMotion = e.matches;
+    };
+    // Re-sync once on subscribe in case the setting flipped before this ran.
+    reduceMotion = motionQuery.matches;
+    motionQuery.addEventListener("change", onChange);
+    return () => motionQuery.removeEventListener("change", onChange);
+  });
+
+  const enterMs = $derived(reduceMotion ? 0 : ENTER_MS);
+  const exitMs = $derived(reduceMotion ? 0 : EXIT_MS);
 
   const GLYPH: Record<ToastKind, string> = {
     success: "✓",

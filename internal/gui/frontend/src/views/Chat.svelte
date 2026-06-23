@@ -142,8 +142,15 @@
     try {
       if (store?.running) {
         const steered = await Bridge.SteerInput(sessionId, text, images);
-        if (steered) toasts.info("steered into the running turn");
-        else await Bridge.SendInput(sessionId, text, images, []);
+        if (steered) {
+          toasts.info("steered into the running turn");
+        } else {
+          // Steer wasn't accepted (e.g. the turn moved past the steer window):
+          // we fall back to a fresh queued turn. The user typed expecting to
+          // steer, so surface the behavior change rather than queuing silently.
+          await Bridge.SendInput(sessionId, text, images, []);
+          toasts.info("couldn't steer — queued as a new turn");
+        }
       } else {
         await Bridge.SendInput(sessionId, text, images, []);
       }

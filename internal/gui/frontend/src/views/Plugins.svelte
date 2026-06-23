@@ -32,6 +32,7 @@
     const seq = ++loadSeq;
     loading = true;
     error = null;
+    confirming = null; // a refresh clears any dangling inline Uninstall?/Remove?
     try {
       const d = await Bridge.Plugins();
       if (seq === loadSeq) data = d;
@@ -45,6 +46,27 @@
     load();
     return () => {
       loadSeq++;
+    };
+  });
+
+  // Plugins() is local + instant (reads installed plugins + configured
+  // marketplaces), so re-reading freely is cheap. There's no plugins push
+  // event, so a plugin installed via the CLI (`eigen plugin install`) won't
+  // appear until restart — re-read on window focus / tab-visible so it lands
+  // without one. Skip while a load is in flight (no overlap); load() resets
+  // confirming, so a refresh also clears any dangling inline confirm. Both
+  // listeners are torn down on unmount — leak contract.
+  function refreshOnReturn() {
+    if (document.visibilityState !== "visible") return;
+    if (loading) return;
+    load();
+  }
+  $effect(() => {
+    window.addEventListener("focus", refreshOnReturn);
+    document.addEventListener("visibilitychange", refreshOnReturn);
+    return () => {
+      window.removeEventListener("focus", refreshOnReturn);
+      document.removeEventListener("visibilitychange", refreshOnReturn);
     };
   });
 

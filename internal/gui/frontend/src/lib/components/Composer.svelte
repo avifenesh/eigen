@@ -63,8 +63,9 @@
 
   function grow() {
     if (!ta) return;
-    // Measure against a clean slate, then clamp to the row cap. The cap is read
-    // from a CSS custom property so the JS and the stylesheet never disagree.
+    // Measure against a clean slate, then clamp to the row cap. The cap is the
+    // MAX_ROWS JS constant, multiplied by the line-box height we read from the
+    // computed style so the geometry still tracks the font tokens.
     ta.style.height = "auto";
     const cs = getComputedStyle(ta);
     const line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.35;

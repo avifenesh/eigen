@@ -17,6 +17,7 @@ import type {
   CronsDTO,
   PluginsDTO,
   ConfigDTO,
+  DaemonStats,
   FeedDTO,
   FeedItemDTO,
   MachinesDTO,
@@ -25,7 +26,7 @@ import type {
 export const Bridge = {
   // health
   Ping: (): Promise<void> => B.Ping(),
-  Stats: (): Promise<unknown> => B.Stats(),
+  Stats: (): Promise<DaemonStats | null> => B.Stats(),
   // version of THIS gui binary (compared against daemon version for mismatch)
   GUIVersion: (): Promise<string> => B.GUIVersion(),
   // sessions

@@ -394,5 +394,14 @@
     .cfg__skel {
       animation: none;
     }
+    .toggle__knob,
+    .toggle,
+    .chip {
+      transition: none;
+    }
+    /* Keep the on-state as a static end-state — no slide, just the final position. */
+    .toggle--on .toggle__knob {
+      transform: translateX(18px);
+    }
   }
 </style>

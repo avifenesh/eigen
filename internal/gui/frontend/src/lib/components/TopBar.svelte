@@ -7,9 +7,30 @@
   import type { Snippet } from "svelte";
   import { router } from "$lib/router.svelte";
   import { daemon } from "$lib/stores/daemon.svelte";
+  import { sessions } from "$lib/stores/sessions.svelte";
   import StatusDot from "./StatusDot.svelte";
 
   let { actions }: { actions?: Snippet } = $props();
+
+  // The masthead title names where you are. On the Chat route a routed session
+  // id should read as that session's title, not the generic "Chat" word — so
+  // the bar tells you which conversation you're in. Falls back to "Chat" while
+  // the list is still loading or the id is unknown; every other route is just
+  // its (capitalized) name.
+  const title = $derived.by(() => {
+    if (router.route === "chat" && router.param) {
+      const sess = sessions.list.find((s) => s.id === router.param);
+      return sess?.title || "Chat";
+    }
+    return router.route;
+  });
+  // A resolved session title is free-form text and should keep its own casing;
+  // only route names earn the masthead's word-initial capitalization.
+  const verbatimTitle = $derived(
+    router.route === "chat" && router.param
+      ? !!sessions.list.find((s) => s.id === router.param)?.title
+      : false,
+  );
 
   // Status copy and dot state are derived straight from the daemon store so the
   // bar mirrors the connection without any local bookkeeping.
@@ -30,7 +51,7 @@
 <header class="topbar">
   <div class="topbar__heading">
     <span class="topbar__eyebrow">Eigen</span>
-    <h1 class="topbar__title">{router.route}</h1>
+    <h1 class="topbar__title" class:topbar__title--verbatim={verbatimTitle}>{title}</h1>
   </div>
 
   <div class="topbar__spacer"></div>
@@ -107,6 +128,11 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  /* A resolved session title keeps its own casing — capitalize is for the
+     one-word route names, not free-form titles. */
+  .topbar__title--verbatim {
+    text-transform: none;
   }
 
   .topbar__spacer {

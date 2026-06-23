@@ -16,15 +16,21 @@
     title,
     line = "",
     action,
+    headingLevel = 2,
   }: {
     glyph?: string;
     title: string;
     line?: string;
     action?: Snippet;
+    // Heading level for the title so the empty state slots into the surrounding
+    // document outline — a top-level view body wants <h2>, a card nested under a
+    // section heading wants <h3>. Defaults to 2 so existing callers are unchanged.
+    headingLevel?: 1 | 2 | 3 | 4 | 5 | 6;
   } = $props();
 
   // An action makes this a place to *do* something — let teal lead the eye.
   const hasAction = $derived(!!action);
+  const titleTag = $derived(`h${headingLevel}` as const);
 </script>
 
 <div class="empty" class:empty--actionable={hasAction}>
@@ -32,7 +38,7 @@
     <span class="empty__glyph-mark">{glyph}</span>
   </div>
   <div class="empty__text">
-    <h2 class="empty__title">{title}</h2>
+    <svelte:element this={titleTag} class="empty__title">{title}</svelte:element>
     {#if line}<p class="empty__line">{line}</p>{/if}
   </div>
   {#if action}<div class="empty__action">{@render action()}</div>{/if}

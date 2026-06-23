@@ -36,7 +36,10 @@
     error = null;
     try {
       const d = await Bridge.Machines();
-      if (seq === loadSeq) data = d;
+      if (seq === loadSeq) {
+        if (d) data = d;
+        else error = "Could not load machines";
+      }
     } catch (e) {
       if (seq === loadSeq) error = e instanceof Error ? e.message : String(e);
     } finally {

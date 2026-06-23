@@ -41,6 +41,12 @@
   // Refresh the session list whenever the daemon comes (back) online. Scoped to
   // an $effect so the reconnect callback is removed if this component unmounts.
   $effect(() => daemon.onReconnect(() => sessions.refresh()));
+
+  // Honor prefers-reduced-motion: Svelte JS transitions don't check it on their
+  // own, so collapse the route fly to 0ms for reduced-motion users.
+  const reduceMotion =
+    typeof matchMedia === "function" &&
+    matchMedia("(prefers-reduced-motion: reduce)").matches;
 </script>
 
 <div class="shell">
@@ -49,7 +55,7 @@
     <TopBar />
     <div class="outlet">
       {#key router.route}
-        <div class="outlet__page" in:fly={{ y: 6, duration: 180, opacity: 0 }}>
+        <div class="outlet__page" in:fly={{ y: 6, duration: reduceMotion ? 0 : 180, opacity: 0 }}>
         {#if router.route === "home"}
           <Home />
         {:else if router.route === "chat"}

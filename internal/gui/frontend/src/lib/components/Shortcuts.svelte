@@ -12,10 +12,15 @@
     { keys: ["?"], desc: "This shortcut sheet" },
     { keys: ["Esc"], desc: "Close palette / dialog / sheet" },
     { keys: ["↑", "↓"], desc: "Move within the palette / lists" },
-    { keys: ["Enter"], desc: "Open the selected item" },
-    { keys: ["Enter"], desc: "Send a message (Chat)" },
+    { keys: ["Enter"], desc: "Open selection (palette / lists)" },
+    { keys: ["Enter"], desc: "Send the message (in Chat)" },
     { keys: ["Shift", "Enter"], desc: "Newline in the composer" },
   ];
+
+  // The palette (⌘/Ctrl+K) is where the verbs live; the sheet only points at it
+  // so the two are never out of sync.
+  const paletteNote =
+    "In the palette: start a session, prune empty sessions, refresh the feed — or type to fuzzy-jump to any session.";
 
   function isTyping(): boolean {
     const el = document.activeElement;
@@ -23,17 +28,31 @@
     const tag = el.tagName;
     return tag === "INPUT" || tag === "TEXTAREA" || (el as HTMLElement).isContentEditable;
   }
+  function show() {
+    // Yield the screen from any other top-level overlay (the command palette)
+    // so the two never stack and fight over focus.
+    dispatchEvent(new CustomEvent("eigen:overlay", { detail: "shortcuts" }));
+    open = true;
+  }
   function onKey(e: KeyboardEvent) {
     if (e.key === "?" && !isTyping() && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
-      open = !open;
+      open ? (open = false) : show();
     } else if (e.key === "Escape" && open) {
       open = false;
     }
   }
+  // The command palette opened — close so the focused overlay stays on top.
+  function onOverlay(e: Event) {
+    if ((e as CustomEvent).detail !== "shortcuts") open = false;
+  }
   $effect(() => {
     addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
+    addEventListener("eigen:overlay", onOverlay);
+    return () => {
+      removeEventListener("keydown", onKey);
+      removeEventListener("eigen:overlay", onOverlay);
+    };
   });
 </script>
 
@@ -58,6 +77,7 @@
         </div>
       {/each}
     </dl>
+    <p class="sc__note">{paletteNote}</p>
     <button class="sc__close" onclick={() => (open = false)}>Close</button>
   </div>
 {/if}
@@ -119,6 +139,14 @@
     margin: 0;
     font-size: var(--fs-body-sm);
     color: var(--text-secondary);
+  }
+  .sc__note {
+    margin: var(--sp-5) 0 0;
+    padding-top: var(--sp-5);
+    border-top: 1px solid var(--border-hairline);
+    font-size: var(--fs-body-sm);
+    line-height: 1.5;
+    color: var(--text-muted);
   }
   .sc__close {
     margin-top: var(--sp-6);

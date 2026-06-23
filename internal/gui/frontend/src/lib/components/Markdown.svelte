@@ -164,7 +164,9 @@
       <span
         class="md-task"
         class:md-task--done={item.checked}
-        aria-hidden="true"
+        role="checkbox"
+        aria-checked={!!item.checked}
+        aria-label={item.checked ? "done" : "to do"}
       ></span>
     {/if}
     <span class="md-li__body">{@render block(item.tokens)}</span>

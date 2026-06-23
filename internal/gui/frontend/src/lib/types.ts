@@ -44,7 +44,7 @@ export type SessionInfoDTO = {
   status: string;
   turns: number;
   views: number;
-  updated: number;
+  updated: number; // unix nano — divide by 1e6 for ms (use relTime() in lib/status.ts)
 };
 
 export type ToolInfo = { name: string; read_only: boolean };
