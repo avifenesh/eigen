@@ -7,7 +7,7 @@
   // local + fast (no network probe).
   import { Bridge } from "$lib/bridge";
   import { toasts } from "$lib/stores/toasts.svelte";
-  import type { RoutingDTO, ModelDTO } from "$lib/types";
+  import type { RoutingDTO, ModelDTO, RouteStatsDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
   import Badge from "$lib/components/Badge.svelte";
   import StatusDot from "$lib/components/StatusDot.svelte";
@@ -18,6 +18,12 @@
   let query = $state("");
   let provFilter = $state<string | null>(null);
   let onlyAvailable = $state(false);
+
+  // Live routing-health strip: how routing actually behaved (from the
+  // observability log), shown above the static catalog so the view leads with
+  // behaviour. Fetched once with the same disposed-guard Observe uses.
+  let routes = $state<RouteStatsDTO | null>(null);
+  let disposed = false;
 
   let loadSeq = 0;
   async function load() {
@@ -32,12 +38,40 @@
       if (seq === loadSeq) loading = false;
     }
   }
+  async function loadRoutes() {
+    try {
+      const sum = await Bridge.ObserveSummary(5000);
+      if (!disposed && sum && sum.available && sum.records > 0) routes = sum.routes;
+    } catch {
+      // Health strip is supplementary; a missing observability log is not an error here.
+    }
+  }
   $effect(() => {
     load();
+    loadRoutes();
     return () => {
       loadSeq++;
+      disposed = true;
     };
   });
+
+  // The routing-health strip only earns its place once routing has happened.
+  const routeTotal = $derived(
+    routes ? routes.routed + routes.skipped + routes.assessed + routes.orchestrator : 0,
+  );
+  const routeStages = $derived(
+    routes
+      ? ([
+          { key: "routed", label: "routed", n: routes.routed, tone: "brand" },
+          { key: "assessed", label: "assessed", n: routes.assessed, tone: "accent" },
+          { key: "skipped", label: "skipped", n: routes.skipped, tone: "muted" },
+          { key: "orchestrator", label: "orchestrator", n: routes.orchestrator, tone: "warn" },
+        ] as const)
+      : [],
+  );
+  const routeModelMax = $derived(
+    routes ? routes.byModel.reduce((mx, m) => Math.max(mx, m.count), 1) : 1,
+  );
 
   const models = $derived.by(() => {
     const all = data?.models ?? [];
@@ -91,6 +125,40 @@
       <input class="route__search" type="text" placeholder="Filter models…" bind:value={query} aria-label="Filter models" />
       {#if data}<span class="route__count tnum">{models.length}</span>{/if}
     </header>
+
+    {#if routes && routeTotal > 0}
+      <section class="health" aria-label="Routing health">
+        <div class="health__lead">
+          <span class="health__eyebrow">How routing behaved</span>
+          <span class="health__total tnum">{routeTotal.toLocaleString()}<span class="health__total-u"> decisions</span></span>
+        </div>
+        <div class="health__flow" role="img" aria-label="Routing decision breakdown">
+          {#each routeStages as st (st.key)}
+            {#if st.n > 0}
+              <div class="flow flow--{st.tone}" style="flex:{st.n}" title="{st.label}: {st.n}">
+                <span class="flow__n tnum">{st.n.toLocaleString()}</span>
+                <span class="flow__l">{st.label}</span>
+              </div>
+            {/if}
+          {/each}
+        </div>
+        {#if routes.byModel.length > 0}
+          <div class="health__models">
+            <span class="health__models-label">routed to</span>
+            <div class="health__bars">
+              {#each routes.byModel as m (m.name)}
+                <div class="hbar" title="{m.name}: {m.count}">
+                  <span class="hbar__name" title={m.name}>{m.name}</span>
+                  <div class="hbar__track"><span style="width:{(m.count / routeModelMax) * 100}%"></span></div>
+                  <span class="hbar__n tnum">{m.count.toLocaleString()}</span>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+        <div class="health__rule"><span>catalog</span></div>
+      </section>
+    {/if}
 
     {#if loading && !data}
       <div class="route__grid route__grid--pad">
@@ -246,6 +314,158 @@
     font-size: var(--fs-label);
     color: var(--text-faint);
   }
+  /* Routing-health strip — leads with how routing behaves before the catalog. */
+  .health {
+    flex: none;
+    padding: var(--sp-6) var(--sp-9) 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-5);
+  }
+  .health__lead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-5);
+  }
+  .health__eyebrow {
+    font: var(--fw-semibold) var(--fs-micro) / 1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--text-faint);
+  }
+  .health__total {
+    font: var(--fw-semibold) var(--fs-h3) / 1 var(--font-sans);
+    color: var(--text-primary);
+  }
+  .health__total-u {
+    font-size: var(--fs-label);
+    font-weight: var(--fw-regular);
+    color: var(--text-muted);
+  }
+  .health__flow {
+    display: flex;
+    gap: var(--sp-2);
+    height: 46px;
+  }
+  .flow {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+    padding: 0 var(--sp-4);
+    border-radius: var(--r-sm);
+    overflow: hidden;
+    position: relative;
+    border: 1px solid var(--border-hairline);
+  }
+  .flow__n {
+    font: var(--fw-semibold) var(--fs-body-sm) / 1 var(--font-sans);
+    color: var(--text-primary);
+    white-space: nowrap;
+  }
+  .flow__l {
+    font-size: var(--fs-micro);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .flow--brand {
+    background: linear-gradient(180deg, rgba(105, 194, 184, 0.16), rgba(105, 194, 184, 0.06));
+    border-color: var(--border-brand-faint);
+  }
+  .flow--brand .flow__n {
+    color: var(--brand-bright);
+  }
+  .flow--accent {
+    background: linear-gradient(180deg, rgba(111, 155, 208, 0.14), rgba(111, 155, 208, 0.05));
+    border-color: rgba(111, 155, 208, 0.22);
+  }
+  .flow--accent .flow__n {
+    color: var(--accent-bright);
+  }
+  .flow--muted {
+    background: var(--bg-raised);
+  }
+  .flow--warn {
+    background: linear-gradient(180deg, rgba(224, 179, 106, 0.14), rgba(224, 179, 106, 0.05));
+    border-color: rgba(224, 179, 106, 0.22);
+  }
+  .flow--warn .flow__n {
+    color: var(--warn);
+  }
+  .health__models {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+  }
+  .health__models-label {
+    font: var(--fw-semibold) var(--fs-micro) / 1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--text-faint);
+  }
+  .health__bars {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: var(--sp-2) var(--sp-6);
+  }
+  .hbar {
+    display: grid;
+    grid-template-columns: minmax(0, 130px) 1fr auto;
+    align-items: center;
+    gap: var(--sp-4);
+  }
+  .hbar__name {
+    font-size: var(--fs-body-sm);
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .hbar__track {
+    height: 5px;
+    background: var(--bg-inset);
+    border-radius: var(--r-full);
+    overflow: hidden;
+  }
+  .hbar__track span {
+    display: block;
+    height: 100%;
+    background: var(--spectrum);
+    border-radius: var(--r-full);
+    transition: width var(--dur-slow) var(--ease-out);
+  }
+  .hbar__n {
+    font-size: var(--fs-label);
+    color: var(--text-muted);
+    min-width: 32px;
+    text-align: right;
+  }
+  .health__rule {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    margin-top: var(--sp-1);
+  }
+  .health__rule::before,
+  .health__rule::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border-hairline);
+  }
+  .health__rule span {
+    font: var(--fw-semibold) var(--fs-micro) / 1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--text-ghost);
+  }
+
   .route__grid {
     flex: 1;
     overflow-y: auto;
@@ -331,6 +551,9 @@
   @media (prefers-reduced-motion: reduce) {
     .route__skel {
       animation: none;
+    }
+    .hbar__track span {
+      transition: none;
     }
   }
 </style>

@@ -1,10 +1,14 @@
 <script lang="ts">
   // The honest placeholder for not-yet-built views and zero-data lists. It must
   // read as intentional and calm — a considered pause, never a broken control.
-  // The glyph sits in a soft inset disc to feel placed rather than dropped; the
-  // title leads, the line follows on a readable measure, and an optional action
-  // offers the one thing worth doing here. A brief, reduced-motion-safe rise on
-  // mount keeps arrivals gentle.
+  //
+  // VOICE: the glyph sits in a soft inset disc to feel placed rather than
+  // dropped; the title leads, the line follows on a readable measure, and an
+  // optional action offers the one thing worth doing here. When an action is
+  // present the surface comes quietly alive — a faint teal ring and a hairline
+  // tether draw the eye down to that next step; without one it reads as cool,
+  // intentional calm. A brief, reduced-motion-safe rise on mount keeps arrivals
+  // gentle, with the glyph leading and the text settling a beat behind.
   import type { Snippet } from "svelte";
 
   let {
@@ -18,9 +22,12 @@
     line?: string;
     action?: Snippet;
   } = $props();
+
+  // An action makes this a place to *do* something — let teal lead the eye.
+  const hasAction = $derived(!!action);
 </script>
 
-<div class="empty">
+<div class="empty" class:empty--actionable={hasAction}>
   <div class="empty__glyph" aria-hidden="true">
     <span class="empty__glyph-mark">{glyph}</span>
   </div>
@@ -42,19 +49,27 @@
     gap: var(--sp-6);
     padding: var(--sp-10) var(--sp-8);
     text-align: center;
-    animation: empty-rise var(--dur-slow) var(--ease-out);
+    /* Glyph leads the rise; text + action settle a beat behind (see below). */
+    animation: empty-rise var(--dur-slow) var(--ease-out) both;
   }
 
-  /* GLYPH — large but quiet; a soft inset disc places it intentionally. */
+  /* GLYPH — large but quiet; a soft inset disc places it intentionally.
+     A faint outer ring lifts it off the page without ever shouting. */
   .empty__glyph {
+    position: relative;
     display: grid;
     place-items: center;
-    width: 56px;
-    height: 56px;
+    width: 60px;
+    height: 60px;
     border-radius: var(--r-full);
     background: var(--bg-inset);
-    box-shadow: inset 0 0 0 1px var(--border-hairline);
-    color: var(--text-faint);
+    box-shadow:
+      inset 0 0 0 1px var(--border-hairline),
+      0 0 0 6px var(--state-hover);
+    color: var(--text-ghost);
+    transition:
+      color var(--dur-base) var(--ease-out),
+      box-shadow var(--dur-base) var(--ease-out);
   }
   .empty__glyph-mark {
     font-size: 30px;
@@ -64,12 +79,25 @@
     transform: translateY(-0.02em);
   }
 
+  /* When there's a next step, the glyph warms to teal and gains a quiet halo —
+     the one living accent points the eye toward the action below. */
+  .empty--actionable .empty__glyph {
+    color: var(--brand);
+    box-shadow:
+      inset 0 0 0 1px var(--border-brand-faint),
+      0 0 0 6px var(--state-selected),
+      var(--glow-live);
+  }
+
   /* TEXT BLOCK — tight pairing of title + line so they read as one unit. */
   .empty__text {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: var(--sp-3);
+    /* Stagger: text arrives just after the glyph for a settled, crafted feel. */
+    animation: empty-settle var(--dur-slow) var(--ease-out) both;
+    animation-delay: 60ms;
   }
   .empty__title {
     margin: 0;
@@ -88,12 +116,37 @@
     text-wrap: balance;
   }
 
-  /* ACTION — the single thing worth doing; sits a touch lower, separated. */
+  /* ACTION — the single thing worth doing. A short hairline tether reaches up
+     toward the text so the button reads as the resolution of the prompt, not a
+     loose control floating in space. */
   .empty__action {
-    margin-top: var(--sp-2);
+    position: relative;
+    margin-top: var(--sp-4);
+    animation: empty-settle var(--dur-slow) var(--ease-out) both;
+    animation-delay: 120ms;
+  }
+  .empty__action::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + var(--sp-2));
+    width: 1px;
+    height: var(--sp-3);
+    background: linear-gradient(to bottom, transparent, var(--border-brand-faint));
+    transform: translateX(-50%);
   }
 
   @keyframes empty-rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  @keyframes empty-settle {
     from {
       opacity: 0;
       transform: translateY(4px);
@@ -104,7 +157,9 @@
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .empty {
+    .empty,
+    .empty__text,
+    .empty__action {
       animation: none;
     }
   }

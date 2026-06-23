@@ -255,9 +255,11 @@
   .kpi {
     padding: var(--sp-6);
   }
+  /* Profile KPIs are lifetime tallies, not live signals — they stay neutral so
+     brand teal keeps meaning "alive" across the app. Only errors carry color. */
   .kpi__v {
     font: var(--fw-bold) var(--fs-h1) / 1 var(--font-display);
-    color: var(--brand);
+    color: var(--text-primary);
   }
   .kpi__v--err {
     color: var(--error);

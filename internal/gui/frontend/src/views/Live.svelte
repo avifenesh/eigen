@@ -131,10 +131,10 @@
 <div class="live">
   <header class="live__head">
     <div class="live__kpis">
-      <div class="kpi kpi--working"><span class="kpi__v tnum">{counts.working}</span><span class="kpi__l">working</span></div>
-      <div class="kpi kpi--approval"><span class="kpi__v tnum">{counts.approval}</span><span class="kpi__l">approval</span></div>
+      <div class="kpi" class:kpi--working={counts.working > 0}><span class="kpi__v tnum">{counts.working}</span><span class="kpi__l">working</span></div>
+      <div class="kpi" class:kpi--approval={counts.approval > 0}><span class="kpi__v tnum">{counts.approval}</span><span class="kpi__l">approval</span></div>
       <div class="kpi kpi--idle"><span class="kpi__v tnum">{counts.idle}</span><span class="kpi__l">idle</span></div>
-      <div class="kpi kpi--error"><span class="kpi__v tnum">{counts.error}</span><span class="kpi__l">error</span></div>
+      <div class="kpi" class:kpi--error={counts.error > 0}><span class="kpi__v tnum">{counts.error}</span><span class="kpi__l">error</span></div>
     </div>
     <Button variant="primary" size="sm" loading={starting} onclick={startSession}>New session</Button>
   </header>
@@ -158,7 +158,7 @@
   {:else}
     <div class="live__list">
       {#each ordered as s (s.id)}
-        <div class="lrow" class:lrow--live={isLive(s)} class:lrow--approval={s.status === "approval"}>
+        <div class="lrow" class:lrow--working={s.status === "working"} class:lrow--approval={s.status === "approval"}>
           <StatusDot state={sessionDot(s.status)} size={9} pulse={isLive(s)} />
           <button class="lrow__main" onclick={() => open(s)} title="Open session">
             <span class="lrow__title">{s.title || "untitled session"}</span>
@@ -219,7 +219,7 @@
     color: var(--text-primary);
   }
   .kpi--working .kpi__v {
-    color: var(--working);
+    color: var(--brand-bright);
   }
   .kpi--approval .kpi__v {
     color: var(--warn);
@@ -268,21 +268,34 @@
     border-radius: var(--r-md);
     transition: border-color var(--dur-fast) var(--ease-out);
   }
-  .lrow--live {
-    border-left-color: var(--working);
+  /* WORKING — alive. Teal left edge + a soft teal halo that breathes, so the
+     eye lands on what is actually running. This is the view's reason to exist. */
+  .lrow--working {
+    border-left-color: var(--brand);
+    animation: lrow-live var(--breath) var(--ease-inout) infinite;
   }
-  .lrow--approval {
-    border-left-color: var(--warn);
-    box-shadow: var(--glow-working);
-    animation: lrow-pulse var(--breath) var(--ease-inout) infinite;
-  }
-  @keyframes lrow-pulse {
+  @keyframes lrow-live {
     0%,
     100% {
       box-shadow: 0 0 0 1px var(--border-brand-faint);
     }
     50% {
-      box-shadow: var(--glow-working);
+      box-shadow: var(--glow-live);
+    }
+  }
+  /* APPROVAL — blocked on the user. Warn edge + a warn halo that breathes, a
+     distinct register from "running": something is waiting, not progressing. */
+  .lrow--approval {
+    border-left-color: var(--warn);
+    animation: lrow-wait var(--breath) var(--ease-inout) infinite;
+  }
+  @keyframes lrow-wait {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgba(224, 179, 106, 0.25);
+    }
+    50% {
+      box-shadow: var(--glow-warn);
     }
   }
   .lrow__main {
@@ -345,9 +358,17 @@
   @media (prefers-reduced-motion: reduce) {
     .live__skel,
     .lrow,
+    .lrow--working,
     .lrow--approval {
       animation: none;
       transition: none;
+    }
+    /* hold the live/approval glow steady rather than breathing */
+    .lrow--working {
+      box-shadow: var(--glow-live);
+    }
+    .lrow--approval {
+      box-shadow: 0 0 0 1px rgba(224, 179, 106, 0.35);
     }
   }
 </style>

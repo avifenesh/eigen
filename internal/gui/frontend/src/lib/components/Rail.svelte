@@ -53,6 +53,18 @@
     if (route === "sessions") return sessions.count;
     return 0;
   }
+
+  // These routes count *active work* — when their badge is non-zero the count
+  // is teal and breathing, so the eye is drawn to what is running/fresh. Other
+  // badges (e.g. total sessions) stay neutral: a tally, not a live signal.
+  const liveRoutes = new Set<Route>(["home", "chat", "agents", "live"]);
+
+  // Rail footer mirrors the daemon connection so the chrome bookends: brand at
+  // the top, engine status at the bottom. Version is shown only when known.
+  const online = $derived(daemon.status === "online");
+  const offline = $derived(daemon.status === "offline");
+  const footState = $derived(online ? "online" : offline ? "offline" : "connecting");
+  const version = $derived(daemon.stats?.version ?? "");
 </script>
 
 <nav class="rail" aria-label="Primary">
@@ -69,6 +81,7 @@
         {#each zone.items as item (item.route)}
           {@const active = router.route === item.route}
           {@const n = badge(item.route)}
+          {@const live = liveRoutes.has(item.route) && n > 0}
           <button
             class="rail__item"
             class:rail__item--active={active}
@@ -78,11 +91,21 @@
             <span class="rail__edge" aria-hidden="true"></span>
             <span class="rail__glyph" aria-hidden="true">{item.glyph}</span>
             <span class="rail__label">{item.label}</span>
-            {#if n > 0}<span class="rail__badge tnum">{n}</span>{/if}
+            {#if n > 0}
+              <span class="rail__badge tnum" class:rail__badge--live={live}>{n}</span>
+            {/if}
           </button>
         {/each}
       </div>
     {/each}
+  </div>
+
+  <!-- FOOTER — the rail's bottom bookend: engine status + version. Quiet by
+       default; the dot carries the living color when online. -->
+  <div class="rail__foot rail__foot--{footState}" title={`Daemon ${footState}`}>
+    <span class="rail__foot-dot" aria-hidden="true"></span>
+    <span class="rail__foot-status">{footState}</span>
+    {#if version}<span class="rail__foot-version tnum">{version}</span>{/if}
   </div>
 </nav>
 
@@ -120,8 +143,20 @@
     height: 7px;
     border-radius: var(--r-full);
     background: var(--brand);
-    /* faint living halo — the rail's one accent, kept whisper-quiet */
+    /* A living halo that breathes slowly — the brand mark is the rail's
+       heartbeat, the one accent that proves the chrome is alive even at rest. */
     box-shadow: 0 0 0 3px var(--state-selected);
+    animation: rail-mark-breathe var(--breath) var(--ease-inout) infinite;
+    will-change: box-shadow;
+  }
+  @keyframes rail-mark-breathe {
+    0%,
+    100% {
+      box-shadow: 0 0 0 2px var(--state-selected);
+    }
+    50% {
+      box-shadow: 0 0 0 4px rgba(105, 194, 184, 0.16);
+    }
   }
 
   .rail__scroll {
@@ -201,8 +236,10 @@
     opacity: 1;
   }
 
-  /* LEFT EDGE — its own element so it can scale-grow from the row's
-     vertical center with --ease-out instead of just appearing. */
+  /* LEFT EDGE — its own element so it can spring-grow from the row's vertical
+     center instead of just appearing. The bar is a soft teal gradient (bright
+     at the top, settling below) and carries a faint glow so the active marker
+     reads as a lit filament, not a flat tick. */
   .rail__edge {
     position: absolute;
     left: calc(-1 * var(--sp-4));
@@ -210,12 +247,13 @@
     width: 2px;
     height: var(--sp-6);
     border-radius: var(--r-full);
-    background: var(--brand);
+    background: linear-gradient(to bottom, var(--brand-bright), var(--brand));
+    box-shadow: 0 0 6px -1px rgba(105, 194, 184, 0.5);
     transform: translateY(-50%) scaleY(0);
     transform-origin: center;
     opacity: 0;
     transition:
-      transform var(--dur-base) var(--ease-out),
+      transform var(--dur-base) var(--ease-spring),
       opacity var(--dur-fast) var(--ease-out);
   }
   .rail__item--active .rail__edge {
@@ -275,12 +313,102 @@
     color: var(--text-on-brand);
   }
 
+  /* LIVE BADGE — counts that mean active work (running turns, bg tasks, live
+     sessions, items to act on) go teal and breathe, drawing the eye to what
+     is moving. A neutral tally (total sessions) keeps the quiet pill above. */
+  .rail__badge--live {
+    background: var(--state-selected);
+    color: var(--brand-bright);
+    box-shadow: inset 0 0 0 1px var(--border-brand-faint);
+    animation: rail-badge-breathe var(--breath) var(--ease-inout) infinite;
+    will-change: opacity;
+  }
+  .rail__item:hover .rail__badge--live {
+    background: var(--state-selected);
+    color: var(--brand-bright);
+  }
+  .rail__item--active .rail__badge--live {
+    background: var(--brand-dim);
+    color: var(--text-on-brand);
+    box-shadow: none;
+  }
+  @keyframes rail-badge-breathe {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.62;
+    }
+  }
+
+  /* FOOTER — the bottom bookend. A thin hairline lid, then a status dot +
+     word + version, all whisper-quiet. The dot is the only color: teal and
+     softly breathing when the engine is online, error when it has dropped. */
+  .rail__foot {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    height: var(--sp-9);
+    padding: 0 var(--sp-6);
+    border-top: 1px solid var(--border-hairline);
+    font: var(--fw-medium) var(--fs-micro) / 1 var(--font-sans);
+    color: var(--text-ghost);
+    user-select: none;
+  }
+  .rail__foot-dot {
+    width: 6px;
+    height: 6px;
+    flex: 0 0 auto;
+    border-radius: var(--r-full);
+    background: var(--text-faint);
+  }
+  .rail__foot--online .rail__foot-dot {
+    background: var(--brand);
+    animation: rail-foot-breathe var(--breath) var(--ease-inout) infinite;
+    will-change: opacity;
+  }
+  .rail__foot--offline .rail__foot-dot {
+    background: var(--error);
+  }
+  @keyframes rail-foot-breathe {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
+  .rail__foot-status {
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+  }
+  .rail__foot--online .rail__foot-status {
+    color: var(--text-muted);
+  }
+  .rail__foot--offline .rail__foot-status {
+    color: var(--error);
+  }
+  /* Version reads as a quiet build stamp — pushed to the far edge, ghosted. */
+  .rail__foot-version {
+    margin-left: auto;
+    color: var(--text-faint);
+    letter-spacing: var(--ls-normal);
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .rail__item,
     .rail__edge,
     .rail__glyph,
     .rail__badge {
       transition: none;
+    }
+    .rail__mark-dot,
+    .rail__badge--live,
+    .rail__foot--online .rail__foot-dot {
+      animation: none;
     }
   }
 </style>

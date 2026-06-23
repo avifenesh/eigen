@@ -117,7 +117,7 @@
           <div class="plug__list">
             {#each data.plugins as p (p.name)}
               <Card>
-                <div class="pl">
+                <div class="pl pl--scan-{p.scanStatus || 'unknown'}">
                   <div class="pl__main">
                     <div class="pl__top">
                       <span class="pl__name">{p.name}</span>
@@ -262,6 +262,20 @@
     display: flex;
     gap: var(--sp-5);
     padding: var(--sp-5);
+    border-left: 2px solid transparent;
+    border-radius: var(--r-md) 0 0 var(--r-md);
+  }
+  /* Scan status is the one axis that matters for an installed plugin — is this
+     bundle trusted? It tints the left edge so the section reads as "what did I
+     let in", the way Skills tints rows by source. */
+  .pl--scan-clean {
+    border-left-color: var(--success);
+  }
+  .pl--scan-forced {
+    border-left-color: var(--warn);
+  }
+  .pl--scan-unknown {
+    border-left-color: var(--border-strong);
   }
   .pl__main {
     flex: 1;
@@ -296,15 +310,26 @@
     flex-wrap: wrap;
     gap: var(--sp-3);
   }
+  /* Component counts as a capability ribbon: each bordered chip shows what the
+     plugin wired in (3 skills · 2 agents …), so the grid reads as "what does
+     this add" at a glance rather than a flat label run. */
   .comp {
     display: inline-flex;
     align-items: baseline;
     gap: var(--sp-2);
-    font-size: var(--fs-label);
-    color: var(--text-secondary);
+    height: 20px;
+    padding: 0 var(--sp-3);
+    border-radius: var(--r-xs);
+    background: var(--bg-overlay);
+    border: 1px solid var(--border-hairline);
+    font-size: var(--fs-micro);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--text-muted);
   }
   .comp__n {
-    font-weight: var(--fw-semibold);
+    font: var(--fw-semibold) var(--fs-label) / 1 var(--font-sans);
+    letter-spacing: var(--ls-normal);
     color: var(--brand);
   }
   .pl__warn {

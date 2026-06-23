@@ -83,7 +83,10 @@
 
 <div class="mx">
   <header class="mx__head">
-    <h1 class="mx__title">Machines</h1>
+    <div class="mx__lead">
+      <span class="mx__eyebrow">Remote hosts</span>
+      {#if data}<span class="mx__n tnum">{machines.length}</span>{/if}
+    </div>
     <p class="mx__hint">
       Install eigen on a new host from the CLI: <code class="mx__code">eigen remote install</code>
     </p>
@@ -185,11 +188,20 @@
     padding: var(--sp-6) var(--sp-9);
     border-bottom: 1px solid var(--border-hairline);
   }
-  .mx__title {
-    margin: 0;
-    font: var(--fw-semibold) var(--fs-h2) / 1 var(--font-display);
-    color: var(--text-primary);
-    letter-spacing: var(--ls-heading);
+  .mx__lead {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-3);
+  }
+  .mx__eyebrow {
+    font: var(--fw-semibold) var(--fs-label) / 1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--text-faint);
+  }
+  .mx__n {
+    font-size: var(--fs-label);
+    color: var(--text-ghost);
   }
   .mx__hint {
     margin: 0;

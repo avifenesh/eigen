@@ -202,7 +202,12 @@
       </div>
       <div class="live">
         {#each live as s (s.id)}
-          <button class="lr" onclick={() => openSession(s)}>
+          <button
+            class="lr"
+            class:lr--working={s.status === "working"}
+            class:lr--approval={s.status === "approval"}
+            onclick={() => openSession(s)}
+          >
             <StatusDot state={sessionDot(s.status)} size={8} pulse={s.status === "working" || s.status === "approval"} />
             <span class="lr__title">{s.title || "untitled session"}</span>
             {#if s.status === "approval"}<Badge tone="warn">needs approval</Badge>{/if}
@@ -300,7 +305,7 @@
     color: var(--text-primary);
   }
   .strip__v--live {
-    color: var(--working);
+    color: var(--brand-bright);
   }
   .strip__l {
     font-size: var(--fs-micro);
@@ -445,6 +450,7 @@
     padding: var(--sp-4) var(--sp-5);
     background: var(--bg-raised);
     border: 1px solid var(--border-hairline);
+    border-left: 2px solid var(--border-subtle);
     border-radius: var(--r-md);
     cursor: pointer;
     text-align: left;
@@ -452,6 +458,35 @@
   }
   .lr:hover {
     background: var(--bg-raised-2);
+  }
+  /* WORKING — alive: teal edge + a teal halo that breathes, matching Live. The
+     home base's "working now" zone must read as the most alive surface here. */
+  .lr--working {
+    border-left-color: var(--brand);
+    animation: lr-live var(--breath) var(--ease-inout) infinite;
+  }
+  @keyframes lr-live {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px var(--border-brand-faint);
+    }
+    50% {
+      box-shadow: var(--glow-live);
+    }
+  }
+  /* APPROVAL — blocked on the user: warn edge + warn halo, a distinct register. */
+  .lr--approval {
+    border-left-color: var(--warn);
+    animation: lr-wait var(--breath) var(--ease-inout) infinite;
+  }
+  @keyframes lr-wait {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgba(224, 179, 106, 0.25);
+    }
+    50% {
+      box-shadow: var(--glow-warn);
+    }
   }
   .lr:focus-visible {
     outline: none;
@@ -538,8 +573,17 @@
     .strip {
       transition: none;
     }
+    .lr--working,
+    .lr--approval,
     .row-skel {
       animation: none;
+    }
+    /* hold the live/approval glow steady rather than breathing */
+    .lr--working {
+      box-shadow: var(--glow-live);
+    }
+    .lr--approval {
+      box-shadow: 0 0 0 1px rgba(224, 179, 106, 0.35);
     }
   }
 </style>

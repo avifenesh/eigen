@@ -1164,6 +1164,11 @@
     .set__toggle-knob {
       transition: none;
     }
+    /* hold the live caret solid rather than blinking */
+    .caret {
+      animation: none;
+      opacity: 0.8;
+    }
   }
 
   /* ── session menu ──────────────────────────────────────────────────────── */

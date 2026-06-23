@@ -153,7 +153,7 @@
   {:else}
     <div class="sx__list">
       {#each visible as s (s.id)}
-        <div class="srow">
+        <div class="srow" class:srow--working={s.status === "working"} class:srow--approval={s.status === "approval"}>
           <StatusDot state={sessionDot(s.status)} size={7} pulse={s.status === "working" || s.status === "approval"} />
           <button class="srow__main" onclick={() => resume(s)} title="Resume session">
             <span class="srow__title">{s.title || "untitled session"}</span>
@@ -267,10 +267,20 @@
     padding: var(--sp-4) var(--sp-5);
     border-radius: var(--r-md);
     border: 1px solid transparent;
+    border-left: 2px solid transparent;
     transition: background var(--dur-fast) var(--ease-out);
   }
   .srow:hover {
     background: var(--state-hover);
+  }
+  /* The archive echoes the cockpit's language quietly: a live row wears the
+     teal (working) / warn (approval) seam, but does NOT breathe — this is a
+     list to scan, not a surface to watch. The dot already pulses. */
+  .srow--working {
+    border-left-color: var(--brand);
+  }
+  .srow--approval {
+    border-left-color: var(--warn);
   }
   .srow__main {
     flex: 1;

@@ -1,8 +1,11 @@
 <script lang="ts">
-  // Skills — the capability gallery. Discovered SKILL.md skills as cards
-  // (grouped by source), plus dream-proposed drafts awaiting accept/reject.
-  // Clicking a skill opens a slide-over with its rendered body. Skills are
-  // local files; the bridge reads them directly.
+  // Skills — the capability gallery. Discovered SKILL.md skills as cards,
+  // grouped into source shelves (user / project / extra), each shelf tinted
+  // by origin so the page reads as organized capability racks rather than a
+  // flat card dump. Dream-proposed drafts ride a distinct PINNED review strip
+  // at the top — a warm, alive band that says "review these" and never blends
+  // into the active shelves. Clicking a skill opens a slide-over with its
+  // rendered body. Skills are local files; the bridge reads them directly.
   import { Bridge } from "$lib/bridge";
   import { toasts } from "$lib/stores/toasts.svelte";
   import type { SkillsDTO, SkillDTO } from "$lib/types";
@@ -70,6 +73,27 @@
   const proposals = $derived(data?.proposals ?? []);
   const visibleProposals = $derived(proposals.slice(0, proposalsShown));
   const visibleActive = $derived(filtered.slice(0, activeShown));
+
+  // Source shelves — group the visible (paged) active skills by origin and
+  // order them user → project → extra so the most-yours capabilities lead.
+  // Each shelf carries its own tint; a shelf only renders when it has skills.
+  const SHELF_ORDER = ["user", "project", "extra"] as const;
+  type Shelf = { source: string; label: string; skills: SkillDTO[] };
+  const shelves = $derived.by<Shelf[]>(() => {
+    const by: Record<string, SkillDTO[]> = {};
+    for (const s of visibleActive) (by[s.source] ??= []).push(s);
+    const known = SHELF_ORDER.filter((src) => by[src]?.length).map((src) => ({
+      source: src,
+      label: src === "user" ? "Yours" : src === "project" ? "This project" : "Bundled",
+      skills: by[src],
+    }));
+    // Any unexpected source still gets a (neutral) shelf rather than vanishing.
+    const extras = Object.keys(by)
+      .filter((src) => !SHELF_ORDER.includes(src as (typeof SHELF_ORDER)[number]))
+      .sort()
+      .map((src) => ({ source: src, label: src, skills: by[src] }));
+    return [...known, ...extras];
+  });
 
   async function preview(s: SkillDTO) {
     openSkill = s;
@@ -148,21 +172,26 @@
   {:else}
     <div class="skills__scroll">
       {#if proposals.length > 0}
-        <section class="skills__section">
-          <div class="skills__section-head">
-            <h2 class="skills__section-title">Proposed</h2>
-            <Badge tone="warn">{proposals.length} awaiting review</Badge>
-          </div>
-          <div class="skills__grid">
-            {#each visibleProposals as p (p.name)}
-              <Card>
-                <div class="sk sk--proposal">
-                  <div class="sk__top">
-                    <span class="sk__name">{p.name}</span>
-                    <Badge tone="warn">proposed</Badge>
+        <!-- PINNED review strip — a warm, alive band, visually unlike the
+             quiet active shelves below: this asks for a decision. -->
+        <section class="strip" aria-label="Proposed skills awaiting review">
+          <div class="strip__rail" aria-hidden="true"></div>
+          <div class="strip__inner">
+            <div class="strip__head">
+              <span class="strip__eyebrow">
+                <span class="strip__pulse" aria-hidden="true"></span>
+                Awaiting review
+              </span>
+              <Badge tone="warn">{proposals.length}</Badge>
+            </div>
+            <div class="strip__row">
+              {#each visibleProposals as p (p.name)}
+                <div class="prop">
+                  <div class="prop__top">
+                    <span class="prop__name">{p.name}</span>
                   </div>
-                  <p class="sk__desc">{p.description}</p>
-                  <div class="sk__actions">
+                  <p class="prop__desc">{p.description}</p>
+                  <div class="prop__actions">
                     <Button variant="primary" size="sm" loading={acting[p.name]} onclick={() => accept(p.name)}>
                       Accept
                     </Button>
@@ -171,49 +200,52 @@
                     </Button>
                   </div>
                 </div>
-              </Card>
-            {/each}
-          </div>
-          {#if proposalsShown < proposals.length}
-            <div class="skills__more">
-              <Button variant="ghost" size="sm" onclick={() => (proposalsShown += PAGE)}>
-                Show {Math.min(PAGE, proposals.length - proposalsShown)} more · {proposals.length - proposalsShown} remaining
-              </Button>
+              {/each}
+              {#if proposalsShown < proposals.length}
+                <button class="prop prop--more" onclick={() => (proposalsShown += PAGE)}>
+                  <span class="prop__more-n tnum">+{proposals.length - proposalsShown}</span>
+                  <span class="prop__more-label">more to review</span>
+                </button>
+              {/if}
             </div>
-          {/if}
+          </div>
         </section>
       {/if}
 
-      <section class="skills__section">
-        <div class="skills__section-head">
-          <h2 class="skills__section-title">Active</h2>
-          <span class="skills__count tnum">{filtered.length}</span>
-        </div>
-        {#if filtered.length === 0}
-          <p class="skills__empty-note">No skills match “{query}”.</p>
-        {:else}
-          <div class="skills__grid">
-            {#each visibleActive as s (s.name)}
-              <Card interactive onclick={() => preview(s)} title={s.path}>
-                <div class="sk">
-                  <div class="sk__top">
-                    <span class="sk__name">{s.name}</span>
-                    <Badge tone={sourceTone(s.source)}>{s.source}</Badge>
-                  </div>
-                  <p class="sk__desc">{s.description}</p>
-                </div>
-              </Card>
-            {/each}
-          </div>
-          {#if activeShown < filtered.length}
-            <div class="skills__more">
-              <Button variant="ghost" size="sm" onclick={() => (activeShown += PAGE)}>
-                Show {Math.min(PAGE, filtered.length - activeShown)} more · {filtered.length - activeShown} remaining
-              </Button>
+      {#if filtered.length === 0}
+        <p class="skills__empty-note">No skills match “{query}”.</p>
+      {:else}
+        {#each shelves as shelf (shelf.source)}
+          <section class="shelf shelf--{sourceTone(shelf.source)}">
+            <div class="shelf__head">
+              <span class="shelf__dot" aria-hidden="true"></span>
+              <h2 class="shelf__title">{shelf.label}</h2>
+              <span class="shelf__n tnum">{shelf.skills.length}</span>
             </div>
-          {/if}
+            <div class="skills__grid">
+              {#each shelf.skills as s (s.name)}
+                <Card interactive onclick={() => preview(s)} title={s.path}>
+                  <div class="sk sk--{sourceTone(s.source)}">
+                    <span class="sk__rail" aria-hidden="true"></span>
+                    <div class="sk__top">
+                      <span class="sk__name">{s.name}</span>
+                      <Badge tone={sourceTone(s.source)}>{s.source}</Badge>
+                    </div>
+                    <p class="sk__desc">{s.description}</p>
+                  </div>
+                </Card>
+              {/each}
+            </div>
+          </section>
+        {/each}
+        {#if activeShown < filtered.length}
+          <div class="skills__more">
+            <Button variant="ghost" size="sm" onclick={() => (activeShown += PAGE)}>
+              Show {Math.min(PAGE, filtered.length - activeShown)} more · {filtered.length - activeShown} remaining
+            </Button>
+          </div>
         {/if}
-      </section>
+      {/if}
     </div>
   {/if}
 </div>
@@ -300,23 +332,6 @@
     flex-direction: column;
     gap: var(--sp-8);
   }
-  .skills__section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-5);
-  }
-  .skills__section-head {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-4);
-  }
-  .skills__section-title {
-    margin: 0;
-    font: var(--fw-semibold) var(--fs-label) / 1 var(--font-sans);
-    text-transform: uppercase;
-    letter-spacing: var(--ls-eyebrow);
-    color: var(--text-faint);
-  }
   .skills__grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -337,12 +352,225 @@
       background-position: -200% 0;
     }
   }
-  .sk {
+
+  /* PINNED REVIEW STRIP — proposals. A warm-edged band with a live pulse that
+     reads as "decide on these," set apart from the cool active shelves. The
+     left rail in --working tints the whole strip toward attention. */
+  .strip {
+    position: relative;
+    display: flex;
+    gap: 0;
+    border-radius: var(--r-lg);
+    background:
+      linear-gradient(180deg, var(--working-bg), transparent 64%),
+      var(--bg-raised);
+    border: 1px solid color-mix(in srgb, var(--working) 24%, transparent);
+    box-shadow: var(--shadow-1);
+    overflow: hidden;
+  }
+  .strip__rail {
+    flex: none;
+    width: 3px;
+    background: linear-gradient(180deg, var(--working), color-mix(in srgb, var(--working) 30%, transparent));
+  }
+  .strip__inner {
+    flex: 1;
+    min-width: 0;
+    padding: var(--sp-6) var(--sp-6) var(--sp-6) var(--sp-7);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-5);
+  }
+  .strip__head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+  }
+  .strip__eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-3);
+    font: var(--fw-semibold) var(--fs-label) / 1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--working);
+  }
+  .strip__pulse {
+    width: 7px;
+    height: 7px;
+    border-radius: var(--r-full);
+    background: var(--working);
+    box-shadow: var(--glow-working);
+    animation: strip-breathe var(--breath) var(--ease-inout) infinite;
+  }
+  @keyframes strip-breathe {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.45;
+      transform: scale(0.82);
+    }
+  }
+  /* Horizontal review row — proposals queue left-to-right and scroll-snap,
+     reinforcing "a stack to work through" vs. the static shelf grids. */
+  .strip__row {
+    display: flex;
+    gap: var(--sp-5);
+    overflow-x: auto;
+    padding-bottom: var(--sp-2);
+    scroll-snap-type: x proximity;
+  }
+  .prop {
+    flex: none;
+    width: 268px;
+    scroll-snap-align: start;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
     padding: var(--sp-5);
+    border-radius: var(--r-md);
+    background: var(--bg-base);
+    border: 1px solid color-mix(in srgb, var(--working) 16%, var(--border-hairline));
+  }
+  .prop__top {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+  }
+  .prop__name {
+    font-weight: var(--fw-semibold);
+    font-size: var(--fs-body);
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .prop__desc {
+    margin: 0;
+    flex: 1;
+    color: var(--text-muted);
+    font-size: var(--fs-body-sm);
+    line-height: var(--lh-snug);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .prop__actions {
+    display: flex;
+    gap: var(--sp-3);
+    margin-top: auto;
+  }
+  /* The "+N more to review" tile lives inline at the end of the queue. */
+  .prop--more {
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+    width: 132px;
+    border-style: dashed;
+    border-color: color-mix(in srgb, var(--working) 30%, transparent);
+    background: transparent;
+    color: var(--working);
+    cursor: pointer;
+    font: inherit;
+    transition: background var(--dur-fast) var(--ease-out);
+  }
+  .prop--more:hover {
+    background: var(--working-bg);
+  }
+  .prop--more:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .prop__more-n {
+    font-weight: var(--fw-bold);
+    font-size: var(--fs-h2);
+    color: var(--working);
+    line-height: 1;
+  }
+  .prop__more-label {
+    font-size: var(--fs-label);
+    color: var(--text-muted);
+  }
+
+  /* SOURCE SHELVES — each origin is its own tinted rack. The shelf head dot
+     and the per-card left rail carry the source hue (brand / info / neutral)
+     so the grid reads as grouped capability racks even without titles. */
+  .shelf {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-5);
+  }
+  .shelf__head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+  }
+  .shelf__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--r-full);
+    flex: none;
+    background: var(--shelf-tint);
+    box-shadow: 0 0 0 4px var(--shelf-tint-faint);
+  }
+  .shelf__title {
+    margin: 0;
+    font: var(--fw-semibold) var(--fs-label) / 1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--text-secondary);
+  }
+  .shelf__n {
+    font-size: var(--fs-label);
+    color: var(--text-faint);
+  }
+  .shelf--brand {
+    --shelf-tint: var(--brand);
+    --shelf-tint-faint: var(--state-selected);
+  }
+  .shelf--info {
+    --shelf-tint: var(--info);
+    --shelf-tint-faint: var(--info-bg);
+  }
+  .shelf--neutral {
+    --shelf-tint: var(--text-ghost);
+    --shelf-tint-faint: var(--state-hover);
+  }
+
+  .sk {
+    position: relative;
+    padding: var(--sp-5) var(--sp-5) var(--sp-5) var(--sp-6);
     display: flex;
     flex-direction: column;
     gap: var(--sp-4);
     min-height: 92px;
+  }
+  /* Per-card source rail — the quiet origin signature on the left edge. */
+  .sk__rail {
+    position: absolute;
+    inset: var(--sp-5) auto var(--sp-5) 0;
+    width: 2px;
+    border-radius: var(--r-full);
+    background: var(--card-tint);
+    opacity: 0.55;
+    transition: opacity var(--dur-fast) var(--ease-out);
+  }
+  .sk--brand {
+    --card-tint: var(--brand);
+  }
+  .sk--info {
+    --card-tint: var(--info);
+  }
+  .sk--neutral {
+    --card-tint: var(--text-ghost);
+  }
+  :global(.card--interactive:hover) .sk__rail {
+    opacity: 1;
   }
   .sk__top {
     display: flex;
@@ -369,11 +597,6 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  .sk__actions {
-    display: flex;
-    gap: var(--sp-3);
-    margin-top: auto;
-  }
   .skills__empty-note {
     color: var(--text-muted);
     font-size: var(--fs-body-sm);
@@ -392,6 +615,10 @@
     background: var(--bg-scrim);
     z-index: 50;
     animation: scrim-in var(--dur-fast) var(--ease-out);
+  }
+  .sheet__scrim:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
   }
   .sheet {
     position: fixed;
@@ -467,7 +694,8 @@
     .sheet {
       animation: none;
     }
-    .skills__skel {
+    .skills__skel,
+    .strip__pulse {
       animation: none;
     }
   }

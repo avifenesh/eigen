@@ -60,6 +60,12 @@
       ? Math.round(((s.cache_read_tokens ?? 0) / (s.input_tokens ?? 1)) * 100)
       : 0,
   );
+  // Cache-hit gauge geometry: a 270° arc (gap at the bottom). The fill circle is
+  // dashed to (cacheHit/100)·arcLen so the spectrum sweeps with the hit rate.
+  const arcR = 52;
+  const arcCirc = 2 * Math.PI * arcR;
+  const arcLen = arcCirc * 0.75;
+  const arcGap = arcCirc - arcLen;
   function ms(d?: number): string {
     if (!d) return "—";
     if (d < 1000) return `${d}ms`;
@@ -102,8 +108,8 @@
       {:else}
         <section class="obs__kpis">
           <Card><div class="kpi"><div class="kpi__v tnum">{s.sessions}</div><div class="kpi__l">sessions</div></div></Card>
-          <Card><div class="kpi"><div class="kpi__v tnum">{s.running_turns}</div><div class="kpi__l">running turns</div></div></Card>
-          <Card><div class="kpi"><div class="kpi__v tnum">{s.bg_tasks}</div><div class="kpi__l">background tasks</div></div></Card>
+          <Card live={s.running_turns > 0}><div class="kpi"><div class="kpi__v tnum" class:kpi__v--live={s.running_turns > 0}>{s.running_turns}</div><div class="kpi__l">running turns</div></div></Card>
+          <Card live={s.bg_tasks > 0}><div class="kpi"><div class="kpi__v tnum" class:kpi__v--live={s.bg_tasks > 0}>{s.bg_tasks}</div><div class="kpi__l">background tasks</div></div></Card>
           <Card><div class="kpi"><div class="kpi__v tnum">{s.views}</div><div class="kpi__l">attached views</div></div></Card>
         </section>
         <div class="obs__cols">
@@ -123,16 +129,41 @@
           <Card>
             <div class="panel">
               <div class="panel__title">tokens (live)</div>
-              <div class="cache">
-                <div class="cache__bar"><span style="width:{cacheHit}%"></span></div>
-                <div class="cache__label tnum">{cacheHit}% cache hit</div>
+              <div class="tokens">
+                <div class="gauge" role="img" aria-label="{cacheHit}% cache hit rate">
+                  <svg class="gauge__svg" viewBox="0 0 120 120" aria-hidden="true">
+                    <defs>
+                      <!-- SVG strokes cannot consume the --spectrum CSS gradient token;
+                           these stops replicate its documented stops (brand-strong → brand → mid → accent). -->
+                      <linearGradient id="cacheArc" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#3e9e96" />
+                        <stop offset="34%" stop-color="#69c2b8" />
+                        <stop offset="64%" stop-color="#5bb6c9" />
+                        <stop offset="100%" stop-color="#6f9bd0" />
+                      </linearGradient>
+                    </defs>
+                    <circle class="gauge__track" cx="60" cy="60" r={arcR} stroke-dasharray="{arcLen} {arcGap}" />
+                    <circle
+                      class="gauge__fill"
+                      cx="60"
+                      cy="60"
+                      r={arcR}
+                      stroke="url(#cacheArc)"
+                      stroke-dasharray="{(cacheHit / 100) * arcLen} {arcCirc}"
+                    />
+                  </svg>
+                  <div class="gauge__center">
+                    <span class="gauge__pct tnum">{cacheHit}<span class="gauge__pct-u">%</span></span>
+                    <span class="gauge__cap">cache hit</span>
+                  </div>
+                </div>
+                <dl class="kv tokens__kv">
+                  <dt>input</dt><dd class="tnum">{(s.input_tokens ?? 0).toLocaleString()}</dd>
+                  <dt>output</dt><dd class="tnum">{(s.output_tokens ?? 0).toLocaleString()}</dd>
+                  <dt>cache read</dt><dd class="tnum">{(s.cache_read_tokens ?? 0).toLocaleString()}</dd>
+                  <dt>cache write</dt><dd class="tnum">{(s.cache_write_tokens ?? 0).toLocaleString()}</dd>
+                </dl>
               </div>
-              <dl class="kv">
-                <dt>input</dt><dd class="tnum">{(s.input_tokens ?? 0).toLocaleString()}</dd>
-                <dt>output</dt><dd class="tnum">{(s.output_tokens ?? 0).toLocaleString()}</dd>
-                <dt>cache read</dt><dd class="tnum">{(s.cache_read_tokens ?? 0).toLocaleString()}</dd>
-                <dt>cache write</dt><dd class="tnum">{(s.cache_write_tokens ?? 0).toLocaleString()}</dd>
-              </dl>
             </div>
           </Card>
         </div>
@@ -173,15 +204,25 @@
         </div>
       </div>
     {:else if tab === "tools"}
+      {@const toolMax = summary.tools.reduce((mx, t) => Math.max(mx, t.calls), 1)}
       <Card>
         <table class="tbl">
-          <thead><tr><th>tool</th><th class="tbl__num">calls</th><th class="tbl__num">errors</th><th class="tbl__num">avg</th></tr></thead>
+          <thead><tr><th>tool</th><th class="tbl__bar-h">calls</th><th class="tbl__num">errors</th><th class="tbl__num">avg</th></tr></thead>
           <tbody>
             {#each summary.tools as t (t.name)}
+              {@const errRate = t.calls > 0 ? t.errors / t.calls : 0}
               <tr>
                 <td class="tbl__name">{t.name}</td>
-                <td class="tbl__num tnum">{k(t.calls)}</td>
-                <td class="tbl__num tnum" class:tbl__err={t.errors > 0}>{t.errors}</td>
+                <td class="tbl__bar">
+                  <div class="mbar"><span style="width:{(t.calls / toolMax) * 100}%"></span></div>
+                  <span class="mbar__n tnum">{k(t.calls)}</span>
+                </td>
+                <td
+                  class="tbl__num tnum"
+                  class:tbl__err={t.errors > 0}
+                  class:tbl__err--hot={errRate >= 0.25}
+                  title={t.errors > 0 ? `${Math.round(errRate * 100)}% of calls` : undefined}
+                >{t.errors}</td>
                 <td class="tbl__num tnum">{ms(t.calls > 0 ? Math.round(t.durationMs / t.calls) : 0)}</td>
               </tr>
             {/each}
@@ -189,14 +230,18 @@
         </table>
       </Card>
     {:else if tab === "models"}
+      {@const turnMax = summary.models.reduce((mx, m) => Math.max(mx, m.turns), 1)}
       <Card>
         <table class="tbl">
-          <thead><tr><th>model</th><th class="tbl__num">turns</th><th class="tbl__num">in</th><th class="tbl__num">out</th><th class="tbl__num">cache rd</th></tr></thead>
+          <thead><tr><th>model</th><th class="tbl__bar-h">turns</th><th class="tbl__num">in</th><th class="tbl__num">out</th><th class="tbl__num">cache rd</th></tr></thead>
           <tbody>
             {#each summary.models as m (m.name)}
               <tr>
                 <td class="tbl__name">{m.name}</td>
-                <td class="tbl__num tnum">{m.turns}</td>
+                <td class="tbl__bar">
+                  <div class="mbar"><span style="width:{(m.turns / turnMax) * 100}%"></span></div>
+                  <span class="mbar__n tnum">{m.turns}</span>
+                </td>
                 <td class="tbl__num tnum">{k(m.inTokens)}</td>
                 <td class="tbl__num tnum">{k(m.outTokens)}</td>
                 <td class="tbl__num tnum">{k(m.cacheReadTokens)}</td>
@@ -209,16 +254,25 @@
       {#if summary.hooks.length === 0}
         <p class="obs__empty-note">No hook activity recorded.</p>
       {:else}
+        {@const hookMax = summary.hooks.reduce((mx, h) => Math.max(mx, h.starts), 1)}
         <Card>
           <table class="tbl">
-            <thead><tr><th>hook</th><th class="tbl__num">starts</th><th class="tbl__num">done</th><th class="tbl__num">errors</th></tr></thead>
+            <thead><tr><th>hook</th><th class="tbl__bar-h">starts</th><th class="tbl__num">done</th><th class="tbl__num">errors</th></tr></thead>
             <tbody>
               {#each summary.hooks as h (h.name)}
+                {@const errRate = h.starts > 0 ? h.errors / h.starts : 0}
                 <tr>
                   <td class="tbl__name">{h.name}</td>
-                  <td class="tbl__num tnum">{h.starts}</td>
+                  <td class="tbl__bar">
+                    <div class="mbar"><span style="width:{(h.starts / hookMax) * 100}%"></span></div>
+                    <span class="mbar__n tnum">{h.starts}</span>
+                  </td>
                   <td class="tbl__num tnum">{h.done}</td>
-                  <td class="tbl__num tnum" class:tbl__err={h.errors > 0}>{h.errors}</td>
+                  <td
+                    class="tbl__num tnum"
+                    class:tbl__err={h.errors > 0}
+                    class:tbl__err--hot={errRate >= 0.25}
+                  >{h.errors}</td>
                 </tr>
               {/each}
             </tbody>
@@ -318,7 +372,12 @@
   }
   .kpi__v {
     font: var(--fw-bold) var(--fs-display) / 1 var(--font-display);
-    color: var(--brand);
+    color: var(--text-primary);
+  }
+  /* Teal is reserved for counts that mean active work right now; a settled or
+     zero metric stays neutral so the brand color always means "alive". */
+  .kpi__v--live {
+    color: var(--brand-bright);
   }
   .kpi__l {
     margin-top: var(--sp-3);
@@ -359,26 +418,65 @@
     font-weight: var(--fw-medium);
     text-align: right;
   }
-  .cache {
-    margin-bottom: var(--sp-6);
+  /* Tokens panel — cache-hit arc gauge beside the token breakdown. */
+  .tokens {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-8);
   }
-  .cache__bar {
-    height: 8px;
-    background: var(--bg-inset);
-    border-radius: var(--r-full);
-    overflow: hidden;
+  .tokens__kv {
+    flex: 1;
+    min-width: 0;
+    align-self: center;
   }
-  .cache__bar span {
-    display: block;
+  .gauge {
+    position: relative;
+    width: 116px;
+    height: 116px;
+    flex: none;
+  }
+  .gauge__svg {
+    width: 100%;
     height: 100%;
-    background: var(--spectrum);
-    border-radius: var(--r-full);
-    transition: width var(--dur-slow) var(--ease-out);
+    /* Rotate so the 270° gap sits at the bottom and the fill sweeps from lower-left. */
+    transform: rotate(135deg);
   }
-  .cache__label {
-    margin-top: var(--sp-3);
-    font-size: var(--fs-label);
-    color: var(--text-secondary);
+  .gauge__track,
+  .gauge__fill {
+    fill: none;
+    stroke-width: 9;
+    stroke-linecap: round;
+  }
+  .gauge__track {
+    stroke: var(--bg-inset);
+  }
+  .gauge__fill {
+    transition: stroke-dasharray var(--dur-slow) var(--ease-out);
+  }
+  .gauge__center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+  }
+  .gauge__pct {
+    font: var(--fw-bold) var(--fs-h1) / 1 var(--font-display);
+    color: var(--brand-bright);
+    letter-spacing: var(--ls-heading);
+  }
+  .gauge__pct-u {
+    font-size: var(--fs-h3);
+    font-weight: var(--fw-medium);
+    color: var(--text-muted);
+  }
+  .gauge__cap {
+    font-size: var(--fs-micro);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--text-faint);
   }
 
   /* Proportional bar lists (routes / errors). */
@@ -457,9 +555,50 @@
   }
   .tbl__err {
     color: var(--error);
+    font-weight: var(--fw-semibold);
+  }
+  /* Severity-tinted error cell: a hot rate gets a filled chip so a struggling
+     tool/hook reads at a glance, not just a red number. */
+  .tbl__err--hot {
+    background: var(--error-bg);
+    box-shadow: inset 2px 0 0 var(--error);
+  }
+  /* Inline mini-bar in the primary count column. */
+  .tbl__bar-h {
+    text-align: left !important;
+    padding-left: var(--sp-5);
+  }
+  .tbl__bar {
+    width: 38%;
+  }
+  .mbar {
+    display: inline-block;
+    width: calc(100% - 44px);
+    height: 5px;
+    vertical-align: middle;
+    background: var(--bg-inset);
+    border-radius: var(--r-full);
+    overflow: hidden;
+  }
+  .mbar span {
+    display: block;
+    height: 100%;
+    background: var(--spectrum);
+    border-radius: var(--r-full);
+    transition: width var(--dur-slow) var(--ease-out);
+  }
+  .mbar__n {
+    display: inline-block;
+    width: 40px;
+    margin-left: var(--sp-2);
+    text-align: right;
+    vertical-align: middle;
+    font-size: var(--fs-label);
+    color: var(--text-secondary);
   }
   @media (prefers-reduced-motion: reduce) {
-    .cache__bar span,
+    .gauge__fill,
+    .mbar span,
     .obs__tab {
       transition: none;
     }

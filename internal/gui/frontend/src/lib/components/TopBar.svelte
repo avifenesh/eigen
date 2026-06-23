@@ -20,6 +20,11 @@
     daemon.status === "online" ? "ok" : daemon.status === "offline" ? "error" : "idle",
   );
   const connecting = $derived(daemon.status === "connecting");
+
+  // The bar's one living signal: how many turns the engine is driving right
+  // now. When > 0, a teal "running" capsule breathes in beside health so the
+  // top band reflects work in flight without the eye hunting for it.
+  const running = $derived(daemon.stats?.running_turns ?? 0);
 </script>
 
 <header class="topbar">
@@ -32,6 +37,19 @@
 
   {#if actions}
     <div class="topbar__actions">{@render actions()}</div>
+  {/if}
+
+  {#if running > 0}
+    <div
+      class="topbar__running"
+      role="status"
+      aria-live="polite"
+      title={`${running} ${running === 1 ? "turn" : "turns"} running`}
+    >
+      <span class="topbar__running-pulse" aria-hidden="true"></span>
+      <span class="topbar__running-count tnum">{running}</span>
+      <span class="topbar__running-word">running</span>
+    </div>
   {/if}
 
   <div
@@ -53,15 +71,20 @@
     align-items: center;
     gap: var(--sp-5);
     padding: 0 var(--sp-7);
-    background: var(--bg-base);
-    /* The bottom edge is the only border the bar carries — a single hairline
-       that separates chrome from content without drawing a heavy line. */
+    /* A faint top-down lift so the bar reads as the one owned top band — its
+       weight tapers into the content below rather than floating on a flat
+       fill. The hairline + shadow seat it as a single edge, not a stack. */
+    background: linear-gradient(to bottom, var(--bg-raised) 0%, var(--bg-base) 100%);
     border-bottom: 1px solid var(--border-hairline);
-    box-shadow: 0 1px 0 0 var(--divider);
+    box-shadow:
+      0 1px 0 0 var(--divider),
+      0 6px 16px -10px rgba(0, 0, 0, 0.55);
   }
 
   /* TITLE — an eyebrow wordmark sits flush above the page name, giving the
-     bar a considered masthead feel rather than a lone capitalized word. */
+     bar a considered masthead feel rather than a lone capitalized word. The
+     eyebrow and title share a 2px-stepped baseline so the cluster reads as
+     one masthead block, tightly bound. */
   .topbar__heading {
     display: flex;
     flex-direction: column;
@@ -95,6 +118,51 @@
     display: flex;
     align-items: center;
     gap: var(--sp-4);
+  }
+
+  /* RUNNING SIGNAL — the bar's one alive surface. A teal capsule that only
+     exists while turns are in flight: a soft pulsing core, the count, then a
+     quiet word. Teal here means "the engine is doing something right now." */
+  .topbar__running {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-3);
+    height: var(--sp-8);
+    padding: 0 var(--sp-5) 0 var(--sp-4);
+    border: 1px solid var(--border-brand-faint);
+    border-radius: var(--r-full);
+    background: var(--state-selected);
+    color: var(--brand-bright);
+  }
+  .topbar__running-pulse {
+    width: 7px;
+    height: 7px;
+    flex: 0 0 auto;
+    border-radius: var(--r-full);
+    background: var(--brand);
+    box-shadow: 0 0 0 0 var(--brand);
+    animation: topbar-run-pulse var(--breath) var(--ease-inout) infinite;
+    will-change: opacity, box-shadow;
+  }
+  @keyframes topbar-run-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      box-shadow: 0 0 0 0 rgba(105, 194, 184, 0.35);
+    }
+    50% {
+      opacity: 0.6;
+      box-shadow: 0 0 0 4px rgba(105, 194, 184, 0);
+    }
+  }
+  .topbar__running-count {
+    font: var(--fw-semibold) var(--fs-label) / 1 var(--font-sans);
+    color: var(--brand-bright);
+  }
+  .topbar__running-word {
+    font: var(--fw-medium) var(--fs-label) / 1 var(--font-sans);
+    letter-spacing: var(--ls-normal);
+    color: var(--brand);
   }
 
   /* HEALTH CLUSTER — dot + word, wrapped in a faint pill so it reads as a
@@ -135,6 +203,11 @@
     .topbar__health,
     .topbar__health-label {
       transition: none;
+    }
+    /* Hold the running signal lit but static — it still reads as alive. */
+    .topbar__running-pulse {
+      animation: none;
+      box-shadow: 0 0 0 3px rgba(105, 194, 184, 0.18);
     }
   }
 </style>

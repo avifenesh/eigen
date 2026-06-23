@@ -151,6 +151,20 @@
   --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.42), 0 0 0 1px var(--border-subtle);
   --shadow-focus: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--border-brand);
   --glow-working: 0 0 0 1px rgba(208, 140, 94, 0.35), 0 0 12px rgba(208, 140, 94, 0.18);
+  /* WAITING — the amber sibling, for a surface blocked on the user (awaiting
+     approval). Same hairline-ring + halo shape as the others, warn-hued. */
+  --glow-warn: 0 0 0 1px rgba(224, 179, 106, 0.35), 0 0 12px rgba(224, 179, 106, 0.16);
+  /* LIVING TEAL — the accent that breathes. `--glow-live` is the teal sibling
+     of --glow-working: a hairline brand ring + a soft halo, for the one item
+     a view wants to mark as currently-relevant (running agent, freshest row).
+     `--edge-live` is the faint teal seam a live surface wears along an edge. */
+  --glow-live: 0 0 0 1px rgba(105, 194, 184, 0.32), 0 0 14px rgba(105, 194, 184, 0.16);
+  --edge-live: linear-gradient(
+    180deg,
+    var(--brand-bright),
+    var(--brand) 45%,
+    transparent
+  );
 
   /* MOTION */
   --dur-instant: 80ms;

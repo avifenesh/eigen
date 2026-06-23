@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { fly } from "svelte/transition";
   import { router } from "$lib/router.svelte";
   import { daemon } from "$lib/stores/daemon.svelte";
   import { sessions } from "$lib/stores/sessions.svelte";
@@ -48,6 +49,7 @@
     <TopBar />
     <div class="outlet">
       {#key router.route}
+        <div class="outlet__page" in:fly={{ y: 6, duration: 180, opacity: 0 }}>
         {#if router.route === "home"}
           <Home />
         {:else if router.route === "chat"}
@@ -81,6 +83,7 @@
         {:else}
           <EmptyState glyph="λ" title={router.route} line="This view is coming soon." />
         {/if}
+        </div>
       {/key}
     </div>
   </div>
@@ -100,6 +103,10 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+  }
+  .outlet__page {
+    height: 100%;
+    min-height: 0;
   }
   .outlet {
     flex: 1;
