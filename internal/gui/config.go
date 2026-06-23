@@ -13,11 +13,21 @@ import (
 
 // ConfigFieldDTO is one editable config setting + its current value/options.
 type ConfigFieldDTO struct {
-	Key     string   `json:"key"`
-	Desc    string   `json:"desc"`
-	Value   string   `json:"value"`
-	Options []string `json:"options,omitempty"` // closed/dynamic option set ("" = free text)
-	Multi   bool     `json:"multi,omitempty"`   // space-separated multi-select
+	Key        string   `json:"key"`
+	Desc       string   `json:"desc"`
+	Value      string   `json:"value"`
+	Options    []string `json:"options,omitempty"`    // closed/dynamic option set ("" = free text)
+	Multi      bool     `json:"multi,omitempty"`      // space-separated multi-select
+	AllowEmpty bool     `json:"allowEmpty,omitempty"` // empty is a valid (often meaningful) choice — picker offers it
+}
+
+// emptyMeaningful lists option-set fields where "" is a real, reachable value
+// (e.g. judge_model: empty = automatic cross-vendor judge). Without an explicit
+// empty choice in the picker, once a real value is set the unset state becomes
+// unreachable — so the view must offer it.
+var emptyMeaningful = map[string]bool{
+	"model":       true,
+	"judge_model": true,
 }
 
 // ConfigDTO is the full editable-config snapshot.
@@ -58,11 +68,12 @@ func (b *Bridge) Config() (*ConfigDTO, error) {
 			opts = dynamicOptions(f.Dynamic)
 		}
 		out = append(out, ConfigFieldDTO{
-			Key:     f.Key,
-			Desc:    f.Desc,
-			Value:   config.Get(c, f.Key),
-			Options: opts,
-			Multi:   f.Multi,
+			Key:        f.Key,
+			Desc:       f.Desc,
+			Value:      config.Get(c, f.Key),
+			Options:    opts,
+			Multi:      f.Multi,
+			AllowEmpty: emptyMeaningful[f.Key],
 		})
 	}
 	return &ConfigDTO{Fields: out, Path: config.Path()}, nil

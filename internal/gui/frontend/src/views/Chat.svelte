@@ -391,6 +391,37 @@
     "What changed in the last few commits?",
     "Find and explain the riskiest function here.",
   ];
+
+  // Screen-reader completion mirror. VirtualList only mounts visible rows, and
+  // the streamed assistant tokens append silently to off-screen DOM, so a SR
+  // user gets no notification a turn finished. This sr-only aria-live region
+  // carries the latest FINALIZED assistant prose: once the turn ends (no live
+  // block streaming) and the newest history block is assistant text, announce
+  // it. Empty while a turn streams or when the tail isn't assistant prose, so
+  // mid-stream churn and user/tool/reasoning rows don't spam the announcer.
+  const lastAssistant = $derived.by(() => {
+    if (!store || store.running || store.live) return "";
+    const h = store.history;
+    const tail = h[h.length - 1];
+    return tail && tail.kind === "text" ? tail.text : "";
+  });
+
+  // A human label for a transcript block's kind, voiced as the row's aria-label
+  // so a SR user hears what each row is (assistant prose, the model's reasoning,
+  // a tool call, or a system note) rather than an unlabeled region. Tool rows
+  // delegate their detail to ToolCallCard; this names the row around it.
+  function rowLabel(kind: string): string {
+    switch (kind) {
+      case "reasoning":
+        return "Assistant reasoning";
+      case "tool":
+        return "Tool call";
+      case "note":
+        return "System note";
+      default:
+        return "Assistant message";
+    }
+  }
 </script>
 
 {#if missing}
@@ -441,32 +472,52 @@
           {#if store?.truncated}
             <div class="chat__earlier">Showing the most recent messages.</div>
           {/if}
-          <VirtualList items={rows} estimateHeight={120} pin key={(b) => b.uid}>
-            {#snippet row(block)}
-              {@const isLive = block === store?.live}
-              <div class="chat__row">
-                {#if block.kind === "tool"}
-                  <ToolCallCard {block} />
-                {:else if block.kind === "note"}
-                  <div class="msg msg--note">{block.text}</div>
-                {:else if block.kind === "reasoning"}
-                  <div class="msg msg--reasoning" class:msg--live={isLive}>
-                    <span class="msg__tag">reasoning</span>
-                    {block.text}
-                  </div>
-                {:else if isLive}
-                  <!-- The in-flight assistant block streams as plain text for
-                       speed; it finalizes to Markdown once committed to history.
-                       A subtle caret trails the live text while it streams. -->
-                  <div class="msg msg--text msg--live">{block.text}<span class="caret" aria-hidden="true"></span></div>
-                {:else}
-                  <!-- Completed assistant prose renders as Markdown (sans; fenced
-                       code delegates to CodeBlock). -->
-                  <div class="msg msg--text"><Markdown source={block.text} /></div>
-                {/if}
-              </div>
-            {/snippet}
-          </VirtualList>
+          <!-- role=log + polite live region: VirtualList only mounts visible
+               rows, so without this a SR user gets no signal that the agent
+               replied or a turn finished. aria-relevant additions+text covers
+               both new rows and the in-place text growth of the live block. -->
+          <div
+            class="chat__log"
+            role="log"
+            aria-label="Conversation"
+            aria-live="polite"
+            aria-relevant="additions text"
+          >
+            <VirtualList items={rows} estimateHeight={120} pin key={(b) => b.uid}>
+              {#snippet row(block)}
+                {@const isLive = block === store?.live}
+                <div class="chat__row" role="article" aria-label={rowLabel(block.kind)}>
+                  {#if block.kind === "tool"}
+                    <ToolCallCard {block} />
+                  {:else if block.kind === "note"}
+                    <div class="msg msg--note">{block.text}</div>
+                  {:else if block.kind === "reasoning"}
+                    <div class="msg msg--reasoning" class:msg--live={isLive}>
+                      <span class="msg__tag">reasoning</span>
+                      {block.text}
+                    </div>
+                  {:else if isLive}
+                    <!-- The in-flight assistant block streams as plain text for
+                         speed; it finalizes to Markdown once committed to history.
+                         A subtle caret trails the live text while it streams. -->
+                    <div class="msg msg--text msg--live">{block.text}<span class="caret" aria-hidden="true"></span></div>
+                  {:else}
+                    <!-- Completed assistant prose renders as Markdown (sans; fenced
+                         code delegates to CodeBlock). -->
+                    <div class="msg msg--text"><Markdown source={block.text} /></div>
+                  {/if}
+                </div>
+              {/snippet}
+            </VirtualList>
+          </div>
+          <!-- Off-screen completion announcer. The windowed transcript above
+               may not have the just-finalized assistant block mounted, so mirror
+               its text here once the turn settles — that gives the SR user the
+               "the agent replied / turn finished" cue the visual caret gives a
+               sighted user. Empty while streaming, so it fires once per turn. -->
+          <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">
+            {#if lastAssistant}Assistant replied: {lastAssistant}{/if}
+          </div>
         {/if}
       </div>
 
@@ -840,6 +891,28 @@
     color: var(--text-faint);
     font-size: var(--fs-label);
     padding: var(--sp-3);
+  }
+  /* The role=log wrapper takes the flex space VirtualList used to fill directly
+     and hands it down (VirtualList sizes to height:100%), so windowing geometry
+     is unchanged — this layer only adds the live-region semantics. */
+  .chat__log {
+    flex: 1;
+    min-height: 0;
+  }
+  /* Off-screen completion announcer — present in the a11y tree, invisible on
+     screen. Standard clip pattern (not display:none, which drops it from the
+     tree); mirrors .diff__sr. */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
   }
 
   /* ── empty-session starter ─────────────────────────────────────────────── */

@@ -59,6 +59,12 @@ type WireEventDTO struct {
 	IsError   bool   `json:"isError,omitempty"`
 	InTokens  int    `json:"inTokens,omitempty"`
 	OutTokens int    `json:"outTokens,omitempty"`
+	// EventDone attribution: which provider/model produced the turn, plus the
+	// turn's prompt-cache hits/writes (cacheReadTokens vs inTokens is the hit rate).
+	Provider         string `json:"provider,omitempty"`
+	Model            string `json:"model,omitempty"`
+	CacheReadTokens  int    `json:"cacheReadTokens,omitempty"`
+	CacheWriteTokens int    `json:"cacheWriteTokens,omitempty"`
 }
 
 // StreamEventDTO is the payload emitted on the per-session event channel.
@@ -185,6 +191,8 @@ func toWireEventDTO(e daemon.WireEvent) WireEventDTO {
 		Kind: e.Kind, Step: e.Step, Text: e.Text, ToolName: e.ToolName,
 		ToolID: e.ToolID, ToolArgs: string(e.ToolArgs), Result: e.Result,
 		IsError: e.IsError, InTokens: e.InTokens, OutTokens: e.OutTokens,
+		Provider: e.Provider, Model: e.Model,
+		CacheReadTokens: e.CacheReadTokens, CacheWriteTokens: e.CacheWriteTokens,
 	}
 }
 

@@ -6,6 +6,10 @@ import (
 	"io"
 	"os/exec"
 	"strings"
+	"sync"
+	"time"
+
+	"golang.org/x/sync/singleflight"
 
 	"github.com/avifenesh/eigen/internal/daemon"
 )
@@ -70,11 +74,86 @@ func Dial(target string, errOut io.Writer) (*daemon.Client, io.Closer, error) {
 	return daemon.DialConn(conn), conn, nil
 }
 
-// ListSessions opens a transient ssh connection, lists the remote daemon's
-// sessions, and closes it — a read-only peek for the Machines drill-in. The
-// remote's stderr is captured so a failure (eigen not installed, daemon can't
-// spawn, missing creds) surfaces its real reason instead of a bare "no daemon".
+// Re-listing the same machine within a few seconds (drill in, back out, drill
+// back in — or two views refreshing the same target at once) shouldn't each pay
+// a fresh ssh handshake + remote daemon spawn (seconds on a cold remote). Two
+// guards make the read-only peek cheap under that load:
+//
+//   - listGroup coalesces concurrent ListSessions(target) calls: the first
+//     dial-and-list for a target runs, and any sibling call for the same target
+//     that arrives while it's in flight rides along on that one result instead
+//     of spawning its own ssh. Different targets never block each other (the
+//     singleflight key is the target).
+//   - listCache holds each target's last good result for listCacheTTL. A re-list
+//     inside that window returns the cached slice without dialing at all.
+//
+// Only successful lists are cached — an error (host down, eigen missing) retries
+// on the next call rather than sticking. The cached slice is value-typed
+// (daemon.SessionInfo has no reference fields) and treated read-only, so sharing
+// it across coalesced/cached callers is safe.
+const listCacheTTL = 3 * time.Second
+
+var (
+	listGroup singleflight.Group
+
+	listCacheMu sync.Mutex
+	listCache   = map[string]listCacheEntry{}
+)
+
+type listCacheEntry struct {
+	infos []daemon.SessionInfo
+	at    time.Time
+}
+
+func cachedSessions(target string) ([]daemon.SessionInfo, bool) {
+	listCacheMu.Lock()
+	defer listCacheMu.Unlock()
+	e, ok := listCache[target]
+	if !ok || time.Since(e.at) >= listCacheTTL {
+		return nil, false
+	}
+	return e.infos, true
+}
+
+func storeSessions(target string, infos []daemon.SessionInfo) {
+	listCacheMu.Lock()
+	defer listCacheMu.Unlock()
+	listCache[target] = listCacheEntry{infos: infos, at: time.Now()}
+}
+
+// ListSessions returns the sessions on a remote eigen daemon — a read-only peek
+// for the Machines drill-in. Concurrent calls for the same target coalesce onto
+// one ssh dial, and a result is reused for listCacheTTL, so re-opening the same
+// machine doesn't pay the ssh handshake again within that window. A cold or
+// error result is fetched freshly via dialAndList.
 func ListSessions(target string) ([]daemon.SessionInfo, error) {
+	if infos, ok := cachedSessions(target); ok {
+		return infos, nil
+	}
+	v, err, _ := listGroup.Do(target, func() (any, error) {
+		// Re-check inside the flight: a concurrent leader may have just
+		// populated the cache between our miss above and acquiring the slot.
+		if infos, ok := cachedSessions(target); ok {
+			return infos, nil
+		}
+		infos, derr := dialAndList(target)
+		if derr != nil {
+			return nil, derr
+		}
+		storeSessions(target, infos)
+		return infos, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.([]daemon.SessionInfo), nil
+}
+
+// dialAndList opens a transient ssh connection, lists the remote daemon's
+// sessions, and closes it. The remote's stderr is captured so a failure (eigen
+// not installed, daemon can't spawn, missing creds) surfaces its real reason
+// instead of a bare "no daemon".
+func dialAndList(target string) ([]daemon.SessionInfo, error) {
 	var errBuf bytes.Buffer
 	c, closer, err := Dial(target, &errBuf)
 	if err != nil {

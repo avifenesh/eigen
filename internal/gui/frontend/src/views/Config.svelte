@@ -52,6 +52,13 @@
     return o.length === 2 && o.includes("true") && o.includes("false");
   }
 
+  // allowEmpty: the bridge marks option-set fields where "" is a real, reachable
+  // value (judge_model = automatic cross-vendor judge; model = unset). Narrow-cast
+  // locally — the shared ConfigFieldDTO type isn't ours to extend this round.
+  function allowsEmpty(f: ConfigFieldDTO): boolean {
+    return (f as ConfigFieldDTO & { allowEmpty?: boolean }).allowEmpty === true;
+  }
+
   async function commit(key: string, value: string) {
     saving[key] = true;
     try {
@@ -152,7 +159,12 @@
                     disabled={saving[f.key]}
                     onchange={(e) => commit(f.key, (e.currentTarget as HTMLSelectElement).value)}
                   >
-                    {#if !f.options.includes(values[f.key])}
+                    {#if allowsEmpty(f)}
+                      <!-- Empty is a real, reachable choice (e.g. judge_model = automatic).
+                           Keep the clear affordance even after a real model is picked. -->
+                      <option value="">(automatic)</option>
+                    {/if}
+                    {#if !f.options.includes(values[f.key]) && !(allowsEmpty(f) && !values[f.key])}
                       <option value={values[f.key]}>{values[f.key] || "(unset)"}</option>
                     {/if}
                     {#each f.options as opt (opt)}

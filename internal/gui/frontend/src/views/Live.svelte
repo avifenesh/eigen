@@ -6,6 +6,7 @@
   // working / awaiting approval), Remove (inline confirm). A KPI line counts the
   // four statuses. This is a control surface — every action does real work.
   import { sessions } from "$lib/stores/sessions.svelte";
+  import { daemon } from "$lib/stores/daemon.svelte";
   import { router } from "$lib/router.svelte";
   import { Bridge } from "$lib/bridge";
   import { toasts } from "$lib/stores/toasts.svelte";
@@ -34,19 +35,37 @@
   let acting = $state<Record<string, boolean>>({});
 
   // Poll the shared store while mounted. A self-scheduling timeout (not a
-  // re-running interval) refreshes ~every 2s; cleanup clears the pending timer.
+  // re-running interval) refreshes ~every 2s — but only does real work when the
+  // daemon is online AND the document is visible. Offline every tick is a
+  // guaranteed-failing RPC; backgrounded it just hammers the daemon for a view
+  // nobody is looking at. So the timer stays cheap (re-checks every 2s) while
+  // gated, and two signals kick an immediate catch-up refresh: daemon reconnect
+  // and the tab regaining visibility. Cleanup clears the timer + both listeners.
   $effect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let stopped = false;
     async function tick() {
-      await sessions.refresh();
-      if (stopped) return;
+      if (daemon.status === "online" && !document.hidden) {
+        await sessions.refresh();
+        if (stopped) return;
+      }
       timer = setTimeout(tick, 2000);
     }
     tick();
+    // Resume the moment the daemon comes back rather than waiting out the tick.
+    const offReconnect = daemon.onReconnect(() => {
+      if (!stopped && !document.hidden) sessions.refresh();
+    });
+    // Catch up immediately when the tab is brought back into view.
+    function onVisibility() {
+      if (!stopped && !document.hidden && daemon.status === "online") sessions.refresh();
+    }
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       stopped = true;
       clearTimeout(timer);
+      offReconnect();
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   });
 

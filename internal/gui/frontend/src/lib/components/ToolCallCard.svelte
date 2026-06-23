@@ -32,7 +32,18 @@
           : "warn"
         : ("working" as const),
   );
-  const tone = $derived(block.isError ? "error" : block.done ? "ok" : "running");
+  // The header glyph color must agree with the dot: a done-without-result tool
+  // is indeterminate (warn), not a success (ok). Mirror dotState's three-way
+  // logic so the glyph never signals green while the dot/note signal amber.
+  const tone = $derived(
+    block.isError
+      ? "error"
+      : block.done
+        ? block.result
+          ? "ok"
+          : "warn"
+        : "running",
+  );
 
   // ── Tool family classification ──────────────────────────────────────────────
   // Normalize the daemon's tool name to a lowercase key so casing/aliases don't
@@ -520,6 +531,9 @@
   }
   .tool__glyph--ok {
     color: var(--brand);
+  }
+  .tool__glyph--warn {
+    color: var(--warn);
   }
   .tool__glyph--running {
     color: var(--working);

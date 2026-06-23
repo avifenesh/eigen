@@ -121,9 +121,10 @@
     return rows;
   });
 
-  // Index of the lead row: the soonest still-scheduled timer. It gets the
-  // teal-lit treatment so the eye lands on what fires next.
-  const leadUnit = $derived(timers.find((t) => t.ts !== null)?.unit ?? null);
+  // Lead row: the soonest run that will actually fire — running (active) with a
+  // future next. teal=alive, so a stopped timer (even one with a future next)
+  // is never the lead. timers is already sorted soonest-first.
+  const leadUnit = $derived(timers.find((t) => t.ts !== null && t.active)?.unit ?? null);
 
   // Crontab specs → a human cadence, so the column reads as a rhythm not a glob.
   const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -230,7 +231,8 @@
                     <div class="cron__top">
                       <StatusDot state={c.active ? "ok" : "idle"} size={7} pulse={lead} />
                       <span class="cron__name">{c.name}</span>
-                      <Badge tone={c.active ? "success" : "neutral"}>{c.active ? "scheduled" : "no next run"}</Badge>
+                      <Badge tone={c.active ? "success" : "neutral"}>{c.active ? "running" : "stopped"}</Badge>
+                      <Badge tone={c.enabled ? "info" : "neutral"}>{c.enabled ? "enabled" : "disabled"}</Badge>
                     </div>
                     <div class="cron__cmd selectable">{c.command}</div>
                     {#if c.pos !== null || (c.last && c.last !== "—")}
@@ -249,9 +251,12 @@
                   <div class="cron__actions">
                     {#if c.active}
                       <Button variant="ghost" size="sm" loading={acting[c.unit ?? ""]} onclick={() => ctl(c, "stop")}>Stop</Button>
-                      <Button variant="ghost" size="sm" loading={acting[c.unit ?? ""]} onclick={() => ctl(c, "disable")}>Disable</Button>
                     {:else}
                       <Button variant="primary" size="sm" loading={acting[c.unit ?? ""]} onclick={() => ctl(c, "start")}>Start</Button>
+                    {/if}
+                    {#if c.enabled}
+                      <Button variant="ghost" size="sm" loading={acting[c.unit ?? ""]} onclick={() => ctl(c, "disable")}>Disable</Button>
+                    {:else}
                       <Button variant="ghost" size="sm" loading={acting[c.unit ?? ""]} onclick={() => ctl(c, "enable")}>Enable</Button>
                     {/if}
                   </div>

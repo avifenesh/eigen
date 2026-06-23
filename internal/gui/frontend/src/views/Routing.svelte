@@ -122,7 +122,7 @@
       <span class="prov__name">All</span>
       {#if data}<span class="prov__n tnum">{data.models.length}</span>{/if}
     </button>
-    {#each data?.providers ?? [] as p (p.name)}
+    {#each (data?.providers ?? []).filter((p) => p.modelCount > 0) as p (p.name)}
       <button class="prov" class:prov--on={provFilter === p.name} onclick={() => (provFilter = provFilter === p.name ? null : p.name)}>
         <StatusDot state={p.credentialed ? "ok" : "idle"} size={7} />
         <span class="prov__name">{p.name}</span>

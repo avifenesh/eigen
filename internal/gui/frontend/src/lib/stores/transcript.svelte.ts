@@ -153,6 +153,12 @@ export function createTranscript(sessionId: string) {
         commitLive();
         resetPending();
         pushHistory({ uid: nextUid(), kind: "note", text: e.text ?? "" });
+        // Abnormal turn end (provider error / interrupt / overflow-no-compact /
+        // reasoning-only spin-out) emits ONLY a terminal note, never a `done`,
+        // so the composer would stay stuck in the working state forever. Clear
+        // running here. In-turn informational notes (e.g. compaction) are always
+        // followed by a `done` that also clears running, so this is safe.
+        running = false;
         break;
       case "approval":
         // A gated tool is waiting for the user. The turn stays running, so the

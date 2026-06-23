@@ -28,6 +28,10 @@ export type WireEventDTO = {
   isError?: boolean;
   inTokens?: number;
   outTokens?: number;
+  provider?: string;
+  model?: string;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
 };
 
 export type StreamEventDTO = { event: WireEventDTO; replay: boolean };
@@ -225,7 +229,8 @@ export type CronDTO = {
   kind: string; // "timer" | "crontab"
   next: string;
   last: string;
-  active: boolean;
+  active: boolean; // unit is loaded/running now (start/stop)
+  enabled: boolean; // unit is enabled persistently (enable/disable)
   command: string;
   unit?: string;
 };
@@ -236,6 +241,7 @@ export type CronsDTO = {
   systemdAvail: boolean;
 };
 
+export type ScanFindingDTO = { component: string; reasons?: string[] };
 export type InstalledPluginDTO = {
   name: string;
   marketplace?: string;
@@ -249,6 +255,7 @@ export type InstalledPluginDTO = {
   hooks?: number;
   scanStatus?: string;
   scanCount?: number;
+  scans?: ScanFindingDTO[];
   warnings?: string[];
 };
 export type MarketplaceDTO = {

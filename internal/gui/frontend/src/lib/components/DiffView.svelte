@@ -37,13 +37,24 @@
   }
 
   // ── Parse ────────────────────────────────────────────────────────────────
-  // One pass: classify every line. File headers (---/+++/diff/index) read as
-  // quiet meta so a raw `git diff` paste renders gracefully, not as add/del.
-  const rows = $derived.by<Row[]>(() => {
+  // One pass: classify every line AND tally the diffstat counts inline. File
+  // headers (---/+++/diff/index) read as quiet meta so a raw `git diff` paste
+  // renders gracefully, not as add/del. Counting add/del/hunk rows here folds
+  // what used to be three separate rows.filter() passes into this single loop.
+  interface Parsed {
+    rows: Row[];
+    additions: number;
+    deletions: number;
+    hunks: number;
+  }
+  const parsed = $derived.by<Parsed>(() => {
     const src = patch ?? "";
-    if (!src.trim()) return [];
+    if (!src.trim()) return { rows: [], additions: 0, deletions: 0, hunks: 0 };
     const lines = src.replace(/\n$/, "").split("\n");
     const out: Row[] = [];
+    let add = 0;
+    let del = 0;
+    let hunk = 0;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       let kind: Kind;
@@ -52,6 +63,7 @@
       if (line.startsWith("@@")) {
         kind = "hunk";
         text = line;
+        hunk++;
       } else if (
         line.startsWith("+++") ||
         line.startsWith("---") ||
@@ -69,22 +81,25 @@
         kind = "add";
         sign = "+";
         text = line.slice(1);
+        add++;
       } else if (line.startsWith("-")) {
         kind = "del";
         sign = "−"; // U+2212 minus — optically matches the + weight
         text = line.slice(1);
+        del++;
       } else {
         kind = "ctx";
         text = line.startsWith(" ") ? line.slice(1) : line;
       }
       out.push({ id: i, kind, sign, text });
     }
-    return out;
+    return { rows: out, additions: add, deletions: del, hunks: hunk };
   });
 
-  const additions = $derived(rows.filter((r) => r.kind === "add").length);
-  const deletions = $derived(rows.filter((r) => r.kind === "del").length);
-  const hunks = $derived(rows.filter((r) => r.kind === "hunk").length);
+  const rows = $derived(parsed.rows);
+  const additions = $derived(parsed.additions);
+  const deletions = $derived(parsed.deletions);
+  const hunks = $derived(parsed.hunks);
   const empty = $derived(rows.length === 0);
 
   // ── Collapse very large diffs ──────────────────────────────────────────────

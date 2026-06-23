@@ -50,6 +50,27 @@
     };
   });
 
+  // Machines() is instant + local (it reads saved eigen remotes + ~/.ssh/config),
+  // so re-reading freely is cheap. The header promises detected entries "show up
+  // automatically", but there's no eigen:machines push event — instead re-read on
+  // window focus / tab-visible so an `eigen remote add` run in a terminal lands
+  // without a GUI restart. Skip while a load is already in flight (no overlap) and
+  // while a drill-in dial is open (a refresh would be invisible behind the sheet).
+  // Both listeners are torn down on unmount — leak contract.
+  function refreshOnReturn() {
+    if (document.visibilityState !== "visible") return;
+    if (loading || openMachine !== null) return;
+    load();
+  }
+  $effect(() => {
+    window.addEventListener("focus", refreshOnReturn);
+    document.addEventListener("visibilitychange", refreshOnReturn);
+    return () => {
+      window.removeEventListener("focus", refreshOnReturn);
+      document.removeEventListener("visibilitychange", refreshOnReturn);
+    };
+  });
+
   // Drill-in dials ssh — slow and may fail. Its own sequence token so a stale
   // resolution (after closing or switching machines) is dropped.
   let remoteSeq = 0;
@@ -126,6 +147,19 @@
     <div class="mx__lead">
       <span class="mx__eyebrow">Remote hosts</span>
       {#if data}<span class="mx__n tnum">{machines.length}</span>{/if}
+      {#if data}
+        <button
+          class="mx__refresh"
+          class:mx__refresh--spin={loading}
+          type="button"
+          title="Re-read remotes (also refreshes on window focus)"
+          aria-label="Refresh machines"
+          disabled={loading}
+          onclick={() => load()}
+        >
+          <span class="mx__refresh-glyph" aria-hidden="true">↻</span>
+        </button>
+      {/if}
     </div>
     <p class="mx__hint">
       Install eigen on a new host from the CLI: <code class="mx__code">eigen remote install</code>
@@ -271,6 +305,42 @@
   .mx__n {
     font-size: var(--fs-label);
     color: var(--text-ghost);
+  }
+  .mx__refresh {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-faint);
+    border-radius: var(--r-xs);
+    cursor: pointer;
+    transition:
+      color var(--dur-fast) var(--ease-out),
+      background var(--dur-fast) var(--ease-out);
+  }
+  .mx__refresh:hover:not(:disabled) {
+    color: var(--brand);
+    background: var(--state-hover);
+  }
+  .mx__refresh:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .mx__refresh:disabled {
+    cursor: default;
+    color: var(--brand);
+  }
+  .mx__refresh-glyph {
+    display: block;
+    font-size: var(--fs-body-sm);
+    line-height: 1;
+  }
+  .mx__refresh--spin .mx__refresh-glyph {
+    animation: mx-spin 0.7s linear infinite;
   }
   .mx__hint {
     margin: 0;
@@ -486,7 +556,8 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .mx__skel,
-    .mx__spinner {
+    .mx__spinner,
+    .mx__refresh--spin .mx__refresh-glyph {
       animation: none;
     }
   }

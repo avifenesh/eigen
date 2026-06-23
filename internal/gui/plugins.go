@@ -13,20 +13,28 @@ import (
 // is intentionally NOT exposed (untrusted bundle code is scanned at install via
 // the CLI; the agent/GUI must not auto-install).
 
+// ScanFindingDTO is one component's risky scan verdict, kept for audit/UI so a
+// --force-installed plugin can show WHICH component tripped the scanner and why.
+type ScanFindingDTO struct {
+	Component string   `json:"component"`
+	Reasons   []string `json:"reasons,omitempty"`
+}
+
 type InstalledPluginDTO struct {
-	Name        string   `json:"name"`
-	Marketplace string   `json:"marketplace,omitempty"`
-	Version     string   `json:"version,omitempty"`
-	Description string   `json:"description,omitempty"`
-	InstalledMs int64    `json:"installedMs"`
-	Skills      []string `json:"skills,omitempty"`
-	Agents      []string `json:"agents,omitempty"`
-	MCPServers  []string `json:"mcpServers,omitempty"`
-	Commands    []string `json:"commands,omitempty"`
-	Hooks       int      `json:"hooks,omitempty"`
-	ScanStatus  string   `json:"scanStatus,omitempty"`
-	ScanCount   int      `json:"scanCount,omitempty"`
-	Warnings    []string `json:"warnings,omitempty"`
+	Name        string           `json:"name"`
+	Marketplace string           `json:"marketplace,omitempty"`
+	Version     string           `json:"version,omitempty"`
+	Description string           `json:"description,omitempty"`
+	InstalledMs int64            `json:"installedMs"`
+	Skills      []string         `json:"skills,omitempty"`
+	Agents      []string         `json:"agents,omitempty"`
+	MCPServers  []string         `json:"mcpServers,omitempty"`
+	Commands    []string         `json:"commands,omitempty"`
+	Hooks       int              `json:"hooks,omitempty"`
+	ScanStatus  string           `json:"scanStatus,omitempty"`
+	ScanCount   int              `json:"scanCount,omitempty"`
+	Scans       []ScanFindingDTO `json:"scans,omitempty"`
+	Warnings    []string         `json:"warnings,omitempty"`
 }
 
 type MarketplaceDTO struct {
@@ -60,12 +68,19 @@ func (b *Bridge) Plugins() (*PluginsDTO, error) {
 
 	plugins := make([]InstalledPluginDTO, 0, len(installed))
 	for _, p := range installed {
+		var scans []ScanFindingDTO
+		if len(p.Scans) > 0 {
+			scans = make([]ScanFindingDTO, 0, len(p.Scans))
+			for _, sc := range p.Scans {
+				scans = append(scans, ScanFindingDTO{Component: sc.Component, Reasons: sc.Reasons})
+			}
+		}
 		plugins = append(plugins, InstalledPluginDTO{
 			Name: p.Name, Marketplace: p.Marketplace, Version: p.Version,
 			Description: p.Description, InstalledMs: p.Installed.UnixMilli(),
 			Skills: p.Skills, Agents: p.Agents, MCPServers: p.MCPServers,
 			Commands: p.Commands, Hooks: p.Hooks,
-			ScanStatus: p.ScanStatus, ScanCount: p.ScanCount, Warnings: p.Warnings,
+			ScanStatus: p.ScanStatus, ScanCount: p.ScanCount, Scans: scans, Warnings: p.Warnings,
 		})
 	}
 	sort.Slice(plugins, func(i, j int) bool { return plugins[i].Name < plugins[j].Name })

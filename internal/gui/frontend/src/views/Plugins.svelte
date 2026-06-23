@@ -9,6 +9,7 @@
   import { Bridge } from "$lib/bridge";
   import { toasts } from "$lib/stores/toasts.svelte";
   import type { PluginsDTO, InstalledPluginDTO } from "$lib/types";
+  import { SvelteSet } from "svelte/reactivity";
   import Card from "$lib/components/Card.svelte";
   import Button from "$lib/components/Button.svelte";
   import Badge from "$lib/components/Badge.svelte";
@@ -20,6 +21,11 @@
   let error = $state<string | null>(null);
   let acting = $state<Record<string, boolean>>({});
   let confirming = $state<string | null>(null); // key of the row awaiting confirm
+  let expandedScans = new SvelteSet<string>(); // plugin names with their scan detail open
+  function toggleScans(name: string) {
+    if (expandedScans.has(name)) expandedScans.delete(name);
+    else expandedScans.add(name);
+  }
 
   let loadSeq = 0;
   async function load() {
@@ -119,6 +125,12 @@
           <h2 class="plug__section-title">Installed plugins</h2>
           <span class="plug__n tnum">{data.plugins.length}</span>
         </div>
+        <!-- No GUI install bridge for plugins: untrusted bundles are scanned at
+             the CLI install seam, so adding a plugin happens there. Honest hint
+             rather than a faked Add control. -->
+        <p class="plug__add-hint">
+          Add a plugin from the CLI: <code class="plug__cmd selectable">eigen plugin install &lt;name&gt;</code> — bundles are scanned before they're wired in.
+        </p>
         {#if data.plugins.length === 0}
           <p class="plug__empty-note">No plugins installed.</p>
         {:else}
@@ -130,7 +142,21 @@
                     <div class="pl__top">
                       <span class="pl__name">{p.name}</span>
                       {#if p.version}<Badge tone="neutral">{p.version}</Badge>{/if}
-                      {#if p.scanStatus}<Badge tone={scanTone(p.scanStatus)}>scan: {p.scanStatus}</Badge>{/if}
+                      {#if p.scanStatus}
+                        {#if p.scans?.length}
+                          <button
+                            type="button"
+                            class="pl__scan-toggle"
+                            aria-expanded={expandedScans.has(p.name)}
+                            onclick={() => toggleScans(p.name)}
+                          >
+                            <Badge tone={scanTone(p.scanStatus)}>scan: {p.scanStatus}</Badge>
+                            <span class="pl__scan-caret" class:pl__scan-caret--open={expandedScans.has(p.name)} aria-hidden="true">▸</span>
+                          </button>
+                        {:else}
+                          <Badge tone={scanTone(p.scanStatus)}>scan: {p.scanStatus}</Badge>
+                        {/if}
+                      {/if}
                       {#if p.marketplace}<span class="pl__market">from {p.marketplace}</span>{/if}
                     </div>
                     {#if p.description}<p class="pl__desc">{p.description}</p>{/if}
@@ -141,6 +167,23 @@
                     </div>
                     {#if p.warnings?.length}
                       <div class="pl__warn">⚠ {p.warnings.join("; ")}</div>
+                    {/if}
+                    {#if p.scans?.length && expandedScans.has(p.name)}
+                      <div class="pl__scans">
+                        <p class="pl__scans-note">Installed despite scan flags — each component that tripped the scanner:</p>
+                        {#each p.scans as s (s.component)}
+                          <div class="scan">
+                            <span class="scan__comp selectable">{s.component}</span>
+                            {#if s.reasons?.length}
+                              <ul class="scan__reasons">
+                                {#each s.reasons as r, ri (ri)}
+                                  <li class="scan__reason">{r}</li>
+                                {/each}
+                              </ul>
+                            {/if}
+                          </div>
+                        {/each}
+                      </div>
                     {/if}
                   </div>
                   <div class="pl__actions">
@@ -256,6 +299,20 @@
     font-size: var(--fs-label);
     color: var(--text-ghost);
   }
+  .plug__add-hint {
+    margin: 0 0 var(--sp-2);
+    color: var(--text-muted);
+    font-size: var(--fs-body-sm);
+    line-height: var(--lh-snug);
+  }
+  .plug__cmd {
+    padding: 1px var(--sp-3);
+    border-radius: var(--r-xs);
+    background: var(--bg-overlay);
+    border: 1px solid var(--border-hairline);
+    font: var(--fw-regular) var(--fs-code-sm) / 1.4 var(--font-mono);
+    color: var(--text-secondary);
+  }
   .plug__list {
     display: flex;
     flex-direction: column;
@@ -343,6 +400,73 @@
   .pl__warn {
     font-size: var(--fs-label);
     color: var(--warn);
+  }
+  /* The scan badge becomes a disclosure when a forced install kept findings:
+     clicking it reveals which component tripped the scanner and why, mirroring
+     the TUI's per-component reason list. */
+  .pl__scan-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    border-radius: var(--r-xs);
+    color: inherit;
+  }
+  .pl__scan-toggle:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
+  .pl__scan-caret {
+    font-size: var(--fs-micro);
+    color: var(--warn);
+    transition: transform var(--dur-fast) var(--ease-out);
+  }
+  .pl__scan-caret--open {
+    transform: rotate(90deg);
+  }
+  .pl__scans {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+    border-radius: var(--r-sm);
+    background: var(--bg-overlay);
+    border: 1px solid var(--border-hairline);
+  }
+  .pl__scans-note {
+    margin: 0;
+    font-size: var(--fs-label);
+    color: var(--warn);
+  }
+  .scan {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+  }
+  .scan__comp {
+    font: var(--fw-medium) var(--fs-code-sm) / 1.4 var(--font-mono);
+    color: var(--text-primary);
+    word-break: break-all;
+  }
+  .scan__reasons {
+    margin: 0;
+    padding-left: var(--sp-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+  }
+  .scan__reason {
+    font-size: var(--fs-body-sm);
+    color: var(--text-muted);
+    line-height: var(--lh-snug);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pl__scan-caret {
+      transition: none;
+    }
   }
   .pl__source {
     font: var(--fw-regular) var(--fs-code-sm) / 1.4 var(--font-mono);

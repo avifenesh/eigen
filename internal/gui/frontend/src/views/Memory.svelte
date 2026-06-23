@@ -35,6 +35,13 @@
   let savingBan = $state(false);
   let removingBan = $state<string | null>(null);
 
+  // Backups (snapshot history of MEMORY.md). The scope DTO carries only the
+  // count; Bridge.MemoryBackups(scope) lists the actual snapshot paths. Lazy:
+  // fetched on first reveal, re-fetched when the scope switches.
+  let backupsOpen = $state(false);
+  let backupPaths = $state<string[]>([]);
+  let backupsLoading = $state(false);
+
   const current = $derived<MemoryScopeDTO | null>(
     scope === "project" ? (data?.project ?? null) : (data?.global ?? null),
   );
@@ -110,6 +117,49 @@
     } finally {
       removingBan = null;
     }
+  }
+
+  // alive guard: a late MemoryBackups() resolution must not write after a scope
+  // switch or unmount started a newer fetch.
+  let backupsSeq = 0;
+  async function loadBackups() {
+    const seq = ++backupsSeq;
+    backupsLoading = true;
+    try {
+      const paths = await Bridge.MemoryBackups(scope);
+      // Go returns oldest-first; reverse for newest-first.
+      if (seq === backupsSeq) backupPaths = [...paths].reverse();
+    } catch (e) {
+      if (seq === backupsSeq) toasts.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (seq === backupsSeq) backupsLoading = false;
+    }
+  }
+  function toggleBackups() {
+    backupsOpen = !backupsOpen;
+    if (backupsOpen) loadBackups();
+  }
+  // Switching scope invalidates the open list — collapse and drop stale paths.
+  $effect(() => {
+    scope;
+    backupsOpen = false;
+    backupPaths = [];
+    backupsSeq++;
+  });
+
+  function backupName(path: string): string {
+    const p = path.split("/");
+    return p[p.length - 1] || path;
+  }
+  // Backup files are named MEMORY.md.20060102-150405.bak — surface the snapshot
+  // moment in a readable form, falling back to the bare filename.
+  function backupWhen(path: string): string {
+    const m = backupName(path).match(/\.(\d{8})-(\d{6})\.bak$/);
+    if (!m) return backupName(path);
+    const [, d, t] = m;
+    const date = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
+    const time = `${t.slice(0, 2)}:${t.slice(2, 4)}:${t.slice(4, 6)}`;
+    return `${date} ${time}`;
   }
 
   function startProfile() {
@@ -358,9 +408,44 @@
           <dl class="mem__meta">
             <dt>notes</dt><dd class="tnum">{current.noteCount}</dd>
             <dt>ad-hoc</dt><dd class="tnum">{current.adHoc.length}</dd>
-            <dt>backups</dt><dd class="tnum">{current.backups}</dd>
+            <dt>backups</dt>
+            <dd>
+              {#if current.backups > 0}
+                <button
+                  class="mem__backups-toggle tnum"
+                  class:mem__backups-toggle--on={current.backups > 0}
+                  type="button"
+                  aria-expanded={backupsOpen}
+                  onclick={toggleBackups}
+                >
+                  {current.backups}
+                  <span class="mem__backups-caret" class:mem__backups-caret--open={backupsOpen} aria-hidden="true">▸</span>
+                </button>
+              {:else}
+                <span class="tnum">0</span>
+              {/if}
+            </dd>
             <dt>size</dt><dd class="tnum">{(current.bytes / 1024).toFixed(1)} KB</dd>
           </dl>
+
+          {#if backupsOpen}
+            <div class="mem__backups">
+              {#if backupsLoading && backupPaths.length === 0}
+                <p class="mem__empty-note">Loading backups…</p>
+              {:else if backupPaths.length === 0}
+                <p class="mem__empty-note">No backup snapshots on disk.</p>
+              {:else}
+                <ul class="mem__backups-list">
+                  {#each backupPaths as path (path)}
+                    <li class="mem__backup">
+                      <span class="mem__backup-when tnum">{backupWhen(path)}</span>
+                      <span class="mem__backup-path selectable" title={path}>{backupName(path)}</span>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            </div>
+          {/if}
         </section>
       </aside>
     </div>
@@ -661,6 +746,70 @@
     color: var(--text-secondary);
     font-size: var(--fs-body-sm);
     text-align: right;
+  }
+  .mem__backups-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: var(--fs-body-sm);
+    padding: 0;
+    cursor: pointer;
+    border-radius: var(--r-sm);
+  }
+  /* teal = alive: a scope with backups on disk reads as live history. */
+  .mem__backups-toggle--on {
+    color: var(--brand);
+  }
+  .mem__backups-toggle:hover {
+    color: var(--accent-bright);
+  }
+  .mem__backups-toggle:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .mem__backups-caret {
+    display: inline-block;
+    font-size: var(--fs-micro);
+    color: var(--text-faint);
+    transition: transform var(--dur-fast) var(--ease-out);
+  }
+  .mem__backups-caret--open {
+    transform: rotate(90deg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .mem__backups-caret {
+      transition: none;
+    }
+  }
+  .mem__backups-list {
+    list-style: none;
+    margin: var(--sp-3) 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+  }
+  .mem__backup {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    padding: var(--sp-3) var(--sp-4);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--r-sm);
+    background: var(--bg-raised);
+  }
+  .mem__backup-when {
+    font-size: var(--fs-body-sm);
+    color: var(--text-secondary);
+  }
+  .mem__backup-path {
+    font-size: var(--fs-micro);
+    color: var(--text-faint);
+    overflow-wrap: anywhere;
   }
   .mem__loading {
     padding: var(--sp-7) var(--sp-9);

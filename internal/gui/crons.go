@@ -14,12 +14,20 @@ import (
 // the TUI crons page uses; a timer can be started/stopped/enabled/disabled.
 
 // CronDTO is one scheduled job (a systemd timer or a crontab line).
+//
+// Enabled vs Active are independent in systemd: Enabled is the persistent
+// install state (survives reboot, controlled by enable/disable); Active is
+// whether the unit is loaded/running right now (controlled by start/stop). A
+// disabled-but-started timer fires until reboot; an enabled-but-stopped timer
+// is dormant until its next start. The UI drives Enable/Disable from Enabled
+// and Start/Stop from Active so each control reflects what it actually does.
 type CronDTO struct {
 	Name    string `json:"name"`
-	Kind    string `json:"kind"` // "timer" | "crontab"
-	Next    string `json:"next"` // human next-run (timer) or cron spec (crontab)
-	Last    string `json:"last"` // last run (timer); "" for crontab
-	Active  bool   `json:"active"`
+	Kind    string `json:"kind"`    // "timer" | "crontab"
+	Next    string `json:"next"`    // human next-run (timer) or cron spec (crontab)
+	Last    string `json:"last"`    // last run (timer); "" for crontab
+	Active  bool   `json:"active"`  // unit is loaded/running now (start/stop)
+	Enabled bool   `json:"enabled"` // unit is enabled persistently (enable/disable)
 	Command string `json:"command"`
 	Unit    string `json:"unit,omitempty"` // systemd unit name (timer only) for control ops
 }
@@ -64,13 +72,30 @@ func loadSystemdTimers() ([]CronDTO, bool) {
 			Kind:    "timer",
 			Next:    humanizeMicros(t.Next),
 			Last:    humanizeMicros(t.Last),
-			Active:  t.Next > 0,
+			Active:  timerIsActive(t.Unit),
+			Enabled: timerIsEnabled(t.Unit),
 			Command: t.Activates,
 			Unit:    t.Unit,
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
 	return rows, true
+}
+
+// timerIsActive reports whether a unit is loaded/running now (start/stop axis).
+// systemctl is-active exits non-zero when not active but still prints the state
+// to stdout, so we read the trimmed output rather than the exit code.
+func timerIsActive(unit string) bool {
+	out, _ := exec.Command("systemctl", "--user", "is-active", unit).Output()
+	return strings.TrimSpace(string(out)) == "active"
+}
+
+// timerIsEnabled reports whether a unit is enabled persistently (enable/disable
+// axis), independent of whether it is running. is-enabled prints e.g.
+// "enabled"/"disabled"/"static" to stdout regardless of exit code.
+func timerIsEnabled(unit string) bool {
+	out, _ := exec.Command("systemctl", "--user", "is-enabled", unit).Output()
+	return strings.TrimSpace(string(out)) == "enabled"
 }
 
 func loadCrontab() []CronDTO {
@@ -103,6 +128,7 @@ func loadCrontab() []CronDTO {
 			Kind:    "crontab",
 			Next:    spec,
 			Active:  true,
+			Enabled: true,
 			Command: command,
 		})
 	}

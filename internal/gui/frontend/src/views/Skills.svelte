@@ -29,6 +29,44 @@
   // Per-proposal in-flight guard so accept/reject buttons disable while acting.
   let acting = $state<Record<string, boolean>>({});
 
+  // Add-a-skill control — install from a local path or a GitHub owner/repo ref.
+  // Both bridges scan the bundle before writing; a scan-block surfaces as the
+  // error toast. `addMode` picks which bridge the input feeds.
+  let addMode = $state<"path" | "github">("path");
+  let addInput = $state("");
+  let installing = $state(false);
+  const addPlaceholder = $derived(
+    addMode === "path" ? "/path/to/skill or SKILL.md" : "owner/repo",
+  );
+  async function install() {
+    const ref = addInput.trim();
+    if (!ref || installing) return;
+    installing = true;
+    try {
+      const res =
+        addMode === "path"
+          ? await Bridge.InstallSkillFromPath(ref)
+          : await Bridge.InstallSkillFromGitHub(ref);
+      if (res) {
+        toasts.success(`installed “${res.name}” → ${res.path}`);
+        addInput = "";
+        await load();
+      } else {
+        toasts.info("nothing installed");
+      }
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      installing = false;
+    }
+  }
+  function onAddKey(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      install();
+    }
+  }
+
   // Page size for the (potentially large) proposed + active grids — the
   // proposals list can run into the hundreds, so we reveal in batches rather
   // than mounting every card at once.
@@ -162,6 +200,44 @@
         aria-label="Filter skills"
       />
       {#if data}<span class="skills__count tnum">{filtered.length}</span>{/if}
+    </div>
+
+    <!-- Add a skill — install from a local path or a GitHub owner/repo ref.
+         Both routes scan the bundle before writing; a scan-block surfaces as
+         an error toast. The segmented toggle picks which bridge runs. -->
+    <div class="skills__add">
+      <div class="seg" role="group" aria-label="Install source">
+        <button
+          type="button"
+          class="seg__btn"
+          class:seg__btn--on={addMode === "path"}
+          aria-pressed={addMode === "path"}
+          onclick={() => (addMode = "path")}
+        >
+          Path
+        </button>
+        <button
+          type="button"
+          class="seg__btn"
+          class:seg__btn--on={addMode === "github"}
+          aria-pressed={addMode === "github"}
+          onclick={() => (addMode = "github")}
+        >
+          GitHub
+        </button>
+      </div>
+      <input
+        class="skills__input skills__add-input"
+        type="text"
+        placeholder={addPlaceholder}
+        bind:value={addInput}
+        onkeydown={onAddKey}
+        disabled={installing}
+        aria-label={addMode === "path" ? "Skill path to install" : "GitHub owner/repo to install"}
+      />
+      <Button variant="primary" size="sm" loading={installing} disabled={!addInput.trim()} onclick={install}>
+        Add
+      </Button>
     </div>
   </header>
 
@@ -301,12 +377,66 @@
     flex: none;
     padding: var(--sp-6) var(--sp-9);
     border-bottom: 1px solid var(--border-hairline);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-6);
+    flex-wrap: wrap;
   }
   .skills__search {
     display: flex;
     align-items: center;
     gap: var(--sp-4);
+    flex: 1;
+    min-width: 200px;
     max-width: 420px;
+  }
+  /* Add control — segmented source toggle + ref input + Add. */
+  .skills__add {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    flex: none;
+  }
+  .skills__add-input {
+    width: 220px;
+    flex: none;
+  }
+  .skills__add-input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  /* Segmented Path | GitHub toggle — the lit segment glows teal (alive). */
+  .seg {
+    display: inline-flex;
+    padding: 2px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-md);
+    background: var(--bg-raised);
+  }
+  .seg__btn {
+    height: 28px;
+    padding: 0 var(--sp-4);
+    border: none;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--text-muted);
+    font: var(--fw-medium) var(--fs-label) / 1 var(--font-sans);
+    cursor: pointer;
+    transition:
+      color var(--dur-fast) var(--ease-out),
+      background var(--dur-fast) var(--ease-out);
+  }
+  .seg__btn:hover:not(.seg__btn--on) {
+    color: var(--text-secondary);
+  }
+  .seg__btn--on {
+    background: var(--brand);
+    color: var(--text-on-brand);
+  }
+  .seg__btn:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
   }
   .skills__input {
     flex: 1;
