@@ -27,6 +27,7 @@
   let openCons = $state<ConsolidationDTO | null>(null);
   let diffPatch = $state("");
   let diffLoading = $state(false);
+  let diffError = $state<string | null>(null);
 
   const current = $derived<DreamingScopeDTO | null>(
     scope === "project" ? (data?.project ?? null) : (data?.global ?? null),
@@ -58,6 +59,7 @@
   async function openDiff(c: ConsolidationDTO) {
     openCons = c;
     diffPatch = "";
+    diffError = null;
     diffLoading = true;
     try {
       const [before, after] = await Promise.all([
@@ -66,7 +68,8 @@
       ]);
       diffPatch = makeUnifiedDiff(before, after, c.label, "current");
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      diffError = e instanceof Error ? e.message : String(e);
+      toasts.error(diffError);
     } finally {
       diffLoading = false;
     }
@@ -74,6 +77,7 @@
   function closeDiff() {
     openCons = null;
     diffPatch = "";
+    diffError = null;
   }
   function onkeydown(e: KeyboardEvent) {
     if (e.key === "Escape" && openCons) closeDiff();
@@ -206,6 +210,13 @@
     <div class="sheet__body">
       {#if diffLoading}
         <div class="sheet__loading">Loading…</div>
+      {:else if diffError}
+        {@const retryCons = openCons}
+        <EmptyState glyph="☾" title="Couldn't load diff" line={diffError}>
+          {#snippet action()}
+            {#if retryCons}<Button variant="secondary" onclick={() => openDiff(retryCons)}>Retry</Button>{/if}
+          {/snippet}
+        </EmptyState>
       {:else if diffPatch}
         <DiffView patch={diffPatch} />
       {:else}

@@ -293,9 +293,16 @@
                     <span class="ag__id tnum">{t.id}</span>
                     <Badge tone={tone(t.status)}>{t.canceling ? "canceling" : t.status}</Badge>
                     {#if t.role}<Badge tone="info">{t.role}</Badge>{/if}
+                    {#if t.model}<Badge tone="brand" truncate>{t.model}</Badge>{/if}
                     {#if t.where}<Badge tone="neutral" truncate>{t.where}</Badge>{/if}
                     <span class="ag__elapsed tnum">{elapsed(t)}</span>
                   </div>
+                  {#if t.kind || t.difficulty}
+                    <div class="ag__route tnum">
+                      {#if t.kind}<span class="ag__route-item">{t.kind}</span>{/if}
+                      {#if t.difficulty}<span class="ag__route-item">{t.difficulty}</span>{/if}
+                    </div>
+                  {/if}
                   <p class="ag__task">{t.task}</p>
                   {#if t.status === "running"}
                     <div class="ag__live">
@@ -349,6 +356,14 @@
       </div>
       <Button variant="icon" size="md" title="Close" onclick={closeTranscript}>✕</Button>
     </header>
+    {#if openTask.model || openTask.kind || openTask.difficulty || openTask.where}
+      <div class="sheet__route">
+        {#if openTask.model}<Badge tone="brand" truncate>{openTask.model}</Badge>{/if}
+        {#if openTask.kind}<Badge tone="neutral">{openTask.kind}</Badge>{/if}
+        {#if openTask.difficulty}<Badge tone="neutral">{openTask.difficulty}</Badge>{/if}
+        {#if openTask.where}<Badge tone="neutral" truncate>{openTask.where}</Badge>{/if}
+      </div>
+    {/if}
     <p class="sheet__task">{openTask.task}</p>
     {#if openTask.result}
       <div class="sheet__section-label">result</div>
@@ -549,6 +564,19 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+  .ag__route {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    font-size: var(--fs-label);
+    color: var(--text-muted);
+    flex-wrap: wrap;
+  }
+  .ag__route-item {
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--text-faint);
+  }
   .ag__live {
     display: flex;
     align-items: center;
@@ -624,6 +652,12 @@
     margin: 0;
     font: var(--fw-semibold) var(--fs-h3) / 1.2 var(--font-display);
     color: var(--text-primary);
+  }
+  .sheet__route {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
   }
   .sheet__task {
     margin: 0;

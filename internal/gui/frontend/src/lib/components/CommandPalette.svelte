@@ -197,26 +197,39 @@
       class="pal__input"
       placeholder="Run an action, jump to a view or session…"
       aria-label="Command palette filter"
+      role="combobox"
+      aria-expanded="true"
+      aria-autocomplete="list"
+      aria-controls="pal-listbox"
+      aria-activedescendant={items.length ? `pal-opt-${active}` : undefined}
       onkeydown={onListKey}
     />
-    <div class="pal__list" role="listbox" aria-label="Commands">
+    <div id="pal-listbox" class="pal__list" role="listbox" aria-label="Commands">
       {#if grouped.length === 0}
         <div class="pal__empty">No matches.</div>
       {:else}
         {#each grouped as g (g.item.id ?? g.item.group + ":" + g.item.label)}
           {#if g.header}<div class="pal__section">{g.header}</div>{/if}
-          <button
+          <!-- Non-focusable option: focus stays on the combobox input, which
+               points here via aria-activedescendant. onmousedown (not click)
+               keeps the input from blurring before the action fires. -->
+          <div
+            id={`pal-opt-${g.index}`}
             class="pal__row"
             class:pal__row--active={g.index === active}
             role="option"
+            tabindex={-1}
             aria-selected={g.index === active}
             onmouseenter={() => (active = g.index)}
-            onclick={() => run(g.item)}
+            onmousedown={(e) => {
+              e.preventDefault();
+              run(g.item);
+            }}
           >
             <span class="pal__glyph" aria-hidden="true">{g.item.glyph}</span>
             <span class="pal__label">{g.item.label}</span>
             <span class="pal__hint">{g.item.hint}</span>
-          </button>
+          </div>
         {/each}
       {/if}
     </div>

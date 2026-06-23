@@ -20,6 +20,7 @@
 
   let summary = $state<ObserveSummaryDTO | null>(null);
   let summaryLoading = $state(true);
+  let summaryError = $state<string | null>(null);
   let memory = $state<MemoryDTO | null>(null);
   let memoryLoading = $state(true);
 
@@ -36,6 +37,7 @@
   async function load() {
     const seq = ++loadSeq;
     summaryLoading = true;
+    summaryError = null;
     memoryLoading = true;
     // Independent fetches — resolve each on its own so a slow ObserveSummary
     // doesn't block the (local, fast) memory read.
@@ -44,7 +46,11 @@
         if (seq === loadSeq) summary = d;
       })
       .catch((e) => {
-        if (seq === loadSeq) toasts.error(e instanceof Error ? e.message : String(e));
+        // Surface the failure in the Usage section (not just a toast): without a
+        // summary the KPIs would read turns=0/errors=0 and the table "no activity"
+        // — indistinguishable from a clean log. Mirrors the load-failure-vs-empty
+        // pattern used across Routing/Crons/Config.
+        if (seq === loadSeq) summaryError = e instanceof Error ? e.message : String(e);
       })
       .finally(() => {
         if (seq === loadSeq) summaryLoading = false;
@@ -130,14 +136,27 @@
         <h2 class="pf__section-title">Usage</h2>
         {#if summaryLoading}<span class="pf__note">loading log…</span>{/if}
       </div>
-      <div class="pf__kpis">
-        <Card><div class="kpi"><div class="kpi__v tnum">{sessionCount}</div><div class="kpi__l">sessions <span class="kpi__qual">since daemon start</span></div></div></Card>
-        <Card><div class="kpi"><div class="kpi__v tnum">{turns}</div><div class="kpi__l">turns logged</div></div></Card>
-        <Card><div class="kpi"><div class="kpi__v tnum">{k(inTokens)}</div><div class="kpi__l">tokens in</div></div></Card>
-        <Card><div class="kpi"><div class="kpi__v tnum">{k(outTokens)}</div><div class="kpi__l">tokens out</div></div></Card>
-        <Card><div class="kpi"><div class="kpi__v tnum">{cacheHit}%</div><div class="kpi__l">cache hit</div></div></Card>
-        <Card><div class="kpi"><div class="kpi__v tnum" class:kpi__v--err={errorCount > 0}>{errorCount}</div><div class="kpi__l">errors</div></div></Card>
-      </div>
+      {#if summaryError && !summary}
+        <!-- Log read failed — never show turns=0/errors=0 here, that would read
+             as a clean log. Distinct failure surface with a Retry, matching the
+             load-failure-vs-empty pattern elsewhere. -->
+        <Card>
+          <div class="pf__err">
+            <p class="pf__err-line">Couldn't read the usage log.</p>
+            <p class="pf__err-detail">{summaryError}</p>
+            <Button variant="secondary" size="sm" onclick={() => load()}>Retry</Button>
+          </div>
+        </Card>
+      {:else}
+        <div class="pf__kpis">
+          <Card><div class="kpi"><div class="kpi__v tnum">{sessionCount}</div><div class="kpi__l">sessions <span class="kpi__qual">since daemon start</span></div></div></Card>
+          <Card><div class="kpi"><div class="kpi__v tnum">{turns}</div><div class="kpi__l">turns logged</div></div></Card>
+          <Card><div class="kpi"><div class="kpi__v tnum">{k(inTokens)}</div><div class="kpi__l">tokens in</div></div></Card>
+          <Card><div class="kpi"><div class="kpi__v tnum">{k(outTokens)}</div><div class="kpi__l">tokens out</div></div></Card>
+          <Card><div class="kpi"><div class="kpi__v tnum">{cacheHit}%</div><div class="kpi__l">cache hit</div></div></Card>
+          <Card><div class="kpi"><div class="kpi__v tnum" class:kpi__v--err={errorCount > 0}>{errorCount}</div><div class="kpi__l">errors</div></div></Card>
+        </div>
+      {/if}
     </section>
 
     <!-- TOP MODELS -->
@@ -147,6 +166,8 @@
       </div>
       {#if summaryLoading && !summary}
         <div class="pf__skel"></div>
+      {:else if summaryError && !summary}
+        <p class="pf__note">Usage log unavailable — see above.</p>
       {:else if !summary || !summary.available || summary.models.length === 0}
         <p class="pf__note">No model activity recorded yet. As sessions run, the observability log tallies usage per model here.</p>
       {:else}
@@ -246,6 +267,28 @@
     color: var(--text-muted);
     font-size: var(--fs-body-sm);
     margin: 0;
+  }
+  /* Usage-log read failure — a quiet, honest surface, not an alarm. The leading
+     line states the failure; the detail is dimmer; a Retry resolves it. */
+  .pf__err {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-4);
+    padding: var(--sp-6);
+  }
+  .pf__err-line {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--fs-body-sm);
+    font-weight: var(--fw-medium);
+  }
+  .pf__err-detail {
+    margin: 0;
+    color: var(--text-faint);
+    font-size: var(--fs-body-sm);
+    line-height: var(--lh-snug);
+    word-break: break-word;
   }
   .pf__inline-link {
     border: none;

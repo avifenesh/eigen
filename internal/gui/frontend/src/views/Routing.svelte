@@ -99,6 +99,8 @@
     if (m.context1m) c.push("1M");
     if (m.reasoning) c.push(m.effort ? `effort:${m.effort}` : "reasoning");
     if (m.search) c.push("search");
+    if (m.vision) c.push("vision");
+    if (m.social) c.push("social");
     return c;
   }
 </script>

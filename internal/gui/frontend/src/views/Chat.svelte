@@ -36,6 +36,11 @@
 
   let store = $state<Transcript | null>(null);
   let sess = $state<SessionStateDTO | null>(null);
+  // True from the moment we kick off attach() until the first State() snapshot
+  // lands (or fails). Drives the transcript skeleton so a session with history
+  // on a slow daemon/ssh shows a loading shimmer rather than a bare empty list
+  // for the round-trip. Cleared in both the .then and .catch arms of State().
+  let loading = $state(false);
 
   // Per-session lifecycle. Re-runs when sessionId changes; cleanup tears the
   // previous session down completely before the next is set up.
@@ -44,6 +49,7 @@
     if (!id || missing) {
       store = null;
       sess = null;
+      loading = false;
       return;
     }
     let alive = true;
@@ -54,14 +60,20 @@
     // listener is registered ONCE in t.start() on a stable event name, so this
     // is safe to call again on reconnect without double-subscribing.
     function attach() {
+      loading = true;
       Bridge.Subscribe(id).catch((e) => toasts.error("subscribe: " + (e instanceof Error ? e.message : String(e))));
       Bridge.State(id)
         .then((s) => {
-          if (!alive || !s) return;
+          if (!alive) return;
+          loading = false;
+          if (!s) return;
           sess = s;
           t.seed(s.messages, s.running ?? false);
         })
-        .catch((e) => toasts.error("state: " + (e instanceof Error ? e.message : String(e))));
+        .catch((e) => {
+          if (alive) loading = false;
+          toasts.error("state: " + (e instanceof Error ? e.message : String(e)));
+        });
     }
 
     attach();
@@ -350,6 +362,11 @@
 
   // ── empty-session starters ──────────────────────────────────────────────
   const isEmpty = $derived(sess != null && sess.messages.length === 0 && !store?.running);
+  // The transcript is still being fetched: attach() fired but the first State()
+  // snapshot hasn't landed (sess null) and nothing has streamed in yet (no
+  // rows). Distinct from isEmpty — a session WITH history shows the skeleton for
+  // the round-trip instead of a bare empty list, then pops to the transcript.
+  const transcriptLoading = $derived(loading && sess == null && rows.length === 0);
   const starters = [
     "Give me a tour of this codebase.",
     "What changed in the last few commits?",
@@ -373,7 +390,20 @@
   <div class="chat">
     <div class="chat__main">
       <div class="chat__scroll selectable">
-        {#if isEmpty}
+        {#if transcriptLoading}
+          <!-- Transcript skeleton: the State() snapshot is still in flight, so
+               we can't yet tell an empty session from one with history. Shimmer
+               rows + a quiet label stand in for the round-trip rather than a
+               bare empty list. Matches the skeletons in Sessions/Live/Machines. -->
+          <div class="tload" aria-busy="true" aria-live="polite">
+            <div class="tload__rows">
+              {#each Array(4) as _, i (i)}
+                <div class="tload__line" class:tload__line--short={i % 2 === 1}></div>
+              {/each}
+            </div>
+            <div class="tload__label">Loading conversation…</div>
+          </div>
+        {:else if isEmpty}
           <!-- Warm starter state: a one-line prompt + clickable example chips
                that send straight into the session. Replaced by the transcript
                the moment the first message lands. -->
@@ -842,6 +872,46 @@
     cursor: not-allowed;
   }
 
+  /* ── transcript skeleton ───────────────────────────────────────────────── */
+  .tload {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-6);
+    max-width: 820px;
+    width: 100%;
+    margin: 0 auto;
+    padding: var(--sp-9) var(--sp-8);
+  }
+  .tload__rows {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+  }
+  .tload__line {
+    height: 16px;
+    border-radius: var(--r-sm);
+    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
+    background-size: 200% 100%;
+    animation: tload-shimmer 1.4s ease-in-out infinite;
+  }
+  .tload__line--short {
+    width: 62%;
+  }
+  .tload__label {
+    font-size: var(--fs-body-sm);
+    color: var(--text-muted);
+  }
+  @keyframes tload-shimmer {
+    to {
+      background-position: -200% 0;
+    }
+  }
+
   .msg {
     font: var(--fw-regular) var(--fs-body) / var(--lh-prose) var(--font-sans);
     color: var(--text-primary);
@@ -1266,6 +1336,9 @@
     .caret {
       animation: none;
       opacity: 0.8;
+    }
+    .tload__line {
+      animation: none;
     }
   }
 

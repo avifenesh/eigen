@@ -1,5 +1,6 @@
-// Toast store — transient feedback (success/error/info). Auto-dismiss with a
-// bounded queue so a burst can't grow unbounded.
+// Toast store — transient feedback (success/error/info/working). Most kinds
+// auto-dismiss after TTL; "working" persists (no timer) until dismissed or
+// evicted. Bounded queue so a burst can't grow unbounded.
 export type ToastKind = "success" | "error" | "info" | "working";
 export type Toast = { id: number; kind: ToastKind; text: string };
 
@@ -31,10 +32,14 @@ function createToasts() {
         timers.delete(dropped.id);
       }
     }
-    timers.set(
-      id,
-      setTimeout(() => dismiss(id), TTL),
-    );
+    // "working" tracks a long-running op: it has no fixed lifetime, so it skips
+    // the TTL timer and persists until explicitly dismissed (or evicted by MAX).
+    if (kind !== "working") {
+      timers.set(
+        id,
+        setTimeout(() => dismiss(id), TTL),
+      );
+    }
     return id;
   }
 
@@ -47,6 +52,7 @@ function createToasts() {
     success: (t: string) => push("success", t),
     error: (t: string) => push("error", t),
     info: (t: string) => push("info", t),
+    working: (t: string) => push("working", t),
   };
 }
 

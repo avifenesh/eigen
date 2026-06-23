@@ -2,24 +2,64 @@
   // A pill tag: a tone-coded label that sits legibly on raised surfaces.
   // Two duties — naming things (model ids, statuses) and counting things
   // (numeric counters). `truncate` clamps wide content (e.g. a full model
-  // id like "us.anthropic.claude-opus-4-8") so it never blows out a row;
-  // the caller is expected to pass a matching `title` on a wrapper for the
-  // full text. Numeric content stays tabular so counts don't jitter.
+  // id like "us.anthropic.claude-opus-4-8") so it never blows out a row.
+  // When truncating, the badge is self-sufficient: it exposes the full
+  // text as its own native `title` (the browser tooltip) so the clamped
+  // remainder is always recoverable on hover. Callers may pass an explicit
+  // `title` for richer text; otherwise the badge captures its rendered
+  // label content automatically. Numeric content stays tabular so counts
+  // don't jitter.
   import type { Snippet } from "svelte";
 
   let {
     tone = "neutral",
     truncate = false,
+    title,
     children,
   }: {
     tone?: "neutral" | "brand" | "success" | "warn" | "error" | "info";
     truncate?: boolean;
+    title?: string;
     children: Snippet;
   } = $props();
+
+  // The rendered label element — read its text so a clamped badge can
+  // surface the full content as a tooltip without the caller wiring one up.
+  let labelEl = $state<HTMLElement | null>(null);
+  let captured = $state("");
+
+  // Keep `captured` in lockstep with the label's rendered text. We watch the
+  // DOM directly (rather than the snippet's source data, which we can't see)
+  // so an in-place update like `{s.model}` changing keeps the tooltip honest.
+  // Only active when we actually need a fallback tooltip — no observer wired
+  // up when an explicit title is given or truncation is off. The observer is
+  // torn down on cleanup, satisfying the leak contract.
+  $effect(() => {
+    if (!(truncate && title === undefined && labelEl)) {
+      captured = "";
+      return;
+    }
+    const el = labelEl;
+    const sync = () => {
+      captured = el.textContent?.trim() ?? "";
+    };
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(el, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  });
+
+  let tooltip = $derived(
+    title !== undefined ? title : truncate ? captured : undefined,
+  );
 </script>
 
-<span class="badge badge--{tone} tnum" class:badge--truncate={truncate}>
-  <span class="badge__label">{@render children()}</span>
+<span
+  class="badge badge--{tone} tnum"
+  class:badge--truncate={truncate}
+  title={tooltip || undefined}
+>
+  <span class="badge__label" bind:this={labelEl}>{@render children()}</span>
 </span>
 
 <style>

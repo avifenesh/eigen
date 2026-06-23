@@ -182,6 +182,8 @@ export type ModelDTO = {
   effortLevels?: string[];
   thinkingBudget?: number;
   search?: boolean;
+  vision?: boolean;
+  social?: boolean;
   available: boolean;
 };
 export type ProviderDTO = { name: string; credentialed: boolean; modelCount: number };

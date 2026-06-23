@@ -22,14 +22,16 @@ type ModelDTO struct {
 	EffortLevels   []string `json:"effortLevels,omitempty"`
 	ThinkingBudget int      `json:"thinkingBudget,omitempty"`
 	Search         bool     `json:"search,omitempty"`
+	Vision         bool     `json:"vision,omitempty"`
+	Social         bool     `json:"social,omitempty"`
 	Available      bool     `json:"available"`
 }
 
 // ProviderDTO is one provider and whether it's credentialed in this environment.
 type ProviderDTO struct {
-	Name        string `json:"name"`
-	Credentialed bool  `json:"credentialed"`
-	ModelCount  int    `json:"modelCount"`
+	Name         string `json:"name"`
+	Credentialed bool   `json:"credentialed"`
+	ModelCount   int    `json:"modelCount"`
 }
 
 // RoutingDTO is the routing/models snapshot: the catalog + provider status.
@@ -93,6 +95,8 @@ func (b *Bridge) Routing() (*RoutingDTO, error) {
 			EffortLevels:   m.EffortLevels,
 			ThinkingBudget: m.ThinkingBudget,
 			Search:         m.Search,
+			Vision:         m.Vision,
+			Social:         m.Social,
 			Available:      availFor(prov),
 		})
 	}
