@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bufio"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -42,13 +43,17 @@ type Anthropic struct {
 }
 
 const (
-	anthropicURL     = "https://api.anthropic.com/v1/messages?beta=true"
 	anthropicVersion = "2023-06-01"
 	// claudeCodeSpoof must be the first system block for OAuth-token requests;
 	// the API rejects OAuth access whose system prompt isn't Claude Code's.
 	claudeCodeSpoof = "You are Claude Code, Anthropic's official CLI for Claude."
 	anthropicMaxTok = 32000
 )
+
+// anthropicURL is the native Messages endpoint. It is a var (not a const) only
+// so a test can point Complete/Stream at an httptest server; production never
+// reassigns it.
+var anthropicURL = "https://api.anthropic.com/v1/messages?beta=true"
 
 // anthropicBeta is the beta-flag set Claude Code sends. oauth-2025-04-20 is
 // mandatory for OAuth tokens; the rest unlock the features eigen uses (1M
@@ -211,6 +216,7 @@ type anthropicRequest struct {
 	Tools        []anthropicTool      `json:"tools,omitempty"`
 	Thinking     json.RawMessage      `json:"thinking,omitempty"`
 	OutputConfig json.RawMessage      `json:"output_config,omitempty"`
+	Stream       bool                 `json:"stream,omitempty"`
 }
 
 type anthropicReply struct {
@@ -234,10 +240,9 @@ type anthropicReply struct {
 	} `json:"error"`
 }
 
-func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error) {
-	if len(req.Messages) == 0 {
-		return nil, fmt.Errorf("request has no messages")
-	}
+// buildBody builds the native Messages request JSON. stream sets stream:true so
+// Complete and Stream share one request shape (the only difference is the flag).
+func (a *Anthropic) buildBody(req Request, stream bool) ([]byte, error) {
 	thinkingBudget, effort, adaptive := a.snapshotThinking()
 	maxTokens := anthropicMaxTok
 	if thinkingBudget > 0 && maxTokens <= thinkingBudget {
@@ -249,6 +254,7 @@ func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error
 		System:    a.systemBlocks(req.System),
 		Messages:  anthropicMessages(req),
 		Tools:     anthropicTools(req.Tools, a.cache),
+		Stream:    stream,
 	}
 	// Thinking: adaptive models use thinking.type=adaptive + output_config.effort;
 	// budget models use thinking.type=enabled + budget_tokens.
@@ -259,8 +265,14 @@ func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error
 	case !adaptive && thinkingBudget > 0:
 		payload.Thinking = json.RawMessage(fmt.Sprintf(`{"type":"enabled","budget_tokens":%d}`, thinkingBudget))
 	}
+	return json.Marshal(payload)
+}
 
-	body, err := json.Marshal(payload)
+func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error) {
+	if len(req.Messages) == 0 {
+		return nil, fmt.Errorf("request has no messages")
+	}
+	body, err := a.buildBody(req, false)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
@@ -303,6 +315,182 @@ func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error
 		}
 	}
 	return out, nil
+}
+
+// Stream runs a streamed completion over the native Messages SSE API
+// (stream:true), forwarding text/thinking deltas to sink as they arrive and
+// assembling the final Response from the block-start/delta/stop events. This is
+// what keeps the UI live mid-turn on the default Claude path; Complete remains
+// the non-streaming fallback for callers that don't set a sink.
+//
+// The Anthropic event flow is: message_start (usage), then per content block a
+// content_block_start / content_block_delta* / content_block_stop, then one or
+// more message_delta (stop_reason + cumulative output usage), then message_stop.
+// tool_use input arrives as partial_json string deltas accumulated per index.
+func (a *Anthropic) Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error) {
+	if len(req.Messages) == 0 {
+		return nil, fmt.Errorf("request has no messages")
+	}
+	body, err := a.buildBody(req, true)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+	headers, err := a.headers()
+	if err != nil {
+		return nil, err
+	}
+	resp, err := httpStream(ctx, a.http, anthropicURL, headers, body, nil)
+	if err != nil {
+		return nil, fmt.Errorf("anthropic: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// One partial block per content index; kind+accumulators distinguish text,
+	// thinking, and tool_use (whose input arrives as partial JSON strings).
+	type partialBlock struct {
+		kind     string // "text" | "thinking" | "tool_use"
+		id, name string
+		args     strings.Builder
+	}
+	byIndex := map[int]*partialBlock{}
+	var order []int
+	var text, reasoning strings.Builder
+	var usage Usage
+	var stopReason string
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data:") {
+			continue // skip SSE "event:" lines and blanks; the data line is self-describing
+		}
+		data := strings.TrimSpace(line[len("data:"):])
+		if data == "" {
+			continue
+		}
+		var ev struct {
+			Type    string `json:"type"`
+			Index   int    `json:"index"`
+			Message *struct {
+				Usage *anthropicStreamUsage `json:"usage"`
+			} `json:"message"`
+			ContentBlock *struct {
+				Type string `json:"type"`
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"content_block"`
+			Delta *struct {
+				Type        string `json:"type"`
+				Text        string `json:"text"`
+				Thinking    string `json:"thinking"`
+				PartialJSON string `json:"partial_json"`
+				StopReason  string `json:"stop_reason"`
+			} `json:"delta"`
+			Usage *anthropicStreamUsage `json:"usage"`
+			Error *struct {
+				Type    string `json:"type"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			continue
+		}
+		switch ev.Type {
+		case "error":
+			if ev.Error != nil {
+				return nil, fmt.Errorf("anthropic stream error: %s: %s", ev.Error.Type, ev.Error.Message)
+			}
+			return nil, fmt.Errorf("anthropic stream error")
+		case "message_start":
+			if ev.Message != nil && ev.Message.Usage != nil {
+				ev.Message.Usage.applyTo(&usage)
+			}
+		case "content_block_start":
+			p := &partialBlock{}
+			if ev.ContentBlock != nil {
+				p.kind = ev.ContentBlock.Type
+				p.id = ev.ContentBlock.ID
+				p.name = ev.ContentBlock.Name
+			}
+			byIndex[ev.Index] = p
+			order = append(order, ev.Index)
+		case "content_block_delta":
+			if ev.Delta == nil {
+				continue
+			}
+			switch ev.Delta.Type {
+			case "text_delta":
+				text.WriteString(ev.Delta.Text)
+				if sink != nil {
+					sink(StreamChunk{Kind: ChunkText, Text: ev.Delta.Text})
+				}
+			case "thinking_delta":
+				reasoning.WriteString(ev.Delta.Thinking)
+				if sink != nil {
+					sink(StreamChunk{Kind: ChunkReasoning, Text: ev.Delta.Thinking})
+				}
+			case "input_json_delta":
+				if p := byIndex[ev.Index]; p != nil {
+					p.args.WriteString(ev.Delta.PartialJSON)
+				}
+			}
+		case "message_delta":
+			if ev.Delta != nil && ev.Delta.StopReason != "" {
+				stopReason = ev.Delta.StopReason
+			}
+			if ev.Usage != nil {
+				ev.Usage.applyTo(&usage)
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read stream: %w", err)
+	}
+	// Refuse truncated output rather than applying it (parity with Complete).
+	if stopReason == "max_tokens" {
+		return nil, fmt.Errorf("anthropic response truncated (max_tokens): refusing possibly-truncated output")
+	}
+
+	out := &Response{Text: text.String(), Reasoning: reasoning.String(), Usage: usage}
+	for _, idx := range order {
+		p := byIndex[idx]
+		if p == nil || p.kind != "tool_use" {
+			continue
+		}
+		out.ToolCalls = append(out.ToolCalls, ToolCall{
+			ID:        p.id,
+			Name:      p.name,
+			Arguments: normalizeArgsRaw(json.RawMessage(p.args.String())),
+		})
+	}
+	return out, nil
+}
+
+// anthropicStreamUsage is the usage block carried on message_start (input +
+// cache counts) and message_delta (cumulative output count). applyTo folds the
+// non-zero fields into the running Usage so the final tally is correct
+// regardless of which event reported which count.
+type anthropicStreamUsage struct {
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+}
+
+func (u *anthropicStreamUsage) applyTo(dst *Usage) {
+	if u.InputTokens > 0 {
+		dst.InputTokens = u.InputTokens
+	}
+	if u.OutputTokens > 0 {
+		dst.OutputTokens = u.OutputTokens
+	}
+	if u.CacheReadInputTokens > 0 {
+		dst.CacheReadTokens = u.CacheReadInputTokens
+	}
+	if u.CacheCreationInputTokens > 0 {
+		dst.CacheWriteTokens = u.CacheCreationInputTokens
+	}
 }
 
 // systemBlocks builds the system array. The first block MUST be the Claude Code

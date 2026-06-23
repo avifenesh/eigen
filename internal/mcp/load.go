@@ -18,6 +18,16 @@ type serverConfig struct {
 	Command []string          `json:"command"`
 	Env     map[string]string `json:"env"`
 
+	// URL and Type describe a REMOTE MCP server (HTTP / SSE transport) rather
+	// than a stdio subprocess. The plugin layer (discoverMCP/addMCPServer)
+	// already parses and persists url+type, so they must round-trip here or a
+	// remote server entry would look like a config with an empty command and be
+	// silently rejected. eigen's transport is stdio-only today, so a remote
+	// entry is recognized and reported as unsupported (see LoadTools) rather
+	// than dropped.
+	URL  string `json:"url,omitempty"`
+	Type string `json:"type,omitempty"`
+
 	// Description is the one-line "what is this server" shown to the model at
 	// the top level of progressive disclosure (e.g. "drive the user's real
 	// Chrome", "isolated Linux sandbox"). REQUIRED in practice: it's how eigen
@@ -77,6 +87,16 @@ func LoadTools(ctx context.Context, path string) (defs []tool.Definition, client
 
 	for _, sc := range cfg.Servers {
 		if sc.Disabled {
+			continue
+		}
+		// Remote MCP (HTTP / SSE) servers carry a url/type but no command. eigen's
+		// transport is stdio-only, so we can't connect them yet — but we MUST NOT
+		// silently drop them as if they were a malformed stdio entry. Report them
+		// explicitly so the failure is visible (and easy to grep for) rather than a
+		// remote server that just never shows up.
+		if isRemoteServer(sc) {
+			errs = append(errs, fmt.Errorf("mcp %q: remote MCP (%s) not yet supported (url=%s) — eigen currently connects stdio MCP servers only", serverName(sc), remoteType(sc), sc.URL))
+			fmt.Fprintf(os.Stderr, "eigen: mcp %q: remote MCP (%s) not yet supported — only stdio (command) MCP servers connect today; skipping %s\n", serverName(sc), remoteType(sc), sc.URL)
 			continue
 		}
 		if sc.Name == "" || len(sc.Command) == 0 {
@@ -203,6 +223,40 @@ func (c *lazyClient) started() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.client != nil
+}
+
+// isRemoteServer reports whether sc describes a remote (HTTP / SSE) MCP server
+// rather than a stdio subprocess. A remote entry is identified by a transport
+// type of http/sse, or by a bare URL with no command — the shape the plugin
+// layer persists for remote servers. A stdio entry that also happens to carry a
+// command is treated as stdio (command wins), so a future remote transport can
+// be added without re-routing those.
+func isRemoteServer(sc serverConfig) bool {
+	if len(sc.Command) > 0 {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(sc.Type)) {
+	case "http", "sse", "streamable-http", "streamable_http":
+		return true
+	}
+	return strings.TrimSpace(sc.URL) != ""
+}
+
+// remoteType returns a human-readable transport label for a remote server entry
+// (for log/error messages), defaulting to "http" when only a URL is given.
+func remoteType(sc serverConfig) string {
+	if t := strings.ToLower(strings.TrimSpace(sc.Type)); t != "" {
+		return t
+	}
+	return "http"
+}
+
+// serverName returns sc.Name, or a placeholder when unnamed, for messages.
+func serverName(sc serverConfig) string {
+	if n := strings.TrimSpace(sc.Name); n != "" {
+		return n
+	}
+	return "<unnamed>"
 }
 
 // toolAllowed applies the per-server allowlist/excludelist to a server-declared

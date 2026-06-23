@@ -413,8 +413,13 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 		res.Plugin.Skills = append(res.Plugin.Skills, instName)
 	}
 
-	// 2) Wire MCP servers (niche, gated, ${ROOT}-expanded) into mcp.json.
+	// 2) Wire MCP servers (niche, gated, ${ROOT}-expanded) into mcp.json. An MCP
+	// server is a subprocess command, so scan it like skills/agents — a malicious
+	// command is just as dangerous as a malicious instruction.
 	for _, s := range comps.MCPServers {
+		if serr := scanCommandComponent(ctx, opts, res, "mcp", pluginName, s.Name, mcpScanBody(s), &scanCount); serr != nil {
+			return nil, serr
+		}
 		name := pluginName + "-" + s.Name
 		if err := r.addMCPServer(name, s, dest, entry); err != nil {
 			return nil, fmt.Errorf("wire mcp %q: %w", s.Name, err)
@@ -422,6 +427,9 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 		res.Plugin.MCPServers = append(res.Plugin.MCPServers, name)
 	}
 	for _, s := range comps.AppServers {
+		if serr := scanCommandComponent(ctx, opts, res, "mcp", pluginName, "app-"+s.Name, mcpScanBody(s), &scanCount); serr != nil {
+			return nil, serr
+		}
 		name := pluginName + "-app-" + s.Name
 		if err := r.addMCPServer(name, s, dest, entry); err != nil {
 			return nil, fmt.Errorf("wire app mcp %q: %w", s.Name, err)
@@ -429,7 +437,13 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 		res.Plugin.MCPServers = append(res.Plugin.MCPServers, name)
 	}
 
-	// 3) Wire hooks (${ROOT}-expanded) into hooks.json.
+	// 3) Wire hooks (${ROOT}-expanded) into hooks.json. A hook auto-runs a shell
+	// command on agent events, so scan each command body before wiring.
+	for i, h := range comps.Hooks {
+		if serr := scanCommandComponent(ctx, opts, res, "hook", pluginName, fmt.Sprintf("%s[%d]", h.Event, i), hookScanBody(h), &scanCount); serr != nil {
+			return nil, serr
+		}
+	}
 	if n, err := r.addHooks(comps.Hooks, dest); err != nil {
 		return nil, fmt.Errorf("wire hooks: %w", err)
 	} else {
@@ -506,6 +520,61 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 	}
 	committed = true
 	return res, nil
+}
+
+// scanCommandComponent runs a hook/MCP command body through the scanner with the
+// same shape skills/agents use: it counts the scan, records a RISKY verdict in
+// res.Scans, and returns a RiskyError (so the caller aborts) unless opts.Force is
+// set. A nil scanner or a safe verdict returns nil. kind is "mcp" or "hook".
+func scanCommandComponent(ctx context.Context, opts InstallOptions, res *InstallResult, kind, pluginName, compName, body string, scanCount *int) error {
+	if opts.Scanner == nil {
+		return nil
+	}
+	sr, serr := opts.Scanner.Scan(ctx, compName, body)
+	if serr != nil {
+		return fmt.Errorf("scan %s %q: %w", kind, compName, serr)
+	}
+	*scanCount++
+	if !sr.Safe {
+		res.Scans = append(res.Scans, ScanFinding{Component: kind + ":" + compName, Reasons: sr.Reasons})
+		if !opts.Force {
+			return &skill.RiskyError{Name: pluginName + "/" + compName, Reasons: sr.Reasons}
+		}
+	}
+	return nil
+}
+
+// mcpScanBody renders an MCP server's launch surface (command + args + env) into
+// a single text blob for the scanner — the executable bits a malicious server
+// would hide its payload in.
+func mcpScanBody(s MCPServer) string {
+	var b strings.Builder
+	for i, c := range s.Command {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(c)
+	}
+	for _, a := range s.Args {
+		b.WriteByte(' ')
+		b.WriteString(a)
+	}
+	if strings.TrimSpace(s.URL) != "" {
+		b.WriteByte(' ')
+		b.WriteString(s.URL)
+	}
+	for k, v := range s.Env {
+		b.WriteByte('\n')
+		b.WriteString(k)
+		b.WriteByte('=')
+		b.WriteString(v)
+	}
+	return b.String()
+}
+
+// hookScanBody renders a hook's shell command into a single line for the scanner.
+func hookScanBody(h HookSpec) string {
+	return strings.Join(h.Command, " ")
 }
 
 // resolvePlugin locates the plugin entry in a (named or any) recorded

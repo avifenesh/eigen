@@ -1,8 +1,10 @@
 package session
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -269,6 +271,66 @@ func TestDeleteForeignKeepsSourceFile(t *testing.T) {
 	// The FOREIGN source file must survive (we only forget our index/copy).
 	if _, err := os.Stat(src); err != nil {
 		t.Fatalf("claude source file must not be deleted: %v", err)
+	}
+}
+
+// TestConcurrentSavesDoNotCorruptIndex mimics the real deployment: several
+// unsynchronized Store instances (GUI project dirs, ExportSession, the app's
+// long-lived store) sharing one ~/.eigen/sessions.json and saving at once. The
+// atomic temp-file+rename in save() must guarantee the index is always
+// complete/parsable JSON — never a half-written clobber — and that the last
+// writer wins.
+func TestConcurrentSavesDoNotCorruptIndex(t *testing.T) {
+	home := isolate(t)
+
+	// Each goroutine gets its own Store (separate mutex), so the only protection
+	// against a corrupt file is save() being atomic.
+	const writers = 12
+	const rounds = 40
+	stores := make([]*Store, writers)
+	for i := range stores {
+		s, err := Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Give each store a distinct meta so the serialized payloads differ.
+		s.metas[id(transcript.SourceEigen, filepath.Join(home, "w", string(rune('a'+i))))] =
+			&Meta{ID: id(transcript.SourceEigen, string(rune('a'+i))), Source: transcript.SourceEigen}
+		stores[i] = s
+	}
+
+	var wg sync.WaitGroup
+	for _, s := range stores {
+		wg.Add(1)
+		go func(s *Store) {
+			defer wg.Done()
+			for r := 0; r < rounds; r++ {
+				if err := s.Save(); err != nil {
+					t.Errorf("Save failed: %v", err)
+					return
+				}
+			}
+		}(s)
+	}
+	wg.Wait()
+
+	// The index must be intact, parsable JSON after the storm of concurrent saves.
+	b, err := os.ReadFile(filepath.Join(home, ".eigen", "sessions.json"))
+	if err != nil {
+		t.Fatalf("index unreadable after concurrent saves: %v", err)
+	}
+	var list []*Meta
+	if err := json.Unmarshal(b, &list); err != nil {
+		t.Fatalf("index corrupted by concurrent saves: %v\n%s", err, b)
+	}
+	if len(list) != 1 {
+		t.Fatalf("each store holds exactly one meta; index should round-trip 1, got %d", len(list))
+	}
+
+	// No temp turds left behind by the atomic-rename dance.
+	leftover, _ := filepath.Glob(filepath.Join(home, ".eigen", "sessions-*.json.tmp"))
+	if len(leftover) != 0 {
+		t.Fatalf("temp files leaked after save: %v", leftover)
 	}
 }
 

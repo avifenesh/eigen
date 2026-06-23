@@ -2,8 +2,10 @@ package llm
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -31,6 +33,11 @@ type Converse struct {
 	creds   awsCreds
 	bearer  string // AWS_BEARER_TOKEN_BEDROCK — when set, auth via Bearer header (no SigV4)
 	http    *http.Client
+
+	// baseURL overrides the Bedrock host (default
+	// https://bedrock-runtime.<region>.amazonaws.com). Empty in production; set
+	// by tests to point at an httptest server.
+	baseURL string
 
 	// Capabilities resolved from the catalog (with env overrides), driving the
 	// extra wire features: prompt caching, 1M-context beta, extended thinking.
@@ -284,10 +291,9 @@ type converseReply struct {
 	Message string `json:"message"` // error message on failure
 }
 
-func (c *Converse) Complete(ctx context.Context, req Request) (*Response, error) {
-	if len(req.Messages) == 0 {
-		return nil, fmt.Errorf("request has no messages")
-	}
+// buildPayload assembles the Converse request body shared by Complete and
+// Stream (the streaming endpoint takes the identical request shape).
+func (c *Converse) buildPayload(req Request) ([]byte, error) {
 	// Extended thinking needs maxTokens > thinking budget; give the answer room
 	// on top of the reasoning budget.
 	context1M, thinkingBudget, effort, adaptive := c.snapshotSettings()
@@ -312,30 +318,53 @@ func (c *Converse) Complete(ctx context.Context, req Request) (*Response, error)
 	if extra := additionalConverseFields(context1M, thinkingBudget, effort, adaptive); extra != nil {
 		payload.AdditionalModelRequestFields = extra
 	}
-	body, err := json.Marshal(payload)
+	return json.Marshal(payload)
+}
+
+// auth returns the request headers and per-request signer for the given Bedrock
+// endpoint URL, matching Complete's auth path (bearer token, else SigV4 with
+// freshly re-resolved profile credentials).
+func (c *Converse) auth() (map[string]string, func(*http.Request, []byte)) {
+	if c.bearer != "" {
+		// Bearer-token auth: a single header, no SigV4, no ~/.aws/credentials.
+		return map[string]string{"Authorization": "Bearer " + c.bearer}, nil
+	}
+	// SigV4. Re-resolve credentials per request: the daemon is long-lived,
+	// so an AWS profile's session token can rotate/expire while a session
+	// stays open. Re-reading picks up refreshed creds without restarting
+	// the daemon. Fall back to the creds loaded at construction.
+	creds := c.creds
+	if fresh, err := loadAWSCreds(c.profile); err == nil {
+		creds = fresh
+	}
+	sign := func(r *http.Request, b []byte) {
+		signV4(r, b, creds, "bedrock", c.region, time.Now())
+	}
+	return nil, sign
+}
+
+// endpointURL builds the Bedrock model endpoint for an action ("converse" or
+// "converse-stream"). It honors c.baseURL (tests) and otherwise targets the
+// regional bedrock-runtime host.
+func (c *Converse) endpointURL(action string) string {
+	host := c.baseURL
+	if host == "" {
+		host = fmt.Sprintf("https://bedrock-runtime.%s.amazonaws.com", c.region)
+	}
+	return fmt.Sprintf("%s/model/%s/%s", host, urlPathEscape(c.Model), action)
+}
+
+func (c *Converse) Complete(ctx context.Context, req Request) (*Response, error) {
+	if len(req.Messages) == 0 {
+		return nil, fmt.Errorf("request has no messages")
+	}
+	body, err := c.buildPayload(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("https://bedrock-runtime.%s.amazonaws.com/model/%s/converse", c.region, urlPathEscape(c.Model))
-	var headers map[string]string
-	var sign func(r *http.Request, b []byte)
-	if c.bearer != "" {
-		// Bearer-token auth: a single header, no SigV4, no ~/.aws/credentials.
-		headers = map[string]string{"Authorization": "Bearer " + c.bearer}
-	} else {
-		// SigV4. Re-resolve credentials per request: the daemon is long-lived,
-		// so an AWS profile's session token can rotate/expire while a session
-		// stays open. Re-reading picks up refreshed creds without restarting
-		// the daemon. Fall back to the creds loaded at construction.
-		creds := c.creds
-		if fresh, err := loadAWSCreds(c.profile); err == nil {
-			creds = fresh
-		}
-		sign = func(r *http.Request, b []byte) {
-			signV4(r, b, creds, "bedrock", c.region, time.Now())
-		}
-	}
+	url := c.endpointURL("converse")
+	headers, sign := c.auth()
 	raw, status, err := httpJSON(ctx, c.http, url, headers, body, sign)
 	if err != nil {
 		return nil, fmt.Errorf("converse: %w", err)
@@ -368,6 +397,164 @@ func (c *Converse) Complete(ctx context.Context, req Request) (*Response, error)
 				Arguments: normalizeArgsRaw(blk.ToolUse.Input),
 			})
 		}
+	}
+	return out, nil
+}
+
+// Stream runs a completion over the Bedrock converse-stream endpoint, forwarding
+// text/reasoning deltas to sink as they arrive and assembling the final Response
+// from the streamed content blocks. This is what keeps the UI live mid-turn on
+// the default Claude path; Complete remains the non-streaming fallback for
+// callers that don't set a sink.
+//
+// Unlike the SSE providers, converse-stream replies in the AWS event-stream
+// binary framing (application/vnd.amazon.eventstream): a sequence of length-
+// prefixed frames whose `:event-type` header names the event and whose payload
+// is that event's JSON. The relevant events mirror the Converse content blocks:
+// contentBlockStart (toolUse id/name), contentBlockDelta (text / reasoning /
+// partial toolUse input JSON), messageStop (stopReason), and metadata (usage).
+func (c *Converse) Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error) {
+	if len(req.Messages) == 0 {
+		return nil, fmt.Errorf("request has no messages")
+	}
+	body, err := c.buildPayload(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+	url := c.endpointURL("converse-stream")
+	headers, sign := c.auth()
+	resp, err := httpStream(ctx, c.http, url, headers, body, sign)
+	if err != nil {
+		return nil, fmt.Errorf("converse: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// One partial tool-use per contentBlockIndex; its input arrives as partial
+	// JSON string deltas accumulated until messageStop.
+	type partialTool struct {
+		id, name string
+		input    strings.Builder
+	}
+	tools := map[int]*partialTool{}
+	var order []int
+	var text, reasoning strings.Builder
+	var usage Usage
+	var stopReason string
+
+	dec := newEventStreamReader(resp.Body)
+	for {
+		evType, payload, derr := dec.next()
+		if derr == io.EOF {
+			break
+		}
+		if derr != nil {
+			return nil, fmt.Errorf("read stream: %w", derr)
+		}
+		switch evType {
+		case "contentBlockStart":
+			var ev struct {
+				ContentBlockIndex int `json:"contentBlockIndex"`
+				Start             struct {
+					ToolUse *struct {
+						ToolUseID string `json:"toolUseId"`
+						Name      string `json:"name"`
+					} `json:"toolUse"`
+				} `json:"start"`
+			}
+			if json.Unmarshal(payload, &ev) != nil {
+				continue
+			}
+			if ev.Start.ToolUse != nil {
+				if _, ok := tools[ev.ContentBlockIndex]; !ok {
+					order = append(order, ev.ContentBlockIndex)
+				}
+				tools[ev.ContentBlockIndex] = &partialTool{id: ev.Start.ToolUse.ToolUseID, name: ev.Start.ToolUse.Name}
+			}
+		case "contentBlockDelta":
+			var ev struct {
+				ContentBlockIndex int `json:"contentBlockIndex"`
+				Delta             struct {
+					Text    string `json:"text"`
+					ToolUse *struct {
+						Input string `json:"input"`
+					} `json:"toolUse"`
+					ReasoningContent *struct {
+						Text string `json:"text"`
+					} `json:"reasoningContent"`
+				} `json:"delta"`
+			}
+			if json.Unmarshal(payload, &ev) != nil {
+				continue
+			}
+			if ev.Delta.Text != "" {
+				text.WriteString(ev.Delta.Text)
+				if sink != nil {
+					sink(StreamChunk{Kind: ChunkText, Text: ev.Delta.Text})
+				}
+			}
+			if ev.Delta.ReasoningContent != nil && ev.Delta.ReasoningContent.Text != "" {
+				reasoning.WriteString(ev.Delta.ReasoningContent.Text)
+				if sink != nil {
+					sink(StreamChunk{Kind: ChunkReasoning, Text: ev.Delta.ReasoningContent.Text})
+				}
+			}
+			if ev.Delta.ToolUse != nil {
+				if p := tools[ev.ContentBlockIndex]; p != nil {
+					p.input.WriteString(ev.Delta.ToolUse.Input)
+				}
+			}
+		case "messageStop":
+			var ev struct {
+				StopReason string `json:"stopReason"`
+			}
+			if json.Unmarshal(payload, &ev) == nil && ev.StopReason != "" {
+				stopReason = ev.StopReason
+			}
+		case "metadata":
+			var ev struct {
+				Usage struct {
+					InputTokens           int `json:"inputTokens"`
+					OutputTokens          int `json:"outputTokens"`
+					CacheReadInputTokens  int `json:"cacheReadInputTokens"`
+					CacheWriteInputTokens int `json:"cacheWriteInputTokens"`
+				} `json:"usage"`
+			}
+			if json.Unmarshal(payload, &ev) == nil {
+				usage = Usage{
+					InputTokens:      ev.Usage.InputTokens,
+					OutputTokens:     ev.Usage.OutputTokens,
+					CacheReadTokens:  ev.Usage.CacheReadInputTokens,
+					CacheWriteTokens: ev.Usage.CacheWriteInputTokens,
+				}
+			}
+		case "internalServerException", "modelStreamErrorException", "validationException",
+			"throttlingException", "serviceUnavailableException":
+			var ev struct {
+				Message string `json:"message"`
+			}
+			_ = json.Unmarshal(payload, &ev)
+			if ev.Message != "" {
+				return nil, fmt.Errorf("converse stream %s: %s", evType, ev.Message)
+			}
+			return nil, fmt.Errorf("converse stream %s", evType)
+		}
+	}
+	// Refuse truncated output rather than applying it (parity with Complete).
+	if stopReason == "max_tokens" {
+		return nil, fmt.Errorf("converse response truncated (max_tokens): refusing possibly-truncated output")
+	}
+
+	out := &Response{Text: text.String(), Reasoning: reasoning.String(), Usage: usage}
+	for _, idx := range order {
+		p := tools[idx]
+		if p == nil {
+			continue
+		}
+		out.ToolCalls = append(out.ToolCalls, ToolCall{
+			ID:        p.id,
+			Name:      p.name,
+			Arguments: normalizeArgsRaw(json.RawMessage(p.input.String())),
+		})
 	}
 	return out, nil
 }
@@ -569,4 +756,114 @@ func envInt(key string, def int) int {
 // so a versioned profile id like "...-v1:0" signs correctly.
 func urlPathEscape(s string) string {
 	return strings.ReplaceAll(url.PathEscape(s), ":", "%3A")
+}
+
+// --- AWS event-stream (vnd.amazon.eventstream) frame decoder ---
+//
+// converse-stream replies in the AWS event-stream binary framing, not SSE. Each
+// frame is: a 12-byte prelude (uint32 total_length, uint32 headers_length,
+// uint32 prelude_crc), then headers_length bytes of headers, then the payload,
+// then a 4-byte message_crc. A header is a 1-byte name length, the UTF-8 name,
+// a 1-byte value type, and (for the string type we care about) a 2-byte length
+// plus the UTF-8 value. We only read the `:event-type` header to dispatch and
+// return the JSON payload; CRCs are not validated (TLS already protects
+// integrity, and the lengths are self-checking against the read). This is the
+// minimal decoder needed for converse-stream — no AWS SDK is vendored.
+
+const eventStreamMaxFrame = maxResponseBytes // 16 MiB cap, matching httpJSON
+
+type eventStreamReader struct {
+	r io.Reader
+}
+
+func newEventStreamReader(r io.Reader) *eventStreamReader { return &eventStreamReader{r: r} }
+
+// next reads the next frame and returns its :event-type header value and JSON
+// payload. It returns io.EOF cleanly at the end of the stream.
+func (d *eventStreamReader) next() (eventType string, payload []byte, err error) {
+	var prelude [12]byte
+	if _, err := io.ReadFull(d.r, prelude[:]); err != nil {
+		if err == io.ErrUnexpectedEOF {
+			err = io.EOF
+		}
+		return "", nil, err
+	}
+	totalLen := binary.BigEndian.Uint32(prelude[0:4])
+	headersLen := binary.BigEndian.Uint32(prelude[4:8])
+	if totalLen < 16 || totalLen > eventStreamMaxFrame || headersLen > totalLen-16 {
+		return "", nil, fmt.Errorf("event-stream: bad frame length (total=%d headers=%d)", totalLen, headersLen)
+	}
+	// Read the remainder of the frame after the prelude: headers + payload + crc.
+	rest := make([]byte, totalLen-12)
+	if _, err := io.ReadFull(d.r, rest); err != nil {
+		return "", nil, err
+	}
+	headers := rest[:headersLen]
+	payload = rest[headersLen : len(rest)-4] // drop trailing 4-byte message CRC
+
+	eventType = parseEventType(headers)
+	return eventType, payload, nil
+}
+
+// parseEventType walks the header block and returns the value of the
+// ":event-type" string header (the event name), or "" if absent. Header layout:
+// uint8 nameLen, name, uint8 valueType, then a type-specific value. We decode
+// just enough of each value type to skip it; only string (7) values are read.
+func parseEventType(headers []byte) string {
+	for len(headers) > 0 {
+		nameLen := int(headers[0])
+		headers = headers[1:]
+		if len(headers) < nameLen+1 {
+			return ""
+		}
+		name := string(headers[:nameLen])
+		headers = headers[nameLen:]
+		valueType := headers[0]
+		headers = headers[1:]
+		switch valueType {
+		case 0, 1: // boolean true / false: no value bytes
+		case 2: // byte
+			if len(headers) < 1 {
+				return ""
+			}
+			headers = headers[1:]
+		case 3: // short
+			if len(headers) < 2 {
+				return ""
+			}
+			headers = headers[2:]
+		case 4: // integer
+			if len(headers) < 4 {
+				return ""
+			}
+			headers = headers[4:]
+		case 5, 8: // long / timestamp
+			if len(headers) < 8 {
+				return ""
+			}
+			headers = headers[8:]
+		case 6, 7: // byte_array / string: 2-byte length prefix + value
+			if len(headers) < 2 {
+				return ""
+			}
+			vLen := int(binary.BigEndian.Uint16(headers[:2]))
+			headers = headers[2:]
+			if len(headers) < vLen {
+				return ""
+			}
+			val := headers[:vLen]
+			headers = headers[vLen:]
+			if valueType == 7 && name == ":event-type" {
+				return string(val)
+			}
+		case 9: // uuid
+			if len(headers) < 16 {
+				return ""
+			}
+			headers = headers[16:]
+		default:
+			return "" // unknown header type: can't safely skip
+		}
+	}
+	return ""
 }

@@ -86,6 +86,20 @@ func runDaemon(cfg config.Config) {
 		return deps.Agent, deps.Close, nil
 	}
 
+	// Report the live background-task count for `stats` / the GUI agents badge.
+	// LoadBgTasks reads the on-disk task store (~/.eigen/tasks[-instance]); count
+	// "running" exactly as the GUI does (internal/gui.Bridge.Agents). Cheap enough
+	// for the ~1Hz stats polling — a directory scan of last-line JSON reads.
+	host.SetBgCount(func() int {
+		running := 0
+		for _, t := range agent.LoadBgTasks(agent.TasksDir()) {
+			if t.Status == "running" {
+				running++
+			}
+		}
+		return running
+	})
+
 	// Live model switching for daemon sessions: rebuild a provider for the new
 	// model id (the same construction the local chat uses).
 	host.SetModelSwitcher(func(dir, modelID string) (llm.Provider, llm.Compactor, int, error) {

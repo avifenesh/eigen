@@ -89,6 +89,66 @@ func TestApplySubtaskEffortLeavesNoMiddleModelsAlone(t *testing.T) {
 	}
 }
 
+// A subtask's effort discipline must NOT mutate the provider the parent (or any
+// other session) shares. subAgent reaches a shared provider on every path — the
+// inherited a.provider(), or a router-cache instance reused across sessions — so
+// it must give the subtask a provider it exclusively owns before lowering effort.
+// Regression for the in-place SetEffort/SetFast bleed.
+func TestSubAgentEffortDoesNotMutateParentProvider(t *testing.T) {
+	t.Run("inherited provider stays untouched", func(t *testing.T) {
+		// claude-opus-4-8 has a real "medium" rung, so discipline WOULD lower a
+		// max-effort provider — proving it doesn't touch this shared instance.
+		shared := &effortProv{id: "us.anthropic.claude-opus-4-8", effort: "max"}
+		a := &Agent{Provider: shared, Perm: PermAuto}
+
+		sub, _ := a.subAgent(context.Background(), "trivial cleanup", SubtaskOpts{Difficulty: "trivial"})
+
+		if shared.effort != "max" {
+			t.Fatalf("parent/shared provider effort was mutated by the subtask: got %q, want %q", shared.effort, "max")
+		}
+		// The subtask must not be holding the shared instance when it disciplines
+		// effort — otherwise the cap would have bled into the parent.
+		if sub.Provider == llm.Provider(shared) {
+			t.Fatal("subtask kept the shared provider; effort discipline would bleed into the parent")
+		}
+	})
+
+	t.Run("router-cache provider stays untouched", func(t *testing.T) {
+		shared := &effortProv{id: "us.anthropic.claude-opus-4-8", effort: "max"}
+		// Parent runs a different provider; the router hands the subtask the shared
+		// cache instance (as the real autoRouter.providerFor cache does).
+		a := &Agent{
+			Provider: &mockProvider{},
+			Perm:     PermAuto,
+			Router: func(_ context.Context, _, _, _ string, _ bool) (llm.Provider, string, string) {
+				return shared, "routed → shared", ""
+			},
+		}
+
+		_, _ = a.subAgent(context.Background(), "easy edit", SubtaskOpts{Difficulty: "easy"})
+
+		if shared.effort != "max" {
+			t.Fatalf("router-cache provider effort was mutated by the subtask: got %q, want %q", shared.effort, "max")
+		}
+	})
+
+	t.Run("non-discipline difficulty keeps inheriting the shared provider", func(t *testing.T) {
+		// medium/hard apply no discipline, so there's no reason to build a fresh
+		// provider — the subtask should inherit the shared one as before.
+		shared := &effortProv{id: "us.anthropic.claude-opus-4-8", effort: "max"}
+		a := &Agent{Provider: shared, Perm: PermAuto}
+
+		sub, _ := a.subAgent(context.Background(), "hard refactor", SubtaskOpts{Difficulty: "hard"})
+
+		if sub.Provider != llm.Provider(shared) {
+			t.Fatal("non-discipline subtask should inherit the shared provider unchanged")
+		}
+		if shared.effort != "max" {
+			t.Fatalf("shared provider effort changed for a hard subtask: got %q", shared.effort)
+		}
+	})
+}
+
 // effortFastProv implements EffortSetter + FastModer for fast-routing tests.
 type effortFastProv struct {
 	id     string

@@ -761,19 +761,34 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 			where = joinWhere(where, label)
 		}
 	}
-	// Output discipline: a trivial/easy subtask doesn't need max reasoning.
-	// Lower the subtask provider's effort to match its difficulty (never raise
-	// it, never touch the orchestrator's own provider) so a mechanical
-	// delegation doesn't burn the global "max" reasoning budget. Opt out with
-	// EIGEN_SUBTASK_EFFORT=keep.
-	if w := applySubtaskEffort(prov, opts.Difficulty); w != "" {
-		where = joinWhere(where, w)
-	}
-	// Latency discipline: a trivial/easy subtask on a fast-capable provider
-	// (Codex priority tier) takes the fast path; medium/hard keep the configured
-	// tier (quality over latency). Same opt-out.
-	if w := applySubtaskFast(prov, opts.Difficulty); w != "" {
-		where = joinWhere(where, w)
+	// Effort/fast discipline mutates the provider in place (SetEffort/SetFast).
+	// Every provider reachable here is SHARED — the parent's live provider
+	// (a.provider()) or a router-cache instance reused across sessions — so
+	// mutating it would bleed a subtask's lowered effort / fast path into the
+	// parent and other sessions. Before disciplining, give the subtask a
+	// provider it EXCLUSIVELY owns (a fresh build of the same model). If we
+	// can't own one, skip discipline rather than corrupt the shared instance.
+	if subtaskDisciplineApplies(opts.Difficulty) {
+		owned, err := llm.New("", prov.ModelID())
+		if err != nil {
+			where = joinWhere(where, "subtask discipline skipped (own-provider build failed: "+err.Error()+")")
+		} else {
+			prov = owned
+			compactor = llm.NewCompactor(owned)
+			// Output discipline: a trivial/easy subtask doesn't need max
+			// reasoning. Lower its effort to match its difficulty (never raise,
+			// never below medium) so a mechanical delegation doesn't burn the
+			// global "max" reasoning budget. Opt out with EIGEN_SUBTASK_EFFORT=keep.
+			if w := applySubtaskEffort(prov, opts.Difficulty); w != "" {
+				where = joinWhere(where, w)
+			}
+			// Latency discipline: a trivial/easy subtask on a fast-capable
+			// provider (Codex priority tier) takes the fast path; medium/hard keep
+			// the configured tier (quality over latency). Same opt-out.
+			if w := applySubtaskFast(prov, opts.Difficulty); w != "" {
+				where = joinWhere(where, w)
+			}
+		}
 	}
 	// Construct the sub-agent explicitly (not by struct copy: Agent embeds a
 	// mutex). It inherits the perm/budget snapshot but stays silent (no
@@ -807,6 +822,23 @@ func joinWhere(a, b string) string {
 		return a
 	}
 	return a + "; " + b
+}
+
+// subtaskDisciplineApplies reports whether effort/fast discipline would do
+// anything for this difficulty — i.e. it's a trivial/easy delegation and the
+// caller hasn't opted out via EIGEN_SUBTASK_EFFORT=keep. It gates the (cheap
+// but not free) fresh-provider build in subAgent: when no discipline would
+// apply, the subtask keeps inheriting the shared provider untouched.
+func subtaskDisciplineApplies(difficulty string) bool {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("EIGEN_SUBTASK_EFFORT")), "keep") {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(difficulty)) {
+	case "trivial", "easy":
+		return true
+	default:
+		return false
+	}
 }
 
 // subtaskEffortFloor is the effort a trivial/easy subtask is CAPPED at — a safe

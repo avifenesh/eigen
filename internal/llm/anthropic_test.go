@@ -1,7 +1,10 @@
 package llm
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,6 +124,87 @@ func TestClaudeOAuthToken(t *testing.T) {
 	// Missing file.
 	if _, err := claudeOAuthToken(filepath.Join(dir, "nope.json")); err == nil {
 		t.Error("missing credentials file should error")
+	}
+}
+
+// TestAnthropicStreamEmitsIncrementalText is the regression for APP-008: the
+// native Anthropic provider must implement Streamer so the default Claude path
+// emits text deltas as they arrive instead of blocking on Complete (frozen UI
+// mid-turn). It mocks the native Messages SSE flow (message_start →
+// content_block_start/delta/stop → message_delta → message_stop) including a
+// text block, a thinking delta, and a streamed tool_use whose input arrives as
+// partial_json, then asserts the deltas reached the sink and the final Response
+// is correctly assembled.
+func TestAnthropicStreamEmitsIncrementalText(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl := w.(interface{ Flush() })
+		write := func(s string) { w.Write([]byte(s)); fl.Flush() }
+		write("event: message_start\ndata: " + `{"type":"message_start","message":{"usage":{"input_tokens":11,"cache_read_input_tokens":3}}}` + "\n\n")
+		// Text block: start, two deltas, stop.
+		write("event: content_block_start\ndata: " + `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}` + "\n\n")
+		write("event: content_block_delta\ndata: " + `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hel"}}` + "\n\n")
+		write("event: content_block_delta\ndata: " + `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"lo"}}` + "\n\n")
+		write("event: content_block_stop\ndata: " + `{"type":"content_block_stop","index":0}` + "\n\n")
+		// Thinking delta on its own block.
+		write("event: content_block_start\ndata: " + `{"type":"content_block_start","index":1,"content_block":{"type":"thinking","thinking":""}}` + "\n\n")
+		write("event: content_block_delta\ndata: " + `{"type":"content_block_delta","index":1,"delta":{"type":"thinking_delta","thinking":"hmm"}}` + "\n\n")
+		write("event: content_block_stop\ndata: " + `{"type":"content_block_stop","index":1}` + "\n\n")
+		// Tool use: input streamed as partial JSON.
+		write("event: content_block_start\ndata: " + `{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"tu_1","name":"read"}}` + "\n\n")
+		write("event: content_block_delta\ndata: " + `{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"path\":"}}` + "\n\n")
+		write("event: content_block_delta\ndata: " + `{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"\"a\"}"}}` + "\n\n")
+		write("event: content_block_stop\ndata: " + `{"type":"content_block_stop","index":2}` + "\n\n")
+		write("event: message_delta\ndata: " + `{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":7}}` + "\n\n")
+		write("event: message_stop\ndata: " + `{"type":"message_stop"}` + "\n\n")
+	}))
+	defer srv.Close()
+
+	a := &Anthropic{Model: "claude-sonnet-4-5", apiKey: "k", http: srv.Client()}
+	// Point the package URL at the test server for the duration of this test.
+	origURL := anthropicURL
+	anthropicURL = srv.URL
+	defer func() { anthropicURL = origURL }()
+
+	var textChunks []string
+	var reasoningChunks []string
+	resp, err := a.Stream(context.Background(),
+		Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}},
+		func(c StreamChunk) {
+			switch c.Kind {
+			case ChunkText:
+				textChunks = append(textChunks, c.Text)
+			case ChunkReasoning:
+				reasoningChunks = append(reasoningChunks, c.Text)
+			}
+		})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	// Incremental text must arrive as separate chunks, not one blob at the end.
+	if len(textChunks) != 2 || textChunks[0] != "Hel" || textChunks[1] != "lo" {
+		t.Fatalf("text chunks = %v, want [Hel lo]", textChunks)
+	}
+	if len(reasoningChunks) != 1 || reasoningChunks[0] != "hmm" {
+		t.Fatalf("reasoning chunks = %v, want [hmm]", reasoningChunks)
+	}
+	if resp.Text != "Hello" {
+		t.Fatalf("resp.Text = %q, want Hello", resp.Text)
+	}
+	if resp.Reasoning != "hmm" {
+		t.Fatalf("resp.Reasoning = %q, want hmm", resp.Reasoning)
+	}
+	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].ID != "tu_1" || resp.ToolCalls[0].Name != "read" {
+		t.Fatalf("tool call wrong: %+v", resp.ToolCalls)
+	}
+	if string(resp.ToolCalls[0].Arguments) != `{"path":"a"}` {
+		t.Fatalf("tool args = %s, want {\"path\":\"a\"}", resp.ToolCalls[0].Arguments)
+	}
+	if resp.Usage.InputTokens != 11 || resp.Usage.OutputTokens != 7 || resp.Usage.CacheReadTokens != 3 {
+		t.Fatalf("usage wrong: %+v", resp.Usage)
+	}
+	if _, ok := interface{}(a).(Streamer); !ok {
+		t.Fatal("Anthropic must implement Streamer")
 	}
 }
 
