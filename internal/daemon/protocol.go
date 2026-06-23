@@ -124,12 +124,16 @@ type ApprovalInfo struct {
 }
 
 // ShellInfo mirrors chat.ShellInfo over the wire (backgrounded bash shells).
+// Started/Finished are unix-millis (0 = unknown / still running) so the shells
+// panel can show elapsed runtime and finish time.
 type ShellInfo struct {
-	ID       string `json:"id"`
-	Command  string `json:"command"`
-	Status   string `json:"status"`
-	ExitCode int    `json:"exit_code"`
-	LastLine string `json:"last_line,omitempty"`
+	ID         string `json:"id"`
+	Command    string `json:"command"`
+	Status     string `json:"status"`
+	ExitCode   int    `json:"exit_code"`
+	StartedMs  int64  `json:"started_ms,omitempty"`
+	FinishedMs int64  `json:"finished_ms,omitempty"`
+	LastLine   string `json:"last_line,omitempty"`
 }
 
 // ToolInfo mirrors chat.ToolInfo over the wire.

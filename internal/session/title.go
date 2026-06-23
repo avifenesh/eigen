@@ -144,6 +144,13 @@ func (s *Store) setTitleIfEmpty(id, title string) {
 	s.save()
 }
 
+// firstUserScanBudget caps how much of a transcript firstUserText scans for the
+// first user message. A byte budget (rather than a line cap) is robust to formats
+// like Codex rollouts that prepend large non-message blocks: the first user turn
+// can land well past line 300, so a line cap would miss it and leave the session
+// permanently untitled. 1MB comfortably covers those prefixes while staying cheap.
+const firstUserScanBudget = 1 << 20 // 1MB
+
 // firstUserText cheaply extracts the first user message from a transcript
 // without a full parse (reads a bounded prefix of the file).
 func firstUserText(src transcript.Source, origin string) string {
@@ -157,10 +164,10 @@ func firstUserText(src transcript.Source, origin string) string {
 	defer f.Close()
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	lines := 0
-	for sc.Scan() && lines < 300 {
-		lines++
+	read := 0
+	for sc.Scan() && read < firstUserScanBudget {
 		line := sc.Bytes()
+		read += len(line) + 1
 		if t := userTextFromLine(src, line); t != "" {
 			return t
 		}

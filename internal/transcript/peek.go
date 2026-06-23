@@ -161,14 +161,90 @@ func claudeText(blocks json.RawMessage, plain string) string {
 	return ""
 }
 
-// claudeDirFromPath decodes Claude's project-folder encoding (the dir segment
-// is the cwd with '/' replaced by '-'): -home-avifenesh-projects-x.
+// claudeDirFromPath recovers the cwd from Claude's project-folder name. Claude
+// encodes the cwd by replacing every non-alphanumeric byte ('/', '.', '_', and
+// even a literal '-') with a single '-', so the encoding is LOSSY: a naive
+// ReplaceAll('-','/') turns "/home/u/.claude/action-graph" (stored as
+// "-home-u--claude-action-graph") into "/home/u//claude/action/graph", grouping
+// sessions under projects that do not exist.
+//
+// Since the original separators cannot be recovered from the string alone, we
+// resolve against the real filesystem: walk the segments left-to-right, and at
+// each '-' boundary prefer descending into a directory ('/'), falling back to
+// re-joining the segment onto the previous component with '.', '_', or '-' when
+// that is what exists on disk. If the name resolves to no existing directory we
+// return "" rather than emit a wrong path — an empty Cwd is better than a
+// phantom project. (The caller still prefers the real cwd recorded in the
+// transcript body over this fallback.)
 func claudeDirFromPath(path string) string {
 	dir := filepath.Base(filepath.Dir(path))
 	if !strings.HasPrefix(dir, "-") {
 		return ""
 	}
-	return strings.ReplaceAll(dir, "-", "/")
+	return resolveClaudeDir(dir)
+}
+
+// resolveClaudeDir reconstructs an absolute path from a '-'-encoded Claude
+// folder name by matching it against the filesystem. Because every '/', '.',
+// '_', and literal '-' was flattened to a single '-', each '-' is ambiguous: it
+// may be a path separator (a new component) or a char inside the current
+// component. We resolve by DFS over the real directory tree — consume one or
+// more segments to form the next existing child directory, descend, and recurse
+// on the rest. The shortest child name is tried first (the common case where
+// '-' is a separator); a fused name (e.g. ".claude" or "agent-sh") is only
+// assumed when that directory actually exists. Returns "" if no reconstruction
+// reaches an existing directory at the end, so a wrong guess never groups
+// sessions under a phantom project.
+func resolveClaudeDir(encoded string) string {
+	segs := strings.Split(strings.TrimPrefix(encoded, "-"), "-")
+	return resolveSegs("/", segs)
+}
+
+// claudeSep is the set of non-'/' separators Claude collapses to '-' inside a
+// single name segment. The '/' (new component) case is handled separately and
+// tried first, so the common multi-directory layout wins over a fused name.
+var claudeSep = []string{".", "_", "-"}
+
+// resolveSegs descends from base by consuming segs[0:] into the next existing
+// directory component (one segment, or several fused by a separator), then
+// recursing on the remainder. It returns the full path once segs is exhausted
+// at an existing directory, or "" if no branch resolves.
+func resolveSegs(base string, segs []string) string {
+	if len(segs) == 0 {
+		if dirExists(base) {
+			return base
+		}
+		return ""
+	}
+	// Component = segs[0], optionally extended by fusing later segments with a
+	// non-'/' separator. Try the shortest (descend on one segment) first.
+	component := segs[0]
+	if dirExists(filepath.Join(base, component)) {
+		if cand := resolveSegs(filepath.Join(base, component), segs[1:]); cand != "" {
+			return cand
+		}
+	}
+	for i := 1; i < len(segs); i++ {
+		for _, sep := range claudeSep {
+			fused := component + sep + segs[i]
+			if !dirExists(filepath.Join(base, fused)) {
+				continue
+			}
+			if cand := resolveSegs(filepath.Join(base, fused), segs[i+1:]); cand != "" {
+				return cand
+			}
+		}
+		// Carry a literal-'-' fusion forward so a longer name (e.g. "agent-sh")
+		// can still match a deeper component on the next iteration.
+		component += "-" + segs[i]
+	}
+	return ""
+}
+
+// dirExists reports whether path is an existing directory.
+func dirExists(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.IsDir()
 }
 
 func peekCodex(path string) Preview {

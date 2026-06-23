@@ -225,9 +225,17 @@ func (c *cronsState) view(m *Model, w, h int) string {
 	if visible < 3 {
 		visible = 3
 	}
-	start := c.list.top
+	// Keep the list's row count in sync with what we render: load() sets it, but
+	// a path that populates rows without going through load() would leave count
+	// stale and window() would return an empty range.
+	c.list.count = len(c.rows)
+	// window() is the renderer's authority on which rows are on-screen: it
+	// re-anchors on the cursor so G (end) can't scroll the active timer off the
+	// bottom even though update() advances l.top with a larger (m.height-6)
+	// estimate. Reading l.top raw here would leave the selected row hidden.
+	from, to := c.list.window(visible)
 	c.clicks.reset()
-	for i := start; i < len(c.rows) && i < start+visible; i++ {
+	for i := from; i < to; i++ {
 		r := c.rows[i]
 		cursor := "  "
 		if i == c.list.cursor {

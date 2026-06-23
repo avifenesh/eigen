@@ -116,6 +116,73 @@ func TestSaveKeepsPreviousFileBackup(t *testing.T) {
 	}
 }
 
+func TestSaveRefusesEmptyOverNonEmpty(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s1.jsonl")
+	good := []llm.Message{{Role: llm.RoleUser, Text: "keep-me"}}
+	if err := Save(path, good); err != nil {
+		t.Fatal(err)
+	}
+
+	// An accidental empty/short autosave must be refused, not silently truncate
+	// the live transcript (and rotate it into a backup).
+	if err := Save(path, nil); err == nil {
+		t.Fatal("Save([]) over a non-empty transcript should return an error")
+	}
+	if err := Save(path, []llm.Message{}); err == nil {
+		t.Fatal("Save(empty slice) over a non-empty transcript should return an error")
+	}
+
+	// The live transcript is untouched and no backup was rotated by the refusal.
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Text != "keep-me" {
+		t.Fatalf("transcript must be unchanged after refused empty save, got %#v", got)
+	}
+	if _, err := os.Stat(path + ".bak"); !os.IsNotExist(err) {
+		t.Fatalf("a refused empty save must not rotate a backup, stat .bak err=%v", err)
+	}
+}
+
+func TestSaveAllowsEmptyOverEmptyOrMissing(t *testing.T) {
+	dir := t.TempDir()
+
+	// Empty save when the target is missing is allowed (creates an empty file).
+	missing := filepath.Join(dir, "missing.jsonl")
+	if err := Save(missing, nil); err != nil {
+		t.Fatalf("empty save over a missing target should succeed: %v", err)
+	}
+
+	// Empty save over an already-empty file is allowed (nothing to lose).
+	empty := filepath.Join(dir, "empty.jsonl")
+	if err := os.WriteFile(empty, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(empty, nil); err != nil {
+		t.Fatalf("empty save over an empty target should succeed: %v", err)
+	}
+}
+
+func TestSaveForceClearsNonEmptyTranscript(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s1.jsonl")
+	if err := Save(path, []llm.Message{{Role: llm.RoleUser, Text: "old"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A deliberate clear bypasses the guard.
+	if err := SaveForce(path, nil); err != nil {
+		t.Fatalf("SaveForce should clear a live transcript: %v", err)
+	}
+	got, err := loadJSONL(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("SaveForce(nil) should leave an empty transcript, got %#v", got)
+	}
+}
+
 func TestSaveRotatesBackupGenerations(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "s1.jsonl")
 	for i := 1; i <= 7; i++ {

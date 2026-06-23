@@ -8,9 +8,15 @@ import (
 )
 
 // parseCodex reads a Codex rollout JSONL. The conversation lives in
-// response_item lines (raw Responses-API items); assistant text and following
-// function_call items are grouped into one assistant message, and *_output
-// items become tool messages. Reasoning/event/meta lines are ignored.
+// response_item lines (raw Responses-API items); assistant text, reasoning, and
+// following function_call items are grouped into one assistant message, and
+// *_output items become tool messages. event/meta lines are ignored.
+//
+// Reasoning items carry summary text plus an encrypted_content blob bound to a
+// specific item id. Codex runs store:false, so resuming a session MUST carry the
+// blob back paired with its id or the server 404s on the reasoning item id. We
+// fold a turn's reasoning into its assistant message (mirroring applyOutputItem
+// in internal/llm/codex.go: last id+blob from the same item, summaries joined).
 func parseCodex(path string) ([]llm.Message, error) {
 	var out []llm.Message
 	asst := llm.Message{Role: llm.RoleAssistant}
@@ -38,6 +44,12 @@ func parseCodex(path string) ([]llm.Message, error) {
 				Input     string          `json:"input"`
 				CallID    string          `json:"call_id"`
 				Output    json.RawMessage `json:"output"`
+				ID        string          `json:"id"`
+				Summary   []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"summary"`
+				Encrypted string `json:"encrypted_content"`
 			} `json:"payload"`
 		}
 		if err := json.Unmarshal(line, &rec); err != nil {
@@ -65,6 +77,27 @@ func parseCodex(path string) ([]llm.Message, error) {
 			default: // developer/system
 				flush()
 			}
+		case "reasoning":
+			// Pair ReasoningID with the blob from the SAME item — the server
+			// verifies they match (Encrypted content item_id mismatch = 400). A
+			// turn can emit several reasoning items; keep the LAST one carrying a
+			// blob, taking both id and blob from it together. Summaries from all
+			// items are joined. Mirrors applyOutputItem in internal/llm/codex.go.
+			if p.Encrypted != "" {
+				asst.ReasoningEncrypted = p.Encrypted
+				asst.ReasoningID = p.ID
+			} else if asst.ReasoningID == "" {
+				asst.ReasoningID = p.ID
+			}
+			for _, s := range p.Summary {
+				if s.Text != "" {
+					if asst.Reasoning != "" {
+						asst.Reasoning += "\n"
+					}
+					asst.Reasoning += s.Text
+				}
+			}
+			haveAsst = true
 		case "function_call":
 			asst.ToolCalls = append(asst.ToolCalls, llm.ToolCall{ID: p.CallID, Name: p.Name, Arguments: rawArgsString(p.Arguments)})
 			haveAsst = true

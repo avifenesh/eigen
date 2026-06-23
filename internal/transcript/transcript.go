@@ -73,7 +73,34 @@ func Detect(path string) Source {
 // The write is atomic (temp file + rename) so a crash, force-exit, or
 // concurrent reader never sees a truncated transcript — this file is the
 // durable record of the conversation.
+//
+// Save refuses to overwrite a live, non-empty transcript with an empty slice:
+// an accidental short/empty autosave would otherwise rotate the good transcript
+// into a backup and then rename a zero-message file over it, losing the
+// conversation. A deliberate clear (e.g. /clear) must go through SaveForce,
+// which also purges the rotated backups so recovery cannot resurrect it.
 func Save(path string, msgs []llm.Message) error {
+	if len(msgs) == 0 && existsNonEmpty(path) {
+		return fmt.Errorf("transcript: refusing empty save over non-empty %s (use SaveForce to clear)", path)
+	}
+	return saveAtomic(path, msgs)
+}
+
+// SaveForce writes msgs exactly like Save but without the empty-over-non-empty
+// guard. Use it for a deliberate clear of an existing conversation; pair it with
+// ClearBackups so Load's corruption-recovery cannot resurrect the cleared
+// transcript from a stale .bak.
+func SaveForce(path string, msgs []llm.Message) error {
+	return saveAtomic(path, msgs)
+}
+
+// existsNonEmpty reports whether path is a regular file with at least one byte.
+func existsNonEmpty(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.Mode().IsRegular() && fi.Size() > 0
+}
+
+func saveAtomic(path string, msgs []llm.Message) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err

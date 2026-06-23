@@ -416,8 +416,16 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 
 	// 2) Wire MCP servers (niche, gated, ${ROOT}-expanded) into mcp.json. An MCP
 	// server is a subprocess command, so scan it like skills/agents — a malicious
-	// command is just as dangerous as a malicious instruction.
+	// command is just as dangerous as a malicious instruction. discoverMCP keeps
+	// every parsed .mcp.json entry, including ones with neither a runnable command
+	// nor a transport the loader can connect/report — the same shape discoverApps
+	// drops up front. Skip those here (and warn) so MCPServers counts only servers
+	// the loader will actually try, not entries it would silently reject.
 	for _, s := range comps.MCPServers {
+		if !mcpRunnable(s) {
+			res.Warnings = append(res.Warnings, fmt.Sprintf("mcp server %q skipped: no command and no supported transport (url/type) — not runnable", s.Name))
+			continue
+		}
 		if serr := scanCommandComponent(ctx, opts, res, "mcp", pluginName, s.Name, mcpScanBody(s), &scanCount); serr != nil {
 			return nil, serr
 		}
@@ -547,6 +555,23 @@ func scanCommandComponent(ctx context.Context, opts InstallOptions, res *Install
 		}
 	}
 	return nil
+}
+
+// mcpRunnable reports whether an MCP server has something the loader can act on:
+// a stdio command, or a remote transport (a url, or a type the loader's
+// isRemoteServer recognizes — http/sse and the streamable-http aliases). A server
+// with none of these is the loader's "empty name or command" reject case; mirror
+// the discoverApps len(cmd)==0 && url=="" guard so install never counts an entry
+// the loader will silently drop. Kept in sync with mcp.isRemoteServer.
+func mcpRunnable(s MCPServer) bool {
+	if len(s.Command) > 0 {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(s.Type)) {
+	case "http", "sse", "streamable-http", "streamable_http":
+		return true
+	}
+	return strings.TrimSpace(s.URL) != ""
 }
 
 // mcpScanBody renders an MCP server's launch surface (command + args + env) into

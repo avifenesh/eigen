@@ -504,8 +504,6 @@ func (s *Session) SetTitle(t string) {
 	s.mu.Unlock()
 }
 
-var _ = llm.RoleUser // keep llm imported for future message-typed protocol
-
 // --- gated-permission approvals over the socket ---
 //
 // When the daemon hosts a gated session, a mutating tool call blocks in
@@ -587,6 +585,15 @@ func (s *Session) pendingList() []pendingApproval {
 	return out
 }
 
+// unixMilli renders a time as unix-millis for the wire, mapping the zero time
+// to 0 (rather than a large negative epoch offset) so "unknown" reads as 0.
+func unixMilli(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixMilli()
+}
+
 // state snapshots everything a remote chat UI needs (history + status).
 func (s *Session) state() *SessionState {
 	s.mu.Lock()
@@ -633,7 +640,11 @@ func (s *Session) state() *SessionState {
 	st.Roots = a.Roots()
 	if a.Shells != nil {
 		for _, sh := range a.Shells.Infos() {
-			st.Shells = append(st.Shells, ShellInfo{ID: sh.ID, Command: sh.Command, Status: sh.Status, ExitCode: sh.ExitCode, LastLine: sh.LastLine})
+			st.Shells = append(st.Shells, ShellInfo{
+				ID: sh.ID, Command: sh.Command, Status: sh.Status, ExitCode: sh.ExitCode,
+				StartedMs: unixMilli(sh.Started), FinishedMs: unixMilli(sh.Finished),
+				LastLine: sh.LastLine,
+			})
 		}
 	}
 	for _, p := range s.pendingList() {
@@ -725,11 +736,11 @@ func (s *Session) clear() {
 	s.turns = 0
 	s.fallbackTitle = ""
 	s.mu.Unlock()
-	// /clear is user-visible state, not just in-memory UI state. Persist the
-	// empty transcript immediately so a daemon restart cannot resurrect the old
-	// conversation — then purge the rotated backups, or transcript.Load's
+	// /clear is user-visible state, not just in-memory UI state. onClear force-
+	// writes the empty transcript immediately (a plain autosave of [] is refused
+	// as an accidental truncation) so a daemon restart cannot resurrect the old
+	// conversation, then purges the rotated backups, or transcript.Load's
 	// corruption-recovery would resurrect the cleared conversation from a .bak.
-	s.flush()
 	if s.onClear != nil {
 		s.onClear()
 	}

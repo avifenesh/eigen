@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/daemon"
@@ -280,9 +281,18 @@ func (r *Remote) Shells() []ShellInfo {
 	st := r.snap()
 	out := make([]ShellInfo, 0, len(st.Shells))
 	for _, s := range st.Shells {
-		out = append(out, ShellInfo{ID: s.ID, Command: s.Command, Status: s.Status, ExitCode: s.ExitCode, LastLine: s.LastLine})
+		out = append(out, ShellInfo{ID: s.ID, Command: s.Command, Status: s.Status, ExitCode: s.ExitCode, Started: msToTime(s.StartedMs), Finished: msToTime(s.FinishedMs), LastLine: s.LastLine})
 	}
 	return out
+}
+
+// msToTime decodes a wire unix-millis stamp into a time.Time, mapping 0
+// (unknown / still running) to the zero time.
+func msToTime(ms int64) time.Time {
+	if ms == 0 {
+		return time.Time{}
+	}
+	return time.UnixMilli(ms)
 }
 
 // KillShell stops a backgrounded shell by id over the socket, then refreshes.

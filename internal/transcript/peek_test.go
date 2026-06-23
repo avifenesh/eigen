@@ -3,6 +3,7 @@ package transcript
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -53,13 +54,52 @@ func TestPeekClaudeCwdAndTitle(t *testing.T) {
 }
 
 func TestClaudeDirFromPath(t *testing.T) {
-	got := claudeDirFromPath("/home/u/.claude/projects/-home-u-projects-x/abc.jsonl")
-	if got != "/home/u/projects/x" {
-		t.Errorf("decoded dir = %q", got)
+	// Claude encodes the cwd by mapping '/', '.', '_', and literal '-' all to a
+	// single '-'. The decode must resolve against the real filesystem: build a
+	// tree whose names exercise each lossy case, then check round-trips.
+	root := t.TempDir()
+	cases := []struct {
+		name, rel string // rel is the cwd relative to root, exercising one lossy case
+	}{
+		{"plain dirs", "proj/sub"},
+		{"dot dir (--)", "dot/.claude/action-graph"},
+		{"underscore", "us/my_proj"},
+		{"literal hyphen", "lit/agent-sh/ada-spark"},
 	}
+	for _, c := range cases {
+		base := filepath.Join(root, c.rel)
+		if err := os.MkdirAll(base, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		encoded := encodeClaudeDir(base)
+		jsonl := filepath.Join(root, ".claude", "projects", encoded, "abc.jsonl")
+		if got := claudeDirFromPath(jsonl); got != base {
+			t.Errorf("%s: decoded %q\n  encoded=%q\n  want    %q", c.name, got, encoded, base)
+		}
+	}
+
 	if claudeDirFromPath("/somewhere/else/abc.jsonl") != "" {
 		t.Error("non-claude folder should decode to empty")
 	}
+	// A name that resolves to no real directory yields "" (no phantom project).
+	if got := claudeDirFromPath("/x/.claude/projects/-nonexistent-ghost-proj/a.jsonl"); got != "" {
+		t.Errorf("unresolvable name should decode to empty, got %q", got)
+	}
+}
+
+// encodeClaudeDir mirrors Claude's folder encoder: every non-alphanumeric byte
+// of the absolute cwd becomes a single '-'. Used only by the test to build
+// inputs the decoder must round-trip.
+func encodeClaudeDir(abs string) string {
+	var b strings.Builder
+	for _, r := range abs {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('-')
+		}
+	}
+	return b.String()
 }
 
 func TestTitleFromRejectsBoilerplate(t *testing.T) {

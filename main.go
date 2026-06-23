@@ -355,8 +355,11 @@ func main() {
 	}
 
 	// Task sources for automation: --prompt-file (re-read each run, so a
-	// cron/systemd loop picks up edited work), else piped stdin when no
-	// positional task was given. Both imply headless print mode.
+	// cron/systemd loop picks up edited work), else piped stdin. A positional
+	// task NO LONGER suppresses the stdin read: when both are present, stdin is
+	// appended to the task (or a note is emitted when there's no task to append
+	// to but the file source already won), so piped input is never dropped
+	// silently. Both sources imply headless print mode.
 	if *promptFile != "" && !appRequested {
 		data, perr := os.ReadFile(*promptFile)
 		if perr != nil {
@@ -364,11 +367,17 @@ func main() {
 		}
 		task = strings.TrimSpace(string(data))
 		*printMode = true
-	} else if !appRequested && task == "" && !isatty.IsTerminal(os.Stdin.Fd()) {
+		// A prompt-file already supplied the task; warn (don't drop silently)
+		// if stdin is ALSO piped, so the user knows it was ignored.
+		if !isatty.IsTerminal(os.Stdin.Fd()) {
+			if data, rerr := io.ReadAll(os.Stdin); rerr == nil && strings.TrimSpace(string(data)) != "" {
+				fmt.Fprintln(os.Stderr, "eigen: --prompt-file set; ignoring piped stdin")
+			}
+		}
+	} else if !appRequested && !isatty.IsTerminal(os.Stdin.Fd()) {
 		if data, rerr := io.ReadAll(os.Stdin); rerr == nil {
 			if piped := strings.TrimSpace(string(data)); piped != "" {
-				task = piped
-				*printMode = true
+				task, *printMode = mergeTaskStdin(task, piped), true
 			}
 		}
 	}
@@ -1076,6 +1085,21 @@ func cliApprove(ctx context.Context, name string, args json.RawMessage) (bool, e
 	fmt.Fprintf(tty, "approve %s %s ? [y/N] ", name, shown)
 	line, _ := bufio.NewReader(tty).ReadString('\n')
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(line)), "y"), nil
+}
+
+// mergeTaskStdin combines a positional task with piped stdin so neither is
+// dropped. With no positional task, the piped text IS the task; with one, the
+// stdin is appended below the task (a blank line between) — the common shape of
+// `eigen "summarize this" < notes.txt`. Both inputs are assumed pre-trimmed.
+func mergeTaskStdin(task, piped string) string {
+	switch {
+	case task == "":
+		return piped
+	case piped == "":
+		return task
+	default:
+		return task + "\n\n" + piped
+	}
 }
 
 // firstNonEmpty returns the first non-empty string.

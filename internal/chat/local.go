@@ -141,7 +141,7 @@ func (l *Local) Shells() []ShellInfo {
 	infos := l.a.Shells.Infos()
 	out := make([]ShellInfo, 0, len(infos))
 	for _, s := range infos {
-		out = append(out, ShellInfo{ID: s.ID, Command: s.Command, Status: s.Status, ExitCode: s.ExitCode, LastLine: s.LastLine})
+		out = append(out, ShellInfo{ID: s.ID, Command: s.Command, Status: s.Status, ExitCode: s.ExitCode, Started: s.Started, Finished: s.Finished, LastLine: s.LastLine})
 	}
 	return out
 }

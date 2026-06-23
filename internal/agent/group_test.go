@@ -349,3 +349,67 @@ func TestTaskGroupPromotedChildSurvivesGroupReturn(t *testing.T) {
 		t.Fatalf("promoted group child must survive group return and finish, got %+v", got)
 	}
 }
+
+// deadlineProvider records, per turn, whether the inbound context carried a
+// deadline and how far out it was — used to prove synthesis runs on the group's
+// own budget (gctx), not the unbounded parent ctx.
+type deadlineProvider struct {
+	mu        sync.Mutex
+	hasDL     []bool
+	remaining []time.Duration
+	reply     string
+}
+
+func (p *deadlineProvider) Name() string    { return "deadline" }
+func (p *deadlineProvider) ModelID() string { return "deadline" }
+func (p *deadlineProvider) Complete(ctx context.Context, _ llm.Request) (*llm.Response, error) {
+	dl, ok := ctx.Deadline()
+	p.mu.Lock()
+	p.hasDL = append(p.hasDL, ok)
+	if ok {
+		p.remaining = append(p.remaining, time.Until(dl))
+	} else {
+		p.remaining = append(p.remaining, 0)
+	}
+	p.mu.Unlock()
+	return &llm.Response{Text: p.reply}, nil
+}
+
+// TestTaskGroupSynthesisBoundedByGroupBudget is the regression for APP-077:
+// synthesis must run under the group's own budget (gctx), so even when the
+// parent ctx has no deadline, the synthesis call sees one — and it's no larger
+// than groupTotalTimeout.
+func TestTaskGroupSynthesisBoundedByGroupBudget(t *testing.T) {
+	reg, err := tool.NewRegistry(roTool("read"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	prov := &deadlineProvider{reply: "done"}
+	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto}
+
+	// Parent ctx with NO deadline: any deadline the synthesis call sees can only
+	// come from the group budget we attach internally.
+	out, gerr := a.TaskGroup(context.Background(), []GroupSubtask{
+		{Task: "look at A", Role: "researcher"},
+	}, 1, "what did A find?")
+	if gerr != nil {
+		t.Fatal(gerr)
+	}
+	if !strings.Contains(out, "--- synthesis ---") {
+		t.Fatalf("expected a synthesis section:\n%s", out)
+	}
+
+	prov.mu.Lock()
+	defer prov.mu.Unlock()
+	if len(prov.hasDL) == 0 {
+		t.Fatal("provider was never called")
+	}
+	// The synthesis turn is the last one. It must carry the group's deadline.
+	last := len(prov.hasDL) - 1
+	if !prov.hasDL[last] {
+		t.Fatal("synthesis ran on an unbounded context — it must inherit the group budget")
+	}
+	if rem := prov.remaining[last]; rem <= 0 || rem > groupTotalTimeout {
+		t.Fatalf("synthesis deadline must lie within the group budget (0 < rem <= %s), got %s", groupTotalTimeout, rem)
+	}
+}

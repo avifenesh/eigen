@@ -3,6 +3,7 @@ package transcript
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 )
 
 // SessionMeta records the live session config alongside an eigen-native
@@ -33,14 +34,44 @@ type SessionMeta struct {
 // metaPath returns the sidecar meta path for a session JSONL file.
 func metaPath(sessionPath string) string { return sessionPath + ".meta.json" }
 
-// SaveMeta writes the session meta sidecar next to the given session file. A
-// write failure is returned but is non-fatal to the caller (meta is best-effort).
+// SaveMeta writes the session meta sidecar next to the given session file. The
+// write is atomic (temp file + rename) so a crash or force-exit mid-write — which
+// happens every turn — never leaves a half-written .meta.json that LoadMeta would
+// reject, silently resetting provider/model/perm/effort/search/goal/loop to
+// defaults on resume. A write failure is returned but is non-fatal to the caller
+// (meta is best-effort).
 func SaveMeta(sessionPath string, m SessionMeta) error {
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(metaPath(sessionPath), b, 0o644)
+	path := metaPath(sessionPath)
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(b); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+	// Best-effort directory fsync makes the rename durable across sudden power loss.
+	_ = syncDir(filepath.Dir(path))
+	return nil
 }
 
 // LoadMeta reads the session meta sidecar for a session file. The second return

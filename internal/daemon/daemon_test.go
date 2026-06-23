@@ -1113,3 +1113,16 @@ func TestStateFastReDerivesAfterSwitch(t *testing.T) {
 		t.Fatal("state().Fast must reflect the toggled fast mode")
 	}
 }
+
+// TestUnixMilli pins the shell-time wire encoding (APP-068): a real instant
+// becomes its unix-millis, while the zero time maps to 0 ("unknown" / still
+// running) rather than a huge negative epoch offset.
+func TestUnixMilli(t *testing.T) {
+	if got := unixMilli(time.Time{}); got != 0 {
+		t.Fatalf("zero time must encode to 0, got %d", got)
+	}
+	at := time.UnixMilli(1_700_000_000_123)
+	if got := unixMilli(at); got != 1_700_000_000_123 {
+		t.Fatalf("unixMilli(%v) = %d, want 1700000000123", at, got)
+	}
+}

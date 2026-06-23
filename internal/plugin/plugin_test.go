@@ -401,6 +401,76 @@ func TestInstallPluginWiresComponents(t *testing.T) {
 	}
 }
 
+// TestInstallPluginSkipsUnrunnableMCPServers proves that an .mcp.json entry with
+// neither a command nor a transport the loader can use (no url/type) is excluded
+// from res.Plugin.MCPServers and surfaced as a warning, while runnable stdio and
+// remote entries are still wired — mirroring the discoverApps len(cmd)==0 guard.
+func TestInstallPluginSkipsUnrunnableMCPServers(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRegistryAt(dir)
+	tgz := buildTarGz(t, "repo-main", map[string]string{
+		".claude-plugin/marketplace.json": `{
+		  "name": "demo", "owner": {"name": "Jane"},
+		  "plugins": [{"name": "toolbox", "source": "./plugins/toolbox", "description": "a toolbox"}]
+		}`,
+		"plugins/toolbox/.claude-plugin/plugin.json": `{"name": "toolbox", "version": "1.0.0"}`,
+		"plugins/toolbox/.mcp.json": `{"mcpServers": {
+		  "stdio":  {"command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/server.js"]},
+		  "remote": {"type": "sse", "url": "https://example.com/sse"},
+		  "ghost":  {"env": {"K": "v"}, "description": "command-less, never-runnable"}
+		}}`,
+		"plugins/toolbox/server.js": "// mcp server\n",
+	})
+
+	if _, _, err := r.AddMarketplace(context.Background(), "jane/demo", fakeTree(tgz)); err != nil {
+		t.Fatalf("add marketplace: %v", err)
+	}
+	res, err := r.InstallPlugin(context.Background(), "toolbox", "", InstallOptions{Scanner: okScanner{}, Tree: fakeTree(tgz)})
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	// Only the two runnable servers are counted; the command-less "ghost" is dropped.
+	if len(res.Plugin.MCPServers) != 2 {
+		t.Fatalf("want 2 wired mcp servers (stdio+remote), got %v", res.Plugin.MCPServers)
+	}
+	for _, n := range res.Plugin.MCPServers {
+		if n == "toolbox-ghost" {
+			t.Fatalf("command-less mcp server should not be wired: %v", res.Plugin.MCPServers)
+		}
+	}
+
+	// The skipped server is named in a warning.
+	warned := false
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "ghost") {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Fatalf("skipped mcp server should be named in a warning, got %v", res.Warnings)
+	}
+
+	// It is not written into mcp.json either.
+	mcp, _ := readObj(r.MCPPath())
+	servers, _ := mcp["servers"].([]any)
+	if len(servers) != 2 {
+		t.Fatalf("mcp.json should hold 2 servers, got %d", len(servers))
+	}
+	for _, e := range servers {
+		if m, ok := e.(jsonObj); ok {
+			if nm, _ := m["name"].(string); nm == "toolbox-ghost" {
+				t.Fatalf("command-less mcp server leaked into mcp.json: %v", servers)
+			}
+		}
+	}
+
+	// The unrunnable server is not scanned (only stdio + remote mcp = 2).
+	if res.Plugin.ScanCount != 2 {
+		t.Fatalf("scan count = %d, want 2 (ghost server not scanned)", res.Plugin.ScanCount)
+	}
+}
+
 func TestInstallCodexMarketplaceAndMapsAgentsToRoles(t *testing.T) {
 	dir := t.TempDir()
 	market := filepath.Join(dir, "openai-bundled")

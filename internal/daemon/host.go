@@ -268,7 +268,19 @@ func (h *Host) enablePersist(s *Session) {
 	}
 	s.onAttach = func() { h.saveSessionMeta(s) } // persist LastAttached
 	s.onTokens = func() { h.saveSessionMeta(s) } // persist cumulative tokens on turn done
-	s.onClear = func() { transcript.ClearBackups(transcriptPath(dir, s.ID)) } // purge backups after /clear
+	// onClear deliberately empties the transcript: a plain Save([]) is refused as
+	// an accidental truncation, so force the empty write, then purge the rotated
+	// backups or Load's recovery would resurrect the just-cleared conversation.
+	s.onClear = func() {
+		p := transcriptPath(dir, s.ID)
+		s.persistMu.Lock()
+		err := transcript.SaveForce(p, nil)
+		s.persistMu.Unlock()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "eigen daemon: clear %s: %v\n", s.ID, err)
+		}
+		transcript.ClearBackups(p)
+	}
 	s.onInactive = func() { h.UnloadIfInactive(s.ID) }
 	h.saveSessionMeta(s)
 }
@@ -654,13 +666,6 @@ func (h *Host) List() []SessionInfo {
 		}
 	}
 	return out
-}
-
-// Count returns the number of hosted sessions.
-func (h *Host) Count() int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return len(h.sessions)
 }
 
 // AnyRunning reports whether any hosted session has a turn in flight. Used by

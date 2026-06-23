@@ -1423,6 +1423,7 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 				Role: llm.RoleUser,
 				Text: "Continue: use a tool to make progress, or give your final answer.",
 			})
+			s.persist()
 			continue
 		}
 		emptyTurns = 0

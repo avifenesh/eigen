@@ -73,7 +73,9 @@ func (s *liveState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "n":
 		if d.Daemon != nil {
 			cwd, _ := os.Getwd()
-			id, err := d.Daemon.New(cwd, "") // root the session where the app runs
+			// root the session where the app runs, on the configured default
+			// model (empty falls back to the daemon's own default)
+			id, err := d.Daemon.New(cwd, d.Config.Model)
 			if err != nil {
 				s.notice = "new failed: " + err.Error()
 			} else {

@@ -531,6 +531,34 @@ func TestMultiWindowStress(t *testing.T) {
 	wg.Wait()
 }
 
+// TestShellInfoTimesRoundTrip pins the shell Started/Finished carry over the
+// wire (APP-068): the daemon snapshots tool.ShellInfo's times as unix-millis
+// and Remote decodes them back, so the shells panel can show elapsed/finished.
+// Both 0 (unknown / still running) and a real stamp must survive intact.
+func TestShellInfoTimesRoundTrip(t *testing.T) {
+	started := time.UnixMilli(1_700_000_000_000) // a fixed, non-zero instant
+	// A running shell: Finished is unknown -> the wire carries 0 -> decodes to
+	// the zero time (not a bogus 1970 instant).
+	wire := daemon.ShellInfo{
+		ID: "shell-1", Command: "npm run dev", Status: "running",
+		StartedMs: started.UnixMilli(), FinishedMs: 0,
+		LastLine: "listening",
+	}
+	if wire.StartedMs != started.UnixMilli() {
+		t.Fatalf("StartedMs not carried: got %d want %d", wire.StartedMs, started.UnixMilli())
+	}
+	if wire.FinishedMs != 0 {
+		t.Fatalf("zero Finished must serialize to 0, got %d", wire.FinishedMs)
+	}
+	gotStarted := msToTime(wire.StartedMs)
+	if !gotStarted.Equal(started) {
+		t.Fatalf("Started round-trip: got %v want %v", gotStarted, started)
+	}
+	if gotFinished := msToTime(wire.FinishedMs); !gotFinished.IsZero() {
+		t.Fatalf("0 must decode to zero time, got %v", gotFinished)
+	}
+}
+
 // TestWireToEventDoneAttribution covers the EventDone attribution carried over
 // the socket: provider/model and prompt-cache hits/writes must survive the
 // WireEvent round-trip so daemon sessions get per-turn model attribution and a
