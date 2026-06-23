@@ -25,6 +25,17 @@ function createFeed() {
     return on<FeedDTO>(ev.feed, apply);
   }
 
+  // refresh: ask the daemon to rescan now. The scan is slow and runs off the
+  // request path server-side; fresh results arrive via the eigen:feed push we
+  // already ride, so there is nothing to await here for the UI to update.
+  async function refresh() {
+    try {
+      await Bridge.RescanFeed();
+    } catch {
+      // a failed rescan leaves the last feed in place — acceptable.
+    }
+  }
+
   async function dismiss(key: string) {
     // optimistic: drop locally; the daemon re-emits the freshened feed too.
     items = items.filter((i) => i.key !== key);
@@ -57,6 +68,7 @@ function createFeed() {
       return items.length;
     },
     start,
+    refresh,
     dismiss,
   };
 }

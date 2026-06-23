@@ -6,6 +6,7 @@
   // lives in an $effect with teardown so it never leaks across mounts.
   import { router, routes, type Route } from "$lib/router.svelte";
   import { sessions } from "$lib/stores/sessions.svelte";
+  import { feed } from "$lib/stores/feed.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { Bridge } from "$lib/bridge";
 
@@ -17,6 +18,7 @@
     glyph: string;
     run: () => void | Promise<void>;
     keywords?: string; // extra fuzzy-match text
+    id?: string; // stable key when label can collide (e.g. untitled sessions)
   };
 
   let open = $state(false);
@@ -48,12 +50,20 @@
       toasts.error(e instanceof Error ? e.message : String(e));
     }
   }
+  // Trigger a real proactive-feed rescan, land on Home where the fresh results
+  // surface (they arrive via the eigen:feed push the feed store rides).
+  function refreshFeed() {
+    hide();
+    router.go("home");
+    feed.refresh();
+    toasts.info("rescanning projects…");
+  }
 
   // Global actions (verbs the rail+views expose, runnable without the mouse).
   const actions: Item[] = [
     { group: "Actions", label: "Start a session", hint: "new", glyph: "✦", run: newSession, keywords: "new chat create" },
     { group: "Actions", label: "Prune empty sessions", hint: "cleanup", glyph: "⌫", run: pruneEmpty, keywords: "delete remove clean" },
-    { group: "Actions", label: "Refresh feed", hint: "scan", glyph: "↻", run: () => { hide(); router.go("home"); }, keywords: "act on proactive ideas" },
+    { group: "Actions", label: "Refresh feed", hint: "scan", glyph: "↻", run: refreshFeed, keywords: "act on proactive ideas rescan" },
   ];
   const navItems: Item[] = routes
     .filter((r) => r !== "chat") // chat is reached via a session, not a bare view
@@ -96,6 +106,7 @@
         hide();
       },
       keywords: s.dir,
+      id: s.id, // sessions share the "untitled session" label; key on id
     }));
     const all = [...actions, ...navItems, ...sess];
     const q = query.trim().toLowerCase();
@@ -191,7 +202,7 @@
       {#if grouped.length === 0}
         <div class="pal__empty">No matches.</div>
       {:else}
-        {#each grouped as g (g.item.group + ":" + g.item.label)}
+        {#each grouped as g (g.item.id ?? g.item.group + ":" + g.item.label)}
           {#if g.header}<div class="pal__section">{g.header}</div>{/if}
           <button
             class="pal__row"

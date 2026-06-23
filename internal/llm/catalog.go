@@ -206,6 +206,12 @@ func ResolveProvider(provider, model string) string {
 	return provider
 }
 
+// CanonicalProvider collapses provider aliases to a single canonical backend
+// name (e.g. "claude" → "converse", "xai" → "grok"). Exported for callers that
+// must key by the same canonical name eigen credentials/routes by — an unknown
+// (genuinely custom) provider name is returned unchanged.
+func CanonicalProvider(p string) string { return canonicalProvider(p) }
+
 // canonicalProvider collapses provider aliases to a single canonical name so
 // alias differences (e.g. "claude" vs "converse") are not treated as a mismatch.
 func canonicalProvider(p string) string {

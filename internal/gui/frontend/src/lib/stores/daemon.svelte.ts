@@ -24,12 +24,15 @@ function createDaemon() {
     const offHealth = on<{ ok: boolean }>(ev.daemonHealth, (data) => {
       if (!data.ok && status !== "offline") status = "offline";
     });
+    // Bootstrap ping only resolves the INITIAL connecting state. A stats event
+    // can arrive (→ online) before this settles; guard both arms so the
+    // live-driven status is never clobbered by the one-shot bootstrap.
     Bridge.Ping()
       .then(() => {
         if (status === "connecting") status = "online";
       })
       .catch(() => {
-        status = "offline";
+        if (status === "connecting") status = "offline";
       });
     return () => {
       offStats();

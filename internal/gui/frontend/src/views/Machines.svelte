@@ -12,12 +12,14 @@
   import type { MachinesDTO, MachineDTO, SessionInfoDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
   import Badge from "$lib/components/Badge.svelte";
+  import Button from "$lib/components/Button.svelte";
   import StatusDot from "$lib/components/StatusDot.svelte";
   import Sheet from "$lib/components/Sheet.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
 
   let data = $state<MachinesDTO | null>(null);
   let loading = $state(true);
+  let error = $state<string | null>(null);
 
   // Drill-in (slide-over) state.
   let openMachine = $state<MachineDTO | null>(null);
@@ -31,11 +33,12 @@
   async function load() {
     const seq = ++loadSeq;
     loading = true;
+    error = null;
     try {
       const d = await Bridge.Machines();
       if (seq === loadSeq) data = d;
     } catch (e) {
-      if (seq === loadSeq) toasts.error(e instanceof Error ? e.message : String(e));
+      if (seq === loadSeq) error = e instanceof Error ? e.message : String(e);
     } finally {
       if (seq === loadSeq) loading = false;
     }
@@ -96,6 +99,12 @@
     <div class="mx__grid mx__grid--pad">
       {#each Array(4) as _, i (i)}<div class="mx__skel"></div>{/each}
     </div>
+  {:else if error && !data}
+    <EmptyState glyph="⊟" title="Couldn't load machines" line={error}>
+      {#snippet action()}
+        <Button variant="secondary" onclick={() => load()}>Retry</Button>
+      {/snippet}
+    </EmptyState>
   {:else if machines.length === 0}
     <EmptyState
       glyph="⊟"

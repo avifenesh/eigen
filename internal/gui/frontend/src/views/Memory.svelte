@@ -146,7 +146,7 @@
     <div class="mem__loading">
       {#each Array(3) as _, i (i)}<div class="mem__skel"></div>{/each}
     </div>
-  {:else if !current || (current.noteCount === 0 && !current.summary && !current.bans && !current.profile)}
+  {:else if !current || (current.noteCount === 0 && current.adHoc.length === 0 && !current.summary && !current.bans && !current.profile)}
     <EmptyState glyph="❖" title="No {scope} memory yet" line="Notes you save — or the agent distills — live here and carry across sessions.">
       {#snippet action()}
         <Button variant="primary" onclick={() => (composing = true)}>Add the first note</Button>
@@ -167,13 +167,30 @@
           </section>
         {/if}
 
+        {#if current.adHoc.length > 0}
+          <section class="mem__section">
+            <div class="mem__section-head">
+              <h2 class="mem__section-title">Saved notes</h2>
+              <span class="mem__count tnum">{current.adHoc.length}</span>
+              <Badge tone="neutral">manual</Badge>
+            </div>
+            <div class="mem__adhoc">
+              {#each current.adHoc as note (note.index)}
+                <Card>
+                  <div class="mem__note selectable"><Markdown source={note.text} /></div>
+                </Card>
+              {/each}
+            </div>
+          </section>
+        {/if}
+
         <section class="mem__section mem__section--grow">
           <div class="mem__section-head">
             <h2 class="mem__section-title">Notes</h2>
             <span class="mem__count tnum">{current.noteCount}</span>
           </div>
           {#if current.noteCount === 0}
-            <p class="mem__empty-note">No raw notes in this scope.</p>
+            <p class="mem__empty-note">No distilled notes in this scope yet.</p>
           {:else}
             <div class="mem__notes">
               <VirtualList items={current.notes} estimateHeight={96} key={(n) => n.index}>
@@ -391,6 +408,13 @@
   }
   .mem__note-wrap {
     padding-bottom: var(--sp-4);
+  }
+  /* Manual saves are few and unbounded in height — a plain stack reads better
+     than windowing, and keeps a freshly-saved note immediately visible. */
+  .mem__adhoc {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
   }
   .mem__empty-note {
     color: var(--text-muted);

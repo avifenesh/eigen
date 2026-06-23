@@ -53,13 +53,21 @@ func skillDirs() []string {
 }
 
 // sourceOf classifies a skill path into user/project/extra by its directory.
+// Discover yields paths as-joined from skillDirs (the project dir is RELATIVE:
+// ".eigen/skills"), so resolve the candidate to absolute before comparing —
+// otherwise a relative project path never matches the absolute project dir and
+// every project skill falls through to "extra".
 func sourceOf(path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		abs = path
+	}
 	home, _ := os.UserHomeDir()
 	userDir := filepath.Join(home, ".eigen", "skills")
-	if strings.HasPrefix(path, userDir) {
+	if strings.HasPrefix(abs, userDir) {
 		return "user"
 	}
-	if abs, err := filepath.Abs(filepath.Join(".eigen", "skills")); err == nil && strings.HasPrefix(path, abs) {
+	if projDir, err := filepath.Abs(filepath.Join(".eigen", "skills")); err == nil && strings.HasPrefix(abs, projDir) {
 		return "project"
 	}
 	return "extra"

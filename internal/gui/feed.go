@@ -129,20 +129,34 @@ func (b *Bridge) DismissFeed(key string) error {
 	return nil
 }
 
+// scanFeed runs one full proactive-feed scan (git/github/memory + suggester),
+// caches it, and pushes it to every surface via eigen:feed. Slow by nature, so
+// it always runs off the request path (the feedLoop ticker or a RescanFeed
+// goroutine), never inline in a bound method.
+func (b *Bridge) scanFeed() {
+	dirs := b.projectDirs()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	f := feed.Scan(ctx, dirs, b.suggest)
+	cancel()
+	b.mu.Lock()
+	b.lastFeed = f
+	b.mu.Unlock()
+	b.emit(eventFeed, feedDTO(f, true))
+}
+
+// RescanFeed triggers a fresh scan now without blocking the caller — the slow
+// scan runs in a goroutine and its result arrives via the eigen:feed push the
+// feed store already rides. This is the user-triggerable "Refresh feed" verb
+// (command palette); the daemon also rescans on its own feedScanEvery cadence.
+func (b *Bridge) RescanFeed() error {
+	go b.scanFeed()
+	return nil
+}
+
 // feedLoop scans the proactive feed on startup and every feedScanEvery, caching
 // the result and pushing it to the frontend. The scan (git/github/memory +
 // suggester) is slow; it runs off the request path entirely.
 func (b *Bridge) feedLoop(stop chan struct{}) {
-	scan := func() {
-		dirs := b.projectDirs()
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		f := feed.Scan(ctx, dirs, b.suggest)
-		cancel()
-		b.mu.Lock()
-		b.lastFeed = f
-		b.mu.Unlock()
-		b.emit(eventFeed, feedDTO(f, true))
-	}
 	// Emit the cache immediately so the UI isn't empty while the first scan runs.
 	if f, ok := feed.Load(); ok {
 		b.mu.Lock()
@@ -150,7 +164,7 @@ func (b *Bridge) feedLoop(stop chan struct{}) {
 		b.mu.Unlock()
 		b.emit(eventFeed, feedDTO(f, true))
 	}
-	scan()
+	b.scanFeed()
 	t := time.NewTicker(feedScanEvery)
 	defer t.Stop()
 	for {
@@ -158,7 +172,7 @@ func (b *Bridge) feedLoop(stop chan struct{}) {
 		case <-stop:
 			return
 		case <-t.C:
-			scan()
+			b.scanFeed()
 		}
 	}
 }

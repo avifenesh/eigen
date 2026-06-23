@@ -8,15 +8,23 @@ function createSessions() {
   let loading = $state(false);
   let error = $state<string | null>(null);
 
+  // Monotonic guard: many callers refresh concurrently (Home $effect, Live's
+  // 2s poll, onReconnect, per-action refreshes). Without it an older snapshot
+  // can resolve last and clobber a newer one. Only the latest call commits.
+  let loadSeq = 0;
   async function refresh() {
+    const seq = ++loadSeq;
     loading = true;
     try {
-      list = await Bridge.Sessions();
+      const next = await Bridge.Sessions();
+      if (seq !== loadSeq) return; // a newer refresh superseded this one
+      list = next;
       error = null;
     } catch (e) {
+      if (seq !== loadSeq) return;
       error = e instanceof Error ? e.message : String(e);
     } finally {
-      loading = false;
+      if (seq === loadSeq) loading = false;
     }
   }
 

@@ -145,8 +145,11 @@
   // ── settings panel: capability-gated mutators ──────────────────────────────
   // Each mutator returns the FRESH state — assign it to `sess` so the dock
   // badges reconcile in place without a round-trip through refreshState().
-  function applyState(s: SessionStateDTO | null) {
-    if (s && sessionId) sess = s;
+  // `forId` is the session current when the RPC was issued: if the user switched
+  // sessions while it was in flight, the stale result is dropped (mirrors the id
+  // guard in refreshState — Chat is keyed on route, not session id).
+  function applyState(forId: string, s: SessionStateDTO | null) {
+    if (s && forId === sessionId) sess = s;
   }
   async function run<T>(fn: () => Promise<T>): Promise<T | undefined> {
     try {
@@ -186,27 +189,32 @@
 
   async function onModel(e: Event) {
     const v = (e.currentTarget as HTMLSelectElement).value;
-    if (!sessionId || v === sess?.model) return;
-    applyState(await run(() => Bridge.SetModel(sessionId, v)) ?? null);
+    const id = sessionId;
+    if (!id || v === sess?.model) return;
+    applyState(id, await run(() => Bridge.SetModel(id, v)) ?? null);
   }
   async function onPerm() {
-    if (!sessionId) return;
+    const id = sessionId;
+    if (!id) return;
     const next = sess?.perm === "auto" ? "gated" : "auto";
-    applyState(await run(() => Bridge.SetPerm(sessionId, next)) ?? null);
+    applyState(id, await run(() => Bridge.SetPerm(id, next)) ?? null);
   }
   async function onEffort(e: Event) {
     const v = (e.currentTarget as HTMLSelectElement).value;
-    if (!sessionId) return;
-    applyState(await run(() => Bridge.SetEffort(sessionId, v)) ?? null);
+    const id = sessionId;
+    if (!id) return;
+    applyState(id, await run(() => Bridge.SetEffort(id, v)) ?? null);
   }
   async function onSearch(e: Event) {
     const v = (e.currentTarget as HTMLSelectElement).value;
-    if (!sessionId) return;
-    applyState(await run(() => Bridge.SetSearch(sessionId, v)) ?? null);
+    const id = sessionId;
+    if (!id) return;
+    applyState(id, await run(() => Bridge.SetSearch(id, v)) ?? null);
   }
   async function onFast() {
-    if (!sessionId) return;
-    applyState(await run(() => Bridge.SetFast(sessionId, !sess?.fast)) ?? null);
+    const id = sessionId;
+    if (!id) return;
+    applyState(id, await run(() => Bridge.SetFast(id, !sess?.fast)) ?? null);
   }
 
   // ── goal + title editing ────────────────────────────────────────────────
@@ -223,10 +231,11 @@
   }
   async function commitGoal() {
     editingGoal = false;
-    if (!sessionId) return;
+    const id = sessionId;
+    if (!id) return;
     const next = goalDraft.trim();
     if (next === (sess?.goal ?? "")) return;
-    applyState(await run(() => Bridge.SetGoal(sessionId, next)) ?? null);
+    applyState(id, await run(() => Bridge.SetGoal(id, next)) ?? null);
   }
   function startTitle() {
     titleDraft = sess?.title ?? "";
@@ -234,10 +243,11 @@
   }
   async function commitTitle() {
     editingTitle = false;
-    if (!sessionId) return;
+    const id = sessionId;
+    if (!id) return;
     const next = titleDraft.trim();
     if (next === (sess?.title ?? "")) return;
-    applyState(await run(() => Bridge.SetTitle(sessionId, next)) ?? null);
+    applyState(id, await run(() => Bridge.SetTitle(id, next)) ?? null);
   }
 
   // ── sandbox / roots ───────────────────────────────────────────────────────

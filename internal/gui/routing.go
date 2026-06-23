@@ -49,17 +49,41 @@ func (b *Bridge) Routing() (*RoutingDTO, error) {
 		avail[p] = llm.ProviderAvailable(p)
 	}
 
+	// availFor resolves credential status for any provider key — canonicalizing
+	// first so an alias ("claude") hits the same entry as its backend
+	// ("converse"), and probing on demand for genuinely custom providers not in
+	// the canonical universe (so they aren't falsely shown as uncredentialed).
+	availFor := func(p string) bool {
+		c := llm.CanonicalProvider(p)
+		if v, ok := avail[c]; ok {
+			return v
+		}
+		v := llm.ProviderAvailable(c)
+		avail[c] = v
+		return v
+	}
+
 	models := llm.Models()
 	out := make([]ModelDTO, 0, len(models))
 	counts := map[string]int{}
+	// Preserve first-seen order for any custom providers beyond the canonical set.
+	var extraProvs []string
+	seenProv := map[string]bool{}
+	for _, p := range providerUniverse {
+		seenProv[p] = true
+	}
 	for _, m := range models {
-		prov := llm.ResolveProvider(m.Provider, m.ID)
+		// Canonicalize the resolved provider so the view filters, the rail
+		// counts, and the credential check all key off the same backend name
+		// (raw aliases like "claude" resolve to "converse").
+		prov := llm.CanonicalProvider(llm.ResolveProvider(m.Provider, m.ID))
 		counts[prov]++
+		if !seenProv[prov] {
+			seenProv[prov] = true
+			extraProvs = append(extraProvs, prov)
+		}
 		out = append(out, ModelDTO{
-			ID: m.ID,
-			// Emit the RESOLVED canonical provider so the view filters on the
-			// same key the rail counts/labels by (raw aliases like "claude"
-			// resolve to "converse"); avoids count/grid disagreement.
+			ID:             m.ID,
 			Provider:       prov,
 			ContextWindow:  m.ContextWindow,
 			Cache:          m.Cache,
@@ -69,13 +93,17 @@ func (b *Bridge) Routing() (*RoutingDTO, error) {
 			EffortLevels:   m.EffortLevels,
 			ThinkingBudget: m.ThinkingBudget,
 			Search:         m.Search,
-			Available:      avail[prov],
+			Available:      availFor(prov),
 		})
 	}
 
-	provs := make([]ProviderDTO, 0, len(providerUniverse))
+	provs := make([]ProviderDTO, 0, len(providerUniverse)+len(extraProvs))
 	for _, p := range providerUniverse {
-		provs = append(provs, ProviderDTO{Name: p, Credentialed: avail[p], ModelCount: counts[p]})
+		provs = append(provs, ProviderDTO{Name: p, Credentialed: availFor(p), ModelCount: counts[p]})
+	}
+	// Surface custom providers (from ~/.eigen/providers.json) the universe omits.
+	for _, p := range extraProvs {
+		provs = append(provs, ProviderDTO{Name: p, Credentialed: availFor(p), ModelCount: counts[p]})
 	}
 
 	return &RoutingDTO{Models: out, Providers: provs}, nil
