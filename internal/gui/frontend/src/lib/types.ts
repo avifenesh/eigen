@@ -186,3 +186,46 @@ export type ModelDTO = {
 };
 export type ProviderDTO = { name: string; credentialed: boolean; modelCount: number };
 export type RoutingDTO = { models: ModelDTO[]; providers: ProviderDTO[] };
+
+export type ToolStatDTO = { name: string; calls: number; errors: number; durationMs: number };
+export type ModelStatDTO = {
+  name: string;
+  turns: number;
+  inTokens: number;
+  outTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  durationMs: number;
+};
+export type HookStatDTO = { name: string; starts: number; done: number; errors: number; durationMs: number };
+export type CountDTO = { name: string; count: number };
+export type RouteStatsDTO = {
+  routed: number;
+  skipped: number;
+  assessed: number;
+  orchestrator: number;
+  byModel: CountDTO[];
+  byKind: CountDTO[];
+  byDifficulty: CountDTO[];
+  skipReasons: CountDTO[];
+};
+export type SubagentStatsDTO = {
+  taskCalls: number;
+  taskErrors: number;
+  groupCalls: number;
+  groupErrors: number;
+  mutatingCalls: number;
+  mutatingErrors: number;
+  backgroundDone: number;
+};
+export type ObserveSummaryDTO = {
+  records: number;
+  byKind: CountDTO[];
+  tools: ToolStatDTO[];
+  models: ModelStatDTO[];
+  hooks: HookStatDTO[];
+  errors: CountDTO[];
+  routes: RouteStatsDTO;
+  subagents: SubagentStatsDTO;
+  available: boolean;
+};

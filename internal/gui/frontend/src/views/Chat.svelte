@@ -65,18 +65,26 @@
     };
   });
 
-  // Refresh the static state snapshot when a turn ends (token counts, pending).
-  // Capture the id and bail if it changed before the RPC resolves, so a late
-  // State(A) response can't clobber sess after the view switched to session B.
+  // Refresh the static state snapshot (token counts, pending approvals) on two
+  // triggers: (1) a turn ending, and (2) a gated approval landing — the turn
+  // stays "running" while the daemon blocks on the user's decision, so we can't
+  // wait for running→false to surface the Allow/Deny dock. Both reads capture
+  // the id and bail if it changed before the RPC resolves.
+  function refreshState() {
+    if (!sessionId) return;
+    const id = sessionId;
+    Bridge.State(id)
+      .then((s) => {
+        if (s && id === sessionId) sess = s;
+      })
+      .catch(() => {});
+  }
   $effect(() => {
-    if (store && store.running === false && sessionId) {
-      const id = sessionId;
-      Bridge.State(id)
-        .then((s) => {
-          if (s && id === sessionId) sess = s;
-        })
-        .catch(() => {});
-    }
+    if (store && store.running === false) refreshState();
+  });
+  $effect(() => {
+    // watch the approval signal; refetch so sess.pending populates the gate UI.
+    if (store && store.approvalSeq > 0) refreshState();
   });
 
   // The rendered transcript: completed history plus the in-flight live block,

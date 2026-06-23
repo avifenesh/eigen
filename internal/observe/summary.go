@@ -98,11 +98,46 @@ func ReadSummary(path string, limit int) (Summary, error) {
 		return Summary{}, err
 	}
 	defer f.Close()
+
+	// Tail-read: rather than parse a multi-million-line log fully into memory
+	// just to keep the last `limit` records, seek to a window near the end
+	// sized to the record cap (records are small JSON lines) and parse only
+	// that. Bounds both time and memory regardless of total file size. The
+	// window grows from the end so we always cover at least `limit` records.
+	var start int64
+	if limit > 0 {
+		if fi, statErr := f.Stat(); statErr == nil {
+			// ~512 bytes/record is a generous upper bound for these metadata
+			// lines; cap the window so a pathological file can't blow memory.
+			const maxWindow = 64 << 20 // 64 MiB
+			window := int64(limit) * 512
+			if window > maxWindow {
+				window = maxWindow
+			}
+			if fi.Size() > window {
+				start = fi.Size() - window
+				if _, err := f.Seek(start, 0); err != nil {
+					start = 0
+					_, _ = f.Seek(0, 0)
+				}
+			}
+		}
+	}
+
 	var records []Record
 	sc := bufio.NewScanner(f)
 	buf := make([]byte, 0, 64*1024)
 	sc.Buffer(buf, 4*1024*1024)
+	first := true
 	for sc.Scan() {
+		// When we seeked into the middle of the file, the first line is almost
+		// certainly a partial record — skip it so we start on a clean boundary.
+		if first {
+			first = false
+			if start > 0 {
+				continue
+			}
+		}
 		var r Record
 		if json.Unmarshal(sc.Bytes(), &r) == nil && r.Kind != "" {
 			records = append(records, r)

@@ -13,6 +13,7 @@ import type {
   AgentsDTO,
   DreamingDTO,
   RoutingDTO,
+  ObserveSummaryDTO,
 } from "$lib/types";
 
 export const Bridge = {
@@ -71,4 +72,6 @@ export const Bridge = {
   CurrentMemory: (scope: string): Promise<string> => B.CurrentMemory(scope),
   // routing
   Routing: (): Promise<RoutingDTO | null> => B.Routing(),
+  // observe (historical log summary; live KPIs come from the daemon stats stream)
+  ObserveSummary: (limit: number): Promise<ObserveSummaryDTO | null> => B.ObserveSummary(limit),
 };

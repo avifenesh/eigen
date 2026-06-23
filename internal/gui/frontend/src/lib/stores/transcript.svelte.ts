@@ -37,6 +37,10 @@ export function createTranscript(sessionId: string) {
   let live = $state<TextBlock | null>(null);
   let running = $state(false);
   let truncated = $state(false);
+  // Bumped whenever an `approval` event arrives, so the view can refetch State
+  // (which carries the pending approvals) even though the turn stays "running"
+  // while the daemon blocks waiting for the user's decision.
+  let approvalSeq = $state(0);
 
   let pendingText = "";
   let pendingKind: "text" | "reasoning" = "text";
@@ -127,6 +131,12 @@ export function createTranscript(sessionId: string) {
         resetPending();
         pushHistory({ uid: nextUid(), kind: "note", text: e.text ?? "" });
         break;
+      case "approval":
+        // A gated tool is waiting for the user. The turn stays running, so the
+        // view can't rely on running→false to refetch pending approvals; bump a
+        // signal it watches instead.
+        approvalSeq++;
+        break;
     }
   }
 
@@ -143,6 +153,10 @@ export function createTranscript(sessionId: string) {
     get truncated() {
       return truncated;
     },
+    // Read by the view to trigger a State() refetch when a gated approval lands.
+    get approvalSeq() {
+      return approvalSeq;
+    },
     // seed history from a Bridge.State snapshot (newest CAP messages).
     seed(messages: MessageDTO[], isRunning: boolean) {
       history = mapMessages(messages, nextUid).slice(-CAP);
@@ -153,7 +167,10 @@ export function createTranscript(sessionId: string) {
     start() {
       off = on<StreamEventDTO>(ev.sessionEvent(sessionId), (m) => {
         if (disposed) return;
-        running = true;
+        // Live (non-replay) deltas mean a turn is in flight; replayed buffer
+        // events must NOT flip an idle session to "running" (running is owned by
+        // the State() seed + the `done` event). `done` always clears it.
+        if (!m.replay && m.event.kind !== "done") running = true;
         onEvent(m.event);
       });
     },

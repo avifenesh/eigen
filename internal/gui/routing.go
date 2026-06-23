@@ -56,8 +56,11 @@ func (b *Bridge) Routing() (*RoutingDTO, error) {
 		prov := llm.ResolveProvider(m.Provider, m.ID)
 		counts[prov]++
 		out = append(out, ModelDTO{
-			ID:             m.ID,
-			Provider:       m.Provider,
+			ID: m.ID,
+			// Emit the RESOLVED canonical provider so the view filters on the
+			// same key the rail counts/labels by (raw aliases like "claude"
+			// resolve to "converse"); avoids count/grid disagreement.
+			Provider:       prov,
 			ContextWindow:  m.ContextWindow,
 			Cache:          m.Cache,
 			Context1M:      m.Context1M,
