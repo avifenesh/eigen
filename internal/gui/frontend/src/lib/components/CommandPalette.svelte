@@ -1,39 +1,126 @@
 <script lang="ts">
-  // Command palette (⌘K / Ctrl+K). A single fuzzy-filtered list of REAL actions
-  // only — navigate to any view, or jump to any session. No dead/no-op rows.
-  // Opens on the shortcut, closes on Escape / selection / scrim click. Keyboard
-  // driven: ↑/↓ move, Enter runs. The open listener lives in an $effect with
-  // teardown so it never leaks across mounts.
+  // Command palette (⌘K / Ctrl+K). A fuzzy-filtered, grouped list of REAL
+  // actions only — run a verb, navigate to any view, or jump to any session.
+  // No dead/no-op rows. Opens on the shortcut, closes on Escape / selection /
+  // scrim click. Keyboard: ↑/↓ move, Enter runs. The window keydown listener
+  // lives in an $effect with teardown so it never leaks across mounts.
   import { router, routes, type Route } from "$lib/router.svelte";
   import { sessions } from "$lib/stores/sessions.svelte";
+  import { toasts } from "$lib/stores/toasts.svelte";
+  import { Bridge } from "$lib/bridge";
 
-  type Item =
-    | { kind: "nav"; label: string; hint: string; route: Route }
-    | { kind: "session"; label: string; hint: string; id: string };
+  type Group = "Actions" | "Views" | "Sessions";
+  type Item = {
+    group: Group;
+    label: string;
+    hint: string;
+    glyph: string;
+    run: () => void | Promise<void>;
+    keywords?: string; // extra fuzzy-match text
+  };
 
   let open = $state(false);
   let query = $state("");
   let active = $state(0);
   let input = $state<HTMLInputElement | undefined>(undefined);
 
-  const navItems: Item[] = routes.map((r) => ({
-    kind: "nav" as const,
-    label: r.charAt(0).toUpperCase() + r.slice(1),
-    hint: "view",
-    route: r,
-  }));
+  function go(route: Route) {
+    router.go(route);
+    hide();
+  }
+  async function newSession() {
+    hide();
+    try {
+      const id = await Bridge.NewSession("", "", "");
+      await sessions.refresh();
+      router.go("chat", id);
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : String(e));
+    }
+  }
+  async function pruneEmpty() {
+    hide();
+    try {
+      const removed = await Bridge.PruneSessions();
+      toasts.info(removed.length ? `pruned ${removed.length} empty session${removed.length === 1 ? "" : "s"}` : "no empty sessions");
+      await sessions.refresh();
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // Global actions (verbs the rail+views expose, runnable without the mouse).
+  const actions: Item[] = [
+    { group: "Actions", label: "Start a session", hint: "new", glyph: "✦", run: newSession, keywords: "new chat create" },
+    { group: "Actions", label: "Prune empty sessions", hint: "cleanup", glyph: "⌫", run: pruneEmpty, keywords: "delete remove clean" },
+    { group: "Actions", label: "Refresh feed", hint: "scan", glyph: "↻", run: () => { hide(); router.go("home"); }, keywords: "act on proactive ideas" },
+  ];
+  const navItems: Item[] = routes
+    .filter((r) => r !== "chat") // chat is reached via a session, not a bare view
+    .map((r) => ({
+      group: "Views" as const,
+      label: r.charAt(0).toUpperCase() + r.slice(1),
+      hint: "view",
+      glyph: "→",
+      run: () => go(r),
+    }));
+
+  // Cheap subsequence fuzzy score: all query chars must appear in order; reward
+  // contiguous runs + word-start hits. Returns -1 for no match.
+  function fuzzy(q: string, text: string): number {
+    if (!q) return 0;
+    const t = text.toLowerCase();
+    let ti = 0;
+    let score = 0;
+    let run = 0;
+    let prev = -2;
+    for (const ch of q) {
+      const at = t.indexOf(ch, ti);
+      if (at < 0) return -1;
+      run = at === prev + 1 ? run + 1 : 0;
+      score += 1 + run * 2 + (at === 0 || t[at - 1] === " " || t[at - 1] === "-" ? 3 : 0);
+      prev = at;
+      ti = at + 1;
+    }
+    return score;
+  }
 
   const items = $derived.by<Item[]>(() => {
     const sess: Item[] = sessions.list.map((s) => ({
-      kind: "session" as const,
+      group: "Sessions" as const,
       label: s.title || "untitled session",
       hint: s.model || "session",
-      id: s.id,
+      glyph: "▶",
+      run: () => {
+        router.go("chat", s.id);
+        hide();
+      },
+      keywords: s.dir,
     }));
-    const all = [...navItems, ...sess];
+    const all = [...actions, ...navItems, ...sess];
     const q = query.trim().toLowerCase();
     if (!q) return all;
-    return all.filter((i) => i.label.toLowerCase().includes(q) || i.hint.toLowerCase().includes(q));
+    // Score against label + hint + keywords; keep matches, best first, but
+    // preserve group order as a stable tiebreak so sections stay coherent.
+    const order: Record<Group, number> = { Actions: 0, Views: 1, Sessions: 2 };
+    return all
+      .map((i) => ({ i, s: Math.max(fuzzy(q, i.label), fuzzy(q, i.hint), i.keywords ? fuzzy(q, i.keywords) : -1) }))
+      .filter((x) => x.s >= 0)
+      .sort((a, b) => b.s - a.s || order[a.i.group] - order[b.i.group])
+      .map((x) => x.i);
+  });
+
+  // Rows with a section header injected when the group changes (visual only;
+  // headers aren't selectable — `active` indexes `items`, not the rendered rows).
+  const grouped = $derived.by(() => {
+    const out: { item: Item; index: number; header?: Group }[] = [];
+    let last: Group | null = null;
+    items.forEach((item, index) => {
+      const header = item.group !== last ? item.group : undefined;
+      last = item.group;
+      out.push({ item, index, header });
+    });
+    return out;
   });
 
   // Keep the active index in range as the filtered set changes.
@@ -51,9 +138,7 @@
     open = false;
   }
   function run(i: Item) {
-    if (i.kind === "nav") router.go(i.route);
-    else router.go("chat", i.id);
-    hide();
+    void i.run();
   }
 
   function onWinKey(e: KeyboardEvent) {
@@ -98,26 +183,27 @@
       bind:this={input}
       bind:value={query}
       class="pal__input"
-      placeholder="Jump to a view or session…"
+      placeholder="Run an action, jump to a view or session…"
       aria-label="Command palette filter"
       onkeydown={onListKey}
     />
     <div class="pal__list" role="listbox" aria-label="Commands">
-      {#if items.length === 0}
+      {#if grouped.length === 0}
         <div class="pal__empty">No matches.</div>
       {:else}
-        {#each items as i, idx (i.kind + ":" + (i.kind === "nav" ? i.route : i.id))}
+        {#each grouped as g (g.item.group + ":" + g.item.label)}
+          {#if g.header}<div class="pal__section">{g.header}</div>{/if}
           <button
             class="pal__row"
-            class:pal__row--active={idx === active}
+            class:pal__row--active={g.index === active}
             role="option"
-            aria-selected={idx === active}
-            onmouseenter={() => (active = idx)}
-            onclick={() => run(i)}
+            aria-selected={g.index === active}
+            onmouseenter={() => (active = g.index)}
+            onclick={() => run(g.item)}
           >
-            <span class="pal__glyph" aria-hidden="true">{i.kind === "nav" ? "→" : "▶"}</span>
-            <span class="pal__label">{i.label}</span>
-            <span class="pal__hint">{i.hint}</span>
+            <span class="pal__glyph" aria-hidden="true">{g.item.glyph}</span>
+            <span class="pal__label">{g.item.label}</span>
+            <span class="pal__hint">{g.item.hint}</span>
           </button>
         {/each}
       {/if}
@@ -180,6 +266,16 @@
     text-align: center;
     color: var(--text-muted);
     font-size: var(--fs-body-sm);
+  }
+  .pal__section {
+    padding: var(--sp-4) var(--sp-4) var(--sp-2);
+    font: var(--fw-semibold) var(--fs-micro) / 1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--text-faint);
+  }
+  .pal__section:first-child {
+    padding-top: var(--sp-2);
   }
   .pal__row {
     width: 100%;

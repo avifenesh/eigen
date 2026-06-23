@@ -8,6 +8,7 @@
   import TopBar from "$lib/components/TopBar.svelte";
   import ToastHost from "$lib/components/ToastHost.svelte";
   import CommandPalette from "$lib/components/CommandPalette.svelte";
+  import Shortcuts from "$lib/components/Shortcuts.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import Home from "./views/Home.svelte";
   import Chat from "./views/Chat.svelte";
@@ -84,6 +85,7 @@
     </div>
   </div>
   <CommandPalette />
+  <Shortcuts />
   <ToastHost />
 </div>
 
