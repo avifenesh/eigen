@@ -20,7 +20,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -1238,8 +1237,17 @@ func notifyCmdline(cfg config.Config) string {
 }
 
 // printSessions lists resumable sessions newest-first for the headless --list.
+// The store index spans every agent (eigen + Claude/Codex/OpenCode/…) once
+// Discover has run, and each id is resumable via --resume (foreign transcripts
+// are translated into eigen history on load). When the store is unavailable, it
+// falls back to a direct cross-agent scan so other agents' sessions are still
+// shown as resumable — by path, which --resume detects and translates.
 func printSessions(store *session.Store) {
 	if store == nil {
+		for _, ref := range recentAgentSessions(20) {
+			when := ref.ModTime.Format("2006-01-02 15:04")
+			fmt.Printf("%s  %-16s  %-8s  %s\n", ref.Path, when, ref.Source, "(untitled)")
+		}
 		return
 	}
 	for _, m := range store.List() {
@@ -1507,9 +1515,13 @@ func refreshMemorySummary(ctx context.Context, prov llm.Provider, mem *memory.St
 }
 
 func runDream(prov llm.Provider, mem, gmem *memory.Store) {
-	paths := recentEigenSessions(8)
-	if len(paths) == 0 {
-		fmt.Fprintln(os.Stderr, "eigen: dream: no eigen sessions to reflect on")
+	// Reflect over a WIDER span: recent sessions across every agent (eigen +
+	// Claude + Codex + OpenCode), newest-first, not just eigen's own last
+	// session. A larger count spans more than one session so consolidation can
+	// find patterns across agents.
+	refs := recentAgentSessions(20)
+	if len(refs) == 0 {
+		fmt.Fprintln(os.Stderr, "eigen: dream: no recent sessions to reflect on")
 		return
 	}
 	idx, err := memory.OpenIndex()
@@ -1522,8 +1534,11 @@ func runDream(prov llm.Provider, mem, gmem *memory.Store) {
 	// Build the session list (id + watermark so unchanged sessions are skipped).
 	var sessions []memory.Session
 	var transcripts []string // kept for skill synthesis below
-	for _, p := range paths {
-		msgs, lerr := transcript.Load(p)
+	for _, ref := range refs {
+		// ImportFrom dispatches on Source so Claude/Codex/OpenCode transcripts
+		// parse with the right reader; it falls back to transcript.Load for
+		// eigen-native sessions.
+		msgs, lerr := transcript.ImportFrom(ref.Source, ref.Path)
 		if lerr != nil {
 			continue
 		}
@@ -1532,12 +1547,11 @@ func runDream(prov llm.Provider, mem, gmem *memory.Store) {
 			continue
 		}
 		transcripts = append(transcripts, t)
-		id := strings.TrimSuffix(filepath.Base(p), ".eigen.jsonl")
-		wm := int64(0)
-		if fi, e := os.Stat(p); e == nil {
-			wm = fi.ModTime().Unix() ^ fi.Size()
-		}
-		sessions = append(sessions, memory.Session{ID: id, Transcript: t, Watermark: wm})
+		sessions = append(sessions, memory.Session{
+			ID:         dreamSessionID(ref),
+			Transcript: t,
+			Watermark:  dreamWatermark(ref),
+		})
 	}
 
 	report, rerr := pipe.Run(context.Background(), sessions)
@@ -1580,22 +1594,27 @@ func runDream(prov llm.Provider, mem, gmem *memory.Store) {
 	}
 }
 
-// recentEigenSessions returns up to n newest eigen session file paths.
-func recentEigenSessions(n int) []string {
-	home, _ := os.UserHomeDir()
-	matches, _ := filepath.Glob(filepath.Join(home, ".eigen", "sessions", "*.eigen.jsonl"))
-	sort.Slice(matches, func(i, j int) bool {
-		fi, e1 := os.Stat(matches[i])
-		fj, e2 := os.Stat(matches[j])
-		if e1 != nil || e2 != nil {
-			return false
-		}
-		return fi.ModTime().After(fj.ModTime())
-	})
-	if len(matches) > n {
-		matches = matches[:n]
+// dreamSessionID derives a stable per-session identifier from a cross-agent
+// ref, used as the index key for the watermark/skip-unchanged logic. For
+// file-based sources it is the base filename (eigen's ".eigen.jsonl" suffix
+// stripped for readable parity with the old path); for OpenCode the Path is
+// already the session id. The source is prefixed so two agents can never
+// collide on an identical base name.
+func dreamSessionID(ref sessionRef) string {
+	base := filepath.Base(ref.Path)
+	base = strings.TrimSuffix(base, ".eigen.jsonl")
+	return string(ref.Source) + ":" + base
+}
+
+// dreamWatermark produces the mtime/size signature so an unchanged session is
+// skipped on the next dream. File-based refs mix mtime with size (matching the
+// old eigen path); sources without a file on disk (OpenCode) fall back to the
+// ref's ModTime, which recentAgentSessions already populated from the DB.
+func dreamWatermark(ref sessionRef) int64 {
+	if fi, e := os.Stat(ref.Path); e == nil && !fi.IsDir() {
+		return fi.ModTime().Unix() ^ fi.Size()
 	}
-	return matches
+	return ref.ModTime.Unix()
 }
 
 // printSkills lists discovered skills for --list-skills.

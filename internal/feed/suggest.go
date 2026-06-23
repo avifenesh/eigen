@@ -13,8 +13,10 @@ package feed
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -121,8 +123,39 @@ If nothing is worth suggesting, reply [].`
 	if items == nil {
 		return cached.Items
 	}
+	// Drop ideas we've recently surfaced (this run or earlier) or that the user
+	// dismissed, so the model can't re-propose the same thing scan after scan.
+	items = dedupSuggestions(items)
+	// If dedup emptied a batch the model actually produced, keep the prior cache
+	// rather than flipping the feed to nothing.
+	if len(items) == 0 && len(cached.Items) > 0 {
+		return cached.Items
+	}
+	recordSeenSuggest(items)
 	saveSuggestCache(items)
 	return items
+}
+
+// dedupSuggestions drops suggestions whose key was recently surfaced or
+// dismissed, so ideas don't repeat run over run.
+func dedupSuggestions(items []Item) []Item {
+	seen := loadSeenSuggest()
+	dismissed := loadDismissed()
+	if len(seen) == 0 && len(dismissed) == 0 {
+		return items
+	}
+	out := items[:0:0]
+	for _, it := range items {
+		k := it.Key()
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		if _, ok := dismissed[k]; ok {
+			continue
+		}
+		out = append(out, it)
+	}
+	return out
 }
 
 // parseSuggestions extracts the JSON array from the model reply (leniently:
@@ -169,15 +202,26 @@ func parseSuggestions(out string, dirs []string) []Item {
 	return items
 }
 
+// maxSuggestDirs caps how many projects feed the suggestion prompt. Wider than
+// "just the last session" so ideas draw on recent cross-session activity, but
+// still bounded — this is a single LLM prompt and each dir costs a few cheap
+// git reads.
+const maxSuggestDirs = 12
+
 // suggestContext builds the bounded context snapshot the model reasons over:
 // per project — branch, working-tree summary, recent commit subjects, the
 // README's opening (what the project IS, so feature suggestions land), and
 // the tail of project memory. Cheap, local, read-only.
+//
+// Projects are ordered by most-recent commit so the prompt spans the user's
+// recently-active work rather than being anchored to one last session, then
+// bounded to maxSuggestDirs. Safe when dirs are empty or none are git repos.
 func suggestContext(dirs []string) string {
+	dirs = orderByRecentActivity(dirs)
 	var b strings.Builder
 	n := 0
 	for _, dir := range dirs {
-		if n >= 6 {
+		if n >= maxSuggestDirs {
 			break
 		}
 		if !isGitRepo(dir) {
@@ -213,6 +257,35 @@ func suggestContext(dirs []string) string {
 		b.WriteString("\n")
 	}
 	return strings.TrimSpace(b.String())
+}
+
+// orderByRecentActivity sorts dirs by their last commit time, most recent
+// first, so the (bounded) context window favors the projects the user has
+// actually touched lately across sessions. Non-repos and repos with no commits
+// sort last (timestamp 0) but are kept — the caller skips non-repos anyway.
+// Stable, so equal/zero timestamps preserve the caller's original order.
+func orderByRecentActivity(dirs []string) []string {
+	if len(dirs) < 2 {
+		return dirs
+	}
+	out := append([]string(nil), dirs...)
+	last := make(map[string]int64, len(out))
+	for _, dir := range out {
+		last[dir] = lastCommitUnix(dir)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return last[out[i]] > last[out[j]]
+	})
+	return out
+}
+
+// lastCommitUnix returns the Unix time of HEAD's commit (0 on any error, e.g.
+// not a repo or no commits yet). One cheap local git read.
+func lastCommitUnix(dir string) int64 {
+	out := gitOut(dir, "log", "-1", "--format=%ct")
+	var t int64
+	fmt.Sscanf(out, "%d", &t)
+	return t
 }
 
 // readmeIntro returns the first descriptive lines of the project README —

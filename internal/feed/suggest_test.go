@@ -181,6 +181,81 @@ func TestSuggestStaleCacheBeatsFailure(t *testing.T) {
 	}
 }
 
+func TestScanSuggestDedupAcrossRuns(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := gitRepo(t)
+	writeAndCommit(t, dir, "a.txt", "hello")
+	reply := `[{"title":"x: idea","detail":"d","dir":"` + dir + `","task":"do it"}]`
+	calls := 0
+	s := func(context.Context, string, string) (string, error) {
+		calls++
+		return reply, nil
+	}
+	// First run surfaces the idea and records its key.
+	if items := scanSuggest(context.Background(), []string{dir}, s); len(items) != 1 || calls != 1 {
+		t.Fatalf("first run: items=%d calls=%d", len(items), calls)
+	}
+	// Expire the suggest cache so the model is consulted again, but the
+	// recently-surfaced set should still suppress the repeated idea.
+	expireSuggestCache(t)
+	items := scanSuggest(context.Background(), []string{dir}, s)
+	if calls != 2 {
+		t.Fatalf("stale cache should re-consult the model, calls=%d", calls)
+	}
+	// The same idea was already surfaced → it must not repeat; the prior cache
+	// is served instead of flipping to nothing.
+	if len(items) != 1 || items[0].Title != "x: idea" {
+		t.Fatalf("repeated idea should fall back to cache, got %+v", items)
+	}
+	// A genuinely new idea (different key) must still get through.
+	reply = `[{"title":"x: fresh idea","detail":"d","dir":"` + dir + `","task":"do it"}]`
+	expireSuggestCache(t)
+	items = scanSuggest(context.Background(), []string{dir}, s)
+	if len(items) != 1 || items[0].Title != "x: fresh idea" {
+		t.Fatalf("new idea should surface, got %+v", items)
+	}
+}
+
+// expireSuggestCache rewrites the suggest cache's Scanned time far in the past
+// so the next scan treats it as stale and calls the model again.
+func expireSuggestCache(t *testing.T) {
+	t.Helper()
+	var c suggestCache
+	b, err := os.ReadFile(suggestCachePath())
+	if err != nil {
+		t.Fatalf("read cache: %v", err)
+	}
+	if err := json.Unmarshal(b, &c); err != nil {
+		t.Fatalf("unmarshal cache: %v", err)
+	}
+	c.Scanned = time.Now().Add(-2 * suggestTTL)
+	b, _ = json.Marshal(c)
+	if err := os.WriteFile(suggestCachePath(), b, 0o644); err != nil {
+		t.Fatalf("write cache: %v", err)
+	}
+}
+
+func TestOrderByRecentActivity(t *testing.T) {
+	older := gitRepo(t)
+	newer := gitRepo(t)
+	writeAndCommit(t, older, "a.txt", "x")
+	// Ensure a strictly later commit timestamp for newer.
+	time.Sleep(1100 * time.Millisecond)
+	writeAndCommit(t, newer, "b.txt", "y")
+	got := orderByRecentActivity([]string{older, newer})
+	if len(got) != 2 || got[0] != newer || got[1] != older {
+		t.Fatalf("most-recent project should sort first: %v", got)
+	}
+	// Non-repos / empty input must not panic and preserve order.
+	if got := orderByRecentActivity(nil); got != nil {
+		t.Fatalf("nil dirs should pass through, got %v", got)
+	}
+	plain := t.TempDir()
+	if got := orderByRecentActivity([]string{plain}); len(got) != 1 || got[0] != plain {
+		t.Fatalf("single dir should pass through, got %v", got)
+	}
+}
+
 func TestReadmeIntro(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "README.md"), []byte("# revuto\n\n[![badge](x)](y)\n\nA PR review bot for GitHub.\nIt watches repos and reviews diffs.\n"), 0o644)
