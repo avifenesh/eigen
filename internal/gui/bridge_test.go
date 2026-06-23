@@ -133,7 +133,7 @@ func TestStopPumpCloseOnce(t *testing.T) {
 
 // TestSubscribeEmptyID rejects a blank session id before dialing.
 func TestSubscribeEmptyID(t *testing.T) {
-	b := NewBridge(func() (*daemon.Client, error) { return nil, nil })
+	b := NewBridge(func() (*daemon.Client, error) { return nil, nil }, nil, nil)
 	if err := b.Subscribe("  "); err == nil {
 		t.Fatal("expected error for empty session id")
 	}

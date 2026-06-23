@@ -392,7 +392,7 @@
           </div>
           <div class="dock__sub tnum">{sess.tokens.toLocaleString()} / {sess.maxTokens.toLocaleString()}</div>
           {#if nearLimit}
-            <button class="dock__nudge" onclick={compact} disabled={compacting} title="Compact the conversation to free context">
+            <button class="dock__nudge" onclick={compact} disabled={compacting || (store?.running ?? false)} title={store?.running ? "finish the current turn first" : "Compact the conversation to free context"}>
               near context limit — compact?
             </button>
           {/if}
@@ -607,13 +607,24 @@
             {#snippet trigger(toggle)}
               <Button variant="icon" size="sm" onclick={toggle} title="Session actions">⋯</Button>
             {/snippet}
+            {@const busy = store?.running ?? false}
             <div class="menu">
-              <button class="menu__item" onclick={compact} disabled={compacting}>
+              <button
+                class="menu__item"
+                onclick={compact}
+                disabled={compacting || busy}
+                title={busy ? "finish the current turn first" : undefined}
+              >
                 <span class="menu__glyph" aria-hidden="true">⊟</span>
                 <span class="menu__label">Compact context</span>
                 <span class="menu__hint">free tokens</span>
               </button>
-              <button class="menu__item" onclick={resend}>
+              <button
+                class="menu__item"
+                onclick={resend}
+                disabled={busy}
+                title={busy ? "finish the current turn first" : undefined}
+              >
                 <span class="menu__glyph" aria-hidden="true">↻</span>
                 <span class="menu__label">Resend last turn</span>
                 <span class="menu__hint">retry</span>
@@ -627,7 +638,12 @@
                   </div>
                 </div>
               {:else}
-                <button class="menu__item menu__item--danger" onclick={() => (confirmClear = true)}>
+                <button
+                  class="menu__item menu__item--danger"
+                  onclick={() => (confirmClear = true)}
+                  disabled={busy}
+                  title={busy ? "finish the current turn first" : undefined}
+                >
                   <span class="menu__glyph" aria-hidden="true">⌫</span>
                   <span class="menu__label">Clear conversation</span>
                   <span class="menu__hint">destructive</span>
