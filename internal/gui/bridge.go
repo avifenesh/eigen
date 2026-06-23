@@ -317,6 +317,21 @@ func (b *Bridge) SendInput(id, text string, images []ImageDTO, allowTools []stri
 	return c.Input(id, text, imgs, allowTools)
 }
 
+// SteerInput injects a message mid-turn (between tool rounds) when a turn is
+// running, returning true if it was delivered as a steer (vs starting a fresh
+// turn). The composer routes through this while the session is running.
+func (b *Bridge) SteerInput(id, text string, images []ImageDTO) (bool, error) {
+	c, err := b.control()
+	if err != nil {
+		return false, err
+	}
+	imgs, err := fromImageDTOs(images)
+	if err != nil {
+		return false, err
+	}
+	return c.SteerInput(id, text, imgs)
+}
+
 // Interrupt cancels the in-flight turn.
 func (b *Bridge) Interrupt(id string) error {
 	c, err := b.control()

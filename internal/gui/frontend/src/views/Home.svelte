@@ -11,6 +11,7 @@
   import { router } from "$lib/router.svelte";
   import { sessionDot } from "$lib/status";
   import { Bridge } from "$lib/bridge";
+  import { Browser } from "@wailsio/runtime";
   import type { FeedItemDTO, SessionInfoDTO } from "$lib/types";
   import Button from "$lib/components/Button.svelte";
   import Badge from "$lib/components/Badge.svelte";
@@ -103,6 +104,14 @@
   function openSession(s: SessionInfoDTO) {
     router.go("chat", s.id);
   }
+  function openURL(url?: string) {
+    if (!url) return;
+    try {
+      Browser.OpenURL(url);
+    } catch {
+      window.open(url, "_blank");
+    }
+  }
 </script>
 
 <div class="home selectable">
@@ -148,6 +157,7 @@
             <div class="fc__foot">
               {#if it.dirName}<Badge tone="neutral" truncate>{it.dirName}</Badge>{/if}
               <span class="fc__spacer"></span>
+              {#if it.url}<Button variant="ghost" size="sm" onclick={() => openURL(it.url)}>Open</Button>{/if}
               <Button variant="secondary" size="sm" loading={acting[it.key]} onclick={() => actOn(it)}>Start →</Button>
             </div>
           </div>
@@ -212,6 +222,8 @@
     </div>
     {#if sessions.loading && sessions.count === 0}
       <div class="rows">{#each Array(4) as _, i (i)}<div class="row-skel"></div>{/each}</div>
+    {:else if sessions.error && sessions.count === 0}
+      <p class="zone__empty">Couldn't load sessions — {sessions.error}</p>
     {:else if recent.length === 0}
       <p class="zone__empty">No sessions yet — start one above.</p>
     {:else}
