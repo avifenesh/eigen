@@ -77,6 +77,33 @@ func TestReadTaskHistorySkipsPartialLines(t *testing.T) {
 	}
 }
 
+func TestReadTaskHistoryExportedValidatesIDAndReadsTrail(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	writeTaskLines(t, dir, "bg-9-1",
+		BgTask{ID: "bg-9-1", Status: "running", Attempts: 1, Started: now},
+		BgTask{ID: "bg-9-1", Status: "running", Attempts: 2, Escalated: true, Started: now},
+		BgTask{ID: "bg-9-1", Status: "done", Attempts: 2, Result: "ok", Started: now})
+
+	hist, err := ReadTaskHistory(dir, "bg-9-1")
+	if err != nil {
+		t.Fatalf("ReadTaskHistory: %v", err)
+	}
+	if len(hist) != 3 || hist[0].Attempts != 1 || !hist[1].Escalated || hist[2].Result != "ok" {
+		t.Fatalf("exported history trail wrong: %+v", hist)
+	}
+
+	// Malformed id is the only error; it must not touch the filesystem.
+	if _, err := ReadTaskHistory(dir, "../etc/passwd"); err == nil {
+		t.Fatal("expected error for invalid task id")
+	}
+
+	// Missing task is not an error — observability reads return empty.
+	if got, err := ReadTaskHistory(dir, "bg-9-2"); err != nil || len(got) != 0 {
+		t.Fatalf("missing task should yield empty, no error: got=%+v err=%v", got, err)
+	}
+}
+
 func TestLoadBgTasksSkipsTranscriptsAndPartialLines(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()

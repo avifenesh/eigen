@@ -614,6 +614,38 @@ func TestAgentReadOnlyMetadataFailsClosed(t *testing.T) {
 	}
 }
 
+func TestNormalizeAgentKindCanonicalAndWarns(t *testing.T) {
+	// Canonical names round-trip with no warning.
+	for _, in := range []string{"general", "Search", "  VISION  ", "social"} {
+		kind, warn := normalizeAgentKind(in)
+		if warn != "" {
+			t.Fatalf("kind %q should be accepted, got warning %q", in, warn)
+		}
+		if want := strings.ToLower(strings.TrimSpace(in)); kind != want {
+			t.Fatalf("kind %q normalized to %q, want %q", in, kind, want)
+		}
+	}
+	// Router aliases map to their canonical kind, also without warning.
+	for in, want := range map[string]string{"web": "search", "image": "vision", "x": "social", "code": "general"} {
+		kind, warn := normalizeAgentKind(in)
+		if warn != "" || kind != want {
+			t.Fatalf("alias %q normalized to %q (warn=%q), want %q", in, kind, warn, want)
+		}
+	}
+	// Empty/unset → no hint, no warning.
+	if kind, warn := normalizeAgentKind("  "); kind != "" || warn != "" {
+		t.Fatalf("empty kind should be silent, got kind=%q warn=%q", kind, warn)
+	}
+	// An unrecognized but non-empty kind is dropped WITH a warning (the fix).
+	kind, warn := normalizeAgentKind("frontend")
+	if kind != "" {
+		t.Fatalf("unknown kind should drop to empty, got %q", kind)
+	}
+	if !strings.Contains(warn, "frontend") || !strings.Contains(warn, "dropped") {
+		t.Fatalf("unknown kind should warn about the dropped hint, got %q", warn)
+	}
+}
+
 func TestDisabledMarketplaceIsNotSearchedForInstalls(t *testing.T) {
 	dir := t.TempDir()
 	r := NewRegistryAt(dir)

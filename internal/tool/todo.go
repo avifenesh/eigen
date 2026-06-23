@@ -4,12 +4,33 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 )
 
 // validTodoStatus is the allowed lifecycle for a task.
 var validTodoStatus = map[string]bool{
 	"pending": true, "in_progress": true, "completed": true, "cancelled": true,
+}
+
+// validTodoPriority is the allowed (optional) priority band for a task.
+var validTodoPriority = map[string]bool{
+	"high": true, "medium": true, "low": true,
+}
+
+// todoPriorityRank orders todos for rendering: lower rank sorts first. An unset
+// or unrecognized priority sorts last (after the explicit high/medium/low band).
+func todoPriorityRank(priority string) int {
+	switch priority {
+	case "high":
+		return 0
+	case "medium":
+		return 1
+	case "low":
+		return 2
+	default:
+		return 3
+	}
 }
 
 // Todo returns the plan-tracking tool. The model passes the FULL task list on
@@ -53,7 +74,6 @@ func Todo() Definition {
 				return "", fmt.Errorf("invalid arguments: %w", err)
 			}
 			inProgress := 0
-			var b strings.Builder
 			done := 0
 			for i, t := range in.Todos {
 				if t.Content == "" {
@@ -62,20 +82,45 @@ func Todo() Definition {
 				if !validTodoStatus[t.Status] {
 					return "", fmt.Errorf("todo %d: invalid status %q", i+1, t.Status)
 				}
+				if t.Priority != "" && !validTodoPriority[t.Priority] {
+					return "", fmt.Errorf("todo %d: invalid priority %q", i+1, t.Priority)
+				}
 				if t.Status == "in_progress" {
 					inProgress++
 				}
 				if t.Status == "completed" {
 					done++
 				}
-				b.WriteString(todoGlyph(t.Status) + " " + t.Content + "\n")
 			}
 			if inProgress > 1 {
 				return "", fmt.Errorf("only one task may be in_progress at a time (%d were)", inProgress)
 			}
+			// Render highest-priority work first; SliceStable keeps the model's
+			// order within a priority band (and across unset priorities).
+			order := make([]int, len(in.Todos))
+			for i := range order {
+				order[i] = i
+			}
+			sort.SliceStable(order, func(a, b int) bool {
+				return todoPriorityRank(in.Todos[order[a]].Priority) < todoPriorityRank(in.Todos[order[b]].Priority)
+			})
+			var b strings.Builder
+			for _, i := range order {
+				t := in.Todos[i]
+				b.WriteString(todoGlyph(t.Status) + " " + t.Content + todoPriorityTag(t.Priority) + "\n")
+			}
 			return fmt.Sprintf("plan updated (%d/%d done):\n%s", done, len(in.Todos), strings.TrimRight(b.String(), "\n")), nil
 		},
 	}
+}
+
+// todoPriorityTag renders an optional priority suffix for a checklist line. An
+// unset priority yields no tag so the output stays clean when it's omitted.
+func todoPriorityTag(priority string) string {
+	if priority == "" {
+		return ""
+	}
+	return " (" + priority + ")"
 }
 
 // todoGlyph maps a status to a plain-text marker for the tool's text result.

@@ -115,7 +115,7 @@ func wireToEvent(e daemon.WireEvent) agent.Event {
 	default:
 		k = agent.EventNote
 	}
-	return agent.Event{Kind: k, Step: e.Step, Text: e.Text, ToolName: e.ToolName, ToolID: e.ToolID, ToolArgs: e.ToolArgs, Result: e.Result, IsError: e.IsError, InTokens: e.InTokens, OutTokens: e.OutTokens}
+	return agent.Event{Kind: k, Step: e.Step, Text: e.Text, ToolName: e.ToolName, ToolID: e.ToolID, ToolArgs: e.ToolArgs, Result: e.Result, IsError: e.IsError, InTokens: e.InTokens, OutTokens: e.OutTokens, Provider: e.Provider, Model: e.Model, CacheReadTokens: e.CacheReadTokens, CacheWriteTokens: e.CacheWriteTokens}
 }
 
 // Send forwards the task and blocks until the daemon reports the turn ended,

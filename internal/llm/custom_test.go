@@ -176,6 +176,96 @@ func TestCustomOpenAIResponsesUsesWireModelAndEndpoint(t *testing.T) {
 	}
 }
 
+// An empty completed Responses reply is the Bedrock/Responses quirk: Complete
+// must re-request (bounded by maxEmptyRetries) the way Mantle.Complete does
+// rather than hand back a do-nothing turn. The stub returns empty until the
+// final allowed attempt, then real text.
+func TestCustomOpenAIResponsesRetriesEmptyCompletion(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls <= maxEmptyRetries { // empty completed responses on the first attempts
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"output": []map[string]any{},
+				"usage":  map[string]any{"input_tokens": 1, "output_tokens": 0},
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"output": []map[string]any{{
+				"type":    "message",
+				"content": []map[string]any{{"type": "output_text", "text": "recovered"}},
+			}},
+			"usage": map[string]any{"input_tokens": 1, "output_tokens": 1},
+		})
+	}))
+	defer srv.Close()
+	if err := UpsertCustomProvider(CustomProvider{
+		Name:    "retrylab",
+		Type:    "openai",
+		API:     "responses",
+		BaseURL: srv.URL + "/v1/responses",
+		NoAuth:  true,
+		Models:  []CustomModel{{Name: "friendly-retry", ID: "wire-retry"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := New("retrylab", "friendly-retry")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := p.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Text != "recovered" {
+		t.Fatalf("expected retried text %q, got %q", "recovered", out.Text)
+	}
+	if want := maxEmptyRetries + 1; calls != want {
+		t.Fatalf("expected %d attempts (%d empty + 1 success), got %d", want, maxEmptyRetries, calls)
+	}
+}
+
+// When every attempt comes back empty, Complete stops after maxEmptyRetries+1
+// requests and returns the (empty) response rather than looping forever.
+func TestCustomOpenAIResponsesEmptyCompletionBounded(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"output": []map[string]any{},
+			"usage":  map[string]any{"input_tokens": 1, "output_tokens": 0},
+		})
+	}))
+	defer srv.Close()
+	if err := UpsertCustomProvider(CustomProvider{
+		Name:    "retrylab",
+		Type:    "openai",
+		API:     "responses",
+		BaseURL: srv.URL + "/v1/responses",
+		NoAuth:  true,
+		Models:  []CustomModel{{Name: "friendly-retry", ID: "wire-retry"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := New("retrylab", "friendly-retry")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := p.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Text != "" || len(out.ToolCalls) != 0 {
+		t.Fatalf("expected empty response after exhausting retries, got %+v", out)
+	}
+	if want := maxEmptyRetries + 1; calls != want {
+		t.Fatalf("expected bounded %d attempts, got %d", want, calls)
+	}
+}
+
 func TestCustomAnthropicUsesWireModelEndpointAndVersion(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("ANT_KEY", "secret")

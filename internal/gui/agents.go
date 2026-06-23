@@ -107,3 +107,19 @@ func (b *Bridge) AgentTranscript(id string) (string, error) {
 	}
 	return string(data), nil
 }
+
+// AgentHistory returns a task's full append-only state trail (attempt 1
+// failed->escalating, attempt 2, overflow notes, terminal) so the board can
+// show why a task retried/escalated. Records are in append order, oldest
+// first. A missing task yields an empty slice; only a malformed id errors.
+func (b *Bridge) AgentHistory(id string) ([]BgTaskDTO, error) {
+	hist, err := agent.ReadTaskHistory(agent.TasksDir(), id)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]BgTaskDTO, 0, len(hist))
+	for _, t := range hist {
+		out = append(out, toBgTaskDTO(t))
+	}
+	return out, nil
+}

@@ -249,22 +249,33 @@ func Models() []ModelInfo {
 // Lookup returns the catalog entry for a model id, matching exactly first, then
 // by prefix (so versioned/region-qualified ids still resolve). The boolean
 // reports whether a match was found.
+//
+// Prefix matching is one-directional: a catalog id must be a prefix of the
+// queried model (a region/version-qualified id like
+// "us.anthropic.claude-opus-4-8-20250101" resolves to the catalogued
+// "us.anthropic.claude-opus-4-8"). The reverse direction is deliberately NOT
+// matched — a truncated query like "gpt-5" must not silently inherit the caps
+// of a longer catalog id like "gpt-5.5". When several catalog ids are prefixes
+// of the query, the LONGEST (most specific) wins.
 func Lookup(model string) (ModelInfo, bool) {
 	if model == "" {
 		return ModelInfo{}, false
 	}
 	_, model = ParseRef(model) // tag-blind: capability lookup is about the id
-	for _, m := range Models() {
+	models := Models()
+	for _, m := range models {
 		if m.ID == model {
 			return m, true
 		}
 	}
-	for _, m := range Models() {
-		if strings.HasPrefix(model, m.ID) || strings.HasPrefix(m.ID, model) {
-			return m, true
+	var best ModelInfo
+	found := false
+	for _, m := range models {
+		if strings.HasPrefix(model, m.ID) && (!found || len(m.ID) > len(best.ID)) {
+			best, found = m, true
 		}
 	}
-	return ModelInfo{}, false
+	return best, found
 }
 
 // HasVision reports whether a model accepts image inputs.

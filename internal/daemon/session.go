@@ -399,13 +399,18 @@ func (s *Session) finishTurn(ctx context.Context, err error) {
 // var so tests can shrink it.
 var backgroundedNotifyMin = 10 * time.Second
 
-// interrupt cancels the in-flight turn, if any.
-func (s *Session) interrupt() {
+// interrupt cancels the in-flight turn, if any. It returns true only when a
+// turn was actually running (s.cancel != nil) and got cancelled, so a caller
+// can distinguish "interrupted a running turn" from "nothing to interrupt".
+func (s *Session) interrupt() bool {
 	s.mu.Lock()
-	if s.cancel != nil {
-		s.cancel()
-	}
+	cancel := s.cancel
 	s.mu.Unlock()
+	if cancel == nil {
+		return false
+	}
+	cancel()
+	return true
 }
 
 // waitUntilIdle waits briefly for an interrupted in-flight turn to unwind.

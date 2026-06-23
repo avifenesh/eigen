@@ -148,6 +148,61 @@ func TestSetModelRefSplitsProvider(t *testing.T) {
 	}
 }
 
+func TestTelegramTokenSetGetDescribeAgree(t *testing.T) {
+	// Regression: Set + Get handled telegram_token but Fields()/Keys() omitted
+	// it, so `/config telegram_token` (describe) reported "unknown key" even
+	// though setting it worked. Set, Get, describe (FieldFor), and View must
+	// all agree the key exists.
+	var c Config
+	if err := Set(&c, "telegram_token", "123:secret"); err != nil {
+		t.Fatalf("Set(telegram_token): %v", err)
+	}
+	if c.TelegramToken != "123:secret" {
+		t.Fatalf("token not stored: %q", c.TelegramToken)
+	}
+
+	// Describe path: FieldFor must return a real (non-zero) field.
+	f := FieldFor("telegram_token")
+	if f.Key != "telegram_token" {
+		t.Fatalf("FieldFor(telegram_token) returned zero Field — describe would report unknown key")
+	}
+	if !f.Secret {
+		t.Fatal("telegram_token must be marked Secret so it stays masked/file-only")
+	}
+	if len(f.Options) != 0 || f.Multi {
+		t.Fatalf("telegram_token should be free-text, got %+v", f)
+	}
+
+	// Keys() derives from Fields(): the key must be listed.
+	found := false
+	for _, k := range Keys() {
+		if k == "telegram_token" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("Keys() must include telegram_token")
+	}
+
+	// Get masks the secret (never echoes the raw token).
+	if got := Get(c, "telegram_token"); got != "set" {
+		t.Fatalf("Get should mask a set token as %q, got %q", "set", got)
+	}
+	if got := Get(Config{}, "telegram_token"); got != "" {
+		t.Fatalf("Get should report unset token as empty, got %q", got)
+	}
+
+	// View must render the key (so TestViewRendersAllKeys + describe stay aligned)
+	// without leaking the raw secret.
+	v := View(c)
+	if !strings.Contains(v, "telegram_token") {
+		t.Fatalf("View missing telegram_token:\n%s", v)
+	}
+	if strings.Contains(v, "123:secret") {
+		t.Fatalf("View leaked the raw token:\n%s", v)
+	}
+}
+
 func TestLoadFromNormalizesRef(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/config.json"

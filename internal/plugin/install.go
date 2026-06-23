@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/skill"
 )
 
@@ -496,7 +497,11 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 			return nil, fmt.Errorf("install agent %q: %w", af.Name, err)
 		}
 		res.Plugin.Agents = append(res.Plugin.Agents, instName)
-		res.Plugin.AgentRoles = append(res.Plugin.AgentRoles, installedAgentRole(instName, af))
+		role, kindWarn := installedAgentRole(instName, af)
+		if kindWarn != "" {
+			res.Warnings = append(res.Warnings, fmt.Sprintf("agent %q: %s", af.Name, kindWarn))
+		}
+		res.Plugin.AgentRoles = append(res.Plugin.AgentRoles, role)
 	}
 
 	if unwiredApps := comps.Apps - len(comps.AppServers); unwiredApps > 0 {
@@ -705,26 +710,66 @@ func (r *Registry) installAgentFile(instName, content string, overwrite bool) er
 	return os.WriteFile(dst, []byte(toEigenRoot(content)), 0o644)
 }
 
-func installedAgentRole(instName string, af AgentFile) InstalledAgentRole {
+// installedAgentRole builds the read-only routing metadata for a plugin agent.
+// A second return value carries a non-fatal warning when the agent declared a
+// routing kind we could not honor, so the caller can surface it on the install
+// result instead of silently dropping the hint.
+func installedAgentRole(instName string, af AgentFile) (InstalledAgentRole, string) {
 	tools, readOnly := normalizeAgentTools(af.Tools, af.ReadOnly, af.ReadOnlySet)
+	kind, warn := normalizeAgentKind(af.Kind)
 	return InstalledAgentRole{
 		Name:        instName,
 		SourceName:  af.Name,
 		Description: af.Description,
-		Kind:        normalizeAgentKind(af.Kind),
+		Kind:        kind,
 		Difficulty:  normalizeAgentDifficulty(af.Difficulty),
 		Model:       strings.TrimSpace(af.Model),
 		Tools:       tools,
 		ReadOnly:    readOnly,
+	}, warn
+}
+
+// normalizeAgentKind validates a plugin agent's declared routing kind against
+// the router's canonical TaskKind set (llm.ParseTaskKind) rather than a list
+// duplicated here, mapping any accepted alias (e.g. "web"→"search") to its
+// canonical name. It returns the canonical kind plus a non-empty warning when a
+// declared kind is recognized by neither — so the dropped hint is surfaced, not
+// swallowed. An empty/unset kind is fine (no hint, no warning).
+func normalizeAgentKind(kind string) (string, string) {
+	trimmed := strings.TrimSpace(kind)
+	if trimmed == "" {
+		return "", ""
+	}
+	tk, ok := llm.ParseTaskKind(trimmed)
+	if !ok {
+		return "", fmt.Sprintf("agent routing kind %q is not recognized (expected one of %s) — routing hint dropped", trimmed, strings.Join(canonicalAgentKinds(), ", "))
+	}
+	return canonicalAgentKindName(tk), ""
+}
+
+// canonicalAgentKindName renders a router TaskKind as its canonical string,
+// keeping install metadata aligned with the llm package's enum.
+func canonicalAgentKindName(tk llm.TaskKind) string {
+	switch tk {
+	case llm.TaskSearch:
+		return "search"
+	case llm.TaskVision:
+		return "vision"
+	case llm.TaskSocial:
+		return "social"
+	default:
+		return "general"
 	}
 }
 
-func normalizeAgentKind(kind string) string {
-	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "general", "search", "vision", "social":
-		return strings.ToLower(strings.TrimSpace(kind))
-	default:
-		return ""
+// canonicalAgentKinds lists the canonical kind names (for warning messages),
+// derived from the router's TaskKind constants.
+func canonicalAgentKinds() []string {
+	return []string{
+		canonicalAgentKindName(llm.TaskGeneral),
+		canonicalAgentKindName(llm.TaskSearch),
+		canonicalAgentKindName(llm.TaskVision),
+		canonicalAgentKindName(llm.TaskSocial),
 	}
 }
 

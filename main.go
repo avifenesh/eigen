@@ -519,13 +519,20 @@ func main() {
 			store, _ := session.Open()
 			history := importResume(store, *resumeFile, *from, *sessionID)
 			cwd, _ := os.Getwd()
-			// Send the daemon a CONCRETE model id, never an empty string. An empty
+			// Send the daemon a CONCRETE model REF, never an empty string. An empty
 			// *model (the default, no config/flag) would let the daemon fall through
 			// to ITS own default (cfg.Provider → converse → Opus), diverging from the
 			// flag-help/direct-path default (mantle / openai.gpt-5.5). effectiveModel
 			// fills in the provider's default model, so the daemon and direct paths
-			// agree on one default. The catalog reconciles provider from the model id.
-			sid, nerr := dc.NewSession(cwd, effectiveModel(*provider, *model), *perm, history)
+			// agree on one default.
+			//
+			// The protocol carries only a model id (no provider field), and the
+			// daemon resolves the provider from cfg.Provider/converse — so a bare
+			// model id would silently drop `--provider grok`. llm.Ref folds the
+			// provider INTO the ref ("grok:<id>") for ids the catalog doesn't already
+			// self-tag, so the daemon build honors the chosen provider; for known ids
+			// the catalog reconciles the provider from the id (no prefix needed).
+			sid, nerr := dc.NewSession(cwd, llm.Ref(*provider, effectiveModel(*provider, *model)), *perm, history)
 			if nerr != nil {
 				fail(fmt.Errorf("daemon session: %w", nerr))
 			}

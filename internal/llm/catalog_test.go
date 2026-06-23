@@ -115,6 +115,39 @@ func TestLookupPrefixAndUnknown(t *testing.T) {
 	}
 }
 
+// TestLookupNoReversePrefix guards against the bug where a truncated query
+// silently inherited a longer catalog id's capabilities (APP-048). A query that
+// is a *prefix* of a catalog id (but not present itself) must NOT match — the
+// only legitimate prefix direction is catalog-id-is-a-prefix-of-query.
+func TestLookupNoReversePrefix(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	// "gpt-5" is not a catalogued id; it must not inherit "gpt-5.5"/"gpt-5.4".
+	if m, ok := Lookup("gpt-5"); ok {
+		t.Fatalf("truncated query %q must not reverse-prefix-match a longer catalog id, got %+v", "gpt-5", m)
+	}
+	// "glm-4" must not inherit "glm-4.7"/"glm-4.6"/"glm-4.5".
+	if m, ok := Lookup("glm-4"); ok {
+		t.Fatalf("truncated query %q must not reverse-prefix-match a longer catalog id, got %+v", "glm-4", m)
+	}
+	// "openai.gpt-5" IS a catalogued id (mantle) and must still resolve exactly,
+	// not be confused by the longer "openai.gpt-5.5"/"openai.gpt-5.4" siblings.
+	if m, ok := Lookup("openai.gpt-5"); !ok || m.ID != "openai.gpt-5" {
+		t.Fatalf("openai.gpt-5 should resolve to its own exact entry, got %+v (ok=%v)", m, ok)
+	}
+}
+
+// TestLookupLongestPrefixWins ensures that when multiple catalog ids are
+// prefixes of the query, the most specific (longest) id wins rather than the
+// first iterated. A versioned "openai.gpt-5.5-2026..." must resolve to
+// "openai.gpt-5.5" and not the shorter "openai.gpt-5".
+func TestLookupLongestPrefixWins(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m, ok := Lookup("openai.gpt-5.5-2026-01-01")
+	if !ok || m.ID != "openai.gpt-5.5" {
+		t.Fatalf("versioned gpt-5.5 should pick the longest prefix openai.gpt-5.5, got %+v (ok=%v)", m, ok)
+	}
+}
+
 func TestGrokAndGLMCatalog(t *testing.T) {
 	// grok-build: large window + live search.
 	gb, ok := Lookup("grok-build")

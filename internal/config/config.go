@@ -302,6 +302,7 @@ func View(c Config) string {
 	fmt.Fprintf(&b, "%-14s = %d\n", "max_tokens", c.MaxTokens)
 	fmt.Fprintf(&b, "%-14s = %s\n", "tts_cmd", val(c.TTSCmd))
 	fmt.Fprintf(&b, "%-14s = %s\n", "notify_cmd", val(c.NotifyCmd))
+	fmt.Fprintf(&b, "%-14s = %s\n", "telegram_token", val(Get(c, "telegram_token")))
 	fmt.Fprintf(&b, "%-14s = %s\n", "judge_model", val(c.JudgeModel))
 	fmt.Fprintf(&b, "%-14s = %t\n", "dream_on_idle", c.DreamOnIdle)
 	fmt.Fprintf(&b, "%-14s = %d\n", "idle_minutes", c.IdleMinutes)

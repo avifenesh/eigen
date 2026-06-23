@@ -56,6 +56,24 @@ func fakeServer(r io.Reader, w io.Writer) {
 						{"type": "image", "mimeType": "image/png", "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="},
 					},
 				}
+			} else if p.Name == "err_text" {
+				// isError with an explicit text message — passed through verbatim.
+				resp["result"] = map[string]any{
+					"isError": true,
+					"content": []map[string]any{{"type": "text", "text": "boom: bad input"}},
+				}
+			} else if p.Name == "err_image" {
+				// isError where the detail lives in a (decodable) image block and
+				// the text is empty — the classic blank-error case.
+				resp["result"] = map[string]any{
+					"isError": true,
+					"content": []map[string]any{
+						{"type": "image", "mimeType": "image/png", "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="},
+					},
+				}
+			} else if p.Name == "err_empty" {
+				// isError with no content at all.
+				resp["result"] = map[string]any{"isError": true, "content": []map[string]any{}}
 			} else {
 				resp["result"] = map[string]any{
 					"content": []map[string]any{{"type": "text", "text": "called " + p.Name + " with " + string(p.Arguments)}},
@@ -499,5 +517,43 @@ func TestCallToolRichPreservesImages(t *testing.T) {
 	txt, err := c.CallTool(context.Background(), "shot", json.RawMessage(`{}`))
 	if err != nil || txt != "screenshot taken" {
 		t.Fatalf("CallTool text path: %q %v", txt, err)
+	}
+}
+
+func TestCallToolRichIsErrorFallbacks(t *testing.T) {
+	c := newTestClient(t)
+	defer c.Close()
+	c.serverName = "mocksrv" // exercise the provenance suffix
+
+	// A textual error is surfaced verbatim.
+	if _, err := c.CallToolRich(context.Background(), "err_text", json.RawMessage(`{}`)); err == nil {
+		t.Fatal("err_text should return an error")
+	} else if err.Error() != "boom: bad input" {
+		t.Fatalf("err_text message = %q, want verbatim text", err.Error())
+	}
+
+	// isError with detail only in an image block + empty text must not bubble a
+	// blank error: it gets a named fallback that notes the image block.
+	_, err := c.CallToolRich(context.Background(), "err_image", json.RawMessage(`{}`))
+	if err == nil {
+		t.Fatal("err_image should return an error")
+	}
+	msg := err.Error()
+	if msg == "" {
+		t.Fatal("err_image returned a blank error message")
+	}
+	for _, want := range []string{`"err_image"`, "no message", `server "mocksrv"`, "1 image block"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("err_image message %q missing %q", msg, want)
+		}
+	}
+
+	// isError with no content at all also gets a non-blank, named fallback.
+	_, err = c.CallToolRich(context.Background(), "err_empty", json.RawMessage(`{}`))
+	if err == nil || err.Error() == "" {
+		t.Fatalf("err_empty should return a non-blank error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), `"err_empty"`) || !strings.Contains(err.Error(), "no message") {
+		t.Fatalf("err_empty message = %q, want named no-message fallback", err.Error())
 	}
 }

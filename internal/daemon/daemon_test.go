@@ -251,6 +251,39 @@ func TestInterruptEmitsTerminalNote(t *testing.T) {
 	}
 }
 
+func TestInterruptReportsWhetherTurnWasRunning(t *testing.T) {
+	// interrupt() must return true only when a turn was actually in flight, so a
+	// view can tell "interrupted a running turn" from "nothing to interrupt".
+	reg, _ := tool.NewRegistry()
+	a := &agent.Agent{Provider: blockingProvider{}, Tools: reg}
+	s := newSession("x", "/tmp", "m", a)
+
+	// Idle session: nothing to interrupt.
+	if s.interrupt() {
+		t.Fatal("interrupt on an idle session must return false")
+	}
+
+	// Running turn: interrupt cancels it and reports true.
+	if !s.send("go", nil, nil) {
+		t.Fatal("send should start")
+	}
+	deadline := time.After(2 * time.Second)
+	for {
+		if s.state().Running {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("turn should be running")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	if !s.interrupt() {
+		t.Fatal("interrupt on a running turn must return true")
+	}
+}
+
 // blockingProvider hangs until ctx is cancelled (to test interrupt).
 type blockingProvider struct{}
 

@@ -530,3 +530,34 @@ func TestMultiWindowStress(t *testing.T) {
 	}()
 	wg.Wait()
 }
+
+// TestWireToEventDoneAttribution covers the EventDone attribution carried over
+// the socket: provider/model and prompt-cache hits/writes must survive the
+// WireEvent round-trip so daemon sessions get per-turn model attribution and a
+// cache-hit signal (not empty strings and zeroed cache tokens).
+func TestWireToEventDoneAttribution(t *testing.T) {
+	in := daemon.WireEvent{
+		Kind:             "done",
+		Step:             3,
+		Text:             "final answer",
+		InTokens:         120,
+		OutTokens:        45,
+		Provider:         "anthropic",
+		Model:            "claude-opus",
+		CacheReadTokens:  90,
+		CacheWriteTokens: 30,
+	}
+	got := wireToEvent(in)
+	if got.Kind != agent.EventDone {
+		t.Fatalf("kind: got %v want EventDone", got.Kind)
+	}
+	if got.Provider != "anthropic" || got.Model != "claude-opus" {
+		t.Fatalf("attribution lost: provider=%q model=%q", got.Provider, got.Model)
+	}
+	if got.CacheReadTokens != 90 || got.CacheWriteTokens != 30 {
+		t.Fatalf("cache tokens lost: read=%d write=%d", got.CacheReadTokens, got.CacheWriteTokens)
+	}
+	if got.InTokens != 120 || got.OutTokens != 45 {
+		t.Fatalf("usage tokens lost: in=%d out=%d", got.InTokens, got.OutTokens)
+	}
+}

@@ -274,12 +274,13 @@ func (s *Server) handle(conn net.Conn) {
 				}
 			})
 		case "interrupt":
-			if sess := s.host.Get(req.ID); sess != nil {
-				sess.interrupt()
-				send(Response{Type: "ok"})
-			} else {
-				send(Response{Type: "error", Error: "no such session"})
-			}
+			// Route through withLiveSession so a cold (unloaded) session hydrates
+			// rather than silently swallowing the interrupt, and surface whether a
+			// turn was actually running — a view must be able to tell "interrupted
+			// a running turn" from "nothing to interrupt".
+			withLiveSession(req.ID, func(sess *Session) {
+				send(Response{Type: "ok", Interrupted: sess.interrupt()})
+			})
 		case "input":
 			withLiveSession(req.ID, func(sess *Session) {
 				if sess.send(req.Text, req.Images, req.AllowTools) {

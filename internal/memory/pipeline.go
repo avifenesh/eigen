@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -399,15 +400,19 @@ func splitAtRuneBoundary(s string, limit int) (string, string) {
 	return s[:cut], s[cut:]
 }
 
-// RegenSummary regenerates the small injected memory_summary.md from MEMORY.md. No-op
-// without a Summarize callback or when memory is empty.
+// RegenSummary regenerates the small injected memory_summary.md from MEMORY.md.
+// No-op without a Summarize callback. When MEMORY.md is empty/whitespace there is
+// nothing to distill, so the stale distilled summary is REMOVED (rather than left
+// behind): Store.Injected() prefers memory_summary.md when present, so keeping it
+// would inject a summary of memory the user has cleared — injected memory must not
+// diverge from the curated tier. Returns whether it changed anything on disk.
 func (p *Pipeline) RegenSummary(ctx context.Context) (bool, error) {
 	if p.Store == nil || p.Summarize == nil {
 		return false, nil
 	}
 	mem := p.Store.Read()
 	if strings.TrimSpace(mem) == "" {
-		return false, nil
+		return p.removeStaleSummary()
 	}
 	sum, err := p.Summarize(ctx, mem)
 	if err != nil || strings.TrimSpace(sum) == "" {
@@ -417,6 +422,33 @@ func (p *Pipeline) RegenSummary(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// removeStaleSummary deletes the distilled summary tier(s) so Store.Injected()
+// falls back to (the now-empty) MEMORY.md instead of serving a summary of memory
+// the user cleared. Removes both the current memory_summary.md and the legacy
+// SUMMARY.md that Injected() also reads. Returns whether any file was removed
+// (so callers only report / commit when something actually changed).
+func (p *Pipeline) removeStaleSummary() (bool, error) {
+	if p.Store == nil {
+		return false, nil
+	}
+	changed := false
+	for _, path := range []string{p.Store.SummaryPath(), p.Store.legacySummaryPath()} {
+		if path == "" {
+			continue
+		}
+		err := os.Remove(path)
+		switch {
+		case err == nil:
+			changed = true
+		case os.IsNotExist(err):
+			// nothing to remove for this tier
+		default:
+			return changed, err
+		}
+	}
+	return changed, nil
 }
 
 // Run is the full per-scope pipeline: stage1 the given sessions → consolidate if

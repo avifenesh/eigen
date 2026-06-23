@@ -651,24 +651,32 @@ func (p *customOpenAIResponses) Complete(ctx context.Context, req Request) (*Res
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
-	raw, status, err := httpJSON(ctx, p.http, p.baseURL+"/responses", p.headers(), body, nil)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", p.name, err)
-	}
-	if status < 200 || status >= 300 {
-		return nil, fmt.Errorf("%s HTTP %d: %s", p.name, status, string(raw))
-	}
-	out, st, reason, err := parseReply(raw)
-	if err != nil {
-		return nil, err
-	}
-	if st == "incomplete" {
-		if reason == "" {
-			reason = "unknown"
+	// Custom Responses endpoints hit the same empty-completed-response quirk as
+	// Bedrock Mantle, so re-request bounded by maxEmptyRetries the way
+	// Mantle.Complete does rather than returning a do-nothing turn.
+	for attempt := 0; ; attempt++ {
+		raw, status, err := httpJSON(ctx, p.http, p.baseURL+"/responses", p.headers(), body, nil)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", p.name, err)
 		}
-		return nil, fmt.Errorf("%s response incomplete (%s): refusing possibly-truncated output", p.name, reason)
+		if status < 200 || status >= 300 {
+			return nil, fmt.Errorf("%s HTTP %d: %s", p.name, status, string(raw))
+		}
+		out, st, reason, err := parseReply(raw)
+		if err != nil {
+			return nil, err
+		}
+		if st == "incomplete" {
+			if reason == "" {
+				reason = "unknown"
+			}
+			return nil, fmt.Errorf("%s response incomplete (%s): refusing possibly-truncated output", p.name, reason)
+		}
+		if out.Text != "" || len(out.ToolCalls) > 0 || attempt >= maxEmptyRetries {
+			return out, nil
+		}
+		// Empty completed response: re-request (the same quirk Mantle retries).
 	}
-	return out, nil
 }
 
 // Stream POSTs stream:true to /responses and assembles the SSE with the shared

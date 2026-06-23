@@ -48,6 +48,11 @@ func (b *Bridge) Config() (*ConfigDTO, error) {
 	fields := config.Fields()
 	out := make([]ConfigFieldDTO, 0, len(fields))
 	for _, f := range fields {
+		// Secret fields (e.g. telegram_token) stay file-only: the form never
+		// surfaces a credential, even the masked "set" placeholder.
+		if f.Secret {
+			continue
+		}
 		opts := f.Options
 		if f.Dynamic != "" {
 			opts = dynamicOptions(f.Dynamic)

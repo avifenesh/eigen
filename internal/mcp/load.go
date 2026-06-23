@@ -58,6 +58,13 @@ type mcpConfig struct {
 
 const connectTimeout = 15 * time.Second
 
+// connectFailCooldown is how long a failed lazy connect is remembered so that
+// repeated tool calls fail fast (returning the cached error) instead of each
+// spawning a fresh subprocess and blocking up to connectTimeout before failing
+// the same way. It's short enough that a server which comes up after a transient
+// failure recovers on the next call past the window.
+const connectFailCooldown = 5 * time.Second
+
 // Handle is a per-session MCP resource returned by LoadTools. It may represent
 // a lazily-started server; callers should keep it for the session lifetime and
 // Close it when the session exits.
@@ -158,13 +165,31 @@ type lazyClient struct {
 	env     []string
 	connect func(context.Context, []string, []string) (*Client, error)
 
+	// failCooldown is how long a failed connect is remembered (fail fast). Zero
+	// disables the cooldown entirely — every failed call reconnects immediately.
+	failCooldown time.Duration
+	// clock is overridable in tests; nil means time.Now.
+	clock func() time.Time
+
 	mu     sync.Mutex
 	client *Client
 	closed bool
+
+	// lastErr / retryAfter cache the most recent connect failure. While now() is
+	// before retryAfter, get() returns lastErr without spawning a process, so a
+	// server that's down doesn't stall every tool call for connectTimeout.
+	lastErr    error
+	retryAfter time.Time
 }
 
 func newLazyClient(name string, command, env []string) *lazyClient {
-	return &lazyClient{name: name, command: append([]string(nil), command...), env: append([]string(nil), env...), connect: Connect}
+	return &lazyClient{
+		name:         name,
+		command:      append([]string(nil), command...),
+		env:          append([]string(nil), env...),
+		connect:      Connect,
+		failCooldown: connectFailCooldown,
+	}
 }
 
 func (c *lazyClient) get(ctx context.Context) (*Client, error) {
@@ -183,14 +208,37 @@ func (c *lazyClient) get(ctx context.Context) (*Client, error) {
 		_ = c.client.Close()
 		c.client = nil
 	}
+	// Fail fast while a recent connect failure is still cooling down: a server
+	// that's down (binary missing, crash on startup) would otherwise have every
+	// tool call spawn a fresh subprocess and block up to connectTimeout before
+	// failing identically. Past the cooldown we fall through and retry, so a
+	// server that recovers is picked up.
+	if c.lastErr != nil && c.now().Before(c.retryAfter) {
+		return nil, c.lastErr
+	}
 	cctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	client, err := c.connect(cctx, c.command, c.env)
 	cancel()
 	if err != nil {
-		return nil, fmt.Errorf("mcp %q: %w", c.name, err)
+		c.lastErr = fmt.Errorf("mcp %q: %w", c.name, err)
+		if c.failCooldown > 0 {
+			c.retryAfter = c.now().Add(c.failCooldown)
+		}
+		return nil, c.lastErr
 	}
+	c.lastErr = nil
+	c.retryAfter = time.Time{}
 	c.client = client
 	return client, nil
+}
+
+// now returns the lazyClient's clock, defaulting to time.Now when unset (tests
+// override it to exercise the cooldown deterministically).
+func (c *lazyClient) now() time.Time {
+	if c.clock != nil {
+		return c.clock()
+	}
+	return time.Now()
 }
 
 func (c *lazyClient) CallToolRich(ctx context.Context, name string, args json.RawMessage) (ToolResult, error) {

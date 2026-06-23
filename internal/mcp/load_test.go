@@ -6,7 +6,101 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+// TestLazyClientFailedConnectCooldown proves a failed connect is cached for the
+// cooldown window: repeated tool calls fail fast (returning the cached error)
+// without spawning a fresh subprocess each time. Past the window a retry is
+// attempted again, so a server that recovers is picked up. A zero cooldown (the
+// default for directly-built literals, as the sibling tests use) must NOT cache,
+// preserving the immediate-retry contract.
+func TestLazyClientFailedConnectCooldown(t *testing.T) {
+	now := time.Unix(0, 0)
+	starts := 0
+	lc := &lazyClient{
+		name:         "srv",
+		command:      []string{"fake"},
+		failCooldown: 5 * time.Second,
+		clock:        func() time.Time { return now },
+		connect: func(context.Context, []string, []string) (*Client, error) {
+			starts++
+			return nil, context.DeadlineExceeded
+		},
+	}
+
+	// First call connects and fails.
+	if _, err := lc.get(context.Background()); err == nil {
+		t.Fatal("first connect should fail")
+	}
+	if starts != 1 {
+		t.Fatalf("first call should attempt one connect, starts=%d", starts)
+	}
+
+	// Within the cooldown: fail fast, no new subprocess.
+	now = now.Add(2 * time.Second)
+	if _, err := lc.get(context.Background()); err == nil {
+		t.Fatal("call within cooldown should still fail")
+	}
+	if starts != 1 {
+		t.Fatalf("call within cooldown must not reconnect, starts=%d", starts)
+	}
+
+	// Past the cooldown: retry is attempted again.
+	now = now.Add(5 * time.Second)
+	if _, err := lc.get(context.Background()); err == nil {
+		t.Fatal("call past cooldown should attempt a fresh connect and fail")
+	}
+	if starts != 2 {
+		t.Fatalf("call past cooldown should reconnect, starts=%d", starts)
+	}
+}
+
+// TestLazyClientCooldownClearsAfterSuccess proves that once a connect succeeds
+// the cached failure is cleared, so a later read-loop death doesn't get
+// short-circuited by a stale cooldown.
+func TestLazyClientCooldownClearsAfterSuccess(t *testing.T) {
+	now := time.Unix(0, 0)
+	fail := true
+	starts := 0
+	lc := &lazyClient{
+		name:         "srv",
+		command:      []string{"fake"},
+		failCooldown: 5 * time.Second,
+		clock:        func() time.Time { return now },
+		connect: func(context.Context, []string, []string) (*Client, error) {
+			starts++
+			if fail {
+				return nil, context.DeadlineExceeded
+			}
+			return newTestClient(t), nil
+		},
+	}
+	defer lc.Close()
+
+	if _, err := lc.get(context.Background()); err == nil {
+		t.Fatal("first connect should fail")
+	}
+
+	// Server recovers; advance past the cooldown and connect successfully.
+	fail = false
+	now = now.Add(6 * time.Second)
+	client, err := lc.get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if starts != 2 {
+		t.Fatalf("recovered server should reconnect, starts=%d", starts)
+	}
+
+	// A live client is reused without re-consulting the cooldown.
+	if got, err := lc.get(context.Background()); err != nil || got != client {
+		t.Fatalf("live client should be reused: got=%p err=%v", got, err)
+	}
+	if starts != 2 {
+		t.Fatalf("reuse must not reconnect, starts=%d", starts)
+	}
+}
 
 // TestRemoteHTTPServerReportedUnsupported proves that an http/sse MCP server
 // entry (url+type, no command) is RECOGNIZED rather than silently dropped:

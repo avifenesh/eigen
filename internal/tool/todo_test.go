@@ -34,6 +34,50 @@ func TestTodoRendersChecklist(t *testing.T) {
 	}
 }
 
+func TestTodoOrdersByPriorityAndSurfacesIt(t *testing.T) {
+	out, err := runTodo(t, map[string]any{
+		"todos": []map[string]any{
+			{"content": "later", "status": "pending", "priority": "low"},
+			{"content": "now", "status": "pending", "priority": "high"},
+			{"content": "soon", "status": "pending", "priority": "medium"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Priority must be rendered, not silently dropped.
+	for _, want := range []string{"now (high)", "soon (medium)", "later (low)"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+	// And the list must be reordered high -> medium -> low.
+	hi, mid, lo := strings.Index(out, "now"), strings.Index(out, "soon"), strings.Index(out, "later")
+	if !(hi < mid && mid < lo) {
+		t.Fatalf("expected high<medium<low ordering, got:\n%s", out)
+	}
+}
+
+func TestTodoPriorityIsOptional(t *testing.T) {
+	out, err := runTodo(t, map[string]any{
+		"todos": []map[string]any{{"content": "untagged", "status": "pending"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "untagged (") {
+		t.Fatalf("an unset priority should add no tag, got:\n%s", out)
+	}
+}
+
+func TestTodoRejectsBadPriority(t *testing.T) {
+	if _, err := runTodo(t, map[string]any{
+		"todos": []map[string]any{{"content": "a", "status": "pending", "priority": "urgent"}},
+	}); err == nil {
+		t.Fatal("invalid priority should error")
+	}
+}
+
 func TestTodoRejectsMultipleInProgress(t *testing.T) {
 	_, err := runTodo(t, map[string]any{
 		"todos": []map[string]any{

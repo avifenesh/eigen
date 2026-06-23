@@ -330,16 +330,19 @@ func (c *Client) CallToolRich(ctx context.Context, name string, args json.RawMes
 		return ToolResult{}, err
 	}
 	var res ToolResult
+	var otherBlocks int // non-text, non-decoded-image blocks (image/audio/etc.)
 	for _, blk := range out.Content {
 		switch blk.Type {
 		case "text":
 			res.Text += blk.Text
 		case "image":
 			if len(res.Images) >= maxMCPImages || blk.Data == "" {
+				otherBlocks++
 				continue
 			}
 			raw, err := base64.StdEncoding.DecodeString(blk.Data)
 			if err != nil || len(raw) == 0 || len(raw) > maxMCPImageBytes {
+				otherBlocks++
 				continue // skip undecodable / oversized images, keep the text
 			}
 			mt := blk.MimeType
@@ -347,12 +350,48 @@ func (c *Client) CallToolRich(ctx context.Context, name string, args json.RawMes
 				mt = "image/png"
 			}
 			res.Images = append(res.Images, llm.Image{MediaType: mt, Data: raw})
+		default:
+			otherBlocks++
 		}
 	}
 	if out.IsError {
-		return res, fmt.Errorf("%s", res.Text)
+		// Many servers signal isError with the detail in non-text content (an
+		// image, a resource block) or with empty text — returning fmt.Errorf("%s",
+		// res.Text) there bubbles an empty error to the agent. Substitute a
+		// meaningful fallback that names the tool, the server, and any blocks the
+		// result carried so the failure isn't a blank message.
+		if strings.TrimSpace(res.Text) != "" {
+			return res, fmt.Errorf("%s", res.Text)
+		}
+		return res, fmt.Errorf("mcp tool %q reported an error (no message)%s%s",
+			name, c.serverSuffix(), blocksSuffix(len(res.Images), otherBlocks))
 	}
 	return res, nil
+}
+
+// serverSuffix returns " from server <name>" when the server reported a name at
+// initialize, else "" — used to give a blank-message tool error some provenance.
+func (c *Client) serverSuffix() string {
+	if c.serverName == "" {
+		return ""
+	}
+	return fmt.Sprintf(" from server %q", c.serverName)
+}
+
+// blocksSuffix notes any non-text content an errored tool result carried, so a
+// "no message" error still hints where the detail might be (e.g. an image).
+func blocksSuffix(images, other int) string {
+	var parts []string
+	if images > 0 {
+		parts = append(parts, fmt.Sprintf("%d image block(s)", images))
+	}
+	if other > 0 {
+		parts = append(parts, fmt.Sprintf("%d other content block(s)", other))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (result carried " + strings.Join(parts, ", ") + ")"
 }
 
 // Close shuts down the connection and the underlying process.

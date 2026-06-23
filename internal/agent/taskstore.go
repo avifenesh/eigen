@@ -136,6 +136,20 @@ func readTaskHistory(path string) []BgTask {
 	return out
 }
 
+// ReadTaskHistory returns a task's full append-only state trail (every
+// recorded state change in order: attempt 1, escalation, attempt 2, terminal)
+// straight from the disk store under dir, without needing a live BgRegistry.
+// The id is validated against the same constraint as cancel markers so a
+// caller's id can never traverse paths. A missing/empty/malformed file yields
+// an empty slice (never fatal — this is an observability read); only a bad id
+// is an error.
+func ReadTaskHistory(dir, id string) ([]BgTask, error) {
+	if !bgIDRe.MatchString(id) {
+		return nil, fmt.Errorf("invalid task id %q", id)
+	}
+	return readTaskHistory(filepath.Join(dir, id+".jsonl")), nil
+}
+
 // taskLost reports whether a persisted "running" record's task is actually
 // gone. Pid liveness is checked when the record carries one for this host;
 // otherwise (old records, other hosts) age beyond the hard runtime cap +
