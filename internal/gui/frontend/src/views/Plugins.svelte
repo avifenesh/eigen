@@ -17,6 +17,7 @@
 
   let data = $state<PluginsDTO | null>(null);
   let loading = $state(true);
+  let error = $state<string | null>(null);
   let acting = $state<Record<string, boolean>>({});
   let confirming = $state<string | null>(null); // key of the row awaiting confirm
 
@@ -24,11 +25,12 @@
   async function load() {
     const seq = ++loadSeq;
     loading = true;
+    error = null;
     try {
       const d = await Bridge.Plugins();
       if (seq === loadSeq) data = d;
     } catch (e) {
-      if (seq === loadSeq) toasts.error(e instanceof Error ? e.message : String(e));
+      if (seq === loadSeq) error = e instanceof Error ? e.message : String(e);
     } finally {
       if (seq === loadSeq) loading = false;
     }
@@ -102,6 +104,12 @@
     <div class="plug__pad">
       {#each Array(3) as _, i (i)}<div class="plug__skel"></div>{/each}
     </div>
+  {:else if error && !data}
+    <EmptyState glyph="⊞" title="Couldn't load plugins" line={error}>
+      {#snippet action()}
+        <Button variant="secondary" onclick={() => load()}>Retry</Button>
+      {/snippet}
+    </EmptyState>
   {:else if !data || (data.plugins.length === 0 && data.marketplaces.length === 0)}
     <EmptyState glyph="⊞" title="No plugins installed" line="Plugins add tools, skills, agents, and MCP servers. Install via `eigen plugin install` (bundles are scanned first)." />
   {:else}

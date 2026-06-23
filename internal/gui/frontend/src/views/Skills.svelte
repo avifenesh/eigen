@@ -18,6 +18,7 @@
 
   let data = $state<SkillsDTO | null>(null);
   let loading = $state(true);
+  let error = $state<string | null>(null);
   let query = $state("");
 
   // Slide-over preview state.
@@ -41,11 +42,12 @@
   async function load() {
     const seq = ++loadSeq;
     loading = true;
+    error = null;
     try {
       const d = await Bridge.Skills();
       if (seq === loadSeq) data = d;
     } catch (e) {
-      if (seq === loadSeq) toasts.error(e instanceof Error ? e.message : String(e));
+      if (seq === loadSeq) error = e instanceof Error ? e.message : String(e);
     } finally {
       if (seq === loadSeq) loading = false;
     }
@@ -167,6 +169,12 @@
     <div class="skills__grid skills__grid--pad">
       {#each Array(6) as _, i (i)}<div class="skills__skel"></div>{/each}
     </div>
+  {:else if error && !data}
+    <EmptyState glyph="✦" title="Couldn't load skills" line={error}>
+      {#snippet action()}
+        <Button variant="secondary" onclick={() => load()}>Retry</Button>
+      {/snippet}
+    </EmptyState>
   {:else if !data || (data.skills.length === 0 && data.proposals.length === 0)}
     <EmptyState glyph="✦" title="No skills yet" line="Skills are SKILL.md capabilities in ~/.eigen/skills or the project. Add one with `eigen skill add`." />
   {:else}

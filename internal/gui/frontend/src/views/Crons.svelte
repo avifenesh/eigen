@@ -21,17 +21,19 @@
 
   let data = $state<CronsDTO | null>(null);
   let loading = $state(true);
+  let error = $state<string | null>(null);
   let acting = $state<Record<string, boolean>>({});
 
   let loadSeq = 0;
   async function load() {
     const seq = ++loadSeq;
     loading = true;
+    error = null;
     try {
       const d = await Bridge.Crons();
       if (seq === loadSeq) data = d;
     } catch (e) {
-      if (seq === loadSeq) toasts.error(e instanceof Error ? e.message : String(e));
+      if (seq === loadSeq) error = e instanceof Error ? e.message : String(e);
     } finally {
       if (seq === loadSeq) loading = false;
     }
@@ -185,6 +187,12 @@
     <div class="crons__pad">
       {#each Array(4) as _, i (i)}<div class="crons__skel"></div>{/each}
     </div>
+  {:else if error && !data}
+    <EmptyState glyph="◷" title="Couldn't load scheduled work" line={error}>
+      {#snippet action()}
+        <Button variant="secondary" onclick={() => load()}>Retry</Button>
+      {/snippet}
+    </EmptyState>
   {:else if !data || (data.timers === 0 && data.crontab === 0)}
     <EmptyState
       glyph="◷"

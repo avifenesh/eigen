@@ -10,11 +10,13 @@
   import type { RoutingDTO, ModelDTO, RouteStatsDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
   import Badge from "$lib/components/Badge.svelte";
+  import Button from "$lib/components/Button.svelte";
   import StatusDot from "$lib/components/StatusDot.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
 
   let data = $state<RoutingDTO | null>(null);
   let loading = $state(true);
+  let error = $state<string | null>(null);
   let query = $state("");
   let provFilter = $state<string | null>(null);
   let onlyAvailable = $state(false);
@@ -29,11 +31,12 @@
   async function load() {
     const seq = ++loadSeq;
     loading = true;
+    error = null;
     try {
       const d = await Bridge.Routing();
       if (seq === loadSeq) data = d;
     } catch (e) {
-      if (seq === loadSeq) toasts.error(e instanceof Error ? e.message : String(e));
+      if (seq === loadSeq) error = e instanceof Error ? e.message : String(e);
     } finally {
       if (seq === loadSeq) loading = false;
     }
@@ -164,6 +167,12 @@
       <div class="route__grid route__grid--pad">
         {#each Array(6) as _, i (i)}<div class="route__skel"></div>{/each}
       </div>
+    {:else if error && !data}
+      <EmptyState glyph="⇄" title="Couldn't load routing" line={error}>
+        {#snippet action()}
+          <Button variant="secondary" onclick={() => load()}>Retry</Button>
+        {/snippet}
+      </EmptyState>
     {:else if !data || data.models.length === 0}
       <EmptyState glyph="⇄" title="No models in the catalog" line="The curated model catalog is empty." />
     {:else if models.length === 0}

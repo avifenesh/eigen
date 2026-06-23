@@ -21,6 +21,7 @@
   let scope = $state<"project" | "global">("project");
   let strand = $state<"rollouts" | "consolidations">("rollouts");
   let loading = $state(true);
+  let error = $state<string | null>(null);
 
   // Diff slide-over state.
   let openCons = $state<ConsolidationDTO | null>(null);
@@ -35,11 +36,12 @@
   async function load() {
     const seq = ++loadSeq;
     loading = true;
+    error = null;
     try {
       const d = await Bridge.Dreaming();
       if (seq === loadSeq) data = d;
     } catch (e) {
-      if (seq === loadSeq) toasts.error(e instanceof Error ? e.message : String(e));
+      if (seq === loadSeq) error = e instanceof Error ? e.message : String(e);
     } finally {
       if (seq === loadSeq) loading = false;
     }
@@ -122,6 +124,12 @@
     <div class="dream__body">
       {#each Array(4) as _, i (i)}<div class="dream__skel"></div>{/each}
     </div>
+  {:else if error && !data}
+    <EmptyState glyph="☾" title="Couldn't load dreaming" line={error}>
+      {#snippet action()}
+        <Button variant="secondary" onclick={() => load()}>Retry</Button>
+      {/snippet}
+    </EmptyState>
   {:else if !current || (current.rollouts.length === 0 && current.consolidations.length === 0)}
     <EmptyState glyph="☾" title="Nothing dreamed yet" line="As eigen reflects over recent sessions, distilled rollouts and memory consolidations appear here." />
   {:else if strand === "rollouts"}

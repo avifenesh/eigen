@@ -21,6 +21,7 @@
 
   let data = $state<AgentsDTO | null>(null);
   let loading = $state(true);
+  let error = $state<string | null>(null);
   let filter = $state<"all" | "running" | "done" | "error">("all");
 
   let openTask = $state<BgTaskDTO | null>(null);
@@ -31,6 +32,7 @@
   let loadSeq = 0;
   async function load() {
     const seq = ++loadSeq;
+    error = null;
     try {
       const d = await Bridge.Agents();
       if (seq === loadSeq) {
@@ -40,7 +42,7 @@
     } catch (e) {
       if (seq === loadSeq) {
         loading = false;
-        toasts.error(e instanceof Error ? e.message : String(e));
+        error = e instanceof Error ? e.message : String(e);
       }
     }
   }
@@ -161,6 +163,12 @@
     <div class="agents__list agents__list--pad">
       {#each Array(4) as _, i (i)}<div class="agents__skel"></div>{/each}
     </div>
+  {:else if error && !data}
+    <EmptyState glyph="⋔" title="Couldn't load agent tasks" line={error}>
+      {#snippet action()}
+        <Button variant="secondary" onclick={() => load()}>Retry</Button>
+      {/snippet}
+    </EmptyState>
   {:else if !data || data.tasks.length === 0}
     <EmptyState glyph="⋔" title="No agent tasks" line="When the agent delegates subtasks (task / task_group), their live fan-out shows up here." />
   {:else if tasks.length === 0}

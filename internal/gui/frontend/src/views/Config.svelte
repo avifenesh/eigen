@@ -9,10 +9,12 @@
   import { toasts } from "$lib/stores/toasts.svelte";
   import type { ConfigDTO, ConfigFieldDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
+  import Button from "$lib/components/Button.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
 
   let data = $state<ConfigDTO | null>(null);
   let loading = $state(true);
+  let error = $state<string | null>(null);
   let saving = $state<Record<string, boolean>>({});
   // Local working copy of values so inputs are editable before commit.
   let values = $state<Record<string, string>>({});
@@ -24,6 +26,7 @@
   async function load() {
     const seq = ++loadSeq;
     loading = true;
+    error = null;
     try {
       const d = await Bridge.Config();
       if (alive && seq === loadSeq && d) {
@@ -31,7 +34,7 @@
         values = Object.fromEntries(d.fields.map((f) => [f.key, f.value]));
       }
     } catch (e) {
-      if (alive && seq === loadSeq) toasts.error(e instanceof Error ? e.message : String(e));
+      if (alive && seq === loadSeq) error = e instanceof Error ? e.message : String(e);
     } finally {
       if (alive && seq === loadSeq) loading = false;
     }
@@ -95,6 +98,12 @@
     <div class="cfg__pad">
       {#each Array(6) as _, i (i)}<div class="cfg__skel"></div>{/each}
     </div>
+  {:else if error && !data}
+    <EmptyState glyph="⚙" title="Couldn't load config" line={error}>
+      {#snippet action()}
+        <Button variant="secondary" onclick={() => load()}>Retry</Button>
+      {/snippet}
+    </EmptyState>
   {:else if !data}
     <EmptyState glyph="⚙" title="Config unavailable" line="Could not read ~/.eigen/config.json." />
   {:else}
