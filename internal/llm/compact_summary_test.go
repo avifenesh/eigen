@@ -53,6 +53,33 @@ func TestCompactWithSummarizesAndFits(t *testing.T) {
 	}
 }
 
+func TestCompactWithNoAdjacentSameRole(t *testing.T) {
+	// The summary must merge into the first retained user turn rather than be
+	// prepended as its own user message — otherwise it sits adjacent to the
+	// recent round's own leading user turn, producing two consecutive user
+	// turns that Converse/Anthropic reject or mishandle.
+	var msgs []Message
+	for i := 0; i < 6; i++ {
+		msgs = append(msgs, big(RoleUser, 2000), big(RoleAssistant, 2000))
+	}
+	out, err := CompactWith(context.Background(), &fakeCompactor{}, msgs, 8000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) < 2 {
+		t.Fatalf("expected a compacted suffix of multiple turns, got %d", len(out))
+	}
+	// The summary lives on the first turn, which must still be a single user turn.
+	if out[0].Role != RoleUser || !strings.Contains(out[0].Text, "SUMMARY") {
+		t.Fatalf("summary should be merged into the first user turn, got %+v", out[0])
+	}
+	for i := 1; i < len(out); i++ {
+		if out[i].Role == out[i-1].Role {
+			t.Fatalf("two adjacent %s turns at index %d-%d", out[i].Role, i-1, i)
+		}
+	}
+}
+
 func TestCompactWithNeverOrphansToolCalls(t *testing.T) {
 	// A round whose assistant makes a tool call answered by a tool message.
 	msgs := []Message{

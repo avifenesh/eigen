@@ -136,6 +136,7 @@ func (s *liveState) view(m *Model, w, h int) string {
 	}
 	s.clicks.reset()
 	s.list.count = len(d.Live)
+	s.list.clamp() // a poll may have shrunk d.Live; keep the cursor in range
 	from, to := s.list.window(visible)
 	for i := from; i < to; i++ {
 		in := d.Live[i]
@@ -158,11 +159,14 @@ func (s *liveState) view(m *Model, w, h int) string {
 		out += "\n" + liveSelectedDetail(d.Live[s.list.cursor], w) + "\n"
 	}
 	out += "\n"
+	// a poll may have shrunk d.Live out from under the prompt — cancel it
+	if s.confirmStop && (s.list.cursor < 0 || s.list.cursor >= len(d.Live)) {
+		s.confirmStop = false
+	}
 	switch {
 	case s.confirmStop:
-		if in := d.Live[s.list.cursor]; true {
-			out += sWarn.Render("  stop session " + in.ID + "? y/n")
-		}
+		in := d.Live[s.list.cursor]
+		out += sWarn.Render("  stop session " + in.ID + "? y/n")
 	case s.notice != "":
 		out += sDim.Render("  " + s.notice)
 	default:

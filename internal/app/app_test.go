@@ -601,6 +601,35 @@ func TestLivePageSummaryAndSelectedDetail(t *testing.T) {
 	}
 }
 
+// A 1.2s poll can shrink d.Live while the cursor sits on a now-gone row with a
+// stop prompt open. view() must clamp the cursor and never index out of range —
+// regression guard for the confirmStop panic (APP-002).
+func TestLivePageViewSurvivesShrunkLive(t *testing.T) {
+	d := testData()
+	d.Daemon = &daemon.Client{}
+	d.Live = []daemon.SessionInfo{
+		{ID: "s1", Dir: "/p", Status: daemon.StatusIdle},
+		{ID: "s2", Dir: "/q", Status: daemon.StatusIdle},
+		{ID: "s3", Dir: "/r", Status: daemon.StatusIdle},
+	}
+	m := NewAt(d, PageLive)
+	m.width, m.height = 110, 32
+	// Cursor on the last row with the stop prompt open.
+	m.live.list.cursor = 2
+	m.live.confirmStop = true
+	// A poll shrinks the list out from under the cursor.
+	d.Live = d.Live[:1]
+	// view() must not panic and must leave the cursor in range — before the fix
+	// the confirmStop branch did d.Live[2] on a length-1 slice.
+	out := m.live.view(m, 90, 28)
+	if m.live.list.cursor >= len(d.Live) || m.live.list.cursor < 0 {
+		t.Fatalf("cursor not clamped after shrink: cursor=%d len=%d", m.live.list.cursor, len(d.Live))
+	}
+	if !strings.Contains(out, "s1") {
+		t.Fatalf("expected surviving session s1 in render:\n%s", out)
+	}
+}
+
 func TestLivePageAttachResult(t *testing.T) {
 	d := testData()
 	d.Live = []daemon.SessionInfo{{ID: "s1", Title: "t", Dir: "/p", Status: daemon.StatusIdle}}

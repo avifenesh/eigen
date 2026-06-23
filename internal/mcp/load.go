@@ -154,7 +154,14 @@ func (c *lazyClient) get(ctx context.Context) (*Client, error) {
 		return nil, fmt.Errorf("mcp %q: client closed", c.name)
 	}
 	if c.client != nil {
-		return c.client, nil
+		if c.client.alive() {
+			return c.client, nil
+		}
+		// The cached connection's read loop died (stream closed, or a fatal
+		// read error such as an oversized JSON-RPC line). Drop it and reconnect
+		// below rather than handing out a corpse that fails every call forever.
+		_ = c.client.Close()
+		c.client = nil
 	}
 	cctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	client, err := c.connect(cctx, c.command, c.env)

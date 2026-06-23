@@ -45,7 +45,7 @@ const shedKeepToolResults = 4
 // CompactWith compacts msgs to fit maxTokens. It preserves the most recent
 // whole rounds verbatim (cut only at user boundaries, so no tool call is ever
 // orphaned) and replaces older history with a single model-generated summary
-// injected as a synthetic user message. If c is nil it falls back to the
+// merged into the first retained user turn. If c is nil it falls back to the
 // deterministic recency-window Compact. Safe to call live or on load.
 func CompactWith(ctx context.Context, c Compactor, msgs []Message, maxTokens int) ([]Message, error) {
 	if maxTokens <= 0 || EstimateTokens(msgs) <= maxTokens {
@@ -113,12 +113,15 @@ func CompactWith(ctx context.Context, c Compactor, msgs []Message, maxTokens int
 	}
 	injected += summary
 
-	out := make([]Message, 0, len(recent)+1)
-	out = append(out, Message{
-		Role: RoleUser,
-		Text: injected,
-	})
-	out = append(out, recent...)
+	// Merge the summary into the first retained user turn rather than prepending
+	// a separate synthetic user message: recent[0] is always a user round-start
+	// (keepFrom comes from userStarts), so a standalone summary turn would put
+	// two adjacent user turns on the wire, which Converse/Anthropic reject or
+	// mishandle. This mirrors how the deterministic Compact prepends its note to
+	// out[0].Text. Copy first so we never mutate the caller's slice.
+	out := make([]Message, len(recent))
+	copy(out, recent)
+	out[0].Text = injected + "\n\n" + out[0].Text
 
 	// If summary + recent still overflow, fall back to progressively stubbing
 	// tool results and then the deterministic whole-round tail — never recurse

@@ -30,6 +30,17 @@ func atomicWrite(path string, data []byte) error {
 		os.Remove(tmpName)
 		return cerr
 	}
+	// Preserve the destination's mode when overwriting an existing file
+	// (CreateTemp makes 0o600, which would silently strip e.g. a 0o755
+	// script's executable bit). For brand-new files default to 0o644.
+	mode := os.FileMode(0o644)
+	if fi, err := os.Stat(path); err == nil {
+		mode = fi.Mode().Perm()
+	}
+	if err := os.Chmod(tmpName, mode); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
 	return os.Rename(tmpName, path)
 }
 

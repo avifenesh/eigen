@@ -297,6 +297,87 @@ func TestLazyClientCloseAndFailedConnect(t *testing.T) {
 	}
 }
 
+func TestOversizedLineMarksClientDeadWithClearError(t *testing.T) {
+	// A single JSON-RPC line larger than the read-loop cap used to make Scan()
+	// stop with bufio.ErrTooLong, silently killing the client. The fix surfaces
+	// a clear error and marks the connection dead so the owner reconnects.
+	pr, pw := io.Pipe()
+	c := newClient(io.Discard, pr, func() error { return pw.Close() })
+	defer c.Close()
+
+	// Register an in-flight call so we can observe the failure it gets.
+	c.mu.Lock()
+	c.nextID++
+	id := c.nextID
+	ch := make(chan rpcResponse, 1)
+	c.pending[id] = ch
+	c.mu.Unlock()
+
+	go func() {
+		// One line, no newline, longer than the buffer cap -> ErrTooLong.
+		junk := strings.Repeat("x", maxRPCLineBytes+1)
+		_, _ = io.WriteString(pw, junk)
+		_ = pw.Close()
+	}()
+
+	select {
+	case _, ok := <-ch:
+		if ok {
+			t.Fatal("expected the in-flight call's channel to be closed, not delivered")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("read loop did not end after an oversized line")
+	}
+
+	if c.alive() {
+		t.Fatal("client should be marked dead after an oversized line")
+	}
+	c.mu.Lock()
+	readErr := c.readErr
+	c.mu.Unlock()
+	if readErr == nil || !strings.Contains(readErr.Error(), "exceeded") {
+		t.Fatalf("expected a clear oversized-line error, got %v", readErr)
+	}
+}
+
+func TestLazyClientReconnectsAfterReadLoopDies(t *testing.T) {
+	starts := 0
+	lc := &lazyClient{
+		name:    "srv",
+		command: []string{"fake"},
+		connect: func(context.Context, []string, []string) (*Client, error) {
+			starts++
+			return newTestClient(t), nil
+		},
+	}
+	defer lc.Close()
+
+	first, err := lc.get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if starts != 1 {
+		t.Fatalf("first get should connect once, starts=%d", starts)
+	}
+
+	// Simulate the read loop dying (e.g. the server crashed or sent an
+	// oversized line that killed the loop): mark the cached client dead.
+	first.mu.Lock()
+	first.dead = true
+	first.mu.Unlock()
+
+	second, err := lc.get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if starts != 2 {
+		t.Fatalf("get should reconnect when the cached client is dead, starts=%d", starts)
+	}
+	if second == first {
+		t.Fatal("get returned the dead client instead of a fresh connection")
+	}
+}
+
 func TestCallTool(t *testing.T) {
 	c := newTestClient(t)
 	defer c.Close()

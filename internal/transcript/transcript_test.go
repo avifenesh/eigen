@@ -146,6 +146,46 @@ func TestSaveRotatesBackupGenerations(t *testing.T) {
 	}
 }
 
+func TestLoadRecoversFromBackupWhenPrimaryTruncated(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "s1.jsonl")
+
+	// First save establishes a good transcript; the second save rotates that
+	// first transcript into path+".bak" (the newest backup generation).
+	if err := Save(path, []llm.Message{{Role: llm.RoleUser, Text: "keep-me"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(path, []llm.Message{{Role: llm.RoleUser, Text: "newer"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Corrupt the primary by truncating it to zero bytes. The .bak generation
+	// still holds the previous readable transcript.
+	if err := os.Truncate(path, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load after truncation: %v", err)
+	}
+	if len(got) != 1 || got[0].Text != "keep-me" {
+		t.Fatalf("Load should recover newest backup, got %#v", got)
+	}
+
+	// When the primary is removed entirely, recovery still applies.
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	got, err = Load(path)
+	if err != nil {
+		t.Fatalf("Load after removal: %v", err)
+	}
+	if len(got) != 1 || got[0].Text != "keep-me" {
+		t.Fatalf("Load should recover backup when primary missing, got %#v", got)
+	}
+}
+
 func TestSaveConcurrentWritersLeaveCompleteTranscriptAndNoTemps(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "concurrent.eigen.jsonl")

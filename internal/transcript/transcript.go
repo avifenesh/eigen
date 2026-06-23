@@ -152,8 +152,24 @@ func syncDir(dir string) error {
 	return d.Sync()
 }
 
-// Load reads an eigen-native JSONL session file.
+// Load reads an eigen-native JSONL session file. When the primary path is
+// missing, empty, or yields zero messages, it falls back to the newest readable
+// backup generation written by Save's rotation (.bak, .bak.1 .. .bak.4) so a
+// truncated or vanished primary does not lose a conversation that backups still
+// hold.
 func Load(path string) ([]llm.Message, error) {
+	msgs, err := loadJSONL(path)
+	if err == nil && len(msgs) > 0 {
+		return msgs, nil
+	}
+	if recovered, ok := recoverFromBackup(path); ok {
+		return recovered, nil
+	}
+	return msgs, err
+}
+
+// loadJSONL decodes one eigen-native JSONL file into messages.
+func loadJSONL(path string) ([]llm.Message, error) {
 	return scanJSONL(path, func(line []byte, out *[]llm.Message) error {
 		var m llm.Message
 		if err := json.Unmarshal(line, &m); err != nil {
@@ -162,6 +178,18 @@ func Load(path string) ([]llm.Message, error) {
 		*out = append(*out, m)
 		return nil
 	})
+}
+
+// recoverFromBackup returns the newest backup generation that yields at least
+// one message, trying .bak first (the most recent rotation) through the oldest.
+func recoverFromBackup(path string) ([]llm.Message, bool) {
+	for gen := 0; gen < transcriptBackupGenerations; gen++ {
+		bak := backupPath(path, gen)
+		if msgs, err := loadJSONL(bak); err == nil && len(msgs) > 0 {
+			return msgs, true
+		}
+	}
+	return nil, false
 }
 
 // scanJSONL reads a JSONL file, invoking fn per non-empty line to append to the

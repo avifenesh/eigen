@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 
@@ -32,11 +33,10 @@ func retrieveRunner(dir string) tool.RetrieveRun {
 				return "", fmt.Errorf("retrieval unavailable")
 			}
 			tried = true
-			// An embedder is OPTIONAL: when none is configured/reachable, open a
+			// An embedder is OPTIONAL: when none is configured, open a
 			// lexical-only (BM25) index so `retrieve` still works. With an
 			// embedder, Search fuses BM25 + cosine.
-			emb, _ := llm.NewEmbedder()
-			opened, err := retrieve.Open(dir, emb)
+			opened, err := retrieve.Open(dir, configuredEmbedder())
 			if err != nil {
 				return "", fmt.Errorf("retrieval unavailable: %w", err)
 			}
@@ -55,6 +55,25 @@ func retrieveRunner(dir string) tool.RetrieveRun {
 		}
 		return formatRetrieval(query, res), nil
 	}
+}
+
+// configuredEmbedder returns the configured embedder, or nil to run retrieval
+// lexical-only (BM25).
+//
+// llm.NewEmbedder defaults EIGEN_EMBED_BASE_URL to a local BGE service and
+// reports ok=true even when nobody set it up — so honoring that bool alone (or
+// discarding it) hands retrieval an embedder pointed at a usually-dead
+// localhost, and every search would hammer it. So we only build an embedder
+// when it is EXPLICITLY configured via EIGEN_EMBED_BASE_URL, then honor the
+// bool; otherwise stay lexical-only.
+func configuredEmbedder() llm.Embedder {
+	if strings.TrimSpace(os.Getenv("EIGEN_EMBED_BASE_URL")) == "" {
+		return nil
+	}
+	if e, ok := llm.NewEmbedder(); ok {
+		return e
+	}
+	return nil
 }
 
 // formatRetrieval renders hits as a scannable list: path:lines (score) + a

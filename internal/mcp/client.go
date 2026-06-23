@@ -70,6 +70,12 @@ type Client struct {
 	mu      sync.Mutex
 	nextID  int
 	pending map[int]chan rpcResponse
+	// dead is set when the read loop ends (stream closed or a fatal read
+	// error). Once dead, the connection can no longer carry calls; the
+	// lazyClient owner reconnects on the next get(). readErr, when non-nil,
+	// is the fatal error that killed the loop (e.g. an oversized line).
+	dead    bool
+	readErr error
 
 	closeFn func() error
 
@@ -85,6 +91,16 @@ func (c *Client) Instructions() string { return c.instructions }
 
 // ServerName returns the name the server reported at initialize (may be empty).
 func (c *Client) ServerName() string { return c.serverName }
+
+// alive reports whether the read loop is still running. Once the loop ends —
+// stream closed, or a fatal read error such as an oversized JSON-RPC line —
+// the connection can no longer carry calls and the lazyClient owner should
+// reconnect.
+func (c *Client) alive() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return !c.dead
+}
 
 // newClient starts the read loop over r and writes requests to w.
 func newClient(w io.Writer, r io.Reader, closeFn func() error) *Client {
@@ -146,9 +162,16 @@ func Connect(ctx context.Context, command []string, env []string) (*Client, erro
 	return c, nil
 }
 
+// maxRPCLineBytes caps a single JSON-RPC message. Rich tool results — a
+// chrome_snapshot, or a base64-encoded full-page screenshot — easily exceed
+// the bufio default (and the old 8 MiB cap), and a single line over the cap
+// makes Scan() stop with bufio.ErrTooLong, killing the read loop. 64 MiB is
+// well clear of those payloads while still bounding memory.
+const maxRPCLineBytes = 64 * 1024 * 1024
+
 func (c *Client) readLoop(r io.Reader) {
 	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	sc.Buffer(make([]byte, 0, 64*1024), maxRPCLineBytes)
 	for sc.Scan() {
 		line := sc.Bytes()
 		if len(line) == 0 {
@@ -166,8 +189,17 @@ func (c *Client) readLoop(r io.Reader) {
 			ch <- resp
 		}
 	}
-	// Stream closed: fail any in-flight calls.
+	// The loop ended. Surface a clear reason: an oversized line (over the cap)
+	// is otherwise silent — Scan returns false with no signal to the caller.
+	err := sc.Err()
+	if err == bufio.ErrTooLong {
+		err = fmt.Errorf("mcp: response line exceeded %d bytes (raise maxRPCLineBytes)", maxRPCLineBytes)
+	}
+	// Mark the connection dead so the lazyClient owner reconnects, and fail any
+	// in-flight calls.
 	c.mu.Lock()
+	c.dead = true
+	c.readErr = err
 	for id, ch := range c.pending {
 		close(ch)
 		delete(c.pending, id)
@@ -193,6 +225,12 @@ func (c *Client) call(ctx context.Context, method string, params any, result any
 	select {
 	case resp, ok := <-ch:
 		if !ok {
+			c.mu.Lock()
+			readErr := c.readErr
+			c.mu.Unlock()
+			if readErr != nil {
+				return fmt.Errorf("mcp: connection closed during %s: %w", method, readErr)
+			}
 			return fmt.Errorf("mcp: connection closed during %s", method)
 		}
 		if resp.Error != nil {

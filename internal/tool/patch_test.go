@@ -390,6 +390,57 @@ func TestPatchAtomicOnFailure(t *testing.T) {
 	}
 }
 
+func TestPatchAgentRenamesAndEdits(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "old.txt")
+	os.WriteFile(src, []byte("one\ntwo\nthree\n"), 0o644)
+
+	patch := `*** Begin Patch
+*** Update File: old.txt
+*** Move to: new.txt
+@@
+ one
+-two
++TWO
+ three
+*** End Patch
+`
+	if _, err := runPatch(t, dir, patch); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Fatal("source file should be removed after rename")
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "new.txt"))
+	if err != nil {
+		t.Fatalf("renamed file should exist: %v", err)
+	}
+	if string(got) != "one\nTWO\nthree\n" {
+		t.Fatalf("rename+edit produced wrong content: %q", got)
+	}
+}
+
+func TestPatchRenamesViaUnifiedDiff(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "old.txt")
+	os.WriteFile(src, []byte("one\ntwo\nthree\n"), 0o644)
+
+	patch := "--- a/old.txt\n+++ b/new.txt\n@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n"
+	if _, err := runPatch(t, dir, patch); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Fatal("source file should be removed after rename")
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "new.txt"))
+	if err != nil {
+		t.Fatalf("renamed file should exist: %v", err)
+	}
+	if string(got) != "one\nTWO\nthree\n" {
+		t.Fatalf("rename+edit produced wrong content: %q", got)
+	}
+}
+
 func TestPatchEmptyErrors(t *testing.T) {
 	if _, err := runPatch(t, t.TempDir(), "not a diff\n"); err == nil {
 		t.Fatal("a patch with no file sections should error")
