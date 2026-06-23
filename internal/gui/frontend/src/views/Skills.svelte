@@ -112,27 +112,45 @@
 
   const proposals = $derived(data?.proposals ?? []);
   const visibleProposals = $derived(proposals.slice(0, proposalsShown));
-  const visibleActive = $derived(filtered.slice(0, activeShown));
 
-  // Source shelves — group the visible (paged) active skills by origin and
-  // order them user → project → extra so the most-yours capabilities lead.
-  // Each shelf carries its own tint; a shelf only renders when it has skills.
+  // Source shelves — group ALL filtered active skills by origin first (so each
+  // shelf's membership is stable), order them user → project → extra so the
+  // most-yours capabilities lead, then page AFTER grouping: cap the total
+  // rendered cards across shelves in shelf order so "Show N more" always fills
+  // the current shelf and only spills into the next once a shelf is exhausted —
+  // never reshuffling cards between shelves. Each shelf carries its own tint;
+  // a shelf only renders when it has at least one card within the cap.
   const SHELF_ORDER = ["user", "project", "extra"] as const;
-  type Shelf = { source: string; label: string; skills: SkillDTO[] };
-  const shelves = $derived.by<Shelf[]>(() => {
+  type Shelf = { source: string; label: string; skills: SkillDTO[]; total: number };
+  // Full shelves from every filtered skill — the stable grouping.
+  const allShelves = $derived.by<Shelf[]>(() => {
     const by: Record<string, SkillDTO[]> = {};
-    for (const s of visibleActive) (by[s.source] ??= []).push(s);
+    for (const s of filtered) (by[s.source] ??= []).push(s);
     const known = SHELF_ORDER.filter((src) => by[src]?.length).map((src) => ({
       source: src,
       label: src === "user" ? "Yours" : src === "project" ? "This project" : "Bundled",
       skills: by[src],
+      total: by[src].length,
     }));
     // Any unexpected source still gets a (neutral) shelf rather than vanishing.
     const extras = Object.keys(by)
       .filter((src) => !SHELF_ORDER.includes(src as (typeof SHELF_ORDER)[number]))
       .sort()
-      .map((src) => ({ source: src, label: src, skills: by[src] }));
+      .map((src) => ({ source: src, label: src, skills: by[src], total: by[src].length }));
     return [...known, ...extras];
+  });
+  // Paged view: walk the stable shelves in order and hand out `activeShown`
+  // cards from the running budget, slicing the shelf where the cap falls.
+  const shelves = $derived.by<Shelf[]>(() => {
+    let budget = activeShown;
+    const out: Shelf[] = [];
+    for (const shelf of allShelves) {
+      if (budget <= 0) break;
+      const take = Math.min(budget, shelf.skills.length);
+      out.push({ ...shelf, skills: shelf.skills.slice(0, take) });
+      budget -= take;
+    }
+    return out;
   });
 
   async function preview(s: SkillDTO) {
@@ -304,7 +322,7 @@
             <div class="shelf__head">
               <span class="shelf__dot" aria-hidden="true"></span>
               <h2 class="shelf__title">{shelf.label}</h2>
-              <span class="shelf__n tnum">{shelf.skills.length}</span>
+              <span class="shelf__n tnum">{shelf.total}</span>
             </div>
             <div class="skills__grid">
               {#each shelf.skills as s (s.name)}

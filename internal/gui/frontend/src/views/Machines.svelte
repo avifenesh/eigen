@@ -189,7 +189,13 @@
     <div class="mx__scroll">
       <div class="mx__grid">
         {#each machines as m (`${m.name}|${m.ssh}`)}
-          <Card interactive onclick={() => drill(m)} title={`Dial ${m.ssh} for live sessions`}>
+          <Card
+            interactive
+            onclick={() => drill(m)}
+            title={m.saved
+              ? `Dial ${m.ssh} for live sessions`
+              : `Dial ${m.ssh} for live sessions — detected ssh host, may not run eigen`}
+          >
             <div class="mc">
               <div class="mc__top">
                 <span class="mc__name">{m.name || m.ssh || "—"}</span>
@@ -234,7 +240,11 @@
     <div class="mx__remote-err">
       <p class="mx__remote-err-title">Couldn't reach this host</p>
       <p class="mx__remote-err-line">{remoteError}</p>
-      <p class="mx__remote-err-hint">The host may be offline or have no eigen daemon running. Install with <code class="mx__code">eigen remote install</code>.</p>
+      {#if openMachine?.saved}
+        <p class="mx__remote-err-hint">The host may be offline or have no eigen daemon running. Install with <code class="mx__code">eigen remote install</code>.</p>
+      {:else}
+        <p class="mx__remote-err-hint">This ssh host may not run eigen — it was detected from your <code class="mx__code">~/.ssh/config</code>, not added as an eigen remote. The host may be offline, or simply isn't an eigen target.</p>
+      {/if}
       {#if openMachine}
         <div class="mx__remote-err-action">
           <Button variant="secondary" onclick={() => drill(openMachine!)}>Retry</Button>

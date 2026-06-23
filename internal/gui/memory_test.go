@@ -43,6 +43,70 @@ func TestAppendMemoryConsolidates(t *testing.T) {
 	}
 }
 
+// TestSplitNotesDropsLeadingHeading verifies splitNotes honors its documented
+// contract: a leading chunk that is solely a top-level ATX "# " heading (the
+// file title) is dropped, while a "## " subheading, an inline-bodied "# " block,
+// and content without a title are all preserved.
+func TestSplitNotesDropsLeadingHeading(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{
+			name: "leading top-level heading dropped",
+			in:   "# Memory\n\nfirst note\n\nsecond note",
+			want: []string{"first note", "second note"},
+		},
+		{
+			name: "leading heading with surrounding blank lines dropped",
+			in:   "\n\n# Memory\n\nonly note\n",
+			want: []string{"only note"},
+		},
+		{
+			name: "no heading keeps all chunks",
+			in:   "first note\n\nsecond note",
+			want: []string{"first note", "second note"},
+		},
+		{
+			name: "subheading is not a droppable title",
+			in:   "## Section\n\nbody",
+			want: []string{"## Section", "body"},
+		},
+		{
+			name: "heading with body in same chunk is kept whole",
+			in:   "# Title\nbody on next line\n\nnext",
+			want: []string{"# Title\nbody on next line", "next"},
+		},
+		{
+			name: "only a heading yields no notes",
+			in:   "# Memory",
+			want: nil,
+		},
+		{
+			name: "empty content yields no notes",
+			in:   "   \n\n  ",
+			want: nil,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := splitNotes(tc.in)
+			if len(got) != len(tc.want) {
+				t.Fatalf("splitNotes(%q) = %d notes %+v, want %d %v", tc.in, len(got), got, len(tc.want), tc.want)
+			}
+			for i, n := range got {
+				if n.Text != tc.want[i] {
+					t.Errorf("note[%d].Text = %q, want %q", i, n.Text, tc.want[i])
+				}
+				if n.Index != i {
+					t.Errorf("note[%d].Index = %d, want %d (indices must be contiguous after drop)", i, n.Index, i)
+				}
+			}
+		})
+	}
+}
+
 // TestBanRoundTrip exercises the GUI ban bridge end to end: add (new + replace),
 // surface via the DTO's BanList, then remove.
 func TestBanRoundTrip(t *testing.T) {

@@ -125,6 +125,15 @@
                 <p class="field__desc">{f.desc}</p>
               </div>
               <div class="field__control">
+                {#if saving[f.key]}
+                  <!-- Inline progress while SetConfig is in flight: the control
+                       goes inert (disabled) but this signals the commit is live,
+                       so a slow daemon (or a reject+revert) doesn't read as "done". -->
+                  <span class="saving" role="status" aria-live="polite">
+                    <span class="saving__spinner" aria-hidden="true"></span>
+                    <span class="saving__label">saving…</span>
+                  </span>
+                {/if}
                 {#if isBool(f)}
                   <button
                     id="cfg-{f.key}"
@@ -261,9 +270,37 @@
   .field__control {
     flex: none;
     display: flex;
+    align-items: center;
     justify-content: flex-end;
+    gap: var(--sp-3);
     min-width: 180px;
     max-width: 320px;
+  }
+
+  /* Per-row commit affordance: a small spinner + dimmed label shown beside the
+     (now-disabled) control while SetConfig is in flight. */
+  .saving {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    color: var(--working);
+  }
+  .saving__spinner {
+    width: 12px;
+    height: 12px;
+    border-radius: var(--r-full);
+    border: 2px solid var(--working-bg);
+    border-top-color: var(--working);
+    animation: cfg-spin 0.7s linear infinite;
+  }
+  .saving__label {
+    font: var(--fw-medium) var(--fs-label) / 1 var(--font-sans);
+  }
+  @keyframes cfg-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   /* Toggle (boolean fields) */
@@ -398,6 +435,11 @@
     .toggle,
     .chip {
       transition: none;
+    }
+    /* No spin under reduced-motion — the dimmed label alone carries the signal. */
+    .saving__spinner {
+      animation: none;
+      opacity: 0.7;
     }
     /* Keep the on-state as a static end-state — no slide, just the final position. */
     .toggle--on .toggle__knob {

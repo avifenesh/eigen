@@ -55,15 +55,35 @@ func splitNotes(content string) []MemoryNoteDTO {
 	chunks := strings.Split(content, "\n\n")
 	out := make([]MemoryNoteDTO, 0, len(chunks))
 	i := 0
+	skippedHeading := false
 	for _, c := range chunks {
 		c = strings.TrimSpace(c)
 		if c == "" {
 			continue
 		}
+		// Drop a leading top-level heading: the first non-empty chunk when it is
+		// solely a single ATX "# " line (the file's title), which would otherwise
+		// render as a card whose only content is the heading.
+		if !skippedHeading {
+			skippedHeading = true
+			if isTopLevelHeading(c) {
+				continue
+			}
+		}
 		out = append(out, MemoryNoteDTO{Index: i, Text: c})
 		i++
 	}
 	return out
+}
+
+// isTopLevelHeading reports whether chunk is solely a single top-level ATX
+// heading line ("# ..."). A "## " (or deeper) heading, or a "# " line followed
+// by body text, is not treated as the droppable file title.
+func isTopLevelHeading(chunk string) bool {
+	if strings.ContainsRune(chunk, '\n') {
+		return false
+	}
+	return strings.HasPrefix(chunk, "# ")
 }
 
 func scopeDTO(s *memory.Store, scope string) *MemoryScopeDTO {

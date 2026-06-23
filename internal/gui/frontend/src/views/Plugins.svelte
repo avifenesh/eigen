@@ -8,6 +8,7 @@
   // confirm rather than acting on a stray click.
   import { Bridge } from "$lib/bridge";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { relTime } from "$lib/status";
   import type { PluginsDTO, InstalledPluginDTO } from "$lib/types";
   import { SvelteSet } from "svelte/reactivity";
   import Card from "$lib/components/Card.svelte";
@@ -125,6 +126,13 @@
     if (s === "forced") return "warn";
     return "neutral";
   }
+  // installedMs / addedMs are unix *milliseconds* (Go's UnixMilli); the shared
+  // relTime() takes unix *nanos*, so scale up before handing it over — the same
+  // /1e6 drift status.ts exists to prevent, just in the other direction. A 0 ms
+  // means the daemon never stamped it, so render nothing rather than "57y ago".
+  function relMs(ms: number): string {
+    return ms > 0 ? relTime(ms * 1e6) : "";
+  }
 </script>
 
 <div class="plug">
@@ -180,6 +188,8 @@
                         {/if}
                       {/if}
                       {#if p.marketplace}<span class="pl__market">from {p.marketplace}</span>{/if}
+                      {#if p.scanCount}<span class="pl__meta tnum" title="components flagged at install">{p.scanCount} flagged</span>{/if}
+                      {#if relMs(p.installedMs)}<span class="pl__meta" title="installed {relMs(p.installedMs)}">installed {relMs(p.installedMs)}</span>{/if}
                     </div>
                     {#if p.description}<p class="pl__desc">{p.description}</p>{/if}
                     <div class="pl__components">
@@ -241,6 +251,8 @@
                       <StatusDot state={m.disabled ? "idle" : "ok"} size={7} />
                       <span class="pl__name">{m.name}</span>
                       {#if m.disabled}<Badge tone="neutral">disabled</Badge>{/if}
+                      {#if m.owner}<span class="pl__meta">by {m.owner}</span>{/if}
+                      {#if relMs(m.addedMs)}<span class="pl__meta" title="added {relMs(m.addedMs)}">added {relMs(m.addedMs)}</span>{/if}
                     </div>
                     <div class="pl__source selectable">{m.source}</div>
                   </div>
@@ -383,6 +395,13 @@
     color: var(--text-primary);
   }
   .pl__market {
+    font-size: var(--fs-label);
+    color: var(--text-faint);
+  }
+  /* Provenance metadata (install/added date, flagged count, owner) — quiet,
+     faint labels that sit alongside the name without competing with the scan
+     badge that earns the row's color. */
+  .pl__meta {
     font-size: var(--fs-label);
     color: var(--text-faint);
   }

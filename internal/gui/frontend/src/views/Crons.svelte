@@ -127,8 +127,27 @@
   const leadUnit = $derived(timers.find((t) => t.ts !== null && t.active)?.unit ?? null);
 
   // Crontab specs → a human cadence, so the column reads as a rhythm not a glob.
+  // Returns null when the spec can't be decoded — the caller then labels it
+  // "(custom schedule)" above the verbatim spec instead of echoing the glob twice.
   const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  function cadence(spec: string): string {
+  // Render a day-of-week field that may be a single day (1), a range (1-5),
+  // or a comma list (1,3,5) as readable day names; null if it isn't day-shaped.
+  function dowPhrase(dow: string): string | null {
+    const named = (d: number) => (d >= 0 && d <= 7 ? DOW[d % 7] : null);
+    const rng = dow.match(/^(\d)-(\d)$/);
+    if (rng) {
+      const a = named(Number(rng[1])),
+        b = named(Number(rng[2]));
+      return a && b ? `${a}–${b}` : null;
+    }
+    if (/^\d(,\d)+$/.test(dow)) {
+      const days = dow.split(",").map((d) => named(Number(d)));
+      return days.every((d) => d) ? days.join(", ") : null;
+    }
+    const d = Number(dow);
+    return Number.isInteger(d) ? named(d) : null;
+  }
+  function cadence(spec: string): string | null {
     const s = spec.trim();
     const named: Record<string, string> = {
       "@hourly": "hourly",
@@ -142,7 +161,7 @@
     };
     if (named[s]) return named[s];
     const f = s.split(/\s+/);
-    if (f.length !== 5) return s;
+    if (f.length !== 5) return null;
     const [mi, h, dom, mon, dow] = f;
     const hm = (hh: string, mm: string) => `${hh.padStart(2, "0")}:${mm.padStart(2, "0")}`;
     if (mi !== "*" && h === "*" && dom === "*" && mon === "*" && dow === "*")
@@ -151,19 +170,26 @@
       return `every ${h.slice(2)}h`;
     if (mi.startsWith("*/") && h === "*" && dom === "*" && dow === "*")
       return `every ${mi.slice(2)}m`;
+    // Step minutes within an hour-range on weekdays/days: "*/15 9-17 * * 1-5".
+    if (mi.startsWith("*/") && /^\d+-\d+$/.test(h) && dom === "*" && mon === "*") {
+      const days = dow === "*" ? "" : (() => {
+        const p = dowPhrase(dow);
+        return p ? ` on ${p}` : null;
+      })();
+      if (days !== null) return `every ${mi.slice(2)}m, ${h}h${days}`;
+    }
     if (mi !== "*" && h !== "*" && dom === "*" && mon === "*" && dow === "*")
       return `daily at ${hm(h, mi)}`;
     if (mi !== "*" && h !== "*" && dow !== "*" && dom === "*" && mon === "*") {
-      const d = Number(dow);
-      const day = Number.isInteger(d) && d >= 0 && d <= 6 ? DOW[d % 7] : dow;
-      return `${day} at ${hm(h, mi)}`;
+      const day = dowPhrase(dow);
+      if (day) return `${day} at ${hm(h, mi)}`;
     }
     if (mi !== "*" && h !== "*" && dom !== "*" && dow === "*")
       return `day ${dom} at ${hm(h, mi)}`;
     if (mi === "*" && h === "*") return "every minute";
-    return s;
+    return null;
   }
-  type CronRow = CronDTO & { cadence: string };
+  type CronRow = CronDTO & { cadence: string | null };
   const crontab = $derived<CronRow[]>(
     (data?.crons ?? []).filter((c) => c.kind === "crontab").map((c) => ({ ...c, cadence: cadence(c.next) })),
   );
@@ -280,7 +306,11 @@
               <Card>
                 <div class="cron cron--tab">
                   <div class="cron__cadence">
-                    <span class="cron__cadence-v">{c.cadence}</span>
+                    {#if c.cadence !== null}
+                      <span class="cron__cadence-v">{c.cadence}</span>
+                    {:else}
+                      <span class="cron__cadence-v cron__cadence-v--custom">custom schedule</span>
+                    {/if}
                     <span class="cron__spec selectable">{c.next}</span>
                   </div>
                   <div class="cron__main">
@@ -519,6 +549,13 @@
     font-weight: var(--fw-medium);
     font-size: var(--fs-body-sm);
     color: var(--text-primary);
+  }
+  /* Undecodable spec: the verbatim glob below is the truth, so the label sits
+     back as a faint italic note rather than competing as a cadence. */
+  .cron__cadence-v--custom {
+    font-weight: var(--fw-regular);
+    font-style: italic;
+    color: var(--text-faint);
   }
   .cron__spec {
     font: var(--fw-medium) var(--fs-code-sm) / 1 var(--font-mono);

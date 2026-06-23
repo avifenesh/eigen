@@ -134,25 +134,38 @@
 
   // ── turn I/O ──────────────────────────────────────────────────────────────
   // Steer routing: mid-turn input is injected into the running turn (steered)
-  // rather than queued as a fresh turn. When idle it sends normally as before.
-  // Images (composer attachments) ride along on both paths; starter chips call
-  // send(text) with none, so the param defaults to an empty list.
+  // rather than queued as a fresh turn. Images (composer attachments) ride along
+  // on both paths; starter chips call send(text) with none, so the param
+  // defaults to an empty list.
+  //
+  // The local `running` flag is a reactive view of stream events and can be
+  // stale right at a turn boundary: between the 'done' event and an Enter, or
+  // before the first delta of a server-restarted turn flips running=true. So we
+  // don't branch on it. The daemon is the only authority on whether a turn is
+  // live, so always try SteerInput first — it returns true when the text was
+  // injected into a running turn, false when there was no turn to steer — and
+  // only fall back to SendInput (a fresh queued turn) when it returns false.
+  // That closes the window where a stale running view queues a duplicate or
+  // competing turn.
   async function send(text: string, images: ImageDTO[] = []) {
     if (!sessionId) return;
+    // The local running flag only colors the messaging below; it never decides
+    // the RPC. Capture it before the await so the toast reflects the user's
+    // intent at send time, not whatever the stream has done by the time the
+    // round-trip lands.
+    const expectedSteer = store?.running ?? false;
     try {
-      if (store?.running) {
-        const steered = await Bridge.SteerInput(sessionId, text, images);
-        if (steered) {
-          toasts.info("steered into the running turn");
-        } else {
-          // Steer wasn't accepted (e.g. the turn moved past the steer window):
-          // we fall back to a fresh queued turn. The user typed expecting to
-          // steer, so surface the behavior change rather than queuing silently.
-          await Bridge.SendInput(sessionId, text, images, []);
-          toasts.info("couldn't steer — queued as a new turn");
-        }
+      const steered = await Bridge.SteerInput(sessionId, text, images);
+      if (steered) {
+        toasts.info("steered into the running turn");
       } else {
+        // No running turn to steer into: send as a fresh turn. When the user
+        // typed expecting to steer mid-turn this is a behavior change, so the
+        // toast surfaces it rather than queuing silently — but on a plain idle
+        // send (the common case) there's nothing to surface, so stay quiet.
+        // (GUI-034 steer-fallback toast — keep it.)
         await Bridge.SendInput(sessionId, text, images, []);
+        if (expectedSteer) toasts.info("couldn't steer — queued as a new turn");
       }
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : String(e));

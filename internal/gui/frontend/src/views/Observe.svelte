@@ -74,6 +74,10 @@
   function k(n: number): string {
     return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
   }
+  // Short git SHA for the runtime panel; daemon embeds the full revision.
+  function shortRev(rev?: string): string {
+    return rev ? rev.slice(0, 7) : "";
+  }
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "overview", label: "Overview" },
@@ -123,6 +127,14 @@
                 <dt>heap alloc</dt><dd class="tnum">{mb(s.heap_alloc_b)} MB</dd>
                 <dt>rss</dt><dd class="tnum">{mb(s.rss_b)} MB</dd>
                 <dt>gc cycles</dt><dd class="tnum">{s.num_gc}</dd>
+                {#if s.version}
+                  <dt>eigen</dt>
+                  <dd>
+                    {s.version}{#if s.vcs_revision}
+                      <span class="rev" title={s.vcs_revision}>@{shortRev(s.vcs_revision)}{#if s.vcs_modified}<span class="rev__dirty" title="built with uncommitted changes">*</span>{/if}</span>
+                    {/if}
+                  </dd>
+                {/if}
                 {#if s.go_version}<dt>go</dt><dd>{s.go_version}</dd>{/if}
               </dl>
             </div>
@@ -469,6 +481,14 @@
     font-size: var(--fs-body-sm);
     font-weight: var(--fw-medium);
     text-align: right;
+  }
+  .rev {
+    margin-left: var(--sp-2);
+    color: var(--text-faint);
+    font-weight: var(--fw-regular);
+  }
+  .rev__dirty {
+    color: var(--brand-bright);
   }
   /* Tokens panel — cache-hit arc gauge beside the token breakdown. */
   .tokens {

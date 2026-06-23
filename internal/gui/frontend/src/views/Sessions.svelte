@@ -6,6 +6,7 @@
   // Header: "Prune empty" (drops zero-turn sessions) + a total count. Reuses the
   // shared `sessions` store; refreshed on mount and after any mutation.
   import { sessions } from "$lib/stores/sessions.svelte";
+  import { daemon } from "$lib/stores/daemon.svelte";
   import { router } from "$lib/router.svelte";
   import { Bridge } from "$lib/bridge";
   import { toasts } from "$lib/stores/toasts.svelte";
@@ -22,6 +23,11 @@
   let exporting = $state<Record<string, boolean>>({});
   let deleting = $state<Record<string, boolean>>({});
   let confirmDelete = $state<Record<string, boolean>>({});
+
+  // Mutating actions (Export/Delete/Prune) all round-trip the daemon; gate them
+  // on the connection the same way Chat gates send, so an offline daemon shows a
+  // disabled control with a reason instead of an enabled button that throws.
+  const online = $derived(daemon.status === "online");
 
   // The list can run long; reveal in batches rather than mounting every row.
   const PAGE = 40;
@@ -126,8 +132,8 @@
       variant="ghost"
       size="sm"
       loading={pruning}
-      disabled={sessions.count === 0}
-      title={sessions.count === 0 ? "No sessions to prune" : "Remove sessions with no turns"}
+      disabled={!online || sessions.count === 0}
+      title={!online ? "daemon offline" : sessions.count === 0 ? "No sessions to prune" : "Remove sessions with no turns"}
       onclick={prune}
     >
       Prune empty
@@ -164,12 +170,32 @@
           <span class="srow__when">{rel(s.updated)}</span>
           <div class="srow__actions">
             <Button variant="ghost" size="sm" onclick={() => resume(s)}>Resume</Button>
-            <Button variant="ghost" size="sm" loading={exporting[s.id]} onclick={() => exportSession(s)}>Export</Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              loading={exporting[s.id]}
+              disabled={!online}
+              title={online ? "Write this session's transcript to a file" : "daemon offline"}
+              onclick={() => exportSession(s)}
+            >Export</Button>
             {#if confirmDelete[s.id]}
-              <Button variant="danger" size="sm" loading={deleting[s.id]} onclick={() => del(s)}>Confirm</Button>
+              <Button
+                variant="danger"
+                size="sm"
+                loading={deleting[s.id]}
+                disabled={!online}
+                title={online ? "Permanently delete this session" : "daemon offline"}
+                onclick={() => del(s)}
+              >Confirm</Button>
               <Button variant="ghost" size="sm" disabled={deleting[s.id]} onclick={() => delete confirmDelete[s.id]}>Cancel</Button>
             {:else}
-              <Button variant="ghost" size="sm" onclick={() => (confirmDelete[s.id] = true)}>Delete</Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!online}
+                title={online ? "Delete this session" : "daemon offline"}
+                onclick={() => (confirmDelete[s.id] = true)}
+              >Delete</Button>
             {/if}
           </div>
         </div>

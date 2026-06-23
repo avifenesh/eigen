@@ -9,6 +9,7 @@
   import { feed } from "$lib/stores/feed.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { router } from "$lib/router.svelte";
+  import { now } from "$lib/stores/clock.svelte";
   import { sessionDot } from "$lib/status";
   import { Bridge } from "$lib/bridge";
   import { Browser } from "@wailsio/runtime";
@@ -96,6 +97,7 @@
   }
 
   function rel(updatedNano: number): string {
+    void now.ms; // tie to shared clock so the label ticks
     const ms = Date.now() - updatedNano / 1e6;
     const m = Math.floor(ms / 60000);
     if (m < 1) return "just now";

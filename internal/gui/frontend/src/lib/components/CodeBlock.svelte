@@ -270,4 +270,12 @@
     color: var(--syn-comment);
     font-style: italic;
   }
+  /* REDUCED MOTION — the only animated surfaces here are the copy + expander
+     hover transitions; drop them when the user asks for less movement. */
+  @media (prefers-reduced-motion: reduce) {
+    .code__copy,
+    .code__expand {
+      transition: none;
+    }
+  }
 </style>

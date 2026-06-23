@@ -358,7 +358,10 @@
     -moz-tab-size: var(--tab-size);
   }
   .diff__scroll--clipped {
-    overflow: hidden;
+    /* Clip only the vertical for the fade — wide preview lines stay
+       horizontally scrollable while the diff is collapsed. */
+    overflow-x: auto;
+    overflow-y: hidden;
   }
   .diff__table {
     width: 100%;

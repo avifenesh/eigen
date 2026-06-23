@@ -42,6 +42,9 @@
   let fileInput: HTMLInputElement | undefined = $state(undefined);
   let focused = $state(false);
   let attachments = $state<Attachment[]>([]);
+  // SSR-stable, per-instance id wiring the textarea's aria-describedby to the
+  // status line below it, so AT reads the offline reason / char count.
+  const statusId = $props.id();
   // Count of in-flight drag-enters so nested children don't flicker the state.
   let dragDepth = $state(0);
   const dragging = $derived(dragDepth > 0 && !disabled);
@@ -60,6 +63,12 @@
         ? `${attachments.length} image${attachments.length === 1 ? "" : "s"} · Enter to send`
         : "Enter to send · Shift+Enter for newline",
   );
+  // The accessible description carried on the textarea (and announced live).
+  // When offline it is the disabled reason; otherwise it mirrors the hint so
+  // the char count / image count reaches AT instead of dying in an aria-hidden
+  // footer.
+  const offlineReason = $derived(disabledReason || "Composer unavailable");
+  const status = $derived(disabled ? offlineReason : hint);
 
   function grow() {
     if (!ta) return;
@@ -221,18 +230,23 @@
       onfocus={() => (focused = true)}
       onblur={() => (focused = false)}
       {disabled}
-      placeholder={disabled
-        ? disabledReason || "Composer unavailable"
-        : "Message eigen…"}
+      placeholder={disabled ? offlineReason : "Message eigen…"}
       rows="1"
       spellcheck="true"
       aria-label="Message eigen"
+      aria-describedby={statusId}
       class="composer__input selectable"
     ></textarea>
 
-    <div class="composer__footer" aria-hidden="true">
-      <span class="composer__hint" class:composer__hint--count={trimmed.length > 0}>
-        {disabled ? disabledReason || "Composer unavailable" : hint}
+    <div class="composer__footer">
+      <span
+        id={statusId}
+        class="composer__hint"
+        class:composer__hint--count={trimmed.length > 0}
+        role="status"
+        aria-live="polite"
+      >
+        {status}
       </span>
     </div>
   </div>
@@ -267,8 +281,10 @@
         variant="primary"
         size="md"
         disabled={!canSend}
-        title={disabled ? disabledReason : "Send message (Enter)"}
-        onclick={send}>Send</Button
+        title={disabled ? offlineReason : "Send message (Enter)"}
+        onclick={send}
+        >Send{#if disabled}<span class="sr-only"> — {offlineReason}</span
+          >{/if}</Button
       >
     {/if}
   </div>
@@ -461,6 +477,23 @@
     /* Nudge the buttons down so their box centres on the first input line rather
        than the footer hint — optical baseline alignment. */
     padding-bottom: calc(var(--fs-micro) + var(--sp-2));
+  }
+
+  /* Off-screen text that stays in the a11y tree — used to fold the offline
+     reason into the Send button's accessible name without changing its visible
+     label. Standard clip pattern (not display:none, which drops it from the
+     tree); mirrors Chat's .sr-only. */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
   }
 
   @media (prefers-reduced-motion: reduce) {

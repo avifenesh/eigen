@@ -92,6 +92,10 @@ export type DaemonStats = {
   bg_tasks: number;
   go_version?: string;
   version?: string;
+  executable?: string;
+  binary_sha256?: string;
+  vcs_revision?: string;
+  vcs_modified?: boolean;
   input_tokens?: number;
   output_tokens?: number;
   cache_read_tokens?: number;

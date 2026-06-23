@@ -251,6 +251,15 @@ export function createTranscript(sessionId: string) {
 //     the last CAP blocks, so we map at most the last CAP*2 messages — enough
 //     to comfortably fill the window even when every message is a single block
 //     (the seed slices to CAP afterward; truncated stays driven by raw length).
+//
+// Correctness (GUI-062): the Map mirrors the live `tool_result` path — it
+// resolves a result to the MOST RECENT undone tool call with the id (last-wins:
+// every new call with the same id overwrites the Map entry), and it NEVER keys
+// on an empty id. Foreign/importer histories (Codex/Claude) and providers that
+// blank ids would otherwise collapse `toolCallId ?? ''` → '' and attach every
+// id-less result to the first id-less tool block. An empty-id result instead
+// becomes a standalone result block, the same as the live path treats an
+// unmatched id.
 function mapMessages(messages: MessageDTO[], uid: () => number): Block[] {
   const window = messages.length > CAP * 2 ? messages.slice(-CAP * 2) : messages;
   const out: Block[] = [];
@@ -259,15 +268,19 @@ function mapMessages(messages: MessageDTO[], uid: () => number): Block[] {
   for (const m of window) {
     if (m.role === "tool") {
       const id = m.toolCallId ?? "";
-      const existing = byToolId.get(id);
+      // Empty id can't be matched (it would collide with every other id-less
+      // call), and an unmatched id has no call to fold into — both surface as a
+      // standalone, already-done result block.
+      const existing = id ? byToolId.get(id) : undefined;
       if (existing) {
         existing.result = m.text;
         existing.isError = m.toolError;
         existing.done = true;
+        // The call has its result; a later same-id call should match on its own
+        // block, not steal this one's result.
+        byToolId.delete(id);
       } else {
-        const block: ToolBlock = { uid: uid(), kind: "tool", id, name: m.toolName ?? "tool", args: "", result: m.text, isError: m.toolError, done: true };
-        byToolId.set(id, block);
-        out.push(block);
+        out.push({ uid: uid(), kind: "tool", id, name: m.toolName ?? "tool", args: "", result: m.text, isError: m.toolError, done: true });
       }
       continue;
     }
@@ -275,7 +288,9 @@ function mapMessages(messages: MessageDTO[], uid: () => number): Block[] {
     if (m.text) out.push({ uid: uid(), kind: "text", step, text: m.text });
     for (const tc of m.toolCalls ?? []) {
       const block: ToolBlock = { uid: uid(), kind: "tool", id: tc.id, name: tc.name, args: tc.args, done: false };
-      byToolId.set(tc.id, block);
+      // Last-wins: an id-less call is never matchable (no result can find it),
+      // so it stays a standalone pending block and is kept out of the Map.
+      if (tc.id) byToolId.set(tc.id, block);
       out.push(block);
     }
     step++;

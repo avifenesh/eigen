@@ -20,6 +20,9 @@
   let composing = $state(false);
   let draft = $state("");
   let saving = $state(false);
+  // The compose textarea element — focused the moment composing flips true so
+  // the cursor lands in the field without a second click.
+  let composeEl = $state<HTMLTextAreaElement | null>(null);
   let editingProfile = $state(false);
   let profileDraft = $state("");
   let savingProfile = $state(false);
@@ -69,6 +72,12 @@
     return () => {
       loadSeq++;
     };
+  });
+
+  // When the composer opens, move focus into the textarea so typing starts
+  // immediately — no extra click. composeEl is bound only while composing.
+  $effect(() => {
+    if (composing && composeEl) composeEl.focus();
   });
 
   async function saveNote() {
@@ -223,6 +232,7 @@
   {#if composing}
     <div class="mem__compose">
       <textarea
+        bind:this={composeEl}
         bind:value={draft}
         class="mem__textarea selectable"
         rows="3"
