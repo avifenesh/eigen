@@ -148,6 +148,19 @@ func TestFirstSentenceAround(t *testing.T) {
 	}
 }
 
+func TestFirstSentenceAroundStripsBulletMarker(t *testing.T) {
+	// No preceding .;: separator before the intent match, so start==0 and the
+	// clause begins at the bullet's leading "- " marker. It must be stripped.
+	b := "- we still need to ship X before the demo"
+	got := firstSentenceAround(b, intentRe)
+	if strings.HasPrefix(got, "-") {
+		t.Fatalf("clause must not keep the bullet marker: %q", got)
+	}
+	if !strings.HasPrefix(got, "we still need to ship X") {
+		t.Fatalf("clause: %q", got)
+	}
+}
+
 func TestRankOrdersByActionability(t *testing.T) {
 	items := []Item{
 		{Kind: "memory", Title: "m1"},

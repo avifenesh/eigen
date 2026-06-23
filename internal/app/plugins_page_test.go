@@ -627,3 +627,43 @@ func TestPluginsPageToggleInstalledPlugin(t *testing.T) {
 		t.Fatal("second enter should re-enable plugin")
 	}
 }
+
+// TestFilterInstalledCatalogDoesNotClobberOriginal guards APP-097: the filter
+// must build a fresh slice, not alias p.catalog[:0]. With interleaved installed
+// entries, an in-place slice[:0]+append would overwrite later catalog elements
+// through any surviving reference to the original backing array.
+func TestFilterInstalledCatalogDoesNotClobberOriginal(t *testing.T) {
+	orig := []pluginpkg.PluginEntry{
+		{Name: "alpha"},
+		{Name: "beta"},  // installed → dropped
+		{Name: "gamma"}, // installed → dropped
+		{Name: "delta"},
+	}
+	p := &pluginsState{
+		catalog: orig,
+		installed: []pluginpkg.InstalledPlugin{
+			{Name: "beta"},
+			{Name: "gamma"},
+		},
+	}
+	p.filterInstalledCatalog()
+
+	want := []string{"alpha", "delta"}
+	if len(p.catalog) != len(want) {
+		t.Fatalf("expected %d uninstalled entries, got %+v", len(want), p.catalog)
+	}
+	for i, name := range want {
+		if p.catalog[i].Name != name {
+			t.Fatalf("catalog[%d] = %q, want %q (full: %+v)", i, p.catalog[i].Name, name, p.catalog)
+		}
+	}
+
+	// The original backing array must be untouched: an aliasing implementation
+	// would have written "delta" over orig[1] while iterating.
+	origNames := []string{"alpha", "beta", "gamma", "delta"}
+	for i, name := range origNames {
+		if orig[i].Name != name {
+			t.Fatalf("original catalog clobbered at %d: got %q, want %q (full: %+v)", i, orig[i].Name, name, orig)
+		}
+	}
+}

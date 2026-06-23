@@ -89,7 +89,7 @@ func remoteAttachLoop(c *daemon.Client, h remote.HostSpec, id string, cfg config
 			Memory:        mem,
 			Store:         store,
 			Skills:        skills,
-			MaxTokens:     cfg.MaxTokens,
+			MaxTokens:     resolveUserMaxTokens(cfg.MaxTokens),
 			NotifyCmd:     cfg.NotifyCmd,
 			HookRunner:    hookRunner,
 			NoSessionFile: true,

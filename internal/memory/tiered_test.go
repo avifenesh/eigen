@@ -143,3 +143,27 @@ func TestBansAddUpdateRemoveList(t *testing.T) {
 		t.Fatal("no bans → no banned-behaviors section")
 	}
 }
+
+func TestAddBanRedactsTitle(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	s, _ := Open("/p")
+	// A secret token in the title must be scrubbed too — bans.md is injected as
+	// system-priority context, so an unredacted token would persist in prompts.
+	if _, err := s.AddBan("Never reuse ghp_0123456789abcdefghij token", "Do not reuse it."); err != nil {
+		t.Fatalf("AddBan: %v", err)
+	}
+	bans := s.ListBans()
+	if len(bans) != 1 {
+		t.Fatalf("want 1 ban, got %d: %+v", len(bans), bans)
+	}
+	if strings.Contains(bans[0].Title, "ghp_0123456789abcdefghij") {
+		t.Fatalf("title should be redacted, got %q", bans[0].Title)
+	}
+	if !strings.Contains(bans[0].Title, Redacted) {
+		t.Fatalf("title should contain redaction placeholder, got %q", bans[0].Title)
+	}
+	// And it must not leak through the injected section either.
+	if strings.Contains(s.Section(), "ghp_0123456789abcdefghij") {
+		t.Fatal("redacted token leaked into injected section")
+	}
+}

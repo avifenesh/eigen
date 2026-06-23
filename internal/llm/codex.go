@@ -146,9 +146,6 @@ func (c *Codex) Effort() string {
 	return c.effort
 }
 
-// SetSearch is a no-op stub: Codex has no client-side search toggle. (Implements
-// the optional interface symmetry; not registered as a Searcher.)
-
 // FastMode reports whether the fast (priority) service tier is active.
 func (c *Codex) FastMode() bool {
 	c.mu.Lock()

@@ -89,12 +89,14 @@ func (l *Local) ProviderName() string {
 	return l.a.Provider.Name()
 }
 
-// SetModel performs a live provider switch (the /model command). modelID is
-// tracked here so the status bar follows.
+// SetModel performs a live provider switch (the /model command). The raw
+// ModelID() (NOT Name(), whose "(zhipu glm)" suffix would diverge from the
+// daemon-attached Remote, which tracks ModelID()) is recorded so the status bar
+// shows the same id for a local chat and an attached session on the same model.
 func (l *Local) SetModel(p llm.Provider, c llm.Compactor, maxTokens int) {
 	l.a.SetLive(p, c, maxTokens)
 	l.mu.Lock()
-	l.modelID = p.Name()
+	l.modelID = p.ModelID()
 	l.mu.Unlock()
 }
 

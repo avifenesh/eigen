@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // TestLazyClientFailedConnectCooldown proves a failed connect is cached for the
@@ -174,6 +175,41 @@ func TestIsRemoteServer(t *testing.T) {
 	for _, c := range cases {
 		if got := isRemoteServer(c.sc); got != c.want {
 			t.Errorf("%s: isRemoteServer = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// TestFirstSentenceRuneTruncation proves the long-line truncation cuts on rune
+// boundaries: a first line of multi-byte runes (accented/CJK/emoji) longer than
+// 120 runes must yield valid UTF-8 ending in the ellipsis, never a broken
+// half-rune from a byte slice. Short and sentence/line cases are kept as a
+// regression guard for the surrounding behavior.
+func TestFirstSentenceRuneTruncation(t *testing.T) {
+	// 130 accented runes — each is 2 bytes in UTF-8, so a byte slice s[:117]
+	// would land mid-rune and corrupt the output.
+	long := strings.Repeat("é", 130)
+	got := firstSentence(long)
+	if !utf8.ValidString(got) {
+		t.Fatalf("firstSentence produced invalid UTF-8: %q", got)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Errorf("expected ellipsis suffix, got %q", got)
+	}
+	if r := []rune(got); len(r) != 118 { // 117 kept + ellipsis
+		t.Errorf("expected 118 runes (117 + ellipsis), got %d", len(r))
+	}
+
+	cases := []struct {
+		name, in, want string
+	}{
+		{"empty", "   ", ""},
+		{"first line only", "drive Chrome\nmore detail", "drive Chrome"},
+		{"first sentence", "isolated Linux sandbox. Run apps.", "isolated Linux sandbox"},
+		{"short unicode untouched", "café ☕", "café ☕"},
+	}
+	for _, c := range cases {
+		if got := firstSentence(c.in); got != c.want {
+			t.Errorf("%s: firstSentence(%q) = %q, want %q", c.name, c.in, got, c.want)
 		}
 	}
 }

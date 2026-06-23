@@ -559,8 +559,11 @@ func firstSentence(s string) string {
 		s = s[:i]
 	}
 	s = strings.TrimSpace(s)
-	if len(s) > 120 {
-		s = s[:117] + "…"
+	// Truncate by runes, not bytes: a byte slice s[:117] can cut mid-rune for
+	// non-ASCII (accented/CJK/emoji) first lines, yielding a broken character in
+	// the Level-0 group description.
+	if r := []rune(s); len(r) > 120 {
+		s = string(r[:117]) + "…"
 	}
 	return s
 }

@@ -734,7 +734,7 @@ func (s *Store) AddBan(title, rule string) (replaced bool, err error) {
 	if s == nil {
 		return false, fmt.Errorf("memory unavailable")
 	}
-	title = strings.TrimSpace(title)
+	title = strings.TrimSpace(Redact(title))
 	rule = strings.TrimSpace(Redact(rule))
 	if title == "" || rule == "" {
 		return false, fmt.Errorf("a ban needs a title and a rule")

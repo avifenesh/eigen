@@ -70,6 +70,44 @@ func TestHookFindsEigenSessionAndIngests(t *testing.T) {
 	}
 }
 
+func TestCoupledDistinguishesUnindexedFromNoCoEdits(t *testing.T) {
+	home := t.TempDir()
+	cwd := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := EnsureHome(); err != nil {
+		t.Fatal(err)
+	}
+
+	// No episodes indexed yet: must signal un-indexed, not "no coupled files".
+	var unindexed bytes.Buffer
+	if err := Coupled(&unindexed, cwd, "internal/orientation/orientation.go"); err != nil {
+		t.Fatal(err)
+	}
+	if got := unindexed.String(); !strings.Contains(got, "no orientation history for this project yet") {
+		t.Fatalf("expected un-indexed signal, got:\n%s", got)
+	}
+
+	// Index an episode that touches only one file: genuinely no co-edits.
+	source := filepath.Join(home, ".eigen", "daemon", "sessions", "s7.jsonl")
+	if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeJSONL(t, source,
+		map[string]any{"Role": "user", "Text": "edit one lonely file"},
+		map[string]any{"Role": "assistant", "ToolCalls": []map[string]any{{"ID": "c1", "Name": "edit", "Arguments": map[string]any{"path": "internal/orientation/orientation.go"}}}},
+	)
+	if err := IngestSource(source, cwd, "eigen", "session", "main", "test", true); err != nil {
+		t.Fatal(err)
+	}
+	var noco bytes.Buffer
+	if err := Coupled(&noco, cwd, "internal/orientation/orientation.go"); err != nil {
+		t.Fatal(err)
+	}
+	if got := noco.String(); !strings.Contains(got, "no coupled files recorded") {
+		t.Fatalf("expected no-co-edits signal, got:\n%s", got)
+	}
+}
+
 type ioDiscard struct{}
 
 func (ioDiscard) Write(p []byte) (int, error) { return len(p), nil }

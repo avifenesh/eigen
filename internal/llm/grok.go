@@ -116,14 +116,6 @@ func (g *Grok) Stream(ctx context.Context, req Request, sink StreamSink) (*Respo
 	return cc.stream(ctx, grokPrepare(req, search, sources), sink)
 }
 
-// prepare appends a hint to the system prompt when Live Search is active,
-// telling Grok to prefer its built-in search over the client-side fetch tool.
-// It lists the actual enabled sources so the model knows what it can search.
-func (g *Grok) prepare(req Request) Request {
-	search, sources := g.snapshot()
-	return grokPrepare(req, search, sources)
-}
-
 func grokPrepare(req Request, search string, sources []string) Request {
 	if search == "off" {
 		return req

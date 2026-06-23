@@ -408,7 +408,7 @@ func attachTUI(c *daemon.Client, id string, cfg config.Config, task string) tui.
 		Skills:        skills,
 		DreamOnIdle:   cfg.DreamOnIdle,
 		IdleMinutes:   cfg.IdleMinutes,
-		MaxTokens:     cfg.MaxTokens,
+		MaxTokens:     resolveUserMaxTokens(cfg.MaxTokens),
 		NotifyCmd:     cfg.NotifyCmd,
 		Router:        newAutoRouter(cfg.Route, cfg.RouteProviders, firstNonEmpty(cfg.Provider, "converse")),
 		HookRunner:    hookRunner,

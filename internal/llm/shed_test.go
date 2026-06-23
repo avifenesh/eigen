@@ -67,6 +67,40 @@ func TestShedToolResultsSkipsErrorsAndStubs(t *testing.T) {
 	}
 }
 
+func TestShedPreservesSpecificStubs(t *testing.T) {
+	// A result already rewritten to a SPECIFIC stub (dropped-screenshot note or
+	// dedupe pointer) must not be overwritten by the generic tool-result stub on
+	// a later shed pass — that would lose the note + dedupe pointer.
+	mk := func() []Message {
+		return []Message{
+			{Role: RoleUser, Text: "go"},
+			{Role: RoleTool, ToolName: "browser", Text: imagePrunedStub},
+			{Role: RoleTool, ToolName: "read", Text: duplicateResultStub},
+			{Role: RoleUser, Text: "next"},
+			{Role: RoleUser, Text: "again"},
+		}
+	}
+
+	// Round-based: keepRounds=0 stubs every result outside the window, but the
+	// already-specific-stubbed ones must survive verbatim.
+	out := ShedToolResults(mk(), 0)
+	if out[1].Text != imagePrunedStub {
+		t.Fatalf("ShedToolResults overwrote imagePrunedStub: %q", out[1].Text)
+	}
+	if out[2].Text != duplicateResultStub {
+		t.Fatalf("ShedToolResults overwrote duplicateResultStub: %q", out[2].Text)
+	}
+
+	// Count-based: keepResults=0 stubs every result, same invariant.
+	out = ShedOldToolResults(mk(), 0)
+	if out[1].Text != imagePrunedStub {
+		t.Fatalf("ShedOldToolResults overwrote imagePrunedStub: %q", out[1].Text)
+	}
+	if out[2].Text != duplicateResultStub {
+		t.Fatalf("ShedOldToolResults overwrote duplicateResultStub: %q", out[2].Text)
+	}
+}
+
 func TestShedToolResultsKeepRoundsZeroStubsAll(t *testing.T) {
 	msgs := []Message{
 		{Role: RoleUser, Text: "a"},

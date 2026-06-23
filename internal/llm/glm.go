@@ -202,13 +202,6 @@ func glmBodyExtra(thinking string, clearThinking bool) map[string]any {
 	return extra
 }
 
-// prepare appends a hint to the system prompt when web_search is active, telling
-// GLM to prefer its built-in search over the client-side fetch tool.
-func (g *GLM) prepare(req Request) Request {
-	search, _, _ := g.snapshot()
-	return glmPrepare(req, search)
-}
-
 func glmPrepare(req Request, search string) Request {
 	if search == "off" {
 		return req

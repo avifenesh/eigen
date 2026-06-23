@@ -37,9 +37,6 @@ func detectNerdFont() bool {
 	return strings.Contains(font, "nerd") || strings.Contains(font, "nf")
 }
 
-// NerdFont reports whether the Nerd Font icon tier is active.
-func NerdFont() bool { return nerdFont }
-
 // NerdFontMode returns the active tier as "on"/"off" — for config comparison
 // (so the startup re-exec only fires when the configured tier differs).
 func NerdFontMode() string {

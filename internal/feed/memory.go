@@ -99,7 +99,12 @@ func firstSentenceAround(bullet string, re *regexp.Regexp) string {
 	} else {
 		end += loc[1]
 	}
-	return strings.TrimSpace(bullet[start:end])
+	clause := strings.TrimSpace(bullet[start:end])
+	// When the match has no preceding .;: separator, start==0 and the clause
+	// still carries the bullet's leading "- " marker. Strip it so titles read
+	// "proj: we still need to ship X" rather than "proj: - we still need…".
+	clause = strings.TrimLeft(clause, "-*\t ")
+	return clause
 }
 
 // clip shortens s to n runes with an ellipsis.
