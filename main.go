@@ -2100,19 +2100,11 @@ func runWorkflowHeadless(a *agent.Agent, name string, vars map[string]string) {
 	}
 	fmt.Fprintf(os.Stderr, "eigen workflow: %s — %d step(s)\n", wf.Name, len(wf.Steps))
 
-	// ONE carried session across steps.
+	// ONE carried session across steps. A per-step model override runs on this
+	// SAME session via a live model switch (see workflowStepRunner), never an
+	// isolated subtask — so step N always sees prior steps' work.
 	sess := a.NewSession()
-	runStep := func(ctx context.Context, prompt, model string) (string, error) {
-		// Per-step model override: a one-shot subtask on the chosen model keeps
-		// the step isolated to its model while still carrying context is the
-		// trade-off — v1 keeps it simple and runs every step on the main
-		// session's model (model override is recorded but applied via the
-		// router only when set). Inherit when model=="".
-		if model != "" {
-			return a.SubtaskWith(ctx, prompt, agent.SubtaskOpts{Model: model})
-		}
-		return sess.Send(ctx, prompt)
-	}
+	runStep := workflowStepRunner(a, sess)
 	judge := func(ctx context.Context, condition, output string) (bool, string, error) {
 		return a.JudgeClaim(ctx, nil, condition, output)
 	}
@@ -2149,6 +2141,42 @@ func runWorkflowHeadless(a *agent.Agent, name string, vars map[string]string) {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "eigen workflow:", err)
 		os.Exit(2)
+	}
+}
+
+// workflowStepRunner returns the StepRunner that drives every workflow step on
+// ONE carried session (so step N sees prior steps' work). A step that names a
+// model is the only twist: instead of an ISOLATED subtask (which would start a
+// fresh, context-blind conversation and break the one-session carry the
+// workflow contract promises), it does a LIVE model switch on the SAME session
+// — snapshot the live provider+compactor, swap to the named model for the
+// duration of this step, run, then ALWAYS restore (deferred, so an error or
+// panic can't strand the override). If the named provider can't be built (no
+// builder injected, bad id, missing creds) we keep context by running on the
+// session's current model and say so — a silent fallback would hide that the
+// override didn't take.
+func workflowStepRunner(a *agent.Agent, sess *agent.Session) workflow.StepRunner {
+	return func(ctx context.Context, prompt, model string) (string, error) {
+		// Inherit the session's model when the step doesn't name one.
+		if model == "" {
+			return sess.Send(ctx, prompt)
+		}
+		if a.ModelProvider == nil {
+			fmt.Fprintf(os.Stderr, "  (model %s ignored — no provider builder; running on session model)\n", model)
+			return sess.Send(ctx, prompt)
+		}
+		p, err := a.ModelProvider(model)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  (model %s unavailable: %v — running on session model)\n", model, err)
+			return sess.Send(ctx, prompt)
+		}
+		// Live switch on the carried session, scoped to exactly this step.
+		prevProv := a.CurrentProvider()
+		prevCompactor := a.Compactor
+		fmt.Fprintf(os.Stderr, "  ⇄ model %s (this step)\n", model)
+		a.SetLive(p, llm.NewCompactor(p), 0)
+		defer a.SetLive(prevProv, prevCompactor, 0)
+		return sess.Send(ctx, prompt)
 	}
 }
 

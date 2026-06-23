@@ -220,6 +220,154 @@ func TestCustomAnthropicUsesWireModelEndpointAndVersion(t *testing.T) {
 	}
 }
 
+func TestCustomReasoningModelAppliesEffort(t *testing.T) {
+	// A custom reasoning model with a catalog Effort must actually send that
+	// effort on the wire for every kind, and SetEffort must change it live —
+	// matching how a built-in reasoning model applies effort.
+
+	t.Run("openai_chat", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		var seen struct {
+			ReasoningEffort string `json:"reasoning_effort"`
+		}
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&seen)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{{"message": map[string]any{"content": "ok"}}},
+			})
+		}))
+		defer srv.Close()
+		if err := UpsertCustomProvider(CustomProvider{
+			Name: "reasonchat", Type: "openai", API: "chat", BaseURL: srv.URL + "/v1", NoAuth: true,
+			Models: []CustomModel{{Name: "r-chat", ID: "wire", Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high"}}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		p, err := New("reasonchat", "r-chat")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}}); err != nil {
+			t.Fatal(err)
+		}
+		if seen.ReasoningEffort != "high" {
+			t.Fatalf("chat reasoning_effort = %q, want high", seen.ReasoningEffort)
+		}
+		es, ok := p.(EffortSetter)
+		if !ok {
+			t.Fatal("custom chat reasoning model must implement EffortSetter")
+		}
+		if es.Effort() != "high" {
+			t.Fatalf("Effort() = %q, want high", es.Effort())
+		}
+		if !es.SetEffort("low") {
+			t.Fatal("SetEffort(low) should succeed for a supported level")
+		}
+		if _, err := p.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}}); err != nil {
+			t.Fatal(err)
+		}
+		if seen.ReasoningEffort != "low" {
+			t.Fatalf("after SetEffort, reasoning_effort = %q, want low", seen.ReasoningEffort)
+		}
+		if es.SetEffort("bogus") {
+			t.Fatal("SetEffort should reject a level outside the model's set")
+		}
+	})
+
+	t.Run("openai_responses", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		var seen struct {
+			Reasoning *struct {
+				Effort string `json:"effort"`
+			} `json:"reasoning"`
+		}
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&seen)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"output": []map[string]any{{"type": "message", "content": []map[string]any{{"type": "output_text", "text": "ok"}}}},
+			})
+		}))
+		defer srv.Close()
+		if err := UpsertCustomProvider(CustomProvider{
+			Name: "reasonresp", Type: "openai", API: "responses", BaseURL: srv.URL + "/v1", NoAuth: true,
+			Models: []CustomModel{{Name: "r-resp", ID: "wire", Reasoning: true, Effort: "medium"}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		p, err := New("reasonresp", "r-resp")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}}); err != nil {
+			t.Fatal(err)
+		}
+		if seen.Reasoning == nil || seen.Reasoning.Effort != "medium" {
+			t.Fatalf("responses reasoning effort = %+v, want medium", seen.Reasoning)
+		}
+	})
+
+	t.Run("anthropic", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		var seen struct {
+			Thinking     json.RawMessage `json:"thinking"`
+			OutputConfig struct {
+				Effort string `json:"effort"`
+			} `json:"output_config"`
+		}
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&seen)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"content": []map[string]any{{"type": "text", "text": "ok"}},
+			})
+		}))
+		defer srv.Close()
+		if err := UpsertCustomProvider(CustomProvider{
+			Name: "reasonant", Type: "ant", BaseURL: srv.URL + "/v1", NoAuth: true,
+			Models: []CustomModel{{Name: "r-ant", ID: "wire", Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "max"}}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		p, err := New("reasonant", "r-ant")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}}); err != nil {
+			t.Fatal(err)
+		}
+		if string(seen.Thinking) != `{"type":"adaptive"}` || seen.OutputConfig.Effort != "high" {
+			t.Fatalf("anthropic thinking=%s output_config.effort=%q, want adaptive/high", seen.Thinking, seen.OutputConfig.Effort)
+		}
+	})
+
+	t.Run("non_reasoning_omits_effort", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		var raw map[string]json.RawMessage
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&raw)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{{"message": map[string]any{"content": "ok"}}},
+			})
+		}))
+		defer srv.Close()
+		if err := UpsertCustomProvider(CustomProvider{
+			Name: "plainchat", Type: "openai", API: "chat", BaseURL: srv.URL + "/v1", NoAuth: true,
+			Models: []CustomModel{{Name: "plain", ID: "wire"}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		p, err := New("plainchat", "plain")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}}); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := raw["reasoning_effort"]; ok {
+			t.Fatal("non-reasoning custom model should not send reasoning_effort")
+		}
+	})
+}
+
 func TestCustomProviderRejectsDuplicateModelAcrossProviders(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	if err := UpsertCustomProvider(CustomProvider{Name: "one", Type: "openai", BaseURL: "http://127.0.0.1:1/v1", NoAuth: true, Models: []CustomModel{{Name: "shared"}}}); err != nil {

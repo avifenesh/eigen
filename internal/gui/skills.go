@@ -1,10 +1,13 @@
 package gui
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/skill"
 )
 
@@ -108,4 +111,92 @@ func (b *Bridge) AcceptSkill(name string) (string, error) {
 // RejectSkill discards a dream-proposed skill.
 func (b *Bridge) RejectSkill(name string) error {
 	return skill.Reject(name)
+}
+
+// SkillInstallDTO is the result of an install: the resolved skill name and the
+// path its SKILL.md was written to.
+type SkillInstallDTO struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+// userSkillsDir is the per-user skills store (~/.eigen/skills) — installs land
+// here, the same target the CLI uses for `eigen skill add`.
+func userSkillsDir() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".eigen", "skills")
+}
+
+// installScanner builds the security scanner for skill installs using a small/
+// cheap model (EIGEN_SMALL_MODEL → grok composer → Haiku), mirroring main's
+// smallProvider precedence. It vets the SKILL.md content before it is written;
+// a RISKY verdict aborts the install (the bridge never Forces). Returns nil
+// when no provider can be credentialed, in which case the caller fails closed.
+func installScanner() skill.Scanner {
+	if sm := os.Getenv("EIGEN_SMALL_MODEL"); sm != "" {
+		if p, err := llm.New("", sm); err == nil {
+			return skill.ProviderScanner{P: p}
+		}
+	}
+	if llm.ProviderAvailable("grok") {
+		if p, err := llm.New("grok", "grok-composer-2.5-fast"); err == nil {
+			return skill.ProviderScanner{P: p}
+		}
+	}
+	if p, err := llm.New("converse", "us.anthropic.claude-haiku-4-5-20251001-v1:0"); err == nil {
+		return skill.ProviderScanner{P: p}
+	}
+	return nil
+}
+
+// installOptions builds the InstallOptions shared by both install paths: write
+// into the per-user store, scan on, never Force. A nil scanner (no credentialed
+// small model) is surfaced as an error rather than silently installing unvetted
+// content.
+func (b *Bridge) installOptions() (skill.InstallOptions, error) {
+	sc := installScanner()
+	if sc == nil {
+		return skill.InstallOptions{}, errors.New("cannot scan skill: no credentialed model available (set EIGEN_SMALL_MODEL or credential a provider)")
+	}
+	return skill.InstallOptions{Dir: userSkillsDir(), Scanner: sc}, nil
+}
+
+// InstallSkillFromPath installs a skill from a local SKILL.md file or a
+// directory containing one. The content is security-scanned before it is
+// written; a RISKY verdict aborts the install (a *skill.RiskyError is returned,
+// flattened to its message by Wails). Returns the resolved name + install path.
+func (b *Bridge) InstallSkillFromPath(path string) (*SkillInstallDTO, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, errors.New("skill path is empty")
+	}
+	opts, err := b.installOptions()
+	if err != nil {
+		return nil, err
+	}
+	res, err := skill.InstallFromPath(context.Background(), path, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &SkillInstallDTO{Name: res.Name, Path: res.Path}, nil
+}
+
+// InstallSkillFromGitHub installs a skill from a GitHub reference of the form
+// owner/repo[/subpath][@ref] (a leading github.com/ or https:// is tolerated).
+// The fetched SKILL.md is security-scanned before it is written; a RISKY
+// verdict aborts the install. Returns the resolved name + install path.
+func (b *Bridge) InstallSkillFromGitHub(ownerRepo string) (*SkillInstallDTO, error) {
+	ref, err := skill.ParseGitHubRef(ownerRepo)
+	if err != nil {
+		return nil, err
+	}
+	opts, err := b.installOptions()
+	if err != nil {
+		return nil, err
+	}
+	res, err := skill.InstallFromGitHub(context.Background(), ref, skill.DefaultFetcher, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &SkillInstallDTO{Name: res.Name, Path: res.Path}, nil
 }

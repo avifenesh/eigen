@@ -3,7 +3,6 @@ package gui
 import (
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/avifenesh/eigen/internal/memory"
 )
@@ -25,18 +24,19 @@ type MemoryNoteDTO struct {
 // content. Summary is the distilled/injected view; Notes is the raw append-only
 // MEMORY.md split into entries; Bans + Profile are the editable side files.
 type MemoryScopeDTO struct {
-	Scope     string          `json:"scope"` // "project" | "global"
-	Dir       string          `json:"dir"`
-	Path      string          `json:"path"`
-	Summary   string          `json:"summary"`
-	HasSummary bool           `json:"hasSummary"`
-	Notes     []MemoryNoteDTO `json:"notes"`
-	NoteCount int             `json:"noteCount"`
-	Bans      string          `json:"bans"`
-	Profile   string          `json:"profile,omitempty"` // global only (USER.md)
-	AdHoc     []MemoryNoteDTO `json:"adHoc"`
-	Backups   int             `json:"backups"`
-	Bytes     int             `json:"bytes"`
+	Scope      string          `json:"scope"` // "project" | "global"
+	Dir        string          `json:"dir"`
+	Path       string          `json:"path"`
+	Summary    string          `json:"summary"`
+	HasSummary bool            `json:"hasSummary"`
+	Notes      []MemoryNoteDTO `json:"notes"`
+	NoteCount  int             `json:"noteCount"`
+	Bans       string          `json:"bans"`
+	BanList    []memory.Ban    `json:"banList"`           // structured title/rule blocks, for editing
+	Profile    string          `json:"profile,omitempty"` // global only (USER.md)
+	AdHoc      []MemoryNoteDTO `json:"adHoc"`
+	Backups    int             `json:"backups"`
+	Bytes      int             `json:"bytes"`
 }
 
 // MemoryDTO is the full memory snapshot for the view: both scopes.
@@ -89,6 +89,7 @@ func scopeDTO(s *memory.Store, scope string) *MemoryScopeDTO {
 		Notes:      notes,
 		NoteCount:  len(notes),
 		Bans:       strings.TrimSpace(s.Bans()),
+		BanList:    s.ListBans(),
 		AdHoc:      adhoc,
 		Backups:    len(s.Backups()),
 		Bytes:      len(raw),
@@ -110,12 +111,36 @@ func (b *Bridge) Memory() (*MemoryDTO, error) {
 }
 
 // AppendMemory adds a manual note to the given scope ("project" | "global").
+// Goes through Store.Append (not AddAdHocNote directly) so the save also
+// enqueues consolidation + summary maintenance — the same path the agent's
+// memory tool and the TUI use, which is what a "save to memory" action implies.
 func (b *Bridge) AppendMemory(scope, note string) error {
 	s, err := openScope(scope)
 	if err != nil {
 		return err
 	}
-	return s.AddAdHocNote(note, time.Now())
+	return s.Append(note)
+}
+
+// AddBan records (or updates, by title) a hard prohibition in the given scope's
+// bans.md — the banthis layer, native in eigen, mirroring the TUI's /ban.
+// Returns whether it replaced an existing ban of the same title.
+func (b *Bridge) AddBan(scope, title, rule string) (bool, error) {
+	s, err := openScope(scope)
+	if err != nil {
+		return false, err
+	}
+	return s.AddBan(title, rule)
+}
+
+// RemoveBan deletes a ban by title (case-insensitive) from the given scope,
+// mirroring the TUI's /unban. Returns whether one was removed.
+func (b *Bridge) RemoveBan(scope, title string) (bool, error) {
+	s, err := openScope(scope)
+	if err != nil {
+		return false, err
+	}
+	return s.RemoveBan(title)
 }
 
 // WriteUserProfile replaces the global editable user profile (USER.md).

@@ -67,11 +67,17 @@ export const Bridge = {
   AppendMemory: (scope: string, note: string): Promise<void> => B.AppendMemory(scope, note),
   WriteUserProfile: (content: string): Promise<void> => B.WriteUserProfile(content),
   MemoryBackups: (scope: string): Promise<string[]> => B.MemoryBackups(scope),
+  // bans (banthis hard-prohibition layer) — returns whether an existing ban was replaced/removed
+  AddBan: (scope: string, title: string, rule: string): Promise<boolean> => B.AddBan(scope, title, rule),
+  RemoveBan: (scope: string, title: string): Promise<boolean> => B.RemoveBan(scope, title),
   // skills
   Skills: (): Promise<SkillsDTO | null> => B.Skills(),
   SkillBody: (name: string): Promise<string> => B.SkillBody(name),
   AcceptSkill: (name: string): Promise<string> => B.AcceptSkill(name),
   RejectSkill: (name: string): Promise<void> => B.RejectSkill(name),
+  // skill install (local path or owner/repo GitHub ref) — scanned before write
+  InstallSkillFromPath: (path: string): Promise<{ name: string; path: string } | null> => B.InstallSkillFromPath(path),
+  InstallSkillFromGitHub: (ownerRepo: string): Promise<{ name: string; path: string } | null> => B.InstallSkillFromGitHub(ownerRepo),
   // agents
   Agents: (): Promise<AgentsDTO | null> => B.Agents(),
   CancelAgent: (id: string): Promise<void> => B.CancelAgent(id),

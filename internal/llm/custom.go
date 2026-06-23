@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -480,6 +481,69 @@ func newCustomProvider(providerName, modelName string) (Provider, error) {
 	}
 }
 
+// customEffortLevels resolves the accepted effort labels for a custom reasoning
+// model: the catalog-style EffortLevels when given, else the global fallback.
+// Non-reasoning models accept nothing (effort is ignored).
+func customEffortLevels(m CustomModel) []string {
+	if !m.Reasoning {
+		return nil
+	}
+	if len(m.EffortLevels) > 0 {
+		return m.EffortLevels
+	}
+	return EffortLevels
+}
+
+// customEffort is the runtime reasoning-effort knob shared by all three custom
+// provider kinds. It mirrors how built-in reasoning providers carry effort: the
+// model's catalog default seeds it, EIGEN_REASONING_EFFORT overrides at startup
+// (when the model accepts it), and SetEffort/Effort satisfy EffortSetter so a
+// live /effort switch works without rebuilding the provider.
+type customEffort struct {
+	mu        sync.RWMutex
+	reasoning bool
+	levels    []string
+	effort    string
+}
+
+func newCustomEffort(m CustomModel) *customEffort {
+	e := &customEffort{reasoning: m.Reasoning, levels: customEffortLevels(m), effort: m.Effort}
+	if env := strings.TrimSpace(os.Getenv("EIGEN_REASONING_EFFORT")); env != "" && effortSupported(env, e.levels) {
+		e.effort = env
+	}
+	return e
+}
+
+// SetEffort changes the reasoning effort if the model supports the level.
+func (e *customEffort) SetEffort(level string) bool {
+	if !e.reasoning || !effortSupported(level, e.levels) {
+		return false
+	}
+	e.mu.Lock()
+	e.effort = level
+	e.mu.Unlock()
+	return true
+}
+
+// Effort returns the current reasoning-effort label ("" when not reasoning).
+func (e *customEffort) Effort() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.effort
+}
+
+// snapshot returns the current effort label and whether it's an active reasoning
+// request (a reasoning model with a non-empty, non-disabling effort).
+func (e *customEffort) snapshot() (effort string, active bool) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	eff := strings.TrimSpace(e.effort)
+	if !e.reasoning || eff == "" || eff == "off" || eff == "none" || eff == "minimal" {
+		return eff, false
+	}
+	return eff, true
+}
+
 func normalizeOpenAIBase(base string) string {
 	b := strings.TrimRight(strings.TrimSpace(base), "/")
 	for _, suffix := range []string{"/chat/completions", "/responses"} {
@@ -494,17 +558,33 @@ func normalizeAnthropicBase(base string) string {
 	return strings.TrimRight(b, "/")
 }
 
+var _ EffortSetter = (*customOpenAIChat)(nil)
+
 type customOpenAIChat struct {
 	name  string
 	model string
 	wire  string
 	c     *chatClient
+	*customEffort
 }
 
 func newCustomOpenAIChat(p CustomProvider, m CustomModel) *customOpenAIChat {
 	m = normalizeCustomModel(m)
 	c := newChatClient(normalizeOpenAIBase(p.BaseURL), m.ID, customAPIKey(p), p.Name)
-	return &customOpenAIChat{name: p.Name, model: m.Name, wire: m.ID, c: c}
+	cc := &customOpenAIChat{name: p.Name, model: m.Name, wire: m.ID, c: c, customEffort: newCustomEffort(m)}
+	// Inject the chat-completions reasoning-effort field when set, the way GLM
+	// injects its thinking field via the shared chatClient extra hook.
+	c.extra = cc.bodyExtra
+	return cc
+}
+
+// bodyExtra adds the OpenAI-compatible chat-completions reasoning-effort field
+// for a reasoning custom model with an active effort. Nil otherwise.
+func (p *customOpenAIChat) bodyExtra() map[string]any {
+	if effort, active := p.snapshot(); active {
+		return map[string]any{"reasoning_effort": effort}
+	}
+	return nil
 }
 
 func (p *customOpenAIChat) Name() string    { return p.model + " (" + p.name + " openai-chat)" }
@@ -516,6 +596,8 @@ func (p *customOpenAIChat) Stream(ctx context.Context, req Request, sink StreamS
 	return p.c.stream(ctx, req, sink)
 }
 
+var _ EffortSetter = (*customOpenAIResponses)(nil)
+
 type customOpenAIResponses struct {
 	name    string
 	model   string
@@ -523,11 +605,12 @@ type customOpenAIResponses struct {
 	baseURL string
 	apiKey  string
 	http    *http.Client
+	*customEffort
 }
 
 func newCustomOpenAIResponses(p CustomProvider, m CustomModel) *customOpenAIResponses {
 	m = normalizeCustomModel(m)
-	return &customOpenAIResponses{name: p.Name, model: m.Name, wire: m.ID, baseURL: normalizeOpenAIBase(p.BaseURL), apiKey: customAPIKey(p), http: &http.Client{Timeout: 5 * time.Minute}}
+	return &customOpenAIResponses{name: p.Name, model: m.Name, wire: m.ID, baseURL: normalizeOpenAIBase(p.BaseURL), apiKey: customAPIKey(p), http: &http.Client{Timeout: 5 * time.Minute}, customEffort: newCustomEffort(m)}
 }
 
 func (p *customOpenAIResponses) Name() string    { return p.model + " (" + p.name + " openai-responses)" }
@@ -537,6 +620,10 @@ func (p *customOpenAIResponses) Complete(ctx context.Context, req Request) (*Res
 		return nil, fmt.Errorf("request has no messages")
 	}
 	payload := responsesRequest{Model: p.wire, Input: buildInput(req), Tools: toResponsesTools(req.Tools)}
+	// Apply reasoning effort the way mantle/codex do for the Responses API.
+	if effort, active := p.snapshot(); active {
+		payload.Reasoning = &reasoningConfig{Effort: effort, Summary: reasoningSummary}
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -565,6 +652,8 @@ func (p *customOpenAIResponses) Complete(ctx context.Context, req Request) (*Res
 	return out, nil
 }
 
+var _ EffortSetter = (*customAnthropic)(nil)
+
 type customAnthropic struct {
 	name    string
 	model   string
@@ -573,6 +662,7 @@ type customAnthropic struct {
 	apiKey  string
 	version string
 	http    *http.Client
+	*customEffort
 }
 
 func newCustomAnthropic(p CustomProvider, m CustomModel) *customAnthropic {
@@ -581,7 +671,7 @@ func newCustomAnthropic(p CustomProvider, m CustomModel) *customAnthropic {
 	if version == "" {
 		version = anthropicVersion
 	}
-	return &customAnthropic{name: p.Name, model: m.Name, wire: m.ID, baseURL: normalizeAnthropicBase(p.BaseURL), apiKey: customAPIKey(p), version: version, http: &http.Client{Timeout: 5 * time.Minute}}
+	return &customAnthropic{name: p.Name, model: m.Name, wire: m.ID, baseURL: normalizeAnthropicBase(p.BaseURL), apiKey: customAPIKey(p), version: version, http: &http.Client{Timeout: 5 * time.Minute}, customEffort: newCustomEffort(m)}
 }
 
 func (p *customAnthropic) Name() string    { return p.model + " (" + p.name + " anthropic)" }
@@ -595,6 +685,12 @@ func (p *customAnthropic) Complete(ctx context.Context, req Request) (*Response,
 		MaxTokens: anthropicMaxTok,
 		Messages:  anthropicMessages(req),
 		Tools:     anthropicTools(req.Tools, false),
+	}
+	// Adaptive thinking + output_config.effort, mirroring the built-in Anthropic
+	// provider's effort path (api.anthropic.com/v1/messages).
+	if effort, active := p.snapshot(); active {
+		payload.Thinking = json.RawMessage(`{"type":"adaptive"}`)
+		payload.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":%q}`, effort))
 	}
 	if strings.TrimSpace(req.System) != "" {
 		payload.System = []anthropicTextBlock{{Type: "text", Text: req.System}}
