@@ -64,6 +64,13 @@ export function createTranscript(sessionId: string) {
   let off: (() => void) | null = null;
   let uidSeq = 0;
   const nextUid = () => ++uidSeq;
+  // Did this turn stream any text/reasoning delta? A non-Streamer provider
+  // (Converse/opus path) emits the final answer as a single `done`{text} with
+  // NO preceding `text`/`reasoning` deltas, so commitLive() has nothing to
+  // flush and the reply would be dropped (GUI-092). When this stays false at
+  // `done`, we push e.text as a final text block. Set on the first delta of a
+  // turn, reset when a turn starts.
+  let streamedThisTurn = false;
 
   function pushHistory(b: Block) {
     history.push(b);
@@ -102,7 +109,7 @@ export function createTranscript(sessionId: string) {
     pendingText = "";
   }
 
-  function onEvent(e: WireEventDTO) {
+  function onEvent(e: WireEventDTO, replay: boolean) {
     // Stream-token signal (GUI-061): any event MAY carry inTokens/outTokens.
     // Keep the latest live count so the dock context ring updates mid-turn
     // instead of jumping at turn end. outTokens is the figure that grows while
@@ -120,6 +127,7 @@ export function createTranscript(sessionId: string) {
           pendingStep = step;
         }
         pendingText += e.text ?? "";
+        streamedThisTurn = true;
         scheduleFlush();
         break;
       }
@@ -143,6 +151,15 @@ export function createTranscript(sessionId: string) {
         flush();
         commitLive();
         resetPending();
+        // Non-Streamer providers (Converse/opus path) deliver the whole answer
+        // in `done`{text} with no preceding deltas, so there is no `live` block
+        // to flush — append the final text directly or it is dropped from the
+        // transcript (GUI-092). Streaming turns already committed their text via
+        // the deltas, so skip to avoid a duplicate tail block.
+        if (!streamedThisTurn && e.text) {
+          pushHistory({ uid: nextUid(), kind: "text", step: e.step ?? 0, text: e.text });
+        }
+        streamedThisTurn = false;
         running = false;
         // Turn over: the view refetches sess.tokens via refreshState(), so the
         // live override is no longer authoritative — clear it.
@@ -159,12 +176,23 @@ export function createTranscript(sessionId: string) {
         // running here. In-turn informational notes (e.g. compaction) are always
         // followed by a `done` that also clears running, so this is safe.
         running = false;
+        // Clear the streamed-this-turn guard too (GUI-092): a streamed turn that
+        // ends on a terminal note (provider error / interrupt) would otherwise
+        // leave the flag set, and a following non-Streamer single-`done` answer
+        // would be wrongly suppressed and dropped. An in-turn note (compaction)
+        // is followed by re-streamed deltas that set the flag again before its
+        // own `done`, so clearing here is safe for streaming turns.
+        streamedThisTurn = false;
         break;
       case "approval":
         // A gated tool is waiting for the user. The turn stays running, so the
         // view can't rely on running→false to refetch pending approvals; bump a
-        // signal it watches instead.
-        approvalSeq++;
+        // signal it watches instead. Only for LIVE approvals (GUI-065): on
+        // reconnect the daemon replays its buffer, so a resolved approval would
+        // re-bump approvalSeq → refreshState and the gate UI could briefly
+        // re-show an approval the user already decided. Replayed history is
+        // already reflected in the State() seed, so ignore it here.
+        if (!replay) approvalSeq++;
         break;
     }
   }
@@ -202,6 +230,11 @@ export function createTranscript(sessionId: string) {
     seed(messages: MessageDTO[], isRunning: boolean) {
       live = null;
       resetPending();
+      // A reconnect/attach starts the in-flight turn from a clean slate (the
+      // replay rebuilds it), so the streamed-this-turn guard (GUI-092) must not
+      // carry over from before — otherwise a replayed single-`done` answer could
+      // be wrongly suppressed by a stale flag.
+      streamedThisTurn = false;
       if (rafId) {
         cancelAnimationFrame(rafId);
         rafId = 0;
@@ -220,8 +253,14 @@ export function createTranscript(sessionId: string) {
         // otherwise resurrect an IDLE session. Replayed buffer events never flip
         // it either (`running` is owned by the State() seed). `done` always
         // clears it (handled in onEvent).
-        if (!m.replay && TURN_KINDS.has(m.event.kind)) running = true;
-        onEvent(m.event);
+        if (!m.replay && TURN_KINDS.has(m.event.kind)) {
+          // A live turn-kind on an idle session is a fresh turn starting: reset
+          // the "did we stream anything" guard so the done case can tell a
+          // non-Streamer single-`done` answer (GUI-092) from a streamed one.
+          if (!running) streamedThisTurn = false;
+          running = true;
+        }
+        onEvent(m.event, m.replay);
       });
     },
     dispose() {

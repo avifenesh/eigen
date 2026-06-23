@@ -49,13 +49,18 @@ type RouteStatsDTO struct {
 	SkipReasons  []CountDTO `json:"skipReasons"`
 }
 type SubagentStatsDTO struct {
-	TaskCalls      int `json:"taskCalls"`
-	TaskErrors     int `json:"taskErrors"`
-	GroupCalls     int `json:"groupCalls"`
-	GroupErrors    int `json:"groupErrors"`
-	MutatingCalls  int `json:"mutatingCalls"`
-	MutatingErrors int `json:"mutatingErrors"`
-	BackgroundDone int `json:"backgroundDone"`
+	TaskCalls       int `json:"taskCalls"`
+	TaskErrors      int `json:"taskErrors"`
+	GroupCalls      int `json:"groupCalls"`
+	GroupErrors     int `json:"groupErrors"`
+	MutatingCalls   int `json:"mutatingCalls"`
+	MutatingErrors  int `json:"mutatingErrors"`
+	StatusChecks    int `json:"statusChecks"`
+	Promotes        int `json:"promotes"`
+	PromoteErrors   int `json:"promoteErrors"`
+	BackgroundDone  int `json:"backgroundDone"`
+	BackgroundNotes int `json:"backgroundNotes"`
+	RouteNotes      int `json:"routeNotes"`
 }
 
 // ObserveSummaryDTO is the historical observability summary for the dashboard's
@@ -148,7 +153,10 @@ func (b *Bridge) ObserveSummary(limit int) (*ObserveSummaryDTO, error) {
 			TaskCalls: s.Subagents.TaskCalls, TaskErrors: s.Subagents.TaskErrors,
 			GroupCalls: s.Subagents.GroupCalls, GroupErrors: s.Subagents.GroupErrors,
 			MutatingCalls: s.Subagents.MutatingCalls, MutatingErrors: s.Subagents.MutatingErrors,
-			BackgroundDone: s.Subagents.BackgroundDone,
+			StatusChecks: s.Subagents.StatusChecks, Promotes: s.Subagents.Promotes,
+			PromoteErrors:  s.Subagents.PromoteErrors,
+			BackgroundDone: s.Subagents.BackgroundDone, BackgroundNotes: s.Subagents.BackgroundNotes,
+			RouteNotes: s.Subagents.RouteNotes,
 		},
 		Available: true,
 	}, nil

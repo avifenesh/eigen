@@ -105,8 +105,12 @@ func encodeClaudeDir(abs string) string {
 func TestTitleFromRejectsBoilerplate(t *testing.T) {
 	reject := []string{
 		"<user_instructions>x</user_instructions>",
+		"<environment_details>cwd=/x</environment_details>",
+		"</closing_tag>",
+		"<self_closing/>",
 		"# AGENTS.md instructions for /x",
 		`{"json":"blob"}`,
+		`["a","b","c"]`,
 		"caveat: the messages below",
 		"",
 	}
@@ -121,6 +125,27 @@ func TestTitleFromRejectsBoilerplate(t *testing.T) {
 	long := titleFrom(string(make([]rune, 0)) + "this is a very long user message that certainly exceeds the seventy two character title cap for sure")
 	if len([]rune(long)) > 73 {
 		t.Errorf("title not truncated: %d runes", len([]rune(long)))
+	}
+}
+
+// TestTitleFromKeepsHumanAsksStartingWithBracket guards APP-109: a real ask may
+// open with '<', '{', or '[' and must still produce a title. Only genuine
+// structured blobs (valid JSON, or a complete markup/instruction tag) are
+// rejected — the leading byte alone is not enough.
+func TestTitleFromKeepsHumanAsksStartingWithBracket(t *testing.T) {
+	keep := map[string]string{
+		"{count} should be reactive":      "{count} should be reactive",
+		"[needs review] fix the parser":   "[needs review] fix the parser",
+		"< 10ms latency is the goal":      "< 10ms latency is the goal",
+		"<= 5 retries then give up":       "<= 5 retries then give up",
+		"{ this is not valid json at all": "{ this is not valid json at all",
+		"[a, b] but unterminated":         "[a, b] but unterminated",
+		"<3 from the team":                "<3 from the team",
+	}
+	for in, want := range keep {
+		if got := titleFrom(in); got != want {
+			t.Errorf("titleFrom(%q) = %q, want %q (a human ask, not a blob)", in, got, want)
+		}
 	}
 }
 
@@ -163,6 +188,29 @@ func TestScanPeekExtrapolatesBeyondBudget(t *testing.T) {
 	lo, hi := want*97/100, want*103/100
 	if got < lo || got > hi {
 		t.Errorf("extrapolated count = %d, want ~%d (within [%d,%d])", got, want, lo, hi)
+	}
+}
+
+// TestPeekHermesTitle guards APP-108: peekHermes must derive a Title from the
+// first user message (parity with the other peekers), not leave it blank.
+// Hermes has no working directory in its format, so Cwd stays empty.
+func TestPeekHermesTitle(t *testing.T) {
+	dir := t.TempDir()
+	content := `{"role":"session_meta","model":"us.anthropic.claude-opus-4-7","platform":"telegram"}
+{"role":"user","content":"help me tune the digest feeds"}
+{"role":"assistant","content":"on it"}
+{"role":"tool","tool_call_id":"t1","content":"done"}
+`
+	p := writeFile(t, dir, "20260513_x.jsonl", content)
+	pv := Peek(SourceHermes, p)
+	if pv.Title != "help me tune the digest feeds" {
+		t.Errorf("hermes title = %q, want derived from first user line", pv.Title)
+	}
+	if pv.Cwd != "" {
+		t.Errorf("hermes has no cwd in its format, got %q", pv.Cwd)
+	}
+	if pv.Messages != 2 { // user + assistant; session_meta and tool are not turns
+		t.Errorf("hermes messages = %d, want 2", pv.Messages)
 	}
 }
 

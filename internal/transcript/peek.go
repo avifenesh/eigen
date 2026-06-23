@@ -115,9 +115,15 @@ func titleFrom(s string) string {
 		return ""
 	}
 	// Reject obvious non-asks: injected instructions, tags, structured blobs.
+	// A leading '<', '{', or '[' alone is NOT enough — a real ask can open with
+	// one (e.g. "{count} should be reactive", "[needs review] fix the parser").
+	// Only reject when the message is genuinely a structured blob: it parses as
+	// valid JSON, or it opens with a complete XML/instruction tag.
 	low := strings.ToLower(s)
 	switch {
-	case strings.HasPrefix(s, "<"), strings.HasPrefix(s, "{"), strings.HasPrefix(s, "["):
+	case (strings.HasPrefix(s, "{") || strings.HasPrefix(s, "[")) && json.Valid([]byte(s)):
+		return ""
+	case strings.HasPrefix(s, "<") && isMarkupTag(s):
 		return ""
 	case strings.HasPrefix(s, "#") && strings.Contains(low, "agents.md"):
 		return ""
@@ -135,6 +141,36 @@ func titleFrom(s string) string {
 		return strings.TrimSpace(string(r[:72])) + "…"
 	}
 	return s
+}
+
+// isMarkupTag reports whether s opens with a complete XML/instruction tag —
+// "<name ...>", "<name/>", or a closing "</name>" — the shape of injected
+// context blocks (e.g. <user_instructions>, <environment_details>). It is
+// deliberately narrow so a human ask that merely starts with '<' (e.g.
+// "< 10ms latency is the goal" or "<3 from the team") still yields a title:
+// the first '<' must be immediately followed by a tag name (or '/') and a
+// matching '>' must close it on the same line.
+func isMarkupTag(s string) bool {
+	if !strings.HasPrefix(s, "<") {
+		return false
+	}
+	rest := s[1:]
+	rest = strings.TrimPrefix(rest, "/") // allow a closing tag
+	if rest == "" {
+		return false
+	}
+	// A tag name starts with a letter or underscore; bare "< foo" or "<3" is prose.
+	c := rest[0]
+	if !(c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+		return false
+	}
+	end := strings.IndexByte(rest, '>')
+	if end < 0 {
+		return false // no closing '>' — an unterminated '<' is prose, not a tag
+	}
+	// The bytes up to '>' must be a tag (name + optional attributes), not a
+	// sentence: reject if a newline appears before the '>' closes the tag.
+	return !strings.ContainsAny(rest[:end], "\n")
 }
 
 func peekClaude(path string) Preview {
@@ -355,8 +391,29 @@ func peekPi(path string) Preview {
 }
 
 func peekHermes(path string) Preview {
-	_, total := scanPeek(path, hermesTurn)
-	return Preview{Messages: total}
+	lines, total := scanPeek(path, hermesTurn)
+	p := Preview{Messages: total}
+	// Hermes is a flat chat-completions JSONL (see parseHermes): each line is one
+	// message keyed by role, with the text in a plain "content" string. There is
+	// no working directory in the format (sessions originate from chat platforms
+	// like telegram, not a repo checkout), so Cwd stays empty and we derive the
+	// Title from the first user message — parity with the other peekers.
+	for _, ln := range lines {
+		var rec struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		}
+		if json.Unmarshal([]byte(ln), &rec) != nil {
+			continue
+		}
+		if rec.Role == "user" && rec.Content != "" {
+			p.Title = titleFrom(rec.Content)
+			if p.Title != "" {
+				break
+			}
+		}
+	}
+	return p
 }
 
 func peekEigen(path string) Preview {

@@ -9,9 +9,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/avifenesh/eigen/internal/command"
 	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/feed"
 	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/workflow"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -83,6 +85,18 @@ const (
 	eventDaemonHealth = "eigen:daemon:health"
 )
 
+// DaemonStats parity contract (GUI-096): the daemon resource-health snapshot is
+// the ONE shape emitted RAW — both on the eventDaemonStats stream (healthLoop)
+// and from Stats() — as the *daemon.DaemonStats value with its native snake_case
+// JSON tags (uptime_sec, heap_alloc_b, binary_sha256, vcs_revision, …). It does
+// NOT pass through the dto.go camelCase DTO layer that every other type uses, so
+// the frontend's types.ts `DaemonStats` block hand-mirrors those snake_case tags
+// 1:1. Because there is no DTO+mapper enforcing the mapping, a daemon-side field
+// rename silently desyncs the two: KEEP the daemon tags and the types.ts keys in
+// lockstep (esp. the identity fields version/executable/binary_sha256/
+// vcs_revision/vcs_modified). A full DTO+mapper is a deliberate non-goal here —
+// the documented-parity rule avoids churn while making the requirement explicit.
+
 // healthLoop pushes a DaemonStats snapshot to the frontend at ~1Hz while
 // online, backing off to 5s while the daemon is unreachable so a down daemon
 // never becomes a busy reconnect loop.
@@ -103,6 +117,8 @@ func (b *Bridge) healthLoop(stop chan struct{}) {
 						fails = 0
 						t.Reset(fast)
 					}
+					// Emitted RAW (snake_case daemon tags, no DTO) — see the
+					// DaemonStats parity contract above; types.ts must mirror.
 					b.emit(eventDaemonStats, st)
 					continue
 				} else {
@@ -219,7 +235,10 @@ func (b *Bridge) Ping() error {
 	return c.Ping()
 }
 
-// Stats returns the daemon resource-health snapshot.
+// Stats returns the daemon resource-health snapshot. NOTE: this is the RAW
+// *daemon.DaemonStats (snake_case daemon tags, no DTO) — see the DaemonStats
+// parity contract near eventDaemonStats; the types.ts DaemonStats block mirrors
+// those tags 1:1.
 func (b *Bridge) Stats() (*daemon.DaemonStats, error) {
 	c, err := b.control()
 	if err != nil {
@@ -468,4 +487,199 @@ func (b *Bridge) DetachBash(id string) (bool, error) {
 		return false, err
 	}
 	return c.DetachBash(id)
+}
+
+// ---- workflows (internal/workflow) ----
+
+// WorkflowInfoDTO is one authored workflow for the GUI menu: its name (the file
+// basename, i.e. the arg `/workflow <name>` takes), the frontmatter description,
+// and how many steps it has.
+type WorkflowInfoDTO struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Steps       int    `json:"steps"`
+}
+
+// WorkflowResultDTO summarizes a finished RunWorkflow over the carried session:
+// the step ids that ran, the step that stopped the run ("" = all ok), and each
+// step's output text keyed by step id. It mirrors workflow.Result.
+type WorkflowResultDTO struct {
+	Completed []string          `json:"completed"`
+	FailedAt  string            `json:"failedAt,omitempty"`
+	Outputs   map[string]string `json:"outputs"`
+}
+
+// Workflows lists the authored workflows under ~/.eigen/workflows. Each is
+// loaded so its description and step count are surfaced; a workflow that fails
+// to parse is skipped (it can't be run anyway). This is the GUI peer of the
+// TUI's `/workflow` (no args) listing.
+func (b *Bridge) Workflows() ([]WorkflowInfoDTO, error) {
+	names := workflow.List()
+	out := make([]WorkflowInfoDTO, 0, len(names))
+	for _, name := range names {
+		wf, err := workflow.Load(name)
+		if err != nil {
+			continue // unparseable workflow — not runnable, omit
+		}
+		out = append(out, WorkflowInfoDTO{Name: wf.Name, Description: wf.Description, Steps: len(wf.Steps)})
+	}
+	return out, nil
+}
+
+// RunWorkflow plays an authored workflow's steps in order on ONE daemon session
+// (so step N sees prior steps' work), driving workflow.Run with a StepRunner
+// that submits each step's prompt over the daemon and waits for that turn to
+// finish. {{var.NAME}} placeholders are filled from vars.
+//
+// No Judge is wired here, so a step carrying a `check:` directive fails closed
+// with a clear error (matching the headless `eigen run` contract that a check
+// needs a judge) — judged checks + on_failure remain a headless / follow-up
+// concern, exactly as the TUI's in-chat `/workflow` keeps it to "play the
+// prompts in order". A richer GUI surface (live step progress via the existing
+// session stream, judged checks) is a follow-up; this is the bridge seam.
+func (b *Bridge) RunWorkflow(sessionID, name string, vars map[string]string) (*WorkflowResultDTO, error) {
+	if strings.TrimSpace(sessionID) == "" {
+		return nil, fmt.Errorf("session id required")
+	}
+	wf, err := workflow.Load(name)
+	if err != nil {
+		return nil, err
+	}
+	c, err := b.control()
+	if err != nil {
+		return nil, err
+	}
+	res, runErr := wf.Run(context.Background(), workflow.RunOpts{
+		Vars: vars,
+		Run:  b.daemonStepRunner(c, sessionID),
+	})
+	var dto *WorkflowResultDTO
+	if res != nil {
+		dto = &WorkflowResultDTO{Completed: res.Completed, FailedAt: res.FailedAt, Outputs: res.Outputs}
+	}
+	return dto, runErr
+}
+
+// daemonStepRunner returns a workflow.StepRunner that drives one step on the
+// daemon session: submit the step's prompt, then poll the session until the turn
+// finishes and return its final assistant text. The model arg (a step's explicit
+// `model:`) is honored as a live switch on the session for the step's duration,
+// then restored — so step N keeps the carried context. A failed switch keeps
+// context by running on the session's current model.
+func (b *Bridge) daemonStepRunner(c *daemon.Client, sessionID string) workflow.StepRunner {
+	return func(ctx context.Context, prompt, model string) (string, error) {
+		if model != "" {
+			if err := c.SetModel(sessionID, model); err == nil {
+				if prev, perr := c.State(sessionID); perr == nil && prev.Model != "" {
+					defer func() { _ = c.SetModel(sessionID, prev.Model) }()
+				}
+			}
+			// A failed switch is non-fatal: keep context on the current model.
+		}
+		if err := c.Input(sessionID, prompt, nil, nil); err != nil {
+			return "", err
+		}
+		return b.awaitTurn(ctx, c, sessionID)
+	}
+}
+
+// awaitTurn blocks until the session's in-flight turn finishes (Running goes
+// false) or ctx is cancelled, then returns the last assistant message's text.
+// It polls State at ~4Hz; the daemon's `input` op marks the session running
+// before returning, so there's no start-race where we observe "not running"
+// before the turn begins.
+func (b *Bridge) awaitTurn(ctx context.Context, c *daemon.Client, sessionID string) (string, error) {
+	t := time.NewTicker(250 * time.Millisecond)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-t.C:
+			st, err := c.State(sessionID)
+			if err != nil {
+				return "", err
+			}
+			if st.Running {
+				continue
+			}
+			return lastAssistantText(st.Messages), nil
+		}
+	}
+}
+
+// lastAssistantText returns the text of the most recent assistant message (the
+// step's "answer"), or "" if there is none.
+func lastAssistantText(msgs []llm.Message) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == llm.RoleAssistant && strings.TrimSpace(msgs[i].Text) != "" {
+			return msgs[i].Text
+		}
+	}
+	return ""
+}
+
+// ---- custom commands (internal/command) ----
+
+// CommandInfoDTO is one custom slash command for the GUI menu, mirroring the
+// TUI's `/<name>` surface: its name, frontmatter description + argument-hint,
+// optional model, allowed-tools restriction, and scope ("project" | "user").
+type CommandInfoDTO struct {
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	ArgHint      string   `json:"argHint,omitempty"`
+	Model        string   `json:"model,omitempty"`
+	AllowedTools []string `json:"allowedTools,omitempty"`
+	Scope        string   `json:"scope"`
+}
+
+// Commands lists the custom slash commands discovered under the project and user
+// command dirs (project shadows user), the GUI peer of the TUI's `/<name>` menu.
+func (b *Bridge) Commands() ([]CommandInfoDTO, error) {
+	set := command.Load(command.Dirs()...)
+	cmds := set.All()
+	out := make([]CommandInfoDTO, 0, len(cmds))
+	for _, cmd := range cmds {
+		out = append(out, CommandInfoDTO{
+			Name:         cmd.Name,
+			Description:  cmd.Description,
+			ArgHint:      cmd.ArgHint,
+			Model:        cmd.Model,
+			AllowedTools: cmd.AllowedTools,
+			Scope:        cmd.Scope,
+		})
+	}
+	return out, nil
+}
+
+// RunCommand expands a custom command's body with args ($ARGUMENTS / $1..$9, per
+// command.Expand) and submits it as a normal turn on the daemon session — the
+// GUI peer of the TUI's runCustomCommand. A command's `model:` frontmatter does
+// a live model switch on the session first (best-effort: a failed switch runs on
+// the current model). `allowed-tools` frontmatter scopes the turn to those tools
+// (the daemon enforces and clears it after the turn). Returns the expanded
+// prompt that was submitted so the caller can echo it into the transcript.
+func (b *Bridge) RunCommand(sessionID, name, args string) (string, error) {
+	if strings.TrimSpace(sessionID) == "" {
+		return "", fmt.Errorf("session id required")
+	}
+	cmd, ok := command.Load(command.Dirs()...).Get(name)
+	if !ok {
+		return "", fmt.Errorf("unknown command %q", name)
+	}
+	prompt := command.Expand(cmd.Body, args)
+	if strings.TrimSpace(prompt) == "" {
+		return "", fmt.Errorf("command %q has an empty body", name)
+	}
+	c, err := b.control()
+	if err != nil {
+		return "", err
+	}
+	if cmd.Model != "" {
+		_ = c.SetModel(sessionID, cmd.Model) // best-effort; keep going on failure
+	}
+	if err := c.Input(sessionID, prompt, nil, cmd.AllowedTools); err != nil {
+		return "", err
+	}
+	return prompt, nil
 }

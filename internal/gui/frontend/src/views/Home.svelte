@@ -133,7 +133,7 @@
     <Button variant="primary" size="lg" loading={starting} onclick={startSession}>Start a session</Button>
   </header>
 
-  <button class="strip" onclick={() => router.go("observe")} title="Open Observe">
+  <button class="strip" onclick={() => router.go("observe")} title="Open Observe" aria-label="Open Observe — telemetry">
     <div class="strip__stat"><span class="strip__v tnum">{stats?.sessions ?? sessions.count}</span><span class="strip__l">sessions</span></div>
     <div class="strip__sep"></div>
     <div class="strip__stat"><span class="strip__v tnum" class:strip__v--live={(stats?.running_turns ?? 0) > 0}>{stats?.running_turns ?? 0}</span><span class="strip__l">running</span></div>
@@ -215,6 +215,7 @@
             class="lr"
             class:lr--working={s.status === "working"}
             class:lr--approval={s.status === "approval"}
+            aria-label={`Open session ${s.title || "untitled"}`}
             onclick={() => openSession(s)}
           >
             <StatusDot state={sessionDot(s.status)} size={8} pulse={s.status === "working" || s.status === "approval"} />
@@ -243,7 +244,7 @@
     {:else}
       <div class="rows">
         {#each recent as s (s.id)}
-          <button class="row" onclick={() => openSession(s)}>
+          <button class="row" aria-label={`Open session ${s.title || "untitled"}`} onclick={() => openSession(s)}>
             <StatusDot state={sessionDot(s.status)} size={6} />
             <span class="row__title">{s.title || "untitled session"}</span>
             <span class="row__dir">{base(s.dir)}</span>
@@ -424,6 +425,11 @@
   .fc__x:hover {
     color: var(--text-primary);
     background: var(--state-hover);
+  }
+  .fc__x:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+    color: var(--text-primary);
   }
   .fc__detail {
     margin: 0;

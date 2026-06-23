@@ -88,7 +88,12 @@
     const set = new Set((values[f.key] ?? "").split(/\s+/).filter(Boolean));
     if (set.has(opt)) set.delete(opt);
     else set.add(opt);
-    commit(f.key, [...set].join(" "));
+    const next = [...set].join(" ");
+    // Optimistic: flip the chip's on-state this frame instead of after the
+    // commit round-trip. commit() reverts values[f.key] to the stored value if
+    // SetConfig rejects, so a failed toggle still settles back correctly.
+    values[f.key] = next;
+    commit(f.key, next);
   }
   function multiHas(key: string, opt: string): boolean {
     return (values[key] ?? "").split(/\s+/).filter(Boolean).includes(opt);
@@ -319,6 +324,12 @@
     outline: none;
     box-shadow: var(--shadow-focus);
   }
+  /* Dim + inert while its SetConfig is in flight — the same disabled affordance
+     the saving label carries, so the toggle reads as paused, not done. */
+  .toggle:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
   .toggle--on {
     background: var(--brand-dim);
     border-color: var(--brand);
@@ -381,6 +392,13 @@
     border-color: var(--border-brand-faint);
     box-shadow: var(--shadow-focus);
   }
+  /* Dim + inert while its SetConfig is in flight — one disabled affordance
+     shared by select, toggle, and chips behind the saving label. */
+  .select:disabled,
+  .input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
   .select:focus-visible {
     background-image: linear-gradient(45deg, transparent 50%, var(--brand) 50%),
       linear-gradient(135deg, var(--brand) 50%, transparent 50%);
@@ -421,6 +439,12 @@
   .chip:focus-visible {
     outline: none;
     box-shadow: var(--shadow-focus);
+  }
+  /* Dim + inert while its SetConfig is in flight — matches the toggle/select so
+     the chip set reads as paused, not done, behind the saving label. */
+  .chip:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   .chip--on {
     background: var(--state-selected);

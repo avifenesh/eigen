@@ -43,43 +43,53 @@ func TestAppendMemoryConsolidates(t *testing.T) {
 	}
 }
 
-// TestSplitNotesDropsLeadingHeading verifies splitNotes honors its documented
-// contract: a leading chunk that is solely a top-level ATX "# " heading (the
-// file title) is dropped, while a "## " subheading, an inline-bodied "# " block,
-// and content without a title are all preserved.
-func TestSplitNotesDropsLeadingHeading(t *testing.T) {
+// TestSplitNotesSectionSplitting verifies splitNotes honors the curated-memory
+// contract: section-structured MEMORY.md ("## Heading\n\n- bullets") splits on
+// top-level "## " heading boundaries — keeping each heading WITH its body so a
+// heading is never orphaned from its bullets (the APP-053 regression) — while
+// un-sectioned (un-consolidated) content falls back to blank-line cards, and a
+// leading "# " file title is dropped in both paths.
+func TestSplitNotesSectionSplitting(t *testing.T) {
 	cases := []struct {
 		name string
 		in   string
 		want []string
 	}{
 		{
-			name: "leading top-level heading dropped",
+			// The APP-053 regression: post-consolidation markdown. Each heading must
+			// stay attached to its bullets — NOT split into orphan "## Preferences"
+			// + bullet cards.
+			name: "consolidated sections keep heading with bullets",
+			in:   "# Memory\n\n## Preferences\n\n- likes tabs\n- dislikes hedging\n\n## Commands\n\n- build: make\n- test: go test",
+			want: []string{
+				"## Preferences\n\n- likes tabs\n- dislikes hedging",
+				"## Commands\n\n- build: make\n- test: go test",
+			},
+		},
+		{
+			name: "preamble before first section is dropped",
+			in:   "# Memory\n\nintro text\n\n## Preferences\n\n- likes tabs",
+			want: []string{"## Preferences\n\n- likes tabs"},
+		},
+		{
+			name: "single section, no top-level title",
+			in:   "## Preferences\n\n- likes tabs\n- dislikes hedging",
+			want: []string{"## Preferences\n\n- likes tabs\n- dislikes hedging"},
+		},
+		{
+			// Fallback: no "## " sections — un-consolidated append-only notes split
+			// on blank lines, leading "# " title dropped.
+			name: "no sections falls back to blank-line cards",
 			in:   "# Memory\n\nfirst note\n\nsecond note",
 			want: []string{"first note", "second note"},
 		},
 		{
-			name: "leading heading with surrounding blank lines dropped",
-			in:   "\n\n# Memory\n\nonly note\n",
-			want: []string{"only note"},
-		},
-		{
-			name: "no heading keeps all chunks",
+			name: "no sections, no title keeps all chunks",
 			in:   "first note\n\nsecond note",
 			want: []string{"first note", "second note"},
 		},
 		{
-			name: "subheading is not a droppable title",
-			in:   "## Section\n\nbody",
-			want: []string{"## Section", "body"},
-		},
-		{
-			name: "heading with body in same chunk is kept whole",
-			in:   "# Title\nbody on next line\n\nnext",
-			want: []string{"# Title\nbody on next line", "next"},
-		},
-		{
-			name: "only a heading yields no notes",
+			name: "only a top-level heading yields no notes",
 			in:   "# Memory",
 			want: nil,
 		},
@@ -100,10 +110,23 @@ func TestSplitNotesDropsLeadingHeading(t *testing.T) {
 					t.Errorf("note[%d].Text = %q, want %q", i, n.Text, tc.want[i])
 				}
 				if n.Index != i {
-					t.Errorf("note[%d].Index = %d, want %d (indices must be contiguous after drop)", i, n.Index, i)
+					t.Errorf("note[%d].Index = %d, want %d (indices must be contiguous)", i, n.Index, i)
 				}
 			}
 		})
+	}
+}
+
+// TestSplitNotesNoOrphanHeadings is the focused APP-053 guard: no resulting note
+// is solely a "## " heading line with no body. Before the fix, blank-line
+// splitting produced exactly such orphan cards.
+func TestSplitNotesNoOrphanHeadings(t *testing.T) {
+	const consolidated = "# Memory\n\n## Preferences\n\n- a\n- b\n\n## Style\n\n- c"
+	for _, n := range splitNotes(consolidated) {
+		lines := strings.Split(strings.TrimSpace(n.Text), "\n")
+		if len(lines) == 1 && strings.HasPrefix(lines[0], "## ") {
+			t.Errorf("orphan heading card: %q (heading severed from its body)", n.Text)
+		}
 	}
 }
 

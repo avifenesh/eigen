@@ -3,6 +3,7 @@ package gui
 import (
 	"context"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/avifenesh/eigen/internal/feed"
@@ -18,6 +19,16 @@ const eventFeed = "eigen:feed"
 
 // feedScanEvery matches the TUI's refresh cadence.
 const feedScanEvery = 10 * time.Minute
+
+// feedScanning is the single-flight guard for the proactive-feed scan. A scan is
+// slow by nature (git/gh subprocesses + a ~90s LLM suggester, capped at 2 min)
+// and races a fixed set of on-disk paths (feed.json / feed-suggest.json), so at
+// most one may run at a time. The user-triggerable "Refresh feed" verb and the
+// feedLoop ticker both go through scanFeed, which CAS-acquires this guard; a
+// trigger that lands while a scan is in flight coalesces into a no-op. It lives
+// at package scope (not on Bridge) because the GUI hosts exactly one Bridge —
+// the singleton Wails service — and the guard must be owned by this file alone.
+var feedScanning atomic.Bool
 
 // FeedItemDTO mirrors feed.Item plus its stable dismiss key + a display dir name.
 type FeedItemDTO struct {
@@ -133,7 +144,17 @@ func (b *Bridge) DismissFeed(key string) error {
 // caches it, and pushes it to every surface via eigen:feed. Slow by nature, so
 // it always runs off the request path (the feedLoop ticker or a RescanFeed
 // goroutine), never inline in a bound method.
+//
+// It single-flights on feedScanning: if a scan is already in flight the CAS
+// fails and this call returns immediately (coalesced), so spamming the palette
+// "Refresh feed" verb or a ticker tick that lands mid-scan can't stack racing
+// scans over the same fixed feed.json / feed-suggest.json paths.
 func (b *Bridge) scanFeed() {
+	if !feedScanning.CompareAndSwap(false, true) {
+		return // a scan is already running; coalesce this trigger into it
+	}
+	defer feedScanning.Store(false)
+
 	dirs := b.projectDirs()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	f := feed.Scan(ctx, dirs, b.suggest)
@@ -148,6 +169,10 @@ func (b *Bridge) scanFeed() {
 // scan runs in a goroutine and its result arrives via the eigen:feed push the
 // feed store already rides. This is the user-triggerable "Refresh feed" verb
 // (command palette); the daemon also rescans on its own feedScanEvery cadence.
+//
+// Spam-safe: scanFeed single-flights on feedScanning, so a refresh that fires
+// while a scan is already in flight coalesces into a no-op rather than starting
+// another ~2-min scan racing the same feed.json / feed-suggest.json paths.
 func (b *Bridge) RescanFeed() error {
 	go b.scanFeed()
 	return nil

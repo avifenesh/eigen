@@ -52,6 +52,13 @@
       loading = false;
       return;
     }
+    // Drop the PRIOR session's snapshot before we attach to this id. Until the
+    // State() round-trip below lands, sess belongs to the session we just left
+    // (or is null on first mount) — rendering dock values or deriving isEmpty
+    // from it would show stale data for the new session (GUI-064/GUI-066). The
+    // skeleton (transcriptLoading) covers the gap; isEmpty stays false while
+    // sess is null so the warm starter never flashes against the wrong session.
+    sess = null;
     let alive = true;
     const t = createTranscript(id);
 
@@ -122,13 +129,14 @@
     if (store && store.approvalSeq > 0) refreshState();
   });
 
-  // The rendered transcript: completed history plus the in-flight live block,
-  // as one keyed list fed to VirtualList (windowed; only visible rows mount).
-  const rows = $derived.by(() => {
-    const h = store?.history ?? [];
-    const live = store?.live;
-    return live ? [...h, live] : h;
-  });
+  // The completed history, fed to VirtualList as a STABLE reference (windowed;
+  // only visible rows mount). The in-flight `live` block is NOT concatenated in
+  // here — spreading the whole history (up to CAP=2000) on every live delta
+  // (~60×/sec while streaming) re-derived the windowed offsets each frame
+  // (GUI-069). Instead `live` is rendered as a single fixed trailing row below
+  // the list, so a live token append touches one node, not the list geometry.
+  const history = $derived(store?.history ?? []);
+  const live = $derived(store?.live ?? null);
 
   const online = $derived(daemon.status === "online");
 
@@ -171,14 +179,31 @@
       toasts.error(e instanceof Error ? e.message : String(e));
     }
   }
+  // Stop the running turn. Re-entrant guarded: without it the user can mash
+  // Stop and fire Bridge.Interrupt repeatedly while the first RPC is still in
+  // flight (the button stays "Stop" until `done` clears running) — GUI-068.
+  // `interrupting` flips the composer's primary action to a disabled
+  // "stopping…" affordance; it clears on RPC resolve here AND on running→false
+  // (the $effect below), whichever lands first, so a turn that ends before the
+  // RPC returns still releases the button.
+  let interrupting = $state(false);
   async function interrupt() {
-    if (!sessionId) return;
+    if (!sessionId || interrupting) return;
+    interrupting = true;
     try {
       await Bridge.Interrupt(sessionId);
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      interrupting = false;
     }
   }
+  // Belt-and-suspenders: if the turn ends (running→false) while the Interrupt
+  // RPC is still pending, drop the interrupting state so the composer doesn't
+  // wedge on "stopping…". Harmless when the finally arm already cleared it.
+  $effect(() => {
+    if (store?.running === false && interrupting) interrupting = false;
+  });
   // Background the turn's foreground shell so a turn wedged on a long-running
   // command is freed WITHOUT killing it (vs. Interrupt, which kills the turn).
   // The backgrounded shell then shows up in the shells dock — refresh so it
@@ -400,12 +425,26 @@
   }
 
   // ── empty-session starters ──────────────────────────────────────────────
-  const isEmpty = $derived(sess != null && sess.messages.length === 0 && !store?.running);
+  // Genuinely empty session: the authoritative State snapshot for the CURRENT
+  // id has landed (sess != null, not loading) with no messages, and nothing has
+  // streamed/seeded into the transcript (history empty, no live block, idle).
+  // The loading guard + sess reset on id change (GUI-064) keep sess from being a
+  // PRIOR non-empty snapshot during the async gap, so the warm starter only
+  // shows for a real empty session — never as a flash while State resolves
+  // (GUI-066).
+  const isEmpty = $derived(
+    !loading &&
+      sess != null &&
+      sess.messages.length === 0 &&
+      history.length === 0 &&
+      !live &&
+      !store?.running,
+  );
   // The transcript is still being fetched: attach() fired but the first State()
   // snapshot hasn't landed (sess null) and nothing has streamed in yet (no
   // rows). Distinct from isEmpty — a session WITH history shows the skeleton for
   // the round-trip instead of a bare empty list, then pops to the transcript.
-  const transcriptLoading = $derived(loading && sess == null && rows.length === 0);
+  const transcriptLoading = $derived(loading && sess == null && history.length === 0 && !live);
   const starters = [
     "Give me a tour of this codebase.",
     "What changed in the last few commits?",
@@ -441,6 +480,19 @@
       default:
         return "Assistant message";
     }
+  }
+
+  // A note's tone, derived from its text prefix. finishTurn (daemon-side) emits
+  // an abnormal turn end as a plain note — "error: <msg>" for a provider/tool
+  // failure, "interrupted" for a user stop — using the SAME text channel as
+  // benign notes (route changes, "task → background", compaction). Without a
+  // tone a provider failure renders identically to a routine note (GUI-093). We
+  // can't add an EventError kind frontend-side (that's APP work), so we read the
+  // tone from the existing text, matching the daemon/TUI prefix convention
+  // (tui.go: `interrupted` || prefix `error: `) and render an error tone warmly.
+  function noteTone(text: string): "error" | "info" {
+    const t = (text ?? "").trim();
+    return t === "interrupted" || t.startsWith("error:") ? "error" : "info";
   }
 </script>
 
@@ -503,24 +555,30 @@
             aria-live="polite"
             aria-relevant="additions text"
           >
-            <VirtualList items={rows} estimateHeight={120} pin key={(b) => b.uid}>
+            <!-- Only COMPLETED history feeds the windowed list. The in-flight
+                 `live` block is rendered as a fixed trailing row below (see the
+                 live region after this list), so a live token append no longer
+                 rebuilds a [...history, live] array each frame and re-derives
+                 every offset (~60×/sec) — GUI-069. Keys stay the stable per-
+                 block uid; history rows are all committed, so each renders its
+                 final form (note tone / reasoning / Markdown prose). -->
+            <VirtualList items={history} estimateHeight={120} pin key={(b) => b.uid}>
               {#snippet row(block)}
-                {@const isLive = block === store?.live}
                 <div class="chat__row" role="article" aria-label={rowLabel(block.kind)}>
                   {#if block.kind === "tool"}
                     <ToolCallCard {block} />
                   {:else if block.kind === "note"}
-                    <div class="msg msg--note">{block.text}</div>
+                    <!-- Note tone (GUI-093): a terminal failure/interrupt note
+                         (text prefixed "error:" / "interrupted") gets a warn/
+                         error treatment so a provider failure is not visually
+                         indistinguishable from a benign "task → background"
+                         note. Tone is read from the text, not a separate kind. -->
+                    <div class="msg msg--note" class:msg--note-error={noteTone(block.text) === "error"}>{block.text}</div>
                   {:else if block.kind === "reasoning"}
-                    <div class="msg msg--reasoning" class:msg--live={isLive}>
+                    <div class="msg msg--reasoning">
                       <span class="msg__tag">reasoning</span>
                       {block.text}
                     </div>
-                  {:else if isLive}
-                    <!-- The in-flight assistant block streams as plain text for
-                         speed; it finalizes to Markdown once committed to history.
-                         A subtle caret trails the live text while it streams. -->
-                    <div class="msg msg--text msg--live">{block.text}<span class="caret" aria-hidden="true"></span></div>
                   {:else}
                     <!-- Completed assistant prose renders as Markdown (sans; fenced
                          code delegates to CodeBlock). -->
@@ -530,6 +588,26 @@
               {/snippet}
             </VirtualList>
           </div>
+          {#if live}
+            <!-- The in-flight assistant block, OUTSIDE the windowed list — it
+                 streams as plain text for speed and finalizes to Markdown once
+                 committed to history (where it joins the list above). Rendering
+                 it here, not inside VirtualList, is what keeps a per-frame token
+                 append from re-deriving the whole list's geometry (GUI-069). A
+                 subtle caret trails the live text while it streams. -->
+            <div class="chat__live">
+              <div class="chat__row" role="article" aria-label={rowLabel(live.kind)}>
+                {#if live.kind === "reasoning"}
+                  <div class="msg msg--reasoning msg--live">
+                    <span class="msg__tag">reasoning</span>
+                    {live.text}<span class="caret" aria-hidden="true"></span>
+                  </div>
+                {:else}
+                  <div class="msg msg--text msg--live">{live.text}<span class="caret" aria-hidden="true"></span></div>
+                {/if}
+              </div>
+            </div>
+          {/if}
           <!-- Off-screen completion announcer. The windowed transcript above
                may not have the just-finalized assistant block mounted, so mirror
                its text here once the turn settles — that gives the SR user the
@@ -544,14 +622,19 @@
       {#if store?.running}
         <div class="chat__working">
           <StatusDot state="working" size={7} pulse />
-          <span class="chat__working-label">working…</span>
+          <!-- While an Interrupt RPC is in flight the indicator reads "stopping…"
+               so the user sees the stop landed and the turn is winding down
+               (GUI-068) — the Interrupt is also re-entry guarded in interrupt()
+               so mashing Stop can't fire multiple RPCs. -->
+          <span class="chat__working-label">{interrupting ? "stopping…" : "working…"}</span>
           <!-- Detach-bash: free a turn stuck on a long shell by backgrounding it
                (it reappears in the shells dock) — distinct from interrupt, which
-               kills the whole turn. -->
+               kills the whole turn. Disabled while stopping — the turn is already
+               being killed. -->
           <button
             class="chat__detach"
             onclick={detachBash}
-            disabled={detaching || !online}
+            disabled={detaching || interrupting || !online}
             title={online ? "Background the running shell to free this turn (without killing it)" : "daemon offline"}
           >detach shell</button>
         </div>
@@ -584,8 +667,21 @@
           </div>
           <div class="dock__sub tnum">{sess.tokens.toLocaleString()} / {sess.maxTokens.toLocaleString()}</div>
           {#if nearLimit}
-            <button class="dock__nudge" onclick={compact} disabled={compacting || (store?.running ?? false)} title={store?.running ? "finish the current turn first" : "Compact the conversation to free context"}>
-              near context limit — compact?
+            <button
+              class="dock__nudge"
+              class:dock__nudge--busy={compacting}
+              onclick={compact}
+              disabled={compacting || (store?.running ?? false)}
+              title={store?.running ? "finish the current turn first" : "Compact the conversation to free context"}
+            >
+              <!-- In-progress affordance (GUI-055): Compact takes seconds, so a
+                   greyed label with no change reads as a dead button. Swap to a
+                   spinner + "compacting…" while it runs. -->
+              {#if compacting}
+                <span class="dock__spinner" aria-hidden="true"></span>compacting…
+              {:else}
+                near context limit — compact?
+              {/if}
             </button>
           {/if}
         </div>
@@ -807,9 +903,17 @@
                 disabled={compacting || busy}
                 title={busy ? "finish the current turn first" : undefined}
               >
-                <span class="menu__glyph" aria-hidden="true">⊟</span>
-                <span class="menu__label">Compact context</span>
-                <span class="menu__hint">free tokens</span>
+                <!-- In-progress affordance (GUI-055): Compact takes seconds, so
+                     swap the glyph for a spinner and the labels for "compacting…"
+                     while it runs rather than leaving a static greyed item. -->
+                {#if compacting}
+                  <span class="dock__spinner" aria-hidden="true"></span>
+                  <span class="menu__label">Compacting…</span>
+                {:else}
+                  <span class="menu__glyph" aria-hidden="true">⊟</span>
+                  <span class="menu__label">Compact context</span>
+                  <span class="menu__hint">free tokens</span>
+                {/if}
               </button>
               <button
                 class="menu__item"
@@ -918,6 +1022,18 @@
   .chat__log {
     flex: 1;
     min-height: 0;
+  }
+  /* The in-flight live block, rendered OUTSIDE VirtualList (GUI-069) so a token
+     append touches one node instead of re-deriving the whole list's geometry.
+     It sits just below the windowed history, where the streaming reply belongs.
+     flex:none keeps it from stealing the list's space; a bounded height with
+     its own scroll keeps a long live reasoning stream from shoving the composer
+     off-screen — it commits into the windowed list above the moment the turn
+     ends. */
+  .chat__live {
+    flex: none;
+    max-height: 42vh;
+    overflow-y: auto;
   }
   /* Off-screen completion announcer — present in the a11y tree, invisible on
      screen. Standard clip pattern (not display:none, which drops it from the
@@ -1052,6 +1168,16 @@
     border: 1px solid var(--border-hairline);
     border-radius: var(--r-sm);
     padding: var(--sp-4) var(--sp-5);
+  }
+  /* A terminal failure/interrupt note (GUI-093). Same shape as a benign note —
+     it's still a note, not an alarm banner — but tinted with the error palette
+     and a heavier left rule so a provider failure reads as a failure rather than
+     vanishing into the neutral note styling of "task → background". */
+  .msg--note-error {
+    color: var(--error);
+    background: var(--error-bg);
+    border-color: var(--error);
+    border-left-width: 3px;
   }
   .msg__tag {
     display: block;
@@ -1242,6 +1368,32 @@
   .dock__nudge:disabled {
     color: var(--text-ghost);
     cursor: not-allowed;
+  }
+  /* While compacting the nudge is disabled but must read as IN-PROGRESS, not
+     dead — hold the working tint (override the ghosted disabled color) and pair
+     it with the inline spinner. */
+  .dock__nudge--busy:disabled {
+    color: var(--working);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+  /* Inline progress spinner shared by the compact nudge + menu item (GUI-055).
+     Same ring construction as Button's .btn__spinner, sized for inline text and
+     stilled under reduced-motion. */
+  .dock__spinner {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border-radius: var(--r-full);
+    border: 2px solid var(--working-bg);
+    border-top-color: var(--working);
+    animation: dock-spin 0.7s linear infinite;
+  }
+  @keyframes dock-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
   .dock__pills {
     display: flex;
@@ -1485,6 +1637,11 @@
       opacity: 0.8;
     }
     .tload__line {
+      animation: none;
+    }
+    /* still the compact spinner — the "compacting…" label still conveys the
+       in-progress state without motion. */
+    .dock__spinner {
       animation: none;
     }
   }

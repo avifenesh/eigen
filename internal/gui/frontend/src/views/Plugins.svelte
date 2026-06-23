@@ -121,6 +121,15 @@
     if (p.hooks) c.push({ label: "hooks", n: p.hooks });
     return c;
   }
+  // Uninstall blast radius — RemovePlugin reverses ALL the plugin's wiring and
+  // deletes files, so the confirm names what goes (e.g. "Remove 3 skills, 2
+  // agents, 1 mcp?") instead of a bare "Uninstall?". A plugin with nothing
+  // wired (no components) falls back to the plain prompt.
+  function consequence(p: InstalledPluginDTO): string {
+    const c = components(p);
+    if (c.length === 0) return "Uninstall?";
+    return "Remove " + c.map((x) => `${x.n} ${x.label}`).join(", ") + "?";
+  }
   function scanTone(s?: string): "success" | "warn" | "neutral" {
     if (s === "clean") return "success";
     if (s === "forced") return "warn";
@@ -220,7 +229,7 @@
                   </div>
                   <div class="pl__actions">
                     {#if confirming === "p:" + p.name}
-                      <span class="pl__confirm">Uninstall?</span>
+                      <span class="pl__confirm">{consequence(p)}</span>
                       <Button variant="danger" size="sm" loading={acting["p:" + p.name]} onclick={() => removePlugin(p.name)}>Confirm</Button>
                       <Button variant="ghost" size="sm" onclick={() => (confirming = null)}>Cancel</Button>
                     {:else}

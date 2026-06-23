@@ -79,6 +79,13 @@ export type SessionStateDTO = {
 
 export type CompactResultDTO = { before: number; after: number };
 
+// Parity contract (GUI-096): DaemonStats is the one shape the bridge emits RAW —
+// from Stats() and on the eigen:daemon:stats stream — as the Go *daemon.DaemonStats
+// with its native snake_case tags, bypassing the camelCase DTO layer every other
+// type uses. So these keys must mirror internal/daemon/protocol.go DaemonStats 1:1
+// (esp. the identity fields version/executable/binary_sha256/vcs_revision/
+// vcs_modified). There is no mapper to catch drift: a daemon field rename silently
+// desyncs this block — keep them in lockstep.
 export type DaemonStats = {
   uptime_sec: number;
   goroutines: number;
@@ -226,7 +233,12 @@ export type SubagentStatsDTO = {
   groupErrors: number;
   mutatingCalls: number;
   mutatingErrors: number;
+  statusChecks: number;
+  promotes: number;
+  promoteErrors: number;
   backgroundDone: number;
+  backgroundNotes: number;
+  routeNotes: number;
 };
 export type CronDTO = {
   name: string;
@@ -252,6 +264,7 @@ export type InstalledPluginDTO = {
   version?: string;
   description?: string;
   installedMs: number;
+  enabled: boolean;
   skills?: string[];
   agents?: string[];
   mcpServers?: string[];

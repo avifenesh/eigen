@@ -97,6 +97,26 @@
     };
   });
 
+  // Skills() reads local SKILL.md files directly, so re-reading is cheap. There
+  // is no skills push event, so a skill proposed via the dream loop's Propose()
+  // or installed via `eigen skill add` in another window won't appear until a
+  // manual reload — re-read on window focus / tab-visible so it lands without
+  // one. Skip while a load is in flight (no overlap). Both listeners are torn
+  // down on unmount — leak contract.
+  function refreshOnReturn() {
+    if (document.visibilityState !== "visible") return;
+    if (loading) return;
+    load();
+  }
+  $effect(() => {
+    window.addEventListener("focus", refreshOnReturn);
+    document.addEventListener("visibilitychange", refreshOnReturn);
+    return () => {
+      window.removeEventListener("focus", refreshOnReturn);
+      document.removeEventListener("visibilitychange", refreshOnReturn);
+    };
+  });
+
   const filtered = $derived.by(() => {
     const q = query.trim().toLowerCase();
     const all = data?.skills ?? [];
@@ -203,6 +223,17 @@
   function onkeydown(e: KeyboardEvent) {
     if (e.key === "Escape" && openSkill) closePreview();
   }
+
+  // The proposals queue scrolls horizontally with scroll-snap, but the cards
+  // can overflow the visible band. When focus lands on a control inside a card
+  // (Accept / Reject / the "+N more" tile) via keyboard or AT, pull its card
+  // into the scrollport so tabbing always reveals the next proposal rather than
+  // leaving the focused control clipped off-screen.
+  function onPropFocus(e: FocusEvent) {
+    const target = e.target as HTMLElement | null;
+    const card = target?.closest<HTMLElement>(".prop");
+    card?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
 </script>
 
 <svelte:window {onkeydown} />
@@ -286,7 +317,14 @@
               </span>
               <Badge tone="warn">{proposals.length}</Badge>
             </div>
-            <div class="strip__row">
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+            <div
+              class="strip__row"
+              tabindex="0"
+              role="group"
+              aria-label="Proposed skills queue — scrollable"
+              onfocusin={onPropFocus}
+            >
               {#each visibleProposals as p (p.name)}
                 <div class="prop">
                   <div class="prop__top">
@@ -853,6 +891,10 @@
     .skills__skel,
     .strip__pulse {
       animation: none;
+    }
+    .sk__rail,
+    .prop--more {
+      transition: none;
     }
   }
 </style>

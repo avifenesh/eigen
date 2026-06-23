@@ -1,12 +1,16 @@
 package gui
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/avifenesh/eigen/internal/dream"
+	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/memory"
 )
 
@@ -203,4 +207,147 @@ func (b *Bridge) CurrentMemory(scope string) (string, error) {
 		return "", err
 	}
 	return s.Read(), nil
+}
+
+// DreamReportDTO is the outcome of an on-demand dream run for one scope: a short
+// human-readable line plus the booleans the frontend can badge on. Report is "" /
+// Changed false when the run was a clean no-op (nothing queued, nothing to
+// consolidate/distill).
+type DreamReportDTO struct {
+	Scope          string `json:"scope"`
+	Report         string `json:"report"`         // e.g. "consolidated MEMORY.md, regenerated memory_summary.md" or "nothing to dream"
+	Consolidated   bool   `json:"consolidated"`   // MEMORY.md was rewritten
+	SummaryRegened bool   `json:"summaryRegened"` // memory_summary.md was (re)written or cleared
+	Changed        bool   `json:"changed"`        // anything changed on disk
+}
+
+// dreamProvider builds the small/cheap model the dream callbacks run on,
+// mirroring main.smallProvider precedence (EIGEN_SMALL_MODEL → grok composer →
+// Haiku) — the same ladder installScanner uses for skill vetting. Returns an
+// error (rather than a nil provider) when nothing can be credentialed, so
+// DreamNow fails loud instead of silently no-op'ing a button press.
+func dreamProvider() (llm.Provider, error) {
+	if sm := os.Getenv("EIGEN_SMALL_MODEL"); sm != "" {
+		if p, err := llm.New("", sm); err == nil {
+			return p, nil
+		}
+	}
+	if llm.ProviderAvailable("grok") {
+		if p, err := llm.New("grok", "grok-composer-2.5-fast"); err == nil {
+			return p, nil
+		}
+	}
+	if p, err := llm.New("converse", "us.anthropic.claude-haiku-4-5-20251001-v1:0"); err == nil {
+		return p, nil
+	}
+	return nil, errors.New("cannot dream: no credentialed model available (set EIGEN_SMALL_MODEL or credential a provider)")
+}
+
+// newDreamPipeline wires the dream package's model-facing steps into a
+// memory.Pipeline for the given scope, matching main.newMemoryPipeline exactly
+// (Stage1 → dream.Stage1, Consolidate → dream.Consolidate, Summarize →
+// dream.Summarize) so an on-demand GUI dream uses the same callbacks as the
+// nightly tick / TUI idle / `eigen dream` CLI.
+func newDreamPipeline(prov llm.Provider, mem *memory.Store, idx *memory.Index) *memory.Pipeline {
+	return &memory.Pipeline{
+		Store: mem,
+		Index: idx,
+		Stage1: func(ctx context.Context, sessionID, transcript string) (memory.Stage1Result, bool, error) {
+			r, ok, err := dream.Stage1(ctx, prov, transcript)
+			if err != nil || !ok {
+				return memory.Stage1Result{}, false, err
+			}
+			when := time.Now()
+			return memory.Stage1Result{
+				RawMemory:      r.RawMemory(sessionID, when),
+				RolloutSummary: r.Markdown(sessionID, when),
+				RolloutSlug:    r.Slug(),
+				Outcome:        r.Outcome,
+			}, true, nil
+		},
+		Consolidate: func(ctx context.Context, current string) (string, error) {
+			return dream.Consolidate(ctx, prov, current)
+		},
+		Summarize: func(ctx context.Context, memText string) (string, error) {
+			return dream.Summarize(ctx, prov, memText)
+		},
+	}
+}
+
+// DreamNow runs an on-demand consolidation for a scope ("project" | "global"):
+// it builds a memory.Pipeline with the same dream callbacks the CLI/daemon use,
+// drains any queued downstream jobs for the scope, and — when nothing was
+// queued — forces MaybeConsolidate + RegenSummary so a button press always does
+// real work. Stage1 (which needs caller-supplied transcripts) is intentionally
+// not run here; this is the "consolidate what's already captured" affordance.
+// Returns a short report so the frontend can surface what changed.
+//
+// The memory store and index live on the local filesystem, so this runs in-GUI
+// (no daemon round-trip), like the rest of the Memory/Dreaming bridge.
+func (b *Bridge) DreamNow(scope string) (*DreamReportDTO, error) {
+	s, err := openScope(scope)
+	if err != nil {
+		return nil, err
+	}
+	prov, err := dreamProvider()
+	if err != nil {
+		return nil, err
+	}
+
+	idx, err := memory.OpenIndex()
+	if err != nil {
+		return nil, err
+	}
+	defer idx.Close()
+
+	ctx := context.Background()
+	pipe := newDreamPipeline(prov, s, idx)
+	out := &DreamReportDTO{Scope: scope}
+
+	// First drain whatever the regular triggers already queued for this scope
+	// (consolidate/summary). RunQueued reports each job it actually performed.
+	report, qErr := pipe.RunQueued(ctx, 4)
+	if strings.Contains(report, "consolidated") {
+		out.Consolidated = true
+	}
+	if strings.Contains(report, "memory_summary.md") {
+		out.SummaryRegened = true
+	}
+
+	// Nothing was queued (or the queue produced no work): force a run so an
+	// explicit dream is never a silent no-op. MaybeConsolidate(force) rewrites
+	// MEMORY.md from current + Stage1 raw + ad-hoc notes; RegenSummary then
+	// redistills the injected summary (or clears a stale one).
+	if report == "" && qErr == nil {
+		if did, cErr := pipe.MaybeConsolidate(ctx, true); cErr != nil {
+			return nil, cErr
+		} else if did {
+			out.Consolidated = true
+		}
+		did, rErr := pipe.RegenSummary(ctx)
+		if rErr != nil {
+			return nil, rErr
+		}
+		if did {
+			out.SummaryRegened = true
+		}
+	} else if qErr != nil {
+		return nil, qErr
+	}
+
+	out.Changed = out.Consolidated || out.SummaryRegened
+	switch {
+	case out.Changed:
+		var parts []string
+		if out.Consolidated {
+			parts = append(parts, "consolidated MEMORY.md")
+		}
+		if out.SummaryRegened {
+			parts = append(parts, "regenerated memory_summary.md")
+		}
+		out.Report = strings.Join(parts, ", ")
+	default:
+		out.Report = "nothing to dream"
+	}
+	return out, nil
 }

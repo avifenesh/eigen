@@ -9,9 +9,20 @@
   let { code, lang }: { code: string; lang?: string } = $props();
 
   let copied = $state(false);
+  // A denied/unavailable clipboard would otherwise look like a dead button, so a
+  // failed write surfaces its own one-shot label instead of swallowing the reject.
+  let failed = $state(false);
   let copyTimer: ReturnType<typeof setTimeout> | undefined;
-  // Cancel the one-shot reset on unmount so it never writes to a detached state.
-  onDestroy(() => clearTimeout(copyTimer));
+  let failTimer: ReturnType<typeof setTimeout> | undefined;
+  // Cancel the one-shot resets on unmount so they never write to detached state.
+  onDestroy(() => {
+    clearTimeout(copyTimer);
+    clearTimeout(failTimer);
+  });
+
+  // Only offer the copy control when there's something to copy — otherwise the
+  // checkmark could "succeed" on nothing.
+  const canCopy = $derived((code ?? "").trim() !== "");
 
   // ── Huge-blob guard ─────────────────────────────────────────────────────────
   // Tool results are stored uncapped, so a full-page extract or a base64 payload
@@ -68,10 +79,17 @@
     try {
       await navigator.clipboard.writeText(code);
       copied = true;
+      failed = false;
+      clearTimeout(failTimer);
       clearTimeout(copyTimer);
       copyTimer = setTimeout(() => (copied = false), 1400);
     } catch {
-      // Clipboard denied — leave the label unchanged rather than lie.
+      // Clipboard denied/unavailable — say so for ~1.4s rather than look dead.
+      failed = true;
+      copied = false;
+      clearTimeout(copyTimer);
+      clearTimeout(failTimer);
+      failTimer = setTimeout(() => (failed = false), 1400);
     }
   }
 
@@ -126,10 +144,18 @@
 <div class="code">
   <div class="code__head">
     <span class="code__lang">{label || "text"}</span>
-    <button class="code__copy" onclick={copy} title="Copy to clipboard" aria-label="Copy code">
-      <span class="code__copy-icon" aria-hidden="true">{copied ? "✓" : "⧉"}</span>
-      <span class="code__copy-label">{copied ? "copied" : "copy"}</span>
-    </button>
+    {#if canCopy}
+      <button
+        class="code__copy"
+        class:code__copy--failed={failed}
+        onclick={copy}
+        title="Copy to clipboard"
+        aria-label="Copy code"
+      >
+        <span class="code__copy-icon" aria-hidden="true">{failed ? "✕" : copied ? "✓" : "⧉"}</span>
+        <span class="code__copy-label">{failed ? "copy failed" : copied ? "copied" : "copy"}</span>
+      </button>
+    {/if}
   </div>
   <pre class="code__body selectable" class:code__body--capped={tooLarge && !expanded}><code>{@html html}</code></pre>
   {#if tooLarge}
@@ -195,6 +221,12 @@
   .code__copy:focus-visible {
     outline: none;
     box-shadow: var(--shadow-focus);
+  }
+  /* FAILED — a denied/unavailable clipboard tints the control with the shared
+     error hue so the ✕ reads as a real failure, not a missing affordance. */
+  .code__copy--failed,
+  .code__copy--failed:hover {
+    color: var(--error);
   }
   .code__copy-icon {
     font-size: 12px;

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -177,6 +178,12 @@ func Set(c *Config, key, value string) error {
 		}
 		c.InputMode = value
 	case "effort":
+		// Closed set (Fields() declares the options; the GUI renders a <select>).
+		// Enforce it backend-side like every other closed field; "" means unset.
+		opts := FieldFor("effort").Options
+		if value != "" && !slices.Contains(opts, value) {
+			return fmt.Errorf("effort must be one of %s", strings.Join(opts, "|"))
+		}
 		c.Effort = value
 	case "theme":
 		if value != "" && !knownTheme(value) {

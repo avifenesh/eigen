@@ -92,6 +92,34 @@ func TestSetValidation(t *testing.T) {
 	}
 }
 
+// TestSetEffortClosedSet pins the GUI-101 contract: effort is a CLOSED option
+// set (Fields() declares it, the GUI renders a <select>), so Set must reject
+// values outside that set like every other closed field — "" stays valid for
+// "unset", and every declared option round-trips.
+func TestSetEffortClosedSet(t *testing.T) {
+	var c Config
+	// A value not in the option set is rejected and leaves Effort unchanged.
+	if err := Set(&c, "effort", "ultra"); err == nil {
+		t.Fatal("out-of-set effort should error")
+	}
+	if c.Effort != "" {
+		t.Fatalf("rejected effort must not be stored, got %q", c.Effort)
+	}
+	// Empty clears (unset) and is allowed.
+	if err := Set(&c, "effort", ""); err != nil {
+		t.Fatalf("empty effort (unset) should be allowed: %v", err)
+	}
+	// Every option the GUI offers must be accepted (no drift between Set and Fields()).
+	for _, opt := range FieldFor("effort").Options {
+		if err := Set(&c, "effort", opt); err != nil {
+			t.Fatalf("Set(effort, %q) should be accepted: %v", opt, err)
+		}
+		if c.Effort != opt {
+			t.Fatalf("effort %q not stored, got %q", opt, c.Effort)
+		}
+	}
+}
+
 func TestViewRendersAllKeys(t *testing.T) {
 	c := Config{Provider: "glm", MaxTokens: 1234}
 	v := View(c)

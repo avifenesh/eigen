@@ -100,9 +100,15 @@
     remoteLoading = false;
   }
 
+  // Normalize both slash styles, then take the last non-empty segment. Trailing
+  // separators are trimmed; a bare root ("/" or "\") keeps the separator as the
+  // label so it isn't rendered as an em-dash. Empty/whitespace → "—".
   function base(dir: string): string {
-    const p = (dir ?? "").replace(/\/$/, "").split("/");
-    return p[p.length - 1] || dir || "—";
+    const norm = (dir ?? "").replace(/\\/g, "/");
+    const trimmed = norm.replace(/\/+$/, "");
+    if (trimmed === "") return norm === "" ? "—" : "/";
+    const p = trimmed.split("/");
+    return p[p.length - 1] || trimmed;
   }
 
   // Remote attach is a terminal flow, not a GUI bridge call: `eigen --remote
@@ -164,9 +170,14 @@
         </button>
       {/if}
     </div>
-    <p class="mx__hint">
-      Install eigen on a new host from the CLI: <code class="mx__code">eigen remote install</code>
-    </p>
+    <div class="mx__notes">
+      <p class="mx__hint">
+        Install eigen on a new host from the CLI: <code class="mx__code">eigen remote install</code>
+      </p>
+      <p class="mx__hint mx__hint--quiet">
+        Dialing a host reaches it directly over ssh — it works whether or not your local daemon is running.
+      </p>
+    </div>
   </header>
 
   {#if loading && !data}
@@ -194,7 +205,7 @@
             onclick={() => drill(m)}
             title={m.saved
               ? `Dial ${m.ssh} for live sessions`
-              : `Dial ${m.ssh} for live sessions — detected ssh host, may not run eigen`}
+              : `Check ${m.ssh} for an eigen daemon`}
           >
             <div class="mc">
               <div class="mc__top">
@@ -207,7 +218,13 @@
               <div class="mc__ssh selectable">{m.ssh}</div>
               <dl class="mc__meta">
                 {#if m.addr}<dt>addr</dt><dd class="mc__mono">{m.addr}</dd>{/if}
-                {#if m.dir}<dt>dir</dt><dd class="mc__mono" title={m.dir}>{m.dir}</dd>{/if}
+                {#if m.dir}
+                  <dt>dir</dt>
+                  <dd class="mc__dir">
+                    <span class="mc__dir-base">{base(m.dir)}</span>
+                    <span class="mc__mono mc__dir-full">{m.dir.replace(/\\/g, "/")}</span>
+                  </dd>
+                {/if}
               </dl>
               {#if m.model || m.perm}
                 <div class="mc__badges">
@@ -231,6 +248,11 @@
   {#if openMachine}
     <div class="mx__sheet-ssh">{openMachine.ssh}</div>
   {/if}
+  <!-- Dial is up to ~30s. Wrap the whole dialing/result region in a polite live
+       region so a SR user hears "Dialing over ssh…" and then the outcome
+       (sessions, empty, or the error) without having to navigate. aria-busy
+       tracks the in-flight dial. -->
+  <div role="status" aria-live="polite" aria-busy={remoteLoading}>
   {#if remoteLoading}
     <div class="mx__dialing">
       <span class="mx__spinner" aria-hidden="true"></span>
@@ -286,6 +308,7 @@
       {/each}
     </div>
   {/if}
+  </div>
 </Sheet>
 
 <style>
@@ -355,10 +378,20 @@
   .mx__refresh--spin .mx__refresh-glyph {
     animation: mx-spin 0.7s linear infinite;
   }
+  .mx__notes {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    align-items: flex-end;
+    text-align: right;
+  }
   .mx__hint {
     margin: 0;
     font-size: var(--fs-label);
     color: var(--text-muted);
+  }
+  .mx__hint--quiet {
+    color: var(--text-faint);
   }
   .mx__code {
     font: var(--fw-regular) var(--fs-code-sm) / 1 var(--font-mono);
@@ -443,6 +476,28 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .mc__dir {
+    margin: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+  }
+  .mc__dir-base {
+    font-size: var(--fs-code-sm);
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Full path on its own muted line so it's reachable without a tooltip
+     (keyboard/touch/SR). Wraps rather than truncates — the whole path matters. */
+  .mc__dir-full {
+    font-size: var(--fs-micro);
+    color: var(--text-faint);
+    white-space: normal;
+    word-break: break-all;
   }
   .mc__badges {
     display: flex;

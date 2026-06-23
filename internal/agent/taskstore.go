@@ -26,6 +26,14 @@ import (
 // other processes; never let an id traverse paths).
 var bgIDRe = regexp.MustCompile(`^bg-[0-9]+-[0-9]+$`)
 
+// ValidTaskID reports whether id is a well-formed background-task id (the same
+// constraint readers use before joining it into a file path). Exported so other
+// packages (e.g. the GUI bridge) can reject path-traversal ids before any
+// filesystem access, rather than re-deriving the pattern.
+func ValidTaskID(id string) bool {
+	return bgIDRe.MatchString(id)
+}
+
 // lostGrace is how much past bgMaxRuntime a "running" record may age before it
 // is considered lost even when pid liveness can't be checked (old records
 // without a pid, or another host).

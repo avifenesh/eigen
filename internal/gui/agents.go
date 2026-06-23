@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -95,8 +96,13 @@ func (b *Bridge) CancelAgent(id string) error {
 }
 
 // AgentTranscript returns the raw transcript snapshot for a task, if one exists
-// on disk (subtask message exchanges, one JSON line each).
+// on disk (subtask message exchanges, one JSON line each). The id is validated
+// against the same constraint readers use before it is joined into a path, so a
+// crafted id (e.g. "../../etc/passwd") can never read outside the tasks dir.
 func (b *Bridge) AgentTranscript(id string) (string, error) {
+	if !agent.ValidTaskID(id) {
+		return "", fmt.Errorf("invalid task id %q", id)
+	}
 	path := filepath.Join(agent.TasksDir(), id+".transcript.jsonl")
 	data, err := os.ReadFile(path)
 	if err != nil {

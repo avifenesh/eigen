@@ -1,6 +1,8 @@
 package gui
 
 import (
+	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/avifenesh/eigen/internal/plugin"
@@ -26,6 +28,7 @@ type InstalledPluginDTO struct {
 	Version     string           `json:"version,omitempty"`
 	Description string           `json:"description,omitempty"`
 	InstalledMs int64            `json:"installedMs"`
+	Enabled     bool             `json:"enabled"`
 	Skills      []string         `json:"skills,omitempty"`
 	Agents      []string         `json:"agents,omitempty"`
 	MCPServers  []string         `json:"mcpServers,omitempty"`
@@ -78,7 +81,8 @@ func (b *Bridge) Plugins() (*PluginsDTO, error) {
 		plugins = append(plugins, InstalledPluginDTO{
 			Name: p.Name, Marketplace: p.Marketplace, Version: p.Version,
 			Description: p.Description, InstalledMs: p.Installed.UnixMilli(),
-			Skills: p.Skills, Agents: p.Agents, MCPServers: p.MCPServers,
+			Enabled: pluginEnabled(reg, p),
+			Skills:  p.Skills, Agents: p.Agents, MCPServers: p.MCPServers,
 			Commands: p.Commands, Hooks: p.Hooks,
 			ScanStatus: p.ScanStatus, ScanCount: p.ScanCount, Scans: scans, Warnings: p.Warnings,
 		})
@@ -116,6 +120,20 @@ func (b *Bridge) RemoveMarketplace(name string) (bool, error) {
 	return reg.RemoveMarket(name)
 }
 
+// SetPluginEnabled enables/disables ALL of an installed plugin's wired
+// components at once (skills, agents, commands, MCP servers, hooks) without
+// uninstalling, so a GUI user can stop a broken plugin and re-enable it later
+// instead of removing it. Delegates to the same Registry.SetEnabled the TUI's
+// `/plugin enable|disable` uses; applies to NEW sessions only. Returns false if
+// no plugin by that name is installed.
+func (b *Bridge) SetPluginEnabled(name string, enabled bool) (bool, error) {
+	reg, err := plugin.NewRegistry()
+	if err != nil {
+		return false, err
+	}
+	return reg.SetEnabled(name, enabled)
+}
+
 // RemovePlugin fully uninstalls a plugin: reverses its wiring (skills, agents,
 // mcp, hooks, commands) and removes its files, not just the registry record.
 func (b *Bridge) RemovePlugin(name string) (bool, error) {
@@ -124,4 +142,38 @@ func (b *Bridge) RemovePlugin(name string) (bool, error) {
 		return false, err
 	}
 	return reg.Uninstall(name)
+}
+
+// pluginEnabled derives a plugin's enabled state from the on-disk markers
+// Registry.SetEnabled flips, using only the registry's public component dirs.
+// Disabling parks each skill/agent/command file aside with a ".disabled"
+// suffix, so a plugin reads as disabled the moment any tracked component is
+// found parked (and its active file gone). A plugin with no file-backed
+// components — MCP/hooks only — has nothing to park here and reads as enabled.
+func pluginEnabled(reg *plugin.Registry, p plugin.InstalledPlugin) bool {
+	parked := func(active string) bool {
+		if _, err := os.Stat(active); err == nil {
+			return false // active file present → that component is live
+		}
+		if _, err := os.Stat(active + ".disabled"); err == nil {
+			return true // active gone, parked copy present → disabled
+		}
+		return false // neither present (already removed) → not a disable signal
+	}
+	for _, sd := range p.Skills {
+		if parked(filepath.Join(reg.SkillsDir(), sd, "SKILL.md")) {
+			return false
+		}
+	}
+	for _, an := range p.Agents {
+		if parked(filepath.Join(reg.AgentsDir(), an+".md")) {
+			return false
+		}
+	}
+	for _, cn := range p.Commands {
+		if parked(filepath.Join(reg.CommandsDir(), cn+".md")) {
+			return false
+		}
+	}
+	return true
 }

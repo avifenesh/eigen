@@ -5,6 +5,7 @@
   // (global only) the editable user profile. Reads memory directly via the
   // bridge (memory is local filesystem; no daemon round-trip).
   import { Bridge } from "$lib/bridge";
+  import { router } from "$lib/router.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
   import type { MemoryDTO, MemoryScopeDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
@@ -51,6 +52,19 @@
   const bans = $derived<BanDTO[]>(
     ((current as (MemoryScopeDTO & { banList?: BanDTO[] }) | null)?.banList ?? []),
   );
+  // A scope with nothing injected — no summary, notes, ad-hoc saves, bans or
+  // profile. Backups are *not* counted here: a scope can consolidate down to
+  // nothing-injected yet still carry snapshot history, which the empty state
+  // must acknowledge (see hasBackupHistory) rather than claim "no memory yet".
+  const isEmpty = $derived(
+    !current ||
+      (current.noteCount === 0 &&
+        current.adHoc.length === 0 &&
+        !current.summary &&
+        bans.length === 0 &&
+        !current.profile),
+  );
+  const hasBackupHistory = $derived((current?.backups ?? 0) > 0);
 
   // alive guard: a late Bridge.Memory() resolution must not write after unmount
   // or after a newer load() started.
@@ -197,12 +211,12 @@
 
 <div class="mem">
   <header class="mem__head">
-    <div class="mem__scopes" role="tablist" aria-label="Memory scope">
+    <div class="mem__scopes" role="group" aria-label="Memory scope">
       <button
         class="mem__scope"
         class:mem__scope--on={scope === "project"}
-        role="tab"
-        aria-selected={scope === "project"}
+        type="button"
+        aria-pressed={scope === "project"}
         onclick={() => (scope = "project")}
       >
         Project
@@ -211,8 +225,8 @@
       <button
         class="mem__scope"
         class:mem__scope--on={scope === "global"}
-        role="tab"
-        aria-selected={scope === "global"}
+        type="button"
+        aria-pressed={scope === "global"}
         onclick={() => (scope = "global")}
       >
         Global
@@ -237,6 +251,12 @@
         class="mem__textarea selectable"
         rows="3"
         placeholder={`A durable note for ${scope} memory…`}
+        onkeydown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.isComposing) {
+            e.preventDefault();
+            saveNote();
+          }
+        }}
       ></textarea>
       <div class="mem__compose-actions">
         <Button variant="ghost" size="sm" onclick={() => ((composing = false), (draft = ""))}>Discard</Button>
@@ -251,13 +271,23 @@
     <div class="mem__loading">
       {#each Array(3) as _, i (i)}<div class="mem__skel"></div>{/each}
     </div>
-  {:else if !current || (current.noteCount === 0 && current.adHoc.length === 0 && !current.summary && bans.length === 0 && !current.profile)}
+  {:else if isEmpty && hasBackupHistory}
+    <EmptyState
+      glyph="☾"
+      title="Nothing injected in {scope} memory"
+      line="This scope consolidated down to nothing currently injected — but its snapshot history is preserved. Review what changed in Dreaming, or start fresh below."
+    >
+      {#snippet action()}
+        <Button variant="primary" onclick={() => router.go("dreaming")}>View in Dreaming</Button>
+      {/snippet}
+    </EmptyState>
+  {:else if isEmpty}
     <EmptyState glyph="❖" title="No {scope} memory yet" line="Notes you save — or the agent distills — live here and carry across sessions.">
       {#snippet action()}
         <Button variant="primary" onclick={() => (composing = true)}>Add the first note</Button>
       {/snippet}
     </EmptyState>
-  {:else}
+  {:else if current}
     <div class="mem__body">
       <div class="mem__main">
         {#if current.summary}
@@ -326,7 +356,18 @@
               Your durable personalization prompt — eigen keeps it current as it learns; your own additions sit alongside.
             </p>
             {#if editingProfile}
-              <textarea bind:value={profileDraft} class="mem__textarea selectable" rows="6" placeholder="Add your own notes — eigen keeps the rest current…"></textarea>
+              <textarea
+                bind:value={profileDraft}
+                class="mem__textarea selectable"
+                rows="6"
+                placeholder="Add your own notes — eigen keeps the rest current…"
+                onkeydown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.isComposing) {
+                    e.preventDefault();
+                    saveProfile();
+                  }
+                }}
+              ></textarea>
               <div class="mem__compose-actions">
                 <Button variant="ghost" size="sm" onclick={() => (editingProfile = false)}>Cancel</Button>
                 <Button variant="primary" size="sm" loading={savingProfile} onclick={saveProfile}>Save</Button>
@@ -842,6 +883,9 @@
   @media (prefers-reduced-motion: reduce) {
     .mem__skel {
       animation: none;
+    }
+    .mem__scope {
+      transition: none;
     }
   }
 </style>

@@ -163,29 +163,6 @@ func toMessageDTO(m llm.Message) MessageDTO {
 	}
 }
 
-func fromMessageDTOs(in []MessageDTO) ([]llm.Message, error) {
-	out := make([]llm.Message, 0, len(in))
-	for _, d := range in {
-		imgs, err := fromImageDTOs(d.Images)
-		if err != nil {
-			return nil, err
-		}
-		var tcs []llm.ToolCall
-		if len(d.ToolCalls) > 0 {
-			tcs = make([]llm.ToolCall, 0, len(d.ToolCalls))
-			for _, tc := range d.ToolCalls {
-				tcs = append(tcs, llm.ToolCall{ID: tc.ID, Name: tc.Name, Arguments: []byte(tc.Args)})
-			}
-		}
-		out = append(out, llm.Message{
-			Role: llm.Role(d.Role), Text: d.Text, Reasoning: d.Reasoning,
-			ToolCalls: tcs, ToolCallID: d.ToolCallID, ToolName: d.ToolName,
-			ToolError: d.ToolError, Images: imgs,
-		})
-	}
-	return out, nil
-}
-
 func toWireEventDTO(e daemon.WireEvent) WireEventDTO {
 	return WireEventDTO{
 		Kind: e.Kind, Step: e.Step, Text: e.Text, ToolName: e.ToolName,

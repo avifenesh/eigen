@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -12,9 +13,11 @@ import (
 // stores directly rather than going through the daemon. Two scopes: the current
 // project (rooted at the GUI's cwd) and the cross-project global store.
 
-// MemoryNoteDTO is one parsed memory note for the browser. Memory files are
-// append-only Markdown; we split on blank-line boundaries into renderable
-// entries so the GUI can show them as cards rather than one wall of text.
+// MemoryNoteDTO is one parsed memory note for the browser. Curated MEMORY.md is
+// section-structured Markdown ("## Heading\n\n- bullets"); we split on top-level
+// "## " heading boundaries — keeping each heading with its body — into
+// renderable entries so the GUI can show them as cards rather than one wall of
+// text (and so a heading is never severed from its bullets into an orphan card).
 type MemoryNoteDTO struct {
 	Index int    `json:"index"`
 	Text  string `json:"text"`
@@ -45,16 +48,79 @@ type MemoryDTO struct {
 	Global  *MemoryScopeDTO `json:"global"`
 }
 
-// splitNotes breaks append-only Markdown memory into entries on blank-line
-// boundaries, dropping empties and a leading top-level heading.
+// splitNotes breaks curated Markdown memory into renderable entries. Post
+// consolidation MEMORY.md is section-structured ("## Heading\n\n- bullets"), so
+// we split on "## " heading boundaries and keep each heading together with the
+// body that follows it — otherwise blank-line splitting would sever a heading
+// from its bullets into orphan "## Preferences" cards. A leading top-level ATX
+// "# " title (and any preamble before the first "## ") is dropped, mirroring the
+// old behavior. Content with no "## " headings (e.g. an un-consolidated,
+// append-only store) falls back to blank-line splitting so it still renders as
+// cards rather than one wall of text.
 func splitNotes(content string) []MemoryNoteDTO {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return nil
 	}
+	sections := splitOnTopLevelHeadings(content)
+	if sections == nil {
+		// No "## " headings — fall back to blank-line chunks, dropping a leading
+		// "# " file title.
+		sections = splitOnBlankLines(content)
+	}
+	out := make([]MemoryNoteDTO, 0, len(sections))
+	for i, s := range sections {
+		out = append(out, MemoryNoteDTO{Index: i, Text: s})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// splitOnTopLevelHeadings splits content on lines that begin a top-level "## "
+// section, returning each heading together with the body that follows it (up to
+// the next "## " line). Any preamble before the first "## " — including a
+// leading "# " file title — is dropped. Returns nil when content has no "## "
+// heading line, so the caller can fall back to blank-line splitting.
+func splitOnTopLevelHeadings(content string) []string {
+	lines := strings.Split(content, "\n")
+	var sections []string
+	var cur []string
+	flush := func() {
+		if len(cur) == 0 {
+			return
+		}
+		if s := strings.TrimSpace(strings.Join(cur, "\n")); s != "" {
+			sections = append(sections, s)
+		}
+		cur = nil
+	}
+	started := false
+	for _, ln := range lines {
+		if strings.HasPrefix(ln, "## ") {
+			started = true
+			flush() // close the prior section (or drop the preamble on first hit)
+			cur = []string{ln}
+			continue
+		}
+		if started {
+			cur = append(cur, ln)
+		}
+	}
+	if !started {
+		return nil
+	}
+	flush()
+	return sections
+}
+
+// splitOnBlankLines breaks content into blank-line-separated chunks, dropping
+// empties and a leading top-level ATX "# " title. Used for un-consolidated
+// stores that have no "## " section headings yet.
+func splitOnBlankLines(content string) []string {
 	chunks := strings.Split(content, "\n\n")
-	out := make([]MemoryNoteDTO, 0, len(chunks))
-	i := 0
+	out := make([]string, 0, len(chunks))
 	skippedHeading := false
 	for _, c := range chunks {
 		c = strings.TrimSpace(c)
@@ -70,8 +136,7 @@ func splitNotes(content string) []MemoryNoteDTO {
 				continue
 			}
 		}
-		out = append(out, MemoryNoteDTO{Index: i, Text: c})
-		i++
+		out = append(out, c)
 	}
 	return out
 }
@@ -120,10 +185,19 @@ func scopeDTO(s *memory.Store, scope string) *MemoryScopeDTO {
 	return dto
 }
 
-// Memory returns the full project + global memory snapshot.
+// Memory returns the full project + global memory snapshot. A failure to open
+// either scope is surfaced (not swallowed) so the frontend's catch can
+// distinguish a real load failure from a legitimately-empty store rather than
+// rendering an empty DTO built from a nil store.
 func (b *Bridge) Memory() (*MemoryDTO, error) {
-	proj, _ := memory.Open("")
-	glob, _ := memory.OpenGlobal()
+	proj, err := memory.Open("")
+	if err != nil {
+		return nil, fmt.Errorf("open project memory: %w", err)
+	}
+	glob, err := memory.OpenGlobal()
+	if err != nil {
+		return nil, fmt.Errorf("open global memory: %w", err)
+	}
 	return &MemoryDTO{
 		Project: scopeDTO(proj, "project"),
 		Global:  scopeDTO(glob, "global"),
