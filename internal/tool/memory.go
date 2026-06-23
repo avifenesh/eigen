@@ -139,6 +139,9 @@ func Memory(project, global MemoryStore) Definition {
 				}
 				return fmt.Sprintf("%s banned behavior %q (%s) — enforced as a hard rule in future sessions", verb, in.Title, where), nil
 			}
+			if strings.TrimSpace(in.Note) == "" {
+				return "", fmt.Errorf("a note is required")
+			}
 			if err := store.Append(in.Note); err != nil {
 				return "", err
 			}

@@ -1142,7 +1142,6 @@ func Status(w io.Writer, cwd string) error {
 	}
 	cursors, _ := filepath.Glob(filepath.Join(paths.Data, "_cursors", "*.json"))
 	kv("cursor files", len(cursors))
-	kv("lagging cursors", 0)
 	return nil
 }
 func latestEpisodeTime(eps []Episode) string {

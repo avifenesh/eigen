@@ -22,9 +22,18 @@ type Preview struct {
 
 // peekMaxBytes caps how much of a transcript Peek scans for the cwd + first
 // user message. The cwd and first user turn are near the top of every format,
-// so a small window suffices; the message COUNT is the file's line count
-// (counted cheaply by a byte scan, not JSON parsing).
+// so a small window suffices.
 const peekMaxBytes = 256 << 10 // 256KB
+
+// peekCountMaxBytes caps how much of a transcript scanPeek parses to COUNT
+// turns. Turn counting JSON-unmarshals every line, so on multi-MB (occasionally
+// >100MB) transcripts an exact count is the dominant cost of a peek — and a
+// peekVersion bump re-peeks up to the whole backlog at once. We bound that work:
+// files within the cap are counted exactly; past it the count is extrapolated
+// from the turn density of the bytes already scanned (turns/byte × total size).
+// 8MB counts the overwhelming majority of sessions exactly while keeping the
+// per-file cost flat regardless of how large the long tail grows.
+const peekCountMaxBytes = 8 << 20 // 8MB
 
 // Peek extracts a Preview for a session without a full parse. src selects the
 // format; origin is the file path (or, for OpenCode, the session id — which
@@ -46,10 +55,14 @@ func Peek(src Source, origin string) Preview {
 }
 
 // scanPeek reads a transcript once: it keeps the head lines (up to peekMaxBytes)
-// for title/cwd extraction, and counts conversational TURNS over the WHOLE file
-// using a per-source line classifier (mechanical — turns have a known structure,
-// no model needed). countTurn returns true for a line that is one user or
-// assistant message.
+// for title/cwd extraction, and counts conversational TURNS using a per-source
+// line classifier (mechanical — turns have a known structure, no model needed).
+// countTurn returns true for a line that is one user or assistant message.
+//
+// Turn counting is bounded by peekCountMaxBytes: files within the cap are
+// counted exactly; past it scanning stops and the count is extrapolated from the
+// density observed so far (turns per scanned byte × total file size), so a peek
+// never reads + per-line unmarshals an entire 100MB+ transcript just to recount.
 func scanPeek(path string, countTurn func(line []byte) bool) (lines []string, turns int) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -57,19 +70,38 @@ func scanPeek(path string, countTurn func(line []byte) bool) (lines []string, tu
 	}
 	defer f.Close()
 
+	var total int64
+	if fi, err := f.Stat(); err == nil {
+		total = fi.Size()
+	}
+
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	read := 0
+	headRead := 0  // bytes accumulated into the head (lines) window
+	countRead := 0 // bytes whose turns were actually classified
 	for sc.Scan() {
 		b := sc.Bytes()
-		if countTurn != nil && countTurn(b) {
-			turns++
+		if countTurn != nil && countRead < peekCountMaxBytes {
+			if countTurn(b) {
+				turns++
+			}
+			countRead += len(b) + 1
 		}
-		if read < peekMaxBytes {
+		if headRead < peekMaxBytes {
 			ln := string(b)
-			read += len(ln) + 1
+			headRead += len(ln) + 1
 			lines = append(lines, ln)
 		}
+		// Stop once both jobs are done: the head window is full and the count
+		// budget is spent. The remaining turns are extrapolated below.
+		if headRead >= peekMaxBytes && (countTurn == nil || countRead >= peekCountMaxBytes) {
+			break
+		}
+	}
+	// If counting stopped short of the file end, scale the partial count up to
+	// the whole file by the density of what we scanned.
+	if countTurn != nil && countRead > 0 && total > int64(countRead) {
+		turns = int(int64(turns) * total / int64(countRead))
 	}
 	return lines, turns
 }

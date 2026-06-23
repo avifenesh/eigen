@@ -81,6 +81,19 @@ func TestMemoryToolWithRealStoreEnqueuesMaintenance(t *testing.T) {
 	}
 }
 
+func TestMemoryToolRejectsEmptyNote(t *testing.T) {
+	for _, note := range []string{"", "   ", "\n\t "} {
+		fm := &fakeMem{}
+		args, _ := json.Marshal(map[string]string{"note": note})
+		if _, err := Memory(fm, nil).Run(context.Background(), args); err == nil {
+			t.Fatalf("empty/whitespace note %q should error", note)
+		}
+		if len(fm.notes) != 0 {
+			t.Fatalf("empty/whitespace note %q should not be appended: %v", note, fm.notes)
+		}
+	}
+}
+
 func TestMemoryToolPropagatesError(t *testing.T) {
 	fm := &fakeMem{fail: true}
 	args, _ := json.Marshal(map[string]string{"note": "x"})

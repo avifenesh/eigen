@@ -124,6 +124,48 @@ func TestTitleFromRejectsBoilerplate(t *testing.T) {
 	}
 }
 
+// TestScanPeekExactWithinBudget: a file smaller than peekCountMaxBytes is
+// counted exactly (no extrapolation), and the whole-file scan is unaffected.
+func TestScanPeekExactWithinBudget(t *testing.T) {
+	dir := t.TempDir()
+	var sb strings.Builder
+	const turns = 50
+	for range turns {
+		sb.WriteString(`{"role":"user","text":"hi"}` + "\n")
+		sb.WriteString(`{"role":"assistant","text":"yo"}` + "\n")
+	}
+	p := writeFile(t, dir, "small.jsonl", sb.String())
+	_, got := scanPeek(p, hermesTurn)
+	if got != turns*2 {
+		t.Errorf("exact count within budget = %d, want %d", got, turns*2)
+	}
+}
+
+// TestScanPeekExtrapolatesBeyondBudget: a file larger than peekCountMaxBytes is
+// not fully parsed; the count is extrapolated from the scanned prefix and must
+// land close to the true turn total (within the density-estimate tolerance).
+func TestScanPeekExtrapolatesBeyondBudget(t *testing.T) {
+	dir := t.TempDir()
+	// Each pair (~60 bytes) is one user + one assistant turn. Emit enough to
+	// exceed peekCountMaxBytes by a few MB so the early break + extrapolation
+	// path is exercised.
+	pair := `{"role":"user","text":"hello there friend"}` + "\n" +
+		`{"role":"assistant","text":"hi back at you pal"}` + "\n"
+	want := 0
+	var sb strings.Builder
+	for sb.Len() < peekCountMaxBytes+(2<<20) {
+		sb.WriteString(pair)
+		want += 2
+	}
+	p := writeFile(t, dir, "huge.jsonl", sb.String())
+	_, got := scanPeek(p, hermesTurn)
+	// Uniform density ⇒ extrapolation should be within a small margin of truth.
+	lo, hi := want*97/100, want*103/100
+	if got < lo || got > hi {
+		t.Errorf("extrapolated count = %d, want ~%d (within [%d,%d])", got, want, lo, hi)
+	}
+}
+
 func TestPeekEigenUsesMetaDir(t *testing.T) {
 	dir := t.TempDir()
 	p := writeFile(t, dir, "s.eigen.jsonl", `{"role":"user","text":"do the thing"}`+"\n")

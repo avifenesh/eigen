@@ -332,10 +332,13 @@ func (r *Remote) AddDir(path string) (string, error) {
 // Roots lists the daemon session's tool-sandbox allowed dirs (primary first).
 func (r *Remote) Roots() []string { return r.snap().Roots }
 
-// Steer injects a message into the daemon session's running turn (mid-turn,
-// between tool-call rounds). Returns true when a turn was running and the
-// message was steered; false when idle (caller should Send). Fire-and-forget —
-// never blocks on the turn (unlike Send).
+// Steer delivers a message to the daemon session via the atomic input op: if a
+// turn was running it's injected mid-turn (between tool-call rounds) and returns
+// true; if the session went idle the daemon STARTS A NEW TURN with it and
+// returns false. Either outcome means the message was delivered — unlike the
+// local backend, a false here must NOT be re-queued (steerOrQueue relies on
+// this), or the daemon would run it twice. Fire-and-forget — never blocks on
+// the turn (unlike Send).
 func (r *Remote) Steer(text string, images []llm.Image) bool {
 	steered, err := r.c.SteerInput(r.id, text, images)
 	if err != nil {

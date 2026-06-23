@@ -109,6 +109,52 @@ func TestRemoteSendAndState(t *testing.T) {
 	}
 }
 
+// TestRemoteSteerIdleStartsTurnReturnsFalse pins the APP-103 contract: when the
+// daemon session is IDLE, Steer delivers the message by STARTING A NEW TURN and
+// returns false (the input op is atomic — it never rejects). The message was
+// still delivered, so steerOrQueue must NOT re-queue on this false (which would
+// run it twice). The turn must have started (history gains the user message).
+func TestRemoteSteerIdleStartsTurnReturnsFalse(t *testing.T) {
+	build := func(_, _ string) (*agent.Agent, func(), error) {
+		reg, _ := tool.NewRegistry()
+		return &agent.Agent{Provider: echoProv{}, Tools: reg, Perm: agent.PermAuto, MaxContextTokens: 9000}, func() {}, nil
+	}
+	c, id := startDaemon(t, build)
+	r, err := NewRemote(c, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Wire(func(agent.Event) {}, nil)
+
+	// Steer against an idle session: the daemon starts a fresh turn and reports
+	// steered=false (not "running, injected").
+	if r.Steer("type into the void", nil) {
+		t.Fatal("Steer on an idle session must return false (it started a new turn, not steered)")
+	}
+
+	// The message WAS delivered — the daemon ran it as a turn, so it appears in
+	// history. Re-queueing on the false above would send a SECOND copy.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		r.Refresh()
+		msgs := r.Messages()
+		count := 0
+		for _, msg := range msgs {
+			if msg.Role == llm.RoleUser && msg.Text == "type into the void" {
+				count++
+			}
+		}
+		if count == 1 {
+			return // exactly one copy: delivered once, not double-sent
+		}
+		if count > 1 {
+			t.Fatalf("message sent %d times (double-send): %+v", count, msgs)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("Steer on idle session never started a turn: %+v", r.Messages())
+}
+
 // gateRemoteProv triggers one gated tool call then finishes.
 type gateRemoteProv struct{ step int }
 
