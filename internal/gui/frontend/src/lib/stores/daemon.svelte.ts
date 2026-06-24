@@ -8,6 +8,13 @@ import type { DaemonStats } from "$lib/types";
 
 type Status = "connecting" | "online" | "offline";
 
+// baseVersion strips semver build metadata: "0.1.0+7c6737f-dirty" → "0.1.0".
+// Two binaries from the same release but different dev builds share a base, so
+// the mismatch warning fires only on a genuine release divergence.
+function baseVersion(v: string): string {
+  return v.split("+")[0].trim();
+}
+
 function createDaemon() {
   let status = $state<Status>("connecting");
   let stats = $state<DaemonStats | null>(null);
@@ -62,10 +69,15 @@ function createDaemon() {
     get daemonVersion() {
       return stats?.version ?? "";
     },
-    // True when both versions are known and differ — surfaced as a warning in
-    // the chrome so a stale daemon vs fresh GUI (or vice-versa) is visible.
+    // True only when the daemon and GUI differ at the RELEASE level — the base
+    // semver before the +gitrev/-dirty build suffix. A dev rebuild of the GUI
+    // against a slightly-older dev daemon (same 0.1.0, different rev) is NOT a
+    // real mismatch and must stay quiet; a true version divergence (0.1.0 vs
+    // 0.2.0) still warns. baseVersion strips "+…" build metadata per semver.
     get versionMismatch() {
-      return !!guiVersion && !!stats?.version && guiVersion !== stats.version;
+      const d = stats?.version ?? "";
+      if (!guiVersion || !d) return false;
+      return baseVersion(guiVersion) !== baseVersion(d);
     },
     start,
     // Register a callback fired whenever the daemon transitions back to online.

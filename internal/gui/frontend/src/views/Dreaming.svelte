@@ -47,6 +47,24 @@
       if (seq === loadSeq) loading = false;
     }
   }
+  // Run consolidation + summary for the current scope on demand. The daemon
+  // dreams on its own cadence; this lets the user fold pending notes into
+  // MEMORY.md + regenerate the injected summary now, then reloads the timeline.
+  let dreaming = $state(false);
+  async function dreamNow() {
+    if (dreaming) return;
+    dreaming = true;
+    try {
+      const r = await Bridge.DreamNow(scope);
+      toasts.success(r?.report || (r?.changed ? "consolidated memory" : "nothing new to consolidate"));
+      await load();
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      dreaming = false;
+    }
+  }
+
   $effect(() => {
     load();
     return () => {
@@ -121,6 +139,11 @@
       <button class="dream__seg" class:dream__seg--on={strand === "consolidations"} role="tab" aria-selected={strand === "consolidations"} onclick={() => (strand = "consolidations")}>
         Consolidations {#if current}<span class="dream__n tnum">{current.consolidations.length}</span>{/if}
       </button>
+    </div>
+    <div class="dream__actions">
+      <Button variant="secondary" size="sm" loading={dreaming} title="Consolidate this scope's notes into memory + regenerate the injected summary now" onclick={dreamNow}>
+        Dream now
+      </Button>
     </div>
   </header>
 
@@ -283,6 +306,9 @@
     gap: var(--sp-5);
     padding: var(--sp-6) var(--sp-9);
     border-bottom: 1px solid var(--border-hairline);
+  }
+  .dream__actions {
+    margin-left: auto;
   }
   .dream__scopes,
   .dream__strands {

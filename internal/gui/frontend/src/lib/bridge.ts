@@ -12,6 +12,7 @@ import type {
   SkillsDTO,
   AgentsDTO,
   DreamingDTO,
+  DreamReportDTO,
   RoutingDTO,
   ObserveSummaryDTO,
   CronsDTO,
@@ -90,6 +91,8 @@ export const Bridge = {
   Dreaming: (): Promise<DreamingDTO | null> => B.Dreaming(),
   ConsolidationContent: (path: string): Promise<string> => B.ConsolidationContent(path),
   CurrentMemory: (scope: string): Promise<string> => B.CurrentMemory(scope),
+  // run consolidation + summary on demand for a scope ("project" | "global")
+  DreamNow: (scope: string): Promise<DreamReportDTO | null> => B.DreamNow(scope),
   // routing
   Routing: (): Promise<RoutingDTO | null> => B.Routing(),
   // observe (historical log summary; live KPIs come from the daemon stats stream)

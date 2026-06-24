@@ -890,6 +890,16 @@ func runNightlyDream(host *daemon.Host, prov llm.Provider, gmem *memory.Store) {
 				_ = gmem.Append(n)
 			}
 			summaryRefreshed, _ := refreshMemorySummary(context.Background(), prov, gmem, idx)
+			// Refresh USER.md's auto-maintained learned block from the curated
+			// global profile, same as the CLI `eigen dream` path (main.go) — so a
+			// daemon-only user gets the same injected USER.md freshness instead of
+			// it going stale until they run dream by hand. The user's own section
+			// is preserved by SetLearnedProfile.
+			learned := strings.TrimSpace(gmem.Injected())
+			if learned == "" {
+				learned = strings.Join(notes, "\n")
+			}
+			_ = gmem.SetLearnedProfile(learned)
 			memory.CommitMemory(fmt.Sprintf("dream: global profile — %d new", len(notes)))
 			if summaryRefreshed {
 				fmt.Fprintf(os.Stderr, "eigen daemon: global profile +%d, regenerated memory_summary.md\n", len(notes))

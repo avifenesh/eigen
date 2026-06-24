@@ -187,6 +187,15 @@ export type DreamingDTO = {
   global: DreamingScopeDTO | null;
 };
 
+// Result of an on-demand DreamNow(scope): what consolidation did this run.
+export type DreamReportDTO = {
+  scope: string;
+  report: string;
+  consolidated: boolean;
+  summaryRegened: boolean;
+  changed: boolean;
+};
+
 export type ModelDTO = {
   id: string;
   provider: string;

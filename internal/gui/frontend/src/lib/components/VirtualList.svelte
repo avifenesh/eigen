@@ -4,6 +4,7 @@
   // height drives the scroll geometry; actual heights are measured and fed back
   // so variable-height rows settle correctly. Pin-to-bottom optional (chat).
   import type { Snippet } from "svelte";
+  import { SvelteMap } from "svelte/reactivity";
 
   let {
     items,
@@ -52,7 +53,13 @@
   // reorder of `items` (e.g. the transcript CAP eviction) keeps each row's real
   // height instead of mis-attributing a neighbour's. Falls back to the estimate
   // until a row reports. Pruned to live keys so evicted rows don't accumulate.
-  let measured = $state<Map<string | number, number>>(new Map());
+  // SvelteMap (not a plain Map): a plain Map's .set()/.delete() do NOT notify
+  // Svelte 5 reactivity, so `offsets` would never recompute when a row reports
+  // its real height — leaving rows at their estimate positions and making an
+  // expanding tool card overlap the next block (the "opened behind / covered"
+  // bug) and collapsed rows leave stale gaps. SvelteMap makes mutations reactive
+  // so the offset geometry follows actual measured heights.
+  const measured = new SvelteMap<string | number, number>();
 
   function heightAt(i: number): number {
     const h = measured.get(keyOf(items[i], i));
