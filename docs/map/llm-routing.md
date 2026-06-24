@@ -41,8 +41,8 @@
 - **Role:** The static model catalog — capabilities, context windows, provider
   defaults, and provider-alias canonicalization.
 - **Key symbols:**
-  - `ModelInfo` (type) — per-model record: provider, window(s), `Cache`/`Context1M`/`Reasoning`/`Vision`/`Search`/`Social`, effort levels, `ServiceTier`.
-  - `Catalog` (var) — the curated built-in model list (mantle/codex GPT, converse/anthropic Claude, grok, glm, local).
+  - `ModelInfo` (type) — per-model record: `ID`, `Provider`, `ContextWindow`, `Cache`, `Context1M`/`ContextWindow1M`, `Reasoning`/`Effort`/`EffortLevels`/`ThinkingBudget`, `Search`/`Vision`/`Social`, `ServiceTier`.
+  - `Catalog` (var) — the curated built-in model list, spanning all chat backends: mantle GPT (`openai.gpt-5.5/5.4/5`), codex GPT (`gpt-5.5/5.4`), converse Claude (`us.anthropic.claude-opus-4-8` = default, `sonnet-4-6`, `3-5-sonnet`, `haiku-4-5`), native-anthropic Claude (`claude-opus-4-1`, `sonnet-4-5` = native default, `3-5-haiku`), local llama, grok (`grok-build` = default, `composer-2.5-fast`, `grok-4`, `grok-code-fast-1`), and glm (`glm-5.2` = 1M native flagship, `glm-5.1` = default, `glm-5/5-turbo/4.7/4.6/4.5/4.5-air`).
   - `defaultModelByProvider` (var) + `DefaultModel(provider)` — resolve a provider's default model id (falls back to first custom-provider model).
   - `ResolveProvider(provider, model)` — reconcile a (provider,model) pair so a known model goes to its catalog backend (prevents 404s).
   - `CanonicalProvider(p)` / `canonicalProvider(p)` — collapse provider aliases ("claude"→"converse", "xai"→"grok") to a canonical backend.
@@ -56,9 +56,9 @@
 ### internal/llm/routerscores.go
 - **Role:** The auto-router's scoring table — the user's quality-TIER ladder (not a price search).
 - **Key symbols:**
-  - `Tier` + `TierSimple/SimpleMed/Med/Frontier` — quality classes 1–4.
-  - `RouterScore` (type) — per-model `Tier`, within-tier `Rank`, `Speed`, `Strict`/`Design` affinity flags.
-  - `routerScores` (var) — model-id → `RouterScore` (grok/glm = "simple only" by trust, opus/gpt-5.x = tier-3).
+  - `Tier` + `TierSimple/SimpleMed/Med/Frontier` — quality classes 1–4; `TierFrontier` (4) is reserved as the unknown-model fallback target (no catalog model is tier-4 today).
+  - `RouterScore` (type) — per-model `Tier`, within-tier `Rank`, `Speed`, `Strict`/`Design` affinity flags (Strict wins general work, Design wins frontend).
+  - `routerScores` (var) — model-id → `RouterScore` by user TRUST not benchmarks: most grok/glm = tier-1 "simple only"; sonnet + `glm-5.2` = tier-2 simple-med (glm-5.2 outranks sonnet there); opus + gpt-5.x = tier-3 med (gpt-5.5 `Strict`/highest-rank, opus `Design`).
   - `scoreFor(id)` (unexported) — score for an id, defaulting unknown models to frontier so the router never silently downgrades.
 - **Depends on:** none beyond package types.
 - **Used by / entrypoint:** `scoreFor` is the scoring primitive for `router.go` (`Route`, `tierOrder`, `affinity`) and `vendor.go` (`CrossReviewer`, `CrossVendorAdversaries`).
@@ -205,6 +205,13 @@
 - **Depends on:** `os`/`net/http`/`encoding/json`/`math`; `firstNonEmpty` (sibling helper) only via `firstNonEmptyEnv` wrapper (self-contained otherwise).
 - **Used by / entrypoint:** `NewEmbedder` is used by `retrieve_run.go` (root); `CosineSim` by `internal/retrieve/index.go`.
 
+### internal/llm/version.go
+- **Role:** Build identity — the package version plus a git-stamped full version string shared by daemon, CLI, GUI, and TUI.
+- **Key symbols:**
+  - `FullVersion()` — base `Version` annotated with the build's short git revision and a `-dirty` marker for uncommitted builds (e.g. `0.1.0+7c6737f-dirty`); falls back to bare `Version` when no VCS stamp is embedded (`go run`). Computed once via `sync.Once` from `debug.BuildInfo` — the same source the daemon uses, so all surfaces report the same string for a given binary.
+- **Depends on:** stdlib `runtime/debug`, `sync`; the package `Version` const (defined in sibling `http.go`, not in this slice).
+- **Used by / entrypoint:** `FullVersion` is called from root `main.go`, `internal/gui/bridge.go`, and `internal/daemon/host.go` (and re-exported through `http.go` for the HTTP user-agent).
+
 ### internal/llm/imagegen.go
 - **Role:** Generative image model — Bedrock InvokeModel (Stability / Nova Canvas / Titan dialects), shares SigV4 + AWS-profile auth with Converse.
 - **Key symbols:**
@@ -223,8 +230,9 @@
 - **`internal/llm` backends (sibling, not in this slice):** `mantle.go`, `converse.go`, `codex.go`, `anthropic.go`, `grok.go`, `glm.go`, `llama.go`, `openaichat.go`, `custom.go`, plus shared infra `http.go`, `sigv4.go`, `vendor.go`. They implement `Provider`/`Streamer`/`EffortSetter` and supply the credential/sign/listing helpers this slice calls (`loadAWSCreds`, `signV4`, `httpJSON`, `claudeOAuthToken`, `grokCLIToken`, `customProviderByName`, `firstNonEmpty`, `envBool`, the `*DefaultBaseURL`/`anthropic*` constants). `vendor.go` (`VendorOf`, `CrossReviewer`, `CrossVendorAdversaries`) is the cross-vendor selection logic that `review.go`/`council.go` build on.
 - **Root package (`/router.go`, `/main.go`, `/build.go`, `/daemon.go`, `/retrieve_run.go`, `/imagegen_run.go`, `main_gui_wails.go`):** the `autoRouter` is the prime consumer — calls `Route`, `RouteCandidates`, `AllCredentialedModels`, `ReviewArtifact`, `Council`/`FormatCouncil`, `CrossReviewer`/`CrossVendorAdversaries`, `ParseTaskKind`/`ParseDifficulty`; `main.go` wires `ContextBudget`, `Discover`, `DefaultModel`, `Models`, compactor chains, and provider construction via `New`.
 - **`internal/agent`:** the agent loop calls `CompactWith`, `EstimateTokens`, `ShedToolImages`, `DedupeToolResults`, `IsContextOverflow`, `ModelEffortLevels`, `NewCompactor`, and type-asserts the `Streamer`/`EffortSetter`/`FastModer` capability interfaces.
-- **`internal/tui` & `internal/chat`:** model picker / switches use `Models`, `Lookup`, `ResolveProvider`, `ParseRef`, `EffectiveContextWindow`, `ContextBudget`, `ModelEffortLevels`, `EffortLevels`, `Vision`/`HasVision`; `internal/chat/local.go` type-asserts `EffortSetter`.
-- **`internal/gui` & `internal/app`:** GUI routing/config and the desktop data layer call `CanonicalProvider`, `ResolveProvider`, `ProviderAvailable`, `Models`, `DefaultModel`.
+- **`internal/tui` & `internal/chat`:** model picker / switches use `Models`, `Lookup`, `ResolveProvider`, `ParseRef`, `EffectiveContextWindow`, `ContextBudget`, `ModelEffortLevels`, `EffortLevels`, `Vision`/`HasVision`; `internal/chat/local.go` type-asserts the `EffortSetter`/`Searcher`/`FastModer` capabilities (and takes a `Compactor` on `SetModel`).
+- **`internal/gui` & `internal/app`:** GUI routing/config and the desktop data layer call `CanonicalProvider`, `ResolveProvider`, `ProviderAvailable`, `Models`, `DefaultModel`, `New`, `Discover`, `FullVersion`, and the chat DTO types (`Message`/`Role*`/`ToolCall`/`Image`/`Request`/`Response`); `internal/app/data.go` also uses the custom-provider helpers (`CustomProvider`/`CustomModel`/`LoadCustomProviders`/`UpsertCustomProvider`, sibling `custom.go`).
+- **`internal/daemon`:** the session layer carries the chat DTOs (`Message`/`Role*`/`Request`/`Response`/`Image`/`ToolCall`), type-asserts the `EffortSetter`/`Searcher`/`FastModer` runtime toggles on the live provider, passes a `Compactor`, and reports build identity via `FullVersion`.
 - **`internal/config`:** persists/loads model refs via `ParseRef`, `Ref`, `Lookup`.
 - **`internal/retrieve`:** semantic index uses `CosineSim` (and an `Embedder` built via `NewEmbedder`).
 - **`internal/telegram`:** lists models via `Models`.

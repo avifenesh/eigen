@@ -36,19 +36,18 @@
   - `icon(nf, fallback)` — internal picker returning the right glyph for the active tier.
   - `IconRead`/`IconWrite`/`IconEdit`/`IconSearch`/`IconBash`/… (vars) — one glyph per tool family.
   - `ToolIcon(name) string` — maps a tool name (incl. aliases like multiedit/apply_patch, grep/glob/find) to its icon; used by the transcript.
-  - `Caret`, `Expanded`/`Collapsed`, `StatusWorking`/`StatusIdle`/`StatusApproval`/`StatusError`, `Ellipsis`, `CollapseAll`/`ExpandAll`, `Back` — the rest of the width-safe glyph vocabulary.
-  - `NerdFont() bool` — reports whether the NF tier is active (see dead-code note: currently has no caller).
+  - `Caret`, `Expanded`/`Collapsed`, `StatusWorking`/`StatusIdle`/`StatusApproval`/`StatusError`, `Ellipsis`, `CollapseAll`/`ExpandAll`, `Back` — the rest of the width-safe glyph vocabulary (status dots are width-1 `◉`/`◌`/`◊`/`✗` chosen to avoid East-Asian-ambiguous double-width).
 - **Depends on:** stdlib only (`os`, `strings`).
 - **Used by / entrypoint:** `internal/tui` (art, view, blocks, sidebar, shellspanel) and `internal/theme/swatch.go`; `NerdFontMode` from `main.go`.
 
 ### internal/theme/swatch.go
 - **Role:** Renders the whole design system (roles, elevation, icons, ramps, weights, glyphs) as one styled block for `eigen theme`.
 - **Key symbols:**
-  - `Swatch() string` — builds the "living swatch" string (pure lipgloss styling, no terminal control).
+  - `Swatch() string` — builds the "living swatch" string (roles, elevation, icons, ramps, weights, glyphs; pure lipgloss styling, no terminal control).
   - `rampChips(ramp)` — renders an animation ramp as a row of background chips.
   - `roleColor(name)` — explicit name→color switch for the swatch chips (compile-checked, no reflection).
 - **Depends on:** `github.com/charmbracelet/lipgloss`; the role vars/styles in `theme.go` and glyphs in `icons.go`.
-- **Used by / entrypoint:** entrypoint: `main.go:271` prints `theme.Swatch()` for the `eigen theme` command.
+- **Used by / entrypoint:** entrypoint: `main.go` prints `theme.Swatch()` for the `eigen theme` command.
 
 ### internal/fuzzy/fuzzy.go
 - **Role:** Shared fuzzy ranking so every "type to find" surface ranks identically.
@@ -60,46 +59,46 @@
 ### internal/config/config.go
 - **Role:** The `~/.eigen/config.json` settings model: the `Config` struct plus load/save and the get/set/view machinery used by `/config` and the config panel.
 - **Key symbols:**
-  - `Config` (struct) — every optional setting (provider/model/perm/effort/theme/nerd_font, telegram, route/route_providers, observe, dream, subtask lifecycle minutes, local_background, daemon_timeout, …).
+  - `Config` (struct) — every optional setting: provider/model (one user-facing model ref; provider is shadow metadata), perm, input_mode (steer|queue), effort, theme, nerd_font, max_tokens, tts_cmd, notify_cmd, judge_model, telegram_token/telegram_allow, skills_dirs, route/route_providers, observe (`*bool`, default-on), dream_on_idle/idle_minutes, front_window_min/stall_idle_min, local_background, daemon_timeout.
   - `Load()` / `LoadFrom(path)` — read the JSON (missing/malformed → zero Config, never an error); splits a tagged model ref into provider+model via `llm.ParseRef`.
   - `Path()`, `Save(c)`, `SaveTo(path, c)` — canonical path and persistence.
-  - `Set(c, key, value)` / `Get(c, key)` — typed key writes/reads matching the JSON field names; `Set` validates closed-set keys.
+  - `Set(c, key, value)` / `Get(c, key)` — typed key writes/reads matching the JSON field names; `Set` validates closed-set keys (theme via `theme.PaletteNames()`, effort via `FieldFor("effort").Options`, perm/input_mode/nerd_font/the bool flags inline); `Get` masks `telegram_token` (returns "set") and renders model as a `llm.Ref`.
   - `Keys()` — settable keys derived from `Fields()` (one source of truth).
   - `View(c)` — aligned "key = value" render for the `/config` view.
-  - `(Config) ObserveEnabled()` — activity log default-on helper.
+  - `(Config) ObserveEnabled()` — activity log default-on helper (true when `Observe` is nil).
   - `knownTheme(name)`, `splitFields(s)` — internal validation/parse helpers.
 - **Depends on:** `internal/llm` (`ParseRef`/`Ref`/`Lookup`), `internal/theme` (`PaletteNames`).
-- **Used by / entrypoint:** `main.go`, `daemon.go`, `build.go`, `remote_session.go`, `internal/tui` (configpanel, commands), `internal/gui/config.go`, `internal/app` (data, pages).
+- **Used by / entrypoint:** `main.go`, `daemon.go`, `build.go`, `remote_session.go`, `internal/tui` (configpanel, commands), `internal/gui/config.go`, `internal/app` (data, inspector, pages).
 
 ### internal/config/dotenv.go
 - **Role:** `.env` credential loading into the process environment (package doc comment lives here).
 - **Key symbols:**
   - `LoadEnvFiles(paths...)` — loads KEY=VALUE pairs without overriding already-set vars; earlier files win, real env wins over all; missing file is not an error; honors `export ` prefix and quoted values.
   - `loadOne(path)` — single-file scanner (1 MB line buffer).
+  - `stripInlineComment(val)` — drops a trailing unquoted `" #..."` comment from a value, preserving non-whitespace `#` (e.g. `color=#fff`) and backslash-escaped hashes.
 - **Depends on:** stdlib only (`bufio`, `os`, `strings`).
-- **Used by / entrypoint:** entrypoint: `main.go:58` loads `~/.eigen/.env` at startup.
+- **Used by / entrypoint:** entrypoint: `main.go` loads `~/.eigen/.env` at startup.
 
 ### internal/config/fields.go
-- **Role:** Field metadata describing each settable key for UIs (descriptions, closed option sets, dynamic option sources, multi-select flag).
+- **Role:** Field metadata describing each settable key for UIs (descriptions, closed option sets, dynamic option sources, multi-select + secret flags).
 - **Key symbols:**
-  - `Field` (struct) — Key/Desc/Options/Dynamic("providers"|"models")/Multi.
-  - `Fields() []Field` — the settable keys in display order (the source of truth `Keys()` derives from).
-  - `FieldFor(key) Field` — lookup metadata for one key.
+  - `Field` (struct) — Key/Desc/Options/Dynamic("providers"|"models")/Multi/Secret. `Secret` marks a credential free-text field: `Get` masks it and secret-shy surfaces (the GUI config form) skip it, while it stays settable.
+  - `Fields() []Field` — the settable keys in display order (the source of truth `Keys()` derives from); only `telegram_token` is currently `Secret`.
+  - `FieldFor(key) Field` — lookup metadata for one key (zero Field when unknown).
 - **Depends on:** none (pure data).
-- **Used by / entrypoint:** `internal/config/config.go` (`Keys()`), `internal/tui/commands.go` (`FieldFor`), and the config picker UIs.
+- **Used by / entrypoint:** `internal/config/config.go` (`Keys()`, plus `Set` reads `FieldFor("effort").Options`), `internal/tui/commands.go` (`FieldFor`), `internal/gui/config.go` (`Fields`, `Secret`), and the config picker UIs.
 
 ### internal/command/command.go
 - **Role:** Custom slash commands (Tier 31) — Claude-Code-compatible markdown commands with frontmatter and `$ARGUMENTS`/`$1..$9` substitution, surfaced as `/<name>`.
 - **Key symbols:**
   - `Command` (struct) — Name/Description/ArgHint/Model/AllowedTools/Body/Path/Scope parsed from a `.md` file.
   - `Dirs()` — command dirs in precedence order (project `./.eigen/commands` then user `~/.eigen/commands`).
-  - `UserDir()` — global user command dir (see dead-code note: no caller).
   - `Set` (struct) + `Load(dirs...)` — discover/parse commands (earlier scope wins); `Get`/`Names`/`All`/`Len` accessors.
   - `parse(name, content)` — split optional `--- … ---` frontmatter (description/argument-hint/model/allowed-tools), tolerating unknown keys.
   - `splitToolList(val)`, `argTokens(args)` — frontmatter tool-list parse and quote-aware arg tokenizer.
   - `Expand(body, args)` — fill `$ARGUMENTS`/`$1..$9`; appends bare args when the body has no placeholder (Claude parity).
 - **Depends on:** stdlib only (`os`, `path/filepath`, `regexp`, `sort`, `strconv`, `strings`).
-- **Used by / entrypoint:** `internal/tui/completion.go` and `internal/tui/commands.go` (load + expand custom commands).
+- **Used by / entrypoint:** `internal/tui/completion.go` and `internal/tui/commands.go` (load + expand custom commands), and `internal/gui/bridge.go` (`Load`/`Dirs`/`Expand` to run a custom command on the daemon session).
 
 ### internal/hook/hook.go
 - **Role:** Fire-and-forget lifecycle hooks (Tier extension seam): run user programs on session/tool/turn/note events, feeding each a small JSON payload on stdin.
@@ -128,7 +127,7 @@
   - `splitFrontmatter(content)` — extract name/description from a leading `--- … ---` block.
   - `Interpolate(s, vars)` — replace `{{var.NAME}}`, reporting unset names.
 - **Depends on:** stdlib only (`os`, `path/filepath`, `regexp`, `strconv`, `strings`).
-- **Used by / entrypoint:** `main.go` (`eigen run`), `internal/tui/workflow.go`.
+- **Used by / entrypoint:** `main.go` (`eigen run`), `internal/tui/workflow.go`, `internal/gui/bridge.go` (`List`/`Load` for the GUI workflow runner).
 
 ### internal/workflow/run.go
 - **Role:** Execute a parsed workflow on one carried session, with judged checks and per-step failure policies, streaming progress events.
@@ -140,7 +139,7 @@
   - `(*Workflow) Run(ctx, opts)` — run steps in order on one session; judge optional checks; apply on_failure (stop/continue/retry up to Retries); returns a non-nil error only when a stop-on-failure step failed.
   - `excerpt(s)` — 200-char result preview for progress events.
 - **Depends on:** stdlib only (`context`, `fmt`, `strings`); collaborates with main via the func types.
-- **Used by / entrypoint:** entrypoint: `main.go:2134` calls `wf.Run(...)` for `eigen run`.
+- **Used by / entrypoint:** entrypoint: `main.go` calls `wf.Run(...)` for `eigen run`; `internal/gui/bridge.go` drives it with a daemon-backed `StepRunner`.
 
 ### internal/harness/harness.go
 - **Role:** Install the bundled Rust helper MCP servers (computer-use, workspace) from embedded source by shelling out to cargo only on explicit install.
@@ -185,11 +184,10 @@
 - **internal/agent** — `hook` wraps an `agent.EventSink` and keys off `agent.Event` kinds.
 - **internal/orientation** — `harness` is a thin installer/launcher in front of the native-Go orientation engine.
 - **internal/tui** & **internal/app** — the biggest consumers of `theme` (styling/icons), and the callers of `config`, `command`, `workflow`, and `fuzzy`.
+- **internal/gui** — the Wails bridge also drives `config` (the config form), `command` (run a custom command on the daemon session), and `workflow` (the GUI workflow runner, with a daemon-backed `StepRunner`).
 - **internal/skill** — shares `fuzzy.Score` for ranking.
 - **internal/observe** — registers a `hook.Observer` to log hook executions (metadata only).
 - **root CLI (`main.go`/`daemon.go`/`build.go`/`remote_session.go`)** — the primary wiring point: loads config + hooks, runs workflows, installs harness components, prints the theme swatch.
 
 ## Dead-code notes
-- `command.UserDir()` — exported, zero callers repo-wide (only `Dirs()` is used to enumerate command dirs). Likely a leftover from a planned plugin-install path.
-- `theme.NerdFont() bool` — exported, zero callers (the active tier is read via `NerdFontMode()` and the internal `nerdFont` var). Public API with no consumer.
 - `theme.Back` glyph — referenced only inside `Swatch()` (the design-system display); no production UI uses the "back" glyph. Lower confidence: it is part of the documented glyph vocabulary and is technically referenced.

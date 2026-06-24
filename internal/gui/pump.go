@@ -61,12 +61,17 @@ func (b *Bridge) Subscribe(id string) error {
 	evName := sessionEvent(id)
 	closeName := sessionClosed(id)
 
-	// The Attach handler runs on the client's event-loop goroutine. v3
+	// The Attach handler runs on the client's event-loop goroutine — a single
+	// goroutine, so a plain counter here increments in strict emit order. v3
 	// Event.Emit is non-blocking (dispatches via go func), so the handler can
-	// never stall the daemon connection.
+	// never stall the daemon connection. Each event carries that ordinal (Seq)
+	// so the frontend can reassemble despite Wails' per-event-goroutine dispatch
+	// reordering arrival at the webview.
+	var seq uint64
 	if err := c.Attach(id, func(e daemon.WireEvent, replay bool) {
 		if b.app != nil {
-			b.app.Event.Emit(evName, StreamEventDTO{Event: toWireEventDTO(e), Replay: replay})
+			seq++
+			b.app.Event.Emit(evName, StreamEventDTO{Event: toWireEventDTO(e), Replay: replay, Seq: seq})
 		}
 	}); err != nil {
 		_ = c.Close()

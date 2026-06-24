@@ -434,8 +434,15 @@
     confirmClear = false;
     menuOpen = false;
     const r = await run(() => Bridge.Clear(sessionId));
-    // The transcript re-seeds on the next State; mirror cleared state now.
-    if (r !== undefined) refreshState();
+    if (r !== undefined) {
+      // The daemon dispatches NO event on clear, and refreshState only updates
+      // `sess` — neither touches the transcript store, so the cleared blocks
+      // would stay on screen until a remount. Re-seed the transcript to empty
+      // here (seed() also resets the live/pending/raf state) so the view
+      // converges with the now-empty session immediately.
+      store?.seed([], false);
+      refreshState();
+    }
   }
   async function resend() {
     if (!sessionId) return;

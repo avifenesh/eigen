@@ -59,15 +59,24 @@ func (b *Bridge) SetApp(app *application.App) { b.app = app }
 // ServiceStartup is the Wails v3 service lifecycle hook (optional interface).
 // Verified signature at v3.0.0-alpha2.105: (context.Context, ServiceOptions) error.
 func (b *Bridge) ServiceStartup(_ context.Context, _ application.ServiceOptions) error {
-	if _, err := b.control(); err != nil {
-		b.emit(eventDaemonHealth, HealthDTO{OK: false, Error: err.Error()})
-	}
 	b.mu.Lock()
 	b.pollStop = make(chan struct{})
 	b.feedStop = make(chan struct{})
 	stop := b.pollStop
 	feedStop := b.feedStop
 	b.mu.Unlock()
+	// The initial daemon connect MUST NOT run inline here: on a cold start
+	// control()→ensure() spawns `eigen daemon` and blocks up to ~10s for its
+	// socket. Wails calls ServiceStartup synchronously on the main goroutine
+	// BEFORE the window is shown, so a blocking probe leaves the desktop with no
+	// window for that whole spawn. Probe in a goroutine; the frontend daemon
+	// store shows connecting→online/offline meanwhile, and healthLoop also
+	// probes within its first 1s tick.
+	go func() {
+		if _, err := b.control(); err != nil {
+			b.emit(eventDaemonHealth, HealthDTO{OK: false, Error: err.Error()})
+		}
+	}()
 	go b.healthLoop(stop)
 	go b.feedLoop(feedStop)
 	return nil

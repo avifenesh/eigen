@@ -2678,5 +2678,32 @@
   "title": "Authored workflows (Workflows/RunWorkflow) built but no GUI bridge facade",
   "file": "internal/gui/bridge.go + bridge.ts",
   "status": "done"
+ },
+ {
+  "id": "GUI-116",
+  "side": "gui",
+  "tier": "high",
+  "kind": "bug",
+  "title": "Wails per-event goroutine dispatch can reorder the session stream; transcript trusts arrival order",
+  "file": "internal/gui/pump.go + dto.go + transcript.svelte.ts",
+  "status": "done"
+ },
+ {
+  "id": "GUI-117",
+  "side": "gui",
+  "tier": "high",
+  "kind": "bug",
+  "title": "Clear conversation leaves old transcript on screen (no re-seed)",
+  "file": "internal/gui/frontend/src/views/Chat.svelte",
+  "status": "done"
+ },
+ {
+  "id": "GUI-118",
+  "side": "gui",
+  "tier": "high",
+  "kind": "bug",
+  "title": "Synchronous daemon spawn in ServiceStartup blocks the window painting on cold start",
+  "file": "internal/gui/bridge.go",
+  "status": "done"
  }
 ]

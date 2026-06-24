@@ -34,12 +34,12 @@
   - `(*Agent).subAgent` — build the sub-agent for one delegation (role filter → explicit model → router → inherit), applying effort/fast discipline; precedence and the "where it ran" note.
   - `(*Agent).runChild` — run a foreground child with detached context, heartbeat, stall watch, and promotion (shared by Subtask and group fan-out).
   - `(*Agent).dispatch` / `runTool` — enforce allow-list + permission posture, run the tool (panic-recovered), cap output at `maxToolOutput`.
-  - `(*Agent).SetLive` / `SetPerm` / `SetGoal` / `SetMaxContextTokens` / `UnlockTools` / `AddDir` — live config mutators (TUI calls these mid-turn).
+  - `(*Agent).SetLive` / `SetPerm` / `SetGoal` / `SetMaxContextTokens` / `UnlockTools` / `AddDir` — live config mutators (TUI calls these mid-turn). Read side: `CurrentProvider` / `CurrentGoal` / `CurrentPerm` / `CurrentMaxContextTokens` / `Roots` are race-safe accessors the daemon's state snapshot uses while a `/model` swap may be in flight.
   - `(*Agent).Run` / `(*Agent).NewSession` / `(*Agent).Resume` — entrypoints to start a one-shot or stateful session.
-  - `applySubtaskEffort` / `applySubtaskFast` / `effortRank` — cap reasoning effort / enable fast mode for trivial/easy subtasks (opt out with `EIGEN_SUBTASK_EFFORT=keep`).
+  - `applySubtaskEffort` / `applySubtaskFast` / `effortRank` / `subtaskDisciplineApplies` / `subtaskEffortFloor` / `joinWhere` — effort/fast discipline for trivial/easy subtasks: cap reasoning at the `medium` floor + enable the fast path, but only on a freshly-built provider the subtask EXCLUSIVELY owns (never mutate the shared parent/router provider); `subtaskDisciplineApplies` gates the cost of that own-provider build, `joinWhere` stitches the "where it ran" note. Opt out with `EIGEN_SUBTASK_EFFORT=keep`.
   - `BashDetachCh` / `DetachBash` / `Shelled` — backgrounded-shell detach plumbing.
 - **Depends on:** `internal/llm` (Provider, Message, Request/Response, Compactor, EstimateTokens, ShedToolImages, DedupeToolResults, IsContextOverflow, Streamer), `internal/tool` (Registry, Definition, Result, Policy, ShellRegistry).
-- **Used by / entrypoint:** Reached from every front-end — `main.go`/`build.go` build the `Agent`; `internal/daemon/session.go`, `internal/tui/tui.go`, `internal/chat/*`, `internal/gui/agents.go` drive `Session.Send`/`Steer`/`Compact`. Subtask/dispatch are invoked by the `task`/`task_group` tools registered in `internal/tool`.
+- **Used by / entrypoint:** Reached from every front-end — `main.go`/`build.go` build the `Agent`; `internal/daemon/session.go`, `internal/tui/tui.go`, `internal/chat/*` drive `Session.Send`/`Steer`/`Compact` (the GUI drives sessions through its `internal/chat` client; `internal/gui/agents.go` is the read-only tasks bridge). Subtask/dispatch are invoked by the `task`/`task_group` tools registered in `internal/tool`.
 
 ### internal/agent/background.go
 - **Role:** Detached background subtasks — the `BgTask` record, the in-memory+durable `BgRegistry`, launch (`SubtaskBackground`), foreground→background promotion (`promoteRunning`), per-attempt run with context-overflow retry and difficulty escalation, and the cross-process cancel watcher.
@@ -49,8 +49,9 @@
   - `TasksDir` / `tasksInstanceSuffix` — resolve `~/.eigen/tasks[-<EIGEN_INSTANCE>]`.
   - `(*BgRegistry).SeedDone` — register a pre-completed task (test/external injection of a result).
   - `(*BgRegistry).StatePath` / `TranscriptPath` — durable observability file paths.
-  - `(*Agent).SubtaskBackground` — launch a detached delegation: returns an id immediately, runs on a `context.Background`-rooted ctx capped at `bgMaxRuntime` (30m), persists state+transcript, emits a finish note.
-  - `(*Agent).runBackgroundAttempt` — one attempt: subagent build, transcript persist hook, sanitized event bridge (`bgEventSink`), heartbeat stall + cancel-marker watchers, returns `bgAttemptOutcome`.
+  - `(*Agent).SubtaskBackground` — launch a detached delegation: returns an id immediately, runs on a `context.Background`-rooted ctx capped at `bgMaxRuntime` (30m), clears any stale `<id>.cancel` before the task is visible as running, persists state+transcript, emits a finish note. The 30m cap is a per-TASK deadline spanning ALL attempts (each attempt derives from the shared `taskCtx`), so a retry/escalation can't make one task run ~2x the cap.
+  - `(*Agent).runBackgroundAttempt` — one attempt against the shared task-level `taskCtx`: subagent build, transcript persist hook, sanitized event bridge (`bgEventSink`), heartbeat stall + cancel-marker watchers; its own derived ctx lets stall/cancel stop just this attempt while the task deadline still bounds the total. Returns `bgAttemptOutcome`.
+  - `backgroundRetryContext` — derive a retry context that carries the promoted first attempt's ABSOLUTE deadline (not its cancellation), so promote-then-retry honors the same per-task cap; falls back to a fresh `bgMaxRuntime` timeout if the prior ctx has no deadline.
   - `nextBackgroundContextRetry` / `backgroundContextRetryTarget` / `compactedBackgroundTask` / `compactOversizedTaskText` / `compactOversizedText` — on context overflow, deterministically compact the transcript/prompt and retry once (no second model call).
   - `nextBackgroundEscalation` / `reportsUnderpowered` / `backgroundAttemptSummary` — on a hard error / stall / self-reported underpowered result, escalate one difficulty tier for the retry.
   - `watchCancelMarker` — poll `<id>.cancel`; on hit persist Canceling and cancel the task ctx (cross-process stop protocol).
@@ -100,7 +101,7 @@
   - `judgeContractReport` / `sanitizeGaps` / `cleanJudgeText` / `nonEmpty` — normalize and bound judge output; manufacture a contract-violation gap when the judge misbehaves.
   - `judgePrompt` / `judgePromptText` — the strict judge prompt (criterion/evidence as untrusted JSON literals).
 - **Depends on:** `internal/llm` (Provider.Complete, Request, Message).
-- **Used by / entrypoint:** Invoked by the `goal_achieved` tool and workflow step-check logic; `internal/tui/goal.go` and the daemon wire the goal/judge UI. `JudgeGoal` has 3 external callers, `JudgeClaim` 1.
+- **Used by / entrypoint:** `JudgeGoal` backs the `goal_achieved` tool (wired in `build.go` + `main.go`); `JudgeClaim` backs workflow step-check logic (`main.go`). `internal/tui/goal.go` and the daemon wire the goal/judge UI.
 
 ### internal/agent/lifecycle.go
 - **Role:** Subtask lifecycle primitives — idle-based stall detection, the in-flight model-call window, the foreground→background front window, and the settable event/persist `relay` used during promotion.
@@ -133,13 +134,15 @@
 - **Key symbols:**
   - `LoadBgTasks` — read every `<id>.jsonl`'s current state (last complete line), interpret stale "running" as "lost", mark Canceling when a marker exists; sorted running-first.
   - `readTaskFile` / `readTaskHistory` — parse the newest valid line / all lines (robust to mid-append partial lines; whole-file-JSON fallback).
+  - `ReadTaskHistory` (exported, `dir,id`) — a task's full append-only state trail straight from the disk store, no live `BgRegistry` needed; id-validated, never fatal on a missing/malformed file.
+  - `ValidTaskID` — exported `bgIDRe` predicate so other packages (the GUI bridge) reject path-traversal ids before any filesystem access instead of re-deriving the pattern.
   - `taskLost` / `sameHost` / `pidAlive` — decide a "running" record is actually gone (pid signal-0 probe for this host, else age beyond `bgMaxRuntime`+`lostGrace`).
   - `RequestCancel` — drop a `<id>.cancel` marker for a running task (errors on bad id / not-running).
   - `(*BgRegistry).adoptStale` — on start: durably append a "lost" line for dead-host running records, prune terminal records past a 7-day retention window (state/transcript/marker).
   - `sortBgTasks` — running-first, then recency.
   - `bgIDRe` — task-id regex guarding path traversal from cross-process inputs.
 - **Depends on:** stdlib only (os, syscall, encoding/json, regexp). Shares `BgTask`, `bgMaxRuntime`, `BgRegistry` with background.go.
-- **Used by / entrypoint:** `BgRegistry.List`/`Get`/`History` call into the readers; `task_status.go`, the daemon, and TUI/GUI tasks panels call `LoadBgTasks`/`RequestCancel`; `adoptStale` runs from `NewBgRegistry`.
+- **Used by / entrypoint:** `BgRegistry.List`/`Get`/`History` call into the readers; `task_status.go`, the daemon, and TUI/GUI tasks panels call `LoadBgTasks`/`RequestCancel`; `internal/gui/agents.go` calls `TasksDir`/`LoadBgTasks`/`RequestCancel`/`ValidTaskID`/`ReadTaskHistory` to back the fan-out view + transcript reads; `adoptStale` runs from `NewBgRegistry`.
 
 ### internal/agent/worktree.go
 - **Role:** Git worktree + patch plumbing for mutating fan-out — repo precheck/safety rails, serialized worktree add/remove, binary-safe patch capture, and 3-way apply/check.

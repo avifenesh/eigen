@@ -71,6 +71,12 @@ type WireEventDTO struct {
 type StreamEventDTO struct {
 	Event  WireEventDTO `json:"event"`
 	Replay bool         `json:"replay"`
+	// Seq is a monotonic per-session ordinal stamped in emit order on the pump's
+	// single event-loop goroutine. Wails' Event.Emit dispatches each event on its
+	// OWN goroutine, which can reorder arrival at the webview; the frontend
+	// transcript store reassembles by Seq so out-of-order delivery can't corrupt
+	// the stream (concatenated deltas, tool_start→tool_result matching).
+	Seq uint64 `json:"seq"`
 }
 
 // SessionInfoDTO mirrors daemon.SessionInfo for the session board.

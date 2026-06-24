@@ -9,8 +9,8 @@
 - **Key symbols:**
   - `Page` (int enum) + `pages []pageSpec` — the 14 surfaces in rail order, each with a name, quick-jump key, purpose/action copy.
   - `Action` (enum: `ActionQuit/OpenChat/Resume/Attach/Remote`) and `Result{Action,Dir,SessionID,Task,Host}` — the exit intent returned to `main`.
-  - `Model` — holds width/height, active page, per-page state structs, `*Data`, palette, live-spinner frame, content scroll.
-  - `New(*Data)` / `NewAt(*Data, Page)` — build the shell; `NewAt` selects an initial page and calls every page's `init`.
+  - `Model` — holds width/height, active page, per-page state structs, `*Data`, palette, live-spinner frame (`liveSpin`), content scroll, a `pendingG` jump-prefix flag, the exit `result`/`quitting` flags, and a `ctx`/`cancel` that gates background work (cancelled on quit). `quitWith(Result)` stores the intent, cancels the context, and quits.
+  - `New(*Data)` / `NewAt(*Data, Page)` — build the shell; `NewAt` selects an initial page and calls each page's `init` (every page except `live`, which has no `init`).
   - `isKnownPage`, `PageByName(name)` (resolves page name/alias for integrations), `newAtPageName` + `applyInitialPageName` (used by `RunPage` to deep-link e.g. plugins/hooks tab).
   - `Init()` — kicks off background session titling, live polling, and feed rescan + tick.
   - `scanFeed`, `feedTick`/`feedTickMsg`, `titleTick`/`titleRefreshMsg`, `feedMsg` — async feed/title refresh plumbing; `feedRefreshEvery = 10m`.
@@ -84,7 +84,7 @@
   - `skillsState` + `init/update/view`, `skillsSummaryLine`, `skillSelectedDetail`.
   - `modelsState` + `init/update/view`, `modelsSummaryLine`, `modelSelectedDetail`.
   - `providersState` (+ `providerDraft`, `providerAddField`/`providerAddFields`) + `startAdd`/`updateAdd`/`visibleAddFields`/`draftValue`/`setDraft`/`saveDraft`/`view`/`viewAdd`; `providerSubtitle`, `providersSummaryLine`, `providerSelectedDetail`.
-  - `memoryState` (+ `consolidateDoneMsg`) + `load`/`update`/`view`/`detailView`/`clickAt`/`deleteSelected`/`scrollDetail`/`clampDetailScroll`; `memoryBullets`, `memoryDetailLines`, `memorySummaryLine`.
+  - `memoryState{list,bullets,loaded,confirm,status,consoling,open,detailScroll,clicks}` (+ `consolidateDoneMsg`) + `load`/`update`/`view`/`detailView`/`clickAt`/`deleteSelected`/`selectedNote`/`scrollDetail`/`clampDetailScroll`; `memoryBullets`, `memoryDetailLines`, `memorySummaryLine`.
 - **Depends on:** `internal/config`, `internal/dream` (memory consolidation), `internal/llm`, `internal/skill`.
 - **Used by / entrypoint:** `app.go` dispatch for PageConfig/PageSkills/PageModels/PageProviders/PageMemory. Memory `C` runs `dream.Consolidate` async; `consolidateDoneMsg` handled in `app.go:Update`.
 
@@ -149,7 +149,7 @@
 
 ### internal/app/inspector.go
 - **Role:** The wide-breakpoint right inspector — a contextual key/value detail of the active page's selected row.
-- **Key symbols:** `(*Model).inspectorDetail(w)`; `kv{k,v}`; `(*Model).inspectorFor()` (big switch over the active page returning title + kv rows + body for sessions/models/providers/crons/plugins/projects/skills/home/machines); `dirLabel`, `projShort`.
+- **Key symbols:** `(*Model).inspectorDetail(w)`; `kv{k,v}`; `(*Model).inspectorFor()` (big switch over the active page returning title + kv rows + body for sessions/models/providers/crons/plugins/projects/skills/home/machines/live/memory/config/profile); `dirLabel`, `projShort`.
 - **Depends on:** lipgloss only (reads each page's state via the `Model`).
 - **Used by / entrypoint:** `app.go:renderInspectorBox` (only drawn at `bpWide`, ≥130 cols).
 
@@ -176,7 +176,7 @@
 - **internal/llm** — model/provider catalog + custom providers (models/providers pages, suggester, data).
 - **internal/remote** — remote machines: list, ssh session peek, one-click install, credential snapshot (machines page).
 - **internal/observe** — metadata-only telemetry summary (observe page, home signal, profile usage, plugins hook telemetry).
-- **internal/memory** — global memory store + USER.md profile (memory + profile pages, data).
+- **internal/memory** — global memory store + USER.md profile (memory + profile pages, data). USER.md has a learned/user split: the profile page reads the full file via `UserProfile()` and saves the editable text via `WriteUserProfile()`, which preserves the eigen-maintained learned block (the split's `UserProfileUser`/`UserProfileLearned`/`SetLearnedProfile` are not called from this slice).
 - **internal/dream** — small-model memory consolidation (memory page `C`).
 - **internal/agent** — `PluginRoleNames()` for palette role commands and plugin task-role selection.
 - **internal/fuzzy** — session-search ranking (filter.go); note the palette has its own `fuzzyScore`.
@@ -186,4 +186,4 @@
 
 ## Dead-code audit
 
-No dead code found. Every unexported func/type/const was grepped repo-wide and has a live caller; every exported symbol either has an external caller (`Run`/`RunAt`/`RunPage`/`Load`/`LoadEmpty`/`Page*`/`Action*`/`Result`) or is the in-package/test constructor surface (`New`/`NewAt` used by ~40 test sites and internally). `PageByName` is used by `newAtPageName`. The `hitTitle`/`hitStatus`/`hitInspector` regions are produced by `hitTest` but deliberately fall through to no-op in `handleMouse` (chrome click zones), so they are inert-by-design, not dead. No commented-out code blocks exist in the slice.
+No dead code found. Almost every unexported func/type/const has a live production caller; every exported symbol either has an external caller (`Run`/`RunAt`/`RunPage`/`Load`/`LoadEmpty`/`Page*`/`Action*`/`Result`) or is the in-package/test constructor surface (`New`/`NewAt` used by the test sites and internally). `PageByName` is used by `newAtPageName`. `clipTextHeight` (app.go) is a thin `clipTextWindow(s,h,0)` wrapper used only from `app_test.go` — a test-only convenience, not a production path. The `hitTitle`/`hitStatus`/`hitInspector` regions are produced by `hitTest` but deliberately fall through to no-op in `handleMouse` (chrome click zones), so they are inert-by-design, not dead. No commented-out code blocks exist in the slice.

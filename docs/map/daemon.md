@@ -33,7 +33,8 @@
   - Control ops (thin wrappers over `request`): `Ping`, `Stats`, `List`, `New`, `NewSession`,
     `Attach`, `Input`, `SteerInput`, `Interrupt`, `Remove`, `Prune`, `Approve`, `State`, `SetPerm`,
     `SetGoal`, `SetTitle`, `AddDir`, `KillShell`, `DetachBash`, `Compact`, `Clear`, `ResetTo`,
-    `Resend`, `SetModel`, `SetEffort`, `SetSearch`, `SetFast`, `Done`, `Close`.
+    `Resend`, `SetModel`, `SetEffort`, `SetSearch`, `SetFast`; plus `Done()` (closed when the
+    connection ends) and `Close()`.
 - **Depends on:** `internal/llm` (Image/Message types in request payloads).
 - **Used by / entrypoint:** entrypoint for all clients — `internal/chat/remote.go`, `internal/gui`
   (bridge/pump/feed), `internal/telegram`, `internal/app/live.go`, `internal/remote/dial.go`,
@@ -43,34 +44,45 @@
 - **Role:** The in-memory core: owns all live `Session`s, the session map + id sequence, persistence
   wiring, hydration/unload lifecycle, the daemon `stats` snapshot, and restore-on-startup.
 - **Key symbols:**
-  - `Host` (type) — guards `sessions map[string]*Session`, `seq`, `persistDir`, and the injected
-    hooks `builder`/`switchModel`/`titler`/`notify`/`bgCount`.
+  - `Host` (type) — guards `sessions map[string]*Session`, `seq`, `persistDir`, the injected hooks
+    `builder`/`switchModel`/`titler`/`notify`/`bgCount`, `started` (uptime origin), and `titleWG`
+    (tracks in-flight background-titling goroutines so a meta write can't outlive teardown).
   - `NewHost()` (no persistence — tests) / `NewPersistentHost(dir)` (persists under dir).
   - Injection setters: `SetTitler`, `SetNotifier`, `SetModelSwitcher`, `SetBuilder`, `SetBgCount`.
   - `ModelSwitcher` (type) — `func(dir, modelID) (provider, compactor, budget, err)` for live /model.
+  - `maybeTitle(s, msgs)` / `waitTitles()` (unexported) — title an untitled session from its first
+    user message on the injected small model, in the background, then persist; `waitTitles` blocks on
+    `titleWG` for tests/clean teardown. Guarded by `s.titling` so a slow titler can't stack calls.
   - `Add(dir, model, agent)` — registers a freshly built agent as a hosted session (assigns `s<seq>`).
-  - `enablePersist(s)` — installs the agent `Persist` hook (continuous transcript autosave), the
-    `onAttach` (save meta) and `onInactive` (unload) hooks.
+  - `enablePersist(s)` — installs the agent `Persist` hook (continuous transcript autosave that also
+    titles + refreshes the cold-listing summary), and the `onAttach` (save meta / LastAttached),
+    `onTokens` (save meta when cumulative tokens change on turn done), `onClear` (force-write the empty
+    transcript via `transcript.SaveForce` then `transcript.ClearBackups` so recovery can't resurrect a
+    cleared chat), and `onInactive` (unload) hooks.
+  - `rememberHistorySummary(s, msgs)` (on `*Session`) — store just turn count + a fallback-title
+    snippet so a cold row lists cheaply without keeping the full `[]llm.Message` in heap.
   - `hydrateLocked(s)` / `Hydrate(id)` — rebuild a cold session's agent from disk + meta (resume or
     new), re-apply perm/goal/added-roots; `hydrateLocked` requires the caller hold `loadMu`.
   - `UnloadIfInactive(id)` — drop heavyweight agent/MCP/LSP for an idle, view-less session, keeping
     only cold metadata; double-checks running/subs/shells around a flush.
   - `saveSessionMeta(s)` — snapshot resurrect state (dir/model/title/perm/goal/added-roots/last-
-    attached) to the sidecar.
-  - `Restore(build)` — on startup, load persisted metas as cold rows (no providers built), backfill
-    titles, advance `seq`; returns count.
-  - `Stats()` — build a `DaemonStats` (goroutines, heap/RSS, GC, session/view/running counts, cumulative
-    token usage, build identity).
-  - `Get` / `isCurrent` / `List` (newest-first) / `Count` / `AnyRunning`.
+    attached/cumulative-tokens) to the sidecar.
+  - `Restore(build)` — on startup, load persisted metas as cold rows (no providers built), restore
+    cumulative token tallies + LastAttached, backfill titles, advance `seq`; returns count.
+  - `Stats()` — build a `DaemonStats` (uptime, goroutines, heap/RSS, GC, session/view/running counts,
+    cumulative in/out/cache-read/cache-write token usage summed across sessions, `bgCount()` tasks,
+    `llm.FullVersion()` + binary/VCS build identity).
+  - `Get` / `isCurrent` / `List` (newest-first) / `AnyRunning`.
   - `Shutdown()` — lossless daemon stop: flush, interrupt, wait-idle, flush again, then close each
     session's resources WITHOUT deleting persisted state.
   - `Remove(id)` (user delete: stop + delete durable files) / `PruneEmpty()` (drop conversation-less
     sessions, in memory + on disk).
   - `daemonBuildIdentity` / `sessionHasRunningShells` (unexported helpers).
 - **Depends on:** `internal/agent` (Agent/Session/Permission), `internal/llm` (Provider/Compactor/
-  Message/Version), `internal/transcript` (Save/Load).
+  Message/RoleUser/FullVersion), `internal/transcript` (Save/SaveForce/Load/ClearBackups).
 - **Used by / entrypoint:** constructed in `daemon.go` (`NewPersistentHost` + setters + `Restore`),
-  exposed to clients by `server.go`. `AnyRunning` is read by the nightly dreamer in `daemon.go`.
+  exposed to clients by `server.go`. `AnyRunning` is read by the nightly dreamer in `daemon.go`;
+  `SetBgCount` is wired there from the background-task registry.
 
 ### internal/daemon/server.go
 - **Role:** Exposes a `Host` over a unix socket: accepts connections (one per view), parses requests,
@@ -98,11 +110,14 @@
 - **Key symbols:**
   - `Status` consts (`StatusIdle/Working/Approval/Error`); `SessionInfo` (rail listing DTO).
   - `Session` (type) — agent + sess, status/title/updated, cold metadata (turns/fallbackTitle/
-    coldPerm/coldGoal/coldRoots), subs/events for fan-out, cumulative token counters, approvals map,
-    and host hooks `onAttach`/`onInactive`/`onClose`/`notify`.
+    coldPerm/coldGoal/coldRoots), subs/events for fan-out, lifetime token counters
+    (`cumIn/cumOut/cumCacheRead/cumCacheWrite`), `lastAttached`, approvals map, the mutex trio
+    `mu`/`loadMu`/`persistMu`, and host hooks `onAttach`/`onTokens`/`onClear`/`onInactive`/`onClose`/
+    `notify`.
   - `newSession` / `newColdSession` / `bindAgent` — construction; `bindAgent` wires `OnEvent` →
     `dispatch` (composing the agent's `EventWrap` for observability) and installs the approver.
-  - `dispatch(e)` — record event, update status, accumulate token usage, bound the replay buffer
+  - `dispatch(e)` — record event, update status, on `EventDone` accumulate lifetime token usage
+    (in/out/cache-read/cache-write) and fire `onTokens` to persist it, bound the replay buffer
     (`maxReplayEvents`), fan out to subs, and trigger a background-done wake.
   - `wakeForBg(id)` / `wakeForGoalStart` / `wakeForGoalContinue` / `goalJudgeAvailable` — autonomous
     self-continuation: collect a finished bg task or keep working an unachieved goal with no TUI.
@@ -112,9 +127,11 @@
     emit a terminal note, fire the backgrounded-turn desktop notification, drop the replay buffer,
     continue any active goal, and let the host unload if idle+detached.
   - `interrupt` / `waitUntilIdle` / `flush` — cancel in-flight turn / bounded wait for unwind /
-    persist current transcript (used by `Host.Shutdown`).
+    persist current transcript (used by `Host.Shutdown`; `flush` first calls `sess.FlushSteer()` so a
+    pending mid-turn steer is made durable too).
   - `info` / `state` — listing snapshot / full `SessionState` snapshot (history + model/provider/
-    perm/goal/effort/search/fast/tools/roots/shells/pending).
+    perm/goal/effort/search/fast/fast_ok/tools/roots/shells/pending; falls back to cold
+    title/model/perm/goal when the agent is unloaded). `unixMilli` (helper) maps zero-time → 0.
   - `installApprover` / `answer` / `pendingList` + `pendingApproval` + `approvalTimeout` — gated-tool
     approvals broadcast to views; fail-closed deny after 10m if no view answers.
   - `setPerm/setGoal/addDir/killShell/detachBash/setEffort/setSearch/setFast/compact/resume/clear/
@@ -129,14 +146,21 @@
   event/state DTOs, and the event-kind/encode helpers shared by client and server.
 - **Key symbols:**
   - `Builder` (type) — `func(dir, model) (*agent.Agent, func(), error)` injected by `main`.
-  - `Request` / `Response` — line-JSON command + reply (Type discriminates the payload).
-  - `DaemonStats` — resource-health snapshot DTO (uptime/goroutines/heap/RSS/GC/counts/token usage/
-    build identity).
-  - `SessionState` — full remote-UI snapshot DTO (messages + model/perm/goal/budget/tools/roots/
-    shells/pending).
-  - `ApprovalInfo` / `ShellInfo` / `ToolInfo` — sub-DTOs mirroring chat-layer types over the wire.
+  - `Request` / `Response` — line-JSON command + reply (Type discriminates the payload). `Response`
+    also carries op-specific scalars: `Root` (add-dir), `Steered` (input), `Interrupted` (interrupt),
+    `Killed` (kill-shell), `Detached` (detach-bash), `Before`/`After` (compact), `Pruned`, `Stats`.
+  - `DaemonStats` — resource-health snapshot DTO: uptime, goroutines, heap-alloc/heap-sys/RSS, GC,
+    session/view/running-turn/bg-task counts, Go + eigen version (`llm.FullVersion()`), executable
+    path + binary SHA-256 + VCS revision/modified build identity, and cumulative
+    input/output/cache-read/cache-write token totals (cache-read vs input = the prompt-cache hit rate).
+  - `SessionState` — full remote-UI snapshot DTO (messages + tokens + title/model/provider/max-tokens/
+    perm/goal/effort/search/fast/fast_ok/running/tools/roots/shells/pending).
+  - `ApprovalInfo` / `ShellInfo` / `ToolInfo` — sub-DTOs mirroring chat-layer types over the wire
+    (`ShellInfo` carries started/finished unix-millis + last line; 0 = unknown/running).
   - `WireEvent` + `wireEvent(e)` + `eventKindName(k)` — flatten `agent.Event` (kind as string) for
-    the socket.
+    the socket; carries text/tool fields, in/out tokens, and on `done` the producing provider/model
+    plus per-turn cache-read/cache-write token counts. `eventKindName` maps every `agent.EventKind`
+    (text/reasoning/tool_start/tool_result/done/note/approval/bg_done).
   - `encode(v)` — marshal a value to one JSON line.
 - **Depends on:** `internal/agent` (Agent/Event/EventKind), `internal/llm` (Image/Message).
 - **Used by / entrypoint:** the shared vocabulary of `client.go` and `server.go`; DTOs also consumed
@@ -164,7 +188,10 @@
   prune/delete of persisted sessions (works whether or not the daemon is running).
 - **Key symbols:**
   - `SessionsDir()` — `~/.eigen/daemon[-instance]/sessions`.
-  - `persistMeta` (type) + `transcriptPath`/`metaPath` (paths) + `saveMeta` (write sidecar).
+  - `persistMeta` (type) — sidecar resurrect state: id/dir/model/title/perm/goal, LastAttached (unix
+    seconds, "last used by me"), AddedRoots (user /add-dir grants), and the lifetime token tallies
+    `CumIn/CumOut/CumCacheRead/CumCacheWrite` (so the stats cache-hit ratio survives a restart). Plus
+    `transcriptPath`/`metaPath` (paths) + `saveMeta` (write sidecar).
   - `loadPersisted(dir)` / `persisted` (type) — scan dir, return every resurrectable (meta+history),
     ordered by numeric id.
   - `idNum(id)` — parse `s12` → 12; `snippet(s, n)` — first line truncated to n runes.
@@ -213,16 +240,7 @@
   constructs the host, injects Builder/ModelSwitcher/titler/notifier, and exposes the CLI subcommand.
 
 ## Dead-code suspects
-- `Host.Count()` (host.go:646) — **high**: grepped the whole repo; zero callers (production or test).
-  The only `Count` references are unrelated (`RunningCount`, `SetBgCount` comment, a test
-  `callCount`). Looks orphaned.
-- `Host.SetBgCount()` (host.go:140) — **high**: setter has zero callers anywhere; the `bgCount` field
-  it sets stays nil, so the `stats` op's `BgTasks` is never populated by a live reporter. The field
-  plumbing exists but the injector is never wired.
-- `var _ = llm.RoleUser` (session.go:490) — **high**: a blank import-guard with comment "keep llm
-  imported," but `llm` is used extensively in the same file (`llm.Image`, `llm.Message`,
-  `llm.RoleUser` at line 460, the provider capability interfaces). The guard is redundant — removing
-  it cannot break the build.
-- `Host.Hydrate(id)` (host.go:355) — **low**: exported but only test callers (`persist_test.go`); its
-  own doc-comment says "for tests and low-risk control paths," so this is likely a deliberate
-  test/low-risk helper rather than accidental dead code — not flagged with confidence.
+- `Host.Hydrate(id)` (host.go) — **low**: exported but only test callers; production paths hydrate
+  under `loadMu` via `server.go`'s `withLiveSession` → `hydrateLocked`. Its own doc-comment says "for
+  tests and low-risk control paths," so this is a deliberate helper rather than accidental dead code —
+  not flagged with confidence.

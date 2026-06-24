@@ -32,10 +32,10 @@
   - `Snapshot()` / `Backups()` / `pruneBackups()` — timestamped `.bak` of `MEMORY.md`, capped at `maxBackups`(10); the safety net for consolidation rewrites.
   - `Rewrite(content)` — atomic replace of `MEMORY.md` (snapshots first).
   - `Read()` / `readFile(p)` — read curated memory / any scope file.
-  - `UserProfile()` / `WriteUserProfile(content)` — read/atomically-write the global `USER.md` (redacted; empty removes).
+  - USER.md (two-part profile, both halves injected): `UserProfile()` reads the whole `USER.md`; `UserProfileUser()` / `UserProfileLearned()` return just the hand-written / eigen-maintained halves; `WriteUserProfile(content)` replaces the user section PRESERVING the learned block; `SetLearnedProfile(learned)` replaces the eigen-maintained block PRESERVING the user section (called by the dream pipeline); all redact and remove the file only when both halves end empty. Split/join via `splitProfile`/`composeProfile` around the `learnedProfileBegin`/`learnedProfileEnd` markers; `writeProfile` does the atomic temp+rename write.
   - `Append(note)` → `AddAdHocNote(note, when)` — record a manual save as a redacted ad-hoc note, then `enqueueMaintenance()` (queues consolidate+summary jobs); `ensureAdHocInstructions()` writes a "treat as data" README once.
   - `Bans()`, `ListBans()`, `AddBan(title,rule)`, `RemoveBan(title)`, `writeBans()` — the native "banthis" layer: hard prohibitions as `### title` blocks in `bans.md`; `Ban` struct.
-  - Injection: `Injected()` (returns `memory_summary.md`, else legacy `SUMMARY.md`, else `MEMORY.md`, each clamped to `maxInjectedBytes`=8 KiB), `clampMemoryTail()` (keeps newest tail at a line boundary), `Section()` (frames memory as stale-data + bans as system-priority), and package func `Sections(global, project)` (global-then-project for the prompt).
+  - Injection: `Injected()` (returns `memory_summary.md`, else legacy `SUMMARY.md`, else `MEMORY.md`, each clamped to `maxInjectedBytes`=8 KiB), `clampMemoryTail()` (keeps newest tail at a line boundary), `Section()` (frames the memory summary as stale-data, then — global scope only — the `USER.md` profile as the user's durable preferences, then bans as system-priority prohibitions), and package func `Sections(global, project)` (global-then-project for the prompt).
   - Workspace ops: `ListFiles()`, `ReadRelative(rel)` (path-traversal guarded), `Search(query,limit)` → `[]SearchHit`.
   - Tiers for the pipeline: `WriteRollout(slug,body,when)`, `RawSummaries(limit)` (reads `rollout_summaries/` + legacy `raw/`), `AdHocNotes(limit)`, `WriteRawMemories(content)`, `writeSummary(content)`.
   - Helpers: `baseDir()`, `key(abs)` (base name + sha1[:8]), `slugify`.
@@ -63,7 +63,7 @@
   - `RunQueued(ctx, maxJobs)` — drain this scope's consolidate/summary jobs via `ClaimScope` + `Finish`.
   - `MaybeConsolidate(ctx, force)` — rewrite `MEMORY.md` when over threshold (default 24 KB) or forced; builds `phase2Input()` (current memory + Stage1 raw memories + ad-hoc notes), writes raw scratchpad, runs `consolidatePhase2`, rewrites, marks selected.
   - `consolidatePhase2` / `consolidatePhase2Chunked` / `splitPhase2Chunks` / `splitAtRuneBoundary` — bound each consolidate call by chunk size (recursive map-reduce up to `maxPhase2ChunkDepth`=4) so the callback's shrink guard stays meaningful.
-  - `RegenSummary(ctx)` — regenerate `memory_summary.md` from `MEMORY.md` via the `Summarize` callback.
+  - `RegenSummary(ctx)` — regenerate `memory_summary.md` from `MEMORY.md` via the `Summarize` callback; when `MEMORY.md` is empty it instead calls `removeStaleSummary()` (deletes `memory_summary.md` + legacy `SUMMARY.md`) so injection never serves a summary of cleared memory.
   - `Run(ctx, sessions)` — the full best-effort per-scope dream; `itoa(n)` helper.
 - **Depends on:** the `Store`/`Index` siblings + `Redact`; takes dream functions as callbacks (no import of dream).
 - **Used by:** constructed in `main.go` (`newMemoryPipeline`), `internal/tui/tui.go` (`newTUIDreamPipeline`), and `daemon.go`'s nightly dreamer — each wiring `dream.Stage1`/`Consolidate`/`Summarize`.
@@ -126,9 +126,9 @@
 - **`internal/llm`** — dream's only dependency: every `dream.*` function calls `llm.Provider.Complete` with `llm.Request`/`llm.Message`. (See `llm-providers.md` / `llm-routing.md`.)
 - **`internal/tool`** — `internal/tool/memory.go` exposes the memory tool to the agent via `MemoryStore`/`memoryReader`/`memorySearcher` interfaces (`Append`, `AddBan`, `ReadRelative`, `Search`) satisfied by `*memory.Store`. (See `tool-actions.md`.)
 - **TUI (`internal/tui`)** — opens the index, builds a dream pipeline (`newTUIDreamPipeline`), runs idle "dream"; reads memory for panels. (See `tui-core.md`.)
-- **GUI (`internal/gui`)** — `memory.go`/`dreaming.go` build DTOs from `*memory.Store` (read, bans, ad-hoc notes, rollouts, backups, user profile) for the desktop app. (See `gui-bridge.md` / `gui-views-*.md`.)
+- **GUI (`internal/gui`)** — `memory.go`/`dreaming.go` build DTOs from `*memory.Store` (read, bans, ad-hoc notes, rollouts, backups) for the desktop app; `MemoryScopeDTO` splits `USER.md` into a writable `Profile` (`UserProfileUser`) and a read-only `ProfileLearned` (`UserProfileLearned`), and `dreaming.go`'s `newDreamPipeline` wires `dream.Stage1`/`Consolidate`/`Summarize` for the `DreamNow` page. (See `gui-bridge.md` / `gui-views-*.md`.)
 - **Daemon (`daemon.go`)** — nightly dreamer: opens global + per-project stores, builds pipelines, runs `dream.SynthesizeSkill`/`DistillGlobal`, commits memory. (See `daemon.md`.)
 - **`internal/feed`** — `feed/memory.go` + `feed/suggest.go` read project `MEMORY.md` tails for cheap local suggestions. (See `skill-feed-retrieve.md`.)
 - **`internal/app`** — `app/data.go` holds a `GlobalMem *memory.Store`; `app/pages.go` calls `dream.Consolidate`; `app/home.go` surfaces the orientation home. (See `app-superapp.md`.)
 - **`internal/harness`** — sole gateway into orientation (install wrapper/hooks, `RunOrientation` → `RunCLI`). (See `root-cmd.md`.)
-- **Root command (`main.go` / `build.go` / `remote_session.go`)** — open stores, render `memory.Sections` into the system prompt for chat sessions, run `eigen dream` / `eigen memory` / `eigen orientation`.
+- **Root command (`main.go` / `build.go` / `remote_session.go`)** — open stores, render `memory.Sections` into the system prompt for chat sessions, run `eigen dream` / `eigen memory` / `eigen orientation`. `runDream` (`main.go`) also calls `dream.DistillGlobal` → `gmem.Append` and refreshes the auto-maintained USER.md block via `gmem.SetLearnedProfile`.

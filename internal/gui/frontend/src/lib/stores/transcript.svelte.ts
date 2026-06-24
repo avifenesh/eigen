@@ -72,6 +72,31 @@ export function createTranscript(sessionId: string) {
   // turn, reset when a turn starts.
   let streamedThisTurn = false;
 
+  // Seq reassembly: each StreamEventDTO carries a monotonic per-session ordinal
+  // (pump.go stamps it in emit order), but Wails dispatches each event on its
+  // own goroutine, so arrival at the webview can be reordered. We apply events
+  // strictly in seq order: an early arrival is parked in `pending` until its
+  // predecessors land. `expectedSeq` is the next seq to apply (1-based; reset in
+  // seed() because a reconnect restarts the seq stream from the replay).
+  let expectedSeq = 1;
+  const reorderBuf = new Map<number, StreamEventDTO>();
+
+  // Apply one (now in-order) stream event: update the running flag, then fold it
+  // into the transcript. Extracted so the seq-reassembly loop and the no-seq
+  // fast path share identical semantics.
+  function applyEvent(m: StreamEventDTO) {
+    // Only kinds that imply an in-flight TURN may flip an idle session to
+    // "running". Wake/lifecycle kinds (bg_done, note, done, unknown) must NOT:
+    // the daemon's bg_done wake would otherwise resurrect an IDLE session.
+    // Replayed buffer events never flip it (running is owned by the State seed).
+    // done always clears it (in onEvent).
+    if (!m.replay && TURN_KINDS.has(m.event.kind)) {
+      if (!running) streamedThisTurn = false;
+      running = true;
+    }
+    onEvent(m.event, m.replay);
+  }
+
   function pushHistory(b: Block) {
     history.push(b);
     if (history.length > CAP) {
@@ -138,12 +163,20 @@ export function createTranscript(sessionId: string) {
         pushHistory({ uid: nextUid(), kind: "tool", id: e.toolId ?? "", name: e.tool ?? "", args: e.toolArgs ?? "", done: false });
         break;
       case "tool_result": {
+        let matched = false;
         for (let i = history.length - 1; i >= 0; i--) {
           const b = history[i];
           if (b.kind === "tool" && b.id === e.toolId) {
             history[i] = { ...b, result: e.result, isError: e.isError, done: true };
+            matched = true;
             break;
           }
+        }
+        // No matching tool_start in history (a foreign-transcript/empty-id case,
+        // or a result that somehow outran its start): surface it as a standalone
+        // done tool block rather than silently dropping the result.
+        if (!matched) {
+          pushHistory({ uid: nextUid(), kind: "tool", id: e.toolId ?? "", name: e.tool ?? "tool", args: "", result: e.result, isError: e.isError, done: true });
         }
         break;
       }
@@ -242,25 +275,43 @@ export function createTranscript(sessionId: string) {
       history = mapMessages(messages, nextUid).slice(-CAP);
       truncated = messages.length > CAP;
       running = isRunning;
+      // A reconnect restarts the daemon's emit-seq stream from the replay, so the
+      // reassembly window must reset too — otherwise the post-reconnect seq 1
+      // would be parked forever behind a stale expectedSeq.
+      expectedSeq = 1;
+      reorderBuf.clear();
     },
     // start the live event listener; lifetime == owning $effect.
     start() {
       off = on<StreamEventDTO>(ev.sessionEvent(sessionId), (m) => {
         if (disposed) return;
-        // Only kinds that imply an in-flight TURN may flip an idle session to
-        // "running". Wake/lifecycle kinds (`bg_done`, `note`, `done`, unknown)
-        // must NOT: e.g. the daemon's `bg_done` background-task wake would
-        // otherwise resurrect an IDLE session. Replayed buffer events never flip
-        // it either (`running` is owned by the State() seed). `done` always
-        // clears it (handled in onEvent).
-        if (!m.replay && TURN_KINDS.has(m.event.kind)) {
-          // A live turn-kind on an idle session is a fresh turn starting: reset
-          // the "did we stream anything" guard so the done case can tell a
-          // non-Streamer single-`done` answer (GUI-092) from a streamed one.
-          if (!running) streamedThisTurn = false;
-          running = true;
+        // Reassemble by seq: Wails can reorder events across its per-event
+        // dispatch goroutines. Park anything ahead of expectedSeq and drain in
+        // order. (A 0/absent seq — shouldn't happen from the pump — applies
+        // immediately so a contract gap degrades to today's arrival-order behavior
+        // rather than stalling.)
+        if (!m.seq) {
+          applyEvent(m);
+          return;
         }
-        onEvent(m.event, m.replay);
+        reorderBuf.set(m.seq, m);
+        while (reorderBuf.has(expectedSeq)) {
+          const next = reorderBuf.get(expectedSeq)!;
+          reorderBuf.delete(expectedSeq);
+          expectedSeq++;
+          applyEvent(next);
+        }
+        // Guard against an unbounded buffer if a seq is ever permanently missing
+        // (dropped event): once we're far ahead, give up waiting and flush what
+        // we have in seq order, resyncing expectedSeq past the gap.
+        if (reorderBuf.size > 256) {
+          const keys = [...reorderBuf.keys()].sort((a, b) => a - b);
+          for (const k of keys) {
+            applyEvent(reorderBuf.get(k)!);
+            reorderBuf.delete(k);
+          }
+          expectedSeq = keys[keys.length - 1] + 1;
+        }
       });
     },
     dispose() {

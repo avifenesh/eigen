@@ -20,32 +20,35 @@
 ## Files
 
 ### internal/gui/bridge.go
-- **Role:** The core `*Bridge` service: lifecycle, the long-lived control client, daemon health loop, and all session/turn/maintenance/settings RPCs.
+- **Role:** The core `*Bridge` service: lifecycle, the long-lived control client, daemon health loop, all session/turn/maintenance/settings RPCs, plus the workflow and custom-command runners.
 - **Key symbols:**
-  - `Bridge` (type) — Wails-bound service; holds `app`, `ensure` (daemon dialer), `suggest`/`dirs` (feed inputs), the `ctrl` control client, the `pumps` map, and stop channels, all under one mutex (IO done outside the lock).
+  - `Bridge` (type) — Wails-bound service; holds `app`, `ensure` (daemon dialer), `suggest`/`dirs` (feed inputs), the `ctrl` control client, the `pumps` map, `closing` flag, `pollStop`/`feedStop` channels, and `lastFeed` (most-recent scan, so `DismissFeed` can rebuild an `Item` from its key), all under one mutex (IO done outside the lock).
   - `NewBridge(ensure, suggest, dirs)` — constructor; injected by `main` so the bridge owns no model/provider construction.
   - `SetApp(app)` — wires the Wails app for event emission (bound + called from bootstrap).
-  - `ServiceStartup(ctx, ServiceOptions) error` — Wails v3 lifecycle hook; primes the control client, starts `healthLoop` + `feedLoop`.
+  - `ServiceStartup(ctx, ServiceOptions) error` — Wails v3 lifecycle hook; primes the control client (emits `eigen:daemon:health` on failure), starts `healthLoop` + `feedLoop`.
   - `ServiceShutdown() error` — Wails shutdown hook; delegates to `Shutdown`.
-  - `healthLoop(stop)` — ~1Hz `DaemonStats` push (`eigen:daemon:stats`), backing off to 5s while the daemon is down.
-  - `control() (*daemon.Client, error)` — returns/(re)connects the long-lived control client, retrying with backoff outside the mutex; drops stale clients.
-  - `Shutdown()` — idempotent teardown of health/feed loops, every pump, and the control client (sync.Once guards).
+  - `eventDaemonStats` (`eigen:daemon:stats`) / `eventDaemonHealth` (`eigen:daemon:health`) — health-stream event names. A long doc block above `healthLoop` states the **DaemonStats parity contract**: `*daemon.DaemonStats` is the ONE shape emitted RAW (its native snake_case JSON tags, bypassing the dto.go camelCase layer) — both on the stats stream and from `Stats()` — so `types.ts` hand-mirrors those tags 1:1 (esp. version/executable/binary_sha256/vcs_revision/vcs_modified) since no DTO+mapper enforces the mapping.
+  - `healthLoop(stop)` — ~1Hz RAW `DaemonStats` push (`eigen:daemon:stats`); on failure emits a `HealthDTO` on `eigen:daemon:health` and backs off to 5s while the daemon is down.
+  - `control() (*daemon.Client, error)` — returns/(re)connects the long-lived control client, retrying with backoff outside the mutex; drops stale clients; refuses while `closing`.
+  - `Shutdown()` — idempotent teardown of health/feed loops, every pump, and the control client (`closing` flag + per-pump sync.Once guards).
   - `emit(name, data)` — non-blocking Wails `Event.Emit` wrapper.
-  - RPC methods (each acquires `control()` then calls daemon): `Ping`, `Stats`, `Sessions`, `NewSession`, `RemoveSession`, `PruneSessions`, `State`, `SendInput`, `SteerInput`, `Interrupt`, `Resend`, `Approve`, `Compact`, `Clear`, `AddDir`, `KillShell`, `DetachBash`.
+  - `GUIVersion() string` — build-stamped version of THIS gui binary (via `llm.FullVersion()`), independent of the daemon's; the frontend diffs it against `DaemonStats.version` to flag a daemon/gui mismatch.
+  - RPC methods (each acquires `control()` then calls daemon): `Ping`, `Stats` (RAW `*daemon.DaemonStats`), `Sessions`, `NewSession`, `RemoveSession`, `PruneSessions`, `State`, `SendInput`, `SteerInput`, `Interrupt`, `Resend`, `Approve`, `Compact`, `Clear`, `AddDir`, `KillShell`, `DetachBash`.
   - `setThen(id, fn)` — helper: run a daemon setter then re-fetch+return fresh `SessionStateDTO` so the UI reconciles optimistic state.
   - `SetModel`/`SetPerm`/`SetGoal`/`SetTitle`/`SetEffort`/`SetSearch`/`SetFast` — session-settings mutators built on `setThen`.
-- **Depends on:** `internal/daemon` (control client + domain types), `internal/feed` (`Suggester` type), `wails/v3/pkg/application`.
-- **Used by / entrypoint:** entrypoint — constructed in `main_gui_wails.go:buildGUIApp` via `gui.NewBridge`, registered with `application.NewService(bridge)`; every exported method reaches the frontend through generated bindings at `internal/gui/frontend/bindings/.../bridge.js`.
+  - **Workflows:** `WorkflowInfoDTO`, `WorkflowResultDTO` (mirrors `workflow.Result`), `Workflows()` (lists authored `~/.eigen/workflows`, skipping unparseable), `RunWorkflow(sessionID, name, vars)` (plays steps on ONE daemon session via `daemonStepRunner`; no Judge wired, so `check:` steps fail closed), and the internal `daemonStepRunner`/`awaitTurn`/`lastAssistantText` helpers (submit a step's prompt, poll `State` at ~4Hz until the turn ends, return the last assistant text; per-step `model:` is a live switch then restored).
+  - **Custom commands:** `CommandInfoDTO`, `Commands()` (lists project+user slash commands via `command.Load(command.Dirs()...)`, project shadows user), `RunCommand(sessionID, name, args)` (expands `$ARGUMENTS`/`$1..$9` via `command.Expand`, best-effort `model:` switch, scopes the turn to `allowed-tools`, returns the expanded prompt to echo).
+- **Depends on:** `internal/daemon` (control client + domain types), `internal/feed` (`Suggester` type), `internal/llm` (`FullVersion`, `Message`/`Role`), `internal/command`, `internal/workflow`, `wailsapp/wails/v3/pkg/application`.
+- **Used by / entrypoint:** entrypoint — constructed in `main_gui_wails.go:buildGUIApp` via `gui.NewBridge(ensureDaemon, guiSuggester(), guiProjectDirs)`, registered with `application.NewService(bridge)`; every exported method reaches the frontend through generated bindings at `internal/gui/frontend/bindings/.../bridge.js`.
 
 ### internal/gui/dto.go
 - **Role:** Package doc + the core wire DTOs and the daemon/llm ⇄ DTO converters shared by every other file.
 - **Key symbols:**
   - `maxImageBytes` (const, 16 MiB) — caps a single decoded inbound image so a hostile data URL can't blow up daemon memory.
-  - `ImageDTO`, `ToolCallDTO`, `MessageDTO`, `WireEventDTO`, `StreamEventDTO`, `SessionInfoDTO`, `SessionStateDTO`, `CompactResultDTO`, `HealthDTO` (types) — JSON wire shapes mirroring `llm.*`/`daemon.*`.
+  - `ImageDTO`, `ToolCallDTO`, `MessageDTO`, `WireEventDTO`, `StreamEventDTO`, `SessionInfoDTO`, `SessionStateDTO`, `CompactResultDTO`, `HealthDTO` (types) — JSON wire shapes mirroring `llm.*`/`daemon.*`. `WireEventDTO` carries the streamed agent event plus `EventDone` attribution (`Provider`/`Model`) and prompt-cache counters (`CacheReadTokens`/`CacheWriteTokens`). `StreamEventDTO` is the per-session event-channel payload (`Event` + `Replay` flag).
   - `toImageDTOs`/`fromImageDTOs` — base64 encode/decode image bytes (the `from` side enforces `maxImageBytes`).
   - `toMessageDTO` — `llm.Message` → `MessageDTO` (tool args → string, images → base64).
-  - `fromMessageDTOs` — `[]MessageDTO` → `[]llm.Message`; **test-only** (no production caller — see dead-code).
-  - `toWireEventDTO` — `daemon.WireEvent` → `WireEventDTO` (used by the pump stream).
+  - `toWireEventDTO` — `daemon.WireEvent` → `WireEventDTO` (used by the pump stream; carries provider/model + cache counters through).
   - `toSessionInfoDTO`, `toSessionStateDTO` — daemon session shapes → DTOs.
 - **Depends on:** `internal/daemon`, `internal/llm`.
 - **Used by / entrypoint:** internal — converters consumed by `bridge.go`, `pump.go`, `feed.go`, `remote.go`; DTO types serialize across every bound method.
@@ -65,15 +68,16 @@
 - **Role:** Proactive-feed bridge: the home base "act on" surface (git/github/memory signals + LLM-suggested ideas), with an instant cache read and a background rescan loop.
 - **Key symbols:**
   - `eventFeed` (const `eigen:feed`), `feedScanEvery` (const 10m) — push event name + rescan cadence (matches the TUI).
+  - `feedScanning` (package-scope `atomic.Bool`) — single-flight guard for the slow scan (git/gh subprocesses + a capped ~2-min LLM suggester racing fixed `feed.json`/`feed-suggest.json` paths); `scanFeed` CAS-acquires it so a ticker tick or palette "Refresh feed" landing mid-scan coalesces into a no-op. Package-scope because the GUI hosts exactly one `Bridge`.
   - `FeedItemDTO`, `FeedDTO` (types) — feed item (with stable dismiss `Key` + display `DirName`) and the snapshot (`Fresh=false` = never scanned).
-  - `toFeedItemDTO`/`feedDTO` — `feed.Item`/`feed.Feed` → DTO (top-N filtered, dismissed removed).
+  - `toFeedItemDTO`/`feedDTO` — `feed.Item`/`feed.Feed` → DTO (top-N filtered via `feed.Top(..., 12, 4)`, dismissed removed).
   - `Feed() (*FeedDTO, error)` — bound; instant cache read, caches `lastFeed`.
   - `FeedFor(dir)` — bound; feed items scoped to one project dir.
   - `StartFromFeed(dir, task)` — bound; atomically `NewSession`+`SendInput` (the GUI analogue of the TUI one-key act-on).
   - `DismissFeed(key)` — bound; hides an item by key, rebuilding the full `feed.Item` from `lastFeed`, then re-emits the freshened feed.
-  - `scanFeed()` — runs one full (slow) scan off the request path, caches + emits `eigen:feed`.
-  - `RescanFeed()` — bound; fires `scanFeed` in a goroutine (the "Refresh feed" verb).
-  - `feedLoop(stop)` — startup + periodic rescan loop.
+  - `scanFeed()` — single-flights on `feedScanning`, runs one full (slow, 2-min ctx) scan off the request path, caches + emits `eigen:feed`.
+  - `RescanFeed()` — bound; fires `scanFeed` in a goroutine (the "Refresh feed" verb; spam-safe via the single-flight).
+  - `feedLoop(stop)` — emits the cache immediately, then startup + periodic (`feedScanEvery`) rescan loop.
   - `projectDirs()` — resolves the dirs to scan from the injected `dirs` provider.
 - **Depends on:** `internal/feed` (`Load`/`Scan`/`Top`/`FilterDismissed`/`Dismiss`/`Item`/`Feed`).
 - **Used by / entrypoint:** entrypoint — `Feed`/`FeedFor`/`StartFromFeed`/`DismissFeed`/`RescanFeed` bound (used by `Home.svelte`, feed store); `feedLoop` launched by `ServiceStartup`, stopped by `Shutdown`.
@@ -81,15 +85,16 @@
 ### internal/gui/memory.go
 - **Role:** Memory-browser bridge; reads/writes the local memory stores (`~/.eigen/memory` + project) directly, NOT via the daemon. Two scopes: project + global.
 - **Key symbols:**
-  - `MemoryNoteDTO`, `MemoryScopeDTO`, `MemoryDTO` (types) — parsed memory cards, one scope (summary/notes/bans/profile/ad-hoc/backups), and the both-scopes snapshot.
-  - `splitNotes(content)` — splits append-only Markdown into entries on blank-line boundaries.
-  - `scopeDTO(store, scope)` — builds a `MemoryScopeDTO` from a `memory.Store` (profile only for global).
-  - `Memory() (*MemoryDTO, error)` — bound; full project+global snapshot.
-  - `AppendMemory(scope, note)` — bound; adds a manual ad-hoc note.
-  - `WriteUserProfile(content)` — bound; replaces the global USER.md.
+  - `MemoryNoteDTO`, `MemoryScopeDTO`, `MemoryDTO` (types) — a parsed memory card, one scope (summary/notes/structured bans/profile/ad-hoc/backups/bytes), and the both-scopes snapshot. `MemoryScopeDTO` splits USER.md into `Profile` (user-authored, editable) and `ProfileLearned` (eigen-auto-maintained, read-only) — global only — and carries both `Bans` (raw) and `BanList` (structured `[]memory.Ban` title/rule blocks for editing).
+  - `splitNotes(content)` → `splitOnTopLevelHeadings`/`splitOnBlankLines`/`isTopLevelHeading` — splits curated section-structured MEMORY.md on top-level `## ` heading boundaries (keeping each heading with its body), falling back to blank-line chunks for un-consolidated stores, dropping any leading `# ` file title.
+  - `scopeDTO(store, scope)` — builds a `MemoryScopeDTO` from a `memory.Store` (USER.md split + ban list only for global).
+  - `Memory() (*MemoryDTO, error)` — bound; full project+global snapshot; a failure to open EITHER scope is surfaced (not swallowed) so the frontend can distinguish a load failure from an empty store.
+  - `AppendMemory(scope, note)` — bound; adds a manual note via `Store.Append` (enqueues consolidation+summary maintenance, the agent/TUI path).
+  - `AddBan(scope, title, rule)` / `RemoveBan(scope, title)` — bound; the banthis layer native in eigen (mirrors the TUI `/ban` `/unban`); return whether a ban was replaced/removed.
+  - `WriteUserProfile(content)` — bound; replaces the global USER.md user-authored section (preserves the learned block).
   - `MemoryBackups(scope)` — bound; lists backup snapshot paths.
   - `openScope(scope)` — helper: `memory.OpenGlobal()` vs `memory.Open("")`.
-- **Depends on:** `internal/memory` (`Store`, `Open`, `OpenGlobal`).
+- **Depends on:** `internal/memory` (`Store`, `Open`, `OpenGlobal`, `Ban`; `Append`/`AddBan`/`RemoveBan`/`ListBans`/`UserProfileUser`/`UserProfileLearned`).
 - **Used by / entrypoint:** entrypoint — bound methods called from the Memory view; `openScope` also used by `dreaming.go`.
 
 ### internal/gui/observe.go
@@ -104,12 +109,14 @@
 ### internal/gui/plugins.go
 - **Role:** Plugin/marketplace bridge; read-only listing + the safe management ops (enable/disable/remove marketplace, uninstall plugin). Installing is deliberately NOT exposed.
 - **Key symbols:**
-  - `InstalledPluginDTO`, `MarketplaceDTO`, `PluginsDTO` (types) — installed-plugin record (incl. scan status/warnings), marketplace record, and the snapshot.
-  - `Plugins() (*PluginsDTO, error)` — bound; lists installed plugins + configured marketplaces from the registry.
+  - `ScanFindingDTO`, `InstalledPluginDTO`, `MarketplaceDTO`, `PluginsDTO` (types) — a per-component risky-scan verdict, an installed-plugin record (incl. wired component lists, scan status/count/findings, warnings, derived `Enabled`), a marketplace record, and the snapshot.
+  - `Plugins() (*PluginsDTO, error)` — bound; lists installed plugins + configured marketplaces from the registry (each plugin's `Enabled` derived via `pluginEnabled`).
   - `SetMarketEnabled(name, enabled)` — bound; toggles a marketplace.
   - `RemoveMarketplace(name)` — bound; removes a marketplace.
+  - `SetPluginEnabled(name, enabled)` — bound; enables/disables ALL of a plugin's wired components at once (skills/agents/commands/MCP/hooks) without uninstalling, via `Registry.SetEnabled` (applies to new sessions only).
   - `RemovePlugin(name)` — bound; full uninstall (reverses wiring + removes files).
-- **Depends on:** `internal/plugin` (`NewRegistry` + `Installed`/`Markets`/`SetMarketEnabled`/`RemoveMarket`/`Uninstall`).
+  - `pluginEnabled(reg, p)` — derives enabled state from on-disk markers `SetEnabled` flips (a `.disabled`-parked component file with its active copy gone reads as disabled; MCP/hooks-only plugins have nothing to park and read as enabled).
+- **Depends on:** `internal/plugin` (`NewRegistry`, `InstalledPlugin` + `Installed`/`Markets`/`SetMarketEnabled`/`RemoveMarket`/`SetEnabled`/`Uninstall`/`SkillsDir`/`AgentsDir`/`CommandsDir`).
 - **Used by / entrypoint:** entrypoint — bound methods called from the Plugins view.
 
 ### internal/gui/routing.go
@@ -124,35 +131,41 @@
 ### internal/gui/skills.go
 - **Role:** Skills-gallery bridge; reads `SKILL.md` files from local dirs directly, plus dream-proposed drafts awaiting accept/reject.
 - **Key symbols:**
-  - `SkillDTO`, `SkillProposalDTO`, `SkillsDTO` (types) — discovered skill (source = user/project/extra), a proposal, and the snapshot.
+  - `SkillDTO`, `SkillProposalDTO`, `SkillsDTO`, `SkillInstallDTO` (types) — discovered skill (source = user/project/extra), a dream proposal, the snapshot, and an install result (resolved name + written path).
   - `skillDirs()` — mirrors `main.skillDirs` (`~/.eigen/skills`, `.eigen/skills`, `EIGEN_SKILLS_DIRS`).
+  - `userSkillsDir()` — the per-user install target (`~/.eigen/skills`, same as `eigen skill add`).
   - `sourceOf(path)` — classifies a skill path into user/project/extra (resolves to absolute first).
   - `Skills() (*SkillsDTO, error)` — bound; discovered skills + proposals.
   - `SkillBody(name)` — bound; a skill's Markdown body (frontmatter stripped) for preview.
   - `AcceptSkill(name)`/`RejectSkill(name)` — bound; promote/discard a dream proposal.
-- **Depends on:** `internal/skill` (`Discover`, `Proposals`, `Accept`, `Reject`, `Set.List`/`Body`).
+  - `InstallSkillFromPath(path)` / `InstallSkillFromGitHub(ownerRepo)` — bound; install a skill from a local SKILL.md/dir or a GitHub `owner/repo[/subpath][@ref]`; the content is security-scanned before write (a RISKY verdict aborts; the bridge never Forces).
+  - `installScanner()` — builds the install scanner on a small/cheap model (`EIGEN_SMALL_MODEL` → grok composer → Haiku, mirroring main's `smallProvider`); nil when nothing is credentialed.
+  - `installOptions()` — shared `skill.InstallOptions` (user store, scan on, never Force); fails closed (error, not silent install) when no scanner is available.
+- **Depends on:** `internal/skill` (`Discover`, `Proposals`, `Accept`, `Reject`, `Set.List`/`Body`, `InstallFromPath`/`InstallFromGitHub`, `ParseGitHubRef`, `DefaultFetcher`, `ProviderScanner`, `InstallOptions`, `Scanner`), `internal/llm` (`New`, `ProviderAvailable`).
 - **Used by / entrypoint:** entrypoint — bound methods called from the Skills view.
 
 ### internal/gui/agents.go
 - **Role:** Agent fan-out bridge; reads subtask/background-task records from `agent.TasksDir()` directly and can request cancellation.
 - **Key symbols:**
-  - `BgTaskDTO`, `AgentsDTO` (types) — one task (times as unix millis) and the board snapshot grouped by status counts.
+  - `BgTaskDTO`, `AgentsDTO` (types) — one task (times as unix millis; carries kind/difficulty/role/attempts/escalated, steps/lastTool/lastNote, token counts, canceling flag) and the board snapshot grouped by status counts (+ `Dir`).
   - `ms(time)` — `time.Time` → unix millis (0 for zero) helper.
   - `toBgTaskDTO(t)` — `agent.BgTask` → DTO.
-  - `Agents() (*AgentsDTO, error)` — bound; loads tasks newest-first + running/done/errored counts.
+  - `Agents() (*AgentsDTO, error)` — bound; loads tasks newest-first + running/done/errored counts (`error`+`lost` both count as errored).
   - `CancelAgent(id)` — bound; drops a cancel marker the host observes.
-  - `AgentTranscript(id)` — bound; reads `<id>.transcript.jsonl` if present.
-- **Depends on:** `internal/agent` (`BgTask`, `TasksDir`, `LoadBgTasks`, `RequestCancel`).
+  - `AgentTranscript(id)` — bound; reads `<id>.transcript.jsonl` if present (id validated via `agent.ValidTaskID` before the path join, so a crafted id can't escape the tasks dir).
+  - `AgentHistory(id)` — bound; a task's full append-only state trail (attempts/escalations/overflow notes/terminal) in append order, so the board can show why a task retried/escalated.
+- **Depends on:** `internal/agent` (`BgTask`, `TasksDir`, `LoadBgTasks`, `RequestCancel`, `ValidTaskID`, `ReadTaskHistory`).
 - **Used by / entrypoint:** entrypoint — bound methods called from `Agents.svelte`.
 
 ### internal/gui/config.go
 - **Role:** Config-form bridge; surfaces editable `~/.eigen/config.json` as typed fields and validates writes through `config.Set`.
 - **Key symbols:**
-  - `ConfigFieldDTO`, `ConfigDTO` (types) — one editable field (with options/multi) and the snapshot + path.
+  - `ConfigFieldDTO`, `ConfigDTO` (types) — one editable field (key/desc/value, with options/`Multi`/`AllowEmpty`) and the snapshot + path.
+  - `emptyMeaningful` (var) — option-set fields where `""` is a real reachable value (`model`, `judge_model`); drives `AllowEmpty` so the picker keeps offering the unset state.
   - `dynamicOptions(kind)` — resolves catalog-dependent option sets (`models` → model IDs, `providers` → canonical providers).
-  - `Config() (*ConfigDTO, error)` — bound; editable fields + current values + options.
+  - `Config() (*ConfigDTO, error)` — bound; editable fields + current values + options; **skips `Secret` fields** (e.g. telegram_token) so the form never surfaces a credential.
   - `SetConfig(key, value)` — bound; validates + persists one key, returns the normalized stored value.
-- **Depends on:** `internal/config` (`Load`/`Fields`/`Get`/`Set`/`Save`/`Path`), `internal/llm` (`Models`).
+- **Depends on:** `internal/config` (`Load`/`Fields`/`Get`/`Set`/`Save`/`Path`; field `Secret`/`Dynamic`/`Multi`), `internal/llm` (`Models`).
 - **Used by / entrypoint:** entrypoint — bound methods called from the Config view.
 
 ### internal/gui/crons.go
@@ -170,40 +183,52 @@
 ### internal/gui/dreaming.go
 - **Role:** Dreaming-history bridge; reconstructs the memory-consolidation timeline (rollout summaries + timestamped `.bak` snapshots) from local files for diffing.
 - **Key symbols:**
-  - `RolloutDTO`, `ConsolidationDTO`, `DreamingScopeDTO`, `DreamingDTO` (types) — a distilled rollout, a memory snapshot, the per-scope history, and the both-scopes snapshot.
+  - `RolloutDTO`, `ConsolidationDTO`, `DreamingScopeDTO`, `DreamingDTO`, `DreamReportDTO` (types) — a distilled rollout (with recovered `WhenMs`), a memory `.bak` snapshot (label/whenMs/bytes), the per-scope history (+ `CurrentBytes`), the both-scopes snapshot, and an on-demand dream-run report (`Report`/`Consolidated`/`SummaryRegened`/`Changed`).
   - `dreamScope(store, scope)` — builds a `DreamingScopeDTO` (rollouts newest-first, backups newest-first).
   - `parseOutcome(s)` — pulls a leading outcome marker (success/partial/failed/skip) from a rollout.
-  - `parseBakStamp(path)` — parses `MEMORY.md.20060102-150405.bak` → label + unix millis.
+  - `rolloutFile` / `rolloutFiles(store, limit)` — re-glob the rollout dirs (Codex-shaped `rollout_summaries/` + legacy `raw/`) retaining each file's path so its timestamp survives (RawSummaries drops filenames).
+  - `parseRolloutStamp(path)` / `parseBakStamp(path)` — recover unix millis (and, for baks, a human label) from a `20060102-150405` filename stamp.
   - `Dreaming() (*DreamingDTO, error)` — bound; project + global dreaming history.
   - `ConsolidationContent(path)` — bound; raw content of a `.bak` snapshot (path-guarded: must look like a memory backup).
   - `CurrentMemory(scope)` — bound; current MEMORY.md content (the "after" side of a diff).
-- **Depends on:** `internal/memory` (`Store`, `Open`, `OpenGlobal`; also reuses `openScope` from memory.go).
+  - `DreamNow(scope)` — bound; runs an on-demand consolidation in-GUI (no daemon round-trip): builds a `memory.Pipeline` with the same dream callbacks the CLI/daemon use, drains queued downstream jobs (`RunQueued`), and — if nothing was queued — forces `MaybeConsolidate(force)` + `RegenSummary` so a button press always does real work (Stage1 is intentionally not run). Returns a `DreamReportDTO`.
+  - `dreamProvider()` — small/cheap model ladder (`EIGEN_SMALL_MODEL` → grok composer → Haiku, same as `installScanner`); errors (not nil) when nothing is credentialed so `DreamNow` fails loud.
+  - `newDreamPipeline(prov, mem, idx)` — wires `dream.Stage1`/`Consolidate`/`Summarize` into a `memory.Pipeline`, matching `main.newMemoryPipeline`.
+- **Depends on:** `internal/memory` (`Store`, `Open`, `OpenGlobal`, `Pipeline`, `Index`, `OpenIndex`; reuses `openScope` from memory.go), `internal/dream` (`Stage1`/`Consolidate`/`Summarize`), `internal/llm` (`Provider`, `New`, `ProviderAvailable`).
 - **Used by / entrypoint:** entrypoint — bound methods called from `Dreaming.svelte`.
 
 ### internal/gui/sessions_extra.go
 - **Role:** Session-manager extras — transcript export to disk (List/Remove/Prune are bridged in bridge.go).
 - **Key symbols:**
-  - `ExportSession(id) (string, error)` — bound; opens the local session store, discovers, and exports the transcript to `~/eigen-exports/<id>-<stamp>.jsonl`.
+  - `ExportSession(id) (string, error)` — bound; exports a transcript to `~/eigen-exports/<id>-<stamp>.jsonl`. Branches on the id kind (mirroring the TUI fork): a daemon-persisted session lives under `daemon.PersistedTranscriptPath` (already eigen-native JSONL → `transcript.Load`+`transcript.Save`), otherwise it's a store id served via `session.Open`→`Discover`→`Export`.
+  - `fileExists(path)` — reports whether a path is an existing regular file (picks the export branch).
   - `exportStamp()` — filename-safe timestamp helper (isolated so it's the only time-dependent line).
   - `safeFileID(id)` — sanitizes a session id for use in a filename.
-- **Depends on:** `internal/session` (`Open`, `Discover`, `Export`).
+- **Depends on:** `internal/session` (`Open`, `Discover`, `Export`), `internal/daemon` (`PersistedTranscriptPath`), `internal/transcript` (`Load`, `Save`).
 - **Used by / entrypoint:** entrypoint — `ExportSession` bound, called from the Sessions view.
 
 ### internal/gui/remote.go
 - **Role:** Remote-machines bridge; lists ssh-reachable targets (saved + `~/.ssh/config` aliases) locally, and lists sessions on a remote daemon over ssh on demand. Install deliberately NOT exposed.
 - **Key symbols:**
   - `MachineDTO`, `MachinesDTO` (types) — one remote target (saved/detected flags) and the snapshot.
+  - `remoteDialTimeout` (const, 10s) — bounds the read-only ssh peek so an unreachable host fails fast instead of blocking on the full daemon request timeout.
   - `Machines() (*MachinesDTO, error)` — bound; saved + ssh-config-detected targets (instant, local).
-  - `RemoteSessions(target) ([]SessionInfoDTO, error)` — bound; dials over ssh to list a remote daemon's sessions (slow; drill-in only).
-- **Depends on:** `internal/remote` (`Machine`, `Machines`, `ListSessions`); reuses `toSessionInfoDTO` from dto.go.
+  - `RemoteSessions(target) ([]SessionInfoDTO, error)` — bound; dials over ssh to list a remote daemon's sessions (slow; drill-in only), capped at `remoteDialTimeout`.
+  - `remoteSessions(ctx, target)` — the cancellable core: reimplements the read-only peek (rather than `remote.ListSessions`, which has no cancel hook) so the dial's `io.Closer` is reachable — on ctx cancel/deadline it kills the ssh process so a pending `List` unblocks and nothing leaks; on a list error it Closes first to flush remote stderr into the message.
+  - `firstRemoteLine(s)` — first non-empty line of remote stderr (the actionable reason).
+- **Depends on:** `internal/remote` (`Machine`, `Machines`, `Dial`), `internal/daemon` (`SessionInfo`); reuses `toSessionInfoDTO` from dto.go.
 - **Used by / entrypoint:** entrypoint — bound methods called from the Remote/Machines view.
 
 ## Cross-links
 
-- **`internal/daemon`** — the session-host daemon: the control client (request/response RPCs in bridge.go) + per-session streaming pumps (pump.go); also the source of `WireEvent`/`SessionInfo`/`SessionState`/`ToolInfo`/`ShellInfo`/`ApprovalInfo`/`DaemonStats` domain types DTO'd here.
-- **`internal/llm`** — model catalog + provider credential checks (routing.go, config.go), `Message`/`ToolCall`/`Image`/`ModelInfo`/`Role`/`Provider` types (dto.go), and the suggester provider built in `main_gui_wails.go`.
+- **`internal/daemon`** — the session-host daemon: the control client (request/response RPCs in bridge.go) + per-session streaming pumps (pump.go); also the source of `WireEvent`/`SessionInfo`/`SessionState`/`ToolInfo`/`ShellInfo`/`ApprovalInfo`/`DaemonStats` domain types DTO'd here, and `PersistedTranscriptPath` for export (sessions_extra.go). `DaemonStats` is the one type emitted RAW (snake_case), not DTO'd — see the parity contract in bridge.go.
+- **`internal/llm`** — model catalog + provider credential checks (routing.go, config.go), `Message`/`ToolCall`/`Image`/`ModelInfo`/`Role`/`Provider` types (dto.go), `FullVersion` for the gui/daemon mismatch badge (bridge.go), the small-model ladders for skill-install scanning + on-demand dreaming (skills.go, dreaming.go), and the suggester provider built in `main_gui_wails.go`.
 - **`internal/feed`** — proactive-feed scan/cache/dismiss + the `Suggester` injection point (feed.go, bridge.go).
-- **`internal/memory`** — local memory stores for the Memory + Dreaming views (memory.go, dreaming.go).
+- **`internal/memory`** — local memory stores for the Memory + Dreaming views (memory.go, dreaming.go), incl. the `Ban` blocks, USER.md user/learned split, and the `Pipeline`/`Index` driving `DreamNow`.
+- **`internal/dream`** — the model-facing `Stage1`/`Consolidate`/`Summarize` callbacks `DreamNow` wires into a memory pipeline (dreaming.go).
+- **`internal/transcript`** — eigen-native JSONL `Load`/`Save` for exporting a daemon-persisted session (sessions_extra.go).
+- **`internal/command`** — project+user custom slash commands surfaced/run by `Commands`/`RunCommand` (bridge.go).
+- **`internal/workflow`** — authored workflows listed/played by `Workflows`/`RunWorkflow` (bridge.go).
 - **`internal/observe`** — local metadata-only event log for the observability dashboard (observe.go).
 - **`internal/plugin`** — plugin/marketplace registry (plugins.go).
 - **`internal/skill`** — SKILL.md discovery + dream proposals (skills.go).

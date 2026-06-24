@@ -34,7 +34,7 @@ export type WireEventDTO = {
   cacheWriteTokens?: number;
 };
 
-export type StreamEventDTO = { event: WireEventDTO; replay: boolean };
+export type StreamEventDTO = { event: WireEventDTO; replay: boolean; seq?: number };
 
 export type SessionInfoDTO = {
   id: string;

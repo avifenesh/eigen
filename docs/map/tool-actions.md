@@ -41,7 +41,7 @@
   - `Registry.Subset(names…)` — a NEW immutable registry with only named tools (used to give parallel `task_group` children a role allowlist sharing the same `Definition`s).
   - `Registry.AllReadOnly()` — whether every tool is read-only (parallel fan-out requires this so children never race the single approval window).
 - **Depends on:** `internal/llm` (`ToolSpec`, `Image`). Stdlib only otherwise.
-- **Used by / entrypoint:** `Registry` is consumed by `internal/agent/agent.go` (`a.Tools.Specs()`, `CoreSpecs`, `GroupCatalog` at ~agent.go:1252-1256) to build the per-step tool list, and constructed via `NewRegistry(...)` in `build.go` and `main.go`. `Definition.Invoke` is called by the agent dispatch path.
+- **Used by / entrypoint:** `Registry` is consumed by `internal/agent/agent.go` (`a.Tools.Specs()`, `CoreSpecs`, `GroupCatalog` at ~agent.go:1284-1288) to build the per-step tool list, and constructed via `NewRegistry(...)` in `build.go:259`/`build.go:316` and `main.go:851`. `Definition.Invoke` is called by the agent dispatch path.
 
 ### internal/tool/policy.go
 - **Role:** The filesystem fence (`Policy`) plus denied-path helpers shared by every path-taking tool — defense in depth, independent of the agent's approval gate.
@@ -60,21 +60,21 @@
   - `TruncateUTF8(s,max)` — byte-truncate without splitting a rune.
   - `DeniedError` (struct) + `Error()` — the denial error type.
 - **Depends on:** stdlib only (`os`, `path/filepath`, `sync`, `unicode/utf8`).
-- **Used by / entrypoint:** `*Policy` is injected into nearly every tool constructor (grep/symbols/list/read/write/edit/bash/…); created once in `main.go:583` (`DefaultPolicy`) / `build.go` per session. `DenyGlobs`/`FilterDeniedLines`/`TruncateUTF8`/`IsDenied` are called from sibling tool files (`grep.go`, `symbols.go`, `list.go`, fs tools).
+- **Used by / entrypoint:** `*Policy` is injected into nearly every tool constructor (grep/symbols/list/read/write/edit/bash/…); created once in `main.go:604` (`DefaultPolicy`) / `build.go:92`/`build.go:315` (`NewPolicy`) per session. `DenyGlobs`/`FilterDeniedLines`/`TruncateUTF8`/`IsDenied` are called from sibling tool files (`grep.go`, `symbols.go`, `list.go`, fs tools).
 
 ### internal/tool/grep.go
 - **Role:** The `grep` tool — regex content search over file contents, powered by ripgrep. Read-only.
 - **Key symbols:**
   - `Grep(policy) Definition` — validates `pattern`, resolves `path` (default `.`) through the policy, runs ripgrep with `DenyGlobs()`, then post-filters with `FilterDeniedLines`; returns `file:line:match` or `(no matches)`.
 - **Depends on:** `Policy` (`policy.go`), `runRipgrep` (`fsutil.go`), `DenyGlobs`/`FilterDeniedLines` (`policy.go`).
-- **Used by / entrypoint:** registered as `grep` in `build.go:195` and `main.go:317`/`726`.
+- **Used by / entrypoint:** registered as `grep` in `build.go:195`/`build.go:317` and `main.go:747`.
 
 ### internal/tool/symbols.go
 - **Role:** The `symbols` tool — find where a function/type/class/etc. is *defined*, across languages, via a ripgrep definition-keyword regex. Read-only.
 - **Key symbols:**
   - `Symbols(policy) Definition` — builds a multi-language definition pattern (`func|type|def|class|fn|struct|enum|trait|interface|impl|module|package` near the quoted name, or a `name = function|(=>|class` binding), runs ripgrep with deny globs + line filter; returns `file:line:definition`.
 - **Depends on:** `Policy`, `runRipgrep` (`fsutil.go`), `DenyGlobs`/`FilterDeniedLines`. Stdlib `regexp`.
-- **Used by / entrypoint:** registered as `symbols` in `build.go:196` and `main.go:318`/`727`.
+- **Used by / entrypoint:** registered as `symbols` in `build.go:196`/`build.go:318` and `main.go:748`.
 
 ### internal/tool/retrieve.go
 - **Role:** The `retrieve` tool — semantic + lexical (BM25, fused with vectors when an embedder is configured) search over the project index. Read-only. The index/ranking itself is injected.
@@ -82,7 +82,7 @@
   - `RetrieveRun` (func type) — injected by `main`/`buildSession`: `(ctx, query, k) → formatted top-k hits`.
   - `Retrieve(run) Definition` — validates `query`, clamps `k` to [1,20] (default 8), reports "unavailable" when `run` is nil.
 - **Depends on:** nothing internal (the index lives behind the injected `RetrieveRun`).
-- **Used by / entrypoint:** registered as `retrieve` in `build.go:203` and `main.go:747`; `RetrieveRun` is wired from the per-project retrieval index in `main.go`/`build.go`.
+- **Used by / entrypoint:** registered as `retrieve` in `build.go:203` and `main.go:768`; `RetrieveRun` is wired from the per-project retrieval index in `main.go`/`build.go` (`retrieveRunner(...)`).
 
 ### internal/tool/searchtools.go
 - **Role:** The `search_tools` meta-tool — hierarchical progressive disclosure of niche tools (MCP servers): list groups → capability categories → tool names → unlock full schemas. Read-only.
@@ -91,7 +91,7 @@
   - `renderAndUnlockMatches(query, matches, unlock)` — formats matched tools' full schemas and calls `unlock`; guards a too-broad keyword that matches a whole big server (shows capabilities/names instead of dumping schemas).
   - `uniqueCapabilities(matches)` / `groupToolCount(r,group)` / `splitGroupQuery(r,q)` / `capabilityMatches(c,q)` / `singleGroup(matches)` — disclosure helpers (dedup capabilities, split `<group> <tail>`, match a capability name, find the common group of matches).
 - **Depends on:** `Registry` + its `Group*`/`MatchNiche*` methods (`tool.go`), `NicheCapability` (`tool.go`), `firstLine` (`tool.go`).
-- **Used by / entrypoint:** registered as `search_tools` in `build.go:253` and `main.go:820` (only wired when `Registry.HasNiche()`); `reg`/`unlock` close over the session's full registry + the agent's live unlocked-set.
+- **Used by / entrypoint:** registered as `search_tools` in `build.go:253` and `main.go:841` (appended after the core defs, only when there are niche tools); `reg`/`unlock` close over the session's full registry (`deps.registryRef()` in `build.go`) + the agent's live unlocked-set.
 
 ### internal/tool/fetch.go
 - **Role:** The `fetch` tool — a single GET against an http(s) URL returning the (truncated) response body as text. Mutating (network egress → gated).
@@ -99,7 +99,7 @@
   - `Fetch() Definition` — validates scheme (http/https) + host, 30s timeout (`defaultFetchTTL`), reads up to 256 KiB (`maxFetchBytes`) with truncation marker, returns `HTTP <code>` + body (or a non-text-body note when not valid UTF-8).
   - `maxFetchBytes` / `defaultFetchTTL` (consts).
 - **Depends on:** stdlib only (`net/http`, `net/url`, `io`, `unicode/utf8`). NOTE in source: no SSRF protection beyond the scheme check — run gated if that matters.
-- **Used by / entrypoint:** registered as `fetch` in `build.go:200` and `main.go:738`.
+- **Used by / entrypoint:** registered as `fetch` in `build.go:200` and `main.go:759`.
 
 ### internal/tool/websearch.go
 - **Role:** The `websearch` tool — web search with a keyless fallback chain (works out of the box) and configurable keyed heads. Mutating (network egress → gated). This file holds the tool + the keyed/configured backends (Tavily, Brave API, SearXNG, generic JSON); the keyless engines + chain live in `websearch_engines.go`.
@@ -112,7 +112,7 @@
   - `formatResults(rs)` / `collapseWS(s)` / `queryEscape(s)` / `envOr(key,def)` — output + URL/env helpers.
   - `maxSearchResults` / `websearchTimeout` (consts).
 - **Depends on:** the `searchEngine`/`searchChain`/SSRF machinery in `websearch_engines.go`; stdlib `net/http`, `encoding/json`.
-- **Used by / entrypoint:** registered as `websearch` in `build.go:206` and `main.go:752`.
+- **Used by / entrypoint:** registered as `websearch` in `build.go:206` and `main.go:773`.
 
 ### internal/tool/websearch_engines.go
 - **Role:** The web-search engine interface, the best-first fallback `searchChain`, the keyless engines (Marginalia, Wikipedia, Mojeek, DuckDuckGo, public brave-web), HTML SERP parsing, URL dedup, and the SSRF host check. Ported natively to Go from `@agent-sh/harness-websearch` v2 (no MCP dependency).
@@ -143,7 +143,7 @@
   - `TaskGroup(run) Definition` — read-only fan-out (children are read-only, which is what makes parallelism safe); optional `workers` + `synthesize` merge step.
   - `TaskGroupMutating(run) Definition` — **not** read-only; parallel implementers in isolated git worktrees, diffs merged behind one approval; requires a clean git repo rooted at the repo root.
 - **Depends on:** nothing internal directly (everything is behind the injected func types). Stdlib `encoding/json`, `strings`.
-- **Used by / entrypoint:** registered as `task`/`task_status`/`task_promote`/`task_group`/`task_group_mutating` in `build.go:201-202` and `main.go:742-746` (also `main.go:759`/`762`). The `*Run` values are built in `main.go`/`build.go`, closing over the agent + provider construction and the worktree-merge machinery. NOTE: the doc comment block describing `TaskGroup` sits physically above `TaskPromote` (a cosmetic comment-placement quirk, not a behavior issue).
+- **Used by / entrypoint:** registered as `task`/`task_status`/`task_promote`/`task_group`/`task_group_mutating` in `build.go:201-202` and `main.go:763-767`. The `*Run` values are built in `main.go`/`build.go`, closing over the agent + provider construction and the worktree-merge machinery. NOTE: the doc comment block describing `TaskGroup` sits physically above `TaskPromote` (a cosmetic comment-placement quirk, not a behavior issue).
 
 ### internal/tool/plan.go
 - **Role:** The `plan` tool — adversarial cross-vendor planning council (author drafts, the OTHER vendor critiques, revise until approved or budget runs out). Read-only (only mutates plan thinking). Logic injected.
@@ -151,7 +151,7 @@
   - `Planner` (func type) — injected `(ctx, task, context) → hardened plan`.
   - `Plan(run) Definition` — validates `task`, reports "not available" when `run` is nil.
 - **Depends on:** nothing internal (council/provider construction is behind `Planner`).
-- **Used by / entrypoint:** registered as `plan` in `build.go:205` and `main.go:751`.
+- **Used by / entrypoint:** registered as `plan` in `build.go:205` and `main.go:772`.
 
 ### internal/tool/review.go
 - **Role:** The `review` tool — cross-vendor review (GPT reviews Claude, Claude reviews GPT, never self-review). Read-only. Logic injected.
@@ -159,7 +159,7 @@
   - `Reviewer` (func type) — injected `(ctx, artifact, focus) → critique`.
   - `Review(run) Definition` — validates `artifact`, reports "not available" when `run` is nil.
 - **Depends on:** nothing internal (reviewer/provider construction is behind `Reviewer`).
-- **Used by / entrypoint:** registered as `review` in `build.go:205` and `main.go:750`.
+- **Used by / entrypoint:** registered as `review` in `build.go:205` and `main.go:771`.
 
 ### internal/tool/goal.go
 - **Role:** The `goal_achieved` tool — the model claims the current goal is done; a fresh-context judge model verifies the evidence and only a confirmed verdict clears the goal. Read-only (mutates only goal state). Judge injected.
@@ -167,16 +167,19 @@
   - `GoalJudge` (func type) — injected `(ctx, evidence) → (achieved, reason, err)`.
   - `GoalAchieved(judge) Definition` — validates `evidence`; on confirm returns "CONFIRMED ... cleared", on reject returns the gaps + retry instruction.
 - **Depends on:** nothing internal (judge/provider construction is behind `GoalJudge`).
-- **Used by / entrypoint:** registered as `goal_achieved` in `build.go:205` and `main.go:66`/`749`/`846`.
+- **Used by / entrypoint:** registered as `goal_achieved` in `build.go:205` and `main.go:770`.
 
 ### internal/tool/todo.go
 - **Role:** The `todo` tool — the model passes the COMPLETE task list each call (idempotent set, not a delta) for a live checklist. Read-only (no fs side effects).
 - **Key symbols:**
-  - `Todo() Definition` — validates each item's content + status, enforces exactly ≤1 `in_progress`, returns a `[x]/[~]/[-]/[ ]` rendered plan with a done count.
-  - `validTodoStatus` (var) — allowed lifecycle set.
+  - `Todo() Definition` — validates each item's `content` + `status` + optional `priority`, enforces exactly ≤1 `in_progress`, sorts by priority (high→medium→low→unset, stable within a band), returns a `[x]/[~]/[-]/[ ]` rendered plan with a done count and a `(priority)` suffix on each line.
+  - `validTodoStatus` (var) — allowed lifecycle set (`pending`/`in_progress`/`completed`/`cancelled`).
+  - `validTodoPriority` (var) — allowed optional priority band (`high`/`medium`/`low`).
+  - `todoPriorityRank(priority)` — render-order rank (unset/unknown sorts last).
+  - `todoPriorityTag(priority)` — `" (priority)"` suffix, empty when unset.
   - `todoGlyph(status)` — status → plain-text marker.
-- **Depends on:** stdlib only.
-- **Used by / entrypoint:** registered as `todo` in `build.go:200` and `main.go:320`/`739`.
+- **Depends on:** stdlib only (`sort`, `strings`).
+- **Used by / entrypoint:** registered as `todo` in `build.go:200`/`build.go:320` and `main.go:760`.
 
 ### internal/tool/memory.go
 - **Role:** The `memory` tool — record or inspect Eigen's own durable memory (project vs global scope; notes vs hard "ban" rules). Read-only with respect to the *user's* project (writes only to Eigen's memory store), so it auto-runs.
@@ -185,7 +188,7 @@
   - `memoryLister` / `memoryReader` / `memorySearcher` (interfaces) — optional capabilities discovered by type assertion (`list`/`read`/`search` actions).
   - `Memory(project, global MemoryStore) Definition` — dispatches `add`/`list`/`read`/`search`; `scope=global` routes to the global store when present; `kind=ban` records a titled hard prohibition.
 - **Depends on:** `internal/memory` (`memory.SearchHit`).
-- **Used by / entrypoint:** registered as `memory` in `build.go:201` and `main.go:741`; satisfied by `*memory.Project`/global store from `internal/memory`.
+- **Used by / entrypoint:** registered as `memory` in `build.go:201` and `main.go:762`; satisfied by `*memory.Project`/global store from `internal/memory`.
 
 ### internal/tool/skill.go
 - **Role:** The `skill` tool — load a skill's full instructions by (loosely matched) name into the conversation. Read-only.
@@ -193,7 +196,7 @@
   - `SkillSet` (interface) — `Body(name)`, `Names()`, `Resolve(hint) → (name, ok)`; satisfied by `*skill.Set` (declared here to avoid an import cycle).
   - `Skill(set) Definition` — loads `Body`; when a fuzzy hint resolved to a different registered name, prefixes a "(loaded skill X for hint Y)" note so a fuzzy resolve is never silent.
 - **Depends on:** the `SkillSet` interface (satisfied by `internal/skill`).
-- **Used by / entrypoint:** registered as `skill` in `build.go:200` and `main.go:740`.
+- **Used by / entrypoint:** registered as `skill` in `build.go:200` and `main.go:761`.
 
 ### internal/tool/imagegen.go
 - **Role:** The `generate_image` tool — render image(s) from a text prompt, save PNGs into the project, and return the saved paths AND the images inline (so the model can see what it made). **Mutating** (writes files). The renderer is injected.
@@ -201,7 +204,7 @@
   - `ImageGenRun` (func type) — injected `(ctx, prompt, width, height, count) → (paths, []llm.Image, err)`.
   - `GenerateImage(run) Definition` — the only `RunRich` tool in this slice; validates `prompt`, reports "unavailable" when `run` is nil, returns a `Result` with paths text + inline images.
 - **Depends on:** `internal/llm` (`Image`).
-- **Used by / entrypoint:** registered as `generate_image` in `build.go:204` and `main.go:748`; `ImageGenRun` is wired from the configured image model (Bedrock by default) in `main.go`/`build.go`.
+- **Used by / entrypoint:** registered as `generate_image` in `build.go:204` and `main.go:769`; `ImageGenRun` is wired from the configured image model (Bedrock by default) in `main.go`/`build.go` (`imageGenRunner(...)`).
 
 ### internal/tool/shells.go
 - **Role:** The backgrounded-shell state machine + per-session registry. Not a tool itself — it's the support layer the bash tools (`bash`/`bash_output`/`kill_shell`, in `bash.go`/`bashoutput.go`, *not* owned by this slice) stream into, plus the awareness block the agent's system prompt shows.
@@ -212,7 +215,7 @@
   - `lastShellLine(out)` — last non-empty output line (one-line hint).
   - consts: `maxShellBuffer` (256 KiB), `maxFinishedShells` (30).
 - **Depends on:** stdlib only (`bytes`, `sync`, `sync/atomic`, `syscall`, `time`).
-- **Used by / entrypoint:** consumed by `bash.go`/`bashoutput.go` (which call `add`/`write`/`snapshot`/`readNew`/`kill`/etc.) and by the TUI/daemon (`Infos`, `RunningCount`, `KillByID`, `StatusBlock`, `ShellInfo`) for the shells panel + `SessionState`. Constructed via `NewShellRegistry()` per session in `main.go`/`build.go`.
+- **Used by / entrypoint:** consumed by `bash.go`/`bashoutput.go` (which call `add`/`write`/`snapshot`/`readNew`/`kill`/etc.; `truncShellCmd` lives in `bash.go`) and by the TUI/daemon (`Infos`, `RunningCount`, `KillByID`, `StatusBlock`, `ShellInfo`) for the shells panel + `SessionState`. Constructed via `NewShellRegistry()` per session in `main.go:742`/`build.go:192`.
 
 ## Cross-links
 - **internal/agent** — the agent loop consumes `Registry.Specs()`/`CoreSpecs()`/`GroupCatalog()` to assemble the per-step tool list and dispatches via `Definition.Invoke`; it also feeds the agent + worktree-merge backends behind the injected `Task*`/`Plan`/`Review`/`Goal`/`Retrieve`/`ImageGen` func types.
