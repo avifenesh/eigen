@@ -221,6 +221,23 @@
       return false;
     }
   }
+
+  // Start a fresh session without leaving Chat — new-chat from the control bar.
+  let startingNew = $state(false);
+  async function newChat() {
+    if (startingNew) return;
+    startingNew = true;
+    try {
+      const id = await Bridge.NewSession("", "", "");
+      await sessions.refresh();
+      router.go("chat", id);
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      startingNew = false;
+    }
+  }
+
   // Stop the running turn. Re-entrant guarded: without it the user can mash
   // Stop and fire Bridge.Interrupt repeatedly while the first RPC is still in
   // flight (the button stays "Stop" until `done` clears running) — GUI-068.
@@ -560,6 +577,53 @@
 {:else}
   <div class="chat">
     <div class="chat__main">
+      <!-- CONTROL BAR — the always-visible session controls: a New-chat action,
+           the model, and the capability quick-toggles (perm/effort/fast/search).
+           These were buried in the dock's "edit" popover; surfacing them here
+           makes switching one click, no hunting. The dock keeps goal/dirs/shells. -->
+      <div class="ctl">
+        <button class="ctl__new" onclick={newChat} disabled={startingNew} title="Start a new chat">
+          {#if startingNew}<span class="dock__spinner" aria-hidden="true"></span>{:else}<span class="ctl__plus" aria-hidden="true">+</span>{/if}
+          New chat
+        </button>
+        <div class="ctl__sep"></div>
+        <label class="ctl__field" title="Model for this session">
+          <span class="ctl__k">model</span>
+          <select class="ctl__sel" value={sess?.model ?? ""} onchange={onModel} onfocus={loadModels}>
+            {#if models.length === 0}
+              <option value={sess?.model ?? ""}>{sess?.model || "—"}</option>
+            {:else}
+              {#each models as m (m.id)}
+                <option value={m.id} disabled={!m.available}>{m.id}{m.available ? "" : " (unavailable)"}</option>
+              {/each}
+            {/if}
+          </select>
+        </label>
+        <button class="ctl__pill" class:ctl__pill--warn={sess?.perm === "auto"} onclick={onPerm} title="Toggle gated approvals vs auto-approve">
+          {sess?.perm === "auto" ? "auto" : "gated"}
+        </button>
+        {#if sess?.effort}
+          <label class="ctl__field" title="Reasoning effort">
+            <span class="ctl__k">effort</span>
+            <select class="ctl__sel ctl__sel--mini" value={sess.effort} onchange={onEffort}>
+              {#each effortLevels as lv (lv)}<option value={lv}>{lv}</option>{/each}
+            </select>
+          </label>
+        {/if}
+        {#if sess?.search}
+          <label class="ctl__field" title="Live search mode">
+            <span class="ctl__k">search</span>
+            <select class="ctl__sel ctl__sel--mini" value={sess.search} onchange={onSearch}>
+              {#each SEARCH_MODES as mode (mode)}<option value={mode}>{mode}</option>{/each}
+            </select>
+          </label>
+        {/if}
+        {#if sess?.fastOk}
+          <button class="ctl__pill" class:ctl__pill--on={sess.fast} onclick={onFast} title="Route eligible turns to the fast tier">
+            fast {sess.fast ? "on" : "off"}
+          </button>
+        {/if}
+      </div>
       <div class="chat__scroll selectable">
         {#if transcriptLoading}
           <!-- Transcript skeleton: the State() snapshot is still in flight, so
@@ -686,6 +750,11 @@
             disabled={detaching || interrupting || !online}
             title={online ? "Background the running shell to free this turn (without killing it)" : "daemon offline"}
           >detach shell</button>
+          <!-- Steer/queue clarity: while a turn runs, typed input is STEERED into
+               it (injected mid-turn); if the daemon can't steer it queues as the
+               next turn. Surfacing the mode removes the "where did my message go"
+               surprise. -->
+          <span class="chat__steerhint" title="Type now to steer the running turn; if it can't be steered it queues as the next turn">↳ steers the running turn</span>
         </div>
       {/if}
 
@@ -1043,6 +1112,142 @@
     flex-direction: column;
     min-width: 0;
   }
+
+  /* CONTROL BAR — slim always-on row above the transcript. */
+  .ctl {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-6);
+    border-bottom: 1px solid var(--border-hairline);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .ctl::-webkit-scrollbar {
+    display: none;
+  }
+  .ctl__new {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    flex: none;
+    height: 26px;
+    padding: 0 var(--sp-4);
+    border: 1px solid var(--border-brand-faint);
+    background: var(--state-selected);
+    color: var(--brand-bright);
+    border-radius: var(--r-sm);
+    font: var(--fw-semibold) var(--fs-body-sm) / 1 var(--font-sans);
+    cursor: pointer;
+    transition: background var(--dur-fast) var(--ease-out);
+  }
+  .ctl__new:hover {
+    background: var(--brand-dim);
+    color: var(--text-on-brand);
+  }
+  .ctl__new:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .ctl__new:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .ctl__plus {
+    font-size: var(--fs-body);
+    line-height: 1;
+  }
+  .ctl__sep {
+    flex: none;
+    width: 1px;
+    align-self: stretch;
+    margin: var(--sp-1) var(--sp-1);
+    background: var(--divider);
+  }
+  .ctl__field {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    flex: none;
+  }
+  .ctl__k {
+    font: var(--fw-medium) var(--fs-micro) / 1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--text-faint);
+  }
+  .ctl__sel {
+    height: 26px;
+    max-width: 200px;
+    padding: 0 var(--sp-6) 0 var(--sp-3);
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-raised);
+    color: var(--text-primary);
+    border-radius: var(--r-sm);
+    font: var(--fw-regular) var(--fs-body-sm) / 1 var(--font-sans);
+    cursor: pointer;
+    /* webkit2gtk paints native selects white without this — own chevron */
+    -webkit-appearance: none;
+    appearance: none;
+    color-scheme: dark;
+    background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+      linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+    background-position:
+      calc(100% - 13px) center,
+      calc(100% - 8px) center;
+    background-size:
+      5px 5px,
+      5px 5px;
+    background-repeat: no-repeat;
+  }
+  .ctl__sel--mini {
+    max-width: 110px;
+  }
+  .ctl__sel:hover {
+    border-color: var(--border-strong);
+  }
+  .ctl__sel:focus-visible {
+    outline: none;
+    border-color: var(--border-brand-faint);
+    box-shadow: var(--shadow-focus);
+  }
+  .ctl__sel option {
+    background: var(--bg-overlay);
+    color: var(--text-primary);
+  }
+  .ctl__pill {
+    flex: none;
+    height: 26px;
+    padding: 0 var(--sp-3);
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-raised);
+    color: var(--text-secondary);
+    border-radius: var(--r-sm);
+    font: var(--fw-medium) var(--fs-body-sm) / 1 var(--font-sans);
+    cursor: pointer;
+    transition:
+      background var(--dur-fast) var(--ease-out),
+      color var(--dur-fast) var(--ease-out);
+  }
+  .ctl__pill:hover {
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+  }
+  .ctl__pill:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  /* auto-perm is a posture worth seeing (tools run unprompted) → warm; fast on → brand. */
+  .ctl__pill--warn {
+    border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+    color: var(--warn);
+  }
+  .ctl__pill--on {
+    border-color: var(--border-brand-faint);
+    background: var(--state-selected);
+    color: var(--brand-bright);
+  }
   /* The scroll region hosts VirtualList, which owns its own internal scroll +
      pin-to-bottom. We give it a bounded height to window against. */
   .chat__scroll {
@@ -1288,6 +1493,11 @@
     50% {
       opacity: 0.55;
     }
+  }
+  /* Steer hint: a quiet note that typing now steers the running turn. */
+  .chat__steerhint {
+    font: var(--fw-regular) var(--fs-label) / 1 var(--font-sans);
+    color: var(--text-faint);
   }
   /* Detach-bash control: a quiet inline link beside the working indicator, not
      an alarm. Reads as secondary text until hovered, then warms. */

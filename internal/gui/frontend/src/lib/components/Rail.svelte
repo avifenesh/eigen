@@ -81,7 +81,10 @@
 <nav class="rail" aria-label="Primary">
   <div class="rail__brand">
     <span class="rail__mark">
-      <span class="rail__mark-dot" aria-hidden="true"></span>
+      <!-- λ is eigen's signature (the eigenvalue mark, shared with the TUI
+           wordmark): spectrum-filled, with a slow living glow so the chrome
+           reads as alive at rest. -->
+      <span class="rail__lambda" aria-hidden="true">λ</span>
       eigen
     </span>
   </div>
@@ -153,24 +156,25 @@
     color: var(--text-primary);
     letter-spacing: var(--ls-heading);
   }
-  .rail__mark-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: var(--r-full);
-    background: var(--brand);
-    /* A living halo that breathes slowly — the brand mark is the rail's
-       heartbeat, the one accent that proves the chrome is alive even at rest. */
-    box-shadow: 0 0 0 3px var(--state-selected);
+  /* λ — eigen's signature mark. The brand spectrum (teal→aqua→cyan→indigo) is
+     clipped to the glyph so it shimmers like the TUI wordmark, and its opacity
+     breathes slowly: the rail's heartbeat, alive at rest. */
+  .rail__lambda {
+    font: var(--fw-bold) calc(var(--fs-h2) + 2px) / 1 var(--font-display);
+    background: var(--spectrum);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
     animation: rail-mark-breathe var(--breath) var(--ease-inout) infinite;
-    will-change: box-shadow;
+    will-change: opacity;
   }
   @keyframes rail-mark-breathe {
     0%,
     100% {
-      box-shadow: 0 0 0 2px var(--state-selected);
+      opacity: 1;
     }
     50% {
-      box-shadow: 0 0 0 4px rgba(105, 194, 184, 0.16);
+      opacity: 0.72;
     }
   }
 
@@ -427,7 +431,7 @@
     .rail__badge {
       transition: none;
     }
-    .rail__mark-dot,
+    .rail__lambda,
     .rail__badge--live,
     .rail__foot--online .rail__foot-dot {
       animation: none;
