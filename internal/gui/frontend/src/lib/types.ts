@@ -121,7 +121,8 @@ export type MemoryScopeDTO = {
   notes: MemoryNoteDTO[];
   noteCount: number;
   bans: string;
-  profile?: string;
+  profile?: string; // USER.md — the user-editable section
+  profileLearned?: string; // USER.md — the eigen-auto-maintained block (read-only)
   adHoc: MemoryNoteDTO[];
   backups: number;
   bytes: number;

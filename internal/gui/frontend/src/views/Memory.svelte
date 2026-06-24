@@ -62,7 +62,8 @@
         current.adHoc.length === 0 &&
         !current.summary &&
         bans.length === 0 &&
-        !current.profile),
+        !current.profile &&
+        !current.profileLearned),
   );
   const hasBackupHistory = $derived((current?.backups ?? 0) > 0);
 
@@ -355,6 +356,15 @@
             <p class="mem__helper">
               Your durable personalization prompt — eigen keeps it current as it learns; your own additions sit alongside.
             </p>
+            {#if current.profileLearned}
+              <div class="mem__learned">
+                <div class="mem__learned-head">
+                  <span class="mem__learned-tag">✧ learned by eigen</span>
+                  <span class="mem__learned-sub">auto-maintained from your sessions</span>
+                </div>
+                <div class="mem__profile selectable"><Markdown source={current.profileLearned} /></div>
+              </div>
+            {/if}
             {#if editingProfile}
               <textarea
                 bind:value={profileDraft}
@@ -647,6 +657,31 @@
     padding: var(--sp-5);
     font-size: var(--fs-body-sm);
     line-height: var(--lh-prose);
+  }
+  /* The eigen-maintained learned block — a quiet teal-edged card above the
+     user's own editor, marking what eigen distilled (read-only here). */
+  .mem__learned {
+    border: 1px solid var(--border-hairline);
+    border-left: 2px solid var(--brand);
+    border-radius: var(--r-md);
+    background: var(--bg-raised);
+    margin-bottom: var(--sp-4);
+  }
+  .mem__learned-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-5) 0;
+  }
+  .mem__learned-tag {
+    font: var(--fw-semibold) var(--fs-label) / 1 var(--font-sans);
+    color: var(--brand);
+  }
+  .mem__learned-sub {
+    font-size: var(--fs-micro);
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
   }
   .mem__notes {
     flex: 1;

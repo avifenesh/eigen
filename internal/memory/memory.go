@@ -289,10 +289,65 @@ func (s *Store) Rewrite(content string) error {
 // Read returns the curated working memory (MEMORY.md), empty if none.
 func (s *Store) Read() string { return s.readFile(s.MemoryPath()) }
 
-// UserProfile returns the editable free-form user profile prompt (USER.md).
+// USER.md has two parts: an eigen-MAINTAINED block (cross-project facts the
+// dream pipeline distills) fenced between these markers, and the user's own
+// free-form additions below it. Both inject; each is edited independently so
+// auto-maintenance never clobbers the user's words and vice-versa.
+const (
+	learnedProfileBegin = "<!-- eigen:learned — auto-maintained from your sessions; edit below the end marker -->"
+	learnedProfileEnd    = "<!-- eigen:end -->"
+)
+
+// UserProfile returns the full editable personalization prompt (USER.md):
+// the eigen-maintained learned block (if any) followed by the user's section.
+// This is what gets injected — both halves matter.
 func (s *Store) UserProfile() string { return s.readFile(s.UserProfilePath()) }
 
-// WriteUserProfile atomically replaces USER.md. Empty content removes the file.
+// splitProfile separates USER.md into (learned, user) sections by the markers.
+// A file with no markers is all user-authored (learned=""), preserving the
+// pre-existing hand-written-only behavior.
+func splitProfile(full string) (learned, user string) {
+	b := strings.Index(full, learnedProfileBegin)
+	e := strings.Index(full, learnedProfileEnd)
+	if b < 0 || e < 0 || e < b {
+		return "", strings.TrimSpace(full)
+	}
+	learned = strings.TrimSpace(full[b+len(learnedProfileBegin) : e])
+	user = strings.TrimSpace(full[e+len(learnedProfileEnd):])
+	return learned, user
+}
+
+// composeProfile re-joins a learned block + user section into USER.md content.
+// Empty learned → just the user text (no markers), so a profile eigen has never
+// touched reads exactly as the user wrote it.
+func composeProfile(learned, user string) string {
+	learned = strings.TrimSpace(learned)
+	user = strings.TrimSpace(user)
+	if learned == "" {
+		return user
+	}
+	out := learnedProfileBegin + "\n" + learned + "\n" + learnedProfileEnd
+	if user != "" {
+		out += "\n\n" + user
+	}
+	return out
+}
+
+// UserProfileUser returns only the user's hand-written section of USER.md.
+func (s *Store) UserProfileUser() string {
+	_, user := splitProfile(s.readFile(s.UserProfilePath()))
+	return user
+}
+
+// UserProfileLearned returns only the eigen-maintained section of USER.md.
+func (s *Store) UserProfileLearned() string {
+	learned, _ := splitProfile(s.readFile(s.UserProfilePath()))
+	return learned
+}
+
+// WriteUserProfile replaces the USER section of USER.md, PRESERVING the
+// eigen-maintained learned block. Empty user content removes the file only when
+// there is also no learned block (so auto-maintained facts aren't lost).
 func (s *Store) WriteUserProfile(content string) error {
 	if s == nil {
 		return fmt.Errorf("memory unavailable")
@@ -301,10 +356,35 @@ func (s *Store) WriteUserProfile(content string) error {
 	if err := s.ensureDir(); err != nil {
 		return err
 	}
-	if content == "" {
+	learned := s.UserProfileLearned()
+	if content == "" && learned == "" {
 		_ = os.Remove(s.UserProfilePath())
 		return nil
 	}
+	return s.writeProfile(composeProfile(learned, content))
+}
+
+// SetLearnedProfile replaces the eigen-MAINTAINED block of USER.md, PRESERVING
+// the user's section. Called by the dream pipeline with distilled cross-project
+// facts. Empty learned removes the block (and the whole file if no user text).
+func (s *Store) SetLearnedProfile(learned string) error {
+	if s == nil {
+		return fmt.Errorf("memory unavailable")
+	}
+	learned = strings.TrimSpace(Redact(learned))
+	if err := s.ensureDir(); err != nil {
+		return err
+	}
+	user := s.UserProfileUser()
+	if learned == "" && user == "" {
+		_ = os.Remove(s.UserProfilePath())
+		return nil
+	}
+	return s.writeProfile(composeProfile(learned, user))
+}
+
+// writeProfile atomically writes USER.md content (temp + rename).
+func (s *Store) writeProfile(content string) error {
 	tmp := s.UserProfilePath() + ".tmp"
 	if err := os.WriteFile(tmp, []byte(content+"\n"), 0o644); err != nil {
 		return err

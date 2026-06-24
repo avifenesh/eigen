@@ -36,7 +36,8 @@ type MemoryScopeDTO struct {
 	NoteCount  int             `json:"noteCount"`
 	Bans       string          `json:"bans"`
 	BanList    []memory.Ban    `json:"banList"`           // structured title/rule blocks, for editing
-	Profile    string          `json:"profile,omitempty"` // global only (USER.md)
+	Profile        string      `json:"profile,omitempty"`        // global only (USER.md) — the user-editable section
+	ProfileLearned string      `json:"profileLearned,omitempty"` // global only — the eigen-auto-maintained block (read-only in the GUI)
 	AdHoc      []MemoryNoteDTO `json:"adHoc"`
 	Backups    int             `json:"backups"`
 	Bytes      int             `json:"bytes"`
@@ -180,7 +181,10 @@ func scopeDTO(s *memory.Store, scope string) *MemoryScopeDTO {
 		Bytes:      len(raw),
 	}
 	if scope == "global" {
-		dto.Profile = strings.TrimSpace(s.UserProfile())
+		// Split USER.md: the editor binds the user-authored section (WriteUserProfile
+		// preserves the learned block), and the learned block is shown read-only.
+		dto.Profile = strings.TrimSpace(s.UserProfileUser())
+		dto.ProfileLearned = strings.TrimSpace(s.UserProfileLearned())
 	}
 	return dto
 }

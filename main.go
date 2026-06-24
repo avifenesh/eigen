@@ -1615,6 +1615,18 @@ func runDream(prov llm.Provider, mem, gmem *memory.Store) {
 			} else {
 				fmt.Printf("global memory: %d new note(s) → %s\n", len(notes), gmem.Dir())
 			}
+			// Auto-maintain USER.md's learned block from the distilled cross-project
+			// profile so the injected personalization prompt reflects what eigen has
+			// learned about the user — the user's own additions (below the end
+			// marker) are preserved. Prefer the curated summary; fall back to the
+			// raw notes when no summary exists yet.
+			learned := strings.TrimSpace(gmem.Injected())
+			if learned == "" {
+				learned = strings.Join(notes, "\n")
+			}
+			if err := gmem.SetLearnedProfile(learned); err == nil {
+				fmt.Printf("user profile: refreshed the auto-maintained block → %s\n", gmem.UserProfilePath())
+			}
 			memory.CommitMemory(fmt.Sprintf("dream: global profile — %d new", len(notes)))
 		}
 	}
