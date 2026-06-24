@@ -318,6 +318,22 @@ export type MachineDTO = {
 };
 export type MachinesDTO = { machines: MachineDTO[] };
 
+// Authored workflows (~/.eigen/workflows) + custom slash commands
+// (~/.eigen/commands) — run on the active session via the bridge.
+export type WorkflowInfoDTO = { name: string; description: string; steps: number };
+export type WorkflowResultDTO = {
+  completed: string[];
+  failedAt?: string;
+  outputs: Record<string, string | undefined>;
+};
+export type CommandInfoDTO = {
+  name: string;
+  description: string;
+  argHint?: string;
+  model?: string;
+  allowedTools?: string[];
+};
+
 export type ObserveSummaryDTO = {
   records: number;
   byKind: CountDTO[];

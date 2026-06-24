@@ -155,8 +155,19 @@
   // only fall back to SendInput (a fresh queued turn) when it returns false.
   // That closes the window where a stale running view queues a duplicate or
   // competing turn.
-  async function send(text: string, images: ImageDTO[] = []) {
-    if (!sessionId) return;
+  // Returns true on a successful send so the Composer clears its draft + image
+  // blobs only then; on any failure it returns false and the draft survives for
+  // a retry (the Composer no longer fire-and-forgets the clear).
+  async function send(text: string, images: ImageDTO[] = []): Promise<boolean> {
+    if (!sessionId) return false;
+    // Slash-command routing: a leading "/<name> [args]" that matches an authored
+    // custom command runs through RunCommand (the command's expanded prompt is
+    // submitted as the turn) rather than being sent as literal chat text. Plain
+    // text — and an unknown /name — falls through to the normal send path.
+    if (images.length === 0) {
+      const handled = await maybeRunCommand(text);
+      if (handled !== null) return handled;
+    }
     // The local running flag only colors the messaging below; it never decides
     // the RPC. Capture it before the await so the toast reflects the user's
     // intent at send time, not whatever the stream has done by the time the
@@ -175,8 +186,39 @@
         await Bridge.SendInput(sessionId, text, images, []);
         if (expectedSteer) toasts.info("couldn't steer — queued as a new turn");
       }
+      return true;
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : String(e));
+      return false;
+    }
+  }
+
+  // Custom slash commands (~/.eigen/commands + project .eigen/commands), loaded
+  // once on demand. A user-authored "/review" should run its expanded prompt as
+  // a turn, not be sent as the literal string "/review" — the TUI does this; the
+  // GUI did not. Returns: true (ran ok), false (matched but failed — keep draft),
+  // or null (not a slash command / no match → caller sends as normal text).
+  let commandNames = $state<Set<string> | null>(null);
+  async function maybeRunCommand(text: string): Promise<boolean | null> {
+    const m = text.match(/^\/([A-Za-z0-9][\w-]*)(?:\s+([\s\S]*))?$/);
+    if (!m) return null;
+    const [, name, args = ""] = m;
+    if (!commandNames) {
+      try {
+        const cmds = await Bridge.Commands();
+        commandNames = new Set((cmds ?? []).map((c) => c.name));
+      } catch {
+        commandNames = new Set();
+      }
+    }
+    if (!commandNames.has(name)) return null;
+    if (!sessionId) return false;
+    try {
+      await Bridge.RunCommand(sessionId, name, args.trim());
+      return true;
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : String(e));
+      return false;
     }
   }
   // Stop the running turn. Re-entrant guarded: without it the user can mash

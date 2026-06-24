@@ -21,6 +21,9 @@ import type {
   FeedDTO,
   FeedItemDTO,
   MachinesDTO,
+  WorkflowInfoDTO,
+  WorkflowResultDTO,
+  CommandInfoDTO,
 } from "$lib/types";
 
 export const Bridge = {
@@ -99,6 +102,13 @@ export const Bridge = {
   SetMarketEnabled: (name: string, enabled: boolean): Promise<boolean> => B.SetMarketEnabled(name, enabled),
   RemoveMarketplace: (name: string): Promise<boolean> => B.RemoveMarketplace(name),
   RemovePlugin: (name: string): Promise<boolean> => B.RemovePlugin(name),
+  // authored workflows + custom slash commands (run on the active session)
+  Workflows: (): Promise<WorkflowInfoDTO[]> => B.Workflows(),
+  RunWorkflow: (sessionID: string, name: string, vars: Record<string, string>): Promise<WorkflowResultDTO | null> =>
+    B.RunWorkflow(sessionID, name, vars),
+  Commands: (): Promise<CommandInfoDTO[]> => B.Commands(),
+  RunCommand: (sessionID: string, name: string, args: string): Promise<string> =>
+    B.RunCommand(sessionID, name, args),
   // config
   Config: (): Promise<ConfigDTO | null> => B.Config(),
   SetConfig: (key: string, value: string): Promise<string> => B.SetConfig(key, value),

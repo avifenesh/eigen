@@ -24,7 +24,10 @@
     running?: boolean;
     disabled?: boolean;
     disabledReason?: string;
-    onsend: (text: string, images: ImageDTO[]) => void;
+    // Returns whether the send was accepted; the composer clears the draft +
+    // attachments ONLY on success, so a failed RPC never destroys what the user
+    // typed. A void/undefined return is treated as success (back-compat).
+    onsend: (text: string, images: ImageDTO[]) => boolean | void | Promise<boolean | void>;
     oninterrupt: () => void;
   } = $props();
 
@@ -121,12 +124,25 @@
     attachments = [];
   }
 
-  function send() {
-    if (!canSend) return;
-    onsend(trimmed, attachments.map((a) => a.image));
-    text = "";
-    clearAttachments();
-    queueMicrotask(grow);
+  // Sending is gated on canSend; while the RPC is in flight `sending` disables
+  // the surface so a double-fire can't duplicate or race. The draft + image
+  // blobs are cleared ONLY after onsend resolves truthy — a transient daemon
+  // failure leaves everything in place to retry rather than silently destroying
+  // a carefully-composed prompt (the data-loss the old fire-and-forget had).
+  let sending = $state(false);
+  async function send() {
+    if (!canSend || sending) return;
+    sending = true;
+    try {
+      const ok = await onsend(trimmed, attachments.map((a) => a.image));
+      if (ok !== false) {
+        text = "";
+        clearAttachments();
+        queueMicrotask(grow);
+      }
+    } finally {
+      sending = false;
+    }
   }
 
   function onkeydown(e: KeyboardEvent) {
