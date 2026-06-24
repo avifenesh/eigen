@@ -12,23 +12,32 @@
   // sending revokes the batch, and onDestroy revokes whatever is left. No leak.
   import { onDestroy } from "svelte";
   import type { ImageDTO } from "$lib/types";
+  import { voice } from "$lib/stores/voice.svelte";
   import Button from "./Button.svelte";
 
   let {
     running = false,
     disabled = false,
     disabledReason = "",
+    voiceModeOn = false,
     onsend,
     oninterrupt,
+    onvoicemode,
   }: {
     running?: boolean;
     disabled?: boolean;
     disabledReason?: string;
+    // Whether the hands-free conversation loop is active (parent owns the session
+    // it runs against; the composer only reflects + toggles it).
+    voiceModeOn?: boolean;
     // Returns whether the send was accepted; the composer clears the draft +
     // attachments ONLY on success, so a failed RPC never destroys what the user
     // typed. A void/undefined return is treated as success (back-compat).
     onsend: (text: string, images: ImageDTO[]) => boolean | void | Promise<boolean | void>;
     oninterrupt: () => void;
+    // Toggle hands-free voice mode. Absent → the voice-mode button is hidden
+    // (e.g. no live session). The composer still offers one-shot dictation.
+    onvoicemode?: () => void;
   } = $props();
 
   // Auto-grow cap, expressed as rows of the input's line-box so the geometry
@@ -149,6 +158,27 @@
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       send();
+    }
+  }
+
+  // One-shot dictation: record a single utterance and append the transcript to
+  // the draft (does NOT auto-send — the author still reviews + presses Enter).
+  // Pressing the mic again while listening cancels the capture. Independent of
+  // voice MODE (the hands-free loop the parent drives).
+  const listening = $derived(voice.listening && !voice.modeOn);
+  async function dictate() {
+    if (disabled) return;
+    if (voice.listening) {
+      await voice.cancelDictate();
+      return;
+    }
+    const heard = await voice.dictate();
+    if (heard) {
+      text = text ? `${text.replace(/\s+$/, "")} ${heard}` : heard;
+      queueMicrotask(() => {
+        grow();
+        ta?.focus();
+      });
     }
   }
 
@@ -278,6 +308,36 @@
       tabindex="-1"
       aria-hidden="true"
     />
+    {#if voice.stt}
+      <!-- Dictate: one utterance → appended to the draft. Pulses while the mic
+           is open; pressing again cancels. Hidden entirely when no STT backend
+           is installed (capability-gated server-side). -->
+      <button
+        type="button"
+        class="composer__mic"
+        class:composer__mic--live={listening}
+        disabled={disabled}
+        title={listening ? "Stop listening" : "Dictate (speak your message)"}
+        aria-label={listening ? "Stop listening" : "Dictate a message"}
+        aria-pressed={listening}
+        onclick={dictate}
+      >{listening ? "◉" : "🎙"}</button>
+    {/if}
+    {#if onvoicemode && voice.stt && voice.tts}
+      <!-- Voice MODE: the hands-free conversation loop (listen → send → speak →
+           listen). Needs both STT and TTS; the parent owns the session it runs
+           against. Lit while active. -->
+      <button
+        type="button"
+        class="composer__mic composer__mic--mode"
+        class:composer__mic--live={voiceModeOn}
+        disabled={disabled}
+        title={voiceModeOn ? "Stop voice conversation" : "Start hands-free voice conversation"}
+        aria-label={voiceModeOn ? "Stop voice conversation" : "Start voice conversation"}
+        aria-pressed={voiceModeOn}
+        onclick={onvoicemode}
+      >☎</button>
+    {/if}
     <Button
       variant="icon"
       size="md"
@@ -512,11 +572,70 @@
     border: 0;
   }
 
+  /* Mic + voice-mode buttons. Share the 32px icon geometry of the attach/send
+     row so they sit on the same baseline. Quiet at rest; teal + breathing while
+     capturing/active so the surface reads as alive when the mic is hot. */
+  .composer__mic {
+    flex: none;
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: var(--r-md);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: var(--fs-body);
+    line-height: 1;
+    cursor: pointer;
+    transition:
+      background var(--dur-fast) var(--ease-out),
+      color var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out);
+  }
+  .composer__mic:hover:not(:disabled) {
+    background: var(--state-hover);
+    color: var(--text-primary);
+  }
+  .composer__mic:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .composer__mic:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  /* Live: the mic is open (dictation) or the conversation loop is running. */
+  .composer__mic--live {
+    color: var(--brand-bright);
+    background: var(--state-selected);
+    border-color: var(--border-brand-faint);
+    animation: composer-mic-breathe var(--breath) var(--ease-inout) infinite;
+    will-change: opacity;
+  }
+  .composer__mic--live:hover:not(:disabled) {
+    color: var(--brand-bright);
+    background: var(--state-selected);
+  }
+  @keyframes composer-mic-breathe {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.6;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .composer,
     .composer__hint,
     .thumb__remove {
       transition: none;
+    }
+    .composer__mic--live {
+      animation: none;
     }
   }
 </style>

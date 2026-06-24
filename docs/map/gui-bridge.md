@@ -22,7 +22,7 @@
 ### internal/gui/bridge.go
 - **Role:** The core `*Bridge` service: lifecycle, the long-lived control client, daemon health loop, all session/turn/maintenance/settings RPCs, plus the workflow and custom-command runners.
 - **Key symbols:**
-  - `Bridge` (type) — Wails-bound service; holds `app`, `ensure` (daemon dialer), `suggest`/`dirs` (feed inputs), the `ctrl` control client, the `pumps` map, `closing` flag, `pollStop`/`feedStop` channels, and `lastFeed` (most-recent scan, so `DismissFeed` can rebuild an `Item` from its key), all under one mutex (IO done outside the lock).
+  - `Bridge` (type) — Wails-bound service; holds `app`, `ensure` (daemon dialer), `suggest`/`dirs` (feed inputs), the `ctrl` control client, the `pumps` map, `closing` flag, `pollStop`/`feedStop` channels, `lastFeed` (most-recent scan, so `DismissFeed` can rebuild an `Item` from its key), and the lazily-built voice controller (`voiceOnce`/`voiceCtl`, see voice.go), all under one mutex (IO done outside the lock).
   - `NewBridge(ensure, suggest, dirs)` — constructor; injected by `main` so the bridge owns no model/provider construction.
   - `SetApp(app)` — wires the Wails app for event emission (bound + called from bootstrap).
   - `ServiceStartup(ctx, ServiceOptions) error` — Wails v3 lifecycle hook; primes the control client (emits `eigen:daemon:health` on failure), starts `healthLoop` + `feedLoop`.
@@ -30,7 +30,7 @@
   - `eventDaemonStats` (`eigen:daemon:stats`) / `eventDaemonHealth` (`eigen:daemon:health`) — health-stream event names. A long doc block above `healthLoop` states the **DaemonStats parity contract**: `*daemon.DaemonStats` is the ONE shape emitted RAW (its native snake_case JSON tags, bypassing the dto.go camelCase layer) — both on the stats stream and from `Stats()` — so `types.ts` hand-mirrors those tags 1:1 (esp. version/executable/binary_sha256/vcs_revision/vcs_modified) since no DTO+mapper enforces the mapping.
   - `healthLoop(stop)` — ~1Hz RAW `DaemonStats` push (`eigen:daemon:stats`); on failure emits a `HealthDTO` on `eigen:daemon:health` and backs off to 5s while the daemon is down.
   - `control() (*daemon.Client, error)` — returns/(re)connects the long-lived control client, retrying with backoff outside the mutex; drops stale clients; refuses while `closing`.
-  - `Shutdown()` — idempotent teardown of health/feed loops, every pump, and the control client (`closing` flag + per-pump sync.Once guards).
+  - `Shutdown()` — idempotent teardown of health/feed loops, every pump, the control client, and any running voice loop (`VoiceModeStop`) (`closing` flag + per-pump sync.Once guards).
   - `emit(name, data)` — non-blocking Wails `Event.Emit` wrapper.
   - `GUIVersion() string` — build-stamped version of THIS gui binary (via `llm.FullVersion()`), independent of the daemon's; the frontend diffs it against `DaemonStats.version` to flag a daemon/gui mismatch.
   - RPC methods (each acquires `control()` then calls daemon): `Ping`, `Stats` (RAW `*daemon.DaemonStats`), `Sessions`, `NewSession`, `RemoveSession`, `PruneSessions`, `State`, `SendInput`, `SteerInput`, `Interrupt`, `Resend`, `Approve`, `Compact`, `Clear`, `AddDir`, `KillShell`, `DetachBash`.
@@ -197,6 +197,21 @@
 - **Depends on:** `internal/memory` (`Store`, `Open`, `OpenGlobal`, `Pipeline`, `Index`, `OpenIndex`; reuses `openScope` from memory.go), `internal/dream` (`Stage1`/`Consolidate`/`Summarize`), `internal/llm` (`Provider`, `New`, `ProviderAvailable`).
 - **Used by / entrypoint:** entrypoint — bound methods called from `Dreaming.svelte`.
 
+### internal/gui/voice.go
+- **Role:** Voice bridge; drives eigen's **server-side** voice stack (the GUI runs on the host, so it shells out to the same recorder+whisper STT / Kokoro-espeak TTS the TUI uses, NOT webview `getUserMedia`). Three features mirror the TUI taxonomy: dictate, read-aloud, hands-free conversation mode. Capability-gated — degrades to "unavailable" when nothing is installed.
+- **Key symbols:**
+  - `eventVoice` (const `eigen:voice`) — push event name; carries `VoiceEventDTO` as the mic/speaker phase changes.
+  - `errVoiceUnavailable` (var) — returned when the requested STT/TTS capability isn't installed (defensive; the frontend gates on `VoiceStatus`).
+  - `VoiceStatusDTO` (`STT`/`TTS` bools), `VoiceEventDTO` (`Phase` ∈ idle|listening|transcribing|thinking|speaking|error|off, `Text`, `Mode`) — capability + live-state wire shapes.
+  - `voiceCtl` (type) — lazily-built voice controller under its own mutex: detected `stt`/`tts`, the single one-shot `cancel`, the conversation-loop `modeStop`, and `speaking`. Built once via `Bridge.voice()` (`voiceOnce`) so detection (cheap PATH probes in `ensureDetected`) runs at most once.
+  - `VoiceStatus() (*VoiceStatusDTO, error)` — bound; capability probe for UI gating.
+  - `VoiceListen() (string, error)` — bound; records ONE VAD-endpointed utterance → transcript (dictate), emitting listening→idle; a second call supersedes the first. `VoiceCancelListen()` cancels in-flight.
+  - `VoiceSpeak(text)` / `VoiceStopSpeak()` — bound; read a string aloud once (cancelable), emitting speaking→idle.
+  - `VoiceModeStart(sessionID)` / `VoiceModeStop()` — bound; the hands-free loop (`voiceModeLoop`): listen → `SendInput` the transcript as a turn → `waitForReply` (poll `State` until the turn goes idle, with a start-grace + 10-min cap) → speak the reply → listen again, until stop/error. Needs BOTH STT and TTS. `VoiceModeStop` is also invoked from `Shutdown` so the loop + its subprocess never outlive the window.
+  - `latestAssistant(st)` — last assistant message text in a `SessionStateDTO` (the reply to speak); distinct from bridge.go's `lastAssistantText([]llm.Message)`.
+- **Depends on:** `internal/voice` (`STT`/`TTS` interfaces, `DetectSTT`/`DetectTTS`/`TTSFromArgv`), `internal/speech` (`Detect`→`Speaker.Argv()`/`Available()`); reuses `Bridge.SendInput`/`State`/`emit`.
+- **Used by / entrypoint:** entrypoint — bound methods called from the voice store (`frontend/src/lib/stores/voice.svelte.ts`), Composer (dictate + voice-mode toggle), and the Chat read-aloud control.
+
 ### internal/gui/sessions_extra.go
 - **Role:** Session-manager extras — transcript export to disk (List/Remove/Prune are bridged in bridge.go).
 - **Key symbols:**
@@ -236,6 +251,7 @@
 - **`internal/config`** — editable `~/.eigen/config.json` form (config.go).
 - **`internal/session`** — local session store transcript export (sessions_extra.go).
 - **`internal/remote`** — ssh-reachable machines + remote session listing (remote.go).
+- **`internal/voice` / `internal/speech`** — server-side STT/TTS stack driven by the voice bridge: dictate, read-aloud, and the hands-free conversation loop (voice.go).
 - **`wailsapp/wails/v3/pkg/application`** — the Wails v3 service host: `*Bridge` is registered as a service, methods → generated TS bindings, `app.Event.Emit` pushes `eigen:*` events.
 - **`main` (root: `main_gui_wails.go`)** — the entrypoint that constructs the bridge (`gui.NewBridge` with `ensureDaemon`/`guiSuggester`/`guiProjectDirs`), registers it as a Wails service, calls `SetApp`, and owns `Shutdown`.
 - **`internal/gui/frontend`** — the Svelte 5 frontend; generated Go→TS bindings at `frontend/bindings/.../bridge.js` wrap every exported `*Bridge` method, consumed by `frontend/src/lib/bridge.ts` and the `*.svelte` views.

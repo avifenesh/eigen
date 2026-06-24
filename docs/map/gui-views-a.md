@@ -73,7 +73,10 @@
   - `applyState(forId, s)` + `run(fn)` — id-guarded state reconcile + error-toasting RPC wrapper.
   - `loadModels()` + `modelsLoaded` + `$effect` — lazy-load routing model catalog when the settings panel
     opens; `effortLevels` `$derived` (model's own ladder else `EFFORT_FALLBACK`); `SEARCH_MODES` const.
-  - `onModel/onPerm/onEffort/onSearch/onFast` — capability mutators (`SetModel`/`SetPerm`/`SetEffort`/`SetSearch`/`SetFast`).
+  - `onModel/onPerm/onEffort/onSearch/onFast` — capability mutators (`SetModel`/`SetPerm`/`SetEffort`/`SetSearch`/`SetFast`); surfaced both in the right dock AND a top control bar (`.ctl`) above the transcript with a `+ New chat` button (`newChat()` → `Bridge.NewSession` + route).
+  - `newChat()` + `startingNew` `$state` — start a fresh session and route to it (the control-bar `+ New chat`).
+  - voice: `toggleVoiceMode()` toggles the hands-free conversation loop against THIS session (a cleanup `$effect` calls `voice.stopMode()` when the session changes/unmounts so it never listens against a hidden session); `voicePhaseLabel` `$derived` drives the voice-mode banner above the composer (live phase + last transcript + end button); completed assistant prose carries a hover-revealed read-aloud button (`voice.speak`/`stopSpeak`), shown only when `voice.tts` exists.
+  - `prettyPath(p)` — collapses a long absolute sandbox root to `…/parent/leaf` for the working-dirs dock (full path stays in the title attr).
   - `startGoal/commitGoal`, `startTitle/commitTitle` + `derivedTitle` `$derived` — inline goal/title editing (`SetGoal`/`SetTitle`).
   - `addDir()` — `Bridge.AddDir` sandbox root; `killShell(shellID)` — `Bridge.KillShell`.
   - `compact()` / `clearSession()` / `resend()` — `Bridge.Compact` / `Bridge.Clear` / `Bridge.Resend` maintenance actions.
@@ -83,7 +86,7 @@
   - `rowLabel(kind)` — SR aria-label per block kind; `noteTone(text)` — derives error vs info note tone
     from the text prefix (`interrupted` / `error:`), since the daemon emits abnormal turn ends as plain notes (GUI-093).
 - **Depends on:** `$lib/bridge`, `$lib/stores/daemon`, `$lib/stores/sessions`, `$lib/stores/toasts`,
-  `$lib/router`, `$lib/events` (`on`, `ev`), `$lib/stores/transcript` (`createTranscript`, `Transcript`),
+  `$lib/stores/voice`, `$lib/router`, `$lib/events` (`on`, `ev`), `$lib/stores/transcript` (`createTranscript`, `Transcript`),
   `$lib/types` (`SessionStateDTO`, `ModelDTO`, `ImageDTO`); components `Composer`, `ToolCallCard`,
   `Markdown`, `VirtualList`, `Badge`, `Button`, `EmptyState`, `StatusDot`, `Popover`.
 - **Used by / entrypoint:** entrypoint: `App.svelte` renders `<Chat param={router.param} />` when

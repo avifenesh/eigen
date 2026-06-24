@@ -10,6 +10,7 @@ export const ev = {
   daemonStats: "eigen:daemon:stats",
   daemonHealth: "eigen:daemon:health",
   feed: "eigen:feed",
+  voice: "eigen:voice",
 };
 
 // on subscribes to a Wails event and hands the typed payload to the callback,

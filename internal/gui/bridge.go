@@ -43,6 +43,11 @@ type Bridge struct {
 	pollStop chan struct{}
 	feedStop chan struct{}
 	lastFeed feed.Feed // most-recent scan, so DismissFeed can rebuild an Item from its key
+
+	// Voice controller (lazily built): STT/TTS backends + the one-shot and
+	// conversation-mode lifecycle. See voice.go.
+	voiceOnce sync.Once
+	voiceCtl  *voiceCtl
 }
 
 // NewBridge constructs the bridge. ensure connects to (and lazily spawns) the
@@ -230,6 +235,11 @@ func (b *Bridge) Shutdown() {
 	}
 	if ctrl != nil {
 		_ = ctrl.Close()
+	}
+	// Stop any voice loop / in-flight mic op so its goroutine + subprocess don't
+	// outlive the window.
+	if b.voiceCtl != nil {
+		_ = b.VoiceModeStop()
 	}
 }
 

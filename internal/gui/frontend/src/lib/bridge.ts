@@ -25,6 +25,7 @@ import type {
   WorkflowInfoDTO,
   WorkflowResultDTO,
   CommandInfoDTO,
+  VoiceStatusDTO,
 } from "$lib/types";
 
 export const Bridge = {
@@ -127,4 +128,13 @@ export const Bridge = {
   RemoteSessions: (target: string): Promise<SessionInfoDTO[]> => B.RemoteSessions(target),
   // sessions
   ExportSession: (id: string): Promise<string> => B.ExportSession(id),
+  // voice — server-side STT/TTS (the GUI runs on the host, so the same stack the
+  // TUI uses, not webview getUserMedia). State streams on the "eigen:voice" event.
+  VoiceStatus: (): Promise<VoiceStatusDTO | null> => B.VoiceStatus(),
+  VoiceListen: (): Promise<string> => B.VoiceListen(), // record one utterance → transcript
+  VoiceCancelListen: (): Promise<void> => B.VoiceCancelListen(),
+  VoiceSpeak: (text: string): Promise<void> => B.VoiceSpeak(text), // read aloud, cancelable
+  VoiceStopSpeak: (): Promise<void> => B.VoiceStopSpeak(),
+  VoiceModeStart: (sessionID: string): Promise<void> => B.VoiceModeStart(sessionID), // hands-free loop
+  VoiceModeStop: (): Promise<void> => B.VoiceModeStop(),
 };

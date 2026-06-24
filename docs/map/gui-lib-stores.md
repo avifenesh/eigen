@@ -49,7 +49,8 @@
   - Bans (banthis hard-prohibition layer): `AddBan`, `RemoveBan` (both return whether an existing ban was replaced/removed).
   - Skills: `Skills`, `SkillBody`, `AcceptSkill`, `RejectSkill`, `InstallSkillFromPath` (local path), `InstallSkillFromGitHub` (`owner/repo` ref) — install variants are scanned before write and return `{ name, path } | null`.
   - Agents: `Agents`, `CancelAgent`, `AgentTranscript`.
-  - Dreaming: `Dreaming`, `ConsolidationContent`, `CurrentMemory`.
+  - Dreaming: `Dreaming`, `ConsolidationContent`, `CurrentMemory`, `DreamNow` (on-demand consolidation for a scope, returns `DreamReportDTO | null`).
+  - Voice (server-side STT/TTS; state streams on `eigen:voice`): `VoiceStatus`, `VoiceListen` (dictate one utterance), `VoiceCancelListen`, `VoiceSpeak`/`VoiceStopSpeak` (read-aloud), `VoiceModeStart`/`VoiceModeStop` (hands-free conversation loop).
   - Routing: `Routing`. Observe: `ObserveSummary` (historical log summary; live KPIs come from the daemon stats stream).
   - Crons: `Crons`, `SetTimer`. Plugins: `Plugins`, `SetMarketEnabled`, `RemoveMarketplace`, `RemovePlugin`. Config: `Config`, `SetConfig`.
   - Workflows/commands (run on the active session): `Workflows`, `RunWorkflow`, `Commands`, `RunCommand`.
@@ -60,10 +61,10 @@
 ### internal/gui/frontend/src/lib/events.ts
 - **Role:** Frontend mirror of the Go event-name builders (`pump.go`/`bridge.go`) plus a typed wrapper over the Wails runtime Events API.
 - **Key symbols:**
-  - `ev` — event-name table: `sessionEvent(id)`, `sessionClosed(id)`, and constants `daemonStats`, `daemonHealth`, `feed`.
+  - `ev` — event-name table: `sessionEvent(id)`, `sessionClosed(id)`, and constants `daemonStats`, `daemonHealth`, `feed`, `voice` (`eigen:voice`).
   - `on<T>(name, cb)` — subscribes to a Wails event, unwraps `e.data` to typed `T`, returns the unsubscribe fn verbatim (caller must register inside an `$effect` and return the remover).
 - **Depends on:** `@wailsio/runtime` (`Events`).
-- **Used by / entrypoint:** `stores/{daemon,feed,transcript}.svelte` and `views/Chat.svelte` (`ev.sessionClosed`).
+- **Used by / entrypoint:** `stores/{daemon,feed,transcript,voice}.svelte` and `views/Chat.svelte` (`ev.sessionClosed`).
 
 ### internal/gui/frontend/src/lib/router.svelte.ts
 - **Role:** Hash-based router (webview-safe under `file://`-style asset serving); reactive via a `$state` snapshot.
@@ -87,7 +88,7 @@
 
 ### internal/gui/frontend/src/lib/types.ts
 - **Role:** Hand-authored TS mirrors of the Go DTOs (`gui/dto.go`) — give the frontend real types at the otherwise-untyped binding seam. Must stay in sync with `dto.go` field names + json tags.
-- **Key symbols (types only; no runtime code):** `ImageDTO`, `ToolCallDTO`, `MessageDTO`, `WireEventDTO` (now carries per-event token counts `inTokens`/`outTokens`/`cacheReadTokens`/`cacheWriteTokens` + `provider`/`model`), `StreamEventDTO`, `SessionInfoDTO` (`updated` is unix nano — use `relTime()`), `ToolInfo`, `ShellInfo`, `ApprovalInfo`, `SessionStateDTO` (incl. `effort`/`search`/`fast`/`fastOk`/`running`/`tools`/`roots`/`shells`/`pending`), `CompactResultDTO`, `DaemonStats`, `HealthDTO`, `MemoryNoteDTO`/`MemoryScopeDTO`/`MemoryDTO`, `SkillDTO`/`SkillProposalDTO`/`SkillsDTO`, `BgTaskDTO`/`AgentsDTO`, `RolloutDTO`/`ConsolidationDTO`/`DreamingScopeDTO`/`DreamingDTO`, `ModelDTO` (incl. `search`/`vision`/`social`/`available`)/`ProviderDTO`/`RoutingDTO`, `ToolStatDTO`/`ModelStatDTO`/`HookStatDTO`/`CountDTO`/`RouteStatsDTO`/`SubagentStatsDTO`, `CronDTO`/`CronsDTO`, `ScanFindingDTO`/`InstalledPluginDTO`/`MarketplaceDTO`/`PluginsDTO`, `ConfigFieldDTO`/`ConfigDTO`, `FeedItemDTO`/`FeedDTO`, `MachineDTO`/`MachinesDTO`, `WorkflowInfoDTO`/`WorkflowResultDTO`/`CommandInfoDTO`, `ObserveSummaryDTO`.
+- **Key symbols (types only; no runtime code):** `ImageDTO`, `ToolCallDTO`, `MessageDTO`, `WireEventDTO` (now carries per-event token counts `inTokens`/`outTokens`/`cacheReadTokens`/`cacheWriteTokens` + `provider`/`model`), `StreamEventDTO`, `SessionInfoDTO` (`updated` is unix nano — use `relTime()`), `ToolInfo`, `ShellInfo`, `ApprovalInfo`, `SessionStateDTO` (incl. `effort`/`search`/`fast`/`fastOk`/`running`/`tools`/`roots`/`shells`/`pending`), `CompactResultDTO`, `DaemonStats`, `HealthDTO`, `MemoryNoteDTO`/`MemoryScopeDTO`/`MemoryDTO`, `SkillDTO`/`SkillProposalDTO`/`SkillsDTO`, `BgTaskDTO`/`AgentsDTO`, `RolloutDTO`/`ConsolidationDTO`/`DreamingScopeDTO`/`DreamingDTO`, `ModelDTO` (incl. `search`/`vision`/`social`/`available`)/`ProviderDTO`/`RoutingDTO`, `ToolStatDTO`/`ModelStatDTO`/`HookStatDTO`/`CountDTO`/`RouteStatsDTO`/`SubagentStatsDTO`, `CronDTO`/`CronsDTO`, `ScanFindingDTO`/`InstalledPluginDTO`/`MarketplaceDTO`/`PluginsDTO`, `ConfigFieldDTO`/`ConfigDTO`, `FeedItemDTO`/`FeedDTO`, `MachineDTO`/`MachinesDTO`, `WorkflowInfoDTO`/`WorkflowResultDTO`/`CommandInfoDTO`, `ObserveSummaryDTO`, `DreamReportDTO`, `VoiceStatusDTO`/`VoiceEventDTO` (voice capability flags + live mic/speaker phase).
 - **Notable field facts (must stay in lockstep with the daemon):**
   - `DaemonStats` is the one shape the bridge emits RAW (from `Stats()` and on `eigen:daemon:stats`) as the Go `*daemon.DaemonStats` with native snake_case tags, bypassing the camelCase DTO layer — so its keys (incl. identity fields `version`/`executable`/`binary_sha256`/`vcs_revision`/`vcs_modified` and token totals) must mirror `internal/daemon/protocol.go` 1:1; there is no mapper to catch drift.
   - `MemoryScopeDTO` splits USER.md into `profile` (user-editable section) and `profileLearned` (eigen-auto-maintained, read-only) and adds `bans` (the banthis hard-prohibition block), `adHoc` notes, `backups`, and `bytes`.
@@ -126,6 +127,20 @@
   - `feed` — the singleton.
 - **Depends on:** `$lib/events` (`on`, `ev`), `$lib/bridge` (`Feed`, `RescanFeed`, `DismissFeed`), `$lib/types` (`FeedDTO`, `FeedItemDTO`).
 - **Used by / entrypoint:** `App.svelte` (`start`), `lib/components/{Rail,CommandPalette}.svelte`, `views/Home.svelte`.
+
+### internal/gui/frontend/src/lib/stores/voice.svelte.ts
+- **Role:** Voice store — capability flags (probed once) plus the live mic/speaker phase streamed on `eigen:voice`, and the three voice actions (dictate, read-aloud, hands-free conversation mode). Drives the Composer mic + Chat read-aloud affordances. Voice is server-side (see gui-bridge voice.go).
+- **Key symbols:**
+  - `VoicePhase` type — `idle|listening|transcribing|thinking|speaking|error|off`.
+  - `createVoice()` (unexported) — `$state` `stt`/`tts`/`probed` + live `phase`/`lastText`/`modeOn`; `applyEvent(e)` ingests a `VoiceEventDTO` (flips `modeOn` off on `off`).
+  - `start()` — probes `Bridge.VoiceStatus()` once then subscribes to `ev.voice`; returns the listener remover.
+  - `dictate()` / `cancelDictate()` — one-shot `Bridge.VoiceListen`/`VoiceCancelListen` (transcript appended to the composer draft, not auto-sent).
+  - `speak(text)` / `stopSpeak()` — read-aloud via `Bridge.VoiceSpeak`/`VoiceStopSpeak`.
+  - `toggleMode(sessionID)` / `stopMode()` — start/stop the hands-free loop (`Bridge.VoiceModeStart`/`VoiceModeStop`).
+  - getters: `stt`, `tts`, `available`, `phase`, `lastText`, `modeOn`, `listening`, `speaking`.
+  - `voice` — the singleton.
+- **Depends on:** `$lib/events` (`on`, `ev`), `$lib/bridge` (the `Voice*` methods), `$lib/types` (`VoiceStatusDTO`, `VoiceEventDTO`).
+- **Used by / entrypoint:** `App.svelte` (`start`), `lib/components/Composer.svelte` (dictate + voice-mode toggle), `views/Chat.svelte` (voice-mode toggle + banner, per-message read-aloud).
 
 ### internal/gui/frontend/src/lib/stores/sessions.svelte.ts
 - **Role:** The live session list backing the Home board and rail badge; refreshed on demand and on daemon reconnect.

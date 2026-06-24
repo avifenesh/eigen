@@ -8,6 +8,7 @@
   import { daemon } from "$lib/stores/daemon.svelte";
   import { sessions } from "$lib/stores/sessions.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { voice } from "$lib/stores/voice.svelte";
   import { router } from "$lib/router.svelte";
   import { on, ev } from "$lib/events";
   import { createTranscript, type Transcript } from "$lib/stores/transcript.svelte";
@@ -263,6 +264,35 @@
   $effect(() => {
     if (store?.running === false && interrupting) interrupting = false;
   });
+
+  // Hands-free voice mode runs against THIS session (listen → submit → speak →
+  // listen). The composer reflects voice.modeOn and calls this to toggle.
+  function toggleVoiceMode() {
+    if (!sessionId) return;
+    voice.toggleMode(sessionId);
+  }
+  // Plain-language cue for the voice-mode banner, mapped from the live phase.
+  const voicePhaseLabel = $derived(
+    voice.phase === "listening"
+      ? "listening…"
+      : voice.phase === "transcribing"
+        ? "transcribing…"
+        : voice.phase === "thinking"
+          ? "thinking…"
+          : voice.phase === "speaking"
+            ? "speaking…"
+            : voice.phase === "error"
+              ? "voice error"
+              : "voice mode",
+  );
+  // Stop the conversation loop when leaving this session (route change /
+  // unmount) so it never keeps listening against a session no longer shown.
+  $effect(() => {
+    void sessionId;
+    return () => {
+      if (voice.modeOn) voice.stopMode();
+    };
+  });
   // Background the turn's foreground shell so a turn wedged on a long-running
   // command is freed WITHOUT killing it (vs. Interrupt, which kills the turn).
   // The backgrounded shell then shows up in the shells dock — refresh so it
@@ -412,6 +442,16 @@
   // ── sandbox / roots ───────────────────────────────────────────────────────
   let dirDraft = $state("");
   let addingDir = $state(false);
+  // Collapse a long absolute root to its last two path segments (…/parent/leaf)
+  // so the dock reads as a clean label, not a wrapping URL. The full path stays
+  // in the title attr for when the exact location matters. Short paths pass
+  // through untouched. Trailing slash trimmed so the leaf isn't lost.
+  function prettyPath(p: string): string {
+    const trimmed = p.replace(/\/+$/, "");
+    const segs = trimmed.split("/").filter(Boolean);
+    if (segs.length <= 2) return trimmed || "/";
+    return "…/" + segs.slice(-2).join("/");
+  }
   async function addDir() {
     const path = dirDraft.trim();
     if (!sessionId || !path || addingDir) return;
@@ -694,8 +734,21 @@
                     </div>
                   {:else}
                     <!-- Completed assistant prose renders as Markdown (sans; fenced
-                         code delegates to CodeBlock). -->
-                    <div class="msg msg--text"><Markdown source={block.text} /></div>
+                         code delegates to CodeBlock). When a TTS backend exists, a
+                         hover-revealed read-aloud control speaks the block. -->
+                    <div class="msg msg--text">
+                      <Markdown source={block.text} />
+                      {#if voice.tts && block.text.trim()}
+                        <button
+                          type="button"
+                          class="msg__speak"
+                          class:msg__speak--on={voice.speaking}
+                          title={voice.speaking ? "Stop reading" : "Read aloud"}
+                          aria-label={voice.speaking ? "Stop reading aloud" : "Read this message aloud"}
+                          onclick={() => (voice.speaking ? voice.stopSpeak() : voice.speak(block.text))}
+                        >{voice.speaking ? "◼" : "🔊"}</button>
+                      {/if}
+                    </div>
                   {/if}
                 </div>
               {/snippet}
@@ -758,13 +811,29 @@
         </div>
       {/if}
 
+      {#if voice.modeOn}
+        <!-- Hands-free voice mode: surface what the mic/speaker is doing so the
+             loop never feels like a black box. The phase maps to a plain-language
+             cue; the last transcript shows what eigen heard. -->
+        <div class="chat__voicebar" role="status" aria-live="polite">
+          <span class="chat__voicebar-dot" class:chat__voicebar-dot--live={voice.listening || voice.speaking}></span>
+          <span class="chat__voicebar-label">{voicePhaseLabel}</span>
+          {#if voice.lastText && voice.phase !== "speaking"}
+            <span class="chat__voicebar-heard">“{voice.lastText}”</span>
+          {/if}
+          <button class="chat__voicebar-stop" onclick={() => voice.stopMode()} title="End voice conversation">end</button>
+        </div>
+      {/if}
+
       <div class="chat__composer">
         <Composer
           running={store?.running ?? false}
           disabled={!online}
           disabledReason={online ? "" : "daemon offline"}
+          voiceModeOn={voice.modeOn}
           onsend={send}
           oninterrupt={interrupt}
+          onvoicemode={online ? toggleVoiceMode : undefined}
         />
       </div>
     </div>
@@ -955,7 +1024,7 @@
             <ul class="roots">
               {#each sess.roots as root, i (root)}
                 <li class="roots__item" class:roots__item--primary={i === 0}>
-                  <span class="roots__path" title={root}>{root}</span>
+                  <span class="roots__path" title={root}>{prettyPath(root)}</span>
                   {#if i === 0}<span class="roots__tag">primary</span>{/if}
                 </li>
               {/each}
@@ -1441,6 +1510,51 @@
     color: var(--text-faint);
     margin-bottom: var(--sp-2);
   }
+  /* Read-aloud control on completed assistant prose. Anchored to the block's
+     top-right, hidden until the row is hovered/focused (or actively speaking),
+     so it never competes with the text at rest. */
+  .msg--text {
+    position: relative;
+  }
+  .msg__speak {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 26px;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--r-sm);
+    background: var(--bg-raised);
+    color: var(--text-muted);
+    font-size: var(--fs-body-sm);
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition:
+      opacity var(--dur-fast) var(--ease-out),
+      color var(--dur-fast) var(--ease-out),
+      background var(--dur-fast) var(--ease-out);
+  }
+  .chat__row:hover .msg__speak,
+  .msg__speak:focus-visible,
+  .msg__speak--on {
+    opacity: 1;
+  }
+  .msg__speak:hover {
+    color: var(--text-primary);
+    background: var(--state-hover);
+  }
+  .msg__speak:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .msg__speak--on {
+    color: var(--brand-bright);
+    border-color: var(--border-brand-faint);
+  }
   .msg--live {
     border-left: 2px solid var(--border-brand-faint);
     padding-left: var(--sp-5);
@@ -1498,6 +1612,69 @@
   .chat__steerhint {
     font: var(--fw-regular) var(--fs-label) / 1 var(--font-sans);
     color: var(--text-faint);
+  }
+
+  /* Voice-mode banner: a slim strip above the composer surfacing the live mic/
+     speaker phase + the last transcript, so hands-free mode is legible. The dot
+     breathes teal while the mic/speaker is active. */
+  .chat__voicebar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+    border: 1px solid var(--border-brand-faint);
+    border-radius: var(--r-md);
+    background: var(--state-selected);
+    font: var(--fw-medium) var(--fs-label) / 1 var(--font-sans);
+    color: var(--text-secondary);
+  }
+  .chat__voicebar-dot {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: var(--r-full);
+    background: var(--text-faint);
+  }
+  .chat__voicebar-dot--live {
+    background: var(--brand);
+    animation: work-breathe var(--breath) var(--ease-inout) infinite;
+    will-change: opacity;
+  }
+  .chat__voicebar-label {
+    flex: none;
+    color: var(--brand-bright);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+  }
+  .chat__voicebar-heard {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+  .chat__voicebar-stop {
+    flex: none;
+    margin-left: auto;
+    border: none;
+    background: transparent;
+    padding: 0;
+    color: var(--text-muted);
+    font: var(--fw-semibold) var(--fs-label) / 1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    cursor: pointer;
+    transition: color var(--dur-fast) var(--ease-out);
+  }
+  .chat__voicebar-stop:hover {
+    color: var(--error);
+  }
+  .chat__voicebar-stop:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
   }
   /* Detach-bash control: a quiet inline link beside the working indicator, not
      an alarm. Reads as secondary text until hovered, then warms. */
@@ -1901,6 +2078,9 @@
     /* still the compact spinner — the "compacting…" label still conveys the
        in-progress state without motion. */
     .dock__spinner {
+      animation: none;
+    }
+    .chat__voicebar-dot--live {
       animation: none;
     }
   }

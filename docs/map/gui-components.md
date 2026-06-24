@@ -63,14 +63,15 @@ the shared DTO types (`$lib/types`), and the `trapFocus` action (`$lib/actions`)
 - **Used by / entrypoint:** mounted once in `App.svelte`; reached via the global ⌘K/Ctrl+K window listener.
 
 ### internal/gui/frontend/src/lib/components/Composer.svelte
-- **Role:** Chat message composer — auto-growing textarea, Enter-sends, Stop-while-running, with image intake (paste / drop / file-pick).
+- **Role:** Chat message composer — auto-growing textarea, Enter-sends, Stop-while-running, with image intake (paste / drop / file-pick) and voice affordances (dictate + hands-free voice-mode toggle).
 - **Key symbols:**
-  - props `running` (flips Send→Stop), `disabled`, `disabledReason` (surfaced inline + as title when daemon offline), `onsend` (now `(text, images: ImageDTO[]) => boolean | void | Promise<…>`; a `false` return means rejected → draft survives), `oninterrupt`.
+  - props `running` (flips Send→Stop), `disabled`, `disabledReason` (surfaced inline + as title when daemon offline), `voiceModeOn` (reflects the conversation loop), `onsend` (now `(text, images: ImageDTO[]) => boolean | void | Promise<…>`; a `false` return means rejected → draft survives), `oninterrupt`, `onvoicemode` (toggle hands-free mode; absent → the voice-mode button is hidden, e.g. no live session).
+  - voice: `dictate()` — one-shot mic capture via the `voice` store; appends the transcript to the draft (does NOT auto-send), pressing again cancels; the mic button is shown only when `voice.stt` is available, the ☎ voice-mode button only when `onvoicemode` + both `voice.stt`/`voice.tts` exist. Both pulse (`composer__mic--live`) while active.
   - `grow()` — measures `scrollHeight`, clamps to `MAX_ROWS` (8) read from the line box.
   - `send()` — `async`, guards `canSend && !sending`, awaits `onsend`; clears text + revokes the image batch + regrows ONLY when `onsend` doesn't return `false` (a failed RPC keeps the carefully-composed prompt). `sending` state disables a double-fire. `onkeydown` (Enter sends, Shift+Enter newlines, respects IME composing).
   - image attachments: `Attachment` (`{ id; image: ImageDTO; url }`) pairs the wire DTO with a locally-owned thumbnail object-URL; `intake(file)` reads an image into raw base64 (data: prefix stripped) + an object-URL, rejecting non-images; `removeAttachment(id)`/`clearAttachments()` revoke owned URLs; `onDestroy(clearAttachments)` is the leak contract. Sources: `onpaste` (image clipboard items), `onDragEnter/Over/Leave/Drop` (drag-depth tracked so nested children don't flicker `dragging`), `onPick` (hidden file input driven by the attach icon Button).
   - derived: `trimmed`, `canSend` (text-or-images, online, not running), `hint`/`status` (char count / image count / shortcut help), `offlineReason`; `statusId` (`$props.id()`) wires the textarea's `aria-describedby` to the live status line.
-- **Depends on:** `./Button.svelte`, `$lib/types` (`ImageDTO`), `svelte` (`onDestroy`).
+- **Depends on:** `./Button.svelte`, `$lib/types` (`ImageDTO`), `$lib/stores/voice` (the voice store), `svelte` (`onDestroy`).
 - **Used by:** `views/Chat.svelte`.
 
 ### internal/gui/frontend/src/lib/components/DiffView.svelte

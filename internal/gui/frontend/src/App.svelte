@@ -5,6 +5,7 @@
   import { daemon } from "$lib/stores/daemon.svelte";
   import { sessions } from "$lib/stores/sessions.svelte";
   import { feed } from "$lib/stores/feed.svelte";
+  import { voice } from "$lib/stores/voice.svelte";
   import Rail from "$lib/components/Rail.svelte";
   import TopBar from "$lib/components/TopBar.svelte";
   import ToastHost from "$lib/components/ToastHost.svelte";
@@ -31,10 +32,12 @@
   onMount(() => {
     const stopDaemon = daemon.start();
     const stopFeed = feed.start();
+    const stopVoice = voice.start();
     sessions.refresh();
     return () => {
       stopDaemon();
       stopFeed();
+      stopVoice();
     };
   });
 

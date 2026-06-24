@@ -196,6 +196,21 @@ export type DreamReportDTO = {
   changed: boolean;
 };
 
+// Which voice capabilities are usable in this environment (capability-gates the
+// composer mic + read-aloud affordances). Server-side detection — see voice.go.
+export type VoiceStatusDTO = {
+  stt: boolean; // a recorder + whisper + model are present
+  tts: boolean; // a TTS command (Kokoro/espeak/…) is present
+};
+
+// Pushed on the "eigen:voice" event as the mic/speaker changes state. Phase:
+// idle | listening | transcribing | thinking | speaking | error | off.
+export type VoiceEventDTO = {
+  phase: string;
+  text?: string; // transcript (listen done) or error message
+  mode?: boolean; // true while hands-free voice MODE is active
+};
+
 export type ModelDTO = {
   id: string;
   provider: string;
