@@ -86,6 +86,36 @@ the shared DTO types (`$lib/types`), and the `trapFocus` action (`$lib/actions`)
 - **Depends on:** `svelte` (`onDestroy`); otherwise self-contained types.
 - **Used by / entrypoint:** directly by `views/Dreaming.svelte`; also rendered by `ToolCallCard.svelte` for synthesized mutation diffs.
 
+### internal/gui/frontend/src/lib/components/Dropdown.svelte
+- **Role:** Custom single-select dropdown over the shared `Popover`. Deliberately NOT a native `<select>`: under webkit2gtk (Wails/Linux) the OS-drawn `<option>` list ignores CSS → black-on-black unreadable. This builds the open list itself so options are always on-theme + keyboard-driven.
+- **Key symbols:** generic `<T extends string|number>`; props `value` (`$bindable`), `options` (`{value,label,sub?,disabled?}[]`), `label`, `width?`, `disabled?`, `onchange?(value)`. Keyboard: Enter/Space opens, ↑/↓ move the active row (skipping disabled), Enter selects, Escape/outside-click close (Popover-owned). Closed control shows the selected label + a border-drawn chevron; `sub` renders a quiet RTL-truncated secondary line (e.g. a dir path).
+- **Depends on:** `./Popover.svelte`.
+- **Used by:** `views/Memory.svelte` + `views/Dreaming.svelte` (scope pickers), `views/Chat.svelte` (control-bar model/effort/search) — every place that previously used a native `<select>` over the dark UI.
+
+### internal/gui/frontend/src/lib/components/Terminal.svelte
+- **Role:** The xterm.js front-end of a host-side PTY (see gui-bridge terminal.go). Starts a server PTY via `TerminalStart(cols,rows)`, pipes keystrokes to `TerminalWrite`, rides `eigen:terminal` for output (base64→bytes→`term.write`), `TerminalResize` on container resize, `TerminalKill` on destroy (so the shell never outlives the panel).
+- **Key symbols:** prop `active` (don't spawn a shell when not the visible tab); `b64ToText` decode; a `ResizeObserver` + `FitAddon` keep the PTY sized; dark theme matching the app surface; race-guarded start (kills an orphan PTY if destroyed before start resolves).
+- **Depends on:** `@xterm/xterm` + `@xterm/addon-fit`, `$lib/bridge`, `$lib/events`.
+- **Used by:** the "Terminal" tab in `views/Chat.svelte`'s tools dock (mount-when-active).
+
+### internal/gui/frontend/src/lib/components/DiffPanel.svelte
+- **Role:** Working-tree diff of the current changes vs HEAD for a dir; reads `WorkingDiff(dir)` and renders the unified patch via the shared `DiffView`, with a per-file +/− stat strip + manual refresh.
+- **Key symbols:** prop `dir`; seq-guarded `load()`, reloads on dir change; handles not-a-repo / clean / truncated / error states.
+- **Depends on:** `$lib/bridge`, `./DiffView.svelte`, `./Button.svelte`, `./EmptyState.svelte`.
+- **Used by:** the "Diff" tab in Chat's tools dock.
+
+### internal/gui/frontend/src/lib/components/FilesPanel.svelte
+- **Role:** Read-only file explorer for a dir; reads `FileTree(dir)` (collapsible tree) and `ReadFileForView(path)` (click-to-view text in a `CodeBlock`). Orienting/reading only — the agent edits via its tools.
+- **Key symbols:** prop `dir`; `openDirs` Set for collapse state; recursive `node` snippet; seq-guarded tree + file-view loads; extension→lang hint for the viewer.
+- **Depends on:** `$lib/bridge`, `./Button.svelte`, `./EmptyState.svelte`, `./CodeBlock.svelte`.
+- **Used by:** the "Files" tab in Chat's tools dock.
+
+### internal/gui/frontend/src/lib/components/BrowserPanel.svelte
+- **Role:** Lightweight in-app browser — a URL bar + a sandboxed `<iframe>` so a referenced page (docs, a PR, a localhost dev server) opens beside the chat. Sites that refuse framing (X-Frame-Options/CSP) get an "open externally" fallback via Wails `Browser.OpenURL`.
+- **Key symbols:** prop `initialUrl` (seeded once via `untrack`); `normalize()` turns a bare host/localhost/IP into a navigable URL; one navigable frame (no tabs/history — kept simple); `openExternal()`.
+- **Depends on:** `@wailsio/runtime` (`Browser.OpenURL`).
+- **Used by:** the "Browser" tab in Chat's tools dock (stays mounted once first opened so page state survives tab switches).
+
 ### internal/gui/frontend/src/lib/components/EmptyState.svelte
 - **Role:** Calm zero-data / not-yet-built placeholder with optional single action.
 - **Key symbols:**

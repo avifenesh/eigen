@@ -9,14 +9,20 @@ import type {
   CompactResultDTO,
   ImageDTO,
   MemoryDTO,
+  MemoryScopeDTO,
+  MemoryScopeRefDTO,
   SkillsDTO,
   AgentsDTO,
   DreamingDTO,
+  DreamingScopeDTO,
   DreamReportDTO,
   RoutingDTO,
   ObserveSummaryDTO,
   CronsDTO,
   PluginsDTO,
+  MarketplaceDTO,
+  PluginPreviewDTO,
+  InstalledPluginDTO,
   ConfigDTO,
   DaemonStats,
   FeedDTO,
@@ -26,6 +32,9 @@ import type {
   WorkflowResultDTO,
   CommandInfoDTO,
   VoiceStatusDTO,
+  RecentDirDTO,
+  WorkingDiffDTO,
+  FileTreeDTO,
 } from "$lib/types";
 
 export const Bridge = {
@@ -88,8 +97,12 @@ export const Bridge = {
   Agents: (): Promise<AgentsDTO | null> => B.Agents(),
   CancelAgent: (id: string): Promise<void> => B.CancelAgent(id),
   AgentTranscript: (id: string): Promise<string> => B.AgentTranscript(id),
+  // per-project memory: enumerate selectable scopes + open any one
+  ListMemoryScopes: (): Promise<MemoryScopeRefDTO[]> => B.ListMemoryScopes(),
+  MemoryForScope: (scope: string): Promise<MemoryScopeDTO | null> => B.MemoryForScope(scope),
   // dreaming
   Dreaming: (): Promise<DreamingDTO | null> => B.Dreaming(),
+  DreamingForScope: (scope: string): Promise<DreamingScopeDTO | null> => B.DreamingForScope(scope),
   ConsolidationContent: (path: string): Promise<string> => B.ConsolidationContent(path),
   CurrentMemory: (scope: string): Promise<string> => B.CurrentMemory(scope),
   // run consolidation + summary on demand for a scope ("project" | "global")
@@ -106,6 +119,13 @@ export const Bridge = {
   SetMarketEnabled: (name: string, enabled: boolean): Promise<boolean> => B.SetMarketEnabled(name, enabled),
   RemoveMarketplace: (name: string): Promise<boolean> => B.RemoveMarketplace(name),
   RemovePlugin: (name: string): Promise<boolean> => B.RemovePlugin(name),
+  // add-a-plugin (mirrors skill-add): record a catalog, list its plugins, install
+  // one (scanned before write; rejects on RISKY or no scanner). All three are slow
+  // (network fetch / LLM scan) — call with a spinner.
+  AddMarketplace: (source: string): Promise<MarketplaceDTO | null> => B.AddMarketplace(source),
+  MarketplacePlugins: (mktName: string): Promise<PluginPreviewDTO[]> => B.MarketplacePlugins(mktName),
+  InstallPlugin: (pluginName: string, mktName: string): Promise<InstalledPluginDTO | null> =>
+    B.InstallPlugin(pluginName, mktName),
   // authored workflows + custom slash commands (run on the active session)
   Workflows: (): Promise<WorkflowInfoDTO[]> => B.Workflows(),
   RunWorkflow: (sessionID: string, name: string, vars: Record<string, string>): Promise<WorkflowResultDTO | null> =>
@@ -128,6 +148,20 @@ export const Bridge = {
   RemoteSessions: (target: string): Promise<SessionInfoDTO[]> => B.RemoteSessions(target),
   // sessions
   ExportSession: (id: string): Promise<string> => B.ExportSession(id),
+  // new-chat working-directory picker: recent dirs + native OS folder dialog
+  RecentDirs: (): Promise<RecentDirDTO[]> => B.RecentDirs(),
+  PickDirectory: (): Promise<string> => B.PickDirectory(), // "" when cancelled
+  // right-panel TOOLS ───────────────────────────────────────────────────────
+  // working-tree diff of the current changes vs HEAD
+  WorkingDiff: (dir: string): Promise<WorkingDiffDTO | null> => B.WorkingDiff(dir),
+  // file-explorer tree + click-to-view file content
+  FileTree: (dir: string): Promise<FileTreeDTO | null> => B.FileTree(dir),
+  ReadFileForView: (path: string): Promise<string> => B.ReadFileForView(path),
+  // PTY terminal — output streams on the "eigen:terminal" event
+  TerminalStart: (cols: number, rows: number): Promise<string> => B.TerminalStart(cols, rows),
+  TerminalWrite: (id: string, data: string): Promise<void> => B.TerminalWrite(id, data),
+  TerminalResize: (id: string, cols: number, rows: number): Promise<void> => B.TerminalResize(id, cols, rows),
+  TerminalKill: (id: string): Promise<void> => B.TerminalKill(id),
   // voice — server-side STT/TTS (the GUI runs on the host, so the same stack the
   // TUI uses, not webview getUserMedia). State streams on the "eigen:voice" event.
   VoiceStatus: (): Promise<VoiceStatusDTO | null> => B.VoiceStatus(),

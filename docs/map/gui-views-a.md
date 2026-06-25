@@ -74,7 +74,9 @@
   - `loadModels()` + `modelsLoaded` + `$effect` — lazy-load routing model catalog when the settings panel
     opens; `effortLevels` `$derived` (model's own ladder else `EFFORT_FALLBACK`); `SEARCH_MODES` const.
   - `onModel/onPerm/onEffort/onSearch/onFast` — capability mutators (`SetModel`/`SetPerm`/`SetEffort`/`SetSearch`/`SetFast`); surfaced both in the right dock AND a top control bar (`.ctl`) above the transcript with a `+ New chat` button (`newChat()` → `Bridge.NewSession` + route).
-  - `newChat()` + `startingNew` `$state` — start a fresh session and route to it (the control-bar `+ New chat`).
+  - `startNewChat()` + `startingNew`/`newChatOpen`/`newChatDir` `$state` — the control-bar "+ New chat" popover: a recents quick-pick (`RecentDirs()` → `recentDirs`, loaded once on open), a **Browse…** button (`PickDirectory()` → native OS folder dialog), and a free-type fallback; the chosen dir is passed to `NewSession(dir,…)` so a new session's primary root is set at creation (it locks there).
+  - **Tools dock** — the right `<aside>` is a tabbed tools panel: `dockTab` (`info|terminal|diff|files|browser`, persisted to localStorage). **Info** = the session meta groups (model/context+compact/title/goal/working-dirs/shells/approvals, all original handlers preserved). **Terminal/Diff/Files** mount-when-active (`<Terminal>`/`<DiffPanel dir={primaryRoot}>`/`<FilesPanel dir={primaryRoot}>` — no PTY/git/fs call until opened). **Browser** (`<BrowserPanel>`) stays mounted once first opened (hidden via display:none) so page state survives switches. `primaryRoot = $derived(sess?.roots?.[0] ?? "")`. Dock widened 268→340px.
+  - control-bar model/effort/search use the custom `<Dropdown>` (not native `<select>` — webkit2gtk black-popup bug); `onModel/onEffort/onSearch` refactored to value-taking `setModel/setEffort/setSearch`, `loadModels()` runs once on mount.
   - voice: `toggleVoiceMode()` toggles the hands-free conversation loop against THIS session (a cleanup `$effect` calls `voice.stopMode()` when the session changes/unmounts so it never listens against a hidden session); `voicePhaseLabel` `$derived` drives the voice-mode banner above the composer (live phase + last transcript + end button); completed assistant prose carries a hover-revealed read-aloud button (`voice.speak`/`stopSpeak`), shown only when `voice.tts` exists.
   - `prettyPath(p)` — collapses a long absolute sandbox root to `…/parent/leaf` for the working-dirs dock (full path stays in the title attr).
   - `startGoal/commitGoal`, `startTitle/commitTitle` + `derivedTitle` `$derived` — inline goal/title editing (`SetGoal`/`SetTitle`).
@@ -87,8 +89,9 @@
     from the text prefix (`interrupted` / `error:`), since the daemon emits abnormal turn ends as plain notes (GUI-093).
 - **Depends on:** `$lib/bridge`, `$lib/stores/daemon`, `$lib/stores/sessions`, `$lib/stores/toasts`,
   `$lib/stores/voice`, `$lib/router`, `$lib/events` (`on`, `ev`), `$lib/stores/transcript` (`createTranscript`, `Transcript`),
-  `$lib/types` (`SessionStateDTO`, `ModelDTO`, `ImageDTO`); components `Composer`, `ToolCallCard`,
-  `Markdown`, `VirtualList`, `Badge`, `Button`, `EmptyState`, `StatusDot`, `Popover`.
+  `$lib/types` (`SessionStateDTO`, `ModelDTO`, `ImageDTO`, `RecentDirDTO`); components `Composer`, `ToolCallCard`,
+  `Markdown`, `VirtualList`, `Badge`, `Button`, `EmptyState`, `StatusDot`, `Popover`, `Dropdown`, and the
+  tools-dock panels `Terminal`/`DiffPanel`/`FilesPanel`/`BrowserPanel`.
 - **Used by / entrypoint:** entrypoint: `App.svelte` renders `<Chat param={router.param} />` when
   `router.route === "chat"`. Reached from Home/Live/Sessions/Machines via `router.go("chat", id)`.
 

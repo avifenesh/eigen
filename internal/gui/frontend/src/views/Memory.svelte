@@ -1,22 +1,32 @@
 <script lang="ts">
-  // Memory — the durable-notes browser. Two scopes (project / global) as a
-  // segmented switch. Each scope shows: a distilled summary (the injected view),
-  // the append-only notes as virtualized cards, ad-hoc manual saves, bans, and
-  // (global only) the editable user profile. Reads memory directly via the
-  // bridge (memory is local filesystem; no daemon round-trip).
+  // Memory — the durable-notes browser. Any known scope (Global plus every
+  // project from session history + on-disk stores) is selectable via a picker.
+  // Each scope shows: a distilled summary (the injected view), the append-only
+  // notes as virtualized cards, ad-hoc manual saves, bans, and (global only) the
+  // editable user profile. Reads memory directly via the bridge (memory is local
+  // filesystem; no daemon round-trip).
   import { Bridge } from "$lib/bridge";
   import { router } from "$lib/router.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
-  import type { MemoryDTO, MemoryScopeDTO } from "$lib/types";
+  import type { MemoryScopeDTO, MemoryScopeRefDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
   import Button from "$lib/components/Button.svelte";
+  import Dropdown from "$lib/components/Dropdown.svelte";
   import Badge from "$lib/components/Badge.svelte";
   import Markdown from "$lib/components/Markdown.svelte";
   import VirtualList from "$lib/components/VirtualList.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
 
-  let data = $state<MemoryDTO | null>(null);
-  let scope = $state<"project" | "global">("project");
+  // The selectable scopes (Global first, then every known project). The picker
+  // binds to `scope` — a scope KEY that round-trips through MemoryForScope (the
+  // backend accepts "global", "project"/"", an abs dir, or an on-disk key). We
+  // open the cwd project by default ("project") for session continuity.
+  let scopes = $state<MemoryScopeRefDTO[]>([]);
+  let scope = $state<string>("project");
+  // The opened scope's rich DTO — loaded on demand via MemoryForScope, replacing
+  // the old two-field {project, global} payload.
+  let current = $state<MemoryScopeDTO | null>(null);
+  let loadError = $state<string | null>(null);
   let loading = $state(true);
   let composing = $state(false);
   let draft = $state("");
@@ -46,12 +56,20 @@
   let backupPaths = $state<string[]>([]);
   let backupsLoading = $state(false);
 
-  const current = $derived<MemoryScopeDTO | null>(
-    scope === "project" ? (data?.project ?? null) : (data?.global ?? null),
-  );
   const bans = $derived<BanDTO[]>(
     ((current as (MemoryScopeDTO & { banList?: BanDTO[] }) | null)?.banList ?? []),
   );
+  // The profile editor (USER.md) only applies to the global scope — profile /
+  // profileLearned are only populated there. Trust the DTO's own scope marker so
+  // a project whose dir happens to be the home root can't masquerade as global.
+  const isGlobal = $derived(current?.scope === "global");
+  // The selected scope's ref, for the dir label / count next to the picker.
+  const selectedRef = $derived<MemoryScopeRefDTO | null>(
+    scopes.find((s) => s.key === scope) ?? null,
+  );
+  // A friendly name for prose (placeholders, empty-state titles). Prefer the
+  // ref's name; fall back to the loaded DTO's scope or the bare key.
+  const scopeLabel = $derived(selectedRef?.name || current?.scope || scope);
   // A scope with nothing injected — no summary, notes, ad-hoc saves, bans or
   // profile. Backups are *not* counted here: a scope can consolidate down to
   // nothing-injected yet still carry snapshot history, which the empty state
@@ -67,27 +85,64 @@
   );
   const hasBackupHistory = $derived((current?.backups ?? 0) > 0);
 
-  // alive guard: a late Bridge.Memory() resolution must not write after unmount
-  // or after a newer load() started.
+  // The picker list — fetched once on mount. Reassigned wholesale for
+  // reactivity. A late resolution after unmount is harmless (no UI clobber), but
+  // guard with `alive` so we don't toast after teardown.
+  let alive = true;
+  async function loadScopes() {
+    try {
+      const refs = await Bridge.ListMemoryScopes();
+      if (!alive) return;
+      scopes = refs;
+      // Snap the picker label to the canonical key of the cwd project (the ref
+      // flagged `current`) so it shows "eigen (10)" rather than the placeholder.
+      // We started the data load under the "project" alias; this only relabels.
+      if (scope === "project") {
+        const cur = refs.find((r) => r.current);
+        if (cur) scope = cur.key;
+      }
+    } catch (e) {
+      if (alive) toasts.error(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // alive guard: a slow MemoryForScope() resolution for an old selection must
+  // not clobber the data of a newer one (or write after unmount). Monotonic seq.
   let loadSeq = 0;
-  async function load() {
+  async function loadScope(key: string) {
     const seq = ++loadSeq;
     loading = true;
+    loadError = null;
     try {
-      const d = await Bridge.Memory();
-      if (seq === loadSeq) data = d;
+      const d = await Bridge.MemoryForScope(key);
+      if (seq === loadSeq) current = d;
     } catch (e) {
-      if (seq === loadSeq) toasts.error(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      if (seq === loadSeq) {
+        loadError = msg;
+        toasts.error(msg);
+      }
     } finally {
       if (seq === loadSeq) loading = false;
     }
   }
+  // Mount: enumerate scopes, then open the initial selection.
   $effect(() => {
-    load();
+    alive = true;
+    loadScopes();
+    loadScope(scope);
     return () => {
+      alive = false;
       loadSeq++;
     };
   });
+  // Switching the picker re-opens the chosen scope.
+  function selectScope(key: string) {
+    if (key === scope) return;
+    scope = key;
+    composing = false;
+    loadScope(key);
+  }
 
   // When the composer opens, move focus into the textarea so typing starts
   // immediately — no extra click. composeEl is bound only while composing.
@@ -104,7 +159,7 @@
       draft = "";
       composing = false;
       toasts.success("note saved");
-      await load();
+      await loadScope(scope);
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -123,7 +178,7 @@
       banRule = "";
       addingBan = false;
       toasts.success(replaced ? "ban updated" : "ban added");
-      await load();
+      await loadScope(scope);
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -135,7 +190,7 @@
     try {
       const removed = await Bridge.RemoveBan(scope, title);
       if (removed) toasts.success("ban removed");
-      await load();
+      await loadScope(scope);
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -196,7 +251,7 @@
       await Bridge.WriteUserProfile(profileDraft);
       editingProfile = false;
       toasts.success("profile saved");
-      await load();
+      await loadScope(scope);
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -212,32 +267,29 @@
 
 <div class="mem">
   <header class="mem__head">
-    <div class="mem__scopes" role="group" aria-label="Memory scope">
-      <button
-        class="mem__scope"
-        class:mem__scope--on={scope === "project"}
-        type="button"
-        aria-pressed={scope === "project"}
-        onclick={() => (scope = "project")}
-      >
-        Project
-        {#if data?.project}<span class="mem__scope-n tnum">{data.project.noteCount}</span>{/if}
-      </button>
-      <button
-        class="mem__scope"
-        class:mem__scope--on={scope === "global"}
-        type="button"
-        aria-pressed={scope === "global"}
-        onclick={() => (scope = "global")}
-      >
-        Global
-        {#if data?.global}<span class="mem__scope-n tnum">{data.global.noteCount}</span>{/if}
-      </button>
-    </div>
-    <div class="mem__head-actions">
-      {#if current}
+    <div class="mem__picker">
+      <!-- N-scope picker: Global first (always present), then every known
+           project. A custom Dropdown (NOT a native <select> — webkit2gtk draws
+           the native option list black-on-black). Each option's `sub` carries
+           the dir so two projects sharing a basename stay distinguishable. -->
+      <Dropdown
+        label="Memory scope"
+        width={300}
+        value={scope}
+        options={scopes.map((s) => ({
+          value: s.key,
+          label: s.noteCount > 0 ? `${s.name} (${s.noteCount})` : s.name,
+          sub: s.dir ? shortDir(s.dir) : undefined,
+        }))}
+        onchange={(v) => selectScope(v)}
+      />
+      {#if selectedRef?.dir}
+        <span class="mem__dir" title={selectedRef.dir}>{shortDir(selectedRef.dir)}</span>
+      {:else if current?.dir}
         <span class="mem__dir" title={current.dir}>{shortDir(current.dir)}</span>
       {/if}
+    </div>
+    <div class="mem__head-actions">
       <Button variant="primary" size="sm" disabled={!current} onclick={() => (composing = !composing)}>
         {composing ? "Cancel" : "Add note"}
       </Button>
@@ -251,7 +303,7 @@
         bind:value={draft}
         class="mem__textarea selectable"
         rows="3"
-        placeholder={`A durable note for ${scope} memory…`}
+        placeholder={`A durable note for ${scopeLabel} memory…`}
         onkeydown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.isComposing) {
             e.preventDefault();
@@ -268,14 +320,20 @@
     </div>
   {/if}
 
-  {#if loading && !data}
+  {#if loading && !current}
     <div class="mem__loading">
       {#each Array(3) as _, i (i)}<div class="mem__skel"></div>{/each}
     </div>
+  {:else if loadError && !current}
+    <EmptyState glyph="☾" title="Couldn't load {scopeLabel} memory" line={loadError}>
+      {#snippet action()}
+        <Button variant="secondary" onclick={() => loadScope(scope)}>Retry</Button>
+      {/snippet}
+    </EmptyState>
   {:else if isEmpty && hasBackupHistory}
     <EmptyState
       glyph="☾"
-      title="Nothing injected in {scope} memory"
+      title="Nothing injected in {scopeLabel} memory"
       line="This scope consolidated down to nothing currently injected — but its snapshot history is preserved. Review what changed in Dreaming, or start fresh below."
     >
       {#snippet action()}
@@ -283,7 +341,7 @@
       {/snippet}
     </EmptyState>
   {:else if isEmpty}
-    <EmptyState glyph="❖" title="No {scope} memory yet" line="Notes you save — or the agent distills — live here and carry across sessions.">
+    <EmptyState glyph="❖" title="No {scopeLabel} memory yet" line="Notes you save — or the agent distills — live here and carry across sessions.">
       {#snippet action()}
         <Button variant="primary" onclick={() => (composing = true)}>Add the first note</Button>
       {/snippet}
@@ -344,7 +402,7 @@
       </div>
 
       <aside class="mem__side">
-        {#if scope === "global"}
+        {#if isGlobal}
           <section class="mem__side-section">
             <div class="mem__section-head">
               <h2 class="mem__section-title">User profile</h2>
@@ -412,7 +470,7 @@
                 bind:value={banRule}
                 class="mem__textarea selectable"
                 rows="3"
-                placeholder={`What the agent must not do (${scope} scope)…`}
+                placeholder={`What the agent must not do (${scopeLabel} scope)…`}
                 aria-label="Ban rule"
               ></textarea>
               <div class="mem__compose-actions">
@@ -529,47 +587,13 @@
     padding: var(--sp-6) var(--sp-9);
     border-bottom: 1px solid var(--border-hairline);
   }
-  .mem__scopes {
-    display: inline-flex;
-    background: var(--bg-well);
-    border: 1px solid var(--border-hairline);
-    border-radius: var(--r-md);
-    padding: var(--sp-1);
-    gap: var(--sp-1);
-  }
-  .mem__scope {
+  /* Scope picker — a styled <select> over N scopes (Global + every project).
+     The dir label sits beside it so projects sharing a basename stay distinct. */
+  .mem__picker {
     display: inline-flex;
     align-items: center;
-    gap: var(--sp-3);
-    height: 28px;
-    padding: 0 var(--sp-5);
-    border: none;
-    background: transparent;
-    color: var(--text-muted);
-    border-radius: var(--r-sm);
-    cursor: pointer;
-    font: var(--fw-medium) var(--fs-body-sm) / 1 var(--font-sans);
-    transition:
-      background var(--dur-fast) var(--ease-out),
-      color var(--dur-fast) var(--ease-out);
-  }
-  .mem__scope:hover {
-    color: var(--text-primary);
-  }
-  .mem__scope:focus-visible {
-    outline: none;
-    box-shadow: var(--shadow-focus);
-  }
-  .mem__scope--on {
-    background: var(--bg-raised-2);
-    color: var(--text-primary);
-  }
-  .mem__scope-n {
-    font-size: var(--fs-micro);
-    color: var(--text-faint);
-  }
-  .mem__scope--on .mem__scope-n {
-    color: var(--brand);
+    gap: var(--sp-5);
+    min-width: 0;
   }
   .mem__head-actions {
     display: flex;
@@ -918,9 +942,6 @@
   @media (prefers-reduced-motion: reduce) {
     .mem__skel {
       animation: none;
-    }
-    .mem__scope {
-      transition: none;
     }
   }
 </style>

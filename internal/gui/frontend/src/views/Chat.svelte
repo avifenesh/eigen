@@ -12,7 +12,7 @@
   import { router } from "$lib/router.svelte";
   import { on, ev } from "$lib/events";
   import { createTranscript, type Transcript } from "$lib/stores/transcript.svelte";
-  import type { SessionStateDTO, ModelDTO, ImageDTO } from "$lib/types";
+  import type { SessionStateDTO, ModelDTO, ImageDTO, RecentDirDTO } from "$lib/types";
   import Composer from "$lib/components/Composer.svelte";
   import ToolCallCard from "$lib/components/ToolCallCard.svelte";
   import Markdown from "$lib/components/Markdown.svelte";
@@ -22,6 +22,11 @@
   import EmptyState from "$lib/components/EmptyState.svelte";
   import StatusDot from "$lib/components/StatusDot.svelte";
   import Popover from "$lib/components/Popover.svelte";
+  import Dropdown from "$lib/components/Dropdown.svelte";
+  import Terminal from "$lib/components/Terminal.svelte";
+  import DiffPanel from "$lib/components/DiffPanel.svelte";
+  import FilesPanel from "$lib/components/FilesPanel.svelte";
+  import BrowserPanel from "$lib/components/BrowserPanel.svelte";
 
   let { param }: { param?: string } = $props();
 
@@ -142,6 +147,32 @@
   const online = $derived(daemon.status === "online");
 
   // ── turn I/O ──────────────────────────────────────────────────────────────
+  // Mid-turn input mode (mirrors the TUI's "steer" | "queue" setting): decides
+  // what happens when the user sends WHILE A TURN IS RUNNING.
+  //   • steer — inject into the running turn (try SteerInput, fall back to
+  //     SendInput when there's nothing to steer). The default.
+  //   • queue — do NOT inject mid-turn; hold the message client-side and submit
+  //     it as a fresh turn once the current turn finishes.
+  // This is a pure client-side concern — the daemon needs no change; queue is
+  // just a hold buffer drained on turn-end. Persisted across reloads so the
+  // posture sticks. localStorage is guarded (it exists in the webview, but the
+  // guard keeps this honest if ever pre-rendered/tested headless).
+  let inputMode = $state<"steer" | "queue">("steer");
+  try {
+    const saved = localStorage.getItem("eigen.inputMode");
+    if (saved === "queue" || saved === "steer") inputMode = saved;
+  } catch {}
+  function setInputMode(m: "steer" | "queue") {
+    inputMode = m;
+    try {
+      localStorage.setItem("eigen.inputMode", m);
+    } catch {}
+  }
+  // Queued messages held in queue mode while a turn runs, drained one-per-turn-
+  // end (each drained item starts a new turn that, when IT ends, drains the
+  // next). Reassigned (never mutated in place) so the count badge stays reactive.
+  let queued = $state<{ text: string; images: ImageDTO[] }[]>([]);
+
   // Steer routing: mid-turn input is injected into the running turn (steered)
   // rather than queued as a fresh turn. Images (composer attachments) ride along
   // on both paths; starter chips call send(text) with none, so the param
@@ -169,6 +200,14 @@
       const handled = await maybeRunCommand(text);
       if (handled !== null) return handled;
     }
+    // Queue mode + a turn already running: hold the message rather than steer.
+    // It drains as a fresh turn when the running turn finishes (drainQueue).
+    // Returning true clears the composer draft just like a real send.
+    if (inputMode === "queue" && (store?.running ?? false)) {
+      queued = [...queued, { text, images }];
+      toasts.info("queued — will send when the turn finishes");
+      return true;
+    }
     // The local running flag only colors the messaging below; it never decides
     // the RPC. Capture it before the await so the toast reflects the user's
     // intent at send time, not whatever the stream has done by the time the
@@ -192,6 +231,20 @@
       toasts.error(e instanceof Error ? e.message : String(e));
       return false;
     }
+  }
+
+  // Drain ONE held message as a fresh turn when the running turn ends. The new
+  // turn flips running=true again, and when IT ends this fires once more for the
+  // next item — so the queue plays back in order without collapsing the holds
+  // into a single turn. Fire-and-forget the toast on failure; a failed submit
+  // drops that item rather than wedging the queue (the user still has the rest).
+  function drainQueue() {
+    if (queued.length === 0 || !sessionId) return;
+    const next = queued[0];
+    queued = queued.slice(1);
+    Bridge.SendInput(sessionId, next.text, next.images, []).catch((e) => {
+      toasts.error(e instanceof Error ? e.message : String(e));
+    });
   }
 
   // Custom slash commands (~/.eigen/commands + project .eigen/commands), loaded
@@ -224,13 +277,42 @@
   }
 
   // Start a fresh session without leaving Chat — new-chat from the control bar.
+  // The New-chat button opens a tiny inline prompt for the working directory:
+  // the session's primary root locks at creation (NewSession's first arg), so
+  // this is the one chance to choose it. A blank dir is valid — NewSession falls
+  // back to the daemon's cwd — so the Start action never blocks on an empty path.
   let startingNew = $state(false);
-  async function newChat() {
+  let newChatOpen = $state(false);
+  let newChatDir = $state("");
+  // Recent project dirs for the new-chat quick-pick. Loaded once (guarded by
+  // recentDirsLoaded) the first time the picker opens, so the popover doesn't
+  // pay a daemon round-trip until the user actually reaches for it.
+  let recentDirs = $state<RecentDirDTO[]>([]);
+  let recentDirsLoaded = $state(false);
+  async function loadRecentDirs() {
+    if (recentDirsLoaded) return;
+    recentDirsLoaded = true;
+    const r = await run(() => Bridge.RecentDirs());
+    if (r) recentDirs = r;
+  }
+  // Load when the popover opens (one-shot — the guard makes re-opens free).
+  $effect(() => {
+    if (newChatOpen) loadRecentDirs();
+  });
+  // Native OS folder picker — fills newChatDir on a real selection, no-op on
+  // cancel (PickDirectory returns "" when the dialog is dismissed).
+  async function pickDir() {
+    const picked = await run(() => Bridge.PickDirectory());
+    if (picked) newChatDir = picked;
+  }
+  async function startNewChat() {
     if (startingNew) return;
     startingNew = true;
     try {
-      const id = await Bridge.NewSession("", "", "");
+      const id = await Bridge.NewSession(newChatDir.trim(), "", "");
       await sessions.refresh();
+      newChatDir = "";
+      newChatOpen = false;
       router.go("chat", id);
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : String(e));
@@ -263,6 +345,18 @@
   // wedge on "stopping…". Harmless when the finally arm already cleared it.
   $effect(() => {
     if (store?.running === false && interrupting) interrupting = false;
+  });
+  // Queue drain (queue input-mode): when the turn transitions running→false,
+  // submit the next held message as a fresh turn. `wasRunning` tracks the prior
+  // value so this fires once per turn-end edge, not on every effect re-run —
+  // without it a re-render while idle (queued mutating, a State refresh) would
+  // re-drain. Each drained item starts a turn that flips running back to true;
+  // when THAT ends, the effect fires again for the next item.
+  let wasRunning = $state(false);
+  $effect(() => {
+    const running = store?.running ?? false;
+    if (wasRunning && !running && queued.length > 0) drainQueue();
+    wasRunning = running;
   });
 
   // Hands-free voice mode runs against THIS session (listen → submit → speak →
@@ -331,6 +425,43 @@
   // max is known, so it reads as a real prompt to compact rather than chrome.
   const nearLimit = $derived(sess != null && sess.maxTokens > 0 && sess.tokens / sess.maxTokens > 0.85);
 
+  // ── right-dock tabs: session Info + the tools panel ─────────────────────────
+  // The dock is a tabbed tools panel: Info (the session groups) + Terminal /
+  // Diff / Files / Browser. The selected tab persists across reloads. The tool
+  // panels target the session's primary sandbox root; when there is none they
+  // show their own empty/error states.
+  type DockTab = "info" | "terminal" | "diff" | "files" | "browser";
+  // Resolve the persisted tab once into a plain local before seeding the runes
+  // (reading one $state inside another's initializer trips svelte-check).
+  let initialDockTab: DockTab = "info";
+  try {
+    const saved = localStorage.getItem("eigen.dockTab");
+    if (saved === "info" || saved === "terminal" || saved === "diff" || saved === "files" || saved === "browser") {
+      initialDockTab = saved;
+    }
+  } catch {}
+  let dockTab = $state<DockTab>(initialDockTab);
+  // Browser keeps its page/navigation state across tab switches: once opened it
+  // stays MOUNTED and is hidden (not unmounted) when another tab is active, so
+  // the loaded page survives. Terminal/Diff/Files mount-when-active (Terminal so
+  // a hidden tab never spawns a PTY; Diff/Files so no git/fs call until opened).
+  let browserOpened = $state(initialDockTab === "browser");
+  function setDockTab(t: DockTab) {
+    dockTab = t;
+    if (t === "browser") browserOpened = true;
+    try {
+      localStorage.setItem("eigen.dockTab", t);
+    } catch {}
+  }
+  const primaryRoot = $derived(sess?.roots?.[0] ?? "");
+  const dockTabs: { id: DockTab; label: string }[] = [
+    { id: "info", label: "Info" },
+    { id: "terminal", label: "Terminal" },
+    { id: "diff", label: "Diff" },
+    { id: "files", label: "Files" },
+    { id: "browser", label: "Browser" },
+  ];
+
   // ── settings panel: capability-gated mutators ──────────────────────────────
   // Each mutator returns the FRESH state — assign it to `sess` so the dock
   // badges reconcile in place without a round-trip through refreshState().
@@ -349,7 +480,6 @@
     }
   }
 
-  let settingsOpen = $state(false);
   let menuOpen = $state(false);
   // Routing model ids load once when the settings panel first opens.
   let models = $state<ModelDTO[]>([]);
@@ -366,6 +496,10 @@
   // provider modes when search is active on the session.
   const SEARCH_MODES = ["off", "auto", "on"];
 
+  // Routing model ids load once, lazily. The control bar's model selector is now
+  // a custom <Dropdown> (no onfocus hook like the old native select), so we call
+  // loadModels() once on mount — cheap and idempotent (modelsLoaded guards the
+  // round-trip), and the bar's current value still shows before they land.
   async function loadModels() {
     if (modelsLoaded) return;
     modelsLoaded = true;
@@ -373,11 +507,29 @@
     if (r?.models) models = r.models;
   }
   $effect(() => {
-    if (settingsOpen) loadModels();
+    loadModels();
   });
 
-  async function onModel(e: Event) {
-    const v = (e.currentTarget as HTMLSelectElement).value;
+  // Control-bar Dropdown option lists, derived from the loaded routing models /
+  // ladders. model: id label, marked + disabled when unavailable. effort/search:
+  // the level/mode as both value and label.
+  const modelOptions = $derived(
+    models.length === 0
+      ? [{ value: sess?.model ?? "", label: sess?.model || "—" }]
+      : models.map((m) => ({
+          value: m.id,
+          label: m.id + (m.available ? "" : " (unavailable)"),
+          disabled: !m.available,
+        })),
+  );
+  const effortOptions = $derived(effortLevels.map((lv) => ({ value: lv, label: lv })));
+  const searchOptions = SEARCH_MODES.map((mode) => ({ value: mode, label: mode }));
+
+  // The control-bar selectors are the custom <Dropdown>, not native <select>s
+  // (webkit2gtk paints a native option list black-on-black). Each takes the
+  // chosen value directly via Dropdown's onchange, so these are value-taking
+  // (not Event-reading) — the run()/Bridge.Set*/applyState logic is unchanged.
+  async function setModel(v: string) {
     const id = sessionId;
     if (!id || v === sess?.model) return;
     applyState(id, await run(() => Bridge.SetModel(id, v)) ?? null);
@@ -388,14 +540,12 @@
     const next = sess?.perm === "auto" ? "gated" : "auto";
     applyState(id, await run(() => Bridge.SetPerm(id, next)) ?? null);
   }
-  async function onEffort(e: Event) {
-    const v = (e.currentTarget as HTMLSelectElement).value;
+  async function setEffort(v: string) {
     const id = sessionId;
     if (!id) return;
     applyState(id, await run(() => Bridge.SetEffort(id, v)) ?? null);
   }
-  async function onSearch(e: Event) {
-    const v = (e.currentTarget as HTMLSelectElement).value;
+  async function setSearch(v: string) {
     const id = sessionId;
     if (!id) return;
     applyState(id, await run(() => Bridge.SetSearch(id, v)) ?? null);
@@ -622,47 +772,99 @@
            These were buried in the dock's "edit" popover; surfacing them here
            makes switching one click, no hunting. The dock keeps goal/dirs/shells. -->
       <div class="ctl">
-        <button class="ctl__new" onclick={newChat} disabled={startingNew} title="Start a new chat">
-          {#if startingNew}<span class="dock__spinner" aria-hidden="true"></span>{:else}<span class="ctl__plus" aria-hidden="true">+</span>{/if}
-          New chat
-        </button>
-        <div class="ctl__sep"></div>
-        <label class="ctl__field" title="Model for this session">
-          <span class="ctl__k">model</span>
-          <select class="ctl__sel" value={sess?.model ?? ""} onchange={onModel} onfocus={loadModels}>
-            {#if models.length === 0}
-              <option value={sess?.model ?? ""}>{sess?.model || "—"}</option>
-            {:else}
-              {#each models as m (m.id)}
-                <option value={m.id} disabled={!m.available}>{m.id}{m.available ? "" : " (unavailable)"}</option>
-              {/each}
+        <!-- New-chat: opens a tiny inline prompt to pick the working directory
+             BEFORE the session starts. The primary root locks at creation, so
+             choosing it here (vs. always rooting at the daemon's cwd) is the one
+             chance to set it. Blank is valid — it falls back to the daemon cwd. -->
+        <Popover label="New chat" align="start" width={272} bind:open={newChatOpen}>
+          {#snippet trigger(toggle)}
+            <button class="ctl__new" onclick={toggle} disabled={startingNew} title="Start a new chat">
+              {#if startingNew}<span class="dock__spinner" aria-hidden="true"></span>{:else}<span class="ctl__plus" aria-hidden="true">+</span>{/if}
+              New chat
+            </button>
+          {/snippet}
+          <div class="newchat">
+            <span class="newchat__label">working directory</span>
+            <!-- Quick-pick recents: a click fills newChatDir without typing a
+                 full path. Omitted entirely when there are no recents. -->
+            {#if recentDirs.length > 0}
+              <ul class="newchat__recents">
+                {#each recentDirs as entry (entry.dir)}
+                  <li>
+                    <button
+                      type="button"
+                      class="newchat__recent"
+                      class:newchat__recent--on={newChatDir === entry.dir}
+                      title={entry.dir}
+                      onclick={() => (newChatDir = entry.dir)}
+                    >
+                      <span class="newchat__recent-name">{entry.name}</span>
+                      <span class="newchat__recent-dir">{prettyPath(entry.dir)}</span>
+                    </button>
+                  </li>
+                {/each}
+              </ul>
             {/if}
-          </select>
-        </label>
+            <!-- svelte-ignore a11y_autofocus -->
+            <input
+              id="newchat-dir"
+              class="dock__input"
+              bind:value={newChatDir}
+              placeholder="working directory (blank = default)"
+              autofocus
+              onkeydown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); startNewChat(); }
+                else if (e.key === "Escape") { newChatOpen = false; }
+              }}
+            />
+            <div class="newchat__actions">
+              <Button variant="ghost" size="sm" onclick={pickDir} title="Browse for a folder">Browse…</Button>
+              <Button variant="primary" size="sm" loading={startingNew} onclick={startNewChat} title="Start a new chat in this directory">Start</Button>
+            </div>
+          </div>
+        </Popover>
+        <div class="ctl__sep"></div>
+        <span class="ctl__field" title="Model for this session">
+          <span class="ctl__k">model</span>
+          <Dropdown
+            value={sess?.model ?? ""}
+            options={modelOptions}
+            label="Model"
+            width={220}
+            onchange={setModel}
+          />
+        </span>
         <button class="ctl__pill" class:ctl__pill--warn={sess?.perm === "auto"} onclick={onPerm} title="Toggle gated approvals vs auto-approve">
           {sess?.perm === "auto" ? "auto" : "gated"}
         </button>
         {#if sess?.effort}
-          <label class="ctl__field" title="Reasoning effort">
+          <span class="ctl__field" title="Reasoning effort">
             <span class="ctl__k">effort</span>
-            <select class="ctl__sel ctl__sel--mini" value={sess.effort} onchange={onEffort}>
-              {#each effortLevels as lv (lv)}<option value={lv}>{lv}</option>{/each}
-            </select>
-          </label>
+            <Dropdown value={sess.effort} options={effortOptions} label="Effort" width={120} onchange={setEffort} />
+          </span>
         {/if}
         {#if sess?.search}
-          <label class="ctl__field" title="Live search mode">
+          <span class="ctl__field" title="Live search mode">
             <span class="ctl__k">search</span>
-            <select class="ctl__sel ctl__sel--mini" value={sess.search} onchange={onSearch}>
-              {#each SEARCH_MODES as mode (mode)}<option value={mode}>{mode}</option>{/each}
-            </select>
-          </label>
+            <Dropdown value={sess.search} options={searchOptions} label="Search mode" width={120} onchange={setSearch} />
+          </span>
         {/if}
         {#if sess?.fastOk}
           <button class="ctl__pill" class:ctl__pill--on={sess.fast} onclick={onFast} title="Route eligible turns to the fast tier">
             fast {sess.fast ? "on" : "off"}
           </button>
         {/if}
+        <!-- Steer/queue (mirrors the TUI inputMode): decides what a mid-turn
+             send does — inject into the running turn, or hold and submit it as
+             a fresh turn once the current one finishes. Lit when queue is on. -->
+        <button
+          class="ctl__pill"
+          class:ctl__pill--on={inputMode === "queue"}
+          onclick={() => setInputMode(inputMode === "queue" ? "steer" : "queue")}
+          title="steer = inject into the running turn; queue = hold and send when the turn finishes"
+        >
+          {inputMode === "queue" ? "⇊ queue" : "↳ steer"}
+        </button>
       </div>
       <div class="chat__scroll selectable">
         {#if transcriptLoading}
@@ -803,11 +1005,18 @@
             disabled={detaching || interrupting || !online}
             title={online ? "Background the running shell to free this turn (without killing it)" : "daemon offline"}
           >detach shell</button>
-          <!-- Steer/queue clarity: while a turn runs, typed input is STEERED into
-               it (injected mid-turn); if the daemon can't steer it queues as the
-               next turn. Surfacing the mode removes the "where did my message go"
+          <!-- Steer/queue clarity: while a turn runs, the hint reflects the
+               active inputMode — STEER injects typed input mid-turn; QUEUE holds
+               it and sends it as the next turn once this one finishes. Surfacing
+               the mode (and any held count) removes the "where did my message go"
                surprise. -->
-          <span class="chat__steerhint" title="Type now to steer the running turn; if it can't be steered it queues as the next turn">↳ steers the running turn</span>
+          {#if inputMode === "queue"}
+            <span class="chat__steerhint" title="Queue mode: typing now holds your message and sends it as a fresh turn when this one finishes">
+              ⇊ queues for the next turn{queued.length > 0 ? ` — ${queued.length} queued` : ""}
+            </span>
+          {:else}
+            <span class="chat__steerhint" title="Type now to steer the running turn; if it can't be steered it queues as the next turn">↳ steers the running turn</span>
+          {/if}
         </div>
       {/if}
 
@@ -839,6 +1048,24 @@
     </div>
 
     <aside class="chat__dock">
+      <!-- TABS: the dock is a tools panel — Info (session groups) + Terminal /
+           Diff / Files / Browser. A fixed strip over a flex-1 body so the
+           height-filling panels (Terminal/Browser) get real space; the Info
+           body scrolls, the tool bodies fill. -->
+      <div class="dock__tabs" role="tablist" aria-label="Session tools">
+        {#each dockTabs as t (t.id)}
+          <button
+            class="dock__tab"
+            class:dock__tab--on={dockTab === t.id}
+            role="tab"
+            aria-selected={dockTab === t.id}
+            onclick={() => setDockTab(t.id)}
+          >{t.label}</button>
+        {/each}
+      </div>
+
+      {#if dockTab === "info"}
+      <div class="dock__body dock__body--scroll">
       <div class="dock__group">
         <div class="dock__label">model</div>
         <div class="dock__value">{sess?.model || "—"}</div>
@@ -873,91 +1100,6 @@
           {/if}
         </div>
       {/if}
-
-      <!-- STATUS + SETTINGS: the read-only pills double as the trigger for an
-           anchored settings panel where each capability is editable. -->
-      <div class="dock__group">
-        <div class="dock__head">
-          <span class="dock__label">status</span>
-          <Popover label="Session settings" align="end" width={272} bind:open={settingsOpen}>
-            {#snippet trigger(toggle)}
-              <Button variant="ghost" size="sm" onclick={toggle} title="Session settings">edit</Button>
-            {/snippet}
-            <div class="set">
-              <div class="set__row">
-                <label class="set__label" for="set-model">model</label>
-                <select id="set-model" class="set__ctl" value={sess?.model ?? ""} onchange={onModel}>
-                  {#if models.length === 0}
-                    <option value={sess?.model ?? ""}>{sess?.model || "—"}</option>
-                  {:else}
-                    {#each models as m (m.id)}
-                      <option value={m.id} disabled={!m.available}>{m.id}{m.available ? "" : " (unavailable)"}</option>
-                    {/each}
-                  {/if}
-                </select>
-              </div>
-
-              <div class="set__row">
-                <span class="set__label">permissions</span>
-                <button
-                  class="set__toggle"
-                  role="switch"
-                  aria-checked={sess?.perm === "auto"}
-                  onclick={onPerm}
-                  title="Toggle auto-approve vs gated approvals"
-                >
-                  <span class="set__toggle-track"><span class="set__toggle-knob"></span></span>
-                  <span class="set__toggle-text">{sess?.perm === "auto" ? "auto" : "gated"}</span>
-                </button>
-              </div>
-
-              {#if sess?.effort}
-                <div class="set__row">
-                  <label class="set__label" for="set-effort">effort</label>
-                  <select id="set-effort" class="set__ctl" value={sess.effort} onchange={onEffort}>
-                    {#each effortLevels as lv (lv)}
-                      <option value={lv}>{lv}</option>
-                    {/each}
-                  </select>
-                </div>
-              {/if}
-
-              {#if sess?.search}
-                <div class="set__row">
-                  <label class="set__label" for="set-search">search</label>
-                  <select id="set-search" class="set__ctl" value={sess.search} onchange={onSearch}>
-                    {#each SEARCH_MODES as mode (mode)}
-                      <option value={mode}>{mode}</option>
-                    {/each}
-                  </select>
-                </div>
-              {/if}
-
-              {#if sess?.fastOk}
-                <div class="set__row">
-                  <span class="set__label">fast tier</span>
-                  <button
-                    class="set__toggle"
-                    role="switch"
-                    aria-checked={sess.fast ?? false}
-                    onclick={onFast}
-                    title="Route eligible turns to the fast tier"
-                  >
-                    <span class="set__toggle-track"><span class="set__toggle-knob"></span></span>
-                    <span class="set__toggle-text">{sess.fast ? "on" : "off"}</span>
-                  </button>
-                </div>
-              {/if}
-            </div>
-          </Popover>
-        </div>
-        <div class="dock__pills">
-          <Badge tone={sess?.perm === "auto" ? "warn" : "neutral"}>{sess?.perm || "gated"}</Badge>
-          {#if sess?.effort}<Badge tone="info">effort: {sess.effort}</Badge>{/if}
-          {#if sess?.search}<Badge tone="info">search: {sess.search}</Badge>{/if}
-          {#if sess?.fastOk}<Badge tone={sess.fast ? "brand" : "neutral"}>fast</Badge>{/if}
-        </div>
-      </div>
 
       <!-- TITLE: inline rename; empty reverts to the derived session title. -->
       <div class="dock__group">
@@ -1165,6 +1307,39 @@
           {/each}
         </div>
       {/if}
+      </div>
+      {/if}
+
+      <!-- TERMINAL: mount-when-active so a hidden tab never spawns a PTY (its
+           onMount opens the server-side shell; unmounting kills it). -->
+      {#if dockTab === "terminal"}
+        <div class="dock__body dock__body--fill">
+          <Terminal active={dockTab === "terminal"} />
+        </div>
+      {/if}
+
+      <!-- DIFF: mount-when-active so no git subprocess runs until opened. -->
+      {#if dockTab === "diff"}
+        <div class="dock__body dock__body--fill">
+          <DiffPanel dir={primaryRoot} />
+        </div>
+      {/if}
+
+      <!-- FILES: mount-when-active so no filesystem read until opened. -->
+      {#if dockTab === "files"}
+        <div class="dock__body dock__body--fill">
+          <FilesPanel dir={primaryRoot} />
+        </div>
+      {/if}
+
+      <!-- BROWSER: stays MOUNTED once first opened (browserOpened) and is hidden
+           rather than unmounted on tab switch, so navigation/page state survives
+           switching away and back. -->
+      {#if browserOpened}
+        <div class="dock__body dock__body--fill" class:dock__body--hidden={dockTab !== "browser"}>
+          <BrowserPanel />
+        </div>
+      {/if}
     </aside>
   </div>
 {/if}
@@ -1245,45 +1420,6 @@
     text-transform: uppercase;
     letter-spacing: var(--ls-eyebrow);
     color: var(--text-faint);
-  }
-  .ctl__sel {
-    height: 26px;
-    max-width: 200px;
-    padding: 0 var(--sp-6) 0 var(--sp-3);
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-raised);
-    color: var(--text-primary);
-    border-radius: var(--r-sm);
-    font: var(--fw-regular) var(--fs-body-sm) / 1 var(--font-sans);
-    cursor: pointer;
-    /* webkit2gtk paints native selects white without this — own chevron */
-    -webkit-appearance: none;
-    appearance: none;
-    color-scheme: dark;
-    background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
-      linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
-    background-position:
-      calc(100% - 13px) center,
-      calc(100% - 8px) center;
-    background-size:
-      5px 5px,
-      5px 5px;
-    background-repeat: no-repeat;
-  }
-  .ctl__sel--mini {
-    max-width: 110px;
-  }
-  .ctl__sel:hover {
-    border-color: var(--border-strong);
-  }
-  .ctl__sel:focus-visible {
-    outline: none;
-    border-color: var(--border-brand-faint);
-    box-shadow: var(--shadow-focus);
-  }
-  .ctl__sel option {
-    background: var(--bg-overlay);
-    color: var(--text-primary);
   }
   .ctl__pill {
     flex: none;
@@ -1710,16 +1846,82 @@
     margin: 0 auto;
     padding: var(--sp-5) var(--sp-8) var(--sp-7);
   }
+  /* The dock is a tabbed tools panel: a fixed tab strip over a flex-1 body. The
+     body is either the scrolling Info stack or a height-filling tool panel
+     (Terminal/Browser manage their own internal scroll), so the aside itself no
+     longer scrolls or pads — those move onto the Info body. Widened from 268 →
+     340 so a terminal/diff has room while the chat column stays dominant. */
   .chat__dock {
-    width: 268px;
+    width: 340px;
     flex: none;
     border-left: 1px solid var(--border-hairline);
     background: var(--bg-well);
-    padding: var(--sp-7) var(--sp-6);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .dock__tabs {
+    flex: none;
+    display: flex;
+    gap: var(--sp-1);
+    padding: var(--sp-3) var(--sp-4);
+    border-bottom: 1px solid var(--border-hairline);
+  }
+  .dock__tab {
+    flex: 1;
+    min-width: 0;
+    height: 26px;
+    padding: 0 var(--sp-2);
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-muted);
+    border-radius: var(--r-sm);
+    font: var(--fw-medium) var(--fs-label) / 1 var(--font-sans);
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition:
+      background var(--dur-fast) var(--ease-out),
+      color var(--dur-fast) var(--ease-out);
+  }
+  .dock__tab:hover {
+    color: var(--text-primary);
+    background: var(--state-hover);
+  }
+  .dock__tab:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .dock__tab--on {
+    border-color: var(--border-brand-faint);
+    background: var(--state-selected);
+    color: var(--brand-bright);
+  }
+  /* The active tab's body. Info scrolls its stacked groups; the tool panels
+     fill the height and own their internal scroll. */
+  .dock__body {
+    flex: 1;
+    min-height: 0;
+  }
+  .dock__body--scroll {
     overflow-y: auto;
+    padding: var(--sp-7) var(--sp-6);
     display: flex;
     flex-direction: column;
     gap: var(--sp-7);
+  }
+  .dock__body--fill {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  /* Browser stays mounted across tab switches (page state survives) but is
+     visually removed when another tab is active. display:none rather than
+     unmount is the whole point — the page/navigation isn't torn down. */
+  .dock__body--hidden {
+    display: none;
   }
   .dock__head {
     display: flex;
@@ -1830,11 +2032,6 @@
     to {
       transform: rotate(360deg);
     }
-  }
-  .dock__pills {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--sp-3);
   }
   .dock__goal {
     font-size: var(--fs-body-sm);
@@ -1958,115 +2155,78 @@
     color: var(--text-muted);
   }
 
-  /* ── settings panel ────────────────────────────────────────────────────── */
-  .set {
+  /* ── new-chat popover ──────────────────────────────────────────────────── */
+  /* The inline working-directory prompt anchored under the New-chat button. */
+  .newchat {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-5);
+    gap: var(--sp-4);
   }
-  .set__row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--sp-5);
+  .newchat__label {
+    font-size: var(--fs-micro);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--text-faint);
   }
-  .set__label {
-    font-size: var(--fs-label);
-    color: var(--text-secondary);
-    flex: none;
-  }
-  .set__ctl {
-    flex: 1;
-    min-width: 0;
-    max-width: 170px;
-    box-sizing: border-box;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-raised);
-    color: var(--text-primary);
-    border-radius: var(--r-sm);
-    /* room for the custom chevron on the right */
-    padding: var(--sp-2) var(--sp-7) var(--sp-2) var(--sp-3);
-    font: var(--fw-regular) var(--fs-body-sm) / 1 var(--font-sans);
-    outline: none;
-    cursor: pointer;
-    /* webkit2gtk paints native selects white without this — reset + own chevron */
-    -webkit-appearance: none;
-    appearance: none;
-    color-scheme: dark;
-    background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
-      linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
-    background-position:
-      calc(100% - 14px) center,
-      calc(100% - 9px) center;
-    background-size:
-      5px 5px,
-      5px 5px;
-    background-repeat: no-repeat;
-  }
-  .set__ctl:hover {
-    border-color: var(--border-strong);
-  }
-  .set__ctl:focus-visible {
-    border-color: var(--border-brand-faint);
-    box-shadow: var(--shadow-focus);
-  }
-  .set__ctl option {
-    background: var(--bg-overlay);
-    color: var(--text-primary);
-  }
-  /* A compact switch styled from tokens; the track tints brand when on. */
-  .set__toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--sp-3);
-    border: none;
-    background: transparent;
+  /* Recent-dir quick-pick: a compact list of clickable rows, each a project
+     name over a dimmed short path. The selected row carries the brand tint. */
+  .newchat__recents {
+    list-style: none;
+    margin: 0;
     padding: 0;
-    cursor: pointer;
-    color: var(--text-secondary);
-    font: var(--fw-medium) var(--fs-label) / 1 var(--font-sans);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    max-height: 168px;
+    overflow-y: auto;
   }
-  .set__toggle:focus-visible {
+  .newchat__recent {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    width: 100%;
+    text-align: left;
+    padding: var(--sp-2) var(--sp-3);
+    border: 1px solid transparent;
+    background: transparent;
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    transition:
+      background var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out);
+  }
+  .newchat__recent:hover {
+    background: var(--state-hover);
+  }
+  .newchat__recent:focus-visible {
     outline: none;
     box-shadow: var(--shadow-focus);
-    border-radius: var(--r-xs);
   }
-  .set__toggle-track {
-    position: relative;
-    width: 30px;
-    height: 16px;
-    border-radius: var(--r-full);
-    background: var(--bg-inset);
-    border: 1px solid var(--border-subtle);
-    transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
-  }
-  .set__toggle-knob {
-    position: absolute;
-    top: 1px;
-    left: 1px;
-    width: 12px;
-    height: 12px;
-    border-radius: var(--r-full);
-    background: var(--text-muted);
-    transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
-  }
-  .set__toggle[aria-checked="true"] .set__toggle-track {
+  .newchat__recent--on {
+    border-color: var(--border-brand-faint);
     background: var(--state-selected);
-    border-color: var(--border-brand);
   }
-  .set__toggle[aria-checked="true"] .set__toggle-knob {
-    transform: translateX(14px);
-    background: var(--brand);
+  .newchat__recent-name {
+    font: var(--fw-semibold) var(--fs-body-sm) / 1.2 var(--font-sans);
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .set__toggle-text {
-    min-width: 3ch;
-    text-align: left;
+  .newchat__recent-dir {
+    font-size: var(--fs-micro);
+    color: var(--text-faint);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
+  .newchat__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--sp-3);
+  }
+
   @media (prefers-reduced-motion: reduce) {
-    .set__toggle-track,
-    .set__toggle-knob {
-      transition: none;
-    }
     /* hold the live caret solid rather than blinking */
     .caret {
       animation: none;

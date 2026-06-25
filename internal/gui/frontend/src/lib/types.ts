@@ -131,6 +131,16 @@ export type MemoryDTO = {
   project: MemoryScopeDTO | null;
   global: MemoryScopeDTO | null;
 };
+// A selectable memory scope in the picker (lightweight — no note bodies). `key`
+// round-trips to MemoryForScope(scope): an abs project dir when known, else the
+// on-disk store key, or "global". See gui/memory.go ListMemoryScopes.
+export type MemoryScopeRefDTO = {
+  key: string;
+  name: string;
+  dir: string;
+  noteCount: number;
+  current?: boolean; // the cwd project — the picker's default selection
+};
 
 export type SkillDTO = {
   name: string;
@@ -194,6 +204,36 @@ export type DreamReportDTO = {
   consolidated: boolean;
   summaryRegened: boolean;
   changed: boolean;
+};
+
+// A recent project dir for the new-chat working-directory picker (RecentDirs).
+export type RecentDirDTO = { dir: string; name: string };
+
+// Right-panel TOOLS DTOs ───────────────────────────────────────────────────
+// Working-tree diff of the current changes vs HEAD (WorkingDiff(dir)).
+export type DiffFileDTO = { path: string; adds: number; dels: number };
+export type WorkingDiffDTO = {
+  dir: string;
+  branch: string;
+  patch: string; // full unified diff (capped; truncated flagged)
+  files: DiffFileDTO[];
+  isRepo: boolean;
+  clean: boolean;
+  truncated: boolean;
+};
+// File-explorer tree (FileTree(dir)); Path is absolute → feeds ReadFileForView.
+export type FileEntryDTO = {
+  name: string;
+  path: string;
+  isDir: boolean;
+  children?: FileEntryDTO[];
+};
+export type FileTreeDTO = { dir: string; entries: FileEntryDTO[]; truncated: boolean };
+// Pushed on the "eigen:terminal" event as the PTY produces output / exits.
+export type TerminalEventDTO = {
+  id: string;
+  data?: string; // base64 of raw PTY output bytes
+  exited?: boolean; // the shell ended / was killed
 };
 
 // Which voice capabilities are usable in this environment (capability-gates the
@@ -306,8 +346,25 @@ export type MarketplaceDTO = {
   owner?: string;
   disabled: boolean;
   addedMs: number;
+  // populated only by AddMarketplace (from the parsed catalog); Plugins() omits them
+  description?: string;
+  version?: string;
+  pluginCount?: number;
 };
 export type PluginsDTO = { plugins: InstalledPluginDTO[]; marketplaces: MarketplaceDTO[] };
+// One installable plugin from a recorded marketplace (read-only preview; counts
+// always present). See gui/plugins.go MarketplacePlugins.
+export type PluginPreviewDTO = {
+  name: string;
+  description?: string;
+  marketplace: string;
+  version?: string;
+  skills: number;
+  agents: number;
+  commands: number;
+  mcpServers: number;
+  hooks: number;
+};
 
 export type ConfigFieldDTO = {
   key: string;

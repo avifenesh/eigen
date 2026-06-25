@@ -23,7 +23,8 @@
 ## Files
 
 ### internal/gui/frontend/src/views/Memory.svelte
-- **Role:** Durable-notes browser for project/global scope: distilled summary, append-only notes (virtualized), ad-hoc manual saves, banned-behavior rules, MEMORY.md snapshot history, and (global only) the editable user profile split into an eigen-learned block + the user's own additions.
+- **Role:** Durable-notes browser for ANY known project + global (an N-scope picker, not just current+global): distilled summary, append-only notes (virtualized), ad-hoc manual saves, banned-behavior rules, MEMORY.md snapshot history, and (global only) the editable user profile split into an eigen-learned block + the user's own additions.
+- **Scope picker:** `scopes` (`ListMemoryScopes()`) feeds a custom `<Dropdown>` (Global first, then every project; option `sub`=dir so same-named projects stay distinct). `scope` is the selected KEY; `current` is loaded per-scope via `MemoryForScope(scope)` (seq-guarded `loadScope`), with the initial `"project"` alias reconciled to its canonical key once the list+DTO land. Write actions (`AppendMemory`/`AddBan`/`RemoveBan`/`MemoryBackups`/`WriteUserProfile`) all pass the selected key — editing any project's memory works.
 - **Key symbols:**
   - `load()` — fetches `Bridge.Memory()` into `data`, alive-guarded by `loadSeq`.
   - `saveNote()` — trims `draft`, calls `Bridge.AppendMemory(scope, note)`, then reloads. Cmd/Ctrl+Enter in the composer also fires it; an `$effect` autofocuses the `composeEl` textarea when `composing` flips on.
@@ -36,13 +37,14 @@
   - `bans` (`$derived`) — narrow-cast of `current.banList` (the typed `BanDTO[] = {title,rule}` the Go DTO carries but `types.ts` only types as the raw `bans` blob).
   - `isEmpty` (`$derived`) — scope with nothing injected (no summary, notes, ad-hoc, bans, or profile/profileLearned); `hasBackupHistory` (`$derived`) gates a distinct empty state when a consolidated-to-nothing scope still has snapshot history.
   - State runes: `data`, `scope`, `loading`, `composing`, `draft`, `saving`, `composeEl`, `editingProfile`, `profileDraft`, `savingProfile`, `addingBan`, `banTitle`, `banRule`, `savingBan`, `removingBan`, `backupsOpen`, `backupPaths`, `backupsLoading`.
-- **Depends on:** `$lib/bridge` (`Memory`, `AppendMemory`, `AddBan`, `RemoveBan`, `MemoryBackups`, `WriteUserProfile`), `$lib/router.svelte` (`router` — the empty-state jump to Dreaming), `$lib/stores/toasts.svelte`, `$lib/types` (`MemoryDTO`, `MemoryScopeDTO`); components `Card`, `Button`, `Badge`, `Markdown`, `VirtualList`, `EmptyState`.
+- **Depends on:** `$lib/bridge` (`ListMemoryScopes`, `MemoryForScope`, `AppendMemory`, `AddBan`, `RemoveBan`, `MemoryBackups`, `WriteUserProfile`), `$lib/router.svelte` (`router` — the empty-state jump to Dreaming), `$lib/stores/toasts.svelte`, `$lib/types` (`MemoryScopeDTO`, `MemoryScopeRefDTO`); components `Card`, `Button`, `Badge`, `Markdown`, `VirtualList`, `EmptyState`, `Dropdown`.
 - **Used by / entrypoint:** entrypoint: `App.svelte` renders `<Memory />` when `router.route === "memory"`.
 
 ### internal/gui/frontend/src/views/Dreaming.svelte
-- **Role:** Memory-consolidation timeline with two strands per scope — per-session rollout summaries and consolidation snapshots; a consolidation opens a slide-over diffing that snapshot against current memory.
+- **Role:** Memory-consolidation timeline with two strands per scope — per-session rollout summaries and consolidation snapshots; a consolidation opens a slide-over diffing that snapshot against current memory. Browses ANY known project (same N-scope `<Dropdown>` as Memory), not just current+global.
+- **Scope picker:** `scopes` (`ListMemoryScopes()`) → `<Dropdown>`; `current` loaded per-scope via `DreamingForScope(key)` (seq-guarded `loadScope`); the `"project"` alias is reconciled to its canonical key via a one-off `MemoryForScope("project").dir` (DreamingScopeDTO has no dir field). `dreamNow`/`openDiff` target the selected key.
 - **Key symbols:**
-  - `load()` — fetches `Bridge.Dreaming()`; sets `error` on failure (alive-guarded).
+  - `loadScope(key)` — fetches `Bridge.DreamingForScope(key)` into `current` (seq-guarded); `loadScopes()` fetches the picker list on mount. (`Bridge.Dreaming()` combined-snapshot path retired in the view.)
   - `openDiff(c)` — fetches `Bridge.ConsolidationContent(c.path)` and `Bridge.CurrentMemory(scope)` in parallel, builds a unified diff for `DiffView`; on failure sets `diffError` (surfaced in-sheet with a Retry) and toasts.
   - `closeDiff()` / `onkeydown(e)` — slide-over teardown (clears `diffError` too); Escape closes the diff.
   - `outcomeTone(o)` — maps rollout outcome string to a `Badge` tone.
@@ -50,7 +52,7 @@
   - `title(text)` — derives a one-line heading from the first non-blank markdown line.
   - `makeUnifiedDiff(before, after, aLabel, bLabel)` — **exported** from a `<script module>`; minimal O(n·m) LCS line diff producing a unified-diff string (kept local since memory files are small).
   - `current` (`$derived`) — active `DreamingScopeDTO`. State: `data`, `scope`, `strand`, `loading`, `error`, `openCons`, `diffPatch`, `diffLoading`, `diffError`.
-- **Depends on:** `$lib/bridge` (`Dreaming`, `ConsolidationContent`, `CurrentMemory`), `$lib/stores/toasts.svelte`, `$lib/actions` (`trapFocus`), `$lib/types` (`DreamingDTO`, `DreamingScopeDTO`, `ConsolidationDTO`); components `Card`, `Button`, `Badge`, `Markdown`, `DiffView`, `VirtualList`, `EmptyState`.
+- **Depends on:** `$lib/bridge` (`ListMemoryScopes`, `DreamingForScope`, `MemoryForScope`, `DreamNow`, `ConsolidationContent`, `CurrentMemory`), `$lib/stores/toasts.svelte`, `$lib/actions` (`trapFocus`), `$lib/types` (`DreamingScopeDTO`, `MemoryScopeRefDTO`, `ConsolidationDTO`); components `Card`, `Button`, `Badge`, `Markdown`, `DiffView`, `VirtualList`, `EmptyState`, `Dropdown`.
 - **Used by / entrypoint:** entrypoint: `App.svelte` renders `<Dreaming />` when `router.route === "dreaming"`. `makeUnifiedDiff` is consumed only inside this file (line 67); not imported elsewhere.
 
 ### internal/gui/frontend/src/views/Skills.svelte

@@ -60,7 +60,7 @@
 
 ### internal/feed/suggest.go
 
-- **Role:** Model-driven "suggest" source — a mid-tier model proposes the step *forward* (missing test, PR for a finished branch, next feature) over a bounded local-context snapshot; runs on its own slow cadence (`suggestTTL`=90min) and is failure-isolated to a stale cache. De-dupes against recently-surfaced/dismissed ideas and prunes suggestions for projects no longer tracked.
+- **Role:** Model-driven "suggest" source — the flagship suggester model (glm-5.2, web_search "auto" included) proposes the *non-obvious* step forward, explicitly told to AVOID restating git/working-tree state ("commit and push…") and to USE its live web_search to ground at least one idea in something NEW in the developer's orbit (a just-shipped library/model version, an adjacent technique, a tool that replaces a manual step). Runs over a bounded local-context snapshot on its own slow cadence (`suggestTTL`=90min) and is failure-isolated to a stale cache. De-dupes against recently-surfaced/dismissed ideas and prunes suggestions for projects no longer tracked.
 - **Key symbols:**
   - `Suggester` (func type) — `func(ctx, system, prompt) (string, error)`, injected by the app so feed has no provider dependency (nil disables the source). `system` carries instructions, `prompt` the data snapshot.
   - `suggestCache` (struct) — persisted state at `~/.eigen/feed-suggest.json`: `Items`, `Scanned`, and `Dirs` (a signature of the dir set the items were generated for, so a project add/remove invalidates the cache even within the TTL).

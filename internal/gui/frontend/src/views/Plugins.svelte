@@ -2,14 +2,15 @@
   // Plugins — installed plugins + configured marketplaces (the Tier 27 plugin
   // layer). Each plugin shows what it wired in (skills / agents / mcp / commands
   // / hooks) and its install-scan status; marketplaces can be enabled/disabled
-  // or removed. Installing is intentionally absent — untrusted bundles are
-  // scanned at install via the CLI; the GUI only manages what's already there.
+  // or removed. Adding a plugin happens here now (mirroring Skills): record a
+  // marketplace source, list its installable plugins, then install one — the
+  // backend scans every bundle before writing, with no force path in the GUI.
   // Uninstall + marketplace-remove are destructive, so they take an inline
   // confirm rather than acting on a stray click.
   import { Bridge } from "$lib/bridge";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { relTime } from "$lib/status";
-  import type { PluginsDTO, InstalledPluginDTO } from "$lib/types";
+  import type { PluginsDTO, InstalledPluginDTO, PluginPreviewDTO } from "$lib/types";
   import { SvelteSet } from "svelte/reactivity";
   import Card from "$lib/components/Card.svelte";
   import Button from "$lib/components/Button.svelte";
@@ -26,6 +27,104 @@
   function toggleScans(name: string) {
     if (expandedScans.has(name)) expandedScans.delete(name);
     else expandedScans.add(name);
+  }
+
+  // Add-a-plugin flow (mirrors Skills' add UX, in two slow steps because the
+  // backend fetches over the network):
+  //   1. AddMarketplace(source) records a catalog (owner/repo, https URL, or
+  //      local path) — slow, so `addingMkt` drives a spinner. On success we
+  //      immediately list its plugins.
+  //   2. MarketplacePlugins(mktName) populates `previews` — one selectable row
+  //      per installable plugin (also reachable via "Browse" on an already-
+  //      recorded marketplace, no re-add needed).
+  //   3. InstallPlugin(name, mkt) scans then writes — `installingPlugin` tracks
+  //      the in-flight row. The three distinct rejects surface as toasts:
+  //      RISKY (warn, no force offered), no-scanner (error), already-installed
+  //      (info, still refresh). On success we refresh the installed list and
+  //      drop the row from `previews`.
+  let mktSource = $state("");
+  let addingMkt = $state(false);
+  let previews = $state<PluginPreviewDTO[]>([]);
+  let previewMkt = $state(""); // which marketplace `previews` came from (for the heading)
+  let installingPlugin = $state<string | null>(null);
+
+  // Non-zero component counts as "3 skills · 1 agent · 2 mcp" for a preview row.
+  function previewComponents(p: PluginPreviewDTO): string {
+    const parts: string[] = [];
+    if (p.skills) parts.push(`${p.skills} skill${p.skills === 1 ? "" : "s"}`);
+    if (p.agents) parts.push(`${p.agents} agent${p.agents === 1 ? "" : "s"}`);
+    if (p.mcpServers) parts.push(`${p.mcpServers} mcp`);
+    if (p.commands) parts.push(`${p.commands} command${p.commands === 1 ? "" : "s"}`);
+    if (p.hooks) parts.push(`${p.hooks} hook${p.hooks === 1 ? "" : "s"}`);
+    return parts.join(" · ");
+  }
+
+  // Step 1+2: record the marketplace source, then list its plugins. AddMarketplace
+  // is idempotent (re-adding refreshes), so this doubles as a re-fetch path.
+  async function addSource() {
+    const src = mktSource.trim();
+    if (!src || addingMkt) return;
+    addingMkt = true;
+    try {
+      const mkt = await Bridge.AddMarketplace(src);
+      if (!mkt) {
+        toasts.info("nothing added");
+        return;
+      }
+      toasts.success(`added marketplace ${mkt.name}`);
+      mktSource = "";
+      await loadPreviews(mkt.name);
+      await load(); // the new marketplace lands in the Marketplaces section too
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      addingMkt = false;
+    }
+  }
+
+  // Step 2 alone: list installable plugins from an already-recorded marketplace
+  // (the "Browse" action). Shares `addingMkt` so the same spinner shows.
+  async function loadPreviews(mktName: string) {
+    addingMkt = true;
+    previewMkt = mktName;
+    try {
+      previews = await Bridge.MarketplacePlugins(mktName);
+      if (previews.length === 0) toasts.info(`${mktName} lists no plugins`);
+    } catch (e) {
+      previews = [];
+      previewMkt = "";
+      toasts.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      addingMkt = false;
+    }
+  }
+
+  // Step 3: scan + install one plugin. The backend rejects distinctly; map each
+  // to the right toast tone. RISKY and no-scanner are honest failures (error);
+  // already-installed is benign (info) and we still refresh + drop the row.
+  async function installPlugin(p: PluginPreviewDTO) {
+    if (installingPlugin) return;
+    installingPlugin = p.name;
+    try {
+      const inst = await Bridge.InstallPlugin(p.name, p.marketplace);
+      toasts.success(`installed ${inst?.name ?? p.name}`);
+      previews = previews.filter((x) => x.name !== p.name);
+      await load();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/already installed/.test(msg)) {
+        // Benign: we already have it. Drop the row and refresh so it shows up.
+        toasts.info(msg);
+        previews = previews.filter((x) => x.name !== p.name);
+        await load();
+      } else {
+        // RISKY bundle (no force path by design) or no credentialed scanner —
+        // both are real failures; the message tells the user what to do.
+        toasts.error(msg);
+      }
+    } finally {
+      installingPlugin = null;
+    }
   }
 
   let loadSeq = 0;
@@ -155,8 +254,11 @@
         <Button variant="secondary" onclick={() => load()}>Retry</Button>
       {/snippet}
     </EmptyState>
-  {:else if !data || (data.plugins.length === 0 && data.marketplaces.length === 0)}
-    <EmptyState glyph="⊞" title="No plugins installed" line="Plugins add tools, skills, agents, and MCP servers. Install via `eigen plugin install` (bundles are scanned first)." />
+  {:else if !data}
+    <!-- Only a genuine "no data object" (load returned nothing) falls here now.
+         An empty-but-loaded result still renders the sections below so the add
+         control stays reachable — a fresh user adds their first plugin here. -->
+    <EmptyState glyph="⊞" title="No plugins" line="Plugins add tools, skills, agents, and MCP servers. Add a marketplace source below to install one (bundles are scanned first)." />
   {:else}
     <div class="plug__scroll">
       <section class="plug__section">
@@ -164,12 +266,58 @@
           <h2 class="plug__section-title">Installed plugins</h2>
           <span class="plug__n tnum">{data.plugins.length}</span>
         </div>
-        <!-- No GUI install bridge for plugins: untrusted bundles are scanned at
-             the CLI install seam, so adding a plugin happens there. Honest hint
-             rather than a faked Add control. -->
-        <p class="plug__add-hint">
-          Add a plugin from the CLI: <code class="plug__cmd selectable">eigen plugin install &lt;name&gt;</code> — bundles are scanned before they're wired in.
-        </p>
+        <!-- Add a plugin — record a marketplace source (owner/repo, https URL,
+             or local path), then install from the listed bundles. Every install
+             is scanned before it's written; a risky bundle is refused with no
+             force path here by design. Both steps fetch over the network, so
+             each carries its own spinner. -->
+        <div class="plug__add">
+          <input
+            class="plug__add-input"
+            type="text"
+            placeholder="owner/repo, https URL, or local path"
+            bind:value={mktSource}
+            onkeydown={(e) => e.key === "Enter" && (e.preventDefault(), addSource())}
+            disabled={addingMkt}
+            aria-label="Marketplace source to add"
+          />
+          <Button variant="primary" size="sm" loading={addingMkt} disabled={!mktSource.trim()} onclick={addSource}>
+            Add source
+          </Button>
+        </div>
+
+        {#if previews.length > 0}
+          <!-- Installable plugins from the browsed/added marketplace. Each row
+               installs on its own spinner; the whole list dims while any one is
+               in flight so a second install can't race the first. -->
+          <div class="prev" class:prev--busy={installingPlugin !== null}>
+            <div class="prev__head">
+              <span class="prev__eyebrow">Installable from {previewMkt}</span>
+              <span class="plug__n tnum">{previews.length}</span>
+            </div>
+            {#each previews as pv (pv.name)}
+              <div class="prev__row">
+                <div class="prev__main">
+                  <div class="prev__top">
+                    <span class="prev__name">{pv.name}</span>
+                    {#if pv.version}<Badge tone="neutral">{pv.version}</Badge>{/if}
+                  </div>
+                  {#if pv.description}<p class="prev__desc">{pv.description}</p>{/if}
+                  {#if previewComponents(pv)}<span class="prev__counts tnum">{previewComponents(pv)}</span>{/if}
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={installingPlugin === pv.name}
+                  disabled={installingPlugin !== null && installingPlugin !== pv.name}
+                  onclick={() => installPlugin(pv)}
+                >
+                  Install
+                </Button>
+              </div>
+            {/each}
+          </div>
+        {/if}
         {#if data.plugins.length === 0}
           <p class="plug__empty-note">No plugins installed.</p>
         {:else}
@@ -271,6 +419,17 @@
                       <Button variant="danger" size="sm" loading={acting["m:" + m.name]} onclick={() => removeMarket(m.name)}>Confirm</Button>
                       <Button variant="ghost" size="sm" onclick={() => (confirming = null)}>Cancel</Button>
                     {:else}
+                      <!-- Browse lists this marketplace's plugins into the add
+                           area above without re-recording it (slow fetch). -->
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        loading={addingMkt && previewMkt === m.name}
+                        disabled={addingMkt}
+                        onclick={() => loadPreviews(m.name)}
+                      >
+                        Browse plugins
+                      </Button>
                       <Button variant="ghost" size="sm" loading={acting["m:" + m.name]} onclick={() => toggleMarket(m.name, m.disabled)}>
                         {m.disabled ? "Enable" : "Disable"}
                       </Button>
@@ -342,19 +501,100 @@
     font-size: var(--fs-label);
     color: var(--text-ghost);
   }
-  .plug__add-hint {
-    margin: 0 0 var(--sp-2);
+  /* Add control — a marketplace source input + Add (mirrors Skills' add row).
+     Adding records a catalog, then lists its plugins below. */
+  .plug__add {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    margin-bottom: var(--sp-2);
+  }
+  .plug__add-input {
+    flex: 1;
+    min-width: 0;
+    max-width: 420px;
+    height: 32px;
+    padding: 0 var(--sp-5);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-md);
+    background: var(--bg-raised);
+    color: var(--text-primary);
+    font: var(--fw-regular) var(--fs-body-sm) / 1 var(--font-sans);
+    outline: none;
+    transition: border-color var(--dur-fast) var(--ease-out);
+  }
+  .plug__add-input:focus-visible {
+    border-color: var(--border-brand-faint);
+    box-shadow: var(--shadow-focus);
+  }
+  .plug__add-input::placeholder {
+    color: var(--text-ghost);
+  }
+  .plug__add-input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  /* Installable-plugins panel — the bridge between "added a source" and "it's
+     in my installed list". Each row offers one Install; the panel dims while
+     any install is in flight. */
+  .prev {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    padding: var(--sp-4) var(--sp-5);
+    margin-bottom: var(--sp-2);
+    border-radius: var(--r-md);
+    background: var(--bg-raised);
+    border: 1px solid var(--border-hairline);
+    transition: opacity var(--dur-fast) var(--ease-out);
+  }
+  .prev--busy {
+    opacity: 0.7;
+  }
+  .prev__head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+  }
+  .prev__eyebrow {
+    font: var(--fw-semibold) var(--fs-label) / 1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--text-faint);
+  }
+  .prev__row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-5);
+    padding: var(--sp-3) 0;
+    border-top: 1px solid var(--divider);
+  }
+  .prev__main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+  }
+  .prev__top {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+  .prev__name {
+    font-weight: var(--fw-semibold);
+    font-size: var(--fs-body-sm);
+    color: var(--text-primary);
+  }
+  .prev__desc {
+    margin: 0;
     color: var(--text-muted);
     font-size: var(--fs-body-sm);
     line-height: var(--lh-snug);
   }
-  .plug__cmd {
-    padding: 1px var(--sp-3);
-    border-radius: var(--r-xs);
-    background: var(--bg-overlay);
-    border: 1px solid var(--border-hairline);
-    font: var(--fw-regular) var(--fs-code-sm) / 1.4 var(--font-mono);
-    color: var(--text-secondary);
+  .prev__counts {
+    font-size: var(--fs-label);
+    color: var(--text-faint);
   }
   .plug__list {
     display: flex;

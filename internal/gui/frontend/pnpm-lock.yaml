@@ -11,6 +11,12 @@ importers:
       '@wailsio/runtime':
         specifier: 3.0.0-alpha.94
         version: 3.0.0-alpha.94
+      '@xterm/addon-fit':
+        specifier: ^0.11.0
+        version: 0.11.0
+      '@xterm/xterm':
+        specifier: ^6.0.0
+        version: 6.0.0
       marked:
         specifier: ^18.0.5
         version: 18.0.5
@@ -192,6 +198,12 @@ packages:
 
   '@wailsio/runtime@3.0.0-alpha.94':
     resolution: {integrity: sha512-jtOtyWLDLop9NfU373sA43NjyGntxDFUIHY6kzmArz5HGn66Ok3vl9N2nIyVs7cArvADxk/mBBZ9wXOX7R0NFA==}
+
+  '@xterm/addon-fit@0.11.0':
+    resolution: {integrity: sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g==}
+
+  '@xterm/xterm@6.0.0':
+    resolution: {integrity: sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg==}
 
   acorn@8.17.0:
     resolution: {integrity: sha512-xRQbDb9BnwDafYNn6Vwl839DYVjqXYb1XVGtWAZ1kcDc6iwAL4hg3B1dZlRiuENFeO2H53gFG3in621AdERVAg==}
@@ -579,6 +591,10 @@ snapshots:
   '@types/trusted-types@2.0.7': {}
 
   '@wailsio/runtime@3.0.0-alpha.94': {}
+
+  '@xterm/addon-fit@0.11.0': {}
+
+  '@xterm/xterm@6.0.0': {}
 
   acorn@8.17.0: {}
 

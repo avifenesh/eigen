@@ -7,9 +7,10 @@
   // you can see exactly what a dream changed. All local files — read directly.
   import { Bridge } from "$lib/bridge";
   import { toasts } from "$lib/stores/toasts.svelte";
-  import type { DreamingDTO, DreamingScopeDTO, ConsolidationDTO } from "$lib/types";
+  import type { DreamingScopeDTO, ConsolidationDTO, MemoryScopeRefDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
   import Button from "$lib/components/Button.svelte";
+  import Dropdown from "$lib/components/Dropdown.svelte";
   import Badge from "$lib/components/Badge.svelte";
   import Markdown from "$lib/components/Markdown.svelte";
   import DiffView from "$lib/components/DiffView.svelte";
@@ -17,8 +18,15 @@
   import EmptyState from "$lib/components/EmptyState.svelte";
   import { trapFocus } from "$lib/actions";
 
-  let data = $state<DreamingDTO | null>(null);
-  let scope = $state<"project" | "global">("project");
+  // The selectable scopes (Global first, then every known project). The picker
+  // binds to `scope` — a scope KEY that round-trips through DreamingForScope (the
+  // backend accepts "global", "project"/"", an abs dir, or an on-disk key). We
+  // open the cwd project by default ("project") for session continuity.
+  let scopes = $state<MemoryScopeRefDTO[]>([]);
+  let scope = $state<string>("project");
+  // The opened scope's dreaming DTO — loaded on demand via DreamingForScope,
+  // replacing the old two-field {project, global} payload.
+  let current = $state<DreamingScopeDTO | null>(null);
   let strand = $state<"rollouts" | "consolidations">("rollouts");
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -29,23 +37,57 @@
   let diffLoading = $state(false);
   let diffError = $state<string | null>(null);
 
-  const current = $derived<DreamingScopeDTO | null>(
-    scope === "project" ? (data?.project ?? null) : (data?.global ?? null),
+  // The selected scope's ref — for the dir label next to the picker.
+  const selectedRef = $derived<MemoryScopeRefDTO | null>(
+    scopes.find((s) => s.key === scope) ?? null,
   );
 
+  // The picker list — fetched once on mount. Reassigned wholesale for
+  // reactivity. A late resolution after unmount is harmless; guard with `alive`
+  // so we don't toast after teardown.
+  let alive = true;
+  async function loadScopes() {
+    try {
+      const refs = await Bridge.ListMemoryScopes();
+      if (!alive) return;
+      scopes = refs;
+      // Relabel the picker from the "project" alias to the canonical key of the
+      // cwd project (the ref flagged `current`), so it shows "eigen (10)" rather
+      // than a placeholder. The dreaming data already loads under the alias.
+      if (scope === "project") {
+        const cur = refs.find((r) => r.current);
+        if (cur) scope = cur.key;
+      }
+    } catch (e) {
+      if (alive) toasts.error(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // alive guard: a slow DreamingForScope() resolution for an old selection must
+  // not clobber the data of a newer one (or write after unmount). Monotonic seq.
   let loadSeq = 0;
-  async function load() {
+  async function loadScope(key: string) {
     const seq = ++loadSeq;
     loading = true;
     error = null;
     try {
-      const d = await Bridge.Dreaming();
-      if (seq === loadSeq) data = d;
+      const d = await Bridge.DreamingForScope(key);
+      if (seq === loadSeq) current = d;
     } catch (e) {
       if (seq === loadSeq) error = e instanceof Error ? e.message : String(e);
     } finally {
       if (seq === loadSeq) loading = false;
     }
+  }
+  // Switching the picker re-opens the chosen scope.
+  function selectScope(key: string) {
+    if (key === scope) return;
+    scope = key;
+    loadScope(key);
+  }
+  function shortDir(d: string): string {
+    const p = d.replace(/\/$/, "").split("/");
+    return p[p.length - 1] || d;
   }
   // Run consolidation + summary for the current scope on demand. The daemon
   // dreams on its own cadence; this lets the user fold pending notes into
@@ -57,7 +99,7 @@
     try {
       const r = await Bridge.DreamNow(scope);
       toasts.success(r?.report || (r?.changed ? "consolidated memory" : "nothing new to consolidate"));
-      await load();
+      await loadScope(scope);
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -65,9 +107,13 @@
     }
   }
 
+  // Mount: enumerate scopes, then open the initial selection.
   $effect(() => {
-    load();
+    alive = true;
+    loadScopes();
+    loadScope(scope);
     return () => {
+      alive = false;
       loadSeq++;
     };
   });
@@ -128,9 +174,25 @@
 
 <div class="dream">
   <header class="dream__head">
-    <div class="dream__scopes" role="tablist" aria-label="Memory scope">
-      <button class="dream__seg" class:dream__seg--on={scope === "project"} role="tab" aria-selected={scope === "project"} onclick={() => (scope = "project")}>Project</button>
-      <button class="dream__seg" class:dream__seg--on={scope === "global"} role="tab" aria-selected={scope === "global"} onclick={() => (scope = "global")}>Global</button>
+    <div class="dream__picker">
+      <!-- N-scope picker: Global first (always present), then every known
+           project. A custom Dropdown (NOT a native <select> — webkit2gtk draws
+           the native option list black-on-black). Each option's `sub` carries
+           the dir so two projects sharing a basename stay distinguishable. -->
+      <Dropdown
+        label="Memory scope"
+        width={300}
+        value={scope}
+        options={scopes.map((s) => ({
+          value: s.key,
+          label: s.noteCount > 0 ? `${s.name} (${s.noteCount})` : s.name,
+          sub: s.dir ? shortDir(s.dir) : undefined,
+        }))}
+        onchange={(v) => selectScope(v)}
+      />
+      {#if selectedRef?.dir}
+        <span class="dream__dir" title={selectedRef.dir}>{shortDir(selectedRef.dir)}</span>
+      {/if}
     </div>
     <div class="dream__strands" role="tablist" aria-label="Timeline strand">
       <button class="dream__seg" class:dream__seg--on={strand === "rollouts"} role="tab" aria-selected={strand === "rollouts"} onclick={() => (strand = "rollouts")}>
@@ -147,14 +209,14 @@
     </div>
   </header>
 
-  {#if loading && !data}
+  {#if loading && !current}
     <div class="dream__body">
       {#each Array(4) as _, i (i)}<div class="dream__skel"></div>{/each}
     </div>
-  {:else if error && !data}
+  {:else if error && !current}
     <EmptyState glyph="☾" title="Couldn't load dreaming" line={error}>
       {#snippet action()}
-        <Button variant="secondary" onclick={() => load()}>Retry</Button>
+        <Button variant="secondary" onclick={() => loadScope(scope)}>Retry</Button>
       {/snippet}
     </EmptyState>
   {:else if !current || (current.rollouts.length === 0 && current.consolidations.length === 0)}
@@ -310,7 +372,22 @@
   .dream__actions {
     margin-left: auto;
   }
-  .dream__scopes,
+  /* Scope picker — a custom Dropdown over N scopes (Global + every project).
+     The dir label sits beside it so projects sharing a basename stay distinct. */
+  .dream__picker {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-5);
+    min-width: 0;
+  }
+  .dream__dir {
+    font-size: var(--fs-label);
+    color: var(--text-faint);
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .dream__strands {
     display: inline-flex;
     background: var(--bg-well);

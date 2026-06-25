@@ -241,6 +241,9 @@ func (b *Bridge) Shutdown() {
 	if b.voiceCtl != nil {
 		_ = b.VoiceModeStop()
 	}
+	// Kill every live PTY terminal so its shell + reader/waiter goroutines don't
+	// outlive the window (terminal.go owns the registry).
+	terminalShutdownAll()
 }
 
 // ---- health ----

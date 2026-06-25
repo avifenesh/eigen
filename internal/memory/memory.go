@@ -295,7 +295,7 @@ func (s *Store) Read() string { return s.readFile(s.MemoryPath()) }
 // auto-maintenance never clobbers the user's words and vice-versa.
 const (
 	learnedProfileBegin = "<!-- eigen:learned — auto-maintained from your sessions; edit below the end marker -->"
-	learnedProfileEnd    = "<!-- eigen:end -->"
+	learnedProfileEnd   = "<!-- eigen:end -->"
 )
 
 // UserProfile returns the full editable personalization prompt (USER.md):
@@ -610,6 +610,104 @@ func key(abs string) string {
 		base = "root"
 	}
 	return base + "-" + hex.EncodeToString(h[:])[:8]
+}
+
+// StoreRef identifies a project memory store on disk WITHOUT opening it. The
+// absolute project path can't be recovered from the hashed key, so callers that
+// want to browse an arbitrary project's memory open it back up via OpenByKey.
+type StoreRef struct {
+	Key  string // on-disk dir name, e.g. "eigen-3e739af1"
+	Name string // readable base (the "-<sha1[:8]>" suffix stripped), e.g. "eigen"
+}
+
+// keySuffix matches the "-<8 lowercase hex>" tail that key() appends, so the
+// readable base name can be recovered for display (the abs path can't be).
+var keySuffix = regexp.MustCompile(`-[0-9a-f]{8}$`)
+
+// readableBase strips key()'s "-<sha1[:8]>" suffix to recover the displayable
+// project name. A dir name without that suffix (e.g. a hand-made dir) is
+// returned unchanged.
+func readableBase(k string) string {
+	if loc := keySuffix.FindStringIndex(k); loc != nil {
+		return k[:loc[0]]
+	}
+	return k
+}
+
+// ListProjectStores enumerates the per-project memory stores that exist on disk
+// under ~/.eigen/memory/, sorted by readable name. The "global" scope and any
+// non-store files (the pre-v2 flat "<key>.md", stray files) are skipped — only
+// directories shaped like a project key are returned. Each StoreRef carries the
+// on-disk key (open it with OpenByKey) and a readable base name; the absolute
+// project path is intentionally absent — it isn't recoverable from the hash.
+func ListProjectStores() ([]StoreRef, error) {
+	base, err := baseDir()
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return nil, err
+	}
+	var out []StoreRef
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue // skip flat <key>.md / global.md and other stray files
+		}
+		k := e.Name()
+		if k == "global" {
+			continue // global is a distinct scope, not a project
+		}
+		out = append(out, StoreRef{Key: k, Name: readableBase(k)})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name == out[j].Name {
+			return out[i].Key < out[j].Key
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out, nil
+}
+
+// StoreKey returns a store's on-disk key (its directory's base name, e.g.
+// "eigen-3e739af1"), the value OpenByKey round-trips and ListProjectStores
+// reports. Empty for a nil store. The global store's key is "global".
+func StoreKey(s *Store) string {
+	if s == nil {
+		return ""
+	}
+	return baseName(s.Dir())
+}
+
+// StoreName returns a store's readable base name (its on-disk key with key()'s
+// "-<sha1[:8]>" suffix stripped, e.g. "eigen"), for display in a scope picker.
+func StoreName(s *Store) string {
+	if s == nil {
+		return ""
+	}
+	return readableBase(StoreKey(s))
+}
+
+// OpenByKey returns the memory store for an on-disk key (e.g. "eigen-3e739af1"),
+// joining ~/.eigen/memory/<key> directly — the path that ListProjectStores
+// reports. Unlike Open(dir), it doesn't re-derive the key from a project path
+// (which isn't recoverable from the hash), so it's how the GUI browses an
+// arbitrary project's memory. The key is validated to be a single path element
+// so it can't escape the memory base dir. migrateFlat runs for parity with
+// Open, harmlessly no-oping when there's no legacy flat file to fold in.
+func OpenByKey(key string) (*Store, error) {
+	base, err := baseDir()
+	if err != nil {
+		return nil, err
+	}
+	key = strings.TrimSpace(key)
+	if key == "" || key == "global" || strings.ContainsAny(key, `/\`) ||
+		key == "." || key == ".." {
+		return nil, fmt.Errorf("invalid memory store key %q", key)
+	}
+	s := &Store{dir: filepath.Join(base, key)}
+	s.migrateFlat(filepath.Join(base, key+".md"))
+	return s, nil
 }
 
 // WriteRollout persists a per-session rollout summary's markdown into the

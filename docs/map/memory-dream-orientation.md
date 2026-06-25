@@ -27,6 +27,7 @@
 - **Key symbols:**
   - `Store` — one scope; fields `dir`, `global`.
   - `Open(projectDir)` / `OpenGlobal()` — return the project / cross-project store (project keyed by abs-path hash); each runs `migrateFlat`.
+  - Per-project enumeration (for the GUI scope picker): `StoreRef{Key,Name}`; `ListProjectStores()` walks `~/.eigen/memory/`, returns one ref per project store dir (skips "global"/flat files), Name = base with the `-<sha1[:8]>` suffix stripped; `OpenByKey(key)` opens `~/.eigen/memory/<key>` directly (validates a single safe path element); `StoreKey(*Store)`/`StoreName(*Store)` derive the on-disk key/readable name from an opened store (the abs path is unrecoverable from the hash, so the GUI dedups session dirs against on-disk keys via these).
   - `migrateFlat(flat)` — one-time non-destructive migration of a pre-v2 flat `<key>.md` into `<dir>/MEMORY.md` (renames old file, moves `.bak`s).
   - Path accessors: `Dir`, `MemoryPath`/`Path`, `SummaryPath`, `legacySummaryPath`, `BansPath`, `UserProfilePath`, `RawMemoriesPath`, `RawDir`, `legacyRawDir`, `ExtensionsDir`, `AdHocDir`, `AdHocNotesDir`, `adHocInstructionsPath`; `IsGlobal`, `ensureDir`.
   - `Snapshot()` / `Backups()` / `pruneBackups()` — timestamped `.bak` of `MEMORY.md`, capped at `maxBackups`(10); the safety net for consolidation rewrites.

@@ -22,13 +22,13 @@ func TestGLMDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.c.model != "glm-5.1" {
-		t.Fatalf("empty model should default to glm-5.1, got %q", g.c.model)
+	if g.c.model != "glm-5.2" {
+		t.Fatalf("empty model should default to glm-5.2, got %q", g.c.model)
 	}
 	if !strings.HasPrefix(g.c.baseURL, "https://api.z.ai") {
 		t.Fatalf("default base URL should be z.ai, got %q", g.c.baseURL)
 	}
-	if !strings.Contains(g.Name(), "glm-5.1") || !strings.Contains(g.Name(), "zhipu") {
+	if !strings.Contains(g.Name(), "glm-5.2") || !strings.Contains(g.Name(), "zhipu") {
 		t.Fatalf("unexpected name %q", g.Name())
 	}
 }

@@ -184,7 +184,7 @@
   - `glmPrepare(req, search)` (pkg fn) — prefer-web_search-over-fetch hint.
   - compile-time asserts `_ Searcher = (*GLM)(nil)`, `_ EffortSetter = (*GLM)(nil)`.
 - **Depends on:** `openaichat.go` (`chatClient`), `converse.go` (`firstNonEmpty`), catalog (`Lookup`).
-- **Used by / entrypoint:** `provider.go` `New` → `NewGLM` (names `glm`/`zhipu`/`z.ai`). `llm.New("glm", "glm-5.1")` is also called as a credentialed-default probe in `main_gui_wails.go` and `internal/app/data.go`.
+- **Used by / entrypoint:** `provider.go` `New` → `NewGLM` (names `glm`/`zhipu`/`z.ai`). `llm.New("glm", "glm-5.2")` is also called as the proactive-feed suggester's credentialed-default probe in `main_gui_wails.go` and `internal/app/data.go` (glm-5.2 = 1M-ctx flagship with web_search "auto" so ideas can be web-grounded).
 
 ### internal/llm/custom.go
 - **Role:** User-defined providers stored in `~/.eigen/providers.json` — a committable/exportable catalog (API keys referenced by env var, or inlined for private local configs). Validates and persists the catalog, and at dispatch time builds the right streaming adapter (`customOpenAIChat`, `customOpenAIResponses`, or `customAnthropic`) reusing the wire code from the built-in providers. All three implement `Streamer` + `EffortSetter`.

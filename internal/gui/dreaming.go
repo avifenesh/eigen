@@ -184,6 +184,21 @@ func (b *Bridge) Dreaming() (*DreamingDTO, error) {
 	}, nil
 }
 
+// DreamingForScope returns the dreaming history for an ARBITRARY scope — the
+// same per-project browsing the Memory view does. Scope is one of: "global" /
+// "" / "project" / a session-history absolute dir / an on-disk store key (e.g.
+// "eigen-3e739af1"); it routes through b.openMemoryScope (shared with the
+// Memory bridge) so the frontend can reuse ListMemoryScopes() to populate one
+// scope picker and call DreamingForScope(key) per selection. A load failure is
+// surfaced so the frontend can tell it apart from a legitimately-empty store.
+func (b *Bridge) DreamingForScope(scope string) (*DreamingScopeDTO, error) {
+	s, label, err := b.openMemoryScope(scope)
+	if err != nil {
+		return nil, err
+	}
+	return dreamScope(s, label), nil
+}
+
 // ConsolidationContent returns the raw content of a consolidation snapshot, so
 // the frontend can diff it against the current memory.
 func (b *Bridge) ConsolidationContent(path string) (string, error) {
@@ -202,7 +217,7 @@ func (b *Bridge) ConsolidationContent(path string) (string, error) {
 // CurrentMemory returns the current MEMORY.md content for a scope (the "after"
 // side of a consolidation diff).
 func (b *Bridge) CurrentMemory(scope string) (string, error) {
-	s, err := openScope(scope)
+	s, _, err := b.openMemoryScope(scope)
 	if err != nil {
 		return "", err
 	}
@@ -285,7 +300,7 @@ func newDreamPipeline(prov llm.Provider, mem *memory.Store, idx *memory.Index) *
 // The memory store and index live on the local filesystem, so this runs in-GUI
 // (no daemon round-trip), like the rest of the Memory/Dreaming bridge.
 func (b *Bridge) DreamNow(scope string) (*DreamReportDTO, error) {
-	s, err := openScope(scope)
+	s, label, err := b.openMemoryScope(scope)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +317,7 @@ func (b *Bridge) DreamNow(scope string) (*DreamReportDTO, error) {
 
 	ctx := context.Background()
 	pipe := newDreamPipeline(prov, s, idx)
-	out := &DreamReportDTO{Scope: scope}
+	out := &DreamReportDTO{Scope: label}
 
 	// First drain whatever the regular triggers already queued for this scope
 	// (consolidate/summary). RunQueued reports each job it actually performed.

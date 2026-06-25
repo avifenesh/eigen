@@ -164,9 +164,9 @@ var defaultModelByProvider = map[string]string{
 	"local":            "local",
 	"grok":             "grok-build",
 	"xai":              "grok-build",
-	"glm":              "glm-5.1",
-	"zhipu":            "glm-5.1",
-	"z.ai":             "glm-5.1",
+	"glm":              "glm-5.2",
+	"zhipu":            "glm-5.2",
+	"z.ai":             "glm-5.2",
 }
 
 // DefaultModel returns the model id a provider uses when none is specified.

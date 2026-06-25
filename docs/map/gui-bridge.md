@@ -93,8 +93,10 @@
   - `AddBan(scope, title, rule)` / `RemoveBan(scope, title)` — bound; the banthis layer native in eigen (mirrors the TUI `/ban` `/unban`); return whether a ban was replaced/removed.
   - `WriteUserProfile(content)` — bound; replaces the global USER.md user-authored section (preserves the learned block).
   - `MemoryBackups(scope)` — bound; lists backup snapshot paths.
-  - `openScope(scope)` — helper: `memory.OpenGlobal()` vs `memory.Open("")`.
-- **Depends on:** `internal/memory` (`Store`, `Open`, `OpenGlobal`, `Ban`; `Append`/`AddBan`/`RemoveBan`/`ListBans`/`UserProfileUser`/`UserProfileLearned`).
+  - **Per-project memory (any project, not just current + global):** `MemoryScopeRefDTO{Key,Name,Dir,NoteCount,Current}`; `ListMemoryScopes() ([]MemoryScopeRefDTO, error)` — "Global" first, then the dedup union of `b.projectDirs()` session-history dirs (Key=abs dir) and on-disk `memory.ListProjectStores()` entries (Key=on-disk store key), deduped by resolved `memory.StoreKey`. The cwd project's ref is flagged `Current` (resolved by KEY, not by dir-vs-storepath comparison — those never match — so the frontend picker defaults to it instead of a "Select…" placeholder). Empty stores (0 notes) and ephemeral cwds (`isEphemeralDir`: `/tmp`, `/var/tmp`, `/run`, `agent-workspace`, `-itch-` temp dirs) are filtered so the picker shows real projects, not session scratch. `NoteCount` is computed cheaply (no note bodies shipped). `MemoryForScope(scope)` — opens an ARBITRARY store and returns the SAME rich `MemoryScopeDTO` via `scopeDTO()`; accepts `"global"`, `"project"`/`""` (cwd, back-compat), an absolute dir (`memory.Open`), or an on-disk key (`memory.OpenByKey`).
+  - `openMemoryScope(scope)` — the full scope router (global / cwd / abs-dir / on-disk-key). ALL write methods (`AppendMemory`/`AddBan`/`RemoveBan`/`MemoryBackups`) route through it, so editing any project's memory works (not just current + global). `noteCount(store)` — lightweight count via `splitNotes`.
+  - `openScope(scope)` — legacy helper (`OpenGlobal` vs `Open("")`); now only used by dreaming.go.
+- **Depends on:** `internal/memory` (`Store`, `Open`, `OpenGlobal`, `OpenByKey`, `ListProjectStores`, `StoreKey`/`StoreName`, `Ban`; `Append`/`AddBan`/`RemoveBan`/`ListBans`/`UserProfileUser`/`UserProfileLearned`).
 - **Used by / entrypoint:** entrypoint — bound methods called from the Memory view; `openScope` also used by `dreaming.go`.
 
 ### internal/gui/observe.go
@@ -115,8 +117,10 @@
   - `RemoveMarketplace(name)` — bound; removes a marketplace.
   - `SetPluginEnabled(name, enabled)` — bound; enables/disables ALL of a plugin's wired components at once (skills/agents/commands/MCP/hooks) without uninstalling, via `Registry.SetEnabled` (applies to new sessions only).
   - `RemovePlugin(name)` — bound; full uninstall (reverses wiring + removes files).
+  - **Add-a-plugin (GUI install, mirrors skill-add):** `PluginPreviewDTO{Name,Description,Marketplace,Version,Skills,Agents,Commands,MCPServers,Hooks}`; `AddMarketplace(source)` — records a catalog (GitHub owner/repo, https URL, or local path) via `Registry.AddMarketplace`+`DefaultTreeFetcher`, returns the extended `MarketplaceDTO` (now also Description/Version/PluginCount); `MarketplacePlugins(mktName)` — read-only `PreviewPlugin` per catalog entry → `[]PluginPreviewDTO`; `InstallPlugin(pluginName, mktName)` — builds `InstallOptions` with the scanner (FAIL CLOSED if none; `Force=false`), runs `Registry.InstallPlugin`, returns the new `InstalledPluginDTO`. RISKY scan aborts via `*skill.RiskyError` (no GUI force path by design). `mktName=""` lets the first marketplace listing the plugin win.
+  - `pluginInstallScanner()`/`pluginInstallOptions()` — duplicate skills.go's small-model scanner ladder + fail-closed discipline (untrusted bundles must be scanned). `installedPluginDTO(reg, p)` — shared `InstalledPlugin`→DTO conversion reused by `Plugins()` and `InstallPlugin`.
   - `pluginEnabled(reg, p)` — derives enabled state from on-disk markers `SetEnabled` flips (a `.disabled`-parked component file with its active copy gone reads as disabled; MCP/hooks-only plugins have nothing to park and read as enabled).
-- **Depends on:** `internal/plugin` (`NewRegistry`, `InstalledPlugin` + `Installed`/`Markets`/`SetMarketEnabled`/`RemoveMarket`/`SetEnabled`/`Uninstall`/`SkillsDir`/`AgentsDir`/`CommandsDir`).
+- **Depends on:** `internal/plugin` (`NewRegistry`, `InstalledPlugin` + `Installed`/`Markets`/`SetMarketEnabled`/`RemoveMarket`/`SetEnabled`/`Uninstall`/`AddMarketplace`/`InstallPlugin`/`PreviewPlugin`/`DefaultTreeFetcher`/`InstallOptions`/`SkillsDir`/`AgentsDir`/`CommandsDir`), `internal/skill` (`Scanner`, `RiskyError`).
 - **Used by / entrypoint:** entrypoint — bound methods called from the Plugins view.
 
 ### internal/gui/routing.go
@@ -189,6 +193,7 @@
   - `rolloutFile` / `rolloutFiles(store, limit)` — re-glob the rollout dirs (Codex-shaped `rollout_summaries/` + legacy `raw/`) retaining each file's path so its timestamp survives (RawSummaries drops filenames).
   - `parseRolloutStamp(path)` / `parseBakStamp(path)` — recover unix millis (and, for baks, a human label) from a `20060102-150405` filename stamp.
   - `Dreaming() (*DreamingDTO, error)` — bound; project + global dreaming history.
+  - `DreamingForScope(scope) (*DreamingScopeDTO, error)` — bound; dreaming history for ANY scope (resolved via `b.openMemoryScope`), so the Dreaming view browses any project like Memory does (uses the same `ListMemoryScopes` picker). `CurrentMemory`/`DreamNow` also route through `openMemoryScope` now, so consolidation + diff work for any project.
   - `ConsolidationContent(path)` — bound; raw content of a `.bak` snapshot (path-guarded: must look like a memory backup).
   - `CurrentMemory(scope)` — bound; current MEMORY.md content (the "after" side of a diff).
   - `DreamNow(scope)` — bound; runs an on-demand consolidation in-GUI (no daemon round-trip): builds a `memory.Pipeline` with the same dream callbacks the CLI/daemon use, drains queued downstream jobs (`RunQueued`), and — if nothing was queued — forces `MaybeConsolidate(force)` + `RegenSummary` so a button press always does real work (Stage1 is intentionally not run). Returns a `DreamReportDTO`.
@@ -211,6 +216,34 @@
   - `latestAssistant(st)` — last assistant message text in a `SessionStateDTO` (the reply to speak); distinct from bridge.go's `lastAssistantText([]llm.Message)`.
 - **Depends on:** `internal/voice` (`STT`/`TTS` interfaces, `DetectSTT`/`DetectTTS`/`TTSFromArgv`), `internal/speech` (`Detect`→`Speaker.Argv()`/`Available()`); reuses `Bridge.SendInput`/`State`/`emit`.
 - **Used by / entrypoint:** entrypoint — bound methods called from the voice store (`frontend/src/lib/stores/voice.svelte.ts`), Composer (dictate + voice-mode toggle), and the Chat read-aloud control.
+
+### internal/gui/terminal.go
+- **Role:** Server-side PTY terminal bridge for the right-panel "Terminal" tool tab — the GUI runs on the host, so it owns a real PTY (creack/pty) and streams raw bytes to the frontend's xterm.js (xterm IS the emulator; no VT logic here). Mirrors the TUI's `termpanel.go` recipe minus the VT step.
+- **Key symbols:**
+  - `eventTerminal` (const `eigen:terminal`) — output/exit stream; payload `TerminalEventDTO{ID, Data(base64 raw bytes), Exited}`.
+  - `term` (type) — one live terminal: its `*os.File` PTY master, the shell `*exec.Cmd`, and a `sync.Once` making teardown idempotent across `TerminalKill`/the waiter/shutdown. Held in a package-level registry (mutex-guarded) keyed by id (the GUI hosts one Bridge).
+  - `TerminalStart(cols, rows) (string, error)` — bound; starts `$SHELL` (or /bin/bash) on a `cols×rows` PTY, returns an id; spawns a reader (PTY→base64→emit `eigen:terminal`) + a waiter (Wait→emit `{exited}`+close).
+  - `TerminalWrite(id, data)` — bound; writes raw keystroke bytes to the PTY. `TerminalResize(id, cols, rows)` — `pty.Setsize`. `TerminalKill(id)` — kill + close + stop, once-guarded.
+  - `terminalShutdownAll()` — kills every live terminal; called from `Bridge.Shutdown` so no shell/goroutine outlives the window.
+- **Depends on:** `github.com/creack/pty`, stdlib (`os/exec`, `encoding/base64`, `sync`); `b.emit`.
+- **Used by / entrypoint:** entrypoint — bound methods called from `lib/components/Terminal.svelte` (the Terminal tab in Chat's tools dock).
+
+### internal/gui/worktree.go
+- **Role:** Read-only right-panel tools — the working-tree DIFF of current changes and the FILE EXPLORER tree + file viewer; all on the host's fs/git directly.
+- **Key symbols:**
+  - `WorkingDiffDTO{Dir,Branch,Patch,Files []DiffFileDTO,IsRepo,Clean,Truncated}`, `DiffFileDTO{Path,Adds,Dels}`; `WorkingDiff(dir)` — bound; `git -C <dir> diff HEAD` (chosen over bare `git diff` so the patch + `--numstat` stats cover ALL pending changes — staged AND unstaged — vs HEAD), 8s ctx timeout, patch capped at `maxPatchBytes` (512 KiB, `Truncated` flagged); non-repo → `IsRepo:false` (not an error).
+  - `FileTreeDTO{Dir,Entries []FileEntryDTO,Truncated}`, `FileEntryDTO{Name,Path(abs),IsDir,Children}`; `FileTree(dir)` — bound; depth-limited (~3) tree, dirs-first then name, skips VCS/build noise (.git/node_modules/vendor/dist/build/.svelte-kit/target/…), capped at ~2000 nodes.
+  - `ReadFileForView(path)` — bound; a file's text for click-to-view (abs path, ~256 KiB cap, NUL-sniff rejects binary).
+- **Depends on:** stdlib (`os/exec`, `os`, `path/filepath`, `context`); mirrors `internal/tool/tree.go` + `internal/tui/gitpanel.go` patterns (not imported).
+- **Used by / entrypoint:** entrypoint — `DiffPanel.svelte` (WorkingDiff) + `FilesPanel.svelte` (FileTree/ReadFileForView) in Chat's tools dock.
+
+### internal/gui/newchat.go
+- **Role:** New-chat working-directory picker bridge — recent dirs + the native OS folder dialog, so a new session's root can be chosen before it's created (the primary root locks at creation).
+- **Key symbols:**
+  - `RecentDirDTO{Dir,Name}`; `RecentDirs() ([]RecentDirDTO, error)` — bound; distinct existing session-history dirs via `b.projectDirs()`, deduped, ephemeral dirs filtered (`isEphemeralDir` from memory.go, shared with the memory scope picker — drops `/tmp`/`agent-workspace`/`-itch-` scratch), capped at `recentDirsCap`(12), `Name=filepath.Base`.
+  - `PickDirectory() (string, error)` — bound; opens the native folder dialog via `b.app.Dialog.OpenFile().CanChooseDirectories(true).CanChooseFiles(false).AttachToWindow(b.app.Window.Current())`, defaulting to `defaultPickDir()` (home→cwd); returns "" on cancel (not an error), errors "no window" when `b.app` is nil.
+- **Depends on:** `wailsapp/wails/v3/pkg/application` (DialogManager), stdlib; reuses `b.projectDirs()`.
+- **Used by / entrypoint:** entrypoint — Chat's "+ New chat" popover (recents quick-pick + Browse… button).
 
 ### internal/gui/sessions_extra.go
 - **Role:** Session-manager extras — transcript export to disk (List/Remove/Prune are bridged in bridge.go).
@@ -252,6 +285,8 @@
 - **`internal/session`** — local session store transcript export (sessions_extra.go).
 - **`internal/remote`** — ssh-reachable machines + remote session listing (remote.go).
 - **`internal/voice` / `internal/speech`** — server-side STT/TTS stack driven by the voice bridge: dictate, read-aloud, and the hands-free conversation loop (voice.go).
+- **`github.com/creack/pty`** — the host-side PTY for the right-panel terminal tool (terminal.go); the GUI streams raw bytes to xterm.js on the frontend.
+- **`wailsapp/wails/v3` DialogManager** — the native OS folder dialog for the new-chat working-dir picker (newchat.go `PickDirectory`).
 - **`wailsapp/wails/v3/pkg/application`** — the Wails v3 service host: `*Bridge` is registered as a service, methods → generated TS bindings, `app.Event.Emit` pushes `eigen:*` events.
 - **`main` (root: `main_gui_wails.go`)** — the entrypoint that constructs the bridge (`gui.NewBridge` with `ensureDaemon`/`guiSuggester`/`guiProjectDirs`), registers it as a Wails service, calls `SetApp`, and owns `Shutdown`.
 - **`internal/gui/frontend`** — the Svelte 5 frontend; generated Go→TS bindings at `frontend/bindings/.../bridge.js` wrap every exported `*Bridge` method, consumed by `frontend/src/lib/bridge.ts` and the `*.svelte` views.

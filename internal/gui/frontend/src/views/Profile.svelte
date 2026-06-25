@@ -84,16 +84,23 @@
         acc.in += m.inTokens;
         acc.out += m.outTokens;
         acc.cacheRead += m.cacheReadTokens;
+        acc.cacheWrite += m.cacheWriteTokens;
         return acc;
       },
-      { in: 0, out: 0, cacheRead: 0 },
+      { in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
     ),
   );
   const inTokens = $derived(modelTotals.in);
   const outTokens = $derived(modelTotals.out);
-  const cacheHit = $derived(
-    inTokens > 0 ? Math.round((modelTotals.cacheRead / inTokens) * 100) : 0,
-  );
+  // Cache-hit% = cached-read tokens over the FULL prompt size. inTokens is the
+  // FRESH (uncached) portion only; cacheRead and cacheWrite are separate buckets,
+  // so the denominator is their sum (else a mostly-cached prompt yields
+  // read/in > 100%). Clamped to [0,100].
+  const cacheHit = $derived.by(() => {
+    const total = inTokens + modelTotals.cacheRead + modelTotals.cacheWrite;
+    if (total <= 0) return 0;
+    return Math.min(100, Math.max(0, Math.round((modelTotals.cacheRead / total) * 100)));
+  });
   const turns = $derived(summary?.records ?? 0);
   const errorCount = $derived((summary?.errors ?? []).reduce((n, e) => n + e.count, 0));
   // Live, volatile counter — explicitly labeled "since daemon start" in the UI

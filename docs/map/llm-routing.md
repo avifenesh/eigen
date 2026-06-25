@@ -42,7 +42,7 @@
   defaults, and provider-alias canonicalization.
 - **Key symbols:**
   - `ModelInfo` (type) — per-model record: `ID`, `Provider`, `ContextWindow`, `Cache`, `Context1M`/`ContextWindow1M`, `Reasoning`/`Effort`/`EffortLevels`/`ThinkingBudget`, `Search`/`Vision`/`Social`, `ServiceTier`.
-  - `Catalog` (var) — the curated built-in model list, spanning all chat backends: mantle GPT (`openai.gpt-5.5/5.4/5`), codex GPT (`gpt-5.5/5.4`), converse Claude (`us.anthropic.claude-opus-4-8` = default, `sonnet-4-6`, `3-5-sonnet`, `haiku-4-5`), native-anthropic Claude (`claude-opus-4-1`, `sonnet-4-5` = native default, `3-5-haiku`), local llama, grok (`grok-build` = default, `composer-2.5-fast`, `grok-4`, `grok-code-fast-1`), and glm (`glm-5.2` = 1M native flagship, `glm-5.1` = default, `glm-5/5-turbo/4.7/4.6/4.5/4.5-air`).
+  - `Catalog` (var) — the curated built-in model list, spanning all chat backends: mantle GPT (`openai.gpt-5.5/5.4/5`), codex GPT (`gpt-5.5/5.4`), converse Claude (`us.anthropic.claude-opus-4-8` = default, `sonnet-4-6`, `3-5-sonnet`, `haiku-4-5`), native-anthropic Claude (`claude-opus-4-1`, `sonnet-4-5` = native default, `3-5-haiku`), local llama, grok (`grok-build` = default, `composer-2.5-fast`, `grok-4`, `grok-code-fast-1`), and glm (`glm-5.2` = 1M native flagship + default, `glm-5.1`, `glm-5/5-turbo/4.7/4.6/4.5/4.5-air`).
   - `defaultModelByProvider` (var) + `DefaultModel(provider)` — resolve a provider's default model id (falls back to first custom-provider model).
   - `ResolveProvider(provider, model)` — reconcile a (provider,model) pair so a known model goes to its catalog backend (prevents 404s).
   - `CanonicalProvider(p)` / `canonicalProvider(p)` — collapse provider aliases ("claude"→"converse", "xai"→"grok") to a canonical backend.

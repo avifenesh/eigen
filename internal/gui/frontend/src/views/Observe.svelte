@@ -55,11 +55,17 @@
     if (h > 0) return `${h}h ${m}m`;
     return `${m}m`;
   }
-  const cacheHit = $derived(
-    s && (s.input_tokens ?? 0) > 0
-      ? Math.round(((s.cache_read_tokens ?? 0) / (s.input_tokens ?? 1)) * 100)
-      : 0,
-  );
+  // Cache-hit% = cached-read tokens over the FULL prompt size. The provider
+  // reports input_tokens as the FRESH (uncached) portion only; cache_read and
+  // cache_write are separate buckets, so the denominator is their sum (else a
+  // mostly-cached prompt yields read/input > 100%). Clamped to [0,100].
+  const cacheHit = $derived.by(() => {
+    if (!s) return 0;
+    const read = s.cache_read_tokens ?? 0;
+    const total = (s.input_tokens ?? 0) + read + (s.cache_write_tokens ?? 0);
+    if (total <= 0) return 0;
+    return Math.min(100, Math.max(0, Math.round((read / total) * 100)));
+  });
   // Cache-hit gauge geometry: a 270° arc (gap at the bottom). The fill circle is
   // dashed to (cacheHit/100)·arcLen so the spectrum sweeps with the hit rate.
   const arcR = 52;

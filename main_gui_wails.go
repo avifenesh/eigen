@@ -43,9 +43,11 @@ func buildGUIApp() (*application.App, *gui.Bridge) {
 }
 
 // guiSuggester adapts a suggestion model into the proactive feed's Suggester.
-// Mirrors the TUI: EIGEN_SUGGEST_MODEL, else glm-5.1 (mid-tier, mostly-idle
-// quota), else the usual small model; nil only if none can be built — the feed
-// then yields just git/github/memory signals (no LLM ideas).
+// Mirrors the TUI: EIGEN_SUGGEST_MODEL, else glm-5.2 (1M-ctx flagship GLM with
+// web_search included, mostly-idle quota), else the usual small model; nil only
+// if none can be built — the feed then yields just git/github/memory signals
+// (no LLM ideas). glm-5.2's web_search defaults to "auto", so the suggester can
+// ground ideas in live web data, not just the local snapshot.
 func guiSuggester() feed.Suggester {
 	prov := guiSuggestProvider()
 	if prov == nil {
@@ -70,7 +72,7 @@ func guiSuggestProvider() llm.Provider {
 		}
 	}
 	if llm.ProviderAvailable("glm") {
-		if p, err := llm.New("glm", "glm-5.1"); err == nil {
+		if p, err := llm.New("glm", "glm-5.2"); err == nil {
 			return p
 		}
 	}

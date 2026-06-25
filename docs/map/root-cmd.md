@@ -231,8 +231,8 @@
     `internal/gui/frontend/dist`, wires `ensureDaemon` + suggester + project dirs
     into `gui.NewBridge`, opens the main webview window.
   - `guiSuggester()` / `guiSuggestProvider()` — adapt a suggestion model
-    (`EIGEN_SUGGEST_MODEL`, else glm-5.1, else the small model) into a
-    `feed.Suggester`.
+    (`EIGEN_SUGGEST_MODEL`, else glm-5.2 (web_search "auto"), else the small
+    model) into a `feed.Suggester`.
   - `guiProjectDirs()` — distinct working dirs across saved sessions (the feed's
     scan universe).
   - `guiAssets` (`//go:embed`) — the built Svelte frontend.

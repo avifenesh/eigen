@@ -26,11 +26,17 @@
   });
 
   const stats = $derived(daemon.stats);
-  const cacheHit = $derived(
-    stats && (stats.input_tokens ?? 0) > 0
-      ? Math.round(((stats.cache_read_tokens ?? 0) / (stats.input_tokens ?? 1)) * 100)
-      : 0,
-  );
+  // Cache-hit% = cached-read tokens over the FULL prompt size. The provider
+  // reports input_tokens as the FRESH (uncached) portion only; cache_read and
+  // cache_write are separate buckets, so the denominator is their sum (else a
+  // mostly-cached prompt yields read/input > 100%). Clamped to [0,100].
+  const cacheHit = $derived.by(() => {
+    if (!stats) return 0;
+    const read = stats.cache_read_tokens ?? 0;
+    const total = (stats.input_tokens ?? 0) + read + (stats.cache_write_tokens ?? 0);
+    if (total <= 0) return 0;
+    return Math.min(100, Math.max(0, Math.round((read / total) * 100)));
+  });
 
   // Live sessions = working or awaiting approval; recent = everything else.
   const live = $derived(sessions.list.filter((s) => s.status === "working" || s.status === "approval"));
