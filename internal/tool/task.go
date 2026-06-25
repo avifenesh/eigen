@@ -15,7 +15,7 @@ type TaskOpts struct {
 	Model      string
 	Role       string
 	Type       string // explore|research|general|code|judge — drives effort+model policy
-	Effort      string // optional explicit effort override (off|low|medium|high|xhigh)
+	Effort     string // optional explicit effort override (off|low|medium|high|xhigh)
 }
 
 // TaskRun is injected by main/buildSession so tool doesn't need to construct

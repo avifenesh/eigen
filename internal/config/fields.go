@@ -36,6 +36,7 @@ func Fields() []Field {
 		{Key: "notify_cmd", Desc: "notifier run on pings (approval needed, long turn done), e.g. notify-send — the message is passed as the last argument; empty = terminal bell only"},
 		{Key: "telegram_token", Desc: "bot token (from @BotFather) for the `eigen telegram` phone bridge — pair with the telegram_allow chat-id allowlist in config.json; shown as `set` once stored (never echoed back)", Secret: true},
 		{Key: "judge_model", Desc: "pin the goal_achieved judge to a specific model — ANY provider works; empty = automatic cross-vendor judge (GPT judges Claude and vice versa)", Dynamic: "models"},
+		{Key: "dream_model", Desc: "pin the background dreaming/consolidation model; empty = sonnet-first dream ladder (kept OFF the cheap GLM quota real tasks want)", Dynamic: "models"},
 		{Key: "dream_on_idle", Desc: "reflect recent sessions into memory when idle", Options: []string{"true", "false"}},
 		{Key: "idle_minutes", Desc: "minutes of idle before dreaming kicks in (default 5)"},
 		{Key: "front_window_min", Desc: "minutes a subtask runs in the foreground before it's promoted to the background (default 2; 0 = default)"},

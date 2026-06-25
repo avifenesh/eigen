@@ -42,6 +42,10 @@ type Config struct {
 	TTSCmd     string `json:"tts_cmd"`
 	NotifyCmd  string `json:"notify_cmd"`
 	JudgeModel string `json:"judge_model"`
+	// DreamModel pins the model for background dreaming/consolidation. Default
+	// (empty) = the sonnet-first dream ladder, deliberately OFF the cheap GLM
+	// quota real tasks want. Env EIGEN_DREAM_MODEL overrides.
+	DreamModel string `json:"dream_model,omitempty"`
 	// TelegramToken is the bot token (from @BotFather) for the `eigen telegram`
 	// phone bridge; TelegramAllow is the chat-id allowlist (only these chats are
 	// served — fail-closed). Env EIGEN_TELEGRAM_TOKEN / EIGEN_TELEGRAM_ALLOW.
@@ -209,6 +213,8 @@ func Set(c *Config, key, value string) error {
 		c.TelegramToken = value
 	case "judge_model":
 		c.JudgeModel = value
+	case "dream_model":
+		c.DreamModel = value
 	case "dream_on_idle":
 		b, err := strconv.ParseBool(value)
 		if err != nil {
@@ -311,6 +317,7 @@ func View(c Config) string {
 	fmt.Fprintf(&b, "%-14s = %s\n", "notify_cmd", val(c.NotifyCmd))
 	fmt.Fprintf(&b, "%-14s = %s\n", "telegram_token", val(Get(c, "telegram_token")))
 	fmt.Fprintf(&b, "%-14s = %s\n", "judge_model", val(c.JudgeModel))
+	fmt.Fprintf(&b, "%-14s = %s\n", "dream_model", val(c.DreamModel))
 	fmt.Fprintf(&b, "%-14s = %t\n", "dream_on_idle", c.DreamOnIdle)
 	fmt.Fprintf(&b, "%-14s = %d\n", "idle_minutes", c.IdleMinutes)
 	fmt.Fprintf(&b, "%-14s = %d\n", "front_window_min", c.FrontWindowMin)
@@ -371,6 +378,8 @@ func Get(c Config, key string) string {
 		return ""
 	case "judge_model":
 		return c.JudgeModel
+	case "dream_model":
+		return c.DreamModel
 	case "dream_on_idle":
 		return strconv.FormatBool(c.DreamOnIdle)
 	case "idle_minutes":

@@ -185,6 +185,10 @@ type Agent struct {
 	// the escalation hook for background tasks. Injected by main.
 	ModelProvider func(model string) (llm.Provider, error)
 
+	// JudgeModel, if set (config judge_model / EIGEN_JUDGE_MODEL), pins the model
+	// the goal/claim judge uses — beats the type-ladder default. Injected by main.
+	JudgeModel string
+
 	// Bg, if set, enables background subtasks (task tool background:true):
 	// detached delegations persisted under ~/.eigen/tasks. Injected by main.
 	Bg *BgRegistry

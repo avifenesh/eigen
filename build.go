@@ -296,6 +296,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		ExtraSystem:      extraSystem,
 		Memory:           memory.Sections(p.GlobalMem, mem),
 		Goal:             p.Goal,
+		JudgeModel:       firstNonEmpty(os.Getenv("EIGEN_JUDGE_MODEL"), p.Cfg.JudgeModel),
 		Router:           router.Route,
 		ModelProvider:    router.providerFor,
 		Bg:               agent.NewBgRegistry(agent.TasksDir()),

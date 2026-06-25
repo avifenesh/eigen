@@ -141,7 +141,7 @@ func runDaemon(cfg config.Config) {
 	// Nightly dreaming: when the machine is idle, reflect persisted sessions
 	// into structured memory across all scopes (the codex-style pipeline) on
 	// the small model. Best-effort, never competes with a live turn.
-	go nightlyDreamer(host, gmem)
+	go nightlyDreamer(host, gmem, cfg.DreamModel)
 
 	// Telegram phone bridge: when a bot token is configured, the daemon keeps
 	// `eigen telegram` running (spawn + restart-on-exit) so the bot is always
@@ -161,6 +161,12 @@ func runDaemon(cfg config.Config) {
 	}
 	defer daemon.RemovePID(daemon.PIDPath())
 	fmt.Fprintf(os.Stderr, "eigen daemon listening on %s (pid %d)\n", daemon.SocketPath(), os.Getpid())
+
+	// Periodic prompt-cache report: the one token-efficiency metric worth a
+	// glance over long uptime (cache reads are billed at a large discount, so a
+	// low hit rate is real money). Logged to stderr every 30 min, but ONLY when
+	// the daemon has actually spent input tokens — an idle daemon stays quiet.
+	go logPromptCacheStats(host)
 
 	// Graceful shutdown on SIGINT/SIGTERM: interrupt every session and close.
 	// Resource teardown (MCP/LSP subprocesses) can hang, so a watchdog forces
@@ -250,15 +256,11 @@ func daemonControl(sub string) bool {
 			fmt.Printf("  bg tasks:    %d (in memory)\n", st.BgTasks)
 		}
 		if st.InputTokens > 0 || st.CacheReadTokens > 0 {
-			denom := st.InputTokens + st.CacheReadTokens
-			var hit float64
-			if denom > 0 {
-				hit = 100 * float64(st.CacheReadTokens) / float64(denom)
-			}
+			hit := cacheHitPct(st.InputTokens, st.CacheReadTokens, st.CacheWriteTokens)
 			fmt.Printf("  tokens:      in %s (cache: %s read, %s write) · out %s\n",
 				humanCount(st.InputTokens), humanCount(st.CacheReadTokens),
 				humanCount(st.CacheWriteTokens), humanCount(st.OutputTokens))
-			fmt.Printf("  cache hit:   %.1f%% of input tokens served from cache\n", hit)
+			fmt.Printf("  cache hit:   %.1f%% of the prompt served from cache\n", hit)
 		}
 		if st.GoVersion != "" {
 			fmt.Printf("  go:          %s\n", st.GoVersion)
@@ -799,7 +801,7 @@ func sweepStaleWorkspaces() {
 // session has changed since last dream → run the memory pipeline per scope
 // (grouped by session dir) on the small model. Best-effort and quiet: a model
 // outage or a busy daemon just skips this cycle.
-func nightlyDreamer(host *daemon.Host, gmem *memory.Store) {
+func nightlyDreamer(host *daemon.Host, gmem *memory.Store, dreamModel string) {
 	const dreamInterval = 3 * time.Hour
 	// First pass shortly after startup (the daemon just restored sessions), then
 	// on the interval. A jittered initial delay avoids dreaming during a fresh
@@ -811,7 +813,7 @@ func nightlyDreamer(host *daemon.Host, gmem *memory.Store) {
 		if host.AnyRunning() {
 			continue // never compete with a live turn for the model
 		}
-		prov := dreamProvider() // sonnet-pinned, NOT the cheap GLM real tasks want
+		prov := dreamProvider(dreamModel) // sonnet-pinned, NOT the cheap GLM real tasks want
 		if prov == nil {
 			continue
 		}
@@ -1013,6 +1015,45 @@ func humanCount(n int64) string {
 		return fmt.Sprintf("%.1fK", float64(n)/1e3)
 	default:
 		return fmt.Sprintf("%d", n)
+	}
+}
+
+// cacheHitPct is the prompt-cache hit rate as a 0..100 percentage: cached reads
+// over the FULL prompt size. The provider reports input_tokens as the FRESH
+// (uncached) portion only, so the denominator sums fresh input + cache reads +
+// cache writes (else a mostly-cached prompt reads > 100%). Matches the GUI's
+// shipped formula (Home/Observe/Profile). Returns 0 when nothing was spent.
+func cacheHitPct(input, cacheRead, cacheWrite int64) float64 {
+	denom := input + cacheRead + cacheWrite
+	if denom <= 0 {
+		return 0
+	}
+	hit := 100 * float64(cacheRead) / float64(denom)
+	if hit < 0 {
+		return 0
+	}
+	if hit > 100 {
+		return 100
+	}
+	return hit
+}
+
+// logPromptCacheStats writes one prompt-cache hit line to stderr every 30 min,
+// gated to skip while the daemon is idle (no input tokens spent yet). The embed
+// result cache (httpEmbedder.CacheStats) is per-index, not daemon-global, so it
+// has no path to this snapshot — only the prompt cache is surfaced here.
+func logPromptCacheStats(host *daemon.Host) {
+	const interval = 30 * time.Minute
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for range t.C {
+		st := host.Stats()
+		if st.InputTokens <= 0 {
+			continue // idle daemon — stay quiet
+		}
+		fmt.Fprintf(os.Stderr, "eigen daemon: prompt cache %.1f%% hit (in=%s read=%s write=%s)\n",
+			cacheHitPct(st.InputTokens, st.CacheReadTokens, st.CacheWriteTokens),
+			humanCount(st.InputTokens), humanCount(st.CacheReadTokens), humanCount(st.CacheWriteTokens))
 	}
 }
 

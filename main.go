@@ -868,8 +868,11 @@ func main() {
 	*provider = llm.ResolveProvider(*provider, *model)
 
 	// `eigen dream`: reflect over recent sessions into project memory, then exit.
+	// Uses the sonnet-pinned dream provider (config dream_model / EIGEN_DREAM_MODEL
+	// / the dream ladder) — same model the daemon's nightly dreamer uses, NOT the
+	// tiny titling model, so a manual dream consolidates as well as the auto one.
 	if flag.Arg(0) == "dream" {
-		runDream(titleProvider(prov), mem, gmem)
+		runDream(dreamProvider(cfg.DreamModel), mem, gmem)
 		return
 	}
 
@@ -903,6 +906,7 @@ func main() {
 		ExtraSystem:      extraSystem,
 		Memory:           memory.Sections(gmem, mem),
 		Goal:             resumedGoal,
+		JudgeModel:       firstNonEmpty(os.Getenv("EIGEN_JUDGE_MODEL"), cfg.JudgeModel),
 		Router:           router.Route,
 		ModelProvider:    router.providerFor,
 		Bg:               agent.NewBgRegistry(agent.TasksDir()),
@@ -1265,8 +1269,9 @@ func titleProvider(main llm.Provider) llm.Provider { return smallProvider(main) 
 // so it earns its keep here. Falls through the ladder (sonnet variants → haiku →
 // gpt) when sonnet isn't credentialed, and finally to the small model so
 // dreaming still runs on a minimal setup. EIGEN_DREAM_MODEL overrides.
-func dreamProvider() llm.Provider {
-	if id := strings.TrimSpace(os.Getenv("EIGEN_DREAM_MODEL")); id != "" {
+func dreamProvider(configured string) llm.Provider {
+	// EIGEN_DREAM_MODEL wins, then config dream_model, then the sonnet ladder.
+	if id := firstNonEmpty(os.Getenv("EIGEN_DREAM_MODEL"), configured); id != "" {
 		if p, err := llm.New("", id); err == nil {
 			return p
 		}

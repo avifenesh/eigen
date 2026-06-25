@@ -29,7 +29,7 @@ type SubagentType string
 
 const (
 	TypeExplore  SubagentType = "explore"  // locate code/files, cheap + fast, read-only
-	TypeResearch SubagentType = "research"  // deep investigation/synthesis — wants a strong reasoner
+	TypeResearch SubagentType = "research" // deep investigation/synthesis — wants a strong reasoner
 	TypeGeneral  SubagentType = "general"  // catch-all delegation
 	TypeCode     SubagentType = "code"     // write/transform code — correctness matters
 	TypeJudge    SubagentType = "judge"    // verify/score a claim — cheap but VALID, independent
@@ -63,11 +63,11 @@ func NormalizeSubagentType(s string) SubagentType {
 // disables the whole policy (handled by the caller; here we just compute).
 func SubagentEffort(t SubagentType, difficulty string) string {
 	base := map[SubagentType]string{
-		TypeExplore:  "low",    // finding things doesn't need deep reasoning
-		TypeResearch: "high",   // synthesis across evidence wants depth
+		TypeExplore:  "low",  // finding things doesn't need deep reasoning
+		TypeResearch: "high", // synthesis across evidence wants depth
 		TypeGeneral:  "medium",
-		TypeCode:     "high",   // correctness-critical
-		TypeJudge:    "low",    // a strict yes/no/score — cheap but valid, not deep
+		TypeCode:     "high", // correctness-critical
+		TypeJudge:    "low",  // a strict yes/no/score — cheap but valid, not deep
 	}[t]
 	if base == "" {
 		base = "medium"
@@ -115,7 +115,7 @@ func lowerEffort(level string) string {
 // User's policy intent, encoded:
 //   - opus    → the default strong generalist (general/code top of ladder)
 //   - glm-5.2 → cheap AND capable (1M ctx, reasoning, web_search) — prime pick
-//               for research + general once credentialed; high in those ladders
+//     for research + general once credentialed; high in those ladders
 //   - composer→ super-fast, fine code → top of the explore/code-fast ladder
 //   - gpt-5.x → review/assessment/judge
 //   - grok    → SEARCH only (not a researcher) — never tops research

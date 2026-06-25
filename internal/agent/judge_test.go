@@ -133,6 +133,17 @@ func TestParseJudgeReportStrictness(t *testing.T) {
 		{"legacy line fails closed", "ACHIEVED: tests pass", false, "judge_contract"},
 		{"bare rejection fallback", `{"verdict":"NOT_ACHIEVED","summary":"no","gaps":[]}`, false, "judge_contract"},
 		{"duplicate verdict fails closed", `{"verdict":"ACHIEVED","verdict":"NOT_ACHIEVED","summary":"x","gaps":[]}`, false, "judge_contract"},
+		// Robustness: prose wrapped around an otherwise-valid object is tolerated
+		// (the object is carved out from the first '{' to its matching '}').
+		{"prose-wrapped achieved", "Here is my verdict:\n{\"verdict\":\"ACHIEVED\",\"summary\":\"tests pass\",\"gaps\":[]}\nLet me know if you need more.", true, "tests pass"},
+		// Braces inside JSON string values must not confuse the brace scanner.
+		{"braces inside strings", `Sure: {"verdict":"NOT_ACHIEVED","summary":"saw a { and a } in output","gaps":[{"category":"untested","requirement":"r","next_step":"add tests"}]}`, false, "add tests"},
+		// Fenced object with a stray language tag and trailing prose still parses.
+		{"fenced with trailing prose", "```json\n{\"verdict\":\"ACHIEVED\",\"summary\":\"done\",\"gaps\":[]}\n```", true, "done"},
+		// Prose with no JSON object at all fails closed.
+		{"prose no object fails closed", "I think the goal is achieved, looks good.", false, "judge_contract"},
+		// An unbalanced/truncated object fails closed.
+		{"truncated object fails closed", `{"verdict":"ACHIEVED","summary":"oops`, false, "judge_contract"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

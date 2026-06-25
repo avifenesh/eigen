@@ -28,8 +28,14 @@ import (
 // still give independence.
 func (a *Agent) defaultJudge() llm.Provider {
 	if a.ModelProvider != nil {
-		if id := llm.SubagentModel(llm.TypeJudge); id != "" {
-			// Don't pick the agent's OWN model as "independent" judge.
+		// Configured judge_model wins (the user explicitly pinned a judge); else
+		// the judge type ladder (gpt/glm/haiku — cheap-but-valid, not the top
+		// default). Either way, never self-grade on the agent's OWN model.
+		id := strings.TrimSpace(a.JudgeModel)
+		if id == "" {
+			id = llm.SubagentModel(llm.TypeJudge)
+		}
+		if id != "" {
 			if cur := a.provider(); cur == nil || cur.ModelID() != id {
 				if p, err := a.ModelProvider(id); err == nil && p != nil {
 					return p
@@ -39,6 +45,18 @@ func (a *Agent) defaultJudge() llm.Provider {
 	}
 	return a.provider()
 }
+
+// Provider-forced structured output (future seam): the verdict is requested via
+// the PROMPT and validated by parseJudgeReport below; there is NO provider-level
+// enforcement, because llm.Request carries no response-format / JSON-schema /
+// forced-tool-choice field (only System, Messages, Tools — see internal/llm/llm.go).
+// If llm.Request ever gains such a field (e.g. ResponseFormat or a forced ToolSpec),
+// set it on the two judge.Complete requests below so capable providers (Anthropic
+// tool_choice, OpenAI/Codex json_schema, GLM) return strict JSON at the wire level,
+// and the lenient extraction here stays only as a fallback for providers that
+// ignore the hint. Until then we harden the PARSER instead: extractJudgeJSON peels
+// prose and code fences off the model's reply, and every malformed/incomplete
+// report still fails CLOSED to NOT_ACHIEVED (judgeContractReport).
 
 // judgePrompt asks for a strict, parseable structured gap report.
 const judgePrompt = `You are a strict completion judge.
@@ -190,22 +208,27 @@ func parseJudgeReport(raw string) judgeReport {
 	}
 }
 
+// extractJudgeJSON peels a single JSON object out of the model's reply. Providers
+// that honor the prompt return a bare object; less obedient ones wrap it in a code
+// fence or surround it with prose ("Here is my verdict: {...}. Let me know."). We
+// tolerate all three by stripping fences and then carving out the first balanced
+// JSON object (first '{' to its matching '}', string-aware). What we do NOT do is
+// accept a bare keyword like "ACHIEVED: tests pass" — the contract is a structured
+// object, and prose verdicts must fail CLOSED to NOT_ACHIEVED. The strictness on
+// the EXTRACTED object (duplicate keys, unknown fields, trailing junk, required
+// gaps) is preserved by the callers below.
 func extractJudgeJSON(raw string) ([]byte, error) {
-	trimmed := strings.TrimSpace(raw)
-	if strings.HasPrefix(trimmed, "```") && strings.HasSuffix(trimmed, "```") {
-		lines := strings.Split(trimmed, "\n")
-		if len(lines) < 3 {
-			return nil, fmt.Errorf("empty fenced judge response")
-		}
-		if !strings.HasPrefix(strings.TrimSpace(lines[0]), "```") || strings.TrimSpace(lines[len(lines)-1]) != "```" {
-			return nil, fmt.Errorf("judge response used a malformed code fence")
-		}
-		trimmed = strings.TrimSpace(strings.Join(lines[1:len(lines)-1], "\n"))
-	}
+	trimmed := stripCodeFence(strings.TrimSpace(raw))
 	if trimmed == "" {
 		return nil, fmt.Errorf("judge response was empty")
 	}
-	dec := json.NewDecoder(strings.NewReader(trimmed))
+	obj, err := carveFirstJSONObject(trimmed)
+	if err != nil {
+		return nil, err
+	}
+	// Re-validate the carved slice as a single, complete JSON object: this still
+	// rejects a truncated object and any trailing data WITHIN the carved span.
+	dec := json.NewDecoder(strings.NewReader(obj))
 	var rawObj json.RawMessage
 	if err := dec.Decode(&rawObj); err != nil {
 		return nil, err
@@ -217,6 +240,64 @@ func extractJudgeJSON(raw string) ([]byte, error) {
 		return nil, err
 	}
 	return []byte(rawObj), nil
+}
+
+// stripCodeFence removes a single surrounding ```…``` block (optionally with a
+// language tag like ```json), returning the inner content. Input must already be
+// space-trimmed. A bare or malformed fence yields "" so the caller fails closed.
+func stripCodeFence(s string) string {
+	if !strings.HasPrefix(s, "```") {
+		return s
+	}
+	if !strings.HasSuffix(s, "```") {
+		return s // opening fence only — let carveFirstJSONObject try the body
+	}
+	lines := strings.Split(s, "\n")
+	if len(lines) < 3 || strings.TrimSpace(lines[len(lines)-1]) != "```" {
+		return ""
+	}
+	return strings.TrimSpace(strings.Join(lines[1:len(lines)-1], "\n"))
+}
+
+// carveFirstJSONObject returns the substring from the first '{' to its matching
+// '}', tracking string literals and escapes so braces inside JSON strings don't
+// throw off the depth count. This lets prose before/after the object be ignored
+// while keeping the object itself intact for strict validation. Returns an error
+// when there is no object or the braces never balance (fail closed).
+func carveFirstJSONObject(s string) (string, error) {
+	start := strings.IndexByte(s, '{')
+	if start < 0 {
+		return "", fmt.Errorf("judge response contained no JSON object")
+	}
+	depth := 0
+	inString := false
+	escaped := false
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return s[start : i+1], nil
+			}
+		}
+	}
+	return "", fmt.Errorf("judge response had an unbalanced JSON object")
 }
 
 func ensureEOF(dec *json.Decoder) error {
