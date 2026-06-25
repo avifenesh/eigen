@@ -143,13 +143,15 @@ the shared DTO types (`$lib/types`), and the `trapFocus` action (`$lib/actions`)
 - **Used by:** `views/Chat.svelte`.
 
 ### internal/gui/frontend/src/lib/components/Rail.svelte
-- **Role:** Primary left-hand navigation grouped into Work / Knowledge / System zones with live count badges, bookended by a breathing brand dot (top) and a daemon-status footer (bottom).
+- **Role:** Primary left-hand navigation grouped into Work / Knowledge / System zones with live count badges, bookended by a breathing brand dot (top) and a daemon-status footer (bottom). **Collapsible** to an icon-only strip; the Chat item expands a live sub-list of running sessions for multi-session navigation.
 - **Key symbols:**
   - `zones` — static nav table mapping `Route`→label+glyph: Work (home, chat, agents, live, sessions), Knowledge (memory, dreaming, skills), System (observe, routing, machines, crons, plugins, profile, config).
   - `badge(route)` — derives the count per route: home → `feed.actOn.length`, chat → `running_turns`, agents → `bg_tasks`, live → sessions with status `working`/`approval`, sessions → `sessions.count`.
   - `liveRoutes` set (home/chat/agents/live) + per-item `live` flag — a non-zero count on those routes goes teal/breathing; a neutral tally (total sessions) stays quiet.
-  - footer derives: `online`/`offline`/`footState` mirror the daemon connection; `version` prefers `daemon.daemonVersion` else `daemon.guiVersion`; `mismatch` (`daemon.versionMismatch`) warn-tints the version stamp and appends a ⚠, with `versionTitle` spelling out the daemon-vs-gui revisions.
-- **Depends on:** `$lib/router.svelte`, `$lib/stores/sessions.svelte`, `$lib/stores/daemon.svelte`, `$lib/stores/feed.svelte`.
+  - `collapsed` (`$derived` of `ui.railCollapsed`) — icon-only mode: hides labels/zone headings/brand wordmark, centers glyphs, floats badges to the row's top-right corner; the brand-row toggle (`«`/`»`, `ui.toggleRail()`) flips it and the rail width animates `--rail-w`↔`--rail-w-collapsed`. Persisted via the `ui` store (localStorage).
+  - `running` (`$derived`) — sessions with status `working`/`approval`; rendered as a `.rail__subs` sub-list under the Chat item (expanded only) so several live sessions can be navigated at once. `activeSession` (Chat's route param) lights the open one; `shortTitle(s)` falls back to the dir basename; each row dots teal (working) / warn (approval).
+  - footer derives: `online`/`offline`/`footState` mirror the daemon connection; `version` prefers `daemon.daemonVersion` else `daemon.guiVersion`; `mismatch` (`daemon.versionMismatch`) warn-tints the version stamp and appends a ⚠, with `versionTitle` spelling out the daemon-vs-gui revisions. Collapsed: foot shows only the status dot (status+version fold into its title).
+- **Depends on:** `$lib/router.svelte`, `$lib/stores/sessions.svelte`, `$lib/stores/daemon.svelte`, `$lib/stores/feed.svelte`, `$lib/stores/ui.svelte` (rail collapsed state).
 - **Used by / entrypoint:** mounted once in `App.svelte` (left column of the shell).
 
 ### internal/gui/frontend/src/lib/components/Sheet.svelte

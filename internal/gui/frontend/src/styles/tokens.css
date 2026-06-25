@@ -180,5 +180,6 @@
 
   /* LAYOUT */
   --rail-w: 212px;
+  --rail-w-collapsed: 60px;
   --topbar-h: 48px;
 }

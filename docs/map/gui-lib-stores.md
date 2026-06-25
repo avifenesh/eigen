@@ -97,6 +97,12 @@
 - **Depends on:** none (type declarations only).
 - **Used by / entrypoint:** consumed by `bridge.ts` (return types), every store, and every view that renders daemon data.
 
+### internal/gui/frontend/src/lib/stores/ui.svelte.ts
+- **Role:** Persistent UI-chrome state that outlives a single view — currently the left rail's collapsed/expanded mode. Its own tiny store so the preference survives reloads (localStorage, guarded) and any component can read it.
+- **Key symbols:** `createUI()` (unexported) — `$state` `railCollapsed` seeded from `localStorage["eigen.railCollapsed"]`; `toggleRail()` / `setRailCollapsed(v)` flip it + persist. `ui` — the singleton.
+- **Depends on:** none (localStorage only).
+- **Used by / entrypoint:** `lib/components/Rail.svelte` (collapse toggle + icon-only mode).
+
 ### internal/gui/frontend/src/lib/stores/clock.svelte.ts
 - **Role:** A single shared 1 Hz clock so views showing live elapsed times read one `now.ms` instead of each spinning their own interval.
 - **Key symbols:**
