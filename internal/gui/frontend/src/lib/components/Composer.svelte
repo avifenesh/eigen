@@ -63,17 +63,25 @@
   let seq = 0;
 
   const trimmed = $derived(text.trim());
-  const canSend = $derived(
-    !disabled && !running && (trimmed.length > 0 || attachments.length > 0),
-  );
+  // canSubmit gates the KEYBOARD path (Enter) + the actual send(): it does NOT
+  // require !running, because typing while a turn runs is how you STEER the
+  // running turn (the parent's onsend tries SteerInput → falls back to a queued
+  // turn). The old `!running` guard here is exactly what made mid-turn input do
+  // nothing. canSend (the visible Send button's enabled state) still excludes
+  // running, but the button is swapped for Stop while running anyway, so the two
+  // never conflict.
+  const canSubmit = $derived(!disabled && (trimmed.length > 0 || attachments.length > 0));
+  const canSend = $derived(canSubmit && !running);
   // The affordance line: quiet shortcut hint by default, swapping to a live
   // character count once the author has typed something worth measuring.
   const hint = $derived(
     trimmed.length > 0
-      ? `${trimmed.length} char${trimmed.length === 1 ? "" : "s"}`
+      ? `${trimmed.length} char${trimmed.length === 1 ? "" : "s"}${running ? " · Enter steers the running turn" : ""}`
       : attachments.length > 0
         ? `${attachments.length} image${attachments.length === 1 ? "" : "s"} · Enter to send`
-        : "Enter to send · Shift+Enter for newline",
+        : running
+          ? "Enter steers the running turn · Shift+Enter for newline"
+          : "Enter to send · Shift+Enter for newline",
   );
   // The accessible description carried on the textarea (and announced live).
   // When offline it is the disabled reason; otherwise it mirrors the hint so
@@ -133,14 +141,15 @@
     attachments = [];
   }
 
-  // Sending is gated on canSend; while the RPC is in flight `sending` disables
-  // the surface so a double-fire can't duplicate or race. The draft + image
-  // blobs are cleared ONLY after onsend resolves truthy — a transient daemon
-  // failure leaves everything in place to retry rather than silently destroying
-  // a carefully-composed prompt (the data-loss the old fire-and-forget had).
+  // Sending is gated on canSubmit (NOT canSend) so Enter works mid-turn to steer;
+  // while the RPC is in flight `sending` disables the surface so a double-fire
+  // can't duplicate or race. The draft + image blobs are cleared ONLY after
+  // onsend resolves truthy — a transient daemon failure leaves everything in
+  // place to retry rather than silently destroying a carefully-composed prompt
+  // (the data-loss the old fire-and-forget had).
   let sending = $state(false);
   async function send() {
-    if (!canSend || sending) return;
+    if (!canSubmit || sending) return;
     sending = true;
     try {
       const ok = await onsend(trimmed, attachments.map((a) => a.image));

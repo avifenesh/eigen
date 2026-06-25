@@ -455,13 +455,71 @@
     } catch {}
   }
   const primaryRoot = $derived(sess?.roots?.[0] ?? "");
-  const dockTabs: { id: DockTab; label: string }[] = [
-    { id: "info", label: "Info" },
-    { id: "terminal", label: "Terminal" },
-    { id: "diff", label: "Diff" },
-    { id: "files", label: "Files" },
-    { id: "browser", label: "Browser" },
+  const dockTabs: { id: DockTab; label: string; glyph: string }[] = [
+    { id: "info", label: "Info", glyph: "ⓘ" },
+    { id: "terminal", label: "Terminal", glyph: "❯" },
+    { id: "diff", label: "Diff", glyph: "⇄" },
+    { id: "files", label: "Files", glyph: "⊟" },
+    { id: "browser", label: "Browser", glyph: "◍" },
   ];
+
+  // ── dock collapse + resize ─────────────────────────────────────────────────
+  // The tools dock collapses to a thin glyph rail (click a glyph to expand back
+  // to that tab) and its width is drag-resizable. Both persist. Width is clamped
+  // so the chat column always keeps usable space.
+  const DOCK_MIN = 240;
+  const DOCK_MAX = 680;
+  function readDockWidth(): number {
+    try {
+      const v = parseInt(localStorage.getItem("eigen.dockWidth") ?? "", 10);
+      if (!Number.isNaN(v)) return Math.min(DOCK_MAX, Math.max(DOCK_MIN, v));
+    } catch {}
+    return 340;
+  }
+  let dockCollapsed = $state(false);
+  try {
+    dockCollapsed = localStorage.getItem("eigen.dockCollapsed") === "1";
+  } catch {}
+  let dockWidth = $state(readDockWidth());
+
+  function toggleDockCollapsed() {
+    dockCollapsed = !dockCollapsed;
+    try {
+      localStorage.setItem("eigen.dockCollapsed", dockCollapsed ? "1" : "0");
+    } catch {}
+  }
+  // Clicking a glyph while collapsed expands the dock to that tab.
+  function pickCollapsedTab(t: DockTab) {
+    setDockTab(t);
+    dockCollapsed = false;
+    try {
+      localStorage.setItem("eigen.dockCollapsed", "0");
+    } catch {}
+  }
+
+  // Drag-resize from the dock's left edge. Pointer events on the grip; we widen
+  // as the pointer moves LEFT (negative dx → wider, since the dock is right-hung).
+  let resizing = $state(false);
+  function startResize(e: PointerEvent) {
+    e.preventDefault();
+    resizing = true;
+    const startX = e.clientX;
+    const startW = dockWidth;
+    const onMove = (ev: PointerEvent) => {
+      const next = Math.min(DOCK_MAX, Math.max(DOCK_MIN, startW + (startX - ev.clientX)));
+      dockWidth = next;
+    };
+    const onUp = () => {
+      resizing = false;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      try {
+        localStorage.setItem("eigen.dockWidth", String(dockWidth));
+      } catch {}
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
 
   // ── settings panel: capability-gated mutators ──────────────────────────────
   // Each mutator returns the FRESH state — assign it to `sess` so the dock
@@ -1048,7 +1106,42 @@
       </div>
     </div>
 
-    <aside class="chat__dock">
+    <aside
+      class="chat__dock"
+      class:chat__dock--collapsed={dockCollapsed}
+      class:chat__dock--resizing={resizing}
+      style={dockCollapsed ? "" : `width:${dockWidth}px`}
+    >
+      <!-- RESIZE GRIP — a hairline strip on the dock's left edge; drag to set the
+           dock width (clamped). Hidden while collapsed. -->
+      {#if !dockCollapsed}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="dock__grip"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize tools panel"
+          title="Drag to resize"
+          onpointerdown={startResize}
+        ></div>
+      {/if}
+
+      {#if dockCollapsed}
+        <!-- COLLAPSED — a thin glyph rail. The toggle expands; a glyph expands to
+             that tab. -->
+        <div class="dock__rail">
+          <button class="dock__railbtn" onclick={toggleDockCollapsed} title="Expand tools panel" aria-label="Expand tools panel">«</button>
+          {#each dockTabs as t (t.id)}
+            <button
+              class="dock__railbtn"
+              class:dock__railbtn--on={dockTab === t.id}
+              title={t.label}
+              aria-label={t.label}
+              onclick={() => pickCollapsedTab(t.id)}
+            >{t.glyph}</button>
+          {/each}
+        </div>
+      {:else}
       <!-- TABS: the dock is a tools panel — Info (session groups) + Terminal /
            Diff / Files / Browser. A fixed strip over a flex-1 body so the
            height-filling panels (Terminal/Browser) get real space; the Info
@@ -1063,8 +1156,11 @@
             onclick={() => setDockTab(t.id)}
           >{t.label}</button>
         {/each}
+        <button class="dock__collapse" onclick={toggleDockCollapsed} title="Collapse tools panel" aria-label="Collapse tools panel">»</button>
       </div>
+      {/if}
 
+      {#if !dockCollapsed}
       {#if dockTab === "info"}
       <div class="dock__body dock__body--scroll">
       <div class="dock__group">
@@ -1340,6 +1436,7 @@
         <div class="dock__body dock__body--fill" class:dock__body--hidden={dockTab !== "browser"}>
           <BrowserPanel />
         </div>
+      {/if}
       {/if}
     </aside>
   </div>
@@ -1853,7 +1950,8 @@
      longer scrolls or pads — those move onto the Info body. Widened from 268 →
      340 so a terminal/diff has room while the chat column stays dominant. */
   .chat__dock {
-    width: 340px;
+    position: relative;
+    width: 340px; /* default; overridden by an inline width when expanded */
     flex: none;
     border-left: 1px solid var(--border-hairline);
     background: var(--bg-well);
@@ -1861,6 +1959,108 @@
     flex-direction: column;
     min-height: 0;
     overflow: hidden;
+  }
+  /* While dragging the grip, suppress text selection + the body's own pointer
+     so the drag stays crisp. */
+  .chat__dock--resizing {
+    user-select: none;
+  }
+  .chat__dock--collapsed {
+    width: 48px;
+  }
+  /* RESIZE GRIP — a 6px hit strip hugging the dock's left edge; a hairline
+     brightens on hover/drag so the affordance reads without a heavy divider. */
+  .dock__grip {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 5;
+  }
+  .dock__grip::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 2px;
+    height: 100%;
+    background: transparent;
+    transition: background var(--dur-fast) var(--ease-out);
+  }
+  .dock__grip:hover::after,
+  .chat__dock--resizing .dock__grip::after {
+    background: var(--border-brand);
+  }
+
+  /* COLLAPSED RAIL — a thin vertical strip of tool glyphs; click one to expand
+     the dock to that tab. The active tab's glyph is lit. */
+  .dock__rail {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-3) 0;
+  }
+  .dock__railbtn {
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: var(--fs-body);
+    line-height: 1;
+    cursor: pointer;
+    transition:
+      background var(--dur-fast) var(--ease-out),
+      color var(--dur-fast) var(--ease-out);
+  }
+  .dock__railbtn:hover {
+    background: var(--state-hover);
+    color: var(--text-primary);
+  }
+  .dock__railbtn:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .dock__railbtn--on {
+    background: var(--state-selected);
+    color: var(--brand-bright);
+  }
+  /* The expanded-state collapse button rides the tab strip's right edge. */
+  .dock__collapse {
+    margin-left: auto;
+    flex: none;
+    width: 26px;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--text-faint);
+    font-size: var(--fs-body);
+    line-height: 1;
+    cursor: pointer;
+    transition:
+      background var(--dur-fast) var(--ease-out),
+      color var(--dur-fast) var(--ease-out);
+  }
+  .dock__collapse:hover {
+    background: var(--state-hover);
+    color: var(--text-primary);
+  }
+  .dock__collapse:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
   }
   .dock__tabs {
     flex: none;
