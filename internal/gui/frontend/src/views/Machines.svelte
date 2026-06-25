@@ -8,6 +8,7 @@
   // here — surfaced as a hint.
   import { Bridge } from "$lib/bridge";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { errText } from "$lib/errors";
   import { sessionDot } from "$lib/status";
   import type { MachinesDTO, MachineDTO, SessionInfoDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
@@ -41,7 +42,7 @@
         else error = "Could not load machines";
       }
     } catch (e) {
-      if (seq === loadSeq) error = e instanceof Error ? e.message : String(e);
+      if (seq === loadSeq) error = errText(e);
     } finally {
       if (seq === loadSeq) loading = false;
     }
@@ -87,7 +88,7 @@
       const list = await Bridge.RemoteSessions(m.ssh);
       if (seq === remoteSeq) remote = list;
     } catch (e) {
-      if (seq === remoteSeq) remoteError = e instanceof Error ? e.message : String(e);
+      if (seq === remoteSeq) remoteError = errText(e);
     } finally {
       if (seq === remoteSeq) remoteLoading = false;
     }

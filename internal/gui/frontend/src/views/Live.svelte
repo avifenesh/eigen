@@ -12,6 +12,7 @@
   import { toasts } from "$lib/stores/toasts.svelte";
   import { now } from "$lib/stores/clock.svelte";
   import { sessionDot } from "$lib/status";
+  import { errText } from "$lib/errors";
   import type { SessionInfoDTO, ApprovalInfo } from "$lib/types";
   import Button from "$lib/components/Button.svelte";
   import Badge from "$lib/components/Badge.svelte";
@@ -118,7 +119,7 @@
       await sessions.refresh();
       router.go("chat", id);
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       starting = false;
     }
@@ -135,7 +136,7 @@
       toasts.info("interrupt requested");
       await sessions.refresh();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       delete interrupting[s.id];
     }
@@ -149,7 +150,7 @@
       delete confirmRemove[s.id];
       await sessions.refresh();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       delete removing[s.id];
     }
@@ -175,7 +176,7 @@
       }
       gatePending[s.id] = pending;
     } catch (e) {
-      gateError[s.id] = e instanceof Error ? e.message : String(e);
+      gateError[s.id] = errText(e);
     } finally {
       delete gateLoading[s.id];
     }
@@ -200,7 +201,7 @@
       closeGate(s.id);
       await sessions.refresh();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       delete acting[key];
     }

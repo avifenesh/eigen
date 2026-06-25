@@ -9,6 +9,7 @@
   // editor; living here keeps identity in one place.
   import { daemon } from "$lib/stores/daemon.svelte";
   import { Bridge } from "$lib/bridge";
+  import { errText } from "$lib/errors";
   import { toasts } from "$lib/stores/toasts.svelte";
   import type { ObserveSummaryDTO, MemoryDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
@@ -50,7 +51,7 @@
         // summary the KPIs would read turns=0/errors=0 and the table "no activity"
         // — indistinguishable from a clean log. Mirrors the load-failure-vs-empty
         // pattern used across Routing/Crons/Config.
-        if (seq === loadSeq) summaryError = e instanceof Error ? e.message : String(e);
+        if (seq === loadSeq) summaryError = errText(e);
       })
       .finally(() => {
         if (seq === loadSeq) summaryLoading = false;
@@ -60,7 +61,7 @@
         if (seq === loadSeq) memory = d;
       })
       .catch((e) => {
-        if (seq === loadSeq) toasts.error(e instanceof Error ? e.message : String(e));
+        if (seq === loadSeq) toasts.error(errText(e));
       })
       .finally(() => {
         if (seq === loadSeq) memoryLoading = false;
@@ -128,7 +129,7 @@
       editing = false;
       await load();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       saving = false;
     }

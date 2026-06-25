@@ -6,6 +6,7 @@
   // (config.Set), so an invalid value is rejected with a toast and the field
   // reverts to its stored value.
   import { Bridge } from "$lib/bridge";
+  import { errText } from "$lib/errors";
   import { toasts } from "$lib/stores/toasts.svelte";
   import type { ConfigDTO, ConfigFieldDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
@@ -34,7 +35,7 @@
         values = Object.fromEntries(d.fields.map((f) => [f.key, f.value]));
       }
     } catch (e) {
-      if (alive && seq === loadSeq) error = e instanceof Error ? e.message : String(e);
+      if (alive && seq === loadSeq) error = errText(e);
     } finally {
       if (alive && seq === loadSeq) loading = false;
     }
@@ -77,7 +78,7 @@
         const f = data.fields.find((x) => x.key === key);
         if (f) values[key] = f.value;
       }
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       if (alive) delete saving[key];
     }

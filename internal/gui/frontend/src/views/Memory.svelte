@@ -6,6 +6,7 @@
   // editable user profile. Reads memory directly via the bridge (memory is local
   // filesystem; no daemon round-trip).
   import { Bridge } from "$lib/bridge";
+  import { errText } from "$lib/errors";
   import { router } from "$lib/router.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
   import type { MemoryScopeDTO, MemoryScopeRefDTO } from "$lib/types";
@@ -102,7 +103,7 @@
         if (cur) scope = cur.key;
       }
     } catch (e) {
-      if (alive) toasts.error(e instanceof Error ? e.message : String(e));
+      if (alive) toasts.error(errText(e));
     }
   }
 
@@ -117,7 +118,7 @@
       const d = await Bridge.MemoryForScope(key);
       if (seq === loadSeq) current = d;
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = errText(e);
       if (seq === loadSeq) {
         loadError = msg;
         toasts.error(msg);
@@ -161,7 +162,7 @@
       toasts.success("note saved");
       await loadScope(scope);
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       saving = false;
     }
@@ -180,7 +181,7 @@
       toasts.success(replaced ? "ban updated" : "ban added");
       await loadScope(scope);
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       savingBan = false;
     }
@@ -192,7 +193,7 @@
       if (removed) toasts.success("ban removed");
       await loadScope(scope);
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       removingBan = null;
     }
@@ -209,7 +210,7 @@
       // Go returns oldest-first; reverse for newest-first.
       if (seq === backupsSeq) backupPaths = [...paths].reverse();
     } catch (e) {
-      if (seq === backupsSeq) toasts.error(e instanceof Error ? e.message : String(e));
+      if (seq === backupsSeq) toasts.error(errText(e));
     } finally {
       if (seq === backupsSeq) backupsLoading = false;
     }
@@ -253,7 +254,7 @@
       toasts.success("profile saved");
       await loadScope(scope);
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       savingProfile = false;
     }

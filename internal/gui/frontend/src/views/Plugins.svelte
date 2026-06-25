@@ -8,6 +8,7 @@
   // Uninstall + marketplace-remove are destructive, so they take an inline
   // confirm rather than acting on a stray click.
   import { Bridge } from "$lib/bridge";
+  import { errText } from "$lib/errors";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { relTime } from "$lib/status";
   import type { PluginsDTO, InstalledPluginDTO, PluginPreviewDTO } from "$lib/types";
@@ -76,7 +77,7 @@
       await loadPreviews(mkt.name);
       await load(); // the new marketplace lands in the Marketplaces section too
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       addingMkt = false;
     }
@@ -93,7 +94,7 @@
     } catch (e) {
       previews = [];
       previewMkt = "";
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       addingMkt = false;
     }
@@ -111,7 +112,7 @@
       previews = previews.filter((x) => x.name !== p.name);
       await load();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = errText(e);
       if (/already installed/.test(msg)) {
         // Benign: we already have it. Drop the row and refresh so it shows up.
         toasts.info(msg);
@@ -137,7 +138,7 @@
       const d = await Bridge.Plugins();
       if (seq === loadSeq) data = d;
     } catch (e) {
-      if (seq === loadSeq) error = e instanceof Error ? e.message : String(e);
+      if (seq === loadSeq) error = errText(e);
     } finally {
       if (seq === loadSeq) loading = false;
     }
@@ -179,7 +180,7 @@
       else toasts.info(`${name} was not installed`);
       await load();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       delete acting["p:" + name];
     }
@@ -191,7 +192,7 @@
       toasts.success(`${enabled ? "enabled" : "disabled"} ${name}`);
       await load();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       delete acting["m:" + name];
     }
@@ -204,7 +205,7 @@
       toasts.info(ok ? `removed marketplace ${name}` : `${name} not found`);
       await load();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       delete acting["m:" + name];
     }

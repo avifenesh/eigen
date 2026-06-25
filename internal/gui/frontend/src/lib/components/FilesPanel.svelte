@@ -4,6 +4,7 @@
   // via ReadFileForView(path) into a read-only viewer pane. Read-only by design —
   // this is for orienting + reading, not editing (the agent edits via its tools).
   import { Bridge } from "$lib/bridge";
+  import { errText } from "$lib/errors";
   import type { FileTreeDTO, FileEntryDTO } from "$lib/types";
   import Button from "./Button.svelte";
   import EmptyState from "./EmptyState.svelte";
@@ -37,7 +38,7 @@
         openDirs = new Set((t?.entries ?? []).filter((e) => e.isDir).map((e) => e.path));
       }
     } catch (e) {
-      if (s === seq) error = e instanceof Error ? e.message : String(e);
+      if (s === seq) error = errText(e);
     } finally {
       if (s === seq) loading = false;
     }
@@ -70,7 +71,7 @@
       const text = await Bridge.ReadFileForView(entry.path);
       if (s === viewSeq) viewText = text;
     } catch (e) {
-      if (s === viewSeq) viewError = e instanceof Error ? e.message : String(e);
+      if (s === viewSeq) viewError = errText(e);
     } finally {
       if (s === viewSeq) viewLoading = false;
     }

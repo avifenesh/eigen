@@ -6,6 +6,7 @@
   // transcript can be opened in a slide-over. Polling lives in an $effect whose
   // cleanup clears the interval — no leaked timer on nav.
   import { Bridge } from "$lib/bridge";
+  import { errText } from "$lib/errors";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { now } from "$lib/stores/clock.svelte";
   import { taskDot } from "$lib/status";
@@ -42,7 +43,7 @@
     } catch (e) {
       if (seq === loadSeq) {
         loading = false;
-        error = e instanceof Error ? e.message : String(e);
+        error = errText(e);
       }
     }
   }
@@ -101,7 +102,7 @@
       toasts.info("cancel requested");
       await load();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       delete acting[id];
     }
@@ -114,7 +115,7 @@
     try {
       transcript = await Bridge.AgentTranscript(t.id);
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       transcriptLoading = false;
     }

@@ -12,6 +12,7 @@
   import { toasts } from "$lib/stores/toasts.svelte";
   import { now } from "$lib/stores/clock.svelte";
   import { sessionDot } from "$lib/status";
+  import { errText } from "$lib/errors";
   import type { SessionInfoDTO } from "$lib/types";
   import Button from "$lib/components/Button.svelte";
   import Badge from "$lib/components/Badge.svelte";
@@ -80,7 +81,7 @@
       const path = await Bridge.ExportSession(s.id);
       toasts.success(`exported → ${path}`);
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       delete exporting[s.id];
     }
@@ -94,7 +95,7 @@
       delete confirmDelete[s.id];
       await sessions.refresh();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       delete deleting[s.id];
     }
@@ -109,7 +110,7 @@
       else toasts.success(`pruned ${n} empty session${n === 1 ? "" : "s"}`);
       await sessions.refresh();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       pruning = false;
     }

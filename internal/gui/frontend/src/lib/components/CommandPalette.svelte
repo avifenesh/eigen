@@ -9,6 +9,7 @@
   import { feed } from "$lib/stores/feed.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { Bridge } from "$lib/bridge";
+  import { errText } from "$lib/errors";
   import { trapFocus } from "$lib/actions";
 
   type Group = "Actions" | "Views" | "Sessions";
@@ -41,7 +42,7 @@
       await sessions.refresh();
       router.go("chat", id);
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     }
   }
   async function pruneEmpty() {
@@ -51,7 +52,7 @@
       toasts.info(removed.length ? `pruned ${removed.length} empty session${removed.length === 1 ? "" : "s"}` : "no empty sessions");
       await sessions.refresh();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     }
   }
   // Trigger a real proactive-feed rescan, land on Home where the fresh results

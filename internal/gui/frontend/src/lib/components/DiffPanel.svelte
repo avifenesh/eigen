@@ -4,6 +4,7 @@
   // the unified patch with the shared DiffView. Manual refresh + a per-file stat
   // strip. Not a live watcher: a Refresh button re-reads on demand (cheap).
   import { Bridge } from "$lib/bridge";
+  import { errText } from "$lib/errors";
   import type { WorkingDiffDTO } from "$lib/types";
   import DiffView from "./DiffView.svelte";
   import Button from "./Button.svelte";
@@ -25,7 +26,7 @@
       const d = await Bridge.WorkingDiff(dir);
       if (s === seq) data = d;
     } catch (e) {
-      if (s === seq) error = e instanceof Error ? e.message : String(e);
+      if (s === seq) error = errText(e);
     } finally {
       if (s === seq) loading = false;
     }

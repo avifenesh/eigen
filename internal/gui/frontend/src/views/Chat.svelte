@@ -11,6 +11,7 @@
   import { voice } from "$lib/stores/voice.svelte";
   import { router } from "$lib/router.svelte";
   import { on, ev } from "$lib/events";
+  import { errText } from "$lib/errors";
   import { createTranscript, type Transcript } from "$lib/stores/transcript.svelte";
   import type { SessionStateDTO, ModelDTO, ImageDTO, RecentDirDTO } from "$lib/types";
   import Composer from "$lib/components/Composer.svelte";
@@ -74,7 +75,7 @@
     // is safe to call again on reconnect without double-subscribing.
     function attach() {
       loading = true;
-      Bridge.Subscribe(id).catch((e) => toasts.error("subscribe: " + (e instanceof Error ? e.message : String(e))));
+      Bridge.Subscribe(id).catch((e) => toasts.error("subscribe: " + errText(e)));
       Bridge.State(id)
         .then((s) => {
           if (!alive) return;
@@ -85,7 +86,7 @@
         })
         .catch((e) => {
           if (alive) loading = false;
-          toasts.error("state: " + (e instanceof Error ? e.message : String(e)));
+          toasts.error("state: " + errText(e));
         });
     }
 
@@ -228,7 +229,7 @@
       }
       return true;
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
       return false;
     }
   }
@@ -243,7 +244,7 @@
     const next = queued[0];
     queued = queued.slice(1);
     Bridge.SendInput(sessionId, next.text, next.images, []).catch((e) => {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     });
   }
 
@@ -271,7 +272,7 @@
       await Bridge.RunCommand(sessionId, name, args.trim());
       return true;
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
       return false;
     }
   }
@@ -315,7 +316,7 @@
       newChatOpen = false;
       router.go("chat", id);
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       startingNew = false;
     }
@@ -335,7 +336,7 @@
     try {
       await Bridge.Interrupt(sessionId);
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       interrupting = false;
     }
@@ -401,7 +402,7 @@
       else toasts.info("no foreground shell to background");
       refreshState();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       detaching = false;
     }
@@ -414,7 +415,7 @@
       await Bridge.Approve(sessionId, approvalID, allow);
       refreshState();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     }
   }
 
@@ -475,7 +476,7 @@
     try {
       return await fn();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
       return undefined;
     }
   }

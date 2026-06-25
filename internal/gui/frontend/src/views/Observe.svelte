@@ -7,6 +7,7 @@
   import { daemon } from "$lib/stores/daemon.svelte";
   import { Bridge } from "$lib/bridge";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { errText } from "$lib/errors";
   import type { ObserveSummaryDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
@@ -30,7 +31,7 @@
       const d = await Bridge.ObserveSummary(5000);
       if (!disposed) summary = d;
     } catch (e) {
-      if (!disposed) toasts.error(e instanceof Error ? e.message : String(e));
+      if (!disposed) toasts.error(errText(e));
     } finally {
       if (!disposed) summaryLoading = false;
     }

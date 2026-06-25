@@ -11,6 +11,7 @@
   import { router } from "$lib/router.svelte";
   import { now } from "$lib/stores/clock.svelte";
   import { sessionDot } from "$lib/status";
+  import { errText } from "$lib/errors";
   import { Bridge } from "$lib/bridge";
   import { Browser } from "@wailsio/runtime";
   import type { FeedItemDTO, SessionInfoDTO } from "$lib/types";
@@ -76,7 +77,7 @@
       await sessions.refresh();
       router.go("chat", id);
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       starting = false;
     }
@@ -96,7 +97,7 @@
       await sessions.refresh();
       router.go("chat", id);
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       delete acting[it.key];
     }

@@ -11,6 +11,7 @@
   // entries decode their spec into a human cadence. All bridge calls, controls,
   // badges and empty states are unchanged.
   import { Bridge } from "$lib/bridge";
+  import { errText } from "$lib/errors";
   import { toasts } from "$lib/stores/toasts.svelte";
   import type { CronsDTO, CronDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
@@ -33,7 +34,7 @@
       const d = await Bridge.Crons();
       if (seq === loadSeq) data = d;
     } catch (e) {
-      if (seq === loadSeq) error = e instanceof Error ? e.message : String(e);
+      if (seq === loadSeq) error = errText(e);
     } finally {
       if (seq === loadSeq) loading = false;
     }
@@ -202,7 +203,7 @@
       toasts.success(`${verb} ${c.name}`);
       await load();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       if (c.unit) delete acting[c.unit];
     }

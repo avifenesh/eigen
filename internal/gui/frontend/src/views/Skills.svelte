@@ -7,6 +7,7 @@
   // into the active shelves. Clicking a skill opens a slide-over with its
   // rendered body. Skills are local files; the bridge reads them directly.
   import { Bridge } from "$lib/bridge";
+  import { errText } from "$lib/errors";
   import { toasts } from "$lib/stores/toasts.svelte";
   import type { SkillsDTO, SkillDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
@@ -55,7 +56,7 @@
         toasts.info("nothing installed");
       }
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       installing = false;
     }
@@ -85,7 +86,7 @@
       const d = await Bridge.Skills();
       if (seq === loadSeq) data = d;
     } catch (e) {
-      if (seq === loadSeq) error = e instanceof Error ? e.message : String(e);
+      if (seq === loadSeq) error = errText(e);
     } finally {
       if (seq === loadSeq) loading = false;
     }
@@ -181,7 +182,7 @@
       body = await Bridge.SkillBody(s.name);
     } catch (e) {
       body = "";
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       bodyLoading = false;
     }
@@ -198,7 +199,7 @@
       toasts.success(`accepted “${name}”`);
       await load();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       delete acting[name];
     }
@@ -210,7 +211,7 @@
       toasts.info(`rejected “${name}”`);
       await load();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       delete acting[name];
     }

@@ -6,6 +6,7 @@
   // consolidation opens a diff of that snapshot against the current memory, so
   // you can see exactly what a dream changed. All local files — read directly.
   import { Bridge } from "$lib/bridge";
+  import { errText } from "$lib/errors";
   import { toasts } from "$lib/stores/toasts.svelte";
   import type { DreamingScopeDTO, ConsolidationDTO, MemoryScopeRefDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
@@ -59,7 +60,7 @@
         if (cur) scope = cur.key;
       }
     } catch (e) {
-      if (alive) toasts.error(e instanceof Error ? e.message : String(e));
+      if (alive) toasts.error(errText(e));
     }
   }
 
@@ -74,7 +75,7 @@
       const d = await Bridge.DreamingForScope(key);
       if (seq === loadSeq) current = d;
     } catch (e) {
-      if (seq === loadSeq) error = e instanceof Error ? e.message : String(e);
+      if (seq === loadSeq) error = errText(e);
     } finally {
       if (seq === loadSeq) loading = false;
     }
@@ -101,7 +102,7 @@
       toasts.success(r?.report || (r?.changed ? "consolidated memory" : "nothing new to consolidate"));
       await loadScope(scope);
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : String(e));
+      toasts.error(errText(e));
     } finally {
       dreaming = false;
     }
@@ -132,7 +133,7 @@
       ]);
       diffPatch = makeUnifiedDiff(before, after, c.label, "current");
     } catch (e) {
-      diffError = e instanceof Error ? e.message : String(e);
+      diffError = errText(e);
       toasts.error(diffError);
     } finally {
       diffLoading = false;

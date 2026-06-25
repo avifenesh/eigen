@@ -1,6 +1,7 @@
 // Sessions store — the live session list backing the Home board and rail badge.
 // Refreshed on demand and whenever the daemon reconnects. Cheap: one List RPC.
 import { Bridge } from "$lib/bridge";
+import { errText } from "$lib/errors";
 import type { SessionInfoDTO } from "$lib/types";
 
 function createSessions() {
@@ -27,7 +28,7 @@ function createSessions() {
       loaded = true;
     } catch (e) {
       if (seq !== loadSeq) return;
-      error = e instanceof Error ? e.message : String(e);
+      error = errText(e);
     } finally {
       if (seq === loadSeq) loading = false;
     }

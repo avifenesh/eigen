@@ -6,6 +6,7 @@
   // live search) and whether its provider is currently usable. Read-only,
   // local + fast (no network probe).
   import { Bridge } from "$lib/bridge";
+  import { errText } from "$lib/errors";
   import { toasts } from "$lib/stores/toasts.svelte";
   import type { RoutingDTO, ModelDTO, RouteStatsDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
@@ -36,7 +37,7 @@
       const d = await Bridge.Routing();
       if (seq === loadSeq) data = d;
     } catch (e) {
-      if (seq === loadSeq) error = e instanceof Error ? e.message : String(e);
+      if (seq === loadSeq) error = errText(e);
     } finally {
       if (seq === loadSeq) loading = false;
     }
