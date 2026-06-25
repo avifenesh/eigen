@@ -93,25 +93,95 @@ func SearchTools(reg func() *Registry, unlock func(names []string)) Definition {
 			if group, tail, ok := splitGroupQuery(r, q); ok {
 				for _, c := range r.GroupCapabilities(group) {
 					if capabilityMatches(c, tail) {
+						// A capability is a SMALL, bounded set (≤~8 tools). Unlock
+						// the whole batch + return their schemas in ONE call —
+						// rather than listing names and forcing yet another
+						// search_tools round-trip per tool. Iterating the search is
+						// the real cost; once the model has named the server AND the
+						// capability it clearly wants this group of tools, so hand
+						// them over callable.
+						matches := r.MatchNicheInGroup(group, c.Name)
+						if len(matches) > 0 {
+							return renderAndUnlockMatches(group+" "+c.Name, matches, unlock)
+						}
 						tools := r.GroupCapabilityTools(group, c.Name)
 						return fmt.Sprintf("%s/%s — %d tools (search_tools with a specific tool name to open its schema):\n- %s", group, c.Name, len(tools), strings.Join(tools, "\n- ")), nil
 					}
 				}
 				// Scoped narrow keyword/tool match → full schemas + unlock.
 				matches := r.MatchNicheInGroup(group, tail)
+				if len(matches) == 0 {
+					// Don't dead-end: the model named the right server but used
+					// words that didn't land. Show that server's capabilities +
+					// tool names so the next call lands instead of looping.
+					return groupGuide(r, group, tail), nil
+				}
 				return renderAndUnlockMatches(tail, matches, unlock)
 			}
 
 			// Level 2b: keyword/tool match → full schemas + unlock.
 			matches := r.MatchNiche(q)
+			if len(matches) == 0 {
+				// Before giving up, see if the query *names* a group fuzzily
+				// (e.g. "browser" → the chrome server) and guide into it.
+				if g := closestGroup(r, q); g != "" {
+					return groupGuide(r, g, ""), nil
+				}
+			}
 			return renderAndUnlockMatches(q, matches, unlock)
 		},
 	}
 }
 
+// groupGuide renders a server's capability categories (or tool names if it has
+// none) as a productive next step when a query named the right server but the
+// keyword didn't resolve to specific tools — so the model drills in instead of
+// looping on "no tools match". `tail` is the words that missed (echoed for
+// context); empty when the whole query just named the group.
+func groupGuide(r *Registry, group, tail string) string {
+	var b strings.Builder
+	if tail != "" {
+		fmt.Fprintf(&b, "No %s tool matched %q. ", group, tail)
+	}
+	if caps := r.GroupCapabilities(group); len(caps) > 0 {
+		fmt.Fprintf(&b, "%s server capabilities (search_tools \"%s <capability>\" for tool names, or search_tools with a tool name/keyword to open a schema):\n", group, group)
+		for _, c := range caps {
+			gist := c.Gist
+			if gist == "" {
+				gist = c.Name + " tools"
+			}
+			fmt.Fprintf(&b, "- %s (%d tools) — %s\n", c.Name, c.Count, gist)
+		}
+		return strings.TrimRight(b.String(), "\n")
+	}
+	tools := r.GroupTools(group)
+	fmt.Fprintf(&b, "%s server — %d tools (search_tools with a tool name to open its schema):\n- %s", group, len(tools), strings.Join(tools, "\n- "))
+	return b.String()
+}
+
+// closestGroup finds a niche group the query plausibly refers to, even when it
+// doesn't contain the literal group name: a token of the query appears in the
+// group name, or the group name appears in the query (so "browser"/"web" can be
+// pointed at "chrome" via its gist by the caller; here we match on name tokens).
+func closestGroup(r *Registry, q string) string {
+	toks := tokenizeQuery(strings.ToLower(q))
+	for _, g := range r.GroupNames() {
+		gl := strings.ToLower(g)
+		if strings.Contains(q, gl) || strings.Contains(gl, q) {
+			return g
+		}
+		for _, t := range toks {
+			if strings.Contains(gl, t) || strings.Contains(t, gl) {
+				return g
+			}
+		}
+	}
+	return ""
+}
+
 func renderAndUnlockMatches(query string, matches []Definition, unlock func(names []string)) (string, error) {
 	if len(matches) == 0 {
-		return fmt.Sprintf("no tools match %q. Run search_tools with an empty query to list the groups.", query), nil
+		return fmt.Sprintf("No tool matched %q. Try broader words (a capability like \"tabs\"/\"screenshot\"/\"input\", or a server name like \"chrome\"/\"workspace\"), or run search_tools with an empty query to list every group.", query), nil
 	}
 	// Guard against a too-broad keyword opening an entire huge server: if it
 	// resolves to one whole group, show capability categories or tool names rather
@@ -180,7 +250,22 @@ func splitGroupQuery(r *Registry, q string) (group, tail string, ok bool) {
 func capabilityMatches(c NicheCapability, q string) bool {
 	q = strings.ToLower(strings.TrimSpace(q))
 	name := strings.ToLower(c.Name)
-	return q == name || strings.ReplaceAll(q, "_", "-") == name
+	if q == name {
+		return true
+	}
+	// Flatten hyphen/underscore/space on BOTH sides so "page read", "page-read",
+	// and "page_read" all match the "page-read" capability (exact-only matching
+	// here is what dead-ended the model when it paraphrased the category).
+	flat := func(s string) string { return strings.NewReplacer("-", "", "_", "", " ", "").Replace(s) }
+	if flat(q) == flat(name) {
+		return true
+	}
+	// A capability also matches when the query is contained in its name or gist,
+	// or the name in the query — so "screenshot" reaches "screenshots", "tab"
+	// reaches "tabs", "read page content" reaches "page-read".
+	gist := strings.ToLower(c.Gist)
+	return strings.Contains(name, q) || strings.Contains(q, name) ||
+		(gist != "" && strings.Contains(gist, q))
 }
 
 // singleGroup returns the common group of all matches, or "" if they span

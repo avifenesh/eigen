@@ -330,6 +330,16 @@ func (r *Registry) MatchNicheInGroup(group, query string) []Definition {
 
 func (r *Registry) matchNiche(query, group string) []Definition {
 	q := strings.ToLower(strings.TrimSpace(query))
+	// Tokenize the query so a paraphrased, multi-word ask ("read the page",
+	// "open a new tab") matches even though that exact phrase appears in no
+	// field. A tool matches when EVERY meaningful token hits SOME field (name/
+	// description/group/capability) — AND across tokens, OR across fields. This
+	// is what keeps the model from looping on search_tools: it doesn't have to
+	// guess the one literal substring, only use relevant words. Hyphen/underscore
+	// are word separators (so "page read" reaches the "page-read" capability and
+	// "new tab" reaches "chrome_new_tab"). Stopwords are dropped so filler
+	// ("the", "a", "to") can't force a miss.
+	toks := tokenizeQuery(q)
 	var out []Definition
 	for _, name := range r.order {
 		d := r.byName[name]
@@ -339,16 +349,75 @@ func (r *Registry) matchNiche(query, group string) []Definition {
 		if group != "" && strings.ToLower(d.Group) != group {
 			continue
 		}
-		if q == "" ||
-			strings.Contains(strings.ToLower(d.Name), q) ||
-			strings.Contains(strings.ToLower(d.Description), q) ||
-			(d.Group != "" && strings.Contains(strings.ToLower(d.Group), q)) ||
-			(d.Capability != "" && strings.Contains(strings.ToLower(d.Capability), q)) ||
-			(d.CapabilityDesc != "" && strings.Contains(strings.ToLower(d.CapabilityDesc), q)) {
+		if q == "" {
+			out = append(out, d)
+			continue
+		}
+		// Whole-query substring is still the strongest signal (exact tool name,
+		// a phrase that does appear) — accept it directly.
+		hay := strings.ToLower(d.Name + " " + d.Description + " " + d.Group + " " + d.Capability + " " + d.CapabilityDesc)
+		if strings.Contains(hay, q) {
+			out = append(out, d)
+			continue
+		}
+		// Otherwise every meaningful token must land somewhere in this tool's
+		// searchable text (each compared with hyphen/underscore flattened too).
+		if len(toks) > 0 && allTokensMatch(toks, hay) {
 			out = append(out, d)
 		}
 	}
 	return out
+}
+
+// queryStopwords are filler words dropped from a search_tools query so they
+// can't turn an otherwise-good match into a miss.
+var queryStopwords = map[string]bool{
+	// articles / prepositions / pronouns — pure filler
+	"the": true, "a": true, "an": true, "to": true, "of": true, "in": true,
+	"on": true, "for": true, "and": true, "or": true, "with": true, "my": true,
+	"me": true, "i": true, "it": true, "this": true, "that": true, "from": true,
+	// generic intent verbs — they describe WANTING, not the tool; keeping them
+	// in the AND-set would reject a tool that does the thing but doesn't echo the
+	// verb ("open the page" rejecting a page-read tool that says "extract"/"read").
+	"open": true, "get": true, "show": true, "use": true, "want": true,
+	"need": true, "let": true, "can": true, "do": true, "make": true,
+	"please": true, "some": true, "any": true, "tool": true, "tools": true,
+}
+
+// tokenizeQuery splits a query into lowercase word tokens, flattening hyphen/
+// underscore to spaces and dropping stopwords + 1-char noise.
+func tokenizeQuery(q string) []string {
+	flat := strings.NewReplacer("-", " ", "_", " ", "/", " ", ".", " ").Replace(q)
+	var out []string
+	for _, t := range strings.Fields(flat) {
+		if len(t) < 2 || queryStopwords[t] {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+// allTokensMatch reports whether every token appears in hay (hyphen/underscore
+// flattened on both sides, so "newtab"/"new tab"/"new-tab" all reach
+// "chrome_new_tab"). A token also matches its own singular/plural-ish stem so
+// "tab" hits "tabs" and vice versa.
+func allTokensMatch(toks []string, hay string) bool {
+	flatHay := strings.NewReplacer("-", " ", "_", " ", "/", " ", ".", " ").Replace(hay)
+	for _, t := range toks {
+		if strings.Contains(flatHay, t) || strings.Contains(hay, t) {
+			continue
+		}
+		// crude stem: drop a trailing 's' (tabs→tab) or add one (tab→tabs)
+		if strings.HasSuffix(t, "s") && strings.Contains(flatHay, strings.TrimSuffix(t, "s")) {
+			continue
+		}
+		if strings.Contains(flatHay, t+"s") {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func firstLine(s string) string {
