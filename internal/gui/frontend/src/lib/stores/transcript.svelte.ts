@@ -98,11 +98,19 @@ export function createTranscript(sessionId: string) {
   }
 
   function pushHistory(b: Block) {
-    history.push(b);
-    if (history.length > CAP) {
-      history.splice(0, history.length - CAP);
-      truncated = true;
-    }
+    // Reassign (new array reference), don't mutate in place. The Chat view binds
+    // VirtualList's `items` to a $derived of this array; an in-place .push keeps
+    // the SAME reference, so the keyed #each / windowing didn't reliably re-run
+    // for the final block at turn end (the last message only appeared after
+    // leaving + re-entering the chat, which re-seeds a fresh array). A new
+    // reference makes the derived fire every push. This is NOT per-token — live
+    // tokens accumulate in `live`; pushHistory only fires at block boundaries
+    // (tool start/result, note, and the turn's final commit), so the array copy
+    // is cheap and bounded by CAP.
+    let next = history.length >= CAP ? history.slice(history.length - CAP + 1) : history.slice();
+    if (history.length >= CAP) truncated = true;
+    next.push(b);
+    history = next;
   }
 
   function resetPending() {
