@@ -71,12 +71,17 @@ func guiSuggestProvider() llm.Provider {
 			return p
 		}
 	}
+	// Prefer glm-5.2 (1M-ctx, web_search included) but wrap it in a fallback to
+	// the small model: if GLM rejects on quota/billing (e.g. a drained z.ai
+	// balance), the fallback carries ideas AND GLM is frozen for the rest of the
+	// day so the next scans don't keep hitting a dead account. See llm.NewFallback.
+	small := smallProvider(nil)
 	if llm.ProviderAvailable("glm") {
 		if p, err := llm.New("glm", "glm-5.2"); err == nil {
-			return p
+			return llm.NewFallback(p, small)
 		}
 	}
-	return smallProvider(nil)
+	return small
 }
 
 // guiProjectDirs returns the distinct working dirs across saved sessions

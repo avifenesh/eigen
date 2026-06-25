@@ -336,7 +336,9 @@ func (d *Data) feedItems() []feed.Item {
 // web_search included (glm-5.2) over the tiny titling model;
 // EIGEN_SUGGEST_MODEL pins one.
 func (d *Data) suggester() feed.Suggester {
-	prov := suggestProvider()
+	// glm-5.2 preferred, but wrapped to fall back to the small model on a GLM
+	// quota/billing rejection (and freeze GLM for the day) so ideas keep flowing.
+	prov := suggestProvider(d.Small)
 	if prov == nil {
 		prov = d.Small
 	}
@@ -357,8 +359,10 @@ func (d *Data) suggester() feed.Suggester {
 
 // suggestProvider picks the dedicated suggestion model: EIGEN_SUGGEST_MODEL
 // when set, else glm-5.2 when its credentials exist (1M-ctx flagship, web_search
-// included, mostly idle quota). nil = fall back to the caller's small model.
-func suggestProvider() llm.Provider {
+// included), wrapped in a fallback to `small` so a GLM quota/billing rejection
+// routes to the small model (and freezes GLM for the day — see llm.NewFallback)
+// instead of killing ideas. nil = caller falls back to its own small model.
+func suggestProvider(small llm.Provider) llm.Provider {
 	if id := os.Getenv("EIGEN_SUGGEST_MODEL"); id != "" {
 		if p, err := llm.New("", id); err == nil {
 			return p
@@ -366,7 +370,7 @@ func suggestProvider() llm.Provider {
 	}
 	if llm.ProviderAvailable("glm") {
 		if p, err := llm.New("glm", "glm-5.2"); err == nil {
-			return p
+			return llm.NewFallback(p, small)
 		}
 	}
 	return nil

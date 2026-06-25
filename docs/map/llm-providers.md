@@ -53,6 +53,15 @@
 - **Depends on:** stdlib only.
 - **Used by / entrypoint:** `httpJSON` — anthropic, converse, mantle, custom (responses/anthropic), `chatClient`, imagegen. `httpStream` — anthropic, converse, codex, mantle, custom (responses/anthropic), `chatClient`. `sleepBackoff` reused for retry pacing in codex/mantle stream loops.
 
+### internal/llm/fallback.go
+- **Role:** A `Provider` decorator that tries a PRIMARY model, then a FALLBACK — and FREEZES the primary for the rest of the local day when it fails on quota/billing, so a drained account isn't re-hit on every call. Built for the proactive-feed suggester (glm-5.2 primary → small-model fallback) where a GLM "insufficient balance" 429 would otherwise kill ideas every scan.
+- **Key symbols:**
+  - `IsQuotaError(err)` — true for HTTP 429 / "insufficient balance" / "no resource package" / z.ai code 1113 / quota / billing / out-of-credit wording (the raw provider body rides in the error string from http.go's `HTTP <code>: <body>`). Distinct from a transient 5xx/network blip.
+  - `fallbackProvider` (type) — `primary`/`fallback` providers + a mutex-guarded `frozenUntil`; `frozen()`/`freezeForToday()` (parks the primary until the next local midnight). `Complete` tries the primary unless frozen; on `IsQuotaError` it freezes for the day, and ANY primary error routes to the fallback (except a dead ctx, which short-circuits). `Name`/`ModelID` report the PRIMARY (the headline model; the fallback is invisible).
+  - `NewFallback(primary, fallback)` — wraps the two; a nil side collapses to the other, nil/nil → nil.
+- **Depends on:** stdlib only.
+- **Used by / entrypoint:** `main_gui_wails.go:guiSuggestProvider` and `internal/app/data.go:suggestProvider` wrap glm-5.2 over the small model. Tested in `fallback_test.go` (quota detection, healthy-primary, route+freeze, non-quota-no-freeze).
+
 ### internal/llm/version.go
 - **Role:** Build-stamped version string, computed once from `debug.BuildInfo` so daemon, CLI, GUI, and TUI all report the same identity for a given binary.
 - **Key symbols:**

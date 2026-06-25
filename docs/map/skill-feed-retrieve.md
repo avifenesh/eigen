@@ -74,7 +74,7 @@
   - `orderByRecentActivity(dirs) []string` / `lastCommitUnix(dir) int64` — sort dirs by HEAD commit time (most recent first, stable) so the bounded context window favors recently-touched projects.
   - `readmeIntro(dir)`, `gitLine(dir, args...)`, `gitOut(dir, args...)` — context-gathering helpers.
 - **Depends on:** `internal/memory` (`memory.Open`); reuses `isGitRepo`/`dirtyFiles`/`gitIn` (git.go), `splitBullets`/`clip` (memory.go), and `loadSeenSuggest`/`recordSeenSuggest`/`loadDismissed` (feed.go).
-- **Used by / entrypoint:** `scanSuggest` called by `Scan` (feed.go). The `Suggester` is wired in by `main_gui_wails.go:guiSuggester` (GUI) and `internal/app/data.go:suggester` (TUI app).
+- **Used by / entrypoint:** `scanSuggest` called by `Scan` (feed.go). The `Suggester` is wired in by `main_gui_wails.go:guiSuggester` (GUI) and `internal/app/data.go:suggester` (TUI app) — both prefer glm-5.2 wrapped via `llm.NewFallback` over the small model, so a GLM quota/billing 429 transparently routes ideas to the fallback (and freezes GLM for the day) instead of stalling the source.
 
 ### internal/retrieve/index.go
 
