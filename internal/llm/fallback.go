@@ -73,18 +73,23 @@ func (f *fallbackProvider) Name() string    { return f.primary.Name() }
 func (f *fallbackProvider) ModelID() string { return f.primary.ModelID() }
 
 func (f *fallbackProvider) frozen() bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return !f.frozenUntil.IsZero() && time.Now().Before(f.frozenUntil)
+	if !f.frozenUntil.IsZero() && time.Now().Before(f.frozenUntil) {
+		return true
+	}
+	// Also honor the PROCESS-WIDE freeze: a quota 429 on this model's provider
+	// from ANY instance (a sibling subagent, a prior call) parks the whole
+	// provider, so we don't re-probe a known-drained account per fresh provider.
+	return providerFrozen(canonicalProvider(ResolveProvider("", f.primary.ModelID())))
 }
 
-// freezeForToday parks the primary until the next local midnight.
+// freezeForToday parks the primary until the next local midnight — both on this
+// instance AND process-wide by provider, so every other provider built for the
+// same drained backend (subagent picks, fresh dream providers) skips it too.
 func (f *fallbackProvider) freezeForToday() {
-	now := time.Now()
-	y, m, d := now.Date()
 	f.mu.Lock()
-	f.frozenUntil = time.Date(y, m, d+1, 0, 0, 0, 0, now.Location())
+	f.frozenUntil = nextMidnight()
 	f.mu.Unlock()
+	FreezeProvider(canonicalProvider(ResolveProvider("", f.primary.ModelID())))
 }
 
 func (f *fallbackProvider) Complete(ctx context.Context, req Request) (*Response, error) {
@@ -108,4 +113,58 @@ func (f *fallbackProvider) Complete(ctx context.Context, req Request) (*Response
 		return nil, errors.New("fallback provider unavailable")
 	}
 	return f.fallback.Complete(ctx, req)
+}
+
+func nextMidnight() time.Time {
+	now := time.Now()
+	y, m, d := now.Date()
+	return time.Date(y, m, d+1, 0, 0, 0, 0, now.Location())
+}
+
+// ── process-wide provider quota freeze ──────────────────────────────────────
+// A quota/billing 429 (e.g. a drained GLM account whose KEY is still present)
+// must take that provider out of selection EVERYWHERE until it likely refills —
+// not just on the one wrapped instance that saw the error. Subagent model picks
+// (SubagentModel) and fresh dream/judge providers all consult this, so a frozen
+// provider drops out of every capability ladder for the rest of the day instead
+// of being re-tried (and re-429'd) per fresh provider. Keyed by canonical
+// provider name; auto-expires at the next local midnight.
+var (
+	frozenMu        sync.Mutex
+	frozenProviders = map[string]time.Time{}
+)
+
+// FreezeProvider parks a provider (by canonical name) until next local midnight.
+func FreezeProvider(provider string) {
+	if provider == "" {
+		return
+	}
+	frozenMu.Lock()
+	frozenProviders[provider] = nextMidnight()
+	frozenMu.Unlock()
+}
+
+// clearFrozenProviders resets the process-wide freeze registry (tests only).
+func clearFrozenProviders() {
+	frozenMu.Lock()
+	frozenProviders = map[string]time.Time{}
+	frozenMu.Unlock()
+}
+
+// providerFrozen reports whether a provider is currently quota-frozen.
+func providerFrozen(provider string) bool {
+	if provider == "" {
+		return false
+	}
+	frozenMu.Lock()
+	defer frozenMu.Unlock()
+	until, ok := frozenProviders[provider]
+	if !ok {
+		return false
+	}
+	if time.Now().Before(until) {
+		return true
+	}
+	delete(frozenProviders, provider) // expired — clear it
+	return false
 }

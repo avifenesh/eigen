@@ -160,10 +160,16 @@ func SubagentModel(t SubagentType) string {
 }
 
 // modelCredentialed reports whether a catalog model's provider currently has
-// usable credentials (so a suspended/unconfigured provider is skipped).
+// usable credentials AND isn't quota-frozen — so a suspended/unconfigured
+// provider, OR one that 429'd on quota earlier today (a drained account whose
+// KEY is still present, e.g. GLM), is skipped to the next ladder entry instead
+// of being picked and re-429'd. The freeze auto-expires at midnight.
 func modelCredentialed(modelID string) bool {
 	prov := ResolveProvider("", modelID)
 	if prov == "" {
+		return false
+	}
+	if providerFrozen(canonicalProvider(prov)) {
 		return false
 	}
 	return ProviderAvailable(prov)

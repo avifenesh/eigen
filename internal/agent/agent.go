@@ -776,7 +776,19 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 			// defeat the override's purpose.
 			where = joinWhere(where, "explicit model "+opts.Model+" unavailable ("+err.Error()+") — falling back")
 		} else {
-			prov = p
+			// Wrap the picked model in quota failover to the parent's provider:
+			// a TYPE-policy pick (e.g. research→glm-5.2) whose account is drained
+			// 429s, and unlike the main loop the subagent had no safety net — so
+			// a quota error here would just fail the subtask. NewFallback freezes
+			// the drained provider (process-wide) + routes to the parent's
+			// credentialed model. Only when the parent is a DIFFERENT model (no
+			// point wrapping a provider in itself).
+			parent := a.provider()
+			if parent != nil && parent.ModelID() != p.ModelID() {
+				prov = llm.NewFallback(p, parent)
+			} else {
+				prov = p
+			}
 			compactor = llm.NewCompactor(p)
 			where = joinWhere(where, "running on "+opts.Model+" (explicit)")
 		}

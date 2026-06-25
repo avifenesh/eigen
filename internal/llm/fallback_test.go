@@ -82,6 +82,8 @@ func TestFallbackUsesPrimaryWhenHealthy(t *testing.T) {
 }
 
 func TestFallbackRoutesAndFreezesOnQuota(t *testing.T) {
+	clearFrozenProviders() // isolate from the process-wide freeze registry
+	t.Cleanup(clearFrozenProviders)
 	primary := &stubProvider{name: "glm", err: errors.New(`HTTP 429: {"code":"1113","message":"Insufficient balance"}`)}
 	fallback := &stubProvider{name: "small", reply: "FALLBACK"}
 	f := NewFallback(primary, fallback)
@@ -108,7 +110,27 @@ func TestFallbackRoutesAndFreezesOnQuota(t *testing.T) {
 	}
 }
 
+// A quota 429 must freeze the provider PROCESS-WIDE so SubagentModel /
+// modelCredentialed drop it from every ladder (not just the one wrapped
+// instance) — the GLM-drained-account case.
+func TestProcessWideProviderFreeze(t *testing.T) {
+	clearFrozenProviders()
+	t.Cleanup(clearFrozenProviders)
+	if providerFrozen("glm") {
+		t.Fatal("glm should not be frozen initially")
+	}
+	FreezeProvider("glm")
+	if !providerFrozen("glm") {
+		t.Fatal("glm should be frozen after FreezeProvider")
+	}
+	if providerFrozen("converse") {
+		t.Fatal("freezing glm must not freeze other providers")
+	}
+}
+
 func TestFallbackNonQuotaErrorDoesNotFreeze(t *testing.T) {
+	clearFrozenProviders() // isolate from the process-wide freeze registry
+	t.Cleanup(clearFrozenProviders)
 	primary := &stubProvider{name: "glm", err: errors.New("HTTP 500: transient")}
 	fallback := &stubProvider{name: "small", reply: "FALLBACK"}
 	f := NewFallback(primary, fallback)
