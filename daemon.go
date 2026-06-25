@@ -141,7 +141,7 @@ func runDaemon(cfg config.Config) {
 	// Nightly dreaming: when the machine is idle, reflect persisted sessions
 	// into structured memory across all scopes (the codex-style pipeline) on
 	// the small model. Best-effort, never competes with a live turn.
-	go nightlyDreamer(host, gmem, cfg.DreamModel)
+	go nightlyDreamer(host, gmem, cfg)
 
 	// Telegram phone bridge: when a bot token is configured, the daemon keeps
 	// `eigen telegram` running (spawn + restart-on-exit) so the bot is always
@@ -801,7 +801,7 @@ func sweepStaleWorkspaces() {
 // session has changed since last dream → run the memory pipeline per scope
 // (grouped by session dir) on the small model. Best-effort and quiet: a model
 // outage or a busy daemon just skips this cycle.
-func nightlyDreamer(host *daemon.Host, gmem *memory.Store, dreamModel string) {
+func nightlyDreamer(host *daemon.Host, gmem *memory.Store, cfg config.Config) {
 	const dreamInterval = 3 * time.Hour
 	// First pass shortly after startup (the daemon just restored sessions), then
 	// on the interval. A jittered initial delay avoids dreaming during a fresh
@@ -813,11 +813,11 @@ func nightlyDreamer(host *daemon.Host, gmem *memory.Store, dreamModel string) {
 		if host.AnyRunning() {
 			continue // never compete with a live turn for the model
 		}
-		prov := dreamProvider(dreamModel) // sonnet-pinned, NOT the cheap GLM real tasks want
+		prov := dreamProvider(cfg.DreamModel) // sonnet-pinned, NOT the cheap GLM real tasks want
 		if prov == nil {
 			continue
 		}
-		runNightlyDream(host, prov, gmem)
+		runNightlyDream(host, prov, gmem, cfg)
 	}
 }
 
@@ -825,7 +825,7 @@ func nightlyDreamer(host *daemon.Host, gmem *memory.Store, dreamModel string) {
 // for each scope. Idempotency (watermarks) means unchanged sessions are skipped
 // cheaply, so this is safe to run on every idle interval. After per-project
 // dreaming, it distills cross-project preferences into the GLOBAL profile.
-func runNightlyDream(host *daemon.Host, prov llm.Provider, gmem *memory.Store) {
+func runNightlyDream(host *daemon.Host, prov llm.Provider, gmem *memory.Store, dreamCfg config.Config) {
 	idx, err := memory.OpenIndex()
 	if err != nil {
 		return
@@ -860,6 +860,7 @@ func runNightlyDream(host *daemon.Host, prov llm.Provider, gmem *memory.Store) {
 			continue
 		}
 		pipe := newMemoryPipeline(prov, mem, idx)
+		wireBatchStage1(pipe, prov, dreamCfg) // opt-in async batch Stage1 (no-op unless enabled + supported)
 		var sessions []memory.Session
 		for _, p := range infos {
 			path := daemon.PersistedTranscriptPath(p.ID)

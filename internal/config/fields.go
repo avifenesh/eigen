@@ -38,6 +38,7 @@ func Fields() []Field {
 		{Key: "judge_model", Desc: "pin the goal_achieved judge to a specific model — ANY provider works; empty = automatic cross-vendor judge (GPT judges Claude and vice versa)", Dynamic: "models"},
 		{Key: "dream_model", Desc: "pin the background dreaming/consolidation model; empty = sonnet-first dream ladder (kept OFF the cheap GLM quota real tasks want)", Dynamic: "models"},
 		{Key: "dream_on_idle", Desc: "reflect recent sessions into memory when idle", Options: []string{"true", "false"}},
+		{Key: "dream_batch", Desc: "route dream Stage1 through the provider's async batch API (~50% cheaper; Anthropic only today) — results land on a later wake; off by default", Options: []string{"true", "false"}},
 		{Key: "idle_minutes", Desc: "minutes of idle before dreaming kicks in (default 5)"},
 		{Key: "front_window_min", Desc: "minutes a subtask runs in the foreground before it's promoted to the background (default 2; 0 = default)"},
 		{Key: "stall_idle_min", Desc: "minutes a subagent may go with no tool call before it's considered hung and stopped (default 2; 0 = default)"},

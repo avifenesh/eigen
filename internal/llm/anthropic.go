@@ -307,18 +307,20 @@ func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error
 	if reply.StopReason == "max_tokens" {
 		return nil, fmt.Errorf("anthropic response truncated (max_tokens): refusing possibly-truncated output")
 	}
+	return reply.toResponse(), nil
+}
 
-	out := &Response{Usage: Usage{InputTokens: reply.Usage.InputTokens, OutputTokens: reply.Usage.OutputTokens, CacheReadTokens: reply.Usage.CacheReadInputTokens, CacheWriteTokens: reply.Usage.CacheCreationInputTokens}}
-	for _, blk := range reply.Content {
+// toResponse folds a decoded native reply into the neutral Response (text +
+// reasoning + tool calls + usage). Extracted so the Messages Batches collector
+// (batch_anthropic.go) reuses the EXACT same block handling as Complete.
+func (r anthropicReply) toResponse() *Response {
+	out := &Response{Usage: Usage{InputTokens: r.Usage.InputTokens, OutputTokens: r.Usage.OutputTokens, CacheReadTokens: r.Usage.CacheReadInputTokens, CacheWriteTokens: r.Usage.CacheCreationInputTokens}}
+	for _, blk := range r.Content {
 		switch blk.Type {
 		case "text":
 			out.Text += blk.Text
 		case "thinking":
 			out.Reasoning += blk.Thinking
-			// Capture the signature so the signed thinking block can be
-			// re-emitted on the next assistant turn (interleaved thinking +
-			// tool use requires the prior signed block back). ReasoningEncrypted
-			// is the neutral carrier for the opaque blob to echo back.
 			if blk.Signature != "" {
 				out.ReasoningEncrypted = blk.Signature
 			}
@@ -330,7 +332,7 @@ func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error
 			})
 		}
 	}
-	return out, nil
+	return out
 }
 
 // Stream runs a streamed completion over the native Messages SSE API

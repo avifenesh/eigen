@@ -41,6 +41,21 @@ type Pipeline struct {
 	// Summarize distills MEMORY.md into the small injected memory_summary.md.
 	Summarize func(ctx context.Context, memory string) (string, error)
 
+	// Batch path (optional, off-hot-path only): when Batcher + Stage1Req +
+	// Stage1Parse are all set AND the provider supports batches, Stage1 work can
+	// be SUBMITTED as one provider batch (~50% input discount) and reconciled on
+	// a later wake, instead of N synchronous Complete calls. Stage1Req builds the
+	// per-session request (same as the sync Stage1 sends); Stage1Parse turns a
+	// batched reply's text back into a Stage1Result. Injected by main so this
+	// package needn't import internal/dream or internal/llm's provider plumbing.
+	Batcher interface {
+		SubmitBatch(ctx context.Context, items []BatchRequest) (string, error)
+		PollBatch(ctx context.Context, id string) (state string, done bool, err error)
+		CollectBatch(ctx context.Context, id string) (map[string]string, error) // key → reply text
+	}
+	Stage1Req   func(transcript string) (system, user string)
+	Stage1Parse func(text string) (Stage1Result, bool, error)
+
 	// ConsolidateBytes triggers a consolidate when MEMORY.md exceeds this size
 	// (0 = a sane default).
 	ConsolidateBytes int
@@ -120,50 +135,190 @@ func (p *Pipeline) Stage1Sessions(ctx context.Context, sessions []Session) (int,
 			// cheaply.)
 			continue
 		}
-		when := time.Now()
-		if strings.TrimSpace(result.RawMemory) == "" {
-			result.RawMemory = result.RolloutSummary
-		}
-		if strings.TrimSpace(result.RolloutSummary) == "" {
-			result.RolloutSummary = result.RawMemory
-		}
-		if result.RolloutSlug == "" {
-			result.RolloutSlug = "session"
-		}
-		if p.Index != nil {
-			if err := p.Index.RecordStage1Output(Stage1Output{
-				Scope:           scope,
-				ThreadID:        s.ID,
-				SourceUpdatedAt: s.Watermark,
-				RawMemory:       Redact(result.RawMemory),
-				RolloutSummary:  Redact(result.RolloutSummary),
-				RolloutSlug:     result.RolloutSlug,
-				Outcome:         result.Outcome,
-				GeneratedAt:     when.Unix(),
-			}); err != nil {
-				lastErr = err
-				continue
-			}
-		}
-		raw, err := p.Store.WriteRollout(result.RolloutSlug, result.RolloutSummary, when)
-		if err != nil {
+		if err := p.recordStage1(scope, s.ID, s.Watermark, result); err != nil {
 			lastErr = err
-		} else if p.Index != nil {
-			if err := p.Index.UpdateStage1RolloutPath(scope, s.ID, raw); err != nil {
-				lastErr = err
-			}
-		}
-		if p.Index != nil {
-			if err := p.Index.EnqueueWatermark(JobConsolidate, scope, scopeJobKey, s.Watermark); err != nil {
-				lastErr = err
-			}
-			if err := p.Index.EnqueueWatermark(JobSummary, scope, scopeJobKey, s.Watermark); err != nil {
-				lastErr = err
-			}
+			continue
 		}
 		n++
 	}
 	return n, lastErr
+}
+
+// recordStage1 persists one Stage1 result for a session: the SQLite row, the
+// human rollout markdown, and the downstream consolidate/summary watermarks.
+// Shared by the sync loop (Stage1Sessions) and the batch reconciler so a batched
+// summary lands byte-identically to a live one. Returns the first error.
+func (p *Pipeline) recordStage1(scope, threadID string, watermark int64, result Stage1Result) error {
+	when := time.Now()
+	if strings.TrimSpace(result.RawMemory) == "" {
+		result.RawMemory = result.RolloutSummary
+	}
+	if strings.TrimSpace(result.RolloutSummary) == "" {
+		result.RolloutSummary = result.RawMemory
+	}
+	if result.RolloutSlug == "" {
+		result.RolloutSlug = "session"
+	}
+	var firstErr error
+	if p.Index != nil {
+		if err := p.Index.RecordStage1Output(Stage1Output{
+			Scope:           scope,
+			ThreadID:        threadID,
+			SourceUpdatedAt: watermark,
+			RawMemory:       Redact(result.RawMemory),
+			RolloutSummary:  Redact(result.RolloutSummary),
+			RolloutSlug:     result.RolloutSlug,
+			Outcome:         result.Outcome,
+			GeneratedAt:     when.Unix(),
+		}); err != nil {
+			return err // can't record the row → don't enqueue downstream against it
+		}
+	}
+	raw, err := p.Store.WriteRollout(result.RolloutSlug, result.RolloutSummary, when)
+	if err != nil {
+		firstErr = err
+	} else if p.Index != nil {
+		if err := p.Index.UpdateStage1RolloutPath(scope, threadID, raw); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	if p.Index != nil {
+		if err := p.Index.EnqueueWatermark(JobConsolidate, scope, scopeJobKey, watermark); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		if err := p.Index.EnqueueWatermark(JobSummary, scope, scopeJobKey, watermark); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+// BatchRequest is one Stage1 request handed to the injected Batcher: a caller
+// key (the session/thread id) + the system+user prompt. Decoupled from
+// internal/llm so this package stays provider-agnostic; main adapts it.
+type BatchRequest struct {
+	Key    string
+	System string
+	User   string
+}
+
+// batchEnabled reports whether the batch Stage1 path is fully wired.
+func (p *Pipeline) batchEnabled() bool {
+	return p.Batcher != nil && p.Stage1Req != nil && p.Stage1Parse != nil && p.Index != nil && p.Store != nil
+}
+
+// SubmitStage1Batch gathers the not-yet-summarized sessions, submits them as ONE
+// provider batch, and persists the batch record (crash-safe) — returning the
+// batch id and how many items it carried. Results are applied later by
+// ReconcileStage1Batches. Returns ("",0,nil) when nothing needs summarizing or
+// the batch path isn't enabled (caller falls back to the sync Stage1Sessions).
+func (p *Pipeline) SubmitStage1Batch(ctx context.Context, sessions []Session) (string, int, error) {
+	if !p.batchEnabled() {
+		return "", 0, nil
+	}
+	scope := p.scopeKey()
+	var reqs []BatchRequest
+	items := map[string]int64{}
+	for _, s := range sessions {
+		if p.Index.Stage1Summarized(scope, s.ID, s.Watermark) {
+			continue
+		}
+		if strings.TrimSpace(s.Transcript) == "" {
+			continue
+		}
+		if _, dup := items[s.ID]; dup {
+			continue
+		}
+		sys, usr := p.Stage1Req(s.Transcript)
+		reqs = append(reqs, BatchRequest{Key: s.ID, System: sys, User: usr})
+		items[s.ID] = s.Watermark
+	}
+	if len(reqs) == 0 {
+		return "", 0, nil
+	}
+	id, err := p.Batcher.SubmitBatch(ctx, reqs)
+	if err != nil || id == "" {
+		return "", 0, err // caller falls back to sync
+	}
+	if err := p.Index.RecordStage1Batch(Stage1Batch{
+		BatchID:     id,
+		Scope:       scope,
+		Items:       items,
+		SubmittedAt: time.Now().Unix(),
+		State:       "pending",
+	}); err != nil {
+		// Persisted-record failure after a live submit: we'd lose track of the
+		// batch. Surface it; the batch still runs provider-side but we can't
+		// reconcile it — the watermark gate means those sessions just get
+		// re-summarized next run (sync), so no data loss, only wasted spend.
+		return id, len(reqs), err
+	}
+	return id, len(reqs), nil
+}
+
+// ReconcileStage1Batches polls every in-flight batch for THIS pipeline's scope.
+// A done batch is collected and each result recorded via recordStage1 (identical
+// to the sync path). A batch older than maxWait that hasn't finished is ABANDONED
+// — its row deleted — so the watermark gate lets those sessions be re-summarized
+// synchronously on a later run; memory never stalls on a stuck batch. Returns the
+// number of sessions reconciled. (sessionsByID lets a failed/abandoned batch's
+// items fall back to sync here when transcripts are still in hand.)
+func (p *Pipeline) ReconcileStage1Batches(ctx context.Context, maxWait time.Duration) (int, error) {
+	if !p.batchEnabled() {
+		return 0, nil
+	}
+	scope := p.scopeKey()
+	batches, err := p.Index.PendingStage1Batches()
+	if err != nil {
+		return 0, err
+	}
+	applied := 0
+	var lastErr error
+	for _, b := range batches {
+		if b.Scope != scope {
+			continue
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		state, done, perr := p.Batcher.PollBatch(ctx, b.BatchID)
+		if perr != nil {
+			lastErr = perr
+			continue
+		}
+		if !done {
+			_ = p.Index.SetStage1BatchState(b.BatchID, state)
+			// Max-wait fallback: a batch that won't finish must not block memory.
+			if maxWait > 0 && time.Since(time.Unix(b.SubmittedAt, 0)) > maxWait {
+				_ = p.Index.DeleteStage1Batch(b.BatchID) // un-summarized items re-run sync next wake
+			}
+			continue
+		}
+		results, cerr := p.Batcher.CollectBatch(ctx, b.BatchID)
+		if cerr != nil {
+			lastErr = cerr
+			continue // try again next wake (until maxWait abandons it)
+		}
+		for threadID, watermark := range b.Items {
+			text, ok := results[threadID]
+			if !ok {
+				continue // this item failed in the batch; watermark gate re-runs it sync
+			}
+			res, keep, perr := p.Stage1Parse(text)
+			if perr != nil || !keep {
+				continue
+			}
+			if err := p.recordStage1(scope, threadID, watermark, res); err != nil {
+				lastErr = err
+				continue
+			}
+			applied++
+		}
+		if err := p.Index.DeleteStage1Batch(b.BatchID); err != nil && lastErr == nil {
+			lastErr = err
+		}
+	}
+	return applied, lastErr
 }
 
 // RunQueued drains queued downstream memory jobs for this pipeline's scope.
@@ -458,10 +613,49 @@ func (p *Pipeline) removeStaleSummary() (bool, error) {
 // behind an empty report).
 func (p *Pipeline) Run(ctx context.Context, sessions []Session) (string, error) {
 	var parts []string
-	n, stageErr := p.Stage1Sessions(ctx, sessions)
+	var stageErr error
+	if p.batchEnabled() {
+		// Batch path: first apply any batch that finished since the last wake
+		// (abandon ones stuck past 12h → they re-run sync), THEN submit this
+		// wake's new sessions as one batch. Submitted results are recorded on a
+		// LATER wake by the reconcile above, so this wake's downstream
+		// (consolidate/summary) runs over whatever already landed.
+		const batchMaxWait = 12 * time.Hour
+		if applied, rerr := p.ReconcileStage1Batches(ctx, batchMaxWait); applied > 0 || rerr != nil {
+			if applied > 0 {
+				parts = append(parts, itoa(applied)+" batched summaries applied")
+			}
+			stageErr = rerr
+		}
+		if id, count, serr := p.SubmitStage1Batch(ctx, sessions); serr != nil {
+			// Submit failed — fall back to a synchronous Stage1 pass this wake so
+			// memory still progresses (the whole point of dream).
+			if stageErr == nil {
+				stageErr = serr
+			}
+			if n, e := p.Stage1Sessions(ctx, sessions); n > 0 {
+				parts = append(parts, itoa(n)+" new session summaries (sync fallback)")
+				if stageErr == nil {
+					stageErr = e
+				}
+			}
+		} else if id != "" {
+			parts = append(parts, itoa(count)+" sessions submitted to batch")
+		}
+		// Drain downstream + maybe-consolidate over whatever's already recorded.
+		return p.runDownstream(ctx, parts, stageErr)
+	}
+	n, syncErr := p.Stage1Sessions(ctx, sessions)
 	if n > 0 {
 		parts = append(parts, itoa(n)+" new session summaries")
 	}
+	return p.runDownstream(ctx, parts, syncErr)
+}
+
+// runDownstream drains queued consolidate/summary jobs, maybe-consolidates a
+// legacy file with no queued work, and commits — the tail shared by the sync and
+// batch Run paths. `parts`/`stageErr` carry whatever Stage1 (sync or batch) did.
+func (p *Pipeline) runDownstream(ctx context.Context, parts []string, stageErr error) (string, error) {
 	queued, queuedErr := p.RunQueued(ctx, 16)
 	if queued != "" {
 		parts = append(parts, queued)

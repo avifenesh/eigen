@@ -1538,6 +1538,86 @@ func newMemoryPipeline(prov llm.Provider, mem *memory.Store, idx *memory.Index) 
 	}
 }
 
+// wireBatchStage1 enables the async batch Stage1 path on a dream pipeline when
+// (a) the user opted in (dream_batch / EIGEN_DREAM_BATCH) and (b) the dream
+// provider's backend actually supports a batch API (llm.AsBatch). Bridges the
+// neutral memory.BatchRequest ⇄ llm.BatchItem and reuses dream.Stage1Request /
+// ParseStage1 so a batched summary is built + interpreted identically to a sync
+// one. No-op (pipeline stays fully synchronous) when either condition is false.
+func wireBatchStage1(pipe *memory.Pipeline, prov llm.Provider, cfg config.Config) {
+	if !(cfg.DreamBatch || os.Getenv("EIGEN_DREAM_BATCH") == "1") {
+		return
+	}
+	bp, ok := llm.AsBatch(prov)
+	if !ok {
+		return // provider has no batch API — keep the sync path
+	}
+	pipe.Stage1Req = func(transcript string) (system, user string) {
+		r := dream.Stage1Request(transcript)
+		u := ""
+		if len(r.Messages) > 0 {
+			u = r.Messages[0].Text
+		}
+		return r.System, u
+	}
+	pipe.Stage1Parse = func(text string) (memory.Stage1Result, bool, error) {
+		r, ok, err := dream.ParseStage1(text)
+		if err != nil || !ok {
+			return memory.Stage1Result{}, false, err
+		}
+		// The batch reconciler doesn't carry sessionID/when into the parse, so
+		// stamp them at record time the same way the sync Stage1 callback does:
+		// use a neutral slug-derived id + now. RawMemory/Markdown only use these
+		// for provenance headers; the watermark+thread_id row keys handle identity.
+		when := time.Now()
+		return memory.Stage1Result{
+			RawMemory:      r.RawMemory("session", when),
+			RolloutSummary: r.Markdown("session", when),
+			RolloutSlug:    r.Slug(),
+			Outcome:        r.Outcome,
+		}, true, nil
+	}
+	pipe.Batcher = batchAdapter{bp}
+}
+
+// batchAdapter bridges llm.BatchProvider (key→*Response) to the pipeline's
+// provider-agnostic Batcher (key→reply text). The pipeline never imports llm's
+// provider plumbing; this lives in main where both are in scope.
+type batchAdapter struct{ bp llm.BatchProvider }
+
+func (a batchAdapter) SubmitBatch(ctx context.Context, items []memory.BatchRequest) (string, error) {
+	bi := make([]llm.BatchItem, 0, len(items))
+	for _, it := range items {
+		bi = append(bi, llm.BatchItem{Key: it.Key, Req: llm.Request{
+			System:   it.System,
+			Messages: []llm.Message{{Role: llm.RoleUser, Text: it.User}},
+		}})
+	}
+	return a.bp.SubmitBatch(ctx, bi)
+}
+
+func (a batchAdapter) PollBatch(ctx context.Context, id string) (string, bool, error) {
+	st, err := a.bp.PollBatch(ctx, id)
+	if err != nil {
+		return "", false, err
+	}
+	return string(st.State), st.Terminal() && st.State == llm.BatchDone, nil
+}
+
+func (a batchAdapter) CollectBatch(ctx context.Context, id string) (map[string]string, error) {
+	res, err := a.bp.CollectBatch(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(res))
+	for k, r := range res {
+		if r != nil {
+			out[k] = r.Text
+		}
+	}
+	return out, nil
+}
+
 func memoryScopeKey(mem *memory.Store) string {
 	if mem == nil {
 		return ""

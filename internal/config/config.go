@@ -65,7 +65,13 @@ type Config struct {
 	// metadata only) for long-term learning + debugging. Default on.
 	Observe     *bool `json:"observe,omitempty"`
 	DreamOnIdle bool  `json:"dream_on_idle"`
-	IdleMinutes int   `json:"idle_minutes"`
+	// DreamBatch routes dream Stage1 through the provider's async BATCH API
+	// (~50% input discount) when the dream model's provider supports it
+	// (Anthropic Messages Batches today). Off by default — the batch path is
+	// async (results land on a later wake) and only pays on the heavy nightly
+	// run, so it's opt-in. Env EIGEN_DREAM_BATCH=1 also enables it.
+	DreamBatch  bool `json:"dream_batch,omitempty"`
+	IdleMinutes int  `json:"idle_minutes"`
 
 	// FrontWindowMin / StallIdleMin tune the subtask lifecycle: a foreground
 	// subtask runs inline for FrontWindowMin minutes before it's promoted to
@@ -221,6 +227,12 @@ func Set(c *Config, key, value string) error {
 			return fmt.Errorf("dream_on_idle must be true|false")
 		}
 		c.DreamOnIdle = b
+	case "dream_batch":
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("dream_batch must be true|false")
+		}
+		c.DreamBatch = b
 	case "idle_minutes":
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 0 {
@@ -319,6 +331,7 @@ func View(c Config) string {
 	fmt.Fprintf(&b, "%-14s = %s\n", "judge_model", val(c.JudgeModel))
 	fmt.Fprintf(&b, "%-14s = %s\n", "dream_model", val(c.DreamModel))
 	fmt.Fprintf(&b, "%-14s = %t\n", "dream_on_idle", c.DreamOnIdle)
+	fmt.Fprintf(&b, "%-14s = %t\n", "dream_batch", c.DreamBatch)
 	fmt.Fprintf(&b, "%-14s = %d\n", "idle_minutes", c.IdleMinutes)
 	fmt.Fprintf(&b, "%-14s = %d\n", "front_window_min", c.FrontWindowMin)
 	fmt.Fprintf(&b, "%-14s = %d\n", "stall_idle_min", c.StallIdleMin)
@@ -382,6 +395,8 @@ func Get(c Config, key string) string {
 		return c.DreamModel
 	case "dream_on_idle":
 		return strconv.FormatBool(c.DreamOnIdle)
+	case "dream_batch":
+		return strconv.FormatBool(c.DreamBatch)
 	case "idle_minutes":
 		return strconv.Itoa(c.IdleMinutes)
 	case "front_window_min":

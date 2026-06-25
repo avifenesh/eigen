@@ -2,6 +2,7 @@ package memory
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -111,6 +112,14 @@ CREATE TABLE IF NOT EXISTS summaries (
 	  PRIMARY KEY (scope, thread_id)
 	);
 	CREATE INDEX IF NOT EXISTS idx_stage1_outputs_scope_source ON stage1_outputs(scope, source_updated_at DESC, thread_id DESC);
+	CREATE TABLE IF NOT EXISTS stage1_batches (
+	  batch_id     TEXT PRIMARY KEY,        -- provider batch id (msgbatch_…)
+	  scope        TEXT NOT NULL,
+	  items        TEXT NOT NULL,           -- JSON {threadID: watermark} submitted in this batch
+	  submitted_at INTEGER NOT NULL,        -- unix; drives the max-wait fallback
+	  state        TEXT NOT NULL            -- pending | processing | done | failed | expired
+	);
+	CREATE INDEX IF NOT EXISTS idx_stage1_batches_scope ON stage1_batches(scope);
 	`)
 	if err != nil {
 		return err
@@ -240,6 +249,82 @@ func (i *Index) Stage1Summarized(scope, threadID string, sourceUpdatedAt int64) 
 	var wm int64
 	err := i.db.QueryRow(`SELECT source_updated_at FROM stage1_outputs WHERE scope=? AND thread_id=?`, scope, threadID).Scan(&wm)
 	return err == nil && wm == sourceUpdatedAt && sourceUpdatedAt != 0
+}
+
+// Stage1Batch is one in-flight provider batch of Stage1 requests: the durable
+// record that survives a daemon restart between submit and collect.
+type Stage1Batch struct {
+	BatchID     string
+	Scope       string
+	Items       map[string]int64 // threadID → source watermark submitted
+	SubmittedAt int64
+	State       string
+}
+
+// RecordStage1Batch persists a freshly submitted batch — called IMMEDIATELY
+// after SubmitBatch returns, so a crash before the next poll can't orphan it.
+func (i *Index) RecordStage1Batch(b Stage1Batch) error {
+	if i == nil {
+		return nil
+	}
+	itemsJSON, err := json.Marshal(b.Items)
+	if err != nil {
+		return err
+	}
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	_, err = i.db.Exec(`INSERT OR REPLACE INTO stage1_batches (batch_id, scope, items, submitted_at, state) VALUES (?,?,?,?,?)`,
+		b.BatchID, b.Scope, string(itemsJSON), b.SubmittedAt, b.State)
+	return err
+}
+
+// PendingStage1Batches lists batches not yet terminally resolved — what the
+// daemon polls on each wake.
+func (i *Index) PendingStage1Batches() ([]Stage1Batch, error) {
+	if i == nil {
+		return nil, nil
+	}
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	rows, err := i.db.Query(`SELECT batch_id, scope, items, submitted_at, state FROM stage1_batches WHERE state NOT IN ('done','failed','expired') ORDER BY submitted_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Stage1Batch
+	for rows.Next() {
+		var b Stage1Batch
+		var itemsJSON string
+		if err := rows.Scan(&b.BatchID, &b.Scope, &itemsJSON, &b.SubmittedAt, &b.State); err != nil {
+			return out, err
+		}
+		_ = json.Unmarshal([]byte(itemsJSON), &b.Items)
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+// DeleteStage1Batch removes a resolved batch row (after collect/abandon).
+func (i *Index) DeleteStage1Batch(batchID string) error {
+	if i == nil {
+		return nil
+	}
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	_, err := i.db.Exec(`DELETE FROM stage1_batches WHERE batch_id=?`, batchID)
+	return err
+}
+
+// SetStage1BatchState updates a batch's last-known state (so a long-running
+// batch's progress survives restarts and the listing reflects reality).
+func (i *Index) SetStage1BatchState(batchID, state string) error {
+	if i == nil {
+		return nil
+	}
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	_, err := i.db.Exec(`UPDATE stage1_batches SET state=? WHERE batch_id=?`, state, batchID)
+	return err
 }
 
 // Stage1Outputs lists a scope's Stage1 rows, newest first.

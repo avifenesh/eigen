@@ -53,6 +53,12 @@
 - **Depends on:** stdlib only.
 - **Used by / entrypoint:** `httpJSON` — anthropic, converse, mantle, custom (responses/anthropic), `chatClient`, imagegen. `httpStream` — anthropic, converse, codex, mantle, custom (responses/anthropic), `chatClient`. `sleepBackoff` reused for retry pacing in codex/mantle stream loops.
 
+### internal/llm/batch.go + batch_anthropic.go
+- **Role:** Optional ASYNC BATCH inference (~50% input discount) for off-hot-path work (dream Stage1 only today). A batch is submit→poll→collect over minutes–hours, which doesn't fit the sync `Provider.Complete`, so it's a SEPARATE optional interface a provider MAY also satisfy.
+- **Key symbols (batch.go):** `BatchProvider{ SubmitBatch(ctx,[]BatchItem)(id,err); PollBatch(ctx,id)(BatchStatus,err); CollectBatch(ctx,id)(map[string]*Response,err) }`; `BatchItem{Key,Req}` (Key = caller correlation id); `BatchState`/`BatchStatus` (+ `Terminal()`); `AsBatch(p)(BatchProvider,bool)` capability probe → callers fall back to a sync `Complete` loop when absent.
+- **Key symbols (batch_anthropic.go):** `*Anthropic` implements it via Messages Batches — POST `/v1/messages/batches` (per-request `params` = `buildBody(req,false)`, preserving the claude-code spoof block), GET poll (`processing_status`/`request_counts`), GET `results_url` JSONL → `anthropicReply.toResponse()` (REUSED from anthropic.go). `safeCustomID`/`collectKey` map item keys to the wire custom_id charset deterministically (stateless, restart-proof; a hashed-id same-process fast path via a `sync.Map`). The ONLY confirmed-reachable batch provider today.
+- **Used by / entrypoint:** the dream pipeline's batch Stage1 path (memory.Pipeline.Batcher via main's batchAdapter), gated by `dream_batch` + a sonnet-class dream provider. Tested in batch_anthropic_test.go (key round-trip + JSONL parse).
+
 ### internal/llm/fallback.go
 - **Role:** A `Provider` decorator that tries a PRIMARY model, then a FALLBACK — and FREEZES the primary for the rest of the local day when it fails on quota/billing, so a drained account isn't re-hit on every call. Built for the proactive-feed suggester (glm-5.2 primary → small-model fallback) where a GLM "insufficient balance" 429 would otherwise kill ideas every scan.
 - **Key symbols:**
