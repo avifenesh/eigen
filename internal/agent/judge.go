@@ -16,6 +16,30 @@ import (
 	"github.com/avifenesh/eigen/internal/llm"
 )
 
+// defaultJudge picks the judge provider when the caller passes nil. Judging is
+// a verification task, not the work itself: it wants a CHEAP-BUT-VALID model
+// that's INDEPENDENT of the agent's own (no point self-grading on the same
+// brain). The judge type policy (llm.SubagentModel(TypeJudge)) prefers a
+// mid-tier assessor (gpt for assessment, glm as the cheap-capable alt, haiku as
+// the floor) — never the top-tier default, never the lowest. Built fresh via
+// ModelProvider so it's an owned instance. Falls back to the agent's own
+// provider only when no judge model is credentialed (so this never regresses a
+// setup where judging worked before) — but the strict prompt + clean context
+// still give independence.
+func (a *Agent) defaultJudge() llm.Provider {
+	if a.ModelProvider != nil {
+		if id := llm.SubagentModel(llm.TypeJudge); id != "" {
+			// Don't pick the agent's OWN model as "independent" judge.
+			if cur := a.provider(); cur == nil || cur.ModelID() != id {
+				if p, err := a.ModelProvider(id); err == nil && p != nil {
+					return p
+				}
+			}
+		}
+	}
+	return a.provider()
+}
+
 // judgePrompt asks for a strict, parseable structured gap report.
 const judgePrompt = `You are a strict completion judge.
 
@@ -63,13 +87,7 @@ func (a *Agent) JudgeGoal(ctx context.Context, judge llm.Provider, evidence stri
 		return false, "", fmt.Errorf("no goal is set")
 	}
 	if judge == nil {
-		// Default: the agent's own provider (race-safe read) in a FRESH
-		// context. Judging completion is a hard reasoning task, so it gets
-		// the strongest available model; independence comes from the clean
-		// context and the strict verdict prompt — the judge sees only the
-		// goal and the claimed evidence, none of the working conversation's
-		// momentum or self-justification.
-		judge = a.provider()
+		judge = a.defaultJudge()
 	}
 	if judge == nil {
 		return false, "", fmt.Errorf("no judge model available")
@@ -340,7 +358,7 @@ func nonEmpty(s, fallback string) string {
 // strict prompt; judge may be nil (falls back to the agent's provider).
 func (a *Agent) JudgeClaim(ctx context.Context, judge llm.Provider, condition, evidence string) (bool, string, error) {
 	if judge == nil {
-		judge = a.provider()
+		judge = a.defaultJudge()
 	}
 	if judge == nil {
 		return false, "", fmt.Errorf("no judge model available")

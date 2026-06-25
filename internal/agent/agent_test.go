@@ -272,8 +272,11 @@ func TestSubtaskRunsFreshSession(t *testing.T) {
 	if out != "subtask answer" {
 		t.Fatalf("got %q", out)
 	}
-	if events != 0 {
-		t.Fatal("subtask events should be suppressed (not emitted to the caller)")
+	// The CHILD's events are suppressed (its stream never reaches the caller).
+	// The parent MAY emit a single "task → where" audit note (where the subtask
+	// ran — model/type policy), so events is 0 or 1, never the child's stream.
+	if events > 1 {
+		t.Fatalf("child subtask events leaked to the caller: got %d (want ≤1 audit note)", events)
 	}
 }
 

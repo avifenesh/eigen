@@ -14,6 +14,8 @@ type TaskOpts struct {
 	Difficulty string
 	Model      string
 	Role       string
+	Type       string // explore|research|general|code|judge — drives effort+model policy
+	Effort      string // optional explicit effort override (off|low|medium|high|xhigh)
 }
 
 // TaskRun is injected by main/buildSession so tool doesn't need to construct
@@ -59,6 +61,8 @@ func Task(run TaskRun) Definition {
     "difficulty": { "type": "string", "enum": ["trivial","easy","medium","hard"], "description": "Routing ladder: trivial = mechanical/cheap; easy = well-scoped; medium = reasoning/may run long; hard = strongest available. Stating this routes the subtask; omitting it keeps your model unless model-assessed routing is enabled." },
     "model": { "type": "string", "description": "Optional explicit model/ref override. Beats routing. Examples: grok-code-fast-1, glm-5.2, mantle:openai.gpt-5.5, us.anthropic.claude-opus-4-8." },
     "role": { "type": "string", "description": "Optional named sub-agent role. Built-ins: researcher, reviewer, summarizer. Installed plugin agents are also valid for task (they inherit normal tools and approval gates)." },
+    "type": { "type": "string", "enum": ["explore","research","general","code","judge"], "description": "Subagent PURPOSE — picks a capability-aware model + reasoning effort: explore (cheap+fast finder), research (strong reasoner), general (balanced), code (correctness), judge (cheap-but-valid verifier). Omit to derive from role/kind." },
+    "effort": { "type": "string", "enum": ["off","low","medium","high","xhigh"], "description": "Optional explicit reasoning effort for this subtask; overrides the type policy. Use sparingly." },
     "background": { "type": "boolean", "description": "If true, start the subtask asynchronously and return a task id immediately; use task_status to check/collect later." }
   },
   "required": ["task"],
@@ -71,6 +75,8 @@ func Task(run TaskRun) Definition {
 				Difficulty string `json:"difficulty"`
 				Model      string `json:"model"`
 				Role       string `json:"role"`
+				Type       string `json:"type"`
+				Effort     string `json:"effort"`
 				Background bool   `json:"background"`
 			}
 			if err := json.Unmarshal(args, &in); err != nil {
@@ -82,7 +88,7 @@ func Task(run TaskRun) Definition {
 			if run == nil {
 				return "", fmt.Errorf("subtasks are not available")
 			}
-			return run(ctx, in.Task, TaskOpts{Kind: in.Kind, Difficulty: in.Difficulty, Model: in.Model, Role: in.Role}, in.Background)
+			return run(ctx, in.Task, TaskOpts{Kind: in.Kind, Difficulty: in.Difficulty, Model: in.Model, Role: in.Role, Type: in.Type, Effort: in.Effort}, in.Background)
 		},
 	}
 }

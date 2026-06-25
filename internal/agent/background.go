@@ -642,6 +642,10 @@ func nextBackgroundEscalation(opts SubtaskOpts, err error, result string, stalle
 	}
 	next := opts
 	next.Difficulty = up
+	// Reset the explicit effort override so the type/difficulty policy is
+	// re-evaluated at the new (harder) tier — an escalated attempt should be
+	// allowed to think harder, not stay pinned to the prior level.
+	next.Effort = ""
 	return next, reason, true
 }
 

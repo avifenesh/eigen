@@ -113,7 +113,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		if deps.Agent == nil {
 			return "", fmt.Errorf("subtasks unavailable")
 		}
-		aopts := agent.SubtaskOpts{Kind: opts.Kind, Difficulty: opts.Difficulty, Model: opts.Model, Role: opts.Role}
+		aopts := agent.SubtaskOpts{Kind: opts.Kind, Difficulty: opts.Difficulty, Model: opts.Model, Role: opts.Role, Type: opts.Type, Effort: opts.Effort}
 		if background {
 			return deps.Agent.SubtaskBackground(ctx, t, aopts)
 		}
@@ -266,6 +266,14 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 	if err != nil {
 		deps.Close()
 		return nil, err
+	}
+	// Quota-freeze failover (C1): wrap the live provider so a quota/billing
+	// rejection (e.g. a drained GLM account) freezes the primary for the day and
+	// routes to a credentialed alternative, instead of erroring every turn. The
+	// fallback is the small-model ladder (a different, usually cheaper backend).
+	// Only wraps when a distinct fallback exists; otherwise prov is unchanged.
+	if fb := smallProvider(prov); fb != nil && fb.ModelID() != prov.ModelID() {
+		prov = llm.NewFallback(prov, fb)
 	}
 	deps.Provider = prov
 

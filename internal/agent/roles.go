@@ -26,6 +26,8 @@ type Role struct {
 	Kind         string   // default routing kind when the caller gives none
 	Difficulty   string   // default routing difficulty when the caller gives none
 	Model        string   // optional default model when the caller gives none
+	Type         string   // subagent type (explore/research/general/code/judge) → effort+model policy
+	Effort       string   // optional explicit effort override (beats the type policy)
 	ReadOnly     bool     // every tool in Tools is read-only (enforced at build)
 	InheritTools bool     // plugin agent: keep caller's normal toolset/approval gates
 }
@@ -41,6 +43,7 @@ var builtinRoles = map[string]Role{
 		System:     "You are a RESEARCHER sub-agent. Investigate and report findings — read code, search the tree, trace how things work. You have READ-ONLY local tools (no network, no edits, no commands). Return a concise, concrete findings report the orchestrator can act on: what you found, where (paths/symbols), and what it means. Do not speculate beyond the evidence.",
 		Tools:      []string{"read", "grep", "glob", "list", "tree", "symbols", "skill"},
 		Difficulty: "easy",
+		Type:       "research", // deep investigation → high effort + a strong reasoner, not a cheap finder
 		ReadOnly:   true,
 	},
 	"reviewer": {
@@ -48,6 +51,7 @@ var builtinRoles = map[string]Role{
 		System:     "You are a REVIEWER sub-agent. Critique the target (code, a diff, a design, an approach) for correctness, edge cases, security, and clarity. You have READ-ONLY tools plus the cross-vendor review tool. Return specific, actionable issues ranked by severity — not vague praise. Cite exact locations.",
 		Tools:      []string{"read", "grep", "glob", "list", "tree", "symbols", "diff", "review"},
 		Difficulty: "medium",
+		Type:       "judge", // assessment → cheap-but-valid model, bounded effort
 		ReadOnly:   true,
 	},
 	"summarizer": {
@@ -55,6 +59,7 @@ var builtinRoles = map[string]Role{
 		System:     "You are a SUMMARIZER sub-agent. Read the named sources and produce a tight, faithful summary — no new claims, no tools beyond reading. Preserve the key facts, decisions, and open questions.",
 		Tools:      []string{"read", "grep", "glob", "list", "tree"},
 		Difficulty: "trivial",
+		Type:       "explore", // mechanical read+condense → cheap + fast
 		ReadOnly:   true,
 	},
 }

@@ -649,7 +649,7 @@ func main() {
 				return "", fmt.Errorf("unknown task role %q (built-ins: %s; installed plugin agents: %s)", opts.Role, strings.Join(agent.RoleNames(), ", "), strings.Join(agent.PluginRoleNames(), ", "))
 			}
 		}
-		aopts := agent.SubtaskOpts{Kind: opts.Kind, Difficulty: opts.Difficulty, Model: opts.Model, Role: opts.Role}
+		aopts := agent.SubtaskOpts{Kind: opts.Kind, Difficulty: opts.Difficulty, Model: opts.Model, Role: opts.Role, Type: opts.Type, Effort: opts.Effort}
 		if background {
 			return a.SubtaskBackground(ctx, t, aopts)
 		}
@@ -1257,6 +1257,27 @@ func localReady(base string) bool {
 // titleProvider is retained as an alias for smallProvider (session titling uses
 // the same small model as the other background chores).
 func titleProvider(main llm.Provider) llm.Provider { return smallProvider(main) }
+
+// dreamProvider picks the model for background dreaming/consolidation. It pins
+// SONNET (via the dream ladder) on PURPOSE: dreaming is heavy + runs off the hot
+// path, so routing it to the cheap-but-capable GLM would drain the quota real
+// tasks want. Sonnet is "questionable for live tasks" but a fine consolidator,
+// so it earns its keep here. Falls through the ladder (sonnet variants → haiku →
+// gpt) when sonnet isn't credentialed, and finally to the small model so
+// dreaming still runs on a minimal setup. EIGEN_DREAM_MODEL overrides.
+func dreamProvider() llm.Provider {
+	if id := strings.TrimSpace(os.Getenv("EIGEN_DREAM_MODEL")); id != "" {
+		if p, err := llm.New("", id); err == nil {
+			return p
+		}
+	}
+	if id := llm.FirstCredentialed(llm.DreamModelLadder()...); id != "" {
+		if p, err := llm.New("", id); err == nil {
+			return p
+		}
+	}
+	return smallProvider(nil)
+}
 
 // notifyCmdline returns the external desktop-notifier command (config notify_cmd,
 // else EIGEN_NOTIFY_CMD), empty when none is configured.

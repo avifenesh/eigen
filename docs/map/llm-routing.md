@@ -53,6 +53,16 @@
 - **Depends on:** `ParseRef` (ref.go); `customProviderByName`/`customModels`/`normalizeCustomModel` + `envBool` (sibling `custom.go`/helpers, not in this slice).
 - **Used by / entrypoint:** Heavily reused — `router.go`/`candidates.go`/`budget.go`/`ref.go`/`llm.go` here, every backend's constructor, plus `internal/config`, `internal/tui`, `internal/gui/routing.go`, `internal/app/data.go`, `internal/telegram`, and root `main.go`/`router.go`.
 
+### internal/llm/subpolicy.go
+- **Role:** Per-SUBAGENT capability-aware policy (Tier 31): a subagent's TYPE drives both its reasoning EFFORT and its MODEL — distinct from the router's task-quality tiering. The principle is **capability ≠ price**: a cheap model can be the best fit (glm-5.2: 1M ctx + reasoning + included web_search) and an expensive one wrong for a job (grok has search but is a poor researcher).
+- **Key symbols:**
+  - `SubagentType` + `TypeExplore/Research/General/Code/Judge`; `NormalizeSubagentType(s)` maps role names / free-form strings to a type (default general).
+  - `SubagentEffort(type, difficulty)` — generic effort level (off..xhigh): explore low, research/code high, general medium, judge low; difficulty nudges within (hard lifts, trivial drops; judge fixed, explore never lifts). The agent's `setSubtaskEffort` clamps it to the model's own ladder (handles GLM {off,on}).
+  - `SubagentModel(type)` — walks the type's `modelLadder` (capability-first) and returns the first credentialed model, skipping suspended providers (so a blocked GLM falls through gracefully). `EIGEN_SUBAGENT_MODEL_<TYPE>` overrides. Ladders encode the user's intent: research→glm-5.2→opus→gpt (grok absent: search≠research); judge→gpt→glm→haiku (never the top default); explore→composer/glm/haiku (fast+cheap); code→opus/composer/glm.
+  - `DreamModelLadder()` — sonnet-first (dreaming pinned off the cheap-GLM quota real tasks want); `FirstCredentialed(ids…)` / `modelCredentialed(id)` helpers.
+- **Depends on:** catalog (`ResolveProvider`, `ProviderAvailable`).
+- **Used by / entrypoint:** `internal/agent` subAgent (model+effort policy), `judge.go:defaultJudge` (cheap-valid judge), `main.go:dreamProvider` (sonnet dream). Disabled wholesale by `EIGEN_SUBTASK_EFFORT=keep`.
+
 ### internal/llm/routerscores.go
 - **Role:** The auto-router's scoring table — the user's quality-TIER ladder (not a price search).
 - **Key symbols:**

@@ -811,7 +811,7 @@ func nightlyDreamer(host *daemon.Host, gmem *memory.Store) {
 		if host.AnyRunning() {
 			continue // never compete with a live turn for the model
 		}
-		prov := titleProvider(nil) // the small model (health-checks itself)
+		prov := dreamProvider() // sonnet-pinned, NOT the cheap GLM real tasks want
 		if prov == nil {
 			continue
 		}
@@ -838,10 +838,20 @@ func runNightlyDream(host *daemon.Host, prov llm.Provider, gmem *memory.Store) {
 		}
 		byDir[p.Dir] = append(byDir[p.Dir], p)
 	}
+	// Bounded + iterative: process at most maxScopesPerWake scopes this wake,
+	// then stop and let the next interval pick up the rest. Combined with the
+	// watermark idempotency (unchanged scopes are no-ops) this means a backlog of
+	// many projects drains a few per wake rather than grinding the whole universe
+	// — and never "non-stop": the loop also yields the moment a live turn starts.
+	const maxScopesPerWake = 4
+	scopesDone := 0
 	var globalCorpus []string // a sample of rollout summaries for the global profile
 	for dir, infos := range byDir {
 		if host.AnyRunning() {
 			return // a turn started mid-dream; yield the model
+		}
+		if scopesDone >= maxScopesPerWake {
+			break // iterative cap — the rest dream on the next wake
 		}
 		mem, err := memory.Open(dir)
 		if err != nil {
@@ -868,6 +878,7 @@ func runNightlyDream(host *daemon.Host, prov llm.Provider, gmem *memory.Store) {
 		if len(sessions) == 0 {
 			continue
 		}
+		scopesDone++ // a scope with real sessions counts toward the per-wake cap
 		if report, _ := pipe.Run(context.Background(), sessions); report != "" {
 			fmt.Fprintf(os.Stderr, "eigen daemon: dreamed %s — %s\n", dir, report)
 		}
