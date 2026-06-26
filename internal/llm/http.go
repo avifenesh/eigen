@@ -15,7 +15,7 @@ import (
 // Version is eigen's base semantic version, reported in the User-Agent of
 // provider requests and as the headline version everywhere. FullVersion()
 // (version.go) annotates it with the build's git revision.
-const Version = "0.2.3"
+const Version = "0.2.4"
 
 const (
 	// maxAttempts bounds retries for transient provider failures (network, 429,
