@@ -35,6 +35,7 @@ func writeAt(t *testing.T, home, rel string, mtime time.Time) string {
 func TestRecentAgentSessionsOrderingAndTagging(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads USERPROFILE on Windows
 
 	base := time.Now().Add(-time.Hour)
 	// Newest -> oldest: codex, claude, eigen.
@@ -78,7 +79,9 @@ func TestRecentAgentSessionsOrderingAndTagging(t *testing.T) {
 // TestRecentAgentSessionsEmptyHome confirms an entirely missing set of agent
 // dirs yields no refs and no panic (every dir guarded by os.Stat).
 func TestRecentAgentSessionsEmptyHome(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads USERPROFILE on Windows
 	if got := recentAgentSessions(8); len(got) != 0 {
 		t.Fatalf("expected no refs for empty home, got %d", len(got))
 	}
@@ -131,6 +134,7 @@ func TestDreamWatermark(t *testing.T) {
 func TestPrintSessionsFallbackSpansAgents(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads USERPROFILE on Windows
 
 	base := time.Now().Add(-time.Hour)
 	claudePath := writeAt(t, home, ".claude/projects/-home-u-proj/b.jsonl", base.Add(time.Minute))

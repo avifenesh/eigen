@@ -114,7 +114,11 @@ func runDaemon(cfg config.Config) {
 		if chain := llm.NewChain(cfg.ChainFor("primary")...); llm.ChainBeyond(chain, p.ModelID()) {
 			prov = llm.NewFallback(p, chain)
 		}
-		return prov, llm.CompactorChain(llm.NewCompactor(smallProvider(p)), llm.NewCompactor(p)), contextBudget(cfg.MaxTokens, "", modelID), nil
+		// Compact through the FALLBACK-wrapped prov, not raw p: otherwise a
+		// quota/billing rejection on the primary would fail compaction outright
+		// instead of falling through the chain (the same reason prov is returned
+		// for turns). smallProvider stays the cheap first rung.
+		return prov, llm.CompactorChain(llm.NewCompactor(smallProvider(prov)), llm.NewCompactor(prov)), contextBudget(cfg.MaxTokens, "", modelID), nil
 	})
 
 	// Auto-title daemon sessions on the small model (same titler as the app's
