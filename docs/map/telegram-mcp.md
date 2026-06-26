@@ -200,6 +200,10 @@
 ### internal/google/tools.go
 - **Role:** The agent tools. `(*Auth).Tools(nowFn)` returns niche-grouped (`google`) tools: `google_calendar_list` (read), `google_calendar_create` (write, all-day or timed), `gmail_list` (read). They return a clear "not configured/connected" until linked, so they're always safe to register.
 
+### internal/google/summary.go
+- **Role:** Structured (typed, non-prose) summaries for the working-station dashboard, distinct from the prose agent tools. `UpcomingEvents(ctx,days,max)` → `[]CalEvent`, `UnreadCount(ctx)` → int (Gmail INBOX label), `RecentUnread(ctx,max)` → `[]MailMsg`.
+- **Used by / entrypoint:** `internal/gui/dashboard.go` (Home's Today zone).
+
 ### internal/google/wire.go
 - **Role:** `Default()` — process-wide shared `Auth` (one token store + creds across agent tools, GUI bridge, CLI).
 - **Used by / entrypoint:** `build.go` + `main.go` register `google.Default().Tools(nil)` into the tool set; `internal/gui/google.go` drives connect/disconnect/status.

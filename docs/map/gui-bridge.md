@@ -193,6 +193,12 @@
 - **Depends on:** `internal/mcp` (the config editor + keychain secret store).
 - **Used by / entrypoint:** the Connectors view (local-server section + add-server form).
 
+### internal/gui/dashboard.go
+- **Role:** The working-station command-center data in ONE call — today's calendar + unread mail (Google, when linked) + machine health (always). Eigen is a working STATION, not a coding tool; Home answers "what's my day + is my machine OK".
+- **Key symbols:** `DashboardDTO` (`googleConnected`/`events`/`unreadCount`/`unread`/`health`), `CalEventDTO`/`MailMsgDTO`/`SysHealthDTO`, `healthDTO`; bound `Dashboard()` — reads `syshealth.Read()` + (when `google.Default().Connected()`) `UpcomingEvents`/`UnreadCount`/`RecentUnread`, each section best-effort.
+- **Depends on:** `internal/google`, `internal/syshealth`.
+- **Used by / entrypoint:** Home's "Today" zone (calendar · inbox · machine panels), refreshed every 60s.
+
 ### internal/gui/google.go
 - **Role:** Native Google (Calendar + Gmail) status + connect bridge — eigen's direct-REST built-in (NOT an MCP connector), authorized with the user's own Google Cloud OAuth client.
 - **Key symbols:** `GoogleStatusDTO` (`configured`/`connected`/`setupHint`); bound `GoogleStatus()`, `ConnectGoogle()` (runs the loopback OAuth flow, blocks until linked), `DisconnectGoogle()`.

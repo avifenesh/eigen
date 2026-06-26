@@ -14,7 +14,7 @@
   import { errText } from "$lib/errors";
   import { Bridge } from "$lib/bridge";
   import { Browser } from "@wailsio/runtime";
-  import type { FeedItemDTO, SessionInfoDTO } from "$lib/types";
+  import type { FeedItemDTO, SessionInfoDTO, DashboardDTO } from "$lib/types";
   import Button from "$lib/components/Button.svelte";
   import Badge from "$lib/components/Badge.svelte";
   import StatusDot from "$lib/components/StatusDot.svelte";
@@ -22,9 +22,47 @@
   let starting = $state(false);
   let acting = $state<Record<string, boolean>>({});
 
+  // Working-station command center: today's calendar + unread mail + machine
+  // health. One round-trip; refreshed on mount and every 60s.
+  let dash = $state<DashboardDTO | null>(null);
+  async function loadDash() {
+    try {
+      const d = await Bridge.Dashboard();
+      if (d) dash = d;
+    } catch {
+      /* dashboard is best-effort; never block Home */
+    }
+  }
+
   $effect(() => {
     sessions.refresh();
+    loadDash();
+    const t = setInterval(loadDash, 60_000);
+    return () => clearInterval(t);
   });
+
+  // Health bar tone: calm under 70%, warn 70–90, hot above.
+  function tone(pct: number): "ok" | "warn" | "hot" {
+    if (pct >= 90) return "hot";
+    if (pct >= 70) return "warn";
+    return "ok";
+  }
+  function eventTime(e: { start: string; allDay: boolean }): string {
+    if (e.allDay) return "all day";
+    const d = new Date(e.start);
+    if (isNaN(d.getTime())) return e.start;
+    const today = new Date();
+    const sameDay = d.toDateString() === today.toDateString();
+    const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return sameDay ? t : `${d.toLocaleDateString([], { weekday: "short" })} ${t}`;
+  }
+  function fromName(from: string): string {
+    // "Name <email>" → Name; bare email → the local part.
+    const m = from.match(/^\s*"?([^"<]+?)"?\s*</);
+    if (m) return m[1].trim();
+    const at = from.indexOf("@");
+    return at > 0 ? from.slice(0, at) : from;
+  }
 
   const stats = $derived(daemon.stats);
   // Cache-hit% = cached-read tokens over the FULL prompt size. The provider
@@ -149,6 +187,71 @@
     <div class="strip__sep"></div>
     <div class="strip__stat"><span class="strip__v tnum">{cacheHit}%</span><span class="strip__l">cache hit</span></div>
   </button>
+
+  <!-- ZONE 1.5 · TODAY (command center: calendar · mail · machine) -->
+  {#if dash}
+    <section class="today">
+      <!-- Calendar -->
+      <button class="panel" onclick={() => router.go("connectors")} title="Manage Google in Connectors">
+        <div class="panel__head"><span class="panel__icon">📅</span><span class="panel__title">Today</span></div>
+        {#if !dash.googleConnected}
+          <p class="panel__empty">Connect Google to see your calendar.</p>
+        {:else if dash.events.length === 0}
+          <p class="panel__empty">No upcoming events.</p>
+        {:else}
+          <ul class="panel__list">
+            {#each dash.events.slice(0, 5) as e (e.summary + e.start)}
+              <li class="evt">
+                <span class="evt__time tnum">{eventTime(e)}</span>
+                <span class="evt__sum">{e.summary}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </button>
+
+      <!-- Mail -->
+      <button class="panel" onclick={() => router.go("connectors")} title="Manage Google in Connectors">
+        <div class="panel__head">
+          <span class="panel__icon">✉</span><span class="panel__title">Inbox</span>
+          {#if dash.googleConnected && dash.unreadCount > 0}<span class="panel__badge tnum">{dash.unreadCount}</span>{/if}
+        </div>
+        {#if !dash.googleConnected}
+          <p class="panel__empty">Connect Google to see your inbox.</p>
+        {:else if dash.unread.length === 0}
+          <p class="panel__empty">Inbox zero — nothing unread.</p>
+        {:else}
+          <ul class="panel__list">
+            {#each dash.unread.slice(0, 5) as m (m.from + m.subject)}
+              <li class="mail">
+                <span class="mail__from">{fromName(m.from)}</span>
+                <span class="mail__subj">{m.subject}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </button>
+
+      <!-- Machine health -->
+      <div class="panel">
+        <div class="panel__head"><span class="panel__icon">▦</span><span class="panel__title">Machine</span></div>
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric__top"><span class="metric__k">CPU load</span><span class="metric__v tnum">{Math.round(dash.health.loadPerCpu * 100)}%</span></div>
+            <div class="bar"><div class="bar__fill bar__fill--{tone(dash.health.loadPerCpu * 100)}" style="width:{Math.min(100, dash.health.loadPerCpu * 100)}%"></div></div>
+          </div>
+          <div class="metric">
+            <div class="metric__top"><span class="metric__k">Memory</span><span class="metric__v tnum">{dash.health.memUsedGb}/{dash.health.memTotalGb} GB</span></div>
+            <div class="bar"><div class="bar__fill bar__fill--{tone(dash.health.memUsedPct)}" style="width:{dash.health.memUsedPct}%"></div></div>
+          </div>
+          <div class="metric">
+            <div class="metric__top"><span class="metric__k">Disk /</span><span class="metric__v tnum">{dash.health.diskUsedPct}%</span></div>
+            <div class="bar"><div class="bar__fill bar__fill--{tone(dash.health.diskUsedPct)}" style="width:{dash.health.diskUsedPct}%"></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  {/if}
 
   <!-- ZONE 2 · ACT ON (the proactive feed) -->
   <section class="zone">
@@ -334,6 +437,144 @@
     width: 1px;
     align-self: stretch;
     background: var(--divider);
+  }
+
+  /* ZONE 1.5 · today (command center) */
+  .today {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: var(--sp-5);
+  }
+  .panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    padding: var(--sp-5) var(--sp-6);
+    min-height: 132px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--r-lg);
+    text-align: left;
+    cursor: pointer;
+    transition:
+      border-color var(--dur-fast) var(--ease-out),
+      background var(--dur-fast) var(--ease-out);
+  }
+  /* The machine panel is a div (not navigable) — no hover affordance. */
+  button.panel:hover {
+    border-color: var(--border-subtle);
+    background: var(--bg-raised-2);
+  }
+  button.panel:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .panel__head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+  .panel__icon {
+    font-size: var(--fs-body);
+  }
+  .panel__title {
+    font: var(--fw-semibold) var(--fs-label) / 1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--text-faint);
+  }
+  .panel__badge {
+    margin-left: auto;
+    font-size: var(--fs-micro);
+    font-weight: var(--fw-bold);
+    color: var(--brand-bright);
+    background: var(--state-selected);
+    border: 1px solid var(--border-brand-faint);
+    border-radius: var(--r-full);
+    padding: 1px var(--sp-3);
+  }
+  .panel__empty {
+    margin: auto 0;
+    color: var(--text-ghost);
+    font-size: var(--fs-label);
+  }
+  .panel__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+  }
+  .evt,
+  .mail {
+    display: flex;
+    gap: var(--sp-4);
+    align-items: baseline;
+    min-width: 0;
+  }
+  .evt__time {
+    flex: none;
+    width: 64px;
+    font-size: var(--fs-label);
+    color: var(--brand-bright);
+  }
+  .evt__sum,
+  .mail__subj {
+    flex: 1;
+    font-size: var(--fs-body-sm);
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mail__from {
+    flex: none;
+    width: 96px;
+    font-size: var(--fs-label);
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .metrics {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+  }
+  .metric__top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: var(--sp-2);
+  }
+  .metric__k {
+    font-size: var(--fs-label);
+    color: var(--text-muted);
+  }
+  .metric__v {
+    font-size: var(--fs-label);
+    color: var(--text-secondary);
+  }
+  .bar {
+    height: 6px;
+    border-radius: var(--r-full);
+    background: var(--bg-inset);
+    overflow: hidden;
+  }
+  .bar__fill {
+    height: 100%;
+    border-radius: var(--r-full);
+    transition: width var(--dur-slow) var(--ease-out);
+  }
+  .bar__fill--ok {
+    background: var(--brand);
+  }
+  .bar__fill--warn {
+    background: var(--warn);
+  }
+  .bar__fill--hot {
+    background: var(--danger, var(--err));
   }
 
   /* zones */

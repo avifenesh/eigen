@@ -441,6 +441,28 @@ export type GoogleStatusDTO = {
   setupHint: string; // how to add a client when not configured
 };
 
+// Working-station command-center snapshot. Mirrors internal/gui/dashboard.go.
+export type CalEventDTO = { summary: string; start: string; allDay: boolean; location: string };
+export type MailMsgDTO = { from: string; subject: string };
+export type SysHealthDTO = {
+  loadPerCpu: number;
+  cpus: number;
+  memUsedPct: number;
+  memUsedGb: number;
+  memTotalGb: number;
+  diskUsedPct: number;
+  diskUsedGb: number;
+  diskTotalGb: number;
+  uptimeHours: number;
+};
+export type DashboardDTO = {
+  googleConnected: boolean;
+  events: CalEventDTO[];
+  unreadCount: number;
+  unread: MailMsgDTO[];
+  health: SysHealthDTO;
+};
+
 export type FeedItemDTO = {
   key: string;
   kind: string; // git | github | memory | suggest
