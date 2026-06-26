@@ -1400,6 +1400,14 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		var err error
 		streamed := false
 		prov := a.provider()
+		// Make provider failover VISIBLE: when the live provider is a fallback
+		// wrapper and the primary fails over to its fallback this turn, surface a
+		// note with the cause instead of silently serving from a weaker model.
+		llm.SetFallbackNotifier(prov, func(primaryID, fallbackID string, cause error) {
+			a.emit(Event{Kind: EventNote, Step: step, Text: fmt.Sprintf(
+				"%s unavailable (%s) — falling back to %s for this turn.",
+				primaryID, truncateForNote(cause.Error()), fallbackID)})
+		})
 		// Heartbeat the subtask watchdog at model-call START: a non-streaming
 		// Complete() (e.g. the Converse/opus path) emits NOTHING until it
 		// returns, so a slow-but-healthy inference would otherwise look "idle"

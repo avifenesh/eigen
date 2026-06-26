@@ -52,6 +52,32 @@ type fallbackProvider struct {
 
 	mu          sync.Mutex
 	frozenUntil time.Time // primary is skipped until this instant (zero = live)
+	// onFallback, when set, is called the moment a turn falls from the primary
+	// to the fallback — with the primary's id, the fallback's id, and the error
+	// that triggered the switch. The agent wires this to a visible EventNote so a
+	// fallback is SURFACED to the user (with the cause), never a silent bypass.
+	onFallback func(primaryID, fallbackID string, cause error)
+}
+
+// SetFallbackNotifier installs a callback fired when this provider falls over to
+// its fallback. No-op on a non-fallback provider (a collapsed nil side). Safe to
+// call once after construction; the daemon/agent sets it so failover is visible.
+func SetFallbackNotifier(p Provider, fn func(primaryID, fallbackID string, cause error)) {
+	if f, ok := p.(*fallbackProvider); ok {
+		f.mu.Lock()
+		f.onFallback = fn
+		f.mu.Unlock()
+	}
+}
+
+// notifyFallback fires onFallback (read under lock) outside the lock.
+func (f *fallbackProvider) notifyFallback(cause error) {
+	f.mu.Lock()
+	fn := f.onFallback
+	f.mu.Unlock()
+	if fn != nil {
+		fn(f.primary.ModelID(), f.fallback.ModelID(), cause)
+	}
 }
 
 // NewFallback wraps a primary provider with a fallback. A nil side collapses to
@@ -108,11 +134,119 @@ func (f *fallbackProvider) Complete(ctx context.Context, req Request) (*Response
 		if ctx.Err() != nil {
 			return nil, err
 		}
+		if f.fallback == nil {
+			return nil, err // nothing to fall to — surface the real cause
+		}
+		f.notifyFallback(err) // SURFACE the failover + cause; never silent
 	}
 	if f.fallback == nil {
 		return nil, errors.New("fallback provider unavailable")
 	}
 	return f.fallback.Complete(ctx, req)
+}
+
+// Stream forwards to the primary's streaming path (falling back on a quota
+// freeze / error), so a wrapped reasoning model still streams its text +
+// reasoning deltas. Without this method the wrapper is not a Streamer, so the
+// agent silently took the non-streaming Complete path: no live text, and no
+// reasoning deltas at all — the model's "thoughts" never reached the UI. A side
+// that can't stream (only Complete) is driven via streamViaComplete so the sink
+// still fires once with the final text.
+func (f *fallbackProvider) Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error) {
+	if !f.frozen() {
+		resp, err := streamAny(ctx, f.primary, req, sink)
+		if err == nil {
+			return resp, nil
+		}
+		if IsQuotaError(err) {
+			f.freezeForToday()
+		}
+		if ctx.Err() != nil {
+			return nil, err
+		}
+		if f.fallback == nil {
+			return nil, err
+		}
+		f.notifyFallback(err) // SURFACE the failover + cause; never silent
+	}
+	if f.fallback == nil {
+		return nil, errors.New("fallback provider unavailable")
+	}
+	return streamAny(ctx, f.fallback, req, sink)
+}
+
+// streamAny streams through p when it implements Streamer, else runs Complete
+// and emits the final text as a single chunk so callers relying on the sink
+// still see output.
+func streamAny(ctx context.Context, p Provider, req Request, sink StreamSink) (*Response, error) {
+	if sm, ok := p.(Streamer); ok {
+		return sm.Stream(ctx, req, sink)
+	}
+	resp, err := p.Complete(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if sink != nil && resp != nil && resp.Text != "" {
+		sink(StreamChunk{Kind: ChunkText, Text: resp.Text})
+	}
+	return resp, nil
+}
+
+// activeProvider returns the side capability calls should target: the primary
+// unless it is frozen (quota), then the fallback. Keeps runtime toggles
+// (effort/search/fast) pointed at whichever provider actually serves turns.
+func (f *fallbackProvider) activeProvider() Provider {
+	if f.frozen() && f.fallback != nil {
+		return f.fallback
+	}
+	return f.primary
+}
+
+// SetEffort/Effort/SetSearch/SearchMode/SetFast/FastMode forward the optional
+// runtime-capability interfaces to the active provider, so a wrapped reasoning
+// model still exposes its effort/search/fast controls (the daemon type-asserts
+// the live provider for these; an unwrapped assertion on the bare wrapper failed
+// → the GUI showed no effort dropdown and SetEffort was a no-op).
+func (f *fallbackProvider) SetEffort(level string) bool {
+	if es, ok := f.activeProvider().(EffortSetter); ok {
+		return es.SetEffort(level)
+	}
+	return false
+}
+
+func (f *fallbackProvider) Effort() string {
+	if es, ok := f.activeProvider().(EffortSetter); ok {
+		return es.Effort()
+	}
+	return ""
+}
+
+func (f *fallbackProvider) SetSearch(mode string) bool {
+	if sr, ok := f.activeProvider().(Searcher); ok {
+		return sr.SetSearch(mode)
+	}
+	return false
+}
+
+func (f *fallbackProvider) SearchMode() string {
+	if sr, ok := f.activeProvider().(Searcher); ok {
+		return sr.SearchMode()
+	}
+	return ""
+}
+
+func (f *fallbackProvider) SetFast(on bool) bool {
+	if fm, ok := f.activeProvider().(FastModer); ok {
+		return fm.SetFast(on)
+	}
+	return false
+}
+
+func (f *fallbackProvider) FastMode() bool {
+	if fm, ok := f.activeProvider().(FastModer); ok {
+		return fm.FastMode()
+	}
+	return false
 }
 
 func nextMidnight() time.Time {

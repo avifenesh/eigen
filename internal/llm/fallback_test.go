@@ -145,3 +145,104 @@ func TestFallbackNonQuotaErrorDoesNotFreeze(t *testing.T) {
 		t.Fatalf("non-quota failure should not freeze primary; want 2 tries, got %d", primary.calls)
 	}
 }
+
+// effortStub is a provider with the EffortSetter/Searcher/FastModer capabilities,
+// to verify the fallback wrapper forwards them to the active side.
+type effortStub struct {
+	stubProvider
+	effort string
+	search string
+	fast   bool
+}
+
+func (e *effortStub) SetEffort(l string) bool { e.effort = l; return true }
+func (e *effortStub) Effort() string          { return e.effort }
+func (e *effortStub) SetSearch(m string) bool { e.search = m; return true }
+func (e *effortStub) SearchMode() string      { return e.search }
+func (e *effortStub) SetFast(on bool) bool    { e.fast = on; return true }
+func (e *effortStub) FastMode() bool          { return e.fast }
+
+// TestFallbackForwardsCapabilities is the GLM "no effort dropdown" fix: a
+// reasoning provider wrapped in a fallback must still expose EffortSetter etc.,
+// or the daemon's type-assertion fails and the GUI shows no effort control.
+func TestFallbackForwardsCapabilities(t *testing.T) {
+	clearFrozenProviders()
+	primary := &effortStub{stubProvider: stubProvider{name: "glm-5.2", reply: "ok"}, effort: "max"}
+	fb := &stubProvider{name: "small", reply: "fb"}
+	f := NewFallback(primary, fb)
+
+	es, ok := f.(EffortSetter)
+	if !ok {
+		t.Fatal("wrapped provider must implement EffortSetter (else no effort dropdown)")
+	}
+	if es.Effort() != "max" {
+		t.Fatalf("Effort() forwarded = %q, want max", es.Effort())
+	}
+	if !es.SetEffort("high") || primary.effort != "high" {
+		t.Fatalf("SetEffort not forwarded to primary: %q", primary.effort)
+	}
+	if sr, ok := f.(Searcher); !ok || !sr.SetSearch("on") || primary.search != "on" {
+		t.Fatal("Searcher not forwarded to primary")
+	}
+	if fm, ok := f.(FastModer); !ok || !fm.SetFast(true) || !primary.fast {
+		t.Fatal("FastModer not forwarded to primary")
+	}
+}
+
+// TestFallbackNotifiesOnFailover is the "don't bypass silently" requirement: a
+// failover fires onFallback with the primary's cause.
+func TestFallbackNotifiesOnFailover(t *testing.T) {
+	clearFrozenProviders()
+	primary := &stubProvider{name: "glm-5.2", err: errors.New("HTTP 500: boom")}
+	fb := &stubProvider{name: "small", reply: "served"}
+	f := NewFallback(primary, fb)
+
+	var gotPrimary, gotFallback string
+	var gotCause error
+	SetFallbackNotifier(f, func(p, fbid string, cause error) {
+		gotPrimary, gotFallback, gotCause = p, fbid, cause
+	})
+	resp, err := f.Complete(context.Background(), Request{})
+	if err != nil || resp.Text != "served" {
+		t.Fatalf("expected fallback to serve, got %v / %v", resp, err)
+	}
+	if gotPrimary != "glm-5.2" || gotFallback != "small" || gotCause == nil {
+		t.Fatalf("failover not surfaced: primary=%q fallback=%q cause=%v", gotPrimary, gotFallback, gotCause)
+	}
+}
+
+// TestFallbackStreamsThroughPrimary: the wrapper is a Streamer and forwards
+// reasoning/text chunks (else the agent took the non-streaming path → no
+// thoughts).
+func TestFallbackStreamsThroughPrimary(t *testing.T) {
+	clearFrozenProviders()
+	primary := &streamStub{name: "glm-5.2"}
+	fb := &stubProvider{name: "small", reply: "fb"}
+	f := NewFallback(primary, fb)
+	sm, ok := f.(Streamer)
+	if !ok {
+		t.Fatal("wrapped provider must implement Streamer")
+	}
+	var kinds []ChunkKind
+	_, err := sm.Stream(context.Background(), Request{}, func(c StreamChunk) { kinds = append(kinds, c.Kind) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(kinds) != 2 || kinds[0] != ChunkReasoning || kinds[1] != ChunkText {
+		t.Fatalf("expected reasoning then text chunks forwarded, got %v", kinds)
+	}
+}
+
+// streamStub emits one reasoning + one text chunk.
+type streamStub struct{ name string }
+
+func (s *streamStub) Name() string    { return s.name }
+func (s *streamStub) ModelID() string { return s.name }
+func (s *streamStub) Complete(ctx context.Context, req Request) (*Response, error) {
+	return &Response{Text: "done"}, nil
+}
+func (s *streamStub) Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error) {
+	sink(StreamChunk{Kind: ChunkReasoning, Text: "thinking"})
+	sink(StreamChunk{Kind: ChunkText, Text: "answer"})
+	return &Response{Text: "answer", Reasoning: "thinking"}, nil
+}
