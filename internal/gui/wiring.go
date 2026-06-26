@@ -25,6 +25,12 @@ type MCPServerDTO struct {
 	Remote       bool     `json:"remote"`
 	// Env is rendered as KEY=VALUE lines in the editor (kept simple for the form).
 	EnvPairs []string `json:"envPairs,omitempty"`
+	// SecretEnvKeys names env vars stored in the OS keychain (values never leave
+	// it). Read-back carries only the names; shown as "•••• (secret)" rows.
+	SecretEnvKeys []string `json:"secretEnvKeys,omitempty"`
+	// SecretEnvPairs is WRITE-ONLY input (KEY=VALUE lines) → stored in the
+	// keychain on save. Always empty on read-back.
+	SecretEnvPairs []string `json:"secretEnvPairs,omitempty"`
 }
 
 // MCPServersDTO is the wiring snapshot.
@@ -38,43 +44,52 @@ func entryToDTO(e mcp.ServerEntry) MCPServerDTO {
 		env = append(env, k+"="+v)
 	}
 	return MCPServerDTO{
-		Name:         e.Name,
-		Command:      e.Command,
-		URL:          e.URL,
-		Type:         e.Type,
-		Description:  e.Description,
-		Tools:        e.Tools,
-		ExcludeTools: e.ExcludeTools,
-		Disabled:     e.Disabled,
-		Remote:       e.Remote,
-		EnvPairs:     env,
+		Name:          e.Name,
+		Command:       e.Command,
+		URL:           e.URL,
+		Type:          e.Type,
+		Description:   e.Description,
+		Tools:         e.Tools,
+		ExcludeTools:  e.ExcludeTools,
+		Disabled:      e.Disabled,
+		Remote:        e.Remote,
+		EnvPairs:      env,
+		SecretEnvKeys: e.SecretEnvKeys,
 	}
 }
 
 func dtoToEntry(d MCPServerDTO) mcp.ServerEntry {
-	env := map[string]string{}
-	for _, p := range d.EnvPairs {
+	env := parsePairs(d.EnvPairs)
+	secrets := parsePairs(d.SecretEnvPairs)
+	return mcp.ServerEntry{
+		Name:          strings.TrimSpace(d.Name),
+		Command:       d.Command,
+		URL:           strings.TrimSpace(d.URL),
+		Type:          strings.TrimSpace(d.Type),
+		Env:           env,
+		Description:   d.Description,
+		Tools:         d.Tools,
+		ExcludeTools:  d.ExcludeTools,
+		Disabled:      d.Disabled,
+		SecretEnvKeys: d.SecretEnvKeys,
+		SecretEnv:     secrets,
+	}
+}
+
+// parsePairs turns KEY=VALUE lines into a map (nil when empty).
+func parsePairs(lines []string) map[string]string {
+	m := map[string]string{}
+	for _, p := range lines {
 		if k, v, ok := strings.Cut(p, "="); ok {
-			k = strings.TrimSpace(k)
-			if k != "" {
-				env[k] = v
+			if k = strings.TrimSpace(k); k != "" {
+				m[k] = v
 			}
 		}
 	}
-	if len(env) == 0 {
-		env = nil
+	if len(m) == 0 {
+		return nil
 	}
-	return mcp.ServerEntry{
-		Name:         strings.TrimSpace(d.Name),
-		Command:      d.Command,
-		URL:          strings.TrimSpace(d.URL),
-		Type:         strings.TrimSpace(d.Type),
-		Env:          env,
-		Description:  d.Description,
-		Tools:        d.Tools,
-		ExcludeTools: d.ExcludeTools,
-		Disabled:     d.Disabled,
-	}
+	return m
 }
 
 // MCPServers lists every configured MCP server (stdio + remote) for the editor.
@@ -103,4 +118,11 @@ func (b *Bridge) RemoveMCPServer(name string) (bool, error) {
 // SetMCPServerDisabled toggles a server's disabled flag.
 func (b *Bridge) SetMCPServerDisabled(name string, disabled bool) (bool, error) {
 	return mcp.SetServerDisabled(mcp.UserConfigPath(), strings.TrimSpace(name), disabled)
+}
+
+// MCPSecretsAvailable reports whether the OS keychain can store MCP env secrets.
+// The editor gates its "store as secret" affordance on this — without a keyring
+// it keeps env values as plaintext rather than imply a security guarantee.
+func (b *Bridge) MCPSecretsAvailable() bool {
+	return mcp.SecretsAvailable()
 }

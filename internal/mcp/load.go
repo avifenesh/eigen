@@ -57,6 +57,12 @@ type serverConfig struct {
 	// Disabled skips this server entirely (kept in config, not connected) —
 	// toggled from the app's plugins page.
 	Disabled bool `json:"disabled,omitempty"`
+
+	// SecretEnvKeys names env vars whose VALUES live in the OS keychain, not in
+	// this file (e.g. ["GITHUB_PERSONAL_ACCESS_TOKEN"]). The values are merged
+	// into the server's env at connect time from keychain entry <secret_service>/
+	// <name>. This keeps API keys out of plaintext mcp.json.
+	SecretEnvKeys []string `json:"secret_env_keys,omitempty"`
 }
 
 type mcpConfig struct {
@@ -126,7 +132,7 @@ func LoadTools(ctx context.Context, path string) (defs []tool.Definition, client
 			probe, err = ConnectHTTP(cctx, d)
 			client = newLazyHTTPClient(sc.Name, d)
 		} else {
-			env := serverEnv(sc.Env)
+			env := serverEnvWithSecrets(sc)
 			command := expandCommand(sc.Command, env)
 			probe, err = Connect(cctx, command, env)
 			client = newLazyClient(sc.Name, command, env)
@@ -547,6 +553,24 @@ func serverEnv(extra map[string]string) []string {
 	env := os.Environ()
 	for k, v := range extra {
 		env = append(env, k+"="+v)
+	}
+	return env
+}
+
+// serverEnvWithSecrets is serverEnv plus the server's keychain-stored secret env
+// (SecretEnvKeys → values from the OS keychain), so an API key never sits in
+// plaintext mcp.json. Keychain values are appended after the plaintext env, so a
+// stored secret wins over any stale plaintext value for the same key.
+func serverEnvWithSecrets(sc serverConfig) []string {
+	env := serverEnv(sc.Env)
+	if len(sc.SecretEnvKeys) == 0 {
+		return env
+	}
+	secrets := serverSecrets(sc.Name)
+	for _, k := range sc.SecretEnvKeys {
+		if v, ok := secrets[k]; ok {
+			env = append(env, k+"="+v)
+		}
 	}
 	return env
 }

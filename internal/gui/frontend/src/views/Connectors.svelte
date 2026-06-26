@@ -35,6 +35,16 @@
   let addDesc = $state("");
   let adding = $state(false);
 
+  // Add-local-MCP-server form (stdio). Secrets routed to the OS keychain.
+  let srvOpen = $state(false);
+  let srvName = $state("");
+  let srvCommand = $state(""); // shell-style: "node server.js" → split on spaces
+  let srvDesc = $state("");
+  let srvEnv = $state(""); // KEY=VALUE per line (plaintext)
+  let srvSecret = $state(""); // KEY=VALUE per line (keychain)
+  let srvSaving = $state(false);
+  let secretsOk = $state(true);
+
   let alive = true;
   let loadSeq = 0;
   async function load() {
@@ -55,6 +65,11 @@
   }
   $effect(() => {
     load();
+    Bridge.MCPSecretsAvailable()
+      .then((ok) => {
+        if (alive) secretsOk = ok;
+      })
+      .catch(() => {});
     // A background OAuth flow finishing fires eigen:connector — refresh + toast.
     const off = on<ConnectorEventDTO>(ev.connector, (d) => {
       if (!alive) return;
@@ -164,6 +179,44 @@
       toasts.error(errText(e));
     } finally {
       busy[s.name] = false;
+    }
+  }
+
+  function splitLines(s: string): string[] {
+    return s
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+  }
+
+  async function saveLocalServer() {
+    const name = srvName.trim();
+    const cmd = srvCommand.trim().split(/\s+/).filter(Boolean);
+    if (!name || cmd.length === 0) {
+      toasts.error("Name and command are required");
+      return;
+    }
+    srvSaving = true;
+    try {
+      await Bridge.SaveMCPServer({
+        name,
+        command: cmd,
+        description: srvDesc.trim(),
+        disabled: false,
+        remote: false,
+        envPairs: splitLines(srvEnv),
+        secretEnvPairs: secretsOk ? splitLines(srvSecret) : [],
+        // when no keyring, fold "secret" lines into plaintext env rather than drop
+        ...(secretsOk ? {} : { envPairs: [...splitLines(srvEnv), ...splitLines(srvSecret)] }),
+      });
+      toasts.success(`${name} saved`);
+      srvOpen = false;
+      srvName = srvCommand = srvDesc = srvEnv = srvSecret = "";
+      await load();
+    } catch (e) {
+      toasts.error(errText(e));
+    } finally {
+      srvSaving = false;
     }
   }
 
@@ -298,11 +351,53 @@
       {/if}
 
       <!-- Local MCP servers (wiring) -->
+      <header class="cx__head cx__head--sub">
+        <h3 class="cx__subtitle">Local MCP servers</h3>
+        <p class="cx__sub">
+          Stdio servers wired in mcp.json — add, toggle, or remove them here.
+          {#if secretsOk}Secrets you mark are stored in your OS keychain, never in mcp.json.{:else}<span class="warn">No OS keychain detected — secret values would be stored as plaintext.</span>{/if}
+        </p>
+      </header>
+      <div class="cx__actions">
+        {#if !srvOpen}
+          <Button variant="secondary" onclick={() => (srvOpen = true)}>+ Add MCP server</Button>
+        {/if}
+      </div>
+      {#if srvOpen}
+        <Card>
+          <div class="add">
+            <div class="add__row">
+              <label class="add__lbl" for="srv-name">Name</label>
+              <input id="srv-name" class="add__in" bind:value={srvName} placeholder="github" />
+            </div>
+            <div class="add__row">
+              <label class="add__lbl" for="srv-cmd">Command</label>
+              <input id="srv-cmd" class="add__in" bind:value={srvCommand} placeholder="docker run ghcr.io/github/github-mcp-server" />
+            </div>
+            <div class="add__row">
+              <label class="add__lbl" for="srv-desc">Description</label>
+              <input id="srv-desc" class="add__in" bind:value={srvDesc} placeholder="GitHub MCP (optional)" />
+            </div>
+            <div class="add__row">
+              <label class="add__lbl" for="srv-env">Env (KEY=VALUE per line)</label>
+              <textarea id="srv-env" class="add__ta" bind:value={srvEnv} rows="2" placeholder="LOG_LEVEL=info"></textarea>
+            </div>
+            <div class="add__row">
+              <label class="add__lbl" for="srv-secret">
+                {secretsOk ? "Secret env → keychain (KEY=VALUE per line)" : "Secret env (no keychain — stored as plaintext)"}
+              </label>
+              <textarea id="srv-secret" class="add__ta" bind:value={srvSecret} rows="2" placeholder="GITHUB_PERSONAL_ACCESS_TOKEN=ghp_…"></textarea>
+            </div>
+            <div class="add__btns">
+              <Button variant="primary" disabled={srvSaving} onclick={saveLocalServer}>
+                {srvSaving ? "Saving…" : "Save server"}
+              </Button>
+              <Button variant="ghost" disabled={srvSaving} onclick={() => (srvOpen = false)}>Cancel</Button>
+            </div>
+          </div>
+        </Card>
+      {/if}
       {#if stdioServers.length > 0}
-        <header class="cx__head cx__head--sub">
-          <h3 class="cx__subtitle">Local MCP servers</h3>
-          <p class="cx__sub">Stdio servers wired in mcp.json — toggle or remove them here.</p>
-        </header>
         <div class="list">
           {#each stdioServers as s (s.name)}
             <Card>
@@ -311,6 +406,7 @@
                   <div class="conn__name">
                     <span class="conn__title">{s.name}</span>
                     {#if s.disabled}<span class="badge badge--off">disabled</span>{:else}<span class="badge badge--ok">enabled</span>{/if}
+                    {#if s.secretEnvKeys && s.secretEnvKeys.length > 0}<span class="badge badge--secret" title={s.secretEnvKeys.join(", ")}>🔑 {s.secretEnvKeys.length} secret</span>{/if}
                   </div>
                   {#if s.description}<p class="conn__desc">{s.description}</p>{/if}
                   {#if s.command}<p class="conn__url">{s.command.join(" ")}</p>{/if}
@@ -488,10 +584,32 @@
     border-color: var(--border-brand-faint);
     box-shadow: var(--shadow-focus);
   }
+  .add__ta {
+    padding: var(--sp-2) var(--sp-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-sm);
+    background: var(--bg-raised-2);
+    color: var(--text-primary);
+    font: var(--fw-regular) var(--fs-body-sm) / 1.4 var(--font-mono);
+    outline: none;
+    resize: vertical;
+  }
+  .add__ta:focus-visible {
+    border-color: var(--border-brand-faint);
+    box-shadow: var(--shadow-focus);
+  }
   .add__btns {
     display: flex;
     gap: var(--sp-2);
     margin-top: var(--sp-2);
+  }
+  .warn {
+    color: var(--warn, var(--danger));
+  }
+  .badge--secret {
+    background: var(--bg-raised-2);
+    color: var(--text-muted);
+    border-color: var(--border-brand-faint);
   }
   .conn__glyph {
     font-size: var(--fs-body);

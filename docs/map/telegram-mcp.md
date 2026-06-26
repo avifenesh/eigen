@@ -62,7 +62,8 @@
 ### internal/mcp/load.go
 - **Role:** The config loader + tool adapter — reads `mcp.json`, probes servers for schemas, and turns each tool into a lazily-connected Eigen `tool.Definition`.
 - **Key symbols:**
-  - `serverConfig` — one `mcp.json` entry: `Name`, `Command`, `Env`, `Description`, `Tools` allowlist, `ExcludeTools`, `Disabled`, plus remote fields `URL`, `Type` (`http`/`sse`/`streamable-http`), `Headers` (`http_headers`), `BearerTokenEnv` (`bearer_token_env_var`, static-creds path).
+  - `serverConfig` — one `mcp.json` entry: `Name`, `Command`, `Env`, `Description`, `Tools` allowlist, `ExcludeTools`, `Disabled`, `SecretEnvKeys` (`secret_env_keys` — env vars whose values live in the keychain), plus remote fields `URL`, `Type` (`http`/`sse`/`streamable-http`), `Headers` (`http_headers`), `BearerTokenEnv` (`bearer_token_env_var`, static-creds path).
+  - `serverEnv` / `serverEnvWithSecrets(sc)` — merge configured env onto os.Environ; the latter also folds in keychain secret values (stored secret wins over stale plaintext).
   - `mcpConfig` — `{ servers: [...] }`.
   - `Handle` — interface (`Close() error`) for a per-session MCP resource returned to callers.
   - `LoadTools(ctx, path)` — reads `mcp.json` (missing file is fine), applies `withBuiltinServers`, probes each enabled server once for schemas (stdio OR remote — same probe→list→wrap path), derives a Level-0 group "gist", returns `[]tool.Definition` + `[]Handle` (lazy clients) + non-fatal `errs`.
@@ -83,16 +84,21 @@
 - **Depends on:** `internal/tool` (`tool.Definition`, `tool.Result`); same-package `Connect`/`ConnectHTTP`/`session`/`withBuiltinServers`.
 - **Used by / entrypoint:** `LoadTools` called from `build.go` and `main.go` (the agent's tool-layer assembly). Returned `Handle`s stored as `mcpClients` and closed at session end.
 
+### internal/mcp/secret.go
+- **Role:** The MCP env-secret store — keeps a stdio server's secret env VALUES (API keys) in the OS keychain (`go-keyring`, service `eigen-mcp-env`, keyed by server name) instead of plaintext mcp.json. (Lives in mcp, not connector, because connector imports mcp — a shared keychain helper there would cycle.)
+- **Key symbols:** `SecretsAvailable()` (keyring probe — gates the GUI's "mark secret" affordance), `serverSecrets(name)` (load at connect), `setServerSecrets`/`deleteServerSecrets`.
+- **Used by / entrypoint:** `load.go:serverEnvWithSecrets` (merges secrets into env at connect), `config.go` (SaveServer/RemoveServer route + clean up secrets).
+
 ### internal/mcp/config.go
-- **Role:** The typed, schema-aware `mcp.json` editor (stdio AND remote) the GUI/CLI use to add/edit/enable/remove servers without hand-editing JSON. The plugin layer manipulates the same file as raw maps for bundle wiring; this is the user-facing path.
+- **Role:** The typed, schema-aware `mcp.json` editor (stdio AND remote) the GUI/CLI use to add/edit/enable/remove servers without hand-editing JSON. Routes secret env to the keychain (values never touch the file). The plugin layer manipulates the same file as raw maps for bundle wiring; this is the user-facing path.
 - **Key symbols:**
-  - `ServerEntry` — the public view of a server (with a `Remote` flag), `toEntry`/`toConfig` converters.
+  - `ServerEntry` — the public view of a server (with a `Remote` flag + `SecretEnvKeys` names; write-only `SecretEnv` values on save), `toEntry`/`toConfig` converters.
   - `UserConfigPath()` — `~/.eigen/mcp.json` (the GUI/connector edit target; project-local `.eigen/mcp.json` is a CLI-cwd concern, not editable from the desktop).
   - `readConfig`/`writeConfig` — load (missing → empty) / atomic write (0600, temp+rename).
   - `ListServers(path)` — every configured server (NOT auto-built-ins), name-sorted.
   - `validateEntry` — must have a name and EITHER a remote url OR a stdio command (not both/neither).
-  - `SaveServer` (add/replace by name) / `RemoveServer` / `SetServerDisabled`.
-- **Depends on:** stdlib only (same package's `serverConfig`/`isRemoteServer`).
+  - `SaveServer` (add/replace by name; SecretEnv → keychain, merged with stored, key names recorded in `secret_env_keys`) / `RemoveServer` (also deletes keychain secrets) / `SetServerDisabled`; `sortedKeys` helper.
+- **Depends on:** `go-keyring` (via secret.go); same package's `serverConfig`/`isRemoteServer`.
 - **Used by / entrypoint:** `internal/gui` (`connectors.go`, `wiring.go`).
 
 ### internal/mcp/builtin.go

@@ -429,6 +429,8 @@ export type MCPServerDTO = {
   disabled: boolean;
   remote: boolean;
   envPairs?: string[]; // KEY=VALUE lines
+  secretEnvKeys?: string[]; // env vars stored in the OS keychain (names only)
+  secretEnvPairs?: string[]; // write-only: KEY=VALUE secrets → keychain on save
 };
 export type MCPServersDTO = { servers: MCPServerDTO[] };
 

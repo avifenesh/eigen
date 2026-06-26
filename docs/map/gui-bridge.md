@@ -189,9 +189,9 @@
 
 ### internal/gui/wiring.go
 - **Role:** The full `mcp.json` server editor (stdio AND remote) so MCP servers are managed in the GUI, not by hand-editing JSON. (Connectors get the richer OAuth surface above; this is the general server list.)
-- **Key symbols:** `MCPServerDTO`/`MCPServersDTO` (with `EnvPairs` as `KEY=VALUE` lines + a `Remote` flag), `entryToDTO`/`dtoToEntry`; bound `MCPServers()` / `SaveMCPServer(d)` / `RemoveMCPServer(name)` / `SetMCPServerDisabled(name, disabled)`.
-- **Depends on:** `internal/mcp` (the config editor).
-- **Used by / entrypoint:** the Connectors view (local-server section).
+- **Key symbols:** `MCPServerDTO`/`MCPServersDTO` (`EnvPairs` KEY=VALUE lines, `Remote` flag, `SecretEnvKeys` names + write-only `SecretEnvPairs`), `entryToDTO`/`dtoToEntry`/`parsePairs`; bound `MCPServers()` / `SaveMCPServer(d)` / `RemoveMCPServer(name)` / `SetMCPServerDisabled(name, disabled)` / `MCPSecretsAvailable()` (gates the GUI's secret affordance).
+- **Depends on:** `internal/mcp` (the config editor + keychain secret store).
+- **Used by / entrypoint:** the Connectors view (local-server section + add-server form).
 
 ### internal/gui/crons.go
 - **Role:** Scheduled-work bridge; surfaces systemd `--user` timers + the user's crontab via shelling out, and timer control verbs.

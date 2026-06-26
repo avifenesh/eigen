@@ -161,6 +161,7 @@ export const Bridge = {
   RemoveMCPServer: (name: string): Promise<boolean> => B.RemoveMCPServer(name),
   SetMCPServerDisabled: (name: string, disabled: boolean): Promise<boolean> =>
     B.SetMCPServerDisabled(name, disabled),
+  MCPSecretsAvailable: (): Promise<boolean> => B.MCPSecretsAvailable(),
   // proactive feed
   Feed: (): Promise<FeedDTO | null> => B.Feed(),
   // per-project feed accessor — reserved for a future project drill-in view (not dead code)

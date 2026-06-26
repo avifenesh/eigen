@@ -28,36 +28,46 @@ type ServerEntry struct {
 	Disabled    bool              `json:"disabled"`
 	// Remote is true when this entry is a remote (HTTP) server rather than stdio.
 	Remote bool `json:"remote"`
+	// SecretEnvKeys names env vars whose VALUES are kept in the OS keychain, not
+	// in mcp.json. Read-back only carries the key NAMES (values never leave the
+	// keychain).
+	SecretEnvKeys []string `json:"secretEnvKeys,omitempty"`
+	// SecretEnv is WRITE-ONLY input on SaveServer: key→value pairs to store in the
+	// keychain (their keys are recorded in SecretEnvKeys, values stripped from the
+	// file). Always empty on read-back.
+	SecretEnv map[string]string `json:"secretEnv,omitempty"`
 }
 
 func (sc serverConfig) toEntry() ServerEntry {
 	return ServerEntry{
-		Name:         sc.Name,
-		Command:      sc.Command,
-		Env:          sc.Env,
-		URL:          sc.URL,
-		Type:         sc.Type,
-		Headers:      sc.Headers,
-		Description:  sc.Description,
-		Tools:        sc.Tools,
-		ExcludeTools: sc.ExcludeTools,
-		Disabled:     sc.Disabled,
-		Remote:       isRemoteServer(sc),
+		Name:          sc.Name,
+		Command:       sc.Command,
+		Env:           sc.Env,
+		URL:           sc.URL,
+		Type:          sc.Type,
+		Headers:       sc.Headers,
+		Description:   sc.Description,
+		Tools:         sc.Tools,
+		ExcludeTools:  sc.ExcludeTools,
+		Disabled:      sc.Disabled,
+		Remote:        isRemoteServer(sc),
+		SecretEnvKeys: sc.SecretEnvKeys,
 	}
 }
 
 func (e ServerEntry) toConfig() serverConfig {
 	return serverConfig{
-		Name:         strings.TrimSpace(e.Name),
-		Command:      e.Command,
-		Env:          e.Env,
-		URL:          strings.TrimSpace(e.URL),
-		Type:         strings.TrimSpace(e.Type),
-		Headers:      e.Headers,
-		Description:  e.Description,
-		Tools:        e.Tools,
-		ExcludeTools: e.ExcludeTools,
-		Disabled:     e.Disabled,
+		Name:          strings.TrimSpace(e.Name),
+		Command:       e.Command,
+		Env:           e.Env,
+		URL:           strings.TrimSpace(e.URL),
+		Type:          strings.TrimSpace(e.Type),
+		Headers:       e.Headers,
+		Description:   e.Description,
+		Tools:         e.Tools,
+		ExcludeTools:  e.ExcludeTools,
+		Disabled:      e.Disabled,
+		SecretEnvKeys: e.SecretEnvKeys,
 	}
 }
 
@@ -136,7 +146,9 @@ func validateEntry(e ServerEntry) error {
 }
 
 // SaveServer adds or replaces (by name, case-insensitive) one server entry,
-// validating it first. Returns an error for a malformed entry.
+// validating it first. Any SecretEnv values are written to the OS keychain (not
+// the file) and their key names recorded in secret_env_keys; the merged set of
+// secret keys is preserved so re-saving without re-supplying a value keeps it.
 func SaveServer(path string, e ServerEntry) error {
 	if err := validateEntry(e); err != nil {
 		return err
@@ -146,6 +158,34 @@ func SaveServer(path string, e ServerEntry) error {
 		return err
 	}
 	sc := e.toConfig()
+
+	// Route secret env to the keychain. Merge new values over any already stored
+	// for this server (so editing one secret doesn't wipe the others), and union
+	// the recorded key names.
+	if len(e.SecretEnv) > 0 {
+		stored := serverSecrets(sc.Name)
+		if stored == nil {
+			stored = map[string]string{}
+		}
+		keyset := map[string]bool{}
+		for _, k := range sc.SecretEnvKeys {
+			keyset[k] = true
+		}
+		for k, v := range e.SecretEnv {
+			stored[k] = v
+			keyset[k] = true
+			// A secret key must never also live in the plaintext env.
+			delete(sc.Env, k)
+		}
+		if len(sc.Env) == 0 {
+			sc.Env = nil
+		}
+		if err := setServerSecrets(sc.Name, stored); err != nil {
+			return fmt.Errorf("store secret env for %q in keychain: %w", sc.Name, err)
+		}
+		sc.SecretEnvKeys = sortedKeys(keyset)
+	}
+
 	replaced := false
 	for i, ex := range cfg.Servers {
 		if strings.EqualFold(ex.Name, sc.Name) {
@@ -158,6 +198,16 @@ func SaveServer(path string, e ServerEntry) error {
 		cfg.Servers = append(cfg.Servers, sc)
 	}
 	return writeConfig(path, cfg)
+}
+
+// sortedKeys returns the map keys sorted (stable secret_env_keys ordering).
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // RemoveServer deletes a server by name. Returns whether one was removed.
@@ -179,6 +229,8 @@ func RemoveServer(path, name string) (bool, error) {
 		return false, nil
 	}
 	cfg.Servers = kept
+	// Drop any keychain-stored secrets for this server (no orphaned credentials).
+	deleteServerSecrets(name)
 	return true, writeConfig(path, cfg)
 }
 
