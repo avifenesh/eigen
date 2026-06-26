@@ -54,6 +54,35 @@ type fallbackProvider struct {
 	frozenUntil time.Time // primary is skipped until this instant (zero = live)
 }
 
+// FallbackNotice describes a primary→fallback failover for a single turn.
+type FallbackNotice struct {
+	PrimaryID, FallbackID string
+	Cause                 error
+}
+
+// fallbackNotifierKey carries a per-CALL failover callback through the context,
+// rather than storing it on the (process-shared) provider. Providers are shared
+// across concurrent sessions/subagents, so a notifier set on the provider would
+// be overwritten between sessions and route a notice to the wrong one. A context
+// value is per-call and thread-safe — each turn's ctx carries its own sink.
+type fallbackNotifierKey struct{}
+
+// WithFallbackNotifier returns a ctx that, when a fallbackProvider fails over
+// during a call made with it, invokes fn with the failover detail. The agent
+// wraps each turn's ctx so a fallback is SURFACED (with the cause), never a
+// silent bypass.
+func WithFallbackNotifier(ctx context.Context, fn func(FallbackNotice)) context.Context {
+	return context.WithValue(ctx, fallbackNotifierKey{}, fn)
+}
+
+// notifyFallback fires the context's failover callback (if any). Per-call, so no
+// shared state and no lock.
+func (f *fallbackProvider) notifyFallback(ctx context.Context, cause error) {
+	if fn, ok := ctx.Value(fallbackNotifierKey{}).(func(FallbackNotice)); ok && fn != nil {
+		fn(FallbackNotice{PrimaryID: f.primary.ModelID(), FallbackID: f.fallback.ModelID(), Cause: cause})
+	}
+}
+
 // NewFallback wraps a primary provider with a fallback. A nil side collapses to
 // the other (so callers don't special-case "only one available"); nil/nil → nil.
 func NewFallback(primary, fallback Provider) Provider {
@@ -73,7 +102,12 @@ func (f *fallbackProvider) Name() string    { return f.primary.Name() }
 func (f *fallbackProvider) ModelID() string { return f.primary.ModelID() }
 
 func (f *fallbackProvider) frozen() bool {
-	if !f.frozenUntil.IsZero() && time.Now().Before(f.frozenUntil) {
+	// Lock the read: frozenUntil is written under f.mu in freezeForToday, and
+	// frozen() is called concurrently from Complete/Stream across sessions.
+	f.mu.Lock()
+	until := f.frozenUntil
+	f.mu.Unlock()
+	if !until.IsZero() && time.Now().Before(until) {
 		return true
 	}
 	// Also honor the PROCESS-WIDE freeze: a quota 429 on this model's provider
@@ -108,11 +142,119 @@ func (f *fallbackProvider) Complete(ctx context.Context, req Request) (*Response
 		if ctx.Err() != nil {
 			return nil, err
 		}
+		if f.fallback == nil {
+			return nil, err // nothing to fall to — surface the real cause
+		}
+		f.notifyFallback(ctx, err) // SURFACE the failover + cause; never silent
 	}
 	if f.fallback == nil {
 		return nil, errors.New("fallback provider unavailable")
 	}
 	return f.fallback.Complete(ctx, req)
+}
+
+// Stream forwards to the primary's streaming path (falling back on a quota
+// freeze / error), so a wrapped reasoning model still streams its text +
+// reasoning deltas. Without this method the wrapper is not a Streamer, so the
+// agent silently took the non-streaming Complete path: no live text, and no
+// reasoning deltas at all — the model's "thoughts" never reached the UI. A side
+// that can't stream (only Complete) is driven via streamViaComplete so the sink
+// still fires once with the final text.
+func (f *fallbackProvider) Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error) {
+	if !f.frozen() {
+		resp, err := streamAny(ctx, f.primary, req, sink)
+		if err == nil {
+			return resp, nil
+		}
+		if IsQuotaError(err) {
+			f.freezeForToday()
+		}
+		if ctx.Err() != nil {
+			return nil, err
+		}
+		if f.fallback == nil {
+			return nil, err
+		}
+		f.notifyFallback(ctx, err) // SURFACE the failover + cause; never silent
+	}
+	if f.fallback == nil {
+		return nil, errors.New("fallback provider unavailable")
+	}
+	return streamAny(ctx, f.fallback, req, sink)
+}
+
+// streamAny streams through p when it implements Streamer, else runs Complete
+// and emits the final text as a single chunk so callers relying on the sink
+// still see output.
+func streamAny(ctx context.Context, p Provider, req Request, sink StreamSink) (*Response, error) {
+	if sm, ok := p.(Streamer); ok {
+		return sm.Stream(ctx, req, sink)
+	}
+	resp, err := p.Complete(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if sink != nil && resp != nil && resp.Text != "" {
+		sink(StreamChunk{Kind: ChunkText, Text: resp.Text})
+	}
+	return resp, nil
+}
+
+// activeProvider returns the side capability calls should target: the primary
+// unless it is frozen (quota), then the fallback. Keeps runtime toggles
+// (effort/search/fast) pointed at whichever provider actually serves turns.
+func (f *fallbackProvider) activeProvider() Provider {
+	if f.frozen() && f.fallback != nil {
+		return f.fallback
+	}
+	return f.primary
+}
+
+// SetEffort/Effort/SetSearch/SearchMode/SetFast/FastMode forward the optional
+// runtime-capability interfaces to the active provider, so a wrapped reasoning
+// model still exposes its effort/search/fast controls (the daemon type-asserts
+// the live provider for these; an unwrapped assertion on the bare wrapper failed
+// → the GUI showed no effort dropdown and SetEffort was a no-op).
+func (f *fallbackProvider) SetEffort(level string) bool {
+	if es, ok := f.activeProvider().(EffortSetter); ok {
+		return es.SetEffort(level)
+	}
+	return false
+}
+
+func (f *fallbackProvider) Effort() string {
+	if es, ok := f.activeProvider().(EffortSetter); ok {
+		return es.Effort()
+	}
+	return ""
+}
+
+func (f *fallbackProvider) SetSearch(mode string) bool {
+	if sr, ok := f.activeProvider().(Searcher); ok {
+		return sr.SetSearch(mode)
+	}
+	return false
+}
+
+func (f *fallbackProvider) SearchMode() string {
+	if sr, ok := f.activeProvider().(Searcher); ok {
+		return sr.SearchMode()
+	}
+	return ""
+}
+
+func (f *fallbackProvider) SetFast(on bool) bool {
+	if fm, ok := f.activeProvider().(FastModer); ok {
+		return fm.SetFast(on)
+	}
+	return false
+}
+
+func (f *fallbackProvider) FastMode() bool {
+	if fm, ok := f.activeProvider().(FastModer); ok {
+		return fm.FastMode()
+	}
+	return false
 }
 
 func nextMidnight() time.Time {
