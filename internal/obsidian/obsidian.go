@@ -72,8 +72,8 @@ func Available() bool {
 
 // Note is one markdown note in the vault.
 type Note struct {
-	Path     string    `json:"path"`     // vault-relative path (the note id)
-	Title    string    `json:"title"`    // basename without .md
+	Path     string    `json:"path"`  // vault-relative path (the note id)
+	Title    string    `json:"title"` // basename without .md
 	Modified time.Time `json:"modified"`
 	Size     int64     `json:"size"`
 }

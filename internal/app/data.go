@@ -148,8 +148,13 @@ func (d *Data) reloadSessions() {
 
 // LoadEmpty returns deterministic, side-effect-free app data for smoke tests
 // and other callers that need to exercise the shell without reading user state.
+// FeedFresh is true so Init() does NOT kick a background feed.Scan — that scan
+// shells out (e.g. `gh` for the GitHub feed) and, when unauthenticated, injects
+// a "sign in" card at the top of the home feed. In a smoke/PTY run that card
+// would sit under the cursor and turn a stray Enter into an ActionOpenChat,
+// making the shell exit non-deterministically. Empty data must stay empty.
 func LoadEmpty() *Data {
-	return &Data{Config: config.Config{}, Skills: skill.Discover()}
+	return &Data{Config: config.Config{}, Skills: skill.Discover(), FeedFresh: true}
 }
 
 // Load gathers the app's data. Failures degrade (a page shows "unavailable")

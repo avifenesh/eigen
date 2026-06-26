@@ -45,8 +45,8 @@ type VoiceEventDTO struct {
 	// Phase is one of: idle | listening | transcribing | thinking | speaking |
 	// error | off. The frontend maps it to the composer's mic affordance.
 	Phase string `json:"phase"`
-	Text  string `json:"text,omitempty"`  // transcript (listening done) or error message
-	Mode  bool   `json:"mode,omitempty"`  // true while voice MODE (hands-free loop) is active
+	Text  string `json:"text,omitempty"` // transcript (listening done) or error message
+	Mode  bool   `json:"mode,omitempty"` // true while voice MODE (hands-free loop) is active
 }
 
 // voiceCtl is the bridge's voice controller: lazily-detected STT/TTS plus the

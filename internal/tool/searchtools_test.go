@@ -123,10 +123,10 @@ func TestFuzzyKeywordMatching(t *testing.T) {
 	cases := []struct {
 		query, want string
 	}{
-		{"new tab", "chrome_new_tab"},       // multi-word, none-verbatim ("new"+"tab")
+		{"new tab", "chrome_new_tab"},                    // multi-word, none-verbatim ("new"+"tab")
 		{"open the page article", "chrome_read_article"}, // stopword "the" dropped
-		{"read page", "chrome_read_article"}, // matches the page-read capability desc
-		{"tabs", "chrome_new_tab"},           // plural reaches singular field
+		{"read page", "chrome_read_article"},             // matches the page-read capability desc
+		{"tabs", "chrome_new_tab"},                       // plural reaches singular field
 	}
 	for _, c := range cases {
 		var unlocked []string

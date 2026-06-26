@@ -20,12 +20,12 @@ const cliTimeout = 20 * time.Second
 
 // Reviewer is one registered repo in revuto (mirrors `revuto list --json`).
 type Reviewer struct {
-	Repo           string            `json:"repo"`
-	Paused         bool              `json:"paused"`
-	AutoActivate   bool              `json:"autoActivate"`
-	BotLogin       string            `json:"botLogin,omitempty"`
-	Schedules      map[string]string `json:"schedules,omitempty"`
-	AuthorAllowlist []string         `json:"authorAllowlist,omitempty"`
+	Repo            string            `json:"repo"`
+	Paused          bool              `json:"paused"`
+	AutoActivate    bool              `json:"autoActivate"`
+	BotLogin        string            `json:"botLogin,omitempty"`
+	Schedules       map[string]string `json:"schedules,omitempty"`
+	AuthorAllowlist []string          `json:"authorAllowlist,omitempty"`
 }
 
 // Available reports whether the `revuto` CLI is installed.

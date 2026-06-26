@@ -23,20 +23,20 @@ import (
 // unchanged; only these shorthands need translating. Kept small + explicit so
 // the chain config reads like the user wrote it.
 var chainAlias = map[string]string{
-	"opus":      "us.anthropic.claude-opus-4-8",
-	"opus-4.8":  "us.anthropic.claude-opus-4-8",
-	"opus-4.1":  "claude-opus-4-1-20250805",
-	"sonnet":    "us.anthropic.claude-sonnet-4-6",
+	"opus":       "us.anthropic.claude-opus-4-8",
+	"opus-4.8":   "us.anthropic.claude-opus-4-8",
+	"opus-4.1":   "claude-opus-4-1-20250805",
+	"sonnet":     "us.anthropic.claude-sonnet-4-6",
 	"sonnet-4.6": "us.anthropic.claude-sonnet-4-6",
 	"sonnet-4.5": "claude-sonnet-4-5-20250929",
-	"haiku":     "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-	"gpt-5.5":   "openai.gpt-5.5", // bedrock/mantle by default (credentialed via Bedrock)
-	"gpt-5.4":   "openai.gpt-5.4",
-	"gpt-5":     "openai.gpt-5",
-	"glm":       "glm-5.2",
-	"composer":  "grok-composer-2.5-fast",
-	"grok":      "grok-build",
-	"grok-code": "grok-code-fast-1",
+	"haiku":      "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+	"gpt-5.5":    "openai.gpt-5.5", // bedrock/mantle by default (credentialed via Bedrock)
+	"gpt-5.4":    "openai.gpt-5.4",
+	"gpt-5":      "openai.gpt-5",
+	"glm":        "glm-5.2",
+	"composer":   "grok-composer-2.5-fast",
+	"grok":       "grok-build",
+	"grok-code":  "grok-code-fast-1",
 }
 
 // ResolveChainID maps a friendly chain entry to a catalog model id. Order:

@@ -102,10 +102,10 @@ func (b *Bridge) SetConfig(key, value string) (string, error) {
 
 // RuleChainDTO is one role's fallback chain for the editor.
 type RuleChainDTO struct {
-	Role   string   `json:"role"`       // "primary" | "explore" | … | "judge"
-	Desc   string   `json:"desc"`       // what this role drives
-	Chain  []string `json:"chain"`      // ordered model names (friendly shorthands ok)
-	Custom bool     `json:"custom"`     // true = user-configured; false = built-in default
+	Role   string   `json:"role"`   // "primary" | "explore" | … | "judge"
+	Desc   string   `json:"desc"`   // what this role drives
+	Chain  []string `json:"chain"`  // ordered model names (friendly shorthands ok)
+	Custom bool     `json:"custom"` // true = user-configured; false = built-in default
 }
 
 // RuleChainsDTO is the full per-role chain snapshot for the editor.

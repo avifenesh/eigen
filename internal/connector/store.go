@@ -16,15 +16,15 @@ import (
 // the (dynamically registered) client credentials, and the current OAuth token.
 // One record per MCP server name.
 type record struct {
-	Name         string         `json:"name"`
-	ServerURL    string         `json:"server_url"`
-	AuthURL      string         `json:"auth_url"`
-	TokenURL     string         `json:"token_url"`
-	ClientID     string         `json:"client_id"`
-	ClientSecret string         `json:"client_secret,omitempty"`
-	Scopes       []string       `json:"scopes,omitempty"`
-	Token        *oauth2.Token  `json:"token,omitempty"`
-	Connected    time.Time      `json:"connected,omitempty"`
+	Name         string        `json:"name"`
+	ServerURL    string        `json:"server_url"`
+	AuthURL      string        `json:"auth_url"`
+	TokenURL     string        `json:"token_url"`
+	ClientID     string        `json:"client_id"`
+	ClientSecret string        `json:"client_secret,omitempty"`
+	Scopes       []string      `json:"scopes,omitempty"`
+	Token        *oauth2.Token `json:"token,omitempty"`
+	Connected    time.Time     `json:"connected,omitempty"`
 }
 
 // Status is a connector's connection state for the GUI/CLI.

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/avifenesh/eigen/internal/llm"
@@ -96,15 +97,22 @@ func TestSubAgentEffortDoesNotMutateParentProvider(t *testing.T) {
 		shared := &effortProv{id: "us.anthropic.claude-opus-4-8", effort: "max"}
 		a := &Agent{Provider: shared, Perm: PermAuto}
 
-		sub, _ := a.subAgent(context.Background(), "trivial cleanup", SubtaskOpts{Difficulty: "trivial"})
+		sub, where := a.subAgent(context.Background(), "trivial cleanup", SubtaskOpts{Difficulty: "trivial"})
 
+		// The core invariant, true in EVERY environment: the shared parent provider
+		// is never mutated by the subtask.
 		if shared.effort != "max" {
 			t.Fatalf("parent/shared provider effort was mutated by the subtask: got %q, want %q", shared.effort, "max")
 		}
-		// The subtask must not be holding the shared instance when it disciplines
-		// effort — otherwise the cap would have bled into the parent.
-		if sub.Provider == llm.Provider(shared) {
-			t.Fatal("subtask kept the shared provider; effort discipline would bleed into the parent")
+		// Identity check only when discipline actually RAN. Discipline needs an
+		// own-provider build (llm.New), which requires model credentials; without
+		// them (e.g. CI) subAgent reports "...effort skipped..." and SAFELY keeps
+		// the shared instance read-only — keeping it is fine precisely because no
+		// SetEffort was called. So only require a non-shared provider when the
+		// build succeeded and discipline could have bled.
+		disciplineSkipped := strings.Contains(where, "effort skipped")
+		if !disciplineSkipped && sub.Provider == llm.Provider(shared) {
+			t.Fatal("subtask kept the shared provider while disciplining effort; the cap would bleed into the parent")
 		}
 	})
 

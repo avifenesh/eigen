@@ -48,8 +48,8 @@ func (a *Auth) Connect(ctx context.Context) error {
 	verifier := oauth2.GenerateVerifier()
 	state := oauth2.GenerateVerifier()
 	authURL := cfg.AuthCodeURL(state,
-		oauth2.AccessTypeOffline,          // request a refresh token
-		oauth2.ApprovalForce,              // force consent so a refresh token is re-issued
+		oauth2.AccessTypeOffline, // request a refresh token
+		oauth2.ApprovalForce,     // force consent so a refresh token is re-issued
 		oauth2.S256ChallengeOption(verifier),
 	)
 	if err := a.openFn(authURL); err != nil {

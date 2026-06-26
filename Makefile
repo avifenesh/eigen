@@ -1,5 +1,9 @@
 EIGEN := bin/eigen
-PKGS := ./...
+# All packages EXCEPT internal/gui: the GUI package imports Wails, which pulls in
+# webkitgtk via cgo. The default gate (CI's Go-gate job) builds webkit-free, so
+# it skips internal/gui — that package is built/vetted/tested under the wails +
+# webkit2_41 tags by the separate gui-phase gate (scripts/verify-gui-phase.sh).
+PKGS := $(shell go list ./... | grep -v '/internal/gui')
 
 .PHONY: build gui-run gui-smoke gui-desktop vet test race fmt gate harness perf perf-soak perf-bench stats clean
 

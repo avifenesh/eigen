@@ -16,16 +16,16 @@ import (
 
 // ServerEntry is the public view of one mcp.json server, for editor UIs.
 type ServerEntry struct {
-	Name        string            `json:"name"`
-	Command     []string          `json:"command,omitempty"`
-	Env         map[string]string `json:"env,omitempty"`
-	URL         string            `json:"url,omitempty"`
-	Type        string            `json:"type,omitempty"`
-	Headers     map[string]string `json:"headers,omitempty"`
-	Description string            `json:"description,omitempty"`
-	Tools       []string          `json:"tools,omitempty"`
-	ExcludeTools []string         `json:"excludeTools,omitempty"`
-	Disabled    bool              `json:"disabled"`
+	Name         string            `json:"name"`
+	Command      []string          `json:"command,omitempty"`
+	Env          map[string]string `json:"env,omitempty"`
+	URL          string            `json:"url,omitempty"`
+	Type         string            `json:"type,omitempty"`
+	Headers      map[string]string `json:"headers,omitempty"`
+	Description  string            `json:"description,omitempty"`
+	Tools        []string          `json:"tools,omitempty"`
+	ExcludeTools []string          `json:"excludeTools,omitempty"`
+	Disabled     bool              `json:"disabled"`
 	// Remote is true when this entry is a remote (HTTP) server rather than stdio.
 	Remote bool `json:"remote"`
 	// SecretEnvKeys names env vars whose VALUES are kept in the OS keychain, not

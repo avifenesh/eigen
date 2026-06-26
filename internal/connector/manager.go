@@ -29,8 +29,8 @@ type Manager struct {
 	openFn func(url string) error // browser opener (overridable in tests)
 
 	mu      sync.Mutex
-	loaded  bool                         // cache has been read from the store
-	cache   map[string]record            // name → record (loaded lazily)
+	loaded  bool                          // cache has been read from the store
+	cache   map[string]record             // name → record (loaded lazily)
 	sources map[string]oauth2.TokenSource // name → live refreshing token source
 }
 

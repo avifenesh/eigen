@@ -29,19 +29,19 @@ func newFakeAuthServer(t *testing.T) *fakeAuthServer {
 
 	mux.HandleFunc("/.well-known/oauth-protected-resource", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{
-			"resource":               base + "/mcp",
-			"authorization_servers":  []string{base},
-			"scopes_supported":       []string{"read", "write"},
+			"resource":              base + "/mcp",
+			"authorization_servers": []string{base},
+			"scopes_supported":      []string{"read", "write"},
 		})
 	})
 	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{
-			"issuer":                                base,
-			"authorization_endpoint":                base + "/authorize",
-			"token_endpoint":                        base + "/token",
-			"registration_endpoint":                 base + "/register",
-			"code_challenge_methods_supported":      []string{"S256"},
-			"scopes_supported":                      []string{"read", "write"},
+			"issuer":                           base,
+			"authorization_endpoint":           base + "/authorize",
+			"token_endpoint":                   base + "/token",
+			"registration_endpoint":            base + "/register",
+			"code_challenge_methods_supported": []string{"S256"},
+			"scopes_supported":                 []string{"read", "write"},
 		})
 	})
 	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {

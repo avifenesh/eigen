@@ -74,24 +74,24 @@ func (l BoardLaneDTO) laneKey() string {
 // KanbanCardDTO is one item on the kanban (a PR, issue, or local git loose-end).
 type KanbanCardDTO struct {
 	Key    string `json:"key"`
-	Repo   string `json:"repo"`           // owner/name or local project name (the disambiguator)
+	Repo   string `json:"repo"` // owner/name or local project name (the disambiguator)
 	Title  string `json:"title"`
 	Number int    `json:"number,omitempty"`
 	URL    string `json:"url,omitempty"`
-	Kind   string `json:"kind"`           // "pr" | "issue" | "git"
+	Kind   string `json:"kind"` // "pr" | "issue" | "git"
 	// Derived signals for badges.
-	Review    string `json:"review,omitempty"`    // "approved" | "changes" | "pending"
-	Draft     bool   `json:"draft,omitempty"`
-	NeedsYou  bool   `json:"needsYou,omitempty"`  // review-requested / changes-requested / assigned
-	Session   bool   `json:"session,omitempty"`   // an eigen session is active on this repo
-	AgeHours  int    `json:"ageHours,omitempty"`  // since last activity (reddens past ~48h)
-	Task      string `json:"task,omitempty"`      // for local git cards (Start →)
-	Dir       string `json:"dir,omitempty"`       // local project dir (git cards / session start)
+	Review   string `json:"review,omitempty"` // "approved" | "changes" | "pending"
+	Draft    bool   `json:"draft,omitempty"`
+	NeedsYou bool   `json:"needsYou,omitempty"` // review-requested / changes-requested / assigned
+	Session  bool   `json:"session,omitempty"`  // an eigen session is active on this repo
+	AgeHours int    `json:"ageHours,omitempty"` // since last activity (reddens past ~48h)
+	Task     string `json:"task,omitempty"`     // for local git cards (Start →)
+	Dir      string `json:"dir,omitempty"`      // local project dir (git cards / session start)
 }
 
 // KanbanColumnDTO is one column with its ordered cards.
 type KanbanColumnDTO struct {
-	ID    string          `json:"id"`    // needs-you | todo | in-progress | in-review | done
+	ID    string          `json:"id"` // needs-you | todo | in-progress | in-review | done
 	Title string          `json:"title"`
 	Cards []KanbanCardDTO `json:"cards"`
 }
@@ -122,8 +122,8 @@ func (b *Bridge) Kanban() (*KanbanDTO, error) {
 
 	// Active-session repos: a working/approval session rooted in a project dir →
 	// that repo has an agent on it (badge + nudges In Progress).
-	sessionDirs := map[string]bool{}    // dir → has an active session
-	approvalDirs := map[string]bool{}   // dir → session awaiting approval (Needs you)
+	sessionDirs := map[string]bool{}  // dir → has an active session
+	approvalDirs := map[string]bool{} // dir → session awaiting approval (Needs you)
 	if sess, err := b.Sessions(); err == nil {
 		for _, s := range sess {
 			if s.Dir == "" {
@@ -408,8 +408,8 @@ func boardPinnedSet() map[string]bool {
 
 // PinLane / UnpinLane toggle whether a lane stays on the board when idle. key is
 // the lane's dir (local) or owner/name (remote). Persisted to config.
-func (b *Bridge) PinLane(key string) error    { return setLanePinned(key, true) }
-func (b *Bridge) UnpinLane(key string) error  { return setLanePinned(key, false) }
+func (b *Bridge) PinLane(key string) error   { return setLanePinned(key, true) }
+func (b *Bridge) UnpinLane(key string) error { return setLanePinned(key, false) }
 
 func setLanePinned(key string, pinned bool) error {
 	key = strings.TrimSpace(key)

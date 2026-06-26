@@ -79,7 +79,7 @@ type Config struct {
 
 	// Observe enables the structured activity log (~/.eigen/observe/events.jsonl,
 	// metadata only) for long-term learning + debugging. Default on.
-	Observe     *bool `json:"observe,omitempty"`
+	Observe *bool `json:"observe,omitempty"`
 
 	// RuleChains is the per-ROLE model fallback chain: an ordered list of model
 	// names (friendly shorthands ok — opus/glm/composer/…) tried in turn, each

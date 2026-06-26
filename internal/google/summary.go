@@ -15,7 +15,7 @@ import (
 // CalEvent is one upcoming calendar event for the dashboard.
 type CalEvent struct {
 	Summary  string `json:"summary"`
-	Start    string `json:"start"`    // RFC3339 dateTime, or YYYY-MM-DD for all-day
+	Start    string `json:"start"` // RFC3339 dateTime, or YYYY-MM-DD for all-day
 	AllDay   bool   `json:"allDay"`
 	Location string `json:"location"`
 }

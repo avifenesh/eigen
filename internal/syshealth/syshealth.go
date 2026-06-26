@@ -48,12 +48,12 @@ type Health struct {
 // GPU is one accelerator's live stats.
 type GPU struct {
 	Name       string  `json:"name"`
-	UtilPct    float64 `json:"utilPct"`    // compute utilization 0..100
-	MemUsed    uint64  `json:"memUsed"`    // bytes
-	MemTotal   uint64  `json:"memTotal"`   // bytes
+	UtilPct    float64 `json:"utilPct"`  // compute utilization 0..100
+	MemUsed    uint64  `json:"memUsed"`  // bytes
+	MemTotal   uint64  `json:"memTotal"` // bytes
 	MemUsedPct float64 `json:"memUsedPct"`
 	TempC      float64 `json:"tempC"`
-	PowerW     float64 `json:"powerW"`     // current draw, watts (0 when unread)
+	PowerW     float64 `json:"powerW"` // current draw, watts (0 when unread)
 }
 
 // Read collects a machine-health snapshot. Best-effort: unreadable metrics stay
