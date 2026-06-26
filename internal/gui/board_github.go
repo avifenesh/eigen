@@ -162,11 +162,22 @@ func buildGitHubLanes(ctx context.Context) []ghRepoLane {
 		l.Items = append(l.Items, w.item(true, "OPEN"))
 		l.bumpLatest(w.updated)
 	}
-	for _, w := range ghSearchWork(ctx, "issues", append(ownerArgs, "--state", "open")) {
-		l := lane(w.repo)
-		l.OpenIssues++
-		l.Items = append(l.Items, w.item(false, "OPEN"))
-		l.bumpLatest(w.updated)
+	// Issues are scoped to ones that ACTUALLY involve the user (assigned /
+	// authored / mentioned / commented) — an unscoped open-issue search drowns
+	// the Todo column in bot noise (e.g. a repo's hundreds of automated CVE
+	// issues). Dedupe across the two queries by url.
+	seenIssue := map[string]bool{}
+	for _, scope := range [][]string{{"--assignee", "@me"}, {"--author", "@me"}, {"--mentions", "@me"}} {
+		for _, w := range ghSearchWork(ctx, "issues", append(append(ownerArgs, "--state", "open"), scope...)) {
+			if seenIssue[w.url] {
+				continue
+			}
+			seenIssue[w.url] = true
+			l := lane(w.repo)
+			l.OpenIssues++
+			l.Items = append(l.Items, w.item(false, "OPEN"))
+			l.bumpLatest(w.updated)
+		}
 	}
 	// Done: recently merged PRs (capped by the search limit + updated recency).
 	for _, w := range ghSearchWork(ctx, "prs", append(ownerArgs, "--merged", "--limit", itoa(ghDoneLimit))) {
