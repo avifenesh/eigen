@@ -228,6 +228,10 @@
     // intent at send time, not whatever the stream has done by the time the
     // round-trip lands.
     const expectedSteer = store?.running ?? false;
+    // Show the activity indicator immediately — before the RPC round-trip and
+    // the model's first event — so a slow streaming model never looks frozen.
+    // The first real turn event (or done) clears it; clear on error below.
+    store?.markPending();
     try {
       const steered = await Bridge.SteerInput(sessionId, text, images);
       if (steered) {
@@ -243,6 +247,7 @@
       }
       return true;
     } catch (e) {
+      store?.clearPending(); // RPC failed — no turn is coming, drop the indicator
       toasts.error(errText(e));
       return false;
     }
@@ -1087,7 +1092,7 @@
         {/if}
       </div>
 
-      {#if store?.running}
+      {#if store?.working}
         <div class="chat__working">
           <StatusDot state="working" size={7} pulse />
           <!-- While an Interrupt RPC is in flight the indicator reads "stopping…"

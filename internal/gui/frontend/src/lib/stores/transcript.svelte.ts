@@ -62,6 +62,13 @@ export function createTranscript(sessionId: string) {
   let live = $state<TextBlock | null>(null);
   let running = $state(false);
   let truncated = $state(false);
+  // Optimistic "request sent, awaiting the first event" flag. running only flips
+  // true when the FIRST stream event of a turn arrives — but a slow streaming
+  // model (glm/gpt thinking before the first token) can take seconds, leaving a
+  // dead gap where the view shows nothing and the turn looks frozen. The view
+  // sets this the instant it sends; the first real turn event (or done) clears
+  // it, so `working = running || pending` shows the indicator immediately.
+  let pending = $state(false);
   // Bumped whenever an `approval` event arrives, so the view can refetch State
   // (which carries the pending approvals) even though the turn stays "running"
   // while the daemon blocks waiting for the user's decision.
@@ -121,6 +128,7 @@ export function createTranscript(sessionId: string) {
     if (!m.replay && TURN_KINDS.has(m.event.kind)) {
       if (!running) streamedThisTurn = false;
       running = true;
+      pending = false; // a real turn event took over the optimistic flag
     }
     onEvent(m.event, m.replay);
   }
@@ -242,6 +250,7 @@ export function createTranscript(sessionId: string) {
         }
         streamedThisTurn = false;
         running = false;
+        pending = false; // turn over — drop any optimistic indicator
         // Turn over: the view refetches sess.tokens via refreshState(), so the
         // live override is no longer authoritative — clear it.
         liveTokens = 0;
@@ -287,6 +296,21 @@ export function createTranscript(sessionId: string) {
     },
     get running() {
       return running;
+    },
+    // working = a real in-flight turn (running) OR an optimistic just-sent state
+    // (pending) before the first event lands. The view's activity indicator
+    // binds to this so something shows the instant the user sends, even while a
+    // slow streaming model is still thinking before its first token.
+    get working() {
+      return running || pending;
+    },
+    // markPending is called by the view the moment it dispatches a send, so the
+    // indicator appears immediately. Cleared by the first turn event or `done`.
+    markPending() {
+      pending = true;
+    },
+    clearPending() {
+      pending = false;
     },
     get truncated() {
       return truncated;
@@ -336,6 +360,7 @@ export function createTranscript(sessionId: string) {
       history = mapMessages(messages, nextUid).slice(-CAP);
       truncated = messages.length > CAP;
       running = isRunning;
+      pending = false; // seed is authoritative — drop any optimistic flag
       // Reset the reassembly window to "unlatched" (0): the next event seen —
       // whatever seq the live pump is currently at — re-latches the base. (A
       // reconnect MAY restart the pump's seq, but a re-attach to a still-live
