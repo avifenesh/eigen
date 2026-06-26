@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/avifenesh/eigen/internal/obsidian"
@@ -23,6 +24,33 @@ type ObsidianStatusDTO struct {
 func (b *Bridge) ObsidianStatus() (*ObsidianStatusDTO, error) {
 	s := obsidian.CurrentStatus()
 	return &ObsidianStatusDTO{Available: s.Available, Vault: s.Vault}, nil
+}
+
+// ChooseObsidianVault opens a native folder picker and pins the chosen dir as
+// the Obsidian vault (must contain a .obsidian folder). Returns the new vault
+// path, or "" when the user cancelled. Lets the user point eigen at ANY vault.
+func (b *Bridge) ChooseObsidianVault() (string, error) {
+	if b.app == nil {
+		return "", fmt.Errorf("no window")
+	}
+	dlg := b.app.Dialog.OpenFile().
+		CanChooseDirectories(true).
+		CanChooseFiles(false).
+		SetTitle("Choose your Obsidian vault")
+	if win := b.app.Window.Current(); win != nil {
+		dlg = dlg.AttachToWindow(win)
+	}
+	dir, err := dlg.PromptForSingleSelection()
+	if err != nil {
+		return "", err
+	}
+	if dir == "" {
+		return "", nil // cancelled
+	}
+	if err := obsidian.SetVault(dir); err != nil {
+		return "", err
+	}
+	return obsidian.VaultPath(), nil
 }
 
 // RevutoStatusDTO is the revuto connector card state.

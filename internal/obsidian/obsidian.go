@@ -13,14 +13,20 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/avifenesh/eigen/internal/config"
 )
 
-// VaultPath resolves the Obsidian vault directory: $EIGEN_OBSIDIAN_VAULT, else
-// ~/revuto (the user's vault on this machine), else ~/Obsidian. Returns "" only
-// when the home dir is unreadable.
+// VaultPath resolves the Obsidian vault directory: env EIGEN_OBSIDIAN_VAULT →
+// configured obsidian_vault → ~/revuto (the user's vault) → ~/Obsidian. Returns
+// "" only when the home dir is unreadable. Use ANY vault by setting the config
+// (from the Connectors Obsidian card) or the env var.
 func VaultPath() string {
 	if env := strings.TrimSpace(os.Getenv("EIGEN_OBSIDIAN_VAULT")); env != "" {
 		return env
+	}
+	if c := strings.TrimSpace(config.Load().ObsidianVault); c != "" {
+		return c
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -34,6 +40,23 @@ func VaultPath() string {
 	}
 	// Default to ~/revuto even if not yet a vault (the user's known location).
 	return filepath.Join(home, "revuto")
+}
+
+// SetVault persists the chosen vault dir (must be an Obsidian vault — has a
+// .obsidian dir). Empty clears it (back to auto-detect). Returns an error when
+// the dir isn't a vault, so the GUI can reject a bad pick.
+func SetVault(dir string) error {
+	dir = strings.TrimSpace(dir)
+	cfg := config.Load()
+	if dir == "" {
+		cfg.ObsidianVault = ""
+		return config.Save(cfg)
+	}
+	if !isVault(dir) {
+		return fmt.Errorf("%s is not an Obsidian vault (no .obsidian folder)", dir)
+	}
+	cfg.ObsidianVault = dir
+	return config.Save(cfg)
 }
 
 // isVault reports whether dir looks like an Obsidian vault (has a .obsidian dir).

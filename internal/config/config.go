@@ -72,6 +72,11 @@ type Config struct {
 	// directory path; a remote lane by its "owner/name". Toggled from the board.
 	BoardPinned []string `json:"board_pinned,omitempty"`
 
+	// ObsidianVault pins the Obsidian vault directory eigen reads/writes notes
+	// in. Empty = auto-detect (env EIGEN_OBSIDIAN_VAULT → ~/revuto → ~/Obsidian).
+	// Set it (from the Connectors Obsidian card) to use ANY vault you like.
+	ObsidianVault string `json:"obsidian_vault,omitempty"`
+
 	// Observe enables the structured activity log (~/.eigen/observe/events.jsonl,
 	// metadata only) for long-term learning + debugging. Default on.
 	Observe     *bool `json:"observe,omitempty"`

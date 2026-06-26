@@ -209,7 +209,7 @@
 
 ### internal/gui/builtins.go
 - **Role:** Bridge for the non-Google native local connectors — Obsidian (vault notes) + revuto (PR-reviewer daemon). Surfaced as Connectors cards; no OAuth (FS / CLI).
-- **Key symbols:** `ObsidianStatusDTO` + `ObsidianStatus()` (vault available + path); `RevutoStatusDTO` + `RevutoStatus()` (CLI available + reviewer/paused counts), `RevutoReviewerDTO` + `RevutoReviewers()`, `RevutoTrigger(repo, job)`, `RevutoSetPaused(repo, paused)`.
+- **Key symbols:** `ObsidianStatusDTO` + `ObsidianStatus()` (vault available + path), `ChooseObsidianVault()` (native folder picker → `obsidian.SetVault`; use ANY vault); `RevutoStatusDTO` + `RevutoStatus()` (CLI available + reviewer/paused counts), `RevutoReviewerDTO` + `RevutoReviewers()`, `RevutoTrigger(repo, job)`, `RevutoSetPaused(repo, paused)` — the Revuto card's Manage panel (per-repo Review-now / Pause-Resume).
 - **Depends on:** `internal/obsidian`, `internal/revuto`.
 - **Used by / entrypoint:** the Obsidian + Revuto cards in the Connectors view.
 

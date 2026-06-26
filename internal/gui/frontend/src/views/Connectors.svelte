@@ -19,6 +19,7 @@
     GoogleStatusDTO,
     ObsidianStatusDTO,
     RevutoStatusDTO,
+    RevutoReviewerDTO,
   } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
   import Button from "$lib/components/Button.svelte";
@@ -30,6 +31,11 @@
   let gBusy = $state(false);
   let obsidian = $state<ObsidianStatusDTO | null>(null);
   let revuto = $state<RevutoStatusDTO | null>(null);
+  let obsBusy = $state(false);
+  // Revuto control panel: expand to list reviewers with per-repo actions.
+  let revOpen = $state(false);
+  let reviewers = $state<RevutoReviewerDTO[]>([]);
+  let revBusy = $state<Record<string, boolean>>({});
   let loading = $state(true);
   let error = $state<string | null>(null);
   let busy = $state<Record<string, boolean>>({});
@@ -190,6 +196,56 @@
       toasts.error(errText(e));
     } finally {
       busy[s.name] = false;
+    }
+  }
+
+  async function chooseVault() {
+    obsBusy = true;
+    try {
+      const v = await Bridge.ChooseObsidianVault();
+      if (v) {
+        toasts.success("Obsidian vault set: " + v);
+        obsidian = await Bridge.ObsidianStatus();
+      }
+    } catch (e) {
+      toasts.error(errText(e));
+    } finally {
+      obsBusy = false;
+    }
+  }
+
+  async function toggleRevuto() {
+    revOpen = !revOpen;
+    if (revOpen && reviewers.length === 0) {
+      try {
+        reviewers = await Bridge.RevutoReviewers();
+      } catch (e) {
+        toasts.error(errText(e));
+      }
+    }
+  }
+  async function revPause(r: RevutoReviewerDTO) {
+    revBusy[r.repo] = true;
+    try {
+      await Bridge.RevutoSetPaused(r.repo, !r.paused);
+      reviewers = await Bridge.RevutoReviewers();
+      revuto = await Bridge.RevutoStatus();
+    } catch (e) {
+      toasts.error(errText(e));
+    } finally {
+      delete revBusy[r.repo];
+    }
+  }
+  async function revTrigger(r: RevutoReviewerDTO) {
+    revBusy[r.repo] = true;
+    toasts.info("revuto review " + r.repo + " — running (may take a while)…");
+    try {
+      await Bridge.RevutoTrigger(r.repo, "review");
+      toasts.success("revuto review done: " + r.repo);
+    } catch (e) {
+      toasts.error(errText(e));
+    } finally {
+      delete revBusy[r.repo];
     }
   }
 
@@ -360,7 +416,10 @@
                 {#if obsidian.available}<span class="badge badge--ok">connected</span>{:else}<span class="badge badge--off">no vault</span>{/if}
               </div>
               <p class="conn__desc">Read, search &amp; write notes in your Obsidian vault.</p>
-              <p class="conn__url">{obsidian.available ? obsidian.vault : "Set EIGEN_OBSIDIAN_VAULT, or create a vault at " + (obsidian.vault || "~/revuto")}</p>
+              <p class="conn__url">{obsidian.available ? obsidian.vault : "No vault — choose one (any folder with a .obsidian)"}</p>
+            </div>
+            <div class="conn__ops">
+              <Button variant="secondary" disabled={obsBusy} onclick={chooseVault}>{obsidian.available ? "Change vault" : "Choose vault"}</Button>
             </div>
           </div>
         </Card>
@@ -380,7 +439,29 @@
               <p class="conn__desc">Your AI PR-reviewer — list reviewers, trigger review/learn/decay, pause/resume.</p>
               {#if !revuto.available}<p class="conn__url">Install the `revuto` CLI to control it from here.</p>{/if}
             </div>
+            {#if revuto.available}
+              <div class="conn__ops">
+                <Button variant="secondary" onclick={toggleRevuto}>{revOpen ? "Hide" : "Manage"}</Button>
+              </div>
+            {/if}
           </div>
+          {#if revOpen}
+            <div class="revlist">
+              {#if reviewers.length === 0}
+                <p class="conn__url" style="padding: 0 var(--sp-6) var(--sp-4)">Loading reviewers…</p>
+              {:else}
+                {#each reviewers as r (r.repo)}
+                  <div class="revrow">
+                    <span class="revrow__repo">{r.repo}</span>
+                    {#if r.paused}<span class="badge badge--off">paused</span>{/if}
+                    <span class="revrow__sp"></span>
+                    <button class="revrow__act" disabled={revBusy[r.repo]} onclick={() => revTrigger(r)}>Review now</button>
+                    <button class="revrow__act" disabled={revBusy[r.repo]} onclick={() => revPause(r)}>{r.paused ? "Resume" : "Pause"}</button>
+                  </div>
+                {/each}
+              {/if}
+            </div>
+          {/if}
         </Card>
       {/if}
 
@@ -746,6 +827,45 @@
   .conn__glyph {
     font-size: var(--fs-body);
     line-height: 1;
+  }
+  /* Revuto reviewer control list. */
+  .revlist {
+    border-top: 1px solid var(--divider);
+    padding: var(--sp-3) var(--sp-6);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    max-height: 280px;
+    overflow-y: auto;
+  }
+  .revrow {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+  .revrow__repo {
+    font: var(--fw-regular) var(--fs-body-sm) / 1 var(--font-mono);
+    color: var(--text-secondary);
+  }
+  .revrow__sp {
+    flex: 1;
+  }
+  .revrow__act {
+    border: 1px solid var(--border-subtle);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font: var(--fw-medium) var(--fs-label) / 1 var(--font-sans);
+    padding: var(--sp-1) var(--sp-3);
+    border-radius: var(--r-sm);
+  }
+  .revrow__act:hover:not(:disabled) {
+    color: var(--brand-bright);
+    border-color: var(--border-brand-faint);
+  }
+  .revrow__act:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   /* Directory grid */

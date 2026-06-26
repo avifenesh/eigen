@@ -187,6 +187,7 @@ export const Bridge = {
   ImportGoogleClient: (): Promise<boolean> => B.ImportGoogleClient(),
   // native local built-ins: Obsidian vault + revuto reviewer
   ObsidianStatus: (): Promise<ObsidianStatusDTO | null> => B.ObsidianStatus(),
+  ChooseObsidianVault: (): Promise<string> => B.ChooseObsidianVault(),
   RevutoStatus: (): Promise<RevutoStatusDTO | null> => B.RevutoStatus(),
   RevutoReviewers: (): Promise<RevutoReviewerDTO[]> => B.RevutoReviewers(),
   RevutoTrigger: (repo: string, job: string): Promise<string> => B.RevutoTrigger(repo, job),

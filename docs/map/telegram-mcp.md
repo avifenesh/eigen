@@ -217,7 +217,8 @@
 > is also revuto's) → `~/Obsidian`.
 
 ### internal/obsidian/obsidian.go
-- **Key symbols:** `VaultPath`/`isVault`/`Available`; `Note`; `List(limit)`, `Search(query,limit)` (title+content), `Read`/`Write`/`Append` (markdown), `walkNotes` (skips `.obsidian`/`.git`/`.locks`/`.workspaces`/dotdirs, capped `maxVaultScan`), `safeJoin` (rejects absolute + `..` traversal so a tool call can't escape the vault).
+- **Key symbols:** `VaultPath` (env `EIGEN_OBSIDIAN_VAULT` → config `obsidian_vault` → ~/revuto → ~/Obsidian — point at ANY vault), `SetVault(dir)` (persist a chosen vault; rejects non-vault dirs), `isVault`/`Available`; `Note`; `List(limit)`, `Search(query,limit)` (title+content), `Read`/`Write`/`Append` (markdown), `walkNotes` (skips `.obsidian`/`.git`/`.locks`/`.workspaces`/dotdirs, capped `maxVaultScan`), `safeJoin` (rejects absolute + `..` traversal so a tool call can't escape the vault).
+- **Depends on:** `internal/config` (the `obsidian_vault` pin).
 ### internal/obsidian/tools.go
 - **Key symbols:** `Tools()` → niche group `obsidian`: `obsidian_search` / `obsidian_read` / `obsidian_write` (append|overwrite); `CurrentStatus`/`Status`.
 - **Used by:** `build.go`/`main.go` register the tools; `internal/gui/builtins.go` drives the card.
