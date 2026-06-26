@@ -183,3 +183,147 @@
   --rail-w-collapsed: 60px;
   --topbar-h: 48px;
 }
+
+/*
+ * THEMES — the `theme` config key (deepteal | nord | gruvbox) sets
+ * <html data-theme=...>; these blocks override ONLY the color tokens so the
+ * whole GUI re-themes. Typography, spacing, radii, motion, layout stay shared
+ * (in :root). deepteal is :root above (the default), so no block is needed for
+ * it. Palettes mirror internal/theme/theme.go's nord/gruvbox so the GUI matches
+ * the TUI. Applied by App.svelte from Config().theme on load + on change.
+ */
+[data-theme="nord"] {
+  --bg-well: #15191f;
+  --bg-base: #1b1f27;
+  --bg-raised: #222734;
+  --bg-raised-2: #2b3140;
+  --bg-overlay: #2b3140;
+  --bg-overlay-2: #353c4d;
+  --bg-scrim: rgba(21, 25, 31, 0.62);
+  --bg-inset: rgba(0, 0, 0, 0.22);
+
+  --state-hover: rgba(255, 255, 255, 0.04);
+  --state-active: rgba(255, 255, 255, 0.07);
+  --state-selected: rgba(129, 161, 193, 0.12);
+  --state-focus-bg: rgba(129, 161, 193, 0.08);
+
+  --border-hairline: rgba(216, 222, 233, 0.08);
+  --border-subtle: rgba(216, 222, 233, 0.12);
+  --border-strong: rgba(216, 222, 233, 0.2);
+  --border-brand: rgba(129, 161, 193, 0.55);
+  --border-brand-faint: rgba(129, 161, 193, 0.24);
+  --divider: rgba(216, 222, 233, 0.07);
+
+  --text-primary: #d8dee9;
+  --text-secondary: #9aa5b8;
+  --text-muted: #79839a;
+  --text-ghost: #5b657a;
+  --text-faint: #4a5365;
+  --text-on-brand: #1b1f27;
+  --text-on-accent: #1b1f27;
+
+  --brand: #81a1c1;
+  --brand-strong: #5e81ac;
+  --brand-bright: #b3c4d8;
+  --brand-dim: #4c6a8a;
+  --accent: #88c0d0;
+  --accent-strong: #6aa0b3;
+  --accent-bright: #a8d4e0;
+
+  --success: #a3be8c;
+  --success-bg: rgba(163, 190, 140, 0.12);
+  --warn: #ebcb8b;
+  --warn-bg: rgba(235, 203, 139, 0.12);
+  --error: #bf616a;
+  --error-bg: rgba(191, 97, 106, 0.13);
+  --info: #88c0d0;
+  --info-bg: rgba(136, 192, 208, 0.12);
+  --working: #d08770;
+  --working-bg: rgba(208, 135, 112, 0.12);
+
+  --syn-bg: #171b22;
+  --syn-text: #d8dee9;
+  --syn-keyword: #b48ead;
+  --syn-type: #ebcb8b;
+  --syn-func: #88c0d0;
+  --syn-string: #a3be8c;
+  --syn-number: #d08770;
+  --syn-comment: #616e88;
+  --syn-punct: #9aa5b8;
+  --syn-builtin: #8fbcbb;
+  --diff-add-bg: rgba(30, 42, 34, 0.85);
+  --diff-add-gutter: #3a6b4c;
+  --diff-del-bg: rgba(46, 32, 38, 0.85);
+  --diff-del-gutter: #7a4640;
+
+  --spectrum: linear-gradient(100deg, #5e81ac 0%, #81a1c1 34%, #88c0d0 64%, #8fbcbb 100%);
+  --spectrum-text: #88c0d0;
+}
+
+[data-theme="gruvbox"] {
+  --bg-well: #1d2021;
+  --bg-base: #282828;
+  --bg-raised: #32302f;
+  --bg-raised-2: #3c3836;
+  --bg-overlay: #3c3836;
+  --bg-overlay-2: #504945;
+  --bg-scrim: rgba(29, 32, 33, 0.62);
+  --bg-inset: rgba(0, 0, 0, 0.24);
+
+  --state-hover: rgba(255, 255, 255, 0.04);
+  --state-active: rgba(255, 255, 255, 0.07);
+  --state-selected: rgba(131, 165, 152, 0.13);
+  --state-focus-bg: rgba(131, 165, 152, 0.08);
+
+  --border-hairline: rgba(235, 219, 178, 0.08);
+  --border-subtle: rgba(235, 219, 178, 0.12);
+  --border-strong: rgba(235, 219, 178, 0.2);
+  --border-brand: rgba(131, 165, 152, 0.55);
+  --border-brand-faint: rgba(131, 165, 152, 0.24);
+  --divider: rgba(235, 219, 178, 0.07);
+
+  --text-primary: #ebdbb2;
+  --text-secondary: #a89984;
+  --text-muted: #928374;
+  --text-ghost: #7c6f64;
+  --text-faint: #504945;
+  --text-on-brand: #1d2021;
+  --text-on-accent: #1d2021;
+
+  --brand: #83a598;
+  --brand-strong: #689d6a;
+  --brand-bright: #bdddd0;
+  --brand-dim: #427b58;
+  --accent: #8ec07c;
+  --accent-strong: #689d6a;
+  --accent-bright: #b8e0a8;
+
+  --success: #b8bb26;
+  --success-bg: rgba(184, 187, 38, 0.12);
+  --warn: #fabd2f;
+  --warn-bg: rgba(250, 189, 47, 0.12);
+  --error: #fb4934;
+  --error-bg: rgba(251, 73, 52, 0.13);
+  --info: #83a598;
+  --info-bg: rgba(131, 165, 152, 0.12);
+  --working: #fe8019;
+  --working-bg: rgba(254, 128, 25, 0.12);
+
+  --syn-bg: #1d2021;
+  --syn-text: #ebdbb2;
+  --syn-keyword: #fb4934;
+  --syn-type: #fabd2f;
+  --syn-func: #8ec07c;
+  --syn-string: #b8bb26;
+  --syn-number: #d3869b;
+  --syn-comment: #928374;
+  --syn-punct: #a89984;
+  --syn-builtin: #8ec07c;
+  --diff-add-bg: rgba(40, 40, 15, 0.85);
+  --diff-add-gutter: #4a6b1f;
+  --diff-del-bg: rgba(50, 26, 22, 0.85);
+  --diff-del-gutter: #8a3a30;
+
+  --spectrum: linear-gradient(100deg, #689d6a 0%, #83a598 34%, #8ec07c 64%, #b8bb26 100%);
+  --spectrum-text: #83a598;
+}
