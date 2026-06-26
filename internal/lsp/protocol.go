@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/avifenesh/eigen/internal/llm"
 )
 
 // --- LSP protocol types (the subset eigen uses) ----------------------------
@@ -114,7 +116,7 @@ func (c *Client) initialize(ctx context.Context, rootDir string) error {
 				"publishDiagnostics": map[string]any{},
 			},
 		},
-		"clientInfo": map[string]any{"name": "eigen", "version": "0.1.0"},
+		"clientInfo": map[string]any{"name": "eigen", "version": llm.Version},
 	}
 	if err := c.call(ctx, "initialize", params, nil); err != nil {
 		return err

@@ -261,7 +261,7 @@ func initializeParams() map[string]any {
 	return map[string]any{
 		"protocolVersion": protocolVersion,
 		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "eigen", "version": "0.1.0"},
+		"clientInfo":      map[string]any{"name": "eigen", "version": llm.Version},
 	}
 }
 
