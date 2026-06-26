@@ -171,6 +171,10 @@ export const Bridge = {
   Dashboard: (): Promise<DashboardDTO | null> => B.Dashboard(),
   // cross-project work board
   Board: (): Promise<BoardDTO | null> => B.Board(),
+  PinLane: (key: string): Promise<void> => B.PinLane(key),
+  UnpinLane: (key: string): Promise<void> => B.UnpinLane(key),
+  ReviewPR: (url: string): Promise<string> => B.ReviewPR(url),
+  WorkIssue: (url: string): Promise<string> => B.WorkIssue(url),
   // native Google integration (Calendar + Gmail)
   GoogleStatus: (): Promise<GoogleStatusDTO | null> => B.GoogleStatus(),
   ConnectGoogle: (): Promise<void> => B.ConnectGoogle(),

@@ -21,6 +21,40 @@
   let error = $state<string | null>(null);
   let acting = $state<Record<string, boolean>>({});
 
+  // Filters: owner (which GitHub owner / "local") + state (what kind of work).
+  let ownerFilter = $state<string>("all");
+  let stateFilter = $state<"all" | "prs" | "issues" | "dirty">("all");
+
+  // Owners present on the board (from remote lane repos) → filter chips.
+  const owners = $derived.by<string[]>(() => {
+    const set = new Set<string>();
+    for (const l of data?.lanes ?? []) {
+      if (l.remote && l.repo.includes("/")) set.add(l.repo.split("/")[0]);
+    }
+    return [...set].sort();
+  });
+
+  function laneMatches(l: BoardLaneDTO): boolean {
+    if (ownerFilter !== "all") {
+      if (ownerFilter === "local") {
+        if (l.remote) return false;
+      } else if (!l.remote || !l.repo.startsWith(ownerFilter + "/")) {
+        return false;
+      }
+    }
+    switch (stateFilter) {
+      case "prs":
+        return l.openPrs > 0;
+      case "issues":
+        return l.openIss > 0;
+      case "dirty":
+        return l.dirty > 0 || l.unpushed > 0 || l.behind > 0;
+      default:
+        return true;
+    }
+  }
+  const visibleLanes = $derived((data?.lanes ?? []).filter(laneMatches));
+
   let alive = true;
   let loadSeq = 0;
   async function load() {
@@ -80,6 +114,34 @@
   function kindGlyph(kind: string): string {
     return kind === "github" ? "◉" : "±";
   }
+  function isPR(it: BoardItemDTO): boolean {
+    return (it.detail ?? "").startsWith("PR");
+  }
+
+  async function togglePin(lane: BoardLaneDTO) {
+    const key = lane.remote ? lane.repo : lane.dir;
+    try {
+      if (lane.pinned) await Bridge.UnpinLane(key);
+      else await Bridge.PinLane(key);
+      await load();
+    } catch (e) {
+      toasts.error(errText(e));
+    }
+  }
+  // Per-card GitHub actions: Review a PR / Work an issue (start a focused session).
+  async function ghAction(it: BoardItemDTO) {
+    if (!it.url) return;
+    acting[it.key] = true;
+    try {
+      const id = isPR(it) ? await Bridge.ReviewPR(it.url) : await Bridge.WorkIssue(it.url);
+      await sessions.refresh();
+      router.go("chat", id);
+    } catch (e) {
+      toasts.error(errText(e));
+    } finally {
+      delete acting[it.key];
+    }
+  }
 </script>
 
 <div class="board">
@@ -90,6 +152,24 @@
     </div>
     <Button variant="secondary" size="sm" onclick={() => load()}>Refresh</Button>
   </header>
+
+  {#if data && data.lanes.length > 0}
+    <div class="filters">
+      <div class="filtergroup">
+        <button class="fchip" class:fchip--on={ownerFilter === "all"} onclick={() => (ownerFilter = "all")}>All</button>
+        <button class="fchip" class:fchip--on={ownerFilter === "local"} onclick={() => (ownerFilter = "local")}>Local</button>
+        {#each owners as o (o)}
+          <button class="fchip" class:fchip--on={ownerFilter === o} onclick={() => (ownerFilter = o)}>{o}</button>
+        {/each}
+      </div>
+      <div class="filtergroup">
+        <button class="fchip" class:fchip--on={stateFilter === "all"} onclick={() => (stateFilter = "all")}>Everything</button>
+        <button class="fchip" class:fchip--on={stateFilter === "prs"} onclick={() => (stateFilter = "prs")}>PRs</button>
+        <button class="fchip" class:fchip--on={stateFilter === "issues"} onclick={() => (stateFilter = "issues")}>Issues</button>
+        <button class="fchip" class:fchip--on={stateFilter === "dirty"} onclick={() => (stateFilter = "dirty")}>Uncommitted</button>
+      </div>
+    </div>
+  {/if}
 
   {#if loading && !data}
     <div class="board__lanes">
@@ -103,7 +183,7 @@
     <EmptyState glyph="▤" title="No projects yet" line="Open a few projects and the board fills in with their state." />
   {:else}
     <div class="board__lanes">
-      {#each data.lanes as lane (lane.remote ? lane.repo : lane.dir)}
+      {#each visibleLanes as lane (lane.remote ? lane.repo : lane.dir)}
         <section class="lane" class:lane--remote={lane.remote}>
           <header class="lane__head">
             {#if lane.remote}
@@ -113,6 +193,13 @@
               <button class="lane__name" title="Open a session in {lane.name}" onclick={() => openLaneChat(lane)}>{lane.name}</button>
               {#if lane.branch}<span class="lane__branch">{lane.branch}</span>{/if}
             {/if}
+            <button
+              class="lane__pin"
+              class:lane__pin--on={lane.pinned}
+              title={lane.pinned ? "Unpin (hide when idle)" : "Pin (always show)"}
+              aria-label={lane.pinned ? "Unpin lane" : "Pin lane"}
+              onclick={() => togglePin(lane)}
+            >{lane.pinned ? "★" : "☆"}</button>
           </header>
 
           <div class="lane__stats">
@@ -139,7 +226,13 @@
                 {#if it.detail}<p class="card__detail">{it.detail}</p>{/if}
                 <div class="card__foot">
                   {#if it.url}<Button variant="ghost" size="sm" onclick={() => openURL(it.url)}>Open</Button>{/if}
-                  {#if it.task}<Button variant="secondary" size="sm" loading={acting[it.key]} onclick={() => startItem(it)}>Start →</Button>{/if}
+                  {#if it.kind === "github" && it.url}
+                    <Button variant="secondary" size="sm" loading={acting[it.key]} onclick={() => ghAction(it)}>
+                      {isPR(it) ? "Review →" : "Work →"}
+                    </Button>
+                  {:else if it.task}
+                    <Button variant="secondary" size="sm" loading={acting[it.key]} onclick={() => startItem(it)}>Start →</Button>
+                  {/if}
                 </div>
               </div>
             {/each}
@@ -177,6 +270,51 @@
     color: var(--text-muted);
     font-size: var(--fs-label);
     max-width: 70ch;
+  }
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-5);
+    padding: 0 var(--sp-9) var(--sp-4);
+  }
+  .filtergroup {
+    display: flex;
+    gap: var(--sp-2);
+    flex-wrap: wrap;
+  }
+  .fchip {
+    height: 26px;
+    padding: 0 var(--sp-4);
+    border-radius: var(--r-full);
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-raised-2);
+    color: var(--text-muted);
+    cursor: pointer;
+    font: var(--fw-medium) var(--fs-label) / 1 var(--font-sans);
+  }
+  .fchip:hover {
+    color: var(--text-primary);
+  }
+  .fchip--on {
+    background: var(--state-selected);
+    border-color: var(--border-brand-faint);
+    color: var(--brand-bright);
+  }
+  .lane__pin {
+    margin-left: auto;
+    border: none;
+    background: transparent;
+    color: var(--text-faint);
+    cursor: pointer;
+    font-size: var(--fs-body);
+    line-height: 1;
+    padding: 0 var(--sp-1);
+  }
+  .lane__pin:hover {
+    color: var(--text-secondary);
+  }
+  .lane__pin--on {
+    color: var(--warn);
   }
   /* Lanes scroll horizontally — a board, not a list. */
   .board__lanes {

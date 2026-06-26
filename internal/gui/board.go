@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/feed"
 )
 
@@ -51,6 +53,23 @@ type BoardLaneDTO struct {
 	Remote bool   `json:"remote"` // a GitHub repo lane (no local checkout)
 	Repo   string `json:"repo"`   // owner/name (remote lanes)
 	URL    string `json:"url"`    // repo URL (remote lanes)
+	// Pinned: the user pinned this lane so it shows even when idle. Pin key is the
+	// dir (local) or owner/name (remote).
+	Pinned bool `json:"pinned"`
+}
+
+// laneKey is the stable pin key for a lane: its repo (remote) or dir (local).
+func (l BoardLaneDTO) laneKey() string {
+	if l.Remote {
+		return l.Repo
+	}
+	return l.Dir
+}
+
+// active reports whether a lane has anything worth showing on its own (open
+// work or local changes). Idle lanes only appear when pinned.
+func (l BoardLaneDTO) active() bool {
+	return len(l.Items) > 0 || l.Dirty > 0 || l.Unpushed > 0 || l.Behind > 0 || l.OpenPRs > 0 || l.OpenIss > 0
 }
 
 // BoardDTO is the whole board.
@@ -154,11 +173,89 @@ func (b *Bridge) Board() (*BoardDTO, error) {
 		}
 	}
 
+	// Scope = pinned + active: mark pinned lanes, then drop idle lanes that
+	// aren't pinned so the board stays "what needs attention" + a stable pinned
+	// set. (config.BoardPinned keys: dir for local, owner/name for remote.)
+	pinned := boardPinnedSet()
+	kept := lanes[:0]
+	for _, l := range lanes {
+		l.Pinned = pinned[l.laneKey()]
+		if l.active() || l.Pinned {
+			kept = append(kept, l)
+		}
+	}
+	lanes = kept
+
 	out := &BoardDTO{Lanes: lanes}
 	if !f.Scanned.IsZero() {
 		out.Scanned = f.Scanned.Format(time.RFC3339)
 	}
 	return out, nil
+}
+
+// boardPinnedSet loads the pinned-lane keys as a set.
+func boardPinnedSet() map[string]bool {
+	cfg := config.Load()
+	set := make(map[string]bool, len(cfg.BoardPinned))
+	for _, k := range cfg.BoardPinned {
+		set[k] = true
+	}
+	return set
+}
+
+// PinLane / UnpinLane toggle whether a lane stays on the board when idle. key is
+// the lane's dir (local) or owner/name (remote). Persisted to config.
+func (b *Bridge) PinLane(key string) error    { return setLanePinned(key, true) }
+func (b *Bridge) UnpinLane(key string) error  { return setLanePinned(key, false) }
+
+func setLanePinned(key string, pinned bool) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return fmt.Errorf("empty lane key")
+	}
+	cfg := config.Load()
+	out := cfg.BoardPinned[:0]
+	has := false
+	for _, k := range cfg.BoardPinned {
+		if k == key {
+			has = true
+			if !pinned {
+				continue // drop it
+			}
+		}
+		out = append(out, k)
+	}
+	if pinned && !has {
+		out = append(out, key)
+	}
+	cfg.BoardPinned = out
+	return config.Save(cfg)
+}
+
+// ReviewPR starts a session that reviews a specific GitHub PR by URL. The agent
+// reads the PR + diff and gives a critique — the board's per-card "Review"
+// action. Returns the new session id.
+func (b *Bridge) ReviewPR(url string) (string, error) {
+	url = strings.TrimSpace(url)
+	if url == "" {
+		return "", fmt.Errorf("PR url required")
+	}
+	task := "Review this pull request: " + url + ". Use `gh pr view " + url + "` and `gh pr diff " + url +
+		"` to read it, then give me a critique — real issues first, style nits last, and a clear " +
+		"approve/request-changes recommendation."
+	return b.StartFromFeed("", task)
+}
+
+// WorkIssue starts a session to work a specific GitHub issue by URL — the
+// board's per-card "Start working" action on an issue.
+func (b *Bridge) WorkIssue(url string) (string, error) {
+	url = strings.TrimSpace(url)
+	if url == "" {
+		return "", fmt.Errorf("issue url required")
+	}
+	task := "Work on this GitHub issue: " + url + ". Read it with `gh issue view " + url +
+		" --comments`, investigate the codebase if it's checked out locally, propose a plan, and start on it after I confirm."
+	return b.StartFromFeed("", task)
 }
 
 // buildLane assembles one project lane: feed items + local git/TODO context.

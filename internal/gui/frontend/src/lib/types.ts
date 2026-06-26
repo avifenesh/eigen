@@ -489,6 +489,7 @@ export type BoardLaneDTO = {
   remote: boolean; // a GitHub repo lane (no local checkout)
   repo: string; // owner/name (remote lanes)
   url: string; // repo URL (remote lanes)
+  pinned: boolean; // user-pinned (shows even when idle)
 };
 export type BoardDTO = { lanes: BoardLaneDTO[]; scanned?: string };
 

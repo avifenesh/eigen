@@ -67,6 +67,11 @@ type Config struct {
 	// restrict the set. Env EIGEN_BOARD_GH_OWNERS (comma-separated) overrides.
 	BoardGitHubOwners []string `json:"board_github_owners,omitempty"`
 
+	// BoardPinned are lanes the user pinned to the board so they always show even
+	// when idle (no open work / clean tree). A local lane is pinned by its
+	// directory path; a remote lane by its "owner/name". Toggled from the board.
+	BoardPinned []string `json:"board_pinned,omitempty"`
+
 	// Observe enables the structured activity log (~/.eigen/observe/events.jsonl,
 	// metadata only) for long-term learning + debugging. Default on.
 	Observe     *bool `json:"observe,omitempty"`
