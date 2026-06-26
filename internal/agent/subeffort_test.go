@@ -57,8 +57,10 @@ func TestSetSubtaskEffort(t *testing.T) {
 // A coarse-ladder model ({off,on}, e.g. GLM) clamps the generic level to its
 // nearest rung rather than being skipped: "low"→a low rung, "high"→"on".
 func TestSetSubtaskEffortClampsCoarseLadder(t *testing.T) {
-	// glm-5.2 maps to {off,on} in the catalog.
-	p := &effortProv{id: "glm-5.2", effort: "off"}
+	// glm-5.1 maps to {off,on} in the catalog (a bare on/off thinking toggle).
+	// (glm-5.2 is now the graded {off,high,max} ladder, so it's no longer the
+	// coarse-ladder example.)
+	p := &effortProv{id: "glm-5.1", effort: "off"}
 	if w := setSubtaskEffort(p, "high"); p.effort != "on" || w == "" {
 		t.Fatalf("high should clamp to 'on' on a {off,on} model; got effort=%q where=%q", p.effort, w)
 	}
