@@ -116,3 +116,52 @@ func DistillGlobal(ctx context.Context, p llm.Provider, summaries []string, exis
 	}
 	return dedupe(parseBullets(resp.Text), existingGlobal), nil
 }
+
+const stationPrompt = `You are eigen's WORKING-STATION reflection. eigen is the user's personal working station — not just a coding tool. You are given a point-in-time digest of the user's working life: upcoming calendar events, unread mail senders/subjects, project git state (uncommitted/unpushed/behind), scheduled jobs (crons), and machine health.
+
+Produce a SHORT list of durable, ACTIONABLE awareness notes for the user's global memory — things a future eigen session should know to be a better working-station assistant. Examples of the KIND of thing (only if the digest supports it):
+- A recurring commitment or deadline pattern ("standup daily 9am", "rent due monthly").
+- A project that is consistently drifting (many unpushed commits / behind upstream) and likely needs attention.
+- A standing scheduled job worth knowing about.
+- A persistent machine-health concern (disk nearly full).
+
+Strict rules:
+- These are about the USER's working life, NOT a single coding session. Skip anything ephemeral (one meeting today, one unread email) unless it reveals a durable pattern or an obligation worth remembering.
+- Minimum-signal gate: if the digest is routine and nothing is worth remembering beyond today, output NOTHING.
+- Never store secrets, email bodies, or private content; keep it to high-level awareness ([REDACTED_SECRET] for anything sensitive).
+- Do NOT repeat facts already in the existing global memory.
+
+Output ONLY a bullet list ("- " lines), at most 5, most useful first. No headings, no commentary.`
+
+// DistillStation reflects a working-station digest (calendar, mail, projects,
+// crons, health) into durable life/project awareness notes for global memory.
+// Returns new bullets (deduped against existing). Empty digest → nil.
+func DistillStation(ctx context.Context, p llm.Provider, digest, existingGlobal string) ([]string, error) {
+	if p == nil {
+		return nil, fmt.Errorf("dream: nil provider")
+	}
+	if strings.TrimSpace(digest) == "" {
+		return nil, nil
+	}
+	var b strings.Builder
+	b.WriteString("Existing global memory:\n")
+	if strings.TrimSpace(existingGlobal) == "" {
+		b.WriteString("(none)\n")
+	} else {
+		b.WriteString(existingGlobal + "\n")
+	}
+	b.WriteString("\nWorking-station digest (now):\n")
+	b.WriteString(digest)
+	content := b.String()
+	if len(content) > maxSummarizeInput {
+		content = content[len(content)-maxSummarizeInput:]
+	}
+	resp, err := p.Complete(ctx, llm.Request{
+		System:   stationPrompt,
+		Messages: []llm.Message{{Role: llm.RoleUser, Text: content}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return dedupe(parseBullets(resp.Text), existingGlobal), nil
+}

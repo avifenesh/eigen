@@ -31,6 +31,7 @@ import (
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/connector"
 	"github.com/avifenesh/eigen/internal/daemon"
+	"github.com/avifenesh/eigen/internal/feed"
 	"github.com/avifenesh/eigen/internal/google"
 	"github.com/avifenesh/eigen/internal/dream"
 	"github.com/avifenesh/eigen/internal/harness"
@@ -42,6 +43,7 @@ import (
 	"github.com/avifenesh/eigen/internal/observe"
 	"github.com/avifenesh/eigen/internal/session"
 	"github.com/avifenesh/eigen/internal/skill"
+	"github.com/avifenesh/eigen/internal/syshealth"
 	"github.com/avifenesh/eigen/internal/telegram"
 	"github.com/avifenesh/eigen/internal/theme"
 	"github.com/avifenesh/eigen/internal/tool"
@@ -1289,6 +1291,80 @@ func localReady(base string) bool {
 // the same small model as the other background chores).
 func titleProvider(main llm.Provider) llm.Provider { return smallProvider(main) }
 
+// stationDigest builds a point-in-time text digest of the user's working life —
+// upcoming calendar events, unread mail, project git state (the feed), scheduled
+// jobs, and machine health — for the dreaming station-reflection pass. eigen is
+// a working station, so dreaming reflects over the whole working life, not only
+// coding transcripts. Each section is best-effort; an unavailable source is just
+// omitted. Returns "" when nothing meaningful gathered.
+func stationDigest(ctx context.Context) string {
+	var b strings.Builder
+
+	// Google: today's calendar + unread mail (only when linked).
+	if g := google.Default(); g.Connected() {
+		if evs, err := g.UpcomingEvents(ctx, 7, 12); err == nil && len(evs) > 0 {
+			b.WriteString("Upcoming calendar (7d):\n")
+			for _, e := range evs {
+				when := e.Start
+				if e.AllDay {
+					when += " (all day)"
+				}
+				fmt.Fprintf(&b, "- %s — %s\n", when, e.Summary)
+			}
+			b.WriteByte('\n')
+		}
+		if n, err := g.UnreadCount(ctx); err == nil && n > 0 {
+			fmt.Fprintf(&b, "Unread mail: %d\n", n)
+			if msgs, err := g.RecentUnread(ctx, 8); err == nil {
+				for _, m := range msgs {
+					fmt.Fprintf(&b, "- %s — %s\n", m.From, m.Subject)
+				}
+			}
+			b.WriteByte('\n')
+		}
+	}
+
+	// Projects: the proactive feed's git/github signals (uncommitted/unpushed/
+	// behind, open PRs/issues) — the cross-project work state.
+	if f, _ := feed.Load(); len(f.Items) > 0 {
+		var lines []string
+		for _, it := range f.Items {
+			if it.Kind == "git" || it.Kind == "github" {
+				lines = append(lines, "- "+it.Title)
+			}
+		}
+		if len(lines) > 0 {
+			b.WriteString("Project state:\n")
+			b.WriteString(strings.Join(lines, "\n"))
+			b.WriteString("\n\n")
+		}
+	}
+
+	// Scheduled jobs: the user's crontab (durable commitments/chores).
+	if out, err := exec.CommandContext(ctx, "crontab", "-l").Output(); err == nil {
+		var jobs []string
+		for _, line := range strings.Split(string(out), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, "#") {
+				jobs = append(jobs, "- "+line)
+			}
+		}
+		if len(jobs) > 0 {
+			b.WriteString("Scheduled jobs (crontab):\n")
+			b.WriteString(strings.Join(jobs, "\n"))
+			b.WriteString("\n\n")
+		}
+	}
+
+	// Machine health (only when notably stressed — routine health isn't signal).
+	h := syshealth.Read()
+	if h.DiskUsedPct >= 85 || h.MemUsedPct >= 90 {
+		fmt.Fprintf(&b, "Machine: disk %.0f%% used, memory %.0f%% used\n", h.DiskUsedPct, h.MemUsedPct)
+	}
+
+	return strings.TrimSpace(b.String())
+}
+
 // dreamProvider picks the model for background dreaming/consolidation. It pins
 // SONNET (via the dream ladder) on PURPOSE: dreaming is heavy + runs off the hot
 // path, so routing it to the cheap-but-capable GLM would drain the quota real
@@ -1769,6 +1845,24 @@ func runDream(prov llm.Provider, mem, gmem *memory.Store) {
 			memory.CommitMemory(fmt.Sprintf("dream: global profile — %d new", len(notes)))
 		}
 	}
+
+	// Working-station reflection: eigen is a working station, so dreaming also
+	// reflects over the user's working LIFE — calendar, mail, project git state,
+	// scheduled jobs, machine health — into durable awareness notes in global
+	// memory (deadlines, drifting projects, standing commitments). Best-effort:
+	// no digest (Google not linked, quiet projects) → nothing happens.
+	if gmem != nil {
+		if digest := stationDigest(context.Background()); digest != "" {
+			if notes, err := dream.DistillStation(context.Background(), prov, digest, gmem.Read()); err == nil && len(notes) > 0 {
+				for _, n := range notes {
+					_ = gmem.Append(n)
+				}
+				fmt.Printf("station: %d new working-life note(s) → %s\n", len(notes), gmem.Dir())
+				memory.CommitMemory(fmt.Sprintf("dream: working-station — %d new", len(notes)))
+			}
+		}
+	}
+
 	if draft, ok, serr := dream.SynthesizeSkill(context.Background(), prov, corpus); serr == nil && ok {
 		if path, werr := skill.Propose(draft.Name, draft.Description, draft.Body); werr == nil && path != "" {
 			fmt.Printf("proposed skill %q → %s\n  review: eigen skill proposed · accept: eigen skill accept %s\n", draft.Name, path, draft.Name)

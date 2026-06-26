@@ -929,6 +929,21 @@ func runNightlyDream(host *daemon.Host, prov llm.Provider, gmem *memory.Store, d
 			}
 		}
 	}
+
+	// Working-station reflection (calendar/mail/projects/crons/health → durable
+	// life-awareness notes in global memory). eigen is a working station, so the
+	// nightly dream also reflects the working LIFE, not only coding sessions.
+	if gmem != nil && !host.AnyRunning() {
+		if digest := stationDigest(context.Background()); digest != "" {
+			if notes, err := dream.DistillStation(context.Background(), prov, digest, gmem.Read()); err == nil && len(notes) > 0 {
+				for _, n := range notes {
+					_ = gmem.Append(n)
+				}
+				memory.CommitMemory(fmt.Sprintf("dream: working-station — %d new", len(notes)))
+				fmt.Fprintf(os.Stderr, "eigen daemon: working-station +%d\n", len(notes))
+			}
+		}
+	}
 }
 
 // telegramConfigured reports whether a Telegram bot token is set (config or env)

@@ -99,10 +99,10 @@
 - **Used by:** wired as `Pipeline.Stage1` (`main.go`, `internal/tui/tui.go`) — the callback adapts `Stage1` output into `memory.Stage1Result`.
 
 ### internal/dream/summarize.go
-- **Role:** Two distillers — the small injected per-scope summary, and the cross-project global user profile.
-- **Key symbols:** `summarizePrompt` + `Summarize(ctx, p, memory)` — distil `MEMORY.md` into the small injected `memory_summary.md` (refuses a summary not smaller than input); `maxSummarizeInput` (200k); `globalProfilePrompt` + `DistillGlobal(ctx, p, summaries, existingGlobal)` — extract project-independent user-profile bullets from many projects' summaries (deduped).
+- **Role:** Three distillers — the small injected per-scope summary, the cross-project global user profile, and the working-station life-reflection.
+- **Key symbols:** `summarizePrompt` + `Summarize(ctx, p, memory)` — distil `MEMORY.md` into the small injected `memory_summary.md` (refuses a summary not smaller than input); `maxSummarizeInput` (200k); `globalProfilePrompt` + `DistillGlobal(ctx, p, summaries, existingGlobal)` — extract project-independent user-profile bullets from many projects' summaries (deduped); `stationPrompt` + `DistillStation(ctx, p, digest, existingGlobal)` — reflect a WORKING-STATION digest (calendar/mail/projects/crons/health) into durable life-awareness notes for global memory (eigen is a working station, so dreaming reflects the working life, not only coding sessions).
 - **Depends on:** `internal/llm`; reuses `dedupe`/`parseBullets` from dream.go.
-- **Used by:** `Summarize` wired as `Pipeline.Summarize`; `DistillGlobal` called by `daemon.go` nightly dreamer + `main.go` `runDream` to build the global profile.
+- **Used by:** `Summarize` wired as `Pipeline.Summarize`; `DistillGlobal` + `DistillStation` called by `daemon.go` nightly dreamer + `main.go` `runDream`. The station digest is built by `main.go:stationDigest` (Google calendar/mail via `internal/google`, project git state via `internal/feed`, crontab, `internal/syshealth`); routine input → no notes.
 
 ### internal/orientation/orientation.go
 - **Role:** The whole native history/provenance engine — identity/keys, transcript ingestion into a per-project JSON episode graph, the provenance/related/coupled/query/status/threads readers, hook + CLI dispatch, and hook installation.
@@ -133,4 +133,4 @@
 - **`internal/feed`** — `feed/memory.go` + `feed/suggest.go` read project `MEMORY.md` tails for cheap local suggestions. (See `skill-feed-retrieve.md`.)
 - **`internal/app`** — `app/data.go` holds a `GlobalMem *memory.Store`; `app/pages.go` calls `dream.Consolidate`; `app/home.go` surfaces the orientation home. (See `app-superapp.md`.)
 - **`internal/harness`** — sole gateway into orientation (install wrapper/hooks, `RunOrientation` → `RunCLI`). (See `root-cmd.md`.)
-- **Root command (`main.go` / `build.go` / `remote_session.go`)** — open stores, render `memory.Sections` into the system prompt for chat sessions, run `eigen dream` / `eigen memory` / `eigen orientation`. `runDream` (`main.go`) also calls `dream.DistillGlobal` → `gmem.Append` and refreshes the auto-maintained USER.md block via `gmem.SetLearnedProfile`.
+- **Root command (`main.go` / `build.go` / `remote_session.go`)** — open stores, render `memory.Sections` into the system prompt for chat sessions, run `eigen dream` / `eigen memory` / `eigen orientation`. `runDream` (`main.go`) also calls `dream.DistillGlobal` → `gmem.Append` and refreshes the auto-maintained USER.md block via `gmem.SetLearnedProfile`, then `dream.DistillStation(stationDigest(...))` → `gmem.Append` for working-life awareness. The daemon's `runNightlyDream` mirrors both.
