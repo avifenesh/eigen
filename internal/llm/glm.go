@@ -192,11 +192,13 @@ func (g *GLM) SetEffort(level string) bool {
 	case "on", "enabled", "low", "medium", "high", "xhigh", "max":
 		g.thinking = "enabled"
 		// On a graded model, also set reasoning_effort. GLM-5.2 accepts only
-		// "high" and "max", so clamp everything at/under high to "high" and
-		// xhigh/max to "max".
+		// "high" and "max". A bare on/enabled (and xhigh/max) maps to "max" — the
+		// recommended coding default and consistent with NewGLM's seed, so
+		// toggling thinking off→on doesn't silently downgrade max→high; only an
+		// explicit low/medium/high lands on "high".
 		if g.effort != "" {
 			switch level {
-			case "xhigh", "max":
+			case "on", "enabled", "xhigh", "max":
 				g.effort = "max"
 			default:
 				g.effort = "high"

@@ -125,6 +125,18 @@ export function createTranscript(sessionId: string) {
     onEvent(m.event, m.replay);
   }
 
+  // Flush the reorder buffer in seq order and resync the window past it. Used by
+  // the overflow valve (a permanently-missing seq, or a live event that raced
+  // ahead of a replay that never came) so a stuck buffer can't strand events.
+  function drainBufInOrder() {
+    const keys = [...reorderBuf.keys()].sort((a, b) => a - b);
+    for (const k of keys) {
+      applyEvent(reorderBuf.get(k)!);
+      reorderBuf.delete(k);
+    }
+    if (keys.length) expectedSeq = keys[keys.length - 1] + 1;
+  }
+
   function pushHistory(b: Block) {
     // Reassign (new array reference), don't mutate in place. The Chat view binds
     // VirtualList's `items` to a $derived of this array; an in-place .push keeps
@@ -346,8 +358,20 @@ export function createTranscript(sessionId: string) {
         }
         // Latch the window base to the first seq we actually see (the live pump
         // may already be mid-stream after a re-attach), so we never wait forever
-        // for a seq=1 that won't come again.
+        // for a seq=1 that won't come again. On attach the pump emits the REPLAY
+        // buffer first, in seq order, so prefer a replay event as the base: if a
+        // live (non-replay) event races ahead while a replay is still expected
+        // (running), buffer it instead of latching to its higher seq — otherwise
+        // one early live straggler would push the base past the replay and make
+        // every replayed event apply out of order via the behind-window path.
+        // The buffered event drains in order once the base latches (or via the
+        // overflow valve if no replay ever comes).
         if (expectedSeq === 0) {
+          if (running && !m.replay) {
+            reorderBuf.set(m.seq, m);
+            if (reorderBuf.size > 256) drainBufInOrder();
+            return;
+          }
           expectedSeq = m.seq;
         }
         // A late event whose seq is already behind the window (e.g. a straggler
@@ -364,16 +388,9 @@ export function createTranscript(sessionId: string) {
           applyEvent(next);
         }
         // Guard against an unbounded buffer if a seq is ever permanently missing
-        // (dropped event): once we're far ahead, give up waiting and flush what
-        // we have in seq order, resyncing expectedSeq past the gap.
-        if (reorderBuf.size > 256) {
-          const keys = [...reorderBuf.keys()].sort((a, b) => a - b);
-          for (const k of keys) {
-            applyEvent(reorderBuf.get(k)!);
-            reorderBuf.delete(k);
-          }
-          expectedSeq = keys[keys.length - 1] + 1;
-        }
+        // (a dropped event, or no replay arrived to latch the base): give up
+        // waiting and flush what we have in seq order, resyncing past the gap.
+        if (reorderBuf.size > 256) drainBufInOrder();
       });
     },
     dispose() {
