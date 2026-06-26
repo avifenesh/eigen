@@ -172,6 +172,7 @@ export const Bridge = {
   GoogleStatus: (): Promise<GoogleStatusDTO | null> => B.GoogleStatus(),
   ConnectGoogle: (): Promise<void> => B.ConnectGoogle(),
   DisconnectGoogle: (): Promise<void> => B.DisconnectGoogle(),
+  ImportGoogleClient: (): Promise<boolean> => B.ImportGoogleClient(),
   // proactive feed
   Feed: (): Promise<FeedDTO | null> => B.Feed(),
   // per-project feed accessor — reserved for a future project drill-in view (not dead code)

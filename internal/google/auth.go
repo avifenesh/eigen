@@ -114,6 +114,54 @@ func readClientFile(path string) (clientCreds, bool) {
 	return clientCreds{}, false
 }
 
+// ClientPath is the canonical location eigen reads the BYO Google Cloud client
+// from (the import target). ~/.config/eigen/google_client.json.
+func ClientPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "google_client.json"
+	}
+	return filepath.Join(home, ".config", "eigen", "google_client.json")
+}
+
+// ImportClient validates a Google Cloud OAuth-client JSON at srcPath (must
+// contain a usable client_id under installed/web/bare) and copies it to
+// ClientPath (0600). On success the broker picks up the creds (Configured()
+// flips true). This is the in-app "set up Google" step — Google forbids
+// programmatic account/client creation, so the user downloads a Desktop client
+// from the Cloud Console and imports it here.
+func (a *Auth) ImportClient(srcPath string) error {
+	creds, ok := readClientFile(srcPath)
+	if !ok || creds.ClientID == "" {
+		return fmt.Errorf("that file isn't a Google OAuth client JSON (no client_id under installed/web). Download a Desktop OAuth client from Google Cloud Console")
+	}
+	data, err := os.ReadFile(srcPath)
+	if err != nil {
+		return err
+	}
+	dst := ClientPath()
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	tmp := dst + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		return err
+	}
+	// Refresh the in-memory creds so the broker is usable immediately.
+	a.mu.Lock()
+	a.creds, a.haveC = creds, true
+	a.src = nil
+	a.mu.Unlock()
+	return nil
+}
+
+// SetupURL is the Google Cloud Console page where the user creates the OAuth
+// client (Credentials → Create credentials → OAuth client ID → Desktop app).
+const SetupURL = "https://console.cloud.google.com/apis/credentials"
+
 // Auth brokers the Google OAuth token for eigen: it holds the BYO client creds,
 // runs the loopback authorize flow on demand, persists the refresh token (OS
 // keychain via the store), and hands callers a refreshing http client.

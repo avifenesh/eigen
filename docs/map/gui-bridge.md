@@ -201,9 +201,9 @@
 
 ### internal/gui/google.go
 - **Role:** Native Google (Calendar + Gmail) status + connect bridge — eigen's direct-REST built-in (NOT an MCP connector), authorized with the user's own Google Cloud OAuth client.
-- **Key symbols:** `GoogleStatusDTO` (`configured`/`connected`/`setupHint`); bound `GoogleStatus()`, `ConnectGoogle()` (runs the loopback OAuth flow, blocks until linked), `DisconnectGoogle()`.
-- **Depends on:** `internal/google` (`Default`).
-- **Used by / entrypoint:** the Google card at the top of the Connectors view.
+- **Key symbols:** `GoogleStatusDTO` (`configured`/`connected`/`setupHint`/`setupUrl`/`clientPath`); bound `GoogleStatus()`, `ConnectGoogle()` (loopback OAuth, blocks until linked), `DisconnectGoogle()`, `ImportGoogleClient()` (native file picker → `google.ImportClient`; the "Set up" step when not configured).
+- **Depends on:** `internal/google` (`Default`/`ImportClient`/`ClientPath`/`SetupURL`).
+- **Used by / entrypoint:** the Google card at the top of the Connectors view (Set up → Connect → Disconnect lifecycle).
 
 ### internal/gui/crons.go
 - **Role:** Scheduled-work bridge; surfaces systemd `--user` timers + the user's crontab via shelling out, and timer control verbs.

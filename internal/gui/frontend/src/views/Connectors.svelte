@@ -186,6 +186,30 @@
     }
   }
 
+  async function setupGoogle() {
+    // Open the Cloud Console (create a Desktop OAuth client), then import the JSON.
+    if (gstatus?.setupUrl) {
+      try {
+        const { Browser } = await import("@wailsio/runtime");
+        Browser.OpenURL(gstatus.setupUrl);
+      } catch {
+        /* opening the console is a convenience; import still works without it */
+      }
+    }
+    gBusy = true;
+    try {
+      const imported = await Bridge.ImportGoogleClient();
+      if (imported) {
+        toasts.success("Google client imported — now click Connect");
+        await load();
+      }
+    } catch (e) {
+      toasts.error(errText(e));
+    } finally {
+      gBusy = false;
+    }
+  }
+
   async function connectGoogle() {
     gBusy = true;
     try {
@@ -299,7 +323,7 @@
                 {/if}
               </div>
               <p class="conn__desc">Calendar + Gmail — read events &amp; email, create events.</p>
-              {#if !gstatus.configured}<p class="conn__url">To enable: {gstatus.setupHint}</p>{/if}
+              {#if !gstatus.configured}<p class="conn__url">Set up opens Google Cloud Console — create a Desktop OAuth client, then pick the downloaded JSON.</p>{/if}
             </div>
             <div class="conn__ops">
               {#if gstatus.connected}
@@ -307,6 +331,10 @@
               {:else if gstatus.configured}
                 <Button variant="primary" disabled={gBusy} onclick={connectGoogle}>
                   {gBusy ? "Authorizing…" : "Connect"}
+                </Button>
+              {:else}
+                <Button variant="primary" disabled={gBusy} onclick={setupGoogle}>
+                  {gBusy ? "Importing…" : "Set up"}
                 </Button>
               {/if}
             </div>

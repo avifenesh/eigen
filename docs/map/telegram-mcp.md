@@ -186,7 +186,7 @@
 
 ### internal/google/auth.go
 - **Role:** The OAuth broker — loads the BYO client creds, holds the refreshing token source, gates on configured/connected.
-- **Key symbols:** `clientCreds`, `loadClientCreds`/`clientCredPaths` (`$EIGEN_GOOGLE_CLIENT` → `~/.config/eigen/google_client.json` → `~/.config/atrium/google_client.json`), `readClientFile` (accepts `installed`/`web`/bare wrappers), `Auth` (`NewAuth`/`Configured`/`Connected`/`tokenSource`/`Disconnect`), `persistingSource` (writes rotated tokens back, preserves refresh_token).
+- **Key symbols:** `clientCreds`, `loadClientCreds`/`clientCredPaths` (`$EIGEN_GOOGLE_CLIENT` → `~/.config/eigen/google_client.json` → `~/.config/atrium/google_client.json`), `readClientFile` (accepts `installed`/`web`/bare wrappers), `Auth` (`NewAuth`/`Configured`/`Connected`/`tokenSource`/`Disconnect`), `persistingSource` (writes rotated tokens back, preserves refresh_token); `ClientPath()` (import target) + `ImportClient(srcPath)` (validate + copy a downloaded client JSON in, flips Configured), `SetupURL` (Cloud Console credentials page) — the in-app "set up Google" path (Google forbids programmatic account/client creation, so the user imports a Desktop client they create).
 
 ### internal/google/connect.go
 - **Role:** The interactive loopback authorization-code flow. `Connect(ctx)` — bind ephemeral 127.0.0.1 port, open consent (`AccessTypeOffline`+`ApprovalForce`+PKCE for a refresh token), catch the redirect, validate state, exchange, persist. `SetupHint()` is the "how to enable Google" copy.

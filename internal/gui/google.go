@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/avifenesh/eigen/internal/google"
@@ -17,6 +18,8 @@ type GoogleStatusDTO struct {
 	Configured bool   `json:"configured"` // a BYO Google Cloud client is present
 	Connected  bool   `json:"connected"`  // an account is linked (refresh token stored)
 	SetupHint  string `json:"setupHint"`  // how to add a client when not configured
+	SetupURL   string `json:"setupUrl"`   // Google Cloud Console credentials page
+	ClientPath string `json:"clientPath"` // where the imported client JSON lands
 }
 
 // GoogleStatus reports whether Google is configured (client creds present) and
@@ -27,7 +30,37 @@ func (b *Bridge) GoogleStatus() (*GoogleStatusDTO, error) {
 		Configured: a.Configured(),
 		Connected:  a.Connected(),
 		SetupHint:  google.SetupHint(),
+		SetupURL:   google.SetupURL,
+		ClientPath: google.ClientPath(),
 	}, nil
+}
+
+// ImportGoogleClient opens a native file picker for the user's downloaded
+// Google Cloud OAuth-client JSON and imports it (validates + copies to
+// ClientPath). Returns true when a file was imported, false when the user
+// cancelled. This is the in-app "set up Google" step.
+func (b *Bridge) ImportGoogleClient() (bool, error) {
+	if b.app == nil {
+		return false, fmt.Errorf("no window")
+	}
+	dlg := b.app.Dialog.OpenFile().
+		CanChooseFiles(true).
+		CanChooseDirectories(false).
+		SetTitle("Choose your Google OAuth client JSON")
+	if win := b.app.Window.Current(); win != nil {
+		dlg = dlg.AttachToWindow(win)
+	}
+	path, err := dlg.PromptForSingleSelection()
+	if err != nil {
+		return false, err
+	}
+	if path == "" {
+		return false, nil // cancelled
+	}
+	if err := google.Default().ImportClient(path); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // ConnectGoogle runs the loopback OAuth flow (opens the browser, waits for

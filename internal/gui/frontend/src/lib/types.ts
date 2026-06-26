@@ -439,6 +439,8 @@ export type GoogleStatusDTO = {
   configured: boolean; // a BYO Google Cloud client is present
   connected: boolean; // an account is linked
   setupHint: string; // how to add a client when not configured
+  setupUrl: string; // Google Cloud Console credentials page
+  clientPath: string; // where the imported client JSON lands
 };
 
 // Working-station command-center snapshot. Mirrors internal/gui/dashboard.go.
