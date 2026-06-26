@@ -135,9 +135,9 @@
 - **Used by / entrypoint:** rendered by `Config.svelte`.
 
 ### internal/gui/frontend/src/views/Connectors.svelte
-- **Role:** The "superapp" integrations view (`connectors` route, rail "Connectors"). Lists remote MCP connectors with OAuth connection status; add one by name + URL (→ background OAuth, browser opens); connect/disconnect/remove; a second section lists local stdio MCP servers (toggle/remove). Refreshes on the `eigen:connector` event when a background flow finishes.
-- **Key symbols:** `load()` (parallel `Connectors`+`MCPServers`, `alive`/`loadSeq` guarded), the add-connector form (`addConnector`), `connect`/`disconnect`/`removeConnector`, `toggleServer`/`removeServer`, `connecting`/`busy` per-name state, `stdioServers` derived; subscribes `ev.connector` via `on()`.
-- **Depends on:** `$lib/bridge` (`Connectors`/`AddConnector`/`ConnectConnector`/`DisconnectConnector`/`RemoveConnector`/`SetConnectorDisabled`/`MCPServers`/`SetMCPServerDisabled`/`RemoveMCPServer`), `$lib/events` (`ev.connector`), `$lib/types` (`ConnectorsDTO`/`ConnectorDTO`/`ConnectorEventDTO`/`MCPServersDTO`/`MCPServerDTO`), `$lib/stores/toasts.svelte`; components `Card`, `Button`, `EmptyState`.
+- **Role:** The "superapp" integrations view (`connectors` route, rail "Connectors"). Three sections: configured connectors with OAuth status (connect/disconnect/remove); a **curated directory grid** (one-click add+authorize for Notion/Linear/Asana/…); and local stdio MCP servers (toggle/remove). Add a custom one by name + URL. Refreshes on the `eigen:connector` event when a background flow finishes.
+- **Key symbols:** `load()` (parallel `Connectors`+`MCPServers`, `alive`/`loadSeq` guarded), `addConnector` (custom URL form) + `addFromCatalog` (directory tile), `connect`/`disconnect`/`removeConnector`, `toggleServer`/`removeServer`, `connecting`/`busy` per-name state, `stdioServers` derived; subscribes `ev.connector` via `on()`.
+- **Depends on:** `$lib/bridge` (`Connectors`/`AddConnector`/`AddCatalogConnector`/`ConnectConnector`/`DisconnectConnector`/`RemoveConnector`/`SetConnectorDisabled`/`MCPServers`/`SetMCPServerDisabled`/`RemoveMCPServer`), `$lib/events` (`ev.connector`), `$lib/types` (`ConnectorsDTO`/`ConnectorDTO`/`CatalogEntryDTO`/`ConnectorEventDTO`/`MCPServersDTO`/`MCPServerDTO`), `$lib/stores/toasts.svelte`; components `Card`, `Button`, `EmptyState`.
 - **Used by / entrypoint:** `App.svelte` renders `<Connectors />` when `router.route === "connectors"`; the rail item lives in the System zone (`Rail.svelte`).
 
 ## Cross-links

@@ -13,6 +13,7 @@
     ConnectorsDTO,
     ConnectorDTO,
     ConnectorEventDTO,
+    CatalogEntryDTO,
     MCPServersDTO,
     MCPServerDTO,
   } from "$lib/types";
@@ -88,6 +89,19 @@
       toasts.error(errText(e));
     } finally {
       adding = false;
+    }
+  }
+
+  async function addFromCatalog(e: CatalogEntryDTO) {
+    if (e.added) return;
+    connecting[e.name] = true;
+    try {
+      await Bridge.AddCatalogConnector(e.name);
+      toasts.info(`Opening browser to authorize ${e.display}…`);
+      await load();
+    } catch (err) {
+      connecting[e.name] = false;
+      toasts.error(errText(err));
     }
   }
 
@@ -224,7 +238,8 @@
               <div class="conn">
                 <div class="conn__info">
                   <div class="conn__name">
-                    <span class="conn__title">{c.name}</span>
+                    {#if c.glyph}<span class="conn__glyph">{c.glyph}</span>{/if}
+                    <span class="conn__title">{c.display || c.name}</span>
                     {#if connecting[c.name]}
                       <span class="badge badge--pending">authorizing…</span>
                     {:else if c.connected}
@@ -253,7 +268,33 @@
           {/each}
         </div>
       {:else}
-        <EmptyState glyph="⟐" title="No connectors yet" line="Add a remote MCP server to connect an external app." />
+        <EmptyState glyph="⟐" title="No connectors yet" line="Pick one from the directory below, or add a remote MCP server by URL." />
+      {/if}
+
+      <!-- Directory: one-click browse & connect -->
+      {#if conns && conns.directory.length > 0}
+        <header class="cx__head cx__head--sub">
+          <h3 class="cx__subtitle">Directory</h3>
+          <p class="cx__sub">Popular connectors — one click to add and authorize.</p>
+        </header>
+        <div class="grid">
+          {#each conns.directory as e (e.name)}
+            <button
+              class="tile"
+              class:tile--added={e.added}
+              disabled={e.added || connecting[e.name]}
+              title={e.description}
+              onclick={() => addFromCatalog(e)}
+            >
+              <span class="tile__glyph">{e.glyph}</span>
+              <span class="tile__name">{e.display}</span>
+              <span class="tile__cat">{e.category}</span>
+              <span class="tile__cta">
+                {#if e.added}added{:else if connecting[e.name]}authorizing…{:else}+ connect{/if}
+              </span>
+            </button>
+          {/each}
+        </div>
       {/if}
 
       <!-- Local MCP servers (wiring) -->
@@ -451,6 +492,64 @@
     display: flex;
     gap: var(--sp-2);
     margin-top: var(--sp-2);
+  }
+  .conn__glyph {
+    font-size: var(--fs-body);
+    line-height: 1;
+  }
+
+  /* Directory grid */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: var(--sp-3);
+  }
+  .tile {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-1);
+    padding: var(--sp-4) var(--sp-5);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-md);
+    background: var(--bg-raised-2);
+    cursor: pointer;
+    text-align: left;
+    transition:
+      border-color var(--dur-fast) var(--ease-out),
+      background var(--dur-fast) var(--ease-out);
+  }
+  .tile:hover:not(:disabled) {
+    border-color: var(--border-brand-faint);
+    background: var(--state-hover);
+  }
+  .tile:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+  .tile--added {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .tile__glyph {
+    font-size: 1.4rem;
+    line-height: 1;
+  }
+  .tile__name {
+    font: var(--fw-semibold) var(--fs-body-sm) / 1.2 var(--font-sans);
+    color: var(--text-primary);
+  }
+  .tile__cat {
+    font-size: var(--fs-micro);
+    color: var(--text-faint);
+  }
+  .tile__cta {
+    margin-top: var(--sp-2);
+    font: var(--fw-medium) var(--fs-label) / 1 var(--font-sans);
+    color: var(--brand-bright);
+  }
+  .tile--added .tile__cta {
+    color: var(--text-faint);
   }
   @media (prefers-reduced-motion: reduce) {
     .cx__skel {

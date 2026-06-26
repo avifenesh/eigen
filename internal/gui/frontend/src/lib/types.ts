@@ -393,6 +393,8 @@ export type RuleChainsDTO = {
 // Notion, …). Mirrors internal/gui/connectors.go.
 export type ConnectorDTO = {
   name: string;
+  display: string;
+  glyph: string;
   url: string;
   type: string;
   description: string;
@@ -401,7 +403,17 @@ export type ConnectorDTO = {
   requiresAuth: boolean;
   expiry?: string; // RFC3339 token expiry
 };
-export type ConnectorsDTO = { connectors: ConnectorDTO[] };
+// One curated directory connector (the browse-and-connect grid).
+export type CatalogEntryDTO = {
+  name: string;
+  display: string;
+  glyph: string;
+  url: string;
+  description: string;
+  category: string;
+  added: boolean; // already configured in mcp.json
+};
+export type ConnectorsDTO = { connectors: ConnectorDTO[]; directory: CatalogEntryDTO[] };
 // Emitted on "eigen:connector" when a background OAuth flow finishes.
 export type ConnectorEventDTO = { name: string; ok: boolean; error?: string };
 

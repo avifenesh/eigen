@@ -140,6 +140,10 @@
 - **Depends on:** `golang.org/x/oauth2`; same-package discovery/register/store/callback/browser.
 - **Used by / entrypoint:** `wire.go:Default`/`Install`; `internal/gui/connectors.go`.
 
+### internal/connector/directory.go
+- **Role:** The curated connector directory — a hard-coded catalog of known remote-MCP connectors (Notion, Linear, Asana, Atlassian, Sentry, Stripe, …) so the GUI shows a one-click "browse & connect" grid over the generic OAuth flow (pure UX sugar; connecting a tile runs the same discovery+PKCE as a hand-typed URL).
+- **Key symbols:** `CatalogEntry` (name/display/glyph/url/description/category), `catalog` (the list), `Directory()` (returns a copy), `CatalogByName(name)` (case-insensitive lookup; ok=false for custom URLs).
+
 ### internal/connector/discovery.go
 - **Role:** RFC 9728 + RFC 8414 / OpenID metadata discovery.
 - **Key symbols:** `parseWWWAuthenticate` (pull `resource_metadata` from the 401 challenge), `splitAuthParams`, `discover` (resource → auth-server), `fetchProtectedResource`/`fetchAuthServer` (well-known paths, derived from origin when no hint), `authServerMeta`/`protectedResourceMeta`, `fetchJSON`, `originOf`.

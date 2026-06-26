@@ -179,8 +179,10 @@
 - **Role:** The "superapp" integrations bridge — remote MCP servers (connectors) authorized over OAuth, with live connection status, add/connect/disconnect/remove. The slow browser-opening OAuth flow runs OFF the bound call and reports on the `eigen:connector` event.
 - **Key symbols:**
   - `ConnectorDTO`/`ConnectorsDTO` (status + editor rows; `Connected`/`RequiresAuth`/`Expiry`), `connectorEventDTO` (emitted on completion).
-  - `Connectors()` — bound; remote servers from `mcp.ListServers` joined with `connector.Default()` OAuth status + expiry.
+  - `Connectors()` — bound; remote servers from `mcp.ListServers` joined with `connector.Default()` OAuth status + expiry + curated-directory display/glyph, PLUS the full `connector.Directory()` (each marked `Added` when already in mcp.json).
+  - `CatalogEntryDTO` — one curated directory tile (display/glyph/url/category/added).
   - `AddConnector(name, url, desc)` — bound; writes the `mcp.json` remote entry (`mcp.SaveServer`) then `startConnect` (background OAuth, emits `eigen:connector`).
+  - `AddCatalogConnector(name)` — bound; one-click add of a directory connector (URL from `connector.CatalogByName`) → `AddConnector`.
   - `ConnectConnector(name)` (re-auth) / `DisconnectConnector` (drop token, keep entry) / `RemoveConnector` (token + entry) / `SetConnectorDisabled`.
 - **Depends on:** `internal/connector` (`Default`), `internal/mcp` (`ListServers`/`SaveServer`/`RemoveServer`/`SetServerDisabled`/`UserConfigPath`).
 - **Used by / entrypoint:** the Connectors view; `eigen:connector` event consumed by the frontend.

@@ -147,6 +147,7 @@ export const Bridge = {
   Connectors: (): Promise<ConnectorsDTO | null> => B.Connectors(),
   AddConnector: (name: string, url: string, description: string): Promise<void> =>
     B.AddConnector(name, url, description),
+  AddCatalogConnector: (name: string): Promise<void> => B.AddCatalogConnector(name),
   ConnectConnector: (name: string): Promise<void> => B.ConnectConnector(name),
   DisconnectConnector: (name: string): Promise<void> => B.DisconnectConnector(name),
   RemoveConnector: (name: string): Promise<boolean> => B.RemoveConnector(name),

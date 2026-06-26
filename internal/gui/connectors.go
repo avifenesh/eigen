@@ -25,6 +25,8 @@ import (
 // ConnectorDTO is one connector's editor + status row.
 type ConnectorDTO struct {
 	Name        string `json:"name"`
+	Display     string `json:"display"` // friendly label from the directory, else the name
+	Glyph       string `json:"glyph"`   // directory tile glyph (empty for custom URLs)
 	URL         string `json:"url"`
 	Type        string `json:"type"`
 	Description string `json:"description"`
@@ -37,9 +39,22 @@ type ConnectorDTO struct {
 	Expiry       string `json:"expiry,omitempty"` // RFC3339, when the token expires
 }
 
-// ConnectorsDTO is the connectors snapshot.
+// CatalogEntryDTO is one curated directory connector (the browse-and-connect grid).
+type CatalogEntryDTO struct {
+	Name        string `json:"name"`
+	Display     string `json:"display"`
+	Glyph       string `json:"glyph"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
+	Category    string `json:"category"`
+	Added       bool   `json:"added"` // already in mcp.json (so the grid shows "added")
+}
+
+// ConnectorsDTO is the connectors snapshot: configured connectors + the curated
+// directory of ones the user could add.
 type ConnectorsDTO struct {
-	Connectors []ConnectorDTO `json:"connectors"`
+	Connectors []ConnectorDTO    `json:"connectors"`
+	Directory  []CatalogEntryDTO `json:"directory"`
 }
 
 // connectorEventDTO is emitted on "eigen:connector" when a background OAuth flow
@@ -58,19 +73,30 @@ func (b *Bridge) Connectors() (*ConnectorsDTO, error) {
 		return nil, err
 	}
 	mgr := connector.Default()
+	configured := map[string]bool{}
 	out := make([]ConnectorDTO, 0)
 	for _, s := range servers {
+		configured[strings.ToLower(s.Name)] = true
 		if !s.Remote {
 			continue // connectors are the remote servers; stdio lives in the wiring editor
 		}
 		dto := ConnectorDTO{
 			Name:         s.Name,
+			Display:      s.Name,
 			URL:          s.URL,
 			Type:         s.Type,
 			Description:  s.Description,
 			Disabled:     s.Disabled,
 			RequiresAuth: true,
 			Connected:    mgr.IsConnected(s.Name),
+		}
+		// Enrich from the curated directory (display label + tile glyph) when known.
+		if cat, ok := connector.CatalogByName(s.Name); ok {
+			dto.Display = cat.Display
+			dto.Glyph = cat.Glyph
+			if dto.Description == "" {
+				dto.Description = cat.Description
+			}
 		}
 		out = append(out, dto)
 	}
@@ -86,7 +112,30 @@ func (b *Bridge) Connectors() (*ConnectorsDTO, error) {
 			}
 		}
 	}
-	return &ConnectorsDTO{Connectors: out}, nil
+	// Curated directory — mark entries already configured so the grid shows "added".
+	dir := make([]CatalogEntryDTO, 0)
+	for _, e := range connector.Directory() {
+		dir = append(dir, CatalogEntryDTO{
+			Name:        e.Name,
+			Display:     e.Display,
+			Glyph:       e.Glyph,
+			URL:         e.URL,
+			Description: e.Description,
+			Category:    e.Category,
+			Added:       configured[strings.ToLower(e.Name)],
+		})
+	}
+	return &ConnectorsDTO{Connectors: out, Directory: dir}, nil
+}
+
+// AddCatalogConnector adds a curated directory connector by name (one click —
+// the URL comes from the catalog), then starts its OAuth flow.
+func (b *Bridge) AddCatalogConnector(name string) error {
+	cat, ok := connector.CatalogByName(strings.TrimSpace(name))
+	if !ok {
+		return fmt.Errorf("unknown directory connector %q", name)
+	}
+	return b.AddConnector(cat.Name, cat.URL, cat.Description)
 }
 
 // AddConnector records a remote MCP server in mcp.json and starts the OAuth
