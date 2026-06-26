@@ -32,12 +32,21 @@ type GLM struct {
 	// mean the model may search when it deems it useful).
 	search string
 
-	// thinking is GLM's reasoning mode. GLM exposes exactly TWO modes via the
-	// `thinking.type` request field: "enabled" (the model emits
-	// reasoning_content before its answer) and "disabled" (no reasoning). We
-	// map eigen's effort vocabulary onto these: "off" → disabled, anything
-	// else → enabled. Empty = don't send the field (server default).
+	// thinking is GLM's reasoning ON/OFF toggle, sent as the `thinking.type`
+	// request field: "enabled" (the model emits reasoning_content before its
+	// answer) or "disabled" (no reasoning). Empty = don't send the field
+	// (server default).
 	thinking string
+
+	// effort is GLM-5.2's graded reasoning level, sent as the OpenAI-style
+	// `reasoning_effort` field WHEN thinking is enabled. GLM-5.2 documents two
+	// levels — "high" and "max" — and z.ai recommends "max" for coding/agent
+	// use. Empty means this model has no graded effort (older GLM: thinking is a
+	// bare enabled/disabled toggle with no reasoning_effort field), so the field
+	// is omitted. Without reasoning_effort, GLM-5.2 does NOT stream
+	// reasoning_content even with thinking enabled — which is why thoughts never
+	// appeared.
+	effort string
 
 	// clearThinking controls GLM's "Preserved Thinking": when false (the
 	// default while thinking is enabled), GLM keeps reasoning_content from
@@ -80,7 +89,18 @@ func NewGLM(model string) (*GLM, error) {
 		if info.Effort == "off" {
 			g.thinking = "disabled"
 		}
-		// EIGEN_REASONING_EFFORT can override at startup (off|on for GLM).
+		// Graded effort (GLM-5.2: high|max): when the catalog ladder carries a
+		// real level beyond the bare off/on toggle, seed reasoning_effort from
+		// the catalog default ("max" for glm-5.2, per z.ai's coding guidance) so
+		// reasoning_content actually streams. Detect "graded" as a ladder that
+		// contains anything other than off/on.
+		if glmGradedEffort(info.EffortLevels) {
+			g.effort = info.Effort
+			if g.effort == "" || g.effort == "on" {
+				g.effort = "max"
+			}
+		}
+		// EIGEN_REASONING_EFFORT can override at startup.
 		if v := strings.TrimSpace(os.Getenv("EIGEN_REASONING_EFFORT")); v != "" {
 			g.SetEffort(v)
 		}
@@ -100,18 +120,18 @@ func (g *GLM) Name() string    { return g.c.model + " (zhipu glm)" }
 func (g *GLM) ModelID() string { return g.c.model }
 
 func (g *GLM) Complete(ctx context.Context, req Request) (*Response, error) {
-	search, thinking, clearThinking := g.snapshot()
+	search, thinking, effort, clearThinking := g.snapshot()
 	cc := *g.c
 	cc.extraTools = func() []map[string]any { return glmWebSearchTool(search) }
-	cc.extra = func() map[string]any { return glmBodyExtra(thinking, clearThinking) }
+	cc.extra = func() map[string]any { return glmBodyExtra(thinking, effort, clearThinking) }
 	return cc.complete(ctx, glmPrepare(req, search))
 }
 
 func (g *GLM) Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error) {
-	search, thinking, clearThinking := g.snapshot()
+	search, thinking, effort, clearThinking := g.snapshot()
 	cc := *g.c
 	cc.extraTools = func() []map[string]any { return glmWebSearchTool(search) }
-	cc.extra = func() map[string]any { return glmBodyExtra(thinking, clearThinking) }
+	cc.extra = func() map[string]any { return glmBodyExtra(thinking, effort, clearThinking) }
 	return cc.stream(ctx, glmPrepare(req, search), sink)
 }
 
@@ -135,25 +155,29 @@ func (g *GLM) SetSearch(mode string) bool {
 	}
 }
 
-// Effort reports the current reasoning mode in eigen's vocabulary: "off" when
-// thinking is disabled, "on" when enabled, "" when this model has no thinking
+// Effort reports the current reasoning level in eigen's vocabulary. For a
+// GRADED model (GLM-5.2: high|max) it returns the live reasoning_effort; for a
+// bare-toggle model it returns "off"/"on"; "" when this model has no thinking
 // control.
 func (g *GLM) Effort() string {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	switch g.thinking {
-	case "disabled":
+	if g.thinking == "disabled" {
 		return "off"
-	case "enabled":
-		return "on"
-	default:
-		return ""
 	}
+	if g.thinking == "enabled" {
+		if g.effort != "" {
+			return g.effort // graded: report the actual reasoning_effort (high|max)
+		}
+		return "on"
+	}
+	return ""
 }
 
-// SetEffort maps eigen's effort vocabulary onto GLM's two thinking modes:
-// "off" → disabled, any other accepted level ("on", or any reasoning word) →
-// enabled. Returns false when this model has no thinking control, or for an
+// SetEffort maps eigen's effort vocabulary onto GLM's reasoning controls. "off"
+// disables thinking; a graded model (GLM-5.2) records the reasoning_effort
+// (high|max, clamped) AND enables thinking; a bare-toggle model just enables.
+// Returns false when this model has no thinking control, or for an
 // unrecognized value.
 func (g *GLM) SetEffort(level string) bool {
 	g.mu.Lock()
@@ -167,37 +191,75 @@ func (g *GLM) SetEffort(level string) bool {
 		return true
 	case "on", "enabled", "low", "medium", "high", "xhigh", "max":
 		g.thinking = "enabled"
+		// On a graded model, also set reasoning_effort. GLM-5.2 accepts only
+		// "high" and "max". A bare on/enabled (and xhigh/max) maps to "max" — the
+		// recommended coding default and consistent with NewGLM's seed, so
+		// toggling thinking off→on doesn't silently downgrade max→high; only an
+		// explicit low/medium/high lands on "high".
+		if g.effort != "" {
+			switch level {
+			case "on", "enabled", "xhigh", "max":
+				g.effort = "max"
+			default:
+				g.effort = "high"
+			}
+		}
 		return true
 	default:
 		return false
 	}
 }
 
-func (g *GLM) snapshot() (search, thinking string, clearThinking bool) {
+// glmGradedEffort reports whether an effort ladder is GLM-5.2-style graded
+// (carries a level beyond the bare off/on toggle) rather than a plain on/off.
+func glmGradedEffort(levels []string) bool {
+	for _, l := range levels {
+		switch l {
+		case "off", "on", "":
+			// toggle rungs — ignore
+		default:
+			return true
+		}
+	}
+	return false
+}
+
+func (g *GLM) snapshot() (search, thinking, effort string, clearThinking bool) {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	return g.search, g.thinking, g.clearThinking
+	return g.search, g.thinking, g.effort, g.clearThinking
 }
 
 // bodyExtra injects GLM's reasoning request fields when a mode is set:
 //   - thinking.type enabled|disabled — the on/off toggle (eigen effort on|off).
+//   - reasoning_effort high|max — GLM-5.2's graded level. REQUIRED for GLM-5.2
+//     to actually stream reasoning_content; without it the model returns no
+//     thoughts even with thinking enabled (z.ai coding guidance recommends max).
 //   - clear_thinking:false when ENABLED — "Preserved Thinking": GLM retains
 //     reasoning_content from prior assistant turns for coherence + cache hits
 //     (the recommended mode for coding/agent use, per z.ai docs). eigen already
 //     carries Message.Reasoning back across turns, so this is the right default.
 //     Override with EIGEN_GLM_CLEAR_THINKING=1 to drop cross-turn reasoning.
 func (g *GLM) bodyExtra() map[string]any {
-	_, thinking, clearThinking := g.snapshot()
-	return glmBodyExtra(thinking, clearThinking)
+	_, thinking, effort, clearThinking := g.snapshot()
+	return glmBodyExtra(thinking, effort, clearThinking)
 }
 
-func glmBodyExtra(thinking string, clearThinking bool) map[string]any {
+func glmBodyExtra(thinking, effort string, clearThinking bool) map[string]any {
 	if thinking == "" {
 		return nil
 	}
 	extra := map[string]any{"thinking": map[string]any{"type": thinking}}
-	if thinking == "enabled" && !clearThinking {
-		extra["clear_thinking"] = false // preserve reasoning across turns
+	if thinking == "enabled" {
+		// GLM-5.2 needs reasoning_effort (high|max) to actually stream
+		// reasoning_content; older GLM has no graded effort (effort==""), so the
+		// field is omitted there.
+		if effort != "" {
+			extra["reasoning_effort"] = effort
+		}
+		if !clearThinking {
+			extra["clear_thinking"] = false // preserve reasoning across turns
+		}
 	}
 	return extra
 }
@@ -213,7 +275,7 @@ func glmPrepare(req Request, search string) Request {
 // webSearchTool returns the GLM web_search built-in tool entry when search is
 // enabled, or nil when off.
 func (g *GLM) webSearchTool() []map[string]any {
-	search, _, _ := g.snapshot()
+	search, _, _, _ := g.snapshot()
 	return glmWebSearchTool(search)
 }
 

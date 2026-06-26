@@ -94,10 +94,19 @@ export function createTranscript(sessionId: string) {
   // Seq reassembly: each StreamEventDTO carries a monotonic per-session ordinal
   // (pump.go stamps it in emit order), but Wails dispatches each event on its
   // own goroutine, so arrival at the webview can be reordered. We apply events
-  // strictly in seq order: an early arrival is parked in `pending` until its
-  // predecessors land. `expectedSeq` is the next seq to apply (1-based; reset in
-  // seed() because a reconnect restarts the seq stream from the replay).
-  let expectedSeq = 1;
+  // strictly in seq order: an early arrival is parked until its predecessors
+  // land.
+  //
+  // `expectedSeq` is the next seq to apply. It is LATCHED from the first event
+  // actually seen (sentinel 0 = not yet latched) rather than hardcoded to 1 —
+  // because the pump's per-session seq counter does NOT reset when a view
+  // re-attaches (Bridge.Subscribe is a no-op if the pump is already live), so a
+  // re-entered chat can start receiving at seq 50, not 1. Hardcoding 1 parked
+  // every event in reorderBuf until the 256 overflow valve fired, so short
+  // turns (and the final message of a turn) never rendered. Latching to the
+  // first seen seq makes reassembly correct from whatever base the live pump is
+  // at, while still ordering within the window.
+  let expectedSeq = 0;
   const reorderBuf = new Map<number, StreamEventDTO>();
 
   // Apply one (now in-order) stream event: update the running flag, then fold it
@@ -114,6 +123,18 @@ export function createTranscript(sessionId: string) {
       running = true;
     }
     onEvent(m.event, m.replay);
+  }
+
+  // Flush the reorder buffer in seq order and resync the window past it. Used by
+  // the overflow valve (a permanently-missing seq, or a live event that raced
+  // ahead of a replay that never came) so a stuck buffer can't strand events.
+  function drainBufInOrder() {
+    const keys = [...reorderBuf.keys()].sort((a, b) => a - b);
+    for (const k of keys) {
+      applyEvent(reorderBuf.get(k)!);
+      reorderBuf.delete(k);
+    }
+    if (keys.length) expectedSeq = keys[keys.length - 1] + 1;
   }
 
   function pushHistory(b: Block) {
@@ -315,10 +336,11 @@ export function createTranscript(sessionId: string) {
       history = mapMessages(messages, nextUid).slice(-CAP);
       truncated = messages.length > CAP;
       running = isRunning;
-      // A reconnect restarts the daemon's emit-seq stream from the replay, so the
-      // reassembly window must reset too — otherwise the post-reconnect seq 1
-      // would be parked forever behind a stale expectedSeq.
-      expectedSeq = 1;
+      // Reset the reassembly window to "unlatched" (0): the next event seen —
+      // whatever seq the live pump is currently at — re-latches the base. (A
+      // reconnect MAY restart the pump's seq, but a re-attach to a still-live
+      // pump does NOT, so we must not assume 1.)
+      expectedSeq = 0;
       reorderBuf.clear();
     },
     // start the live event listener; lifetime == owning $effect.
@@ -334,6 +356,30 @@ export function createTranscript(sessionId: string) {
           applyEvent(m);
           return;
         }
+        // Latch the window base to the first seq we actually see (the live pump
+        // may already be mid-stream after a re-attach), so we never wait forever
+        // for a seq=1 that won't come again. On attach the pump emits the REPLAY
+        // buffer first, in seq order, so prefer a replay event as the base: if a
+        // live (non-replay) event races ahead while a replay is still expected
+        // (running), buffer it instead of latching to its higher seq — otherwise
+        // one early live straggler would push the base past the replay and make
+        // every replayed event apply out of order via the behind-window path.
+        // The buffered event drains in order once the base latches (or via the
+        // overflow valve if no replay ever comes).
+        if (expectedSeq === 0) {
+          if (running && !m.replay) {
+            reorderBuf.set(m.seq, m);
+            if (reorderBuf.size > 256) drainBufInOrder();
+            return;
+          }
+          expectedSeq = m.seq;
+        }
+        // A late event whose seq is already behind the window (e.g. a straggler
+        // from before a re-latch) applies immediately rather than being dropped.
+        if (m.seq < expectedSeq) {
+          applyEvent(m);
+          return;
+        }
         reorderBuf.set(m.seq, m);
         while (reorderBuf.has(expectedSeq)) {
           const next = reorderBuf.get(expectedSeq)!;
@@ -342,16 +388,9 @@ export function createTranscript(sessionId: string) {
           applyEvent(next);
         }
         // Guard against an unbounded buffer if a seq is ever permanently missing
-        // (dropped event): once we're far ahead, give up waiting and flush what
-        // we have in seq order, resyncing expectedSeq past the gap.
-        if (reorderBuf.size > 256) {
-          const keys = [...reorderBuf.keys()].sort((a, b) => a - b);
-          for (const k of keys) {
-            applyEvent(reorderBuf.get(k)!);
-            reorderBuf.delete(k);
-          }
-          expectedSeq = keys[keys.length - 1] + 1;
-        }
+        // (a dropped event, or no replay arrived to latch the base): give up
+        // waiting and flush what we have in seq order, resyncing past the gap.
+        if (reorderBuf.size > 256) drainBufInOrder();
       });
     },
     dispose() {

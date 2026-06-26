@@ -66,10 +66,10 @@ func TestProviderLiveSettingsConcurrentRequestBuild(t *testing.T) {
 				_ = g.SetEffort("on")
 			}
 		}, func(i int) {
-			search, thinking, clearThinking := g.snapshot()
+			search, thinking, effort, clearThinking := g.snapshot()
 			cc := *g.c
 			cc.extraTools = func() []map[string]any { return glmWebSearchTool(search) }
-			cc.extra = func() map[string]any { return glmBodyExtra(thinking, clearThinking) }
+			cc.extra = func() map[string]any { return glmBodyExtra(thinking, effort, clearThinking) }
 			_, _ = cc.body(glmPrepare(req, search), false)
 		})
 	})

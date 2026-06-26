@@ -133,11 +133,13 @@ var Catalog = []ModelInfo{
 	// glm-5.2 announced 2026-06-13 (Coding Plan UI only); the API model id is
 	// not served until ~next week — keep the entry ready but NOT the default
 	// until the api.z.ai coding endpoint serves it, or GLM calls 404.
-	// Reasoning: GLM exposes TWO thinking modes via the `thinking.type` field
-	// (enabled/disabled) — probed live on the z.ai coding endpoint (enabled →
-	// reasoning_content; disabled → none). Mapped to effort levels off|on
-	// (off→disabled, on→enabled). Default on.
-	{ID: "glm-5.2", Provider: "glm", ContextWindow: 1000000, Search: true, Reasoning: true, Effort: "on", EffortLevels: []string{"off", "on"}},
+	// Reasoning: GLM exposes the `thinking.type` toggle (enabled/disabled). For
+	// 5.2 it ALSO takes a graded `reasoning_effort` with exactly two levels —
+	// "high" and "max" — and z.ai recommends "max" for coding/agent use; without
+	// reasoning_effort the model streams no reasoning_content even with thinking
+	// enabled. So 5.2's ladder is off|high|max (off→thinking disabled), default
+	// max. Older GLM (5.1/5/turbo) is a bare on/off toggle (no reasoning_effort).
+	{ID: "glm-5.2", Provider: "glm", ContextWindow: 1000000, Search: true, Reasoning: true, Effort: "max", EffortLevels: []string{"off", "high", "max"}},
 	{ID: "glm-5.1", Provider: "glm", ContextWindow: 200000, Search: true, Reasoning: true, Effort: "on", EffortLevels: []string{"off", "on"}},
 	{ID: "glm-5", Provider: "glm", ContextWindow: 200000, Search: true, Reasoning: true, Effort: "on", EffortLevels: []string{"off", "on"}},
 	{ID: "glm-5-turbo", Provider: "glm", ContextWindow: 200000, Search: true, Reasoning: true, Effort: "on", EffortLevels: []string{"off", "on"}},
