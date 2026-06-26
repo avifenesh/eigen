@@ -28,6 +28,7 @@ import type {
   ConnectorsDTO,
   MCPServersDTO,
   MCPServerDTO,
+  GoogleStatusDTO,
   DaemonStats,
   FeedDTO,
   FeedItemDTO,
@@ -162,6 +163,10 @@ export const Bridge = {
   SetMCPServerDisabled: (name: string, disabled: boolean): Promise<boolean> =>
     B.SetMCPServerDisabled(name, disabled),
   MCPSecretsAvailable: (): Promise<boolean> => B.MCPSecretsAvailable(),
+  // native Google integration (Calendar + Gmail)
+  GoogleStatus: (): Promise<GoogleStatusDTO | null> => B.GoogleStatus(),
+  ConnectGoogle: (): Promise<void> => B.ConnectGoogle(),
+  DisconnectGoogle: (): Promise<void> => B.DisconnectGoogle(),
   // proactive feed
   Feed: (): Promise<FeedDTO | null> => B.Feed(),
   // per-project feed accessor — reserved for a future project drill-in view (not dead code)

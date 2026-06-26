@@ -31,6 +31,7 @@ import (
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/connector"
 	"github.com/avifenesh/eigen/internal/daemon"
+	"github.com/avifenesh/eigen/internal/google"
 	"github.com/avifenesh/eigen/internal/dream"
 	"github.com/avifenesh/eigen/internal/harness"
 	"github.com/avifenesh/eigen/internal/hook"
@@ -840,6 +841,15 @@ func main() {
 			continue
 		}
 		d.Niche = true // disclose via search_tools
+		defs = append(defs, d)
+		builtin[d.Name] = true
+	}
+	// Google (Calendar + Gmail): native direct-REST tools, niche-grouped under
+	// "google"; safe to register always (return "not connected" until linked).
+	for _, d := range google.Default().Tools(nil) {
+		if builtin[d.Name] {
+			continue
+		}
 		defs = append(defs, d)
 		builtin[d.Name] = true
 	}

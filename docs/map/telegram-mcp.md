@@ -174,6 +174,36 @@
 - **Role:** Process-wide wiring. `DefaultPath()` (`~/.eigen/connectors.json`), `Default()` (shared Manager), `Install()` — sets `mcp.RemoteAuthProvider = Default().AuthHeaderFunc`; called once at startup (`main.go`) before `LoadTools`.
 - **Depends on:** `internal/mcp` (the hook).
 
+## internal/google — native Google integration (Calendar + Gmail)
+
+> Eigen's NATIVE Google integration: direct Calendar/Gmail REST exposed as agent
+> tools, authorized with the user's own Google Cloud OAuth client over a loopback
+> authorization-code flow. Mirrors atrium's proven approach (BYO Desktop OAuth
+> client + loopback callback + stored refresh token + plain REST, no SDK) — and
+> is the FIRST step of folding atrium into eigen ("one app to rule them all").
+> NOT the connector layer: Google has no hosted MCP server and no dynamic client
+> registration, so it's a direct-API built-in, not an MCP connector.
+
+### internal/google/auth.go
+- **Role:** The OAuth broker — loads the BYO client creds, holds the refreshing token source, gates on configured/connected.
+- **Key symbols:** `clientCreds`, `loadClientCreds`/`clientCredPaths` (`$EIGEN_GOOGLE_CLIENT` → `~/.config/eigen/google_client.json` → `~/.config/atrium/google_client.json`), `readClientFile` (accepts `installed`/`web`/bare wrappers), `Auth` (`NewAuth`/`Configured`/`Connected`/`tokenSource`/`Disconnect`), `persistingSource` (writes rotated tokens back, preserves refresh_token).
+
+### internal/google/connect.go
+- **Role:** The interactive loopback authorization-code flow. `Connect(ctx)` — bind ephemeral 127.0.0.1 port, open consent (`AccessTypeOffline`+`ApprovalForce`+PKCE for a refresh token), catch the redirect, validate state, exchange, persist. `SetupHint()` is the "how to enable Google" copy.
+
+### internal/google/store.go
+- **Role:** Token persistence behind `tokenStore`. `newTokenStore` → keychain (`go-keyring`, service `eigen-google`) when available, else `fileTokenStore` (0600 JSON, atomic). `DefaultTokenPath()` = `~/.eigen/google_token.json`.
+
+### internal/google/rest.go
+- **Role:** Authorized REST helpers — `httpClient` (oauth2 client attaching a fresh bearer), `getJSON`/`postJSON` (bounded, error on non-2xx).
+
+### internal/google/tools.go
+- **Role:** The agent tools. `(*Auth).Tools(nowFn)` returns niche-grouped (`google`) tools: `google_calendar_list` (read), `google_calendar_create` (write, all-day or timed), `gmail_list` (read). They return a clear "not configured/connected" until linked, so they're always safe to register.
+
+### internal/google/wire.go
+- **Role:** `Default()` — process-wide shared `Auth` (one token store + creds across agent tools, GUI bridge, CLI).
+- **Used by / entrypoint:** `build.go` + `main.go` register `google.Default().Tools(nil)` into the tool set; `internal/gui/google.go` drives connect/disconnect/status.
+
 ### internal/telegram/telegram.go
 - **Role:** The dependency-free Telegram Bot API client — long-poll `getUpdates`, send/edit HTML messages, inline keyboards, message splitting/escaping. No inbound listener (outbound HTTPS only).
 - **Key symbols:**

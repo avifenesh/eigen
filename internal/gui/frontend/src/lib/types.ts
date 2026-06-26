@@ -434,6 +434,13 @@ export type MCPServerDTO = {
 };
 export type MCPServersDTO = { servers: MCPServerDTO[] };
 
+// Native Google integration (Calendar + Gmail) status. Mirrors internal/gui/google.go.
+export type GoogleStatusDTO = {
+  configured: boolean; // a BYO Google Cloud client is present
+  connected: boolean; // an account is linked
+  setupHint: string; // how to add a client when not configured
+};
+
 export type FeedItemDTO = {
   key: string;
   kind: string; // git | github | memory | suggest

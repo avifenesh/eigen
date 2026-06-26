@@ -16,6 +16,7 @@
     CatalogEntryDTO,
     MCPServersDTO,
     MCPServerDTO,
+    GoogleStatusDTO,
   } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
   import Button from "$lib/components/Button.svelte";
@@ -23,6 +24,8 @@
 
   let conns = $state<ConnectorsDTO | null>(null);
   let servers = $state<MCPServersDTO | null>(null);
+  let gstatus = $state<GoogleStatusDTO | null>(null);
+  let gBusy = $state(false);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let busy = $state<Record<string, boolean>>({});
@@ -52,10 +55,11 @@
     loading = true;
     error = null;
     try {
-      const [c, s] = await Promise.all([Bridge.Connectors(), Bridge.MCPServers()]);
+      const [c, s, g] = await Promise.all([Bridge.Connectors(), Bridge.MCPServers(), Bridge.GoogleStatus()]);
       if (alive && seq === loadSeq) {
         conns = c;
         servers = s;
+        gstatus = g;
       }
     } catch (e) {
       if (alive && seq === loadSeq) error = errText(e);
@@ -182,6 +186,32 @@
     }
   }
 
+  async function connectGoogle() {
+    gBusy = true;
+    try {
+      toasts.info("Opening browser to authorize Google…");
+      await Bridge.ConnectGoogle();
+      toasts.success("Google connected");
+      await load();
+    } catch (e) {
+      toasts.error(errText(e));
+    } finally {
+      gBusy = false;
+    }
+  }
+  async function disconnectGoogle() {
+    gBusy = true;
+    try {
+      await Bridge.DisconnectGoogle();
+      toasts.success("Google disconnected");
+      await load();
+    } catch (e) {
+      toasts.error(errText(e));
+    } finally {
+      gBusy = false;
+    }
+  }
+
   function splitLines(s: string): string[] {
     return s
       .split("\n")
@@ -252,6 +282,38 @@
         {#snippet action()}<Button variant="secondary" onclick={() => load()}>Retry</Button>{/snippet}
       </EmptyState>
     {:else}
+      <!-- Google (native built-in: Calendar + Gmail) -->
+      {#if gstatus}
+        <Card>
+          <div class="conn">
+            <div class="conn__info">
+              <div class="conn__name">
+                <span class="conn__glyph">📅</span>
+                <span class="conn__title">Google</span>
+                {#if gstatus.connected}
+                  <span class="badge badge--ok">connected</span>
+                {:else if gstatus.configured}
+                  <span class="badge badge--off">not connected</span>
+                {:else}
+                  <span class="badge badge--off">setup needed</span>
+                {/if}
+              </div>
+              <p class="conn__desc">Calendar + Gmail — read events &amp; email, create events.</p>
+              {#if !gstatus.configured}<p class="conn__url">To enable: {gstatus.setupHint}</p>{/if}
+            </div>
+            <div class="conn__ops">
+              {#if gstatus.connected}
+                <Button variant="secondary" disabled={gBusy} onclick={disconnectGoogle}>Disconnect</Button>
+              {:else if gstatus.configured}
+                <Button variant="primary" disabled={gBusy} onclick={connectGoogle}>
+                  {gBusy ? "Authorizing…" : "Connect"}
+                </Button>
+              {/if}
+            </div>
+          </div>
+        </Card>
+      {/if}
+
       <!-- Add connector -->
       <div class="cx__actions">
         {#if !addOpen}

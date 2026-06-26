@@ -8,6 +8,7 @@ import (
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/config"
+	"github.com/avifenesh/eigen/internal/google"
 	"github.com/avifenesh/eigen/internal/hook"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/lsp"
@@ -243,6 +244,16 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 			continue
 		}
 		d.Niche = true // LSP tools: occasional; disclose via search_tools
+		defs = append(defs, d)
+		builtin[d.Name] = true
+	}
+	// Google (Calendar + Gmail): native direct-REST tools, niche-grouped under
+	// "google". Always registered — they return a clear "not connected" until the
+	// user links their Google account in the GUI.
+	for _, d := range google.Default().Tools(nil) {
+		if builtin[d.Name] {
+			continue
+		}
 		defs = append(defs, d)
 		builtin[d.Name] = true
 	}
