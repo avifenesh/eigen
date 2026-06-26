@@ -44,24 +44,19 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-/* Custom scrollbars — thin, quiet, themed. */
+/* Scrollbars — thin, quiet, themed, via the STANDARD properties only.
+   Deliberately NO ::-webkit-scrollbar pseudo-elements: WebKit (and WebKitGTK,
+   which is what ships the desktop app) treats any overflow area with a custom
+   ::-webkit-scrollbar as having "custom scrollbars" and drops it off the
+   threaded/async scrolling path onto main-thread painting per scroll event.
+   That is the "scrolling sticks then releases / not smooth, worse scrolling up"
+   feel — every wheel tick has to wait on the main thread (layout, the chat
+   VirtualList remeasure). scrollbar-width / scrollbar-color ARE honored
+   natively by WebKitGTK's GTK scrollbars and keep async scrolling intact, so
+   the bars still look thin + themed without costing smoothness. */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
-}
-*::-webkit-scrollbar {
-  width: 9px;
-  height: 9px;
-}
-*::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--r-full);
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-*::-webkit-scrollbar-thumb:hover {
-  background: var(--text-ghost);
-  background-clip: content-box;
 }
 
 /* Respect reduced-motion: collapse all transitions/animations. */
