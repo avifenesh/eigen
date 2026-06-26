@@ -28,6 +28,8 @@
   import Plugins from "./views/Plugins.svelte";
   import Connectors from "./views/Connectors.svelte";
   import Board from "./views/Board.svelte";
+  import Notes from "./views/Notes.svelte";
+  import Reviewers from "./views/Reviewers.svelte";
   import Config from "./views/Config.svelte";
 
   // Root lifecycle: start the daemon health stream; its teardown runs on unmount.
@@ -69,6 +71,10 @@
           <Observe />
         {:else if router.route === "memory"}
           <Memory />
+        {:else if router.route === "notes"}
+          <Notes />
+        {:else if router.route === "reviewers"}
+          <Reviewers />
         {:else if router.route === "skills"}
           <Skills />
         {:else if router.route === "agents"}

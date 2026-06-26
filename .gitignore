@@ -1,4 +1,6 @@
 /bin/
+# stray root build artifact from `go build -o eigen .`
+/eigen
 /dist/
 /coverage.out
 

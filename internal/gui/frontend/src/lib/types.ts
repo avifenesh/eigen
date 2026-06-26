@@ -447,6 +447,8 @@ export type GoogleStatusDTO = {
 export type ObsidianStatusDTO = { available: boolean; vault: string };
 export type RevutoStatusDTO = { available: boolean; count: number; paused: number };
 export type RevutoReviewerDTO = { repo: string; paused: boolean };
+export type NoteDTO = { path: string; title: string };
+export type GPUSampleDTO = { utilPct: number; tempC: number };
 
 // Working-station command-center snapshot. Mirrors internal/gui/dashboard.go.
 export type CalEventDTO = { summary: string; start: string; allDay: boolean; location: string };

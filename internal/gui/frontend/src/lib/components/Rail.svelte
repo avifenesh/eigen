@@ -49,8 +49,10 @@
       name: "Knowledge",
       items: [
         { route: "memory", label: "Memory", glyph: "❖" },
+        { route: "notes", label: "Notes", glyph: "🗒" },
         { route: "dreaming", label: "Dreaming", glyph: "☾" },
         { route: "skills", label: "Skills", glyph: "✦" },
+        { route: "reviewers", label: "Reviewers", glyph: "🔍" },
       ],
     },
     {

@@ -25,6 +25,8 @@
   // Working-station command center: today's calendar + unread mail + machine
   // health. One round-trip; refreshed on mount and every 60s.
   let dash = $state<DashboardDTO | null>(null);
+  // GPU util/temp history keyed "index|name" → sparklines on the GPU cards.
+  let gpuHist = $state<Record<string, { utilPct: number; tempC: number }[] | undefined>>({});
   async function loadDash() {
     try {
       const d = await Bridge.Dashboard();
@@ -33,13 +35,46 @@
       /* dashboard is best-effort; never block Home */
     }
   }
+  async function loadGpuHist() {
+    try {
+      const h = await Bridge.GPUHistory();
+      if (h) gpuHist = h;
+    } catch {
+      /* no GPU / sampler — sparklines just don't render */
+    }
+  }
 
   $effect(() => {
     sessions.refresh();
     loadDash();
+    loadGpuHist();
     const t = setInterval(loadDash, 60_000);
-    return () => clearInterval(t);
+    // History refreshes faster (the sampler runs every 5s) so the trend moves.
+    const tg = setInterval(loadGpuHist, 6_000);
+    return () => {
+      clearInterval(t);
+      clearInterval(tg);
+    };
   });
+
+  // sparkPath builds an SVG polyline path for a series over a 0..max range.
+  function sparkPath(vals: number[], max: number, w: number, h: number): string {
+    if (vals.length < 2) return "";
+    const n = vals.length;
+    return vals
+      .map((v, i) => {
+        const x = (i / (n - 1)) * w;
+        const y = h - Math.min(1, Math.max(0, v / max)) * h;
+        return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ");
+  }
+  function gpuKey(i: number, name: string): string {
+    return `${i}|${name}`;
+  }
+  function histFor(i: number, name: string): { utilPct: number; tempC: number }[] {
+    return gpuHist[gpuKey(i, name)] ?? [];
+  }
 
   // Health bar tone: calm under 70%, warn 70–90, hot above.
   function tone(pct: number): "ok" | "warn" | "hot" {
@@ -299,6 +334,15 @@
                 <div class="bar"><div class="bar__fill bar__fill--{tone(g.memUsedPct)}" style="width:{g.memUsedPct}%"></div></div>
               </div>
             </div>
+            {#if histFor(i, g.name).length > 1}
+              <div class="spark">
+                <svg viewBox="0 0 100 24" preserveAspectRatio="none" class="spark__svg" aria-label="GPU util + temp trend">
+                  <path class="spark__util" d={sparkPath(histFor(i, g.name).map((p) => p.utilPct), 100, 100, 24)} />
+                  <path class="spark__temp" d={sparkPath(histFor(i, g.name).map((p) => p.tempC), 100, 100, 24)} />
+                </svg>
+                <div class="spark__legend"><span class="spark__l spark__l--util">util</span><span class="spark__l spark__l--temp">temp</span></div>
+              </div>
+            {/if}
           </div>
         {/each}
       </section>
@@ -661,6 +705,42 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-4);
+  }
+  .spark {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+  .spark__svg {
+    flex: 1;
+    height: 24px;
+    width: 100%;
+  }
+  .spark__util,
+  .spark__temp {
+    fill: none;
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+  }
+  .spark__util {
+    stroke: var(--brand);
+  }
+  .spark__temp {
+    stroke: var(--warn);
+  }
+  .spark__legend {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .spark__l {
+    font-size: var(--fs-micro);
+  }
+  .spark__l--util {
+    color: var(--brand);
+  }
+  .spark__l--temp {
+    color: var(--warn);
   }
   .metric__top {
     display: flex;

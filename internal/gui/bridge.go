@@ -44,6 +44,10 @@ type Bridge struct {
 	feedStop chan struct{}
 	lastFeed feed.Feed // most-recent scan, so DismissFeed can rebuild an Item from its key
 
+	// GPU history ring + alert state for the Machine panel sparkline + training
+	// hot-GPU notifications (gpuhist.go). nil until the GPU sample loop starts.
+	gpuHist *gpuHist
+
 	// Voice controller (lazily built): STT/TTS backends + the one-shot and
 	// conversation-mode lifecycle. See voice.go.
 	voiceOnce sync.Once
@@ -84,6 +88,7 @@ func (b *Bridge) ServiceStartup(_ context.Context, _ application.ServiceOptions)
 	}()
 	go b.healthLoop(stop)
 	go b.feedLoop(feedStop)
+	go b.gpuSampleLoop(stop) // GPU history + training hot-GPU alerts (no-op without a GPU)
 	return nil
 }
 

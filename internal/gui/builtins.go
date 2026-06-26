@@ -26,6 +26,40 @@ func (b *Bridge) ObsidianStatus() (*ObsidianStatusDTO, error) {
 	return &ObsidianStatusDTO{Available: s.Available, Vault: s.Vault}, nil
 }
 
+// NoteDTO is one vault note for the Notes view.
+type NoteDTO struct {
+	Path  string `json:"path"`
+	Title string `json:"title"`
+}
+
+// ObsidianNotes lists/searches vault notes (blank query → recent). For the
+// Notes view's list pane.
+func (b *Bridge) ObsidianNotes(query string) ([]NoteDTO, error) {
+	notes, err := obsidian.Search(query, 200)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]NoteDTO, 0, len(notes))
+	for _, n := range notes {
+		out = append(out, NoteDTO{Path: n.Path, Title: n.Title})
+	}
+	return out, nil
+}
+
+// ObsidianRead returns a note's full markdown (the read pane).
+func (b *Bridge) ObsidianRead(path string) (string, error) {
+	return obsidian.Read(path)
+}
+
+// ObsidianWrite creates/updates (append=false) or appends to a note. Returns the
+// vault-relative path. Powers the Notes view's edit/new + quick-capture.
+func (b *Bridge) ObsidianWrite(path, content string, append bool) (string, error) {
+	if append {
+		return obsidian.Append(path, content)
+	}
+	return obsidian.Write(path, content)
+}
+
 // ChooseObsidianVault opens a native folder picker and pins the chosen dir as
 // the Obsidian vault (must contain a .obsidian folder). Returns the new vault
 // path, or "" when the user cancelled. Lets the user point eigen at ANY vault.

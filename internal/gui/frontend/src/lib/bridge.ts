@@ -32,6 +32,8 @@ import type {
   ObsidianStatusDTO,
   RevutoStatusDTO,
   RevutoReviewerDTO,
+  NoteDTO,
+  GPUSampleDTO,
   DashboardDTO,
   BoardDTO,
   KanbanDTO,
@@ -188,6 +190,12 @@ export const Bridge = {
   // native local built-ins: Obsidian vault + revuto reviewer
   ObsidianStatus: (): Promise<ObsidianStatusDTO | null> => B.ObsidianStatus(),
   ChooseObsidianVault: (): Promise<string> => B.ChooseObsidianVault(),
+  ObsidianNotes: (query: string): Promise<NoteDTO[]> => B.ObsidianNotes(query),
+  ObsidianRead: (path: string): Promise<string> => B.ObsidianRead(path),
+  ObsidianWrite: (path: string, content: string, append: boolean): Promise<string> =>
+    B.ObsidianWrite(path, content, append),
+  // GPU history (sparkline) keyed "index|name"
+  GPUHistory: (): Promise<Record<string, GPUSampleDTO[] | undefined> | null> => B.GPUHistory(),
   RevutoStatus: (): Promise<RevutoStatusDTO | null> => B.RevutoStatus(),
   RevutoReviewers: (): Promise<RevutoReviewerDTO[]> => B.RevutoReviewers(),
   RevutoTrigger: (repo: string, job: string): Promise<string> => B.RevutoTrigger(repo, job),
