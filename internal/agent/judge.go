@@ -27,15 +27,33 @@ import (
 // setup where judging worked before) — but the strict prompt + clean context
 // still give independence.
 func (a *Agent) defaultJudge() llm.Provider {
+	// Configured judge_model wins (the user explicitly pinned a judge), built via
+	// ModelProvider so it's an owned instance — never self-grade on the agent's
+	// OWN model.
 	if a.ModelProvider != nil {
-		// Configured judge_model wins (the user explicitly pinned a judge); else
-		// the judge type ladder (gpt/glm/haiku — cheap-but-valid, not the top
-		// default). Either way, never self-grade on the agent's OWN model.
-		id := strings.TrimSpace(a.JudgeModel)
-		if id == "" {
-			id = llm.SubagentModel(llm.TypeJudge)
+		if id := strings.TrimSpace(a.JudgeModel); id != "" {
+			if cur := a.provider(); cur == nil || cur.ModelID() != id {
+				if p, err := a.ModelProvider(id); err == nil && p != nil {
+					return p
+				}
+			}
 		}
-		if id != "" {
+	}
+	// Per-role "judge" CHAIN: the user-configured judge chain IS the provider
+	// (first reachable model, falling through on quota), as long as its headline
+	// model differs from the agent's own (independence). Beats the built-in ladder.
+	if a.ChainProvider != nil {
+		if ch := a.ChainProvider(string(llm.TypeJudge)); ch != nil {
+			if cur := a.provider(); cur == nil || cur.ModelID() != ch.ModelID() {
+				return ch
+			}
+		}
+	}
+	// Built-in judge type ladder (gpt/glm/haiku — cheap-but-valid, not the top
+	// default), built fresh; falls back to the agent's own provider only when no
+	// judge model is credentialed.
+	if a.ModelProvider != nil {
+		if id := llm.SubagentModel(llm.TypeJudge); id != "" {
 			if cur := a.provider(); cur == nil || cur.ModelID() != id {
 				if p, err := a.ModelProvider(id); err == nil && p != nil {
 					return p

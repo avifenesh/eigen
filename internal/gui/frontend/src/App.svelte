@@ -26,6 +26,7 @@
   import Profile from "./views/Profile.svelte";
   import Crons from "./views/Crons.svelte";
   import Plugins from "./views/Plugins.svelte";
+  import Connectors from "./views/Connectors.svelte";
   import Config from "./views/Config.svelte";
 
   // Root lifecycle: start the daemon health stream; its teardown runs on unmount.
@@ -87,6 +88,8 @@
           <Crons />
         {:else if router.route === "plugins"}
           <Plugins />
+        {:else if router.route === "connectors"}
+          <Connectors />
         {:else if router.route === "config"}
           <Config />
         {:else}

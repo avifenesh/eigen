@@ -24,6 +24,10 @@ import type {
   PluginPreviewDTO,
   InstalledPluginDTO,
   ConfigDTO,
+  RuleChainsDTO,
+  ConnectorsDTO,
+  MCPServersDTO,
+  MCPServerDTO,
   DaemonStats,
   FeedDTO,
   FeedItemDTO,
@@ -136,6 +140,26 @@ export const Bridge = {
   // config
   Config: (): Promise<ConfigDTO | null> => B.Config(),
   SetConfig: (key: string, value: string): Promise<string> => B.SetConfig(key, value),
+  // per-role model fallback chains (the per-rule chain editor)
+  RuleChains: (): Promise<RuleChainsDTO | null> => B.RuleChains(),
+  SetRuleChain: (role: string, chain: string[]): Promise<string[]> => B.SetRuleChain(role, chain),
+  // connectors — remote MCP servers authorized over OAuth
+  Connectors: (): Promise<ConnectorsDTO | null> => B.Connectors(),
+  AddConnector: (name: string, url: string, description: string): Promise<void> =>
+    B.AddConnector(name, url, description),
+  ConnectConnector: (name: string): Promise<void> => B.ConnectConnector(name),
+  DisconnectConnector: (name: string): Promise<void> => B.DisconnectConnector(name),
+  RemoveConnector: (name: string): Promise<boolean> => B.RemoveConnector(name),
+  SetConnectorDisabled: (name: string, disabled: boolean): Promise<boolean> =>
+    B.SetConnectorDisabled(name, disabled),
+  // MCP server wiring editor (stdio + remote)
+  MCPServers: (): Promise<MCPServersDTO | null> => B.MCPServers(),
+  // The generated binding model marks optional fields required; our $lib/types
+  // shape is the contract callers use, so cast at the boundary.
+  SaveMCPServer: (d: MCPServerDTO): Promise<void> => B.SaveMCPServer(d as never),
+  RemoveMCPServer: (name: string): Promise<boolean> => B.RemoveMCPServer(name),
+  SetMCPServerDisabled: (name: string, disabled: boolean): Promise<boolean> =>
+    B.SetMCPServerDisabled(name, disabled),
   // proactive feed
   Feed: (): Promise<FeedDTO | null> => B.Feed(),
   // per-project feed accessor — reserved for a future project drill-in view (not dead code)

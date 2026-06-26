@@ -12,6 +12,7 @@
   import Card from "$lib/components/Card.svelte";
   import Button from "$lib/components/Button.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import RuleChainsEditor from "$lib/components/RuleChainsEditor.svelte";
 
   let data = $state<ConfigDTO | null>(null);
   let loading = $state(true);
@@ -122,6 +123,7 @@
   {:else}
     <div class="cfg__scroll">
       <div class="cfg__path selectable">{data.path}</div>
+      <RuleChainsEditor />
       <div class="cfg__list">
         {#each data.fields as f (f.key)}
           <Card>

@@ -169,8 +169,27 @@
   - `dynamicOptions(kind)` — resolves catalog-dependent option sets (`models` → model IDs, `providers` → canonical providers).
   - `Config() (*ConfigDTO, error)` — bound; editable fields + current values + options; **skips `Secret` fields** (e.g. telegram_token) so the form never surfaces a credential.
   - `SetConfig(key, value)` — bound; validates + persists one key, returns the normalized stored value.
-- **Depends on:** `internal/config` (`Load`/`Fields`/`Get`/`Set`/`Save`/`Path`; field `Secret`/`Dynamic`/`Multi`), `internal/llm` (`Models`).
-- **Used by / entrypoint:** entrypoint — bound methods called from the Config view.
+  - `RuleChainDTO`/`RuleChainsDTO` (types), `ruleRoleDesc` (var), `chainModelChoices()` — the per-role fallback-chain editor's data: one role's ordered chain (`role`/`desc`/`chain`/`custom`) + the model-name choices the picker offers (friendly shorthands from `DefaultRuleChain` ∪ catalog ids).
+  - `RuleChains() (*RuleChainsDTO, error)` — bound; every role's current chain (`config.ChainFor`) + `custom` flag (set in `RuleChains` vs built-in default) + model choices.
+  - `SetRuleChain(role, chain)` — bound; persists one role's chain (empty → revert to default via `config.SetRuleChain`), returns the stored chain.
+- **Depends on:** `internal/config` (`Load`/`Fields`/`Get`/`Set`/`Save`/`Path`/`RuleRoles`/`ChainFor`/`SetRuleChain`/`DefaultRuleChain`; field `Secret`/`Dynamic`/`Multi`), `internal/llm` (`Models`).
+- **Used by / entrypoint:** entrypoint — bound methods called from the Config view (form + `RuleChainsEditor`).
+
+### internal/gui/connectors.go
+- **Role:** The "superapp" integrations bridge — remote MCP servers (connectors) authorized over OAuth, with live connection status, add/connect/disconnect/remove. The slow browser-opening OAuth flow runs OFF the bound call and reports on the `eigen:connector` event.
+- **Key symbols:**
+  - `ConnectorDTO`/`ConnectorsDTO` (status + editor rows; `Connected`/`RequiresAuth`/`Expiry`), `connectorEventDTO` (emitted on completion).
+  - `Connectors()` — bound; remote servers from `mcp.ListServers` joined with `connector.Default()` OAuth status + expiry.
+  - `AddConnector(name, url, desc)` — bound; writes the `mcp.json` remote entry (`mcp.SaveServer`) then `startConnect` (background OAuth, emits `eigen:connector`).
+  - `ConnectConnector(name)` (re-auth) / `DisconnectConnector` (drop token, keep entry) / `RemoveConnector` (token + entry) / `SetConnectorDisabled`.
+- **Depends on:** `internal/connector` (`Default`), `internal/mcp` (`ListServers`/`SaveServer`/`RemoveServer`/`SetServerDisabled`/`UserConfigPath`).
+- **Used by / entrypoint:** the Connectors view; `eigen:connector` event consumed by the frontend.
+
+### internal/gui/wiring.go
+- **Role:** The full `mcp.json` server editor (stdio AND remote) so MCP servers are managed in the GUI, not by hand-editing JSON. (Connectors get the richer OAuth surface above; this is the general server list.)
+- **Key symbols:** `MCPServerDTO`/`MCPServersDTO` (with `EnvPairs` as `KEY=VALUE` lines + a `Remote` flag), `entryToDTO`/`dtoToEntry`; bound `MCPServers()` / `SaveMCPServer(d)` / `RemoveMCPServer(name)` / `SetMCPServerDisabled(name, disabled)`.
+- **Depends on:** `internal/mcp` (the config editor).
+- **Used by / entrypoint:** the Connectors view (local-server section).
 
 ### internal/gui/crons.go
 - **Role:** Scheduled-work bridge; surfaces systemd `--user` timers + the user's crontab via shelling out, and timer control verbs.

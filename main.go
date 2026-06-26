@@ -29,6 +29,7 @@ import (
 	"github.com/avifenesh/eigen/internal/app"
 	"github.com/avifenesh/eigen/internal/chat"
 	"github.com/avifenesh/eigen/internal/config"
+	"github.com/avifenesh/eigen/internal/connector"
 	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/dream"
 	"github.com/avifenesh/eigen/internal/harness"
@@ -161,6 +162,11 @@ func main() {
 	if inst != "" {
 		os.Setenv("EIGEN_INSTANCE", inst)
 	}
+
+	// Wire OAuth-managed connector tokens into the MCP loader before any LoadTools
+	// call, so remote MCP servers ("connectors") authenticate with a bearer that
+	// refreshes transparently. No-op for servers with no connected token.
+	connector.Install()
 
 	// Ref form: --model mantle:us.openai.gpt-5.5 names both in one flag; an
 	// explicit tag beats --provider (one field is the source of truth).
@@ -867,12 +873,22 @@ func main() {
 	// context budget, the TUI's live provider, and rebuild-resume all agree.
 	*provider = llm.ResolveProvider(*provider, *model)
 
+	// Quota-freeze failover: the chosen model stays PRIMARY, but a quota/billing
+	// rejection falls through the configured "primary" rule chain instead of
+	// erroring every turn (same wrap as the daemon build path). Falls back to the
+	// small-model ladder when no chain resolves.
+	if chain := llm.NewChain(cfg.ChainFor("primary")...); llm.ChainBeyond(chain, prov.ModelID()) {
+		prov = llm.NewFallback(prov, chain)
+	} else if fb := smallProvider(prov); fb != nil && fb.ModelID() != prov.ModelID() {
+		prov = llm.NewFallback(prov, fb)
+	}
+
 	// `eigen dream`: reflect over recent sessions into project memory, then exit.
 	// Uses the sonnet-pinned dream provider (config dream_model / EIGEN_DREAM_MODEL
 	// / the dream ladder) — same model the daemon's nightly dreamer uses, NOT the
 	// tiny titling model, so a manual dream consolidates as well as the auto one.
 	if flag.Arg(0) == "dream" {
-		runDream(dreamProvider(cfg.DreamModel), mem, gmem)
+		runDream(dreamProvider(cfg), mem, gmem)
 		return
 	}
 
@@ -907,6 +923,7 @@ func main() {
 		Memory:           memory.Sections(gmem, mem),
 		Goal:             resumedGoal,
 		JudgeModel:       firstNonEmpty(os.Getenv("EIGEN_JUDGE_MODEL"), cfg.JudgeModel),
+		ChainProvider:    func(role string) llm.Provider { return llm.NewChain(cfg.ChainFor(role)...) },
 		Router:           router.Route,
 		ModelProvider:    router.providerFor,
 		Bg:               agent.NewBgRegistry(agent.TasksDir()),
@@ -1269,12 +1286,18 @@ func titleProvider(main llm.Provider) llm.Provider { return smallProvider(main) 
 // so it earns its keep here. Falls through the ladder (sonnet variants → haiku →
 // gpt) when sonnet isn't credentialed, and finally to the small model so
 // dreaming still runs on a minimal setup. EIGEN_DREAM_MODEL overrides.
-func dreamProvider(configured string) llm.Provider {
-	// EIGEN_DREAM_MODEL wins, then config dream_model, then the sonnet ladder.
-	if id := firstNonEmpty(os.Getenv("EIGEN_DREAM_MODEL"), configured); id != "" {
+func dreamProvider(cfg config.Config) llm.Provider {
+	// EIGEN_DREAM_MODEL wins, then config dream_model — an explicit single pin.
+	if id := firstNonEmpty(os.Getenv("EIGEN_DREAM_MODEL"), cfg.DreamModel); id != "" {
 		if p, err := llm.New("", id); err == nil {
 			return p
 		}
+	}
+	// Per-role "dreamer" CHAIN: the user-configured dream chain (first reachable
+	// model, falling through on quota). Defaults to the sonnet-first chain that
+	// stays OFF the cheap GLM quota real tasks want.
+	if ch := llm.NewChain(cfg.ChainFor("dreamer")...); ch != nil {
+		return ch
 	}
 	if id := llm.FirstCredentialed(llm.DreamModelLadder()...); id != "" {
 		if p, err := llm.New("", id); err == nil {

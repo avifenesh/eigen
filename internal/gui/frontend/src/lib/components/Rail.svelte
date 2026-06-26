@@ -60,6 +60,7 @@
         { route: "machines", label: "Machines", glyph: "⊟" },
         { route: "crons", label: "Crons", glyph: "◷" },
         { route: "plugins", label: "Plugins", glyph: "⊞" },
+        { route: "connectors", label: "Connectors", glyph: "⟐" },
         { route: "profile", label: "Profile", glyph: "◑" },
         { route: "config", label: "Config", glyph: "⚙" },
       ],

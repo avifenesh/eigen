@@ -255,19 +255,27 @@ func (c *Client) notify(method string, params any) error {
 	return c.enc.Encode(rpcRequest{JSONRPC: "2.0", Method: method, Params: params})
 }
 
-func (c *Client) initialize(ctx context.Context) error {
-	params := map[string]any{
+// initializeParams is the MCP initialize request payload, shared by every
+// transport so the handshake reads identically over stdio and HTTP.
+func initializeParams() map[string]any {
+	return map[string]any{
 		"protocolVersion": protocolVersion,
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "eigen", "version": "0.1.0"},
 	}
-	var res struct {
-		Instructions string `json:"instructions"`
-		ServerInfo   struct {
-			Name string `json:"name"`
-		} `json:"serverInfo"`
-	}
-	if err := c.call(ctx, "initialize", params, &res); err != nil {
+}
+
+// initResult is the subset of the MCP initialize response eigen reads.
+type initResult struct {
+	Instructions string `json:"instructions"`
+	ServerInfo   struct {
+		Name string `json:"name"`
+	} `json:"serverInfo"`
+}
+
+func (c *Client) initialize(ctx context.Context) error {
+	var res initResult
+	if err := c.call(ctx, "initialize", initializeParams(), &res); err != nil {
 		return err
 	}
 	c.instructions = strings.TrimSpace(res.Instructions)
@@ -310,25 +318,32 @@ const (
 	maxMCPImages = 4
 )
 
-// CallToolRich invokes a tool and returns its text + image content. text and
-// image MCP content blocks are both honored; unknown block types are ignored.
-func (c *Client) CallToolRich(ctx context.Context, name string, args json.RawMessage) (ToolResult, error) {
+// toolCallParams builds the tools/call request payload.
+func toolCallParams(name string, args json.RawMessage) map[string]any {
 	params := map[string]any{"name": name}
 	if len(args) > 0 {
 		params["arguments"] = json.RawMessage(args)
 	}
-	var out struct {
-		Content []struct {
-			Type     string `json:"type"`
-			Text     string `json:"text"`
-			Data     string `json:"data"`     // base64 (image/audio blocks)
-			MimeType string `json:"mimeType"` // e.g. image/png
-		} `json:"content"`
-		IsError bool `json:"isError"`
-	}
-	if err := c.call(ctx, "tools/call", params, &out); err != nil {
-		return ToolResult{}, err
-	}
+	return params
+}
+
+// rawToolResult is the wire shape of a tools/call result, shared by transports.
+type rawToolResult struct {
+	Content []struct {
+		Type     string `json:"type"`
+		Text     string `json:"text"`
+		Data     string `json:"data"`     // base64 (image/audio blocks)
+		MimeType string `json:"mimeType"` // e.g. image/png
+	} `json:"content"`
+	IsError bool `json:"isError"`
+}
+
+// decodeToolResult turns a raw tools/call result into a ToolResult, honoring
+// text + image content blocks (images base64-decoded and bounded) and producing
+// a meaningful error when the server flags isError. serverName is used only to
+// give a blank-message error some provenance. Shared by the stdio + HTTP
+// transports so result handling is identical regardless of how the bytes arrive.
+func decodeToolResult(out rawToolResult, toolName, serverName string) (ToolResult, error) {
 	var res ToolResult
 	var otherBlocks int // non-text, non-decoded-image blocks (image/audio/etc.)
 	for _, blk := range out.Content {
@@ -364,18 +379,28 @@ func (c *Client) CallToolRich(ctx context.Context, name string, args json.RawMes
 			return res, fmt.Errorf("%s", res.Text)
 		}
 		return res, fmt.Errorf("mcp tool %q reported an error (no message)%s%s",
-			name, c.serverSuffix(), blocksSuffix(len(res.Images), otherBlocks))
+			toolName, serverSuffix(serverName), blocksSuffix(len(res.Images), otherBlocks))
 	}
 	return res, nil
 }
 
+// CallToolRich invokes a tool and returns its text + image content. text and
+// image MCP content blocks are both honored; unknown block types are ignored.
+func (c *Client) CallToolRich(ctx context.Context, name string, args json.RawMessage) (ToolResult, error) {
+	var out rawToolResult
+	if err := c.call(ctx, "tools/call", toolCallParams(name, args), &out); err != nil {
+		return ToolResult{}, err
+	}
+	return decodeToolResult(out, name, c.serverName)
+}
+
 // serverSuffix returns " from server <name>" when the server reported a name at
 // initialize, else "" — used to give a blank-message tool error some provenance.
-func (c *Client) serverSuffix() string {
-	if c.serverName == "" {
+func serverSuffix(serverName string) string {
+	if serverName == "" {
 		return ""
 	}
-	return fmt.Sprintf(" from server %q", c.serverName)
+	return fmt.Sprintf(" from server %q", serverName)
 }
 
 // blocksSuffix notes any non-text content an errored tool result carried, so a

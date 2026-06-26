@@ -154,6 +154,63 @@ func TestSetRouteKeys(t *testing.T) {
 	}
 }
 
+func TestRuleChainsSetGetView(t *testing.T) {
+	var c Config
+
+	// An unconfigured role resolves to its built-in default (not the global one).
+	if got := c.ChainFor("dreamer"); got[0] != "sonnet" {
+		t.Fatalf("dreamer default should be sonnet-first, got %v", got)
+	}
+	if got := c.ChainFor("primary"); len(got) == 0 || got[0] != "opus" {
+		t.Fatalf("primary default should be opus-first, got %v", got)
+	}
+	// A role with neither config nor a role-default falls to DefaultRuleChain.
+	if got := c.ChainFor("unknown-role"); got[0] != DefaultRuleChain[0] {
+		t.Fatalf("unknown role should fall to DefaultRuleChain, got %v", got)
+	}
+
+	// Set via the dotted CLI key (comma OR space separated).
+	if err := Set(&c, "rule_chains.judge", "gpt-5.4, glm,haiku"); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.ChainFor("judge"); len(got) != 3 || got[0] != "gpt-5.4" || got[2] != "haiku" {
+		t.Fatalf("judge chain wrong: %v", got)
+	}
+	if got := Get(c, "rule_chains.judge"); got != "gpt-5.4,glm,haiku" {
+		t.Fatalf("Get judge chain = %q", got)
+	}
+
+	// View shows the customized role.
+	if v := View(c); !strings.Contains(v, "rule_chains.judge") || !strings.Contains(v, "gpt-5.4,glm,haiku") {
+		t.Fatalf("View missing customized chain:\n%s", v)
+	}
+
+	// Empty value clears → reverts to the built-in default + drops from the map.
+	if err := Set(&c, "rule_chains.judge", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c.RuleChains["judge"]; ok {
+		t.Fatal("clearing should remove the role from RuleChains")
+	}
+	if got := c.ChainFor("judge"); got[0] != "gpt-5.4" {
+		t.Fatalf("after clear, judge should revert to default, got %v", got)
+	}
+
+	// Missing role name errors.
+	if err := Set(&c, "rule_chains.", "opus"); err == nil {
+		t.Fatal("rule_chains. with no role should error")
+	}
+}
+
+func TestChainForEnvOverride(t *testing.T) {
+	t.Setenv("EIGEN_CHAIN_PRIMARY", "glm, opus")
+	var c Config
+	got := c.ChainFor("primary")
+	if len(got) != 2 || got[0] != "glm" || got[1] != "opus" {
+		t.Fatalf("env override not applied: %v", got)
+	}
+}
+
 func TestSetModelRefSplitsProvider(t *testing.T) {
 	var c Config
 	if err := Set(&c, "model", "mantle:us.openai.gpt-5.5"); err != nil {

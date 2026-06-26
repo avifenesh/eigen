@@ -267,12 +267,15 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		deps.Close()
 		return nil, err
 	}
-	// Quota-freeze failover (C1): wrap the live provider so a quota/billing
-	// rejection (e.g. a drained GLM account) freezes the primary for the day and
-	// routes to a credentialed alternative, instead of erroring every turn. The
-	// fallback is the small-model ladder (a different, usually cheaper backend).
-	// Only wraps when a distinct fallback exists; otherwise prov is unchanged.
-	if fb := smallProvider(prov); fb != nil && fb.ModelID() != prov.ModelID() {
+	// Quota-freeze failover: the user's chosen model stays PRIMARY, but a
+	// quota/billing rejection (e.g. a drained account) falls through the
+	// configured "primary" rule chain (opus→gpt-5.5→glm→…) instead of erroring
+	// every turn. The chain skips uncredentialed/frozen links; if everything in
+	// it is also down, we're genuinely down. Falls back to the small-model ladder
+	// when no chain resolves.
+	if chain := llm.NewChain(p.Cfg.ChainFor("primary")...); llm.ChainBeyond(chain, prov.ModelID()) {
+		prov = llm.NewFallback(prov, chain)
+	} else if fb := smallProvider(prov); fb != nil && fb.ModelID() != prov.ModelID() {
 		prov = llm.NewFallback(prov, fb)
 	}
 	deps.Provider = prov
@@ -297,6 +300,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		Memory:           memory.Sections(p.GlobalMem, mem),
 		Goal:             p.Goal,
 		JudgeModel:       firstNonEmpty(os.Getenv("EIGEN_JUDGE_MODEL"), p.Cfg.JudgeModel),
+		ChainProvider:    func(role string) llm.Provider { return llm.NewChain(p.Cfg.ChainFor(role)...) },
 		Router:           router.Route,
 		ModelProvider:    router.providerFor,
 		Bg:               agent.NewBgRegistry(agent.TasksDir()),

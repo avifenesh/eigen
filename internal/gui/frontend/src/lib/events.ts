@@ -12,6 +12,7 @@ export const ev = {
   feed: "eigen:feed",
   voice: "eigen:voice",
   terminal: "eigen:terminal",
+  connector: "eigen:connector",
 };
 
 // on subscribes to a Wails event and hands the typed payload to the callback,

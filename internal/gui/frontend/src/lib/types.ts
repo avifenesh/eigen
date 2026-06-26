@@ -375,6 +375,51 @@ export type ConfigFieldDTO = {
 };
 export type ConfigDTO = { fields: ConfigFieldDTO[]; path: string };
 
+// Per-role model fallback chain (the per-rule chain editor). Each role's chain
+// is an ordered list of model names tried in turn, each falling through to the
+// next on a quota/billing failure until one answers.
+export type RuleChainDTO = {
+  role: string; // "primary" | "explore" | "research" | "general" | "code" | "dreamer" | "judge"
+  desc: string;
+  chain: string[];
+  custom: boolean; // true = user-configured; false = built-in default
+};
+export type RuleChainsDTO = {
+  roles: RuleChainDTO[];
+  models: string[]; // model names the picker offers (shorthands + catalog ids)
+};
+
+// Connectors: remote MCP servers authorized over OAuth (Google Workspace, Slack,
+// Notion, …). Mirrors internal/gui/connectors.go.
+export type ConnectorDTO = {
+  name: string;
+  url: string;
+  type: string;
+  description: string;
+  disabled: boolean;
+  connected: boolean;
+  requiresAuth: boolean;
+  expiry?: string; // RFC3339 token expiry
+};
+export type ConnectorsDTO = { connectors: ConnectorDTO[] };
+// Emitted on "eigen:connector" when a background OAuth flow finishes.
+export type ConnectorEventDTO = { name: string; ok: boolean; error?: string };
+
+// MCP server wiring editor (stdio + remote). Mirrors internal/gui/wiring.go.
+export type MCPServerDTO = {
+  name: string;
+  command?: string[];
+  url?: string;
+  type?: string;
+  description?: string;
+  tools?: string[];
+  excludeTools?: string[];
+  disabled: boolean;
+  remote: boolean;
+  envPairs?: string[]; // KEY=VALUE lines
+};
+export type MCPServersDTO = { servers: MCPServerDTO[] };
+
 export type FeedItemDTO = {
   key: string;
   kind: string; // git | github | memory | suggest

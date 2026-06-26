@@ -69,6 +69,16 @@
 - **Depends on:** stdlib only.
 - **Used by / entrypoint:** `main_gui_wails.go:guiSuggestProvider` and `internal/app/data.go:suggestProvider` wrap glm-5.2 over the small model. Tested in `fallback_test.go` (quota detection, healthy-primary, route+freeze, non-quota-no-freeze).
 
+### internal/llm/chain.go (N-model fallback CHAIN)
+- **Role:** Generalizes the binary `NewFallback` into an ORDERED N-link chain — a role (primary / a subagent type / dreamer / judge) is configured as a list of models, and the chain runs the first reachable one, falling through to the next on a quota/billing failure (freezing the drained provider via `FreezeProvider`) until one answers, or the whole chain is exhausted ("we're down"). This is what the GUI's per-rule chain editor edits and what `config.ChainFor(role)` feeds.
+- **Key symbols:**
+  - `chainAlias` (map) — friendly shorthands → catalog ids (`opus`→`us.anthropic.claude-opus-4-8`, `glm`→`glm-5.2`, `composer`→`grok-composer-2.5-fast`, `grok`→`grok-build`, `gpt-5.5`→`openai.gpt-5.5`, sonnet/haiku/etc.). Small + explicit so a chain reads like the user wrote it.
+  - `ResolveChainID(friendly)` — exact catalog id → `provider:id` ref → shorthand alias → `""` (unknown; the chain SKIPS it rather than erroring, so a chain may name models absent from this build, e.g. `opus-4.7`).
+  - `chainProvider` (type) — `ids` (resolved, ordered, deduped) + lazily-built `links`. `Complete` walks the ids: skips any whose provider is uncredentialed/quota-frozen (`modelCredentialed`), tries the rest; on `IsQuotaError` freezes that provider + advances; a NON-quota error surfaces (the model was reachable, the request itself failed); exhaustion → `"model chain exhausted: no credentialed model available"`. `Name`/`ModelID` report `firstReachableID()` (the headline link a call would use).
+  - `NewChain(friendly...)` — resolves + dedupes; `nil` when nothing resolves (caller treats as "no provider").
+- **Depends on:** `fallback.go` (`IsQuotaError`/`FreezeProvider`), `subpolicy.go` (`modelCredentialed`), the catalog (`Lookup`/`ParseRef`/`ResolveProvider`/`canonicalProvider`).
+- **Used by / entrypoint:** wired at all 5 model-selection sites — primary (`build.go`, `main.go`, daemon `SetModelSwitcher` wrap the chosen model in `NewFallback(model, NewChain(cfg.ChainFor("primary")))`), subagent (`agent.Agent.ChainProvider` → `subAgent` uses the type's chain directly), dreamer (`main.go:dreamProvider`), judge (`agent/judge.go:defaultJudge`). Config in `config.RuleChains`/`ChainFor`/`DefaultRoleChains`/`DefaultRuleChain`. Tested in `chain_test.go` (resolve/passthrough, build dedupe, exhaust-when-frozen, headline-skips-frozen).
+
 ### internal/llm/version.go
 - **Role:** Build-stamped version string, computed once from `debug.BuildInfo` so daemon, CLI, GUI, and TUI all report the same identity for a given binary.
 - **Key symbols:**

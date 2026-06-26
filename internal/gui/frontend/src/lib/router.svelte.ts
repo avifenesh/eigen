@@ -16,6 +16,7 @@ export const routes = [
   "profile",
   "crons",
   "plugins",
+  "connectors",
   "config",
 ] as const;
 export type Route = (typeof routes)[number];

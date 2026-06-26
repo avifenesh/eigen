@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,10 +22,9 @@ func TestLazyClientFailedConnectCooldown(t *testing.T) {
 	starts := 0
 	lc := &lazyClient{
 		name:         "srv",
-		command:      []string{"fake"},
 		failCooldown: 5 * time.Second,
 		clock:        func() time.Time { return now },
-		connect: func(context.Context, []string, []string) (*Client, error) {
+		dial: func(context.Context) (session, error) {
 			starts++
 			return nil, context.DeadlineExceeded
 		},
@@ -66,10 +66,9 @@ func TestLazyClientCooldownClearsAfterSuccess(t *testing.T) {
 	starts := 0
 	lc := &lazyClient{
 		name:         "srv",
-		command:      []string{"fake"},
 		failCooldown: 5 * time.Second,
 		clock:        func() time.Time { return now },
-		connect: func(context.Context, []string, []string) (*Client, error) {
+		dial: func(context.Context) (session, error) {
 			starts++
 			if fail {
 				return nil, context.DeadlineExceeded
@@ -103,57 +102,52 @@ func TestLazyClientCooldownClearsAfterSuccess(t *testing.T) {
 	}
 }
 
-// TestRemoteHTTPServerReportedUnsupported proves that an http/sse MCP server
-// entry (url+type, no command) is RECOGNIZED rather than silently dropped:
-// LoadTools must surface a clear "remote MCP (http/sse) not yet supported"
-// error instead of either connecting it or rejecting it as a malformed stdio
-// entry. This guards the plugin layer's url/type fields round-tripping into
-// serverConfig.
-func TestRemoteHTTPServerReportedUnsupported(t *testing.T) {
-	// Neutralize built-in server auto-detection so the test sees only our config
-	// (otherwise a dev box with the workspace/chrome helpers installed would add
-	// extra clients/errors and make the assertions flaky). Each override points
-	// at a non-existent path, which makes the *Binary() detectors return "".
+// TestRemoteHTTPServerConnects proves a remote (Streamable HTTP) MCP server
+// entry (url+type, no command) is CONNECTED: LoadTools dials it, lists its
+// tools, and exposes them as eigen tools — the same path a stdio server takes.
+// A fake httptest server speaks JSON-RPC over the Streamable HTTP transport.
+func TestRemoteHTTPServerConnects(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "nope")
 	t.Setenv("EIGEN_WORKSPACE_BIN", missing)
 	t.Setenv("EIGEN_COMPUTER_USE_BIN", missing)
 	t.Setenv("EIGEN_CHROME_BRIDGE", missing)
 	t.Setenv("EIGEN_NODE_BIN", missing)
 
+	srv := newFakeHTTPMCPServer(t)
+	defer srv.Close()
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.json")
 	cfg := `{"servers":[
-		{"name":"remote","type":"http","url":"https://example.com/mcp"},
-		{"name":"remote-sse","type":"sse","url":"https://example.com/sse"},
-		{"name":"remote-bareurl","url":"https://example.com/bare"}
+		{"name":"remote","type":"http","url":"` + srv.URL + `","description":"a remote connector"}
 	]}`
 	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	defs, clients, errs := LoadTools(context.Background(), path)
-
-	// No stdio command means nothing connects; but the entries must NOT vanish
-	// silently — each must produce an explicit "not yet supported" error.
-	if len(defs) != 0 {
-		t.Fatalf("remote servers should expose no tools, got %d", len(defs))
+	if len(errs) != 0 {
+		t.Fatalf("remote connect should succeed, got errors: %v", errs)
 	}
-	if len(clients) != 0 {
-		t.Fatalf("remote servers should open no clients, got %d", len(clients))
+	if len(clients) != 1 {
+		t.Fatalf("remote server should open one client, got %d", len(clients))
 	}
-	if len(errs) != 3 {
-		t.Fatalf("each remote server should be reported once, got %d errors: %v", len(errs), errs)
+	if len(defs) != 1 {
+		t.Fatalf("remote server should expose its one tool, got %d", len(defs))
 	}
-	for _, err := range errs {
-		msg := err.Error()
-		if !strings.Contains(msg, "remote MCP") || !strings.Contains(msg, "not yet supported") {
-			t.Errorf("error should explain remote MCP is unsupported, got: %v", err)
-		}
-		// The generic malformed-entry message must NOT be what we get — that's
-		// the silent-drop bug this fix closes.
-		if strings.Contains(msg, "empty name or command") {
-			t.Errorf("remote server misreported as a malformed stdio entry: %v", err)
-		}
+	if defs[0].Name != "remote_echo" {
+		t.Fatalf("wrapped tool name = %q, want remote_echo", defs[0].Name)
+	}
+	// Invoke through the lazy client end-to-end.
+	res, err := defs[0].Invoke(context.Background(), json.RawMessage(`{"x":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Text, "echoed") {
+		t.Fatalf("unexpected tool result: %q", res.Text)
+	}
+	for _, c := range clients {
+		_ = c.Close()
 	}
 }
 

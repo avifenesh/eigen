@@ -189,6 +189,14 @@ type Agent struct {
 	// the goal/claim judge uses — beats the type-ladder default. Injected by main.
 	JudgeModel string
 
+	// ChainProvider, if set, builds the per-ROLE fallback-chain provider for a
+	// role ("explore"/"research"/"general"/"code"/"judge"/"dreamer"/"primary").
+	// Injected by main from config RuleChains. When present it REPLACES the
+	// built-in type ladders: a subagent of a given type runs that role's chain
+	// (first reachable model, falling through on quota), so model selection is
+	// fully user-configurable. Returns nil when the role has no usable chain.
+	ChainProvider func(role string) llm.Provider
+
 	// Bg, if set, enables background subtasks (task tool background:true):
 	// detached delegations persisted under ~/.eigen/tasks. Injected by main.
 	Bg *BgRegistry
@@ -760,7 +768,20 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 	// != price — e.g. research prefers glm-5.2, judge prefers gpt, explore a fast
 	// cheap model), skipping suspended providers. Explicit Model still wins.
 	stype := llm.NormalizeSubagentType(firstNonEmpty(opts.Type, opts.Kind))
-	if opts.Model == "" && !subtaskPolicyDisabled() {
+	// Per-role CHAIN takes precedence: the user-configured chain for this
+	// subagent type IS the provider (first reachable model, falling through on
+	// quota), replacing the built-in ladder + manual fallback wrap. Only when no
+	// explicit Model override and the policy isn't disabled.
+	if opts.Model == "" && !subtaskPolicyDisabled() && a.ChainProvider != nil {
+		if ch := a.ChainProvider(string(stype)); ch != nil {
+			prov = ch
+			compactor = llm.NewCompactor(ch)
+			where = joinWhere(where, "type "+string(stype)+" chain")
+		}
+	}
+	// Legacy ladder fallback (no chain configured): pick the type's preferred
+	// credentialed model, wrapped in quota failover to the parent below.
+	if opts.Model == "" && prov == a.provider() && !subtaskPolicyDisabled() && a.ChainProvider == nil {
 		if m := llm.SubagentModel(stype); m != "" {
 			opts.Model = m
 			where = joinWhere(where, "type "+string(stype))

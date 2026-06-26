@@ -119,8 +119,26 @@
   - `toggleMulti(f, opt)` / `multiHas(key, opt)` — add/remove an option in the space-separated multi-select set (guarded by the field's `multi` flag); `toggleMulti` flips the chip optimistically, with `commit` reverting on reject.
   - `commitIfChanged(f)` — commits a text/number field on blur/Enter only when it differs from stored.
   - State: `data`, `loading`, `error`, `saving` (per-key, shown as an inline spinner+label that also disables the control), `values`, `alive`, `loadSeq`.
-- **Depends on:** `$lib/bridge` (`Config`, `SetConfig`), `$lib/stores/toasts.svelte`, `$lib/types` (`ConfigDTO`, `ConfigFieldDTO`); components `Card`, `Button`, `EmptyState`.
+  - Mounts `<RuleChainsEditor />` above the field list (the per-role model fallback-chain editor).
+- **Depends on:** `$lib/bridge` (`Config`, `SetConfig`), `$lib/stores/toasts.svelte`, `$lib/types` (`ConfigDTO`, `ConfigFieldDTO`); components `Card`, `Button`, `EmptyState`, `RuleChainsEditor`.
 - **Used by / entrypoint:** entrypoint: `App.svelte` renders `<Config />` when `router.route === "config"`.
+
+### internal/gui/frontend/src/lib/components/RuleChainsEditor.svelte
+- **Role:** The per-rule model fallback-chain editor (lives inside the Config view). One row per role (primary/explore/research/general/code/dreamer/judge); each row is an ORDERED chain shown as numbered chips with ←/→ reorder + × remove, an "add model…" `Dropdown`, and a `reset` (revert to built-in default) shown only when the role is `custom`. Every edit persists via `Bridge.SetRuleChain` and folds the stored chain back in.
+- **Key symbols:**
+  - `load()` — fetches `Bridge.RuleChains()`; `alive`/`loadSeq` guarded.
+  - `save(role, chain)` — `Bridge.SetRuleChain`, updates the row's `chain`/`custom`, toasts; reloads authoritative state on failure.
+  - `move(r,i,delta)` / `remove(r,i)` / `add(r,model)` (dedupes — a chain visits each link once) / `reset(r)` (empty save → default).
+  - `addOptions(r)` — picker choices = `data.models` minus what's already in the row's chain.
+  - Uses the custom `Dropdown` (NOT a native `<select>`: webkit2gtk paints the option list black-on-black).
+- **Depends on:** `$lib/bridge` (`RuleChains`, `SetRuleChain`), `$lib/types` (`RuleChainsDTO`, `RuleChainDTO`), `$lib/stores/toasts.svelte`; components `Card`, `Dropdown`.
+- **Used by / entrypoint:** rendered by `Config.svelte`.
+
+### internal/gui/frontend/src/views/Connectors.svelte
+- **Role:** The "superapp" integrations view (`connectors` route, rail "Connectors"). Lists remote MCP connectors with OAuth connection status; add one by name + URL (→ background OAuth, browser opens); connect/disconnect/remove; a second section lists local stdio MCP servers (toggle/remove). Refreshes on the `eigen:connector` event when a background flow finishes.
+- **Key symbols:** `load()` (parallel `Connectors`+`MCPServers`, `alive`/`loadSeq` guarded), the add-connector form (`addConnector`), `connect`/`disconnect`/`removeConnector`, `toggleServer`/`removeServer`, `connecting`/`busy` per-name state, `stdioServers` derived; subscribes `ev.connector` via `on()`.
+- **Depends on:** `$lib/bridge` (`Connectors`/`AddConnector`/`ConnectConnector`/`DisconnectConnector`/`RemoveConnector`/`SetConnectorDisabled`/`MCPServers`/`SetMCPServerDisabled`/`RemoveMCPServer`), `$lib/events` (`ev.connector`), `$lib/types` (`ConnectorsDTO`/`ConnectorDTO`/`ConnectorEventDTO`/`MCPServersDTO`/`MCPServerDTO`), `$lib/stores/toasts.svelte`; components `Card`, `Button`, `EmptyState`.
+- **Used by / entrypoint:** `App.svelte` renders `<Connectors />` when `router.route === "connectors"`; the rail item lives in the System zone (`Rail.svelte`).
 
 ## Cross-links
 - **`internal/gui/frontend/src/lib/bridge.ts`** — the `Bridge` facade every view calls; wraps the Wails-generated TS bindings.

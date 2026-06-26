@@ -194,9 +194,8 @@ func TestWrapMapsReadOnlyHint(t *testing.T) {
 func TestLazyClientStartsOnFirstToolCall(t *testing.T) {
 	starts := 0
 	lc := &lazyClient{
-		name:    "srv",
-		command: []string{"fake"},
-		connect: func(context.Context, []string, []string) (*Client, error) {
+		name: "srv",
+		dial: func(context.Context) (session, error) {
 			starts++
 			return newTestClient(t), nil
 		},
@@ -238,9 +237,8 @@ func TestLazyClientStartsOnFirstToolCall(t *testing.T) {
 func TestLazyClientConcurrentFirstGetStartsOnce(t *testing.T) {
 	starts := 0
 	lc := &lazyClient{
-		name:    "srv",
-		command: []string{"fake"},
-		connect: func(context.Context, []string, []string) (*Client, error) {
+		name: "srv",
+		dial: func(context.Context) (session, error) {
 			starts++
 			time.Sleep(20 * time.Millisecond)
 			return newTestClient(t), nil
@@ -249,7 +247,7 @@ func TestLazyClientConcurrentFirstGetStartsOnce(t *testing.T) {
 	defer lc.Close()
 	const n = 16
 	type result struct {
-		client *Client
+		client session
 		err    error
 	}
 	resCh := make(chan result, n)
@@ -259,7 +257,7 @@ func TestLazyClientConcurrentFirstGetStartsOnce(t *testing.T) {
 			resCh <- result{client: client, err: err}
 		}()
 	}
-	var first *Client
+	var first session
 	for i := 0; i < n; i++ {
 		res := <-resCh
 		if res.err != nil {
@@ -278,9 +276,8 @@ func TestLazyClientConcurrentFirstGetStartsOnce(t *testing.T) {
 
 func TestLazyClientCloseAndFailedConnect(t *testing.T) {
 	closed := &lazyClient{
-		name:    "srv",
-		command: []string{"fake"},
-		connect: func(context.Context, []string, []string) (*Client, error) {
+		name: "srv",
+		dial: func(context.Context) (session, error) {
 			t.Fatal("closed lazy client must not connect")
 			return nil, nil
 		},
@@ -294,9 +291,8 @@ func TestLazyClientCloseAndFailedConnect(t *testing.T) {
 
 	starts := 0
 	failing := &lazyClient{
-		name:    "srv",
-		command: []string{"fake"},
-		connect: func(context.Context, []string, []string) (*Client, error) {
+		name: "srv",
+		dial: func(context.Context) (session, error) {
 			starts++
 			return nil, context.DeadlineExceeded
 		},
@@ -361,9 +357,8 @@ func TestOversizedLineMarksClientDeadWithClearError(t *testing.T) {
 func TestLazyClientReconnectsAfterReadLoopDies(t *testing.T) {
 	starts := 0
 	lc := &lazyClient{
-		name:    "srv",
-		command: []string{"fake"},
-		connect: func(context.Context, []string, []string) (*Client, error) {
+		name: "srv",
+		dial: func(context.Context) (session, error) {
 			starts++
 			return newTestClient(t), nil
 		},
@@ -380,9 +375,10 @@ func TestLazyClientReconnectsAfterReadLoopDies(t *testing.T) {
 
 	// Simulate the read loop dying (e.g. the server crashed or sent an
 	// oversized line that killed the loop): mark the cached client dead.
-	first.mu.Lock()
-	first.dead = true
-	first.mu.Unlock()
+	firstC := first.(*Client)
+	firstC.mu.Lock()
+	firstC.dead = true
+	firstC.mu.Unlock()
 
 	second, err := lc.get(context.Background())
 	if err != nil {

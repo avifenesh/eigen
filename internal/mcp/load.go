@@ -18,15 +18,22 @@ type serverConfig struct {
 	Command []string          `json:"command"`
 	Env     map[string]string `json:"env"`
 
-	// URL and Type describe a REMOTE MCP server (HTTP / SSE transport) rather
-	// than a stdio subprocess. The plugin layer (discoverMCP/addMCPServer)
-	// already parses and persists url+type, so they must round-trip here or a
-	// remote server entry would look like a config with an empty command and be
-	// silently rejected. eigen's transport is stdio-only today, so a remote
-	// entry is recognized and reported as unsupported (see LoadTools) rather
-	// than dropped.
+	// URL and Type describe a REMOTE MCP server (Streamable HTTP transport)
+	// rather than a stdio subprocess. A remote entry has a url (and optionally a
+	// type of "http"/"sse"/"streamable-http") and NO command. Remote servers are
+	// how "connectors" (Google Workspace, Slack, Notion, …) are wired.
 	URL  string `json:"url,omitempty"`
 	Type string `json:"type,omitempty"`
+
+	// Headers are extra static HTTP headers sent on every request to a remote
+	// server (e.g. a region or tenant header).
+	Headers map[string]string `json:"http_headers,omitempty"`
+
+	// BearerTokenEnv names an environment variable holding a bearer token for a
+	// remote server; when set, eigen sends "Authorization: Bearer <value>". This
+	// is the simple static-credential path; OAuth-managed tokens (Phase 2) are
+	// supplied by the connector layer instead and take precedence.
+	BearerTokenEnv string `json:"bearer_token_env_var,omitempty"`
 
 	// Description is the one-line "what is this server" shown to the model at
 	// the top level of progressive disclosure (e.g. "drive the user's real
@@ -96,24 +103,34 @@ func LoadTools(ctx context.Context, path string) (defs []tool.Definition, client
 		if sc.Disabled {
 			continue
 		}
-		// Remote MCP (HTTP / SSE) servers carry a url/type but no command. eigen's
-		// transport is stdio-only, so we can't connect them yet — but we MUST NOT
-		// silently drop them as if they were a malformed stdio entry. Report them
-		// explicitly so the failure is visible (and easy to grep for) rather than a
-		// remote server that just never shows up.
-		if isRemoteServer(sc) {
-			errs = append(errs, fmt.Errorf("mcp %q: remote MCP (%s) not yet supported (url=%s) — eigen currently connects stdio MCP servers only", serverName(sc), remoteType(sc), sc.URL))
-			fmt.Fprintf(os.Stderr, "eigen: mcp %q: remote MCP (%s) not yet supported — only stdio (command) MCP servers connect today; skipping %s\n", serverName(sc), remoteType(sc), sc.URL)
+		remote := isRemoteServer(sc)
+		if sc.Name == "" {
+			errs = append(errs, fmt.Errorf("mcp server with empty name"))
 			continue
 		}
-		if sc.Name == "" || len(sc.Command) == 0 {
-			errs = append(errs, fmt.Errorf("mcp server with empty name or command"))
+		if !remote && len(sc.Command) == 0 {
+			errs = append(errs, fmt.Errorf("mcp %q: empty command (and no remote url)", sc.Name))
 			continue
 		}
+		// Dial a probe connection to learn tool schemas (closed before serving),
+		// and build the lazy client that re-dials on first real tool call. Both
+		// transports go through the same probe→list→wrap path below.
 		cctx, cancel := context.WithTimeout(ctx, connectTimeout)
-		env := serverEnv(sc.Env)
-		command := expandCommand(sc.Command, env)
-		probe, err := Connect(cctx, command, env)
+		var (
+			probe  session
+			err    error
+			client *lazyClient
+		)
+		if remote {
+			d := httpDialerFor(sc)
+			probe, err = ConnectHTTP(cctx, d)
+			client = newLazyHTTPClient(sc.Name, d)
+		} else {
+			env := serverEnv(sc.Env)
+			command := expandCommand(sc.Command, env)
+			probe, err = Connect(cctx, command, env)
+			client = newLazyClient(sc.Name, command, env)
+		}
 		cancel()
 		if err != nil {
 			errs = append(errs, fmt.Errorf("mcp %q: %w", sc.Name, err))
@@ -134,7 +151,6 @@ func LoadTools(ctx context.Context, path string) (defs []tool.Definition, client
 			gist = firstSentence(probe.Instructions())
 		}
 		_ = probe.Close()
-		client := newLazyClient(sc.Name, command, env)
 		clients = append(clients, client)
 		if gist == "" {
 			gist = sc.Name + " MCP server"
@@ -157,13 +173,15 @@ func LoadTools(ctx context.Context, path string) (defs []tool.Definition, client
 
 // lazyClient owns a per-session MCP server that is started only when one of
 // its tools is actually invoked. LoadTools still probes each server once to
-// learn schemas for search_tools, but those probe processes are closed before
-// the session starts serving turns.
+// learn schemas for search_tools, but those probe connections are closed before
+// the session starts serving turns. The transport (stdio subprocess or remote
+// Streamable HTTP) is hidden behind the `dial` func, so a connector and a local
+// server share this lazy lifecycle.
 type lazyClient struct {
-	name    string
-	command []string
-	env     []string
-	connect func(context.Context, []string, []string) (*Client, error)
+	name string
+	// dial opens a fresh connection (stdio: spawn the subprocess; HTTP: open the
+	// remote session). Both return a `session`.
+	dial func(context.Context) (session, error)
 
 	// failCooldown is how long a failed connect is remembered (fail fast). Zero
 	// disables the cooldown entirely — every failed call reconnects immediately.
@@ -172,7 +190,7 @@ type lazyClient struct {
 	clock func() time.Time
 
 	mu     sync.Mutex
-	client *Client
+	client session
 	closed bool
 
 	// lastErr / retryAfter cache the most recent connect failure. While now() is
@@ -182,17 +200,33 @@ type lazyClient struct {
 	retryAfter time.Time
 }
 
+// newLazyClient builds a lazy stdio server (spawns command+env on first use).
 func newLazyClient(name string, command, env []string) *lazyClient {
+	cmd := append([]string(nil), command...)
+	envc := append([]string(nil), env...)
 	return &lazyClient{
-		name:         name,
-		command:      append([]string(nil), command...),
-		env:          append([]string(nil), env...),
-		connect:      Connect,
+		name: name,
+		dial: func(ctx context.Context) (session, error) {
+			return Connect(ctx, cmd, envc)
+		},
 		failCooldown: connectFailCooldown,
 	}
 }
 
-func (c *lazyClient) get(ctx context.Context) (*Client, error) {
+// newLazyHTTPClient builds a lazy REMOTE server (opens the HTTP session on first
+// use). The dialer's AuthHeader is re-read per connect, so a token refreshed
+// between connects is picked up.
+func newLazyHTTPClient(name string, d httpDialer) *lazyClient {
+	return &lazyClient{
+		name: name,
+		dial: func(ctx context.Context) (session, error) {
+			return ConnectHTTP(ctx, d)
+		},
+		failCooldown: connectFailCooldown,
+	}
+}
+
+func (c *lazyClient) get(ctx context.Context) (session, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
@@ -202,22 +236,22 @@ func (c *lazyClient) get(ctx context.Context) (*Client, error) {
 		if c.client.alive() {
 			return c.client, nil
 		}
-		// The cached connection's read loop died (stream closed, or a fatal
-		// read error such as an oversized JSON-RPC line). Drop it and reconnect
-		// below rather than handing out a corpse that fails every call forever.
+		// The cached connection died (stdio read loop ended, or the HTTP session
+		// was marked dead). Drop it and reconnect below rather than handing out a
+		// corpse that fails every call forever.
 		_ = c.client.Close()
 		c.client = nil
 	}
 	// Fail fast while a recent connect failure is still cooling down: a server
-	// that's down (binary missing, crash on startup) would otherwise have every
-	// tool call spawn a fresh subprocess and block up to connectTimeout before
-	// failing identically. Past the cooldown we fall through and retry, so a
-	// server that recovers is picked up.
+	// that's down (binary missing, crash on startup, remote unreachable) would
+	// otherwise have every tool call re-dial and block up to connectTimeout
+	// before failing identically. Past the cooldown we fall through and retry, so
+	// a server that recovers is picked up.
 	if c.lastErr != nil && c.now().Before(c.retryAfter) {
 		return nil, c.lastErr
 	}
 	cctx, cancel := context.WithTimeout(ctx, connectTimeout)
-	client, err := c.connect(cctx, c.command, c.env)
+	client, err := c.dial(cctx)
 	cancel()
 	if err != nil {
 		c.lastErr = fmt.Errorf("mcp %q: %w", c.name, err)
@@ -273,6 +307,36 @@ func (c *lazyClient) started() bool {
 	return c.client != nil
 }
 
+// RemoteAuthProvider, when set, supplies the Authorization-header func for a
+// remote MCP server (keyed by server name + url). It's the seam the connector /
+// OAuth layer (Phase 2+) plugs into: it returns a func that yields the current
+// "Bearer <token>" (refreshed transparently), and ok=false when it has no
+// managed credential for this server (so eigen falls back to the static
+// bearer_token_env_var path). Left nil in plain stdio/remote use.
+var RemoteAuthProvider func(name, url string) (authHeader func() string, ok bool)
+
+// httpDialerFor builds the remote dialer for a server config: an OAuth-managed
+// auth header from RemoteAuthProvider if available, else the static
+// bearer_token_env_var, else no auth. Static headers ride along either way.
+func httpDialerFor(sc serverConfig) httpDialer {
+	d := httpDialer{URL: strings.TrimSpace(sc.URL), HTTPHeaders: sc.Headers}
+	if RemoteAuthProvider != nil {
+		if auth, ok := RemoteAuthProvider(sc.Name, d.URL); ok {
+			d.AuthHeader = auth
+			return d
+		}
+	}
+	if env := strings.TrimSpace(sc.BearerTokenEnv); env != "" {
+		d.AuthHeader = func() string {
+			if v := strings.TrimSpace(os.Getenv(env)); v != "" {
+				return "Bearer " + v
+			}
+			return ""
+		}
+	}
+	return d
+}
+
 // isRemoteServer reports whether sc describes a remote (HTTP / SSE) MCP server
 // rather than a stdio subprocess. A remote entry is identified by a transport
 // type of http/sse, or by a bare URL with no command — the shape the plugin
@@ -288,23 +352,6 @@ func isRemoteServer(sc serverConfig) bool {
 		return true
 	}
 	return strings.TrimSpace(sc.URL) != ""
-}
-
-// remoteType returns a human-readable transport label for a remote server entry
-// (for log/error messages), defaulting to "http" when only a URL is given.
-func remoteType(sc serverConfig) string {
-	if t := strings.ToLower(strings.TrimSpace(sc.Type)); t != "" {
-		return t
-	}
-	return "http"
-}
-
-// serverName returns sc.Name, or a placeholder when unnamed, for messages.
-func serverName(sc serverConfig) string {
-	if n := strings.TrimSpace(sc.Name); n != "" {
-		return n
-	}
-	return "<unnamed>"
 }
 
 // toolAllowed applies the per-server allowlist/excludelist to a server-declared

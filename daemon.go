@@ -107,7 +107,14 @@ func runDaemon(cfg config.Config) {
 		if err != nil {
 			return nil, nil, 0, err
 		}
-		return p, llm.CompactorChain(llm.NewCompactor(smallProvider(p)), llm.NewCompactor(p)), contextBudget(cfg.MaxTokens, "", modelID), nil
+		// The switched-to model stays PRIMARY; wrap it in the configured "primary"
+		// rule chain so a quota/billing rejection falls through instead of erroring
+		// every turn (matches the build/main construction).
+		prov := llm.Provider(p)
+		if chain := llm.NewChain(cfg.ChainFor("primary")...); llm.ChainBeyond(chain, p.ModelID()) {
+			prov = llm.NewFallback(p, chain)
+		}
+		return prov, llm.CompactorChain(llm.NewCompactor(smallProvider(p)), llm.NewCompactor(p)), contextBudget(cfg.MaxTokens, "", modelID), nil
 	})
 
 	// Auto-title daemon sessions on the small model (same titler as the app's
@@ -813,7 +820,7 @@ func nightlyDreamer(host *daemon.Host, gmem *memory.Store, cfg config.Config) {
 		if host.AnyRunning() {
 			continue // never compete with a live turn for the model
 		}
-		prov := dreamProvider(cfg.DreamModel) // sonnet-pinned, NOT the cheap GLM real tasks want
+		prov := dreamProvider(cfg) // dreamer chain: sonnet-first, NOT the cheap GLM real tasks want
 		if prov == nil {
 			continue
 		}

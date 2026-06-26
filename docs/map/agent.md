@@ -20,7 +20,7 @@
 ### internal/agent/agent.go
 - **Role:** The core tool-use loop, the `Agent`/`Session` types, live-switchable config, compaction policy, foreground subtask delegation, and tool dispatch/permission gating.
 - **Key symbols:**
-  - `Agent` — the loop driver; holds Provider/Tools/Perm/Compactor plus injected seams (Router, ModelProvider, Bg, Policy, Shells, WorktreeTools, SessionDir). Four fields (Provider/Perm/Compactor/MaxContextTokens) are mutex-guarded for live switching mid-turn.
+  - `Agent` — the loop driver; holds Provider/Tools/Perm/Compactor plus injected seams (Router, ModelProvider, ChainProvider, Bg, Policy, Shells, WorktreeTools, SessionDir, JudgeModel). Four fields (Provider/Perm/Compactor/MaxContextTokens) are mutex-guarded for live switching mid-turn. `ChainProvider func(role string) llm.Provider` (injected by main from `config.RuleChains`) builds the per-ROLE fallback chain and, when set, REPLACES the built-in subagent type ladders + the judge ladder — a subagent of a given type runs that role's chain (first reachable model, falling through on quota).
   - `Session` — a running conversation (msgs + RWMutex); circuit-breaker state for auto-compaction; `steer`/`allowTools` per-turn slots.
   - `Permission` / `PermGated` / `PermAuto` — autonomy posture (gated asks before mutating tools; auto runs everything).
   - `Event` / `EventKind` / `EventSink` — the structured event stream (text/reasoning deltas, tool lifecycle, done, note, approval, bg-done); the single front-end seam.
@@ -31,7 +31,7 @@
   - `(*Session).SetTurnTools` / `turnTools` — restrict the next turn to a slash command's `allowed-tools`.
   - `(*Session).Compact` / `maybeCompact` / `maybeCompactWithNotes` / `forceCompactOnOverflow` — on-demand, proactive (trigger/target/stall fractions), and post-overflow compaction.
   - `(*Agent).Subtask` / `SubtaskWith` — run a delegated task on a fresh sub-agent; foreground with idle-stall + front-window→background promotion.
-  - `(*Agent).subAgent` — build the sub-agent for one delegation (role filter → explicit model → router → inherit), applying effort/fast discipline; precedence and the "where it ran" note.
+  - `(*Agent).subAgent` — build the sub-agent for one delegation. Precedence: role filter → explicit model → (when `ChainProvider` set) the TYPE's fallback chain as the provider → legacy `SubagentModel` ladder wrapped in `NewFallback` over the parent → router → inherit. Applies effort/fast discipline; records the "where it ran" note (incl. "type <t> chain").
   - `(*Agent).runChild` — run a foreground child with detached context, heartbeat, stall watch, and promotion (shared by Subtask and group fan-out).
   - `(*Agent).dispatch` / `runTool` — enforce allow-list + permission posture, run the tool (panic-recovered), cap output at `maxToolOutput`.
   - `(*Agent).SetLive` / `SetPerm` / `SetGoal` / `SetMaxContextTokens` / `UnlockTools` / `AddDir` — live config mutators (TUI calls these mid-turn). Read side: `CurrentProvider` / `CurrentGoal` / `CurrentPerm` / `CurrentMaxContextTokens` / `Roots` are race-safe accessors the daemon's state snapshot uses while a `/model` swap may be in flight.
@@ -94,6 +94,7 @@
 ### internal/agent/judge.go
 - **Role:** Goal-completion judging — an independent judge provider verifies a claimed achievement against the goal/criterion with a strict structured-gap contract; fail closed on any malformed/missing verdict.
 - **Key symbols:**
+  - `(*Agent).defaultJudge` — pick the judge provider when none passed: `JudgeModel` pin → (when set) the "judge" ROLE fallback chain → built-in judge type ladder → agent's own provider. Each step requires independence (headline model ≠ the agent's own), built fresh via `ModelProvider`.
   - `(*Agent).JudgeGoal` — judge the agent's current Goal against evidence; on a confirmed verdict clears the goal and emits a note; returns (achieved, reason).
   - `(*Agent).JudgeClaim` — same machinery for an arbitrary condition (workflow step checks), independent of Goal.
   - `judgeReport` / `judgeGap` — the parsed verdict + concrete gaps; `achieved()` requires ACHIEVED + summary + zero gaps; `format()` renders the gap report back to the model.
