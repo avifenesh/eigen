@@ -61,6 +61,12 @@ type Config struct {
 	Route          bool     `json:"route"`
 	RouteProviders []string `json:"route_providers"`
 
+	// BoardGitHubOwners are the GitHub owners (your login + orgs like "agent-sh")
+	// whose repos appear as lanes on the cross-project work board. Empty = the
+	// board auto-detects (the gh-authenticated user + their orgs). Set to pin or
+	// restrict the set. Env EIGEN_BOARD_GH_OWNERS (comma-separated) overrides.
+	BoardGitHubOwners []string `json:"board_github_owners,omitempty"`
+
 	// Observe enables the structured activity log (~/.eigen/observe/events.jsonl,
 	// metadata only) for long-term learning + debugging. Default on.
 	Observe     *bool `json:"observe,omitempty"`

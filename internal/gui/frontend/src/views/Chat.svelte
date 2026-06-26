@@ -145,6 +145,20 @@
   const history = $derived(store?.history ?? []);
   const live = $derived(store?.live ?? null);
 
+  // Active task plan (the `todo` tool's list). Shown as a pinned panel while the
+  // model is tracking a multi-step plan that isn't fully done. Hidden when empty
+  // or every task is completed/cancelled (nothing left to surface).
+  const todos = $derived(store?.todos ?? []);
+  const todosActive = $derived(todos.some((t) => t.status === "pending" || t.status === "in_progress"));
+  const todoDone = $derived(todos.filter((t) => t.status === "completed").length);
+  let todoCollapsed = $state(false);
+  function todoGlyph(status: string): string {
+    if (status === "completed") return "✓";
+    if (status === "in_progress") return "◐";
+    if (status === "cancelled") return "✕";
+    return "○";
+  }
+
   const online = $derived(daemon.status === "online");
 
   // ── turn I/O ──────────────────────────────────────────────────────────────
@@ -925,6 +939,33 @@
           {inputMode === "queue" ? "⇊ queue" : "↳ steer"}
         </button>
       </div>
+      <!-- ACTIVE PLAN — the `todo` tool's live task list, pinned above the
+           transcript so the user always sees what the agent is working through.
+           Shown only while there's unfinished work; collapsible to a one-line
+           summary so it never crowds the conversation. -->
+      {#if todosActive}
+        <div class="plan" class:plan--collapsed={todoCollapsed}>
+          <button class="plan__head" onclick={() => (todoCollapsed = !todoCollapsed)} title={todoCollapsed ? "Show plan" : "Collapse plan"}>
+            <span class="plan__chev" class:plan__chev--open={!todoCollapsed} aria-hidden="true"></span>
+            <span class="plan__title">Plan</span>
+            <span class="plan__count tnum">{todoDone}/{todos.length}</span>
+            {#if todoCollapsed}
+              {@const cur = todos.find((t) => t.status === "in_progress")}
+              {#if cur}<span class="plan__current">{cur.content}</span>{/if}
+            {/if}
+          </button>
+          {#if !todoCollapsed}
+            <ul class="plan__list">
+              {#each todos as t (t.content)}
+                <li class="ptask ptask--{t.status}">
+                  <span class="ptask__glyph">{todoGlyph(t.status)}</span>
+                  <span class="ptask__text">{t.content}</span>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+      {/if}
       <div class="chat__scroll selectable">
         {#if transcriptLoading}
           <!-- Transcript skeleton: the State() snapshot is still in flight, so
@@ -1553,6 +1594,111 @@
   }
   /* The scroll region hosts VirtualList, which owns its own internal scroll +
      pin-to-bottom. We give it a bounded height to window against. */
+  /* ACTIVE PLAN panel — pinned above the transcript. */
+  .plan {
+    flex: none;
+    margin: 0 auto;
+    width: 100%;
+    max-width: 820px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border-hairline);
+    border-left: 2px solid var(--brand);
+    border-radius: var(--r-md);
+    margin-bottom: var(--sp-3);
+    overflow: hidden;
+  }
+  .plan__head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    width: 100%;
+    padding: var(--sp-3) var(--sp-4);
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+  }
+  .plan__head:hover {
+    background: var(--state-hover);
+  }
+  .plan__chev {
+    width: 6px;
+    height: 6px;
+    border-right: 1.5px solid var(--text-muted);
+    border-bottom: 1.5px solid var(--text-muted);
+    transform: rotate(-45deg);
+    transition: transform var(--dur-fast) var(--ease-out);
+    flex: none;
+  }
+  .plan__chev--open {
+    transform: rotate(45deg);
+  }
+  .plan__title {
+    font: var(--fw-semibold) var(--fs-label) / 1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--brand-bright);
+  }
+  .plan__count {
+    font-size: var(--fs-label);
+    color: var(--text-faint);
+  }
+  .plan__current {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--fs-label);
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .plan__list {
+    list-style: none;
+    margin: 0;
+    padding: 0 var(--sp-4) var(--sp-3) var(--sp-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+  }
+  .ptask {
+    display: flex;
+    gap: var(--sp-3);
+    align-items: baseline;
+    font-size: var(--fs-body-sm);
+  }
+  .ptask__glyph {
+    flex: none;
+    width: 14px;
+    color: var(--text-muted);
+  }
+  .ptask__text {
+    color: var(--text-secondary);
+    line-height: var(--lh-snug);
+  }
+  .ptask--in_progress .ptask__glyph {
+    color: var(--brand-bright);
+  }
+  .ptask--in_progress .ptask__text {
+    color: var(--text-primary);
+    font-weight: var(--fw-medium);
+  }
+  .ptask--completed .ptask__glyph {
+    color: var(--success);
+  }
+  .ptask--completed .ptask__text {
+    color: var(--text-faint);
+    text-decoration: line-through;
+  }
+  .ptask--cancelled .ptask__text {
+    color: var(--text-ghost);
+    text-decoration: line-through;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .plan__chev {
+      transition: none;
+    }
+  }
+
   .chat__scroll {
     flex: 1;
     min-height: 0;

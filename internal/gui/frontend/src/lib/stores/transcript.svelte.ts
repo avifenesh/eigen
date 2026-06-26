@@ -28,6 +28,25 @@ export type ToolBlock = {
 export type NoteBlock = { uid: number; kind: "note"; text: string };
 export type Block = TextBlock | ToolBlock | NoteBlock;
 
+// One task from the `todo` tool's plan, surfaced live in the chat view.
+export type TodoEntry = { content: string; status: string; priority?: string };
+
+// parseTodos pulls the task list from a `todo` tool block's raw JSON args. The
+// tool passes the COMPLETE list every call, so the latest todo block IS the
+// current plan. Returns [] on anything unparseable.
+function parseTodos(args: string): TodoEntry[] {
+  if (!args) return [];
+  try {
+    const v = JSON.parse(args);
+    const list = Array.isArray(v?.todos) ? v.todos : [];
+    return list
+      .filter((t: unknown): t is TodoEntry => !!t && typeof (t as TodoEntry).content === "string")
+      .map((t: TodoEntry) => ({ content: t.content, status: t.status || "pending", priority: t.priority }));
+  } catch {
+    return [];
+  }
+}
+
 const CAP = 2000;
 
 // Event kinds that imply an in-flight TURN — receiving one live (non-replay)
@@ -260,6 +279,19 @@ export function createTranscript(sessionId: string) {
     // freezing until refreshState(). 0 means "fall back to sess.tokens".
     get liveTokens() {
       return liveTokens;
+    },
+    // The current task plan: the latest `todo` tool block's task list (the tool
+    // replaces the whole list each call, so newest wins). [] when the model
+    // hasn't recorded a plan this session. Drives the chat view's live plan
+    // panel. All-done/empty is left to the view to hide.
+    get todos(): TodoEntry[] {
+      for (let i = history.length - 1; i >= 0; i--) {
+        const b = history[i];
+        if (b.kind === "tool" && b.name === "todo" && b.args) {
+          return parseTodos(b.args);
+        }
+      }
+      return [];
     },
     // seed history from a Bridge.State snapshot (newest CAP messages).
     // Called on first mount AND on every daemon reconnect (the view re-attaches

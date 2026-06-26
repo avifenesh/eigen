@@ -60,6 +60,20 @@ func scanGitHub(ctx context.Context) []Item {
 		return []Item{ghAuthItem()}
 	}
 	items = append(items, issues...)
+	// Your own OPEN PRs across every org you belong to (incl. agent-sh) — work
+	// in flight you authored, so you can jump back to address review/CI. Spans
+	// all orgs because `--author @me` isn't scoped to one. Lower priority than
+	// review-requested/assigned (those are blocking others), so it comes last.
+	mine, err := ghSearch(ctx,
+		"prs", []string{"--author", "@me", "--state", "open"},
+		"your open PR",
+		"This is your own open pull request: %s (%s). Check its review + CI status with "+
+			"`gh pr view %d --repo %s` and `gh pr checks %d --repo %s`; if something needs addressing, "+
+			"summarize it and propose the next step.")
+	if errors.Is(err, errGHAuth) {
+		return []Item{ghAuthItem()}
+	}
+	items = append(items, mine...)
 	return items
 }
 

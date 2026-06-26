@@ -33,18 +33,24 @@ type BoardItemDTO struct {
 	URL    string `json:"url,omitempty"`
 }
 
-// BoardLaneDTO is one project's column.
+// BoardLaneDTO is one project's column. A lane is either LOCAL (a checkout, with
+// git state) or REMOTE (a GitHub repo with no local clone, just open PR/issue
+// counts + a URL).
 type BoardLaneDTO struct {
-	Name      string         `json:"name"`   // project basename
-	Dir       string         `json:"dir"`    // absolute path
-	Branch    string         `json:"branch"` // current git branch ("" when not a repo)
-	Dirty     int            `json:"dirty"`  // uncommitted files
-	Unpushed  int            `json:"unpushed"`
-	Behind    int            `json:"behind"`
-	Todos     int            `json:"todos"` // TODO/FIXME count (tracked files)
-	OpenPRs   int            `json:"openPrs"`
-	OpenIss   int            `json:"openIss"`
-	Items     []BoardItemDTO `json:"items"` // actionable cards (feed items for this dir)
+	Name     string         `json:"name"`   // project basename / repo name
+	Dir      string         `json:"dir"`    // absolute path (local lanes; "" for remote)
+	Branch   string         `json:"branch"` // current git branch ("" when not a repo)
+	Dirty    int            `json:"dirty"`  // uncommitted files
+	Unpushed int            `json:"unpushed"`
+	Behind   int            `json:"behind"`
+	Todos    int            `json:"todos"` // TODO/FIXME count (tracked files)
+	OpenPRs  int            `json:"openPrs"`
+	OpenIss  int            `json:"openIss"`
+	Items    []BoardItemDTO `json:"items"` // actionable cards (feed items for this dir)
+	// Remote-only fields.
+	Remote bool   `json:"remote"` // a GitHub repo lane (no local checkout)
+	Repo   string `json:"repo"`   // owner/name (remote lanes)
+	URL    string `json:"url"`    // repo URL (remote lanes)
 }
 
 // BoardDTO is the whole board.
@@ -92,7 +98,7 @@ func (b *Bridge) Board() (*BoardDTO, error) {
 		add(d)
 	}
 
-	// Order: most actionable first (items desc), then dirty, then name.
+	// Order LOCAL lanes: most actionable first (items desc), then dirty, then name.
 	sort.Slice(lanes, func(i, j int) bool {
 		li, lj := lanes[i], lanes[j]
 		ai, aj := len(li.Items), len(lj.Items)
@@ -104,6 +110,49 @@ func (b *Bridge) Board() (*BoardDTO, error) {
 		}
 		return li.Name < lj.Name
 	})
+
+	// Append REMOTE GitHub repo lanes (owned + org repos, e.g. agent-sh), so the
+	// board spans projects without a local checkout. Skip a repo whose name
+	// already has a local lane (the local one is richer). gh-cached + background-
+	// refreshed, so this stays instant.
+	if ghLanes, ok := githubBoardLanes(); ok {
+		localNames := map[string]bool{}
+		for _, l := range lanes {
+			localNames[strings.ToLower(l.Name)] = true
+		}
+		for _, r := range ghLanes {
+			name := r.NameWithOwner
+			if i := strings.LastIndexByte(name, '/'); i >= 0 {
+				name = name[i+1:]
+			}
+			if localNames[strings.ToLower(name)] {
+				continue // already shown as a local lane (the local one is richer)
+			}
+			items := make([]BoardItemDTO, 0, len(r.Items))
+			for _, w := range r.Items {
+				kindLabel := "issue"
+				if w.IsPR {
+					kindLabel = "PR"
+				}
+				items = append(items, BoardItemDTO{
+					Key:    r.NameWithOwner + "#" + itoa(w.Number),
+					Kind:   "github",
+					Title:  w.Title,
+					Detail: kindLabel + " #" + itoa(w.Number),
+					URL:    w.URL,
+				})
+			}
+			lanes = append(lanes, BoardLaneDTO{
+				Name:    name,
+				Remote:  true,
+				Repo:    r.NameWithOwner,
+				URL:     r.URL,
+				OpenPRs: r.OpenPRs,
+				OpenIss: r.OpenIssues,
+				Items:   items,
+			})
+		}
+	}
 
 	out := &BoardDTO{Lanes: lanes}
 	if !f.Scanned.IsZero() {

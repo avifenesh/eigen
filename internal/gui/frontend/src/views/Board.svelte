@@ -103,11 +103,16 @@
     <EmptyState glyph="▤" title="No projects yet" line="Open a few projects and the board fills in with their state." />
   {:else}
     <div class="board__lanes">
-      {#each data.lanes as lane (lane.dir)}
-        <section class="lane">
+      {#each data.lanes as lane (lane.remote ? lane.repo : lane.dir)}
+        <section class="lane" class:lane--remote={lane.remote}>
           <header class="lane__head">
-            <button class="lane__name" title="Open a session in {lane.name}" onclick={() => openLaneChat(lane)}>{lane.name}</button>
-            {#if lane.branch}<span class="lane__branch">{lane.branch}</span>{/if}
+            {#if lane.remote}
+              <button class="lane__name" title="Open {lane.repo} on GitHub" onclick={() => openURL(lane.url)}>{lane.name}</button>
+              <span class="lane__tag" title={lane.repo}>GitHub</span>
+            {:else}
+              <button class="lane__name" title="Open a session in {lane.name}" onclick={() => openLaneChat(lane)}>{lane.name}</button>
+              {#if lane.branch}<span class="lane__branch">{lane.branch}</span>{/if}
+            {/if}
           </header>
 
           <div class="lane__stats">
@@ -117,8 +122,10 @@
             {#if lane.todos > 0}<span class="stat stat--dim" title="TODO/FIXME markers">⊙{lane.todos}</span>{/if}
             {#if lane.openPrs > 0}<span class="stat stat--info" title="open PRs">PR {lane.openPrs}</span>{/if}
             {#if lane.openIss > 0}<span class="stat stat--info" title="open issues">⊘{lane.openIss}</span>{/if}
-            {#if lane.dirty === 0 && lane.unpushed === 0 && lane.behind === 0 && lane.items.length === 0}
+            {#if !lane.remote && lane.dirty === 0 && lane.unpushed === 0 && lane.behind === 0 && lane.items.length === 0}
               <span class="stat stat--clean">clean</span>
+            {:else if lane.remote && lane.openPrs === 0 && lane.openIss === 0}
+              <span class="stat stat--clean">no open work</span>
             {/if}
           </div>
 
@@ -136,7 +143,7 @@
                 </div>
               </div>
             {/each}
-            {#if lane.items.length === 0}
+            {#if lane.items.length === 0 && !lane.remote}
               <p class="lane__empty">Nothing loose here.</p>
             {/if}
           </div>
@@ -227,6 +234,19 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* Remote (GitHub) lanes read quieter than local checkouts. */
+  .lane--remote {
+    border-style: dashed;
+  }
+  .lane__tag {
+    font: var(--fw-medium) var(--fs-micro) / 1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--text-faint);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-full);
+    padding: 1px var(--sp-2);
   }
   .lane__stats {
     display: flex;

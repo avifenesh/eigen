@@ -486,6 +486,9 @@ export type BoardLaneDTO = {
   openPrs: number;
   openIss: number;
   items: BoardItemDTO[];
+  remote: boolean; // a GitHub repo lane (no local checkout)
+  repo: string; // owner/name (remote lanes)
+  url: string; // repo URL (remote lanes)
 };
 export type BoardDTO = { lanes: BoardLaneDTO[]; scanned?: string };
 
