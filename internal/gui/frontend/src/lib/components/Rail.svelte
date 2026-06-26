@@ -39,6 +39,7 @@
       items: [
         { route: "home", label: "Home", glyph: "◆" },
         { route: "chat", label: "Chat", glyph: "▶" },
+        { route: "board", label: "Board", glyph: "▤" },
         { route: "agents", label: "Agents", glyph: "⋔" },
         { route: "live", label: "Live", glyph: "◐" },
         { route: "sessions", label: "Sessions", glyph: "≡" },

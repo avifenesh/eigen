@@ -7,6 +7,7 @@ export const routes = [
   "agents",
   "live",
   "sessions",
+  "board",
   "memory",
   "dreaming",
   "skills",

@@ -118,6 +118,12 @@
   (`SessionInfoDTO`, `ApprovalInfo`); components `Button`, `Badge`, `StatusDot`, `EmptyState`.
 - **Used by / entrypoint:** entrypoint: `App.svelte` renders `<Live />` when `router.route === "live"`.
 
+### internal/gui/frontend/src/views/Board.svelte
+- **Role:** The cross-project WORK BOARD (`board` route, WORK-zone rail item) — one horizontally-scrolling lane per project with git state (branch · dirty/unpushed/behind · TODOs) + actionable cards (open PRs/issues + git loose-ends from the feed), each one-click startable. eigen's "project management" surface.
+- **Key symbols:** `load()` (`Bridge.Board()`, `alive`/`loadSeq` guarded) + a Refresh button; `startItem(it)` (task → `StartFromFeed` → chat, else `openURL`); `openLaneChat(lane)` (plain `NewSession` rooted at the project); per-lane stat chips (`±dirty` ↑unpushed ↓behind ⊙todos PR/issue, or "clean").
+- **Depends on:** `$lib/bridge` (`Board`/`StartFromFeed`/`NewSession`), `$lib/types` (`BoardDTO`/`BoardLaneDTO`/`BoardItemDTO`), `$lib/stores/sessions`, `@wailsio/runtime` Browser; components `Button`, `Badge`, `EmptyState`.
+- **Used by / entrypoint:** `App.svelte` renders `<Board />` for `router.route === "board"`.
+
 ### internal/gui/frontend/src/views/Sessions.svelte
 - **Role:** The full session manager / archive — type-to-search across title+dir, newest-first,
   batched "show more", per-row Resume / Export / Delete (inline confirm), header "Prune empty" + total.

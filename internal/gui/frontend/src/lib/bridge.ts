@@ -30,6 +30,7 @@ import type {
   MCPServerDTO,
   GoogleStatusDTO,
   DashboardDTO,
+  BoardDTO,
   DaemonStats,
   FeedDTO,
   FeedItemDTO,
@@ -168,6 +169,8 @@ export const Bridge = {
   MCPSecretsAvailable: (): Promise<boolean> => B.MCPSecretsAvailable(),
   // working-station command center (calendar + mail + machine health)
   Dashboard: (): Promise<DashboardDTO | null> => B.Dashboard(),
+  // cross-project work board
+  Board: (): Promise<BoardDTO | null> => B.Board(),
   // native Google integration (Calendar + Gmail)
   GoogleStatus: (): Promise<GoogleStatusDTO | null> => B.GoogleStatus(),
   ConnectGoogle: (): Promise<void> => B.ConnectGoogle(),

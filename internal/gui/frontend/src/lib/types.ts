@@ -465,6 +465,30 @@ export type DashboardDTO = {
   health: SysHealthDTO;
 };
 
+// Cross-project work board. Mirrors internal/gui/board.go.
+export type BoardItemDTO = {
+  key: string;
+  kind: string; // git | github
+  title: string;
+  detail?: string;
+  dir?: string;
+  task?: string;
+  url?: string;
+};
+export type BoardLaneDTO = {
+  name: string;
+  dir: string;
+  branch: string;
+  dirty: number;
+  unpushed: number;
+  behind: number;
+  todos: number;
+  openPrs: number;
+  openIss: number;
+  items: BoardItemDTO[];
+};
+export type BoardDTO = { lanes: BoardLaneDTO[]; scanned?: string };
+
 export type FeedItemDTO = {
   key: string;
   kind: string; // git | github | memory | suggest

@@ -193,6 +193,12 @@
 - **Depends on:** `internal/mcp` (the config editor + keychain secret store).
 - **Used by / entrypoint:** the Connectors view (local-server section + add-server form).
 
+### internal/gui/board.go
+- **Role:** The cross-project WORK BOARD — "what's going on across all my projects" in one place (project management for the working station). One lane per project: git state (branch, dirty/unpushed/behind, TODO/FIXME count), open PRs/issues + git loose-ends (grouped from the cached proactive feed), each card one-click startable.
+- **Key symbols:** `BoardDTO`/`BoardLaneDTO`/`BoardItemDTO`; bound `Board()` — groups `feed.Load()` git/github items by dir, unions with `projectDirs()`, enriches each lane via local probes (`gitBranch`/`countDirty`/`countRevs`/`countTodos` — `git grep -c TODO|FIXME`, capped `maxTodoScan`), sorts most-actionable-first. Instant (reads the feed cache; no rescan).
+- **Depends on:** `internal/feed` (cached items), `os/exec` git probes.
+- **Used by / entrypoint:** the Board view (`board` route); items reuse `StartFromFeed`/`NewSession`.
+
 ### internal/gui/dashboard.go
 - **Role:** The working-station command-center data in ONE call — today's calendar + unread mail (Google, when linked) + machine health (always). Eigen is a working STATION, not a coding tool; Home answers "what's my day + is my machine OK".
 - **Key symbols:** `DashboardDTO` (`googleConnected`/`events`/`unreadCount`/`unread`/`health`), `CalEventDTO`/`MailMsgDTO`/`SysHealthDTO`, `healthDTO`; bound `Dashboard()` — reads `syshealth.Read()` + (when `google.Default().Connected()`) `UpcomingEvents`/`UnreadCount`/`RecentUnread`, each section best-effort.
