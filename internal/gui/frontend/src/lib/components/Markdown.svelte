@@ -1,3 +1,35 @@
+<script module lang="ts">
+  import { marked as markedLib, type Token as TokenT } from "marked";
+
+  // Module-scoped lex cache shared by ALL Markdown instances (see the per-
+  // instance `tokens` derive for why). Simple bounded LRU keyed by source text.
+  const LEX_CACHE = new Map<string, TokenT[]>();
+  const LEX_CACHE_MAX = 400;
+  export function lexCached(src: string): TokenT[] {
+    if (!src) return [];
+    const hit = LEX_CACHE.get(src);
+    if (hit) {
+      // refresh recency: re-insert moves it to the end of Map iteration order
+      LEX_CACHE.delete(src);
+      LEX_CACHE.set(src, hit);
+      return hit;
+    }
+    let toks: TokenT[];
+    try {
+      toks = markedLib.lexer(src, { gfm: true, breaks: false });
+    } catch {
+      toks = [];
+    }
+    LEX_CACHE.set(src, toks);
+    if (LEX_CACHE.size > LEX_CACHE_MAX) {
+      // evict the oldest (first) entry
+      const oldest = LEX_CACHE.keys().next().value;
+      if (oldest !== undefined) LEX_CACHE.delete(oldest);
+    }
+    return toks;
+  }
+</script>
+
 <script lang="ts">
   // Assistant prose → real Markdown, rendered in SANS. This is the one surface
   // where the model's words become typeset text, so it must read like an
@@ -9,8 +41,7 @@
   // every text node and stray `<tag>` from the source is auto-escaped by
   // Svelte's interpolation, so there is no injection path. Fenced code is the
   // ONLY place monospace appears at block level, and it delegates to CodeBlock.
-  import type { Snippet } from "svelte";
-  import { marked, type Token, type Tokens } from "marked";
+  import { type Token, type Tokens } from "marked";
   import { Browser } from "@wailsio/runtime";
   import CodeBlock from "./CodeBlock.svelte";
 
@@ -18,14 +49,15 @@
 
   // Lex to a token tree (no HTML output). Configured to NOT trust raw HTML —
   // marked still emits `html`/`text` tokens, but we render their literal text.
-  const tokens = $derived.by<Token[]>(() => {
-    if (!source) return [];
-    try {
-      return marked.lexer(source, { gfm: true, breaks: false });
-    } catch {
-      return [];
-    }
-  });
+  //
+  // Memoized by source string in a small module-level LRU: the chat transcript
+  // is a VirtualList that mounts/unmounts rows as they scroll in and out, and a
+  // freshly-mounted Markdown for an UNCHANGED message would otherwise re-run the
+  // lexer every time the row scrolls back into view. Completed messages have a
+  // stable source, so the cache turns repeated scroll-in renders into a map hit
+  // (the reported "slow / re-renders everything" scroll cost). Bounded so a long
+  // session can't grow it without limit.
+  const tokens = $derived.by<Token[]>(() => lexCached(source));
 
   function openLink(e: MouseEvent, href: string | undefined) {
     e.preventDefault();
@@ -39,6 +71,27 @@
         /* swallow — never navigate the host webview away */
       }
     }
+  }
+
+  // A tight list item holds only inline content (text tokens), so it renders
+  // inline — no wrapping <p> and no paragraph margins (the stray blank line
+  // under bullets). An item with any real block child (paragraph from a loose
+  // list, nested list, code, blockquote) is NOT tight and goes through block().
+  const BLOCK_KINDS = new Set([
+    "paragraph",
+    "list",
+    "code",
+    "blockquote",
+    "heading",
+    "table",
+    "hr",
+    "space",
+    "html", // block HTML must use the block <pre> path, not inline
+    "def",
+  ]);
+  function isTightItem(item: Tokens.ListItem): boolean {
+    const toks = item.tokens ?? [];
+    return toks.length > 0 && !toks.some((t) => BLOCK_KINDS.has(t.type));
   }
 
   // Only allow href schemes that can't navigate/execute in-app.
@@ -169,7 +222,21 @@
         aria-label={item.checked ? "done" : "to do"}
       ></span>
     {/if}
-    <span class="md-li__body">{@render block(item.tokens)}</span>
+    <!-- TIGHT items (the common single-line bullet) carry only `text` tokens; a
+         loose item carries real block tokens (its own paragraphs / nested
+         lists). Render a tight item INLINE so it doesn't get wrapped in a
+         block <p> with paragraph margins — that wrapper added a stray blank
+         line under every bullet. Only fall to block rendering when the item
+         actually holds block content. -->
+    <span class="md-li__body">
+      {#if isTightItem(item)}
+        <!-- inline() already unwraps a text token's nested inline tokens, so
+             item.tokens passes straight through (strong/em/code/link render). -->
+        {@render inline(item.tokens)}
+      {:else}
+        {@render block(item.tokens)}
+      {/if}
+    </span>
   </li>
 {/snippet}
 

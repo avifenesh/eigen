@@ -228,6 +228,10 @@
     // intent at send time, not whatever the stream has done by the time the
     // round-trip lands.
     const expectedSteer = store?.running ?? false;
+    // Show the activity indicator immediately — before the RPC round-trip and
+    // the model's first event — so a slow streaming model never looks frozen.
+    // The first real turn event (or done) clears it; clear on error below.
+    store?.markPending();
     try {
       const steered = await Bridge.SteerInput(sessionId, text, images);
       if (steered) {
@@ -243,6 +247,7 @@
       }
       return true;
     } catch (e) {
+      store?.clearPending(); // RPC failed — no turn is coming, drop the indicator
       toasts.error(errText(e));
       return false;
     }
@@ -1087,7 +1092,7 @@
         {/if}
       </div>
 
-      {#if store?.running}
+      {#if store?.working}
         <div class="chat__working">
           <StatusDot state="working" size={7} pulse />
           <!-- While an Interrupt RPC is in flight the indicator reads "stopping…"
@@ -1705,6 +1710,12 @@
     display: flex;
     flex-direction: column;
     position: relative;
+    /* Clip the column: the windowed list (.chat__log) and the live block are
+       stacked flex children; without clipping, a growing live block makes the
+       column overflow and the list's absolutely-positioned rows render OVER the
+       live area (the "streaming text tops over what's above, then snaps back on
+       commit" bug). Clipping + min-height:0 on the list keeps each in its slot. */
+    overflow: hidden;
   }
   /* Each virtual row is full-width; the content centers to a readable measure. */
   .chat__row {
