@@ -9,7 +9,8 @@ const KNOWN = new Set(["deepteal", "nord", "gruvbox"]);
 
 export function applyTheme(name: string | undefined | null): void {
   const root = document.documentElement;
-  const t = (name ?? "").trim();
+  // Guard non-string config values + match case-insensitively.
+  const t = (typeof name === "string" ? name : "").trim().toLowerCase();
   // deepteal / unknown / empty → the :root default: clear the attribute.
   if (!t || t === "deepteal" || !KNOWN.has(t)) {
     root.removeAttribute("data-theme");
