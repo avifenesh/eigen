@@ -52,31 +52,34 @@ type fallbackProvider struct {
 
 	mu          sync.Mutex
 	frozenUntil time.Time // primary is skipped until this instant (zero = live)
-	// onFallback, when set, is called the moment a turn falls from the primary
-	// to the fallback — with the primary's id, the fallback's id, and the error
-	// that triggered the switch. The agent wires this to a visible EventNote so a
-	// fallback is SURFACED to the user (with the cause), never a silent bypass.
-	onFallback func(primaryID, fallbackID string, cause error)
 }
 
-// SetFallbackNotifier installs a callback fired when this provider falls over to
-// its fallback. No-op on a non-fallback provider (a collapsed nil side). Safe to
-// call once after construction; the daemon/agent sets it so failover is visible.
-func SetFallbackNotifier(p Provider, fn func(primaryID, fallbackID string, cause error)) {
-	if f, ok := p.(*fallbackProvider); ok {
-		f.mu.Lock()
-		f.onFallback = fn
-		f.mu.Unlock()
-	}
+// FallbackNotice describes a primary→fallback failover for a single turn.
+type FallbackNotice struct {
+	PrimaryID, FallbackID string
+	Cause                 error
 }
 
-// notifyFallback fires onFallback (read under lock) outside the lock.
-func (f *fallbackProvider) notifyFallback(cause error) {
-	f.mu.Lock()
-	fn := f.onFallback
-	f.mu.Unlock()
-	if fn != nil {
-		fn(f.primary.ModelID(), f.fallback.ModelID(), cause)
+// fallbackNotifierKey carries a per-CALL failover callback through the context,
+// rather than storing it on the (process-shared) provider. Providers are shared
+// across concurrent sessions/subagents, so a notifier set on the provider would
+// be overwritten between sessions and route a notice to the wrong one. A context
+// value is per-call and thread-safe — each turn's ctx carries its own sink.
+type fallbackNotifierKey struct{}
+
+// WithFallbackNotifier returns a ctx that, when a fallbackProvider fails over
+// during a call made with it, invokes fn with the failover detail. The agent
+// wraps each turn's ctx so a fallback is SURFACED (with the cause), never a
+// silent bypass.
+func WithFallbackNotifier(ctx context.Context, fn func(FallbackNotice)) context.Context {
+	return context.WithValue(ctx, fallbackNotifierKey{}, fn)
+}
+
+// notifyFallback fires the context's failover callback (if any). Per-call, so no
+// shared state and no lock.
+func (f *fallbackProvider) notifyFallback(ctx context.Context, cause error) {
+	if fn, ok := ctx.Value(fallbackNotifierKey{}).(func(FallbackNotice)); ok && fn != nil {
+		fn(FallbackNotice{PrimaryID: f.primary.ModelID(), FallbackID: f.fallback.ModelID(), Cause: cause})
 	}
 }
 
@@ -99,7 +102,12 @@ func (f *fallbackProvider) Name() string    { return f.primary.Name() }
 func (f *fallbackProvider) ModelID() string { return f.primary.ModelID() }
 
 func (f *fallbackProvider) frozen() bool {
-	if !f.frozenUntil.IsZero() && time.Now().Before(f.frozenUntil) {
+	// Lock the read: frozenUntil is written under f.mu in freezeForToday, and
+	// frozen() is called concurrently from Complete/Stream across sessions.
+	f.mu.Lock()
+	until := f.frozenUntil
+	f.mu.Unlock()
+	if !until.IsZero() && time.Now().Before(until) {
 		return true
 	}
 	// Also honor the PROCESS-WIDE freeze: a quota 429 on this model's provider
@@ -137,7 +145,7 @@ func (f *fallbackProvider) Complete(ctx context.Context, req Request) (*Response
 		if f.fallback == nil {
 			return nil, err // nothing to fall to — surface the real cause
 		}
-		f.notifyFallback(err) // SURFACE the failover + cause; never silent
+		f.notifyFallback(ctx, err) // SURFACE the failover + cause; never silent
 	}
 	if f.fallback == nil {
 		return nil, errors.New("fallback provider unavailable")
@@ -167,7 +175,7 @@ func (f *fallbackProvider) Stream(ctx context.Context, req Request, sink StreamS
 		if f.fallback == nil {
 			return nil, err
 		}
-		f.notifyFallback(err) // SURFACE the failover + cause; never silent
+		f.notifyFallback(ctx, err) // SURFACE the failover + cause; never silent
 	}
 	if f.fallback == nil {
 		return nil, errors.New("fallback provider unavailable")

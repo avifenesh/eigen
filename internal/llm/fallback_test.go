@@ -197,17 +197,14 @@ func TestFallbackNotifiesOnFailover(t *testing.T) {
 	fb := &stubProvider{name: "small", reply: "served"}
 	f := NewFallback(primary, fb)
 
-	var gotPrimary, gotFallback string
-	var gotCause error
-	SetFallbackNotifier(f, func(p, fbid string, cause error) {
-		gotPrimary, gotFallback, gotCause = p, fbid, cause
-	})
-	resp, err := f.Complete(context.Background(), Request{})
+	var got FallbackNotice
+	ctx := WithFallbackNotifier(context.Background(), func(n FallbackNotice) { got = n })
+	resp, err := f.Complete(ctx, Request{})
 	if err != nil || resp.Text != "served" {
 		t.Fatalf("expected fallback to serve, got %v / %v", resp, err)
 	}
-	if gotPrimary != "glm-5.2" || gotFallback != "small" || gotCause == nil {
-		t.Fatalf("failover not surfaced: primary=%q fallback=%q cause=%v", gotPrimary, gotFallback, gotCause)
+	if got.PrimaryID != "glm-5.2" || got.FallbackID != "small" || got.Cause == nil {
+		t.Fatalf("failover not surfaced: %+v", got)
 	}
 }
 

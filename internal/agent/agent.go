@@ -1400,13 +1400,14 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 		var err error
 		streamed := false
 		prov := a.provider()
-		// Make provider failover VISIBLE: when the live provider is a fallback
-		// wrapper and the primary fails over to its fallback this turn, surface a
-		// note with the cause instead of silently serving from a weaker model.
-		llm.SetFallbackNotifier(prov, func(primaryID, fallbackID string, cause error) {
+		// Make provider failover VISIBLE: carry a per-turn notifier on the context
+		// (NOT on the shared provider — concurrent sessions share provider
+		// instances) so when the primary fails over to its fallback this turn, we
+		// surface a note with the cause instead of silently serving a weaker model.
+		callCtx := llm.WithFallbackNotifier(ctx, func(n llm.FallbackNotice) {
 			a.emit(Event{Kind: EventNote, Step: step, Text: fmt.Sprintf(
 				"%s unavailable (%s) — falling back to %s for this turn.",
-				primaryID, truncateForNote(cause.Error()), fallbackID)})
+				n.PrimaryID, truncateForNote(n.Cause.Error()), n.FallbackID)})
 		})
 		// Heartbeat the subtask watchdog at model-call START: a non-streaming
 		// Complete() (e.g. the Converse/opus path) emits NOTHING until it
@@ -1426,9 +1427,9 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 				}
 				a.emit(Event{Kind: kind, Step: step, Text: c.Text})
 			}
-			resp, err = sm.Stream(ctx, req, sink)
+			resp, err = sm.Stream(callCtx, req, sink)
 		} else {
-			resp, err = prov.Complete(ctx, req)
+			resp, err = prov.Complete(callCtx, req)
 		}
 		if err != nil {
 			// Error-driven compaction: if the provider rejected the request as
