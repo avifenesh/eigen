@@ -26,6 +26,7 @@
   - `adoptIntoBackground(...)` — detach/ctrl+b path: convert a running foreground command into a registered background shell via `safeBuffer.redirect`.
   - `pumpShell`, `finishShell` — drain a pipe into a `Shell`; map exit/signal status onto `setStatus("exited"/"killed", code)`.
   - `truncShellCmd(s)` — one-line command preview (≤80 chars); also used by `bashoutput.go`/`shells.go`.
+  - `shellPath()` / `shellCommand(command)` — resolve a usable shell ONCE (`$EIGEN_SHELL` → `bash`/`sh` on PATH → common absolute paths → `bash`) and run `<shell> -c`. Replaces the hardcoded `exec.Command("bash", …)` that broke in minimal environments (agent workspace / container) where bash isn't on PATH / `/usr/bin/bash` is absent; falls back transparently to POSIX `sh -c`. (The GUI PTY terminal has the parallel `resolveTerminalShell` in `internal/gui/terminal.go`.)
   - `safeBuffer` (struct) + `WriteString`/`String`/`redirect` — goroutine-safe buffer that can re-route future writes to a `Shell` (the live-handoff trick).
 - **Depends on:** `ShellRegistry`/`Shell` (`shells.go`); `Policy.Dir()` (`policy.go`). Stdlib `os/exec`, `syscall`, `io`, `bufio`.
 - **Used by / entrypoint:** registered as the `bash` tool in `build.go:198` and `main.go:756` (always via `BashWithShells`; the bare `Bash` constructor has no production caller). `detach` is `Agent.BashDetachCh()`.

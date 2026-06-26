@@ -29,6 +29,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -96,9 +97,12 @@ func (b *Bridge) TerminalStart(cols, rows int) (string, error) {
 		rows = 24
 	}
 
-	shell := os.Getenv("SHELL")
+	// $SHELL → bash/sh on PATH → common absolute paths. The bare "/bin/bash"
+	// fallback broke in minimal environments (agent workspace / container) where
+	// that path doesn't exist; resolve a shell that's actually present.
+	shell := strings.TrimSpace(os.Getenv("SHELL"))
 	if shell == "" {
-		shell = "/bin/bash"
+		shell = resolveTerminalShell()
 	}
 	cmd := exec.Command(shell, "-i")
 	cmd.Dir = terminalStartDir()
@@ -256,4 +260,22 @@ func terminalStartDir() string {
 		return wd
 	}
 	return ""
+}
+
+// resolveTerminalShell finds a usable interactive shell when $SHELL is unset:
+// bash/sh on PATH, then common absolute paths. Falls back to "/bin/sh" (the most
+// universally present), so the terminal opens even in a minimal environment
+// where /bin/bash is absent.
+func resolveTerminalShell() string {
+	for _, name := range []string{"bash", "zsh", "sh"} {
+		if p, err := exec.LookPath(name); err == nil {
+			return p
+		}
+	}
+	for _, abs := range []string{"/bin/bash", "/usr/bin/bash", "/bin/sh", "/system/bin/sh"} {
+		if fi, err := os.Stat(abs); err == nil && !fi.IsDir() {
+			return abs
+		}
+	}
+	return "/bin/sh"
 }

@@ -250,7 +250,10 @@
 
       <!-- Machine health -->
       <div class="panel">
-        <div class="panel__head"><span class="panel__icon">▦</span><span class="panel__title">Machine</span></div>
+        <div class="panel__head">
+          <span class="panel__icon">▦</span><span class="panel__title">Machine</span>
+          {#if dash.health.cpuTempC > 0}<span class="panel__temp {dash.health.cpuTempC >= 85 ? 'hot' : dash.health.cpuTempC >= 70 ? 'warm' : ''}">{Math.round(dash.health.cpuTempC)}°C</span>{/if}
+        </div>
         <div class="metrics">
           <div class="metric">
             <div class="metric__top"><span class="metric__k">CPU load</span><span class="metric__v tnum">{Math.round(dash.health.loadPerCpu * 100)}%</span></div>
@@ -260,6 +263,12 @@
             <div class="metric__top"><span class="metric__k">Memory</span><span class="metric__v tnum">{dash.health.memUsedGb}/{dash.health.memTotalGb} GB</span></div>
             <div class="bar"><div class="bar__fill bar__fill--{tone(dash.health.memUsedPct)}" style="width:{dash.health.memUsedPct}%"></div></div>
           </div>
+          {#if dash.health.swapTotalGb > 0}
+            <div class="metric">
+              <div class="metric__top"><span class="metric__k">Swap</span><span class="metric__v tnum">{dash.health.swapUsedGb}/{dash.health.swapTotalGb} GB</span></div>
+              <div class="bar"><div class="bar__fill bar__fill--{tone(dash.health.swapUsedPct)}" style="width:{dash.health.swapUsedPct}%"></div></div>
+            </div>
+          {/if}
           <div class="metric">
             <div class="metric__top"><span class="metric__k">Disk /</span><span class="metric__v tnum">{dash.health.diskUsedPct}%</span></div>
             <div class="bar"><div class="bar__fill bar__fill--{tone(dash.health.diskUsedPct)}" style="width:{dash.health.diskUsedPct}%"></div></div>
@@ -267,6 +276,33 @@
         </div>
       </div>
     </section>
+
+    <!-- GPUs — full-width below the today grid (training-rig signals). -->
+    {#if dash.health.gpus && dash.health.gpus.length > 0}
+      <section class="gpus">
+        {#each dash.health.gpus as g, i (i)}
+          <div class="gpu">
+            <div class="gpu__head">
+              <span class="gpu__icon">▣</span>
+              <span class="gpu__name">{g.name}</span>
+              <span class="gpu__spacer"></span>
+              {#if g.powerW > 0}<span class="gpu__pow tnum">{Math.round(g.powerW)}W</span>{/if}
+              <span class="gpu__temp {g.tempC >= 85 ? 'hot' : g.tempC >= 70 ? 'warm' : ''} tnum">{Math.round(g.tempC)}°C</span>
+            </div>
+            <div class="gpu__metrics">
+              <div class="metric">
+                <div class="metric__top"><span class="metric__k">GPU util</span><span class="metric__v tnum">{Math.round(g.utilPct)}%</span></div>
+                <div class="bar"><div class="bar__fill bar__fill--{tone(g.utilPct)}" style="width:{g.utilPct}%"></div></div>
+              </div>
+              <div class="metric">
+                <div class="metric__top"><span class="metric__k">VRAM</span><span class="metric__v tnum">{g.memUsedGb}/{g.memTotalGb} GB</span></div>
+                <div class="bar"><div class="bar__fill bar__fill--{tone(g.memUsedPct)}" style="width:{g.memUsedPct}%"></div></div>
+              </div>
+            </div>
+          </div>
+        {/each}
+      </section>
+    {/if}
   {/if}
 
   <!-- ZONE 2 · ACT ON (the proactive feed) -->
@@ -554,7 +590,74 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .panel__temp {
+    margin-left: auto;
+    font: var(--fw-medium) var(--fs-label) / 1 var(--font-mono);
+    color: var(--text-muted);
+  }
+  .panel__temp.warm {
+    color: var(--warn);
+  }
+  .panel__temp.hot {
+    color: var(--error);
+    font-weight: var(--fw-bold);
+  }
   .metrics {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+  }
+
+  /* GPUs — full-width row(s) of accelerator cards. */
+  .gpus {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--sp-5);
+  }
+  .gpu {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    padding: var(--sp-5) var(--sp-6);
+    background: var(--bg-raised);
+    border: 1px solid var(--border-hairline);
+    border-left: 2px solid var(--accent, var(--brand));
+    border-radius: var(--r-lg);
+  }
+  .gpu__head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+  .gpu__icon {
+    color: var(--accent, var(--brand));
+  }
+  .gpu__name {
+    font: var(--fw-semibold) var(--fs-body-sm) / 1 var(--font-sans);
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .gpu__spacer {
+    flex: 1;
+  }
+  .gpu__pow {
+    font-size: var(--fs-label);
+    color: var(--text-faint);
+  }
+  .gpu__temp {
+    font-size: var(--fs-label);
+    color: var(--text-muted);
+  }
+  .gpu__temp.warm {
+    color: var(--warn);
+  }
+  .gpu__temp.hot {
+    color: var(--error);
+    font-weight: var(--fw-bold);
+  }
+  .gpu__metrics {
     display: flex;
     flex-direction: column;
     gap: var(--sp-4);

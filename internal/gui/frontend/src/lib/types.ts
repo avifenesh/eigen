@@ -451,6 +451,15 @@ export type RevutoReviewerDTO = { repo: string; paused: boolean };
 // Working-station command-center snapshot. Mirrors internal/gui/dashboard.go.
 export type CalEventDTO = { summary: string; start: string; allDay: boolean; location: string };
 export type MailMsgDTO = { from: string; subject: string };
+export type GPUDTO = {
+  name: string;
+  utilPct: number;
+  memUsedGb: number;
+  memTotalGb: number;
+  memUsedPct: number;
+  tempC: number;
+  powerW: number;
+};
 export type SysHealthDTO = {
   loadPerCpu: number;
   cpus: number;
@@ -460,6 +469,11 @@ export type SysHealthDTO = {
   diskUsedPct: number;
   diskUsedGb: number;
   diskTotalGb: number;
+  swapUsedPct: number;
+  swapUsedGb: number;
+  swapTotalGb: number;
+  cpuTempC: number;
+  gpus?: GPUDTO[];
   uptimeHours: number;
 };
 export type DashboardDTO = {

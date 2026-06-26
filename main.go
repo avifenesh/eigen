@@ -1367,9 +1367,20 @@ func stationDigest(ctx context.Context) string {
 	}
 
 	// Machine health (only when notably stressed — routine health isn't signal).
+	// This is a training rig, so swap pressure + GPU thermal/util are worth a
+	// dream note when high.
 	h := syshealth.Read()
-	if h.DiskUsedPct >= 85 || h.MemUsedPct >= 90 {
-		fmt.Fprintf(&b, "Machine: disk %.0f%% used, memory %.0f%% used\n", h.DiskUsedPct, h.MemUsedPct)
+	if h.DiskUsedPct >= 85 || h.MemUsedPct >= 90 || h.SwapUsedPct >= 50 || h.CPUTempC >= 85 {
+		fmt.Fprintf(&b, "Machine: disk %.0f%% · memory %.0f%% · swap %.0f%%", h.DiskUsedPct, h.MemUsedPct, h.SwapUsedPct)
+		if h.CPUTempC > 0 {
+			fmt.Fprintf(&b, " · CPU %.0f°C", h.CPUTempC)
+		}
+		b.WriteByte('\n')
+	}
+	for _, g := range h.GPUs {
+		if g.TempC >= 85 || g.MemUsedPct >= 90 {
+			fmt.Fprintf(&b, "GPU %s: %.0f%% util, VRAM %.0f%%, %.0f°C\n", g.Name, g.UtilPct, g.MemUsedPct, g.TempC)
+		}
 	}
 
 	return strings.TrimSpace(b.String())

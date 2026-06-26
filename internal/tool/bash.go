@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -18,6 +19,53 @@ const (
 	defaultBashTimeout = 30 * time.Second
 	maxBashTimeout     = 10 * time.Minute
 )
+
+// resolvedShell is the shell path used to run commands, resolved once. The bash
+// tool ran `bash -c` via PATH, which breaks in a minimal environment (e.g. an
+// agent workspace / container) where bash isn't on PATH or lives at an unusual
+// location — the command failed with "bash: not found" / "/usr/bin/bash
+// missing". We now resolve a usable shell at first use and fall back to plain
+// POSIX sh, so the tool works wherever SOME shell exists.
+var (
+	resolvedShellOnce sync.Once
+	resolvedShellPath string
+)
+
+// shellPath returns the absolute path of a usable shell, preferring bash (the
+// tool's contract is bash-ish), falling back to sh. Order: $EIGEN_SHELL →
+// bash/sh on PATH → common absolute locations. Returns "bash" as a last resort
+// so behavior is unchanged on a normal box (exec still PATH-resolves it).
+func shellPath() string {
+	resolvedShellOnce.Do(func() {
+		if env := strings.TrimSpace(os.Getenv("EIGEN_SHELL")); env != "" {
+			resolvedShellPath = env
+			return
+		}
+		for _, name := range []string{"bash", "sh"} {
+			if p, err := exec.LookPath(name); err == nil {
+				resolvedShellPath = p
+				return
+			}
+		}
+		for _, abs := range []string{
+			"/usr/bin/bash", "/bin/bash", "/usr/local/bin/bash",
+			"/usr/bin/sh", "/bin/sh", "/system/bin/sh",
+		} {
+			if fi, err := os.Stat(abs); err == nil && !fi.IsDir() {
+				resolvedShellPath = abs
+				return
+			}
+		}
+		resolvedShellPath = "bash" // last resort — unchanged historical behavior
+	})
+	return resolvedShellPath
+}
+
+// shellCommand builds an exec.Cmd that runs command through the resolved shell
+// with `-c`. Both bash and sh accept `-c`, so the fallback is transparent.
+func shellCommand(command string) *exec.Cmd {
+	return exec.Command(shellPath(), "-c", command)
+}
 
 // bashDeps carries the optional plumbing for backgrounding (the shell registry
 // + a per-call detach signal). nil-safe: a plain Bash(policy) still works.
@@ -121,7 +169,7 @@ func bashWith(policy *Policy, deps bashDeps) Definition {
 // mid-run can hand the live process to the background registry. When detachCh
 // is nil this is a plain synchronous run (the historical behavior).
 func runBash(ctx context.Context, command, dir string, timeout time.Duration, shells *ShellRegistry, detachCh <-chan struct{}) (string, error) {
-	cmd := exec.Command("bash", "-c", command)
+	cmd := shellCommand(command)
 	// Own process group so a timeout/cancel/kill reaches the WHOLE tree (bash +
 	// anything it spawned), not just the bash leader.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -193,7 +241,7 @@ func runBash(ctx context.Context, command, dir string, timeout time.Duration, sh
 // startBackgroundShell spawns command detached and registers it, returning the
 // handle line immediately (background=true path).
 func startBackgroundShell(shells *ShellRegistry, command, dir string) (string, error) {
-	cmd := exec.Command("bash", "-c", command)
+	cmd := shellCommand(command)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if dir != "" {
 		cmd.Dir = dir

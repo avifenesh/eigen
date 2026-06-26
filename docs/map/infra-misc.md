@@ -180,9 +180,9 @@
 - **Used by / entrypoint:** entrypoint: `main.go` `eigen harness`/`eigen orientation` (`OrientationInstalled`, `OrientationHome`, `InstallOrientation`, `InstallOrientationHooks`, `RunOrientation`).
 
 ### internal/syshealth/syshealth.go
-- **Role:** Basic machine health (CPU load, memory, disk, uptime) for the working-station dashboard — the "is my machine OK at a glance" signal (an atrium capability brought into eigen). Linux-first via `/proc` + `statfs`, no deps/auth; unreadable metrics stay zero.
-- **Key symbols:** `Health` struct, `Read()`; internal `readLoadAvg`/`readMemInfo`/`readDisk`/`readUptime`/`parseKB`/`pct`.
-- **Used by / entrypoint:** `internal/gui/dashboard.go` (`Dashboard()` → Home's Machine panel).
+- **Role:** Machine health (CPU load, memory, **swap**, disk, **CPU temp**, **GPU**, uptime) for the working-station dashboard. Linux-first via `/proc` + `statfs` + `/sys/class/thermal` + `nvidia-smi`; no required deps/auth; unreadable metrics stay zero. The user trains models here, so swap pressure + GPU util/VRAM/temp/power are first-class.
+- **Key symbols:** `Health` (+ `GPU`), `Read()`; readers `readLoadAvg`/`readMemInfo` (mem+swap)/`readDisk`/`readUptime`/`readCPUTemp` (thermal zones, CPU-ish max)/`readGPUs` (`nvidia-smi --query-gpu`, 3s timeout, silent no-op without it); `parseKB`/`pct`.
+- **Used by / entrypoint:** `internal/gui/dashboard.go` (`Dashboard()` → Home Machine panel + GPU cards); `main.go:stationDigest` flags high swap/CPU-temp/GPU-temp for the dream.
 
 ## Cross-links
 - **internal/llm** — `config` parses/renders model refs and looks up catalog providers (`ParseRef`/`Ref`/`Lookup`).
