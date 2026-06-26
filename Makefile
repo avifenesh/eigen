@@ -5,15 +5,23 @@ EIGEN := bin/eigen
 # webkit2_41 tags by the separate gui-phase gate (scripts/verify-gui-phase.sh).
 PKGS := $(shell go list ./... | grep -v '/internal/gui')
 
-.PHONY: build gui-run gui-smoke gui-desktop vet test race fmt gate harness perf perf-soak perf-bench stats clean
+.PHONY: build gui-run gui-smoke gui-desktop gui-frontend vet test race fmt gate harness perf perf-soak perf-bench stats clean
 
 build:
 	go build -o $(EIGEN) .
 
-gui-run:
+# Build the Svelte bundle into internal/gui/frontend/dist, which the Go binary
+# embeds via go:embed. The bundle is NOT committed (gitignored), so the GUI
+# targets below MUST build it first or the binary embeds a stale/missing
+# frontend — the cause of "my GUI fix didn't show up after rebuild". Uses pnmp
+# if present, else npm.
+gui-frontend:
+	cd internal/gui/frontend && (command -v pnpm >/dev/null 2>&1 && pnpm install --frozen-lockfile && pnpm build || (npm ci && npm run build))
+
+gui-run: gui-frontend
 	go run -tags 'wails production webkit2_41' . gui
 
-gui-desktop:
+gui-desktop: gui-frontend
 	go build -tags 'wails production webkit2_41' -o bin/eigen-gui .
 
 gui-smoke:

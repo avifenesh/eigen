@@ -16,9 +16,12 @@
 # design-system scratch mocks
 .design-mock/
 
-# GUI frontend: deps, generated bindings, and the built bundle are not source.
-# A committed dist/.gitkeep keeps the go:embed directive resolvable; the real
-# bundle is produced by `vite build` (Taskfile/CI) before `wails3 build`.
+# GUI frontend deps + generated bindings are not source.
 /internal/gui/frontend/node_modules/
 /internal/gui/frontend/bindings/
-/internal/gui/frontend/dist/
+# The built dist/ bundle IS committed (not ignored): the Go binary embeds it via
+# go:embed, and neither `make gui-desktop` nor the gui-phase gate nor releases
+# ran `vite build` first — so a clean checkout/build embedded a stale or missing
+# frontend, and committed frontend fixes never reached the binary. Committing the
+# bundle makes `go build` self-contained; `make gui-frontend` regenerates it when
+# the Svelte source changes (run it + commit the result with frontend edits).
