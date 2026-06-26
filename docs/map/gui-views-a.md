@@ -119,9 +119,11 @@
 - **Used by / entrypoint:** entrypoint: `App.svelte` renders `<Live />` when `router.route === "live"`.
 
 ### internal/gui/frontend/src/views/Board.svelte
-- **Role:** The cross-project WORK BOARD (`board` route, WORK-zone rail item) — one horizontally-scrolling lane per project with git state (branch · dirty/unpushed/behind · TODOs) + actionable cards (open PRs/issues + git loose-ends from the feed), each one-click startable. eigen's "project management" surface.
-- **Key symbols:** `load()` (`Bridge.Board()`, `alive`/`loadSeq` guarded) + a Refresh button; `startItem(it)` (task → `StartFromFeed` → chat, else `openURL`); `openLaneChat(lane)` (plain `NewSession` rooted at the project); per-lane stat chips (`±dirty` ↑unpushed ↓behind ⊙todos PR/issue, or "clean").
-- **Depends on:** `$lib/bridge` (`Board`/`StartFromFeed`/`NewSession`), `$lib/types` (`BoardDTO`/`BoardLaneDTO`/`BoardItemDTO`), `$lib/stores/sessions`, `@wailsio/runtime` Browser; components `Button`, `Badge`, `EmptyState`.
+- **Role:** The cross-project WORK BOARD (`board` route, WORK-zone rail item) — eigen's project-management surface, with a **Projects ⇄ Kanban view toggle** (shared data/load).
+  - **Projects view:** one horizontally-scrolling lane per project — git state (branch · dirty/unpushed/behind · TODOs), open PR/issue cards, owner+state filter chips, ☆/★ pin per lane.
+  - **Kanban view:** cross-repo DERIVED columns (Needs you / Todo / In progress / In review / Done). Each card shows kind badge (PR/issue/git) · repo · #num · age (reddens >48h) · ⚡ session / draft / approved / changes-requested badges. Read-only columns; act via per-card buttons (Review→ PR, Work→ issue, Start→ git).
+- **Key symbols:** `view` toggle; `load()` (parallel `Board()`+`Kanban()`); `startItem`/`ghAction`/`cardAction` (kind→ReviewPR/WorkIssue/StartFromFeed), `openLaneChat`, `togglePin`; filters (`ownerFilter`/`stateFilter`/`visibleLanes`); `ageClass`/`ageLabel`/`cardVerb`.
+- **Depends on:** `$lib/bridge` (`Board`/`Kanban`/`StartFromFeed`/`NewSession`/`ReviewPR`/`WorkIssue`/`PinLane`/`UnpinLane`), `$lib/types` (`BoardDTO`/`BoardLaneDTO`/`BoardItemDTO`/`KanbanDTO`/`KanbanColumnDTO`/`KanbanCardDTO`), `$lib/stores/sessions`, `@wailsio/runtime` Browser; components `Button`, `Badge`, `EmptyState`.
 - **Used by / entrypoint:** `App.svelte` renders `<Board />` for `router.route === "board"`.
 
 ### internal/gui/frontend/src/views/Sessions.svelte

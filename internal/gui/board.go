@@ -66,6 +66,209 @@ func (l BoardLaneDTO) laneKey() string {
 	return l.Dir
 }
 
+// ── Kanban: a cross-repo, DERIVED column board ──────────────────────────────
+// Columns reflect git+GitHub reality (no manual status field). Each work item
+// is assigned a column by deriving its status from the signals the board
+// already gathers + a cheap feed/@me + active-session join.
+
+// KanbanCardDTO is one item on the kanban (a PR, issue, or local git loose-end).
+type KanbanCardDTO struct {
+	Key    string `json:"key"`
+	Repo   string `json:"repo"`           // owner/name or local project name (the disambiguator)
+	Title  string `json:"title"`
+	Number int    `json:"number,omitempty"`
+	URL    string `json:"url,omitempty"`
+	Kind   string `json:"kind"`           // "pr" | "issue" | "git"
+	// Derived signals for badges.
+	Review    string `json:"review,omitempty"`    // "approved" | "changes" | "pending"
+	Draft     bool   `json:"draft,omitempty"`
+	NeedsYou  bool   `json:"needsYou,omitempty"`  // review-requested / changes-requested / assigned
+	Session   bool   `json:"session,omitempty"`   // an eigen session is active on this repo
+	AgeHours  int    `json:"ageHours,omitempty"`  // since last activity (reddens past ~48h)
+	Task      string `json:"task,omitempty"`      // for local git cards (Start →)
+	Dir       string `json:"dir,omitempty"`       // local project dir (git cards / session start)
+}
+
+// KanbanColumnDTO is one column with its ordered cards.
+type KanbanColumnDTO struct {
+	ID    string          `json:"id"`    // needs-you | todo | in-progress | in-review | done
+	Title string          `json:"title"`
+	Cards []KanbanCardDTO `json:"cards"`
+}
+
+// KanbanDTO is the whole derived board.
+type KanbanDTO struct {
+	Columns []KanbanColumnDTO `json:"columns"`
+}
+
+// Kanban derives the cross-repo column board from the same data the lane board
+// uses (cached GitHub work + local git + the feed's @me classification + active
+// eigen sessions). Read-only: columns reflect reality; the user acts via card
+// buttons and the card re-derives next refresh.
+func (b *Bridge) Kanban() (*KanbanDTO, error) {
+	// "Needs you" join: the feed already classified the user's review-requested /
+	// assigned / own-PR items by URL — reuse it to flag attention without extra
+	// gh calls.
+	needsYou := map[string]bool{}
+	f, _ := feed.Load()
+	for _, it := range f.Items {
+		if it.Kind == "github" && it.URL != "" {
+			t := strings.ToLower(it.Title)
+			if strings.HasPrefix(t, "review requested") || strings.HasPrefix(t, "assigned issue") {
+				needsYou[it.URL] = true
+			}
+		}
+	}
+
+	// Active-session repos: a working/approval session rooted in a project dir →
+	// that repo has an agent on it (badge + nudges In Progress).
+	sessionDirs := map[string]bool{}    // dir → has an active session
+	approvalDirs := map[string]bool{}   // dir → session awaiting approval (Needs you)
+	if sess, err := b.Sessions(); err == nil {
+		for _, s := range sess {
+			if s.Dir == "" {
+				continue
+			}
+			if s.Status == "working" || s.Status == "approval" {
+				sessionDirs[s.Dir] = true
+			}
+			if s.Status == "approval" {
+				approvalDirs[s.Dir] = true
+			}
+		}
+	}
+
+	cols := map[string]*KanbanColumnDTO{
+		"needs-you":   {ID: "needs-you", Title: "Needs you"},
+		"todo":        {ID: "todo", Title: "Todo"},
+		"in-progress": {ID: "in-progress", Title: "In progress"},
+		"in-review":   {ID: "in-review", Title: "In review"},
+		"done":        {ID: "done", Title: "Done"},
+	}
+	add := func(colID string, c KanbanCardDTO) { cols[colID].Cards = append(cols[colID].Cards, c) }
+
+	now := time.Now()
+	ageHours := func(t time.Time) int {
+		if t.IsZero() {
+			return 0
+		}
+		h := int(now.Sub(t).Hours())
+		if h < 0 {
+			h = 0
+		}
+		return h
+	}
+
+	// GitHub work items → cards. (Uses the cached GH lanes the board already has.)
+	if ghLanes, ok := githubBoardLanes(); ok {
+		for _, lane := range ghLanes {
+			repoName := lane.NameWithOwner
+			for _, w := range lane.Items {
+				c := KanbanCardDTO{
+					Key: repoName + "#" + itoa(w.Number), Repo: repoName, Title: w.Title,
+					Number: w.Number, URL: w.URL, Draft: w.Draft, AgeHours: ageHours(w.Updated),
+					NeedsYou: needsYou[w.URL],
+				}
+				if w.IsPR {
+					c.Kind = "pr"
+					switch w.ReviewDecision {
+					case "APPROVED":
+						c.Review = "approved"
+					case "CHANGES_REQUESTED":
+						c.Review = "changes"
+					case "REVIEW_REQUIRED":
+						c.Review = "pending"
+					}
+				} else {
+					c.Kind = "issue"
+				}
+				add(kanbanColumnFor(w, c.NeedsYou), c)
+			}
+		}
+	}
+
+	// Local git loose-ends (uncommitted/unpushed/behind) → In Progress cards,
+	// with the active-session badge. These are "code exists, not yet a PR".
+	for _, lane := range b.localLanes() {
+		if lane.Dirty == 0 && lane.Unpushed == 0 && lane.Behind == 0 {
+			continue
+		}
+		hasSession := sessionDirs[lane.Dir]
+		title := lane.Name + ": "
+		switch {
+		case lane.Dirty > 0:
+			title += itoa(lane.Dirty) + " uncommitted"
+		case lane.Unpushed > 0:
+			title += itoa(lane.Unpushed) + " unpushed"
+		default:
+			title += itoa(lane.Behind) + " behind"
+		}
+		add("in-progress", KanbanCardDTO{
+			Key: "git|" + lane.Dir, Repo: lane.Name, Title: title, Kind: "git",
+			Dir: lane.Dir, Session: hasSession,
+			Task: "Review the working tree (git status/diff) and commit coherent chunks, or push/integrate as needed.",
+		})
+	}
+
+	// Tag GitHub cards whose repo has an active local session, and order each
+	// column: needs-you first, then session, then oldest (aging) first.
+	order := []string{"needs-you", "todo", "in-progress", "in-review", "done"}
+	out := &KanbanDTO{}
+	for _, id := range order {
+		col := cols[id]
+		sort.SliceStable(col.Cards, func(i, j int) bool {
+			a, b2 := col.Cards[i], col.Cards[j]
+			if a.NeedsYou != b2.NeedsYou {
+				return a.NeedsYou
+			}
+			if a.Session != b2.Session {
+				return a.Session
+			}
+			return a.AgeHours > b2.AgeHours // oldest first within a column
+		})
+		if col.Cards == nil {
+			col.Cards = []KanbanCardDTO{}
+		}
+		out.Columns = append(out.Columns, *col)
+	}
+	return out, nil
+}
+
+// kanbanColumnFor derives a GitHub item's column (first match wins, terminal
+// states dominate). needsYou short-circuits open work into the attention column.
+func kanbanColumnFor(w ghWorkItem, needsYou bool) string {
+	if w.State == "MERGED" || w.State == "CLOSED" {
+		return "done"
+	}
+	if w.IsPR {
+		if needsYou || w.ReviewDecision == "CHANGES_REQUESTED" {
+			return "needs-you"
+		}
+		if w.Draft {
+			return "in-progress"
+		}
+		return "in-review" // open non-draft PR
+	}
+	// Issue.
+	if needsYou {
+		return "needs-you"
+	}
+	return "todo"
+}
+
+// localLanes builds just the local (checkout) lanes with git context — the same
+// per-dir probe the lane board does, factored so Kanban can reuse it.
+func (b *Bridge) localLanes() []BoardLaneDTO {
+	var lanes []BoardLaneDTO
+	for _, dir := range b.projectDirs() {
+		if dir == "" {
+			continue
+		}
+		lanes = append(lanes, buildLane(dir, nil))
+	}
+	return lanes
+}
+
 // active reports whether a lane has anything worth showing on its own (open
 // work or local changes). Idle lanes only appear when pinned.
 func (l BoardLaneDTO) active() bool {

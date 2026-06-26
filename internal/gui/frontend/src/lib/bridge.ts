@@ -31,6 +31,7 @@ import type {
   GoogleStatusDTO,
   DashboardDTO,
   BoardDTO,
+  KanbanDTO,
   DaemonStats,
   FeedDTO,
   FeedItemDTO,
@@ -171,6 +172,7 @@ export const Bridge = {
   Dashboard: (): Promise<DashboardDTO | null> => B.Dashboard(),
   // cross-project work board
   Board: (): Promise<BoardDTO | null> => B.Board(),
+  Kanban: (): Promise<KanbanDTO | null> => B.Kanban(),
   PinLane: (key: string): Promise<void> => B.PinLane(key),
   UnpinLane: (key: string): Promise<void> => B.UnpinLane(key),
   ReviewPR: (url: string): Promise<string> => B.ReviewPR(url),

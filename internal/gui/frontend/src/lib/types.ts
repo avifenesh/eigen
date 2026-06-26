@@ -493,6 +493,25 @@ export type BoardLaneDTO = {
 };
 export type BoardDTO = { lanes: BoardLaneDTO[]; scanned?: string };
 
+// Kanban: a cross-repo, derived column board. Mirrors internal/gui/board.go.
+export type KanbanCardDTO = {
+  key: string;
+  repo: string;
+  title: string;
+  number?: number;
+  url?: string;
+  kind: string; // "pr" | "issue" | "git"
+  review?: string; // "approved" | "changes" | "pending"
+  draft?: boolean;
+  needsYou?: boolean;
+  session?: boolean;
+  ageHours?: number;
+  task?: string;
+  dir?: string;
+};
+export type KanbanColumnDTO = { id: string; title: string; cards: KanbanCardDTO[] };
+export type KanbanDTO = { columns: KanbanColumnDTO[] };
+
 export type FeedItemDTO = {
   key: string;
   kind: string; // git | github | memory | suggest

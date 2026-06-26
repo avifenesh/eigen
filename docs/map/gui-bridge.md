@@ -195,9 +195,11 @@
 
 ### internal/gui/board.go
 - **Role:** The cross-project WORK BOARD — "what's going on across all my projects" in one place (project management for the working station). One lane per project: git state (branch, dirty/unpushed/behind, TODO/FIXME count), open PRs/issues + git loose-ends (grouped from the cached proactive feed), each card one-click startable.
-- **Key symbols:** `BoardDTO`/`BoardLaneDTO`/`BoardItemDTO`; bound `Board()` — groups `feed.Load()` git/github items by dir, unions with `projectDirs()`, enriches each lane via local probes (`gitBranch`/`countDirty`/`countRevs`/`countTodos` — `git grep -c TODO|FIXME`, capped `maxTodoScan`), sorts most-actionable-first. Instant (reads the feed cache; no rescan).
-- **Depends on:** `internal/feed` (cached items), `os/exec` git probes.
-- **Used by / entrypoint:** the Board view (`board` route); items reuse `StartFromFeed`/`NewSession`.
+- **Key symbols:** `BoardDTO`/`BoardLaneDTO`/`BoardItemDTO`; bound `Board()` — groups `feed.Load()` git/github items by dir, unions with `projectDirs()`, enriches each lane via local probes (`gitBranch`/`countDirty`/`countRevs`/`countTodos`), merges remote GitHub lanes (`board_github.go`), scopes to pinned+active. `PinLane`/`UnpinLane` (config.BoardPinned), `ReviewPR(url)`/`WorkIssue(url)` per-card actions.
+- **Kanban (`Kanban()` bound):** a cross-repo DERIVED column board — `KanbanDTO`/`KanbanColumnDTO`/`KanbanCardDTO`. Columns **Needs you / Todo / In progress / In review / Done** derived first-match by `kanbanColumnFor` (merged/closed→Done, PR changes-requested or feed-@me→Needs you, draft PR or local-git/active-session→In progress, open PR→In review, issue→Todo). Joins the feed's review-requested/assigned @me set (by URL) for "Needs you" + matches `Sessions().Dir` for the ⚡ active-session badge/In-progress nudge. Cards carry PR review state (`reviewDecision`→approved/changes/pending), draft, age (reddens >48h). Read-only (no drag-status); ordered needs-you → session → oldest.
+- **GitHub data (`board_github.go`):** `gh search prs/issues --owner <each> --state open` + a `--merged` sweep for Done — fetches `isDraft`+`reviewDecision` for PRs; TWO calls per kind across all owners (not N×2), 5-min background cache.
+- **Depends on:** `internal/feed` (cached items + @me classification), `internal/config` (pins/owners), `os/exec` (git + gh).
+- **Used by / entrypoint:** the Board view (`board` route, Projects⇄Kanban toggle); items reuse `StartFromFeed`/`NewSession`/`ReviewPR`/`WorkIssue`.
 
 ### internal/gui/dashboard.go
 - **Role:** The working-station command-center data in ONE call — today's calendar + unread mail (Google, when linked) + machine health (always). Eigen is a working STATION, not a coding tool; Home answers "what's my day + is my machine OK".

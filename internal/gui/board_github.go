@@ -22,8 +22,15 @@ import (
 const (
 	ghBoardTimeout  = 15 * time.Second
 	ghBoardCacheTTL = 5 * time.Minute
-	ghBoardLimit    = 100 // max PRs/issues pulled per search
+	ghBoardLimit    = 100 // max open PRs/issues pulled per search
+	ghDoneLimit     = 30  // max recently-merged PRs for the Done column
 )
+
+func (l *ghRepoLane) bumpLatest(t time.Time) {
+	if t.After(l.Latest) {
+		l.Latest = t
+	}
+}
 
 // ghRepoLane is a GitHub repo as a board lane (remote — no local clone). Carries
 // the actionable PRs/issues so the board shows real work, not just a count.
@@ -36,13 +43,20 @@ type ghRepoLane struct {
 	Latest        time.Time // most recent activity across its items (for ordering)
 }
 
-// ghWorkItem is one open PR or issue.
+// ghWorkItem is one PR or issue with the signals the kanban derivation needs.
 type ghWorkItem struct {
 	IsPR    bool
 	Number  int
 	Title   string
 	URL     string
 	Updated time.Time
+	// PR signals (zero/"" for issues).
+	Draft          bool   // draft PR
+	ReviewDecision string // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED | ""
+	State          string // OPEN | MERGED | CLOSED (lowercased varies; normalized upper)
+	// Whether the current user is requested as a reviewer or assigned — drives
+	// the "Needs you" column. Derived from the feed's @me classification, joined
+	// by URL (see board.go), not fetched here.
 }
 
 var (
@@ -139,21 +153,27 @@ func buildGitHubLanes(ctx context.Context) []ghRepoLane {
 		return l
 	}
 
-	for _, w := range ghSearchWork(ctx, "prs", ownerArgs) {
+	// Open PRs (with review/draft signals), open issues, and recently
+	// merged/closed PRs (for the Done column). Each is one gh-search call across
+	// all owners — bounded total.
+	for _, w := range ghSearchWork(ctx, "prs", append(ownerArgs, "--state", "open")) {
 		l := lane(w.repo)
 		l.OpenPRs++
-		l.Items = append(l.Items, ghWorkItem{IsPR: true, Number: w.number, Title: w.title, URL: w.url, Updated: w.updated})
-		if w.updated.After(l.Latest) {
-			l.Latest = w.updated
-		}
+		l.Items = append(l.Items, w.item(true, "OPEN"))
+		l.bumpLatest(w.updated)
 	}
-	for _, w := range ghSearchWork(ctx, "issues", ownerArgs) {
+	for _, w := range ghSearchWork(ctx, "issues", append(ownerArgs, "--state", "open")) {
 		l := lane(w.repo)
 		l.OpenIssues++
-		l.Items = append(l.Items, ghWorkItem{IsPR: false, Number: w.number, Title: w.title, URL: w.url, Updated: w.updated})
-		if w.updated.After(l.Latest) {
-			l.Latest = w.updated
-		}
+		l.Items = append(l.Items, w.item(false, "OPEN"))
+		l.bumpLatest(w.updated)
+	}
+	// Done: recently merged PRs (capped by the search limit + updated recency).
+	for _, w := range ghSearchWork(ctx, "prs", append(ownerArgs, "--merged", "--limit", itoa(ghDoneLimit))) {
+		l := lane(w.repo)
+		it := w.item(true, "MERGED")
+		l.Items = append(l.Items, it)
+		l.bumpLatest(w.updated)
 	}
 
 	lanes := make([]ghRepoLane, 0, len(byRepo))
@@ -167,18 +187,37 @@ func buildGitHubLanes(ctx context.Context) []ghRepoLane {
 }
 
 type ghSearchRow struct {
-	repo    string
-	number  int
-	title   string
-	url     string
-	updated time.Time
+	repo           string
+	number         int
+	title          string
+	url            string
+	updated        time.Time
+	draft          bool
+	reviewDecision string
 }
 
-// ghSearchWork runs one `gh search <prs|issues>` across all owners, open state.
-func ghSearchWork(ctx context.Context, what string, ownerArgs []string) []ghSearchRow {
-	args := append([]string{"search", what}, ownerArgs...)
-	args = append(args, "--state", "open", "--limit", itoa(ghBoardLimit),
-		"--json", "repository,number,title,url,updatedAt")
+// item builds a ghWorkItem from a search row, stamping PR-ness + state.
+func (r ghSearchRow) item(isPR bool, state string) ghWorkItem {
+	return ghWorkItem{
+		IsPR: isPR, Number: r.number, Title: r.title, URL: r.url, Updated: r.updated,
+		Draft: r.draft, ReviewDecision: r.reviewDecision, State: state,
+	}
+}
+
+// ghSearchWork runs one `gh search <prs|issues>` across all owners. The caller
+// supplies state/limit args. PRs carry draft + reviewDecision; issues don't
+// (gh rejects those json fields for issue searches), so the field set differs.
+func ghSearchWork(ctx context.Context, what string, extraArgs []string) []ghSearchRow {
+	jsonFields := "repository,number,title,url,updatedAt"
+	if what == "prs" {
+		jsonFields += ",isDraft,reviewDecision"
+	}
+	args := append([]string{"search", what}, extraArgs...)
+	// Default a limit when the caller didn't pass one (open searches do).
+	if !hasFlag(extraArgs, "--limit") {
+		args = append(args, "--limit", itoa(ghBoardLimit))
+	}
+	args = append(args, "--json", jsonFields)
 	out := ghOut(ctx, args...)
 	if out == "" {
 		return nil
@@ -187,10 +226,12 @@ func ghSearchWork(ctx context.Context, what string, ownerArgs []string) []ghSear
 		Repository struct {
 			NameWithOwner string `json:"nameWithOwner"`
 		} `json:"repository"`
-		Number    int    `json:"number"`
-		Title     string `json:"title"`
-		URL       string `json:"url"`
-		UpdatedAt string `json:"updatedAt"`
+		Number         int    `json:"number"`
+		Title          string `json:"title"`
+		URL            string `json:"url"`
+		UpdatedAt      string `json:"updatedAt"`
+		IsDraft        bool   `json:"isDraft"`
+		ReviewDecision string `json:"reviewDecision"`
 	}
 	if json.Unmarshal([]byte(out), &raw) != nil {
 		return nil
@@ -198,9 +239,21 @@ func ghSearchWork(ctx context.Context, what string, ownerArgs []string) []ghSear
 	rows := make([]ghSearchRow, 0, len(raw))
 	for _, r := range raw {
 		t, _ := time.Parse(time.RFC3339, r.UpdatedAt)
-		rows = append(rows, ghSearchRow{repo: r.Repository.NameWithOwner, number: r.Number, title: r.Title, url: r.URL, updated: t})
+		rows = append(rows, ghSearchRow{
+			repo: r.Repository.NameWithOwner, number: r.Number, title: r.Title, url: r.URL,
+			updated: t, draft: r.IsDraft, reviewDecision: r.ReviewDecision,
+		})
 	}
 	return rows
+}
+
+func hasFlag(args []string, flag string) bool {
+	for _, a := range args {
+		if a == flag {
+			return true
+		}
+	}
+	return false
 }
 
 func ghOut(ctx context.Context, args ...string) string {
