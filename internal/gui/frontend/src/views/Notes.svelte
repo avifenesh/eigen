@@ -9,6 +9,7 @@
   import type { NoteDTO, ObsidianStatusDTO } from "$lib/types";
   import Button from "$lib/components/Button.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import Markdown from "$lib/components/Markdown.svelte";
 
   let status = $state<ObsidianStatusDTO | null>(null);
   let notes = $state<NoteDTO[]>([]);
@@ -139,7 +140,9 @@
         {#if editing}
           <textarea class="notes__editor selectable" bind:value={draft}></textarea>
         {:else}
-          <pre class="notes__read selectable">{content}</pre>
+          <!-- Obsidian notes are markdown — render them, don't dump raw text in a
+               <pre>. Edit mode still shows the raw source in the textarea. -->
+          <div class="notes__read selectable"><Markdown source={content} /></div>
         {/if}
       {/if}
     </section>
@@ -267,19 +270,23 @@
   .notes__sp {
     flex: 1;
   }
-  .notes__read,
+  /* Rendered note: a scrolling prose pane (Markdown owns its own typography). */
+  .notes__read {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--sp-6);
+  }
+  /* Raw markdown source while editing: mono, preserve line breaks. */
   .notes__editor {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
     margin: 0;
     padding: var(--sp-6);
-    color: var(--text-secondary);
     font: var(--fw-regular) var(--fs-body-sm) / var(--lh-relaxed) var(--font-mono);
     white-space: pre-wrap;
     word-break: break-word;
-  }
-  .notes__editor {
     border: none;
     background: var(--bg-base);
     resize: none;
