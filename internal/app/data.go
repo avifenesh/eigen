@@ -148,8 +148,13 @@ func (d *Data) reloadSessions() {
 
 // LoadEmpty returns deterministic, side-effect-free app data for smoke tests
 // and other callers that need to exercise the shell without reading user state.
+// FeedFresh is true so Init() does NOT kick a background feed.Scan — that scan
+// shells out (e.g. `gh` for the GitHub feed) and, when unauthenticated, injects
+// a "sign in" card at the top of the home feed. In a smoke/PTY run that card
+// would sit under the cursor and turn a stray Enter into an ActionOpenChat,
+// making the shell exit non-deterministically. Empty data must stay empty.
 func LoadEmpty() *Data {
-	return &Data{Config: config.Config{}, Skills: skill.Discover()}
+	return &Data{Config: config.Config{}, Skills: skill.Discover(), FeedFresh: true}
 }
 
 // Load gathers the app's data. Failures degrade (a page shows "unavailable")
@@ -332,10 +337,13 @@ func (d *Data) feedItems() []feed.Item {
 
 // suggester adapts a model into the feed's Suggester (nil when no model is
 // available — the suggest source just stays off). Suggestion quality scales
-// with the model, so it prefers a mid-tier model that's usually idle
-// (glm-5.1) over the tiny titling model; EIGEN_SUGGEST_MODEL pins one.
+// with the model, so it prefers a flagship model that's usually idle and has
+// web_search included (glm-5.2) over the tiny titling model;
+// EIGEN_SUGGEST_MODEL pins one.
 func (d *Data) suggester() feed.Suggester {
-	prov := suggestProvider()
+	// glm-5.2 preferred, but wrapped to fall back to the small model on a GLM
+	// quota/billing rejection (and freeze GLM for the day) so ideas keep flowing.
+	prov := suggestProvider(d.Small)
 	if prov == nil {
 		prov = d.Small
 	}
@@ -355,17 +363,19 @@ func (d *Data) suggester() feed.Suggester {
 }
 
 // suggestProvider picks the dedicated suggestion model: EIGEN_SUGGEST_MODEL
-// when set, else glm-5.1 when its credentials exist (mid-tier quality, mostly
-// idle quota). nil = fall back to the caller's small model.
-func suggestProvider() llm.Provider {
+// when set, else glm-5.2 when its credentials exist (1M-ctx flagship, web_search
+// included), wrapped in a fallback to `small` so a GLM quota/billing rejection
+// routes to the small model (and freezes GLM for the day — see llm.NewFallback)
+// instead of killing ideas. nil = caller falls back to its own small model.
+func suggestProvider(small llm.Provider) llm.Provider {
 	if id := os.Getenv("EIGEN_SUGGEST_MODEL"); id != "" {
 		if p, err := llm.New("", id); err == nil {
 			return p
 		}
 	}
 	if llm.ProviderAvailable("glm") {
-		if p, err := llm.New("glm", "glm-5.1"); err == nil {
-			return p
+		if p, err := llm.New("glm", "glm-5.2"); err == nil {
+			return llm.NewFallback(p, small)
 		}
 	}
 	return nil

@@ -118,17 +118,32 @@ func Stage1(ctx context.Context, p llm.Provider, transcript string) (RolloutSumm
 	if strings.TrimSpace(transcript) == "" {
 		return RolloutSummary{}, false, nil
 	}
-	if len(transcript) > maxReflectInput {
-		transcript = transcript[len(transcript)-maxReflectInput:] // most-recent tail
-	}
-	resp, err := p.Complete(ctx, llm.Request{
-		System:   stage1Prompt,
-		Messages: []llm.Message{{Role: llm.RoleUser, Text: transcript}},
-	})
+	resp, err := p.Complete(ctx, Stage1Request(transcript))
 	if err != nil {
 		return RolloutSummary{}, false, err
 	}
-	s := parseRollout(resp.Text)
+	return ParseStage1(resp.Text)
+}
+
+// Stage1Request builds the Stage1 request for one transcript — the same request
+// Stage1 sends synchronously, exposed so the batch path (one BatchItem per
+// session) builds identical requests. Returns a zero Request for an empty
+// transcript (caller skips it).
+func Stage1Request(transcript string) llm.Request {
+	if len(transcript) > maxReflectInput {
+		transcript = transcript[len(transcript)-maxReflectInput:] // most-recent tail
+	}
+	return llm.Request{
+		System:   stage1Prompt,
+		Messages: []llm.Message{{Role: llm.RoleUser, Text: transcript}},
+	}
+}
+
+// ParseStage1 parses a Stage1 model reply into a rollout summary; ok=false means
+// skip (trivial/empty). Shared by the sync (Stage1) and batch (CollectBatch)
+// paths so a batched summary is interpreted identically to a live one.
+func ParseStage1(text string) (RolloutSummary, bool, error) {
+	s := parseRollout(text)
 	if s.Empty() {
 		return RolloutSummary{}, false, nil
 	}

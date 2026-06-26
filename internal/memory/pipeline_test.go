@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -113,6 +114,41 @@ func TestPipelineConsolidateAndSummary(t *testing.T) {
 	}
 	if !strings.HasPrefix(strings.TrimSpace(p.Store.Injected()), "SUMMARY:") {
 		t.Fatalf("injection should now be the small summary, got %q", p.Store.Injected())
+	}
+}
+
+func TestPipelineRegenSummaryRemovesStaleSummaryWhenMemoryCleared(t *testing.T) {
+	p := fakePipe(t)
+	// Establish a distilled summary from real memory.
+	p.Store.Rewrite("- " + strings.Repeat("padding note ", 10) + "\n")
+	if did, err := p.RegenSummary(context.Background()); err != nil || !did {
+		t.Fatalf("seed summary: did=%v err=%v", did, err)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(p.Store.Injected()), "SUMMARY:") {
+		t.Fatalf("precondition: injection should be the distilled summary, got %q", p.Store.Injected())
+	}
+
+	// Clear MEMORY.md — the curated tier is now empty.
+	if err := p.Store.Rewrite("   \n"); err != nil {
+		t.Fatal(err)
+	}
+	did, err := p.RegenSummary(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !did {
+		t.Fatal("clearing MEMORY.md should remove the stale summary (a real change)")
+	}
+	if _, statErr := os.Stat(p.Store.SummaryPath()); !os.IsNotExist(statErr) {
+		t.Fatalf("memory_summary.md should be gone, stat err=%v", statErr)
+	}
+	if got := strings.TrimSpace(p.Store.Injected()); got != "" {
+		t.Fatalf("injected memory must not diverge from cleared MEMORY.md, got %q", got)
+	}
+
+	// Idempotent: nothing left to remove → no change reported.
+	if did, err := p.RegenSummary(context.Background()); err != nil || did {
+		t.Fatalf("second regen on empty memory should be a no-op: did=%v err=%v", did, err)
 	}
 }
 

@@ -31,12 +31,23 @@ func TestChunkSkipsBlank(t *testing.T) {
 }
 
 func TestDeniedPaths(t *testing.T) {
-	for _, p := range []string{".env", ".env.local", "a/.git/config", "node_modules/x.js", "img.png", "b/.aws/creds"} {
+	denyCases := []string{
+		// dirs + existing coverage
+		".env", ".env.local", "a/.git/config", "node_modules/x.js", "img.png", "b/.aws/creds",
+		// broadened secret files (APP-085)
+		".envrc", "config/.envrc", ".netrc", "home/.netrc",
+		"server.pem", "deploy/private.key", "cert.p12", "cert.pfx",
+		"credentials", ".aws/credentials",
+		"id_rsa", ".ssh/id_rsa", "id_rsa.pub", "id_ed25519", "keys/id_ed25519.pub",
+		// forward-slash normalization of a backslash path
+		"a\\.ssh\\id_rsa", "secrets\\server.pem",
+	}
+	for _, p := range denyCases {
 		if !denied(p) {
 			t.Errorf("%q should be denied from the index", p)
 		}
 	}
-	for _, p := range []string{"main.go", "internal/llm/embed.go", "README.md", "src/app.ts"} {
+	for _, p := range []string{"main.go", "internal/llm/embed.go", "README.md", "src/app.ts", "keyboard.go", "envrc.md"} {
 		if denied(p) {
 			t.Errorf("%q should be indexable", p)
 		}

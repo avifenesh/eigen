@@ -12,8 +12,10 @@ import (
 	"time"
 )
 
-// Version is eigen's version, reported in the User-Agent of provider requests.
-const Version = "0.1.0"
+// Version is eigen's base semantic version, reported in the User-Agent of
+// provider requests and as the headline version everywhere. FullVersion()
+// (version.go) annotates it with the build's git revision.
+const Version = "0.2.0"
 
 const (
 	// maxAttempts bounds retries for transient provider failures (network, 429,
@@ -60,13 +62,19 @@ func httpJSON(ctx context.Context, client *http.Client, url string, headers map[
 			lastErr = fmt.Errorf("request: %w", err)
 			continue // network error: retry
 		}
-		raw, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+		// Read one byte past the cap so an oversized body is detected rather than
+		// silently truncated mid-JSON (which would surface as an opaque
+		// "unexpected end of JSON input" at the caller's json.Unmarshal).
+		raw, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 		retryAfter = parseRetryAfter(resp.Header.Get("Retry-After"))
 		io.Copy(io.Discard, resp.Body) // drain so the connection can be reused
 		resp.Body.Close()
 		if readErr != nil {
 			lastErr = fmt.Errorf("read response: %w", readErr)
 			continue
+		}
+		if len(raw) > maxResponseBytes {
+			return nil, resp.StatusCode, fmt.Errorf("response exceeded %d MiB cap", maxResponseBytes>>20)
 		}
 
 		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {

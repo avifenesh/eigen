@@ -1,4 +1,6 @@
 /bin/
+# stray root build artifact from `go build -o eigen .`
+/eigen
 /dist/
 /coverage.out
 
@@ -13,3 +15,10 @@
 
 # design-system scratch mocks
 .design-mock/
+
+# GUI frontend: deps, generated bindings, and the built bundle are not source.
+# A committed dist/.gitkeep keeps the go:embed directive resolvable; the real
+# bundle is produced by `vite build` (Taskfile/CI) before `wails3 build`.
+/internal/gui/frontend/node_modules/
+/internal/gui/frontend/bindings/
+/internal/gui/frontend/dist/

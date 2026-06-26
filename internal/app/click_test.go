@@ -3,12 +3,37 @@ package app
 // Tests for the Tier 10 Wave 3 page-local content clicks.
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/avifenesh/eigen/internal/daemon"
+	"github.com/avifenesh/eigen/internal/observe"
+	"github.com/avifenesh/eigen/internal/skill"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// seedSkillsDir writes two minimal SKILL.md files into a temp dir and returns
+// the root, so skill.Discover yields a deterministic two-skill set.
+func seedSkillsDir(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	for _, sk := range []struct{ name, desc string }{
+		{"alpha-skill", "first test skill"},
+		{"beta-skill", "second test skill"},
+	} {
+		dir := filepath.Join(root, sk.name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir skill dir: %v", err)
+		}
+		body := "---\nname: " + sk.name + "\ndescription: " + sk.desc + "\n---\n\nbody for " + sk.name + "\n"
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(body), 0o644); err != nil {
+			t.Fatalf("write SKILL.md: %v", err)
+		}
+	}
+	return root
+}
 
 // rowLine returns the content-local line a clickMap recorded for item idx (or
 // -1). Tests render the page first so the map is populated.
@@ -171,5 +196,156 @@ func TestHomeClickWithLiveSection(t *testing.T) {
 	_, cmd := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: contentLineY(m, l, line)})
 	if !m.quitting || cmd == nil || m.result.Action != ActionOpenChat {
 		t.Fatalf("clicking the mapped feed line should open the feed item's chat, got action=%v quitting=%v", m.result.Action, m.quitting)
+	}
+}
+
+// TestModelsClickSelectsRow verifies a content click on a model row moves the
+// selection (the catalog is read-only, so there is no second-click open).
+func TestModelsClickSelectsRow(t *testing.T) {
+	d := testData()
+	m := New(d)
+	m.width, m.height = 120, 30
+	m.active = PageModels
+	if len(m.models.rows) < 2 {
+		t.Skip("need at least two catalog models")
+	}
+	l := m.computeLayout()
+	_ = m.models.view(m, l.inner.w, l.inner.h)
+	line := rowLine(&m.models.clicks, 1)
+	if line < 0 {
+		t.Fatal("model row 1 should be in the click map")
+	}
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: contentLineY(m, l, line)})
+	if m.models.list.cursor != 1 {
+		t.Fatalf("click should select model row 1, got cursor=%d", m.models.list.cursor)
+	}
+	if m.quitting {
+		t.Fatal("selecting a model must not quit")
+	}
+}
+
+// TestProvidersClickSelectsRow verifies a content click on a provider row moves
+// the selection (credentials are managed externally; no second-click open).
+func TestProvidersClickSelectsRow(t *testing.T) {
+	d := testData()
+	m := New(d)
+	m.width, m.height = 120, 30
+	m.active = PageProviders
+	if len(m.providers.rows) < 2 {
+		t.Skip("need at least two providers")
+	}
+	l := m.computeLayout()
+	_ = m.providers.view(m, l.inner.w, l.inner.h)
+	line := rowLine(&m.providers.clicks, 1)
+	if line < 0 {
+		t.Fatal("provider row 1 should be in the click map")
+	}
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: contentLineY(m, l, line)})
+	if m.providers.list.cursor != 1 {
+		t.Fatalf("click should select provider row 1, got cursor=%d", m.providers.list.cursor)
+	}
+}
+
+// TestSkillsClickSelectsThenPreviews verifies first click selects a skill and a
+// second click on the selected row opens its preview (same as enter).
+func TestSkillsClickSelectsThenPreviews(t *testing.T) {
+	d := testData()
+	d.Skills = skill.Discover(seedSkillsDir(t)) // deterministic two-skill set
+	m := New(d)
+	m.width, m.height = 120, 30
+	m.active = PageSkills
+	skills := d.Skills.List()
+	if len(skills) < 2 {
+		t.Fatalf("seeded skills dir should yield two skills, got %d", len(skills))
+	}
+	l := m.computeLayout()
+	_ = m.skills.view(m, l.inner.w, l.inner.h)
+	line := rowLine(&m.skills.clicks, 1)
+	if line < 0 {
+		t.Fatal("skill row 1 should be in the click map")
+	}
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: contentLineY(m, l, line)})
+	if m.skills.list.cursor != 1 {
+		t.Fatalf("first click should select skill row 1, got cursor=%d", m.skills.list.cursor)
+	}
+	if m.skills.preview != "" {
+		t.Fatal("first click should only select, not preview")
+	}
+	_ = m.skills.view(m, l.inner.w, l.inner.h)
+	line = rowLine(&m.skills.clicks, 1)
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: contentLineY(m, l, line)})
+	if m.skills.preview == "" {
+		t.Fatal("second click on the selected skill should open its preview")
+	}
+}
+
+// TestCronsClickSelectsThenToggles verifies first click selects a cron row and
+// a second click toggles it (a crontab row has no toggle, so it stays selected;
+// we assert the select + idempotent re-click path without shelling out).
+func TestCronsClickSelectsThenToggles(t *testing.T) {
+	d := testData()
+	m := New(d)
+	m.width, m.height = 120, 30
+	m.active = PageCrons
+	// Seed deterministic rows so the test never depends on the host's systemd
+	// timers or crontab; mark loaded so view() skips the real loader.
+	m.crons.rows = []CronRow{
+		{Name: "alpha", Kind: "crontab", Next: "@daily", Active: true, Command: "echo a"},
+		{Name: "beta", Kind: "crontab", Next: "@hourly", Active: true, Command: "echo b"},
+	}
+	m.crons.list.count = len(m.crons.rows)
+	m.crons.loaded = true
+	l := m.computeLayout()
+	_ = m.crons.view(m, l.inner.w, l.inner.h)
+	line := rowLine(&m.crons.clicks, 1)
+	if line < 0 {
+		t.Fatal("cron row 1 should be in the click map")
+	}
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: contentLineY(m, l, line)})
+	if m.crons.list.cursor != 1 {
+		t.Fatalf("first click should select cron row 1, got cursor=%d", m.crons.list.cursor)
+	}
+	// Second click on the selected crontab row routes through the toggle path
+	// (which reports crontab rows are file-managed) and keeps it selected.
+	_ = m.crons.view(m, l.inner.w, l.inner.h)
+	line = rowLine(&m.crons.clicks, 1)
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: contentLineY(m, l, line)})
+	if m.crons.list.cursor != 1 {
+		t.Fatalf("second click should keep cron row 1 selected, got cursor=%d", m.crons.list.cursor)
+	}
+}
+
+// TestObserveSectionClickScrolls verifies clicking a recorded section line snaps
+// that section toward the top of the content viewport.
+func TestObserveSectionClickScrolls(t *testing.T) {
+	d := testData()
+	d.Observe = observe.Summary{
+		Records: 99,
+		Errors:  map[string]int{"denied": 3, "timeout": 2},
+		Notes:   map[string]int{"route": 4, "background": 3},
+		Models: map[string]observe.ModelSummary{
+			"gpt-5.5": {Turns: 2, InTokens: 100}, "fast": {Turns: 1}, "claude": {Turns: 3},
+		},
+		Tools:  map[string]observe.ToolSummary{"bash": {Calls: 2}, "read": {Calls: 5}, "edit": {Calls: 3}},
+		Hooks:  map[string]observe.HookSummary{"session_start": {Done: 1}, "pre_tool": {Done: 2}},
+		Skills: map[string]observe.SkillSummary{"frontend": {Calls: 2}, "backend": {Calls: 1}},
+	}
+	m := NewAt(d, PageObserve)
+	m.width, m.height = 90, 14 // short viewport so the page overflows and scroll is live
+	l := m.computeLayout()
+	_ = m.observe.view(m, l.inner.w, m.contentBodyHeight(l))
+	// Pick a section recorded well below the fold (errors is section index 1+).
+	target := -1
+	for line, idx := range m.observe.clicks.line2idx {
+		if idx >= 2 && (target < 0 || line < target) {
+			target = line
+		}
+	}
+	if target <= 0 {
+		t.Skip("not enough sections rendered to test a below-fold click")
+	}
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.inner.x + 2, Y: contentLineY(m, l, target)})
+	if m.contentScroll == 0 {
+		t.Fatalf("clicking a below-fold section should scroll the content, scroll=%d target line=%d", m.contentScroll, target)
 	}
 }

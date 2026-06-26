@@ -3,6 +3,7 @@ package transcript
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -53,20 +54,63 @@ func TestPeekClaudeCwdAndTitle(t *testing.T) {
 }
 
 func TestClaudeDirFromPath(t *testing.T) {
-	got := claudeDirFromPath("/home/u/.claude/projects/-home-u-projects-x/abc.jsonl")
-	if got != "/home/u/projects/x" {
-		t.Errorf("decoded dir = %q", got)
+	// Claude encodes the cwd by mapping '/', '.', '_', and literal '-' all to a
+	// single '-'. The decode must resolve against the real filesystem: build a
+	// tree whose names exercise each lossy case, then check round-trips.
+	root := t.TempDir()
+	cases := []struct {
+		name, rel string // rel is the cwd relative to root, exercising one lossy case
+	}{
+		{"plain dirs", "proj/sub"},
+		{"dot dir (--)", "dot/.claude/action-graph"},
+		{"underscore", "us/my_proj"},
+		{"literal hyphen", "lit/agent-sh/ada-spark"},
 	}
+	for _, c := range cases {
+		base := filepath.Join(root, c.rel)
+		if err := os.MkdirAll(base, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		encoded := encodeClaudeDir(base)
+		jsonl := filepath.Join(root, ".claude", "projects", encoded, "abc.jsonl")
+		if got := claudeDirFromPath(jsonl); got != base {
+			t.Errorf("%s: decoded %q\n  encoded=%q\n  want    %q", c.name, got, encoded, base)
+		}
+	}
+
 	if claudeDirFromPath("/somewhere/else/abc.jsonl") != "" {
 		t.Error("non-claude folder should decode to empty")
 	}
+	// A name that resolves to no real directory yields "" (no phantom project).
+	if got := claudeDirFromPath("/x/.claude/projects/-nonexistent-ghost-proj/a.jsonl"); got != "" {
+		t.Errorf("unresolvable name should decode to empty, got %q", got)
+	}
+}
+
+// encodeClaudeDir mirrors Claude's folder encoder: every non-alphanumeric byte
+// of the absolute cwd becomes a single '-'. Used only by the test to build
+// inputs the decoder must round-trip.
+func encodeClaudeDir(abs string) string {
+	var b strings.Builder
+	for _, r := range abs {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('-')
+		}
+	}
+	return b.String()
 }
 
 func TestTitleFromRejectsBoilerplate(t *testing.T) {
 	reject := []string{
 		"<user_instructions>x</user_instructions>",
+		"<environment_details>cwd=/x</environment_details>",
+		"</closing_tag>",
+		"<self_closing/>",
 		"# AGENTS.md instructions for /x",
 		`{"json":"blob"}`,
+		`["a","b","c"]`,
 		"caveat: the messages below",
 		"",
 	}
@@ -81,6 +125,92 @@ func TestTitleFromRejectsBoilerplate(t *testing.T) {
 	long := titleFrom(string(make([]rune, 0)) + "this is a very long user message that certainly exceeds the seventy two character title cap for sure")
 	if len([]rune(long)) > 73 {
 		t.Errorf("title not truncated: %d runes", len([]rune(long)))
+	}
+}
+
+// TestTitleFromKeepsHumanAsksStartingWithBracket guards APP-109: a real ask may
+// open with '<', '{', or '[' and must still produce a title. Only genuine
+// structured blobs (valid JSON, or a complete markup/instruction tag) are
+// rejected — the leading byte alone is not enough.
+func TestTitleFromKeepsHumanAsksStartingWithBracket(t *testing.T) {
+	keep := map[string]string{
+		"{count} should be reactive":      "{count} should be reactive",
+		"[needs review] fix the parser":   "[needs review] fix the parser",
+		"< 10ms latency is the goal":      "< 10ms latency is the goal",
+		"<= 5 retries then give up":       "<= 5 retries then give up",
+		"{ this is not valid json at all": "{ this is not valid json at all",
+		"[a, b] but unterminated":         "[a, b] but unterminated",
+		"<3 from the team":                "<3 from the team",
+	}
+	for in, want := range keep {
+		if got := titleFrom(in); got != want {
+			t.Errorf("titleFrom(%q) = %q, want %q (a human ask, not a blob)", in, got, want)
+		}
+	}
+}
+
+// TestScanPeekExactWithinBudget: a file smaller than peekCountMaxBytes is
+// counted exactly (no extrapolation), and the whole-file scan is unaffected.
+func TestScanPeekExactWithinBudget(t *testing.T) {
+	dir := t.TempDir()
+	var sb strings.Builder
+	const turns = 50
+	for range turns {
+		sb.WriteString(`{"role":"user","text":"hi"}` + "\n")
+		sb.WriteString(`{"role":"assistant","text":"yo"}` + "\n")
+	}
+	p := writeFile(t, dir, "small.jsonl", sb.String())
+	_, got := scanPeek(p, hermesTurn)
+	if got != turns*2 {
+		t.Errorf("exact count within budget = %d, want %d", got, turns*2)
+	}
+}
+
+// TestScanPeekExtrapolatesBeyondBudget: a file larger than peekCountMaxBytes is
+// not fully parsed; the count is extrapolated from the scanned prefix and must
+// land close to the true turn total (within the density-estimate tolerance).
+func TestScanPeekExtrapolatesBeyondBudget(t *testing.T) {
+	dir := t.TempDir()
+	// Each pair (~60 bytes) is one user + one assistant turn. Emit enough to
+	// exceed peekCountMaxBytes by a few MB so the early break + extrapolation
+	// path is exercised.
+	pair := `{"role":"user","text":"hello there friend"}` + "\n" +
+		`{"role":"assistant","text":"hi back at you pal"}` + "\n"
+	want := 0
+	var sb strings.Builder
+	for sb.Len() < peekCountMaxBytes+(2<<20) {
+		sb.WriteString(pair)
+		want += 2
+	}
+	p := writeFile(t, dir, "huge.jsonl", sb.String())
+	_, got := scanPeek(p, hermesTurn)
+	// Uniform density ⇒ extrapolation should be within a small margin of truth.
+	lo, hi := want*97/100, want*103/100
+	if got < lo || got > hi {
+		t.Errorf("extrapolated count = %d, want ~%d (within [%d,%d])", got, want, lo, hi)
+	}
+}
+
+// TestPeekHermesTitle guards APP-108: peekHermes must derive a Title from the
+// first user message (parity with the other peekers), not leave it blank.
+// Hermes has no working directory in its format, so Cwd stays empty.
+func TestPeekHermesTitle(t *testing.T) {
+	dir := t.TempDir()
+	content := `{"role":"session_meta","model":"us.anthropic.claude-opus-4-7","platform":"telegram"}
+{"role":"user","content":"help me tune the digest feeds"}
+{"role":"assistant","content":"on it"}
+{"role":"tool","tool_call_id":"t1","content":"done"}
+`
+	p := writeFile(t, dir, "20260513_x.jsonl", content)
+	pv := Peek(SourceHermes, p)
+	if pv.Title != "help me tune the digest feeds" {
+		t.Errorf("hermes title = %q, want derived from first user line", pv.Title)
+	}
+	if pv.Cwd != "" {
+		t.Errorf("hermes has no cwd in its format, got %q", pv.Cwd)
+	}
+	if pv.Messages != 2 { // user + assistant; session_meta and tool are not turns
+		t.Errorf("hermes messages = %d, want 2", pv.Messages)
 	}
 }
 

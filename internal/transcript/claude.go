@@ -2,6 +2,7 @@ package transcript
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/avifenesh/eigen/internal/llm"
 )
@@ -49,11 +50,12 @@ func parseClaude(path string) ([]llm.Message, error) {
 
 		asst := llm.Message{Role: llm.RoleAssistant}
 		haveAsst := false
+		var asstText []string
 		for _, b := range blocks {
 			switch b.Type {
 			case "text":
 				if rec.Message.Role == "assistant" {
-					asst.Text += b.Text
+					asstText = append(asstText, b.Text)
 					haveAsst = true
 				} else if b.Text != "" {
 					*out = append(*out, llm.Message{Role: llm.RoleUser, Text: b.Text})
@@ -69,6 +71,9 @@ func parseClaude(path string) ([]llm.Message, error) {
 				})
 			}
 		}
+		// Join assistant text blocks with a newline so consecutive blocks stay
+		// separated rather than running together ("line one"+"line two").
+		asst.Text = strings.Join(asstText, "\n")
 		if haveAsst {
 			*out = append(*out, asst)
 		}
@@ -77,7 +82,9 @@ func parseClaude(path string) ([]llm.Message, error) {
 }
 
 // claudeResultText flattens a tool_result content (string or list of text/image
-// blocks) to plain text.
+// blocks) to plain text. Multiple text blocks are joined with a newline so that
+// distinct blocks stay separated rather than running together; non-text blocks
+// (e.g. image) carry no text and are skipped.
 func claudeResultText(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -91,13 +98,13 @@ func claudeResultText(raw json.RawMessage) string {
 		Text string `json:"text"`
 	}
 	if json.Unmarshal(raw, &blocks) == nil {
-		var b []byte
+		var parts []string
 		for _, blk := range blocks {
 			if blk.Type == "text" {
-				b = append(b, blk.Text...)
+				parts = append(parts, blk.Text)
 			}
 		}
-		return string(b)
+		return strings.Join(parts, "\n")
 	}
 	return ""
 }

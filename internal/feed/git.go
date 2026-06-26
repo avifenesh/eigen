@@ -68,13 +68,32 @@ func isGitRepo(dir string) bool {
 	return err == nil && strings.TrimSpace(out) == "true"
 }
 
-// dirtyFiles returns the count of modified/untracked files.
+// dirtyFiles returns the count of modified/untracked files. Uses the
+// NUL-separated porcelain format so paths containing newlines stay intact and
+// rename/copy records (which carry a trailing origin path as a second field)
+// are counted as the single change they represent.
 func dirtyFiles(dir string) int {
-	out, err := gitIn(dir, "status", "--porcelain")
-	if err != nil || strings.TrimSpace(out) == "" {
+	out, err := gitIn(dir, "status", "--porcelain", "-z")
+	if err != nil {
 		return 0
 	}
-	return len(strings.Split(strings.TrimRight(out, "\n"), "\n"))
+	// -z terminates each field with NUL; a trailing NUL leaves an empty tail.
+	fields := strings.Split(strings.TrimRight(out, "\x00"), "\x00")
+	n := 0
+	for i := 0; i < len(fields); i++ {
+		f := fields[i]
+		if f == "" {
+			continue
+		}
+		n++
+		// Rename (R) and copy (C) records spell "XY <path>" and are followed
+		// by a separate field holding the origin path — skip it so the pair
+		// counts as one file. The status code is the first two columns.
+		if len(f) >= 2 && (f[0] == 'R' || f[0] == 'C') {
+			i++
+		}
+	}
+	return n
 }
 
 // behind returns the count of upstream commits not in HEAD (0 when no

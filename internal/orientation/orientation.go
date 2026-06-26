@@ -1065,6 +1065,10 @@ func firstN(s string, n int) string {
 
 func Coupled(w io.Writer, cwd, file string) error {
 	eps, _ := loadEpisodesForCWD(cwd)
+	if len(eps) == 0 {
+		fmt.Fprintln(w, "(no orientation history for this project yet)")
+		return nil
+	}
 	known := map[string]bool{}
 	for _, e := range eps {
 		for _, f := range e.FilesTouched {
@@ -1138,7 +1142,6 @@ func Status(w io.Writer, cwd string) error {
 	}
 	cursors, _ := filepath.Glob(filepath.Join(paths.Data, "_cursors", "*.json"))
 	kv("cursor files", len(cursors))
-	kv("lagging cursors", 0)
 	return nil
 }
 func latestEpisodeTime(eps []Episode) string {

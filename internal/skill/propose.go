@@ -38,9 +38,11 @@ func safeName(name string) error {
 }
 
 // Propose stages a synthesized skill under ProposedDir for the user to review.
-// Overwrites an existing proposal of the same name (a refined proposal). Skips
-// (returns "", nil) when a skill of that name is already ACTIVE — no point
-// proposing what's installed.
+// Preserves the FIRST proposal of a given name: the dream loop runs repeatedly,
+// and a still-unreviewed proposal must not be silently clobbered by a later
+// pass. Returns ("", nil) — a no-op — when a proposal already exists (whether
+// the body is identical or refined) or when a skill of that name is already
+// ACTIVE. Only a brand-new name is written, returning its path.
 func Propose(name, description, body string) (string, error) {
 	if err := safeName(name); err != nil {
 		return "", err
@@ -49,12 +51,15 @@ func Propose(name, description, body string) (string, error) {
 		return "", nil // already an active skill
 	}
 	sd := filepath.Join(ProposedDir(), name)
+	path := filepath.Join(sd, "SKILL.md")
+	if _, err := os.Stat(path); err == nil {
+		return "", nil // a proposal is already pending review — don't overwrite it
+	}
 	if err := os.MkdirAll(sd, 0o755); err != nil {
 		return "", err
 	}
 	desc := strings.ReplaceAll(strings.TrimSpace(description), "\n", " ")
 	content := fmt.Sprintf("---\nname: %s\ndescription: \"%s\"\n---\n\n%s\n", name, desc, strings.TrimSpace(body))
-	path := filepath.Join(sd, "SKILL.md")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return "", err
 	}

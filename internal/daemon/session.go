@@ -52,7 +52,7 @@ type Session struct {
 
 	mu        sync.Mutex
 	loadMu    sync.Mutex // serializes unload/rehydrate with operations that need a live agent
-	persistMu sync.Mutex // serializes transcript writes that share a fixed tmp path
+	persistMu sync.Mutex // serializes one session's transcript Save + .bak rotation so a shutdown flush and an agent-loop Persist can't interleave
 	agent     *agent.Agent
 	sess      *agent.Session
 	status    Status
@@ -72,6 +72,8 @@ type Session struct {
 	// ordering (transcript mtime lies; the titler touches files).
 	lastAttached time.Time
 	onAttach     func() // host hook: persist meta when a view attaches
+	onTokens     func() // host hook: persist meta when cumulative tokens change (turn done)
+	onClear      func() // host hook: purge transcript backups after /clear (so recovery can't resurrect)
 
 	// notify, when set, fires a desktop notification when a turn finishes with
 	// NO views attached — i.e. the user backgrounded the turn (left the window
@@ -160,6 +162,13 @@ func (s *Session) dispatch(e agent.Event) {
 		s.cumCacheRead += int64(e.CacheReadTokens)
 		s.cumCacheWrite += int64(e.CacheWriteTokens)
 	}
+	// Persist the updated lifetime token tallies after a turn finishes so the
+	// cache-hit ratio in stats survives a restart (fired outside the lock —
+	// saveSessionMeta re-enters s.mu).
+	var onTokens func()
+	if e.Kind == agent.EventDone {
+		onTokens = s.onTokens
+	}
 	wakeID := ""
 	if e.Kind == agent.EventBgDone && !s.running {
 		// A background task this session spawned finished while the orchestrator
@@ -183,6 +192,9 @@ func (s *Session) dispatch(e agent.Event) {
 		}
 	}
 	s.mu.Unlock()
+	if onTokens != nil {
+		onTokens()
+	}
 	if wakeID != "" {
 		s.wakeForBg(wakeID)
 	}
@@ -387,13 +399,18 @@ func (s *Session) finishTurn(ctx context.Context, err error) {
 // var so tests can shrink it.
 var backgroundedNotifyMin = 10 * time.Second
 
-// interrupt cancels the in-flight turn, if any.
-func (s *Session) interrupt() {
+// interrupt cancels the in-flight turn, if any. It returns true only when a
+// turn was actually running (s.cancel != nil) and got cancelled, so a caller
+// can distinguish "interrupted a running turn" from "nothing to interrupt".
+func (s *Session) interrupt() bool {
 	s.mu.Lock()
-	if s.cancel != nil {
-		s.cancel()
-	}
+	cancel := s.cancel
 	s.mu.Unlock()
+	if cancel == nil {
+		return false
+	}
+	cancel()
+	return true
 }
 
 // waitUntilIdle waits briefly for an interrupted in-flight turn to unwind.
@@ -487,8 +504,6 @@ func (s *Session) SetTitle(t string) {
 	s.mu.Unlock()
 }
 
-var _ = llm.RoleUser // keep llm imported for future message-typed protocol
-
 // --- gated-permission approvals over the socket ---
 //
 // When the daemon hosts a gated session, a mutating tool call blocks in
@@ -570,6 +585,15 @@ func (s *Session) pendingList() []pendingApproval {
 	return out
 }
 
+// unixMilli renders a time as unix-millis for the wire, mapping the zero time
+// to 0 (rather than a large negative epoch offset) so "unknown" reads as 0.
+func unixMilli(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixMilli()
+}
+
 // state snapshots everything a remote chat UI needs (history + status).
 func (s *Session) state() *SessionState {
 	s.mu.Lock()
@@ -616,7 +640,11 @@ func (s *Session) state() *SessionState {
 	st.Roots = a.Roots()
 	if a.Shells != nil {
 		for _, sh := range a.Shells.Infos() {
-			st.Shells = append(st.Shells, ShellInfo{ID: sh.ID, Command: sh.Command, Status: sh.Status, ExitCode: sh.ExitCode, LastLine: sh.LastLine})
+			st.Shells = append(st.Shells, ShellInfo{
+				ID: sh.ID, Command: sh.Command, Status: sh.Status, ExitCode: sh.ExitCode,
+				StartedMs: unixMilli(sh.Started), FinishedMs: unixMilli(sh.Finished),
+				LastLine: sh.LastLine,
+			})
 		}
 	}
 	for _, p := range s.pendingList() {
@@ -708,10 +736,14 @@ func (s *Session) clear() {
 	s.turns = 0
 	s.fallbackTitle = ""
 	s.mu.Unlock()
-	// /clear is user-visible state, not just in-memory UI state. Persist the
-	// empty transcript immediately so a daemon restart cannot resurrect the old
-	// conversation.
-	s.flush()
+	// /clear is user-visible state, not just in-memory UI state. onClear force-
+	// writes the empty transcript immediately (a plain autosave of [] is refused
+	// as an accidental truncation) so a daemon restart cannot resurrect the old
+	// conversation, then purges the rotated backups, or transcript.Load's
+	// corruption-recovery would resurrect the cleared conversation from a .bak.
+	if s.onClear != nil {
+		s.onClear()
+	}
 }
 
 // resend retries the last user turn (the /resend command) — runs like send.

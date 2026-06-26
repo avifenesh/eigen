@@ -772,6 +772,68 @@ func TestShutdownFlushesPendingSteer(t *testing.T) {
 	}
 }
 
+// TestCumulativeTokensSurviveRestart: the lifetime token tallies (used for the
+// prompt-cache hit ratio in daemon stats) must be persisted in meta and reloaded
+// on restore. The bug was that they rebuilt from 0 after a restart, so the
+// cache-hit ratio collapsed to 0% and re-climbed (read as a regression).
+func TestCumulativeTokensSurviveRestart(t *testing.T) {
+	persistDir := t.TempDir()
+
+	// Daemon #1: a live session accrues token usage, then persists meta.
+	h1 := NewPersistentHost(persistDir)
+	reg, _ := tool.NewRegistry()
+	s := h1.Add("/tmp/proj", "echo-model", &agent.Agent{Provider: echoProvider{}, Tools: reg, Perm: agent.PermAuto})
+	s.mu.Lock()
+	s.cumIn, s.cumOut, s.cumCacheRead, s.cumCacheWrite = 1000, 200, 800, 50
+	s.mu.Unlock()
+	h1.saveSessionMeta(s)
+
+	// It landed in the sidecar meta.
+	if got := loadPersisted(persistDir); len(got) != 1 ||
+		got[0].meta.CumIn != 1000 || got[0].meta.CumOut != 200 ||
+		got[0].meta.CumCacheRead != 800 || got[0].meta.CumCacheWrite != 50 {
+		t.Fatalf("cumulative tokens not persisted to meta: %+v", got)
+	}
+
+	// Daemon #2: restore — the cold row carries the tallies forward, so Stats
+	// reports the same totals instead of resetting to 0.
+	h2 := NewPersistentHost(persistDir)
+	if n := h2.Restore(persistentBuilder()); n != 1 {
+		t.Fatalf("restore: %d, want 1", n)
+	}
+	st := h2.Stats()
+	if st.InputTokens != 1000 || st.OutputTokens != 200 ||
+		st.CacheReadTokens != 800 || st.CacheWriteTokens != 50 {
+		t.Fatalf("restored stats lost token tallies: in=%d out=%d cacheRead=%d cacheWrite=%d",
+			st.InputTokens, st.OutputTokens, st.CacheReadTokens, st.CacheWriteTokens)
+	}
+}
+
+// TestTurnDonePersistsCumulativeTokens: an EventDone with token usage bumps the
+// session's lifetime tallies AND persists them (via the onTokens hook) so a
+// restart immediately after a turn doesn't lose the just-finished turn's tokens.
+func TestTurnDonePersistsCumulativeTokens(t *testing.T) {
+	persistDir := t.TempDir()
+	h := NewPersistentHost(persistDir)
+	reg, _ := tool.NewRegistry()
+	s := h.Add("/tmp", "m", &agent.Agent{Provider: echoProvider{}, Tools: reg, Perm: agent.PermAuto})
+
+	s.dispatch(agent.Event{Kind: agent.EventDone, InTokens: 500, OutTokens: 120, CacheReadTokens: 400, CacheWriteTokens: 30})
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		ps := loadPersisted(persistDir)
+		if len(ps) == 1 && ps[0].meta.CumIn == 500 && ps[0].meta.CumCacheRead == 400 {
+			if ps[0].meta.CumOut != 120 || ps[0].meta.CumCacheWrite != 30 {
+				t.Fatalf("partial token persist: %+v", ps[0].meta)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("EventDone did not persist cumulative tokens to meta")
+}
+
 func TestClearPersistsEmptyTranscript(t *testing.T) {
 	persistDir := t.TempDir()
 	h := NewPersistentHost(persistDir)

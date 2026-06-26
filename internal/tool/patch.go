@@ -342,7 +342,17 @@ func applyPatch(policy *Policy, files []filePatch) (string, error) {
 			}
 			results = append(results, result{path: resolved, content: strings.Join(added, "\n") + "\n"})
 		default:
-			data, err := os.ReadFile(resolved)
+			// For a rename, read from the source (oldPath); the destination
+			// (resolved = newPath) does not exist yet. The trailing os.Remove of
+			// the old path below finishes the move.
+			source := resolved
+			if f.renaming() {
+				source, err = policy.Resolve(f.oldPath)
+				if err != nil {
+					return "", err
+				}
+			}
+			data, err := os.ReadFile(source)
 			if err != nil {
 				return "", fmt.Errorf("apply_patch: %s: %w", target, err)
 			}
@@ -499,22 +509,4 @@ func findBlockMatches(lines, old []string) []int {
 		}
 	}
 	return out
-}
-
-// findBlock returns the index where old occurs contiguously in lines, preferring
-// the hint position; -1 if not found. An empty old block inserts at the hint.
-func findBlock(lines, old []string, hint int) int {
-	matches := findBlockMatches(lines, old)
-	if len(matches) == 0 {
-		if len(old) == 0 {
-			return clampIndex(hint, len(lines))
-		}
-		return -1
-	}
-	for _, at := range matches {
-		if at == hint {
-			return at
-		}
-	}
-	return matches[0]
 }

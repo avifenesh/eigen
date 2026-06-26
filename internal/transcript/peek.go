@@ -22,9 +22,18 @@ type Preview struct {
 
 // peekMaxBytes caps how much of a transcript Peek scans for the cwd + first
 // user message. The cwd and first user turn are near the top of every format,
-// so a small window suffices; the message COUNT is the file's line count
-// (counted cheaply by a byte scan, not JSON parsing).
+// so a small window suffices.
 const peekMaxBytes = 256 << 10 // 256KB
+
+// peekCountMaxBytes caps how much of a transcript scanPeek parses to COUNT
+// turns. Turn counting JSON-unmarshals every line, so on multi-MB (occasionally
+// >100MB) transcripts an exact count is the dominant cost of a peek — and a
+// peekVersion bump re-peeks up to the whole backlog at once. We bound that work:
+// files within the cap are counted exactly; past it the count is extrapolated
+// from the turn density of the bytes already scanned (turns/byte × total size).
+// 8MB counts the overwhelming majority of sessions exactly while keeping the
+// per-file cost flat regardless of how large the long tail grows.
+const peekCountMaxBytes = 8 << 20 // 8MB
 
 // Peek extracts a Preview for a session without a full parse. src selects the
 // format; origin is the file path (or, for OpenCode, the session id — which
@@ -46,10 +55,14 @@ func Peek(src Source, origin string) Preview {
 }
 
 // scanPeek reads a transcript once: it keeps the head lines (up to peekMaxBytes)
-// for title/cwd extraction, and counts conversational TURNS over the WHOLE file
-// using a per-source line classifier (mechanical — turns have a known structure,
-// no model needed). countTurn returns true for a line that is one user or
-// assistant message.
+// for title/cwd extraction, and counts conversational TURNS using a per-source
+// line classifier (mechanical — turns have a known structure, no model needed).
+// countTurn returns true for a line that is one user or assistant message.
+//
+// Turn counting is bounded by peekCountMaxBytes: files within the cap are
+// counted exactly; past it scanning stops and the count is extrapolated from the
+// density observed so far (turns per scanned byte × total file size), so a peek
+// never reads + per-line unmarshals an entire 100MB+ transcript just to recount.
 func scanPeek(path string, countTurn func(line []byte) bool) (lines []string, turns int) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -57,19 +70,38 @@ func scanPeek(path string, countTurn func(line []byte) bool) (lines []string, tu
 	}
 	defer f.Close()
 
+	var total int64
+	if fi, err := f.Stat(); err == nil {
+		total = fi.Size()
+	}
+
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	read := 0
+	headRead := 0  // bytes accumulated into the head (lines) window
+	countRead := 0 // bytes whose turns were actually classified
 	for sc.Scan() {
 		b := sc.Bytes()
-		if countTurn != nil && countTurn(b) {
-			turns++
+		if countTurn != nil && countRead < peekCountMaxBytes {
+			if countTurn(b) {
+				turns++
+			}
+			countRead += len(b) + 1
 		}
-		if read < peekMaxBytes {
+		if headRead < peekMaxBytes {
 			ln := string(b)
-			read += len(ln) + 1
+			headRead += len(ln) + 1
 			lines = append(lines, ln)
 		}
+		// Stop once both jobs are done: the head window is full and the count
+		// budget is spent. The remaining turns are extrapolated below.
+		if headRead >= peekMaxBytes && (countTurn == nil || countRead >= peekCountMaxBytes) {
+			break
+		}
+	}
+	// If counting stopped short of the file end, scale the partial count up to
+	// the whole file by the density of what we scanned.
+	if countTurn != nil && countRead > 0 && total > int64(countRead) {
+		turns = int(int64(turns) * total / int64(countRead))
 	}
 	return lines, turns
 }
@@ -83,9 +115,15 @@ func titleFrom(s string) string {
 		return ""
 	}
 	// Reject obvious non-asks: injected instructions, tags, structured blobs.
+	// A leading '<', '{', or '[' alone is NOT enough — a real ask can open with
+	// one (e.g. "{count} should be reactive", "[needs review] fix the parser").
+	// Only reject when the message is genuinely a structured blob: it parses as
+	// valid JSON, or it opens with a complete XML/instruction tag.
 	low := strings.ToLower(s)
 	switch {
-	case strings.HasPrefix(s, "<"), strings.HasPrefix(s, "{"), strings.HasPrefix(s, "["):
+	case (strings.HasPrefix(s, "{") || strings.HasPrefix(s, "[")) && json.Valid([]byte(s)):
+		return ""
+	case strings.HasPrefix(s, "<") && isMarkupTag(s):
 		return ""
 	case strings.HasPrefix(s, "#") && strings.Contains(low, "agents.md"):
 		return ""
@@ -103,6 +141,36 @@ func titleFrom(s string) string {
 		return strings.TrimSpace(string(r[:72])) + "…"
 	}
 	return s
+}
+
+// isMarkupTag reports whether s opens with a complete XML/instruction tag —
+// "<name ...>", "<name/>", or a closing "</name>" — the shape of injected
+// context blocks (e.g. <user_instructions>, <environment_details>). It is
+// deliberately narrow so a human ask that merely starts with '<' (e.g.
+// "< 10ms latency is the goal" or "<3 from the team") still yields a title:
+// the first '<' must be immediately followed by a tag name (or '/') and a
+// matching '>' must close it on the same line.
+func isMarkupTag(s string) bool {
+	if !strings.HasPrefix(s, "<") {
+		return false
+	}
+	rest := s[1:]
+	rest = strings.TrimPrefix(rest, "/") // allow a closing tag
+	if rest == "" {
+		return false
+	}
+	// A tag name starts with a letter or underscore; bare "< foo" or "<3" is prose.
+	c := rest[0]
+	if !(c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+		return false
+	}
+	end := strings.IndexByte(rest, '>')
+	if end < 0 {
+		return false // no closing '>' — an unterminated '<' is prose, not a tag
+	}
+	// The bytes up to '>' must be a tag (name + optional attributes), not a
+	// sentence: reject if a newline appears before the '>' closes the tag.
+	return !strings.ContainsAny(rest[:end], "\n")
 }
 
 func peekClaude(path string) Preview {
@@ -161,14 +229,90 @@ func claudeText(blocks json.RawMessage, plain string) string {
 	return ""
 }
 
-// claudeDirFromPath decodes Claude's project-folder encoding (the dir segment
-// is the cwd with '/' replaced by '-'): -home-avifenesh-projects-x.
+// claudeDirFromPath recovers the cwd from Claude's project-folder name. Claude
+// encodes the cwd by replacing every non-alphanumeric byte ('/', '.', '_', and
+// even a literal '-') with a single '-', so the encoding is LOSSY: a naive
+// ReplaceAll('-','/') turns "/home/u/.claude/action-graph" (stored as
+// "-home-u--claude-action-graph") into "/home/u//claude/action/graph", grouping
+// sessions under projects that do not exist.
+//
+// Since the original separators cannot be recovered from the string alone, we
+// resolve against the real filesystem: walk the segments left-to-right, and at
+// each '-' boundary prefer descending into a directory ('/'), falling back to
+// re-joining the segment onto the previous component with '.', '_', or '-' when
+// that is what exists on disk. If the name resolves to no existing directory we
+// return "" rather than emit a wrong path — an empty Cwd is better than a
+// phantom project. (The caller still prefers the real cwd recorded in the
+// transcript body over this fallback.)
 func claudeDirFromPath(path string) string {
 	dir := filepath.Base(filepath.Dir(path))
 	if !strings.HasPrefix(dir, "-") {
 		return ""
 	}
-	return strings.ReplaceAll(dir, "-", "/")
+	return resolveClaudeDir(dir)
+}
+
+// resolveClaudeDir reconstructs an absolute path from a '-'-encoded Claude
+// folder name by matching it against the filesystem. Because every '/', '.',
+// '_', and literal '-' was flattened to a single '-', each '-' is ambiguous: it
+// may be a path separator (a new component) or a char inside the current
+// component. We resolve by DFS over the real directory tree — consume one or
+// more segments to form the next existing child directory, descend, and recurse
+// on the rest. The shortest child name is tried first (the common case where
+// '-' is a separator); a fused name (e.g. ".claude" or "agent-sh") is only
+// assumed when that directory actually exists. Returns "" if no reconstruction
+// reaches an existing directory at the end, so a wrong guess never groups
+// sessions under a phantom project.
+func resolveClaudeDir(encoded string) string {
+	segs := strings.Split(strings.TrimPrefix(encoded, "-"), "-")
+	return resolveSegs("/", segs)
+}
+
+// claudeSep is the set of non-'/' separators Claude collapses to '-' inside a
+// single name segment. The '/' (new component) case is handled separately and
+// tried first, so the common multi-directory layout wins over a fused name.
+var claudeSep = []string{".", "_", "-"}
+
+// resolveSegs descends from base by consuming segs[0:] into the next existing
+// directory component (one segment, or several fused by a separator), then
+// recursing on the remainder. It returns the full path once segs is exhausted
+// at an existing directory, or "" if no branch resolves.
+func resolveSegs(base string, segs []string) string {
+	if len(segs) == 0 {
+		if dirExists(base) {
+			return base
+		}
+		return ""
+	}
+	// Component = segs[0], optionally extended by fusing later segments with a
+	// non-'/' separator. Try the shortest (descend on one segment) first.
+	component := segs[0]
+	if dirExists(filepath.Join(base, component)) {
+		if cand := resolveSegs(filepath.Join(base, component), segs[1:]); cand != "" {
+			return cand
+		}
+	}
+	for i := 1; i < len(segs); i++ {
+		for _, sep := range claudeSep {
+			fused := component + sep + segs[i]
+			if !dirExists(filepath.Join(base, fused)) {
+				continue
+			}
+			if cand := resolveSegs(filepath.Join(base, fused), segs[i+1:]); cand != "" {
+				return cand
+			}
+		}
+		// Carry a literal-'-' fusion forward so a longer name (e.g. "agent-sh")
+		// can still match a deeper component on the next iteration.
+		component += "-" + segs[i]
+	}
+	return ""
+}
+
+// dirExists reports whether path is an existing directory.
+func dirExists(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.IsDir()
 }
 
 func peekCodex(path string) Preview {
@@ -247,8 +391,29 @@ func peekPi(path string) Preview {
 }
 
 func peekHermes(path string) Preview {
-	_, total := scanPeek(path, hermesTurn)
-	return Preview{Messages: total}
+	lines, total := scanPeek(path, hermesTurn)
+	p := Preview{Messages: total}
+	// Hermes is a flat chat-completions JSONL (see parseHermes): each line is one
+	// message keyed by role, with the text in a plain "content" string. There is
+	// no working directory in the format (sessions originate from chat platforms
+	// like telegram, not a repo checkout), so Cwd stays empty and we derive the
+	// Title from the first user message — parity with the other peekers.
+	for _, ln := range lines {
+		var rec struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		}
+		if json.Unmarshal([]byte(ln), &rec) != nil {
+			continue
+		}
+		if rec.Role == "user" && rec.Content != "" {
+			p.Title = titleFrom(rec.Content)
+			if p.Title != "" {
+				break
+			}
+		}
+	}
+	return p
 }
 
 func peekEigen(path string) Preview {

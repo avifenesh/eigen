@@ -14,6 +14,11 @@ type Field struct {
 	// Multi marks a space-separated multi-select over the option set
 	// (route_providers). Pickers toggle membership instead of replacing.
 	Multi bool
+	// Secret marks a free-text field holding a credential: Get masks it (returns
+	// "set"/""), and surfaces that don't want to display secrets (e.g. the GUI
+	// config form) skip it. It still exists so /config <key> describe agrees the
+	// key is settable rather than reporting "unknown key".
+	Secret bool
 }
 
 // Fields lists the settable keys with their semantics, in display order.
@@ -29,8 +34,11 @@ func Fields() []Field {
 		{Key: "max_tokens", Desc: "context-budget ceiling in tokens; 0 = auto (85% of the model window)"},
 		{Key: "tts_cmd", Desc: "text-to-speech command for /read and voice mode, e.g. espeak-ng or readd — the text is passed as the last argument"},
 		{Key: "notify_cmd", Desc: "notifier run on pings (approval needed, long turn done), e.g. notify-send — the message is passed as the last argument; empty = terminal bell only"},
+		{Key: "telegram_token", Desc: "bot token (from @BotFather) for the `eigen telegram` phone bridge — pair with the telegram_allow chat-id allowlist in config.json; shown as `set` once stored (never echoed back)", Secret: true},
 		{Key: "judge_model", Desc: "pin the goal_achieved judge to a specific model — ANY provider works; empty = automatic cross-vendor judge (GPT judges Claude and vice versa)", Dynamic: "models"},
+		{Key: "dream_model", Desc: "pin the background dreaming/consolidation model; empty = sonnet-first dream ladder (kept OFF the cheap GLM quota real tasks want)", Dynamic: "models"},
 		{Key: "dream_on_idle", Desc: "reflect recent sessions into memory when idle", Options: []string{"true", "false"}},
+		{Key: "dream_batch", Desc: "route dream Stage1 through the provider's async batch API (~50% cheaper; Anthropic only today) — results land on a later wake; off by default", Options: []string{"true", "false"}},
 		{Key: "idle_minutes", Desc: "minutes of idle before dreaming kicks in (default 5)"},
 		{Key: "front_window_min", Desc: "minutes a subtask runs in the foreground before it's promoted to the background (default 2; 0 = default)"},
 		{Key: "stall_idle_min", Desc: "minutes a subagent may go with no tool call before it's considered hung and stopped (default 2; 0 = default)"},

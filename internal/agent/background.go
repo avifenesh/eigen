@@ -376,7 +376,14 @@ func (a *Agent) SubtaskBackground(ctx context.Context, task string, opts Subtask
 		// foreground turn does not cancel it. It still shares the daemon process;
 		// the durable jsonl/transcript make it process-like to the orchestrator:
 		// start, poll, collect.
-		attempt := a.runBackgroundAttempt(id, task, opts, depth, 1, sub, where)
+		//
+		// One task-level deadline spans ALL attempts: bgMaxRuntime is the per-TASK
+		// cap, not the per-attempt cap. Each attempt derives its context from
+		// taskCtx, so a retry/escalation runs against the time the first attempt
+		// left rather than a fresh bgMaxRuntime (which let one task run ~2x the cap).
+		taskCtx, taskCancel := context.WithTimeout(context.Background(), bgMaxRuntime)
+		defer taskCancel()
+		attempt := a.runBackgroundAttempt(taskCtx, id, task, opts, depth, 1, sub, where)
 		res, err := attempt.result, attempt.err
 		canceled, stalled := attempt.canceled, attempt.stalled
 		var firstSummary string
@@ -385,7 +392,7 @@ func (a *Agent) SubtaskBackground(ctx context.Context, task string, opts Subtask
 			a.Bg.update(id, func(t *BgTask) {
 				t.LastNote = "attempt 1 " + reason
 			})
-			retry := a.runBackgroundAttempt(id, compactedTask, opts, depth, 2, nil, "")
+			retry := a.runBackgroundAttempt(taskCtx, id, compactedTask, opts, depth, 2, nil, "")
 			res, err = retry.result, retry.err
 			canceled, stalled = retry.canceled, retry.stalled
 			if err != nil && !canceled && firstSummary != "" {
@@ -400,7 +407,7 @@ func (a *Agent) SubtaskBackground(ctx context.Context, task string, opts Subtask
 			// runBackgroundAttempt is synchronous: the first attempt's context has
 			// returned before retry starts, so the same task id never has two live
 			// result writers racing to publish a terminal state.
-			retry := a.runBackgroundAttempt(id, task, next, depth, 2, nil, "")
+			retry := a.runBackgroundAttempt(taskCtx, id, task, next, depth, 2, nil, "")
 			res, err = retry.result, retry.err
 			canceled, stalled = retry.canceled, retry.stalled
 			if err != nil && !canceled && firstSummary != "" {
@@ -444,7 +451,25 @@ type bgAttemptOutcome struct {
 	messages []llm.Message
 }
 
-func (a *Agent) runBackgroundAttempt(id, task string, opts SubtaskOpts, depth, attempt int, sub *Agent, where string) bgAttemptOutcome {
+// backgroundRetryContext builds the task-level context for a promoted task's
+// retry. The promoted first attempt ran on prior (created with bgMaxRuntime in
+// runChild and already canceled by the time we retry); a retry must honor the
+// SAME absolute task deadline so promote-then-retry can't exceed the per-task
+// cap. It carries only prior's deadline, not its cancellation. Falls back to a
+// fresh bgMaxRuntime timeout if prior somehow has no deadline.
+func backgroundRetryContext(prior context.Context) (context.Context, context.CancelFunc) {
+	if dl, ok := prior.Deadline(); ok {
+		return context.WithDeadline(context.Background(), dl)
+	}
+	return context.WithTimeout(context.Background(), bgMaxRuntime)
+}
+
+// runBackgroundAttempt runs one attempt of a background task against taskCtx,
+// which carries the SINGLE task-level deadline (bgMaxRuntime) shared by all
+// attempts. The attempt's own context is derived from taskCtx with a fresh
+// cancel so stall/cancel-marker watchers can stop just this attempt, while the
+// shared deadline still bounds the task's total runtime across retries.
+func (a *Agent) runBackgroundAttempt(taskCtx context.Context, id, task string, opts SubtaskOpts, depth, attempt int, sub *Agent, where string) bgAttemptOutcome {
 	if sub == nil {
 		sub, where = a.subAgent(context.Background(), task, opts)
 	}
@@ -478,7 +503,10 @@ func (a *Agent) runBackgroundAttempt(id, task string, opts SubtaskOpts, depth, a
 	sub.OnEvent = activitySink(hb, bgEventSink(a.Bg, id, nil))
 	sub.onModelCall = hb.modelStart
 
-	bgCtx, cancel := context.WithTimeout(context.Background(), bgMaxRuntime)
+	// Derive this attempt from the task-level deadline: cancel() stops only this
+	// attempt (stall/cancel-marker), while taskCtx's bgMaxRuntime deadline still
+	// caps the task across all attempts.
+	bgCtx, cancel := context.WithCancel(taskCtx)
 	defer cancel()
 	bgCtx = context.WithValue(bgCtx, subtaskDepthKey{}, depth+1)
 	canceled := watchCancelMarker(bgCtx, cancel, a.Bg, id)
@@ -614,6 +642,10 @@ func nextBackgroundEscalation(opts SubtaskOpts, err error, result string, stalle
 	}
 	next := opts
 	next.Difficulty = up
+	// Reset the explicit effort override so the type/difficulty policy is
+	// re-evaluated at the new (harder) tier — an escalated attempt should be
+	// allowed to think harder, not stay pinned to the prior level.
+	next.Effort = ""
 	return next, reason, true
 }
 
@@ -682,8 +714,10 @@ func watchCancelMarker(ctx context.Context, cancel context.CancelFunc, r *BgRegi
 // sanitizeNote bounds and flattens a note for the durable record.
 func sanitizeNote(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
-	if len(s) > 200 {
-		s = s[:200] + "…"
+	// Rune-safe cap: byte-slicing split multibyte runes, emitting invalid UTF-8
+	// into the durable BgTask.LastNote record and the panels that render it.
+	if r := []rune(s); len(r) > 200 {
+		s = string(r[:200]) + "…"
 	}
 	return s
 }
@@ -713,8 +747,9 @@ func writeTranscript(path string, msgs []llm.Message) {
 
 // truncateForNote keeps failure notes one-line readable.
 func truncateForNote(s string) string {
-	if len(s) > 160 {
-		return s[:160] + "…"
+	// Rune-safe cap so a multibyte rune is never split into invalid UTF-8.
+	if r := []rune(s); len(r) > 160 {
+		return string(r[:160]) + "…"
 	}
 	return s
 }
@@ -840,12 +875,19 @@ func (a *Agent) promoteRunning(cctx context.Context, cancel context.CancelFunc, 
 		// without a stall or an explicit cancel marker — don't burn a retry on it.
 		deadlineExhausted := firstCtxCanceled && !firstStalled && !firstCanceled
 		parentCanceled := deadlineExhausted
+		// A retry must honor the SAME task-level deadline as the promoted first
+		// attempt (cctx was created with bgMaxRuntime in runChild): the cap is
+		// per-task, so the retry runs against the deadline's REMAINING time rather
+		// than a fresh bgMaxRuntime. cctx is already canceled here, so derive a
+		// fresh context that only carries its absolute deadline.
+		retryCtx, retryCancel := backgroundRetryContext(cctx)
+		defer retryCancel()
 		if compactedTask, reason, ok := a.nextBackgroundContextRetry(context.Background(), c.task, bgAttemptOutcome{err: err, messages: d.messages}); ok && !firstCanceled && !parentCanceled {
 			firstSummary = reason
 			bg.update(id, func(t *BgTask) {
 				t.LastNote = "attempt 1 " + reason
 			})
-			retry := a.runBackgroundAttempt(id, compactedTask, c.opts, c.depth, 2, nil, "")
+			retry := a.runBackgroundAttempt(retryCtx, id, compactedTask, c.opts, c.depth, 2, nil, "")
 			res, err = retry.result, retry.err
 			canceledNow, stalledNow = retry.canceled, retry.stalled
 			if err != nil && !canceledNow && firstSummary != "" {
@@ -859,7 +901,7 @@ func (a *Agent) promoteRunning(cctx context.Context, cancel context.CancelFunc, 
 			})
 			// The original promoted attempt has ended and its context is canceled before
 			// retry starts, so the task id still has only one live writer at a time.
-			retry := a.runBackgroundAttempt(id, c.task, next, c.depth, 2, nil, "")
+			retry := a.runBackgroundAttempt(retryCtx, id, c.task, next, c.depth, 2, nil, "")
 			res, err = retry.result, retry.err
 			canceledNow, stalledNow = retry.canceled, retry.stalled
 			if err != nil && !canceledNow && firstSummary != "" {

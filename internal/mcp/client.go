@@ -70,6 +70,12 @@ type Client struct {
 	mu      sync.Mutex
 	nextID  int
 	pending map[int]chan rpcResponse
+	// dead is set when the read loop ends (stream closed or a fatal read
+	// error). Once dead, the connection can no longer carry calls; the
+	// lazyClient owner reconnects on the next get(). readErr, when non-nil,
+	// is the fatal error that killed the loop (e.g. an oversized line).
+	dead    bool
+	readErr error
 
 	closeFn func() error
 
@@ -85,6 +91,16 @@ func (c *Client) Instructions() string { return c.instructions }
 
 // ServerName returns the name the server reported at initialize (may be empty).
 func (c *Client) ServerName() string { return c.serverName }
+
+// alive reports whether the read loop is still running. Once the loop ends —
+// stream closed, or a fatal read error such as an oversized JSON-RPC line —
+// the connection can no longer carry calls and the lazyClient owner should
+// reconnect.
+func (c *Client) alive() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return !c.dead
+}
 
 // newClient starts the read loop over r and writes requests to w.
 func newClient(w io.Writer, r io.Reader, closeFn func() error) *Client {
@@ -146,9 +162,16 @@ func Connect(ctx context.Context, command []string, env []string) (*Client, erro
 	return c, nil
 }
 
+// maxRPCLineBytes caps a single JSON-RPC message. Rich tool results — a
+// chrome_snapshot, or a base64-encoded full-page screenshot — easily exceed
+// the bufio default (and the old 8 MiB cap), and a single line over the cap
+// makes Scan() stop with bufio.ErrTooLong, killing the read loop. 64 MiB is
+// well clear of those payloads while still bounding memory.
+const maxRPCLineBytes = 64 * 1024 * 1024
+
 func (c *Client) readLoop(r io.Reader) {
 	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	sc.Buffer(make([]byte, 0, 64*1024), maxRPCLineBytes)
 	for sc.Scan() {
 		line := sc.Bytes()
 		if len(line) == 0 {
@@ -166,8 +189,17 @@ func (c *Client) readLoop(r io.Reader) {
 			ch <- resp
 		}
 	}
-	// Stream closed: fail any in-flight calls.
+	// The loop ended. Surface a clear reason: an oversized line (over the cap)
+	// is otherwise silent — Scan returns false with no signal to the caller.
+	err := sc.Err()
+	if err == bufio.ErrTooLong {
+		err = fmt.Errorf("mcp: response line exceeded %d bytes (raise maxRPCLineBytes)", maxRPCLineBytes)
+	}
+	// Mark the connection dead so the lazyClient owner reconnects, and fail any
+	// in-flight calls.
 	c.mu.Lock()
+	c.dead = true
+	c.readErr = err
 	for id, ch := range c.pending {
 		close(ch)
 		delete(c.pending, id)
@@ -193,6 +225,12 @@ func (c *Client) call(ctx context.Context, method string, params any, result any
 	select {
 	case resp, ok := <-ch:
 		if !ok {
+			c.mu.Lock()
+			readErr := c.readErr
+			c.mu.Unlock()
+			if readErr != nil {
+				return fmt.Errorf("mcp: connection closed during %s: %w", method, readErr)
+			}
 			return fmt.Errorf("mcp: connection closed during %s", method)
 		}
 		if resp.Error != nil {
@@ -217,19 +255,27 @@ func (c *Client) notify(method string, params any) error {
 	return c.enc.Encode(rpcRequest{JSONRPC: "2.0", Method: method, Params: params})
 }
 
-func (c *Client) initialize(ctx context.Context) error {
-	params := map[string]any{
+// initializeParams is the MCP initialize request payload, shared by every
+// transport so the handshake reads identically over stdio and HTTP.
+func initializeParams() map[string]any {
+	return map[string]any{
 		"protocolVersion": protocolVersion,
 		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "eigen", "version": "0.1.0"},
+		"clientInfo":      map[string]any{"name": "eigen", "version": llm.Version},
 	}
-	var res struct {
-		Instructions string `json:"instructions"`
-		ServerInfo   struct {
-			Name string `json:"name"`
-		} `json:"serverInfo"`
-	}
-	if err := c.call(ctx, "initialize", params, &res); err != nil {
+}
+
+// initResult is the subset of the MCP initialize response eigen reads.
+type initResult struct {
+	Instructions string `json:"instructions"`
+	ServerInfo   struct {
+		Name string `json:"name"`
+	} `json:"serverInfo"`
+}
+
+func (c *Client) initialize(ctx context.Context) error {
+	var res initResult
+	if err := c.call(ctx, "initialize", initializeParams(), &res); err != nil {
 		return err
 	}
 	c.instructions = strings.TrimSpace(res.Instructions)
@@ -272,36 +318,46 @@ const (
 	maxMCPImages = 4
 )
 
-// CallToolRich invokes a tool and returns its text + image content. text and
-// image MCP content blocks are both honored; unknown block types are ignored.
-func (c *Client) CallToolRich(ctx context.Context, name string, args json.RawMessage) (ToolResult, error) {
+// toolCallParams builds the tools/call request payload.
+func toolCallParams(name string, args json.RawMessage) map[string]any {
 	params := map[string]any{"name": name}
 	if len(args) > 0 {
 		params["arguments"] = json.RawMessage(args)
 	}
-	var out struct {
-		Content []struct {
-			Type     string `json:"type"`
-			Text     string `json:"text"`
-			Data     string `json:"data"`     // base64 (image/audio blocks)
-			MimeType string `json:"mimeType"` // e.g. image/png
-		} `json:"content"`
-		IsError bool `json:"isError"`
-	}
-	if err := c.call(ctx, "tools/call", params, &out); err != nil {
-		return ToolResult{}, err
-	}
+	return params
+}
+
+// rawToolResult is the wire shape of a tools/call result, shared by transports.
+type rawToolResult struct {
+	Content []struct {
+		Type     string `json:"type"`
+		Text     string `json:"text"`
+		Data     string `json:"data"`     // base64 (image/audio blocks)
+		MimeType string `json:"mimeType"` // e.g. image/png
+	} `json:"content"`
+	IsError bool `json:"isError"`
+}
+
+// decodeToolResult turns a raw tools/call result into a ToolResult, honoring
+// text + image content blocks (images base64-decoded and bounded) and producing
+// a meaningful error when the server flags isError. serverName is used only to
+// give a blank-message error some provenance. Shared by the stdio + HTTP
+// transports so result handling is identical regardless of how the bytes arrive.
+func decodeToolResult(out rawToolResult, toolName, serverName string) (ToolResult, error) {
 	var res ToolResult
+	var otherBlocks int // non-text, non-decoded-image blocks (image/audio/etc.)
 	for _, blk := range out.Content {
 		switch blk.Type {
 		case "text":
 			res.Text += blk.Text
 		case "image":
 			if len(res.Images) >= maxMCPImages || blk.Data == "" {
+				otherBlocks++
 				continue
 			}
 			raw, err := base64.StdEncoding.DecodeString(blk.Data)
 			if err != nil || len(raw) == 0 || len(raw) > maxMCPImageBytes {
+				otherBlocks++
 				continue // skip undecodable / oversized images, keep the text
 			}
 			mt := blk.MimeType
@@ -309,12 +365,58 @@ func (c *Client) CallToolRich(ctx context.Context, name string, args json.RawMes
 				mt = "image/png"
 			}
 			res.Images = append(res.Images, llm.Image{MediaType: mt, Data: raw})
+		default:
+			otherBlocks++
 		}
 	}
 	if out.IsError {
-		return res, fmt.Errorf("%s", res.Text)
+		// Many servers signal isError with the detail in non-text content (an
+		// image, a resource block) or with empty text — returning fmt.Errorf("%s",
+		// res.Text) there bubbles an empty error to the agent. Substitute a
+		// meaningful fallback that names the tool, the server, and any blocks the
+		// result carried so the failure isn't a blank message.
+		if strings.TrimSpace(res.Text) != "" {
+			return res, fmt.Errorf("%s", res.Text)
+		}
+		return res, fmt.Errorf("mcp tool %q reported an error (no message)%s%s",
+			toolName, serverSuffix(serverName), blocksSuffix(len(res.Images), otherBlocks))
 	}
 	return res, nil
+}
+
+// CallToolRich invokes a tool and returns its text + image content. text and
+// image MCP content blocks are both honored; unknown block types are ignored.
+func (c *Client) CallToolRich(ctx context.Context, name string, args json.RawMessage) (ToolResult, error) {
+	var out rawToolResult
+	if err := c.call(ctx, "tools/call", toolCallParams(name, args), &out); err != nil {
+		return ToolResult{}, err
+	}
+	return decodeToolResult(out, name, c.serverName)
+}
+
+// serverSuffix returns " from server <name>" when the server reported a name at
+// initialize, else "" — used to give a blank-message tool error some provenance.
+func serverSuffix(serverName string) string {
+	if serverName == "" {
+		return ""
+	}
+	return fmt.Sprintf(" from server %q", serverName)
+}
+
+// blocksSuffix notes any non-text content an errored tool result carried, so a
+// "no message" error still hints where the detail might be (e.g. an image).
+func blocksSuffix(images, other int) string {
+	var parts []string
+	if images > 0 {
+		parts = append(parts, fmt.Sprintf("%d image block(s)", images))
+	}
+	if other > 0 {
+		parts = append(parts, fmt.Sprintf("%d other content block(s)", other))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (result carried " + strings.Join(parts, ", ") + ")"
 }
 
 // Close shuts down the connection and the underlying process.

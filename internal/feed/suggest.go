@@ -12,9 +12,13 @@ package feed
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -47,23 +51,48 @@ func suggestCachePath() string {
 	return filepath.Join(home, ".eigen", "feed-suggest.json")
 }
 
-// suggestCache is the persisted suggest state.
+// suggestCache is the persisted suggest state. Dirs is a signature of the dir
+// set the cached items were generated for: when the current set differs (a
+// project was added or removed) the cache is stale even within the TTL, so we
+// never keep showing suggestions for a project that's no longer tracked.
 type suggestCache struct {
 	Items   []Item    `json:"items"`
 	Scanned time.Time `json:"scanned"`
+	Dirs    string    `json:"dirs"`
 }
 
-func loadSuggestCache() (suggestCache, bool) {
+// dirsSignature hashes the sorted, de-duplicated dir set so cache validity is
+// independent of the order or repetition the caller passes dirs in.
+func dirsSignature(dirs []string) string {
+	uniq := make([]string, 0, len(dirs))
+	seen := make(map[string]bool, len(dirs))
+	for _, d := range dirs {
+		if seen[d] {
+			continue
+		}
+		seen[d] = true
+		uniq = append(uniq, d)
+	}
+	sort.Strings(uniq)
+	h := sha256.Sum256([]byte(strings.Join(uniq, "\x00")))
+	return hex.EncodeToString(h[:8])
+}
+
+// loadSuggestCache returns the persisted cache and whether it is still fresh
+// for the given dirs. It's stale once the TTL elapses OR the dir set changed —
+// a removed project must not keep surfacing its old cached suggestions.
+func loadSuggestCache(dirs []string) (suggestCache, bool) {
 	var c suggestCache
 	b, err := os.ReadFile(suggestCachePath())
 	if err != nil || json.Unmarshal(b, &c) != nil {
 		return suggestCache{}, false
 	}
-	return c, time.Since(c.Scanned) < suggestTTL
+	fresh := time.Since(c.Scanned) < suggestTTL && c.Dirs == dirsSignature(dirs)
+	return c, fresh
 }
 
-func saveSuggestCache(items []Item) {
-	b, err := json.Marshal(suggestCache{Items: items, Scanned: time.Now()})
+func saveSuggestCache(items []Item, dirs []string) {
+	b, err := json.Marshal(suggestCache{Items: items, Scanned: time.Now(), Dirs: dirsSignature(dirs)})
 	if err != nil {
 		return
 	}
@@ -72,6 +101,24 @@ func saveSuggestCache(items []Item) {
 	if os.WriteFile(tmp, b, 0o644) == nil {
 		_ = os.Rename(tmp, suggestCachePath())
 	}
+}
+
+// keepKnownDirs drops cached items rooted at a dir no longer in the current
+// set, so stale-cache fallbacks (model error, empty dedup batch) can't resurrect
+// suggestions for a removed project. Items with no dir ("" = root at CWD) are
+// kept — they aren't tied to a tracked project.
+func keepKnownDirs(items []Item, dirs []string) []Item {
+	known := make(map[string]bool, len(dirs))
+	for _, d := range dirs {
+		known[d] = true
+	}
+	out := items[:0:0]
+	for _, it := range items {
+		if it.Dir == "" || known[it.Dir] {
+			out = append(out, it)
+		}
+	}
+	return out
 }
 
 // scanSuggest returns model suggestions: the cached set while it's fresh
@@ -89,40 +136,77 @@ func scanSuggest(parent context.Context, dirs []string, s Suggester) []Item {
 	if s == nil {
 		return nil
 	}
-	cached, fresh := loadSuggestCache()
+	cached, fresh := loadSuggestCache(dirs)
 	if fresh {
 		return cached.Items
 	}
+	// The cache is stale (TTL elapsed or the dir set changed). Any fallback to
+	// these items must not carry suggestions for projects no longer tracked.
+	stale := keepKnownDirs(cached.Items, dirs)
 	ctxt := suggestContext(dirs)
 	if ctxt == "" {
-		return cached.Items
+		return stale
 	}
-	system := `You are a JSON-only suggestion engine inside a developer's personal dashboard. You receive a snapshot of their projects (recent commits, working-tree state, README intro, notes). Propose up to 3 genuinely useful next actions. Be bold — these are offers the user can clear with one keystroke, so a sharp guess beats a safe restatement.
+	system := `You are a JSON-only idea engine inside a developer's personal dashboard. You receive a snapshot of their projects (recent commits, working-tree state, README intro, notes) — that snapshot is CONTEXT for understanding what they work on, NOT the menu of suggestions. Propose up to 3 genuinely interesting next moves. Be bold — these are offers the user can clear with one keystroke, so a sharp, non-obvious guess beats a safe restatement.
 
-Good suggestions span:
-- FOLLOW-THROUGH they forgot: the regression test after a fix, docs after a feature, the PR for a finished branch, finishing what's half-committed, postponed cleanup.
-- THE NEXT FEATURE STEP: from the project's trajectory, propose the concrete next capability worth building — e.g. a rollout/feature-gate mechanism to trial a new model or behavior on a slice before fully releasing it, a missing benchmark before a perf claim, an A/B path for a risky change.
-- WORK THE USER MUST DO: things only they can decide or unblock (a config to set, a credential to rotate, a choice between two designs) — surface it crisply.
-- WORKFLOW IMPROVEMENTS: when the snapshot shows repeated friction (manual steps, flaky areas, missing automation), offer a quick focused session to fix the workflow itself.
+You have a live web_search tool. USE IT. Before suggesting, search for what's NEW and relevant to this developer's orbit: recent releases of the libraries/models/frameworks they depend on, a newer technique or paper that applies to a problem they're working on, a tool that would replace a manual step you see in their workflow, a competing approach worth knowing about. Ground at least one suggestion in something you found on the web that they likely haven't seen yet — cite the concrete thing (release/version/technique name) in the detail.
 
-NOT raw-state restatements (uncommitted/unpushed counts are already shown elsewhere). Never propose destructive actions (force-push, deletes, deploys).
+AVOID the obvious. Do NOT suggest "commit and push changes on X", "review your uncommitted files", or any restatement of git/working-tree state — those are already shown elsewhere and the user finds them boring. Reach further:
+- NEWER THAN THEIR CODE: a library/model/API they use just shipped a relevant feature or a faster/cheaper option — propose adopting or trialing it (name the version).
+- ADJACENT IN THEIR ORBIT: a technique, pattern, or tool from the same space they work in that would level up a current project — even if they haven't mentioned it.
+- THE NEXT REAL FEATURE STEP: from the project's trajectory, the concrete capability worth building next (a rollout/feature-gate to trial a change on a slice, a missing benchmark before a perf claim, an A/B path for a risky change).
+- HIGH-LEVERAGE FOLLOW-THROUGH only when sharp: the regression test that pins a subtle fix, docs that unlock others, a finished branch genuinely ready to ship — phrased specifically, never as a generic chore.
+- WORK ONLY THEY CAN DECIDE: a config to set, a credential to rotate, a design choice between two real options — surfaced crisply.
+
+Never propose destructive actions (force-push, deletes, deploys).
 
 Your ENTIRE reply must be a single JSON array, no prose, no code fences. Each element:
-{"title":"<≤60 chars, start with the project name>","detail":"<≤70 chars, why this matters>","dir":"<the project dir exactly as given>","task":"<instructions for an agent session: investigate briefly, then TAKE the first concrete step (write the test, scaffold the feature gate, draft the PR/design) rather than only asking questions; stop and ask only where a decision is genuinely the user's>"}
+{"title":"<≤60 chars, start with the project name>","detail":"<≤70 chars, why this matters — name the new thing/version if web-sourced>","dir":"<the project dir exactly as given>","task":"<instructions for an agent session: investigate briefly (including a web search where the idea is web-sourced), then TAKE the first concrete step (try the new lib, write the test, scaffold the feature gate, draft the PR/design) rather than only asking questions; stop and ask only where a decision is genuinely the user's>"}
 
 If nothing is worth suggesting, reply [].`
 	ctx, cancel := context.WithTimeout(parent, suggestTimeout)
 	defer cancel()
 	out, err := s(ctx, system, ctxt)
 	if err != nil {
-		return cached.Items // stale beats nothing
+		return stale // stale beats nothing
 	}
 	items := parseSuggestions(out, dirs)
 	if items == nil {
-		return cached.Items
+		return stale
 	}
-	saveSuggestCache(items)
+	// Drop ideas we've recently surfaced (this run or earlier) or that the user
+	// dismissed, so the model can't re-propose the same thing scan after scan.
+	items = dedupSuggestions(items)
+	// If dedup emptied a batch the model actually produced, keep the prior cache
+	// rather than flipping the feed to nothing.
+	if len(items) == 0 && len(stale) > 0 {
+		return stale
+	}
+	recordSeenSuggest(items)
+	saveSuggestCache(items, dirs)
 	return items
+}
+
+// dedupSuggestions drops suggestions whose key was recently surfaced or
+// dismissed, so ideas don't repeat run over run.
+func dedupSuggestions(items []Item) []Item {
+	seen := loadSeenSuggest()
+	dismissed := loadDismissed()
+	if len(seen) == 0 && len(dismissed) == 0 {
+		return items
+	}
+	out := items[:0:0]
+	for _, it := range items {
+		k := it.Key()
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		if _, ok := dismissed[k]; ok {
+			continue
+		}
+		out = append(out, it)
+	}
+	return out
 }
 
 // parseSuggestions extracts the JSON array from the model reply (leniently:
@@ -169,15 +253,26 @@ func parseSuggestions(out string, dirs []string) []Item {
 	return items
 }
 
+// maxSuggestDirs caps how many projects feed the suggestion prompt. Wider than
+// "just the last session" so ideas draw on recent cross-session activity, but
+// still bounded — this is a single LLM prompt and each dir costs a few cheap
+// git reads.
+const maxSuggestDirs = 12
+
 // suggestContext builds the bounded context snapshot the model reasons over:
 // per project — branch, working-tree summary, recent commit subjects, the
 // README's opening (what the project IS, so feature suggestions land), and
 // the tail of project memory. Cheap, local, read-only.
+//
+// Projects are ordered by most-recent commit so the prompt spans the user's
+// recently-active work rather than being anchored to one last session, then
+// bounded to maxSuggestDirs. Safe when dirs are empty or none are git repos.
 func suggestContext(dirs []string) string {
+	dirs = orderByRecentActivity(dirs)
 	var b strings.Builder
 	n := 0
 	for _, dir := range dirs {
-		if n >= 6 {
+		if n >= maxSuggestDirs {
 			break
 		}
 		if !isGitRepo(dir) {
@@ -213,6 +308,35 @@ func suggestContext(dirs []string) string {
 		b.WriteString("\n")
 	}
 	return strings.TrimSpace(b.String())
+}
+
+// orderByRecentActivity sorts dirs by their last commit time, most recent
+// first, so the (bounded) context window favors the projects the user has
+// actually touched lately across sessions. Non-repos and repos with no commits
+// sort last (timestamp 0) but are kept — the caller skips non-repos anyway.
+// Stable, so equal/zero timestamps preserve the caller's original order.
+func orderByRecentActivity(dirs []string) []string {
+	if len(dirs) < 2 {
+		return dirs
+	}
+	out := append([]string(nil), dirs...)
+	last := make(map[string]int64, len(out))
+	for _, dir := range out {
+		last[dir] = lastCommitUnix(dir)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return last[out[i]] > last[out[j]]
+	})
+	return out
+}
+
+// lastCommitUnix returns the Unix time of HEAD's commit (0 on any error, e.g.
+// not a repo or no commits yet). One cheap local git read.
+func lastCommitUnix(dir string) int64 {
+	out := gitOut(dir, "log", "-1", "--format=%ct")
+	var t int64
+	fmt.Sscanf(out, "%d", &t)
+	return t
 }
 
 // readmeIntro returns the first descriptive lines of the project README —

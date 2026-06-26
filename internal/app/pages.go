@@ -334,6 +334,7 @@ type skillsState struct {
 	preview string // body being previewed ("" = list view)
 	name    string
 	prompt  installPrompt
+	clicks  clickMap
 }
 
 func (s *skillsState) init(d *Data) { s.list.count = d.Skills.Len() }
@@ -380,6 +381,25 @@ func (s *skillsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// clickAt selects a skill row; a second click on the selected row previews it
+// (same as enter). Clicks are ignored while previewing or installing — those
+// modes own the keyboard.
+func (s *skillsState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
+	if s.preview != "" || s.prompt.active {
+		return nil, false
+	}
+	idx, ok := s.clicks.at(localY)
+	if !ok || idx < 0 || idx >= m.data.Skills.Len() {
+		return nil, false
+	}
+	if s.list.cursor == idx {
+		_, cmd := s.update(m, tea.KeyMsg{Type: tea.KeyEnter}) // preview the selected skill
+		return cmd, true
+	}
+	s.list.cursor = idx
+	return nil, true
+}
+
 func (s *skillsState) view(m *Model, w, h int) string {
 	if s.preview != "" {
 		out := pageTitle(s.name, "skill", w)
@@ -406,6 +426,7 @@ func (s *skillsState) view(m *Model, w, h int) string {
 	visible := h - 8
 	from, to := s.list.window(visible)
 	nameW := 30
+	s.clicks.reset()
 	for i := from; i < to; i++ {
 		sk := skills[i]
 		usage := ""
@@ -413,6 +434,7 @@ func (s *skillsState) view(m *Model, w, h int) string {
 			usage = sViolet.Render(fmt.Sprintf(" %dx", st.Calls))
 		}
 		line := pad(truncate(sk.Name, nameW-1), nameW) + sDim.Render(truncate(sk.Description, max(8, w-nameW-8))) + usage
+		s.clicks.mark(lineCount(out), i)
 		out += row(i == s.list.cursor, line) + "\n"
 	}
 	if s.list.cursor >= 0 && s.list.cursor < len(skills) {
@@ -461,8 +483,9 @@ func skillSelectedDetail(d *Data, sk skill.Skill, w int) string {
 
 // modelsState lists the catalog with availability + capability tags.
 type modelsState struct {
-	list list
-	rows []ModelRow
+	list   list
+	rows   []ModelRow
+	clicks clickMap
 }
 
 func (s *modelsState) init(*Data) {
@@ -475,11 +498,23 @@ func (s *modelsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// clickAt selects a model row (the catalog is read-only, so a click moves the
+// selection and refreshes the detail line — there is no separate open action).
+func (s *modelsState) clickAt(_ *Model, localY int) (tea.Cmd, bool) {
+	idx, ok := s.clicks.at(localY)
+	if !ok || idx < 0 || idx >= len(s.rows) {
+		return nil, false
+	}
+	s.list.cursor = idx
+	return nil, true
+}
+
 func (s *modelsState) view(m *Model, w, h int) string {
 	out := pageTitle("models", fmt.Sprintf("%d in catalog", len(s.rows)), w)
 	out += modelsSummaryLine(s.rows, w) + "\n\n"
 	visible := h - 8
 	from, to := s.list.window(visible)
+	s.clicks.reset()
 	for i := from; i < to; i++ {
 		r := s.rows[i]
 		dot := sErr.Render("●")
@@ -493,6 +528,7 @@ func (s *modelsState) view(m *Model, w, h int) string {
 			sDim.Render(pad(r.Provider, 10)),
 			sViolet.Render(pad(win, 6)),
 			sFaint.Render(r.Tags))
+		s.clicks.mark(lineCount(out), i)
 		out += row(i == s.list.cursor, line) + "\n"
 	}
 	if s.list.cursor >= 0 && s.list.cursor < len(s.rows) {
@@ -550,6 +586,7 @@ type providersState struct {
 	draft     providerDraft
 	err       string
 	saved     string
+	clicks    clickMap
 }
 
 type providerDraft struct {
@@ -602,6 +639,22 @@ func (s *providersState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+// clickAt selects a provider row (credentials are managed externally, so a
+// click moves the selection and refreshes the detail line). Clicks are ignored
+// while the add-provider form owns the keyboard.
+func (s *providersState) clickAt(_ *Model, localY int) (tea.Cmd, bool) {
+	if s.adding {
+		return nil, false
+	}
+	idx, ok := s.clicks.at(localY)
+	if !ok || idx < 0 || idx >= len(s.rows) {
+		return nil, false
+	}
+	s.list.cursor = idx
+	s.err, s.saved = "", ""
+	return nil, true
 }
 
 func (s *providersState) startAdd() {
@@ -806,6 +859,7 @@ func (s *providersState) view(m *Model, w, h int) string {
 	out := pageTitle("providers", providerSubtitle(m.data), w)
 	out += providersSummaryLine(s.rows, w) + "\n\n"
 	from, to := s.list.window(h - 8)
+	s.clicks.reset()
 	for i := from; i < to; i++ {
 		r := s.rows[i]
 		statusText := "missing"
@@ -824,6 +878,7 @@ func (s *providersState) view(m *Model, w, h int) string {
 			pad(fmt.Sprintf("%d models", r.Models), 10),
 			"default: "+truncate(defaultModel, max(8, w-42)))
 		line = strings.Replace(line, statusText, status, 1)
+		s.clicks.mark(lineCount(out), i)
 		out += row(i == s.list.cursor, line) + "\n"
 	}
 	if s.list.cursor >= 0 && s.list.cursor < len(s.rows) {

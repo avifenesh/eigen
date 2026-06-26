@@ -46,10 +46,13 @@ func loadOne(path string) error {
 		}
 		key = strings.TrimSpace(key)
 		val = strings.TrimSpace(val)
-		if len(val) >= 2 {
-			if (val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'') {
-				val = val[1 : len(val)-1]
-			}
+		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
+			// Quoted value: take it verbatim, comments inside the quotes belong to the value.
+			val = val[1 : len(val)-1]
+		} else {
+			// Unquoted value: strip an inline " #..." comment, then trim the
+			// trailing whitespace it leaves behind (e.g. KEY=sk-... # rotate monthly).
+			val = strings.TrimRight(stripInlineComment(val), " \t")
 		}
 		if key != "" {
 			if _, exists := os.LookupEnv(key); !exists {
@@ -58,4 +61,29 @@ func loadOne(path string) error {
 		}
 	}
 	return scanner.Err()
+}
+
+// stripInlineComment returns val truncated at the first unescaped " #"
+// (whitespace followed by a hash), dropping the comment. A "#" not preceded by
+// whitespace, or one escaped with a preceding backslash, stays part of the
+// value so tokens like "color=#fff" or escaped hashes survive.
+func stripInlineComment(val string) string {
+	for i := 1; i < len(val); i++ {
+		if val[i] != '#' {
+			continue
+		}
+		if val[i-1] != ' ' && val[i-1] != '\t' {
+			continue
+		}
+		// Count preceding backslashes; an odd count escapes the hash.
+		backslashes := 0
+		for j := i - 2; j >= 0 && val[j] == '\\'; j-- {
+			backslashes++
+		}
+		if backslashes%2 == 1 {
+			continue
+		}
+		return val[:i]
+	}
+	return val
 }

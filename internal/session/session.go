@@ -64,6 +64,12 @@ func Open() (*Store, error) {
 func (s *Store) indexPath() string          { return filepath.Join(s.dir, "sessions.json") }
 func (s *Store) eigenPath(id string) string { return filepath.Join(s.dir, "store", id+".jsonl") }
 
+// save writes the index crash-safe and last-writer-wins: it serializes to a
+// temp file in the same dir, then atomically renames it over the index path
+// (rename is atomic on POSIX). This keeps the multiple unsynchronized Store
+// instances that share ~/.eigen/sessions.json from clobbering each other into a
+// half-written/corrupt file — a concurrent write either lands fully or not at
+// all, and the last rename wins. (A single shared Store is the deeper fix.)
 func (s *Store) save() error {
 	list := make([]*Meta, 0, len(s.metas))
 	for _, m := range s.metas {
@@ -73,7 +79,29 @@ func (s *Store) save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.indexPath(), b, 0o644)
+	tmp, err := os.CreateTemp(s.dir, "sessions-*.json.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(b); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, s.indexPath()); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return nil
 }
 
 // Save persists the index.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 
@@ -44,6 +45,17 @@ func (t ProviderTitler) Title(ctx context.Context, head string) (string, error) 
 	return title, nil
 }
 
+// titleJob is an immutable snapshot of the per-session fields the background
+// titler needs. Snapshotting decouples the worker goroutines from the shared
+// *Meta pointers (which Discover/upsert mutate under s.mu), so the worker never
+// reads m.Source/m.Origin off the live map without the lock — it carries copies
+// and re-looks-up the meta by id under s.mu only when it writes the title.
+type titleJob struct {
+	id     string
+	source transcript.Source
+	origin string
+}
+
 // TitleUntitled titles, in the background, up to `limit` of the most recent
 // sessions that still lack a title, reading only a cheap head of each
 // transcript. It returns immediately; titles fill in and persist as they land.
@@ -51,16 +63,10 @@ func (s *Store) TitleUntitled(ctx context.Context, t Titler, limit int) {
 	if t == nil {
 		return
 	}
-	todo := s.List() // newest first, deduped
-	var pick []*Meta
-	for _, m := range todo {
-		if strings.TrimSpace(m.Title) == "" {
-			pick = append(pick, m)
-			if limit > 0 && len(pick) >= limit {
-				break
-			}
-		}
-	}
+	// Snapshot the untitled sessions' id/source/origin into value copies under
+	// s.mu, so neither this loop nor any worker ever reads a live *Meta field
+	// (Title/Source/Origin) that Discover/upsert mutates concurrently.
+	pick := s.untitledJobs(limit)
 	if len(pick) == 0 {
 		return
 	}
@@ -68,29 +74,82 @@ func (s *Store) TitleUntitled(ctx context.Context, t Titler, limit int) {
 	go func() {
 		sem := make(chan struct{}, 3) // bounded concurrency
 		var wg sync.WaitGroup
-		for _, m := range pick {
-			head := firstUserText(m.Source, m.Origin)
+		for _, job := range pick {
+			head := firstUserText(job.source, job.origin)
 			if strings.TrimSpace(head) == "" {
 				continue
 			}
 			wg.Add(1)
 			sem <- struct{}{}
-			go func(m *Meta, head string) {
+			go func(job titleJob, head string) {
 				defer wg.Done()
 				defer func() { <-sem }()
 				title, err := t.Title(ctx, head)
 				if err != nil || title == "" {
 					return
 				}
-				s.mu.Lock()
-				m.Title = title
-				s.save()
-				s.mu.Unlock()
-			}(m, head)
+				s.setTitleIfEmpty(job.id, title)
+			}(job, head)
 		}
 		wg.Wait()
 	}()
 }
+
+// untitledJobs snapshots, under s.mu, up to `limit` of the most recent
+// still-untitled sessions (newest-first, fingerprint-deduped — matching List)
+// into value copies. Reading m.Title/m.Source/m.Origin here, while holding the
+// lock, is what lets the background titler run without touching the live *Meta
+// pointers that Discover/upsert mutate.
+func (s *Store) untitledJobs(limit int) []titleJob {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	metas := make([]*Meta, 0, len(s.metas))
+	for _, m := range s.metas {
+		metas = append(metas, m)
+	}
+	sort.Slice(metas, func(i, j int) bool { return metas[i].Updated > metas[j].Updated })
+	seen := map[string]bool{}
+	var jobs []titleJob
+	for _, m := range metas {
+		if m.Fingerprint != "" {
+			if seen[m.Fingerprint] {
+				continue
+			}
+			seen[m.Fingerprint] = true
+		}
+		if strings.TrimSpace(m.Title) != "" {
+			continue
+		}
+		jobs = append(jobs, titleJob{id: m.ID, source: m.Source, origin: m.Origin})
+		if limit > 0 && len(jobs) >= limit {
+			break
+		}
+	}
+	return jobs
+}
+
+// setTitleIfEmpty looks the meta up by id and, if it still exists and lacks a
+// title, sets it and persists — all under s.mu, so the background titler never
+// mutates a *Meta that Discover/upsert may be writing concurrently. It only
+// fills an empty title so it never clobbers one a meanwhile-running Discover
+// peek already derived.
+func (s *Store) setTitleIfEmpty(id, title string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m := s.metas[id]
+	if m == nil || strings.TrimSpace(m.Title) != "" {
+		return
+	}
+	m.Title = title
+	s.save()
+}
+
+// firstUserScanBudget caps how much of a transcript firstUserText scans for the
+// first user message. A byte budget (rather than a line cap) is robust to formats
+// like Codex rollouts that prepend large non-message blocks: the first user turn
+// can land well past line 300, so a line cap would miss it and leave the session
+// permanently untitled. 1MB comfortably covers those prefixes while staying cheap.
+const firstUserScanBudget = 1 << 20 // 1MB
 
 // firstUserText cheaply extracts the first user message from a transcript
 // without a full parse (reads a bounded prefix of the file).
@@ -105,10 +164,10 @@ func firstUserText(src transcript.Source, origin string) string {
 	defer f.Close()
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	lines := 0
-	for sc.Scan() && lines < 300 {
-		lines++
+	read := 0
+	for sc.Scan() && read < firstUserScanBudget {
 		line := sc.Bytes()
+		read += len(line) + 1
 		if t := userTextFromLine(src, line); t != "" {
 			return t
 		}

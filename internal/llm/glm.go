@@ -17,7 +17,7 @@ const glmDefaultBaseURL = "https://api.z.ai/api/coding/paas/v4"
 var _ Searcher = (*GLM)(nil)
 var _ EffortSetter = (*GLM)(nil)
 
-// GLM drives Zhipu's GLM models (glm-5.2, glm-5.1, glm-4.6, …) over their
+// GLM drives Zhipu's GLM models (glm-5.2 default, glm-5.1, glm-4.6, …) over their
 // OpenAI-compatible chat-completions API. When search is enabled, it injects
 // the server-side web_search tool so GLM can ground answers in live web data
 // without requiring client-side fetch — a zero-cost alternative to eigen's
@@ -63,7 +63,7 @@ func NewGLM(model string) (*GLM, error) {
 	}
 	base := firstNonEmpty(os.Getenv("EIGEN_GLM_BASE_URL"), glmDefaultBaseURL)
 	if model == "" {
-		model = "glm-5.1"
+		model = "glm-5.2"
 	}
 	g := &GLM{
 		c:      newChatClient(base, model, key, "glm"),
@@ -200,13 +200,6 @@ func glmBodyExtra(thinking string, clearThinking bool) map[string]any {
 		extra["clear_thinking"] = false // preserve reasoning across turns
 	}
 	return extra
-}
-
-// prepare appends a hint to the system prompt when web_search is active, telling
-// GLM to prefer its built-in search over the client-side fetch tool.
-func (g *GLM) prepare(req Request) Request {
-	search, _, _ := g.snapshot()
-	return glmPrepare(req, search)
 }
 
 func glmPrepare(req Request, search string) Request {

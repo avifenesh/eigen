@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -420,10 +421,16 @@ func skipDir(name string) bool {
 	return false
 }
 
-// denied excludes secrets and binary-ish paths from the index.
+// denied excludes secrets and binary-ish paths from the index. The index is
+// read back and embedded into snippets, so any secret material that slips in
+// here leaks — hence the broad coverage of common credential files (keys,
+// PKCS#12 bundles, .env/.envrc, .netrc, cloud/SSH credential stores).
 func denied(rel string) bool {
 	low := strings.ToLower(rel)
-	for _, seg := range strings.Split(low, string(filepath.Separator)) {
+	// Normalize to forward slashes so segment matching works regardless of the
+	// OS path separator (e.g. a Windows-style "a\\.ssh\\id_rsa").
+	low = strings.ReplaceAll(low, "\\", "/")
+	for _, seg := range strings.Split(low, "/") {
 		switch seg {
 		case ".git", ".ssh", ".aws", ".gnupg", "node_modules", "vendor", ".eigen":
 			return true
@@ -431,11 +438,18 @@ func denied(rel string) bool {
 	}
 	switch filepath.Ext(low) {
 	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".zip", ".gz", ".tar",
-		".bin", ".exe", ".so", ".dylib", ".o", ".a", ".wasm", ".mp4", ".mp3", ".lock":
+		".bin", ".exe", ".so", ".dylib", ".o", ".a", ".wasm", ".mp4", ".mp3", ".lock",
+		".pem", ".key", ".p12", ".pfx":
 		return true
 	}
-	base := filepath.Base(low)
-	return base == ".env" || strings.HasPrefix(base, ".env.")
+	base := path.Base(low)
+	switch base {
+	case ".env", ".envrc", ".netrc", "credentials":
+		return true
+	}
+	return strings.HasPrefix(base, ".env.") ||
+		strings.HasPrefix(base, "id_rsa") ||
+		strings.HasPrefix(base, "id_ed25519")
 }
 
 // chunkFile splits content into overlapping line windows.

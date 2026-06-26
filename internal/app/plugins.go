@@ -251,7 +251,7 @@ func (p *pluginsState) filterInstalledCatalog() {
 	for _, pl := range p.installed {
 		installed[strings.ToLower(strings.TrimSpace(pl.Name))] = true
 	}
-	out := p.catalog[:0]
+	var out []pluginpkg.PluginEntry
 	for _, e := range p.catalog {
 		k := strings.ToLower(strings.TrimSpace(e.Name))
 		if k == "" || !installed[k] {

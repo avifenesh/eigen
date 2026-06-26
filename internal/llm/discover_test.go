@@ -77,6 +77,27 @@ func TestIsSkippable(t *testing.T) {
 	}
 }
 
+func TestBedrockDiscoverProfileMatchesConverse(t *testing.T) {
+	// Discovery must resolve the same profile precedence as the chat path
+	// (EIGEN_CONVERSE_PROFILE > AWS_PROFILE > aviary), or it probes the wrong
+	// account for a user on a non-default profile.
+	t.Setenv("EIGEN_CONVERSE_PROFILE", "")
+	t.Setenv("AWS_PROFILE", "")
+	if got := bedrockDiscoverProfile(); got != "aviary" {
+		t.Fatalf("default profile: got %q, want aviary", got)
+	}
+
+	t.Setenv("AWS_PROFILE", "work")
+	if got := bedrockDiscoverProfile(); got != "work" {
+		t.Fatalf("AWS_PROFILE: got %q, want work", got)
+	}
+
+	t.Setenv("EIGEN_CONVERSE_PROFILE", "aviary")
+	if got := bedrockDiscoverProfile(); got != "aviary" {
+		t.Fatalf("EIGEN_CONVERSE_PROFILE should win: got %q, want aviary", got)
+	}
+}
+
 type errConnRefused struct{}
 
 func (errConnRefused) Error() string { return "dial tcp: connect: connection refused" }

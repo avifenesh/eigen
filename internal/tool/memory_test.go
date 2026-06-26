@@ -81,6 +81,55 @@ func TestMemoryToolWithRealStoreEnqueuesMaintenance(t *testing.T) {
 	}
 }
 
+// TestMemoryToolMoveProjectToProject verifies action=move relocates a note from
+// the session project into ANOTHER project (by on-disk key), not just to global.
+func TestMemoryToolMoveProjectToProject(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	proj, err := memory.Open("/project-src")
+	if err != nil {
+		t.Fatal(err)
+	}
+	glob, err := memory.OpenGlobal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Destination: a distinct project store opened by key.
+	dst, err := memory.OpenByKey("dest-12345678")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	args, _ := json.Marshal(map[string]string{
+		"action": "move", "scope": "project", "to": "dest-12345678",
+		"note": "a fact that belongs to the dest project",
+	})
+	if _, err := Memory(proj, glob).Run(context.Background(), args); err != nil {
+		t.Fatalf("project→project move: %v", err)
+	}
+	found := false
+	for _, n := range dst.AdHocNotes(50) {
+		if strings.Contains(n, "a fact that belongs to the dest project") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("note not recorded in destination project store")
+	}
+}
+
+func TestMemoryToolRejectsEmptyNote(t *testing.T) {
+	for _, note := range []string{"", "   ", "\n\t "} {
+		fm := &fakeMem{}
+		args, _ := json.Marshal(map[string]string{"note": note})
+		if _, err := Memory(fm, nil).Run(context.Background(), args); err == nil {
+			t.Fatalf("empty/whitespace note %q should error", note)
+		}
+		if len(fm.notes) != 0 {
+			t.Fatalf("empty/whitespace note %q should not be appended: %v", note, fm.notes)
+		}
+	}
+}
+
 func TestMemoryToolPropagatesError(t *testing.T) {
 	fm := &fakeMem{fail: true}
 	args, _ := json.Marshal(map[string]string{"note": "x"})

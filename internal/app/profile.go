@@ -64,6 +64,12 @@ func (s *profileState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		s.status, s.err = "", ""
 	case "R":
 		s.status, s.err = "refreshed", ""
+	case "j", "down":
+		// No row cursor here — profile renders usage + a scrolling prompt and
+		// relies on contentScroll. Nudge the page a line, matching observe.
+		m.scrollContent(1)
+	case "k", "up":
+		m.scrollContent(-1)
 	}
 	return m, nil
 }

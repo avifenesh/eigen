@@ -108,6 +108,35 @@ func TestProfilePromptEscCancelsAndCapturesJumpKeys(t *testing.T) {
 	}
 }
 
+func TestProfileJKScrollContent(t *testing.T) {
+	m := memModel(t, "")
+	m.active = PageProfile
+	// A long profile + short viewport guarantees the prompt summary overflows,
+	// so j/k drive the shared contentScroll (profile has no row cursor).
+	var b strings.Builder
+	for i := 0; i < 40; i++ {
+		b.WriteString("personalization line that is fairly long to force wrapping and overflow\n")
+	}
+	if err := m.data.GlobalMem.WriteUserProfile(b.String()); err != nil {
+		t.Fatal(err)
+	}
+	m.width, m.height = 80, 12
+	if m.contentScroll != 0 {
+		t.Fatalf("contentScroll should start at 0, got %d", m.contentScroll)
+	}
+	m.Update(key("j"))
+	if m.contentScroll != 1 {
+		t.Fatalf("j should scroll profile content down one line, got %d", m.contentScroll)
+	}
+	m.Update(key("k"))
+	if m.contentScroll != 0 {
+		t.Fatalf("k should scroll profile content back up, got %d", m.contentScroll)
+	}
+	if m.profile.editing {
+		t.Fatal("j/k must not open the editor")
+	}
+}
+
 func TestProfileClickOpensPromptEditorAnywhere(t *testing.T) {
 	m := memModel(t, "")
 	m.active = PageProfile

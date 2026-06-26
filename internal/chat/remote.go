@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/daemon"
@@ -115,7 +116,7 @@ func wireToEvent(e daemon.WireEvent) agent.Event {
 	default:
 		k = agent.EventNote
 	}
-	return agent.Event{Kind: k, Step: e.Step, Text: e.Text, ToolName: e.ToolName, ToolID: e.ToolID, ToolArgs: e.ToolArgs, Result: e.Result, IsError: e.IsError, InTokens: e.InTokens, OutTokens: e.OutTokens}
+	return agent.Event{Kind: k, Step: e.Step, Text: e.Text, ToolName: e.ToolName, ToolID: e.ToolID, ToolArgs: e.ToolArgs, Result: e.Result, IsError: e.IsError, InTokens: e.InTokens, OutTokens: e.OutTokens, Provider: e.Provider, Model: e.Model, CacheReadTokens: e.CacheReadTokens, CacheWriteTokens: e.CacheWriteTokens}
 }
 
 // Send forwards the task and blocks until the daemon reports the turn ended,
@@ -280,9 +281,18 @@ func (r *Remote) Shells() []ShellInfo {
 	st := r.snap()
 	out := make([]ShellInfo, 0, len(st.Shells))
 	for _, s := range st.Shells {
-		out = append(out, ShellInfo{ID: s.ID, Command: s.Command, Status: s.Status, ExitCode: s.ExitCode, LastLine: s.LastLine})
+		out = append(out, ShellInfo{ID: s.ID, Command: s.Command, Status: s.Status, ExitCode: s.ExitCode, Started: msToTime(s.StartedMs), Finished: msToTime(s.FinishedMs), LastLine: s.LastLine})
 	}
 	return out
+}
+
+// msToTime decodes a wire unix-millis stamp into a time.Time, mapping 0
+// (unknown / still running) to the zero time.
+func msToTime(ms int64) time.Time {
+	if ms == 0 {
+		return time.Time{}
+	}
+	return time.UnixMilli(ms)
 }
 
 // KillShell stops a backgrounded shell by id over the socket, then refreshes.
@@ -322,10 +332,13 @@ func (r *Remote) AddDir(path string) (string, error) {
 // Roots lists the daemon session's tool-sandbox allowed dirs (primary first).
 func (r *Remote) Roots() []string { return r.snap().Roots }
 
-// Steer injects a message into the daemon session's running turn (mid-turn,
-// between tool-call rounds). Returns true when a turn was running and the
-// message was steered; false when idle (caller should Send). Fire-and-forget —
-// never blocks on the turn (unlike Send).
+// Steer delivers a message to the daemon session via the atomic input op: if a
+// turn was running it's injected mid-turn (between tool-call rounds) and returns
+// true; if the session went idle the daemon STARTS A NEW TURN with it and
+// returns false. Either outcome means the message was delivered — unlike the
+// local backend, a false here must NOT be re-queued (steerOrQueue relies on
+// this), or the daemon would run it twice. Fire-and-forget — never blocks on
+// the turn (unlike Send).
 func (r *Remote) Steer(text string, images []llm.Image) bool {
 	steered, err := r.c.SteerInput(r.id, text, images)
 	if err != nil {

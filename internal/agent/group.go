@@ -170,8 +170,11 @@ func (a *Agent) TaskGroup(ctx context.Context, subs []GroupSubtask, workers int,
 	// Optional merge step: one more sub-agent (no tools — pure reasoning) reads
 	// the children's reports and produces a single coherent answer to the
 	// synthesis question. Best-effort: on failure, return the raw report so the
-	// orchestrator still has the children's findings.
-	merged, err := a.synthesizeReports(ctx, synthesize, report)
+	// orchestrator still has the children's findings. Bound it by gctx (the
+	// group's own budget, still live here before the deferred cancel) so
+	// synthesis can't run past the group's deadline — children were already
+	// bounded by gctx, so synthesis must share that budget, not the parent's.
+	merged, err := a.synthesizeReports(gctx, synthesize, report)
 	if err != nil || strings.TrimSpace(merged) == "" {
 		return report, nil
 	}
@@ -238,7 +241,7 @@ func formatGroupReport(results []childResult) string {
 		}
 		res := r.result
 		if len(res) > maxGroupResultBytes {
-			res = res[:maxGroupResultBytes] + "\n  …[truncated]"
+			res = tool.TruncateUTF8(res, maxGroupResultBytes) + "\n  …[truncated]"
 		}
 		// Indent each result line so the report stays scannable.
 		for _, line := range strings.Split(strings.TrimRight(res, "\n"), "\n") {

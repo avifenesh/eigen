@@ -8,12 +8,15 @@ import (
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/config"
+	"github.com/avifenesh/eigen/internal/google"
 	"github.com/avifenesh/eigen/internal/hook"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/lsp"
 	"github.com/avifenesh/eigen/internal/mcp"
 	"github.com/avifenesh/eigen/internal/memory"
 	"github.com/avifenesh/eigen/internal/observe"
+	"github.com/avifenesh/eigen/internal/obsidian"
+	"github.com/avifenesh/eigen/internal/revuto"
 	"github.com/avifenesh/eigen/internal/skill"
 	"github.com/avifenesh/eigen/internal/tool"
 )
@@ -113,7 +116,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		if deps.Agent == nil {
 			return "", fmt.Errorf("subtasks unavailable")
 		}
-		aopts := agent.SubtaskOpts{Kind: opts.Kind, Difficulty: opts.Difficulty, Model: opts.Model, Role: opts.Role}
+		aopts := agent.SubtaskOpts{Kind: opts.Kind, Difficulty: opts.Difficulty, Model: opts.Model, Role: opts.Role, Type: opts.Type, Effort: opts.Effort}
 		if background {
 			return deps.Agent.SubtaskBackground(ctx, t, aopts)
 		}
@@ -246,6 +249,26 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		defs = append(defs, d)
 		builtin[d.Name] = true
 	}
+	// Google (Calendar + Gmail): native direct-REST tools, niche-grouped under
+	// "google". Always registered — they return a clear "not connected" until the
+	// user links their Google account in the GUI.
+	for _, d := range google.Default().Tools(nil) {
+		if builtin[d.Name] {
+			continue
+		}
+		defs = append(defs, d)
+		builtin[d.Name] = true
+	}
+	// Obsidian (vault notes) + revuto (PR-reviewer daemon): native local
+	// built-ins. Safe to register always — each no-ops with a clear error until
+	// its vault/CLI is present.
+	for _, d := range append(obsidian.Tools(), revuto.Tools()...) {
+		if builtin[d.Name] {
+			continue
+		}
+		defs = append(defs, d)
+		builtin[d.Name] = true
+	}
 	// search_tools (progressive disclosure) reveals + unlocks the niche tools
 	// above. It needs the finished registry (to search) + the agent (to unlock),
 	// both resolved lazily via deps so the placeholder can be created before
@@ -266,6 +289,17 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 	if err != nil {
 		deps.Close()
 		return nil, err
+	}
+	// Quota-freeze failover: the user's chosen model stays PRIMARY, but a
+	// quota/billing rejection (e.g. a drained account) falls through the
+	// configured "primary" rule chain (opus→gpt-5.5→glm→…) instead of erroring
+	// every turn. The chain skips uncredentialed/frozen links; if everything in
+	// it is also down, we're genuinely down. Falls back to the small-model ladder
+	// when no chain resolves.
+	if chain := llm.NewChain(p.Cfg.ChainFor("primary")...); llm.ChainBeyond(chain, prov.ModelID()) {
+		prov = llm.NewFallback(prov, chain)
+	} else if fb := smallProvider(prov); fb != nil && fb.ModelID() != prov.ModelID() {
+		prov = llm.NewFallback(prov, fb)
 	}
 	deps.Provider = prov
 
@@ -288,6 +322,8 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		ExtraSystem:      extraSystem,
 		Memory:           memory.Sections(p.GlobalMem, mem),
 		Goal:             p.Goal,
+		JudgeModel:       firstNonEmpty(os.Getenv("EIGEN_JUDGE_MODEL"), p.Cfg.JudgeModel),
+		ChainProvider:    func(role string) llm.Provider { return llm.NewChain(p.Cfg.ChainFor(role)...) },
 		Router:           router.Route,
 		ModelProvider:    router.providerFor,
 		Bg:               agent.NewBgRegistry(agent.TasksDir()),

@@ -20,7 +20,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -30,8 +29,11 @@ import (
 	"github.com/avifenesh/eigen/internal/app"
 	"github.com/avifenesh/eigen/internal/chat"
 	"github.com/avifenesh/eigen/internal/config"
+	"github.com/avifenesh/eigen/internal/connector"
 	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/dream"
+	"github.com/avifenesh/eigen/internal/feed"
+	"github.com/avifenesh/eigen/internal/google"
 	"github.com/avifenesh/eigen/internal/harness"
 	"github.com/avifenesh/eigen/internal/hook"
 	"github.com/avifenesh/eigen/internal/llm"
@@ -39,8 +41,11 @@ import (
 	"github.com/avifenesh/eigen/internal/mcp"
 	"github.com/avifenesh/eigen/internal/memory"
 	"github.com/avifenesh/eigen/internal/observe"
+	"github.com/avifenesh/eigen/internal/obsidian"
+	"github.com/avifenesh/eigen/internal/revuto"
 	"github.com/avifenesh/eigen/internal/session"
 	"github.com/avifenesh/eigen/internal/skill"
+	"github.com/avifenesh/eigen/internal/syshealth"
 	"github.com/avifenesh/eigen/internal/telegram"
 	"github.com/avifenesh/eigen/internal/theme"
 	"github.com/avifenesh/eigen/internal/tool"
@@ -163,6 +168,11 @@ func main() {
 		os.Setenv("EIGEN_INSTANCE", inst)
 	}
 
+	// Wire OAuth-managed connector tokens into the MCP loader before any LoadTools
+	// call, so remote MCP servers ("connectors") authenticate with a bearer that
+	// refreshes transparently. No-op for servers with no connected token.
+	connector.Install()
+
 	// Ref form: --model mantle:us.openai.gpt-5.5 names both in one flag; an
 	// explicit tag beats --provider (one field is the source of truth).
 	if tag, id := llm.ParseRef(*model); tag != "" {
@@ -170,7 +180,7 @@ func main() {
 	}
 
 	if *showVersion {
-		fmt.Println("eigen", llm.Version)
+		fmt.Println("eigen", llm.FullVersion())
 		return
 	}
 
@@ -261,7 +271,7 @@ func main() {
 	// `eigen version`: print version (used by `eigen remote install` to verify
 	// a freshly-installed remote binary; mirrors the --version flag).
 	if flag.Arg(0) == "version" {
-		fmt.Println("eigen", llm.Version)
+		fmt.Println("eigen", llm.FullVersion())
 		return
 	}
 
@@ -356,8 +366,11 @@ func main() {
 	}
 
 	// Task sources for automation: --prompt-file (re-read each run, so a
-	// cron/systemd loop picks up edited work), else piped stdin when no
-	// positional task was given. Both imply headless print mode.
+	// cron/systemd loop picks up edited work), else piped stdin. A positional
+	// task NO LONGER suppresses the stdin read: when both are present, stdin is
+	// appended to the task (or a note is emitted when there's no task to append
+	// to but the file source already won), so piped input is never dropped
+	// silently. Both sources imply headless print mode.
 	if *promptFile != "" && !appRequested {
 		data, perr := os.ReadFile(*promptFile)
 		if perr != nil {
@@ -365,11 +378,17 @@ func main() {
 		}
 		task = strings.TrimSpace(string(data))
 		*printMode = true
-	} else if !appRequested && task == "" && !isatty.IsTerminal(os.Stdin.Fd()) {
+		// A prompt-file already supplied the task; warn (don't drop silently)
+		// if stdin is ALSO piped, so the user knows it was ignored.
+		if !isatty.IsTerminal(os.Stdin.Fd()) {
+			if data, rerr := io.ReadAll(os.Stdin); rerr == nil && strings.TrimSpace(string(data)) != "" {
+				fmt.Fprintln(os.Stderr, "eigen: --prompt-file set; ignoring piped stdin")
+			}
+		}
+	} else if !appRequested && !isatty.IsTerminal(os.Stdin.Fd()) {
 		if data, rerr := io.ReadAll(os.Stdin); rerr == nil {
 			if piped := strings.TrimSpace(string(data)); piped != "" {
-				task = piped
-				*printMode = true
+				task, *printMode = mergeTaskStdin(task, piped), true
 			}
 		}
 	}
@@ -520,7 +539,20 @@ func main() {
 			store, _ := session.Open()
 			history := importResume(store, *resumeFile, *from, *sessionID)
 			cwd, _ := os.Getwd()
-			sid, nerr := dc.NewSession(cwd, *model, *perm, history)
+			// Send the daemon a CONCRETE model REF, never an empty string. An empty
+			// *model (the default, no config/flag) would let the daemon fall through
+			// to ITS own default (cfg.Provider → converse → Opus), diverging from the
+			// flag-help/direct-path default (mantle / openai.gpt-5.5). effectiveModel
+			// fills in the provider's default model, so the daemon and direct paths
+			// agree on one default.
+			//
+			// The protocol carries only a model id (no provider field), and the
+			// daemon resolves the provider from cfg.Provider/converse — so a bare
+			// model id would silently drop `--provider grok`. llm.Ref folds the
+			// provider INTO the ref ("grok:<id>") for ids the catalog doesn't already
+			// self-tag, so the daemon build honors the chosen provider; for known ids
+			// the catalog reconciles the provider from the id (no prefix needed).
+			sid, nerr := dc.NewSession(cwd, llm.Ref(*provider, effectiveModel(*provider, *model)), *perm, history)
 			if nerr != nil {
 				fail(fmt.Errorf("daemon session: %w", nerr))
 			}
@@ -628,7 +660,7 @@ func main() {
 				return "", fmt.Errorf("unknown task role %q (built-ins: %s; installed plugin agents: %s)", opts.Role, strings.Join(agent.RoleNames(), ", "), strings.Join(agent.PluginRoleNames(), ", "))
 			}
 		}
-		aopts := agent.SubtaskOpts{Kind: opts.Kind, Difficulty: opts.Difficulty, Model: opts.Model, Role: opts.Role}
+		aopts := agent.SubtaskOpts{Kind: opts.Kind, Difficulty: opts.Difficulty, Model: opts.Model, Role: opts.Role, Type: opts.Type, Effort: opts.Effort}
 		if background {
 			return a.SubtaskBackground(ctx, t, aopts)
 		}
@@ -816,6 +848,23 @@ func main() {
 		defs = append(defs, d)
 		builtin[d.Name] = true
 	}
+	// Google (Calendar + Gmail): native direct-REST tools, niche-grouped under
+	// "google"; safe to register always (return "not connected" until linked).
+	for _, d := range google.Default().Tools(nil) {
+		if builtin[d.Name] {
+			continue
+		}
+		defs = append(defs, d)
+		builtin[d.Name] = true
+	}
+	// Obsidian vault notes + revuto PR-reviewer: native local built-ins.
+	for _, d := range append(obsidian.Tools(), revuto.Tools()...) {
+		if builtin[d.Name] {
+			continue
+		}
+		defs = append(defs, d)
+		builtin[d.Name] = true
+	}
 	// search_tools (progressive disclosure): reveal + unlock the niche tools.
 	defs = append(defs, tool.SearchTools(func() *tool.Registry {
 		if a != nil {
@@ -846,9 +895,22 @@ func main() {
 	// context budget, the TUI's live provider, and rebuild-resume all agree.
 	*provider = llm.ResolveProvider(*provider, *model)
 
+	// Quota-freeze failover: the chosen model stays PRIMARY, but a quota/billing
+	// rejection falls through the configured "primary" rule chain instead of
+	// erroring every turn (same wrap as the daemon build path). Falls back to the
+	// small-model ladder when no chain resolves.
+	if chain := llm.NewChain(cfg.ChainFor("primary")...); llm.ChainBeyond(chain, prov.ModelID()) {
+		prov = llm.NewFallback(prov, chain)
+	} else if fb := smallProvider(prov); fb != nil && fb.ModelID() != prov.ModelID() {
+		prov = llm.NewFallback(prov, fb)
+	}
+
 	// `eigen dream`: reflect over recent sessions into project memory, then exit.
+	// Uses the sonnet-pinned dream provider (config dream_model / EIGEN_DREAM_MODEL
+	// / the dream ladder) — same model the daemon's nightly dreamer uses, NOT the
+	// tiny titling model, so a manual dream consolidates as well as the auto one.
 	if flag.Arg(0) == "dream" {
-		runDream(titleProvider(prov), mem, gmem)
+		runDream(dreamProvider(cfg), mem, gmem)
 		return
 	}
 
@@ -882,6 +944,8 @@ func main() {
 		ExtraSystem:      extraSystem,
 		Memory:           memory.Sections(gmem, mem),
 		Goal:             resumedGoal,
+		JudgeModel:       firstNonEmpty(os.Getenv("EIGEN_JUDGE_MODEL"), cfg.JudgeModel),
+		ChainProvider:    func(role string) llm.Provider { return llm.NewChain(cfg.ChainFor(role)...) },
 		Router:           router.Route,
 		ModelProvider:    router.providerFor,
 		Bg:               agent.NewBgRegistry(agent.TasksDir()),
@@ -1066,6 +1130,21 @@ func cliApprove(ctx context.Context, name string, args json.RawMessage) (bool, e
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(line)), "y"), nil
 }
 
+// mergeTaskStdin combines a positional task with piped stdin so neither is
+// dropped. With no positional task, the piped text IS the task; with one, the
+// stdin is appended below the task (a blank line between) — the common shape of
+// `eigen "summarize this" < notes.txt`. Both inputs are assumed pre-trimmed.
+func mergeTaskStdin(task, piped string) string {
+	switch {
+	case task == "":
+		return piped
+	case piped == "":
+		return task
+	default:
+		return task + "\n\n" + piped
+	}
+}
+
 // firstNonEmpty returns the first non-empty string.
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
@@ -1222,6 +1301,119 @@ func localReady(base string) bool {
 // the same small model as the other background chores).
 func titleProvider(main llm.Provider) llm.Provider { return smallProvider(main) }
 
+// stationDigest builds a point-in-time text digest of the user's working life —
+// upcoming calendar events, unread mail, project git state (the feed), scheduled
+// jobs, and machine health — for the dreaming station-reflection pass. eigen is
+// a working station, so dreaming reflects over the whole working life, not only
+// coding transcripts. Each section is best-effort; an unavailable source is just
+// omitted. Returns "" when nothing meaningful gathered.
+func stationDigest(ctx context.Context) string {
+	var b strings.Builder
+
+	// Google: today's calendar + unread mail (only when linked).
+	if g := google.Default(); g.Connected() {
+		if evs, err := g.UpcomingEvents(ctx, 7, 12); err == nil && len(evs) > 0 {
+			b.WriteString("Upcoming calendar (7d):\n")
+			for _, e := range evs {
+				when := e.Start
+				if e.AllDay {
+					when += " (all day)"
+				}
+				fmt.Fprintf(&b, "- %s — %s\n", when, e.Summary)
+			}
+			b.WriteByte('\n')
+		}
+		if n, err := g.UnreadCount(ctx); err == nil && n > 0 {
+			fmt.Fprintf(&b, "Unread mail: %d\n", n)
+			if msgs, err := g.RecentUnread(ctx, 8); err == nil {
+				for _, m := range msgs {
+					fmt.Fprintf(&b, "- %s — %s\n", m.From, m.Subject)
+				}
+			}
+			b.WriteByte('\n')
+		}
+	}
+
+	// Projects: the proactive feed's git/github signals (uncommitted/unpushed/
+	// behind, open PRs/issues) — the cross-project work state.
+	if f, _ := feed.Load(); len(f.Items) > 0 {
+		var lines []string
+		for _, it := range f.Items {
+			if it.Kind == "git" || it.Kind == "github" {
+				lines = append(lines, "- "+it.Title)
+			}
+		}
+		if len(lines) > 0 {
+			b.WriteString("Project state:\n")
+			b.WriteString(strings.Join(lines, "\n"))
+			b.WriteString("\n\n")
+		}
+	}
+
+	// Scheduled jobs: the user's crontab (durable commitments/chores).
+	if out, err := exec.CommandContext(ctx, "crontab", "-l").Output(); err == nil {
+		var jobs []string
+		for _, line := range strings.Split(string(out), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, "#") {
+				jobs = append(jobs, "- "+line)
+			}
+		}
+		if len(jobs) > 0 {
+			b.WriteString("Scheduled jobs (crontab):\n")
+			b.WriteString(strings.Join(jobs, "\n"))
+			b.WriteString("\n\n")
+		}
+	}
+
+	// Machine health (only when notably stressed — routine health isn't signal).
+	// This is a training rig, so swap pressure + GPU thermal/util are worth a
+	// dream note when high.
+	h := syshealth.Read()
+	if h.DiskUsedPct >= 85 || h.MemUsedPct >= 90 || h.SwapUsedPct >= 50 || h.CPUTempC >= 85 {
+		fmt.Fprintf(&b, "Machine: disk %.0f%% · memory %.0f%% · swap %.0f%%", h.DiskUsedPct, h.MemUsedPct, h.SwapUsedPct)
+		if h.CPUTempC > 0 {
+			fmt.Fprintf(&b, " · CPU %.0f°C", h.CPUTempC)
+		}
+		b.WriteByte('\n')
+	}
+	for _, g := range h.GPUs {
+		if g.TempC >= 85 || g.MemUsedPct >= 90 {
+			fmt.Fprintf(&b, "GPU %s: %.0f%% util, VRAM %.0f%%, %.0f°C\n", g.Name, g.UtilPct, g.MemUsedPct, g.TempC)
+		}
+	}
+
+	return strings.TrimSpace(b.String())
+}
+
+// dreamProvider picks the model for background dreaming/consolidation. It pins
+// SONNET (via the dream ladder) on PURPOSE: dreaming is heavy + runs off the hot
+// path, so routing it to the cheap-but-capable GLM would drain the quota real
+// tasks want. Sonnet is "questionable for live tasks" but a fine consolidator,
+// so it earns its keep here. Falls through the ladder (sonnet variants → haiku →
+// gpt) when sonnet isn't credentialed, and finally to the small model so
+// dreaming still runs on a minimal setup. EIGEN_DREAM_MODEL overrides.
+func dreamProvider(cfg config.Config) llm.Provider {
+	// EIGEN_DREAM_MODEL wins, then config dream_model — an explicit single pin.
+	if id := firstNonEmpty(os.Getenv("EIGEN_DREAM_MODEL"), cfg.DreamModel); id != "" {
+		if p, err := llm.New("", id); err == nil {
+			return p
+		}
+	}
+	// Per-role "dreamer" CHAIN: the user-configured dream chain (first reachable
+	// model, falling through on quota). Defaults to the sonnet-first chain that
+	// stays OFF the cheap GLM quota real tasks want.
+	if ch := llm.NewChain(cfg.ChainFor("dreamer")...); ch != nil {
+		return ch
+	}
+	if id := llm.FirstCredentialed(llm.DreamModelLadder()...); id != "" {
+		if p, err := llm.New("", id); err == nil {
+			return p
+		}
+	}
+	return smallProvider(nil)
+}
+
 // notifyCmdline returns the external desktop-notifier command (config notify_cmd,
 // else EIGEN_NOTIFY_CMD), empty when none is configured.
 func notifyCmdline(cfg config.Config) string {
@@ -1232,8 +1424,17 @@ func notifyCmdline(cfg config.Config) string {
 }
 
 // printSessions lists resumable sessions newest-first for the headless --list.
+// The store index spans every agent (eigen + Claude/Codex/OpenCode/…) once
+// Discover has run, and each id is resumable via --resume (foreign transcripts
+// are translated into eigen history on load). When the store is unavailable, it
+// falls back to a direct cross-agent scan so other agents' sessions are still
+// shown as resumable — by path, which --resume detects and translates.
 func printSessions(store *session.Store) {
 	if store == nil {
+		for _, ref := range recentAgentSessions(20) {
+			when := ref.ModTime.Format("2006-01-02 15:04")
+			fmt.Printf("%s  %-16s  %-8s  %s\n", ref.Path, when, ref.Source, "(untitled)")
+		}
 		return
 	}
 	for _, m := range store.List() {
@@ -1467,6 +1668,86 @@ func newMemoryPipeline(prov llm.Provider, mem *memory.Store, idx *memory.Index) 
 	}
 }
 
+// wireBatchStage1 enables the async batch Stage1 path on a dream pipeline when
+// (a) the user opted in (dream_batch / EIGEN_DREAM_BATCH) and (b) the dream
+// provider's backend actually supports a batch API (llm.AsBatch). Bridges the
+// neutral memory.BatchRequest ⇄ llm.BatchItem and reuses dream.Stage1Request /
+// ParseStage1 so a batched summary is built + interpreted identically to a sync
+// one. No-op (pipeline stays fully synchronous) when either condition is false.
+func wireBatchStage1(pipe *memory.Pipeline, prov llm.Provider, cfg config.Config) {
+	if !(cfg.DreamBatch || os.Getenv("EIGEN_DREAM_BATCH") == "1") {
+		return
+	}
+	bp, ok := llm.AsBatch(prov)
+	if !ok {
+		return // provider has no batch API — keep the sync path
+	}
+	pipe.Stage1Req = func(transcript string) (system, user string) {
+		r := dream.Stage1Request(transcript)
+		u := ""
+		if len(r.Messages) > 0 {
+			u = r.Messages[0].Text
+		}
+		return r.System, u
+	}
+	pipe.Stage1Parse = func(text string) (memory.Stage1Result, bool, error) {
+		r, ok, err := dream.ParseStage1(text)
+		if err != nil || !ok {
+			return memory.Stage1Result{}, false, err
+		}
+		// The batch reconciler doesn't carry sessionID/when into the parse, so
+		// stamp them at record time the same way the sync Stage1 callback does:
+		// use a neutral slug-derived id + now. RawMemory/Markdown only use these
+		// for provenance headers; the watermark+thread_id row keys handle identity.
+		when := time.Now()
+		return memory.Stage1Result{
+			RawMemory:      r.RawMemory("session", when),
+			RolloutSummary: r.Markdown("session", when),
+			RolloutSlug:    r.Slug(),
+			Outcome:        r.Outcome,
+		}, true, nil
+	}
+	pipe.Batcher = batchAdapter{bp}
+}
+
+// batchAdapter bridges llm.BatchProvider (key→*Response) to the pipeline's
+// provider-agnostic Batcher (key→reply text). The pipeline never imports llm's
+// provider plumbing; this lives in main where both are in scope.
+type batchAdapter struct{ bp llm.BatchProvider }
+
+func (a batchAdapter) SubmitBatch(ctx context.Context, items []memory.BatchRequest) (string, error) {
+	bi := make([]llm.BatchItem, 0, len(items))
+	for _, it := range items {
+		bi = append(bi, llm.BatchItem{Key: it.Key, Req: llm.Request{
+			System:   it.System,
+			Messages: []llm.Message{{Role: llm.RoleUser, Text: it.User}},
+		}})
+	}
+	return a.bp.SubmitBatch(ctx, bi)
+}
+
+func (a batchAdapter) PollBatch(ctx context.Context, id string) (string, bool, error) {
+	st, err := a.bp.PollBatch(ctx, id)
+	if err != nil {
+		return "", false, err
+	}
+	return string(st.State), st.Terminal() && st.State == llm.BatchDone, nil
+}
+
+func (a batchAdapter) CollectBatch(ctx context.Context, id string) (map[string]string, error) {
+	res, err := a.bp.CollectBatch(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(res))
+	for k, r := range res {
+		if r != nil {
+			out[k] = r.Text
+		}
+	}
+	return out, nil
+}
+
 func memoryScopeKey(mem *memory.Store) string {
 	if mem == nil {
 		return ""
@@ -1501,9 +1782,13 @@ func refreshMemorySummary(ctx context.Context, prov llm.Provider, mem *memory.St
 }
 
 func runDream(prov llm.Provider, mem, gmem *memory.Store) {
-	paths := recentEigenSessions(8)
-	if len(paths) == 0 {
-		fmt.Fprintln(os.Stderr, "eigen: dream: no eigen sessions to reflect on")
+	// Reflect over a WIDER span: recent sessions across every agent (eigen +
+	// Claude + Codex + OpenCode), newest-first, not just eigen's own last
+	// session. A larger count spans more than one session so consolidation can
+	// find patterns across agents.
+	refs := recentAgentSessions(20)
+	if len(refs) == 0 {
+		fmt.Fprintln(os.Stderr, "eigen: dream: no recent sessions to reflect on")
 		return
 	}
 	idx, err := memory.OpenIndex()
@@ -1516,8 +1801,11 @@ func runDream(prov llm.Provider, mem, gmem *memory.Store) {
 	// Build the session list (id + watermark so unchanged sessions are skipped).
 	var sessions []memory.Session
 	var transcripts []string // kept for skill synthesis below
-	for _, p := range paths {
-		msgs, lerr := transcript.Load(p)
+	for _, ref := range refs {
+		// ImportFrom dispatches on Source so Claude/Codex/OpenCode transcripts
+		// parse with the right reader; it falls back to transcript.Load for
+		// eigen-native sessions.
+		msgs, lerr := transcript.ImportFrom(ref.Source, ref.Path)
 		if lerr != nil {
 			continue
 		}
@@ -1526,12 +1814,11 @@ func runDream(prov llm.Provider, mem, gmem *memory.Store) {
 			continue
 		}
 		transcripts = append(transcripts, t)
-		id := strings.TrimSuffix(filepath.Base(p), ".eigen.jsonl")
-		wm := int64(0)
-		if fi, e := os.Stat(p); e == nil {
-			wm = fi.ModTime().Unix() ^ fi.Size()
-		}
-		sessions = append(sessions, memory.Session{ID: id, Transcript: t, Watermark: wm})
+		sessions = append(sessions, memory.Session{
+			ID:         dreamSessionID(ref),
+			Transcript: t,
+			Watermark:  dreamWatermark(ref),
+		})
 	}
 
 	report, rerr := pipe.Run(context.Background(), sessions)
@@ -1564,9 +1851,39 @@ func runDream(prov llm.Provider, mem, gmem *memory.Store) {
 			} else {
 				fmt.Printf("global memory: %d new note(s) → %s\n", len(notes), gmem.Dir())
 			}
+			// Auto-maintain USER.md's learned block from the distilled cross-project
+			// profile so the injected personalization prompt reflects what eigen has
+			// learned about the user — the user's own additions (below the end
+			// marker) are preserved. Prefer the curated summary; fall back to the
+			// raw notes when no summary exists yet.
+			learned := strings.TrimSpace(gmem.Injected())
+			if learned == "" {
+				learned = strings.Join(notes, "\n")
+			}
+			if err := gmem.SetLearnedProfile(learned); err == nil {
+				fmt.Printf("user profile: refreshed the auto-maintained block → %s\n", gmem.UserProfilePath())
+			}
 			memory.CommitMemory(fmt.Sprintf("dream: global profile — %d new", len(notes)))
 		}
 	}
+
+	// Working-station reflection: eigen is a working station, so dreaming also
+	// reflects over the user's working LIFE — calendar, mail, project git state,
+	// scheduled jobs, machine health — into durable awareness notes in global
+	// memory (deadlines, drifting projects, standing commitments). Best-effort:
+	// no digest (Google not linked, quiet projects) → nothing happens.
+	if gmem != nil {
+		if digest := stationDigest(context.Background()); digest != "" {
+			if notes, err := dream.DistillStation(context.Background(), prov, digest, gmem.Read()); err == nil && len(notes) > 0 {
+				for _, n := range notes {
+					_ = gmem.Append(n)
+				}
+				fmt.Printf("station: %d new working-life note(s) → %s\n", len(notes), gmem.Dir())
+				memory.CommitMemory(fmt.Sprintf("dream: working-station — %d new", len(notes)))
+			}
+		}
+	}
+
 	if draft, ok, serr := dream.SynthesizeSkill(context.Background(), prov, corpus); serr == nil && ok {
 		if path, werr := skill.Propose(draft.Name, draft.Description, draft.Body); werr == nil && path != "" {
 			fmt.Printf("proposed skill %q → %s\n  review: eigen skill proposed · accept: eigen skill accept %s\n", draft.Name, path, draft.Name)
@@ -1574,22 +1891,27 @@ func runDream(prov llm.Provider, mem, gmem *memory.Store) {
 	}
 }
 
-// recentEigenSessions returns up to n newest eigen session file paths.
-func recentEigenSessions(n int) []string {
-	home, _ := os.UserHomeDir()
-	matches, _ := filepath.Glob(filepath.Join(home, ".eigen", "sessions", "*.eigen.jsonl"))
-	sort.Slice(matches, func(i, j int) bool {
-		fi, e1 := os.Stat(matches[i])
-		fj, e2 := os.Stat(matches[j])
-		if e1 != nil || e2 != nil {
-			return false
-		}
-		return fi.ModTime().After(fj.ModTime())
-	})
-	if len(matches) > n {
-		matches = matches[:n]
+// dreamSessionID derives a stable per-session identifier from a cross-agent
+// ref, used as the index key for the watermark/skip-unchanged logic. For
+// file-based sources it is the base filename (eigen's ".eigen.jsonl" suffix
+// stripped for readable parity with the old path); for OpenCode the Path is
+// already the session id. The source is prefixed so two agents can never
+// collide on an identical base name.
+func dreamSessionID(ref sessionRef) string {
+	base := filepath.Base(ref.Path)
+	base = strings.TrimSuffix(base, ".eigen.jsonl")
+	return string(ref.Source) + ":" + base
+}
+
+// dreamWatermark produces the mtime/size signature so an unchanged session is
+// skipped on the next dream. File-based refs mix mtime with size (matching the
+// old eigen path); sources without a file on disk (OpenCode) fall back to the
+// ref's ModTime, which recentAgentSessions already populated from the DB.
+func dreamWatermark(ref sessionRef) int64 {
+	if fi, e := os.Stat(ref.Path); e == nil && !fi.IsDir() {
+		return fi.ModTime().Unix() ^ fi.Size()
 	}
-	return matches
+	return ref.ModTime.Unix()
 }
 
 // printSkills lists discovered skills for --list-skills.
@@ -2094,19 +2416,11 @@ func runWorkflowHeadless(a *agent.Agent, name string, vars map[string]string) {
 	}
 	fmt.Fprintf(os.Stderr, "eigen workflow: %s — %d step(s)\n", wf.Name, len(wf.Steps))
 
-	// ONE carried session across steps.
+	// ONE carried session across steps. A per-step model override runs on this
+	// SAME session via a live model switch (see workflowStepRunner), never an
+	// isolated subtask — so step N always sees prior steps' work.
 	sess := a.NewSession()
-	runStep := func(ctx context.Context, prompt, model string) (string, error) {
-		// Per-step model override: a one-shot subtask on the chosen model keeps
-		// the step isolated to its model while still carrying context is the
-		// trade-off — v1 keeps it simple and runs every step on the main
-		// session's model (model override is recorded but applied via the
-		// router only when set). Inherit when model=="".
-		if model != "" {
-			return a.SubtaskWith(ctx, prompt, agent.SubtaskOpts{Model: model})
-		}
-		return sess.Send(ctx, prompt)
-	}
+	runStep := workflowStepRunner(a, sess)
 	judge := func(ctx context.Context, condition, output string) (bool, string, error) {
 		return a.JudgeClaim(ctx, nil, condition, output)
 	}
@@ -2143,6 +2457,42 @@ func runWorkflowHeadless(a *agent.Agent, name string, vars map[string]string) {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "eigen workflow:", err)
 		os.Exit(2)
+	}
+}
+
+// workflowStepRunner returns the StepRunner that drives every workflow step on
+// ONE carried session (so step N sees prior steps' work). A step that names a
+// model is the only twist: instead of an ISOLATED subtask (which would start a
+// fresh, context-blind conversation and break the one-session carry the
+// workflow contract promises), it does a LIVE model switch on the SAME session
+// — snapshot the live provider+compactor, swap to the named model for the
+// duration of this step, run, then ALWAYS restore (deferred, so an error or
+// panic can't strand the override). If the named provider can't be built (no
+// builder injected, bad id, missing creds) we keep context by running on the
+// session's current model and say so — a silent fallback would hide that the
+// override didn't take.
+func workflowStepRunner(a *agent.Agent, sess *agent.Session) workflow.StepRunner {
+	return func(ctx context.Context, prompt, model string) (string, error) {
+		// Inherit the session's model when the step doesn't name one.
+		if model == "" {
+			return sess.Send(ctx, prompt)
+		}
+		if a.ModelProvider == nil {
+			fmt.Fprintf(os.Stderr, "  (model %s ignored — no provider builder; running on session model)\n", model)
+			return sess.Send(ctx, prompt)
+		}
+		p, err := a.ModelProvider(model)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  (model %s unavailable: %v — running on session model)\n", model, err)
+			return sess.Send(ctx, prompt)
+		}
+		// Live switch on the carried session, scoped to exactly this step.
+		prevProv := a.CurrentProvider()
+		prevCompactor := a.Compactor
+		fmt.Fprintf(os.Stderr, "  ⇄ model %s (this step)\n", model)
+		a.SetLive(p, llm.NewCompactor(p), 0)
+		defer a.SetLive(prevProv, prevCompactor, 0)
+		return sess.Send(ctx, prompt)
 	}
 }
 

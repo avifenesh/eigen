@@ -56,6 +56,24 @@ func fakeServer(r io.Reader, w io.Writer) {
 						{"type": "image", "mimeType": "image/png", "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="},
 					},
 				}
+			} else if p.Name == "err_text" {
+				// isError with an explicit text message — passed through verbatim.
+				resp["result"] = map[string]any{
+					"isError": true,
+					"content": []map[string]any{{"type": "text", "text": "boom: bad input"}},
+				}
+			} else if p.Name == "err_image" {
+				// isError where the detail lives in a (decodable) image block and
+				// the text is empty — the classic blank-error case.
+				resp["result"] = map[string]any{
+					"isError": true,
+					"content": []map[string]any{
+						{"type": "image", "mimeType": "image/png", "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="},
+					},
+				}
+			} else if p.Name == "err_empty" {
+				// isError with no content at all.
+				resp["result"] = map[string]any{"isError": true, "content": []map[string]any{}}
 			} else {
 				resp["result"] = map[string]any{
 					"content": []map[string]any{{"type": "text", "text": "called " + p.Name + " with " + string(p.Arguments)}},
@@ -176,9 +194,8 @@ func TestWrapMapsReadOnlyHint(t *testing.T) {
 func TestLazyClientStartsOnFirstToolCall(t *testing.T) {
 	starts := 0
 	lc := &lazyClient{
-		name:    "srv",
-		command: []string{"fake"},
-		connect: func(context.Context, []string, []string) (*Client, error) {
+		name: "srv",
+		dial: func(context.Context) (session, error) {
 			starts++
 			return newTestClient(t), nil
 		},
@@ -220,9 +237,8 @@ func TestLazyClientStartsOnFirstToolCall(t *testing.T) {
 func TestLazyClientConcurrentFirstGetStartsOnce(t *testing.T) {
 	starts := 0
 	lc := &lazyClient{
-		name:    "srv",
-		command: []string{"fake"},
-		connect: func(context.Context, []string, []string) (*Client, error) {
+		name: "srv",
+		dial: func(context.Context) (session, error) {
 			starts++
 			time.Sleep(20 * time.Millisecond)
 			return newTestClient(t), nil
@@ -231,7 +247,7 @@ func TestLazyClientConcurrentFirstGetStartsOnce(t *testing.T) {
 	defer lc.Close()
 	const n = 16
 	type result struct {
-		client *Client
+		client session
 		err    error
 	}
 	resCh := make(chan result, n)
@@ -241,7 +257,7 @@ func TestLazyClientConcurrentFirstGetStartsOnce(t *testing.T) {
 			resCh <- result{client: client, err: err}
 		}()
 	}
-	var first *Client
+	var first session
 	for i := 0; i < n; i++ {
 		res := <-resCh
 		if res.err != nil {
@@ -260,9 +276,8 @@ func TestLazyClientConcurrentFirstGetStartsOnce(t *testing.T) {
 
 func TestLazyClientCloseAndFailedConnect(t *testing.T) {
 	closed := &lazyClient{
-		name:    "srv",
-		command: []string{"fake"},
-		connect: func(context.Context, []string, []string) (*Client, error) {
+		name: "srv",
+		dial: func(context.Context) (session, error) {
 			t.Fatal("closed lazy client must not connect")
 			return nil, nil
 		},
@@ -276,9 +291,8 @@ func TestLazyClientCloseAndFailedConnect(t *testing.T) {
 
 	starts := 0
 	failing := &lazyClient{
-		name:    "srv",
-		command: []string{"fake"},
-		connect: func(context.Context, []string, []string) (*Client, error) {
+		name: "srv",
+		dial: func(context.Context) (session, error) {
 			starts++
 			return nil, context.DeadlineExceeded
 		},
@@ -294,6 +308,87 @@ func TestLazyClientCloseAndFailedConnect(t *testing.T) {
 	}
 	if starts != 2 {
 		t.Fatalf("failed connects should not be cached permanently, starts=%d", starts)
+	}
+}
+
+func TestOversizedLineMarksClientDeadWithClearError(t *testing.T) {
+	// A single JSON-RPC line larger than the read-loop cap used to make Scan()
+	// stop with bufio.ErrTooLong, silently killing the client. The fix surfaces
+	// a clear error and marks the connection dead so the owner reconnects.
+	pr, pw := io.Pipe()
+	c := newClient(io.Discard, pr, func() error { return pw.Close() })
+	defer c.Close()
+
+	// Register an in-flight call so we can observe the failure it gets.
+	c.mu.Lock()
+	c.nextID++
+	id := c.nextID
+	ch := make(chan rpcResponse, 1)
+	c.pending[id] = ch
+	c.mu.Unlock()
+
+	go func() {
+		// One line, no newline, longer than the buffer cap -> ErrTooLong.
+		junk := strings.Repeat("x", maxRPCLineBytes+1)
+		_, _ = io.WriteString(pw, junk)
+		_ = pw.Close()
+	}()
+
+	select {
+	case _, ok := <-ch:
+		if ok {
+			t.Fatal("expected the in-flight call's channel to be closed, not delivered")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("read loop did not end after an oversized line")
+	}
+
+	if c.alive() {
+		t.Fatal("client should be marked dead after an oversized line")
+	}
+	c.mu.Lock()
+	readErr := c.readErr
+	c.mu.Unlock()
+	if readErr == nil || !strings.Contains(readErr.Error(), "exceeded") {
+		t.Fatalf("expected a clear oversized-line error, got %v", readErr)
+	}
+}
+
+func TestLazyClientReconnectsAfterReadLoopDies(t *testing.T) {
+	starts := 0
+	lc := &lazyClient{
+		name: "srv",
+		dial: func(context.Context) (session, error) {
+			starts++
+			return newTestClient(t), nil
+		},
+	}
+	defer lc.Close()
+
+	first, err := lc.get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if starts != 1 {
+		t.Fatalf("first get should connect once, starts=%d", starts)
+	}
+
+	// Simulate the read loop dying (e.g. the server crashed or sent an
+	// oversized line that killed the loop): mark the cached client dead.
+	firstC := first.(*Client)
+	firstC.mu.Lock()
+	firstC.dead = true
+	firstC.mu.Unlock()
+
+	second, err := lc.get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if starts != 2 {
+		t.Fatalf("get should reconnect when the cached client is dead, starts=%d", starts)
+	}
+	if second == first {
+		t.Fatal("get returned the dead client instead of a fresh connection")
 	}
 }
 
@@ -418,5 +513,43 @@ func TestCallToolRichPreservesImages(t *testing.T) {
 	txt, err := c.CallTool(context.Background(), "shot", json.RawMessage(`{}`))
 	if err != nil || txt != "screenshot taken" {
 		t.Fatalf("CallTool text path: %q %v", txt, err)
+	}
+}
+
+func TestCallToolRichIsErrorFallbacks(t *testing.T) {
+	c := newTestClient(t)
+	defer c.Close()
+	c.serverName = "mocksrv" // exercise the provenance suffix
+
+	// A textual error is surfaced verbatim.
+	if _, err := c.CallToolRich(context.Background(), "err_text", json.RawMessage(`{}`)); err == nil {
+		t.Fatal("err_text should return an error")
+	} else if err.Error() != "boom: bad input" {
+		t.Fatalf("err_text message = %q, want verbatim text", err.Error())
+	}
+
+	// isError with detail only in an image block + empty text must not bubble a
+	// blank error: it gets a named fallback that notes the image block.
+	_, err := c.CallToolRich(context.Background(), "err_image", json.RawMessage(`{}`))
+	if err == nil {
+		t.Fatal("err_image should return an error")
+	}
+	msg := err.Error()
+	if msg == "" {
+		t.Fatal("err_image returned a blank error message")
+	}
+	for _, want := range []string{`"err_image"`, "no message", `server "mocksrv"`, "1 image block"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("err_image message %q missing %q", msg, want)
+		}
+	}
+
+	// isError with no content at all also gets a non-blank, named fallback.
+	_, err = c.CallToolRich(context.Background(), "err_empty", json.RawMessage(`{}`))
+	if err == nil || err.Error() == "" {
+		t.Fatalf("err_empty should return a non-blank error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), `"err_empty"`) || !strings.Contains(err.Error(), "no message") {
+		t.Fatalf("err_empty message = %q, want named no-message fallback", err.Error())
 	}
 }

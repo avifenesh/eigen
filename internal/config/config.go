@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -41,6 +42,10 @@ type Config struct {
 	TTSCmd     string `json:"tts_cmd"`
 	NotifyCmd  string `json:"notify_cmd"`
 	JudgeModel string `json:"judge_model"`
+	// DreamModel pins the model for background dreaming/consolidation. Default
+	// (empty) = the sonnet-first dream ladder, deliberately OFF the cheap GLM
+	// quota real tasks want. Env EIGEN_DREAM_MODEL overrides.
+	DreamModel string `json:"dream_model,omitempty"`
 	// TelegramToken is the bot token (from @BotFather) for the `eigen telegram`
 	// phone bridge; TelegramAllow is the chat-id allowlist (only these chats are
 	// served — fail-closed). Env EIGEN_TELEGRAM_TOKEN / EIGEN_TELEGRAM_ALLOW.
@@ -56,11 +61,43 @@ type Config struct {
 	Route          bool     `json:"route"`
 	RouteProviders []string `json:"route_providers"`
 
+	// BoardGitHubOwners are the GitHub owners (your login + orgs like "agent-sh")
+	// whose repos appear as lanes on the cross-project work board. Empty = the
+	// board auto-detects (the gh-authenticated user + their orgs). Set to pin or
+	// restrict the set. Env EIGEN_BOARD_GH_OWNERS (comma-separated) overrides.
+	BoardGitHubOwners []string `json:"board_github_owners,omitempty"`
+
+	// BoardPinned are lanes the user pinned to the board so they always show even
+	// when idle (no open work / clean tree). A local lane is pinned by its
+	// directory path; a remote lane by its "owner/name". Toggled from the board.
+	BoardPinned []string `json:"board_pinned,omitempty"`
+
+	// ObsidianVault pins the Obsidian vault directory eigen reads/writes notes
+	// in. Empty = auto-detect (env EIGEN_OBSIDIAN_VAULT → ~/revuto → ~/Obsidian).
+	// Set it (from the Connectors Obsidian card) to use ANY vault you like.
+	ObsidianVault string `json:"obsidian_vault,omitempty"`
+
 	// Observe enables the structured activity log (~/.eigen/observe/events.jsonl,
 	// metadata only) for long-term learning + debugging. Default on.
-	Observe     *bool `json:"observe,omitempty"`
-	DreamOnIdle bool  `json:"dream_on_idle"`
-	IdleMinutes int   `json:"idle_minutes"`
+	Observe *bool `json:"observe,omitempty"`
+
+	// RuleChains is the per-ROLE model fallback chain: an ordered list of model
+	// names (friendly shorthands ok — opus/glm/composer/…) tried in turn, each
+	// falling through to the next on a quota/billing failure until one answers.
+	// Keys are roles: "primary", "subagent", "explore", "research", "general",
+	// "code", "dreamer", "judge". A missing/empty role falls back to "default".
+	// Empty map → built-in DefaultRuleChain. Edited in the GUI (per-rule switcher)
+	// and persisted here. Env EIGEN_CHAIN_<ROLE> (comma-separated) overrides one.
+	RuleChains map[string][]string `json:"rule_chains,omitempty"`
+
+	DreamOnIdle bool `json:"dream_on_idle"`
+	// DreamBatch routes dream Stage1 through the provider's async BATCH API
+	// (~50% input discount) when the dream model's provider supports it
+	// (Anthropic Messages Batches today). Off by default — the batch path is
+	// async (results land on a later wake) and only pays on the heavy nightly
+	// run, so it's opt-in. Env EIGEN_DREAM_BATCH=1 also enables it.
+	DreamBatch  bool `json:"dream_batch,omitempty"`
+	IdleMinutes int  `json:"idle_minutes"`
 
 	// FrontWindowMin / StallIdleMin tune the subtask lifecycle: a foreground
 	// subtask runs inline for FrontWindowMin minutes before it's promoted to
@@ -177,6 +214,12 @@ func Set(c *Config, key, value string) error {
 		}
 		c.InputMode = value
 	case "effort":
+		// Closed set (Fields() declares the options; the GUI renders a <select>).
+		// Enforce it backend-side like every other closed field; "" means unset.
+		opts := FieldFor("effort").Options
+		if value != "" && !slices.Contains(opts, value) {
+			return fmt.Errorf("effort must be one of %s", strings.Join(opts, "|"))
+		}
 		c.Effort = value
 	case "theme":
 		if value != "" && !knownTheme(value) {
@@ -202,12 +245,20 @@ func Set(c *Config, key, value string) error {
 		c.TelegramToken = value
 	case "judge_model":
 		c.JudgeModel = value
+	case "dream_model":
+		c.DreamModel = value
 	case "dream_on_idle":
 		b, err := strconv.ParseBool(value)
 		if err != nil {
 			return fmt.Errorf("dream_on_idle must be true|false")
 		}
 		c.DreamOnIdle = b
+	case "dream_batch":
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("dream_batch must be true|false")
+		}
+		c.DreamBatch = b
 	case "idle_minutes":
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 0 {
@@ -253,9 +304,41 @@ func Set(c *Config, key, value string) error {
 		}
 		c.Observe = &b
 	default:
+		// rule_chains.<role> — set one role's fallback chain (comma/space list of
+		// model names). The map is otherwise edited via the GUI bridge; this is the
+		// CLI escape hatch. Empty value clears the role (reverts to its default).
+		if role, ok := strings.CutPrefix(key, "rule_chains."); ok {
+			role = strings.TrimSpace(role)
+			if role == "" {
+				return fmt.Errorf("rule_chains key needs a role: rule_chains.<%s>", strings.Join(RuleRoles, "|"))
+			}
+			SetRuleChain(c, role, splitChain(value))
+			return nil
+		}
 		return fmt.Errorf("unknown key %q (valid: %s)", key, strings.Join(Keys(), " "))
 	}
 	return nil
+}
+
+// SetRuleChain sets (or, with an empty chain, clears) one role's fallback chain.
+// Clearing reverts the role to its built-in default (DefaultRoleChains /
+// DefaultRuleChain) at resolution time. Lazily allocates the map.
+func SetRuleChain(c *Config, role string, chain []string) {
+	role = strings.TrimSpace(role)
+	if role == "" {
+		return
+	}
+	if len(chain) == 0 {
+		delete(c.RuleChains, role)
+		if len(c.RuleChains) == 0 {
+			c.RuleChains = nil
+		}
+		return
+	}
+	if c.RuleChains == nil {
+		c.RuleChains = map[string][]string{}
+	}
+	c.RuleChains[role] = chain
 }
 
 // Keys lists the /config-settable keys (skills_dirs stays file-only: a list),
@@ -302,8 +385,11 @@ func View(c Config) string {
 	fmt.Fprintf(&b, "%-14s = %d\n", "max_tokens", c.MaxTokens)
 	fmt.Fprintf(&b, "%-14s = %s\n", "tts_cmd", val(c.TTSCmd))
 	fmt.Fprintf(&b, "%-14s = %s\n", "notify_cmd", val(c.NotifyCmd))
+	fmt.Fprintf(&b, "%-14s = %s\n", "telegram_token", val(Get(c, "telegram_token")))
 	fmt.Fprintf(&b, "%-14s = %s\n", "judge_model", val(c.JudgeModel))
+	fmt.Fprintf(&b, "%-14s = %s\n", "dream_model", val(c.DreamModel))
 	fmt.Fprintf(&b, "%-14s = %t\n", "dream_on_idle", c.DreamOnIdle)
+	fmt.Fprintf(&b, "%-14s = %t\n", "dream_batch", c.DreamBatch)
 	fmt.Fprintf(&b, "%-14s = %d\n", "idle_minutes", c.IdleMinutes)
 	fmt.Fprintf(&b, "%-14s = %d\n", "front_window_min", c.FrontWindowMin)
 	fmt.Fprintf(&b, "%-14s = %d\n", "stall_idle_min", c.StallIdleMin)
@@ -318,6 +404,13 @@ func View(c Config) string {
 	fmt.Fprintf(&b, "%-16s = %d\n", "daemon_timeout", c.DaemonTimeout)
 	if len(c.SkillsDirs) > 0 {
 		fmt.Fprintf(&b, "%-14s = %s (file-only)\n", "skills_dirs", strings.Join(c.SkillsDirs, ":"))
+	}
+	// Per-role fallback chains: only the roles the user customized (the rest use
+	// built-in defaults). Set via rule_chains.<role> or the GUI per-rule editor.
+	for _, role := range RuleRoles {
+		if ch, ok := c.RuleChains[role]; ok && len(ch) > 0 {
+			fmt.Fprintf(&b, "%-14s = %s\n", "rule_chains."+role, strings.Join(ch, ","))
+		}
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -363,8 +456,12 @@ func Get(c Config, key string) string {
 		return ""
 	case "judge_model":
 		return c.JudgeModel
+	case "dream_model":
+		return c.DreamModel
 	case "dream_on_idle":
 		return strconv.FormatBool(c.DreamOnIdle)
+	case "dream_batch":
+		return strconv.FormatBool(c.DreamBatch)
 	case "idle_minutes":
 		return strconv.Itoa(c.IdleMinutes)
 	case "front_window_min":
@@ -382,5 +479,69 @@ func Get(c Config, key string) string {
 	case "daemon_timeout":
 		return strconv.Itoa(c.DaemonTimeout)
 	}
+	if role, ok := strings.CutPrefix(key, "rule_chains."); ok {
+		return strings.Join(c.ChainFor(strings.TrimSpace(role)), ",")
+	}
 	return ""
+}
+
+// DefaultRuleChain is the built-in model fallback chain used for any role the
+// user hasn't customized. Friendly names; resolved + credential-filtered at use
+// (llm.NewChain). Ordered strongest→last-resort: if the whole chain is dead,
+// the request genuinely fails.
+var DefaultRuleChain = []string{
+	"opus", "gpt-5.5", "glm", "sonnet", "gpt-5.4", "opus-4.7", "glm-5.1", "composer", "glm-5", "grok",
+}
+
+// RuleRoles are the configurable per-role chain keys (the GUI's switcher rows).
+var RuleRoles = []string{"primary", "explore", "research", "general", "code", "dreamer", "judge"}
+
+// DefaultRoleChains are the built-in per-role chains, encoding the capability !=
+// price intuitions (these mirror the SubagentModel ladders so an unconfigured
+// install behaves the same, but now as full fallback chains): explore wants
+// fast+cheap, research wants strong, code wants strong+fast, judge wants a
+// cheap-but-valid assessor (gpt/glm/haiku — never the top default), dreamer
+// stays sonnet-first OFF the GLM quota real tasks want. A role absent here uses
+// DefaultRuleChain (opus-first, full failover). Every chain still falls through
+// to extra links so it degrades instead of failing on a single drained account.
+var DefaultRoleChains = map[string][]string{
+	"explore":  {"composer", "glm", "haiku", "sonnet", "opus"},
+	"research": {"glm", "opus", "gpt-5.5", "sonnet", "grok"},
+	"code":     {"opus", "composer", "glm", "gpt-5.5", "sonnet"},
+	"general":  {"opus", "glm", "gpt-5.5", "sonnet", "composer"},
+	"judge":    {"gpt-5.4", "glm", "haiku", "gpt-5.5", "sonnet"},
+	"dreamer":  {"sonnet", "haiku", "gpt-5.4", "glm"},
+}
+
+// ChainFor returns the model chain for a role: env override
+// (EIGEN_CHAIN_<ROLE>) → the role's configured chain → the "default" configured
+// chain → the role's built-in default → DefaultRuleChain. Never empty.
+func (c Config) ChainFor(role string) []string {
+	if env := strings.TrimSpace(os.Getenv("EIGEN_CHAIN_" + strings.ToUpper(role))); env != "" {
+		return splitChain(env)
+	}
+	if c.RuleChains != nil {
+		if ch, ok := c.RuleChains[role]; ok && len(ch) > 0 {
+			return ch
+		}
+		if ch, ok := c.RuleChains["default"]; ok && len(ch) > 0 {
+			return ch
+		}
+	}
+	if ch, ok := DefaultRoleChains[role]; ok {
+		return ch
+	}
+	return DefaultRuleChain
+}
+
+// splitChain parses a comma/space separated chain string into model names.
+func splitChain(s string) []string {
+	f := strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' })
+	out := make([]string, 0, len(f))
+	for _, x := range f {
+		if x = strings.TrimSpace(x); x != "" {
+			out = append(out, x)
+		}
+	}
+	return out
 }

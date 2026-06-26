@@ -71,10 +71,16 @@ func TestProgressiveDisclosure(t *testing.T) {
 		t.Fatalf("group browse should NOT dump tool names or schemas, got %q", out)
 	}
 
-	// Level 2: search group + capability → tool names, still no schemas/unlock.
-	outCap, _ := st.Run(context.Background(), []byte(`{"query":"chrome page-actions"}`))
-	if !strings.Contains(outCap, "chrome_click") || !strings.Contains(outCap, "chrome_navigate") || strings.Contains(outCap, "args:") {
-		t.Fatalf("capability browse should list tool names only, got %q", outCap)
+	// Level 2: search group + capability → unlock the whole (small) capability
+	// batch with schemas in ONE call, so the model doesn't round-trip per tool.
+	var capUnlocked []string
+	stCap := SearchTools(func() *Registry { return reg }, func(n []string) { capUnlocked = append(capUnlocked, n...) })
+	outCap, _ := stCap.Run(context.Background(), []byte(`{"query":"chrome page-actions"}`))
+	if !strings.Contains(outCap, "chrome_click") || !strings.Contains(outCap, "chrome_navigate") || !strings.Contains(outCap, "args:") {
+		t.Fatalf("capability browse should unlock the batch with schemas, got %q", outCap)
+	}
+	if len(capUnlocked) != 2 {
+		t.Fatalf("capability browse should unlock both tools, got %v", capUnlocked)
 	}
 
 	// Level 3: search a keyword → full schema + unlock.
@@ -99,9 +105,59 @@ func TestGroupCapabilityBrowseAcceptsSpacedGroupAlias(t *testing.T) {
 	)
 	st := SearchTools(func() *Registry { return reg }, nil)
 	out, _ := st.Run(context.Background(), []byte(`{"query":"computer use accessibility"}`))
-	if !strings.Contains(out, "computer_use_setup_accessibility") || strings.Contains(out, "args:") {
-		t.Fatalf("spaced group alias should browse capability tool names only, got %q", out)
+	// Spaced group alias still resolves the group+capability; the capability is a
+	// small batch so it unlocks with schemas in one call.
+	if !strings.Contains(out, "computer_use_setup_accessibility") || !strings.Contains(out, "args:") {
+		t.Fatalf("spaced group alias should resolve + unlock the capability batch, got %q", out)
 	}
+}
+
+// Paraphrased, multi-word, hyphen-variant queries must still resolve — this is
+// the looping the strict matcher caused (the agent couldn't guess the literal
+// substring).
+func TestFuzzyKeywordMatching(t *testing.T) {
+	reg, _ := NewRegistry(
+		nicheCapDef("chrome_new_tab", "chrome", "tabs", "open a new browser tab"),
+		nicheCapDef("chrome_read_article", "chrome", "page-read", "extract the readable article text from the page"),
+	)
+	cases := []struct {
+		query, want string
+	}{
+		{"new tab", "chrome_new_tab"},                    // multi-word, none-verbatim ("new"+"tab")
+		{"open the page article", "chrome_read_article"}, // stopword "the" dropped
+		{"read page", "chrome_read_article"},             // matches the page-read capability desc
+		{"tabs", "chrome_new_tab"},                       // plural reaches singular field
+	}
+	for _, c := range cases {
+		var unlocked []string
+		st := SearchTools(func() *Registry { return reg }, func(n []string) { unlocked = append(unlocked, n...) })
+		out, _ := st.Run(context.Background(), []byte(`{"query":`+jsonStr(c.query)+`}`))
+		if !strings.Contains(out, c.want) {
+			t.Errorf("query %q should reach %s, got %q", c.query, c.want, out)
+		}
+	}
+}
+
+// A query that names the right server but misses on keywords must guide into
+// that server's capabilities, not dead-end with "no tools match".
+func TestScopedMissGuidesIntoGroup(t *testing.T) {
+	reg, _ := NewRegistry(
+		nicheCapDef("chrome_click", "chrome", "page-actions", "click an element"),
+		nicheCapDef("chrome_screenshot", "chrome", "screenshots", "capture a screenshot"),
+	)
+	st := SearchTools(func() *Registry { return reg }, nil)
+	out, _ := st.Run(context.Background(), []byte(`{"query":"chrome frobnicate"}`))
+	if strings.Contains(strings.ToLower(out), "no tools match") {
+		t.Fatalf("scoped miss should guide into the group, not dead-end, got %q", out)
+	}
+	if !strings.Contains(out, "page-actions") && !strings.Contains(out, "screenshots") {
+		t.Fatalf("scoped miss should list the group's capabilities, got %q", out)
+	}
+}
+
+func jsonStr(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }
 
 func TestEmptySearchListsGroups(t *testing.T) {

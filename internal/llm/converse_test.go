@@ -1,7 +1,13 @@
 package llm
 
 import (
+	"bytes"
+	"context"
+	"encoding/binary"
 	"encoding/json"
+	"hash/crc32"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -217,6 +223,109 @@ func TestConverseAdaptiveThinking(t *testing.T) {
 	// (NewConverse needs creds; just check catalog wiring via a direct lookup)
 	if info, _ := Lookup("us.anthropic.claude-opus-4-8"); info.Effort == "" {
 		t.Fatal("opus-4-8 should carry an Effort (adaptive) in the catalog")
+	}
+}
+
+// encodeEventStreamFrame builds one AWS event-stream frame for the given
+// :event-type and JSON payload, with valid prelude/message CRC32s — the exact
+// wire shape converse-stream emits, so the decoder is exercised end to end.
+func encodeEventStreamFrame(eventType string, payload []byte) []byte {
+	// Headers: :message-type=event, :event-type=<eventType>, :content-type=application/json.
+	var hdr bytes.Buffer
+	writeStrHeader := func(name, val string) {
+		hdr.WriteByte(byte(len(name)))
+		hdr.WriteString(name)
+		hdr.WriteByte(7) // string value type
+		var l [2]byte
+		binary.BigEndian.PutUint16(l[:], uint16(len(val)))
+		hdr.Write(l[:])
+		hdr.WriteString(val)
+	}
+	writeStrHeader(":message-type", "event")
+	writeStrHeader(":event-type", eventType)
+	writeStrHeader(":content-type", "application/json")
+	headers := hdr.Bytes()
+
+	totalLen := uint32(12 + len(headers) + len(payload) + 4)
+	var prelude [8]byte
+	binary.BigEndian.PutUint32(prelude[0:4], totalLen)
+	binary.BigEndian.PutUint32(prelude[4:8], uint32(len(headers)))
+	preludeCRC := crc32.ChecksumIEEE(prelude[:])
+
+	var frame bytes.Buffer
+	frame.Write(prelude[:])
+	var pc [4]byte
+	binary.BigEndian.PutUint32(pc[:], preludeCRC)
+	frame.Write(pc[:])
+	frame.Write(headers)
+	frame.Write(payload)
+	msgCRC := crc32.ChecksumIEEE(frame.Bytes())
+	var mc [4]byte
+	binary.BigEndian.PutUint32(mc[:], msgCRC)
+	frame.Write(mc[:])
+	return frame.Bytes()
+}
+
+// TestConverseStreamEmitsIncrementalText is the regression for APP-008: Bedrock
+// Converse must implement Streamer so the default Claude path streams instead of
+// blocking on Complete (frozen UI mid-turn). It mocks the converse-stream binary
+// event-stream framing — contentBlockStart/Delta for text, reasoning, and a
+// streamed toolUse, then messageStop + metadata — and asserts the deltas reached
+// the sink and the final Response is assembled correctly.
+func TestConverseStreamEmitsIncrementalText(t *testing.T) {
+	frames := bytes.Join([][]byte{
+		encodeEventStreamFrame("messageStart", []byte(`{"role":"assistant"}`)),
+		encodeEventStreamFrame("contentBlockDelta", []byte(`{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":"think"}}}`)),
+		encodeEventStreamFrame("contentBlockDelta", []byte(`{"contentBlockIndex":0,"delta":{"text":"Hel"}}`)),
+		encodeEventStreamFrame("contentBlockDelta", []byte(`{"contentBlockIndex":0,"delta":{"text":"lo"}}`)),
+		encodeEventStreamFrame("contentBlockStart", []byte(`{"contentBlockIndex":1,"start":{"toolUse":{"toolUseId":"tu_1","name":"read"}}}`)),
+		encodeEventStreamFrame("contentBlockDelta", []byte(`{"contentBlockIndex":1,"delta":{"toolUse":{"input":"{\"path\":"}}}`)),
+		encodeEventStreamFrame("contentBlockDelta", []byte(`{"contentBlockIndex":1,"delta":{"toolUse":{"input":"\"a\"}"}}}`)),
+		encodeEventStreamFrame("messageStop", []byte(`{"stopReason":"tool_use"}`)),
+		encodeEventStreamFrame("metadata", []byte(`{"usage":{"inputTokens":12,"outputTokens":5,"cacheReadInputTokens":4}}`)),
+	}, nil)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.amazon.eventstream")
+		w.Write(frames)
+	}))
+	defer srv.Close()
+
+	c := &Converse{Model: "us.anthropic.claude-opus-4-8", region: "us-east-2", bearer: "t", http: srv.Client(), baseURL: srv.URL}
+	var textChunks, reasoningChunks []string
+	resp, err := c.Stream(context.Background(),
+		Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}},
+		func(ch StreamChunk) {
+			switch ch.Kind {
+			case ChunkText:
+				textChunks = append(textChunks, ch.Text)
+			case ChunkReasoning:
+				reasoningChunks = append(reasoningChunks, ch.Text)
+			}
+		})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if len(textChunks) != 2 || textChunks[0] != "Hel" || textChunks[1] != "lo" {
+		t.Fatalf("text chunks = %v, want [Hel lo]", textChunks)
+	}
+	if len(reasoningChunks) != 1 || reasoningChunks[0] != "think" {
+		t.Fatalf("reasoning chunks = %v, want [think]", reasoningChunks)
+	}
+	if resp.Text != "Hello" || resp.Reasoning != "think" {
+		t.Fatalf("resp text=%q reasoning=%q", resp.Text, resp.Reasoning)
+	}
+	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].ID != "tu_1" || resp.ToolCalls[0].Name != "read" {
+		t.Fatalf("tool call wrong: %+v", resp.ToolCalls)
+	}
+	if string(resp.ToolCalls[0].Arguments) != `{"path":"a"}` {
+		t.Fatalf("tool args = %s", resp.ToolCalls[0].Arguments)
+	}
+	if resp.Usage.InputTokens != 12 || resp.Usage.OutputTokens != 5 || resp.Usage.CacheReadTokens != 4 {
+		t.Fatalf("usage wrong: %+v", resp.Usage)
+	}
+	if _, ok := interface{}(c).(Streamer); !ok {
+		t.Fatal("Converse must implement Streamer")
 	}
 }
 

@@ -11,6 +11,7 @@ package chat
 
 import (
 	"context"
+	"time"
 
 	"github.com/avifenesh/eigen/internal/agent"
 	"github.com/avifenesh/eigen/internal/llm"
@@ -28,6 +29,8 @@ type ShellInfo struct {
 	Command  string
 	Status   string // running | exited | killed
 	ExitCode int
+	Started  time.Time // when the shell launched (zero if unknown)
+	Finished time.Time // when it exited/was killed (zero while running)
 	LastLine string
 }
 

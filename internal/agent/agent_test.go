@@ -139,6 +139,46 @@ func TestRunNudgesPastEmptyTurn(t *testing.T) {
 	}
 }
 
+func TestEmptyTurnNudgePersisted(t *testing.T) {
+	// A genuinely-empty turn (no text, no tools, no reasoning) appends a
+	// "Continue" nudge and loops. That append MUST be persisted — like the
+	// reasoning-only and steer branches — so a crash between the nudge and the
+	// next persist can't diverge in-memory history from the autosaved transcript.
+	prov := &mockProvider{replies: []*llm.Response{
+		{}, // genuinely empty: nudges
+		{Text: "final"},
+	}}
+	reg, err := tool.NewRegistry(callTool("ping"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshots [][]llm.Message
+	a := &Agent{Provider: prov, Tools: reg, Perm: PermAuto,
+		Persist: func(msgs []llm.Message) {
+			cp := make([]llm.Message, len(msgs))
+			copy(cp, msgs)
+			snapshots = append(snapshots, cp)
+		},
+	}
+	if _, err := a.Run(context.Background(), "t"); err != nil {
+		t.Fatal(err)
+	}
+	const nudge = "Continue: use a tool to make progress, or give your final answer."
+	persistedNudge := false
+	for _, snap := range snapshots {
+		if len(snap) > 0 {
+			last := snap[len(snap)-1]
+			if last.Role == llm.RoleUser && last.Text == nudge {
+				persistedNudge = true
+				break
+			}
+		}
+	}
+	if !persistedNudge {
+		t.Fatal("empty-turn nudge was appended but never persisted")
+	}
+}
+
 func TestRunErrorsOnPersistentEmptyTurns(t *testing.T) {
 	prov := &mockProvider{replies: []*llm.Response{{}, {}, {}, {}}}
 	reg, err := tool.NewRegistry(callTool("ping"))
@@ -232,8 +272,11 @@ func TestSubtaskRunsFreshSession(t *testing.T) {
 	if out != "subtask answer" {
 		t.Fatalf("got %q", out)
 	}
-	if events != 0 {
-		t.Fatal("subtask events should be suppressed (not emitted to the caller)")
+	// The CHILD's events are suppressed (its stream never reaches the caller).
+	// The parent MAY emit a single "task → where" audit note (where the subtask
+	// ran — model/type policy), so events is 0 or 1, never the child's stream.
+	if events > 1 {
+		t.Fatalf("child subtask events leaked to the caller: got %d (want ≤1 audit note)", events)
 	}
 }
 

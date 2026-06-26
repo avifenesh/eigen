@@ -55,8 +55,12 @@ func baseDir() (string, error) {
 	return d, nil
 }
 
-// Open returns the memory store for projectDir (its absolute path keys the
-// scope dir). A blank projectDir uses the cwd.
+// Open returns the memory store for projectDir. The scope is keyed by the
+// project's CANONICAL root — the git main-worktree root when projectDir is
+// inside a repo — so a worktree, a subdirectory, or a session rooted at `..`
+// all map to the SAME store instead of fragmenting one project's memory across
+// several scopes. Non-git dirs fall back to the absolute path (unchanged), so
+// existing non-repo scopes keep their keys. A blank projectDir uses the cwd.
 func Open(projectDir string) (*Store, error) {
 	base, err := baseDir()
 	if err != nil {
@@ -65,9 +69,13 @@ func Open(projectDir string) (*Store, error) {
 	if projectDir == "" {
 		projectDir, _ = os.Getwd()
 	}
-	abs, err := filepath.Abs(projectDir)
-	if err != nil {
-		abs = projectDir
+	abs := canonicalProjectDir(projectDir)
+	if abs == "" {
+		if a, aerr := filepath.Abs(projectDir); aerr == nil {
+			abs = a
+		} else {
+			abs = projectDir
+		}
 	}
 	k := key(abs)
 	s := &Store{dir: filepath.Join(base, k)}
@@ -289,10 +297,65 @@ func (s *Store) Rewrite(content string) error {
 // Read returns the curated working memory (MEMORY.md), empty if none.
 func (s *Store) Read() string { return s.readFile(s.MemoryPath()) }
 
-// UserProfile returns the editable free-form user profile prompt (USER.md).
+// USER.md has two parts: an eigen-MAINTAINED block (cross-project facts the
+// dream pipeline distills) fenced between these markers, and the user's own
+// free-form additions below it. Both inject; each is edited independently so
+// auto-maintenance never clobbers the user's words and vice-versa.
+const (
+	learnedProfileBegin = "<!-- eigen:learned — auto-maintained from your sessions; edit below the end marker -->"
+	learnedProfileEnd   = "<!-- eigen:end -->"
+)
+
+// UserProfile returns the full editable personalization prompt (USER.md):
+// the eigen-maintained learned block (if any) followed by the user's section.
+// This is what gets injected — both halves matter.
 func (s *Store) UserProfile() string { return s.readFile(s.UserProfilePath()) }
 
-// WriteUserProfile atomically replaces USER.md. Empty content removes the file.
+// splitProfile separates USER.md into (learned, user) sections by the markers.
+// A file with no markers is all user-authored (learned=""), preserving the
+// pre-existing hand-written-only behavior.
+func splitProfile(full string) (learned, user string) {
+	b := strings.Index(full, learnedProfileBegin)
+	e := strings.Index(full, learnedProfileEnd)
+	if b < 0 || e < 0 || e < b {
+		return "", strings.TrimSpace(full)
+	}
+	learned = strings.TrimSpace(full[b+len(learnedProfileBegin) : e])
+	user = strings.TrimSpace(full[e+len(learnedProfileEnd):])
+	return learned, user
+}
+
+// composeProfile re-joins a learned block + user section into USER.md content.
+// Empty learned → just the user text (no markers), so a profile eigen has never
+// touched reads exactly as the user wrote it.
+func composeProfile(learned, user string) string {
+	learned = strings.TrimSpace(learned)
+	user = strings.TrimSpace(user)
+	if learned == "" {
+		return user
+	}
+	out := learnedProfileBegin + "\n" + learned + "\n" + learnedProfileEnd
+	if user != "" {
+		out += "\n\n" + user
+	}
+	return out
+}
+
+// UserProfileUser returns only the user's hand-written section of USER.md.
+func (s *Store) UserProfileUser() string {
+	_, user := splitProfile(s.readFile(s.UserProfilePath()))
+	return user
+}
+
+// UserProfileLearned returns only the eigen-maintained section of USER.md.
+func (s *Store) UserProfileLearned() string {
+	learned, _ := splitProfile(s.readFile(s.UserProfilePath()))
+	return learned
+}
+
+// WriteUserProfile replaces the USER section of USER.md, PRESERVING the
+// eigen-maintained learned block. Empty user content removes the file only when
+// there is also no learned block (so auto-maintained facts aren't lost).
 func (s *Store) WriteUserProfile(content string) error {
 	if s == nil {
 		return fmt.Errorf("memory unavailable")
@@ -301,10 +364,35 @@ func (s *Store) WriteUserProfile(content string) error {
 	if err := s.ensureDir(); err != nil {
 		return err
 	}
-	if content == "" {
+	learned := s.UserProfileLearned()
+	if content == "" && learned == "" {
 		_ = os.Remove(s.UserProfilePath())
 		return nil
 	}
+	return s.writeProfile(composeProfile(learned, content))
+}
+
+// SetLearnedProfile replaces the eigen-MAINTAINED block of USER.md, PRESERVING
+// the user's section. Called by the dream pipeline with distilled cross-project
+// facts. Empty learned removes the block (and the whole file if no user text).
+func (s *Store) SetLearnedProfile(learned string) error {
+	if s == nil {
+		return fmt.Errorf("memory unavailable")
+	}
+	learned = strings.TrimSpace(Redact(learned))
+	if err := s.ensureDir(); err != nil {
+		return err
+	}
+	user := s.UserProfileUser()
+	if learned == "" && user == "" {
+		_ = os.Remove(s.UserProfilePath())
+		return nil
+	}
+	return s.writeProfile(composeProfile(learned, user))
+}
+
+// writeProfile atomically writes USER.md content (temp + rename).
+func (s *Store) writeProfile(content string) error {
 	tmp := s.UserProfilePath() + ".tmp"
 	if err := os.WriteFile(tmp, []byte(content+"\n"), 0o644); err != nil {
 		return err
@@ -490,6 +578,48 @@ func (s *Store) Section() string {
 	return b.String()
 }
 
+// MoveNote relocates a fact between scopes: it records `note` in dst (as an
+// ad-hoc note Phase 2 will fold, tagged with where it came from) and records a
+// supersede tombstone in src so the next consolidation drops src's copy under
+// the RECENCY-WINS rule. Used to PROMOTE a project fact that turned out to be
+// cross-cutting into global, or DEMOTE a global note that only applies to one
+// project down into that project. Either store may be nil (then it's a plain
+// add to whichever is non-nil). Returns an error only on write failure.
+func MoveNote(src, dst *Store, note string) error {
+	note = strings.TrimSpace(note)
+	if note == "" {
+		return fmt.Errorf("a note is required")
+	}
+	if dst == nil {
+		return fmt.Errorf("no destination scope")
+	}
+	srcLabel, dstLabel := scopeLabel(src), scopeLabel(dst)
+	if err := dst.Append(fmt.Sprintf("%s [moved from %s memory]", note, srcLabel)); err != nil {
+		return fmt.Errorf("record in %s: %w", dstLabel, err)
+	}
+	// Tombstone in the source so consolidation supersedes the old copy. Harmless
+	// when src is nil (a pure add) or src == dst (no self-move tombstone).
+	if src != nil && filepath.Clean(src.Dir()) != filepath.Clean(dst.Dir()) {
+		_ = src.Append(fmt.Sprintf("SUPERSEDED: the fact %q has moved to %s memory — drop it from this scope. [moved to %s]", note, dstLabel, dstLabel))
+	}
+	return nil
+}
+
+// scopeLabel names a store for provenance text: "global" or its readable
+// project name (e.g. "eigen"), or "an unknown" for nil.
+func scopeLabel(s *Store) string {
+	if s == nil {
+		return "an unknown"
+	}
+	if s.global {
+		return "global"
+	}
+	if n := StoreName(s); n != "" {
+		return n + " (project)"
+	}
+	return "project"
+}
+
 // Sections renders the combined global + project memory for injection: global
 // first (broad rules and style), then project-specific notes. Either may be nil
 // or empty.
@@ -530,6 +660,104 @@ func key(abs string) string {
 		base = "root"
 	}
 	return base + "-" + hex.EncodeToString(h[:])[:8]
+}
+
+// StoreRef identifies a project memory store on disk WITHOUT opening it. The
+// absolute project path can't be recovered from the hashed key, so callers that
+// want to browse an arbitrary project's memory open it back up via OpenByKey.
+type StoreRef struct {
+	Key  string // on-disk dir name, e.g. "eigen-3e739af1"
+	Name string // readable base (the "-<sha1[:8]>" suffix stripped), e.g. "eigen"
+}
+
+// keySuffix matches the "-<8 lowercase hex>" tail that key() appends, so the
+// readable base name can be recovered for display (the abs path can't be).
+var keySuffix = regexp.MustCompile(`-[0-9a-f]{8}$`)
+
+// readableBase strips key()'s "-<sha1[:8]>" suffix to recover the displayable
+// project name. A dir name without that suffix (e.g. a hand-made dir) is
+// returned unchanged.
+func readableBase(k string) string {
+	if loc := keySuffix.FindStringIndex(k); loc != nil {
+		return k[:loc[0]]
+	}
+	return k
+}
+
+// ListProjectStores enumerates the per-project memory stores that exist on disk
+// under ~/.eigen/memory/, sorted by readable name. The "global" scope and any
+// non-store files (the pre-v2 flat "<key>.md", stray files) are skipped — only
+// directories shaped like a project key are returned. Each StoreRef carries the
+// on-disk key (open it with OpenByKey) and a readable base name; the absolute
+// project path is intentionally absent — it isn't recoverable from the hash.
+func ListProjectStores() ([]StoreRef, error) {
+	base, err := baseDir()
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return nil, err
+	}
+	var out []StoreRef
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue // skip flat <key>.md / global.md and other stray files
+		}
+		k := e.Name()
+		if k == "global" {
+			continue // global is a distinct scope, not a project
+		}
+		out = append(out, StoreRef{Key: k, Name: readableBase(k)})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name == out[j].Name {
+			return out[i].Key < out[j].Key
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out, nil
+}
+
+// StoreKey returns a store's on-disk key (its directory's base name, e.g.
+// "eigen-3e739af1"), the value OpenByKey round-trips and ListProjectStores
+// reports. Empty for a nil store. The global store's key is "global".
+func StoreKey(s *Store) string {
+	if s == nil {
+		return ""
+	}
+	return baseName(s.Dir())
+}
+
+// StoreName returns a store's readable base name (its on-disk key with key()'s
+// "-<sha1[:8]>" suffix stripped, e.g. "eigen"), for display in a scope picker.
+func StoreName(s *Store) string {
+	if s == nil {
+		return ""
+	}
+	return readableBase(StoreKey(s))
+}
+
+// OpenByKey returns the memory store for an on-disk key (e.g. "eigen-3e739af1"),
+// joining ~/.eigen/memory/<key> directly — the path that ListProjectStores
+// reports. Unlike Open(dir), it doesn't re-derive the key from a project path
+// (which isn't recoverable from the hash), so it's how the GUI browses an
+// arbitrary project's memory. The key is validated to be a single path element
+// so it can't escape the memory base dir. migrateFlat runs for parity with
+// Open, harmlessly no-oping when there's no legacy flat file to fold in.
+func OpenByKey(key string) (*Store, error) {
+	base, err := baseDir()
+	if err != nil {
+		return nil, err
+	}
+	key = strings.TrimSpace(key)
+	if key == "" || key == "global" || strings.ContainsAny(key, `/\`) ||
+		key == "." || key == ".." {
+		return nil, fmt.Errorf("invalid memory store key %q", key)
+	}
+	s := &Store{dir: filepath.Join(base, key)}
+	s.migrateFlat(filepath.Join(base, key+".md"))
+	return s, nil
 }
 
 // WriteRollout persists a per-session rollout summary's markdown into the
@@ -580,18 +808,82 @@ func (s *Store) AdHocNotes(limit int) []string {
 	if s == nil {
 		return nil
 	}
+	contents, _ := s.adHocNotesWithPaths(limit)
+	return contents
+}
+
+// adHocNotesWithPaths returns the same notes AdHocNotes does, paired with their
+// source file paths (same order/limit), so a consumer can RETIRE exactly the
+// files it folded — preventing an already-consolidated note from re-feeding
+// every future Phase 2 forever.
+func (s *Store) adHocNotesWithPaths(limit int) (contents, paths []string) {
+	if s == nil {
+		return nil, nil
+	}
 	matches, _ := filepath.Glob(filepath.Join(s.AdHocNotesDir(), "*.md"))
 	sort.Strings(matches)
 	if limit > 0 && len(matches) > limit {
 		matches = matches[len(matches)-limit:]
 	}
-	var out []string
 	for _, m := range matches {
 		if b, err := os.ReadFile(m); err == nil {
-			out = append(out, string(b))
+			contents = append(contents, string(b))
+			paths = append(paths, m)
 		}
 	}
-	return out
+	return contents, paths
+}
+
+// RetiredAdHocDir holds ad-hoc notes already folded into MEMORY.md by Phase 2.
+// They are MOVED here (not deleted) so they stop re-feeding consolidation while
+// staying recoverable on disk.
+func (s *Store) RetiredAdHocDir() string {
+	if s == nil {
+		return ""
+	}
+	return filepath.Join(s.AdHocDir(), "retired")
+}
+
+// RetireAdHocNotes moves the given ad-hoc note files into the retired/ dir so a
+// note consolidation has already absorbed no longer re-enters Phase 2 input.
+// Best-effort per file; a move failure is skipped, not fatal (the note simply
+// stays live and gets reconsidered next cycle). Returns how many were retired.
+func (s *Store) RetireAdHocNotes(paths []string) int {
+	if s == nil || len(paths) == 0 {
+		return 0
+	}
+	if err := os.MkdirAll(s.RetiredAdHocDir(), 0o755); err != nil {
+		return 0
+	}
+	retired := 0
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		dst := filepath.Join(s.RetiredAdHocDir(), filepath.Base(p))
+		if _, err := os.Stat(dst); err == nil {
+			// name collision in retired/ — disambiguate with a counter suffix
+			dst = uniqueRetiredPath(dst)
+		}
+		if err := os.Rename(p, dst); err == nil {
+			retired++
+		}
+	}
+	return retired
+}
+
+// uniqueRetiredPath returns p, or p with a "-N" suffix before .md, that doesn't
+// already exist — so two notes with the same basename can both be retired.
+func uniqueRetiredPath(p string) string {
+	ext := filepath.Ext(p)
+	stem := strings.TrimSuffix(p, ext)
+	for i := 2; i < 10000; i++ {
+		cand := fmt.Sprintf("%s-%d%s", stem, i, ext)
+		if _, err := os.Stat(cand); os.IsNotExist(err) {
+			return cand
+		}
+	}
+	return p
 }
 
 // WriteRawMemories writes the merged Phase 2 input scratchpad.
@@ -734,7 +1026,7 @@ func (s *Store) AddBan(title, rule string) (replaced bool, err error) {
 	if s == nil {
 		return false, fmt.Errorf("memory unavailable")
 	}
-	title = strings.TrimSpace(title)
+	title = strings.TrimSpace(Redact(title))
 	rule = strings.TrimSpace(Redact(rule))
 	if title == "" || rule == "" {
 		return false, fmt.Errorf("a ban needs a title and a rule")

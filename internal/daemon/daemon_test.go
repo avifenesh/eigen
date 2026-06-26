@@ -251,6 +251,39 @@ func TestInterruptEmitsTerminalNote(t *testing.T) {
 	}
 }
 
+func TestInterruptReportsWhetherTurnWasRunning(t *testing.T) {
+	// interrupt() must return true only when a turn was actually in flight, so a
+	// view can tell "interrupted a running turn" from "nothing to interrupt".
+	reg, _ := tool.NewRegistry()
+	a := &agent.Agent{Provider: blockingProvider{}, Tools: reg}
+	s := newSession("x", "/tmp", "m", a)
+
+	// Idle session: nothing to interrupt.
+	if s.interrupt() {
+		t.Fatal("interrupt on an idle session must return false")
+	}
+
+	// Running turn: interrupt cancels it and reports true.
+	if !s.send("go", nil, nil) {
+		t.Fatal("send should start")
+	}
+	deadline := time.After(2 * time.Second)
+	for {
+		if s.state().Running {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("turn should be running")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	if !s.interrupt() {
+		t.Fatal("interrupt on a running turn must return true")
+	}
+}
+
 // blockingProvider hangs until ctx is cancelled (to test interrupt).
 type blockingProvider struct{}
 
@@ -344,6 +377,92 @@ func TestApprovalRoundTripOverSocket(t *testing.T) {
 	}
 	if !ran {
 		t.Fatal("approved tool should have run")
+	}
+}
+
+// TestAttachMidWaitApprovalNotDuplicated pins the dedup fix: a view attaching
+// while an approval is already outstanding must receive that approval exactly
+// ONCE — not once from the replay buffer (the original broadcast) AND again
+// from the pendingList() re-send. The replay buffer skips approval-kind events;
+// pendingList() is the single canonical source for a mid-wait attach.
+func TestAttachMidWaitApprovalNotDuplicated(t *testing.T) {
+	build := func(_, _ string) (*agent.Agent, func(), error) {
+		reg, _ := tool.NewRegistry(tool.Definition{
+			Name:       "mutate",
+			Parameters: json.RawMessage(`{"type":"object"}`),
+			Run:        func(context.Context, json.RawMessage) (string, error) { return "did it", nil },
+		})
+		a := &agent.Agent{Provider: &toolCallProvider{}, Tools: reg, Perm: agent.PermGated}
+		return a, func() {}, nil
+	}
+	sock := filepath.Join(t.TempDir(), "d.sock")
+	srv, err := Listen(sock, NewHost(), build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve()
+	defer srv.Close()
+
+	// First view: attach + input → blocks on a gated tool call. The approval is
+	// broadcast (landing in the session's replay buffer) and stays outstanding.
+	c1, err := Dial(sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c1.Close()
+	id, err := c1.New("/tmp", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	approvals1 := make(chan WireEvent, 4)
+	if err := c1.Attach(id, func(e WireEvent, _ bool) {
+		if e.Kind == "approval" {
+			approvals1 <- e
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c1.Input(id, "do the thing", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	var want WireEvent
+	select {
+	case want = <-approvals1:
+	case <-time.After(3 * time.Second):
+		t.Fatal("first view never saw the approval broadcast")
+	}
+
+	// Second view attaches MID-WAIT: the approval is in the replay buffer AND
+	// still outstanding in pendingList(). It must arrive exactly once.
+	c2, err := Dial(sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	approvals2 := make(chan WireEvent, 4)
+	if err := c2.Attach(id, func(e WireEvent, _ bool) {
+		if e.Kind == "approval" {
+			approvals2 <- e
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var got []WireEvent
+	deadline := time.After(750 * time.Millisecond)
+	for {
+		select {
+		case e := <-approvals2:
+			got = append(got, e)
+		case <-deadline:
+			if len(got) != 1 {
+				t.Fatalf("mid-wait attach should see the approval exactly once, got %d: %+v", len(got), got)
+			}
+			if got[0].Result != want.Result {
+				t.Fatalf("approval id mismatch: got %q want %q", got[0].Result, want.Result)
+			}
+			return
+		}
 	}
 }
 
@@ -992,5 +1111,18 @@ func TestStateFastReDerivesAfterSwitch(t *testing.T) {
 	}
 	if !s.state().Fast {
 		t.Fatal("state().Fast must reflect the toggled fast mode")
+	}
+}
+
+// TestUnixMilli pins the shell-time wire encoding (APP-068): a real instant
+// becomes its unix-millis, while the zero time maps to 0 ("unknown" / still
+// running) rather than a huge negative epoch offset.
+func TestUnixMilli(t *testing.T) {
+	if got := unixMilli(time.Time{}); got != 0 {
+		t.Fatalf("zero time must encode to 0, got %d", got)
+	}
+	at := time.UnixMilli(1_700_000_000_123)
+	if got := unixMilli(at); got != 1_700_000_000_123 {
+		t.Fatalf("unixMilli(%v) = %d, want 1700000000123", at, got)
 	}
 }

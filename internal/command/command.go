@@ -44,15 +44,6 @@ func Dirs() []string {
 	return dirs
 }
 
-// UserDir is where plugin-installed and hand-authored commands live globally.
-func UserDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".eigen", "commands")
-}
-
 // Set is the loaded set of custom commands, keyed by name (first scope wins).
 type Set struct {
 	byName map[string]Command

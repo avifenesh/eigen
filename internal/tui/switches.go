@@ -276,6 +276,18 @@ func (m *model) steerOrQueue(task string) {
 		m.note("↪ steering: " + compact(task))
 		return
 	}
+	// A remote backend's input op is atomic: Steer either injects into a
+	// running turn (returns true, handled above) or — if the daemon went idle
+	// between the TUI seeing "running" and the op landing — STARTS A NEW TURN
+	// with this message (returns false). Either way the message was delivered,
+	// so queueing it again would send it twice. Only the local backend's false
+	// truly means "idle, not sent", and there only when we tried to steer.
+	if m.steering() {
+		if _, remote := m.backend.(*chat.Remote); remote {
+			m.note("↪ started a new turn: " + compact(task))
+			return
+		}
+	}
 	m.queued = append(m.queued, task)
 	m.note(fmt.Sprintf("queued (%d): %s", len(m.queued), compact(task)))
 }

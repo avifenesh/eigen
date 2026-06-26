@@ -92,6 +92,34 @@ func TestSetValidation(t *testing.T) {
 	}
 }
 
+// TestSetEffortClosedSet pins the GUI-101 contract: effort is a CLOSED option
+// set (Fields() declares it, the GUI renders a <select>), so Set must reject
+// values outside that set like every other closed field — "" stays valid for
+// "unset", and every declared option round-trips.
+func TestSetEffortClosedSet(t *testing.T) {
+	var c Config
+	// A value not in the option set is rejected and leaves Effort unchanged.
+	if err := Set(&c, "effort", "ultra"); err == nil {
+		t.Fatal("out-of-set effort should error")
+	}
+	if c.Effort != "" {
+		t.Fatalf("rejected effort must not be stored, got %q", c.Effort)
+	}
+	// Empty clears (unset) and is allowed.
+	if err := Set(&c, "effort", ""); err != nil {
+		t.Fatalf("empty effort (unset) should be allowed: %v", err)
+	}
+	// Every option the GUI offers must be accepted (no drift between Set and Fields()).
+	for _, opt := range FieldFor("effort").Options {
+		if err := Set(&c, "effort", opt); err != nil {
+			t.Fatalf("Set(effort, %q) should be accepted: %v", opt, err)
+		}
+		if c.Effort != opt {
+			t.Fatalf("effort %q not stored, got %q", opt, c.Effort)
+		}
+	}
+}
+
 func TestViewRendersAllKeys(t *testing.T) {
 	c := Config{Provider: "glm", MaxTokens: 1234}
 	v := View(c)
@@ -126,6 +154,63 @@ func TestSetRouteKeys(t *testing.T) {
 	}
 }
 
+func TestRuleChainsSetGetView(t *testing.T) {
+	var c Config
+
+	// An unconfigured role resolves to its built-in default (not the global one).
+	if got := c.ChainFor("dreamer"); got[0] != "sonnet" {
+		t.Fatalf("dreamer default should be sonnet-first, got %v", got)
+	}
+	if got := c.ChainFor("primary"); len(got) == 0 || got[0] != "opus" {
+		t.Fatalf("primary default should be opus-first, got %v", got)
+	}
+	// A role with neither config nor a role-default falls to DefaultRuleChain.
+	if got := c.ChainFor("unknown-role"); got[0] != DefaultRuleChain[0] {
+		t.Fatalf("unknown role should fall to DefaultRuleChain, got %v", got)
+	}
+
+	// Set via the dotted CLI key (comma OR space separated).
+	if err := Set(&c, "rule_chains.judge", "gpt-5.4, glm,haiku"); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.ChainFor("judge"); len(got) != 3 || got[0] != "gpt-5.4" || got[2] != "haiku" {
+		t.Fatalf("judge chain wrong: %v", got)
+	}
+	if got := Get(c, "rule_chains.judge"); got != "gpt-5.4,glm,haiku" {
+		t.Fatalf("Get judge chain = %q", got)
+	}
+
+	// View shows the customized role.
+	if v := View(c); !strings.Contains(v, "rule_chains.judge") || !strings.Contains(v, "gpt-5.4,glm,haiku") {
+		t.Fatalf("View missing customized chain:\n%s", v)
+	}
+
+	// Empty value clears → reverts to the built-in default + drops from the map.
+	if err := Set(&c, "rule_chains.judge", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c.RuleChains["judge"]; ok {
+		t.Fatal("clearing should remove the role from RuleChains")
+	}
+	if got := c.ChainFor("judge"); got[0] != "gpt-5.4" {
+		t.Fatalf("after clear, judge should revert to default, got %v", got)
+	}
+
+	// Missing role name errors.
+	if err := Set(&c, "rule_chains.", "opus"); err == nil {
+		t.Fatal("rule_chains. with no role should error")
+	}
+}
+
+func TestChainForEnvOverride(t *testing.T) {
+	t.Setenv("EIGEN_CHAIN_PRIMARY", "glm, opus")
+	var c Config
+	got := c.ChainFor("primary")
+	if len(got) != 2 || got[0] != "glm" || got[1] != "opus" {
+		t.Fatalf("env override not applied: %v", got)
+	}
+}
+
 func TestSetModelRefSplitsProvider(t *testing.T) {
 	var c Config
 	if err := Set(&c, "model", "mantle:us.openai.gpt-5.5"); err != nil {
@@ -145,6 +230,61 @@ func TestSetModelRefSplitsProvider(t *testing.T) {
 	// Get renders the one-field form (catalog ids bare).
 	if got := Get(c, "model"); got != "glm-5.1" {
 		t.Fatalf("Get(model) = %q", got)
+	}
+}
+
+func TestTelegramTokenSetGetDescribeAgree(t *testing.T) {
+	// Regression: Set + Get handled telegram_token but Fields()/Keys() omitted
+	// it, so `/config telegram_token` (describe) reported "unknown key" even
+	// though setting it worked. Set, Get, describe (FieldFor), and View must
+	// all agree the key exists.
+	var c Config
+	if err := Set(&c, "telegram_token", "123:secret"); err != nil {
+		t.Fatalf("Set(telegram_token): %v", err)
+	}
+	if c.TelegramToken != "123:secret" {
+		t.Fatalf("token not stored: %q", c.TelegramToken)
+	}
+
+	// Describe path: FieldFor must return a real (non-zero) field.
+	f := FieldFor("telegram_token")
+	if f.Key != "telegram_token" {
+		t.Fatalf("FieldFor(telegram_token) returned zero Field — describe would report unknown key")
+	}
+	if !f.Secret {
+		t.Fatal("telegram_token must be marked Secret so it stays masked/file-only")
+	}
+	if len(f.Options) != 0 || f.Multi {
+		t.Fatalf("telegram_token should be free-text, got %+v", f)
+	}
+
+	// Keys() derives from Fields(): the key must be listed.
+	found := false
+	for _, k := range Keys() {
+		if k == "telegram_token" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("Keys() must include telegram_token")
+	}
+
+	// Get masks the secret (never echoes the raw token).
+	if got := Get(c, "telegram_token"); got != "set" {
+		t.Fatalf("Get should mask a set token as %q, got %q", "set", got)
+	}
+	if got := Get(Config{}, "telegram_token"); got != "" {
+		t.Fatalf("Get should report unset token as empty, got %q", got)
+	}
+
+	// View must render the key (so TestViewRendersAllKeys + describe stay aligned)
+	// without leaking the raw secret.
+	v := View(c)
+	if !strings.Contains(v, "telegram_token") {
+		t.Fatalf("View missing telegram_token:\n%s", v)
+	}
+	if strings.Contains(v, "123:secret") {
+		t.Fatalf("View leaked the raw token:\n%s", v)
 	}
 }
 

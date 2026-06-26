@@ -109,6 +109,52 @@ func TestRemoteSendAndState(t *testing.T) {
 	}
 }
 
+// TestRemoteSteerIdleStartsTurnReturnsFalse pins the APP-103 contract: when the
+// daemon session is IDLE, Steer delivers the message by STARTING A NEW TURN and
+// returns false (the input op is atomic — it never rejects). The message was
+// still delivered, so steerOrQueue must NOT re-queue on this false (which would
+// run it twice). The turn must have started (history gains the user message).
+func TestRemoteSteerIdleStartsTurnReturnsFalse(t *testing.T) {
+	build := func(_, _ string) (*agent.Agent, func(), error) {
+		reg, _ := tool.NewRegistry()
+		return &agent.Agent{Provider: echoProv{}, Tools: reg, Perm: agent.PermAuto, MaxContextTokens: 9000}, func() {}, nil
+	}
+	c, id := startDaemon(t, build)
+	r, err := NewRemote(c, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Wire(func(agent.Event) {}, nil)
+
+	// Steer against an idle session: the daemon starts a fresh turn and reports
+	// steered=false (not "running, injected").
+	if r.Steer("type into the void", nil) {
+		t.Fatal("Steer on an idle session must return false (it started a new turn, not steered)")
+	}
+
+	// The message WAS delivered — the daemon ran it as a turn, so it appears in
+	// history. Re-queueing on the false above would send a SECOND copy.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		r.Refresh()
+		msgs := r.Messages()
+		count := 0
+		for _, msg := range msgs {
+			if msg.Role == llm.RoleUser && msg.Text == "type into the void" {
+				count++
+			}
+		}
+		if count == 1 {
+			return // exactly one copy: delivered once, not double-sent
+		}
+		if count > 1 {
+			t.Fatalf("message sent %d times (double-send): %+v", count, msgs)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("Steer on idle session never started a turn: %+v", r.Messages())
+}
+
 // gateRemoteProv triggers one gated tool call then finishes.
 type gateRemoteProv struct{ step int }
 
@@ -529,4 +575,63 @@ func TestMultiWindowStress(t *testing.T) {
 		}
 	}()
 	wg.Wait()
+}
+
+// TestShellInfoTimesRoundTrip pins the shell Started/Finished carry over the
+// wire (APP-068): the daemon snapshots tool.ShellInfo's times as unix-millis
+// and Remote decodes them back, so the shells panel can show elapsed/finished.
+// Both 0 (unknown / still running) and a real stamp must survive intact.
+func TestShellInfoTimesRoundTrip(t *testing.T) {
+	started := time.UnixMilli(1_700_000_000_000) // a fixed, non-zero instant
+	// A running shell: Finished is unknown -> the wire carries 0 -> decodes to
+	// the zero time (not a bogus 1970 instant).
+	wire := daemon.ShellInfo{
+		ID: "shell-1", Command: "npm run dev", Status: "running",
+		StartedMs: started.UnixMilli(), FinishedMs: 0,
+		LastLine: "listening",
+	}
+	if wire.StartedMs != started.UnixMilli() {
+		t.Fatalf("StartedMs not carried: got %d want %d", wire.StartedMs, started.UnixMilli())
+	}
+	if wire.FinishedMs != 0 {
+		t.Fatalf("zero Finished must serialize to 0, got %d", wire.FinishedMs)
+	}
+	gotStarted := msToTime(wire.StartedMs)
+	if !gotStarted.Equal(started) {
+		t.Fatalf("Started round-trip: got %v want %v", gotStarted, started)
+	}
+	if gotFinished := msToTime(wire.FinishedMs); !gotFinished.IsZero() {
+		t.Fatalf("0 must decode to zero time, got %v", gotFinished)
+	}
+}
+
+// TestWireToEventDoneAttribution covers the EventDone attribution carried over
+// the socket: provider/model and prompt-cache hits/writes must survive the
+// WireEvent round-trip so daemon sessions get per-turn model attribution and a
+// cache-hit signal (not empty strings and zeroed cache tokens).
+func TestWireToEventDoneAttribution(t *testing.T) {
+	in := daemon.WireEvent{
+		Kind:             "done",
+		Step:             3,
+		Text:             "final answer",
+		InTokens:         120,
+		OutTokens:        45,
+		Provider:         "anthropic",
+		Model:            "claude-opus",
+		CacheReadTokens:  90,
+		CacheWriteTokens: 30,
+	}
+	got := wireToEvent(in)
+	if got.Kind != agent.EventDone {
+		t.Fatalf("kind: got %v want EventDone", got.Kind)
+	}
+	if got.Provider != "anthropic" || got.Model != "claude-opus" {
+		t.Fatalf("attribution lost: provider=%q model=%q", got.Provider, got.Model)
+	}
+	if got.CacheReadTokens != 90 || got.CacheWriteTokens != 30 {
+		t.Fatalf("cache tokens lost: read=%d write=%d", got.CacheReadTokens, got.CacheWriteTokens)
+	}
+	if got.InTokens != 120 || got.OutTokens != 45 {
+		t.Fatalf("usage tokens lost: in=%d out=%d", got.InTokens, got.OutTokens)
+	}
 }

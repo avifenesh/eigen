@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/avifenesh/eigen/internal/config"
 )
 
 // inspectorDetail renders the wide-breakpoint right inspector: a contextual
@@ -247,6 +249,92 @@ func (m *Model) inspectorFor() (string, []kv, string) {
 			{"dir", dirLabel(r.Dir)},
 			{"perm", r.Perm},
 		}, "enter: open a remote session · i: install eigen here"
+
+	case PageLive:
+		s := &m.live
+		if s.list.cursor < 0 || s.list.cursor >= len(d.Live) {
+			return "", nil, ""
+		}
+		in := d.Live[s.list.cursor]
+		updated := "unknown"
+		if in.Updated > 0 {
+			updated = relTime(in.Updated)
+		}
+		return liveLabel(in), []kv{
+			{"status", string(in.Status)},
+			{"model", in.Model},
+			{"turns", fmt.Sprintf("%d", in.Turns)},
+			{"views", fmt.Sprintf("%d", in.Views)},
+			{"updated", updated},
+			{"dir", dirLabel(in.Dir)},
+			{"id", in.ID},
+		}, "enter attach · i interrupt · x stop"
+
+	case PageMemory:
+		s := &m.memory
+		s.load(d)
+		note := s.selectedNote()
+		if note == "" {
+			return "", nil, ""
+		}
+		title := strings.TrimPrefix(strings.SplitN(note, "\n", 2)[0], "- ")
+		if title == "" {
+			title = fmt.Sprintf("note %d/%d", s.list.cursor+1, len(s.bullets))
+		}
+		return title, []kv{
+			{"note", fmt.Sprintf("%d/%d", s.list.cursor+1, len(s.bullets))},
+		}, note
+
+	case PageConfig:
+		fields := config.Fields()
+		c := &m.config
+		if c.list.cursor < 0 || c.list.cursor >= len(fields) {
+			return "", nil, ""
+		}
+		f := fields[c.list.cursor]
+		val := config.Get(d.Config, f.Key)
+		if val == "" {
+			val = "(unset)"
+		}
+		kind := "free text"
+		if opts := optionsFor(f); len(opts) > 0 {
+			if f.Multi {
+				kind = "multi-select"
+			} else {
+				kind = "one of: " + strings.Join(opts, ", ")
+			}
+		}
+		return f.Key, []kv{
+			{"value", val},
+			{"type", kind},
+		}, f.Desc
+
+	case PageProfile:
+		obs := d.Observe
+		inTok, outTok, cacheRead, cacheWrite, turns := 0, 0, 0, 0, 0
+		for _, ms := range obs.Models {
+			turns += ms.Turns
+			inTok += ms.InTokens
+			outTok += ms.OutTokens
+			cacheRead += ms.CacheReadTokens
+			cacheWrite += ms.CacheWriteTokens
+		}
+		rows := []kv{
+			{"sessions", fmt.Sprintf("%d", len(d.Sessions))},
+			{"projects", fmt.Sprintf("%d", len(d.Projects))},
+			{"turns", fmt.Sprintf("%d", turns)},
+			{"events", fmt.Sprintf("%d", obs.Records)},
+		}
+		if inTok+outTok > 0 {
+			rows = append(rows, kv{"tokens", fmt.Sprintf("%d/%d", inTok, outTok)})
+		}
+		if cacheRead+cacheWrite > 0 {
+			rows = append(rows, kv{"cache", fmt.Sprintf("%d/%d", cacheRead, cacheWrite)})
+		}
+		if errs := countTotal(obs.Errors); errs > 0 {
+			rows = append(rows, kv{"errors", fmt.Sprintf("%d", errs)})
+		}
+		return "usage", rows, "e edit profile prompt · R refresh"
 	}
 	return "", nil, ""
 }

@@ -61,7 +61,7 @@ func ShedOldToolResults(msgs []Message, keepResults int) []Message {
 		if m.Role != RoleTool || m.ToolError {
 			continue
 		}
-		if m.Text == toolResultStub || m.Text == "" {
+		if m.Text == "" || isStub(m.Text) {
 			continue
 		}
 		if kept < keepResults {
@@ -154,10 +154,21 @@ func ShedToolResults(msgs []Message, keepRounds int) []Message {
 		if m.Role != RoleTool || m.ToolError {
 			continue
 		}
-		if m.Text == toolResultStub || m.Text == "" {
+		if m.Text == "" || isStub(m.Text) {
 			continue
 		}
 		m.Text = toolResultStub
 	}
 	return out
+}
+
+// isStub reports whether text is already one of the compaction stubs, so a
+// later shed pass won't overwrite a specific note (e.g. the dropped-screenshot
+// note or the dedupe pointer) with the generic tool-result stub.
+func isStub(text string) bool {
+	switch text {
+	case toolResultStub, imagePrunedStub, duplicateResultStub:
+		return true
+	}
+	return false
 }

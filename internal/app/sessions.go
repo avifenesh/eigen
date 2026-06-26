@@ -328,6 +328,12 @@ func (p *projectsState) view(m *Model, w, h int) string {
 	p.clicks.reset()
 	if p.inside && p.proj < len(d.Projects) {
 		proj := d.Projects[p.proj]
+		// Keep the section sizes + cursor math identical to update()/enter:
+		// the unified cursor walks feed items (0..feedN-1) then sessions.
+		pf := d.feedFor(proj.Dir)
+		p.feedN = len(pf)
+		p.inner.count = p.feedN + len(proj.Sessions)
+		p.inner.clamp()
 		out := pageTitle(proj.Name, proj.Dir, w)
 		visible := h - 5
 		from, to := p.inner.window(visible)
@@ -336,11 +342,21 @@ func (p *projectsState) view(m *Model, w, h int) string {
 			titleW = 16
 		}
 		for i := from; i < to; i++ {
-			r := proj.Sessions[i]
-			line := fmt.Sprintf("%s %s %s",
-				pad(truncate(r.Title, titleW), titleW),
-				sViolet.Render(pad(fmt.Sprintf("%d", r.Msgs), 5)),
-				sDim.Render(relTime(r.Updated)))
+			var line string
+			if i < p.feedN {
+				// A feed item (project loose end): one keystroke to start it.
+				it := pf[i]
+				line = fmt.Sprintf("%s %s %s",
+					kindGlyph(it.Kind),
+					pad(truncate(it.Title, titleW), titleW),
+					sDim.Render(truncate(it.Detail, 18)))
+			} else {
+				r := proj.Sessions[i-p.feedN]
+				line = fmt.Sprintf("%s %s %s",
+					pad(truncate(r.Title, titleW), titleW),
+					sViolet.Render(pad(fmt.Sprintf("%d", r.Msgs), 5)),
+					sDim.Render(relTime(r.Updated)))
+			}
 			p.clicks.mark(lineCount(out), i)
 			out += row(i == p.inner.cursor, line) + "\n"
 		}
@@ -404,15 +420,22 @@ func (p *projectsState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
 	d := m.data
 	if p.inside && p.proj < len(d.Projects) {
 		proj := d.Projects[p.proj]
-		if idx < 0 || idx >= len(proj.Sessions) {
+		// idx is the unified feed+session index (matching view()'s marks).
+		if idx < 0 || idx >= p.feedN+len(proj.Sessions) {
 			return nil, false
 		}
-		if p.inner.cursor == idx {
-			_, cmd := m.quitWith(openAction(proj.Sessions[idx]))
+		if p.inner.cursor != idx {
+			p.inner.cursor = idx
+			return nil, true
+		}
+		// Second click on the selected row → activate it.
+		if idx < p.feedN {
+			it := d.feedFor(proj.Dir)[idx]
+			_, cmd := m.quitWith(Result{Action: ActionOpenChat, Dir: it.Dir, Task: it.Task})
 			return cmd, true
 		}
-		p.inner.cursor = idx
-		return nil, true
+		_, cmd := m.quitWith(openAction(proj.Sessions[idx-p.feedN]))
+		return cmd, true
 	}
 	if idx < 0 || idx >= len(d.Projects) {
 		return nil, false

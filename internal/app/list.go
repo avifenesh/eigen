@@ -62,15 +62,33 @@ func (l *list) key(key string, visible int) bool {
 }
 
 // window returns the [from,to) visible range for the current viewport.
+//
+// The renderer is the authority on geometry: move()/key() advance l.top against
+// update()'s estimate of the visible rows, but the page only knows its REAL row
+// budget here (layout inner height minus that page's fixed chrome). When the two
+// disagree — update() routinely sees a larger height than view()'s window — the
+// cursor can sit below l.top+visible. We re-anchor on the cursor so the selected
+// row is always inside the rendered window instead of scrolling off the bottom.
 func (l *list) window(visible int) (int, int) {
 	if visible <= 0 || l.count <= visible {
 		return 0, l.count
 	}
 	from := l.top
+	// Keep the cursor on-screen even if l.top was advanced with a different
+	// (larger) visible estimate in update().
+	if l.cursor < from {
+		from = l.cursor
+	}
+	if l.cursor >= from+visible {
+		from = l.cursor - visible + 1
+	}
 	to := from + visible
 	if to > l.count {
 		to = l.count
 		from = to - visible
+	}
+	if from < 0 {
+		from = 0
 	}
 	return from, to
 }

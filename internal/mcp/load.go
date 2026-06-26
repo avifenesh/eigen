@@ -18,6 +18,23 @@ type serverConfig struct {
 	Command []string          `json:"command"`
 	Env     map[string]string `json:"env"`
 
+	// URL and Type describe a REMOTE MCP server (Streamable HTTP transport)
+	// rather than a stdio subprocess. A remote entry has a url (and optionally a
+	// type of "http"/"sse"/"streamable-http") and NO command. Remote servers are
+	// how "connectors" (Google Workspace, Slack, Notion, …) are wired.
+	URL  string `json:"url,omitempty"`
+	Type string `json:"type,omitempty"`
+
+	// Headers are extra static HTTP headers sent on every request to a remote
+	// server (e.g. a region or tenant header).
+	Headers map[string]string `json:"http_headers,omitempty"`
+
+	// BearerTokenEnv names an environment variable holding a bearer token for a
+	// remote server; when set, eigen sends "Authorization: Bearer <value>". This
+	// is the simple static-credential path; OAuth-managed tokens (Phase 2) are
+	// supplied by the connector layer instead and take precedence.
+	BearerTokenEnv string `json:"bearer_token_env_var,omitempty"`
+
 	// Description is the one-line "what is this server" shown to the model at
 	// the top level of progressive disclosure (e.g. "drive the user's real
 	// Chrome", "isolated Linux sandbox"). REQUIRED in practice: it's how eigen
@@ -40,6 +57,12 @@ type serverConfig struct {
 	// Disabled skips this server entirely (kept in config, not connected) —
 	// toggled from the app's plugins page.
 	Disabled bool `json:"disabled,omitempty"`
+
+	// SecretEnvKeys names env vars whose VALUES live in the OS keychain, not in
+	// this file (e.g. ["GITHUB_PERSONAL_ACCESS_TOKEN"]). The values are merged
+	// into the server's env at connect time from keychain entry <secret_service>/
+	// <name>. This keeps API keys out of plaintext mcp.json.
+	SecretEnvKeys []string `json:"secret_env_keys,omitempty"`
 }
 
 type mcpConfig struct {
@@ -47,6 +70,13 @@ type mcpConfig struct {
 }
 
 const connectTimeout = 15 * time.Second
+
+// connectFailCooldown is how long a failed lazy connect is remembered so that
+// repeated tool calls fail fast (returning the cached error) instead of each
+// spawning a fresh subprocess and blocking up to connectTimeout before failing
+// the same way. It's short enough that a server which comes up after a transient
+// failure recovers on the next call past the window.
+const connectFailCooldown = 5 * time.Second
 
 // Handle is a per-session MCP resource returned by LoadTools. It may represent
 // a lazily-started server; callers should keep it for the session lifetime and
@@ -79,14 +109,34 @@ func LoadTools(ctx context.Context, path string) (defs []tool.Definition, client
 		if sc.Disabled {
 			continue
 		}
-		if sc.Name == "" || len(sc.Command) == 0 {
-			errs = append(errs, fmt.Errorf("mcp server with empty name or command"))
+		remote := isRemoteServer(sc)
+		if sc.Name == "" {
+			errs = append(errs, fmt.Errorf("mcp server with empty name"))
 			continue
 		}
+		if !remote && len(sc.Command) == 0 {
+			errs = append(errs, fmt.Errorf("mcp %q: empty command (and no remote url)", sc.Name))
+			continue
+		}
+		// Dial a probe connection to learn tool schemas (closed before serving),
+		// and build the lazy client that re-dials on first real tool call. Both
+		// transports go through the same probe→list→wrap path below.
 		cctx, cancel := context.WithTimeout(ctx, connectTimeout)
-		env := serverEnv(sc.Env)
-		command := expandCommand(sc.Command, env)
-		probe, err := Connect(cctx, command, env)
+		var (
+			probe  session
+			err    error
+			client *lazyClient
+		)
+		if remote {
+			d := httpDialerFor(sc)
+			probe, err = ConnectHTTP(cctx, d)
+			client = newLazyHTTPClient(sc.Name, d)
+		} else {
+			env := serverEnvWithSecrets(sc)
+			command := expandCommand(sc.Command, env)
+			probe, err = Connect(cctx, command, env)
+			client = newLazyClient(sc.Name, command, env)
+		}
 		cancel()
 		if err != nil {
 			errs = append(errs, fmt.Errorf("mcp %q: %w", sc.Name, err))
@@ -107,7 +157,6 @@ func LoadTools(ctx context.Context, path string) (defs []tool.Definition, client
 			gist = firstSentence(probe.Instructions())
 		}
 		_ = probe.Close()
-		client := newLazyClient(sc.Name, command, env)
 		clients = append(clients, client)
 		if gist == "" {
 			gist = sc.Name + " MCP server"
@@ -130,40 +179,106 @@ func LoadTools(ctx context.Context, path string) (defs []tool.Definition, client
 
 // lazyClient owns a per-session MCP server that is started only when one of
 // its tools is actually invoked. LoadTools still probes each server once to
-// learn schemas for search_tools, but those probe processes are closed before
-// the session starts serving turns.
+// learn schemas for search_tools, but those probe connections are closed before
+// the session starts serving turns. The transport (stdio subprocess or remote
+// Streamable HTTP) is hidden behind the `dial` func, so a connector and a local
+// server share this lazy lifecycle.
 type lazyClient struct {
-	name    string
-	command []string
-	env     []string
-	connect func(context.Context, []string, []string) (*Client, error)
+	name string
+	// dial opens a fresh connection (stdio: spawn the subprocess; HTTP: open the
+	// remote session). Both return a `session`.
+	dial func(context.Context) (session, error)
+
+	// failCooldown is how long a failed connect is remembered (fail fast). Zero
+	// disables the cooldown entirely — every failed call reconnects immediately.
+	failCooldown time.Duration
+	// clock is overridable in tests; nil means time.Now.
+	clock func() time.Time
 
 	mu     sync.Mutex
-	client *Client
+	client session
 	closed bool
+
+	// lastErr / retryAfter cache the most recent connect failure. While now() is
+	// before retryAfter, get() returns lastErr without spawning a process, so a
+	// server that's down doesn't stall every tool call for connectTimeout.
+	lastErr    error
+	retryAfter time.Time
 }
 
+// newLazyClient builds a lazy stdio server (spawns command+env on first use).
 func newLazyClient(name string, command, env []string) *lazyClient {
-	return &lazyClient{name: name, command: append([]string(nil), command...), env: append([]string(nil), env...), connect: Connect}
+	cmd := append([]string(nil), command...)
+	envc := append([]string(nil), env...)
+	return &lazyClient{
+		name: name,
+		dial: func(ctx context.Context) (session, error) {
+			return Connect(ctx, cmd, envc)
+		},
+		failCooldown: connectFailCooldown,
+	}
 }
 
-func (c *lazyClient) get(ctx context.Context) (*Client, error) {
+// newLazyHTTPClient builds a lazy REMOTE server (opens the HTTP session on first
+// use). The dialer's AuthHeader is re-read per connect, so a token refreshed
+// between connects is picked up.
+func newLazyHTTPClient(name string, d httpDialer) *lazyClient {
+	return &lazyClient{
+		name: name,
+		dial: func(ctx context.Context) (session, error) {
+			return ConnectHTTP(ctx, d)
+		},
+		failCooldown: connectFailCooldown,
+	}
+}
+
+func (c *lazyClient) get(ctx context.Context) (session, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
 		return nil, fmt.Errorf("mcp %q: client closed", c.name)
 	}
 	if c.client != nil {
-		return c.client, nil
+		if c.client.alive() {
+			return c.client, nil
+		}
+		// The cached connection died (stdio read loop ended, or the HTTP session
+		// was marked dead). Drop it and reconnect below rather than handing out a
+		// corpse that fails every call forever.
+		_ = c.client.Close()
+		c.client = nil
+	}
+	// Fail fast while a recent connect failure is still cooling down: a server
+	// that's down (binary missing, crash on startup, remote unreachable) would
+	// otherwise have every tool call re-dial and block up to connectTimeout
+	// before failing identically. Past the cooldown we fall through and retry, so
+	// a server that recovers is picked up.
+	if c.lastErr != nil && c.now().Before(c.retryAfter) {
+		return nil, c.lastErr
 	}
 	cctx, cancel := context.WithTimeout(ctx, connectTimeout)
-	client, err := c.connect(cctx, c.command, c.env)
+	client, err := c.dial(cctx)
 	cancel()
 	if err != nil {
-		return nil, fmt.Errorf("mcp %q: %w", c.name, err)
+		c.lastErr = fmt.Errorf("mcp %q: %w", c.name, err)
+		if c.failCooldown > 0 {
+			c.retryAfter = c.now().Add(c.failCooldown)
+		}
+		return nil, c.lastErr
 	}
+	c.lastErr = nil
+	c.retryAfter = time.Time{}
 	c.client = client
 	return client, nil
+}
+
+// now returns the lazyClient's clock, defaulting to time.Now when unset (tests
+// override it to exercise the cooldown deterministically).
+func (c *lazyClient) now() time.Time {
+	if c.clock != nil {
+		return c.clock()
+	}
+	return time.Now()
 }
 
 func (c *lazyClient) CallToolRich(ctx context.Context, name string, args json.RawMessage) (ToolResult, error) {
@@ -196,6 +311,53 @@ func (c *lazyClient) started() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.client != nil
+}
+
+// RemoteAuthProvider, when set, supplies the Authorization-header func for a
+// remote MCP server (keyed by server name + url). It's the seam the connector /
+// OAuth layer (Phase 2+) plugs into: it returns a func that yields the current
+// "Bearer <token>" (refreshed transparently), and ok=false when it has no
+// managed credential for this server (so eigen falls back to the static
+// bearer_token_env_var path). Left nil in plain stdio/remote use.
+var RemoteAuthProvider func(name, url string) (authHeader func() string, ok bool)
+
+// httpDialerFor builds the remote dialer for a server config: an OAuth-managed
+// auth header from RemoteAuthProvider if available, else the static
+// bearer_token_env_var, else no auth. Static headers ride along either way.
+func httpDialerFor(sc serverConfig) httpDialer {
+	d := httpDialer{URL: strings.TrimSpace(sc.URL), HTTPHeaders: sc.Headers}
+	if RemoteAuthProvider != nil {
+		if auth, ok := RemoteAuthProvider(sc.Name, d.URL); ok {
+			d.AuthHeader = auth
+			return d
+		}
+	}
+	if env := strings.TrimSpace(sc.BearerTokenEnv); env != "" {
+		d.AuthHeader = func() string {
+			if v := strings.TrimSpace(os.Getenv(env)); v != "" {
+				return "Bearer " + v
+			}
+			return ""
+		}
+	}
+	return d
+}
+
+// isRemoteServer reports whether sc describes a remote (HTTP / SSE) MCP server
+// rather than a stdio subprocess. A remote entry is identified by a transport
+// type of http/sse, or by a bare URL with no command — the shape the plugin
+// layer persists for remote servers. A stdio entry that also happens to carry a
+// command is treated as stdio (command wins), so a future remote transport can
+// be added without re-routing those.
+func isRemoteServer(sc serverConfig) bool {
+	if len(sc.Command) > 0 {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(sc.Type)) {
+	case "http", "sse", "streamable-http", "streamable_http":
+		return true
+	}
+	return strings.TrimSpace(sc.URL) != ""
 }
 
 // toolAllowed applies the per-server allowlist/excludelist to a server-declared
@@ -395,6 +557,24 @@ func serverEnv(extra map[string]string) []string {
 	return env
 }
 
+// serverEnvWithSecrets is serverEnv plus the server's keychain-stored secret env
+// (SecretEnvKeys → values from the OS keychain), so an API key never sits in
+// plaintext mcp.json. Keychain values are appended after the plaintext env, so a
+// stored secret wins over any stale plaintext value for the same key.
+func serverEnvWithSecrets(sc serverConfig) []string {
+	env := serverEnv(sc.Env)
+	if len(sc.SecretEnvKeys) == 0 {
+		return env
+	}
+	secrets := serverSecrets(sc.Name)
+	for _, k := range sc.SecretEnvKeys {
+		if v, ok := secrets[k]; ok {
+			env = append(env, k+"="+v)
+		}
+	}
+	return env
+}
+
 // expandCommand expands ${VAR} / $VAR references in a server's command and args
 // against the given environment (os.Environ + configured env). exec.Command does
 // NOT do shell expansion, so a config like ["node", "${EIGEN_PLUGIN_ROOT}/x.js"]
@@ -450,8 +630,11 @@ func firstSentence(s string) string {
 		s = s[:i]
 	}
 	s = strings.TrimSpace(s)
-	if len(s) > 120 {
-		s = s[:117] + "…"
+	// Truncate by runes, not bytes: a byte slice s[:117] can cut mid-rune for
+	// non-ASCII (accented/CJK/emoji) first lines, yielding a broken character in
+	// the Level-0 group description.
+	if r := []rune(s); len(r) > 120 {
+		s = string(r[:117]) + "…"
 	}
 	return s
 }

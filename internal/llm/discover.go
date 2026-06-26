@@ -181,21 +181,41 @@ func listAnthropicModels(ctx context.Context) ([]string, error) {
 	return listJSON(ctx, "https://api.anthropic.com/v1/models?limit=100", headers)
 }
 
-// listBedrockModels uses the Bedrock control-plane ListFoundationModels +
-// ListInferenceProfiles (SigV4). Inference profiles are what eigen actually
-// invokes (us./global. prefixes), so both are listed.
+// bedrockDiscoverProfile resolves the AWS profile for Bedrock discovery the
+// same way NewConverse does, so discovery probes the account chat actually
+// uses: EIGEN_CONVERSE_PROFILE, then AWS_PROFILE, then "aviary".
+func bedrockDiscoverProfile() string {
+	return firstNonEmpty(os.Getenv("EIGEN_CONVERSE_PROFILE"), os.Getenv("AWS_PROFILE"), "aviary")
+}
+
+// listBedrockModels uses the Bedrock control-plane ListInferenceProfiles.
+// Inference profiles are what eigen actually invokes (us./global. prefixes).
+// Auth mirrors NewConverse: prefer the Bedrock bearer token
+// (AWS_BEARER_TOKEN_BEDROCK) via an Authorization header, else SigV4 from the
+// converse profile (EIGEN_CONVERSE_PROFILE / AWS_PROFILE / aviary). Using the
+// same profile/token as chat means discovery probes the account the user
+// actually talks to, not a stray "default".
 func listBedrockModels(ctx context.Context) ([]string, error) {
-	creds, err := loadAWSCreds(firstNonEmpty(os.Getenv("AWS_PROFILE"), "default"))
-	if err != nil {
-		return nil, errSkip{"no aws credentials"}
-	}
 	region := firstNonEmpty(os.Getenv("EIGEN_CONVERSE_REGION"), os.Getenv("AWS_REGION"), "us-east-2")
+	bearer := os.Getenv("AWS_BEARER_TOKEN_BEDROCK")
+	var creds awsCreds
+	if bearer == "" {
+		var err error
+		creds, err = loadAWSCreds(bedrockDiscoverProfile())
+		if err != nil {
+			return nil, errSkip{"no aws credentials"}
+		}
+	}
 	get := func(url string) ([]byte, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return nil, err
 		}
-		signV4(req, nil, creds, "bedrock", region, time.Now())
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		} else {
+			signV4(req, nil, creds, "bedrock", region, time.Now())
+		}
 		resp, err := discoverClient.Do(req)
 		if err != nil {
 			return nil, err

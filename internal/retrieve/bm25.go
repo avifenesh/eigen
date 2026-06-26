@@ -83,20 +83,23 @@ func splitIdentifier(w string) []string {
 }
 
 // bm25Index is a lexical index over a chunk set: per-chunk term frequencies,
-// document frequencies, and length stats. Rebuilt from the chunk slice (cheap:
-// it just re-tokenizes the in-memory chunk text), so it always reflects the
-// current corpus without separate persistence.
+// document frequencies, length stats, and an inverted index (term -> chunks that
+// contain it). Rebuilt from the chunk slice (cheap: it just re-tokenizes the
+// in-memory chunk text), so it always reflects the current corpus without
+// separate persistence.
 type bm25Index struct {
-	tf     []map[string]int // term frequencies per chunk (index-aligned with chunks)
-	docLen []int            // token count per chunk
-	df     map[string]int   // document frequency per term
-	avgLen float64
-	n      int
+	tf       []map[string]int // term frequencies per chunk (index-aligned with chunks)
+	docLen   []int            // token count per chunk
+	df       map[string]int   // document frequency per term
+	postings map[string][]int // inverted index: term -> ascending chunk indices containing it
+	avgLen   float64
+	n        int
 }
 
-// buildBM25 tokenizes every chunk's path+text into the lexical index.
+// buildBM25 tokenizes every chunk's path+text into the lexical index, including
+// the inverted index that lets rank touch only chunks that share a query term.
 func buildBM25(chunks []Chunk) *bm25Index {
-	bi := &bm25Index{df: map[string]int{}, n: len(chunks)}
+	bi := &bm25Index{df: map[string]int{}, postings: map[string][]int{}, n: len(chunks)}
 	bi.tf = make([]map[string]int, len(chunks))
 	bi.docLen = make([]int, len(chunks))
 	total := 0
@@ -112,12 +115,35 @@ func buildBM25(chunks []Chunk) *bm25Index {
 		total += len(toks)
 		for t := range freq {
 			bi.df[t]++
+			// Chunks are visited in ascending order, so each posting list stays sorted.
+			bi.postings[t] = append(bi.postings[t], i)
 		}
 	}
 	if bi.n > 0 {
 		bi.avgLen = float64(total) / float64(bi.n)
 	}
 	return bi
+}
+
+// idf is the inverse document frequency of a term with the standard +0.5
+// smoothing. df is the term's document frequency; a df of 0 (term absent from
+// the corpus) contributes nothing.
+func (bi *bm25Index) idf(df int) float64 {
+	if df == 0 {
+		return 0
+	}
+	return math.Log(1 + (float64(bi.n)-float64(df)+0.5)/(float64(df)+0.5))
+}
+
+// termWeight is the BM25 contribution of a single term to one chunk, given the
+// term's idf, its frequency f in the chunk, and the chunk's token length dl.
+func (bi *bm25Index) termWeight(idf float64, f, dl int) float64 {
+	if f == 0 {
+		return 0
+	}
+	num := float64(f) * (bm25K1 + 1)
+	den := float64(f) + bm25K1*(1-bm25B+bm25B*float64(dl)/bi.avgLen)
+	return idf * num / den
 }
 
 // score returns the BM25 score of chunk i for the query terms. Zero when no
@@ -127,44 +153,58 @@ func (bi *bm25Index) score(i int, queryTerms []string) float64 {
 		return 0
 	}
 	tf := bi.tf[i]
-	dl := float64(bi.docLen[i])
+	dl := bi.docLen[i]
 	var s float64
 	for _, t := range queryTerms {
-		f := tf[t]
-		if f == 0 {
-			continue
-		}
-		df := bi.df[t]
-		if df == 0 {
-			continue
-		}
-		// idf with the standard +0.5 smoothing (clamped non-negative).
-		idf := math.Log(1 + (float64(bi.n)-float64(df)+0.5)/(float64(df)+0.5))
-		num := float64(f) * (bm25K1 + 1)
-		den := float64(f) + bm25K1*(1-bm25B+bm25B*dl/bi.avgLen)
-		s += idf * num / den
+		s += bi.termWeight(bi.idf(bi.df[t]), tf[t], dl)
 	}
 	return s
 }
 
 // rank returns chunk indices ordered by BM25 score (descending), excluding
 // zero-score chunks. Used standalone (no embedder) and as one input to RRF.
+//
+// It walks the inverted index rather than every chunk: only chunks that share at
+// least one query term can score above zero, so accumulating over the union of
+// the query terms' posting lists is O(matching postings) instead of O(N*Q).
 func (bi *bm25Index) rank(query string) []int {
 	terms := tokenize(query)
-	if len(terms) == 0 || bi.n == 0 {
+	if len(terms) == 0 || bi.n == 0 || bi.avgLen == 0 {
 		return nil
+	}
+	// De-dupe query terms so a repeated term is scored once per chunk.
+	scores := map[int]float64{}
+	seen := make(map[string]bool, len(terms))
+	for _, t := range terms {
+		if seen[t] {
+			continue
+		}
+		seen[t] = true
+		idf := bi.idf(bi.df[t])
+		if idf == 0 {
+			continue // term absent from the corpus
+		}
+		for _, i := range bi.postings[t] {
+			scores[i] += bi.termWeight(idf, bi.tf[i][t], bi.docLen[i])
+		}
 	}
 	type sc struct {
 		i int
 		s float64
 	}
-	scored := make([]sc, 0, bi.n)
-	for i := 0; i < bi.n; i++ {
-		if s := bi.score(i, terms); s > 0 {
+	scored := make([]sc, 0, len(scores))
+	for i, s := range scores {
+		if s > 0 {
 			scored = append(scored, sc{i, s})
 		}
 	}
-	sort.Slice(scored, func(a, b int) bool { return scored[a].s > scored[b].s })
+	// Map iteration is unordered; the index tiebreak keeps output deterministic.
+	sort.Slice(scored, func(a, b int) bool {
+		if scored[a].s != scored[b].s {
+			return scored[a].s > scored[b].s
+		}
+		return scored[a].i < scored[b].i
+	})
 	out := make([]int, len(scored))
 	for j, x := range scored {
 		out[j] = x.i

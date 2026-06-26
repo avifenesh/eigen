@@ -595,6 +595,16 @@ func (m *Model) contentClick(localX, localY int) (tea.Cmd, bool) {
 		return m.config.clickAt(m, localY)
 	case PageMemory:
 		return m.memory.clickAt(m, localY)
+	case PageSkills:
+		return m.skills.clickAt(m, localY)
+	case PageModels:
+		return m.models.clickAt(m, localY)
+	case PageProviders:
+		return m.providers.clickAt(m, localY)
+	case PageObserve:
+		return m.observe.clickAt(m, localY)
+	case PageCrons:
+		return m.crons.clickAt(m, localY)
 	case PagePlugins:
 		return m.plugins.clickAt(m, localX, localY)
 	case PageProfile:
@@ -725,17 +735,26 @@ func padLeft(s string, n int) string {
 // page's mission so every surface has a persistent, high-signal headline even
 // when its list content is scrolled.
 func (m *Model) renderTitleBar(l appLayout) string {
-	left := sTitle.Render(" eigen ") + sFaint.Render("›") + " " + sText.Render(m.activeName())
+	mark := sTitle.Render(" eigen ") + sFaint.Render("›") + " " + sText.Render(m.activeName())
+	left := mark
 	if purpose := m.activePurpose(); purpose != "" && l.title.w >= 72 {
 		left += sFaint.Render(" · " + purpose)
 	}
-	rightText := m.titleStats()
+	stats := m.titleStats()
+	rightText := stats
 	if action := m.activeAction(); action != "" && l.title.w >= 96 {
 		rightText += " · " + action
 	}
 	right := sFaint.Render(rightText + " ")
 	if lipgloss.Width(left)+lipgloss.Width(right)+1 > l.title.w {
-		left = sTitle.Render(" eigen ") + sFaint.Render("›") + " " + sText.Render(m.activeName())
+		// Shed the optional suffixes (right action first, then the left
+		// purpose) before resorting to a hard truncate so the highest-signal
+		// breadcrumb and stats survive on narrow widths.
+		left = mark
+		right = sFaint.Render(stats + " ")
+		if lipgloss.Width(left)+lipgloss.Width(right)+1 > l.title.w {
+			return truncate(left+" "+right, l.title.w)
+		}
 	}
 	gap := l.title.w - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {

@@ -19,20 +19,23 @@ const (
 //	trivial  "small, well-scoped tasks"                       → tier 1 (grok/glm/composer)
 //	easy     "well-scoped, needs iteration, little reasoning"  → tier 2 (sonnet)
 //	medium   "not fully scoped, reasoning, maybe long-running" → tier 3 (opus)
-//	hard     "not scoped, reasoning, long-running"             → the DEFAULT model
-//	         (whatever is currently set — opus by default)
+//	hard     "not scoped, reasoning, long-running"             → the strongest
+//	         capable tier present (tier 4 if it ever exists, else the best
+//	         model on hand — opus today)
 type Difficulty int
 
 const (
 	DiffTrivial Difficulty = iota // small, well-scoped (rename, format, tiny edit)
 	DiffEasy                      // well-scoped, iterative, little reasoning
 	DiffMedium                    // not fully scoped, needs reasoning, may run long
-	DiffHard                      // unscoped + reasoning + long-running → default model
+	DiffHard                      // unscoped + reasoning + long-running → strongest capable tier
 )
 
 // targetTier is the quality tier a difficulty demands, per the user's ladder:
-// trivial→1 (grok/glm/composer), easy→2 (sonnet), medium→3 (opus). Hard is not
-// tier-mapped at all — it keeps the user's current DEFAULT model (see Route).
+// trivial→1 (grok/glm/composer), easy→2 (sonnet), medium→3 (opus). Hard targets
+// TierFrontier (4) — no tier-4 model exists today, so Route's "no model reaches
+// the target → take the highest tier present" fallback sends hard work to the
+// strongest capable model on hand (opus today).
 func targetTier(d Difficulty) Tier {
 	switch d {
 	case DiffTrivial:
@@ -65,21 +68,20 @@ type RouteRequest struct {
 }
 
 // Route picks the model for req per the user's quality-tier ladder:
-//  1. HARD general tasks are NOT routed: they keep the user's current default
-//     model (opus by default) — Route returns no
-//     choice and the caller stays put. Hard search/vision tasks still route,
-//     because the default may lack the capability.
-//  2. Keep only CAPABLE candidates (required search/vision flag, big-enough
-//     context window).
-//  3. Target tier = targetTier(difficulty). Pick the LOWEST tier >= target
+//  1. Keep only CAPABLE candidates (required search/vision/social flag,
+//     big-enough context window). No capable candidate → no choice.
+//  2. Target tier = targetTier(difficulty). Pick the LOWEST tier >= target
 //     (simple work goes to tier-1, never wastefully up); if no capable model
 //     reaches the target, take the highest tier present (never refuse, do the
-//     task as well as possible).
-//  4. Within the chosen tier: prefer non-Bedrock (spare the employer-paid
-//     account), then faster.
+//     task as well as possible). HARD work targets tier 4, which no model
+//     reaches today, so it lands on the strongest capable model on hand (opus).
+//  3. Within the chosen tier: task affinity (Strict for general, Design for
+//     frontend), then within-tier Rank, then non-Bedrock (spare the
+//     employer-paid account) as a true tiebreak, then faster.
 //
-// Returns the chosen model ID and true, or "" and false when routing should
-// not change the model (hard general task, or no capable candidate).
+// Returns the chosen model ID and true, or "" and false when no candidate is
+// capable of the task. The caller compares the chosen model to the active one
+// and skips a redundant switch when they already match.
 func Route(req RouteRequest) (string, bool) {
 	capable := make([]string, 0, len(req.Candidates))
 	for _, id := range req.Candidates {

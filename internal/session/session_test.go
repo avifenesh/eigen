@@ -1,8 +1,11 @@
 package session
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -270,6 +273,152 @@ func TestDeleteForeignKeepsSourceFile(t *testing.T) {
 	if _, err := os.Stat(src); err != nil {
 		t.Fatalf("claude source file must not be deleted: %v", err)
 	}
+}
+
+// TestConcurrentSavesDoNotCorruptIndex mimics the real deployment: several
+// unsynchronized Store instances (GUI project dirs, ExportSession, the app's
+// long-lived store) sharing one ~/.eigen/sessions.json and saving at once. The
+// atomic temp-file+rename in save() must guarantee the index is always
+// complete/parsable JSON — never a half-written clobber — and that the last
+// writer wins.
+func TestConcurrentSavesDoNotCorruptIndex(t *testing.T) {
+	home := isolate(t)
+
+	// Each goroutine gets its own Store (separate mutex), so the only protection
+	// against a corrupt file is save() being atomic.
+	const writers = 12
+	const rounds = 40
+	stores := make([]*Store, writers)
+	for i := range stores {
+		s, err := Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Give each store a distinct meta so the serialized payloads differ.
+		s.metas[id(transcript.SourceEigen, filepath.Join(home, "w", string(rune('a'+i))))] =
+			&Meta{ID: id(transcript.SourceEigen, string(rune('a'+i))), Source: transcript.SourceEigen}
+		stores[i] = s
+	}
+
+	var wg sync.WaitGroup
+	for _, s := range stores {
+		wg.Add(1)
+		go func(s *Store) {
+			defer wg.Done()
+			for r := 0; r < rounds; r++ {
+				if err := s.Save(); err != nil {
+					t.Errorf("Save failed: %v", err)
+					return
+				}
+			}
+		}(s)
+	}
+	wg.Wait()
+
+	// The index must be intact, parsable JSON after the storm of concurrent saves.
+	b, err := os.ReadFile(filepath.Join(home, ".eigen", "sessions.json"))
+	if err != nil {
+		t.Fatalf("index unreadable after concurrent saves: %v", err)
+	}
+	var list []*Meta
+	if err := json.Unmarshal(b, &list); err != nil {
+		t.Fatalf("index corrupted by concurrent saves: %v\n%s", err, b)
+	}
+	if len(list) != 1 {
+		t.Fatalf("each store holds exactly one meta; index should round-trip 1, got %d", len(list))
+	}
+
+	// No temp turds left behind by the atomic-rename dance.
+	leftover, _ := filepath.Glob(filepath.Join(home, ".eigen", "sessions-*.json.tmp"))
+	if len(leftover) != 0 {
+		t.Fatalf("temp files leaked after save: %v", leftover)
+	}
+}
+
+// fixedTitler is a deterministic Titler stub for the background-titling tests.
+type fixedTitler struct{ title string }
+
+func (f fixedTitler) Title(ctx context.Context, head string) (string, error) {
+	return f.title, nil
+}
+
+// TestTitleUntitledFillsEmptyTitle verifies the background titler actually
+// lands a title on an untitled session via the guarded id re-lookup.
+func TestTitleUntitledFillsEmptyTitle(t *testing.T) {
+	home := isolate(t)
+	writeClaude(t, home, "s.jsonl", "untitled opener", "ok")
+
+	s, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Discover(); err != nil {
+		t.Fatal(err)
+	}
+	id := s.List()[0].ID
+	// Discover's peek already titled it from the first user line; clear it so we
+	// exercise the background fill path.
+	s.mu.Lock()
+	s.metas[id].Title = ""
+	s.mu.Unlock()
+
+	s.TitleUntitled(context.Background(), fixedTitler{title: "Background Title"}, 10)
+
+	// Read the title under s.mu — the worker writes it under the lock, so any
+	// unguarded read here would itself be a race (and fail -race).
+	title := func() string {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.metas[id].Title
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if title() == "Background Title" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("title not filled by background titler, got %q", title())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// TestTitleUntitledRaceWithDiscover runs the background titler concurrently with
+// repeated Discover passes (which mutate the shared *Meta under s.mu). Under
+// `go test -race` this fails if the worker reads m.Source/m.Origin or writes
+// m.Title off the live map without the lock.
+func TestTitleUntitledRaceWithDiscover(t *testing.T) {
+	home := isolate(t)
+	for i := 0; i < 8; i++ {
+		writeClaude(t, home, "s"+string(rune('a'+i))+".jsonl", "opener "+string(rune('a'+i)), "ok")
+	}
+
+	s, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Discover(); err != nil {
+		t.Fatal(err)
+	}
+	// Force every session back to untitled + un-peeked so both Discover's peek
+	// and the background titler contend over the same metas.
+	s.mu.Lock()
+	for _, m := range s.metas {
+		m.Title = ""
+		m.PeekVer = 0
+	}
+	s.mu.Unlock()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 20; i++ {
+			_ = s.Discover()
+		}
+	}()
+	s.TitleUntitled(context.Background(), fixedTitler{title: "T"}, 0)
+	wg.Wait()
 }
 
 func TestExportWritesEigenJSONL(t *testing.T) {

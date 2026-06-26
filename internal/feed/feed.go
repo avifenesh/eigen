@@ -204,6 +204,66 @@ func FilterDismissed(items []Item) []Item {
 	return out
 }
 
+// --- recently-surfaced suggestions --------------------------------------
+
+// Model suggestions are expensive and tend to re-propose the same idea each
+// scan. We keep a rolling set of recently-surfaced suggestion keys (same
+// content-key + TTL pattern as dismissals) and filter them out of fresh model
+// output, so ideas don't repeat run over run. A suggestion resurfaces only
+// once it ages out — by then it's a fair reminder again.
+
+// seenSuggestTTL is how long a surfaced suggestion stays suppressed. Long
+// enough that the same idea doesn't repeat across the day's scans, short
+// enough that a still-relevant idea can come back later.
+const seenSuggestTTL = 7 * 24 * time.Hour
+
+// seenSuggestPath is the recently-surfaced suggestion store.
+func seenSuggestPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".eigen", "feed-suggest-seen.json")
+}
+
+// loadSeenSuggest returns the live (unexpired) set of surfaced suggestion keys.
+func loadSeenSuggest() map[string]time.Time {
+	out := map[string]time.Time{}
+	b, err := os.ReadFile(seenSuggestPath())
+	if err != nil {
+		return out
+	}
+	var raw map[string]time.Time
+	if json.Unmarshal(b, &raw) != nil {
+		return out
+	}
+	for k, t := range raw {
+		if time.Since(t) < seenSuggestTTL {
+			out[k] = t
+		}
+	}
+	return out
+}
+
+// recordSeenSuggest stamps the given suggestion keys as surfaced (merging into
+// the live set and dropping expired entries). Best-effort.
+func recordSeenSuggest(items []Item) {
+	if len(items) == 0 {
+		return
+	}
+	seen := loadSeenSuggest() // already pruned of expired keys
+	now := time.Now()
+	for _, it := range items {
+		seen[it.Key()] = now
+	}
+	b, err := json.Marshal(seen)
+	if err != nil {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(seenSuggestPath()), 0o755)
+	tmp := seenSuggestPath() + ".tmp"
+	if os.WriteFile(tmp, b, 0o644) == nil {
+		_ = os.Rename(tmp, seenSuggestPath())
+	}
+}
+
 // Top selects up to limit items in rank order, capping each kind at perKind
 // so one noisy source (e.g. a busy GitHub week) can't crowd the others off
 // the home page. Skipped items backfill at the end if the limit isn't met.

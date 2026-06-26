@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bufio"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -42,13 +43,17 @@ type Anthropic struct {
 }
 
 const (
-	anthropicURL     = "https://api.anthropic.com/v1/messages?beta=true"
 	anthropicVersion = "2023-06-01"
 	// claudeCodeSpoof must be the first system block for OAuth-token requests;
 	// the API rejects OAuth access whose system prompt isn't Claude Code's.
 	claudeCodeSpoof = "You are Claude Code, Anthropic's official CLI for Claude."
 	anthropicMaxTok = 32000
 )
+
+// anthropicURL is the native Messages endpoint. It is a var (not a const) only
+// so a test can point Complete/Stream at an httptest server; production never
+// reassigns it.
+var anthropicURL = "https://api.anthropic.com/v1/messages?beta=true"
 
 // anthropicBeta is the beta-flag set Claude Code sends. oauth-2025-04-20 is
 // mandatory for OAuth tokens; the rest unlock the features eigen uses (1M
@@ -178,7 +183,7 @@ type anthropicTool struct {
 }
 
 // anthropicContent is one block in a message's content array (text / image /
-// tool_use / tool_result). Only the fields for the active type are set.
+// thinking / tool_use / tool_result). Only the fields for the active type are set.
 type anthropicContent struct {
 	Type      string             `json:"type"`
 	Text      string             `json:"text,omitempty"`
@@ -189,6 +194,13 @@ type anthropicContent struct {
 	ToolUseID string             `json:"tool_use_id,omitempty"` // tool_result
 	Content   any                `json:"content,omitempty"`     // tool_result: string, or []anthropicContent (text+image)
 	IsError   bool               `json:"is_error,omitempty"`    // tool_result
+	// Thinking + Signature carry an interleaved-thinking block. With the
+	// interleaved-thinking beta enabled, Anthropic returns a signed thinking
+	// block on a turn that also uses tools, and expects that exact signed block
+	// echoed back (preceding the tool_use) on the next request — dropping it
+	// loses chain-of-thought and is rejected under strict signature validation.
+	Thinking  string `json:"thinking,omitempty"`  // thinking
+	Signature string `json:"signature,omitempty"` // thinking
 }
 
 // anthropicImageSrc is the base64 image source for an "image" content block.
@@ -211,15 +223,18 @@ type anthropicRequest struct {
 	Tools        []anthropicTool      `json:"tools,omitempty"`
 	Thinking     json.RawMessage      `json:"thinking,omitempty"`
 	OutputConfig json.RawMessage      `json:"output_config,omitempty"`
+	Stream       bool                 `json:"stream,omitempty"`
 }
 
 type anthropicReply struct {
 	Content []struct {
-		Type  string          `json:"type"`
-		Text  string          `json:"text"`
-		ID    string          `json:"id"`
-		Name  string          `json:"name"`
-		Input json.RawMessage `json:"input"`
+		Type      string          `json:"type"`
+		Text      string          `json:"text"`
+		ID        string          `json:"id"`
+		Name      string          `json:"name"`
+		Input     json.RawMessage `json:"input"`
+		Thinking  string          `json:"thinking"`  // thinking block
+		Signature string          `json:"signature"` // thinking block (interleaved)
 	} `json:"content"`
 	StopReason string `json:"stop_reason"`
 	Usage      struct {
@@ -234,10 +249,9 @@ type anthropicReply struct {
 	} `json:"error"`
 }
 
-func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error) {
-	if len(req.Messages) == 0 {
-		return nil, fmt.Errorf("request has no messages")
-	}
+// buildBody builds the native Messages request JSON. stream sets stream:true so
+// Complete and Stream share one request shape (the only difference is the flag).
+func (a *Anthropic) buildBody(req Request, stream bool) ([]byte, error) {
 	thinkingBudget, effort, adaptive := a.snapshotThinking()
 	maxTokens := anthropicMaxTok
 	if thinkingBudget > 0 && maxTokens <= thinkingBudget {
@@ -249,6 +263,7 @@ func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error
 		System:    a.systemBlocks(req.System),
 		Messages:  anthropicMessages(req),
 		Tools:     anthropicTools(req.Tools, a.cache),
+		Stream:    stream,
 	}
 	// Thinking: adaptive models use thinking.type=adaptive + output_config.effort;
 	// budget models use thinking.type=enabled + budget_tokens.
@@ -259,8 +274,14 @@ func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error
 	case !adaptive && thinkingBudget > 0:
 		payload.Thinking = json.RawMessage(fmt.Sprintf(`{"type":"enabled","budget_tokens":%d}`, thinkingBudget))
 	}
+	return json.Marshal(payload)
+}
 
-	body, err := json.Marshal(payload)
+func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error) {
+	if len(req.Messages) == 0 {
+		return nil, fmt.Errorf("request has no messages")
+	}
+	body, err := a.buildBody(req, false)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
@@ -286,14 +307,23 @@ func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error
 	if reply.StopReason == "max_tokens" {
 		return nil, fmt.Errorf("anthropic response truncated (max_tokens): refusing possibly-truncated output")
 	}
+	return reply.toResponse(), nil
+}
 
-	out := &Response{Usage: Usage{InputTokens: reply.Usage.InputTokens, OutputTokens: reply.Usage.OutputTokens, CacheReadTokens: reply.Usage.CacheReadInputTokens, CacheWriteTokens: reply.Usage.CacheCreationInputTokens}}
-	for _, blk := range reply.Content {
+// toResponse folds a decoded native reply into the neutral Response (text +
+// reasoning + tool calls + usage). Extracted so the Messages Batches collector
+// (batch_anthropic.go) reuses the EXACT same block handling as Complete.
+func (r anthropicReply) toResponse() *Response {
+	out := &Response{Usage: Usage{InputTokens: r.Usage.InputTokens, OutputTokens: r.Usage.OutputTokens, CacheReadTokens: r.Usage.CacheReadInputTokens, CacheWriteTokens: r.Usage.CacheCreationInputTokens}}
+	for _, blk := range r.Content {
 		switch blk.Type {
 		case "text":
 			out.Text += blk.Text
 		case "thinking":
-			out.Reasoning += blk.Text
+			out.Reasoning += blk.Thinking
+			if blk.Signature != "" {
+				out.ReasoningEncrypted = blk.Signature
+			}
 		case "tool_use":
 			out.ToolCalls = append(out.ToolCalls, ToolCall{
 				ID:        blk.ID,
@@ -302,7 +332,189 @@ func (a *Anthropic) Complete(ctx context.Context, req Request) (*Response, error
 			})
 		}
 	}
+	return out
+}
+
+// Stream runs a streamed completion over the native Messages SSE API
+// (stream:true), forwarding text/thinking deltas to sink as they arrive and
+// assembling the final Response from the block-start/delta/stop events. This is
+// what keeps the UI live mid-turn on the default Claude path; Complete remains
+// the non-streaming fallback for callers that don't set a sink.
+//
+// The Anthropic event flow is: message_start (usage), then per content block a
+// content_block_start / content_block_delta* / content_block_stop, then one or
+// more message_delta (stop_reason + cumulative output usage), then message_stop.
+// tool_use input arrives as partial_json string deltas accumulated per index.
+func (a *Anthropic) Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error) {
+	if len(req.Messages) == 0 {
+		return nil, fmt.Errorf("request has no messages")
+	}
+	body, err := a.buildBody(req, true)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+	headers, err := a.headers()
+	if err != nil {
+		return nil, err
+	}
+	resp, err := httpStream(ctx, a.http, anthropicURL, headers, body, nil)
+	if err != nil {
+		return nil, fmt.Errorf("anthropic: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// One partial block per content index; kind+accumulators distinguish text,
+	// thinking, and tool_use (whose input arrives as partial JSON strings).
+	type partialBlock struct {
+		kind     string // "text" | "thinking" | "tool_use"
+		id, name string
+		args     strings.Builder
+	}
+	byIndex := map[int]*partialBlock{}
+	var order []int
+	var text, reasoning strings.Builder
+	var reasoningSig string // signature of the thinking block (interleaved)
+	var usage Usage
+	var stopReason string
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data:") {
+			continue // skip SSE "event:" lines and blanks; the data line is self-describing
+		}
+		data := strings.TrimSpace(line[len("data:"):])
+		if data == "" {
+			continue
+		}
+		var ev struct {
+			Type    string `json:"type"`
+			Index   int    `json:"index"`
+			Message *struct {
+				Usage *anthropicStreamUsage `json:"usage"`
+			} `json:"message"`
+			ContentBlock *struct {
+				Type string `json:"type"`
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"content_block"`
+			Delta *struct {
+				Type        string `json:"type"`
+				Text        string `json:"text"`
+				Thinking    string `json:"thinking"`
+				Signature   string `json:"signature"`
+				PartialJSON string `json:"partial_json"`
+				StopReason  string `json:"stop_reason"`
+			} `json:"delta"`
+			Usage *anthropicStreamUsage `json:"usage"`
+			Error *struct {
+				Type    string `json:"type"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			continue
+		}
+		switch ev.Type {
+		case "error":
+			if ev.Error != nil {
+				return nil, fmt.Errorf("anthropic stream error: %s: %s", ev.Error.Type, ev.Error.Message)
+			}
+			return nil, fmt.Errorf("anthropic stream error")
+		case "message_start":
+			if ev.Message != nil && ev.Message.Usage != nil {
+				ev.Message.Usage.applyTo(&usage)
+			}
+		case "content_block_start":
+			p := &partialBlock{}
+			if ev.ContentBlock != nil {
+				p.kind = ev.ContentBlock.Type
+				p.id = ev.ContentBlock.ID
+				p.name = ev.ContentBlock.Name
+			}
+			byIndex[ev.Index] = p
+			order = append(order, ev.Index)
+		case "content_block_delta":
+			if ev.Delta == nil {
+				continue
+			}
+			switch ev.Delta.Type {
+			case "text_delta":
+				text.WriteString(ev.Delta.Text)
+				if sink != nil {
+					sink(StreamChunk{Kind: ChunkText, Text: ev.Delta.Text})
+				}
+			case "thinking_delta":
+				reasoning.WriteString(ev.Delta.Thinking)
+				if sink != nil {
+					sink(StreamChunk{Kind: ChunkReasoning, Text: ev.Delta.Thinking})
+				}
+			case "signature_delta":
+				// The thinking block's signature arrives as its own delta after
+				// the thinking text; capture it to re-emit the signed block.
+				reasoningSig += ev.Delta.Signature
+			case "input_json_delta":
+				if p := byIndex[ev.Index]; p != nil {
+					p.args.WriteString(ev.Delta.PartialJSON)
+				}
+			}
+		case "message_delta":
+			if ev.Delta != nil && ev.Delta.StopReason != "" {
+				stopReason = ev.Delta.StopReason
+			}
+			if ev.Usage != nil {
+				ev.Usage.applyTo(&usage)
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read stream: %w", err)
+	}
+	// Refuse truncated output rather than applying it (parity with Complete).
+	if stopReason == "max_tokens" {
+		return nil, fmt.Errorf("anthropic response truncated (max_tokens): refusing possibly-truncated output")
+	}
+
+	out := &Response{Text: text.String(), Reasoning: reasoning.String(), ReasoningEncrypted: reasoningSig, Usage: usage}
+	for _, idx := range order {
+		p := byIndex[idx]
+		if p == nil || p.kind != "tool_use" {
+			continue
+		}
+		out.ToolCalls = append(out.ToolCalls, ToolCall{
+			ID:        p.id,
+			Name:      p.name,
+			Arguments: normalizeArgsRaw(json.RawMessage(p.args.String())),
+		})
+	}
 	return out, nil
+}
+
+// anthropicStreamUsage is the usage block carried on message_start (input +
+// cache counts) and message_delta (cumulative output count). applyTo folds the
+// non-zero fields into the running Usage so the final tally is correct
+// regardless of which event reported which count.
+type anthropicStreamUsage struct {
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+}
+
+func (u *anthropicStreamUsage) applyTo(dst *Usage) {
+	if u.InputTokens > 0 {
+		dst.InputTokens = u.InputTokens
+	}
+	if u.OutputTokens > 0 {
+		dst.OutputTokens = u.OutputTokens
+	}
+	if u.CacheReadInputTokens > 0 {
+		dst.CacheReadTokens = u.CacheReadInputTokens
+	}
+	if u.CacheCreationInputTokens > 0 {
+		dst.CacheWriteTokens = u.CacheCreationInputTokens
+	}
 }
 
 // systemBlocks builds the system array. The first block MUST be the Claude Code
@@ -379,6 +591,19 @@ func anthropicMessages(req Request) []anthropicMessage {
 		case RoleAssistant:
 			flush()
 			var content []anthropicContent
+			// Re-emit the prior signed thinking block FIRST (it must precede
+			// tool_use). With interleaved thinking enabled, Anthropic expects the
+			// exact signed block back on a turn that uses tools; without the
+			// signature the API can reject it, so only re-emit when both the
+			// reasoning text and its signature were captured. ReasoningEncrypted
+			// carries the signature (see Complete/Stream).
+			if m.ReasoningEncrypted != "" && strings.TrimSpace(m.Reasoning) != "" {
+				content = append(content, anthropicContent{
+					Type:      "thinking",
+					Thinking:  m.Reasoning,
+					Signature: m.ReasoningEncrypted,
+				})
+			}
 			if strings.TrimSpace(m.Text) != "" {
 				content = append(content, anthropicContent{Type: "text", Text: m.Text})
 			}

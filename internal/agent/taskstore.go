@@ -26,6 +26,14 @@ import (
 // other processes; never let an id traverse paths).
 var bgIDRe = regexp.MustCompile(`^bg-[0-9]+-[0-9]+$`)
 
+// ValidTaskID reports whether id is a well-formed background-task id (the same
+// constraint readers use before joining it into a file path). Exported so other
+// packages (e.g. the GUI bridge) can reject path-traversal ids before any
+// filesystem access, rather than re-deriving the pattern.
+func ValidTaskID(id string) bool {
+	return bgIDRe.MatchString(id)
+}
+
 // lostGrace is how much past bgMaxRuntime a "running" record may age before it
 // is considered lost even when pid liveness can't be checked (old records
 // without a pid, or another host).
@@ -134,6 +142,20 @@ func readTaskHistory(path string) []BgTask {
 		}
 	}
 	return out
+}
+
+// ReadTaskHistory returns a task's full append-only state trail (every
+// recorded state change in order: attempt 1, escalation, attempt 2, terminal)
+// straight from the disk store under dir, without needing a live BgRegistry.
+// The id is validated against the same constraint as cancel markers so a
+// caller's id can never traverse paths. A missing/empty/malformed file yields
+// an empty slice (never fatal — this is an observability read); only a bad id
+// is an error.
+func ReadTaskHistory(dir, id string) ([]BgTask, error) {
+	if !bgIDRe.MatchString(id) {
+		return nil, fmt.Errorf("invalid task id %q", id)
+	}
+	return readTaskHistory(filepath.Join(dir, id+".jsonl")), nil
 }
 
 // taskLost reports whether a persisted "running" record's task is actually

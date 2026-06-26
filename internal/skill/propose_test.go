@@ -57,3 +57,37 @@ func TestProposeAcceptReject(t *testing.T) {
 		t.Fatal("reject should remove the proposal")
 	}
 }
+
+// A repeated dream pass must not silently overwrite a pending proposal the user
+// is about to review: the first proposal wins, later passes no-op.
+func TestProposePreservesFirst(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	p1, err := Propose("dedupe-logs", "collapse repeated log lines", "1. detect runs\n2. collapse")
+	if err != nil || p1 == "" {
+		t.Fatalf("first propose: %v path=%q", err, p1)
+	}
+	original, err := os.ReadFile(p1)
+	if err != nil {
+		t.Fatalf("read first proposal: %v", err)
+	}
+
+	// A later pass with a refined body must NOT clobber the pending proposal.
+	p2, err := Propose("dedupe-logs", "collapse repeated log lines (refined)", "totally different body")
+	if err != nil {
+		t.Fatalf("second propose: %v", err)
+	}
+	if p2 != "" {
+		t.Fatalf("re-proposing a pending name should no-op (got path %q)", p2)
+	}
+	if len(Proposals()) != 1 {
+		t.Fatalf("want 1 proposal after re-propose, got %d", len(Proposals()))
+	}
+	after, err := os.ReadFile(p1)
+	if err != nil {
+		t.Fatalf("read proposal after re-propose: %v", err)
+	}
+	if string(after) != string(original) {
+		t.Fatal("pending proposal must be preserved, not overwritten by a later pass")
+	}
+}

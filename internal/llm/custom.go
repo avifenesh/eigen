@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -480,6 +482,69 @@ func newCustomProvider(providerName, modelName string) (Provider, error) {
 	}
 }
 
+// customEffortLevels resolves the accepted effort labels for a custom reasoning
+// model: the catalog-style EffortLevels when given, else the global fallback.
+// Non-reasoning models accept nothing (effort is ignored).
+func customEffortLevels(m CustomModel) []string {
+	if !m.Reasoning {
+		return nil
+	}
+	if len(m.EffortLevels) > 0 {
+		return m.EffortLevels
+	}
+	return EffortLevels
+}
+
+// customEffort is the runtime reasoning-effort knob shared by all three custom
+// provider kinds. It mirrors how built-in reasoning providers carry effort: the
+// model's catalog default seeds it, EIGEN_REASONING_EFFORT overrides at startup
+// (when the model accepts it), and SetEffort/Effort satisfy EffortSetter so a
+// live /effort switch works without rebuilding the provider.
+type customEffort struct {
+	mu        sync.RWMutex
+	reasoning bool
+	levels    []string
+	effort    string
+}
+
+func newCustomEffort(m CustomModel) *customEffort {
+	e := &customEffort{reasoning: m.Reasoning, levels: customEffortLevels(m), effort: m.Effort}
+	if env := strings.TrimSpace(os.Getenv("EIGEN_REASONING_EFFORT")); env != "" && effortSupported(env, e.levels) {
+		e.effort = env
+	}
+	return e
+}
+
+// SetEffort changes the reasoning effort if the model supports the level.
+func (e *customEffort) SetEffort(level string) bool {
+	if !e.reasoning || !effortSupported(level, e.levels) {
+		return false
+	}
+	e.mu.Lock()
+	e.effort = level
+	e.mu.Unlock()
+	return true
+}
+
+// Effort returns the current reasoning-effort label ("" when not reasoning).
+func (e *customEffort) Effort() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.effort
+}
+
+// snapshot returns the current effort label and whether it's an active reasoning
+// request (a reasoning model with a non-empty, non-disabling effort).
+func (e *customEffort) snapshot() (effort string, active bool) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	eff := strings.TrimSpace(e.effort)
+	if !e.reasoning || eff == "" || eff == "off" || eff == "none" || eff == "minimal" {
+		return eff, false
+	}
+	return eff, true
+}
+
 func normalizeOpenAIBase(base string) string {
 	b := strings.TrimRight(strings.TrimSpace(base), "/")
 	for _, suffix := range []string{"/chat/completions", "/responses"} {
@@ -494,17 +559,36 @@ func normalizeAnthropicBase(base string) string {
 	return strings.TrimRight(b, "/")
 }
 
+var (
+	_ EffortSetter = (*customOpenAIChat)(nil)
+	_ Streamer     = (*customOpenAIChat)(nil)
+)
+
 type customOpenAIChat struct {
 	name  string
 	model string
 	wire  string
 	c     *chatClient
+	*customEffort
 }
 
 func newCustomOpenAIChat(p CustomProvider, m CustomModel) *customOpenAIChat {
 	m = normalizeCustomModel(m)
 	c := newChatClient(normalizeOpenAIBase(p.BaseURL), m.ID, customAPIKey(p), p.Name)
-	return &customOpenAIChat{name: p.Name, model: m.Name, wire: m.ID, c: c}
+	cc := &customOpenAIChat{name: p.Name, model: m.Name, wire: m.ID, c: c, customEffort: newCustomEffort(m)}
+	// Inject the chat-completions reasoning-effort field when set, the way GLM
+	// injects its thinking field via the shared chatClient extra hook.
+	c.extra = cc.bodyExtra
+	return cc
+}
+
+// bodyExtra adds the OpenAI-compatible chat-completions reasoning-effort field
+// for a reasoning custom model with an active effort. Nil otherwise.
+func (p *customOpenAIChat) bodyExtra() map[string]any {
+	if effort, active := p.snapshot(); active {
+		return map[string]any{"reasoning_effort": effort}
+	}
+	return nil
 }
 
 func (p *customOpenAIChat) Name() string    { return p.model + " (" + p.name + " openai-chat)" }
@@ -516,6 +600,11 @@ func (p *customOpenAIChat) Stream(ctx context.Context, req Request, sink StreamS
 	return p.c.stream(ctx, req, sink)
 }
 
+var (
+	_ EffortSetter = (*customOpenAIResponses)(nil)
+	_ Streamer     = (*customOpenAIResponses)(nil)
+)
+
 type customOpenAIResponses struct {
 	name    string
 	model   string
@@ -523,47 +612,96 @@ type customOpenAIResponses struct {
 	baseURL string
 	apiKey  string
 	http    *http.Client
+	*customEffort
 }
 
 func newCustomOpenAIResponses(p CustomProvider, m CustomModel) *customOpenAIResponses {
 	m = normalizeCustomModel(m)
-	return &customOpenAIResponses{name: p.Name, model: m.Name, wire: m.ID, baseURL: normalizeOpenAIBase(p.BaseURL), apiKey: customAPIKey(p), http: &http.Client{Timeout: 5 * time.Minute}}
+	return &customOpenAIResponses{name: p.Name, model: m.Name, wire: m.ID, baseURL: normalizeOpenAIBase(p.BaseURL), apiKey: customAPIKey(p), http: &http.Client{Timeout: 5 * time.Minute}, customEffort: newCustomEffort(m)}
 }
 
 func (p *customOpenAIResponses) Name() string    { return p.model + " (" + p.name + " openai-responses)" }
 func (p *customOpenAIResponses) ModelID() string { return p.model }
-func (p *customOpenAIResponses) Complete(ctx context.Context, req Request) (*Response, error) {
-	if len(req.Messages) == 0 {
-		return nil, fmt.Errorf("request has no messages")
+
+// buildBody builds the Responses-API request JSON. stream sets stream:true so
+// Complete and Stream share one request shape (only the flag differs), the way
+// mantle's buildBody does.
+func (p *customOpenAIResponses) buildBody(req Request, stream bool) ([]byte, error) {
+	payload := responsesRequest{Model: p.wire, Input: buildInput(req), Tools: toResponsesTools(req.Tools), Stream: stream}
+	// Apply reasoning effort the way mantle/codex do for the Responses API.
+	if effort, active := p.snapshot(); active {
+		payload.Reasoning = &reasoningConfig{Effort: effort, Summary: reasoningSummary}
 	}
-	payload := responsesRequest{Model: p.wire, Input: buildInput(req), Tools: toResponsesTools(req.Tools)}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
-	}
+	return json.Marshal(payload)
+}
+
+func (p *customOpenAIResponses) headers() map[string]string {
 	headers := map[string]string{}
 	if p.apiKey != "" {
 		headers["Authorization"] = "Bearer " + p.apiKey
 	}
-	raw, status, err := httpJSON(ctx, p.http, p.baseURL+"/responses", headers, body, nil)
+	return headers
+}
+
+func (p *customOpenAIResponses) Complete(ctx context.Context, req Request) (*Response, error) {
+	if len(req.Messages) == 0 {
+		return nil, fmt.Errorf("request has no messages")
+	}
+	body, err := p.buildBody(req, false)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+	// Custom Responses endpoints hit the same empty-completed-response quirk as
+	// Bedrock Mantle, so re-request bounded by maxEmptyRetries the way
+	// Mantle.Complete does rather than returning a do-nothing turn.
+	for attempt := 0; ; attempt++ {
+		raw, status, err := httpJSON(ctx, p.http, p.baseURL+"/responses", p.headers(), body, nil)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", p.name, err)
+		}
+		if status < 200 || status >= 300 {
+			return nil, fmt.Errorf("%s HTTP %d: %s", p.name, status, string(raw))
+		}
+		out, st, reason, err := parseReply(raw)
+		if err != nil {
+			return nil, err
+		}
+		if st == "incomplete" {
+			if reason == "" {
+				reason = "unknown"
+			}
+			return nil, fmt.Errorf("%s response incomplete (%s): refusing possibly-truncated output", p.name, reason)
+		}
+		if out.Text != "" || len(out.ToolCalls) > 0 || attempt >= maxEmptyRetries {
+			return out, nil
+		}
+		// Empty completed response: re-request (the same quirk Mantle retries).
+	}
+}
+
+// Stream POSTs stream:true to /responses and assembles the SSE with the shared
+// parseResponsesSSE, forwarding text/reasoning deltas to sink as they arrive so
+// user-defined Responses-API providers stay live mid-turn instead of blocking
+// with no deltas (the Streamer check now succeeds for them).
+func (p *customOpenAIResponses) Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error) {
+	if len(req.Messages) == 0 {
+		return nil, fmt.Errorf("request has no messages")
+	}
+	body, err := p.buildBody(req, true)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+	resp, err := httpStream(ctx, p.http, p.baseURL+"/responses", p.headers(), body, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", p.name, err)
 	}
-	if status < 200 || status >= 300 {
-		return nil, fmt.Errorf("%s HTTP %d: %s", p.name, status, string(raw))
-	}
-	out, st, reason, err := parseReply(raw)
-	if err != nil {
-		return nil, err
-	}
-	if st == "incomplete" {
-		if reason == "" {
-			reason = "unknown"
-		}
-		return nil, fmt.Errorf("%s response incomplete (%s): refusing possibly-truncated output", p.name, reason)
-	}
-	return out, nil
+	return parseResponsesSSE(resp, sink)
 }
+
+var (
+	_ EffortSetter = (*customAnthropic)(nil)
+	_ Streamer     = (*customAnthropic)(nil)
+)
 
 type customAnthropic struct {
 	name    string
@@ -573,6 +711,7 @@ type customAnthropic struct {
 	apiKey  string
 	version string
 	http    *http.Client
+	*customEffort
 }
 
 func newCustomAnthropic(p CustomProvider, m CustomModel) *customAnthropic {
@@ -581,33 +720,52 @@ func newCustomAnthropic(p CustomProvider, m CustomModel) *customAnthropic {
 	if version == "" {
 		version = anthropicVersion
 	}
-	return &customAnthropic{name: p.Name, model: m.Name, wire: m.ID, baseURL: normalizeAnthropicBase(p.BaseURL), apiKey: customAPIKey(p), version: version, http: &http.Client{Timeout: 5 * time.Minute}}
+	return &customAnthropic{name: p.Name, model: m.Name, wire: m.ID, baseURL: normalizeAnthropicBase(p.BaseURL), apiKey: customAPIKey(p), version: version, http: &http.Client{Timeout: 5 * time.Minute}, customEffort: newCustomEffort(m)}
 }
 
 func (p *customAnthropic) Name() string    { return p.model + " (" + p.name + " anthropic)" }
 func (p *customAnthropic) ModelID() string { return p.model }
-func (p *customAnthropic) Complete(ctx context.Context, req Request) (*Response, error) {
-	if len(req.Messages) == 0 {
-		return nil, fmt.Errorf("request has no messages")
-	}
+
+// buildBody builds the native Messages request JSON. stream sets stream:true so
+// Complete and Stream share one request shape (only the flag differs), mirroring
+// the built-in Anthropic provider.
+func (p *customAnthropic) buildBody(req Request, stream bool) ([]byte, error) {
 	payload := anthropicRequest{
 		Model:     p.wire,
 		MaxTokens: anthropicMaxTok,
 		Messages:  anthropicMessages(req),
 		Tools:     anthropicTools(req.Tools, false),
+		Stream:    stream,
+	}
+	// Adaptive thinking + output_config.effort, mirroring the built-in Anthropic
+	// provider's effort path (api.anthropic.com/v1/messages).
+	if effort, active := p.snapshot(); active {
+		payload.Thinking = json.RawMessage(`{"type":"adaptive"}`)
+		payload.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":%q}`, effort))
 	}
 	if strings.TrimSpace(req.System) != "" {
 		payload.System = []anthropicTextBlock{{Type: "text", Text: req.System}}
 	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
-	}
+	return json.Marshal(payload)
+}
+
+func (p *customAnthropic) headers() map[string]string {
 	headers := map[string]string{"anthropic-version": p.version}
 	if p.apiKey != "" {
 		headers["x-api-key"] = p.apiKey
 	}
-	raw, status, err := httpJSON(ctx, p.http, p.baseURL+"/messages", headers, body, nil)
+	return headers
+}
+
+func (p *customAnthropic) Complete(ctx context.Context, req Request) (*Response, error) {
+	if len(req.Messages) == 0 {
+		return nil, fmt.Errorf("request has no messages")
+	}
+	body, err := p.buildBody(req, false)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+	raw, status, err := httpJSON(ctx, p.http, p.baseURL+"/messages", p.headers(), body, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", p.name, err)
 	}
@@ -634,6 +792,161 @@ func (p *customAnthropic) Complete(ctx context.Context, req Request) (*Response,
 		case "tool_use":
 			out.ToolCalls = append(out.ToolCalls, ToolCall{ID: blk.ID, Name: blk.Name, Arguments: normalizeArgsRaw(blk.Input)})
 		}
+	}
+	return out, nil
+}
+
+// Stream POSTs stream:true to /messages and assembles the native Messages SSE
+// with the shared parseAnthropicSSE, forwarding text/thinking deltas to sink as
+// they arrive so user-defined Anthropic providers stay live mid-turn instead of
+// blocking with no deltas (the Streamer check now succeeds for them).
+func (p *customAnthropic) Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error) {
+	if len(req.Messages) == 0 {
+		return nil, fmt.Errorf("request has no messages")
+	}
+	body, err := p.buildBody(req, true)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+	resp, err := httpStream(ctx, p.http, p.baseURL+"/messages", p.headers(), body, nil)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", p.name, err)
+	}
+	return parseAnthropicSSE(resp, p.name, sink)
+}
+
+// parseAnthropicSSE assembles a native Anthropic Messages SSE stream into a
+// final Response, forwarding text/thinking deltas to sink as they arrive. The
+// event flow is: message_start (usage), then per content block a
+// content_block_start / content_block_delta* / content_block_stop, then one or
+// more message_delta (stop_reason + cumulative output usage), then message_stop.
+// tool_use input arrives as partial_json string deltas accumulated per index.
+// The label prefixes errors so a custom provider's failures name that provider.
+func parseAnthropicSSE(resp *http.Response, label string, sink StreamSink) (*Response, error) {
+	defer resp.Body.Close()
+
+	// One partial block per content index; kind+accumulators distinguish text,
+	// thinking, and tool_use (whose input arrives as partial JSON strings).
+	type partialBlock struct {
+		kind     string // "text" | "thinking" | "tool_use"
+		id, name string
+		args     strings.Builder
+	}
+	byIndex := map[int]*partialBlock{}
+	var order []int
+	var text, reasoning strings.Builder
+	var reasoningSig string // signature of the thinking block (interleaved)
+	var usage Usage
+	var stopReason string
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data:") {
+			continue // skip SSE "event:" lines and blanks; the data line is self-describing
+		}
+		data := strings.TrimSpace(line[len("data:"):])
+		if data == "" {
+			continue
+		}
+		var ev struct {
+			Type    string `json:"type"`
+			Index   int    `json:"index"`
+			Message *struct {
+				Usage *anthropicStreamUsage `json:"usage"`
+			} `json:"message"`
+			ContentBlock *struct {
+				Type string `json:"type"`
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"content_block"`
+			Delta *struct {
+				Type        string `json:"type"`
+				Text        string `json:"text"`
+				Thinking    string `json:"thinking"`
+				Signature   string `json:"signature"`
+				PartialJSON string `json:"partial_json"`
+				StopReason  string `json:"stop_reason"`
+			} `json:"delta"`
+			Usage *anthropicStreamUsage `json:"usage"`
+			Error *struct {
+				Type    string `json:"type"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			continue
+		}
+		switch ev.Type {
+		case "error":
+			if ev.Error != nil {
+				return nil, fmt.Errorf("%s stream error: %s: %s", label, ev.Error.Type, ev.Error.Message)
+			}
+			return nil, fmt.Errorf("%s stream error", label)
+		case "message_start":
+			if ev.Message != nil && ev.Message.Usage != nil {
+				ev.Message.Usage.applyTo(&usage)
+			}
+		case "content_block_start":
+			pb := &partialBlock{}
+			if ev.ContentBlock != nil {
+				pb.kind = ev.ContentBlock.Type
+				pb.id = ev.ContentBlock.ID
+				pb.name = ev.ContentBlock.Name
+			}
+			byIndex[ev.Index] = pb
+			order = append(order, ev.Index)
+		case "content_block_delta":
+			if ev.Delta == nil {
+				continue
+			}
+			switch ev.Delta.Type {
+			case "text_delta":
+				text.WriteString(ev.Delta.Text)
+				if sink != nil {
+					sink(StreamChunk{Kind: ChunkText, Text: ev.Delta.Text})
+				}
+			case "thinking_delta":
+				reasoning.WriteString(ev.Delta.Thinking)
+				if sink != nil {
+					sink(StreamChunk{Kind: ChunkReasoning, Text: ev.Delta.Thinking})
+				}
+			case "signature_delta":
+				reasoningSig += ev.Delta.Signature
+			case "input_json_delta":
+				if pb := byIndex[ev.Index]; pb != nil {
+					pb.args.WriteString(ev.Delta.PartialJSON)
+				}
+			}
+		case "message_delta":
+			if ev.Delta != nil && ev.Delta.StopReason != "" {
+				stopReason = ev.Delta.StopReason
+			}
+			if ev.Usage != nil {
+				ev.Usage.applyTo(&usage)
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read stream: %w", err)
+	}
+	// Refuse truncated output rather than applying it (parity with Complete).
+	if stopReason == "max_tokens" {
+		return nil, fmt.Errorf("%s response truncated (max_tokens): refusing possibly-truncated output", label)
+	}
+
+	out := &Response{Text: text.String(), Reasoning: reasoning.String(), ReasoningEncrypted: reasoningSig, Usage: usage}
+	for _, idx := range order {
+		pb := byIndex[idx]
+		if pb == nil || pb.kind != "tool_use" {
+			continue
+		}
+		out.ToolCalls = append(out.ToolCalls, ToolCall{
+			ID:        pb.id,
+			Name:      pb.name,
+			Arguments: normalizeArgsRaw(json.RawMessage(pb.args.String())),
+		})
 	}
 	return out, nil
 }

@@ -73,7 +73,34 @@ func Detect(path string) Source {
 // The write is atomic (temp file + rename) so a crash, force-exit, or
 // concurrent reader never sees a truncated transcript — this file is the
 // durable record of the conversation.
+//
+// Save refuses to overwrite a live, non-empty transcript with an empty slice:
+// an accidental short/empty autosave would otherwise rotate the good transcript
+// into a backup and then rename a zero-message file over it, losing the
+// conversation. A deliberate clear (e.g. /clear) must go through SaveForce,
+// which also purges the rotated backups so recovery cannot resurrect it.
 func Save(path string, msgs []llm.Message) error {
+	if len(msgs) == 0 && existsNonEmpty(path) {
+		return fmt.Errorf("transcript: refusing empty save over non-empty %s (use SaveForce to clear)", path)
+	}
+	return saveAtomic(path, msgs)
+}
+
+// SaveForce writes msgs exactly like Save but without the empty-over-non-empty
+// guard. Use it for a deliberate clear of an existing conversation; pair it with
+// ClearBackups so Load's corruption-recovery cannot resurrect the cleared
+// transcript from a stale .bak.
+func SaveForce(path string, msgs []llm.Message) error {
+	return saveAtomic(path, msgs)
+}
+
+// existsNonEmpty reports whether path is a regular file with at least one byte.
+func existsNonEmpty(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.Mode().IsRegular() && fi.Size() > 0
+}
+
+func saveAtomic(path string, msgs []llm.Message) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
@@ -152,8 +179,37 @@ func syncDir(dir string) error {
 	return d.Sync()
 }
 
-// Load reads an eigen-native JSONL session file.
+// Load reads an eigen-native JSONL session file. When the primary path is
+// missing, empty, or yields zero messages, it falls back to the newest readable
+// backup generation written by Save's rotation (.bak, .bak.1 .. .bak.4) so a
+// truncated or vanished primary does not lose a conversation that backups still
+// hold.
 func Load(path string) ([]llm.Message, error) {
+	msgs, err := loadJSONL(path)
+	if err == nil && len(msgs) > 0 {
+		return msgs, nil
+	}
+	// Primary is missing, unreadable, or yields zero messages — fall back to the
+	// newest readable backup. NOTE: a deliberately-emptied transcript (e.g.
+	// /clear) must also purge its backups (see ClearBackups), otherwise this
+	// recovery would resurrect the cleared conversation.
+	if recovered, ok := recoverFromBackup(path); ok {
+		return recovered, nil
+	}
+	return msgs, err
+}
+
+// ClearBackups removes all rotated backup generations for a transcript. Call it
+// alongside a deliberate Save([]) (e.g. /clear) so Load's corruption-recovery
+// cannot resurrect the just-cleared conversation from a stale .bak.
+func ClearBackups(path string) {
+	for gen := 0; gen < transcriptBackupGenerations; gen++ {
+		_ = os.Remove(backupPath(path, gen))
+	}
+}
+
+// loadJSONL decodes one eigen-native JSONL file into messages.
+func loadJSONL(path string) ([]llm.Message, error) {
 	return scanJSONL(path, func(line []byte, out *[]llm.Message) error {
 		var m llm.Message
 		if err := json.Unmarshal(line, &m); err != nil {
@@ -162,6 +218,18 @@ func Load(path string) ([]llm.Message, error) {
 		*out = append(*out, m)
 		return nil
 	})
+}
+
+// recoverFromBackup returns the newest backup generation that yields at least
+// one message, trying .bak first (the most recent rotation) through the oldest.
+func recoverFromBackup(path string) ([]llm.Message, bool) {
+	for gen := 0; gen < transcriptBackupGenerations; gen++ {
+		bak := backupPath(path, gen)
+		if msgs, err := loadJSONL(bak); err == nil && len(msgs) > 0 {
+			return msgs, true
+		}
+	}
+	return nil, false
 }
 
 // scanJSONL reads a JSONL file, invoking fn per non-empty line to append to the

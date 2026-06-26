@@ -185,6 +185,18 @@ type Agent struct {
 	// the escalation hook for background tasks. Injected by main.
 	ModelProvider func(model string) (llm.Provider, error)
 
+	// JudgeModel, if set (config judge_model / EIGEN_JUDGE_MODEL), pins the model
+	// the goal/claim judge uses — beats the type-ladder default. Injected by main.
+	JudgeModel string
+
+	// ChainProvider, if set, builds the per-ROLE fallback-chain provider for a
+	// role ("explore"/"research"/"general"/"code"/"judge"/"dreamer"/"primary").
+	// Injected by main from config RuleChains. When present it REPLACES the
+	// built-in type ladders: a subagent of a given type runs that role's chain
+	// (first reachable model, falling through on quota), so model selection is
+	// fully user-configurable. Returns nil when the role has no usable chain.
+	ChainProvider func(role string) llm.Provider
+
 	// Bg, if set, enables background subtasks (task tool background:true):
 	// detached delegations persisted under ~/.eigen/tasks. Injected by main.
 	Bg *BgRegistry
@@ -561,6 +573,13 @@ type SubtaskOpts struct {
 	Difficulty string
 	Model      string // explicit model id/ref — overrides routing when set
 	Role       string // named role (built-in or installed plugin agent)
+	// Type is the subagent's PURPOSE (explore/research/general/code/judge) — it
+	// drives a capability-aware effort + model policy (llm.SubagentEffort /
+	// SubagentModel) distinct from Kind/Difficulty. Empty → derived from Role,
+	// else "general". Effort, when set, is an explicit override that beats the
+	// policy (the orchestrator pins a level for this one delegation).
+	Type   string
+	Effort string
 }
 
 // Subtask runs task on a fresh session of (a copy of) this agent, with event
@@ -734,7 +753,38 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 			if opts.Model == "" {
 				opts.Model = role.Model
 			}
+			if opts.Type == "" {
+				opts.Type = role.Type
+			}
+			if opts.Effort == "" {
+				opts.Effort = role.Effort
+			}
 			where = "role " + role.Name
+		}
+	}
+
+	// Subagent TYPE drives a capability-aware policy: when the caller didn't name
+	// an explicit Model, pick the type's preferred credentialed model (capability
+	// != price — e.g. research prefers glm-5.2, judge prefers gpt, explore a fast
+	// cheap model), skipping suspended providers. Explicit Model still wins.
+	stype := llm.NormalizeSubagentType(firstNonEmpty(opts.Type, opts.Kind))
+	// Per-role CHAIN takes precedence: the user-configured chain for this
+	// subagent type IS the provider (first reachable model, falling through on
+	// quota), replacing the built-in ladder + manual fallback wrap. Only when no
+	// explicit Model override and the policy isn't disabled.
+	if opts.Model == "" && !subtaskPolicyDisabled() && a.ChainProvider != nil {
+		if ch := a.ChainProvider(string(stype)); ch != nil {
+			prov = ch
+			compactor = llm.NewCompactor(ch)
+			where = joinWhere(where, "type "+string(stype)+" chain")
+		}
+	}
+	// Legacy ladder fallback (no chain configured): pick the type's preferred
+	// credentialed model, wrapped in quota failover to the parent below.
+	if opts.Model == "" && prov == a.provider() && !subtaskPolicyDisabled() && a.ChainProvider == nil {
+		if m := llm.SubagentModel(stype); m != "" {
+			opts.Model = m
+			where = joinWhere(where, "type "+string(stype))
 		}
 	}
 
@@ -747,7 +797,19 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 			// defeat the override's purpose.
 			where = joinWhere(where, "explicit model "+opts.Model+" unavailable ("+err.Error()+") — falling back")
 		} else {
-			prov = p
+			// Wrap the picked model in quota failover to the parent's provider:
+			// a TYPE-policy pick (e.g. research→glm-5.2) whose account is drained
+			// 429s, and unlike the main loop the subagent had no safety net — so
+			// a quota error here would just fail the subtask. NewFallback freezes
+			// the drained provider (process-wide) + routes to the parent's
+			// credentialed model. Only when the parent is a DIFFERENT model (no
+			// point wrapping a provider in itself).
+			parent := a.provider()
+			if parent != nil && parent.ModelID() != p.ModelID() {
+				prov = llm.NewFallback(p, parent)
+			} else {
+				prov = p
+			}
 			compactor = llm.NewCompactor(p)
 			where = joinWhere(where, "running on "+opts.Model+" (explicit)")
 		}
@@ -761,19 +823,46 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 			where = joinWhere(where, label)
 		}
 	}
-	// Output discipline: a trivial/easy subtask doesn't need max reasoning.
-	// Lower the subtask provider's effort to match its difficulty (never raise
-	// it, never touch the orchestrator's own provider) so a mechanical
-	// delegation doesn't burn the global "max" reasoning budget. Opt out with
-	// EIGEN_SUBTASK_EFFORT=keep.
-	if w := applySubtaskEffort(prov, opts.Difficulty); w != "" {
-		where = joinWhere(where, w)
-	}
-	// Latency discipline: a trivial/easy subtask on a fast-capable provider
-	// (Codex priority tier) takes the fast path; medium/hard keep the configured
-	// tier (quality over latency). Same opt-out.
-	if w := applySubtaskFast(prov, opts.Difficulty); w != "" {
-		where = joinWhere(where, w)
+	// Effort/fast discipline mutates the provider in place (SetEffort/SetFast).
+	// Every provider reachable here is SHARED — the parent's live provider
+	// (a.provider()) or a router-cache instance reused across sessions — so
+	// mutating it would bleed a subtask's lowered effort / fast path into the
+	// parent and other sessions. Before disciplining, give the subtask a
+	// provider it EXCLUSIVELY owns (a fresh build of the same model). If we
+	// can't own one, skip discipline rather than corrupt the shared instance.
+	if !subtaskPolicyDisabled() {
+		// Effort/fast discipline mutates the provider in place — but every provider
+		// reachable here is SHARED (the parent's live provider, or a router-cache
+		// instance reused across sessions), so mutating it would bleed this
+		// subtask's effort into the parent + other sessions. Give the subtask a
+		// provider it EXCLUSIVELY owns (a fresh build of the same model) first; if
+		// that fails, skip discipline rather than corrupt the shared instance.
+		owned, err := llm.New("", prov.ModelID())
+		if err != nil {
+			where = joinWhere(where, "subtask effort skipped (own-provider build failed: "+err.Error()+")")
+		} else {
+			prov = owned
+			compactor = llm.NewCompactor(owned)
+			// Effort by POLICY: type sets the baseline (explore low … research/
+			// code high, judge low-but-valid), difficulty nudges within it, and an
+			// explicit opts.Effort overrides outright. This REPLACES the old
+			// one-way trivial→medium downshift — a hard code subtask can now lift
+			// to xhigh, a judge stays low regardless of the work's difficulty.
+			level := opts.Effort
+			if level == "" {
+				level = llm.SubagentEffort(stype, opts.Difficulty)
+			}
+			if w := setSubtaskEffort(prov, level); w != "" {
+				where = joinWhere(where, w)
+			}
+			// Latency: explore + judge (cheap, bounded jobs) take a fast-capable
+			// provider's fast path; the heavier types keep quality over latency.
+			if stype == llm.TypeExplore || stype == llm.TypeJudge {
+				if w := applySubtaskFast(prov, "trivial"); w != "" {
+					where = joinWhere(where, w)
+				}
+			}
+		}
 	}
 	// Construct the sub-agent explicitly (not by struct copy: Agent embeds a
 	// mutex). It inherits the perm/budget snapshot but stays silent (no
@@ -798,6 +887,16 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 	return sub, where
 }
 
+// firstNonEmpty returns the first non-blank string, or "".
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // joinWhere combines two non-empty "where ran" fragments with "; ".
 func joinWhere(a, b string) string {
 	if a == "" {
@@ -809,56 +908,75 @@ func joinWhere(a, b string) string {
 	return a + "; " + b
 }
 
-// subtaskEffortFloor is the effort a trivial/easy subtask is CAPPED at — a safe
-// middle, never the model's minimum. Flooring reasoning (low/none/off) would hurt
-// quality, which Tier 30 explicitly must not do; "medium" keeps solid reasoning
-// while shedding the wasteful max/high/xhigh budget on cheap delegations.
-const subtaskEffortFloor = "medium"
+// subtaskPolicyDisabled reports whether the per-subagent effort/model policy is
+// turned off (EIGEN_SUBTASK_EFFORT=keep) — the escape hatch that makes every
+// subtask inherit the orchestrator's provider + effort untouched.
+func subtaskPolicyDisabled() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("EIGEN_SUBTASK_EFFORT")), "keep")
+}
 
-// applySubtaskEffort caps a subtask provider's reasoning effort at a safe middle
-// ("medium") for trivial/easy delegations, so a cheap subtask doesn't burn the
-// global "max" reasoning budget (more thinking = more output tokens + slower).
-// It is deliberately conservative:
-//   - it ONLY steps DOWN to the floor (never raises; never touches a model
-//     already at/below medium);
-//   - it acts ONLY when the model has a real "medium" rung — models like GLM
-//     ({off,on}) have no safe middle, so stepping down would DISABLE reasoning;
-//     those are left untouched;
-//   - it never targets low/none/off (flooring reasoning hurts quality);
-//   - it never touches the orchestrator's own provider (subtask providers only).
-//
-// Returns a short "where" note when it changed something. Opt out entirely with
-// EIGEN_SUBTASK_EFFORT=keep. Non-reasoning models (no EffortSetter) no-op.
-func applySubtaskEffort(prov llm.Provider, difficulty string) string {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("EIGEN_SUBTASK_EFFORT")), "keep") {
+// setSubtaskEffort sets a subtask provider's reasoning effort to the generic
+// policy level (off/low/medium/high/xhigh), clamping to what THIS model
+// supports — so a model lacking a rung still lands on the nearest legal one,
+// and a model with no real reasoning ladder (e.g. GLM {off,on}) maps the level
+// to on/off rather than being skipped. Unlike the old floor-only logic this
+// goes BOTH ways: a hard code subtask can lift effort, a judge can pin it low.
+// Never touches the orchestrator's own provider (subtask providers only).
+// Returns a short "where" note when it changed something.
+func setSubtaskEffort(prov llm.Provider, level string) string {
+	level = strings.TrimSpace(level)
+	if level == "" {
 		return ""
-	}
-	switch strings.ToLower(strings.TrimSpace(difficulty)) {
-	case "trivial", "easy":
-		// proceed — these are the cheap delegations worth capping
-	default:
-		return "" // medium/hard/unset: keep the configured effort
 	}
 	es, ok := prov.(llm.EffortSetter)
 	if !ok {
-		return ""
+		return "" // non-reasoning model
 	}
 	levels := llm.ModelEffortLevels(prov.ModelID())
-	floorRank := effortRank(levels, subtaskEffortFloor)
-	if floorRank < 0 {
-		// No "medium" rung (e.g. GLM {off,on}): there is no safe middle to step
-		// down to, and the only lower option disables reasoning. Leave it alone.
+	target := clampEffortToModel(levels, level)
+	if target == "" || strings.EqualFold(target, es.Effort()) {
 		return ""
 	}
-	// Only step DOWN: do nothing if the current effort is already at or below
-	// the floor (don't raise an intentionally-low model, don't churn medium).
-	if effortRank(levels, es.Effort()) <= floorRank {
-		return ""
-	}
-	if es.SetEffort(subtaskEffortFloor) {
-		return "effort→" + subtaskEffortFloor + " (" + strings.ToLower(difficulty) + ")"
+	if es.SetEffort(target) {
+		return "effort→" + target
 	}
 	return ""
+}
+
+// clampEffortToModel maps a generic effort level to the nearest level THIS model
+// actually offers. Generic ladder is off<low<medium<high<xhigh; a model with a
+// coarser ladder (GLM {off,on}) gets the proportional rung (off→off, anything
+// higher→on), and a missing exact rung falls to the closest by position.
+func clampEffortToModel(levels []string, want string) string {
+	if len(levels) == 0 {
+		return want // provider will validate/ignore
+	}
+	if effortRank(levels, want) >= 0 {
+		return want
+	}
+	// Position `want` on the generic ladder, then scale to the model's ladder.
+	generic := []string{"off", "none", "low", "medium", "high", "xhigh"}
+	wi := -1
+	for i, g := range generic {
+		if strings.EqualFold(g, want) {
+			wi = i
+			break
+		}
+	}
+	if wi < 0 {
+		return levels[len(levels)/2] // unknown → model's middle
+	}
+	// Map proportionally low-end→first rung, high-end→last rung, rounding to the
+	// NEAREST rung (so on a {off,on} ladder anything above the bottom lands on
+	// "on" rather than collapsing to "off" via truncation).
+	idx := (wi*(len(levels)-1)*2 + (len(generic) - 1)) / (2 * (len(generic) - 1))
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(levels) {
+		idx = len(levels) - 1
+	}
+	return levels[idx]
 }
 
 // effortRank returns the index of level in the ordered set (lowest→highest), or
@@ -1391,6 +1509,7 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 				Role: llm.RoleUser,
 				Text: "Continue: use a tool to make progress, or give your final answer.",
 			})
+			s.persist()
 			continue
 		}
 		emptyTurns = 0

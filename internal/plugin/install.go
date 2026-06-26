@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/skill"
 )
 
@@ -413,8 +414,21 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 		res.Plugin.Skills = append(res.Plugin.Skills, instName)
 	}
 
-	// 2) Wire MCP servers (niche, gated, ${ROOT}-expanded) into mcp.json.
+	// 2) Wire MCP servers (niche, gated, ${ROOT}-expanded) into mcp.json. An MCP
+	// server is a subprocess command, so scan it like skills/agents — a malicious
+	// command is just as dangerous as a malicious instruction. discoverMCP keeps
+	// every parsed .mcp.json entry, including ones with neither a runnable command
+	// nor a transport the loader can connect/report — the same shape discoverApps
+	// drops up front. Skip those here (and warn) so MCPServers counts only servers
+	// the loader will actually try, not entries it would silently reject.
 	for _, s := range comps.MCPServers {
+		if !mcpRunnable(s) {
+			res.Warnings = append(res.Warnings, fmt.Sprintf("mcp server %q skipped: no command and no supported transport (url/type) — not runnable", s.Name))
+			continue
+		}
+		if serr := scanCommandComponent(ctx, opts, res, "mcp", pluginName, s.Name, mcpScanBody(s), &scanCount); serr != nil {
+			return nil, serr
+		}
 		name := pluginName + "-" + s.Name
 		if err := r.addMCPServer(name, s, dest, entry); err != nil {
 			return nil, fmt.Errorf("wire mcp %q: %w", s.Name, err)
@@ -422,6 +436,9 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 		res.Plugin.MCPServers = append(res.Plugin.MCPServers, name)
 	}
 	for _, s := range comps.AppServers {
+		if serr := scanCommandComponent(ctx, opts, res, "mcp", pluginName, "app-"+s.Name, mcpScanBody(s), &scanCount); serr != nil {
+			return nil, serr
+		}
 		name := pluginName + "-app-" + s.Name
 		if err := r.addMCPServer(name, s, dest, entry); err != nil {
 			return nil, fmt.Errorf("wire app mcp %q: %w", s.Name, err)
@@ -429,7 +446,13 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 		res.Plugin.MCPServers = append(res.Plugin.MCPServers, name)
 	}
 
-	// 3) Wire hooks (${ROOT}-expanded) into hooks.json.
+	// 3) Wire hooks (${ROOT}-expanded) into hooks.json. A hook auto-runs a shell
+	// command on agent events, so scan each command body before wiring.
+	for i, h := range comps.Hooks {
+		if serr := scanCommandComponent(ctx, opts, res, "hook", pluginName, fmt.Sprintf("%s[%d]", h.Event, i), hookScanBody(h), &scanCount); serr != nil {
+			return nil, serr
+		}
+	}
 	if n, err := r.addHooks(comps.Hooks, dest); err != nil {
 		return nil, fmt.Errorf("wire hooks: %w", err)
 	} else {
@@ -482,7 +505,11 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 			return nil, fmt.Errorf("install agent %q: %w", af.Name, err)
 		}
 		res.Plugin.Agents = append(res.Plugin.Agents, instName)
-		res.Plugin.AgentRoles = append(res.Plugin.AgentRoles, installedAgentRole(instName, af))
+		role, kindWarn := installedAgentRole(instName, af)
+		if kindWarn != "" {
+			res.Warnings = append(res.Warnings, fmt.Sprintf("agent %q: %s", af.Name, kindWarn))
+		}
+		res.Plugin.AgentRoles = append(res.Plugin.AgentRoles, role)
 	}
 
 	if unwiredApps := comps.Apps - len(comps.AppServers); unwiredApps > 0 {
@@ -506,6 +533,78 @@ func (r *Registry) InstallPlugin(ctx context.Context, pluginName, mktName string
 	}
 	committed = true
 	return res, nil
+}
+
+// scanCommandComponent runs a hook/MCP command body through the scanner with the
+// same shape skills/agents use: it counts the scan, records a RISKY verdict in
+// res.Scans, and returns a RiskyError (so the caller aborts) unless opts.Force is
+// set. A nil scanner or a safe verdict returns nil. kind is "mcp" or "hook".
+func scanCommandComponent(ctx context.Context, opts InstallOptions, res *InstallResult, kind, pluginName, compName, body string, scanCount *int) error {
+	if opts.Scanner == nil {
+		return nil
+	}
+	sr, serr := opts.Scanner.Scan(ctx, compName, body)
+	if serr != nil {
+		return fmt.Errorf("scan %s %q: %w", kind, compName, serr)
+	}
+	*scanCount++
+	if !sr.Safe {
+		res.Scans = append(res.Scans, ScanFinding{Component: kind + ":" + compName, Reasons: sr.Reasons})
+		if !opts.Force {
+			return &skill.RiskyError{Name: pluginName + "/" + compName, Reasons: sr.Reasons}
+		}
+	}
+	return nil
+}
+
+// mcpRunnable reports whether an MCP server has something the loader can act on:
+// a stdio command, or a remote transport (a url, or a type the loader's
+// isRemoteServer recognizes — http/sse and the streamable-http aliases). A server
+// with none of these is the loader's "empty name or command" reject case; mirror
+// the discoverApps len(cmd)==0 && url=="" guard so install never counts an entry
+// the loader will silently drop. Kept in sync with mcp.isRemoteServer.
+func mcpRunnable(s MCPServer) bool {
+	if len(s.Command) > 0 {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(s.Type)) {
+	case "http", "sse", "streamable-http", "streamable_http":
+		return true
+	}
+	return strings.TrimSpace(s.URL) != ""
+}
+
+// mcpScanBody renders an MCP server's launch surface (command + args + env) into
+// a single text blob for the scanner — the executable bits a malicious server
+// would hide its payload in.
+func mcpScanBody(s MCPServer) string {
+	var b strings.Builder
+	for i, c := range s.Command {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(c)
+	}
+	for _, a := range s.Args {
+		b.WriteByte(' ')
+		b.WriteString(a)
+	}
+	if strings.TrimSpace(s.URL) != "" {
+		b.WriteByte(' ')
+		b.WriteString(s.URL)
+	}
+	for k, v := range s.Env {
+		b.WriteByte('\n')
+		b.WriteString(k)
+		b.WriteByte('=')
+		b.WriteString(v)
+	}
+	return b.String()
+}
+
+// hookScanBody renders a hook's shell command into a single line for the scanner.
+func hookScanBody(h HookSpec) string {
+	return strings.Join(h.Command, " ")
 }
 
 // resolvePlugin locates the plugin entry in a (named or any) recorded
@@ -636,26 +735,66 @@ func (r *Registry) installAgentFile(instName, content string, overwrite bool) er
 	return os.WriteFile(dst, []byte(toEigenRoot(content)), 0o644)
 }
 
-func installedAgentRole(instName string, af AgentFile) InstalledAgentRole {
+// installedAgentRole builds the read-only routing metadata for a plugin agent.
+// A second return value carries a non-fatal warning when the agent declared a
+// routing kind we could not honor, so the caller can surface it on the install
+// result instead of silently dropping the hint.
+func installedAgentRole(instName string, af AgentFile) (InstalledAgentRole, string) {
 	tools, readOnly := normalizeAgentTools(af.Tools, af.ReadOnly, af.ReadOnlySet)
+	kind, warn := normalizeAgentKind(af.Kind)
 	return InstalledAgentRole{
 		Name:        instName,
 		SourceName:  af.Name,
 		Description: af.Description,
-		Kind:        normalizeAgentKind(af.Kind),
+		Kind:        kind,
 		Difficulty:  normalizeAgentDifficulty(af.Difficulty),
 		Model:       strings.TrimSpace(af.Model),
 		Tools:       tools,
 		ReadOnly:    readOnly,
+	}, warn
+}
+
+// normalizeAgentKind validates a plugin agent's declared routing kind against
+// the router's canonical TaskKind set (llm.ParseTaskKind) rather than a list
+// duplicated here, mapping any accepted alias (e.g. "web"→"search") to its
+// canonical name. It returns the canonical kind plus a non-empty warning when a
+// declared kind is recognized by neither — so the dropped hint is surfaced, not
+// swallowed. An empty/unset kind is fine (no hint, no warning).
+func normalizeAgentKind(kind string) (string, string) {
+	trimmed := strings.TrimSpace(kind)
+	if trimmed == "" {
+		return "", ""
+	}
+	tk, ok := llm.ParseTaskKind(trimmed)
+	if !ok {
+		return "", fmt.Sprintf("agent routing kind %q is not recognized (expected one of %s) — routing hint dropped", trimmed, strings.Join(canonicalAgentKinds(), ", "))
+	}
+	return canonicalAgentKindName(tk), ""
+}
+
+// canonicalAgentKindName renders a router TaskKind as its canonical string,
+// keeping install metadata aligned with the llm package's enum.
+func canonicalAgentKindName(tk llm.TaskKind) string {
+	switch tk {
+	case llm.TaskSearch:
+		return "search"
+	case llm.TaskVision:
+		return "vision"
+	case llm.TaskSocial:
+		return "social"
+	default:
+		return "general"
 	}
 }
 
-func normalizeAgentKind(kind string) string {
-	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "general", "search", "vision", "social":
-		return strings.ToLower(strings.TrimSpace(kind))
-	default:
-		return ""
+// canonicalAgentKinds lists the canonical kind names (for warning messages),
+// derived from the router's TaskKind constants.
+func canonicalAgentKinds() []string {
+	return []string{
+		canonicalAgentKindName(llm.TaskGeneral),
+		canonicalAgentKindName(llm.TaskSearch),
+		canonicalAgentKindName(llm.TaskVision),
+		canonicalAgentKindName(llm.TaskSocial),
 	}
 }
 

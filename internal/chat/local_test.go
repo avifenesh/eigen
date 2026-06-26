@@ -83,6 +83,29 @@ func TestLocalDeniedApproval(t *testing.T) {
 	}
 }
 
+// suffixProv mimics a real provider (e.g. GLM) whose Name() carries a human
+// suffix while ModelID() is the raw, resolvable id.
+type suffixProv struct{}
+
+func (suffixProv) Name() string    { return "glm-4.6 (zhipu glm)" }
+func (suffixProv) ModelID() string { return "glm-4.6" }
+func (suffixProv) Complete(context.Context, llm.Request) (*llm.Response, error) {
+	return &llm.Response{}, nil
+}
+
+func TestLocalSetModelTracksRawID(t *testing.T) {
+	// SetModel must record the raw ModelID() — not the suffixed Name() — so a
+	// local chat and a daemon-attached Remote (which tracks ModelID()) show the
+	// same model string in the status bar for the identical model.
+	reg, _ := tool.NewRegistry()
+	a := &agent.Agent{Provider: &gateProv{}, Tools: reg, Perm: agent.PermAuto}
+	l := NewLocal(a, nil, "m")
+	l.SetModel(suffixProv{}, nil, 0)
+	if got := l.ModelID(); got != "glm-4.6" {
+		t.Fatalf("ModelID after SetModel = %q, want %q (raw id, no Name() suffix)", got, "glm-4.6")
+	}
+}
+
 func TestLocalResetAndState(t *testing.T) {
 	reg, _ := tool.NewRegistry()
 	a := &agent.Agent{Provider: &gateProv{step: 1}, Tools: reg, Perm: agent.PermAuto}

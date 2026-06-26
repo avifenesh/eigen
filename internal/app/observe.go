@@ -12,35 +12,42 @@ import (
 // observeState is the app command-center view over metadata-only telemetry:
 // route behavior, subagent/tool failures, model/token usage, hooks and runtime
 // stress. It deliberately renders aggregates, not transcript content.
-type observeState struct{ list list }
-
-func (s *observeState) init(d *Data) { s.sync(d) }
-
-func (s *observeState) sync(d *Data) {
-	count := 6 // hero + section headers/details baseline
-	if d != nil {
-		count += len(nonZeroCounts(d.Observe.ByKind))
-		count += len(nonZeroCounts(d.Observe.Errors))
-		count += len(nonZeroCounts(d.Observe.Notes))
-		count += len(d.Observe.Models)
-		count += len(d.Observe.Tools)
-		count += len(d.Observe.Hooks)
-		count += len(d.Observe.Skills)
-	}
-	if count < 1 {
-		count = 1
-	}
-	s.list.count = count
+type observeState struct {
+	clicks clickMap // section-start line → section index (click snaps it to top)
 }
 
+func (s *observeState) init(*Data) {}
+
 func (s *observeState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	s.sync(m.data)
-	s.list.key(msg.String(), m.height-6)
+	// observe renders every section and relies on contentScroll (the global
+	// pgup/pgdown/home/end handler) — there is no row cursor in view(). Map
+	// j/k to a single-line content scroll so they nudge the page instead of
+	// moving a phantom list cursor the renderer never reads.
+	switch msg.String() {
+	case "j", "down":
+		m.scrollContent(1)
+	case "k", "up":
+		m.scrollContent(-1)
+	}
 	return m, nil
 }
 
+// clickAt snaps the clicked section to the top of the content viewport. observe
+// has no row cursor or open action — sections only scroll — so a click on a
+// section's first line jumps the page to it (the section-click counterpart of
+// the j/k content-scroll model).
+func (s *observeState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
+	line, ok := s.clicks.at(localY)
+	if !ok {
+		return nil, false
+	}
+	// clicks records absolute section-start lines; scroll there directly
+	// (scrollContent clamps to the page's max scroll).
+	m.scrollContent(line - m.contentScroll)
+	return nil, true
+}
+
 func (s *observeState) view(m *Model, w, h int) string {
-	s.sync(m.data)
 	d := m.data
 	out := pageTitle("observe", "metadata-only telemetry", w)
 	if d.ObserveErr != "" {
@@ -48,16 +55,28 @@ func (s *observeState) view(m *Model, w, h int) string {
 		return out
 	}
 	obs := d.Observe
-	out += observeHero(obs, w)
-	out += observeRoutes(obs, w)
-	out += observeSubagents(obs, w)
-	out += observeCounts("errors", obs.Errors, w, func(v string) string { return sErr.Render(v) })
-	out += observeCounts("route / system notes", obs.Notes, w, func(v string) string { return sAccent.Render(v) })
-	out += observeModels(obs, w)
-	out += observeSkills(obs, w)
-	out += observeTools(obs, w)
-	out += observeHooks(obs, w)
-	out += observeRuntime(obs, w)
+	s.clicks.reset()
+	sectionIdx := 0
+	// section appends a telemetry block and records its first content-local line
+	// as a click target so a click can snap that section to the top.
+	section := func(block string) {
+		if block == "" {
+			return
+		}
+		s.clicks.mark(lineCount(out), sectionIdx)
+		sectionIdx++
+		out += block
+	}
+	section(observeHero(obs, w))
+	section(observeRoutes(obs, w))
+	section(observeSubagents(obs, w))
+	section(observeCounts("errors", obs.Errors, w, func(v string) string { return sErr.Render(v) }))
+	section(observeCounts("route / system notes", obs.Notes, w, func(v string) string { return sAccent.Render(v) }))
+	section(observeModels(obs, w))
+	section(observeSkills(obs, w))
+	section(observeTools(obs, w))
+	section(observeHooks(obs, w))
+	section(observeRuntime(obs, w))
 	out += "\n" + sFaint.Render("  source: "+truncate(d.ObservePath, max(10, w-12)))
 	out += "\n" + sFaint.Render("  CLI: eigen observe summary --limit=5000")
 	return out

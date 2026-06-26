@@ -123,6 +123,7 @@ type cronsState struct {
 	rows   []CronRow
 	loaded bool
 	status string // last action feedback
+	clicks clickMap
 }
 
 func (c *cronsState) init(*Data) {}
@@ -189,6 +190,23 @@ func (c *cronsState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// clickAt selects a cron row; a second click on the selected timer toggles it
+// on/off (same as enter/space). crontab rows have no toggle, so a re-click just
+// keeps them selected.
+func (c *cronsState) clickAt(m *Model, localY int) (tea.Cmd, bool) {
+	idx, ok := c.clicks.at(localY)
+	if !ok || idx < 0 || idx >= len(c.rows) {
+		return nil, false
+	}
+	if c.list.cursor == idx {
+		_, cmd := c.update(m, tea.KeyMsg{Type: tea.KeyEnter}) // toggle the selected timer
+		return cmd, true
+	}
+	c.list.cursor = idx
+	c.status = ""
+	return nil, true
+}
+
 // timerCtl runs systemctl --user <verb> <unit>, returning combined output.
 func timerCtl(verb, unit string) (string, error) {
 	out, err := exec.Command("systemctl", "--user", verb, unit).CombinedOutput()
@@ -207,8 +225,17 @@ func (c *cronsState) view(m *Model, w, h int) string {
 	if visible < 3 {
 		visible = 3
 	}
-	start := c.list.top
-	for i := start; i < len(c.rows) && i < start+visible; i++ {
+	// Keep the list's row count in sync with what we render: load() sets it, but
+	// a path that populates rows without going through load() would leave count
+	// stale and window() would return an empty range.
+	c.list.count = len(c.rows)
+	// window() is the renderer's authority on which rows are on-screen: it
+	// re-anchors on the cursor so G (end) can't scroll the active timer off the
+	// bottom even though update() advances l.top with a larger (m.height-6)
+	// estimate. Reading l.top raw here would leave the selected row hidden.
+	from, to := c.list.window(visible)
+	c.clicks.reset()
+	for i := from; i < to; i++ {
 		r := c.rows[i]
 		cursor := "  "
 		if i == c.list.cursor {
@@ -221,6 +248,7 @@ func (c *cronsState) view(m *Model, w, h int) string {
 		kind := sDim.Render(pad(r.Kind, 8))
 		name := sText.Render(pad(truncate(r.Name, 34), 36))
 		next := sDim.Render(pad(truncate(r.Next, 22), 24))
+		c.clicks.mark(lineCount(out), i)
 		out += cursor + mark + " " + kind + name + next + "\n"
 	}
 	if i := c.list.cursor; i < len(c.rows) {

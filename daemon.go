@@ -86,6 +86,20 @@ func runDaemon(cfg config.Config) {
 		return deps.Agent, deps.Close, nil
 	}
 
+	// Report the live background-task count for `stats` / the GUI agents badge.
+	// LoadBgTasks reads the on-disk task store (~/.eigen/tasks[-instance]); count
+	// "running" exactly as the GUI does (internal/gui.Bridge.Agents). Cheap enough
+	// for the ~1Hz stats polling — a directory scan of last-line JSON reads.
+	host.SetBgCount(func() int {
+		running := 0
+		for _, t := range agent.LoadBgTasks(agent.TasksDir()) {
+			if t.Status == "running" {
+				running++
+			}
+		}
+		return running
+	})
+
 	// Live model switching for daemon sessions: rebuild a provider for the new
 	// model id (the same construction the local chat uses).
 	host.SetModelSwitcher(func(dir, modelID string) (llm.Provider, llm.Compactor, int, error) {
@@ -93,7 +107,18 @@ func runDaemon(cfg config.Config) {
 		if err != nil {
 			return nil, nil, 0, err
 		}
-		return p, llm.CompactorChain(llm.NewCompactor(smallProvider(p)), llm.NewCompactor(p)), contextBudget(cfg.MaxTokens, "", modelID), nil
+		// The switched-to model stays PRIMARY; wrap it in the configured "primary"
+		// rule chain so a quota/billing rejection falls through instead of erroring
+		// every turn (matches the build/main construction).
+		prov := llm.Provider(p)
+		if chain := llm.NewChain(cfg.ChainFor("primary")...); llm.ChainBeyond(chain, p.ModelID()) {
+			prov = llm.NewFallback(p, chain)
+		}
+		// Compact through the FALLBACK-wrapped prov, not raw p: otherwise a
+		// quota/billing rejection on the primary would fail compaction outright
+		// instead of falling through the chain (the same reason prov is returned
+		// for turns). smallProvider stays the cheap first rung.
+		return prov, llm.CompactorChain(llm.NewCompactor(smallProvider(prov)), llm.NewCompactor(prov)), contextBudget(cfg.MaxTokens, "", modelID), nil
 	})
 
 	// Auto-title daemon sessions on the small model (same titler as the app's
@@ -124,10 +149,18 @@ func runDaemon(cfg config.Config) {
 		fmt.Fprintf(os.Stderr, "eigen daemon: restored %d session(s)\n", n)
 	}
 
+	// Heal pre-existing memory-scope fragmentation: before canonical git-root
+	// scoping (memory.Open keys by the repo's main-worktree root), a worktree, a
+	// subdir, or a `..`-rooted session each got its OWN scope — splitting one
+	// project's memory across stores. Fold those legacy scopes into the canonical
+	// one, once, using the persisted-session dirs as the known-project set.
+	// Best-effort + idempotent (already-merged scopes are gone, so re-runs no-op).
+	go reconcileMemoryScopes()
+
 	// Nightly dreaming: when the machine is idle, reflect persisted sessions
 	// into structured memory across all scopes (the codex-style pipeline) on
 	// the small model. Best-effort, never competes with a live turn.
-	go nightlyDreamer(host, gmem)
+	go nightlyDreamer(host, gmem, cfg)
 
 	// Telegram phone bridge: when a bot token is configured, the daemon keeps
 	// `eigen telegram` running (spawn + restart-on-exit) so the bot is always
@@ -147,6 +180,12 @@ func runDaemon(cfg config.Config) {
 	}
 	defer daemon.RemovePID(daemon.PIDPath())
 	fmt.Fprintf(os.Stderr, "eigen daemon listening on %s (pid %d)\n", daemon.SocketPath(), os.Getpid())
+
+	// Periodic prompt-cache report: the one token-efficiency metric worth a
+	// glance over long uptime (cache reads are billed at a large discount, so a
+	// low hit rate is real money). Logged to stderr every 30 min, but ONLY when
+	// the daemon has actually spent input tokens — an idle daemon stays quiet.
+	go logPromptCacheStats(host)
 
 	// Graceful shutdown on SIGINT/SIGTERM: interrupt every session and close.
 	// Resource teardown (MCP/LSP subprocesses) can hang, so a watchdog forces
@@ -236,15 +275,11 @@ func daemonControl(sub string) bool {
 			fmt.Printf("  bg tasks:    %d (in memory)\n", st.BgTasks)
 		}
 		if st.InputTokens > 0 || st.CacheReadTokens > 0 {
-			denom := st.InputTokens + st.CacheReadTokens
-			var hit float64
-			if denom > 0 {
-				hit = 100 * float64(st.CacheReadTokens) / float64(denom)
-			}
+			hit := cacheHitPct(st.InputTokens, st.CacheReadTokens, st.CacheWriteTokens)
 			fmt.Printf("  tokens:      in %s (cache: %s read, %s write) · out %s\n",
 				humanCount(st.InputTokens), humanCount(st.CacheReadTokens),
 				humanCount(st.CacheWriteTokens), humanCount(st.OutputTokens))
-			fmt.Printf("  cache hit:   %.1f%% of input tokens served from cache\n", hit)
+			fmt.Printf("  cache hit:   %.1f%% of the prompt served from cache\n", hit)
 		}
 		if st.GoVersion != "" {
 			fmt.Printf("  go:          %s\n", st.GoVersion)
@@ -394,7 +429,7 @@ func attachTUI(c *daemon.Client, id string, cfg config.Config, task string) tui.
 		Skills:        skills,
 		DreamOnIdle:   cfg.DreamOnIdle,
 		IdleMinutes:   cfg.IdleMinutes,
-		MaxTokens:     cfg.MaxTokens,
+		MaxTokens:     resolveUserMaxTokens(cfg.MaxTokens),
 		NotifyCmd:     cfg.NotifyCmd,
 		Router:        newAutoRouter(cfg.Route, cfg.RouteProviders, firstNonEmpty(cfg.Provider, "converse")),
 		HookRunner:    hookRunner,
@@ -780,12 +815,40 @@ func sweepStaleWorkspaces() {
 	}()
 }
 
+// reconcileMemoryScopes folds legacy per-cwd memory scopes into their canonical
+// git-root scope, healing fragmentation that predates canonical scoping. It uses
+// every distinct persisted-session dir as the known-project set, so a worktree
+// or subdir that was once its own scope gets merged into the main repo's scope.
+// Best-effort + idempotent; logs only when it actually merged something.
+func reconcileMemoryScopes() {
+	seen := map[string]bool{}
+	var dirs []string
+	for _, p := range daemon.ListPersisted() {
+		if p.Dir == "" || seen[p.Dir] {
+			continue
+		}
+		seen[p.Dir] = true
+		dirs = append(dirs, p.Dir)
+	}
+	if len(dirs) == 0 {
+		return
+	}
+	merges, err := memory.ReconcileScopes(dirs, time.Now())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "eigen daemon: scope reconcile:", err)
+	}
+	for _, m := range merges {
+		fmt.Fprintf(os.Stderr, "eigen daemon: merged memory scope %s → %s (%d bytes, %d ad-hoc, %d rollouts; archived %s)\n",
+			m.SrcKey, m.DstKey, m.MemoryBytes, m.AdHocCopied, m.RolloutCopied, m.ArchivedAs)
+	}
+}
+
 // nightlyDreamer reflects persisted daemon sessions into structured memory when
 // the machine is idle. Every dreamInterval it checks: nothing running, and a
 // session has changed since last dream → run the memory pipeline per scope
 // (grouped by session dir) on the small model. Best-effort and quiet: a model
 // outage or a busy daemon just skips this cycle.
-func nightlyDreamer(host *daemon.Host, gmem *memory.Store) {
+func nightlyDreamer(host *daemon.Host, gmem *memory.Store, cfg config.Config) {
 	const dreamInterval = 3 * time.Hour
 	// First pass shortly after startup (the daemon just restored sessions), then
 	// on the interval. A jittered initial delay avoids dreaming during a fresh
@@ -797,11 +860,11 @@ func nightlyDreamer(host *daemon.Host, gmem *memory.Store) {
 		if host.AnyRunning() {
 			continue // never compete with a live turn for the model
 		}
-		prov := titleProvider(nil) // the small model (health-checks itself)
+		prov := dreamProvider(cfg) // dreamer chain: sonnet-first, NOT the cheap GLM real tasks want
 		if prov == nil {
 			continue
 		}
-		runNightlyDream(host, prov, gmem)
+		runNightlyDream(host, prov, gmem, cfg)
 	}
 }
 
@@ -809,7 +872,7 @@ func nightlyDreamer(host *daemon.Host, gmem *memory.Store) {
 // for each scope. Idempotency (watermarks) means unchanged sessions are skipped
 // cheaply, so this is safe to run on every idle interval. After per-project
 // dreaming, it distills cross-project preferences into the GLOBAL profile.
-func runNightlyDream(host *daemon.Host, prov llm.Provider, gmem *memory.Store) {
+func runNightlyDream(host *daemon.Host, prov llm.Provider, gmem *memory.Store, dreamCfg config.Config) {
 	idx, err := memory.OpenIndex()
 	if err != nil {
 		return
@@ -824,16 +887,27 @@ func runNightlyDream(host *daemon.Host, prov llm.Provider, gmem *memory.Store) {
 		}
 		byDir[p.Dir] = append(byDir[p.Dir], p)
 	}
+	// Bounded + iterative: process at most maxScopesPerWake scopes this wake,
+	// then stop and let the next interval pick up the rest. Combined with the
+	// watermark idempotency (unchanged scopes are no-ops) this means a backlog of
+	// many projects drains a few per wake rather than grinding the whole universe
+	// — and never "non-stop": the loop also yields the moment a live turn starts.
+	const maxScopesPerWake = 4
+	scopesDone := 0
 	var globalCorpus []string // a sample of rollout summaries for the global profile
 	for dir, infos := range byDir {
 		if host.AnyRunning() {
 			return // a turn started mid-dream; yield the model
+		}
+		if scopesDone >= maxScopesPerWake {
+			break // iterative cap — the rest dream on the next wake
 		}
 		mem, err := memory.Open(dir)
 		if err != nil {
 			continue
 		}
 		pipe := newMemoryPipeline(prov, mem, idx)
+		wireBatchStage1(pipe, prov, dreamCfg) // opt-in async batch Stage1 (no-op unless enabled + supported)
 		var sessions []memory.Session
 		for _, p := range infos {
 			path := daemon.PersistedTranscriptPath(p.ID)
@@ -854,6 +928,7 @@ func runNightlyDream(host *daemon.Host, prov llm.Provider, gmem *memory.Store) {
 		if len(sessions) == 0 {
 			continue
 		}
+		scopesDone++ // a scope with real sessions counts toward the per-wake cap
 		if report, _ := pipe.Run(context.Background(), sessions); report != "" {
 			fmt.Fprintf(os.Stderr, "eigen daemon: dreamed %s — %s\n", dir, report)
 		}
@@ -876,6 +951,16 @@ func runNightlyDream(host *daemon.Host, prov llm.Provider, gmem *memory.Store) {
 				_ = gmem.Append(n)
 			}
 			summaryRefreshed, _ := refreshMemorySummary(context.Background(), prov, gmem, idx)
+			// Refresh USER.md's auto-maintained learned block from the curated
+			// global profile, same as the CLI `eigen dream` path (main.go) — so a
+			// daemon-only user gets the same injected USER.md freshness instead of
+			// it going stale until they run dream by hand. The user's own section
+			// is preserved by SetLearnedProfile.
+			learned := strings.TrimSpace(gmem.Injected())
+			if learned == "" {
+				learned = strings.Join(notes, "\n")
+			}
+			_ = gmem.SetLearnedProfile(learned)
 			memory.CommitMemory(fmt.Sprintf("dream: global profile — %d new", len(notes)))
 			if summaryRefreshed {
 				fmt.Fprintf(os.Stderr, "eigen daemon: global profile +%d, regenerated memory_summary.md\n", len(notes))
@@ -883,6 +968,78 @@ func runNightlyDream(host *daemon.Host, prov llm.Provider, gmem *memory.Store) {
 				fmt.Fprintf(os.Stderr, "eigen daemon: global profile +%d\n", len(notes))
 			}
 		}
+	}
+
+	// Reclassify DOWN: a global note that's actually specific to one project was
+	// misfiled — move it into that project's memory. (The UP direction, project →
+	// global, is the DistillGlobal pass above.) Conservative: only confident,
+	// named-project demotions are applied, each tombstoned in global so the next
+	// global consolidation drops the misfiled copy.
+	if gmem != nil && !host.AnyRunning() {
+		reclassifyGlobalDown(prov, gmem, byDir)
+	}
+
+	// Working-station reflection (calendar/mail/projects/crons/health → durable
+	// life-awareness notes in global memory). eigen is a working station, so the
+	// nightly dream also reflects the working LIFE, not only coding sessions.
+	if gmem != nil && !host.AnyRunning() {
+		if digest := stationDigest(context.Background()); digest != "" {
+			if notes, err := dream.DistillStation(context.Background(), prov, digest, gmem.Read()); err == nil && len(notes) > 0 {
+				for _, n := range notes {
+					_ = gmem.Append(n)
+				}
+				memory.CommitMemory(fmt.Sprintf("dream: working-station — %d new", len(notes)))
+				fmt.Fprintf(os.Stderr, "eigen daemon: working-station +%d\n", len(notes))
+			}
+		}
+	}
+}
+
+// reclassifyGlobalDown moves global notes that are really project-specific into
+// the project they belong to. byDir is the dreamed scopes this wake; their
+// readable project names are the demotion candidates (so a note can only move to
+// a project eigen actually knows). Best-effort + conservative — the model is
+// told leaving a note beats a wrong demotion, and only known-name proposals are
+// applied. Each applied move tombstones the global copy via memory.MoveNote.
+func reclassifyGlobalDown(prov llm.Provider, gmem *memory.Store, byDir map[string][]daemon.PersistedInfo) {
+	if gmem == nil || len(byDir) == 0 {
+		return
+	}
+	// Map candidate project NAME → its store (canonical scope per dir).
+	stores := map[string]*memory.Store{}
+	var names []string
+	for dir := range byDir {
+		st, err := memory.Open(dir)
+		if err != nil {
+			continue
+		}
+		name := memory.StoreName(st)
+		if name == "" || name == "global" || stores[name] != nil {
+			continue
+		}
+		stores[name] = st
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return
+	}
+	moves, err := dream.ProposeDemotions(context.Background(), prov, gmem.Read(), names)
+	if err != nil || len(moves) == 0 {
+		return
+	}
+	applied := 0
+	for _, m := range moves {
+		dst := stores[m.Project]
+		if dst == nil {
+			continue
+		}
+		if err := memory.MoveNote(gmem, dst, m.Note); err == nil {
+			applied++
+		}
+	}
+	if applied > 0 {
+		memory.CommitMemory(fmt.Sprintf("dream: demoted %d global note(s) to their project", applied))
+		fmt.Fprintf(os.Stderr, "eigen daemon: demoted %d misfiled global note(s) to project memory\n", applied)
 	}
 }
 
@@ -978,6 +1135,45 @@ func humanCount(n int64) string {
 		return fmt.Sprintf("%.1fK", float64(n)/1e3)
 	default:
 		return fmt.Sprintf("%d", n)
+	}
+}
+
+// cacheHitPct is the prompt-cache hit rate as a 0..100 percentage: cached reads
+// over the FULL prompt size. The provider reports input_tokens as the FRESH
+// (uncached) portion only, so the denominator sums fresh input + cache reads +
+// cache writes (else a mostly-cached prompt reads > 100%). Matches the GUI's
+// shipped formula (Home/Observe/Profile). Returns 0 when nothing was spent.
+func cacheHitPct(input, cacheRead, cacheWrite int64) float64 {
+	denom := input + cacheRead + cacheWrite
+	if denom <= 0 {
+		return 0
+	}
+	hit := 100 * float64(cacheRead) / float64(denom)
+	if hit < 0 {
+		return 0
+	}
+	if hit > 100 {
+		return 100
+	}
+	return hit
+}
+
+// logPromptCacheStats writes one prompt-cache hit line to stderr every 30 min,
+// gated to skip while the daemon is idle (no input tokens spent yet). The embed
+// result cache (httpEmbedder.CacheStats) is per-index, not daemon-global, so it
+// has no path to this snapshot — only the prompt cache is surfaced here.
+func logPromptCacheStats(host *daemon.Host) {
+	const interval = 30 * time.Minute
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for range t.C {
+		st := host.Stats()
+		if st.InputTokens <= 0 {
+			continue // idle daemon — stay quiet
+		}
+		fmt.Fprintf(os.Stderr, "eigen daemon: prompt cache %.1f%% hit (in=%s read=%s write=%s)\n",
+			cacheHitPct(st.InputTokens, st.CacheReadTokens, st.CacheWriteTokens),
+			humanCount(st.InputTokens), humanCount(st.CacheReadTokens), humanCount(st.CacheWriteTokens))
 	}
 }
 

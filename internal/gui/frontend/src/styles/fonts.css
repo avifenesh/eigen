@@ -1,0 +1,27 @@
+/*
+ * Fonts. Inter (UI/prose) + JetBrains Mono (code only). When bundled woff2
+ * files are present under public/fonts they're declared here; until then the
+ * --font-sans / --font-mono fallback stacks in tokens.css resolve to the OS
+ * Inter/JetBrains install or a system sans/mono. No layout depends on the
+ * bundled files existing, so the app renders correctly either way.
+ *
+ * To bundle: drop Inter.var.woff2 + JetBrainsMono.woff2 into public/fonts/ and
+ * uncomment the @font-face blocks below.
+ */
+
+/*
+@font-face {
+  font-family: "Inter var";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/Inter.var.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/JetBrainsMono.woff2") format("woff2");
+}
+*/

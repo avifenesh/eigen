@@ -47,21 +47,22 @@ type Request struct {
 
 // Response is a daemon→view message. Type discriminates the payload.
 type Response struct {
-	Type     string        `json:"type"` // ok | error | sessions | attached | event | state | compacted
-	Error    string        `json:"error,omitempty"`
-	ID       string        `json:"id,omitempty"`       // session id (new/attached)
-	Root     string        `json:"root,omitempty"`     // add-dir: the normalized root added
-	Sessions []SessionInfo `json:"sessions,omitempty"` // list
-	Event    *WireEvent    `json:"event,omitempty"`    // streamed agent event
-	Replay   bool          `json:"replay,omitempty"`   // event is from the replay buffer
-	State    *SessionState `json:"state,omitempty"`    // state op result
-	Before   int           `json:"before,omitempty"`   // compact result (message counts)
-	After    int           `json:"after,omitempty"`
-	Pruned   []string      `json:"pruned,omitempty"`   // prune result: removed session ids
-	Steered  bool          `json:"steered,omitempty"`  // input: delivered as a mid-turn steer (a turn was running)
-	Killed   bool          `json:"killed,omitempty"`   // kill-shell: a running shell was signaled
-	Detached bool          `json:"detached,omitempty"` // detach-bash: a foreground bash was backgrounded
-	Stats    *DaemonStats  `json:"stats,omitempty"`    // stats op: daemon resource health
+	Type        string        `json:"type"` // ok | error | sessions | attached | event | state | compacted
+	Error       string        `json:"error,omitempty"`
+	ID          string        `json:"id,omitempty"`       // session id (new/attached)
+	Root        string        `json:"root,omitempty"`     // add-dir: the normalized root added
+	Sessions    []SessionInfo `json:"sessions,omitempty"` // list
+	Event       *WireEvent    `json:"event,omitempty"`    // streamed agent event
+	Replay      bool          `json:"replay,omitempty"`   // event is from the replay buffer
+	State       *SessionState `json:"state,omitempty"`    // state op result
+	Before      int           `json:"before,omitempty"`   // compact result (message counts)
+	After       int           `json:"after,omitempty"`
+	Pruned      []string      `json:"pruned,omitempty"`      // prune result: removed session ids
+	Steered     bool          `json:"steered,omitempty"`     // input: delivered as a mid-turn steer (a turn was running)
+	Interrupted bool          `json:"interrupted,omitempty"` // interrupt: a running turn was actually cancelled (false = nothing to interrupt)
+	Killed      bool          `json:"killed,omitempty"`      // kill-shell: a running shell was signaled
+	Detached    bool          `json:"detached,omitempty"`    // detach-bash: a foreground bash was backgrounded
+	Stats       *DaemonStats  `json:"stats,omitempty"`       // stats op: daemon resource health
 }
 
 // DaemonStats is the daemon's resource-health snapshot (the `stats` op): enough
@@ -123,12 +124,16 @@ type ApprovalInfo struct {
 }
 
 // ShellInfo mirrors chat.ShellInfo over the wire (backgrounded bash shells).
+// Started/Finished are unix-millis (0 = unknown / still running) so the shells
+// panel can show elapsed runtime and finish time.
 type ShellInfo struct {
-	ID       string `json:"id"`
-	Command  string `json:"command"`
-	Status   string `json:"status"`
-	ExitCode int    `json:"exit_code"`
-	LastLine string `json:"last_line,omitempty"`
+	ID         string `json:"id"`
+	Command    string `json:"command"`
+	Status     string `json:"status"`
+	ExitCode   int    `json:"exit_code"`
+	StartedMs  int64  `json:"started_ms,omitempty"`
+	FinishedMs int64  `json:"finished_ms,omitempty"`
+	LastLine   string `json:"last_line,omitempty"`
 }
 
 // ToolInfo mirrors chat.ToolInfo over the wire.
@@ -149,20 +154,30 @@ type WireEvent struct {
 	IsError   bool            `json:"is_error,omitempty"`
 	InTokens  int             `json:"in_toks,omitempty"`
 	OutTokens int             `json:"out_toks,omitempty"`
+	// EventDone attribution: which provider/model produced the final answer, and
+	// the turn's prompt-cache hits/writes (cache_read vs in_toks is the hit rate).
+	Provider         string `json:"provider,omitempty"`
+	Model            string `json:"model,omitempty"`
+	CacheReadTokens  int    `json:"cache_read_toks,omitempty"`
+	CacheWriteTokens int    `json:"cache_write_toks,omitempty"`
 }
 
 func wireEvent(e agent.Event) *WireEvent {
 	return &WireEvent{
-		Kind:      eventKindName(e.Kind),
-		Step:      e.Step,
-		Text:      e.Text,
-		ToolName:  e.ToolName,
-		ToolID:    e.ToolID,
-		ToolArgs:  e.ToolArgs,
-		Result:    e.Result,
-		IsError:   e.IsError,
-		InTokens:  e.InTokens,
-		OutTokens: e.OutTokens,
+		Kind:             eventKindName(e.Kind),
+		Step:             e.Step,
+		Text:             e.Text,
+		ToolName:         e.ToolName,
+		ToolID:           e.ToolID,
+		ToolArgs:         e.ToolArgs,
+		Result:           e.Result,
+		IsError:          e.IsError,
+		InTokens:         e.InTokens,
+		OutTokens:        e.OutTokens,
+		Provider:         e.Provider,
+		Model:            e.Model,
+		CacheReadTokens:  e.CacheReadTokens,
+		CacheWriteTokens: e.CacheWriteTokens,
 	}
 }
 

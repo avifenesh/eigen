@@ -301,3 +301,41 @@ func TestWorkspaceListReadSearch(t *testing.T) {
 		t.Fatalf("search should find ad-hoc note, hits=%+v err=%v", hits, err)
 	}
 }
+
+// TestUserProfileSectionsRoundTrip verifies USER.md's two sections — the
+// eigen-maintained learned block + the user's free-form area — are edited
+// independently without clobbering each other (APP-054).
+func TestUserProfileSectionsRoundTrip(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	glob, _ := OpenGlobal()
+
+	// User writes their section; no learned block yet → no markers.
+	if err := glob.WriteUserProfile("I prefer terse answers."); err != nil {
+		t.Fatal(err)
+	}
+	if got := glob.UserProfile(); strings.Contains(got, learnedProfileBegin) {
+		t.Fatalf("user-only profile should carry no markers: %q", got)
+	}
+
+	// Eigen auto-maintains the learned block — user section preserved.
+	if err := glob.SetLearnedProfile("Works in Go and Svelte."); err != nil {
+		t.Fatal(err)
+	}
+	if got := glob.UserProfileLearned(); got != "Works in Go and Svelte." {
+		t.Fatalf("learned = %q", got)
+	}
+	if got := glob.UserProfileUser(); got != "I prefer terse answers." {
+		t.Fatalf("user section clobbered by learned write: %q", got)
+	}
+	if full := glob.UserProfile(); !strings.Contains(full, "Works in Go and Svelte.") || !strings.Contains(full, "I prefer terse answers.") {
+		t.Fatalf("full profile must inject BOTH: %q", full)
+	}
+
+	// User edits their section again — learned block preserved.
+	if err := glob.WriteUserProfile("I prefer terse answers. And tests."); err != nil {
+		t.Fatal(err)
+	}
+	if got := glob.UserProfileLearned(); got != "Works in Go and Svelte." {
+		t.Fatalf("learned clobbered by user write: %q", got)
+	}
+}

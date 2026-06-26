@@ -176,6 +176,96 @@ func TestCustomOpenAIResponsesUsesWireModelAndEndpoint(t *testing.T) {
 	}
 }
 
+// An empty completed Responses reply is the Bedrock/Responses quirk: Complete
+// must re-request (bounded by maxEmptyRetries) the way Mantle.Complete does
+// rather than hand back a do-nothing turn. The stub returns empty until the
+// final allowed attempt, then real text.
+func TestCustomOpenAIResponsesRetriesEmptyCompletion(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls <= maxEmptyRetries { // empty completed responses on the first attempts
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"output": []map[string]any{},
+				"usage":  map[string]any{"input_tokens": 1, "output_tokens": 0},
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"output": []map[string]any{{
+				"type":    "message",
+				"content": []map[string]any{{"type": "output_text", "text": "recovered"}},
+			}},
+			"usage": map[string]any{"input_tokens": 1, "output_tokens": 1},
+		})
+	}))
+	defer srv.Close()
+	if err := UpsertCustomProvider(CustomProvider{
+		Name:    "retrylab",
+		Type:    "openai",
+		API:     "responses",
+		BaseURL: srv.URL + "/v1/responses",
+		NoAuth:  true,
+		Models:  []CustomModel{{Name: "friendly-retry", ID: "wire-retry"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := New("retrylab", "friendly-retry")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := p.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Text != "recovered" {
+		t.Fatalf("expected retried text %q, got %q", "recovered", out.Text)
+	}
+	if want := maxEmptyRetries + 1; calls != want {
+		t.Fatalf("expected %d attempts (%d empty + 1 success), got %d", want, maxEmptyRetries, calls)
+	}
+}
+
+// When every attempt comes back empty, Complete stops after maxEmptyRetries+1
+// requests and returns the (empty) response rather than looping forever.
+func TestCustomOpenAIResponsesEmptyCompletionBounded(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"output": []map[string]any{},
+			"usage":  map[string]any{"input_tokens": 1, "output_tokens": 0},
+		})
+	}))
+	defer srv.Close()
+	if err := UpsertCustomProvider(CustomProvider{
+		Name:    "retrylab",
+		Type:    "openai",
+		API:     "responses",
+		BaseURL: srv.URL + "/v1/responses",
+		NoAuth:  true,
+		Models:  []CustomModel{{Name: "friendly-retry", ID: "wire-retry"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := New("retrylab", "friendly-retry")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := p.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Text != "" || len(out.ToolCalls) != 0 {
+		t.Fatalf("expected empty response after exhausting retries, got %+v", out)
+	}
+	if want := maxEmptyRetries + 1; calls != want {
+		t.Fatalf("expected bounded %d attempts, got %d", want, calls)
+	}
+}
+
 func TestCustomAnthropicUsesWireModelEndpointAndVersion(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("ANT_KEY", "secret")
@@ -217,6 +307,285 @@ func TestCustomAnthropicUsesWireModelEndpointAndVersion(t *testing.T) {
 	}
 	if out.Text != "ok" || seenPath != "/v1/messages" || seenKey != "secret" || seenVersion != "2024-01-01" || seenModel != "claude-wire" {
 		t.Fatalf("custom anthropic mismatch out=%+v path=%q key=%q version=%q model=%q", out, seenPath, seenKey, seenVersion, seenModel)
+	}
+}
+
+func TestCustomReasoningModelAppliesEffort(t *testing.T) {
+	// A custom reasoning model with a catalog Effort must actually send that
+	// effort on the wire for every kind, and SetEffort must change it live —
+	// matching how a built-in reasoning model applies effort.
+
+	t.Run("openai_chat", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		var seen struct {
+			ReasoningEffort string `json:"reasoning_effort"`
+		}
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&seen)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{{"message": map[string]any{"content": "ok"}}},
+			})
+		}))
+		defer srv.Close()
+		if err := UpsertCustomProvider(CustomProvider{
+			Name: "reasonchat", Type: "openai", API: "chat", BaseURL: srv.URL + "/v1", NoAuth: true,
+			Models: []CustomModel{{Name: "r-chat", ID: "wire", Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high"}}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		p, err := New("reasonchat", "r-chat")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}}); err != nil {
+			t.Fatal(err)
+		}
+		if seen.ReasoningEffort != "high" {
+			t.Fatalf("chat reasoning_effort = %q, want high", seen.ReasoningEffort)
+		}
+		es, ok := p.(EffortSetter)
+		if !ok {
+			t.Fatal("custom chat reasoning model must implement EffortSetter")
+		}
+		if es.Effort() != "high" {
+			t.Fatalf("Effort() = %q, want high", es.Effort())
+		}
+		if !es.SetEffort("low") {
+			t.Fatal("SetEffort(low) should succeed for a supported level")
+		}
+		if _, err := p.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}}); err != nil {
+			t.Fatal(err)
+		}
+		if seen.ReasoningEffort != "low" {
+			t.Fatalf("after SetEffort, reasoning_effort = %q, want low", seen.ReasoningEffort)
+		}
+		if es.SetEffort("bogus") {
+			t.Fatal("SetEffort should reject a level outside the model's set")
+		}
+	})
+
+	t.Run("openai_responses", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		var seen struct {
+			Reasoning *struct {
+				Effort string `json:"effort"`
+			} `json:"reasoning"`
+		}
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&seen)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"output": []map[string]any{{"type": "message", "content": []map[string]any{{"type": "output_text", "text": "ok"}}}},
+			})
+		}))
+		defer srv.Close()
+		if err := UpsertCustomProvider(CustomProvider{
+			Name: "reasonresp", Type: "openai", API: "responses", BaseURL: srv.URL + "/v1", NoAuth: true,
+			Models: []CustomModel{{Name: "r-resp", ID: "wire", Reasoning: true, Effort: "medium"}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		p, err := New("reasonresp", "r-resp")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}}); err != nil {
+			t.Fatal(err)
+		}
+		if seen.Reasoning == nil || seen.Reasoning.Effort != "medium" {
+			t.Fatalf("responses reasoning effort = %+v, want medium", seen.Reasoning)
+		}
+	})
+
+	t.Run("anthropic", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		var seen struct {
+			Thinking     json.RawMessage `json:"thinking"`
+			OutputConfig struct {
+				Effort string `json:"effort"`
+			} `json:"output_config"`
+		}
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&seen)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"content": []map[string]any{{"type": "text", "text": "ok"}},
+			})
+		}))
+		defer srv.Close()
+		if err := UpsertCustomProvider(CustomProvider{
+			Name: "reasonant", Type: "ant", BaseURL: srv.URL + "/v1", NoAuth: true,
+			Models: []CustomModel{{Name: "r-ant", ID: "wire", Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "max"}}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		p, err := New("reasonant", "r-ant")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}}); err != nil {
+			t.Fatal(err)
+		}
+		if string(seen.Thinking) != `{"type":"adaptive"}` || seen.OutputConfig.Effort != "high" {
+			t.Fatalf("anthropic thinking=%s output_config.effort=%q, want adaptive/high", seen.Thinking, seen.OutputConfig.Effort)
+		}
+	})
+
+	t.Run("non_reasoning_omits_effort", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		var raw map[string]json.RawMessage
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&raw)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{{"message": map[string]any{"content": "ok"}}},
+			})
+		}))
+		defer srv.Close()
+		if err := UpsertCustomProvider(CustomProvider{
+			Name: "plainchat", Type: "openai", API: "chat", BaseURL: srv.URL + "/v1", NoAuth: true,
+			Models: []CustomModel{{Name: "plain", ID: "wire"}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		p, err := New("plainchat", "plain")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}}); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := raw["reasoning_effort"]; ok {
+			t.Fatal("non-reasoning custom model should not send reasoning_effort")
+		}
+	})
+}
+
+// TestCustomOpenAIResponsesStreams is the regression for APP-044 (Responses
+// half): a user-defined openai_responses provider must implement Streamer and
+// forward SSE deltas as they arrive — without Stream the agent's Streamer check
+// fails and the turn blocks with no deltas (dead-air UX).
+func TestCustomOpenAIResponsesStreams(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var seenStream bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Stream bool `json:"stream"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		seenStream = body.Stream
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl := w.(interface{ Flush() })
+		write := func(s string) { _, _ = w.Write([]byte(s)); fl.Flush() }
+		write(`data: {"type":"response.output_text.delta","delta":"Hel"}` + "\n\n")
+		write(`data: {"type":"response.output_text.delta","delta":"lo"}` + "\n\n")
+		write(`data: {"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":4,"output_tokens":2}}}` + "\n\n")
+	}))
+	defer srv.Close()
+	if err := UpsertCustomProvider(CustomProvider{
+		Name: "streamresp", Type: "openai", API: "responses", BaseURL: srv.URL + "/v1", NoAuth: true,
+		Models: []CustomModel{{Name: "stream-r", ID: "wire-r"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := New("streamresp", "stream-r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sp, ok := p.(Streamer)
+	if !ok {
+		t.Fatal("custom openai_responses provider must implement Streamer")
+	}
+	var chunks []string
+	resp, err := sp.Stream(context.Background(),
+		Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}},
+		func(c StreamChunk) {
+			if c.Kind == ChunkText {
+				chunks = append(chunks, c.Text)
+			}
+		})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if !seenStream {
+		t.Fatal("Stream must POST stream:true to /responses")
+	}
+	if len(chunks) != 2 || chunks[0] != "Hel" || chunks[1] != "lo" {
+		t.Fatalf("text chunks = %v, want [Hel lo]", chunks)
+	}
+	if resp.Text != "Hello" {
+		t.Fatalf("resp.Text = %q, want Hello", resp.Text)
+	}
+	if resp.Usage.InputTokens != 4 || resp.Usage.OutputTokens != 2 {
+		t.Fatalf("usage wrong: %+v", resp.Usage)
+	}
+}
+
+// TestCustomAnthropicStreams is the regression for APP-044 (Anthropic half): a
+// user-defined anthropic provider must implement Streamer and forward native
+// Messages SSE deltas (text/thinking) as they arrive, assembling the final
+// Response from the block/delta/stop events.
+func TestCustomAnthropicStreams(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var seenStream bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Stream bool `json:"stream"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		seenStream = body.Stream
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl := w.(interface{ Flush() })
+		write := func(s string) { _, _ = w.Write([]byte(s)); fl.Flush() }
+		write("event: message_start\ndata: " + `{"type":"message_start","message":{"usage":{"input_tokens":9,"cache_read_input_tokens":2}}}` + "\n\n")
+		write("event: content_block_start\ndata: " + `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}` + "\n\n")
+		write("event: content_block_delta\ndata: " + `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hel"}}` + "\n\n")
+		write("event: content_block_delta\ndata: " + `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"lo"}}` + "\n\n")
+		write("event: content_block_stop\ndata: " + `{"type":"content_block_stop","index":0}` + "\n\n")
+		write("event: content_block_start\ndata: " + `{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tu_1","name":"read"}}` + "\n\n")
+		write("event: content_block_delta\ndata: " + `{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"path\":"}}` + "\n\n")
+		write("event: content_block_delta\ndata: " + `{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\"a\"}"}}` + "\n\n")
+		write("event: content_block_stop\ndata: " + `{"type":"content_block_stop","index":1}` + "\n\n")
+		write("event: message_delta\ndata: " + `{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":5}}` + "\n\n")
+		write("event: message_stop\ndata: " + `{"type":"message_stop"}` + "\n\n")
+	}))
+	defer srv.Close()
+	if err := UpsertCustomProvider(CustomProvider{
+		Name: "streamant", Type: "ant", BaseURL: srv.URL + "/v1", NoAuth: true,
+		Models: []CustomModel{{Name: "stream-ant", ID: "claude-wire"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := New("streamant", "stream-ant")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sp, ok := p.(Streamer)
+	if !ok {
+		t.Fatal("custom anthropic provider must implement Streamer")
+	}
+	var chunks []string
+	resp, err := sp.Stream(context.Background(),
+		Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}},
+		func(c StreamChunk) {
+			if c.Kind == ChunkText {
+				chunks = append(chunks, c.Text)
+			}
+		})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if !seenStream {
+		t.Fatal("Stream must POST stream:true to /messages")
+	}
+	if len(chunks) != 2 || chunks[0] != "Hel" || chunks[1] != "lo" {
+		t.Fatalf("text chunks = %v, want [Hel lo]", chunks)
+	}
+	if resp.Text != "Hello" {
+		t.Fatalf("resp.Text = %q, want Hello", resp.Text)
+	}
+	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].ID != "tu_1" || string(resp.ToolCalls[0].Arguments) != `{"path":"a"}` {
+		t.Fatalf("tool call wrong: %+v", resp.ToolCalls)
+	}
+	if resp.Usage.InputTokens != 9 || resp.Usage.OutputTokens != 5 || resp.Usage.CacheReadTokens != 2 {
+		t.Fatalf("usage wrong: %+v", resp.Usage)
 	}
 }
 

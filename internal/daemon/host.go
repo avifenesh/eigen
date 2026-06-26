@@ -209,7 +209,7 @@ func (h *Host) Stats() DaemonStats {
 		Views:            views,
 		RunningTurns:     running,
 		GoVersion:        runtime.Version(),
-		Version:          llm.Version,
+		Version:          llm.FullVersion(),
 		Executable:       exe,
 		BinarySHA256:     sha,
 		VCSRevision:      rev,
@@ -267,6 +267,20 @@ func (h *Host) enablePersist(s *Session) {
 		s.rememberHistorySummary(msgs)
 	}
 	s.onAttach = func() { h.saveSessionMeta(s) } // persist LastAttached
+	s.onTokens = func() { h.saveSessionMeta(s) } // persist cumulative tokens on turn done
+	// onClear deliberately empties the transcript: a plain Save([]) is refused as
+	// an accidental truncation, so force the empty write, then purge the rotated
+	// backups or Load's recovery would resurrect the just-cleared conversation.
+	s.onClear = func() {
+		p := transcriptPath(dir, s.ID)
+		s.persistMu.Lock()
+		err := transcript.SaveForce(p, nil)
+		s.persistMu.Unlock()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "eigen daemon: clear %s: %v\n", s.ID, err)
+		}
+		transcript.ClearBackups(p)
+	}
 	s.onInactive = func() { h.UnloadIfInactive(s.ID) }
 	h.saveSessionMeta(s)
 }
@@ -445,6 +459,12 @@ func (h *Host) saveSessionMeta(s *Session) {
 		Title: s.title,
 		Perm:  perm,
 		Goal:  goal,
+		// Carry the lifetime token tallies so the cache-hit ratio in stats
+		// survives a restart instead of resetting to 0.
+		CumIn:         s.cumIn,
+		CumOut:        s.cumOut,
+		CumCacheRead:  s.cumCacheRead,
+		CumCacheWrite: s.cumCacheWrite,
 	}
 	// Persist user-granted extra roots (everything past the primary, which is
 	// the session Dir that build() already roots at).
@@ -474,6 +494,12 @@ func (h *Host) Restore(build Builder) int {
 		s.coldPerm = p.meta.Perm
 		s.coldGoal = p.meta.Goal
 		s.coldRoots = append([]string(nil), p.meta.AddedRoots...)
+		// Restore lifetime token tallies so the cache-hit ratio in stats picks up
+		// where it left off rather than collapsing to 0% after a restart.
+		s.cumIn = p.meta.CumIn
+		s.cumOut = p.meta.CumOut
+		s.cumCacheRead = p.meta.CumCacheRead
+		s.cumCacheWrite = p.meta.CumCacheWrite
 		if p.meta.LastAttached > 0 {
 			s.lastAttached = time.Unix(p.meta.LastAttached, 0) // survives restart
 		}
@@ -640,13 +666,6 @@ func (h *Host) List() []SessionInfo {
 		}
 	}
 	return out
-}
-
-// Count returns the number of hosted sessions.
-func (h *Host) Count() int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return len(h.sessions)
 }
 
 // AnyRunning reports whether any hosted session has a turn in flight. Used by
