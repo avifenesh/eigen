@@ -169,20 +169,22 @@ func TestGLMThinkingModes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Reasoning model defaults to thinking on.
-	if p.Effort() != "on" {
-		t.Fatalf("glm-5.2 should default to effort on, got %q", p.Effort())
+	// glm-5.2 is graded: defaults to "max" (z.ai's coding recommendation).
+	if p.Effort() != "max" {
+		t.Fatalf("glm-5.2 should default to effort max, got %q", p.Effort())
 	}
-	// bodyExtra emits the enabled thinking field + preserved thinking
-	// (clear_thinking:false) by default for coherence/cache.
+	// bodyExtra emits enabled thinking + reasoning_effort + preserved thinking.
 	ex := p.bodyExtra()
 	if ex == nil || ex["thinking"].(map[string]any)["type"] != "enabled" {
 		t.Fatalf("on → thinking.type=enabled, got %v", ex)
 	}
+	if ex["reasoning_effort"] != "max" {
+		t.Fatalf("graded glm-5.2 → reasoning_effort=max, got %v", ex["reasoning_effort"])
+	}
 	if ct, ok := ex["clear_thinking"]; !ok || ct != false {
 		t.Fatalf("on → clear_thinking:false (preserved thinking), got %v", ex["clear_thinking"])
 	}
-	// Turn it off → disabled.
+	// Turn it off → disabled, no reasoning_effort.
 	if !p.SetEffort("off") || p.Effort() != "off" {
 		t.Fatalf("SetEffort(off) failed: %q", p.Effort())
 	}
@@ -190,12 +192,22 @@ func TestGLMThinkingModes(t *testing.T) {
 	if off["thinking"].(map[string]any)["type"] != "disabled" {
 		t.Fatal("off → thinking.type=disabled")
 	}
+	if _, ok := off["reasoning_effort"]; ok {
+		t.Fatal("off → no reasoning_effort field")
+	}
 	if _, ok := off["clear_thinking"]; ok {
 		t.Fatal("off → no clear_thinking field (only meaningful while enabled)")
 	}
-	// Any reasoning word → enabled.
-	if !p.SetEffort("high") || p.Effort() != "on" {
-		t.Fatalf("SetEffort(high) → on, got %q", p.Effort())
+	// SetEffort("high") on the graded model → reasoning_effort high.
+	if !p.SetEffort("high") || p.Effort() != "high" {
+		t.Fatalf("SetEffort(high) → high, got %q", p.Effort())
+	}
+	if hi := p.bodyExtra()["reasoning_effort"]; hi != "high" {
+		t.Fatalf("SetEffort(high) → reasoning_effort=high, got %v", hi)
+	}
+	// xhigh/max clamp to max.
+	if !p.SetEffort("max") || p.bodyExtra()["reasoning_effort"] != "max" {
+		t.Fatalf("SetEffort(max) → reasoning_effort=max, got %v", p.bodyExtra()["reasoning_effort"])
 	}
 	// A non-reasoning GLM model has no thinking control.
 	t.Setenv("GLM_API_KEY", "test")

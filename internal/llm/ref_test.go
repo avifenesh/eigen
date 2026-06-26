@@ -106,9 +106,9 @@ func TestModelEffortLevelsPerCatalog(t *testing.T) {
 		{"us.anthropic.claude-opus-4-8", []string{"low", "medium", "high", "xhigh", "max"}},
 		// budget-style sonnet: off (thinking disabled) through xhigh budgets
 		{"us.anthropic.claude-sonnet-4-6", []string{"off", "low", "medium", "high", "xhigh"}},
-		// GLM: two thinking modes (probed live — thinking.type enabled/disabled)
-		// mapped to off|on.
-		{"glm-5.2", []string{"off", "on"}},
+		// GLM-5.2: graded reasoning_effort (high|max) on top of the thinking
+		// toggle → off|high|max. Older GLM stays a bare on/off toggle.
+		{"glm-5.2", []string{"off", "high", "max"}},
 		{"glm-5.1", []string{"off", "on"}},
 	}
 	for _, c := range cases {

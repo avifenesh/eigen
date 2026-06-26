@@ -94,10 +94,19 @@ export function createTranscript(sessionId: string) {
   // Seq reassembly: each StreamEventDTO carries a monotonic per-session ordinal
   // (pump.go stamps it in emit order), but Wails dispatches each event on its
   // own goroutine, so arrival at the webview can be reordered. We apply events
-  // strictly in seq order: an early arrival is parked in `pending` until its
-  // predecessors land. `expectedSeq` is the next seq to apply (1-based; reset in
-  // seed() because a reconnect restarts the seq stream from the replay).
-  let expectedSeq = 1;
+  // strictly in seq order: an early arrival is parked until its predecessors
+  // land.
+  //
+  // `expectedSeq` is the next seq to apply. It is LATCHED from the first event
+  // actually seen (sentinel 0 = not yet latched) rather than hardcoded to 1 —
+  // because the pump's per-session seq counter does NOT reset when a view
+  // re-attaches (Bridge.Subscribe is a no-op if the pump is already live), so a
+  // re-entered chat can start receiving at seq 50, not 1. Hardcoding 1 parked
+  // every event in reorderBuf until the 256 overflow valve fired, so short
+  // turns (and the final message of a turn) never rendered. Latching to the
+  // first seen seq makes reassembly correct from whatever base the live pump is
+  // at, while still ordering within the window.
+  let expectedSeq = 0;
   const reorderBuf = new Map<number, StreamEventDTO>();
 
   // Apply one (now in-order) stream event: update the running flag, then fold it
@@ -315,10 +324,11 @@ export function createTranscript(sessionId: string) {
       history = mapMessages(messages, nextUid).slice(-CAP);
       truncated = messages.length > CAP;
       running = isRunning;
-      // A reconnect restarts the daemon's emit-seq stream from the replay, so the
-      // reassembly window must reset too — otherwise the post-reconnect seq 1
-      // would be parked forever behind a stale expectedSeq.
-      expectedSeq = 1;
+      // Reset the reassembly window to "unlatched" (0): the next event seen —
+      // whatever seq the live pump is currently at — re-latches the base. (A
+      // reconnect MAY restart the pump's seq, but a re-attach to a still-live
+      // pump does NOT, so we must not assume 1.)
+      expectedSeq = 0;
       reorderBuf.clear();
     },
     // start the live event listener; lifetime == owning $effect.
@@ -331,6 +341,18 @@ export function createTranscript(sessionId: string) {
         // immediately so a contract gap degrades to today's arrival-order behavior
         // rather than stalling.)
         if (!m.seq) {
+          applyEvent(m);
+          return;
+        }
+        // Latch the window base to the first seq we actually see (the live pump
+        // may already be mid-stream after a re-attach), so we never wait forever
+        // for a seq=1 that won't come again.
+        if (expectedSeq === 0) {
+          expectedSeq = m.seq;
+        }
+        // A late event whose seq is already behind the window (e.g. a straggler
+        // from before a re-latch) applies immediately rather than being dropped.
+        if (m.seq < expectedSeq) {
           applyEvent(m);
           return;
         }
