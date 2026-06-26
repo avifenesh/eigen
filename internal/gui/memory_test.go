@@ -73,6 +73,39 @@ func TestMoveMemoryNote_PromoteToGlobal(t *testing.T) {
 	}
 }
 
+// TestMoveMemoryNote_ProjectToProject verifies a note moves between two project
+// scopes by on-disk key (not only project↔global).
+func TestMoveMemoryNote_ProjectToProject(t *testing.T) {
+	isolateMemoryHome(t)
+	b := &Bridge{}
+
+	// Seed a source project scope with a note, then move it to another project.
+	src, err := memory.OpenByKey("alpha-aaaaaaaa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := src.Append("alpha-only build quirk"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := memory.OpenByKey("beta-bbbbbbbb"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := b.MoveMemoryNote("alpha-aaaaaaaa", "beta-bbbbbbbb", "alpha-only build quirk"); err != nil {
+		t.Fatalf("project→project move: %v", err)
+	}
+	dst, _ := memory.OpenByKey("beta-bbbbbbbb")
+	found := false
+	for _, n := range dst.AdHocNotes(50) {
+		if strings.Contains(n, "alpha-only build quirk") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("note not recorded in destination project")
+	}
+}
+
 // TestMergeMemoryScope_FoldsByKey verifies the bridge merge path folds one
 // project scope into another and reports a human summary.
 func TestMergeMemoryScope_FoldsByKey(t *testing.T) {

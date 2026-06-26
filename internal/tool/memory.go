@@ -39,7 +39,7 @@ type memorySearcher interface {
 func Memory(project, global MemoryStore) Definition {
 	return Definition{
 		Name:        "memory",
-		Description: "Record, inspect, or relocate Eigen memory. action=\"add\" records a durable note for future sessions via Codex-shaped ad-hoc notes; action=\"list\"/\"read\"/\"search\" inspects the memory workspace when the injected summary is not enough; action=\"move\" relocates a fact between scopes (PROMOTE a project fact that's actually cross-cutting to global, or DEMOTE a global note that only applies here to project). scope=\"project\" (default) is this repo; scope=\"global\" applies across projects. Set kind=\"ban\" with a short title to record a HARD prohibition.",
+		Description: "Record, inspect, or relocate Eigen memory. action=\"add\" records a durable note for future sessions via Codex-shaped ad-hoc notes; action=\"list\"/\"read\"/\"search\" inspects the memory workspace when the injected summary is not enough; action=\"move\" relocates a fact between scopes — PROMOTE a project fact that's actually cross-cutting to global, DEMOTE a global note to a project, or move a fact from one project to ANOTHER (to=another project's name/key). scope=\"project\" (default) is this repo; scope=\"global\" applies across projects. Set kind=\"ban\" with a short title to record a HARD prohibition.",
 		ReadOnly:    true,
 		Parameters: json.RawMessage(`{
   "type": "object",
@@ -47,7 +47,7 @@ func Memory(project, global MemoryStore) Definition {
 	    "action": { "type": "string", "enum": ["add", "list", "read", "search", "move"], "description": "add (default) records memory; list/read/search inspect workspace files; move relocates a note between scopes." },
 	    "note": { "type": "string", "description": "The fact to remember/move, or (kind=ban) the rule: what must never be done and why." },
 	    "scope": { "type": "string", "enum": ["project", "global"], "description": "Where to store it (add), or the SOURCE scope (move): \"project\" (this repo, default) or \"global\"." },
-	    "to": { "type": "string", "enum": ["project", "global"], "description": "For action=move: the DESTINATION scope; must differ from scope." },
+	    "to": { "type": "string", "description": "For action=move: the DESTINATION scope — \"global\", \"project\", or ANOTHER project's name/on-disk key (e.g. \"eigen\"). Must differ from the source." },
 	    "kind": { "type": "string", "enum": ["note", "ban"], "description": "\"note\" (default) = a durable fact; \"ban\" = a hard prohibition (needs a title)." },
 	    "title": { "type": "string", "description": "Short title for a ban (e.g. \"No hedging\"). Required when kind=ban." },
 	    "path": { "type": "string", "description": "Relative memory workspace path for action=read." },
@@ -154,9 +154,12 @@ func Memory(project, global MemoryStore) Definition {
 	}
 }
 
-// moveNote relocates a fact between the project and global scopes. Both stores
-// must be the concrete *memory.Store (the move primitive lives there); a plugin
-// store that only satisfies MemoryStore can't be moved between.
+// moveNote relocates a fact between scopes. "project"/"" and "global" resolve to
+// the session's own stores; ANY other value is treated as another PROJECT — by
+// on-disk store key (e.g. "eigen-3e739af1") or readable name (e.g. "eigen",
+// matched against memory.ListProjectStores) — so a fact can move project→project,
+// not only project↔global. The session's stores must be the concrete
+// *memory.Store (the move primitive lives there).
 func moveNote(project, global MemoryStore, from, to, note string) (string, error) {
 	if strings.TrimSpace(note) == "" {
 		return "", fmt.Errorf("a note is required for move")
@@ -165,34 +168,58 @@ func moveNote(project, global MemoryStore, from, to, note string) (string, error
 		from = "project"
 	}
 	if to == "" {
-		return "", fmt.Errorf("move needs a destination scope (to=\"project\" or \"global\")")
+		return "", fmt.Errorf("move needs a destination scope (\"project\", \"global\", or another project's name/key)")
 	}
 	if from == to {
 		return "", fmt.Errorf("source and destination scope are the same (%q)", from)
 	}
-	pick := func(scope string) (*memory.Store, error) {
-		var ms MemoryStore
-		if scope == "global" {
-			ms = global
-		} else {
-			ms = project
-		}
-		s, ok := ms.(*memory.Store)
-		if !ok || s == nil {
-			return nil, fmt.Errorf("%s memory scope unavailable for move", scope)
-		}
-		return s, nil
-	}
-	src, err := pick(from)
+	src, err := pickMoveScope(from, project, global)
 	if err != nil {
 		return "", err
 	}
-	dst, err := pick(to)
+	dst, err := pickMoveScope(to, project, global)
 	if err != nil {
 		return "", err
+	}
+	if memory.StoreKey(src) == memory.StoreKey(dst) {
+		return "", fmt.Errorf("source and destination resolve to the same scope")
 	}
 	if err := memory.MoveNote(src, dst, note); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("moved note from %s to %s memory — the source copy is superseded and drops on the next consolidation", from, to), nil
+}
+
+// pickMoveScope resolves a move scope identifier to a concrete *memory.Store:
+// "project"/"" → the session project, "global" → the session global, anything
+// else → another project opened by on-disk key or readable name.
+func pickMoveScope(scope string, project, global MemoryStore) (*memory.Store, error) {
+	switch scope {
+	case "project", "":
+		s, ok := project.(*memory.Store)
+		if !ok || s == nil {
+			return nil, fmt.Errorf("project memory scope unavailable for move")
+		}
+		return s, nil
+	case "global":
+		s, ok := global.(*memory.Store)
+		if !ok || s == nil {
+			return nil, fmt.Errorf("global memory scope unavailable for move")
+		}
+		return s, nil
+	}
+	// Another project: try the exact on-disk key first, then a readable name.
+	if s, err := memory.OpenByKey(scope); err == nil {
+		return s, nil
+	}
+	refs, err := memory.ListProjectStores()
+	if err != nil {
+		return nil, fmt.Errorf("resolve project %q: %w", scope, err)
+	}
+	for _, r := range refs {
+		if r.Name == scope || r.Key == scope {
+			return memory.OpenByKey(r.Key)
+		}
+	}
+	return nil, fmt.Errorf("unknown project scope %q (use its name or on-disk key; see memory action=list)", scope)
 }

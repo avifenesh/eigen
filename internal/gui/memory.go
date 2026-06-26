@@ -418,22 +418,23 @@ func (b *Bridge) AppendMemory(scope, note string) error {
 	return s.Append(note)
 }
 
-// MoveMemoryNote relocates a fact between scopes: PROMOTE a project note to
-// global (from="project", to="global") or DEMOTE a global note to this project
-// (from="global", to="project"). The note is recorded in the destination and a
-// supersede tombstone is left in the source so the next consolidation drops the
-// old copy. The human peer of the agent memory tool's move action.
+// MoveMemoryNote relocates a fact between ANY two scopes — promote a project
+// note to global, demote a global note to a project, OR move between two
+// projects. `from` and `to` are scope identifiers the picker uses: "global",
+// "project" (cwd), an absolute project dir, or an on-disk store key. The note is
+// recorded in the destination and a supersede tombstone is left in the source so
+// the next consolidation drops the old copy. Human peer of the memory tool move.
 func (b *Bridge) MoveMemoryNote(from, to, note string) error {
-	if from == to {
-		return fmt.Errorf("source and destination scope are the same")
-	}
-	src, err := openScope(from)
+	src, srcLabel, err := b.openMemoryScope(from)
 	if err != nil {
 		return err
 	}
-	dst, err := openScope(to)
+	dst, _, err := b.openMemoryScope(to)
 	if err != nil {
 		return err
+	}
+	if memory.StoreKey(src) == memory.StoreKey(dst) {
+		return fmt.Errorf("source and destination scope are the same (%s)", srcLabel)
 	}
 	return memory.MoveNote(src, dst, note)
 }

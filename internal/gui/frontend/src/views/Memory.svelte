@@ -15,8 +15,8 @@
   import Dropdown from "$lib/components/Dropdown.svelte";
   import Badge from "$lib/components/Badge.svelte";
   import Markdown from "$lib/components/Markdown.svelte";
-  import VirtualList from "$lib/components/VirtualList.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import Sheet from "$lib/components/Sheet.svelte";
 
   // The selectable scopes (Global first, then every known project). The picker
   // binds to `scope` — a scope KEY that round-trips through MemoryForScope (the
@@ -168,26 +168,40 @@
     }
   }
 
-  // Relocate a note between scopes. Promote (project→global) when viewing a
-  // project scope; demote (global→project, into the cwd project) when viewing
-  // global. The source copy is superseded and drops on the next consolidation.
+  // Relocate a note to ANOTHER scope — global, the cwd project, or any other
+  // project. A note can be cross-cutting (→ global), misfiled (global → a
+  // project), or belong to a sibling project (project → project), so the
+  // destination is PICKED from every other scope rather than a fixed toggle.
+  // The source copy is superseded and drops on the next consolidation.
   let movingNote = $state<number | null>(null);
-  async function moveNote(noteText: string, idx: number) {
-    const from = isGlobal ? "global" : "project";
-    const to = isGlobal ? "project" : "global";
+  let moveOpen = $state(false);
+  let movePending = $state<{ text: string; idx: number } | null>(null);
+  // Every scope except the one currently open — the move destinations.
+  const moveTargets = $derived(scopes.filter((s) => s.key !== scope));
+
+  function openMove(noteText: string, idx: number) {
+    movePending = { text: noteText, idx };
+    moveOpen = true;
+  }
+  async function moveTo(dstKey: string, dstName: string) {
+    if (!movePending) return;
+    const { text, idx } = movePending;
+    moveOpen = false;
     movingNote = idx;
     try {
-      await Bridge.MoveMemoryNote(from, to, noteText);
-      toasts.success(`moved to ${to} memory`);
+      await Bridge.MoveMemoryNote(scope, dstKey, text);
+      toasts.success(`moved to ${dstName} memory`);
       await loadScope(scope);
     } catch (e) {
       toasts.error(errText(e));
     } finally {
       movingNote = null;
+      movePending = null;
     }
   }
-  // The label for the per-note move button, by the scope currently open.
-  const moveLabel = $derived(isGlobal ? "→ project" : "→ global");
+  // The per-note button label: a generic "Move" since the destination is chosen
+  // in the picker (was a fixed →global/→project toggle).
+  const moveLabel = "Move";
 
   async function addBan() {
     const title = banTitle.trim();
@@ -399,8 +413,8 @@
                       variant="ghost"
                       size="sm"
                       loading={movingNote === note.index}
-                      title="Relocate this note to the other scope"
-                      onclick={() => moveNote(note.text, note.index)}>{moveLabel}</Button>
+                      title="Relocate this note to another scope"
+                      onclick={() => openMove(note.text, note.index)}>{moveLabel}</Button>
                   </div>
                 </Card>
               {/each}
@@ -408,7 +422,7 @@
           </section>
         {/if}
 
-        <section class="mem__section mem__section--grow">
+        <section class="mem__section">
           <div class="mem__section-head">
             <h2 class="mem__section-title">Notes</h2>
             <span class="mem__count tnum">{current.noteCount}</span>
@@ -416,24 +430,25 @@
           {#if current.noteCount === 0}
             <p class="mem__empty-note">No distilled notes in this scope yet.</p>
           {:else}
+            <!-- A plain stack in the single page scroll (.mem__main). Curated
+                 notes are section-cards (dozens), not the 10k-row case VirtualList
+                 exists for — and nesting VirtualList's own overflow inside the
+                 scrolling column collapsed the notes viewport and made the wheel
+                 fight between two scrollers. -->
             <div class="mem__notes">
-              <VirtualList items={current.notes} estimateHeight={96} key={(n) => n.index}>
-                {#snippet row(note)}
-                  <div class="mem__note-wrap">
-                    <Card>
-                      <div class="mem__note-row">
-                        <div class="mem__note selectable"><Markdown source={note.text} /></div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          loading={movingNote === note.index}
-                          title="Relocate this note to the other scope"
-                          onclick={() => moveNote(note.text, note.index)}>{moveLabel}</Button>
-                      </div>
-                    </Card>
+              {#each current.notes as note (note.index)}
+                <Card>
+                  <div class="mem__note-row">
+                    <div class="mem__note selectable"><Markdown source={note.text} /></div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      loading={movingNote === note.index}
+                      title="Relocate this note to another scope"
+                      onclick={() => openMove(note.text, note.index)}>{moveLabel}</Button>
                   </div>
-                {/snippet}
-              </VirtualList>
+                </Card>
+              {/each}
             </div>
           {/if}
         </section>
@@ -607,6 +622,27 @@
       </aside>
     </div>
   {/if}
+
+  <!-- Move-destination picker: choose any OTHER scope (global, the cwd project,
+       or a sibling project) to relocate the selected note into. -->
+  <Sheet open={moveOpen} label="Move note to scope" width={420} onclose={() => (moveOpen = false)}>
+    {#snippet title()}Move note to…{/snippet}
+    {#if movePending}
+      <p class="mem__move-note selectable">{movePending.text}</p>
+    {/if}
+    {#if moveTargets.length === 0}
+      <p class="mem__empty-note">No other scope to move into.</p>
+    {:else}
+      <div class="mem__move-targets">
+        {#each moveTargets as t (t.key)}
+          <button class="mem__move-target" onclick={() => moveTo(t.key, t.name)}>
+            <span class="mem__move-target-name">{t.name}</span>
+            {#if t.dir}<span class="mem__move-target-dir">{shortDir(t.dir)}</span>{/if}
+          </button>
+        {/each}
+      </div>
+    {/if}
+  </Sheet>
 </div>
 
 <style>
@@ -693,10 +729,6 @@
     flex-direction: column;
     gap: var(--sp-4);
   }
-  .mem__section--grow {
-    flex: 1;
-    min-height: 0;
-  }
   .mem__section-head {
     display: flex;
     align-items: center;
@@ -745,14 +777,12 @@
     text-transform: uppercase;
     letter-spacing: var(--ls-eyebrow);
   }
+  /* Plain stack inside the page scroll (.mem__main) — no inner overflow, so the
+     wheel never fights a nested scroller. */
   .mem__notes {
-    flex: 1;
-    min-height: 0;
-    /* VirtualList needs a bounded height to window against. */
-    height: 100%;
-  }
-  .mem__note-wrap {
-    padding-bottom: var(--sp-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
   }
   /* Note card body + its move-to-other-scope action on one row; the button is
      quiet until hover so the note text stays the focus. */
@@ -773,6 +803,47 @@
   }
   .mem__note-row:hover :global(button) {
     opacity: 1;
+  }
+  /* Move-to-scope picker (inside the Sheet). */
+  .mem__move-note {
+    margin: 0 0 var(--sp-5);
+    padding: var(--sp-4);
+    border-radius: var(--r-md);
+    background: var(--bg-raised);
+    color: var(--text-secondary);
+    font-size: var(--fs-body-sm);
+    line-height: var(--lh-snug);
+    max-height: 8em;
+    overflow-y: auto;
+  }
+  .mem__move-targets {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+  }
+  .mem__move-target {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    text-align: left;
+    padding: var(--sp-4) var(--sp-5);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--r-md);
+    background: var(--bg-raised);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 0.1s ease, border-color 0.1s ease;
+  }
+  .mem__move-target:hover {
+    background: var(--bg-raised-2);
+    border-color: var(--border-brand-faint);
+  }
+  .mem__move-target-name {
+    font: var(--fw-medium) var(--fs-body-sm) / 1.2 var(--font-sans);
+  }
+  .mem__move-target-dir {
+    font-size: var(--fs-micro);
+    color: var(--text-faint);
   }
   /* Manual saves are few and unbounded in height — a plain stack reads better
      than windowing, and keeps a freshly-saved note immediately visible. */
