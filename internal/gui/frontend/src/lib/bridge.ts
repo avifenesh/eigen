@@ -178,6 +178,7 @@ export const Bridge = {
   // per-project feed accessor — reserved for a future project drill-in view (not dead code)
   FeedFor: (dir: string): Promise<FeedItemDTO[]> => B.FeedFor(dir),
   StartFromFeed: (dir: string, task: string): Promise<string> => B.StartFromFeed(dir, task),
+  StartWorkingFromFeed: (dir: string, task: string): Promise<string> => B.StartWorkingFromFeed(dir, task),
   DismissFeed: (key: string): Promise<void> => B.DismissFeed(key),
   RescanFeed: (): Promise<void> => B.RescanFeed(),
   // machines / remote

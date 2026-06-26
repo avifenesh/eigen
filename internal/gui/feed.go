@@ -119,6 +119,25 @@ func (b *Bridge) StartFromFeed(dir, task string) (string, error) {
 	return id, nil
 }
 
+// StartWorkingFromFeed starts a session that COMMITS to an idea as real work,
+// not just exploration. Where StartFromFeed sends the idea verbatim (the
+// "Explore" action — research/scope it), this prepends a work-framing preamble
+// so the agent plans + executes the idea rather than only investigating it. The
+// itch "Start working →" action on the Home Ideas zone.
+func (b *Bridge) StartWorkingFromFeed(dir, task string) (string, error) {
+	id, err := b.NewSession(dir, "", "")
+	if err != nil {
+		return "", err
+	}
+	if task != "" {
+		prompt := "Let's actually do this — plan it, then implement it end to end (don't just research it):\n\n" + task
+		if err := b.SendInput(id, prompt, nil, nil); err != nil {
+			return id, err
+		}
+	}
+	return id, nil
+}
+
 // DismissFeed hides a feed item by key so it stops surfacing. Rebuilds the full
 // Item from the last scan (the DTO only carries the key), then re-emits the
 // freshened feed.

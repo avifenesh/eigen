@@ -141,6 +141,22 @@
     }
   }
 
+  // "Start working →": commit to an idea as real work (plan + implement), not
+  // just explore it. Distinct intent from actOn (which researches/scopes).
+  async function startWorking(it: FeedItemDTO) {
+    if (!it.task) return;
+    acting[it.key] = true;
+    try {
+      const id = await Bridge.StartWorkingFromFeed(it.dir ?? "", it.task);
+      await sessions.refresh();
+      router.go("chat", id);
+    } catch (e) {
+      toasts.error(errText(e));
+    } finally {
+      delete acting[it.key];
+    }
+  }
+
   function rel(updatedNano: number): string {
     void now.ms; // tie to shared clock so the label ticks
     const ms = Date.now() - updatedNano / 1e6;
@@ -305,6 +321,7 @@
               {#if it.dirName}<Badge tone="neutral" truncate>{it.dirName}</Badge>{/if}
               <span class="fc__spacer"></span>
               <Button variant="ghost" size="sm" loading={acting[it.key]} onclick={() => actOn(it)}>Explore →</Button>
+              <Button variant="secondary" size="sm" loading={acting[it.key]} onclick={() => startWorking(it)}>Start working →</Button>
             </div>
           </div>
         {/each}
