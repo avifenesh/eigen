@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -41,6 +42,22 @@ func runTurn(t *testing.T, sock, id, text string) {
 	t.Fatal("turn did not complete")
 }
 
+// waitTranscript blocks until the transcript file at path is readable and
+// contains want, or fails after a bounded wait. Closes the gap between a turn's
+// `done` event (which the test observes over the dispatch channel) and the
+// agent goroutine's disk write landing — the source of the restart flake.
+func waitTranscript(t *testing.T, path, want string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if b, err := os.ReadFile(path); err == nil && strings.Contains(string(b), want) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("transcript %s never contained %q", path, want)
+}
+
 func TestPersistAcrossDaemonRestart(t *testing.T) {
 	// THE core property: kill the daemon, start a new one, the session is
 	// there — same id, same history, same goal/perm — and keeps working.
@@ -63,6 +80,14 @@ func TestPersistAcrossDaemonRestart(t *testing.T) {
 	if err := c1.SetGoal(id, "finish the persistence work"); err != nil {
 		t.Fatal(err)
 	}
+	// The `done` event the test waited on is delivered to the view over the
+	// dispatch channel; the agent's transcript Persist hook runs in the agent
+	// goroutine. Those are ordered (persist before emit) on the happy path, but
+	// under CI load the disk write can still be a beat behind the event arrival —
+	// which made this test flaky (restored 0 sessions / "history lost"). Before
+	// tearing daemon #1 down, wait until the transcript is durably readable with
+	// the turn's content, so the restart reads a complete file deterministically.
+	waitTranscript(t, transcriptPath(persistDir, id), "remember me")
 	c1.Close()
 	if err := srv1.Close(); err != nil {
 		t.Fatal(err)
