@@ -6,6 +6,7 @@
   // (config.Set), so an invalid value is rejected with a toast and the field
   // reverts to its stored value.
   import { Bridge } from "$lib/bridge";
+  import { applyTheme } from "$lib/theme";
   import { errText } from "$lib/errors";
   import { toasts } from "$lib/stores/toasts.svelte";
   import type { ConfigDTO, ConfigFieldDTO } from "$lib/types";
@@ -71,6 +72,9 @@
         const f = data.fields.find((x) => x.key === key);
         if (f) f.value = stored;
       }
+      // Theme applies to the GUI immediately (no restart): swap <html data-theme>
+      // so the palette change is visible the moment it saves.
+      if (key === "theme") applyTheme(stored);
       toasts.success(`${key} saved`);
     } catch (e) {
       if (!alive) return;
