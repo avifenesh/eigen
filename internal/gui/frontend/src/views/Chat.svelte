@@ -1710,6 +1710,12 @@
     display: flex;
     flex-direction: column;
     position: relative;
+    /* Clip the column: the windowed list (.chat__log) and the live block are
+       stacked flex children; without clipping, a growing live block makes the
+       column overflow and the list's absolutely-positioned rows render OVER the
+       live area (the "streaming text tops over what's above, then snaps back on
+       commit" bug). Clipping + min-height:0 on the list keeps each in its slot. */
+    overflow: hidden;
   }
   /* Each virtual row is full-width; the content centers to a readable measure. */
   .chat__row {

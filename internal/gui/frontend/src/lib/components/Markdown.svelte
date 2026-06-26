@@ -86,21 +86,12 @@
     "table",
     "hr",
     "space",
+    "html", // block HTML must use the block <pre> path, not inline
+    "def",
   ]);
   function isTightItem(item: Tokens.ListItem): boolean {
     const toks = item.tokens ?? [];
     return toks.length > 0 && !toks.some((t) => BLOCK_KINDS.has(t.type));
-  }
-  // The inline tokens of a tight item: unwrap a single `text` token's nested
-  // inline tokens (marked nests the parsed inline run under .tokens) so
-  // strong/em/code/link inside a bullet still render.
-  function itemInlineTokens(item: Tokens.ListItem): Token[] {
-    const toks = item.tokens ?? [];
-    if (toks.length === 1 && toks[0].type === "text") {
-      const t = toks[0] as Tokens.Text;
-      if (t.tokens?.length) return t.tokens;
-    }
-    return toks;
   }
 
   // Only allow href schemes that can't navigate/execute in-app.
@@ -239,7 +230,9 @@
          actually holds block content. -->
     <span class="md-li__body">
       {#if isTightItem(item)}
-        {@render inline(itemInlineTokens(item))}
+        <!-- inline() already unwraps a text token's nested inline tokens, so
+             item.tokens passes straight through (strong/em/code/link render). -->
+        {@render inline(item.tokens)}
       {:else}
         {@render block(item.tokens)}
       {/if}

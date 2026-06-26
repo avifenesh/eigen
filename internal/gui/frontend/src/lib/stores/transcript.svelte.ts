@@ -263,9 +263,11 @@ export function createTranscript(sessionId: string) {
         // Abnormal turn end (provider error / interrupt / overflow-no-compact /
         // reasoning-only spin-out) emits ONLY a terminal note, never a `done`,
         // so the composer would stay stuck in the working state forever. Clear
-        // running here. In-turn informational notes (e.g. compaction) are always
-        // followed by a `done` that also clears running, so this is safe.
+        // running AND the optimistic pending flag here (a send that errors before
+        // any turn event ends on a note, not a done). In-turn informational notes
+        // (e.g. compaction) are followed by a `done` that also clears these.
         running = false;
+        pending = false;
         // Clear the streamed-this-turn guard too (GUI-092): a streamed turn that
         // ends on a terminal note (provider error / interrupt) would otherwise
         // leave the flag set, and a following non-Streamer single-`done` answer
