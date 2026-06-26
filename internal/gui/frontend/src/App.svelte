@@ -3,6 +3,7 @@
   import { fly } from "svelte/transition";
   import { Bridge } from "$lib/bridge";
   import { applyTheme } from "$lib/theme";
+  import { installSmoothScroll } from "$lib/smoothscroll";
   import { router } from "$lib/router.svelte";
   import { daemon } from "$lib/stores/daemon.svelte";
   import { sessions } from "$lib/stores/sessions.svelte";
@@ -39,6 +40,10 @@
     const stopDaemon = daemon.start();
     const stopFeed = feed.start();
     const stopVoice = voice.start();
+    // Smooth mouse-wheel scrolling: WebKitGTK leaves wheel scroll as discrete
+    // accelerating notch jumps and Wails exposes no setting to change it, so we
+    // ease it in JS (no-op for trackpads / reduced-motion). See smoothscroll.ts.
+    const stopSmoothScroll = installSmoothScroll();
     sessions.refresh();
     // Apply the saved color theme (deepteal | nord | gruvbox) to the GUI. The
     // config key already drove the TUI; the GUI mirrors it via <html data-theme>.
@@ -49,6 +54,7 @@
       stopDaemon();
       stopFeed();
       stopVoice();
+      stopSmoothScroll();
     };
   });
 

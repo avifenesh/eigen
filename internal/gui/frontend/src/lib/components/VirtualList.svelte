@@ -177,9 +177,17 @@
         // viewport content — making the list jump (the "scroll up is slow/janky"
         // symptom, where off-screen rows above first get their real height). Add
         // the delta to scrollTop so what the user is looking at stays put.
+        //
+        // Baseline the delta against estimateHeight on FIRST measure (prev
+        // undefined): an unmeasured above-viewport row was occupying
+        // estimateHeight in the offset geometry, so resolving it to its real
+        // height shifts the rows below by h - estimateHeight. The old guard
+        // (prev !== undefined) skipped exactly this case, so scrolling UP into
+        // never-measured rows jumped uncompensated — the "up is worse" feel.
         const idx = indexByKey.get(curKey);
-        if (prev !== undefined && idx !== undefined && offsets[idx] < scrollTop) {
-          anchorDelta += h - prev;
+        const base = prev ?? estimateHeight;
+        if (idx !== undefined && offsets[idx] < scrollTop && h !== base) {
+          anchorDelta += h - base;
           if (!anchorRaf) {
             anchorRaf = requestAnimationFrame(() => {
               anchorRaf = 0;
