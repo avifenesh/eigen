@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/avifenesh/eigen/internal/memory"
 )
@@ -415,6 +416,42 @@ func (b *Bridge) AppendMemory(scope, note string) error {
 		return err
 	}
 	return s.Append(note)
+}
+
+// MoveMemoryNote relocates a fact between scopes: PROMOTE a project note to
+// global (from="project", to="global") or DEMOTE a global note to this project
+// (from="global", to="project"). The note is recorded in the destination and a
+// supersede tombstone is left in the source so the next consolidation drops the
+// old copy. The human peer of the agent memory tool's move action.
+func (b *Bridge) MoveMemoryNote(from, to, note string) error {
+	if from == to {
+		return fmt.Errorf("source and destination scope are the same")
+	}
+	src, err := openScope(from)
+	if err != nil {
+		return err
+	}
+	dst, err := openScope(to)
+	if err != nil {
+		return err
+	}
+	return memory.MoveNote(src, dst, note)
+}
+
+// MergeMemoryScope folds the project scope with on-disk key srcKey into dstKey
+// (both project scopes). The manual heal for fragmented memory the GUI surfaces
+// in the scope picker — e.g. an orphan scope from a deleted worktree merged into
+// the live project. Returns a short human summary of what moved.
+func (b *Bridge) MergeMemoryScope(srcKey, dstKey string) (string, error) {
+	res, err := memory.MergeByKey(srcKey, dstKey, time.Now())
+	if err != nil {
+		return "", err
+	}
+	if res == nil {
+		return "nothing to merge", nil
+	}
+	return fmt.Sprintf("merged %s → %s: %d bytes of memory, %d ad-hoc notes, %d rollouts (source archived)",
+		res.SrcKey, res.DstKey, res.MemoryBytes, res.AdHocCopied, res.RolloutCopied), nil
 }
 
 // AddBan records (or updates, by title) a hard prohibition in the given scope's

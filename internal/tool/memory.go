@@ -39,14 +39,15 @@ type memorySearcher interface {
 func Memory(project, global MemoryStore) Definition {
 	return Definition{
 		Name:        "memory",
-		Description: "Record or inspect Eigen memory. action=\"add\" records a durable note for future sessions via Codex-shaped ad-hoc notes; action=\"list\"/\"read\"/\"search\" inspects the memory workspace when the injected summary is not enough. scope=\"project\" (default) is this repo; scope=\"global\" applies across projects. Set kind=\"ban\" with a short title to record a HARD prohibition.",
+		Description: "Record, inspect, or relocate Eigen memory. action=\"add\" records a durable note for future sessions via Codex-shaped ad-hoc notes; action=\"list\"/\"read\"/\"search\" inspects the memory workspace when the injected summary is not enough; action=\"move\" relocates a fact between scopes (PROMOTE a project fact that's actually cross-cutting to global, or DEMOTE a global note that only applies here to project). scope=\"project\" (default) is this repo; scope=\"global\" applies across projects. Set kind=\"ban\" with a short title to record a HARD prohibition.",
 		ReadOnly:    true,
 		Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
-	    "action": { "type": "string", "enum": ["add", "list", "read", "search"], "description": "add (default) records memory; list/read/search inspect workspace files." },
-	    "note": { "type": "string", "description": "The fact to remember, or (kind=ban) the rule: what must never be done and why." },
-	    "scope": { "type": "string", "enum": ["project", "global"], "description": "Where to store it: \"project\" (this repo, default) or \"global\" (applies to every project)." },
+	    "action": { "type": "string", "enum": ["add", "list", "read", "search", "move"], "description": "add (default) records memory; list/read/search inspect workspace files; move relocates a note between scopes." },
+	    "note": { "type": "string", "description": "The fact to remember/move, or (kind=ban) the rule: what must never be done and why." },
+	    "scope": { "type": "string", "enum": ["project", "global"], "description": "Where to store it (add), or the SOURCE scope (move): \"project\" (this repo, default) or \"global\"." },
+	    "to": { "type": "string", "enum": ["project", "global"], "description": "For action=move: the DESTINATION scope; must differ from scope." },
 	    "kind": { "type": "string", "enum": ["note", "ban"], "description": "\"note\" (default) = a durable fact; \"ban\" = a hard prohibition (needs a title)." },
 	    "title": { "type": "string", "description": "Short title for a ban (e.g. \"No hedging\"). Required when kind=ban." },
 	    "path": { "type": "string", "description": "Relative memory workspace path for action=read." },
@@ -60,6 +61,7 @@ func Memory(project, global MemoryStore) Definition {
 				Action string `json:"action"`
 				Note   string `json:"note"`
 				Scope  string `json:"scope"`
+				To     string `json:"to"`
 				Kind   string `json:"kind"`
 				Title  string `json:"title"`
 				Path   string `json:"path"`
@@ -82,6 +84,8 @@ func Memory(project, global MemoryStore) Definition {
 				in.Action = "add"
 			}
 			switch in.Action {
+			case "move":
+				return moveNote(project, global, in.Scope, in.To, in.Note)
 			case "list":
 				l, ok := store.(memoryLister)
 				if !ok {
@@ -148,4 +152,47 @@ func Memory(project, global MemoryStore) Definition {
 			return "noted for future sessions (" + where + " memory)", nil
 		},
 	}
+}
+
+// moveNote relocates a fact between the project and global scopes. Both stores
+// must be the concrete *memory.Store (the move primitive lives there); a plugin
+// store that only satisfies MemoryStore can't be moved between.
+func moveNote(project, global MemoryStore, from, to, note string) (string, error) {
+	if strings.TrimSpace(note) == "" {
+		return "", fmt.Errorf("a note is required for move")
+	}
+	if from == "" {
+		from = "project"
+	}
+	if to == "" {
+		return "", fmt.Errorf("move needs a destination scope (to=\"project\" or \"global\")")
+	}
+	if from == to {
+		return "", fmt.Errorf("source and destination scope are the same (%q)", from)
+	}
+	pick := func(scope string) (*memory.Store, error) {
+		var ms MemoryStore
+		if scope == "global" {
+			ms = global
+		} else {
+			ms = project
+		}
+		s, ok := ms.(*memory.Store)
+		if !ok || s == nil {
+			return nil, fmt.Errorf("%s memory scope unavailable for move", scope)
+		}
+		return s, nil
+	}
+	src, err := pick(from)
+	if err != nil {
+		return "", err
+	}
+	dst, err := pick(to)
+	if err != nil {
+		return "", err
+	}
+	if err := memory.MoveNote(src, dst, note); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("moved note from %s to %s memory — the source copy is superseded and drops on the next consolidation", from, to), nil
 }

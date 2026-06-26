@@ -55,8 +55,12 @@ func baseDir() (string, error) {
 	return d, nil
 }
 
-// Open returns the memory store for projectDir (its absolute path keys the
-// scope dir). A blank projectDir uses the cwd.
+// Open returns the memory store for projectDir. The scope is keyed by the
+// project's CANONICAL root — the git main-worktree root when projectDir is
+// inside a repo — so a worktree, a subdirectory, or a session rooted at `..`
+// all map to the SAME store instead of fragmenting one project's memory across
+// several scopes. Non-git dirs fall back to the absolute path (unchanged), so
+// existing non-repo scopes keep their keys. A blank projectDir uses the cwd.
 func Open(projectDir string) (*Store, error) {
 	base, err := baseDir()
 	if err != nil {
@@ -65,9 +69,13 @@ func Open(projectDir string) (*Store, error) {
 	if projectDir == "" {
 		projectDir, _ = os.Getwd()
 	}
-	abs, err := filepath.Abs(projectDir)
-	if err != nil {
-		abs = projectDir
+	abs := canonicalProjectDir(projectDir)
+	if abs == "" {
+		if a, aerr := filepath.Abs(projectDir); aerr == nil {
+			abs = a
+		} else {
+			abs = projectDir
+		}
 	}
 	k := key(abs)
 	s := &Store{dir: filepath.Join(base, k)}
@@ -570,6 +578,48 @@ func (s *Store) Section() string {
 	return b.String()
 }
 
+// MoveNote relocates a fact between scopes: it records `note` in dst (as an
+// ad-hoc note Phase 2 will fold, tagged with where it came from) and records a
+// supersede tombstone in src so the next consolidation drops src's copy under
+// the RECENCY-WINS rule. Used to PROMOTE a project fact that turned out to be
+// cross-cutting into global, or DEMOTE a global note that only applies to one
+// project down into that project. Either store may be nil (then it's a plain
+// add to whichever is non-nil). Returns an error only on write failure.
+func MoveNote(src, dst *Store, note string) error {
+	note = strings.TrimSpace(note)
+	if note == "" {
+		return fmt.Errorf("a note is required")
+	}
+	if dst == nil {
+		return fmt.Errorf("no destination scope")
+	}
+	srcLabel, dstLabel := scopeLabel(src), scopeLabel(dst)
+	if err := dst.Append(fmt.Sprintf("%s [moved from %s memory]", note, srcLabel)); err != nil {
+		return fmt.Errorf("record in %s: %w", dstLabel, err)
+	}
+	// Tombstone in the source so consolidation supersedes the old copy. Harmless
+	// when src is nil (a pure add) or src == dst (no self-move tombstone).
+	if src != nil && filepath.Clean(src.Dir()) != filepath.Clean(dst.Dir()) {
+		_ = src.Append(fmt.Sprintf("SUPERSEDED: the fact %q has moved to %s memory — drop it from this scope. [moved to %s]", note, dstLabel, dstLabel))
+	}
+	return nil
+}
+
+// scopeLabel names a store for provenance text: "global" or its readable
+// project name (e.g. "eigen"), or "an unknown" for nil.
+func scopeLabel(s *Store) string {
+	if s == nil {
+		return "an unknown"
+	}
+	if s.global {
+		return "global"
+	}
+	if n := StoreName(s); n != "" {
+		return n + " (project)"
+	}
+	return "project"
+}
+
 // Sections renders the combined global + project memory for injection: global
 // first (broad rules and style), then project-specific notes. Either may be nil
 // or empty.
@@ -758,18 +808,82 @@ func (s *Store) AdHocNotes(limit int) []string {
 	if s == nil {
 		return nil
 	}
+	contents, _ := s.adHocNotesWithPaths(limit)
+	return contents
+}
+
+// adHocNotesWithPaths returns the same notes AdHocNotes does, paired with their
+// source file paths (same order/limit), so a consumer can RETIRE exactly the
+// files it folded — preventing an already-consolidated note from re-feeding
+// every future Phase 2 forever.
+func (s *Store) adHocNotesWithPaths(limit int) (contents, paths []string) {
+	if s == nil {
+		return nil, nil
+	}
 	matches, _ := filepath.Glob(filepath.Join(s.AdHocNotesDir(), "*.md"))
 	sort.Strings(matches)
 	if limit > 0 && len(matches) > limit {
 		matches = matches[len(matches)-limit:]
 	}
-	var out []string
 	for _, m := range matches {
 		if b, err := os.ReadFile(m); err == nil {
-			out = append(out, string(b))
+			contents = append(contents, string(b))
+			paths = append(paths, m)
 		}
 	}
-	return out
+	return contents, paths
+}
+
+// RetiredAdHocDir holds ad-hoc notes already folded into MEMORY.md by Phase 2.
+// They are MOVED here (not deleted) so they stop re-feeding consolidation while
+// staying recoverable on disk.
+func (s *Store) RetiredAdHocDir() string {
+	if s == nil {
+		return ""
+	}
+	return filepath.Join(s.AdHocDir(), "retired")
+}
+
+// RetireAdHocNotes moves the given ad-hoc note files into the retired/ dir so a
+// note consolidation has already absorbed no longer re-enters Phase 2 input.
+// Best-effort per file; a move failure is skipped, not fatal (the note simply
+// stays live and gets reconsidered next cycle). Returns how many were retired.
+func (s *Store) RetireAdHocNotes(paths []string) int {
+	if s == nil || len(paths) == 0 {
+		return 0
+	}
+	if err := os.MkdirAll(s.RetiredAdHocDir(), 0o755); err != nil {
+		return 0
+	}
+	retired := 0
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		dst := filepath.Join(s.RetiredAdHocDir(), filepath.Base(p))
+		if _, err := os.Stat(dst); err == nil {
+			// name collision in retired/ — disambiguate with a counter suffix
+			dst = uniqueRetiredPath(dst)
+		}
+		if err := os.Rename(p, dst); err == nil {
+			retired++
+		}
+	}
+	return retired
+}
+
+// uniqueRetiredPath returns p, or p with a "-N" suffix before .md, that doesn't
+// already exist — so two notes with the same basename can both be retired.
+func uniqueRetiredPath(p string) string {
+	ext := filepath.Ext(p)
+	stem := strings.TrimSuffix(p, ext)
+	for i := 2; i < 10000; i++ {
+		cand := fmt.Sprintf("%s-%d%s", stem, i, ext)
+		if _, err := os.Stat(cand); os.IsNotExist(err) {
+			return cand
+		}
+	}
+	return p
 }
 
 // WriteRawMemories writes the merged Phase 2 input scratchpad.

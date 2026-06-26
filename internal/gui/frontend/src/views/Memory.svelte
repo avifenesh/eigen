@@ -168,6 +168,27 @@
     }
   }
 
+  // Relocate a note between scopes. Promote (project→global) when viewing a
+  // project scope; demote (global→project, into the cwd project) when viewing
+  // global. The source copy is superseded and drops on the next consolidation.
+  let movingNote = $state<number | null>(null);
+  async function moveNote(noteText: string, idx: number) {
+    const from = isGlobal ? "global" : "project";
+    const to = isGlobal ? "project" : "global";
+    movingNote = idx;
+    try {
+      await Bridge.MoveMemoryNote(from, to, noteText);
+      toasts.success(`moved to ${to} memory`);
+      await loadScope(scope);
+    } catch (e) {
+      toasts.error(errText(e));
+    } finally {
+      movingNote = null;
+    }
+  }
+  // The label for the per-note move button, by the scope currently open.
+  const moveLabel = $derived(isGlobal ? "→ project" : "→ global");
+
   async function addBan() {
     const title = banTitle.trim();
     const rule = banRule.trim();
@@ -372,7 +393,15 @@
             <div class="mem__adhoc">
               {#each current.adHoc as note (note.index)}
                 <Card>
-                  <div class="mem__note selectable"><Markdown source={note.text} /></div>
+                  <div class="mem__note-row">
+                    <div class="mem__note selectable"><Markdown source={note.text} /></div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      loading={movingNote === note.index}
+                      title="Relocate this note to the other scope"
+                      onclick={() => moveNote(note.text, note.index)}>{moveLabel}</Button>
+                  </div>
                 </Card>
               {/each}
             </div>
@@ -392,7 +421,15 @@
                 {#snippet row(note)}
                   <div class="mem__note-wrap">
                     <Card>
-                      <div class="mem__note selectable"><Markdown source={note.text} /></div>
+                      <div class="mem__note-row">
+                        <div class="mem__note selectable"><Markdown source={note.text} /></div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          loading={movingNote === note.index}
+                          title="Relocate this note to the other scope"
+                          onclick={() => moveNote(note.text, note.index)}>{moveLabel}</Button>
+                      </div>
                     </Card>
                   </div>
                 {/snippet}
@@ -716,6 +753,26 @@
   }
   .mem__note-wrap {
     padding-bottom: var(--sp-4);
+  }
+  /* Note card body + its move-to-other-scope action on one row; the button is
+     quiet until hover so the note text stays the focus. */
+  .mem__note-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-2);
+  }
+  .mem__note-row .mem__note {
+    flex: 1;
+    min-width: 0;
+  }
+  .mem__note-row :global(button) {
+    flex: none;
+    margin: var(--sp-3) var(--sp-3) 0 0;
+    opacity: 0.45;
+    transition: opacity 0.12s ease;
+  }
+  .mem__note-row:hover :global(button) {
+    opacity: 1;
   }
   /* Manual saves are few and unbounded in height — a plain stack reads better
      than windowing, and keeps a freshly-saved note immediately visible. */

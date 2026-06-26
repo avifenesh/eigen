@@ -90,6 +90,8 @@
   - `scopeDTO(store, scope)` — builds a `MemoryScopeDTO` from a `memory.Store` (USER.md split + ban list only for global).
   - `Memory() (*MemoryDTO, error)` — bound; full project+global snapshot; a failure to open EITHER scope is surfaced (not swallowed) so the frontend can distinguish a load failure from an empty store.
   - `AppendMemory(scope, note)` — bound; adds a manual note via `Store.Append` (enqueues consolidation+summary maintenance, the agent/TUI path).
+  - `MoveMemoryNote(from, to, note)` — bound; relocate a fact between scopes (promote project→global / demote global→project) via `memory.MoveNote` (records in dest, tombstones source). The Memory view's per-note `→ global`/`→ project` button.
+  - `MergeMemoryScope(srcKey, dstKey)` — bound; fold one project scope into another by on-disk key via `memory.MergeByKey` (heal a fragmented/orphan scope, e.g. a deleted worktree); returns a human summary string.
   - `AddBan(scope, title, rule)` / `RemoveBan(scope, title)` — bound; the banthis layer native in eigen (mirrors the TUI `/ban` `/unban`); return whether a ban was replaced/removed.
   - `WriteUserProfile(content)` — bound; replaces the global USER.md user-authored section (preserves the learned block).
   - `MemoryBackups(scope)` — bound; lists backup snapshot paths.

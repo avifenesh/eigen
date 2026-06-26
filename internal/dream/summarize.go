@@ -165,3 +165,94 @@ func DistillStation(ctx context.Context, p llm.Provider, digest, existingGlobal 
 	}
 	return dedupe(parseBullets(resp.Text), existingGlobal), nil
 }
+
+const demotePrompt = `You are auditing a coding agent's GLOBAL (cross-project) memory for notes that DON'T belong there because they are really specific to ONE project.
+
+Global memory is for facts that apply EVERYWHERE: the user's working style, recurring preferences, hard rules, environment facts true across projects. A note that names a single repo's build command, a one-project file path, a gotcha that only bites in one codebase, etc. was misfiled and should move DOWN into that project's memory.
+
+You are given the global memory and a list of known project names. For each global note that is actually project-specific AND you can confidently name which project it belongs to (from the project list), output one line:
+
+PROJECT_NAME<TAB>the note text verbatim
+
+Strict rules:
+- Only flag a note when you are CONFIDENT which single project it belongs to. If a note is genuinely cross-project, or you can't tell which project, LEAVE IT (output nothing for it).
+- Use a project name EXACTLY as it appears in the provided list. Never invent a project.
+- Copy the note text verbatim (preserve commands/paths/quotes; keep [REDACTED_SECRET]).
+- Be conservative: demoting a truly-global rule is worse than leaving a misfiled note. When unsure, output nothing.
+- Output ONLY "PROJECT<TAB>note" lines, at most 6. No headings, no commentary. If nothing should move, output nothing.`
+
+// Demotion is one proposed move of a misfiled global note down into a project.
+type Demotion struct {
+	Project string // project name as given in the candidate list
+	Note    string // the note text to move
+}
+
+// ProposeDemotions asks the model which global notes are actually specific to a
+// single named project and should move down into it. projectNames is the set of
+// known project names (the candidates a note may be assigned to). Returns only
+// confident, well-formed proposals whose project is in the candidate set; an
+// empty/blank global memory or no candidates yields nil. Conservative by design
+// — the prompt is told that leaving a note is safer than a wrong demotion.
+func ProposeDemotions(ctx context.Context, p llm.Provider, globalMemory string, projectNames []string) ([]Demotion, error) {
+	if p == nil {
+		return nil, fmt.Errorf("dream: nil provider")
+	}
+	gm := strings.TrimSpace(globalMemory)
+	if gm == "" || len(projectNames) == 0 {
+		return nil, nil
+	}
+	valid := make(map[string]bool, len(projectNames))
+	var b strings.Builder
+	b.WriteString("Known projects:\n")
+	for _, n := range projectNames {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		valid[n] = true
+		fmt.Fprintf(&b, "- %s\n", n)
+	}
+	b.WriteString("\nGlobal memory:\n")
+	b.WriteString(gm)
+	content := b.String()
+	if len(content) > maxSummarizeInput {
+		content = content[len(content)-maxSummarizeInput:]
+	}
+	resp, err := p.Complete(ctx, llm.Request{
+		System:   demotePrompt,
+		Messages: []llm.Message{{Role: llm.RoleUser, Text: content}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var out []Demotion
+	for _, ln := range strings.Split(resp.Text, "\n") {
+		ln = strings.TrimSpace(ln)
+		if ln == "" {
+			continue
+		}
+		// Accept TAB or the first run of spaces as the separator (models vary).
+		proj, note := splitDemotion(ln)
+		proj, note = strings.TrimSpace(proj), strings.TrimSpace(note)
+		if proj == "" || note == "" || !valid[proj] {
+			continue // unknown/invented project or malformed line — drop
+		}
+		out = append(out, Demotion{Project: proj, Note: note})
+		if len(out) >= 6 {
+			break
+		}
+	}
+	return out, nil
+}
+
+// splitDemotion splits a "PROJECT<sep>note" line on the first TAB, falling back
+// to the first whitespace run when the model didn't emit a literal tab.
+func splitDemotion(ln string) (proj, note string) {
+	if i := strings.IndexByte(ln, '\t'); i >= 0 {
+		return ln[:i], ln[i+1:]
+	}
+	if i := strings.IndexFunc(ln, func(r rune) bool { return r == ' ' }); i >= 0 {
+		return ln[:i], ln[i+1:]
+	}
+	return ln, ""
+}

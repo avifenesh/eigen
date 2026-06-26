@@ -145,6 +145,14 @@ func runDaemon(cfg config.Config) {
 		fmt.Fprintf(os.Stderr, "eigen daemon: restored %d session(s)\n", n)
 	}
 
+	// Heal pre-existing memory-scope fragmentation: before canonical git-root
+	// scoping (memory.Open keys by the repo's main-worktree root), a worktree, a
+	// subdir, or a `..`-rooted session each got its OWN scope — splitting one
+	// project's memory across stores. Fold those legacy scopes into the canonical
+	// one, once, using the persisted-session dirs as the known-project set.
+	// Best-effort + idempotent (already-merged scopes are gone, so re-runs no-op).
+	go reconcileMemoryScopes()
+
 	// Nightly dreaming: when the machine is idle, reflect persisted sessions
 	// into structured memory across all scopes (the codex-style pipeline) on
 	// the small model. Best-effort, never competes with a live turn.
@@ -803,6 +811,34 @@ func sweepStaleWorkspaces() {
 	}()
 }
 
+// reconcileMemoryScopes folds legacy per-cwd memory scopes into their canonical
+// git-root scope, healing fragmentation that predates canonical scoping. It uses
+// every distinct persisted-session dir as the known-project set, so a worktree
+// or subdir that was once its own scope gets merged into the main repo's scope.
+// Best-effort + idempotent; logs only when it actually merged something.
+func reconcileMemoryScopes() {
+	seen := map[string]bool{}
+	var dirs []string
+	for _, p := range daemon.ListPersisted() {
+		if p.Dir == "" || seen[p.Dir] {
+			continue
+		}
+		seen[p.Dir] = true
+		dirs = append(dirs, p.Dir)
+	}
+	if len(dirs) == 0 {
+		return
+	}
+	merges, err := memory.ReconcileScopes(dirs, time.Now())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "eigen daemon: scope reconcile:", err)
+	}
+	for _, m := range merges {
+		fmt.Fprintf(os.Stderr, "eigen daemon: merged memory scope %s → %s (%d bytes, %d ad-hoc, %d rollouts; archived %s)\n",
+			m.SrcKey, m.DstKey, m.MemoryBytes, m.AdHocCopied, m.RolloutCopied, m.ArchivedAs)
+	}
+}
+
 // nightlyDreamer reflects persisted daemon sessions into structured memory when
 // the machine is idle. Every dreamInterval it checks: nothing running, and a
 // session has changed since last dream → run the memory pipeline per scope
@@ -930,6 +966,15 @@ func runNightlyDream(host *daemon.Host, prov llm.Provider, gmem *memory.Store, d
 		}
 	}
 
+	// Reclassify DOWN: a global note that's actually specific to one project was
+	// misfiled — move it into that project's memory. (The UP direction, project →
+	// global, is the DistillGlobal pass above.) Conservative: only confident,
+	// named-project demotions are applied, each tombstoned in global so the next
+	// global consolidation drops the misfiled copy.
+	if gmem != nil && !host.AnyRunning() {
+		reclassifyGlobalDown(prov, gmem, byDir)
+	}
+
 	// Working-station reflection (calendar/mail/projects/crons/health → durable
 	// life-awareness notes in global memory). eigen is a working station, so the
 	// nightly dream also reflects the working LIFE, not only coding sessions.
@@ -943,6 +988,54 @@ func runNightlyDream(host *daemon.Host, prov llm.Provider, gmem *memory.Store, d
 				fmt.Fprintf(os.Stderr, "eigen daemon: working-station +%d\n", len(notes))
 			}
 		}
+	}
+}
+
+// reclassifyGlobalDown moves global notes that are really project-specific into
+// the project they belong to. byDir is the dreamed scopes this wake; their
+// readable project names are the demotion candidates (so a note can only move to
+// a project eigen actually knows). Best-effort + conservative — the model is
+// told leaving a note beats a wrong demotion, and only known-name proposals are
+// applied. Each applied move tombstones the global copy via memory.MoveNote.
+func reclassifyGlobalDown(prov llm.Provider, gmem *memory.Store, byDir map[string][]daemon.PersistedInfo) {
+	if gmem == nil || len(byDir) == 0 {
+		return
+	}
+	// Map candidate project NAME → its store (canonical scope per dir).
+	stores := map[string]*memory.Store{}
+	var names []string
+	for dir := range byDir {
+		st, err := memory.Open(dir)
+		if err != nil {
+			continue
+		}
+		name := memory.StoreName(st)
+		if name == "" || name == "global" || stores[name] != nil {
+			continue
+		}
+		stores[name] = st
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return
+	}
+	moves, err := dream.ProposeDemotions(context.Background(), prov, gmem.Read(), names)
+	if err != nil || len(moves) == 0 {
+		return
+	}
+	applied := 0
+	for _, m := range moves {
+		dst := stores[m.Project]
+		if dst == nil {
+			continue
+		}
+		if err := memory.MoveNote(gmem, dst, m.Note); err == nil {
+			applied++
+		}
+	}
+	if applied > 0 {
+		memory.CommitMemory(fmt.Sprintf("dream: demoted %d global note(s) to their project", applied))
+		fmt.Fprintf(os.Stderr, "eigen daemon: demoted %d misfiled global note(s) to project memory\n", applied)
 	}
 }
 

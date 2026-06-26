@@ -13,6 +13,7 @@ const (
 	JobStage1      = "mem_stage1"
 	JobConsolidate = "mem_consolidate"
 	JobSummary     = "mem_summary"
+	JobForget      = "mem_forget"
 
 	scopeJobKey = "scope"
 
@@ -189,6 +190,12 @@ func (p *Pipeline) recordStage1(scope, threadID string, watermark int64, result 
 		if err := p.Index.EnqueueWatermark(JobSummary, scope, scopeJobKey, watermark); err != nil && firstErr == nil {
 			firstErr = err
 		}
+		// Forget runs off the same watermark: after new evidence lands, sweep the
+		// scope's append-only tiers back under their retention caps. Cheap + purely
+		// local (no model), so it rides along with every reflection.
+		if err := p.Index.EnqueueWatermark(JobForget, scope, scopeJobKey, watermark); err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
 	return firstErr
 }
@@ -362,6 +369,10 @@ func (p *Pipeline) RunQueued(ctx context.Context, maxJobs int) (string, error) {
 			} else if did {
 				parts = append(parts, "regenerated memory_summary.md")
 			}
+		case JobForget:
+			if r := p.Store.PruneEvidence(time.Now()); r.RolloutsArchived > 0 || r.RetiredArchived > 0 {
+				parts = append(parts, fmt.Sprintf("archived %d rollouts + %d retired notes", r.RolloutsArchived, r.RetiredArchived))
+			}
 		default:
 			jobErr = fmt.Errorf("unsupported memory job %q for scope %q", j.Kind, j.Scope)
 		}
@@ -382,7 +393,7 @@ func (p *Pipeline) MaybeConsolidate(ctx context.Context, force bool) (bool, erro
 	if p.Store == nil || p.Consolidate == nil {
 		return false, nil
 	}
-	cur, selected := p.phase2Input()
+	cur, selected, adHocPaths := p.phase2Input()
 	limit := p.ConsolidateBytes
 	if limit <= 0 {
 		limit = 24_000 // ~ a few hundred bullets; keeps MEMORY.md curatable
@@ -404,12 +415,20 @@ func (p *Pipeline) MaybeConsolidate(ctx context.Context, force bool) (bool, erro
 	if p.Index != nil {
 		p.Index.MarkSelectedForPhase2(selected)
 	}
+	// Retire the ad-hoc notes this run folded into MEMORY.md: they now live in
+	// the curated memory, so leaving the source files live would re-feed them
+	// into every future Phase 2 (unbounded growth + repeated reconsideration of
+	// already-absorbed notes). Moved to retired/, not deleted — recoverable.
+	p.Store.RetireAdHocNotes(adHocPaths)
 	return true, nil
 }
 
-func (p *Pipeline) phase2Input() (string, []Stage1Output) {
+// phase2Input builds the consolidation input and reports both the Stage1 rows
+// selected (to watermark) and the ad-hoc note FILE PATHS included (to retire
+// after a successful fold).
+func (p *Pipeline) phase2Input() (input string, selected []Stage1Output, adHocPaths []string) {
 	if p == nil || p.Store == nil {
-		return "", nil
+		return "", nil, nil
 	}
 	var b strings.Builder
 	if cur := strings.TrimSpace(p.Store.Read()); cur != "" {
@@ -417,7 +436,6 @@ func (p *Pipeline) phase2Input() (string, []Stage1Output) {
 		b.WriteString(cur)
 		b.WriteString("\n\n")
 	}
-	var selected []Stage1Output
 	if p.Index != nil {
 		rows, err := p.Index.Phase2Inputs(p.scopeKey(), 64)
 		if err == nil {
@@ -430,14 +448,16 @@ func (p *Pipeline) phase2Input() (string, []Stage1Output) {
 			fmt.Fprintf(&b, "### %s (%s)\n\n%s\n\n", r.ThreadID, r.RolloutSlug, strings.TrimSpace(r.RawMemory))
 		}
 	}
-	if notes := p.Store.AdHocNotes(64); len(notes) > 0 {
+	notes, paths := p.Store.adHocNotesWithPaths(64)
+	if len(notes) > 0 {
+		adHocPaths = paths
 		b.WriteString("## Ad-hoc notes\n\n")
 		for _, n := range notes {
 			b.WriteString(strings.TrimSpace(n))
 			b.WriteString("\n\n")
 		}
 	}
-	return strings.TrimSpace(b.String()) + "\n", selected
+	return strings.TrimSpace(b.String()) + "\n", selected, adHocPaths
 }
 
 func (p *Pipeline) consolidatePhase2(ctx context.Context, input string) (string, error) {

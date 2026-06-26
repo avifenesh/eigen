@@ -43,6 +43,70 @@ func TestAppendMemoryConsolidates(t *testing.T) {
 	}
 }
 
+// TestMoveMemoryNote_PromoteToGlobal verifies the bridge promote path: a project
+// note moved to global is recorded in the global store (and the source gets a
+// supersede tombstone). Exercises the same bridge method the GUI move button
+// calls (the synthetic webview click is unreliable in the test sandbox).
+func TestMoveMemoryNote_PromoteToGlobal(t *testing.T) {
+	isolateMemoryHome(t)
+	b := &Bridge{}
+
+	if err := b.MoveMemoryNote("project", "global", "use ripgrep not grep everywhere"); err != nil {
+		t.Fatalf("MoveMemoryNote: %v", err)
+	}
+	glob, err := memory.OpenGlobal()
+	if err != nil {
+		t.Fatalf("OpenGlobal: %v", err)
+	}
+	found := false
+	for _, n := range glob.AdHocNotes(50) {
+		if strings.Contains(n, "use ripgrep not grep everywhere") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("promoted note not recorded in global memory")
+	}
+	// Same scope → error (guard).
+	if err := b.MoveMemoryNote("global", "global", "x"); err == nil {
+		t.Fatal("expected same-scope move to error")
+	}
+}
+
+// TestMergeMemoryScope_FoldsByKey verifies the bridge merge path folds one
+// project scope into another and reports a human summary.
+func TestMergeMemoryScope_FoldsByKey(t *testing.T) {
+	isolateMemoryHome(t)
+	b := &Bridge{}
+
+	src, err := memory.OpenByKey("orphan-11111111")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := src.Rewrite("# Orphan\n- a fact only here\n"); err != nil {
+		t.Fatal(err)
+	}
+	dst, err := memory.OpenByKey("live-22222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := dst.Rewrite("# Live\n- existing\n"); err != nil {
+		t.Fatal(err)
+	}
+
+	msg, err := b.MergeMemoryScope("orphan-11111111", "live-22222222")
+	if err != nil {
+		t.Fatalf("MergeMemoryScope: %v", err)
+	}
+	if !strings.Contains(msg, "merged") {
+		t.Fatalf("unexpected summary: %q", msg)
+	}
+	merged, _ := memory.OpenByKey("live-22222222")
+	if !strings.Contains(merged.Read(), "a fact only here") {
+		t.Fatalf("destination missing folded content:\n%s", merged.Read())
+	}
+}
+
 // TestSplitNotesSectionSplitting verifies splitNotes honors the curated-memory
 // contract: section-structured MEMORY.md ("## Heading\n\n- bullets") splits on
 // top-level "## " heading boundaries — keeping each heading WITH its body so a

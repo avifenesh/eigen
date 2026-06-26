@@ -93,6 +93,10 @@ export const Bridge = {
   // memory
   Memory: (): Promise<MemoryDTO | null> => B.Memory(),
   AppendMemory: (scope: string, note: string): Promise<void> => B.AppendMemory(scope, note),
+  // relocate a fact between scopes: promote (project→global) or demote (global→project)
+  MoveMemoryNote: (from: string, to: string, note: string): Promise<void> => B.MoveMemoryNote(from, to, note),
+  // fold a fragmented project scope (e.g. orphan worktree) into another by on-disk key
+  MergeMemoryScope: (srcKey: string, dstKey: string): Promise<string> => B.MergeMemoryScope(srcKey, dstKey),
   WriteUserProfile: (content: string): Promise<void> => B.WriteUserProfile(content),
   MemoryBackups: (scope: string): Promise<string[]> => B.MemoryBackups(scope),
   // bans (banthis hard-prohibition layer) — returns whether an existing ban was replaced/removed
