@@ -1,8 +1,8 @@
 <script lang="ts">
   // Crons — scheduled work around eigen: systemd --user timers and the user's
   // crontab. Timers show next/last run + active state and can be
-  // started/stopped/enabled/disabled; crontab entries are read-only (their
-  // spec + command). Read directly via the bridge (systemctl/crontab).
+  // started/stopped/enabled/disabled; crontab jobs can be ADDED (with friendly
+  // presets) and removed. Read + written via the bridge (systemctl/crontab).
   //
   // Taste pass: read as a SCHEDULE, not a list. Timers are ordered by next run
   // (soonest first, no-next-run sinks to the bottom) and carry a relative
@@ -208,6 +208,54 @@
       if (c.unit) delete acting[c.unit];
     }
   }
+
+  // --- Add / remove crontab jobs (the writable half).
+  let addOpen = $state(false);
+  let addSpec = $state("");
+  let addCmd = $state("");
+  let addSaving = $state(false);
+  // A few friendly presets so the user doesn't have to recall cron syntax.
+  const specPresets = [
+    { label: "Every hour", spec: "@hourly" },
+    { label: "Every day 9am", spec: "0 9 * * *" },
+    { label: "Weekdays 9am", spec: "0 9 * * 1-5" },
+    { label: "Weekly (Mon)", spec: "0 9 * * 1" },
+  ];
+
+  async function addJob() {
+    const spec = addSpec.trim();
+    const cmd = addCmd.trim();
+    if (!spec || !cmd) {
+      toasts.error("Schedule and command are required");
+      return;
+    }
+    addSaving = true;
+    try {
+      await Bridge.AddCrontab(spec, cmd);
+      toasts.success("Scheduled job added");
+      addOpen = false;
+      addSpec = addCmd = "";
+      await load();
+    } catch (e) {
+      toasts.error(errText(e));
+    } finally {
+      addSaving = false;
+    }
+  }
+
+  async function removeJob(c: CronRow) {
+    const key = c.next + c.command;
+    acting[key] = true;
+    try {
+      await Bridge.RemoveCrontab(c.next, c.command);
+      toasts.success("Removed");
+      await load();
+    } catch (e) {
+      toasts.error(errText(e));
+    } finally {
+      delete acting[key];
+    }
+  }
 </script>
 
 <div class="crons">
@@ -221,16 +269,46 @@
         <Button variant="secondary" onclick={() => load()}>Retry</Button>
       {/snippet}
     </EmptyState>
-  {:else if !data || (data.timers === 0 && data.crontab === 0)}
-    <EmptyState
-      glyph="◷"
-      title="No scheduled work"
-      line={data && !data.systemdAvail
-        ? "No systemd --user timers or crontab found on this machine."
-        : "No systemd --user timers or crontab entries. Set one up to automate eigen runs."}
-    />
   {:else}
     <div class="crons__scroll">
+      <!-- Add a scheduled job (crontab) — the writable entry point. -->
+      <div class="crons__addbar">
+        {#if !addOpen}
+          <Button variant="primary" size="sm" onclick={() => (addOpen = true)}>+ Schedule a job</Button>
+        {/if}
+      </div>
+      {#if addOpen}
+        <Card>
+          <div class="addjob">
+            <div class="addjob__row">
+              <label class="addjob__lbl" for="cron-spec">Schedule</label>
+              <input id="cron-spec" class="addjob__in" bind:value={addSpec} placeholder="@daily  ·  or  0 9 * * 1-5" />
+            </div>
+            <div class="addjob__presets">
+              {#each specPresets as p (p.spec)}
+                <button class="preset" onclick={() => (addSpec = p.spec)}>{p.label}</button>
+              {/each}
+            </div>
+            <div class="addjob__row">
+              <label class="addjob__lbl" for="cron-cmd">Command</label>
+              <input id="cron-cmd" class="addjob__in" bind:value={addCmd} placeholder="eigen run … / notify-send 'standup'" />
+            </div>
+            <div class="addjob__btns">
+              <Button variant="primary" disabled={addSaving} onclick={addJob}>{addSaving ? "Adding…" : "Add job"}</Button>
+              <Button variant="ghost" disabled={addSaving} onclick={() => (addOpen = false)}>Cancel</Button>
+            </div>
+          </div>
+        </Card>
+      {/if}
+
+      {#if (!data || (data.timers === 0 && data.crontab === 0)) && !addOpen}
+        <EmptyState
+          glyph="◷"
+          title="No scheduled work yet"
+          line="Schedule a job above to automate eigen runs, reminders, or chores."
+        />
+      {/if}
+
       {#if timers.length > 0}
         <section class="crons__section">
           <div class="crons__section-head">
@@ -300,7 +378,6 @@
             <span class="crons__rail crons__rail--alt" aria-hidden="true"></span>
             <h2 class="crons__section-title">Crontab</h2>
             <span class="crons__n tnum">{crontab.length}</span>
-            <span class="crons__by">read-only</span>
           </div>
           <div class="crons__list">
             {#each crontab as c, i (i)}
@@ -316,6 +393,9 @@
                   </div>
                   <div class="cron__main">
                     <div class="cron__cmd selectable">{c.command}</div>
+                  </div>
+                  <div class="cron__actions">
+                    <Button variant="ghost" size="sm" loading={acting[c.next + c.command]} onclick={() => removeJob(c)}>Remove</Button>
                   </div>
                 </div>
               </Card>
@@ -565,6 +645,65 @@
     padding: var(--sp-2) var(--sp-3);
     border-radius: var(--r-xs);
     align-self: flex-start;
+  }
+
+  /* --- Add-job form. */
+  .crons__addbar {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .addjob {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    padding: var(--sp-5);
+  }
+  .addjob__row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+  }
+  .addjob__lbl {
+    font: var(--fw-medium) var(--fs-label) / 1 var(--font-sans);
+    color: var(--text-muted);
+  }
+  .addjob__in {
+    height: 34px;
+    padding: 0 var(--sp-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-sm);
+    background: var(--bg-raised-2);
+    color: var(--text-primary);
+    font: var(--fw-regular) var(--fs-code-sm) / 1 var(--font-mono);
+    outline: none;
+  }
+  .addjob__in:focus-visible {
+    border-color: var(--border-brand-faint);
+    box-shadow: var(--shadow-focus);
+  }
+  .addjob__presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+  }
+  .preset {
+    height: 24px;
+    padding: 0 var(--sp-4);
+    border-radius: var(--r-full);
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-raised-2);
+    color: var(--text-muted);
+    cursor: pointer;
+    font: var(--fw-medium) var(--fs-label) / 1 var(--font-sans);
+  }
+  .preset:hover {
+    color: var(--brand-bright);
+    border-color: var(--border-brand-faint);
+  }
+  .addjob__btns {
+    display: flex;
+    gap: var(--sp-2);
+    margin-top: var(--sp-2);
   }
 
   @media (prefers-reduced-motion: reduce) {

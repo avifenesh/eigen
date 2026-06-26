@@ -120,6 +120,8 @@ export const Bridge = {
   // crons
   Crons: (): Promise<CronsDTO | null> => B.Crons(),
   SetTimer: (unit: string, verb: string): Promise<void> => B.SetTimer(unit, verb),
+  AddCrontab: (spec: string, command: string): Promise<void> => B.AddCrontab(spec, command),
+  RemoveCrontab: (spec: string, command: string): Promise<void> => B.RemoveCrontab(spec, command),
   // plugins
   Plugins: (): Promise<PluginsDTO | null> => B.Plugins(),
   SetMarketEnabled: (name: string, enabled: boolean): Promise<boolean> => B.SetMarketEnabled(name, enabled),

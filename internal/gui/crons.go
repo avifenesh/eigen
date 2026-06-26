@@ -150,6 +150,101 @@ func (b *Bridge) Crons() (*CronsDTO, error) {
 	}, nil
 }
 
+// AddCrontab appends a job to the user's crontab. spec is a 5-field cron
+// expression or an @keyword (@daily, @hourly, …); command is the shell command.
+// Validates the spec shape, dedupes an identical line, and writes the whole
+// crontab back via `crontab -`. A missing crontab (exit on `crontab -l`) is
+// treated as empty, so the first job creates it.
+func (b *Bridge) AddCrontab(spec, command string) error {
+	spec = strings.TrimSpace(spec)
+	command = strings.TrimSpace(command)
+	if spec == "" || command == "" {
+		return fmt.Errorf("schedule and command are required")
+	}
+	if err := validateCronSpec(spec); err != nil {
+		return err
+	}
+	lines := currentCrontabLines()
+	line := spec + " " + command
+	for _, l := range lines {
+		if strings.TrimSpace(l) == line {
+			return fmt.Errorf("that schedule + command is already in your crontab")
+		}
+	}
+	lines = append(lines, line)
+	return writeCrontab(lines)
+}
+
+// RemoveCrontab deletes the crontab line matching spec + command exactly.
+// Returns an error when no matching line is found (nothing removed).
+func (b *Bridge) RemoveCrontab(spec, command string) error {
+	spec = strings.TrimSpace(spec)
+	command = strings.TrimSpace(command)
+	target := spec + " " + command
+	lines := currentCrontabLines()
+	kept := make([]string, 0, len(lines))
+	removed := false
+	for _, l := range lines {
+		if strings.TrimSpace(l) == target {
+			removed = true
+			continue
+		}
+		kept = append(kept, l)
+	}
+	if !removed {
+		return fmt.Errorf("no crontab entry matched %q", target)
+	}
+	return writeCrontab(kept)
+}
+
+// currentCrontabLines returns the user's crontab lines (empty when none).
+func currentCrontabLines() []string {
+	out, err := exec.Command("crontab", "-l").Output()
+	if err != nil {
+		return nil // no crontab yet (or unreadable) — treat as empty
+	}
+	var lines []string
+	for _, l := range strings.Split(string(out), "\n") {
+		if strings.TrimRight(l, " \t") != "" {
+			lines = append(lines, l)
+		}
+	}
+	return lines
+}
+
+// writeCrontab installs lines as the user's crontab via `crontab -` (reads from
+// stdin). An empty set clears the crontab with `crontab -r`.
+func writeCrontab(lines []string) error {
+	if len(lines) == 0 {
+		// `crontab -r` errors when there's no crontab; ignore that case.
+		_ = exec.Command("crontab", "-r").Run()
+		return nil
+	}
+	cmd := exec.Command("crontab", "-")
+	cmd.Stdin = strings.NewReader(strings.Join(lines, "\n") + "\n")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("write crontab: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// validateCronSpec checks spec is an @keyword or a 5-field cron expression.
+// Field-content validation is left to cron itself (it rejects on install); this
+// catches the common shape mistakes before we touch the live crontab.
+func validateCronSpec(spec string) error {
+	if strings.HasPrefix(spec, "@") {
+		switch spec {
+		case "@yearly", "@annually", "@monthly", "@weekly", "@daily", "@midnight", "@hourly", "@reboot":
+			return nil
+		}
+		return fmt.Errorf("unknown schedule keyword %q (use @daily, @hourly, @weekly, … or a 5-field cron expression)", spec)
+	}
+	if len(strings.Fields(spec)) != 5 {
+		return fmt.Errorf("cron schedule must be 5 fields (min hour day month weekday) or an @keyword, got %q", spec)
+	}
+	return nil
+}
+
 // SetTimer controls a systemd --user timer. verb is start|stop|enable|disable.
 func (b *Bridge) SetTimer(unit, verb string) error {
 	switch verb {

@@ -214,8 +214,9 @@
   - `loadCrontab()` — runs `crontab -l`, parses spec+command lines.
   - `Crons() (*CronsDTO, error)` — bound; merged timers + crontab snapshot.
   - `SetTimer(unit, verb)` — bound; `systemctl --user <start|stop|enable|disable> <unit>` with validation.
+  - `AddCrontab(spec, command)` / `RemoveCrontab(spec, command)` — bound; WRITABLE crontab: validate the spec (5-field or @keyword), dedupe, and reinstall the whole crontab via `crontab -` (or `crontab -r` when empty). `currentCrontabLines`/`writeCrontab`/`validateCronSpec` helpers.
 - **Depends on:** stdlib only (`os/exec`, `encoding/json`) — shells out to `systemctl`/`crontab`.
-- **Used by / entrypoint:** entrypoint — `Crons`/`SetTimer` bound, called from the Crons view.
+- **Used by / entrypoint:** entrypoint — `Crons`/`SetTimer`/`AddCrontab`/`RemoveCrontab` bound, called from the Crons view (which now has an add-job form + per-row Remove, no longer read-only).
 
 ### internal/gui/dreaming.go
 - **Role:** Dreaming-history bridge; reconstructs the memory-consolidation timeline (rollout summaries + timestamped `.bak` snapshots) from local files for diffing.

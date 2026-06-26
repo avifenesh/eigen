@@ -191,7 +191,8 @@
 
 ### internal/gui/frontend/src/views/Crons.svelte
 - **Role:** Scheduled work — systemd `--user` timers (controllable start/stop/enable/disable) and the
-  user's crontab (read-only). Renders as a schedule: timers ordered by next run with relative ledes,
+  user's crontab (WRITABLE: a "+ Schedule a job" form with cron presets via `AddCrontab`, per-row
+  Remove via `RemoveCrontab`). Renders as a schedule: timers ordered by next run with relative ledes,
   a 24h day-position track, and the soonest live run teal-lit; crontab specs decoded to human cadence.
 - **Key symbols:**
   - `data`/`loading`/`error` + `load()` (`loadSeq` guard) + `$effect` — `Bridge.Crons()` on mount.
