@@ -197,7 +197,7 @@
 - **Role:** The cross-project WORK BOARD — "what's going on across all my projects" in one place (project management for the working station). One lane per project: git state (branch, dirty/unpushed/behind, TODO/FIXME count), open PRs/issues + git loose-ends (grouped from the cached proactive feed), each card one-click startable.
 - **Key symbols:** `BoardDTO`/`BoardLaneDTO`/`BoardItemDTO`; bound `Board()` — groups `feed.Load()` git/github items by dir, unions with `projectDirs()`, enriches each lane via local probes (`gitBranch`/`countDirty`/`countRevs`/`countTodos`), merges remote GitHub lanes (`board_github.go`), scopes to pinned+active. `PinLane`/`UnpinLane` (config.BoardPinned), `ReviewPR(url)`/`WorkIssue(url)` per-card actions.
 - **Kanban (`Kanban()` bound):** a cross-repo DERIVED column board — `KanbanDTO`/`KanbanColumnDTO`/`KanbanCardDTO`. Columns **Needs you / Todo / In progress / In review / Done** derived first-match by `kanbanColumnFor` (merged/closed→Done, PR changes-requested or feed-@me→Needs you, draft PR or local-git/active-session→In progress, open PR→In review, issue→Todo). Joins the feed's review-requested/assigned @me set (by URL) for "Needs you" + matches `Sessions().Dir` for the ⚡ active-session badge/In-progress nudge. Cards carry PR review state (`reviewDecision`→approved/changes/pending), draft, age (reddens >48h). Read-only (no drag-status); ordered needs-you → session → oldest.
-- **GitHub data (`board_github.go`):** `gh search prs/issues --owner <each> --state open` + a `--merged` sweep for Done — fetches `isDraft`+`reviewDecision` for PRs; TWO calls per kind across all owners (not N×2), 5-min background cache.
+- **GitHub data (`board_github.go`):** open PRs `--owner <each>` (owner-wide); ISSUES scoped to `--assignee/--author/--mentions @me` (deduped) so the Todo column isn't flooded by a repo's bot/CVE issues; + a `--merged` sweep for Done. Fetches `isDraft`+`reviewDecision` for PRs; ~few calls total across all owners, 5-min background cache.
 - **Depends on:** `internal/feed` (cached items + @me classification), `internal/config` (pins/owners), `os/exec` (git + gh).
 - **Used by / entrypoint:** the Board view (`board` route, Projects⇄Kanban toggle); items reuse `StartFromFeed`/`NewSession`/`ReviewPR`/`WorkIssue`.
 
@@ -206,6 +206,12 @@
 - **Key symbols:** `DashboardDTO` (`googleConnected`/`events`/`unreadCount`/`unread`/`health`), `CalEventDTO`/`MailMsgDTO`/`SysHealthDTO`, `healthDTO`; bound `Dashboard()` — reads `syshealth.Read()` + (when `google.Default().Connected()`) `UpcomingEvents`/`UnreadCount`/`RecentUnread`, each section best-effort.
 - **Depends on:** `internal/google`, `internal/syshealth`.
 - **Used by / entrypoint:** Home's "Today" zone (calendar · inbox · machine panels), refreshed every 60s.
+
+### internal/gui/builtins.go
+- **Role:** Bridge for the non-Google native local connectors — Obsidian (vault notes) + revuto (PR-reviewer daemon). Surfaced as Connectors cards; no OAuth (FS / CLI).
+- **Key symbols:** `ObsidianStatusDTO` + `ObsidianStatus()` (vault available + path); `RevutoStatusDTO` + `RevutoStatus()` (CLI available + reviewer/paused counts), `RevutoReviewerDTO` + `RevutoReviewers()`, `RevutoTrigger(repo, job)`, `RevutoSetPaused(repo, paused)`.
+- **Depends on:** `internal/obsidian`, `internal/revuto`.
+- **Used by / entrypoint:** the Obsidian + Revuto cards in the Connectors view.
 
 ### internal/gui/google.go
 - **Role:** Native Google (Calendar + Gmail) status + connect bridge — eigen's direct-REST built-in (NOT an MCP connector), authorized with the user's own Google Cloud OAuth client.

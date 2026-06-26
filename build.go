@@ -15,6 +15,8 @@ import (
 	"github.com/avifenesh/eigen/internal/mcp"
 	"github.com/avifenesh/eigen/internal/memory"
 	"github.com/avifenesh/eigen/internal/observe"
+	"github.com/avifenesh/eigen/internal/obsidian"
+	"github.com/avifenesh/eigen/internal/revuto"
 	"github.com/avifenesh/eigen/internal/skill"
 	"github.com/avifenesh/eigen/internal/tool"
 )
@@ -251,6 +253,16 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 	// "google". Always registered — they return a clear "not connected" until the
 	// user links their Google account in the GUI.
 	for _, d := range google.Default().Tools(nil) {
+		if builtin[d.Name] {
+			continue
+		}
+		defs = append(defs, d)
+		builtin[d.Name] = true
+	}
+	// Obsidian (vault notes) + revuto (PR-reviewer daemon): native local
+	// built-ins. Safe to register always — each no-ops with a clear error until
+	// its vault/CLI is present.
+	for _, d := range append(obsidian.Tools(), revuto.Tools()...) {
 		if builtin[d.Name] {
 			continue
 		}

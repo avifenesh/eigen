@@ -41,6 +41,8 @@ import (
 	"github.com/avifenesh/eigen/internal/mcp"
 	"github.com/avifenesh/eigen/internal/memory"
 	"github.com/avifenesh/eigen/internal/observe"
+	"github.com/avifenesh/eigen/internal/obsidian"
+	"github.com/avifenesh/eigen/internal/revuto"
 	"github.com/avifenesh/eigen/internal/session"
 	"github.com/avifenesh/eigen/internal/skill"
 	"github.com/avifenesh/eigen/internal/syshealth"
@@ -849,6 +851,14 @@ func main() {
 	// Google (Calendar + Gmail): native direct-REST tools, niche-grouped under
 	// "google"; safe to register always (return "not connected" until linked).
 	for _, d := range google.Default().Tools(nil) {
+		if builtin[d.Name] {
+			continue
+		}
+		defs = append(defs, d)
+		builtin[d.Name] = true
+	}
+	// Obsidian vault notes + revuto PR-reviewer: native local built-ins.
+	for _, d := range append(obsidian.Tools(), revuto.Tools()...) {
 		if builtin[d.Name] {
 			continue
 		}

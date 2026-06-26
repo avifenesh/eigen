@@ -208,6 +208,33 @@
 - **Role:** `Default()` — process-wide shared `Auth` (one token store + creds across agent tools, GUI bridge, CLI).
 - **Used by / entrypoint:** `build.go` + `main.go` register `google.Default().Tools(nil)` into the tool set; `internal/gui/google.go` drives connect/disconnect/status.
 
+## internal/obsidian — native vault notes
+
+> eigen's Obsidian integration: read/search/write markdown notes in a local
+> vault (a dir of .md files). A direct-FS built-in (no API/OAuth), exposed as
+> agent tools + a Connectors card. Ties into the working-station's idea/notes
+> capture. Vault = `$EIGEN_OBSIDIAN_VAULT` → `~/revuto` (the user's vault, which
+> is also revuto's) → `~/Obsidian`.
+
+### internal/obsidian/obsidian.go
+- **Key symbols:** `VaultPath`/`isVault`/`Available`; `Note`; `List(limit)`, `Search(query,limit)` (title+content), `Read`/`Write`/`Append` (markdown), `walkNotes` (skips `.obsidian`/`.git`/`.locks`/`.workspaces`/dotdirs, capped `maxVaultScan`), `safeJoin` (rejects absolute + `..` traversal so a tool call can't escape the vault).
+### internal/obsidian/tools.go
+- **Key symbols:** `Tools()` → niche group `obsidian`: `obsidian_search` / `obsidian_read` / `obsidian_write` (append|overwrite); `CurrentStatus`/`Status`.
+- **Used by:** `build.go`/`main.go` register the tools; `internal/gui/builtins.go` drives the card.
+
+## internal/revuto — native PR-reviewer control
+
+> eigen's integration with the user's `revuto` AI PR-reviewer daemon: list
+> reviewers, trigger review/learn/decay, pause/resume — by shelling the `revuto`
+> CLI (which emits JSON). A CLI-backed built-in.
+
+### internal/revuto/revuto.go
+- **Key symbols:** `Reviewer`; `Available` (CLI on PATH); `List(ctx)` (`revuto list --json`), `Trigger(ctx,repo,job)` (review|learn|decay, 10-min timeout), `Pause`/`Resume`; `run` (timeout exec).
+- **Note:** depends on the revuto-side `list --json` flag (added in the revuto repo, commit be85295).
+### internal/revuto/tools.go
+- **Key symbols:** `Tools()` → niche group `revuto`: `revuto_list` / `revuto_trigger` / `revuto_pause`; `CurrentStatus(ctx)`/`Status` (count + paused).
+- **Used by:** `build.go`/`main.go` register the tools; `internal/gui/builtins.go` drives the card.
+
 ### internal/telegram/telegram.go
 - **Role:** The dependency-free Telegram Bot API client — long-poll `getUpdates`, send/edit HTML messages, inline keyboards, message splitting/escaping. No inbound listener (outbound HTTPS only).
 - **Key symbols:**

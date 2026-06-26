@@ -29,6 +29,9 @@ import type {
   MCPServersDTO,
   MCPServerDTO,
   GoogleStatusDTO,
+  ObsidianStatusDTO,
+  RevutoStatusDTO,
+  RevutoReviewerDTO,
   DashboardDTO,
   BoardDTO,
   KanbanDTO,
@@ -182,6 +185,12 @@ export const Bridge = {
   ConnectGoogle: (): Promise<void> => B.ConnectGoogle(),
   DisconnectGoogle: (): Promise<void> => B.DisconnectGoogle(),
   ImportGoogleClient: (): Promise<boolean> => B.ImportGoogleClient(),
+  // native local built-ins: Obsidian vault + revuto reviewer
+  ObsidianStatus: (): Promise<ObsidianStatusDTO | null> => B.ObsidianStatus(),
+  RevutoStatus: (): Promise<RevutoStatusDTO | null> => B.RevutoStatus(),
+  RevutoReviewers: (): Promise<RevutoReviewerDTO[]> => B.RevutoReviewers(),
+  RevutoTrigger: (repo: string, job: string): Promise<string> => B.RevutoTrigger(repo, job),
+  RevutoSetPaused: (repo: string, paused: boolean): Promise<void> => B.RevutoSetPaused(repo, paused),
   // proactive feed
   Feed: (): Promise<FeedDTO | null> => B.Feed(),
   // per-project feed accessor — reserved for a future project drill-in view (not dead code)

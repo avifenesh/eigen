@@ -17,6 +17,8 @@
     MCPServersDTO,
     MCPServerDTO,
     GoogleStatusDTO,
+    ObsidianStatusDTO,
+    RevutoStatusDTO,
   } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
   import Button from "$lib/components/Button.svelte";
@@ -26,6 +28,8 @@
   let servers = $state<MCPServersDTO | null>(null);
   let gstatus = $state<GoogleStatusDTO | null>(null);
   let gBusy = $state(false);
+  let obsidian = $state<ObsidianStatusDTO | null>(null);
+  let revuto = $state<RevutoStatusDTO | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let busy = $state<Record<string, boolean>>({});
@@ -74,6 +78,9 @@
         if (alive) secretsOk = ok;
       })
       .catch(() => {});
+    // Native local built-ins (Obsidian vault, revuto reviewer) — best-effort.
+    Bridge.ObsidianStatus().then((s) => { if (alive) obsidian = s; }).catch(() => {});
+    Bridge.RevutoStatus().then((s) => { if (alive) revuto = s; }).catch(() => {});
     // A background OAuth flow finishing fires eigen:connector — refresh + toast.
     const off = on<ConnectorEventDTO>(ev.connector, (d) => {
       if (!alive) return;
@@ -337,6 +344,41 @@
                   {gBusy ? "Importing…" : "Set up"}
                 </Button>
               {/if}
+            </div>
+          </div>
+        </Card>
+      {/if}
+
+      <!-- Obsidian (native local vault) -->
+      {#if obsidian}
+        <Card>
+          <div class="conn">
+            <div class="conn__info">
+              <div class="conn__name">
+                <span class="conn__glyph">🗒</span>
+                <span class="conn__title">Obsidian</span>
+                {#if obsidian.available}<span class="badge badge--ok">connected</span>{:else}<span class="badge badge--off">no vault</span>{/if}
+              </div>
+              <p class="conn__desc">Read, search &amp; write notes in your Obsidian vault.</p>
+              <p class="conn__url">{obsidian.available ? obsidian.vault : "Set EIGEN_OBSIDIAN_VAULT, or create a vault at " + (obsidian.vault || "~/revuto")}</p>
+            </div>
+          </div>
+        </Card>
+      {/if}
+
+      <!-- Revuto (native PR-reviewer daemon) -->
+      {#if revuto}
+        <Card>
+          <div class="conn">
+            <div class="conn__info">
+              <div class="conn__name">
+                <span class="conn__glyph">🔍</span>
+                <span class="conn__title">Revuto</span>
+                {#if revuto.available}<span class="badge badge--ok">{revuto.count} repo{revuto.count === 1 ? "" : "s"}</span>{:else}<span class="badge badge--off">CLI not found</span>{/if}
+                {#if revuto.available && revuto.paused > 0}<span class="badge badge--off">{revuto.paused} paused</span>{/if}
+              </div>
+              <p class="conn__desc">Your AI PR-reviewer — list reviewers, trigger review/learn/decay, pause/resume.</p>
+              {#if !revuto.available}<p class="conn__url">Install the `revuto` CLI to control it from here.</p>{/if}
             </div>
           </div>
         </Card>

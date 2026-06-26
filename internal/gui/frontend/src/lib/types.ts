@@ -443,6 +443,11 @@ export type GoogleStatusDTO = {
   clientPath: string; // where the imported client JSON lands
 };
 
+// Native local built-in connectors (no OAuth). Mirror internal/gui/builtins.go.
+export type ObsidianStatusDTO = { available: boolean; vault: string };
+export type RevutoStatusDTO = { available: boolean; count: number; paused: number };
+export type RevutoReviewerDTO = { repo: string; paused: boolean };
+
 // Working-station command-center snapshot. Mirrors internal/gui/dashboard.go.
 export type CalEventDTO = { summary: string; start: string; allDay: boolean; location: string };
 export type MailMsgDTO = { from: string; subject: string };
