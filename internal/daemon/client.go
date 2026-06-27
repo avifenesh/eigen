@@ -147,6 +147,16 @@ func (c *Client) requestWithin(req Request, d time.Duration) (Response, error) {
 		}
 		return r, nil
 	case <-c.done:
+		// A peer may write the final reply and close immediately; prefer the
+		// queued reply over reporting EOF.
+		select {
+		case r := <-c.replies:
+			if r.Type == "error" {
+				return r, fmt.Errorf("%s", r.Error)
+			}
+			return r, nil
+		default:
+		}
 		return Response{}, fmt.Errorf("daemon connection closed")
 	case <-time.After(d):
 		return Response{}, fmt.Errorf("daemon request %q timed out", req.Op)
