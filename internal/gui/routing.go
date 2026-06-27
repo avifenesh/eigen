@@ -41,7 +41,7 @@ type RoutingDTO struct {
 }
 
 // the provider universe eigen knows (canonical names).
-var providerUniverse = []string{"mantle", "converse", "anthropic", "codex", "grok", "glm", "llama"}
+var providerUniverse = []string{"mantle", "converse", "anthropic", "codex", "grok", "glm", "llama", "moa"}
 
 // Routing returns the model catalog (each flagged with provider availability)
 // and the provider credential status.
