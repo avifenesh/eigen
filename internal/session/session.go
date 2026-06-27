@@ -40,6 +40,28 @@ type Store struct {
 	metas map[string]*Meta
 }
 
+var (
+	sharedMu   sync.Mutex
+	sharedInst *Store
+)
+
+// SharedOpen returns one process-wide Store for paths that would otherwise call
+// Open() on every RPC (GUI export, Wails startup). All writers share one mutex
+// so sessions.json saves do not interleave across instances (APP-018).
+func SharedOpen() (*Store, error) {
+	sharedMu.Lock()
+	defer sharedMu.Unlock()
+	if sharedInst != nil {
+		return sharedInst, nil
+	}
+	s, err := Open()
+	if err != nil {
+		return nil, err
+	}
+	sharedInst = s
+	return sharedInst, nil
+}
+
 // Open loads (or creates) the session store under ~/.eigen.
 func Open() (*Store, error) {
 	home, err := os.UserHomeDir()

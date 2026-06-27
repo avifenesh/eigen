@@ -898,7 +898,7 @@ func TestInputSteersRunningTurnOverSocket(t *testing.T) {
 	if !steered {
 		t.Fatal("input during a running turn should be steered, not rejected busy")
 	}
-	_ = c.Interrupt(id)
+	_, _ = c.Interrupt(id)
 }
 
 func TestBgDoneWakesIdleOrchestrator(t *testing.T) {

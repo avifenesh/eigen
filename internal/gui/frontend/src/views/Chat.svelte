@@ -351,7 +351,8 @@
     if (!sessionId || interrupting) return;
     interrupting = true;
     try {
-      await Bridge.Interrupt(sessionId);
+      const hit = await Bridge.Interrupt(sessionId);
+      if (!hit) toasts.info("nothing running to stop");
     } catch (e) {
       toasts.error(errText(e));
     } finally {
@@ -436,12 +437,22 @@
     }
   }
 
+  // GUI-061: sess.tokens only updates on refreshState (turn end / approval). During
+  // a long turn, stream events carry inTokens/outTokens into store.liveTokens —
+  // use the larger figure so the dock ring moves while the model streams.
+  const effectiveTokens = $derived(
+    Math.max(sess?.tokens ?? 0, store?.liveTokens ?? 0),
+  );
   const pct = $derived(
-    sess && sess.maxTokens > 0 ? Math.min(100, Math.round((sess.tokens / sess.maxTokens) * 100)) : 0,
+    sess && sess.maxTokens > 0
+      ? Math.min(100, Math.round((effectiveTokens / sess.maxTokens) * 100))
+      : 0,
   );
   // Near-context-limit nudge: surface only once we're genuinely close and the
   // max is known, so it reads as a real prompt to compact rather than chrome.
-  const nearLimit = $derived(sess != null && sess.maxTokens > 0 && sess.tokens / sess.maxTokens > 0.85);
+  const nearLimit = $derived(
+    sess != null && sess.maxTokens > 0 && effectiveTokens / sess.maxTokens > 0.85,
+  );
 
   // ── right-dock tabs: session Info + the tools panel ─────────────────────────
   // The dock is a tabbed tools panel: Info (the session groups) + Terminal /
@@ -1269,7 +1280,7 @@
             <div class="dock__bar"><span style="width:{pct}%"></span></div>
             <span class="dock__pct tnum">{pct}%</span>
           </div>
-          <div class="dock__sub tnum">{sess.tokens.toLocaleString()} / {sess.maxTokens.toLocaleString()}</div>
+          <div class="dock__sub tnum">{effectiveTokens.toLocaleString()} / {sess.maxTokens.toLocaleString()}</div>
           {#if nearLimit}
             <button
               class="dock__nudge"

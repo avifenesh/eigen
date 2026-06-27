@@ -89,7 +89,7 @@ func guiSuggestProvider() llm.Provider {
 // guiProjectDirs returns the distinct working dirs across saved sessions
 // (newest-first), the universe the feed scans for loose ends.
 func guiProjectDirs() []string {
-	store, err := session.Open()
+	store, err := session.SharedOpen()
 	if err != nil || store == nil {
 		if wd, e := os.Getwd(); e == nil {
 			return []string{wd}

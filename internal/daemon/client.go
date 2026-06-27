@@ -260,10 +260,14 @@ func (c *Client) SteerInput(id, text string, images []llm.Image) (steered bool, 
 	return resp.Steered, nil
 }
 
-// Interrupt cancels a session's in-flight turn.
-func (c *Client) Interrupt(id string) error {
-	_, err := c.request(Request{Op: "interrupt", ID: id})
-	return err
+// Interrupt cancels a session's in-flight turn. The bool is true only when a
+// turn was actually running (false = nothing to interrupt).
+func (c *Client) Interrupt(id string) (bool, error) {
+	r, err := c.request(Request{Op: "interrupt", ID: id})
+	if err != nil {
+		return false, err
+	}
+	return r.Interrupted, nil
 }
 
 // Remove deletes a hosted session.

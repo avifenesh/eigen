@@ -44,7 +44,7 @@ func (b *Bridge) ExportSession(id string) (string, error) {
 		return dest, nil
 	}
 
-	store, err := session.Open()
+	store, err := session.SharedOpen()
 	if err != nil || store == nil {
 		return "", fmt.Errorf("session store unavailable")
 	}

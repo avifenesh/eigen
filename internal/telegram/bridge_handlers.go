@@ -196,7 +196,7 @@ func (br *Bridge) interrupt(ctx context.Context, chatID int64) {
 		br.bot.Send(ctx, chatID, "no session attached", nil)
 		return
 	}
-	if err := cs.client.Interrupt(cs.sessionID); err != nil {
+	if _, err := cs.client.Interrupt(cs.sessionID); err != nil {
 		br.bot.Send(ctx, chatID, "interrupt failed: "+err.Error(), nil)
 		return
 	}
@@ -347,7 +347,7 @@ func (br *Bridge) onCallback(ctx context.Context, q *CallbackQuery) {
 		br.status(ctx, chatID)
 	case data == "act:stop":
 		br.bot.AnswerCallback(ctx, q.ID, "interrupting")
-		_ = cs.client.Interrupt(cs.sessionID)
+		_, _ = cs.client.Interrupt(cs.sessionID)
 	case data == "act:compact":
 		br.bot.AnswerCallback(ctx, q.ID, "compacting")
 		br.compactCmd(ctx, chatID)

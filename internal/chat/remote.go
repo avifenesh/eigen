@@ -139,7 +139,7 @@ func (r *Remote) Send(ctx context.Context, task string, images []llm.Image) (str
 		// A detached view's context cancel is just the view leaving — the
 		// daemon keeps running the turn. Only a live view's esc interrupts.
 		if !r.isDetached() {
-			_ = r.c.Interrupt(r.id)
+			_, _ = r.c.Interrupt(r.id)
 		}
 		<-ch // the daemon emits a terminal note after the interrupt lands
 	}
@@ -165,7 +165,7 @@ func (r *Remote) Resend(ctx context.Context) (string, error) {
 	case <-ch:
 	case <-ctx.Done():
 		if !r.isDetached() {
-			_ = r.c.Interrupt(r.id)
+			_, _ = r.c.Interrupt(r.id)
 		}
 		<-ch
 	}
@@ -451,4 +451,7 @@ func (r *Remote) Detach() {
 // Interrupt cancels the session's in-flight turn on the daemon — used when a
 // view that did NOT start the turn (attached to an already-running session)
 // presses esc. The terminal event then arrives over the live stream.
-func (r *Remote) Interrupt() error { return r.c.Interrupt(r.id) }
+func (r *Remote) Interrupt() error {
+	_, err := r.c.Interrupt(r.id)
+	return err
+}

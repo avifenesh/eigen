@@ -253,10 +253,11 @@ export function createTranscript(sessionId: string) {
         pushHistory({ uid: nextUid(), kind: "tool", id: e.toolId ?? "", name: e.tool ?? "", args: e.toolArgs ?? "", done: false });
         break;
       case "tool_result": {
+        const tid = e.toolId ?? "";
         let matched = false;
-        for (let i = history.length - 1; i >= 0; i--) {
+        if (tid) for (let i = history.length - 1; i >= 0; i--) {
           const b = history[i];
-          if (b.kind === "tool" && b.id === e.toolId) {
+          if (b.kind === "tool" && b.id === tid) {
             history[i] = { ...b, result: e.result, isError: e.isError, done: true };
             history = history.slice();
             matched = true;

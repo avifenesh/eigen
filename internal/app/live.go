@@ -84,7 +84,7 @@ func (s *liveState) update(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "i":
 		if in := cur(); in != nil && d.Daemon != nil {
-			_ = d.Daemon.Interrupt(in.ID)
+			_, _ = d.Daemon.Interrupt(in.ID)
 			s.notice = "interrupted " + in.ID
 			d.refreshLive()
 		}

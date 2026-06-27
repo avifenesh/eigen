@@ -387,11 +387,12 @@ func (b *Bridge) SteerInput(id, text string, images []ImageDTO) (bool, error) {
 	return c.SteerInput(id, text, imgs)
 }
 
-// Interrupt cancels the in-flight turn.
-func (b *Bridge) Interrupt(id string) error {
+// Interrupt cancels the in-flight turn. Returns whether a running turn was
+// actually cancelled (false when the session was already idle).
+func (b *Bridge) Interrupt(id string) (bool, error) {
 	c, err := b.control()
 	if err != nil {
-		return err
+		return false, err
 	}
 	return c.Interrupt(id)
 }
