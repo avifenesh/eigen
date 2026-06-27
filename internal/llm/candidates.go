@@ -40,6 +40,19 @@ func ProviderAvailable(provider string) bool {
 		return firstNonEmpty(os.Getenv("GLM_API_KEY"), os.Getenv("ZHIPUAI_API_KEY"), os.Getenv("EIGEN_GLM_API_KEY")) != ""
 	case "llama":
 		return os.Getenv("EIGEN_LLAMA_BASE_URL") != ""
+	case "moa":
+		// MoA is a virtual provider: it can serve a turn when at least one
+		// preset's AGGREGATOR (the acting model) has reachable credentials.
+		presets, err := LoadMoAPresets()
+		if err != nil {
+			return false
+		}
+		for _, p := range presets {
+			if ProviderAvailable(ResolveProvider("", p.Aggregator)) {
+				return true
+			}
+		}
+		return false
 	}
 	if p, ok := customProviderByName(provider); ok {
 		return customProviderAvailable(p)

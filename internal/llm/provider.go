@@ -40,6 +40,8 @@ func New(provider, model string) (Provider, error) {
 		return NewGrok(model)
 	case "glm", "zhipu", "z.ai":
 		return NewGLM(model)
+	case "moa":
+		return newMoAProvider(model)
 	default:
 		return newCustomProvider(provider, model)
 	}

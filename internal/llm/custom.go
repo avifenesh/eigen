@@ -345,7 +345,7 @@ func isBuiltinProvider(name string) bool {
 		return true
 	}
 	switch canonicalProvider(name) {
-	case "mantle", "converse", "anthropic", "codex", "llama", "grok", "glm":
+	case "mantle", "converse", "anthropic", "codex", "llama", "grok", "glm", "moa":
 		return true
 	}
 	return false
