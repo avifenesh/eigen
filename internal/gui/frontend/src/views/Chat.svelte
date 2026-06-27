@@ -196,12 +196,9 @@
   // The local `running` flag is a reactive view of stream events and can be
   // stale right at a turn boundary: between the 'done' event and an Enter, or
   // before the first delta of a server-restarted turn flips running=true. So we
-  // don't branch on it. The daemon is the only authority on whether a turn is
-  // live, so always try SteerInput first — it returns true when the text was
-  // injected into a running turn, false when there was no turn to steer — and
-  // only fall back to SendInput (a fresh queued turn) when it returns false.
-  // That closes the window where a stale running view queues a duplicate or
-  // competing turn.
+  // don't branch on it. The daemon's input op is atomic: it starts a fresh turn
+  // when idle and steers when a turn is running. `steered=false` means "accepted
+  // as a fresh turn", not "nothing was sent".
   // Returns true on a successful send so the Composer clears its draft + image
   // blobs only then; on any failure it returns false and the draft survives for
   // a retry (the Composer no longer fire-and-forgets the clear).
@@ -228,25 +225,24 @@
     // intent at send time, not whatever the stream has done by the time the
     // round-trip lands.
     const expectedSteer = store?.running ?? false;
-    // Show the activity indicator immediately — before the RPC round-trip and
-    // the model's first event — so a slow streaming model never looks frozen.
-    // The first real turn event (or done) clears it; clear on error below.
+    // Echo the accepted human message before the RPC returns so a very fast
+    // reply cannot race ahead of the user's text or attached screenshots. Roll
+    // it back if the daemon rejects the input.
+    const optimisticUid = store?.appendUserMessage(text, images);
+    // Show the activity indicator immediately, before the model's first event,
+    // so a slow streaming model never looks frozen. The first real turn event
+    // (or done) clears it; clear on error below.
     store?.markPending();
     try {
       const steered = await Bridge.SteerInput(sessionId, text, images);
       if (steered) {
         toasts.info("steered into the running turn");
-      } else {
-        // No running turn to steer into: send as a fresh turn. When the user
-        // typed expecting to steer mid-turn this is a behavior change, so the
-        // toast surfaces it rather than queuing silently — but on a plain idle
-        // send (the common case) there's nothing to surface, so stay quiet.
-        // (GUI-034 steer-fallback toast — keep it.)
-        await Bridge.SendInput(sessionId, text, images, []);
-        if (expectedSteer) toasts.info("couldn't steer — queued as a new turn");
+      } else if (expectedSteer) {
+        toasts.info("sent as a new turn");
       }
       return true;
     } catch (e) {
+      store?.removeBlock(optimisticUid);
       store?.clearPending(); // RPC failed — no turn is coming, drop the indicator
       toasts.error(errText(e));
       return false;
@@ -262,7 +258,9 @@
     if (queued.length === 0 || !sessionId) return;
     const next = queued[0];
     queued = queued.slice(1);
+    const optimisticUid = store?.appendUserMessage(next.text, next.images);
     Bridge.SendInput(sessionId, next.text, next.images, []).catch((e) => {
+      store?.removeBlock(optimisticUid);
       toasts.error(errText(e));
     });
   }
@@ -796,15 +794,28 @@
     if (!store || store.running || store.live) return "";
     const h = store.history;
     const tail = h[h.length - 1];
-    return tail && tail.kind === "text" ? tail.text : "";
+    return tail && tail.kind === "text" && (tail.role == null || tail.role === "assistant") ? tail.text : "";
   });
 
   // A human label for a transcript block's kind, voiced as the row's aria-label
   // so a SR user hears what each row is (assistant prose, the model's reasoning,
   // a tool call, or a system note) rather than an unlabeled region. Tool rows
   // delegate their detail to ToolCallCard; this names the row around it.
-  function rowLabel(kind: string): string {
-    switch (kind) {
+  const SAFE_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif", "image/bmp"]);
+
+  function imageSrc(image: ImageDTO): string {
+    const mediaType = (image.mediaType || "image/png").toLowerCase();
+    if (!SAFE_IMAGE_TYPES.has(mediaType) || !image.data) return "";
+    return `data:${mediaType};base64,${image.data}`;
+  }
+
+  function imageKey(image: ImageDTO, index: number): string {
+    const data = image.data || "";
+    return `${index}:${image.mediaType}:${data.length}:${data.slice(0, 24)}:${data.slice(-24)}`;
+  }
+
+  function rowLabel(block: { kind: string; role?: string; images?: ImageDTO[] }): string {
+    switch (block.kind) {
       case "reasoning":
         return "Assistant reasoning";
       case "tool":
@@ -812,6 +823,8 @@
       case "note":
         return "System note";
       default:
+        if (block.role === "user") return block.images?.length ? "User message with image" : "User message";
+        if (block.role === "system") return "System message";
         return "Assistant message";
     }
   }
@@ -829,6 +842,27 @@
     return t === "interrupted" || t.startsWith("error:") ? "error" : "info";
   }
 </script>
+
+{#snippet attachedImages(images: ImageDTO[] | undefined)}
+  {#if images?.length}
+    <div class="msg__images" aria-label="Attached images">
+      {#each images as image, i (imageKey(image, i))}
+        {@const src = imageSrc(image)}
+        {#if src}
+          <img
+            class="msg__image"
+            src={src}
+            alt={`attached screenshot ${i + 1}`}
+            loading="lazy"
+            decoding="async"
+          />
+        {:else}
+          <span class="msg__image-fallback">unsupported image</span>
+        {/if}
+      {/each}
+    </div>
+  {/if}
+{/snippet}
 
 {#if missing}
   <EmptyState glyph="▶" title="Session no longer exists" line="It was removed or pruned. Pick another session or start a new one.">
@@ -1024,7 +1058,7 @@
                  final form (note tone / reasoning / Markdown prose). -->
             <VirtualList items={history} estimateHeight={120} pin key={(b) => b.uid}>
               {#snippet row(block)}
-                <div class="chat__row" role="article" aria-label={rowLabel(block.kind)}>
+                <div class="chat__row" role="article" aria-label={rowLabel(block)}>
                   {#if block.kind === "tool"}
                     <ToolCallCard {block} />
                   {:else if block.kind === "note"}
@@ -1043,9 +1077,16 @@
                     <!-- Completed assistant prose renders as Markdown (sans; fenced
                          code delegates to CodeBlock). When a TTS backend exists, a
                          hover-revealed read-aloud control speaks the block. -->
-                    <div class="msg msg--text">
-                      <Markdown source={block.text} />
-                      {#if voice.tts && block.text.trim()}
+                    <div
+                      class="msg msg--text"
+                      class:msg--user={block.role === "user"}
+                      class:msg--image-only={!block.text.trim() && !!block.images?.length}
+                    >
+                      {#if block.text.trim()}
+                        <Markdown source={block.text} />
+                      {/if}
+                      {@render attachedImages(block.images)}
+                      {#if voice.tts && block.role !== "user" && block.text.trim()}
                         <button
                           type="button"
                           class="msg__speak"
@@ -1069,7 +1110,7 @@
                  append from re-deriving the whole list's geometry (GUI-069). A
                  subtle caret trails the live text while it streams. -->
             <div class="chat__live">
-              <div class="chat__row" role="article" aria-label={rowLabel(live.kind)}>
+              <div class="chat__row" role="article" aria-label={rowLabel(live)}>
                 {#if live.kind === "reasoning"}
                   <div class="msg msg--reasoning msg--live">
                     <span class="msg__tag">reasoning</span>
@@ -1906,6 +1947,42 @@
      so it never competes with the text at rest. */
   .msg--text {
     position: relative;
+  }
+  .msg--user {
+    color: var(--text-secondary);
+  }
+  .msg--image-only {
+    line-height: 0;
+  }
+  .msg__images {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 280px));
+    gap: var(--sp-3);
+    margin-top: var(--sp-4);
+  }
+  .msg__images:first-child {
+    margin-top: 0;
+  }
+  .msg__image {
+    display: block;
+    width: 100%;
+    max-height: 360px;
+    object-fit: contain;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-md);
+    background: var(--bg-inset);
+  }
+  .msg__image-fallback {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+    padding: 0 var(--sp-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-md);
+    color: var(--text-muted);
+    background: var(--bg-inset);
+    font-size: var(--fs-body-sm);
+    line-height: var(--lh-snug);
   }
   .msg__speak {
     position: absolute;

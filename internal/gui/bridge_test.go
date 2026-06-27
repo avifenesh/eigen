@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"os"
@@ -80,6 +81,24 @@ func TestImageTooLarge(t *testing.T) {
 	dto := []ImageDTO{{MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(big)}}
 	if _, err := fromImageDTOs(dto); err == nil {
 		t.Fatal("expected error for oversize image, got nil")
+	}
+}
+
+func TestFromImageDTOsDecodesAttachments(t *testing.T) {
+	raw := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a}
+	dto := []ImageDTO{{MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(raw)}}
+	got, err := fromImageDTOs(dto)
+	if err != nil {
+		t.Fatalf("fromImageDTOs: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d images want 1", len(got))
+	}
+	if got[0].MediaType != "image/png" {
+		t.Fatalf("media type = %q want image/png", got[0].MediaType)
+	}
+	if !bytes.Equal(got[0].Data, raw) {
+		t.Fatalf("image bytes = %v want %v", got[0].Data, raw)
 	}
 }
 

@@ -9,12 +9,19 @@
 //   - the Wails listener is registered in start() and removed in dispose(), so
 //     listener lifetime == the owning $effect's lifetime (no leaks on nav).
 import { on, ev } from "$lib/events";
-import type { StreamEventDTO, WireEventDTO, MessageDTO } from "$lib/types";
+import type { StreamEventDTO, WireEventDTO, MessageDTO, ImageDTO } from "$lib/types";
 
 // uid is a monotonic per-block identity used for stable keying in the view, so
 // the CAP splice (which shifts array indices) never forces a full re-render or
 // remount of the heavy tool/markdown rows.
-export type TextBlock = { uid: number; kind: "text" | "reasoning"; step: number; text: string };
+export type TextBlock = {
+  uid: number;
+  kind: "text" | "reasoning";
+  step: number;
+  text: string;
+  role?: string;
+  images?: ImageDTO[];
+};
 export type ToolBlock = {
   uid: number;
   kind: "tool";
@@ -45,6 +52,11 @@ function parseTodos(args: string): TodoEntry[] {
   } catch {
     return [];
   }
+}
+
+function cloneImages(images: ImageDTO[] | undefined): ImageDTO[] | undefined {
+  if (!images?.length) return undefined;
+  return images.map((im) => ({ mediaType: im.mediaType, data: im.data }));
 }
 
 const CAP = 2000;
@@ -314,6 +326,27 @@ export function createTranscript(sessionId: string) {
     clearPending() {
       pending = false;
     },
+    // Echo an accepted human send immediately. The daemon's State() snapshot is
+    // still authoritative and will replace this on attach/reconnect, but using
+    // the durable base64 DTO here means image rows do not depend on composer
+    // preview object URLs (which are revoked after a successful send).
+    appendUserMessage(text: string, images: ImageDTO[] = []): number | null {
+      if (!text && images.length === 0) return null;
+      const uid = nextUid();
+      pushHistory({
+        uid,
+        kind: "text",
+        role: "user",
+        step: history.length,
+        text,
+        images: cloneImages(images),
+      });
+      return uid;
+    },
+    removeBlock(uid: number | null | undefined) {
+      if (uid == null) return;
+      history = history.filter((b) => b.uid !== uid);
+    },
     get truncated() {
       return truncated;
     },
@@ -456,7 +489,7 @@ export function createTranscript(sessionId: string) {
 // id-less result to the first id-less tool block. An empty-id result instead
 // becomes a standalone result block, the same as the live path treats an
 // unmatched id.
-function mapMessages(messages: MessageDTO[], uid: () => number): Block[] {
+export function mapMessages(messages: MessageDTO[], uid: () => number): Block[] {
   const window = messages.length > CAP * 2 ? messages.slice(-CAP * 2) : messages;
   const out: Block[] = [];
   const byToolId = new Map<string, ToolBlock>();
@@ -480,8 +513,9 @@ function mapMessages(messages: MessageDTO[], uid: () => number): Block[] {
       }
       continue;
     }
-    if (m.reasoning) out.push({ uid: uid(), kind: "reasoning", step, text: m.reasoning });
-    if (m.text) out.push({ uid: uid(), kind: "text", step, text: m.text });
+    if (m.reasoning) out.push({ uid: uid(), kind: "reasoning", role: m.role, step, text: m.reasoning });
+    const images = cloneImages(m.images);
+    if (m.text || images?.length) out.push({ uid: uid(), kind: "text", role: m.role, step, text: m.text, images });
     for (const tc of m.toolCalls ?? []) {
       const block: ToolBlock = { uid: uid(), kind: "tool", id: tc.id, name: tc.name, args: tc.args, done: false };
       // Last-wins: an id-less call is never matchable (no result can find it),
