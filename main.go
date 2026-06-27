@@ -2240,16 +2240,15 @@ func moaConfigure(name string) {
 	r := bufio.NewReader(os.Stdin)
 	var existing llm.MoAPreset
 	if name != "" {
-		if p, ok := func() (llm.MoAPreset, bool) {
-			ps, _ := llm.LoadMoAPresets()
-			for _, p := range ps {
-				if p.Name == name {
-					return p, true
-				}
+		ps, err := llm.LoadMoAPresets()
+		if err != nil {
+			fail(fmt.Errorf("moa configure: %w", err))
+		}
+		for _, p := range ps {
+			if p.Name == name {
+				existing = p
+				break
 			}
-			return llm.MoAPreset{}, false
-		}(); ok {
-			existing = p
 		}
 	}
 

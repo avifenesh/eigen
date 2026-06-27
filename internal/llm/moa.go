@@ -59,8 +59,25 @@ func MoAPresetsPath() string {
 	return filepath.Join(home, ".eigen", "moa.json")
 }
 
+// moaFileMu serializes read-modify-write access to ~/.eigen/moa.json from
+// within this process. The on-disk write is already atomic (temp + rename), so
+// a reader never sees a partial file; this lock additionally prevents two
+// concurrent UpsertMoAPreset/DeleteMoAPreset transactions in the same daemon
+// from losing each other's update. (Cross-process races are out of scope — the
+// CLI mutator is a separate short-lived process — but the atomic rename keeps
+// even that case from ever corrupting the file.)
+var moaFileMu sync.RWMutex
+
 // LoadMoAPresets reads ~/.eigen/moa.json. A missing file is normal (no presets).
 func LoadMoAPresets() ([]MoAPreset, error) {
+	moaFileMu.RLock()
+	defer moaFileMu.RUnlock()
+	return loadMoAPresetsLocked()
+}
+
+// loadMoAPresetsLocked is the body of LoadMoAPresets; callers must hold
+// moaFileMu (R or W) — used by the locked Upsert/Delete transactions.
+func loadMoAPresetsLocked() ([]MoAPreset, error) {
 	p := MoAPresetsPath()
 	if p == "" {
 		return nil, os.ErrNotExist
@@ -86,6 +103,14 @@ func LoadMoAPresets() ([]MoAPreset, error) {
 // SaveMoAPresets writes the complete preset list atomically (0600), validating
 // first so a bad write can never land on disk.
 func SaveMoAPresets(presets []MoAPreset) error {
+	moaFileMu.Lock()
+	defer moaFileMu.Unlock()
+	return saveMoAPresetsLocked(presets)
+}
+
+// saveMoAPresetsLocked is the body of SaveMoAPresets; callers must hold
+// moaFileMu for writing.
+func saveMoAPresetsLocked(presets []MoAPreset) error {
 	p := MoAPresetsPath()
 	if p == "" {
 		return os.ErrNotExist
@@ -132,10 +157,14 @@ func SaveMoAPresets(presets []MoAPreset) error {
 	return nil
 }
 
-// UpsertMoAPreset validates and inserts/replaces a preset by name.
+// UpsertMoAPreset validates and inserts/replaces a preset by name. The whole
+// read-modify-write runs under moaFileMu so a concurrent upsert/delete in the
+// same process can't clobber it.
 func UpsertMoAPreset(preset MoAPreset) error {
 	preset = normalizeMoAPreset(preset)
-	presets, err := LoadMoAPresets()
+	moaFileMu.Lock()
+	defer moaFileMu.Unlock()
+	presets, err := loadMoAPresetsLocked()
 	if err != nil {
 		return err
 	}
@@ -150,13 +179,16 @@ func UpsertMoAPreset(preset MoAPreset) error {
 	if !replaced {
 		presets = append(presets, preset)
 	}
-	return SaveMoAPresets(presets)
+	return saveMoAPresetsLocked(presets)
 }
 
-// DeleteMoAPreset removes a preset by name. Removing an absent preset is a no-op.
+// DeleteMoAPreset removes a preset by name. Removing an absent preset is a
+// no-op. The read-modify-write runs under moaFileMu (see UpsertMoAPreset).
 func DeleteMoAPreset(name string) error {
 	name = strings.TrimSpace(name)
-	presets, err := LoadMoAPresets()
+	moaFileMu.Lock()
+	defer moaFileMu.Unlock()
+	presets, err := loadMoAPresetsLocked()
 	if err != nil {
 		return err
 	}
@@ -166,7 +198,7 @@ func DeleteMoAPreset(name string) error {
 			out = append(out, p)
 		}
 	}
-	return SaveMoAPresets(out)
+	return saveMoAPresetsLocked(out)
 }
 
 func normalizeMoAPresets(in []MoAPreset) []MoAPreset {
@@ -265,13 +297,13 @@ func validateMoAPreset(p MoAPreset, presetNames map[string]bool) error {
 // isMoARef reports whether a model ref points at the MoA virtual provider —
 // either by an explicit "moa:" tag or by naming a known MoA preset. This is the
 // recursion guard: it must catch both forms so a preset can never (directly)
-// fan out into another MoA run.
+// fan out into another MoA run. An explicit NON-moa tag (e.g. "custom:review")
+// is taken at its word — it is never a MoA ref even if its bare id happens to
+// collide with a preset name; only an UNTAGGED ref is matched against preset
+// names.
 func isMoARef(ref string, presetNames map[string]bool) bool {
-	if tag, id := ParseRef(ref); tag != "" {
-		if canonicalProvider(tag) == "moa" {
-			return true
-		}
-		ref = id
+	if tag, _ := ParseRef(ref); tag != "" {
+		return canonicalProvider(tag) == "moa"
 	}
 	return presetNames[strings.TrimSpace(ref)]
 }
@@ -379,7 +411,10 @@ func newMoAProvider(modelName string) (Provider, error) {
 	preset, ok := moaPresetByName(modelName)
 	if !ok {
 		if modelName == "" {
-			presets, _ := LoadMoAPresets()
+			presets, err := LoadMoAPresets()
+			if err != nil {
+				return nil, fmt.Errorf("load MoA presets: %w", err)
+			}
 			if len(presets) == 0 {
 				return nil, fmt.Errorf("no MoA presets configured (see: eigen moa configure)")
 			}
@@ -498,8 +533,16 @@ func (m *moaProvider) runReferences(ctx context.Context, req Request) []moaRefOu
 					outputs[i] = moaRefOutput{label: label, text: fmt.Sprintf("[failed: %v]", r)}
 				}
 			}()
-			sem <- struct{}{}
-			defer func() { <-sem }()
+			// Acquire a worker slot, but abandon immediately if the turn's
+			// context is already cancelled rather than blocking behind the
+			// in-flight workers — a cancelled parent should free the goroutine.
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				outputs[i] = moaRefOutput{label: label, text: fmt.Sprintf("[failed: %v]", ctx.Err())}
+				return
+			}
 			cctx, cancel := context.WithTimeout(ctx, moaReferenceTimeout)
 			defer cancel()
 			resp, err := m.references[i].Complete(cctx, refReq)
