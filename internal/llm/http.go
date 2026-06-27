@@ -35,11 +35,15 @@ const (
 // retry is freshly signed.
 func httpJSON(ctx context.Context, client *http.Client, url string, headers map[string]string, body []byte, sign func(*http.Request, []byte)) ([]byte, int, error) {
 	var lastErr error
+	var lastStatus int
 	var retryAfter time.Duration
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if attempt > 0 {
 			if err := sleepBackoff(ctx, attempt, retryAfter); err != nil {
-				return nil, 0, err
+				if lastErr != nil {
+					return nil, lastStatus, fmt.Errorf("%w (last transient response: %v)", err, lastErr)
+				}
+				return nil, lastStatus, err
 			}
 			retryAfter = 0
 		}
@@ -78,12 +82,13 @@ func httpJSON(ctx context.Context, client *http.Client, url string, headers map[
 		}
 
 		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			lastStatus = resp.StatusCode
 			lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(raw))
 			continue // transient: retry
 		}
 		return raw, resp.StatusCode, nil
 	}
-	return nil, 0, fmt.Errorf("failed after %d attempts: %w", maxAttempts, lastErr)
+	return nil, lastStatus, fmt.Errorf("failed after %d attempts: %w", maxAttempts, lastErr)
 }
 
 // sleepBackoff waits for an exponential backoff (honoring a server Retry-After
@@ -129,6 +134,9 @@ func httpStream(ctx context.Context, client *http.Client, url string, headers ma
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if attempt > 0 {
 			if err := sleepBackoff(ctx, attempt, retryAfter); err != nil {
+				if lastErr != nil {
+					return nil, fmt.Errorf("%w (last transient response: %v)", err, lastErr)
+				}
 				return nil, err
 			}
 			retryAfter = 0

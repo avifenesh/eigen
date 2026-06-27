@@ -2,6 +2,9 @@ package llm
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -161,5 +164,104 @@ func TestChainHeadlineSkipsFrozen(t *testing.T) {
 	FreezeProvider(canonicalProvider(ResolveProvider("", a)))
 	if p.ModelID() != b {
 		t.Fatalf("after freezing first link, headline = %q, want %q", p.ModelID(), b)
+	}
+}
+
+type streamStubProvider struct {
+	name        string
+	reply       string
+	err         error
+	streamCalls int
+}
+
+func (s *streamStubProvider) Name() string    { return s.name }
+func (s *streamStubProvider) ModelID() string { return s.name }
+func (s *streamStubProvider) Complete(context.Context, Request) (*Response, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &Response{Text: s.reply}, nil
+}
+func (s *streamStubProvider) Stream(_ context.Context, _ Request, sink StreamSink) (*Response, error) {
+	s.streamCalls++
+	if s.err != nil {
+		return nil, s.err
+	}
+	if sink != nil && s.reply != "" {
+		sink(StreamChunk{Kind: ChunkText, Text: s.reply})
+	}
+	return &Response{Text: s.reply}, nil
+}
+
+func writeNoAuthChainCatalog(t *testing.T) (badID, goodID string) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	badID, goodID = "bad-chain-model", "good-chain-model"
+	path := CustomProvidersPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cat := `{
+  "providers": [
+    {"name":"chainbad","type":"openai_chat","base_url":"http://127.0.0.1:9/v1","no_auth":true,"models":[{"name":"bad-chain-model"}]},
+    {"name":"chaingood","type":"openai_chat","base_url":"http://127.0.0.1:9/v1","no_auth":true,"models":[{"name":"good-chain-model"}]}
+  ]
+}`
+	if err := os.WriteFile(path, []byte(cat), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return badID, goodID
+}
+
+func TestChainStreamFallsThroughOnQuota(t *testing.T) {
+	clearFrozenProviders()
+	t.Cleanup(clearFrozenProviders)
+	badID, goodID := writeNoAuthChainCatalog(t)
+
+	primary := &streamStubProvider{name: badID, err: errors.New(`HTTP 429: {"code":"1113","message":"Insufficient balance"}`)}
+	fallback := &streamStubProvider{name: goodID, reply: "fallback-ok"}
+	cp := &chainProvider{ids: []string{badID, goodID}, links: []Provider{primary, fallback}}
+
+	var noticed FallbackNotice
+	ctx := WithFallbackNotifier(context.Background(), func(n FallbackNotice) { noticed = n })
+	var streamed strings.Builder
+	resp, err := cp.Stream(ctx, Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}}, func(c StreamChunk) {
+		streamed.WriteString(c.Text)
+	})
+	if err != nil {
+		t.Fatalf("chain stream should fall through on quota: %v", err)
+	}
+	if resp.Text != "fallback-ok" || streamed.String() != "fallback-ok" {
+		t.Fatalf("fallback response/stream = %q/%q, want fallback-ok", resp.Text, streamed.String())
+	}
+	if primary.streamCalls != 1 || fallback.streamCalls != 1 {
+		t.Fatalf("stream calls primary=%d fallback=%d, want 1/1", primary.streamCalls, fallback.streamCalls)
+	}
+	if noticed.PrimaryID != badID || noticed.FallbackID != goodID || noticed.Cause == nil {
+		t.Fatalf("fallback notice = %+v, want %s -> %s with cause", noticed, badID, goodID)
+	}
+	if !providerFrozen(canonicalProvider(ResolveProvider("", badID))) {
+		t.Fatal("quota-hit provider should be frozen process-wide")
+	}
+	if providerFrozen(canonicalProvider(ResolveProvider("", goodID))) {
+		t.Fatal("fallback provider should not be frozen")
+	}
+}
+
+func TestCloneProviderPreservesChain(t *testing.T) {
+	cp := &chainProvider{ids: []string{"glm-5.2", "us.anthropic.claude-opus-4-8"}, links: make([]Provider, 2)}
+	cloned, err := CloneProvider(cp)
+	if err != nil {
+		t.Fatalf("CloneProvider(chain) error: %v", err)
+	}
+	cc, ok := cloned.(*chainProvider)
+	if !ok {
+		t.Fatalf("CloneProvider(chain) = %T, want *chainProvider", cloned)
+	}
+	if strings.Join(cc.ids, ",") != strings.Join(cp.ids, ",") {
+		t.Fatalf("cloned ids = %v, want %v", cc.ids, cp.ids)
+	}
+	if len(cc.links) != len(cp.links) || (len(cc.links) > 0 && cc.links[0] != nil) {
+		t.Fatalf("clone should have a fresh lazy link cache, got %#v", cc.links)
 	}
 }

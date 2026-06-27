@@ -1,6 +1,9 @@
 package llm
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // New selects a provider by name. Empty defaults to mantle (Bedrock GPT-5.5).
 // The (provider, model) pair is reconciled against the catalog first, so a
@@ -39,5 +42,45 @@ func New(provider, model string) (Provider, error) {
 		return NewGLM(model)
 	default:
 		return newCustomProvider(provider, model)
+	}
+}
+
+// CloneProvider rebuilds p as a fresh provider instance while preserving Eigen's
+// provider decorators (fallbackProvider / chainProvider). It is used when a
+// subtask needs exclusive runtime knobs (effort/search/fast) without mutating a
+// provider shared by the parent session or router cache.
+//
+// Important: this must NOT collapse a fallback/chain wrapper to only its
+// headline ModelID. A research chain such as glm→opus would otherwise become a
+// bare glm provider; a GLM quota 429 would then fail the subagent instead of
+// falling through to opus. Unknown/test providers are rejected rather than being
+// sent through New("", model), because an empty provider defaults to Mantle and
+// can turn mock model ids into real network calls.
+func CloneProvider(p Provider) (Provider, error) {
+	switch v := p.(type) {
+	case nil:
+		return nil, fmt.Errorf("nil provider")
+	case *chainProvider:
+		return v.clone(), nil
+	case *fallbackProvider:
+		primary, err := CloneProvider(v.primary)
+		if err != nil {
+			return nil, fmt.Errorf("clone fallback primary: %w", err)
+		}
+		fallback, err := CloneProvider(v.fallback)
+		if err != nil {
+			return nil, fmt.Errorf("clone fallback target: %w", err)
+		}
+		return NewFallback(primary, fallback), nil
+	default:
+		model := strings.TrimSpace(p.ModelID())
+		if model == "" {
+			return nil, fmt.Errorf("empty model id")
+		}
+		info, ok := Lookup(model)
+		if !ok || strings.TrimSpace(info.Provider) == "" {
+			return nil, fmt.Errorf("unknown model %q", model)
+		}
+		return New(info.Provider, model)
 	}
 }

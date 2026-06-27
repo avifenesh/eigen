@@ -317,6 +317,7 @@ func TestCustomReasoningModelAppliesEffort(t *testing.T) {
 
 	t.Run("openai_chat", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
+		t.Setenv("EIGEN_REASONING_EFFORT", "")
 		var seen struct {
 			ReasoningEffort string `json:"reasoning_effort"`
 		}
@@ -366,6 +367,7 @@ func TestCustomReasoningModelAppliesEffort(t *testing.T) {
 
 	t.Run("openai_responses", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
+		t.Setenv("EIGEN_REASONING_EFFORT", "")
 		var seen struct {
 			Reasoning *struct {
 				Effort string `json:"effort"`
@@ -398,6 +400,7 @@ func TestCustomReasoningModelAppliesEffort(t *testing.T) {
 
 	t.Run("anthropic", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
+		t.Setenv("EIGEN_REASONING_EFFORT", "")
 		var seen struct {
 			Thinking     json.RawMessage `json:"thinking"`
 			OutputConfig struct {
@@ -431,6 +434,7 @@ func TestCustomReasoningModelAppliesEffort(t *testing.T) {
 
 	t.Run("non_reasoning_omits_effort", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
+		t.Setenv("EIGEN_REASONING_EFFORT", "xhigh")
 		var raw map[string]json.RawMessage
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_ = json.NewDecoder(r.Body).Decode(&raw)
@@ -454,6 +458,47 @@ func TestCustomReasoningModelAppliesEffort(t *testing.T) {
 		}
 		if _, ok := raw["reasoning_effort"]; ok {
 			t.Fatal("non-reasoning custom model should not send reasoning_effort")
+		}
+	})
+}
+
+func TestCustomReasoningEffortEnvOverride(t *testing.T) {
+	t.Run("unset_env_uses_catalog_default", func(t *testing.T) {
+		t.Setenv("EIGEN_REASONING_EFFORT", "")
+		es := newCustomEffort(CustomModel{
+			Name:         "reasoning",
+			Reasoning:    true,
+			Effort:       "medium",
+			EffortLevels: []string{"low", "medium", "high"},
+		})
+		if got := es.Effort(); got != "medium" {
+			t.Fatalf("Effort() = %q, want catalog default medium", got)
+		}
+	})
+
+	t.Run("supported_env_overrides_catalog_default", func(t *testing.T) {
+		t.Setenv("EIGEN_REASONING_EFFORT", "low")
+		es := newCustomEffort(CustomModel{
+			Name:         "reasoning",
+			Reasoning:    true,
+			Effort:       "medium",
+			EffortLevels: []string{"low", "medium", "high"},
+		})
+		if got := es.Effort(); got != "low" {
+			t.Fatalf("Effort() = %q, want env override low", got)
+		}
+	})
+
+	t.Run("unsupported_env_keeps_catalog_default", func(t *testing.T) {
+		t.Setenv("EIGEN_REASONING_EFFORT", "xhigh")
+		es := newCustomEffort(CustomModel{
+			Name:         "reasoning",
+			Reasoning:    true,
+			Effort:       "medium",
+			EffortLevels: []string{"low", "medium", "high"},
+		})
+		if got := es.Effort(); got != "medium" {
+			t.Fatalf("Effort() = %q, want catalog default medium", got)
 		}
 	})
 }

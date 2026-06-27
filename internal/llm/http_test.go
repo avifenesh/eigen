@@ -59,3 +59,56 @@ func TestHTTPJSONAcceptsBodyAtCap(t *testing.T) {
 		t.Fatalf("read %d bytes, want %d", len(raw), maxResponseBytes)
 	}
 }
+
+func TestHTTPJSONReturnsLastTransientStatusOnBackoffCancel(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte(`{"error":"quota"}`))
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	client := &http.Client{Timeout: 5 * time.Second}
+	timer := time.AfterFunc(10*time.Millisecond, cancel)
+	defer timer.Stop()
+	_, status, err := httpJSON(ctx, client, srv.URL, nil, []byte(`{}`), nil)
+	if err == nil {
+		t.Fatal("expected retry/backoff cancellation error")
+	}
+	if status != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429", status)
+	}
+	if calls < 1 {
+		t.Fatal("server was not called")
+	}
+	if !strings.Contains(err.Error(), "HTTP 429") {
+		t.Fatalf("error should retain last HTTP 429 cause, got %v", err)
+	}
+}
+
+func TestHTTPStreamRetainsTransientCauseOnBackoffCancel(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte(`{"error":"quota"}`))
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	client := &http.Client{Timeout: 5 * time.Second}
+	timer := time.AfterFunc(10*time.Millisecond, cancel)
+	defer timer.Stop()
+	_, err := httpStream(ctx, client, srv.URL, nil, []byte(`{}`), nil)
+	if err == nil {
+		t.Fatal("expected retry/backoff cancellation error")
+	}
+	if calls < 1 {
+		t.Fatal("server was not called")
+	}
+	if !strings.Contains(err.Error(), "HTTP 429") {
+		t.Fatalf("error should retain last HTTP 429 cause, got %v", err)
+	}
+}

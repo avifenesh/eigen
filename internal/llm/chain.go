@@ -122,13 +122,26 @@ func (c *chainProvider) ModelID() string {
 // credentialed + not frozen right now (what a call would use), or the first id
 // when none look reachable.
 func (c *chainProvider) firstReachableID() string {
-	for _, id := range c.ids {
-		if modelCredentialed(id) {
-			return id
-		}
+	if id := c.firstReachableIDFrom(0); id != "" {
+		return id
 	}
 	if len(c.ids) > 0 {
 		return c.ids[0]
+	}
+	return ""
+}
+
+func (c *chainProvider) firstReachableIDFrom(start int) string {
+	if start < 0 {
+		start = 0
+	}
+	for i, id := range c.ids {
+		if i < start {
+			continue
+		}
+		if modelCredentialed(id) {
+			return id
+		}
 	}
 	return ""
 }
@@ -146,7 +159,26 @@ func (c *chainProvider) link(i int) (Provider, error) {
 	return p, nil
 }
 
+func (c *chainProvider) clone() *chainProvider {
+	if c == nil {
+		return nil
+	}
+	ids := append([]string(nil), c.ids...)
+	return &chainProvider{ids: ids, links: make([]Provider, len(ids))}
+}
+
 func (c *chainProvider) Complete(ctx context.Context, req Request) (*Response, error) {
+	return c.run(ctx, req, nil, false)
+}
+
+// Stream keeps a role chain live mid-turn and preserves the same quota-fallback
+// semantics as Complete. A link that only implements Complete is adapted via
+// streamAny, so callers can uniformly stream through the chain wrapper.
+func (c *chainProvider) Stream(ctx context.Context, req Request, sink StreamSink) (*Response, error) {
+	return c.run(ctx, req, sink, true)
+}
+
+func (c *chainProvider) run(ctx context.Context, req Request, sink StreamSink, stream bool) (*Response, error) {
 	var lastErr error
 	for i, id := range c.ids {
 		if ctx.Err() != nil {
@@ -165,7 +197,12 @@ func (c *chainProvider) Complete(ctx context.Context, req Request) (*Response, e
 			lastErr = err
 			continue // can't build (transient creds issue) — try the next link
 		}
-		resp, err := p.Complete(ctx, req)
+		var resp *Response
+		if stream {
+			resp, err = streamAny(ctx, p, req, sink)
+		} else {
+			resp, err = p.Complete(ctx, req)
+		}
 		if err == nil {
 			return resp, nil
 		}
@@ -174,6 +211,7 @@ func (c *chainProvider) Complete(ctx context.Context, req Request) (*Response, e
 			// Drained account: freeze its provider for the day so this + every
 			// other chain skips it, and advance to the next link.
 			FreezeProvider(canonicalProvider(ResolveProvider("", id)))
+			notifyFallback(ctx, FallbackNotice{PrimaryID: id, FallbackID: c.firstReachableIDFrom(i + 1), Cause: err})
 			continue
 		}
 		// Non-quota error on a reachable model: the request itself failed (bad
@@ -185,4 +223,75 @@ func (c *chainProvider) Complete(ctx context.Context, req Request) (*Response, e
 		lastErr = errors.New("model chain exhausted: no credentialed model available")
 	}
 	return nil, lastErr
+}
+
+func (c *chainProvider) activeProvider() Provider {
+	for i, id := range c.ids {
+		if !modelCredentialed(id) {
+			continue
+		}
+		p, err := c.link(i)
+		if err == nil {
+			return p
+		}
+	}
+	return nil
+}
+
+// SetEffort/Effort/SetSearch/SearchMode/SetFast/FastMode forward optional
+// runtime knobs to the link the chain would currently use. This keeps role
+// chains compatible with subtask policy (effort/fast discipline) without
+// collapsing the chain to its headline model and losing quota fallback.
+func (c *chainProvider) SetEffort(level string) bool {
+	if p := c.activeProvider(); p != nil {
+		if es, ok := p.(EffortSetter); ok {
+			return es.SetEffort(level)
+		}
+	}
+	return false
+}
+
+func (c *chainProvider) Effort() string {
+	if p := c.activeProvider(); p != nil {
+		if es, ok := p.(EffortSetter); ok {
+			return es.Effort()
+		}
+	}
+	return ""
+}
+
+func (c *chainProvider) SetSearch(mode string) bool {
+	if p := c.activeProvider(); p != nil {
+		if sr, ok := p.(Searcher); ok {
+			return sr.SetSearch(mode)
+		}
+	}
+	return false
+}
+
+func (c *chainProvider) SearchMode() string {
+	if p := c.activeProvider(); p != nil {
+		if sr, ok := p.(Searcher); ok {
+			return sr.SearchMode()
+		}
+	}
+	return ""
+}
+
+func (c *chainProvider) SetFast(on bool) bool {
+	if p := c.activeProvider(); p != nil {
+		if fm, ok := p.(FastModer); ok {
+			return fm.SetFast(on)
+		}
+	}
+	return false
+}
+
+func (c *chainProvider) FastMode() bool {
+	if p := c.activeProvider(); p != nil {
+		if fm, ok := p.(FastModer); ok {
+			return fm.FastMode()
+		}
+	}
+	return false
 }

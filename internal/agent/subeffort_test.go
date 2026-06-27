@@ -93,6 +93,14 @@ func TestSubagentEffortPolicy(t *testing.T) {
 // it must give the subtask a provider it exclusively owns before lowering effort.
 // Regression for the in-place SetEffort/SetFast bleed.
 func TestSubAgentEffortDoesNotMutateParentProvider(t *testing.T) {
+	t.Run("unknown model is not rebuilt through default provider", func(t *testing.T) {
+		shared := &effortProv{id: "mock", effort: "max"}
+
+		if _, err := ownedSubtaskProvider(shared); err == nil || !strings.Contains(err.Error(), `unknown model "mock"`) {
+			t.Fatalf("unknown mock provider should not be resolved through the default backend, got %v", err)
+		}
+	})
+
 	t.Run("inherited provider stays untouched", func(t *testing.T) {
 		// claude-opus-4-8 has a real "medium" rung, so discipline WOULD lower a
 		// max-effort provider — proving it doesn't touch this shared instance.

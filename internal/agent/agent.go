@@ -776,7 +776,7 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 		if ch := a.ChainProvider(string(stype)); ch != nil {
 			prov = ch
 			compactor = llm.NewCompactor(ch)
-			where = joinWhere(where, "type "+string(stype)+" chain")
+			where = joinWhere(where, "type "+string(stype)+" chain (start "+ch.ModelID()+")")
 		}
 	}
 	// Legacy ladder fallback (no chain configured): pick the type's preferred
@@ -837,7 +837,7 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 		// subtask's effort into the parent + other sessions. Give the subtask a
 		// provider it EXCLUSIVELY owns (a fresh build of the same model) first; if
 		// that fails, skip discipline rather than corrupt the shared instance.
-		owned, err := llm.New("", prov.ModelID())
+		owned, err := ownedSubtaskProvider(prov)
 		if err != nil {
 			where = joinWhere(where, "subtask effort skipped (own-provider build failed: "+err.Error()+")")
 		} else {
@@ -885,6 +885,17 @@ func (a *Agent) subAgent(ctx context.Context, task string, opts SubtaskOpts) (*A
 		WorktreeTools:    a.WorktreeTools,
 	}
 	return sub, where
+}
+
+// ownedSubtaskProvider builds a fresh provider instance for subtask-only live
+// knobs (reasoning effort / fast mode). Do not call llm.New blindly for an
+// unknown ModelID: with an empty provider, llm.New defaults to Mantle, so a
+// test/mock provider named "safe" or "mock" can turn into a real network call
+// to a non-existent Mantle model. Only clone models Eigen can resolve through
+// its catalog/custom-provider registry; otherwise report a skip so callers keep
+// the original provider UNMUTATED.
+func ownedSubtaskProvider(prov llm.Provider) (llm.Provider, error) {
+	return llm.CloneProvider(prov)
 }
 
 // firstNonEmpty returns the first non-blank string, or "".

@@ -127,6 +127,27 @@ export function createTranscript(sessionId: string) {
   // at, while still ordering within the window.
   let expectedSeq = 0;
   const reorderBuf = new Map<number, StreamEventDTO>();
+  let latchTimer = 0;
+
+  function cancelLatchDrain() {
+    if (!latchTimer) return;
+    clearTimeout(latchTimer);
+    latchTimer = 0;
+  }
+
+  function scheduleLatchDrain() {
+    if (latchTimer) return;
+    latchTimer = window.setTimeout(() => {
+      latchTimer = 0;
+      // We buffered a live event while expecting a replay base, but no replay
+      // arrived promptly. This happens when Bridge.Subscribe is a no-op because
+      // a pump is already live, or when State().running was stale and the only
+      // live event is the terminal note/done. Do not strand short turns until
+      // the 256-event overflow valve (or a route-away/re-enter): latch to what
+      // we have and render the latest progress now.
+      if (expectedSeq === 0 && reorderBuf.size > 0) drainBufInOrder();
+    }, 180);
+  }
 
   // Apply one (now in-order) stream event: update the running flag, then fold it
   // into the transcript. Extracted so the seq-reassembly loop and the no-seq
@@ -149,6 +170,7 @@ export function createTranscript(sessionId: string) {
   // the overflow valve (a permanently-missing seq, or a live event that raced
   // ahead of a replay that never came) so a stuck buffer can't strand events.
   function drainBufInOrder() {
+    cancelLatchDrain();
     const keys = [...reorderBuf.keys()].sort((a, b) => a - b);
     for (const k of keys) {
       applyEvent(reorderBuf.get(k)!);
@@ -236,6 +258,7 @@ export function createTranscript(sessionId: string) {
           const b = history[i];
           if (b.kind === "tool" && b.id === e.toolId) {
             history[i] = { ...b, result: e.result, isError: e.isError, done: true };
+            history = history.slice();
             matched = true;
             break;
           }
@@ -402,6 +425,7 @@ export function createTranscript(sessionId: string) {
       // pump does NOT, so we must not assume 1.)
       expectedSeq = 0;
       reorderBuf.clear();
+      cancelLatchDrain();
     },
     // start the live event listener; lifetime == owning $effect.
     start() {
@@ -429,9 +453,11 @@ export function createTranscript(sessionId: string) {
         if (expectedSeq === 0) {
           if (running && !m.replay) {
             reorderBuf.set(m.seq, m);
+            scheduleLatchDrain();
             if (reorderBuf.size > 256) drainBufInOrder();
             return;
           }
+          cancelLatchDrain();
           expectedSeq = m.seq;
         }
         // A late event whose seq is already behind the window (e.g. a straggler
@@ -461,6 +487,7 @@ export function createTranscript(sessionId: string) {
       }
       if (rafId) cancelAnimationFrame(rafId);
       rafId = 0;
+      cancelLatchDrain();
       resetPending();
       history = [];
       live = null;

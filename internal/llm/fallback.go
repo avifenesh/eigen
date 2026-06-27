@@ -77,10 +77,14 @@ func WithFallbackNotifier(ctx context.Context, fn func(FallbackNotice)) context.
 
 // notifyFallback fires the context's failover callback (if any). Per-call, so no
 // shared state and no lock.
-func (f *fallbackProvider) notifyFallback(ctx context.Context, cause error) {
+func notifyFallback(ctx context.Context, n FallbackNotice) {
 	if fn, ok := ctx.Value(fallbackNotifierKey{}).(func(FallbackNotice)); ok && fn != nil {
-		fn(FallbackNotice{PrimaryID: f.primary.ModelID(), FallbackID: f.fallback.ModelID(), Cause: cause})
+		fn(n)
 	}
+}
+
+func (f *fallbackProvider) notifyFallback(ctx context.Context, cause error) {
+	notifyFallback(ctx, FallbackNotice{PrimaryID: f.primary.ModelID(), FallbackID: f.fallback.ModelID(), Cause: cause})
 }
 
 // NewFallback wraps a primary provider with a fallback. A nil side collapses to

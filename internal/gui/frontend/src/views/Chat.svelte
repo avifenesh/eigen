@@ -975,7 +975,7 @@
           onclick={() => setInputMode(inputMode === "queue" ? "steer" : "queue")}
           title="steer = inject into the running turn; queue = hold and send when the turn finishes"
         >
-          {inputMode === "queue" ? "⇊ queue" : "↳ steer"}
+          {store?.running ? (inputMode === "queue" ? "⇊ queue" : "↳ steer") : inputMode === "queue" ? "⇊ queue mode" : "input mode"}
         </button>
       </div>
       <!-- ACTIVE PLAN — the `todo` tool's live task list, pinned above the
@@ -1156,12 +1156,14 @@
                it and sends it as the next turn once this one finishes. Surfacing
                the mode (and any held count) removes the "where did my message go"
                surprise. -->
-          {#if inputMode === "queue"}
-            <span class="chat__steerhint" title="Queue mode: typing now holds your message and sends it as a fresh turn when this one finishes">
-              ⇊ queues for the next turn{queued.length > 0 ? ` — ${queued.length} queued` : ""}
-            </span>
-          {:else}
-            <span class="chat__steerhint" title="Type now to steer the running turn; if it can't be steered it queues as the next turn">↳ steers the running turn</span>
+          {#if store?.running}
+            {#if inputMode === "queue"}
+              <span class="chat__steerhint" title="Queue mode: typing now holds your message and sends it as a fresh turn when this one finishes">
+                ⇊ queues for the next turn{queued.length > 0 ? ` — ${queued.length} queued` : ""}
+              </span>
+            {:else}
+              <span class="chat__steerhint" title="Type now to steer the running turn; if it can't be steered it queues as the next turn">↳ steers the running turn</span>
+            {/if}
           {/if}
         </div>
       {/if}
