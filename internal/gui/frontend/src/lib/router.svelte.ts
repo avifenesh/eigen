@@ -4,7 +4,7 @@
 export const routes = [
   "home",
   "chat",
-  "agents",
+  "tasks",
   "live",
   "sessions",
   "board",
@@ -27,6 +27,7 @@ export type Route = (typeof routes)[number];
 function parse(): { route: Route; param?: string } {
   const h = location.hash.replace(/^#\/?/, "");
   const [r, p] = h.split("/");
+  if (r === "agents") return { route: "tasks", param: p || undefined };
   return { route: (routes as readonly string[]).includes(r) ? (r as Route) : "home", param: p || undefined };
 }
 

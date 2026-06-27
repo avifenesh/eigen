@@ -1,17 +1,16 @@
 <script lang="ts">
-  // Agents — the multi-agent fan-out board. Background subtasks (task/task_group
+  // Tasks — the multi-agent fan-out board. Background subtasks (task/task_group
   // delegations) persist to disk; this view polls them and shows live status:
   // running tasks with their current tool + elapsed time, completed/errored
   // results, model/route each ran on. A running task can be canceled; any task's
   // transcript can be opened in a slide-over. Polling lives in an $effect whose
   // cleanup clears the interval — no leaked timer on nav.
-  import { Bridge } from "$lib/bridge";
   import { errText } from "$lib/errors";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { now } from "$lib/stores/clock.svelte";
   import { taskDot } from "$lib/status";
   import { trapFocus } from "$lib/actions";
-  import type { AgentsDTO, BgTaskDTO } from "$lib/types";
+  import type { TasksDTO, BgTaskDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
   import Button from "$lib/components/Button.svelte";
   import Badge from "$lib/components/Badge.svelte";
@@ -20,7 +19,7 @@
   import VirtualList from "$lib/components/VirtualList.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
 
-  let data = $state<AgentsDTO | null>(null);
+  let data = $state<TasksDTO | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let filter = $state<"all" | "running" | "done" | "error">("all");
@@ -30,12 +29,30 @@
   let transcriptLoading = $state(false);
   let acting = $state<Record<string, boolean>>({});
 
+  async function api<T>(path: string, init?: RequestInit): Promise<T> {
+    const res = await fetch(path, {
+      ...init,
+      headers: { Accept: "application/json", ...(init?.headers ?? {}) },
+    });
+    if (!res.ok) {
+      let detail = "";
+      try {
+        const body = (await res.json()) as { error?: string };
+        detail = body.error ?? "";
+      } catch {
+        detail = await res.text().catch(() => "");
+      }
+      throw new Error(detail || `${res.status} ${res.statusText}`);
+    }
+    return (await res.json()) as T;
+  }
+
   let loadSeq = 0;
   async function load() {
     const seq = ++loadSeq;
     error = null;
     try {
-      const d = await Bridge.Agents();
+      const d = await api<TasksDTO>("/api/tasks");
       if (seq === loadSeq) {
         data = d;
         loading = false;
@@ -52,7 +69,7 @@
   // fresh after each load (fast while work is in flight, slow when idle) without
   // re-running the effect — so the timer isn't torn down and recreated on every
   // data change. Cleanup clears the pending timeout AND bumps loadSeq so a
-  // late Bridge.Agents() resolution after unmount is dropped.
+  // late /api/tasks resolution after unmount is dropped.
   $effect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let stopped = false;
@@ -98,7 +115,7 @@
   async function cancel(id: string) {
     acting[id] = true;
     try {
-      await Bridge.CancelAgent(id);
+      await api<{ ok: boolean }>(`/api/tasks/${encodeURIComponent(id)}/cancel`, { method: "POST" });
       toasts.info("cancel requested");
       await load();
     } catch (e) {
@@ -113,7 +130,8 @@
     transcript = "";
     transcriptLoading = true;
     try {
-      transcript = await Bridge.AgentTranscript(t.id);
+      const body = await api<{ transcript: string }>(`/api/tasks/${encodeURIComponent(t.id)}/transcript`);
+      transcript = body.transcript;
     } catch (e) {
       toasts.error(errText(e));
     } finally {
@@ -270,13 +288,13 @@
       {#each Array(4) as _, i (i)}<div class="agents__skel"></div>{/each}
     </div>
   {:else if error && !data}
-    <EmptyState glyph="⋔" title="Couldn't load agent tasks" line={error}>
+    <EmptyState glyph="⋔" title="Couldn't load tasks" line={error}>
       {#snippet action()}
         <Button variant="secondary" onclick={() => load()}>Retry</Button>
       {/snippet}
     </EmptyState>
   {:else if !data || data.tasks.length === 0}
-    <EmptyState glyph="⋔" title="No agent tasks" line="When the agent delegates subtasks (task / task_group), their live fan-out shows up here." />
+    <EmptyState glyph="⋔" title="No tasks" line="When Eigen delegates subtasks (task / task_group), their live fan-out shows up here." />
   {:else if tasks.length === 0}
     <div class="agents__list agents__list--pad">
       <p class="agents__empty-note">No {filter} tasks.</p>

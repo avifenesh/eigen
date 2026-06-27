@@ -30,7 +30,7 @@ func buildGUIApp() (*application.App, *gui.Bridge) {
 		Name:        "eigen",
 		Description: "Eigen desktop GUI",
 		Services:    []application.Service{application.NewService(bridge)},
-		Assets:      application.AssetOptions{Handler: application.AssetFileServerFS(guiAssets)},
+		Assets:      application.AssetOptions{Handler: gui.TasksAPIHandler(application.AssetFileServerFS(guiAssets))},
 		Mac:         application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
 	})
 	bridge.SetApp(app)

@@ -51,6 +51,10 @@ type AgentsDTO struct {
 	Dir     string      `json:"dir"`
 }
 
+// TasksDTO is the public REST name for the same background-task snapshot the
+// legacy Wails Agents bridge returns.
+type TasksDTO = AgentsDTO
+
 func ms(t time.Time) int64 {
 	if t.IsZero() {
 		return 0
@@ -70,9 +74,7 @@ func toBgTaskDTO(t agent.BgTask) BgTaskDTO {
 	}
 }
 
-// Agents returns the background/subtask fan-out, newest first, with counts.
-func (b *Bridge) Agents() (*AgentsDTO, error) {
-	dir := agent.TasksDir()
+func tasksSnapshot(dir string) *TasksDTO {
 	tasks := agent.LoadBgTasks(dir) // already sorted newest-first, lost/canceling derived
 	out := make([]BgTaskDTO, 0, len(tasks))
 	var running, done, errored int
@@ -87,7 +89,12 @@ func (b *Bridge) Agents() (*AgentsDTO, error) {
 			errored++
 		}
 	}
-	return &AgentsDTO{Tasks: out, Running: running, Done: done, Errored: errored, Dir: dir}, nil
+	return &TasksDTO{Tasks: out, Running: running, Done: done, Errored: errored, Dir: dir}
+}
+
+// Agents returns the background/subtask fan-out, newest first, with counts.
+func (b *Bridge) Agents() (*AgentsDTO, error) {
+	return tasksSnapshot(agent.TasksDir()), nil
 }
 
 // CancelAgent requests cancellation of a running background task.

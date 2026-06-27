@@ -20,7 +20,7 @@
   import Observe from "./views/Observe.svelte";
   import Memory from "./views/Memory.svelte";
   import Skills from "./views/Skills.svelte";
-  import Agents from "./views/Agents.svelte";
+  import Tasks from "./views/Tasks.svelte";
   import Live from "./views/Live.svelte";
   import Sessions from "./views/Sessions.svelte";
   import Dreaming from "./views/Dreaming.svelte";
@@ -90,8 +90,8 @@
           <Reviewers />
         {:else if router.route === "skills"}
           <Skills />
-        {:else if router.route === "agents"}
-          <Agents />
+        {:else if router.route === "tasks"}
+          <Tasks />
         {:else if router.route === "live"}
           <Live />
         {:else if router.route === "sessions"}

@@ -40,7 +40,7 @@
         { route: "home", label: "Home", glyph: "◆" },
         { route: "chat", label: "Chat", glyph: "▶" },
         { route: "board", label: "Board", glyph: "▤" },
-        { route: "agents", label: "Agents", glyph: "⋔" },
+        { route: "tasks", label: "Tasks", glyph: "⋔" },
         { route: "live", label: "Live", glyph: "◐" },
         { route: "sessions", label: "Sessions", glyph: "≡" },
       ],
@@ -75,7 +75,7 @@
   function badge(route: Route): number {
     if (route === "home") return feed.actOn.length;
     if (route === "chat") return daemon.stats?.running_turns ?? 0;
-    if (route === "agents") return daemon.stats?.bg_tasks ?? 0;
+    if (route === "tasks") return daemon.stats?.bg_tasks ?? 0;
     if (route === "live") return sessions.list.filter((s) => s.status === "working" || s.status === "approval").length;
     if (route === "sessions") return sessions.count;
     return 0;
@@ -84,7 +84,7 @@
   // These routes count *active work* — when their badge is non-zero the count
   // is teal and breathing, so the eye is drawn to what is running/fresh. Other
   // badges (e.g. total sessions) stay neutral: a tally, not a live signal.
-  const liveRoutes = new Set<Route>(["home", "chat", "agents", "live"]);
+  const liveRoutes = new Set<Route>(["home", "chat", "tasks", "live"]);
 
   // Rail footer mirrors the daemon connection so the chrome bookends: brand at
   // the top, engine status at the bottom. Version is shown only when known.

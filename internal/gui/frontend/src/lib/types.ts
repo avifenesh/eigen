@@ -183,6 +183,7 @@ export type AgentsDTO = {
   errored: number;
   dir: string;
 };
+export type TasksDTO = AgentsDTO;
 
 export type RolloutDTO = { index: number; text: string; outcome?: string; whenMs?: number };
 export type ConsolidationDTO = { path: string; label: string; whenMs: number; bytes: number };

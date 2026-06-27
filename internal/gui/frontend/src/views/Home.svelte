@@ -234,7 +234,7 @@
     <div class="strip__sep"></div>
     <div class="strip__stat"><span class="strip__v tnum" class:strip__v--live={(stats?.running_turns ?? 0) > 0}>{stats?.running_turns ?? 0}</span><span class="strip__l">running</span></div>
     <div class="strip__sep"></div>
-    <div class="strip__stat"><span class="strip__v tnum">{stats?.bg_tasks ?? 0}</span><span class="strip__l">agents</span></div>
+    <div class="strip__stat"><span class="strip__v tnum">{stats?.bg_tasks ?? 0}</span><span class="strip__l">tasks</span></div>
     <div class="strip__sep"></div>
     <div class="strip__stat"><span class="strip__v tnum">{cacheHit}%</span><span class="strip__l">cache hit</span></div>
   </button>
