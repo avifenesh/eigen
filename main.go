@@ -198,6 +198,14 @@ func main() {
 		return
 	}
 
+	// `eigen moa <list|configure|show|delete>`: manage Mixture-of-Agents presets.
+	// Each preset is a selectable model under the `moa` provider whose aggregator
+	// is the acting model and references run first as advisory context.
+	if flag.Arg(0) == "moa" {
+		runMoACmd(flag.Args()[1:])
+		return
+	}
+
 	// `eigen harness <status|install>`: manage Eigen-bundled helper binaries
 	// (computer-use + isolated workspace) from embedded source.
 	if flag.Arg(0) == "harness" {
@@ -2141,6 +2149,166 @@ func runModelsCmd() {
 		fmt.Println("\nnew models can be used directly (--model <id> or /model <id>);")
 		fmt.Println("add catalog entries (internal/llm/catalog.go) for window/caching/thinking metadata.")
 	}
+}
+
+// runMoACmd implements `eigen moa <list|configure|show|delete>`: manage the
+// Mixture-of-Agents presets stored in ~/.eigen/moa.json. Each preset is a model
+// under the `moa` provider — pick it with `/model <preset>` (or
+// `/model moa:<preset>`) and its aggregator becomes the acting model while the
+// reference models run first as advisory context.
+func runMoACmd(args []string) {
+	sub := "list"
+	if len(args) > 0 {
+		sub = strings.ToLower(strings.TrimSpace(args[0]))
+	}
+	switch sub {
+	case "list", "ls", "":
+		moaList()
+	case "show":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: eigen moa show <name>")
+			os.Exit(2)
+		}
+		moaShow(args[1])
+	case "configure", "config", "add", "edit":
+		name := ""
+		if len(args) > 1 {
+			name = args[1]
+		}
+		moaConfigure(name)
+	case "delete", "rm", "remove":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: eigen moa delete <name>")
+			os.Exit(2)
+		}
+		if err := llm.DeleteMoAPreset(args[1]); err != nil {
+			fail(fmt.Errorf("moa delete: %w", err))
+		}
+		fmt.Printf("deleted MoA preset: %s\n", args[1])
+	default:
+		fmt.Fprintln(os.Stderr, "usage: eigen moa <list|show <name>|configure [name]|delete <name>>")
+		os.Exit(2)
+	}
+}
+
+func moaList() {
+	presets, err := llm.LoadMoAPresets()
+	if err != nil {
+		fail(fmt.Errorf("moa list: %w", err))
+	}
+	if len(presets) == 0 {
+		fmt.Println("no MoA presets configured.")
+		fmt.Println("create one: eigen moa configure <name>")
+		return
+	}
+	fmt.Println("Mixture of Agents presets (pick with /model <name> or /model moa:<name>):")
+	for _, p := range presets {
+		moaPrintPreset(p)
+	}
+}
+
+func moaShow(name string) {
+	presets, err := llm.LoadMoAPresets()
+	if err != nil {
+		fail(fmt.Errorf("moa show: %w", err))
+	}
+	for _, p := range presets {
+		if p.Name == name {
+			moaPrintPreset(p)
+			return
+		}
+	}
+	fail(fmt.Errorf("unknown MoA preset %q", name))
+}
+
+func moaPrintPreset(p llm.MoAPreset) {
+	state := ""
+	if p.Enabled != nil && !*p.Enabled {
+		state = "  (disabled — aggregator acts alone)"
+	}
+	fmt.Printf("\n• %s%s\n", p.Name, state)
+	fmt.Println("    references:")
+	for i, r := range p.References {
+		fmt.Printf("      %d. %s\n", i+1, r)
+	}
+	fmt.Printf("    aggregator (acting model): %s\n", p.Aggregator)
+}
+
+// moaConfigure creates or edits a preset interactively over stdin: enter one
+// reference model ref per line (blank to finish), then the aggregator ref.
+func moaConfigure(name string) {
+	r := bufio.NewReader(os.Stdin)
+	var existing llm.MoAPreset
+	if name != "" {
+		ps, err := llm.LoadMoAPresets()
+		if err != nil {
+			fail(fmt.Errorf("moa configure: %w", err))
+		}
+		for _, p := range ps {
+			if p.Name == name {
+				existing = p
+				break
+			}
+		}
+	}
+
+	fmt.Println("Configure a Mixture-of-Agents preset.")
+	fmt.Println("Model refs use eigen's one-field form: a catalog id (e.g. openai.gpt-5.5,")
+	fmt.Println("us.anthropic.claude-opus-4-8) or provider:id (e.g. grok:grok-4). See: eigen models.")
+
+	if name == "" {
+		fmt.Print("\nPreset name: ")
+		line, _ := r.ReadString('\n')
+		name = strings.TrimSpace(line)
+		if name == "" {
+			fail(fmt.Errorf("moa configure: preset name is required"))
+		}
+	} else {
+		fmt.Printf("\nPreset: %s\n", name)
+	}
+
+	fmt.Println("\nReference models (advisory; run first, no tools). One ref per line; blank line to finish.")
+	if len(existing.References) > 0 {
+		fmt.Printf("(current: %s)\n", strings.Join(existing.References, ", "))
+	}
+	var refs []string
+	for {
+		fmt.Printf("  reference %d: ", len(refs)+1)
+		line, err := r.ReadString('\n')
+		ref := strings.TrimSpace(line)
+		if ref == "" {
+			break
+		}
+		refs = append(refs, ref)
+		if err != nil {
+			break
+		}
+	}
+	if len(refs) == 0 {
+		refs = existing.References
+	}
+
+	aggDefault := existing.Aggregator
+	prompt := "\nAggregator (acting model): "
+	if aggDefault != "" {
+		prompt = fmt.Sprintf("\nAggregator (acting model) [%s]: ", aggDefault)
+	}
+	fmt.Print(prompt)
+	line, _ := r.ReadString('\n')
+	agg := strings.TrimSpace(line)
+	if agg == "" {
+		agg = aggDefault
+	}
+
+	preset := llm.MoAPreset{Name: name, References: refs, Aggregator: agg, Enabled: existing.Enabled}
+	if err := llm.ValidateMoAPreset(preset); err != nil {
+		fail(fmt.Errorf("moa configure: %w", err))
+	}
+	if err := llm.UpsertMoAPreset(preset); err != nil {
+		fail(fmt.Errorf("moa configure: %w", err))
+	}
+	fmt.Printf("\nsaved MoA preset: %s\n", name)
+	moaShow(name)
 }
 
 // effectiveModel resolves the model id for a (provider, model) pair, filling in

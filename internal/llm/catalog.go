@@ -176,6 +176,12 @@ func DefaultModel(provider string) string {
 	if m := defaultModelByProvider[provider]; m != "" {
 		return m
 	}
+	if canonicalProvider(provider) == "moa" {
+		if presets, err := LoadMoAPresets(); err == nil && len(presets) > 0 {
+			return presets[0].Name
+		}
+		return ""
+	}
 	if p, ok := customProviderByName(provider); ok && len(p.Models) > 0 {
 		return normalizeCustomModel(p.Models[0]).Name
 	}
@@ -232,6 +238,8 @@ func canonicalProvider(p string) string {
 		return "grok"
 	case "glm", "zhipu", "z.ai":
 		return "glm"
+	case "moa":
+		return "moa"
 	default:
 		return p
 	}
@@ -245,6 +253,7 @@ func Models() []ModelInfo {
 	out := make([]ModelInfo, len(Catalog))
 	copy(out, Catalog)
 	out = append(out, customModels()...)
+	out = append(out, moaModels()...)
 	return out
 }
 
