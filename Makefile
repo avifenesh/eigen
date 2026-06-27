@@ -1,8 +1,10 @@
 EIGEN := bin/eigen
 # All packages EXCEPT internal/gui: the GUI package imports Wails, which pulls in
 # webkitgtk via cgo. The default gate (CI's Go-gate job) builds webkit-free, so
-# it skips internal/gui — that package is built/vetted/tested under the wails +
-# webkit2_41 tags by the separate gui-phase gate (scripts/verify-gui-phase.sh).
+# it skips internal/gui — that package is built/vetted/tested under the wails
+# tag by the separate gui-phase gate (scripts/verify-gui-phase.sh). Local builds
+# use the default gtk4/webkitgtk-6.0 backend; CI's runner has only webkit2gtk-4.1
+# so that gate adds the `gtk3` tag.
 PKGS := $(shell go list ./... | grep -v '/internal/gui')
 
 .PHONY: build gui-run gui-smoke gui-desktop gui-frontend vet test race fmt gate harness perf perf-soak perf-bench stats clean
@@ -19,10 +21,10 @@ gui-frontend:
 	cd internal/gui/frontend && (command -v pnpm >/dev/null 2>&1 && pnpm install --frozen-lockfile && pnpm build || (npm ci && npm run build))
 
 gui-run: gui-frontend
-	go run -tags 'wails production webkit2_41' . gui
+	go run -tags 'wails production' . gui
 
 gui-desktop: gui-frontend
-	go build -tags 'wails production webkit2_41' -o bin/eigen-gui .
+	go build -tags 'wails production' -o bin/eigen-gui .
 
 gui-smoke:
 	scripts/gui-smoke.sh

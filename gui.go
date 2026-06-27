@@ -11,8 +11,8 @@ import (
 // until the window closes. Shutdown runs on BOTH the normal and error paths so
 // no pump goroutine, daemon connection, or daemon-side session view is orphaned.
 //
-// Built only under the `wails` tag (the GUI binary: `-tags 'wails production
-// webkit2_41'` / `make gui-desktop`). A bare `go build .` (CI's `make gate`)
+// Built only under the `wails` tag (the GUI binary: `-tags 'wails production'`
+// / `make gui-desktop`). A bare `go build .` (CI's `make gate`)
 // compiles the !wails stub in gui_stub.go instead, so the default build pulls
 // in no webkitgtk — matching main, where the GUI is the browser/HTTP shell.
 func runGUICmd(_ []string) {
