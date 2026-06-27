@@ -19,6 +19,16 @@ export default defineConfig({
     emptyOutDir: true,
     target: "es2022",
     sourcemap: false,
+    chunkSizeWarningLimit: 900,
+    rolldownOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/@wailsio/runtime")) return "wails-runtime";
+          if (id.includes("node_modules/@xterm")) return "xterm";
+          if (id.includes("node_modules/marked")) return "marked";
+        },
+      },
+    },
   },
   server: {
     host: "127.0.0.1",

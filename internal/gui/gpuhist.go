@@ -11,18 +11,17 @@ import (
 
 // GPU history + training-aware alerting. eigen is the user's training rig, so
 // the Machine panel shows a recent util/temp trend per GPU (sparkline) and the
-// bridge raises a desktop notification when a GPU runs sustained-hot or pegged.
+// bridge raises a desktop notification when a GPU runs sustained thermally hot.
+// Pegged util during training is normal — we do not desktop-notify on util alone.
 // Sampled in the GUI process (the sparkline is a GUI concern); the always-on
 // headless signal lives in the daemon's dream stationDigest.
 
 const (
 	gpuSampleEvery = 5 * time.Second
 	gpuHistoryLen  = 60 // ~5 min of 5s samples
-	// Alert thresholds: a GPU that stays this hot / pegged for alertStreak
-	// consecutive samples fires ONE notification (re-armed when it cools).
-	gpuTempAlertC = 87.0
-	gpuUtilAlert  = 97.0
-	alertStreak   = 3 // ~15s sustained before alerting (ignore brief spikes)
+	// ~80°C under load is expected on a training box; desktop alerts start higher.
+	gpuTempAlertC = 92.0
+	alertStreak   = 6 // ~30s sustained before alerting (ignore brief spikes)
 )
 
 // gpuSample is one point in a GPU's history.
@@ -66,7 +65,7 @@ func (g *gpuHist) record(gpus []syshealth.GPU) []string {
 		}
 		g.samples[k] = s
 
-		hot := gp.TempC >= gpuTempAlertC || gp.UtilPct >= gpuUtilAlert
+		hot := gp.TempC >= gpuTempAlertC
 		if hot {
 			g.hotRun[k]++
 			if g.hotRun[k] >= alertStreak && !g.alerting[k] {
@@ -149,18 +148,21 @@ func (b *Bridge) gpuSampleLoop(stop chan struct{}) {
 				continue
 			}
 			for _, alert := range b.gpuHist.record(h.GPUs) {
-				notifyDesktop("eigen — training rig", alert)
+				notifyDesktop("eigen — GPU temperature", alert, "normal")
 			}
 		}
 	}
 }
 
 // notifyDesktop fires a best-effort desktop notification via notify-send.
-func notifyDesktop(title, body string) {
+func notifyDesktop(title, body, urgency string) {
 	if _, err := exec.LookPath("notify-send"); err != nil {
 		return
 	}
-	c := exec.Command("notify-send", "-u", "critical", title, body)
+	if urgency == "" {
+		urgency = "normal"
+	}
+	c := exec.Command("notify-send", "-u", urgency, title, body)
 	if err := c.Start(); err == nil {
 		go func() { _ = c.Wait() }()
 	}

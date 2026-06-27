@@ -287,7 +287,7 @@
       <div class="panel">
         <div class="panel__head">
           <span class="panel__icon">▦</span><span class="panel__title">Machine</span>
-          {#if dash.health.cpuTempC > 0}<span class="panel__temp {dash.health.cpuTempC >= 85 ? 'hot' : dash.health.cpuTempC >= 70 ? 'warm' : ''}">{Math.round(dash.health.cpuTempC)}°C</span>{/if}
+          {#if dash.health.cpuTempC > 0}<span class="panel__temp {dash.health.cpuTempC >= 90 ? 'hot' : dash.health.cpuTempC >= 80 ? 'warm' : ''}">{Math.round(dash.health.cpuTempC)}°C</span>{/if}
         </div>
         <div class="metrics">
           <div class="metric">
@@ -322,7 +322,7 @@
               <span class="gpu__name">{g.name}</span>
               <span class="gpu__spacer"></span>
               {#if g.powerW > 0}<span class="gpu__pow tnum">{Math.round(g.powerW)}W</span>{/if}
-              <span class="gpu__temp {g.tempC >= 85 ? 'hot' : g.tempC >= 70 ? 'warm' : ''} tnum">{Math.round(g.tempC)}°C</span>
+              <span class="gpu__temp {g.tempC >= 90 ? 'hot' : g.tempC >= 80 ? 'warm' : ''} tnum">{Math.round(g.tempC)}°C</span>
             </div>
             <div class="gpu__metrics">
               <div class="metric">

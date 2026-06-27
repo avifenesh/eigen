@@ -464,9 +464,13 @@
   // the loaded page survives. Terminal/Diff/Files mount-when-active (Terminal so
   // a hidden tab never spawns a PTY; Diff/Files so no git/fs call until opened).
   let browserOpened = $state(initialDockTab === "browser");
+  // Dock terminal: keep mounted once opened (like Browser) so switching tabs does
+  // not kill the PTY and lose cwd/history in the user's real $SHELL.
+  let terminalOpened = $state(initialDockTab === "terminal");
   function setDockTab(t: DockTab) {
     dockTab = t;
     if (t === "browser") browserOpened = true;
+    if (t === "terminal") terminalOpened = true;
     try {
       localStorage.setItem("eigen.dockTab", t);
     } catch {}
@@ -1496,11 +1500,14 @@
       </div>
       {/if}
 
-      <!-- TERMINAL: mount-when-active so a hidden tab never spawns a PTY (its
-           onMount opens the server-side shell; unmounting kills it). -->
-      {#if dockTab === "terminal"}
-        <div class="dock__body dock__body--fill">
-          <Terminal active={dockTab === "terminal"} />
+      <!-- TERMINAL: stays mounted once opened; hidden when another tab is active
+           so the server PTY + shell session survive tab switches. -->
+      {#if terminalOpened}
+        <div
+          class="dock__body dock__body--fill"
+          class:dock__body--hidden={dockTab !== "terminal"}
+        >
+          <Terminal active={dockTab === "terminal"} workdir={primaryRoot} />
         </div>
       {/if}
 

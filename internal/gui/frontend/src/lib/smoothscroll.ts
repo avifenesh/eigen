@@ -78,6 +78,9 @@ function onWheel(e: WheelEvent): void {
 
   const el = scrollableAncestor(e.target);
   if (!el) return;
+  // Chat transcript (VirtualList): JS wheel easing fights rAF-batched scroll +
+  // row remeasure — feels laggy/rubber-bandy. Native scroll keeps WebKitGTK async.
+  if (el.classList.contains("vlist") || el.dataset.nativeScroll === "1") return;
 
   // Normalize line/page deltas to pixels (pixel mode passes through).
   let dy = e.deltaY;

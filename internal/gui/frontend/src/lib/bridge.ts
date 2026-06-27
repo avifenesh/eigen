@@ -228,7 +228,8 @@ export const Bridge = {
   FileTree: (dir: string): Promise<FileTreeDTO | null> => B.FileTree(dir),
   ReadFileForView: (path: string): Promise<string> => B.ReadFileForView(path),
   // PTY terminal — output streams on the "eigen:terminal" event
-  TerminalStart: (cols: number, rows: number): Promise<string> => B.TerminalStart(cols, rows),
+  TerminalStart: (cols: number, rows: number, workDir = ""): Promise<string> =>
+    B.TerminalStart(cols, rows, workDir),
   TerminalWrite: (id: string, data: string): Promise<void> => B.TerminalWrite(id, data),
   TerminalResize: (id: string, cols: number, rows: number): Promise<void> => B.TerminalResize(id, cols, rows),
   TerminalKill: (id: string): Promise<void> => B.TerminalKill(id),

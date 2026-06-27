@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -484,6 +485,28 @@ func TestPatchPureRenameViaUnifiedDiff(t *testing.T) {
 	}
 	if string(got) != "one\ntwo\n" {
 		t.Fatalf("pure unified rename changed content: %q", got)
+	}
+}
+
+func TestPatchRelaxedTrailingWhitespace(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.go")
+	os.WriteFile(path, []byte("package p\n\nfunc foo() {}\n"), 0o644)
+
+	patch := `--- a/a.go
++++ b/a.go
+@@ -1,3 +1,3 @@
+ package p
+ 
+-func foo() {}
++func bar() {}
+`
+	if _, err := runPatch(t, dir, patch); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(path)
+	if !strings.Contains(string(got), "func bar()") {
+		t.Fatalf("relaxed patch failed: %q", got)
 	}
 }
 

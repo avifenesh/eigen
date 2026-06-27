@@ -15,7 +15,7 @@ import (
 func Patch(policy *Policy) Definition {
 	return Definition{
 		Name:        "apply_patch",
-		Description: "Apply a patch across one or more files. Accepts unified diffs (git/diff -u style) and the common *** Begin Patch / *** Update File agent patch format. Supports creating/deleting files. All hunks must apply or nothing is written.",
+		Description: "Apply a patch across one or more files. Prefer edit or multiedit for small, exact replacements — apply_patch needs context that matches the file byte-for-byte (read the file first). Accepts unified diffs (git/diff -u style) and *** Begin Patch / *** Update File agent format. Supports create/delete/rename. All hunks must apply or nothing is written.",
 		Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -399,7 +399,7 @@ func applyHunks(content string, hunks []patchHunk) (string, error) {
 	for hi, h := range hunks {
 		at := findHunk(lines, h)
 		if at < 0 {
-			return "", fmt.Errorf("hunk %d does not apply (context not found)", hi+1)
+			return "", hunkApplyError(hi+1, h, lines)
 		}
 		tail := append([]string{}, lines[at+len(h.oldLines):]...)
 		lines = append(lines[:at], append(append([]string{}, h.newLines...), tail...)...)
@@ -497,16 +497,98 @@ func findBlockMatches(lines, old []string) []int {
 	}
 	var out []int
 	for at := 0; at+len(old) <= len(lines); at++ {
-		ok := true
-		for i := range old {
-			if lines[at+i] != old[i] {
-				ok = false
-				break
-			}
+		if blockMatchesAt(lines, old, at) {
+			out = append(out, at)
 		}
-		if ok {
+	}
+	if len(out) > 0 {
+		return out
+	}
+	// Second pass: tolerate trailing whitespace / CRLF drift (common when models
+	// copy context from read output or Windows-checked-out files).
+	for at := 0; at+len(old) <= len(lines); at++ {
+		if blockMatchesAtRelaxed(lines, old, at) {
 			out = append(out, at)
 		}
 	}
 	return out
+}
+
+func blockMatchesAt(lines, old []string, at int) bool {
+	for i := range old {
+		if lines[at+i] != old[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func blockMatchesAtRelaxed(lines, old []string, at int) bool {
+	for i := range old {
+		if normalizePatchLine(lines[at+i]) != normalizePatchLine(old[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizePatchLine(s string) string {
+	s = strings.TrimRight(s, "\r")
+	return strings.TrimRight(s, " \t")
+}
+
+func hunkApplyError(n int, h patchHunk, lines []string) error {
+	const maxShow = 3
+	var b strings.Builder
+	fmt.Fprintf(&b, "hunk %d does not apply (context not found)", n)
+	if len(h.oldLines) > 0 {
+		b.WriteString("; expected first line")
+		if len(h.oldLines) > 1 {
+			fmt.Fprintf(&b, "s (%d lines)", len(h.oldLines))
+		}
+		b.WriteString(" like:\n")
+		for i := 0; i < len(h.oldLines) && i < maxShow; i++ {
+			fmt.Fprintf(&b, "  | %s\n", h.oldLines[i])
+		}
+		if len(h.oldLines) > maxShow {
+			b.WriteString("  | …\n")
+		}
+	}
+	if hint := nearestPatchContext(lines, h.oldLines); hint != "" {
+		b.WriteString("nearest file match:\n")
+		b.WriteString(hint)
+	}
+	b.WriteString("tip: read the file and use edit/multiedit with exact old_string, or refresh patch context")
+	return fmt.Errorf("%s", strings.TrimSpace(b.String()))
+}
+
+// nearestPatchContext finds a window in lines whose first oldLine appears and
+// shows how the file differs (for agent-facing errors).
+func nearestPatchContext(lines, old []string) string {
+	if len(old) == 0 || len(lines) == 0 {
+		return ""
+	}
+	want := normalizePatchLine(old[0])
+	if want == "" {
+		return ""
+	}
+	for i, ln := range lines {
+		if normalizePatchLine(ln) != want {
+			continue
+		}
+		var b strings.Builder
+		end := i + len(old)
+		if end > len(lines) {
+			end = len(lines)
+		}
+		for j := i; j < end && j-i < 4; j++ {
+			mark := " "
+			if j-i < len(old) && normalizePatchLine(lines[j]) != normalizePatchLine(old[j-i]) {
+				mark = "!"
+			}
+			fmt.Fprintf(&b, "  %s| %s\n", mark, lines[j])
+		}
+		return b.String()
+	}
+	return ""
 }

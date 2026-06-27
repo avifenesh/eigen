@@ -24,6 +24,7 @@
   import Card from "$lib/components/Card.svelte";
   import Button from "$lib/components/Button.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import { Browser } from "@wailsio/runtime";
 
   let conns = $state<ConnectorsDTO | null>(null);
   let servers = $state<MCPServersDTO | null>(null);
@@ -253,7 +254,6 @@
     // Open the Cloud Console (create a Desktop OAuth client), then import the JSON.
     if (gstatus?.setupUrl) {
       try {
-        const { Browser } = await import("@wailsio/runtime");
         Browser.OpenURL(gstatus.setupUrl);
       } catch {
         /* opening the console is a convenience; import still works without it */

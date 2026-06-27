@@ -17,7 +17,7 @@
   // active gates the eager start: the parent only mounts/keeps this when the
   // Terminal tab is the visible one, but expose a prop so a hidden instance
   // doesn't spawn a shell. Default true (mounted = wanted).
-  let { active = true }: { active?: boolean } = $props();
+  let { active = true, workdir = "" }: { active?: boolean; workdir?: string } = $props();
 
   let host = $state<HTMLDivElement | undefined>(undefined);
 
@@ -56,7 +56,7 @@
     let off: (() => void) | null = null;
 
     // Start the server PTY at the fitted size, then wire output + input.
-    Bridge.TerminalStart(term.cols, term.rows)
+    Bridge.TerminalStart(term.cols, term.rows, workdir)
       .then((newId) => {
         if (disposed) {
           // Raced a destroy before start resolved — kill the orphan PTY.

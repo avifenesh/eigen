@@ -36,6 +36,14 @@
   let scrollRaf = 0;
   let anchorDelta = 0;
   let anchorRaf = 0;
+  // True while the user is actively scrolling — skip pin-to-bottom and defer
+  // scroll-anchor compensation until idle so wheel/trackpad stays on the compositor.
+  let userScrolling = false;
+  let scrollEndTimer = 0;
+  // Row height updates deferred while the user scrolls (GUI-001): applying them
+  // immediately rebuilds offsets + window on every ResizeObserver tick.
+  const pendingMeasures = new SvelteMap<string | number, number>();
+  let measureFlushRaf = 0;
 
   function keyOf(item: T, index: number): string | number {
     return key ? key(item, index) : index;
@@ -111,6 +119,17 @@
       scrollRaf = 0;
       if (!viewport) return;
       scrollTop = viewport.scrollTop;
+      userScrolling = true;
+      clearTimeout(scrollEndTimer);
+      scrollEndTimer = window.setTimeout(() => {
+        userScrolling = false;
+        flushPendingMeasures();
+        if (anchorDelta !== 0 && viewport) {
+          viewport.scrollTop += anchorDelta;
+          scrollTop = viewport.scrollTop;
+          anchorDelta = 0;
+        }
+      }, 120);
       if (pin) {
         const gap = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
         pinned = gap < 48;
@@ -120,6 +139,24 @@
 
   function scrollToBottom() {
     if (viewport) viewport.scrollTop = viewport.scrollHeight;
+  }
+
+  function flushPendingMeasures() {
+    if (pendingMeasures.size === 0) return;
+    for (const [k, h] of pendingMeasures) {
+      if (h > 0) measured.set(k, h);
+    }
+    pendingMeasures.clear();
+    cancelAnimationFrame(measureFlushRaf);
+    measureFlushRaf = 0;
+  }
+
+  function scheduleMeasureFlush() {
+    if (measureFlushRaf) return;
+    measureFlushRaf = requestAnimationFrame(() => {
+      measureFlushRaf = 0;
+      if (!userScrolling) flushPendingMeasures();
+    });
   }
 
   // ResizeObserver keeps the viewport height current without layout polling.
@@ -134,8 +171,13 @@
       ro.disconnect();
       cancelAnimationFrame(scrollRaf);
       cancelAnimationFrame(anchorRaf);
+      cancelAnimationFrame(measureFlushRaf);
+      clearTimeout(scrollEndTimer);
       scrollRaf = 0;
       anchorRaf = 0;
+      measureFlushRaf = 0;
+      scrollEndTimer = 0;
+      pendingMeasures.clear();
     };
   });
 
@@ -156,7 +198,7 @@
   // never fires against a torn-down viewport.
   $effect(() => {
     void totalH; // re-run as content grows
-    if (pin && pinned) {
+    if (pin && pinned && !userScrolling) {
       cancelAnimationFrame(pinRaf);
       pinRaf = requestAnimationFrame(scrollToBottom);
     }
@@ -188,7 +230,7 @@
         const base = prev ?? estimateHeight;
         if (idx !== undefined && offsets[idx] < scrollTop && h !== base) {
           anchorDelta += h - base;
-          if (!anchorRaf) {
+          if (!userScrolling && !anchorRaf) {
             anchorRaf = requestAnimationFrame(() => {
               anchorRaf = 0;
               if (viewport && anchorDelta !== 0) {
@@ -199,7 +241,12 @@
             });
           }
         }
-        measured.set(curKey, h);
+        if (userScrolling) {
+          pendingMeasures.set(curKey, h);
+          scheduleMeasureFlush();
+        } else {
+          measured.set(curKey, h);
+        }
       }
     };
     apply();
@@ -215,7 +262,7 @@
   }
 </script>
 
-<div class="vlist" bind:this={viewport} onscroll={onScroll}>
+<div class="vlist" data-native-scroll="1" bind:this={viewport} onscroll={onScroll}>
   <div class="vlist__sizer" style="height:{totalH}px">
     {#each windowItems as w (keyOf(w.item, w.index))}
       <div class="vlist__row" style="transform:translateY({w.top}px)" use:measure={keyOf(w.item, w.index)}>
@@ -230,6 +277,8 @@
     height: 100%;
     overflow-y: auto;
     position: relative;
+    /* Hint WebKitGTK to keep scrolling on the fast path (no custom ::-webkit-scrollbar). */
+    overflow-anchor: auto;
   }
   .vlist__sizer {
     position: relative;

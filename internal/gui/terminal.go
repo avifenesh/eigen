@@ -89,7 +89,7 @@ func terminals() *termManager {
 // base64 → emit eigen:terminal{id,data}) and a waiter goroutine (cmd.Wait → emit
 // {id,exited:true} + tear the terminal down). The shell starts in the user's home
 // (falling back to cwd) with the parent environment inherited plus a sane TERM.
-func (b *Bridge) TerminalStart(cols, rows int) (string, error) {
+func (b *Bridge) TerminalStart(cols, rows int, workDir string) (string, error) {
 	if cols < 1 {
 		cols = 80
 	}
@@ -105,7 +105,7 @@ func (b *Bridge) TerminalStart(cols, rows int) (string, error) {
 		shell = resolveTerminalShell()
 	}
 	cmd := exec.Command(shell, "-i")
-	cmd.Dir = terminalStartDir()
+	cmd.Dir = terminalStartDir(workDir)
 	// Inherit the parent env; advertise a 256-color terminal so the shell + TUIs
 	// emit the escape sequences xterm.js renders. (TERM is appended last so it
 	// wins over any inherited value.)
@@ -250,9 +250,16 @@ func (m *termManager) kill(id string) {
 	})
 }
 
-// terminalStartDir picks the shell's working directory: the user's home, falling
-// back to the GUI process cwd.
-func terminalStartDir() string {
+// terminalStartDir picks the shell's working directory. When workDir is a real
+// directory (session primary root), start there so the dock shell matches the
+// agent sandbox; otherwise home, then GUI cwd.
+func terminalStartDir(workDir string) string {
+	workDir = strings.TrimSpace(workDir)
+	if workDir != "" {
+		if fi, err := os.Stat(workDir); err == nil && fi.IsDir() {
+			return workDir
+		}
+	}
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
 		return home
 	}
