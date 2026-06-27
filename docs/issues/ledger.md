@@ -2,6 +2,8 @@
 
 Generated from 171 scout-found + seed issues, then extended by a GUI gap-fill pass (+54 GUI issues; 221 total). Seeds marked 🌱 (tier/detail preserved). Tier substitution rule: high counts for medium/minor, medium counts for minor — never the reverse. Real bar per side: >=20 high, >=50 high+medium, >=100 total.
 
+**Stability pass:** see [`stability-pass.md`](stability-pass.md) for file-level verification of GUI-091/059/060/061/062/005, APP-013/018/037/071/024/073/019/022/009, and streaming (APP-008/044). `ledger.json` `status: done` is authoritative; the pass doc is for smoke/tests.
+
 ## APP
 
 ### High (25)

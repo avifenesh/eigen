@@ -284,6 +284,9 @@ func readSSEResponse(r io.Reader, wantID int) (rpcResponse, error) {
 		// other SSE fields (event:, id:, retry:) are ignored
 	}
 	if err := sc.Err(); err != nil {
+		if err == bufio.ErrTooLong {
+			err = fmt.Errorf("mcp: SSE response exceeded %d bytes (raise maxRPCLineBytes)", maxRPCLineBytes)
+		}
 		return rpcResponse{}, err
 	}
 	// Stream ended; try a final unterminated frame.

@@ -149,11 +149,12 @@
   "tier": "high",
   "kind": "bug",
   "title": "Large MCP responses (>8 MiB line) silently kill the whole client for the session",
-  "file": "internal/mcp/client.go:149-176 (readLoop)",
+  "file": "internal/mcp/client.go:172-207 (readLoop); internal/mcp/http.go (readSSEResponse)",
   "problem": "readLoop scans newline-delimited JSON-RPC with bufio.Scanner capped at an 8 MiB token. A single oversized response line (chrome_snapshot, full-page extracts, a base64 screenshot) makes sc.Scan() return false with bufio.ErrTooLong. The loop exits, the deferred block closes EVERY pending channel (so all in-flight AND future tool calls return connection closed), and sc.Err() is never inspected. The lazyClient still thinks it has a live *Client. One big tool result permanently bricks that MCP server for the session.",
   "fix": "After the loop, check sc.Err(): if bufio.ErrTooLong, surface a clear error. Raise the buffer cap (32-64 MiB) or switch to length-prefixed/streaming json.Decoder reads. Also mark lazyClient.client dead when the read loop ends so get() reconnects.",
   "seed": false,
-  "status": "done"
+  "status": "done",
+  "note": "64 MiB cap; readLoop+http SSE ErrTooLong; lazyClient reconnect. Tests: TestOversizedLineMarksClientDeadWithClearError, TestLazyClientReconnectsAfterReadLoopDies. See docs/issues/stability-pass.md."
  },
  {
   "id": "APP-014",
