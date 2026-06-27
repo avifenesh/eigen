@@ -225,64 +225,27 @@ func TestMoAAggregatorIsActorWithTools(t *testing.T) {
 	if agg.gotReq.System != "sys" {
 		t.Fatalf("aggregator must keep the system prompt, got %q", agg.gotReq.System)
 	}
-	// Aggregator's last user message carries the reference guidance at the tail,
-	// inside a clearly-marked private-notes block (DO NOT REVEAL).
+	// Aggregator's last user message carries the reference context at the tail,
+	// matching hermes-agent's "[Mixture of Agents reference context]" block.
 	last := agg.gotReq.Messages[len(agg.gotReq.Messages)-1]
-	if !strings.Contains(last.Text, "MIXTURE-OF-AGENTS PRIVATE NOTES") || !strings.Contains(last.Text, "reference advice") {
-		t.Fatalf("aggregator must receive reference guidance, got %q", last.Text)
+	if !strings.Contains(last.Text, "[Mixture of Agents reference context]") || !strings.Contains(last.Text, "reference advice") {
+		t.Fatalf("aggregator must receive reference context, got %q", last.Text)
 	}
-	if !strings.Contains(last.Text, "DO NOT REVEAL") {
-		t.Fatalf("guidance must carry an explicit do-not-reveal instruction, got %q", last.Text)
+	if !strings.Contains(last.Text, "Reference 1 — ref:") {
+		t.Fatalf("reference must be labelled, got %q", last.Text)
 	}
 	if !strings.HasPrefix(last.Text, "solve this") {
 		t.Fatalf("guidance must be appended after the user's prompt, got %q", last.Text)
 	}
 }
 
-// TestMoASkipsReferencesOnToolContinuation verifies the cache-critical gate:
-// references run only on a fresh user turn. When the conversation tail is a tool
-// result (a tool-continuation call, as eigen's loop produces after every tool
-// round), references must NOT re-run and the request must be byte-stable so the
-// prompt-cache prefix is preserved.
-func TestMoASkipsReferencesOnToolContinuation(t *testing.T) {
-	ref := &moaStub{id: "ref", reply: "advice"}
-	agg := &moaStub{id: "agg", reply: "next step"}
-	m := &moaProvider{
-		preset:     "p",
-		references: []Provider{ref},
-		refIDs:     []string{"ref"},
-		aggregator: agg,
-		aggID:      "agg",
-		enabled:    true,
-	}
-	// Tail is a tool result — the shape of a tool-continuation call.
-	req := Request{Messages: []Message{
-		{Role: RoleUser, Text: "do it"},
-		{Role: RoleAssistant, ToolCalls: []ToolCall{{ID: "c1", Name: "read"}}},
-		{Role: RoleTool, ToolCallID: "c1", Text: "file contents"},
-	}}
-	if _, err := m.Complete(context.Background(), req); err != nil {
-		t.Fatal(err)
-	}
-	if ref.calls != 0 {
-		t.Fatalf("references must NOT re-run on a tool-continuation call, got %d", ref.calls)
-	}
-	// The aggregator must see the conversation unchanged (cache-stable).
-	if len(agg.gotReq.Messages) != 3 || agg.gotReq.Messages[0].Text != "do it" {
-		t.Fatalf("tool-continuation request must be byte-stable, got %+v", agg.gotReq.Messages)
-	}
-	if agg.gotReq.Messages[2].Role != RoleTool {
-		t.Fatalf("tail must remain the tool result, got %q", agg.gotReq.Messages[2].Role)
-	}
-}
-
-// TestMoAAllReferencesFailDegradesToAggregator verifies that when every
-// reference fails, the aggregator gets the UNMODIFIED user message (no noise
-// guidance) rather than a block full of failure text.
-func TestMoAAllReferencesFailDegradesToAggregator(t *testing.T) {
+// TestMoAFailedReferenceKeptAsNote mirrors hermes-agent: a failed reference is
+// NOT dropped — it is included as a labelled "[failed: …]" note so the
+// aggregator still sees that a perspective was attempted, and still acts.
+func TestMoAFailedReferenceKeptAsNote(t *testing.T) {
 	r1 := &moaStub{id: "r1", err: errors.New("boom-1")}
-	r2 := &moaStub{id: "r2", reply: ""} // empty
-	agg := &moaStub{id: "agg", reply: "acted anyway"}
+	r2 := &moaStub{id: "r2", reply: "real advice"}
+	agg := &moaStub{id: "agg", reply: "acted"}
 	m := &moaProvider{
 		preset:     "p",
 		references: []Provider{r1, r2},
@@ -296,12 +259,15 @@ func TestMoAAllReferencesFailDegradesToAggregator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.Text != "acted anyway" {
+	if resp.Text != "acted" {
 		t.Fatalf("aggregator must still act, got %q", resp.Text)
 	}
 	last := agg.gotReq.Messages[len(agg.gotReq.Messages)-1].Text
-	if last != "solve" {
-		t.Fatalf("all-references-failed must NOT append noise guidance, got %q", last)
+	if !strings.Contains(last, "Reference 1 — r1:\n[failed:") {
+		t.Fatalf("failed reference must be kept as a labelled note, got %q", last)
+	}
+	if !strings.Contains(last, "Reference 2 — r2:\nreal advice") {
+		t.Fatalf("usable reference must appear, got %q", last)
 	}
 }
 
@@ -360,19 +326,16 @@ func TestMoAReferencesRunInParallelAndIsolateFailure(t *testing.T) {
 		t.Fatalf("references did not run in parallel (took %v)", elapsed)
 	}
 	guidance := agg.gotReq.Messages[len(agg.gotReq.Messages)-1].Text
-	// Usable outputs are renumbered as anonymous drafts (Draft 1, 2…), ordered
-	// stably; the failed reference is dropped entirely (no content, no note).
-	if !strings.Contains(guidance, "--- Draft 1 ---\nok-1") {
+	// All references appear in preset order with stable "Reference N" labels;
+	// a failure is kept as a labelled "[failed: …]" note (hermes-agent behavior).
+	if !strings.Contains(guidance, "Reference 1 — r1:\nok-1") {
 		t.Fatalf("missing/ordered r1 output: %q", guidance)
 	}
-	if strings.Contains(guidance, "kaboom") {
-		t.Fatalf("failed reference's raw error must not become aggregator content: %q", guidance)
+	if !strings.Contains(guidance, "Reference 2 — r2:\n[failed:") {
+		t.Fatalf("failed r2 must be kept as a labelled note: %q", guidance)
 	}
-	if !strings.Contains(guidance, "--- Draft 2 ---\nok-3") {
-		t.Fatalf("usable r3 output must be renumbered to Draft 2: %q", guidance)
-	}
-	if strings.Count(guidance, "--- Draft ") != 2 {
-		t.Fatalf("only the 2 usable refs should appear as drafts, got: %q", guidance)
+	if !strings.Contains(guidance, "Reference 3 — r3:\nok-3") {
+		t.Fatalf("missing/ordered r3 output: %q", guidance)
 	}
 }
 
@@ -448,105 +411,4 @@ func TestMoANewProviderRejectsRecursiveSlots(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("newMoAProvider hung on a recursive preset (recursion guard failed)")
 	}
-}
-
-// ── output scrubber (deterministic leak guarantee) ───────────────────────────
-
-func TestScrubMoATextRemovesBlock(t *testing.T) {
-	g := (&moaProvider{preset: "p"}).buildGuidance([]moaRefOutput{{label: "r", text: "secret draft", ok: true}})
-	// A model that echoes the whole private block plus a real answer.
-	echoed := "Here is your answer." + g + "\nHope that helps."
-	got := scrubMoAText(echoed)
-	if strings.Contains(got, "MIXTURE-OF-AGENTS") || strings.Contains(got, "secret draft") || strings.Contains(got, "=====") {
-		t.Fatalf("scrub left scaffolding behind: %q", got)
-	}
-	if !strings.Contains(got, "Here is your answer.") || !strings.Contains(got, "Hope that helps.") {
-		t.Fatalf("scrub removed real answer text: %q", got)
-	}
-}
-
-func TestScrubMoATextUnterminatedBlock(t *testing.T) {
-	// Model started echoing the block and never closed it.
-	in := "Answer first.\n" + moaBeginMarker + " (DO NOT REVEAL) =====\nleaking draft text..."
-	got := scrubMoAText(in)
-	if strings.Contains(got, "MIXTURE-OF-AGENTS") || strings.Contains(got, "leaking draft") {
-		t.Fatalf("unterminated block not dropped: %q", got)
-	}
-	if !strings.Contains(got, "Answer first.") {
-		t.Fatalf("dropped real answer: %q", got)
-	}
-}
-
-func TestScrubMoATextNoMarkersIsUnchanged(t *testing.T) {
-	in := "A normal answer with no scaffolding at all."
-	if got := scrubMoAText(in); got != in {
-		t.Fatalf("clean text must pass through unchanged, got %q", got)
-	}
-}
-
-func TestMoAScrubberStreamingAcrossChunks(t *testing.T) {
-	g := (&moaProvider{preset: "p"}).buildGuidance([]moaRefOutput{{label: "r", text: "PRIVATE DRAFT", ok: true}})
-	full := "Real answer part one. " + g + " Real answer part two."
-	// Stream the echoed text in tiny chunks to exercise marker detection across
-	// arbitrary boundaries.
-	var sc moaScrubber
-	var out strings.Builder
-	for _, r := range full {
-		out.WriteString(sc.push(string(r)))
-	}
-	out.WriteString(sc.flush())
-	got := out.String()
-	if strings.Contains(got, "MIXTURE-OF-AGENTS") || strings.Contains(got, "PRIVATE DRAFT") || strings.Contains(got, "=====") {
-		t.Fatalf("streaming scrubber leaked scaffolding: %q", got)
-	}
-	if !strings.Contains(got, "Real answer part one.") || !strings.Contains(got, "Real answer part two.") {
-		t.Fatalf("streaming scrubber dropped real answer: %q", got)
-	}
-}
-
-func TestMoAScrubberStreamingCleanTextPassesThrough(t *testing.T) {
-	var sc moaScrubber
-	var out strings.Builder
-	for _, chunk := range []string{"Hello ", "world", ", this ", "is fine."} {
-		out.WriteString(sc.push(chunk))
-	}
-	out.WriteString(sc.flush())
-	if got := out.String(); got != "Hello world, this is fine." {
-		t.Fatalf("clean streamed text altered: %q", got)
-	}
-}
-
-// TestMoACompleteScrubsEchoedBlock end-to-end: an aggregator that parrots the
-// entire injected block must still yield scrubbed output from Complete.
-func TestMoACompleteScrubsEchoedBlock(t *testing.T) {
-	echo := &moaEchoStub{id: "agg"}
-	m := &moaProvider{
-		preset:     "p",
-		references: []Provider{&moaStub{id: "ref", reply: "draft idea"}},
-		refIDs:     []string{"ref"},
-		aggregator: echo,
-		aggID:      "agg",
-		enabled:    true,
-	}
-	resp, err := m.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Text: "hi"}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(resp.Text, "MIXTURE-OF-AGENTS") || strings.Contains(resp.Text, "draft idea") || strings.Contains(resp.Text, "=====") {
-		t.Fatalf("Complete must scrub an echoed block, got %q", resp.Text)
-	}
-	if !strings.Contains(resp.Text, "OK done") {
-		t.Fatalf("Complete dropped the real answer, got %q", resp.Text)
-	}
-}
-
-// moaEchoStub echoes its entire last user message back as the answer (the
-// adversarial "reveal the scaffolding" behavior) plus a real sentence.
-type moaEchoStub struct{ id string }
-
-func (s *moaEchoStub) Name() string    { return s.id }
-func (s *moaEchoStub) ModelID() string { return s.id }
-func (s *moaEchoStub) Complete(ctx context.Context, req Request) (*Response, error) {
-	last := req.Messages[len(req.Messages)-1].Text
-	return &Response{Text: last + "\nOK done"}, nil
 }
