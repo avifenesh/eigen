@@ -30,9 +30,19 @@ type CouncilConfig struct {
 	MaxRounds int // critique/revise rounds (default 3)
 	// CallTimeout bounds each ADVERSARY model call (not the author's). A hanging
 	// adversary (e.g. a stalled endpoint) is treated as a failure so the council
-	// falls through to the next vendor instead of blocking forever. The author's
-	// calls are unbounded — it's the main model doing the real work. 0 = default.
+	// falls through to the next vendor instead of blocking forever. 0 = default.
 	CallTimeout time.Duration
+	// AuthorFallbacks are alternate AUTHORS, tried in order when the primary
+	// Author fails (or times out) producing the initial draft. Without these a
+	// flaky author endpoint (e.g. a stalled mantle GPT) aborts the whole plan
+	// tool; with them the draft degrades to another model instead. Each is a
+	// provider+id pair, like the adversary Fallbacks.
+	AuthorFallbacks []AdversaryOption
+	// AuthorTimeout bounds each AUTHOR call (draft + revise). The author does the
+	// real work, so this is generous; it exists only so a genuinely hung
+	// endpoint fails fast enough to fall through to AuthorFallbacks rather than
+	// blocking forever. 0 = default.
+	AuthorTimeout time.Duration
 }
 
 // AdversaryOption is one candidate adversary (provider + model id).
@@ -57,6 +67,8 @@ type CouncilResult struct {
 	CrossVendor     bool          // author and adversary were different vendors
 	AdversaryFailed bool          // every adversary errored before a first critique
 	AdversaryID     string        // the adversary that actually critiqued
+	AuthorID        string        // the author that actually drafted (may be a fallback)
+	AuthorFellBack  bool          // the primary author failed; a fallback drafted instead
 	Dissent         string        // adversary's remaining objections if not converged
 	Transcript      []CouncilTurn // full debate (author draft, critiques, revisions)
 }
@@ -106,6 +118,13 @@ func Council(ctx context.Context, cfg CouncilConfig, task, taskContext string) (
 		// the next vendor.
 		timeout = 45 * time.Second
 	}
+	authorTimeout := cfg.AuthorTimeout
+	if authorTimeout <= 0 {
+		// The author does the real work, so this is generous — it only exists so
+		// a genuinely hung endpoint fails in time to fall through to a fallback
+		// author rather than blocking the whole plan tool forever.
+		authorTimeout = 120 * time.Second
+	}
 	res := &CouncilResult{}
 
 	ctxBlock := ""
@@ -113,15 +132,53 @@ func Council(ctx context.Context, cfg CouncilConfig, task, taskContext string) (
 		ctxBlock = "\nCONTEXT:\n" + strings.TrimSpace(taskContext) + "\n"
 	}
 
-	// Round 0: the author drafts the initial plan.
-	plan, err := complete(ctx, 0, cfg.Author,
-		"You write precise, pragmatic engineering plans.",
-		fmt.Sprintf(councilAuthorDraft, authorVendorLabel(cfg.AuthorID), strings.TrimSpace(task), ctxBlock))
-	if err != nil {
-		return nil, fmt.Errorf("council: author draft: %w", err)
+	// Build the ordered author list: primary first, then fallbacks. A flaky
+	// primary author (e.g. a stalled mantle GPT timing out) must degrade to
+	// another model, not abort the plan tool with "council: author draft: …".
+	authors := []AdversaryOption{}
+	if cfg.Author != nil {
+		authors = append(authors, AdversaryOption{Provider: cfg.Author, ID: cfg.AuthorID})
 	}
+	authors = append(authors, cfg.AuthorFallbacks...)
+
+	// Round 0: the first author that produces a draft wins. Each call is bounded
+	// by authorTimeout so a hang falls through to the next candidate.
+	var (
+		plan       string
+		draftErr   error
+		usedAuthor AdversaryOption
+		drafted    bool
+	)
+	for i, a := range authors {
+		if a.Provider == nil {
+			continue
+		}
+		p, err := complete(ctx, authorTimeout, a.Provider,
+			"You write precise, pragmatic engineering plans.",
+			fmt.Sprintf(councilAuthorDraft, authorVendorLabel(a.ID), strings.TrimSpace(task), ctxBlock))
+		if err != nil {
+			draftErr = err
+			if ctx.Err() != nil {
+				break // caller's deadline is gone — don't try more authors
+			}
+			continue // this author is down; try the next one
+		}
+		plan, usedAuthor, drafted = p, a, true
+		res.AuthorFellBack = i > 0
+		break
+	}
+	if !drafted {
+		if draftErr == nil {
+			draftErr = fmt.Errorf("no author model configured")
+		}
+		return nil, fmt.Errorf("council: author draft: %w", draftErr)
+	}
+	// From here the "author" is whichever model actually drafted (a fallback
+	// revises its own plan, not the dead primary).
+	author, authorID := usedAuthor.Provider, usedAuthor.ID
+	res.AuthorID = authorID
 	res.Plan = plan
-	res.Transcript = append(res.Transcript, CouncilTurn{Role: "author", Model: cfg.AuthorID, Round: 0, Text: plan})
+	res.Transcript = append(res.Transcript, CouncilTurn{Role: "author", Model: authorID, Round: 0, Text: plan})
 
 	// Build the ordered adversary list: primary first, then fallbacks.
 	advs := []AdversaryOption{}
@@ -142,7 +199,7 @@ func Council(ctx context.Context, cfg CouncilConfig, task, taskContext string) (
 	for _, a := range advs {
 		critique, err := complete(ctx, timeout, a.Provider,
 			"You are an independent, critical senior reviewer. Concrete over vague.",
-			fmt.Sprintf(councilCritique, authorVendorLabel(a.ID), authorVendorLabel(cfg.AuthorID), res.Plan))
+			fmt.Sprintf(councilCritique, authorVendorLabel(a.ID), authorVendorLabel(authorID), res.Plan))
 		if err != nil {
 			continue // this adversary is down; try the next vendor
 		}
@@ -155,7 +212,7 @@ func Council(ctx context.Context, cfg CouncilConfig, task, taskContext string) (
 		return res, nil
 	}
 	res.AdversaryID = adv.ID
-	res.CrossVendor = VendorOf(cfg.AuthorID) != VendorOf(adv.ID)
+	res.CrossVendor = VendorOf(authorID) != VendorOf(adv.ID)
 
 	critique := firstCritique
 	for round := 1; round <= rounds; round++ {
@@ -163,7 +220,7 @@ func Council(ctx context.Context, cfg CouncilConfig, task, taskContext string) (
 			var err error
 			critique, err = complete(ctx, timeout, adv.Provider,
 				"You are an independent, critical senior reviewer. Concrete over vague.",
-				fmt.Sprintf(councilCritique, authorVendorLabel(adv.ID), authorVendorLabel(cfg.AuthorID), res.Plan))
+				fmt.Sprintf(councilCritique, authorVendorLabel(adv.ID), authorVendorLabel(authorID), res.Plan))
 			if err != nil {
 				res.Dissent = "adversary unavailable mid-loop: " + err.Error()
 				res.Rounds = round - 1
@@ -178,8 +235,10 @@ func Council(ctx context.Context, cfg CouncilConfig, task, taskContext string) (
 			return res, nil
 		}
 
-		// Author revises to address the critique.
-		revised, err := complete(ctx, 0, cfg.Author,
+		// Author revises to address the critique. Bounded by authorTimeout so a
+		// hang here degrades to the current plan (with dissent) rather than
+		// blocking; revise failures already fall through gracefully below.
+		revised, err := complete(ctx, authorTimeout, author,
 			"You write precise, pragmatic engineering plans and take critique seriously.",
 			fmt.Sprintf(councilRevise, authorVendorLabel(adv.ID), critique, res.Plan))
 		if err != nil {
@@ -188,7 +247,7 @@ func Council(ctx context.Context, cfg CouncilConfig, task, taskContext string) (
 			return res, nil
 		}
 		res.Plan = revised
-		res.Transcript = append(res.Transcript, CouncilTurn{Role: "author", Model: cfg.AuthorID, Round: round, Text: revised})
+		res.Transcript = append(res.Transcript, CouncilTurn{Role: "author", Model: authorID, Round: round, Text: revised})
 		res.Rounds = round
 
 		// Last round and still revising → capture the standing dissent.
@@ -278,6 +337,9 @@ func FormatCouncil(res *CouncilResult) string {
 		fmt.Fprintf(&b, "Plan (hardened over %d cross-vendor round(s); adversary still has objections):\n\n", res.Rounds)
 	}
 	b.WriteString(strings.TrimSpace(res.Plan))
+	if res.AuthorFellBack && res.AuthorID != "" {
+		fmt.Fprintf(&b, "\n\n(note: the primary author model was unavailable; this plan was drafted by the fallback author %s.)", res.AuthorID)
+	}
 	if res.Dissent != "" && !res.AdversaryFailed {
 		b.WriteString("\n\n---\nUnresolved adversary objections (judge before executing):\n")
 		b.WriteString(strings.TrimSpace(res.Dissent))
