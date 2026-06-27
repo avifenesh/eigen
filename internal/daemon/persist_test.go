@@ -89,6 +89,7 @@ func TestPersistAcrossDaemonRestart(t *testing.T) {
 	// the turn's content, so the restart reads a complete file deterministically.
 	waitTranscript(t, transcriptPath(persistDir, id), "remember me")
 	c1.Close()
+	h1.Shutdown()
 	if err := srv1.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -104,6 +105,7 @@ func TestPersistAcrossDaemonRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	go srv2.Serve()
+	defer h2.Shutdown()
 	defer srv2.Close()
 
 	c2, _ := Dial(sock)
