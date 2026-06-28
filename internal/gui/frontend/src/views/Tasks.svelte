@@ -16,6 +16,7 @@
   import Badge from "$lib/components/Badge.svelte";
   import StatusDot from "$lib/components/StatusDot.svelte";
   import CodeBlock from "$lib/components/CodeBlock.svelte";
+  import Markdown from "$lib/components/Markdown.svelte";
   import VirtualList from "$lib/components/VirtualList.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
 
@@ -386,7 +387,7 @@
     <p class="sheet__task">{openTask.task}</p>
     {#if openTask.result}
       <div class="sheet__section-label">result</div>
-      <div class="sheet__result selectable">{openTask.result}</div>
+      <div class="sheet__result selectable sheet__result--md"><Markdown source={openTask.result} /></div>
     {/if}
     <div class="sheet__section-label">transcript</div>
     <div class="sheet__body selectable">
@@ -407,15 +408,22 @@
                 {#if m.toolError}<Badge tone="error">error</Badge>{/if}
               </div>
               {#if m.reasoning}
-                <div class="tx__reasoning"><span class="tx__tag">reasoning</span>{m.reasoning}</div>
+                <div class="tx__reasoning">
+                  <span class="tx__tag">reasoning</span>
+                  <div class="tx__md"><Markdown source={m.reasoning} /></div>
+                </div>
               {/if}
               {#if m.text}
-                <div class="tx__text">{m.text}</div>
+                {#if m.role === "assistant" || m.role === "user" || m.role === "system"}
+                  <div class="tx__text tx__text--md"><Markdown source={m.text} /></div>
+                {:else}
+                  <div class="tx__text">{m.text}</div>
+                {/if}
               {/if}
               {#each m.toolCalls as c (c.id || c.name)}
                 <div class="tx__call">
                   <span class="tx__call-name">{c.name || "tool"}</span>
-                  {#if c.args}<pre class="tx__call-args">{c.args}</pre>{/if}
+                  {#if c.args}<div class="tx__call-args"><CodeBlock code={c.args} lang="json" /></div>{/if}
                 </div>
               {/each}
               {#if m.raw}
@@ -703,6 +711,13 @@
     max-height: 200px;
     overflow-y: auto;
   }
+  .sheet__result--md {
+    white-space: normal;
+    line-height: var(--lh-prose);
+  }
+  .sheet__result--md :global(.md) {
+    font-size: var(--fs-body-sm);
+  }
   .sheet__body {
     flex: 1;
     overflow-y: auto;
@@ -763,15 +778,27 @@
     color: var(--text-muted);
     font-size: var(--fs-body-sm);
     line-height: var(--lh-snug);
-    white-space: pre-wrap;
     word-break: break-word;
+  }
+  .tx__md :global(.md) {
+    font-size: inherit;
+    color: inherit;
+    line-height: var(--lh-relaxed);
+  }
+  .tx__md :global(.md-p) {
+    margin: var(--sp-2) 0;
   }
   .tx__text {
     color: var(--text-primary);
     font-size: var(--fs-body-sm);
     line-height: var(--lh-snug);
-    white-space: pre-wrap;
     word-break: break-word;
+  }
+  .tx__text--md {
+    line-height: var(--lh-prose);
+  }
+  .tx__text--md :global(.md) {
+    font-size: var(--fs-body-sm);
   }
   .tx__call {
     display: flex;
@@ -782,7 +809,17 @@
     font: var(--fw-medium) var(--fs-code-sm) / 1 var(--font-mono);
     color: var(--info);
   }
-  .tx__call-args,
+  .tx__call-args {
+    margin: 0;
+    max-height: 280px;
+    overflow: auto;
+  }
+  .tx__call-args :global(.code) {
+    border-radius: var(--r-xs);
+  }
+  .tx__call-args :global(.code__body) {
+    max-height: 240px;
+  }
   .tx__raw {
     margin: 0;
     background: var(--syn-bg);

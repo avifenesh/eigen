@@ -16,7 +16,7 @@
     }
     let toks: TokenT[];
     try {
-      toks = markedLib.lexer(src, { gfm: true, breaks: false });
+      toks = markedLib.lexer(src, { gfm: true, breaks: true });
     } catch {
       toks = [];
     }
@@ -338,11 +338,11 @@
   .md :global(.md-code) {
     font-family: var(--font-mono);
     font-size: var(--fs-code-sm);
-    background: var(--bg-inset);
+    background: color-mix(in srgb, var(--syn-bg) 55%, var(--bg-inset));
     border: 1px solid var(--border-hairline);
     border-radius: var(--r-xs);
     padding: 0.08em 0.36em;
-    color: var(--syn-text);
+    color: var(--syn-string);
     white-space: break-spaces;
     word-break: break-word;
   }

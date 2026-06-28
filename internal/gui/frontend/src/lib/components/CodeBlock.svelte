@@ -106,6 +106,9 @@
     "g",
   );
   const NUMBER = /\b(0x[0-9a-fA-F]+|\d+(?:\.\d+)?)\b/g;
+  const FUNC = /\b([A-Za-z_][\w]*)\s*(?=\()/g;
+  const BUILTIN =
+    /\b(?:console|print|println|len|range|str|int|float|bool|typeof|instanceof|undefined|null|true|false|self|this|super|import|from|as|package|fmt|Error|panic|make|new|delete|sizeof|await|async|yield|raise|except|pass|lambda)\b/g;
 
   function esc(s: string): string {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -133,7 +136,9 @@
 
   function tintPlain(seg: string): string {
     let s = esc(seg);
+    s = s.replace(BUILTIN, '<span class="t-builtin">$&</span>');
     s = s.replace(KEYWORDS, '<span class="t-kw">$&</span>');
+    s = s.replace(FUNC, '<span class="t-func">$1</span>');
     s = s.replace(NUMBER, '<span class="t-num">$&</span>');
     return s;
   }
@@ -301,6 +306,12 @@
   .code__body :global(.t-comment) {
     color: var(--syn-comment);
     font-style: italic;
+  }
+  .code__body :global(.t-func) {
+    color: var(--syn-func);
+  }
+  .code__body :global(.t-builtin) {
+    color: var(--syn-builtin);
   }
   /* REDUCED MOTION — the only animated surfaces here are the copy + expander
      hover transitions; drop them when the user asks for less movement. */

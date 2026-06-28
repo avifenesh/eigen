@@ -858,6 +858,31 @@
     const t = (text ?? "").trim();
     return t === "interrupted" || t.startsWith("error:") ? "error" : "info";
   }
+
+  /** Lightweight live-stream formatting: escape HTML, then tint inline `code` and **bold**. */
+  function escHtml(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function formatLiveProse(raw: string): string {
+    const src = raw ?? "";
+    if (!src) return "";
+    const parts = src.split(/(```[\s\S]*?```|`[^`\n]+`|\*\*[^*\n]+\*\*)/g);
+    let out = "";
+    for (const p of parts) {
+      if (!p) continue;
+      if (p.startsWith("```") && p.endsWith("```")) {
+        const inner = p.slice(3, -3).replace(/^\w+\n/, "");
+        out += `<pre class="msg__live-code">${escHtml(inner)}</pre>`;
+      } else if (p.startsWith("`") && p.endsWith("`") && p.length > 2) {
+        out += `<code class="msg__live-inline">${escHtml(p.slice(1, -1))}</code>`;
+      } else if (p.startsWith("**") && p.endsWith("**") && p.length > 4) {
+        out += `<strong>${escHtml(p.slice(2, -2))}</strong>`;
+      } else {
+        out += escHtml(p);
+      }
+    }
+    return out;
+  }
 </script>
 
 {#snippet attachedImages(images: ImageDTO[] | undefined)}
@@ -1088,7 +1113,9 @@
                   {:else if block.kind === "reasoning"}
                     <div class="msg msg--reasoning">
                       <span class="msg__tag">reasoning</span>
-                      {block.text}
+                      <div class="msg__reasoning-body">
+                        <Markdown source={block.text} />
+                      </div>
                     </div>
                   {:else}
                     <!-- Completed assistant prose renders as Markdown (sans; fenced
@@ -1131,10 +1158,14 @@
                 {#if live.kind === "reasoning"}
                   <div class="msg msg--reasoning msg--live">
                     <span class="msg__tag">reasoning</span>
-                    {live.text}<span class="caret" aria-hidden="true"></span>
+                    <div class="msg__reasoning-body msg__reasoning-body--live">
+                      {live.text}<span class="caret" aria-hidden="true"></span>
+                    </div>
                   </div>
                 {:else}
-                  <div class="msg msg--text msg--live">{live.text}<span class="caret" aria-hidden="true"></span></div>
+                  <div class="msg msg--text msg--live">
+                    <div class="msg__live-prose">{@html formatLiveProse(live.text)}<span class="caret" aria-hidden="true"></span></div>
+                  </div>
                 {/if}
               </div>
             </div>
@@ -1929,14 +1960,34 @@
   .msg {
     font: var(--fw-regular) var(--fs-body) / var(--lh-prose) var(--font-sans);
     color: var(--text-primary);
-    white-space: pre-wrap;
     word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .msg--note,
+  .msg__reasoning-body--live {
+    white-space: pre-wrap;
   }
   .msg--reasoning {
     color: var(--text-muted);
     font-size: var(--fs-body-sm);
     border-left: 2px solid var(--border-subtle);
     padding-left: var(--sp-5);
+  }
+  .msg__reasoning-body {
+    margin-top: var(--sp-2);
+    color: var(--text-muted);
+    font-size: var(--fs-body-sm);
+  }
+  .msg__reasoning-body :global(.md) {
+    font-size: inherit;
+    color: inherit;
+    line-height: var(--lh-relaxed);
+  }
+  .msg__reasoning-body :global(.md-p) {
+    margin: var(--sp-3) 0;
+  }
+  .msg__reasoning-body :global(.md-code) {
+    font-size: var(--fs-code-sm);
   }
   .msg--note {
     color: var(--text-secondary);
@@ -1969,6 +2020,31 @@
      so it never competes with the text at rest. */
   .msg--text {
     position: relative;
+    white-space: normal;
+  }
+  .msg__live-prose {
+    white-space: pre-wrap;
+    line-height: var(--lh-prose);
+  }
+  .msg__live-prose :global(.msg__live-inline) {
+    font-family: var(--font-mono);
+    font-size: var(--fs-code-sm);
+    background: var(--bg-inset);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--r-xs);
+    padding: 0.06em 0.32em;
+    color: var(--syn-text);
+  }
+  .msg__live-prose :global(.msg__live-code) {
+    margin: var(--sp-4) 0;
+    padding: var(--sp-4) var(--sp-5);
+    background: var(--syn-bg);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--r-sm);
+    font: var(--fw-regular) var(--fs-code-sm) / var(--lh-code) var(--font-mono);
+    color: var(--syn-text);
+    overflow-x: auto;
+    white-space: pre;
   }
   .msg--user {
     color: var(--text-secondary);
