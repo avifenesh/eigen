@@ -62,6 +62,14 @@
   // an $effect so the reconnect callback is removed if this component unmounts.
   $effect(() => daemon.onReconnect(() => sessions.refresh()));
 
+  // Poll session list while online so idle transitions on background chats are
+  // noticed even when only one chat pump is subscribed.
+  $effect(() => {
+    if (daemon.status !== "online") return;
+    const t = setInterval(() => void sessions.refresh(), 4000);
+    return () => clearInterval(t);
+  });
+
   // Honor prefers-reduced-motion: Svelte JS transitions don't check it on their
   // own, so collapse the route fly to 0ms for reduced-motion users.
   const reduceMotion =

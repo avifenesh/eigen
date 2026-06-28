@@ -7,6 +7,7 @@
   import { Bridge } from "$lib/bridge";
   import { daemon } from "$lib/stores/daemon.svelte";
   import { sessions } from "$lib/stores/sessions.svelte";
+  import { sessionUnread } from "$lib/stores/sessionUnread.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { voice } from "$lib/stores/voice.svelte";
   import { router } from "$lib/router.svelte";
@@ -59,6 +60,7 @@
       loading = false;
       return;
     }
+    sessionUnread.markRead(id);
     // Drop the PRIOR session's snapshot before we attach to this id. Until the
     // State() round-trip below lands, sess belongs to the session we just left
     // (or is null on first mount) — rendering dock values or deriving isEmpty

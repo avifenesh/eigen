@@ -86,6 +86,8 @@ export const Bridge = {
   // streaming
   Subscribe: (id: string): Promise<void> => B.Subscribe(id),
   Unsubscribe: (id: string): Promise<void> => B.Unsubscribe(id),
+  NotifyChatReply: (sessionID: string, title: string): Promise<void> =>
+    B.NotifyChatReply(sessionID, title),
   // sandbox
   AddDir: (id: string, path: string): Promise<string> => B.AddDir(id, path),
   KillShell: (id: string, shellID: string): Promise<boolean> => B.KillShell(id, shellID),

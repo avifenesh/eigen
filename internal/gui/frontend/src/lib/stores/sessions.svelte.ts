@@ -2,6 +2,7 @@
 // Refreshed on demand and whenever the daemon reconnects. Cheap: one List RPC.
 import { Bridge } from "$lib/bridge";
 import { errText } from "$lib/errors";
+import { onSessionsListUpdated } from "$lib/stores/sessionReplyWatch.svelte";
 import type { SessionInfoDTO } from "$lib/types";
 
 function createSessions() {
@@ -24,6 +25,7 @@ function createSessions() {
       const next = await Bridge.Sessions();
       if (seq !== loadSeq) return; // a newer refresh superseded this one
       list = next;
+      onSessionsListUpdated(next);
       error = null;
       loaded = true;
     } catch (e) {

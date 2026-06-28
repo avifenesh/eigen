@@ -4,6 +4,7 @@
   // surface live counts (sessions, running turns, background tasks).
   import { router, type Route } from "$lib/router.svelte";
   import { sessions } from "$lib/stores/sessions.svelte";
+  import { sessionUnread } from "$lib/stores/sessionUnread.svelte";
   import { daemon } from "$lib/stores/daemon.svelte";
   import { feed } from "$lib/stores/feed.svelte";
   import { ui } from "$lib/stores/ui.svelte";
@@ -22,6 +23,24 @@
   const running = $derived(
     sessions.list.filter((s) => s.status === "working" || s.status === "approval"),
   );
+  /** Running + idle sessions with an unread reply (stay visible after turn ends). */
+  const chatRailSessions = $derived.by(() => {
+    const ids = new Set<string>();
+    const out: typeof sessions.list = [];
+    for (const s of running) {
+      if (!ids.has(s.id)) {
+        ids.add(s.id);
+        out.push(s);
+      }
+    }
+    for (const s of sessions.list) {
+      if (sessionUnread.isUnread(s.id) && !ids.has(s.id)) {
+        ids.add(s.id);
+        out.push(s);
+      }
+    }
+    return out;
+  });
   // The session the Chat view currently shows (route param), so the matching
   // sub-row reads as selected.
   const activeSession = $derived(router.route === "chat" ? router.param : undefined);
@@ -74,7 +93,7 @@
   // not the raw session total — the rail nudges toward action.
   function badge(route: Route): number {
     if (route === "home") return feed.actOn.length;
-    if (route === "chat") return daemon.stats?.running_turns ?? 0;
+    if (route === "chat") return Math.max(daemon.stats?.running_turns ?? 0, sessionUnread.count);
     if (route === "tasks") return daemon.stats?.bg_tasks ?? 0;
     if (route === "live") return sessions.list.filter((s) => s.status === "working" || s.status === "approval").length;
     if (route === "sessions") return sessions.count;
@@ -149,17 +168,24 @@
           <!-- RUNNING SESSIONS — a live sub-list under Chat so several active
                sessions can be navigated at once. Only when expanded + there are
                running sessions; the selected one (Chat's current param) is lit. -->
-          {#if item.route === "chat" && !collapsed && running.length > 0}
-            <div class="rail__subs" role="group" aria-label="Running sessions">
-              {#each running as s (s.id)}
+          {#if item.route === "chat" && !collapsed && chatRailSessions.length > 0}
+            <div class="rail__subs" role="group" aria-label="Active and unread chats">
+              {#each chatRailSessions as s (s.id)}
+                {@const unread = sessionUnread.isUnread(s.id)}
                 <button
                   class="rail__sub"
                   class:rail__sub--active={activeSession === s.id}
+                  class:rail__sub--unread={unread}
                   title={shortTitle(s)}
                   onclick={() => router.go("chat", s.id)}
                 >
-                  <span class="rail__sub-dot" class:rail__sub-dot--approval={s.status === "approval"}></span>
+                  <span
+                    class="rail__sub-dot"
+                    class:rail__sub-dot--approval={s.status === "approval"}
+                    class:rail__sub-dot--unread={unread && s.status === "idle"}
+                  ></span>
                   <span class="rail__sub-label">{shortTitle(s)}</span>
+                  {#if unread}<span class="rail__sub-unread" aria-label="Unread reply">●</span>{/if}
                 </button>
               {/each}
             </div>
@@ -482,6 +508,21 @@
   }
   .rail__sub-dot--approval {
     background: var(--warn);
+  }
+  .rail__sub-dot--unread {
+    background: var(--brand-bright);
+    animation: none;
+  }
+  .rail__sub--unread .rail__sub-label {
+    font-weight: var(--fw-semibold);
+    color: var(--text-primary);
+  }
+  .rail__sub-unread {
+    flex: none;
+    font-size: 8px;
+    line-height: 1;
+    color: var(--brand-bright);
+    margin-left: auto;
   }
   .rail__sub-label {
     flex: 1;

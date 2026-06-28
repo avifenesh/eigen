@@ -6,6 +6,7 @@
   // Header: "Prune empty" (drops zero-turn sessions) + a total count. Reuses the
   // shared `sessions` store; refreshed on mount and after any mutation.
   import { sessions } from "$lib/stores/sessions.svelte";
+  import { sessionUnread } from "$lib/stores/sessionUnread.svelte";
   import { daemon } from "$lib/stores/daemon.svelte";
   import { router } from "$lib/router.svelte";
   import { Bridge } from "$lib/bridge";
@@ -160,10 +161,18 @@
   {:else}
     <div class="sx__list">
       {#each visible as s (s.id)}
-        <div class="srow" class:srow--working={s.status === "working"} class:srow--approval={s.status === "approval"}>
+        <div
+          class="srow"
+          class:srow--working={s.status === "working"}
+          class:srow--approval={s.status === "approval"}
+          class:srow--unread={sessionUnread.isUnread(s.id)}
+        >
           <StatusDot state={sessionDot(s.status)} size={7} pulse={s.status === "working" || s.status === "approval"} />
           <button class="srow__main" onclick={() => resume(s)} title="Resume session">
-            <span class="srow__title">{s.title || "untitled session"}</span>
+            <span class="srow__title">
+              {s.title || "untitled session"}
+              {#if sessionUnread.isUnread(s.id)}<span class="srow__unread" title="Unread reply"> ●</span>{/if}
+            </span>
             <span class="srow__dir" title={s.dir}>{base(s.dir)}</span>
           </button>
           {#if s.model}<Badge tone="neutral" truncate>{s.model}</Badge>{/if}
@@ -308,6 +317,13 @@
   }
   .srow--approval {
     border-left-color: var(--warn);
+  }
+  .srow--unread .srow__title {
+    font-weight: var(--fw-semibold);
+  }
+  .srow__unread {
+    color: var(--brand-bright);
+    font-size: var(--fs-micro);
   }
   .srow__main {
     flex: 1;
