@@ -217,6 +217,22 @@
     }
   }
 
+  let removing = $state(false);
+  async function removeInstalled(name: string) {
+    if (!confirm(`Remove skill “${name}” from ~/.eigen/skills?`)) return;
+    removing = true;
+    try {
+      await Bridge.RemoveSkill(name);
+      toasts.success(`removed “${name}”`);
+      closePreview();
+      await load();
+    } catch (e) {
+      toasts.error(errText(e));
+    } finally {
+      removing = false;
+    }
+  }
+
   function sourceTone(src: string): "brand" | "info" | "neutral" {
     return src === "user" ? "brand" : src === "project" ? "info" : "neutral";
   }
@@ -407,7 +423,14 @@
         <h2 class="sheet__title">{openSkill.name}</h2>
         <Badge tone={sourceTone(openSkill.source)}>{openSkill.source}</Badge>
       </div>
-      <Button variant="icon" size="md" title="Close" onclick={closePreview}>✕</Button>
+      <div class="sheet__head-actions">
+        {#if openSkill.source === "user"}
+          <Button variant="ghost" size="sm" loading={removing} onclick={() => removeInstalled(openSkill.name)}>
+            Remove
+          </Button>
+        {/if}
+        <Button variant="icon" size="md" title="Close" onclick={closePreview}>✕</Button>
+      </div>
     </header>
     <p class="sheet__desc">{openSkill.description}</p>
     <div class="sheet__path selectable">{openSkill.path}</div>
@@ -836,6 +859,12 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--sp-5);
+  }
+  .sheet__head-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    flex: none;
   }
   .sheet__title-wrap {
     display: flex;

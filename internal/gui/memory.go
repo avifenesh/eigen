@@ -76,97 +76,15 @@ type MemoryScopeRefDTO struct {
 // append-only store) falls back to blank-line splitting so it still renders as
 // cards rather than one wall of text.
 func splitNotes(content string) []MemoryNoteDTO {
-	content = strings.TrimSpace(content)
-	if content == "" {
+	sections := memory.SplitNotes(content)
+	if len(sections) == 0 {
 		return nil
-	}
-	sections := splitOnTopLevelHeadings(content)
-	if sections == nil {
-		// No "## " headings — fall back to blank-line chunks, dropping a leading
-		// "# " file title.
-		sections = splitOnBlankLines(content)
 	}
 	out := make([]MemoryNoteDTO, 0, len(sections))
 	for i, s := range sections {
 		out = append(out, MemoryNoteDTO{Index: i, Text: s})
 	}
-	if len(out) == 0 {
-		return nil
-	}
 	return out
-}
-
-// splitOnTopLevelHeadings splits content on lines that begin a top-level "## "
-// section, returning each heading together with the body that follows it (up to
-// the next "## " line). Any preamble before the first "## " — including a
-// leading "# " file title — is dropped. Returns nil when content has no "## "
-// heading line, so the caller can fall back to blank-line splitting.
-func splitOnTopLevelHeadings(content string) []string {
-	lines := strings.Split(content, "\n")
-	var sections []string
-	var cur []string
-	flush := func() {
-		if len(cur) == 0 {
-			return
-		}
-		if s := strings.TrimSpace(strings.Join(cur, "\n")); s != "" {
-			sections = append(sections, s)
-		}
-		cur = nil
-	}
-	started := false
-	for _, ln := range lines {
-		if strings.HasPrefix(ln, "## ") {
-			started = true
-			flush() // close the prior section (or drop the preamble on first hit)
-			cur = []string{ln}
-			continue
-		}
-		if started {
-			cur = append(cur, ln)
-		}
-	}
-	if !started {
-		return nil
-	}
-	flush()
-	return sections
-}
-
-// splitOnBlankLines breaks content into blank-line-separated chunks, dropping
-// empties and a leading top-level ATX "# " title. Used for un-consolidated
-// stores that have no "## " section headings yet.
-func splitOnBlankLines(content string) []string {
-	chunks := strings.Split(content, "\n\n")
-	out := make([]string, 0, len(chunks))
-	skippedHeading := false
-	for _, c := range chunks {
-		c = strings.TrimSpace(c)
-		if c == "" {
-			continue
-		}
-		// Drop a leading top-level heading: the first non-empty chunk when it is
-		// solely a single ATX "# " line (the file's title), which would otherwise
-		// render as a card whose only content is the heading.
-		if !skippedHeading {
-			skippedHeading = true
-			if isTopLevelHeading(c) {
-				continue
-			}
-		}
-		out = append(out, c)
-	}
-	return out
-}
-
-// isTopLevelHeading reports whether chunk is solely a single top-level ATX
-// heading line ("# ..."). A "## " (or deeper) heading, or a "# " line followed
-// by body text, is not treated as the droppable file title.
-func isTopLevelHeading(chunk string) bool {
-	if strings.ContainsRune(chunk, '\n') {
-		return false
-	}
-	return strings.HasPrefix(chunk, "# ")
 }
 
 func scopeDTO(s *memory.Store, scope string) *MemoryScopeDTO {
@@ -474,6 +392,25 @@ func (b *Bridge) RemoveBan(scope, title string) (bool, error) {
 		return false, err
 	}
 	return s.RemoveBan(title)
+}
+
+// RemoveMemoryNote drops one curated MEMORY.md note card by index (same order as
+// MemoryForScope notes). Rewrites with a snapshot backup.
+func (b *Bridge) RemoveMemoryNote(scope string, index int) error {
+	s, _, err := b.openMemoryScope(scope)
+	if err != nil {
+		return err
+	}
+	return s.RemoveCuratedNote(index)
+}
+
+// RemoveAdHocMemoryNote deletes one manual ad-hoc save by index.
+func (b *Bridge) RemoveAdHocMemoryNote(scope string, index int) error {
+	s, _, err := b.openMemoryScope(scope)
+	if err != nil {
+		return err
+	}
+	return s.RemoveAdHocNote(index)
 }
 
 // WriteUserProfile replaces the global editable user profile (USER.md).

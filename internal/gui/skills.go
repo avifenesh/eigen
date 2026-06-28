@@ -113,6 +113,11 @@ func (b *Bridge) RejectSkill(name string) error {
 	return skill.Reject(name)
 }
 
+// RemoveSkill deletes an installed skill from ~/.eigen/skills by name.
+func (b *Bridge) RemoveSkill(name string) error {
+	return skill.Remove(userSkillsDir(), name)
+}
+
 // SkillInstallDTO is the result of an install: the resolved skill name and the
 // path its SKILL.md was written to.
 type SkillInstallDTO struct {

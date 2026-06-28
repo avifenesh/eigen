@@ -103,11 +103,14 @@ export const Bridge = {
   // bans (banthis hard-prohibition layer) — returns whether an existing ban was replaced/removed
   AddBan: (scope: string, title: string, rule: string): Promise<boolean> => B.AddBan(scope, title, rule),
   RemoveBan: (scope: string, title: string): Promise<boolean> => B.RemoveBan(scope, title),
+  RemoveMemoryNote: (scope: string, index: number): Promise<void> => B.RemoveMemoryNote(scope, index),
+  RemoveAdHocMemoryNote: (scope: string, index: number): Promise<void> => B.RemoveAdHocMemoryNote(scope, index),
   // skills
   Skills: (): Promise<SkillsDTO | null> => B.Skills(),
   SkillBody: (name: string): Promise<string> => B.SkillBody(name),
   AcceptSkill: (name: string): Promise<string> => B.AcceptSkill(name),
   RejectSkill: (name: string): Promise<void> => B.RejectSkill(name),
+  RemoveSkill: (name: string): Promise<void> => B.RemoveSkill(name),
   // skill install (local path or owner/repo GitHub ref) — scanned before write
   InstallSkillFromPath: (path: string): Promise<{ name: string; path: string } | null> => B.InstallSkillFromPath(path),
   InstallSkillFromGitHub: (ownerRepo: string): Promise<{ name: string; path: string } | null> => B.InstallSkillFromGitHub(ownerRepo),

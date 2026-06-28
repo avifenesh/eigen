@@ -1950,7 +1950,7 @@ func userSkillsDir() string {
 // aborts unless --force.
 func runSkillCmd(args []string, provider, model string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: eigen skill <add|list> …")
+		fmt.Fprintln(os.Stderr, "usage: eigen skill <add|list|remove|…> …")
 		os.Exit(2)
 	}
 	switch args[0] {
@@ -2034,8 +2034,18 @@ func runSkillCmd(args []string, provider, model string) {
 		}
 		fmt.Printf("rejected proposed skill %q\n", args[1])
 		return
+	case "remove", "rm", "delete", "uninstall":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: eigen skill remove <name>")
+			os.Exit(2)
+		}
+		if err := skill.Remove(userSkillsDir(), args[1]); err != nil {
+			fail(fmt.Errorf("skill remove: %w", err))
+		}
+		fmt.Printf("removed skill %q from %s\n", args[1], userSkillsDir())
+		return
 	default:
-		fmt.Fprintf(os.Stderr, "unknown skill subcommand %q (want: add | list | proposed | accept | reject)\n", args[0])
+		fmt.Fprintf(os.Stderr, "unknown skill subcommand %q (want: add | list | proposed | accept | reject | remove)\n", args[0])
 		os.Exit(2)
 	}
 }

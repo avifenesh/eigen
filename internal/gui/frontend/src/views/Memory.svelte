@@ -49,6 +49,8 @@
   let banRule = $state("");
   let savingBan = $state(false);
   let removingBan = $state<string | null>(null);
+  let removingNote = $state<number | null>(null);
+  let removingAdHoc = $state<number | null>(null);
 
   // Backups (snapshot history of MEMORY.md). The scope DTO carries only the
   // count; Bridge.MemoryBackups(scope) lists the actual snapshot paths. Lazy:
@@ -234,6 +236,34 @@
     }
   }
 
+  async function removeNote(index: number) {
+    if (!confirm("Remove this note from memory?")) return;
+    removingNote = index;
+    try {
+      await Bridge.RemoveMemoryNote(scope, index);
+      toasts.success("note removed");
+      await loadScope(scope);
+    } catch (e) {
+      toasts.error(errText(e));
+    } finally {
+      removingNote = null;
+    }
+  }
+
+  async function removeAdHoc(index: number) {
+    if (!confirm("Delete this saved note?")) return;
+    removingAdHoc = index;
+    try {
+      await Bridge.RemoveAdHocMemoryNote(scope, index);
+      toasts.success("saved note deleted");
+      await loadScope(scope);
+    } catch (e) {
+      toasts.error(errText(e));
+    } finally {
+      removingAdHoc = null;
+    }
+  }
+
   // alive guard: a late MemoryBackups() resolution must not write after a scope
   // switch or unmount started a newer fetch.
   let backupsSeq = 0;
@@ -415,6 +445,12 @@
                       loading={movingNote === note.index}
                       title="Relocate this note to another scope"
                       onclick={() => openMove(note.text, note.index)}>{moveLabel}</Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      loading={removingAdHoc === note.index}
+                      title="Delete this saved note"
+                      onclick={() => removeAdHoc(note.index)}>Remove</Button>
                   </div>
                 </Card>
               {/each}
@@ -446,6 +482,12 @@
                       loading={movingNote === note.index}
                       title="Relocate this note to another scope"
                       onclick={() => openMove(note.text, note.index)}>{moveLabel}</Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      loading={removingNote === note.index}
+                      title="Remove this note"
+                      onclick={() => removeNote(note.index)}>Remove</Button>
                   </div>
                 </Card>
               {/each}
