@@ -155,6 +155,37 @@
   const history = $derived(store?.history ?? []);
   const live = $derived(store?.live ?? null);
 
+  let transcriptListEl = $state<HTMLDivElement | undefined>(undefined);
+  let liveScrollEl = $state<HTMLDivElement | undefined>(undefined);
+
+  /** True when the transcript list is scrolled to the bottom (within slack). */
+  function transcriptPinned(): boolean {
+    const el = transcriptListEl;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+  }
+
+  function scrollTranscriptToBottom() {
+    const el = transcriptListEl;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function scrollLiveToBottom() {
+    const el = liveScrollEl;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }
+
+  // While pinned, keep the streaming live block scrolled to its end (history list
+  // is handled inside VirtualList; live sits in a sibling scroller).
+  $effect(() => {
+    if (!live) return;
+    void live.text;
+    if (!transcriptPinned()) return;
+    requestAnimationFrame(scrollLiveToBottom);
+  });
+
   // Active task plan (the `todo` tool's list). Shown as a pinned panel while the
   // model is tracking a multi-step plan that isn't fully done. Hidden when empty
   // or every task is completed/cancelled (nothing left to surface).
@@ -818,6 +849,8 @@
   // rows). Distinct from isEmpty — a session WITH history shows the skeleton for
   // the round-trip instead of a bare empty list, then pops to the transcript.
   const transcriptLoading = $derived(loading && sess == null && history.length === 0 && !live);
+  // Jump to bottom on session switch / when skeleton → transcript (not per message).
+  const transcriptScrollToken = $derived(`${sessionId}:${transcriptLoading ? "load" : "show"}`);
   const starters = [
     "Give me a tour of this codebase.",
     "What changed in the last few commits?",
@@ -1160,7 +1193,14 @@
                  every offset (~60×/sec) — GUI-069. Keys stay the stable per-
                  block uid; history rows are all committed, so each renders its
                  final form (note tone / reasoning / Markdown prose). -->
-            <VirtualList items={history} estimateHeight={120} pin key={(b) => b.uid}>
+            <VirtualList
+              items={history}
+              estimateHeight={120}
+              pin
+              scrollToken={transcriptScrollToken}
+              bind:listRef={transcriptListEl}
+              key={(b) => b.uid}
+            >
               {#snippet row(block)}
                 <div class="chat__row" role="article" aria-label={rowLabel(block)}>
                   {#if block.kind === "tool"}
@@ -1215,7 +1255,7 @@
                  it here, not inside VirtualList, is what keeps a per-frame token
                  append from re-deriving the whole list's geometry (GUI-069). A
                  subtle caret trails the live text while it streams. -->
-            <div class="chat__live">
+            <div class="chat__live" bind:this={liveScrollEl}>
               <div class="chat__row" role="article" aria-label={rowLabel(live)}>
                 {#if live.kind === "reasoning"}
                   <div class="msg msg--reasoning msg--live">

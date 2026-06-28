@@ -12,6 +12,9 @@
     overscan = 6,
     gap = 0,
     pin = false,
+    /** Bump when opening a session (or similar) to jump to the latest message. */
+    scrollToken = "",
+    listRef = $bindable<HTMLDivElement | undefined>(undefined),
     row,
     key,
   }: {
@@ -22,6 +25,8 @@
     // pin: keep the viewport stuck to the bottom as items grow, UNLESS the user
     // has scrolled up (chat transcript behavior). Re-pins when scrolled back down.
     pin?: boolean;
+    scrollToken?: string | number;
+    listRef?: HTMLDivElement | undefined;
     row: Snippet<[T, number]>;
     key?: (item: T, index: number) => string | number;
   } = $props();
@@ -160,6 +165,21 @@
   }
 
   // ResizeObserver keeps the viewport height current without layout polling.
+  $effect(() => {
+    listRef = viewport;
+  });
+
+  // Opening a session (or history landing after load): start at the bottom and
+  // follow new messages until the user scrolls up.
+  $effect(() => {
+    void scrollToken;
+    pinned = true;
+    cancelAnimationFrame(pinRaf);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(scrollToBottom);
+    });
+  });
+
   $effect(() => {
     if (!viewport) return;
     viewportH = viewport.clientHeight;
