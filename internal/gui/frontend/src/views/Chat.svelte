@@ -34,11 +34,19 @@
   // Resolve the session to show: route param, else the newest session.
   const sessionId = $derived(param ?? sessions.list[0]?.id ?? "");
 
-  // A routed session that no longer exists (removed/pruned while open here):
-  // param pins a concrete id, sessions have loaded, but it's not in the list.
-  // Without this guard Chat would render a live composer over a dead session.
+  // A REMOTE session ref (remote:<b64 target>:<realID>, opened from the Machines
+  // board) lives on another host's daemon over ssh. It's NOT in the local
+  // sessions.list, so the local-only "missing" guard below must not fire for it,
+  // and the title/dock tools (which target the GUI's own machine) adapt.
+  const isRemote = $derived(sessionId.startsWith("remote:"));
+
+  // A routed LOCAL session that no longer exists (removed/pruned while open
+  // here): param pins a concrete id, sessions have loaded, but it's not in the
+  // list. Without this guard Chat would render a live composer over a dead
+  // session. Remote refs are exempt — they're never in the local list; their
+  // liveness surfaces through the State()/stream path instead.
   const missing = $derived(
-    !!param && sessions.loaded && !sessions.list.some((s) => s.id === param),
+    !isRemote && !!param && sessions.loaded && !sessions.list.some((s) => s.id === param),
   );
 
   let store = $state<Transcript | null>(null);
@@ -487,13 +495,23 @@
     } catch {}
   }
   const primaryRoot = $derived(sess?.roots?.[0] ?? "");
-  const dockTabs: { id: DockTab; label: string; glyph: string }[] = [
+  // The tool tabs (Terminal/Diff/Files/Browser) act on the GUI's OWN machine —
+  // a local PTY, the local filesystem at primaryRoot, a local browser. For a
+  // REMOTE session those would target the wrong host (primaryRoot is a path on
+  // the remote), so the dock is Info-only when remote: honest over misleading.
+  const allDockTabs: { id: DockTab; label: string; glyph: string }[] = [
     { id: "info", label: "Info", glyph: "ⓘ" },
     { id: "terminal", label: "Terminal", glyph: "❯" },
     { id: "diff", label: "Diff", glyph: "⇄" },
     { id: "files", label: "Files", glyph: "⊟" },
     { id: "browser", label: "Browser", glyph: "◍" },
   ];
+  const dockTabs = $derived(isRemote ? allDockTabs.slice(0, 1) : allDockTabs);
+  // If a tool tab was persisted/active and we land on a remote session, fall
+  // back to Info so the dock never shows a tab the remote session can't use.
+  $effect(() => {
+    if (isRemote && dockTab !== "info") setDockTab("info");
+  });
 
   // ── dock collapse + resize ─────────────────────────────────────────────────
   // The tools dock collapses to a thin glyph rail (click a glyph to expand back
@@ -652,8 +670,12 @@
   let goalDraft = $state("");
   let editingTitle = $state(false);
   let titleDraft = $state("");
-  // The title shown when the session hasn't been explicitly named.
-  const derivedTitle = $derived(sessions.list.find((s) => s.id === sessionId)?.title || "untitled session");
+  // The title shown when the session hasn't been explicitly named. A remote
+  // session isn't in the local sessions.list, so fall back to its State() title
+  // (sess.title) — the remote daemon's own session title — before the generic.
+  const derivedTitle = $derived(
+    sessions.list.find((s) => s.id === sessionId)?.title || sess?.title || "untitled session",
+  );
 
   function startGoal() {
     goalDraft = sess?.goal ?? "";

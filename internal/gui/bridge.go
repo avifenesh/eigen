@@ -15,6 +15,7 @@ import (
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/workflow"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"golang.org/x/sync/singleflight"
 )
 
 // Bridge is the Wails-bound service exposed to the frontend. Every method here
@@ -42,7 +43,14 @@ type Bridge struct {
 	closing  bool
 	pollStop chan struct{}
 	feedStop chan struct{}
-	lastFeed feed.Feed // most-recent scan, so DismissFeed can rebuild an Item from its key
+
+	// Remote control clients, one pooled per ssh target, dialed lazily when a
+	// remote session ref is first acted on and reused while alive (remote_ref.go).
+	// remoteDial singleflights the per-target ssh dial so concurrent RPCs for a
+	// cold target share one spawn. Both guarded by mu (IO outside the lock).
+	remoteCtrls map[string]*daemon.Client
+	remoteDial  singleflight.Group
+	lastFeed    feed.Feed // most-recent scan, so DismissFeed can rebuild an Item from its key
 
 	// GPU history ring + alert state for the Machine panel sparkline + training
 	// hot-GPU notifications (gpuhist.go). nil until the GPU sample loop starts.
@@ -58,7 +66,7 @@ type Bridge struct {
 // daemon; suggest + dirs power the proactive feed (both may be nil/empty — the
 // feed then yields only signal-derived items or nothing).
 func NewBridge(ensure func() (*daemon.Client, error), suggest feed.Suggester, dirs func() []string) *Bridge {
-	return &Bridge{ensure: ensure, suggest: suggest, dirs: dirs, pumps: map[string]*sessionPump{}}
+	return &Bridge{ensure: ensure, suggest: suggest, dirs: dirs, pumps: map[string]*sessionPump{}, remoteCtrls: map[string]*daemon.Client{}}
 }
 
 // SetApp wires the Wails app for event emission. Called from the bootstrap
@@ -220,6 +228,11 @@ func (b *Bridge) Shutdown() {
 	b.pumps = map[string]*sessionPump{}
 	ctrl := b.ctrl
 	b.ctrl = nil
+	remoteCtrls := make([]*daemon.Client, 0, len(b.remoteCtrls))
+	for _, c := range b.remoteCtrls {
+		remoteCtrls = append(remoteCtrls, c)
+	}
+	b.remoteCtrls = map[string]*daemon.Client{}
 	stop := b.pollStop
 	b.pollStop = nil
 	feedStop := b.feedStop
@@ -240,6 +253,11 @@ func (b *Bridge) Shutdown() {
 	}
 	if ctrl != nil {
 		_ = ctrl.Close()
+	}
+	// Close every pooled remote control client — each closes its underlying ssh
+	// process, so no remote daemon connection / ssh subprocess outlives the GUI.
+	for _, c := range remoteCtrls {
+		_ = c.Close()
 	}
 	// Stop any voice loop / in-flight mic op so its goroutine + subprocess don't
 	// outlive the window.
@@ -316,14 +334,16 @@ func (b *Bridge) NewSession(dir, model, perm string) (string, error) {
 	return c.NewSession(dir, model, perm, nil)
 }
 
-// RemoveSession stops the session's pump and removes it from the daemon.
+// RemoveSession stops the session's pump and removes it from the daemon. A
+// remote session is removed on its own daemon; the ref resolves to that daemon's
+// pooled control client.
 func (b *Bridge) RemoveSession(id string) error {
 	b.stopPump(id)
-	c, err := b.control()
+	c, realID, err := b.clientFor(id)
 	if err != nil {
 		return err
 	}
-	return c.Remove(id)
+	return c.Remove(realID)
 }
 
 // PruneSessions removes idle/empty sessions and stops their pumps.
@@ -344,11 +364,11 @@ func (b *Bridge) PruneSessions() ([]string, error) {
 
 // State returns the full session snapshot (history + status).
 func (b *Bridge) State(id string) (*SessionStateDTO, error) {
-	c, err := b.control()
+	c, realID, err := b.clientFor(id)
 	if err != nil {
 		return nil, err
 	}
-	st, err := c.State(id)
+	st, err := c.State(realID)
 	if err != nil {
 		return nil, err
 	}
@@ -361,7 +381,7 @@ func (b *Bridge) State(id string) (*SessionStateDTO, error) {
 // Returns only error; the UI derives running-state from the stream + State(),
 // never a racy synthetic guess.
 func (b *Bridge) SendInput(id, text string, images []ImageDTO, allowTools []string) error {
-	c, err := b.control()
+	c, realID, err := b.clientFor(id)
 	if err != nil {
 		return err
 	}
@@ -369,14 +389,14 @@ func (b *Bridge) SendInput(id, text string, images []ImageDTO, allowTools []stri
 	if err != nil {
 		return err
 	}
-	return c.Input(id, text, imgs, allowTools)
+	return c.Input(realID, text, imgs, allowTools)
 }
 
 // SteerInput injects a message mid-turn (between tool rounds) when a turn is
 // running, returning true if it was delivered as a steer (vs starting a fresh
 // turn). The composer routes through this while the session is running.
 func (b *Bridge) SteerInput(id, text string, images []ImageDTO) (bool, error) {
-	c, err := b.control()
+	c, realID, err := b.clientFor(id)
 	if err != nil {
 		return false, err
 	}
@@ -384,69 +404,69 @@ func (b *Bridge) SteerInput(id, text string, images []ImageDTO) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return c.SteerInput(id, text, imgs)
+	return c.SteerInput(realID, text, imgs)
 }
 
 // Interrupt cancels the in-flight turn. Returns whether a running turn was
 // actually cancelled (false when the session was already idle).
 func (b *Bridge) Interrupt(id string) (bool, error) {
-	c, err := b.control()
+	c, realID, err := b.clientFor(id)
 	if err != nil {
 		return false, err
 	}
-	return c.Interrupt(id)
+	return c.Interrupt(realID)
 }
 
 // Resend retries the last turn.
 func (b *Bridge) Resend(id string) error {
-	c, err := b.control()
+	c, realID, err := b.clientFor(id)
 	if err != nil {
 		return err
 	}
-	return c.Resend(id)
+	return c.Resend(realID)
 }
 
 // Approve resolves a gated tool-call approval.
 func (b *Bridge) Approve(id, approvalID string, allow bool) error {
-	c, err := b.control()
+	c, realID, err := b.clientFor(id)
 	if err != nil {
 		return err
 	}
-	return c.Approve(id, approvalID, allow)
+	return c.Approve(realID, approvalID, allow)
 }
 
 // ---- maintenance ----
 
 // Compact summarizes the conversation toward target tokens.
 func (b *Bridge) Compact(id string, target int) (CompactResultDTO, error) {
-	c, err := b.control()
+	c, realID, err := b.clientFor(id)
 	if err != nil {
 		return CompactResultDTO{}, err
 	}
-	before, after, err := c.Compact(id, target)
+	before, after, err := c.Compact(realID, target)
 	return CompactResultDTO{Before: before, After: after}, err
 }
 
 // Clear wipes the session conversation.
 func (b *Bridge) Clear(id string) error {
-	c, err := b.control()
+	c, realID, err := b.clientFor(id)
 	if err != nil {
 		return err
 	}
-	return c.Clear(id)
+	return c.Clear(realID)
 }
 
 // ---- settings (each returns the fresh state so the UI reconciles optimism) ----
 
-func (b *Bridge) setThen(id string, fn func(*daemon.Client) error) (*SessionStateDTO, error) {
-	c, err := b.control()
+func (b *Bridge) setThen(id string, fn func(c *daemon.Client, realID string) error) (*SessionStateDTO, error) {
+	c, realID, err := b.clientFor(id)
 	if err != nil {
 		return nil, err
 	}
-	if err := fn(c); err != nil {
+	if err := fn(c, realID); err != nil {
 		return nil, err
 	}
-	st, err := c.State(id)
+	st, err := c.State(realID)
 	if err != nil {
 		return nil, err
 	}
@@ -455,66 +475,66 @@ func (b *Bridge) setThen(id string, fn func(*daemon.Client) error) (*SessionStat
 
 // SetModel switches the session's model.
 func (b *Bridge) SetModel(id, model string) (*SessionStateDTO, error) {
-	return b.setThen(id, func(c *daemon.Client) error { return c.SetModel(id, model) })
+	return b.setThen(id, func(c *daemon.Client, realID string) error { return c.SetModel(realID, model) })
 }
 
 // SetPerm switches the permission posture (gated|auto).
 func (b *Bridge) SetPerm(id, perm string) (*SessionStateDTO, error) {
-	return b.setThen(id, func(c *daemon.Client) error { return c.SetPerm(id, perm) })
+	return b.setThen(id, func(c *daemon.Client, realID string) error { return c.SetPerm(realID, perm) })
 }
 
 // SetGoal sets the session goal.
 func (b *Bridge) SetGoal(id, goal string) (*SessionStateDTO, error) {
-	return b.setThen(id, func(c *daemon.Client) error { return c.SetGoal(id, goal) })
+	return b.setThen(id, func(c *daemon.Client, realID string) error { return c.SetGoal(realID, goal) })
 }
 
 // SetTitle renames the session.
 func (b *Bridge) SetTitle(id, title string) (*SessionStateDTO, error) {
-	return b.setThen(id, func(c *daemon.Client) error { return c.SetTitle(id, title) })
+	return b.setThen(id, func(c *daemon.Client, realID string) error { return c.SetTitle(realID, title) })
 }
 
 // SetEffort sets the reasoning-effort level.
 func (b *Bridge) SetEffort(id, level string) (*SessionStateDTO, error) {
-	return b.setThen(id, func(c *daemon.Client) error { return c.SetEffort(id, level) })
+	return b.setThen(id, func(c *daemon.Client, realID string) error { return c.SetEffort(realID, level) })
 }
 
 // SetSearch sets the provider search mode.
 func (b *Bridge) SetSearch(id, mode string) (*SessionStateDTO, error) {
-	return b.setThen(id, func(c *daemon.Client) error { return c.SetSearch(id, mode) })
+	return b.setThen(id, func(c *daemon.Client, realID string) error { return c.SetSearch(realID, mode) })
 }
 
 // SetFast toggles the fast/priority service tier.
 func (b *Bridge) SetFast(id string, on bool) (*SessionStateDTO, error) {
-	return b.setThen(id, func(c *daemon.Client) error { return c.SetFast(id, on) })
+	return b.setThen(id, func(c *daemon.Client, realID string) error { return c.SetFast(realID, on) })
 }
 
 // ---- sandbox / shells / dirs ----
 
 // AddDir grants the session's tools an extra working directory.
 func (b *Bridge) AddDir(id, path string) (string, error) {
-	c, err := b.control()
+	c, realID, err := b.clientFor(id)
 	if err != nil {
 		return "", err
 	}
-	return c.AddDir(id, path)
+	return c.AddDir(realID, path)
 }
 
 // KillShell signals a backgrounded shell.
 func (b *Bridge) KillShell(id, shellID string) (bool, error) {
-	c, err := b.control()
+	c, realID, err := b.clientFor(id)
 	if err != nil {
 		return false, err
 	}
-	return c.KillShell(id, shellID)
+	return c.KillShell(realID, shellID)
 }
 
 // DetachBash backgrounds the foreground bash, freeing the turn.
 func (b *Bridge) DetachBash(id string) (bool, error) {
-	c, err := b.control()
+	c, realID, err := b.clientFor(id)
 	if err != nil {
 		return false, err
 	}
-	return c.DetachBash(id)
+	return c.DetachBash(realID)
 }
 
 // ---- workflows (internal/workflow) ----

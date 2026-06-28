@@ -7,7 +7,7 @@
   // eigen on a fresh host is done from the CLI (`eigen remote install`), not
   // here — surfaced as a hint.
   import { Bridge } from "$lib/bridge";
-  import { toasts } from "$lib/stores/toasts.svelte";
+  import { router } from "$lib/router.svelte";
   import { errText } from "$lib/errors";
   import { sessionDot } from "$lib/status";
   import type { MachinesDTO, MachineDTO, SessionInfoDTO } from "$lib/types";
@@ -112,44 +112,18 @@
     return p[p.length - 1] || trimmed;
   }
 
-  // Remote attach is a terminal flow, not a GUI bridge call: `eigen --remote
-  // <ssh>` opens a live view on that host's daemon over ssh (the agent loop runs
-  // there). The GUI has no per-remote-session pump, so we can't stream a remote
-  // session into Chat — but we can hand the user the exact, working command
-  // rather than leaving a row that looks clickable but does nothing. Copy it +
-  // tell them where to run it. Honest affordance, no dead click.
-  let attachCmdTimer: ReturnType<typeof setTimeout> | undefined;
-  let copiedId = $state<string | null>(null);
-  function attachCmd(ssh: string): string {
-    return `eigen --remote ${ssh}`;
-  }
-  async function attach(s: SessionInfoDTO) {
-    if (!openMachine) return;
-    const cmd = attachCmd(openMachine.ssh);
-    const label = s.title || "untitled session";
-    try {
-      await navigator.clipboard.writeText(cmd);
-      copiedId = s.id;
-      clearTimeout(attachCmdTimer);
-      attachCmdTimer = setTimeout(() => (copiedId = null), 1600);
-      toasts.success(`Copied — run \`${cmd}\` in a terminal to attach (${label})`);
-    } catch {
-      // Clipboard denied: still tell the user the command rather than lie.
-      toasts.info(`Attach from a terminal: ${cmd}`);
-    }
+  // Remote attach is now a real GUI flow: each remote session's id IS an opaque
+  // remote ref (remote:<b64 target>:<realID>, built by RemoteSessions), and every
+  // per-session Bridge call resolves it back to that host's daemon over ssh. So
+  // opening a remote session is the same router hop as a local one — Chat
+  // subscribes the ref, streams its events, and sends input/approvals straight
+  // to the remote daemon. No terminal, no copied command.
+  function open(s: SessionInfoDTO) {
+    closeDrill();
+    router.go("chat", s.id);
   }
 
   const machines = $derived(data?.machines ?? []);
-
-  // The drill-in panel can outlive its rows; clear the one-shot "copied" reset
-  // when the sheet closes or the view unmounts so it never fires after teardown.
-  $effect(() => {
-    if (openMachine === null) {
-      clearTimeout(attachCmdTimer);
-      copiedId = null;
-    }
-    return () => clearTimeout(attachCmdTimer);
-  });
 </script>
 
 <div class="mx">
@@ -278,16 +252,16 @@
     <p class="mx__sheet-empty">No active sessions on this host.</p>
   {:else}
     <p class="mx__remote-note">
-      Attach is a terminal flow — selecting a session copies the
-      <code class="mx__code">eigen --remote</code> command to run in your shell.
+      Open a session to attach over ssh — it streams live into Chat, and your
+      input, approvals, and model switches go straight to this host's daemon.
     </p>
     <div class="mx__remote-list">
       {#each remote as s (s.id)}
-        <!-- The Attach button is the real, keyboard-reachable, focus-visible
-             affordance — so the row stays a plain container (no role=button /
-             tabindex) and never nests two interactive controls or a duplicate
-             tab stop. No misleading pulse: nothing on this row is actionable in
-             the GUI itself, only the explicit copy-the-command button is. -->
+        <!-- The Open button is the real, keyboard-reachable, focus-visible
+             affordance, so the row stays a plain container (no nested
+             interactive controls / duplicate tab stop). Activating it routes to
+             Chat keyed on the remote session ref (remote:<b64 target>:<id>),
+             which Chat subscribes and drives over ssh like any local session. -->
         <div class="rrow">
           <StatusDot state={sessionDot(s.status)} size={7} />
           <div class="rrow__main">
@@ -297,14 +271,14 @@
           {#if s.model}<Badge tone="neutral" truncate>{s.model}</Badge>{/if}
           <span class="rrow__turns tnum">{s.turns} turn{s.turns === 1 ? "" : "s"}</span>
           <Button
-            variant="ghost"
+            variant="primary"
             size="sm"
-            title={`Copy: ${attachCmd(openMachine?.ssh ?? "")}`}
+            title="Open this remote session in Chat (live over ssh)"
             onclick={(e) => {
               e.stopPropagation();
-              attach(s);
+              open(s);
             }}
-          >{copiedId === s.id ? "copied" : "attach"}</Button>
+          >open</Button>
         </div>
       {/each}
     </div>
