@@ -372,8 +372,10 @@
   // Belt-and-suspenders: if the turn ends (running→false) while the Interrupt
   // RPC is still pending, drop the interrupting state so the composer doesn't
   // wedge on "stopping…". Harmless when the finally arm already cleared it.
+  // Use `working` (running OR pending) so a just-submitted-but-not-yet-streaming
+  // turn can still show/keep the Stop affordance until the daemon settles it.
   $effect(() => {
-    if (store?.running === false && interrupting) interrupting = false;
+    if ((store?.working ?? false) === false && interrupting) interrupting = false;
   });
   // Queue drain (queue input-mode): when the turn transitions running→false,
   // submit the next held message as a fresh turn. `wasRunning` tracks the prior
@@ -905,7 +907,45 @@
     }
     return out;
   }
+
+  // Global Escape-to-stop for the chat view. Mirrors the TUI's "esc interrupts"
+  // behavior, but yields to overlays and non-composer form fields so Escape can
+  // still close a popover/dialog or cancel an edit. The composer textarea is the
+  // intentional exception: while a turn is running, Esc stops the turn.
+  function shouldEscStopTurn(e: KeyboardEvent): boolean {
+    if (e.key !== "Escape" || e.defaultPrevented || e.repeat || e.isComposing || e.keyCode === 229) return false;
+    if (!sessionId || !online || interrupting || !(store?.working ?? false)) return false;
+    if (newChatOpen || menuOpen || editingTitle || editingGoal || confirmClear) return false;
+    // If any shared popover/dialog is open, let that surface own Escape even if
+    // focus is currently on the body or the trigger instead of inside the panel.
+    if (document.querySelector('[role="dialog"][aria-modal="true"], .pop, .sheet, .pal, .sc')) return false;
+
+    const target = e.target instanceof HTMLElement ? e.target : null;
+    if (!target) return true;
+
+    // Do not steal Escape from modal/popover surfaces or the embedded terminal
+    // (where Esc may be a real shell/editor keystroke).
+    if (target.closest('[role="dialog"], [aria-modal="true"], .pop, .sheet, .pal, .sc, .term')) return false;
+
+    // Most text controls use Escape for their own cancel/clear semantics. The
+    // composer textarea is different: the running-turn shortcut is expected
+    // there, matching the terminal UI.
+    const tag = target.tagName;
+    const formControl = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
+    if (formControl && !target.closest(".composer")) return false;
+
+    return true;
+  }
+
+  function onGlobalKeydown(e: KeyboardEvent) {
+    if (!shouldEscStopTurn(e)) return;
+    e.preventDefault();
+    void interrupt();
+  }
+
 </script>
+
+<svelte:window onkeydown={onGlobalKeydown} />
 
 {#snippet attachedImages(images: ImageDTO[] | undefined)}
   {#if images?.length}
@@ -1255,6 +1295,8 @@
       <div class="chat__composer">
         <Composer
           running={store?.running ?? false}
+          stoppable={store?.working ?? false}
+          interrupting={interrupting}
           disabled={!online}
           disabledReason={online ? "" : "daemon offline"}
           voiceModeOn={voice.modeOn}

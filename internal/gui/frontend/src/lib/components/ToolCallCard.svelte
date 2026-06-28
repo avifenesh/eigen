@@ -345,6 +345,26 @@
   // recognizable args yet), fall back to showing the raw args as a CodeBlock.
   const hasDiff = $derived(family === "mutation" && diffPatch.trim().length > 0);
 
+  type ChangeStats = { additions: number; deletions: number };
+  const changeStats = $derived.by<ChangeStats>(() => diffStats(diffPatch));
+  const showChangeStats = $derived(
+    hasDiff && !block.isError && (changeStats.additions > 0 || changeStats.deletions > 0),
+  );
+
+  function diffStats(patch: string): ChangeStats {
+    let additions = 0;
+    let deletions = 0;
+    const src = patch ?? "";
+    if (!src.trim()) return { additions, deletions };
+    for (const line of src.replace(/\n$/, "").split("\n")) {
+      // File headers are metadata, not changed source lines.
+      if (line.startsWith("+++") || line.startsWith("---")) continue;
+      if (line.startsWith("+")) additions++;
+      else if (line.startsWith("-")) deletions++;
+    }
+    return { additions, deletions };
+  }
+
   // Whether the args block is worth showing as its own compact line in the
   // output family (we already echo the gist in the summary, so keep it terse).
   const showArgsLine = $derived(
@@ -382,6 +402,16 @@
       <span class="tool__summary">{summary}</span>
     {:else}
       <span class="tool__summary tool__summary--empty">—</span>
+    {/if}
+    {#if showChangeStats}
+      <span
+        class="tool__delta"
+        title={`${changeStats.deletions} deletion${changeStats.deletions === 1 ? "" : "s"}, ${changeStats.additions} addition${changeStats.additions === 1 ? "" : "s"}`}
+        aria-label={`${changeStats.deletions} deletion${changeStats.deletions === 1 ? "" : "s"}, ${changeStats.additions} addition${changeStats.additions === 1 ? "" : "s"}`}
+      >
+        <span class="tool__delta-del">−{changeStats.deletions}</span>
+        <span class="tool__delta-add">+{changeStats.additions}</span>
+      </span>
     {/if}
     <span class="tool__status">
       <StatusDot state={dotState} size={7} pulse={!block.done && !block.isError} />
@@ -559,6 +589,21 @@
   }
   .tool__summary--empty {
     color: var(--text-faint);
+  }
+  .tool__delta {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--sp-2);
+    font: var(--fw-semibold) var(--fs-label) / 1 var(--font-sans);
+    letter-spacing: var(--ls-normal);
+    white-space: nowrap;
+  }
+  .tool__delta-del {
+    color: var(--error);
+  }
+  .tool__delta-add {
+    color: var(--success);
   }
 
   .tool__status {

@@ -17,6 +17,8 @@
 
   let {
     running = false,
+    stoppable,
+    interrupting = false,
     disabled = false,
     disabledReason = "",
     voiceModeOn = false,
@@ -25,6 +27,14 @@
     onvoicemode,
   }: {
     running?: boolean;
+    // Whether this composer should expose Stop. Defaults to `running`, but the
+    // chat view passes `working` so the user can interrupt a just-sent turn
+    // before the first stream event flips running=true.
+    stoppable?: boolean;
+    // True after the parent has sent an interrupt request and before the turn
+    // has actually settled. Disables the Stop affordance and changes its label
+    // so repeated clicks/keys don't look ignored.
+    interrupting?: boolean;
     disabled?: boolean;
     disabledReason?: string;
     // Whether the hands-free conversation loop is active (parent owns the session
@@ -71,16 +81,28 @@
   // running, but the button is swapped for Stop while running anyway, so the two
   // never conflict.
   const canSubmit = $derived(!disabled && (trimmed.length > 0 || attachments.length > 0));
-  const canSend = $derived(canSubmit && !running);
+  const canStopTurn = $derived(stoppable ?? running);
+  const canSend = $derived(canSubmit && !canStopTurn);
+  const turnHint = $derived(
+    interrupting
+      ? "stopping…"
+      : running
+        ? "Enter steers · Esc stops"
+        : "Turn starting · Esc stops",
+  );
   // The affordance line: quiet shortcut hint by default, swapping to a live
   // character count once the author has typed something worth measuring.
   const hint = $derived(
     trimmed.length > 0
-      ? `${trimmed.length} char${trimmed.length === 1 ? "" : "s"}${running ? " · Enter steers the running turn" : ""}`
+      ? `${trimmed.length} char${trimmed.length === 1 ? "" : "s"}${canStopTurn ? ` · ${turnHint}` : ""}`
       : attachments.length > 0
-        ? `${attachments.length} image${attachments.length === 1 ? "" : "s"} · Enter to send`
-        : running
-          ? "Enter steers the running turn · Shift+Enter for newline"
+        ? `${attachments.length} image${attachments.length === 1 ? "" : "s"} · ${canStopTurn ? turnHint : "Enter to send"}`
+        : canStopTurn
+          ? interrupting
+            ? "Stopping the running turn…"
+            : running
+              ? "Enter steers · Esc stops · Shift+Enter for newline"
+              : "Turn starting · Esc stops"
           : "Enter to send · Shift+Enter for newline",
   );
   // The accessible description carried on the textarea (and announced live).
@@ -251,7 +273,7 @@
   class="composer"
   class:composer--disabled={disabled}
   class:composer--focused={focused && !disabled}
-  class:composer--running={running}
+  class:composer--running={canStopTurn}
   class:composer--dragging={dragging}
   ondragenter={onDragEnter}
   ondragover={onDragOver}
@@ -350,16 +372,18 @@
     <Button
       variant="icon"
       size="md"
-      disabled={disabled || running}
+      disabled={disabled || canStopTurn}
       title={disabled ? disabledReason : "Attach images"}
       onclick={() => fileInput?.click()}
     >⧉</Button>
-    {#if running}
+    {#if canStopTurn}
       <Button
         variant="danger"
         size="md"
+        disabled={disabled || interrupting}
         onclick={oninterrupt}
-        title="Interrupt the running turn">Stop</Button
+        title={interrupting ? "Interrupt request sent — waiting for the turn to stop" : "Stop the running turn (Esc)"}
+        >{interrupting ? "Stopping…" : "Stop"}</Button
       >
     {:else}
       <Button
