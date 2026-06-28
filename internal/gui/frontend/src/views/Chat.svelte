@@ -13,10 +13,10 @@
   import { router } from "$lib/router.svelte";
   import { on, ev } from "$lib/events";
   import { errText } from "$lib/errors";
-  import { createTranscript, type Transcript } from "$lib/stores/transcript.svelte";
+  import { createTranscript, type Transcript, groupRows } from "$lib/stores/transcript.svelte";
   import type { SessionStateDTO, ModelDTO, ImageDTO, RecentDirDTO } from "$lib/types";
   import Composer from "$lib/components/Composer.svelte";
-  import ToolCallCard from "$lib/components/ToolCallCard.svelte";
+  import ToolGroupCard from "$lib/components/ToolGroupCard.svelte";
   import Markdown from "$lib/components/Markdown.svelte";
   import VirtualList from "$lib/components/VirtualList.svelte";
   import Badge from "$lib/components/Badge.svelte";
@@ -154,6 +154,54 @@
   // the list, so a live token append touches one node, not the list geometry.
   const history = $derived(store?.history ?? []);
   const live = $derived(store?.live ?? null);
+
+  // Fold consecutive tool calls into "N tools" group rows (a burst of calls
+  // renders as ONE collapsible item, each tool still individually expandable),
+  // separated by any message / reasoning / note. groupRows is pure + O(n) and
+  // derives from `history` only — which changes at block boundaries, never on
+  // the ~60fps token path (that lands in `live`), so grouping never re-runs per
+  // token. The VirtualList keys on the row uid (a group's uid is its first
+  // tool's uid — stable as the run grows), so a growing run never remounts.
+  const rows = $derived(groupRows(history));
+  // The model is streaming prose right now → the live tool's detail folds away.
+  const streaming = $derived(!!live);
+
+  // Per-tool / per-group OPEN overrides, keyed by uid so a user's expand/collapse
+  // survives re-derive and CAP eviction (and a $state record stays reactive in
+  // place under Svelte 5 proxies). Missing key = follow the auto-open rule (live
+  // tool / running run open; history collapsed). A click writes an explicit
+  // boolean that then wins over the rule. Pruned to live uids below so a long
+  // session doesn't accumulate overrides for CAP-evicted blocks.
+  let toolOpen = $state<Partial<Record<number, boolean>>>({});
+  let groupOpen = $state<Partial<Record<number, boolean>>>({});
+  // The child knows each row's EFFECTIVE open state (which may be auto-open), so
+  // it passes the new desired value; the parent just records the explicit
+  // override. Keyed by uid → survives re-derive / CAP eviction.
+  function setToolOpen(uid: number, open: boolean) {
+    toolOpen[uid] = open;
+  }
+  function setGroupOpen(uid: number, open: boolean) {
+    groupOpen[uid] = open;
+  }
+  // Prune override maps to the uids still present (tool uids + group ids), so a
+  // CAP-evicted block's stale override can't leak memory across a long session.
+  // Cheap: runs only when `rows` changes (block boundaries), never per token.
+  $effect(() => {
+    const toolUids = new Set<number>();
+    const groupUids = new Set<number>();
+    for (const r of rows) {
+      if (r.kind === "toolgroup") {
+        groupUids.add(r.uid);
+        for (const t of r.tools) toolUids.add(t.uid);
+      }
+    }
+    for (const k of Object.keys(toolOpen)) {
+      if (!toolUids.has(+k)) delete toolOpen[+k as keyof typeof toolOpen];
+    }
+    for (const k of Object.keys(groupOpen)) {
+      if (!groupUids.has(+k)) delete groupOpen[+k as keyof typeof groupOpen];
+    }
+  });
 
   // Active task plan (the `todo` tool's list). Shown as a pinned panel while the
   // model is tracking a multi-step plan that isn't fully done. Hidden when empty
@@ -861,6 +909,8 @@
         return "Assistant reasoning";
       case "tool":
         return "Tool call";
+      case "toolgroup":
+        return "Tool calls";
       case "note":
         return "System note";
       default:
@@ -1160,11 +1210,24 @@
                  every offset (~60×/sec) — GUI-069. Keys stay the stable per-
                  block uid; history rows are all committed, so each renders its
                  final form (note tone / reasoning / Markdown prose). -->
-            <VirtualList items={history} estimateHeight={120} pin key={(b) => b.uid}>
-              {#snippet row(block)}
+            <VirtualList items={rows} estimateHeight={120} pin key={(r) => r.uid}>
+              {#snippet row(block, i)}
                 <div class="chat__row" role="article" aria-label={rowLabel(block)}>
-                  {#if block.kind === "tool"}
-                    <ToolCallCard {block} />
+                  {#if block.kind === "toolgroup"}
+                    <!-- Consecutive tool calls fold into one "N tools" row, each
+                         tool individually expandable. The running / just-run
+                         tool's detail stays open until the next tool or a stream
+                         supersedes it; isTail marks the live tail group. -->
+                    <ToolGroupCard
+                      group={block}
+                      streaming={streaming}
+                      isTail={i === rows.length - 1}
+                      turnActive={store?.working ?? false}
+                      {toolOpen}
+                      {groupOpen}
+                      onToolToggle={setToolOpen}
+                      onGroupToggle={setGroupOpen}
+                    />
                   {:else if block.kind === "note"}
                     <!-- Note tone (GUI-093): a terminal failure/interrupt note
                          (text prefixed "error:" / "interrupted") gets a warn/
