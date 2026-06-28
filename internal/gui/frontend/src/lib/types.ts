@@ -373,6 +373,7 @@ export type ConfigFieldDTO = {
   value: string;
   options?: string[];
   multi?: boolean;
+  allowEmpty?: boolean;
 };
 export type ConfigDTO = { fields: ConfigFieldDTO[]; path: string };
 

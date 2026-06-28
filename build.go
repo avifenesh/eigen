@@ -109,7 +109,7 @@ func buildSession(p buildParams) (*sessionDeps, error) {
 		hookRunner.SetObserver(deps.obsLog.HookObserver())
 	}
 
-	router := newAutoRouter(p.Cfg.Route, p.Cfg.RouteProviders, p.Provider)
+	router := newAutoRouter(p.Cfg.Route, p.Cfg.RouteProviders, p.Provider, p.Cfg.RouteModel)
 	deps.Router = router
 
 	taskRun := func(ctx context.Context, t string, opts tool.TaskOpts, background bool) (string, error) {

@@ -13,35 +13,47 @@ import (
 )
 
 // autoRouter implements the opt-in per-task model router. It is the glue
-// between the pure policy (llm.Route), small-model/orchestrator routing
+// between the pure policy (llm.Route), prompt-router/orchestrator routing
 // assessment, candidate detection (llm.RouteCandidates), and provider
 // construction (llm.New). Constructed providers are cached so repeated routing
 // to the same model is cheap.
 type autoRouter struct {
-	mu        sync.Mutex
-	enabled   bool
-	providers []string // cross-provider allowlist (canonical); empty = current only
-	current   string   // the user's base provider (always a candidate)
-	cache     map[string]llm.Provider
-	assessor  routeAssessor
+	mu                 sync.Mutex
+	enabled            bool
+	providers          []string // cross-provider allowlist (canonical); empty = current only
+	current            string   // the user's base provider (always a candidate)
+	cache              map[string]llm.Provider
+	routeModel         string // local prompt-router model ref (llama by default)
+	routeProvider      llm.Provider
+	routeProviderRef   string
+	assessor           routeAssessor
+	localRouteAssessor bool
 }
 
 type routeAssessment struct {
 	Kind       llm.TaskKind
 	Difficulty llm.Difficulty
 	Frontend   bool
+	Model      string // optional direct destination chosen by a prompt router
 	Assessor   string
 }
 
 type routeAssessor func(context.Context, string, bool, []string) (routeAssessment, error)
 
-func newAutoRouter(enabled bool, providers []string, current string) *autoRouter {
-	return &autoRouter{
-		enabled:   enabled,
-		providers: providers,
-		current:   current,
-		cache:     map[string]llm.Provider{},
+func newAutoRouter(enabled bool, providers []string, current, routeModel string) *autoRouter {
+	model := routeModelFromConfig(routeModel)
+	r := &autoRouter{
+		enabled:    enabled,
+		providers:  providers,
+		current:    current,
+		cache:      map[string]llm.Provider{},
+		routeModel: model,
 	}
+	if localRouteConfigured(model) {
+		r.assessor = r.assessLocalRoute
+		r.localRouteAssessor = true
+	}
+	return r
 }
 
 func (r *autoRouter) SetEnabled(on bool) {
@@ -61,20 +73,25 @@ func (r *autoRouter) Enabled() bool {
 // ORCHESTRATOR-DRIVEN: explicitly stated kind/difficulty (the main model's
 // delegation decision) always routes, as does a vision subtask capability need.
 // Unstated delegated tasks route only when /route is enabled, and then a small
-// model assesses the subtask level/capabilities; routing is not keyword-based.
-// The top-level/orchestrator model itself is never changed here.
+// model assesses the subtask level/capabilities. When a local route model is
+// explicitly configured (route_model / EIGEN_ROUTE_MODEL), that assessor is the
+// local model; otherwise the legacy small candidate model is used. Routing is
+// not keyword-based. The top-level/orchestrator model itself is never changed
+// here.
 func (r *autoRouter) Route(ctx context.Context, prompt, kind, difficulty string, hasImage bool) (llm.Provider, string, string) {
 	r.mu.Lock()
 	enabled := r.enabled
 	providers := append([]string(nil), r.providers...)
 	current := r.current
 	assessor := r.assessor
+	localAssessor := r.localRouteAssessor
 	r.mu.Unlock()
 
 	// Kind/difficulty: orchestrator-stated wins. If /route is on and the
-	// delegation did not state both fields, ask a small model to assess the
-	// missing routing fields. Do NOT keyword-classify the prompt for routing:
-	// routing should be a model decision that feeds the user's tier chain.
+	// delegation did not state both fields, ask the configured prompt router
+	// (preferably a small local model) to assess the missing routing fields.
+	// Do NOT keyword-classify the prompt for routing: routing should be a model
+	// decision that feeds the user's tier chain.
 	k, kExplicit := llm.ParseTaskKind(kind)
 	d, dExplicit := llm.ParseDifficulty(difficulty)
 	explicit := kExplicit || dExplicit
@@ -99,7 +116,14 @@ func (r *autoRouter) Route(ctx context.Context, prompt, kind, difficulty string,
 			a, err = r.assessRoute(ctx, prompt, hasImage, candidates)
 		}
 		if err != nil {
-			return nil, "", fmt.Sprintf("route skipped: assessor unavailable (%v)", err)
+			if !localAssessor {
+				return nil, "", fmt.Sprintf("route skipped: assessor unavailable (%v)", err)
+			}
+			// A configured local router is an optimization, not a hard dependency.
+			// If it is down, slow, or emits bad JSON, degrade to the parser defaults
+			// (general/medium unless the orchestrator stated a field) and let the
+			// normal policy choose from the allowed candidate set.
+			a = routeAssessment{Kind: k, Difficulty: d, Frontend: false, Assessor: "local fallback"}
 		}
 		assessment = a
 		if kExplicit {
@@ -113,14 +137,28 @@ func (r *autoRouter) Route(ctx context.Context, prompt, kind, difficulty string,
 	if hasImage {
 		assessment.Kind = llm.TaskVision
 	}
-	chosen, ok := llm.Route(llm.RouteRequest{
+	req := llm.RouteRequest{
 		Kind:       assessment.Kind,
 		Difficulty: assessment.Difficulty,
 		Frontend:   assessment.Frontend,
 		Candidates: candidates,
-	})
+	}
+	chosen, ok := "", false
+	if assessment.Model != "" {
+		// A prompt router may choose the concrete destination itself. Validate it
+		// through the same capability gate and candidate allowlist before honoring it.
+		req.Candidates = []string{assessment.Model}
+		chosen, ok = llm.Route(req)
+	}
 	if !ok {
-		return nil, "", "route skipped: no capable candidate model"
+		// The prompt router either did not choose a concrete model, or chose one
+		// that cannot satisfy the assessed/explicit capability. Fall back to the
+		// normal policy over all candidates instead of failing the delegation.
+		req.Candidates = candidates
+		chosen, ok = llm.Route(req)
+		if !ok {
+			return nil, "", "route skipped: no capable candidate model"
+		}
 	}
 
 	prov, err := r.providerFor(chosen)
@@ -136,6 +174,116 @@ func (r *autoRouter) Route(ctx context.Context, prompt, kind, difficulty string,
 	}
 	label := fmt.Sprintf("routed → %s (%s/%s; %s)", chosen, kindName(assessment.Kind), diffName(assessment.Difficulty), source)
 	return prov, chosen, label
+}
+
+func routeModelFromConfig(configured string) string {
+	for _, key := range []string{"EIGEN_ROUTE_MODEL", "EIGEN_ROUTER_MODEL"} {
+		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+			return v
+		}
+	}
+	return strings.TrimSpace(configured)
+}
+
+func localRouteConfigured(routeModel string) bool {
+	return strings.TrimSpace(routeModel) != "" ||
+		strings.TrimSpace(os.Getenv("EIGEN_ROUTE_MODEL")) != "" ||
+		strings.TrimSpace(os.Getenv("EIGEN_ROUTER_MODEL")) != ""
+}
+
+func localRouteModelRef(configured string) (provider, model string) {
+	model = strings.TrimSpace(configured)
+	if model == "" {
+		model = strings.TrimSpace(os.Getenv("EIGEN_ROUTE_MODEL"))
+	}
+	if model == "" {
+		model = strings.TrimSpace(os.Getenv("EIGEN_ROUTER_MODEL"))
+	}
+	if model == "" {
+		model = llm.DefaultModel("llama")
+	}
+	if tag, id := llm.ParseRef(model); tag != "" {
+		return tag, id
+	}
+	// Untagged route_model values are LOCAL model ids, even if the same string is
+	// known in the remote catalog. This lets a llama.cpp/Ollama server expose
+	// arbitrary names (including names that contain ':') without accidentally
+	// routing the router itself to a remote provider.
+	return "llama", model
+}
+
+func localRouteAssessorName(model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return "local"
+	}
+	return "local:" + model
+}
+
+func (r *autoRouter) assessLocalRoute(ctx context.Context, prompt string, hasImage bool, candidates []string) (routeAssessment, error) {
+	provider, model := localRouteModelRef(r.routeModel)
+	if llm.CanonicalProvider(provider) == "llama" {
+		base := strings.TrimSpace(os.Getenv("EIGEN_LLAMA_BASE_URL"))
+		if base == "" {
+			return routeAssessment{}, fmt.Errorf("local router requires EIGEN_LLAMA_BASE_URL (or set route_model to a custom local provider ref)")
+		}
+		if !localReady(base) {
+			return routeAssessment{}, fmt.Errorf("local router is not ready at %s", base)
+		}
+	}
+	prov, err := r.localRouteProvider(provider, model)
+	if err != nil {
+		return routeAssessment{}, err
+	}
+	cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	resp, err := prov.Complete(cctx, llm.Request{
+		System: `You are Eigen's LOCAL prompt router. Decide where a delegated subtask should run. Do not solve the task. Return ONLY compact JSON with keys: kind, difficulty, frontend, model.
+kind must be one of: general, search, vision, social.
+difficulty must be one of: trivial, easy, medium, hard.
+frontend must be true only for UI/visual/frontend/design work.
+model is required and MUST be exactly one of the candidate model ids. If unsure, still choose the safest capable candidate.`,
+		Messages: []llm.Message{{Role: llm.RoleUser, Text: localRouteAssessmentPrompt(prompt, hasImage, candidates)}},
+	})
+	if err != nil {
+		return routeAssessment{}, err
+	}
+	a, err := parseRouteAssessment(resp.Text)
+	if err != nil {
+		return routeAssessment{}, err
+	}
+	if a.Model != "" {
+		normalized, ok := normalizeAssessedModel(a.Model, candidates)
+		if !ok {
+			return routeAssessment{}, fmt.Errorf("local router chose non-candidate model %q", a.Model)
+		}
+		a.Model = normalized
+	}
+	a.Assessor = localRouteAssessorName(model)
+	if hasImage {
+		a.Kind = llm.TaskVision
+	}
+	return a, nil
+}
+
+func (r *autoRouter) localRouteProvider(provider, model string) (llm.Provider, error) {
+	ref := provider + ":" + model
+	r.mu.Lock()
+	if r.routeProvider != nil && r.routeProviderRef == ref {
+		p := r.routeProvider
+		r.mu.Unlock()
+		return p, nil
+	}
+	r.mu.Unlock()
+	p, err := llm.New(provider, model)
+	if err != nil {
+		return nil, err
+	}
+	r.mu.Lock()
+	r.routeProvider = p
+	r.routeProviderRef = ref
+	r.mu.Unlock()
+	return p, nil
 }
 
 func (r *autoRouter) assessRoute(ctx context.Context, prompt string, hasImage bool, candidates []string) (routeAssessment, error) {
@@ -170,6 +318,32 @@ frontend must be true only for UI/visual/frontend/design work.`,
 	return a, nil
 }
 
+func localRouteAssessmentPrompt(prompt string, hasImage bool, candidates []string) string {
+	var b strings.Builder
+	b.WriteString(routeAssessmentPrompt(prompt, hasImage))
+	b.WriteString("\n\ncandidate_models:\n")
+	for _, id := range candidates {
+		b.WriteString("- ")
+		b.WriteString(id)
+		if info, ok := llm.Lookup(id); ok {
+			b.WriteString(" (provider=")
+			b.WriteString(llm.CanonicalProvider(info.Provider))
+			if info.Search {
+				b.WriteString(", search")
+			}
+			if info.Vision {
+				b.WriteString(", vision")
+			}
+			if info.Social {
+				b.WriteString(", social")
+			}
+			b.WriteString(")")
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
 func routeAssessmentPrompt(prompt string, hasImage bool) string {
 	const max = 6000
 	if len([]rune(prompt)) > max {
@@ -190,27 +364,40 @@ func parseRouteAssessment(text string) (routeAssessment, error) {
 		return routeAssessment{}, fmt.Errorf("no JSON object in assessor output")
 	}
 	var raw struct {
-		Kind       string `json:"kind"`
-		Difficulty string `json:"difficulty"`
-		Level      string `json:"level"`
-		Frontend   bool   `json:"frontend"`
+		Kind        string `json:"kind"`
+		Difficulty  string `json:"difficulty"`
+		Level       string `json:"level"`
+		Frontend    bool   `json:"frontend"`
+		Model       string `json:"model"`
+		Route       string `json:"route"`
+		Destination string `json:"destination"`
 	}
 	if err := json.Unmarshal([]byte(text[start:end+1]), &raw); err != nil {
 		return routeAssessment{}, err
 	}
-	k, ok := llm.ParseTaskKind(raw.Kind)
+	model := strings.TrimSpace(firstNonEmpty(raw.Model, raw.Route, raw.Destination))
+	kind := strings.TrimSpace(raw.Kind)
+	k, ok := llm.ParseTaskKind(kind)
 	if !ok {
-		return routeAssessment{}, fmt.Errorf("invalid kind %q", raw.Kind)
+		if kind == "" && model != "" {
+			k = llm.TaskGeneral
+		} else {
+			return routeAssessment{}, fmt.Errorf("invalid kind %q", raw.Kind)
+		}
 	}
-	diff := raw.Difficulty
+	diff := strings.TrimSpace(raw.Difficulty)
 	if diff == "" {
-		diff = raw.Level
+		diff = strings.TrimSpace(raw.Level)
 	}
 	d, ok := llm.ParseDifficulty(diff)
 	if !ok {
-		return routeAssessment{}, fmt.Errorf("invalid difficulty %q", diff)
+		if diff == "" && model != "" {
+			d = llm.DiffMedium
+		} else {
+			return routeAssessment{}, fmt.Errorf("invalid difficulty %q", diff)
+		}
 	}
-	return routeAssessment{Kind: k, Difficulty: d, Frontend: raw.Frontend}, nil
+	return routeAssessment{Kind: k, Difficulty: d, Frontend: raw.Frontend, Model: model}, nil
 }
 
 func (r *autoRouter) routeCandidates(widen bool, current string, providers []string) []string {
@@ -237,6 +424,29 @@ func (r *autoRouter) providerFor(model string) (llm.Provider, error) {
 	}
 	r.cache[model] = p
 	return p, nil
+}
+
+func normalizeAssessedModel(model string, candidates []string) (string, bool) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return "", false
+	}
+	if containsString(candidates, model) {
+		return model, true
+	}
+	if tag, id := llm.ParseRef(model); tag != "" && containsString(candidates, id) {
+		return id, true
+	}
+	return "", false
+}
+
+func containsString(xs []string, want string) bool {
+	for _, x := range xs {
+		if x == want {
+			return true
+		}
+	}
+	return false
 }
 
 func kindName(k llm.TaskKind) string {

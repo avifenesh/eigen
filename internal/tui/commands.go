@@ -396,13 +396,13 @@ func (m *model) command(line string) tea.Cmd {
 			if p := m.router.Providers(); len(p) > 0 {
 				scope = "across " + strings.Join(p, " ")
 			}
-			m.note(fmt.Sprintf("routing: %s (%s) — main model stays explicit; task-tool delegations route when enabled, and stated task kind/difficulty always routes", status, scope))
+			m.note(fmt.Sprintf("routing: %s (%s) — main model stays explicit; task-tool delegations route when enabled; route_model/EIGEN_ROUTE_MODEL can use a small local prompt router", status, scope))
 		case "on":
 			m.router.SetEnabled(true)
-			m.note("model-assessed routing ON for delegated subtasks — main model stays explicit; empty route_providers means all credentialed providers")
+			m.note("prompt routing ON for delegated subtasks — main model stays explicit; route_model/EIGEN_ROUTE_MODEL uses a local prompt router; empty route_providers means all credentialed providers")
 		case "off":
 			m.router.SetEnabled(false)
-			m.note("model-assessed routing OFF — routing still happens when YOU state kind/difficulty on a task delegation")
+			m.note("prompt routing OFF — routing still happens when YOU state kind/difficulty on a task delegation")
 		default:
 			m.push(&block{kind: blockNote, isErr: true, body: sb("usage: /route on|off  (cross-provider scope: /config route_providers <list>)")})
 		}

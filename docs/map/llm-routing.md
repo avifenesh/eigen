@@ -106,7 +106,7 @@
 - **Used by / entrypoint:** root `main.go` (`contextBudget`), `internal/tui/switches.go`.
 
 ### internal/llm/classify.go
-- **Role:** Legacy deterministic prompt classifier (kind + difficulty) — retained for tests/cheap defaults; production routing assesses unstated subtasks with a small model instead.
+- **Role:** Legacy deterministic prompt classifier (kind + difficulty) — retained for tests/cheap defaults; production routing assesses unstated subtasks with a prompt-router model instead.
 - **Key symbols:**
   - `Classify(prompt, hasImage)` — kind + difficulty via wording heuristics (TEST-ONLY caller — see dead-code note).
   - `IsFrontend(prompt)` — frontend/design cue match (TEST-ONLY caller — see dead-code note).

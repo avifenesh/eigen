@@ -53,13 +53,17 @@ type Config struct {
 	TelegramAllow []int64  `json:"telegram_allow,omitempty"`
 	SkillsDirs    []string `json:"skills_dirs"`
 
-	// Route enables the opt-in model-assessed router for delegated subtasks: a
-	// small model assesses missing kind/difficulty, then the user's tier chain
-	// picks the cheapest capable model (ties → stronger → faster). The
-	// main/orchestrator model stays explicit. RouteProviders restricts cross-
-	// provider routing; empty = all credentialed providers.
+	// Route enables the opt-in prompt router for delegated subtasks: a small
+	// local model (route_model / EIGEN_ROUTE_MODEL when configured, otherwise
+	// the legacy small candidate model) assesses missing
+	// kind/difficulty, then the user's tier chain picks the capable destination.
+	// The main/orchestrator model stays explicit. RouteProviders restricts cross-
+	// provider routing; empty = all credentialed providers. RouteModel is the
+	// local prompt-router model ref; untagged values are sent through the llama
+	// backend, while provider:model refs can target a custom local provider.
 	Route          bool     `json:"route"`
 	RouteProviders []string `json:"route_providers"`
+	RouteModel     string   `json:"route_model,omitempty"`
 
 	// BoardGitHubOwners are the GitHub owners (your login + orgs like "agent-sh")
 	// whose repos appear as lanes on the cross-project work board. Empty = the
@@ -285,6 +289,8 @@ func Set(c *Config, key, value string) error {
 		c.Route = b
 	case "route_providers":
 		c.RouteProviders = splitFields(value)
+	case "route_model":
+		c.RouteModel = strings.TrimSpace(value)
 	case "local_background":
 		b, err := strconv.ParseBool(value)
 		if err != nil {
@@ -399,6 +405,7 @@ func View(c Config) string {
 		rp = strings.Join(c.RouteProviders, " ")
 	}
 	fmt.Fprintf(&b, "%-14s = %s\n", "route_providers", rp)
+	fmt.Fprintf(&b, "%-14s = %s\n", "route_model", val(c.RouteModel))
 	fmt.Fprintf(&b, "%-14s = %t\n", "observe", c.ObserveEnabled())
 	fmt.Fprintf(&b, "%-16s = %t\n", "local_background", c.LocalBackground)
 	fmt.Fprintf(&b, "%-16s = %d\n", "daemon_timeout", c.DaemonTimeout)
@@ -472,6 +479,8 @@ func Get(c Config, key string) string {
 		return strconv.FormatBool(c.Route)
 	case "route_providers":
 		return strings.Join(c.RouteProviders, " ")
+	case "route_model":
+		return c.RouteModel
 	case "observe":
 		return strconv.FormatBool(c.ObserveEnabled())
 	case "local_background":
