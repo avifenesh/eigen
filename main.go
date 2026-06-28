@@ -590,7 +590,7 @@ func main() {
 				IdleMinutes:   cfg.IdleMinutes,
 				MaxTokens:     resolveUserMaxTokens(*maxTokens),
 				NotifyCmd:     cfg.NotifyCmd,
-				Router:        newAutoRouter(cfg.Route, cfg.RouteProviders, firstNonEmpty(cfg.Provider, "converse")),
+				Router:        newAutoRouter(cfg.Route, cfg.RouteProviders, firstNonEmpty(cfg.Provider, "converse"), cfg.RouteModel),
 				HookRunner:    hookRunner,
 				NoSessionFile: true, // the daemon persists
 			})
@@ -658,7 +658,7 @@ func main() {
 	}
 	// Auto-router (opt-in): per-task model selection, declared early so the
 	// review/task tools can capture it; configured below.
-	router := newAutoRouter(cfg.Route, cfg.RouteProviders, *provider)
+	router := newAutoRouter(cfg.Route, cfg.RouteProviders, *provider, cfg.RouteModel)
 	taskRun := func(ctx context.Context, t string, opts tool.TaskOpts, background bool) (string, error) {
 		if a == nil {
 			return "", fmt.Errorf("subtasks unavailable")
@@ -2774,7 +2774,7 @@ func runPlan(cfg config.Config, provider, model, task string) {
 		fmt.Fprintln(os.Stderr, "usage: eigen plan <task description>")
 		os.Exit(2)
 	}
-	router := newAutoRouter(cfg.Route, cfg.RouteProviders, provider)
+	router := newAutoRouter(cfg.Route, cfg.RouteProviders, provider, cfg.RouteModel)
 	author := effectiveModel(provider, model)
 	run := router.councilRunner(func() string { return author })
 	fmt.Fprintf(os.Stderr, "planning (author %s, adversary = other vendor)…\n", author)

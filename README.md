@@ -158,7 +158,7 @@ What happens:
 - **Daemon**: the long-lived local host for sessions (`eigen daemon`), normally reached through a Unix socket.
 - **App/TUI**: terminal dashboards for sessions, projects, config, models, providers, observe, memory, plugins, machines, and scheduled jobs.
 - **Tools**: file, shell, search, subtask, observe, plugin, and integration capabilities exposed to the model through approval-aware tool calls.
-- **Routing**: optional delegated-work routing. The main model remains the explicit user choice; `/route` only affects delegated subtasks.
+- **Routing**: optional delegated-work routing. The main model remains the explicit user choice; `/route` only affects delegated subtasks. Set `route_model` (or `EIGEN_ROUTE_MODEL`) to have a small local prompt router read the delegated prompt and choose a concrete candidate model (with kind/difficulty fallback) before Eigen runs the delegated task.
 - **Custom providers**: add OpenAI-compatible chat/responses endpoints or Anthropic-compatible endpoints, each with its own explicit model catalog, from the app Providers page.
 - **Memory**: durable project/global notes injected as compact context, with local storage under `~/.eigen/memory`.
 - **Plugins**: Claude/Codex-style plugin bundles for skills, commands, MCP servers, hooks, and task roles.
@@ -182,7 +182,7 @@ The primary config file is:
 ~/.eigen/config.json
 ```
 
-Common fields include provider/model defaults, routing options, permission mode, theme, and provider-specific settings.
+Common fields include provider/model defaults, routing options (`route`, `route_providers`, `route_model`), permission mode, theme, and provider-specific settings.
 
 Custom provider catalogs live in:
 

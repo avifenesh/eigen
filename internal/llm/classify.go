@@ -5,7 +5,7 @@ import "strings"
 // Classify is a legacy deterministic classifier retained for tests and any
 // non-routing callers that want a cheap default. The production router does not
 // use this wording heuristic for /route; unstated delegated subtasks are assessed
-// by a small model instead.
+// by a prompt-router model instead.
 func Classify(prompt string, hasImage bool) (TaskKind, Difficulty) {
 	return classifyKind(prompt, hasImage), classifyDifficulty(prompt)
 }

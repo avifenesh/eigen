@@ -149,6 +149,15 @@ func TestSetRouteKeys(t *testing.T) {
 	if len(c.RouteProviders) != 2 {
 		t.Fatalf("comma split wrong: %v", c.RouteProviders)
 	}
+	if err := Set(&c, "route_model", "qwen2.5:7b"); err != nil {
+		t.Fatalf("route_model should accept arbitrary local model refs: %v", err)
+	}
+	if c.RouteModel != "qwen2.5:7b" || Get(c, "route_model") != "qwen2.5:7b" {
+		t.Fatalf("route_model did not round-trip: %+v", c)
+	}
+	if v := View(c); !strings.Contains(v, "route_model") || !strings.Contains(v, "qwen2.5:7b") {
+		t.Fatalf("View missing route_model:\n%s", v)
+	}
 	if err := Set(&c, "route", "maybe"); err == nil {
 		t.Fatal("non-bool route should error")
 	}

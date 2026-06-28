@@ -431,7 +431,7 @@ func attachTUI(c *daemon.Client, id string, cfg config.Config, task string) tui.
 		IdleMinutes:   cfg.IdleMinutes,
 		MaxTokens:     resolveUserMaxTokens(cfg.MaxTokens),
 		NotifyCmd:     cfg.NotifyCmd,
-		Router:        newAutoRouter(cfg.Route, cfg.RouteProviders, firstNonEmpty(cfg.Provider, "converse")),
+		Router:        newAutoRouter(cfg.Route, cfg.RouteProviders, firstNonEmpty(cfg.Provider, "converse"), cfg.RouteModel),
 		HookRunner:    hookRunner,
 		NoSessionFile: true,
 	})

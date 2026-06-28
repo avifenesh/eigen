@@ -156,8 +156,10 @@
     holds the cross-provider allowlist + the user's base provider.
   - `(*autoRouter).Route(ctx, prompt, kind, difficulty, hasImage)` —
     orchestrator-driven model selection for a delegated subtask (explicit
-    kind/difficulty or a vision need always routes; otherwise a small model
-    assesses only when `/route` is enabled).
+    kind/difficulty or a vision need always routes; otherwise a prompt router
+    assesses only when `/route` is enabled). If `route_model`/`EIGEN_ROUTE_MODEL`
+    is configured, that assessor is a small local llama/custom-provider model;
+    otherwise the legacy small candidate model assesses.
   - `(*autoRouter).providerFor(model)` — build + cache a provider for a model id.
   - `(*autoRouter).crossReviewer(authorModel)` — returns the review closure (GPT
     reviews Claude, Claude reviews GPT — never self-review).
@@ -166,9 +168,11 @@
     `EIGEN_PLAN_ADVERSARY`).
   - `(*autoRouter).SetEnabled` / `Enabled` / `Providers` — live toggle + allowlist
     accessors (used by the TUI's `/route`).
-  - `assessRoute`, `routeCandidates`, `routeAssessmentPrompt`,
-    `parseRouteAssessment`, `routeAssessment`, `routeAssessor`, `kindName`,
-    `diffName` — the small-model routing-assessment internals.
+  - `assessLocalRoute`, `localRouteAssessmentPrompt`, `assessRoute`,
+    `routeCandidates`, `routeAssessmentPrompt`, `parseRouteAssessment`,
+    `routeAssessment`, `routeAssessor`, `kindName`, `diffName` — the
+    prompt-routing internals. Local assessors may return a concrete candidate
+    `model`, which is validated against the candidate/capability gate before use.
 - **Depends on:** `internal/llm`.
 - **Used by / entrypoint:** `main.go` and `build.go` construct an `autoRouter`
   and wire `Route`/`providerFor` into the agent, and `crossReviewer`/

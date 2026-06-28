@@ -30,6 +30,7 @@ type ConfigFieldDTO struct {
 var emptyMeaningful = map[string]bool{
 	"model":       true,
 	"judge_model": true,
+	"route_model": true,
 }
 
 // ConfigDTO is the full editable-config snapshot.
