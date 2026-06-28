@@ -13,8 +13,19 @@
   import CodeBlock from "./CodeBlock.svelte";
   import DiffView from "./DiffView.svelte";
 
-  let { block }: { block: ToolBlock } = $props();
-  let open = $state(false);
+  // `open` is optionally CONTROLLED: when a parent passes it (e.g. ToolGroupCard
+  // driving the live/auto-open tool), the card reflects that value and reports
+  // clicks via `ontoggle` instead of owning the state. When `open` is omitted
+  // the card keeps its own internal toggle (standalone usage). This lets a group
+  // auto-open the running tool and collapse it once superseded, while a user
+  // click still wins through the parent's override map.
+  let { block, open: openProp, ontoggle }: { block: ToolBlock; open?: boolean; ontoggle?: () => void } = $props();
+  let internalOpen = $state(false);
+  const open = $derived(openProp ?? internalOpen);
+  function toggle() {
+    if (ontoggle) ontoggle();
+    else internalOpen = !internalOpen;
+  }
 
   // ── Status ────────────────────────────────────────────────────────────────
   // Indeterminate: a tool_result that never arrived (dropped on a full buffer)
@@ -392,7 +403,7 @@
 <div class="tool" class:tool--error={block.isError} class:tool--open={open}>
   <button
     class="tool__head"
-    onclick={() => (open = !open)}
+    onclick={toggle}
     aria-expanded={open}
     title={summary || block.name}
   >

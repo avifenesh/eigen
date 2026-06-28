@@ -31,9 +31,58 @@ export type ToolBlock = {
   result?: string;
   isError?: boolean;
   done: boolean;
+  // Stable group id, stamped at ingestion: every tool in one consecutive run
+  // shares the uid of the run's FIRST tool. Unlike deriving the group key from
+  // whichever first tool currently survives, this id is fixed when the run
+  // starts, so CAP eviction of the run's head never re-keys the group (no
+  // VirtualList remount / lost open-state). A non-tool block ends the run; the
+  // next tool starts a new group with its own uid.
+  group: number;
 };
 export type NoteBlock = { uid: number; kind: "note"; text: string };
 export type Block = TextBlock | ToolBlock | NoteBlock;
+
+// A run of CONSECUTIVE tool calls, folded into one collapsible row. The chat
+// view groups tool blocks so a burst of calls renders as a single "N tools"
+// item (each tool still individually expandable) instead of stacking one card
+// per call. A group is broken by any non-tool block — a message, a reasoning
+// stream, or a note — which is exactly the "separated by stream-of-thoughts or
+// message" rule. `uid` is the first member's uid: it never changes as more
+// tools append to the run, so the row keeps a STABLE VirtualList key (no
+// remount/reflow) while the group grows.
+export type ToolGroup = { kind: "toolgroup"; uid: number; tools: ToolBlock[] };
+
+// A renderable transcript row: a standalone non-tool block, or a folded run of
+// tool calls. groupRows() turns the flat Block[] history into Row[].
+export type Row = Exclude<Block, ToolBlock> | ToolGroup;
+
+// groupRows folds maximal runs of consecutive `tool` blocks into ToolGroup rows,
+// leaving every other block (text / reasoning / note) as its own row and as the
+// separator that ends a run. Pure and O(n); the chat view derives it from
+// `history`, which only changes at block boundaries (tool start/result, note,
+// turn-final commit) — never per streamed token — so grouping never re-runs on
+// the ~60fps token path (that lands in the separate `live` block).
+export function groupRows(history: Block[]): Row[] {
+  const rows: Row[] = [];
+  let cur: ToolGroup | null = null;
+  for (const b of history) {
+    if (b.kind === "tool") {
+      // A run break is signalled by a non-tool block (cur=null); the group's
+      // identity is the stamped `group` id (= first tool's uid), so it stays
+      // fixed even if CAP eviction drops the run's head. Guard on id match too,
+      // so a seeded history that ever interleaves runs can't merge two groups.
+      if (cur && cur.uid === b.group) cur.tools.push(b);
+      else {
+        cur = { kind: "toolgroup", uid: b.group, tools: [b] };
+        rows.push(cur);
+      }
+    } else {
+      cur = null;
+      rows.push(b);
+    }
+  }
+  return rows;
+}
 
 // One task from the `todo` tool's plan, surfaced live in the chat view.
 export type TodoEntry = { content: string; status: string; priority?: string };
@@ -195,6 +244,17 @@ export function createTranscript(sessionId: string) {
     history = next;
   }
 
+  // pushToolBlock appends a tool block, stamping its stable `group` id: a tool
+  // that immediately follows another tool joins that run's group; otherwise it
+  // starts a new run keyed by its own uid. The stamp is fixed at ingestion so a
+  // later CAP eviction of the run's head can't re-key the group (groupRows reads
+  // the stamp, not array position).
+  function pushToolBlock(b: Omit<ToolBlock, "group">) {
+    const prev = history[history.length - 1];
+    const group = prev && prev.kind === "tool" ? prev.group : b.uid;
+    pushHistory({ ...b, group });
+  }
+
   function resetPending() {
     pendingText = "";
     pendingKind = "text";
@@ -250,7 +310,7 @@ export function createTranscript(sessionId: string) {
         flush();
         commitLive();
         resetPending();
-        pushHistory({ uid: nextUid(), kind: "tool", id: e.toolId ?? "", name: e.tool ?? "", args: e.toolArgs ?? "", done: false });
+        pushToolBlock({ uid: nextUid(), kind: "tool", id: e.toolId ?? "", name: e.tool ?? "", args: e.toolArgs ?? "", done: false });
         break;
       case "tool_result": {
         const tid = e.toolId ?? "";
@@ -268,7 +328,7 @@ export function createTranscript(sessionId: string) {
         // or a result that somehow outran its start): surface it as a standalone
         // done tool block rather than silently dropping the result.
         if (!matched) {
-          pushHistory({ uid: nextUid(), kind: "tool", id: e.toolId ?? "", name: e.tool ?? "tool", args: "", result: e.result, isError: e.isError, done: true });
+          pushToolBlock({ uid: nextUid(), kind: "tool", id: e.toolId ?? "", name: e.tool ?? "tool", args: "", result: e.result, isError: e.isError, done: true });
         }
         break;
       }
@@ -522,6 +582,14 @@ export function mapMessages(messages: MessageDTO[], uid: () => number): Block[] 
   const out: Block[] = [];
   const byToolId = new Map<string, ToolBlock>();
   let step = 0;
+  // Stamp a tool block's stable `group` id (= the run's first tool's uid):
+  // a tool that follows another tool joins its group, else starts a new run.
+  // Mirrors the live pushToolBlock rule so a seeded transcript groups identically
+  // to a streamed one.
+  const toolGroupId = (u: number): number => {
+    const prev = out[out.length - 1];
+    return prev && prev.kind === "tool" ? prev.group : u;
+  };
   for (const m of window) {
     if (m.role === "tool") {
       const id = m.toolCallId ?? "";
@@ -537,7 +605,8 @@ export function mapMessages(messages: MessageDTO[], uid: () => number): Block[] 
         // block, not steal this one's result.
         byToolId.delete(id);
       } else {
-        out.push({ uid: uid(), kind: "tool", id, name: m.toolName ?? "tool", args: "", result: m.text, isError: m.toolError, done: true });
+        const u = uid();
+        out.push({ uid: u, kind: "tool", id, name: m.toolName ?? "tool", args: "", result: m.text, isError: m.toolError, done: true, group: toolGroupId(u) });
       }
       continue;
     }
@@ -545,7 +614,8 @@ export function mapMessages(messages: MessageDTO[], uid: () => number): Block[] 
     const images = cloneImages(m.images);
     if (m.text || images?.length) out.push({ uid: uid(), kind: "text", role: m.role, step, text: m.text, images });
     for (const tc of m.toolCalls ?? []) {
-      const block: ToolBlock = { uid: uid(), kind: "tool", id: tc.id, name: tc.name, args: tc.args, done: false };
+      const u = uid();
+      const block: ToolBlock = { uid: u, kind: "tool", id: tc.id, name: tc.name, args: tc.args, done: false, group: toolGroupId(u) };
       // Last-wins: an id-less call is never matchable (no result can find it),
       // so it stays a standalone pending block and is kept out of the Map.
       if (tc.id) byToolId.set(tc.id, block);
