@@ -12,6 +12,7 @@
   // sending revokes the batch, and onDestroy revokes whatever is left. No leak.
   import { onDestroy } from "svelte";
   import type { ImageDTO } from "$lib/types";
+  import { slashLabel, type SlashCommandEntry } from "$lib/slash";
   import { voice } from "$lib/stores/voice.svelte";
   import Button from "./Button.svelte";
 
@@ -22,6 +23,7 @@
     disabled = false,
     disabledReason = "",
     voiceModeOn = false,
+    slashCommands = [],
     onsend,
     oninterrupt,
     onvoicemode,
@@ -40,6 +42,9 @@
     // Whether the hands-free conversation loop is active (parent owns the session
     // it runs against; the composer only reflects + toggles it).
     voiceModeOn?: boolean;
+    // Slash command menu entries supplied by the Chat view (TUI built-ins +
+    // project/user custom commands). Empty keeps the composer as a plain input.
+    slashCommands?: SlashCommandEntry[];
     // Returns whether the send was accepted; the composer clears the draft +
     // attachments ONLY on success, so a failed RPC never destroys what the user
     // typed. A void/undefined return is treated as success (back-compat).
@@ -111,6 +116,46 @@
   // footer.
   const offlineReason = $derived(disabledReason || "Composer unavailable");
   const status = $derived(disabled ? offlineReason : hint);
+
+  // Slash-command completion. Mirrors the TUI affordance: a leading "/" opens a
+  // command list; Tab / arrows complete the selected command, and exact commands
+  // still submit with Enter. The menu only covers the command token — once the
+  // user types a space for arguments, it hides and the draft sends normally.
+  let slashIndex = $state(0);
+  const slashQuery = $derived.by(() => {
+    if (attachments.length > 0) return null;
+    const m = text.match(/^\/([^\s/]*)$/);
+    return m ? m[1].toLowerCase() : null;
+  });
+  const slashSuggestions = $derived.by(() => {
+    if (slashQuery == null) return [];
+    const query = slashQuery;
+    return slashCommands
+      .map((cmd, order) => ({ cmd, order, name: cmd.name.toLowerCase() }))
+      .filter((x) => !query || x.name.includes(query))
+      .sort((a, b) => {
+        const ap = a.name.startsWith(query) ? 0 : 1;
+        const bp = b.name.startsWith(query) ? 0 : 1;
+        return ap - bp || a.order - b.order;
+      })
+      .slice(0, 12)
+      .map((x) => x.cmd);
+  });
+  const slashOpen = $derived(!disabled && slashSuggestions.length > 0 && slashQuery != null);
+  $effect(() => {
+    if (slashIndex >= slashSuggestions.length) slashIndex = 0;
+  });
+  function completeSlash(cmd: SlashCommandEntry) {
+    const label = slashLabel(cmd);
+    const wantsArgs = !!cmd.argHint || /[<[]/.test(cmd.usage ?? "");
+    text = wantsArgs ? `${label} ` : label;
+    slashIndex = 0;
+    queueMicrotask(() => {
+      grow();
+      ta?.focus();
+      ta?.setSelectionRange(text.length, text.length);
+    });
+  }
 
   function grow() {
     if (!ta) return;
@@ -186,6 +231,32 @@
   }
 
   function onkeydown(e: KeyboardEvent) {
+    if (slashOpen && slashSuggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        slashIndex = (slashIndex + 1) % slashSuggestions.length;
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        slashIndex = (slashIndex - 1 + slashSuggestions.length) % slashSuggestions.length;
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        completeSlash(slashSuggestions[slashIndex]);
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+        const selected = slashSuggestions[slashIndex];
+        const exact = text.trim().toLowerCase() === slashLabel(selected).toLowerCase();
+        if (!exact) {
+          e.preventDefault();
+          completeSlash(selected);
+          return;
+        }
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       send();
@@ -298,6 +369,29 @@
       </ul>
     {/if}
 
+    {#if slashOpen}
+      <div class="slash-menu" role="listbox" aria-label="Slash commands">
+        {#each slashSuggestions as cmd, i (cmd.name)}
+          <button
+            type="button"
+            class="slash-menu__item"
+            class:slash-menu__item--active={i === slashIndex}
+            role="option"
+            aria-selected={i === slashIndex}
+            onmouseenter={() => (slashIndex = i)}
+            onmousedown={(e) => e.preventDefault()}
+            onclick={() => completeSlash(cmd)}
+          >
+            <span class="slash-menu__name">{cmd.usage ?? slashLabel(cmd)}</span>
+            <span class="slash-menu__desc">{cmd.description}</span>
+            {#if cmd.source === "custom"}
+              <span class="slash-menu__source">custom</span>
+            {/if}
+          </button>
+        {/each}
+      </div>
+    {/if}
+
     <textarea
       bind:this={ta}
       bind:value={text}
@@ -407,6 +501,7 @@
   .composer {
     --pad-y: var(--sp-5);
     --pad-x: var(--sp-5);
+    position: relative;
     display: flex;
     align-items: flex-end;
     gap: var(--sp-4);
@@ -459,6 +554,66 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-2);
+  }
+
+  /* ── slash command menu ────────────────────────────────────────────────── */
+  .slash-menu {
+    position: absolute;
+    left: var(--pad-x);
+    right: calc(var(--pad-x) + 112px);
+    bottom: calc(100% + var(--sp-2));
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    max-height: min(48vh, 340px);
+    overflow-y: auto;
+    padding: var(--sp-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-md);
+    background: var(--bg-overlay);
+    box-shadow: var(--shadow-3);
+  }
+  .slash-menu__item {
+    display: grid;
+    grid-template-columns: minmax(120px, max-content) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--sp-3);
+    width: 100%;
+    padding: var(--sp-2) var(--sp-3);
+    border: none;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font: var(--fw-regular) var(--fs-body-sm) / var(--lh-snug) var(--font-sans);
+    text-align: left;
+    cursor: pointer;
+  }
+  .slash-menu__item:hover,
+  .slash-menu__item--active {
+    background: var(--state-hover);
+    color: var(--text-primary);
+  }
+  .slash-menu__name {
+    color: var(--brand-bright);
+    font-weight: var(--fw-semibold);
+    white-space: nowrap;
+  }
+  .slash-menu__desc {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .slash-menu__source {
+    padding: 1px var(--sp-2);
+    border-radius: var(--r-full);
+    background: var(--bg-inset);
+    color: var(--text-faint);
+    font: var(--fw-medium) var(--fs-micro) / 1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-eyebrow);
   }
 
   /* ── attached-image thumbnails ─────────────────────────────────────────── */

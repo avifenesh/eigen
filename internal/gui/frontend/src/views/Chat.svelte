@@ -9,12 +9,14 @@
   import { sessions } from "$lib/stores/sessions.svelte";
   import { sessionUnread } from "$lib/stores/sessionUnread.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { ui } from "$lib/stores/ui.svelte";
   import { voice } from "$lib/stores/voice.svelte";
   import { router } from "$lib/router.svelte";
   import { on, ev } from "$lib/events";
   import { errText } from "$lib/errors";
+  import { builtinSlashCommands, parseSlashCommand, slashHelpText, type SlashCommandEntry } from "$lib/slash";
   import { createTranscript, type Transcript, groupRows } from "$lib/stores/transcript.svelte";
-  import type { SessionStateDTO, ModelDTO, ImageDTO, RecentDirDTO } from "$lib/types";
+  import type { SessionStateDTO, ModelDTO, ImageDTO, RecentDirDTO, CommandInfoDTO } from "$lib/types";
   import Composer from "$lib/components/Composer.svelte";
   import ToolGroupCard from "$lib/components/ToolGroupCard.svelte";
   import Markdown from "$lib/components/Markdown.svelte";
@@ -354,30 +356,496 @@
     });
   }
 
-  // Custom slash commands (~/.eigen/commands + project .eigen/commands), loaded
-  // once on demand. A user-authored "/review" should run its expanded prompt as
-  // a turn, not be sent as the literal string "/review" — the TUI does this; the
-  // GUI did not. Returns: true (ran ok), false (matched but failed — keep draft),
-  // or null (not a slash command / no match → caller sends as normal text).
-  let commandNames = $state<Set<string> | null>(null);
-  async function maybeRunCommand(text: string): Promise<boolean | null> {
-    const m = text.match(/^\/([A-Za-z0-9][\w-]*)(?:\s+([\s\S]*))?$/);
-    if (!m) return null;
-    const [, name, args = ""] = m;
-    if (!commandNames) {
-      try {
-        const cmds = await Bridge.Commands();
-        commandNames = new Set((cmds ?? []).map((c) => c.name));
-      } catch {
-        commandNames = new Set();
-      }
+  // Slash commands — GUI peer of the TUI's internal/tui/commands.go. Built-ins
+  // are handled first; user/plugin-authored custom commands fall through to the
+  // existing Bridge.RunCommand path. Unknown /names are control input (not model
+  // chat), so they show the same "try /help" note the TUI does.
+  let customCommands = $state<CommandInfoDTO[]>([]);
+  let customCommandsLoaded = $state(false);
+  let customCommandsLoading: Promise<void> | null = null;
+  const composerSlashCommands = $derived([
+    ...builtinSlashCommands,
+    ...customCommands.map((c) => ({
+      name: c.name,
+      usage: `/${c.name}${c.argHint ? ` ${c.argHint}` : ""}`,
+      description: [c.description || "custom command", c.argHint].filter(Boolean).join("  "),
+      argHint: c.argHint,
+      source: "custom" as const,
+    })),
+  ] as SlashCommandEntry[]);
+
+  async function loadCustomCommands() {
+    if (customCommandsLoaded) return;
+    if (customCommandsLoading) return customCommandsLoading;
+    customCommandsLoading = Bridge.Commands()
+      .then((cmds) => {
+        customCommands = cmds ?? [];
+        customCommandsLoaded = true;
+      })
+      .catch(() => {
+        customCommands = [];
+        customCommandsLoaded = true;
+      })
+      .finally(() => {
+        customCommandsLoading = null;
+      });
+    return customCommandsLoading;
+  }
+  $effect(() => {
+    if (sessionId) void loadCustomCommands();
+  });
+
+  // TUI safeWhileRunning(), translated to the GUI command names. Other commands
+  // replace the session, start a fresh turn, or exit/navigate in ways that would
+  // race an active agent turn, so they are refused until the turn is stopped.
+  const safeWhileRunning = new Set([
+    "effort", "search", "fast", "perm", "model", "help", "goal", "loop", "config", "route",
+    "skills", "tools", "observe", "obs", "find", "copy", "read", "voice", "mute", "dictate", "talk", "speak",
+    "rail", "changes", "term", "tasks", "shells", "tray", "workflow", "rename", "background", "bg", "add-dir",
+    "mouse", "steer", "queue", "ban", "unban", "home", "sessions", "plugins", "hooks", "plugin", "marketplace",
+  ]);
+
+  function slashNote(text: string) {
+    if (store?.appendNote(text) == null) toasts.info(text.split("\n")[0] ?? text);
+  }
+  function requireActiveSession(): string | null {
+    if (!sessionId) {
+      slashNote("no active session");
+      return null;
     }
-    if (!commandNames.has(name)) return null;
-    if (!sessionId) return false;
+    return sessionId;
+  }
+  function missingArg(name: string, usage: string) {
+    slashNote(`usage: /${name} ${usage}`.trim());
+    return true;
+  }
+  function onOff(arg: string): boolean | null {
+    switch (arg.toLowerCase()) {
+      case "on":
+      case "true":
+      case "1":
+      case "yes":
+        return true;
+      case "off":
+      case "false":
+      case "0":
+      case "no":
+        return false;
+      default:
+        return null;
+    }
+  }
+  function splitBan(arg: string): { title: string; rule: string } {
+    const i = arg.indexOf(":");
+    if (i < 0) return { title: "", rule: "" };
+    return { title: arg.slice(0, i).trim(), rule: arg.slice(i + 1).trim() };
+  }
+  function openDock(tab: "info" | "terminal" | "diff" | "files" | "browser") {
+    setDockTab(tab);
+    if (dockCollapsed) {
+      dockCollapsed = false;
+      try {
+        localStorage.setItem("eigen.dockCollapsed", "0");
+      } catch {}
+    }
+  }
+  function reviewPrompt(target: string): string {
+    const what = target || "the work you just did in this session";
+    return "Use the review tool to get a cross-vendor critique of " + what + ". Package the relevant artifact (the plan, diff, or code) into the tool's `artifact` argument with enough context to judge it, set an appropriate `focus`, then act on the critique — fix real issues it raises and note anything you disagree with and why.";
+  }
+  async function submitSyntheticTurn(prompt: string): Promise<boolean> {
+    const id = requireActiveSession();
+    if (!id) return false;
+    const optimisticUid = store?.appendUserMessage(prompt, []);
+    store?.markPending();
     try {
-      await Bridge.RunCommand(sessionId, name, args.trim());
+      await Bridge.SendInput(id, prompt, [], []);
       return true;
     } catch (e) {
+      store?.removeBlock(optimisticUid);
+      store?.clearPending();
+      toasts.error(errText(e));
+      return false;
+    }
+  }
+
+  async function runBuiltinSlashCommand(name: string, args: string): Promise<boolean | null> {
+    if (!builtinSlashCommands.some((c) => c.name === name)) return null;
+    if ((store?.running ?? false) && !safeWhileRunning.has(name)) {
+      slashNote(`/${name} can't run mid-turn — press Stop first`);
+      return true;
+    }
+    const id = sessionId;
+    switch (name) {
+      case "help": {
+        const custom = customCommands.length
+          ? "\n\nCustom commands:\n" + customCommands.map((c) => `  /${c.name}${c.argHint ? ` ${c.argHint}` : ""} — ${c.description || "custom command"}`).join("\n")
+          : "";
+        slashNote(slashHelpText() + custom);
+        return true;
+      }
+      case "home":
+        router.go("home");
+        return true;
+      case "sessions":
+      case "resume":
+        router.go("sessions");
+        return true;
+      case "tasks":
+        router.go("tasks");
+        return true;
+      case "tray":
+        router.go("live");
+        return true;
+      case "observe":
+      case "obs":
+        router.go("observe");
+        return true;
+      case "plugins":
+      case "plugin":
+      case "marketplace":
+      case "hooks":
+        router.go("plugins");
+        if (name === "hooks") toasts.info("hooks live under Plugins / Observe in the GUI");
+        return true;
+      case "rail":
+        ui.toggleRail();
+        return true;
+      case "changes":
+        toggleDockCollapsed();
+        return true;
+      case "term":
+        openDock("terminal");
+        return true;
+      case "shells":
+        openDock("info");
+        slashNote(sess?.shells?.length ? "background shells are shown in the Info dock" : "no background shells");
+        return true;
+      case "background":
+      case "bg":
+        if (!(store?.running ?? false)) {
+          slashNote("nothing running to background");
+          return true;
+        }
+        toasts.info("moved to background — the daemon keeps running it; reattach from Chat/Sessions to collect");
+        router.go("home");
+        return true;
+      case "steer":
+        setInputMode("steer");
+        slashNote("input mode → steer (Enter injects into a running turn)");
+        return true;
+      case "queue":
+        setInputMode("queue");
+        slashNote("input mode → queue (Enter waits for the next turn)");
+        return true;
+      case "model": {
+        if (!id) return false;
+        if (!args) {
+          await loadModels();
+          const sample = models.slice(0, 8).map((m) => m.id).join(", ");
+          slashNote(`model: ${sess?.model || "unknown"}${sample ? `\ntry: /model ${sample}` : ""}`);
+          return true;
+        }
+        const parts = args.split(/\s+/).filter(Boolean);
+        const model = parts.length >= 2 ? `${parts[0]}:${parts.slice(1).join(" ")}` : args;
+        const st = await run(() => Bridge.SetModel(id, model));
+        if (!st) return false;
+        applyState(id, st);
+        slashNote("model → " + st.model);
+        return true;
+      }
+      case "perm": {
+        if (!id) return false;
+        const v = args.toLowerCase();
+        if (!v) {
+          slashNote(`permission posture: ${sess?.perm || "unknown"}  (use /perm gated|auto)`);
+          return true;
+        }
+        if (v !== "gated" && v !== "auto") return missingArg("perm", "gated|auto");
+        const st = await run(() => Bridge.SetPerm(id, v));
+        if (!st) return false;
+        applyState(id, st);
+        slashNote("permission posture → " + st.perm);
+        return true;
+      }
+      case "effort": {
+        if (!id) return false;
+        if (!args) {
+          slashNote(sess?.effort ? `reasoning effort: ${sess.effort}   (/effort ${effortLevels.join("|")})` : "the current model does not support a reasoning-effort setting");
+          return true;
+        }
+        const st = await run(() => Bridge.SetEffort(id, args));
+        if (!st) return false;
+        applyState(id, st);
+        slashNote("reasoning effort → " + (st.effort || args));
+        return true;
+      }
+      case "search": {
+        if (!id) return false;
+        if (!args) {
+          slashNote(sess?.search ? `live search: ${sess.search}   (/search off|auto|on)` : "the current model does not support live search");
+          return true;
+        }
+        const v = args.toLowerCase();
+        if (!SEARCH_MODES.includes(v)) return missingArg("search", "off|auto|on");
+        const st = await run(() => Bridge.SetSearch(id, v));
+        if (!st) return false;
+        applyState(id, st);
+        slashNote("live search → " + (st.search || v));
+        return true;
+      }
+      case "fast": {
+        if (!id) return false;
+        const want = args ? onOff(args) : !(sess?.fast ?? false);
+        if (want == null) return missingArg("fast", "[on|off]");
+        const st = await run(() => Bridge.SetFast(id, want));
+        if (!st) return false;
+        applyState(id, st);
+        slashNote("fast mode → " + (st.fast ? "on" : "off"));
+        return true;
+      }
+      case "goal": {
+        if (!id) return false;
+        if (!args) {
+          slashNote(sess?.goal ? `goal: ${sess.goal}   (/goal <new text> · /goal clear)` : "no goal set  (/goal <text> to set a persistent north star)");
+          return true;
+        }
+        const next = ["clear", "none", "off"].includes(args.toLowerCase()) ? "" : args;
+        const st = await run(() => Bridge.SetGoal(id, next));
+        if (!st) return false;
+        applyState(id, st);
+        slashNote(next ? "goal → " + next : "goal cleared");
+        return true;
+      }
+      case "rename": {
+        if (!id) return false;
+        if (!args) {
+          startTitle();
+          slashNote("rename: edit the session title in the Info dock");
+          return true;
+        }
+        const st = await run(() => Bridge.SetTitle(id, args));
+        if (!st) return false;
+        applyState(id, st);
+        await sessions.refresh();
+        slashNote("renamed → " + args);
+        return true;
+      }
+      case "clear":
+        if (!id) return false;
+        await clearSession();
+        slashNote("— cleared —");
+        return true;
+      case "compact":
+        if (!id) return false;
+        await compact();
+        return true;
+      case "save":
+      case "export": {
+        if (!id) return false;
+        const path = await run(() => Bridge.ExportSession(id));
+        if (!path) return false;
+        slashNote(`exported → ${path}`);
+        return true;
+      }
+      case "add-dir": {
+        if (!id) return false;
+        if (!args) {
+          const roots = sess?.roots ?? [];
+          slashNote(roots.length ? "working directories:\n  " + roots.join("\n  ") + "\n(/add-dir <path> to grant another)" : "no sandbox roots reported");
+          return true;
+        }
+        const root = await run(() => Bridge.AddDir(id, args));
+        if (!root) return false;
+        slashNote("added working directory → " + root);
+        refreshState();
+        return true;
+      }
+      case "review":
+        if (!id) return false;
+        return submitSyntheticTurn(reviewPrompt(args));
+      case "workflow": {
+        if (!id) return false;
+        const fields = args.split(/\s+/).filter(Boolean);
+        if (fields.length === 0) {
+          const wfs = await run(() => Bridge.Workflows());
+          if (!wfs) return false;
+          slashNote(wfs.length ? "workflows: " + wfs.map((w) => w.name).join(", ") + "   ·   /workflow <name> [k=v …]" : "no workflows yet — author one under ~/.eigen/workflows/<name>.md");
+          return true;
+        }
+        const [wfName, ...pairs] = fields;
+        const vars: Record<string, string> = {};
+        for (const kv of pairs) {
+          const eq = kv.indexOf("=");
+          if (eq > 0) vars[kv.slice(0, eq)] = kv.slice(eq + 1);
+        }
+        toasts.info(`workflow ${wfName} started`);
+        Bridge.RunWorkflow(id, wfName, vars)
+          .then((res) => {
+            if (res) toasts.success(`workflow ${wfName}: ${res.completed.length} step${res.completed.length === 1 ? "" : "s"} complete`);
+            refreshState();
+          })
+          .catch((e) => toasts.error(errText(e)));
+        slashNote(`workflow ${wfName} started`);
+        return true;
+      }
+      case "tools": {
+        const tools = sess?.tools ?? [];
+        slashNote(tools.length ? "tools:\n" + tools.map((t) => `  ${t.read_only ? "·" : "✎"} ${t.name}`).join("\n") : "no tools");
+        return true;
+      }
+      case "skills": {
+        if (!args) {
+          router.go("skills");
+          return true;
+        }
+        const body = await run(() => Bridge.SkillBody(args));
+        if (!body) return false;
+        slashNote(`skill: ${args}\n\n${body}`);
+        return true;
+      }
+      case "config": {
+        if (!args) {
+          router.go("config");
+          return true;
+        }
+        const [key, ...rest] = args.split(/\s+/);
+        if (!key || rest.length === 0) {
+          const cfg = await run(() => Bridge.Config());
+          const f = cfg?.fields.find((x) => x.key === key);
+          slashNote(f ? `${f.key} = ${f.value || "(unset)"}\n${f.desc}${f.options?.length ? `\nvalues: ${f.options.join("|")}` : ""}` : "usage: /config <key> <value>  (or bare /config to open settings)");
+          return true;
+        }
+        const value = rest.join(" ");
+        const saved = await run(() => Bridge.SetConfig(key, value));
+        if (saved === undefined) return false;
+        slashNote(`config: ${key} = ${saved || value}   (applies to new sessions)`);
+        return true;
+      }
+      case "route": {
+        if (!args) {
+          const cfg = await run(() => Bridge.Config());
+          const route = cfg?.fields.find((f) => f.key === "route")?.value;
+          const providers = cfg?.fields.find((f) => f.key === "route_providers")?.value;
+          slashNote(`routing: ${route === "true" ? "on" : "off"}${providers ? ` (providers: ${providers})` : " (all credentialed providers)"}`);
+          return true;
+        }
+        if (args !== "on" && args !== "off") return missingArg("route", "on|off");
+        await run(() => Bridge.SetConfig("route", args === "on" ? "true" : "false"));
+        slashNote(`model-assessed routing ${args.toUpperCase()}`);
+        return true;
+      }
+      case "ban": {
+        if (!args) {
+          router.go("memory");
+          slashNote("/ban <title>: <rule> records a hard prohibition in project memory");
+          return true;
+        }
+        const { title, rule } = splitBan(args);
+        if (!title || !rule) return missingArg("ban", "<title>: <rule>");
+        const replaced = await run(() => Bridge.AddBan("project", title, rule));
+        if (replaced === undefined) return false;
+        slashNote(`${replaced ? "updated ban" : "banned"}: ${title}`);
+        return true;
+      }
+      case "unban": {
+        if (!args) return missingArg("unban", "<title>");
+        const removed = await run(() => Bridge.RemoveBan("project", args));
+        if (removed === undefined) return false;
+        slashNote(removed ? `removed ban: ${args}` : `no ban titled ${args}`);
+        return true;
+      }
+      case "copy": {
+        if (!lastAssistant) {
+          slashNote("nothing to copy");
+          return true;
+        }
+        try {
+          await navigator.clipboard.writeText(lastAssistant);
+          slashNote(`copied ${lastAssistant.length} chars`);
+        } catch (e) {
+          toasts.error(errText(e));
+          return false;
+        }
+        return true;
+      }
+      case "find": {
+        if (!args) return missingArg("find", "<text>");
+        const found = (window as unknown as { find?: (query: string) => boolean }).find?.(args);
+        slashNote(found === false ? `no matches for ${args}` : `find: ${args}`);
+        return true;
+      }
+      case "voice":
+        if (args === "setup" || args === "doctor") {
+          slashNote(`voice: STT ${voice.stt ? "available" : "missing"}, TTS ${voice.tts ? "available" : "missing"}`);
+          return true;
+        }
+        toggleVoiceMode();
+        return true;
+      case "mute":
+        await voice.stopMode();
+        slashNote("voice mode off");
+        return true;
+      case "dictate":
+      case "talk": {
+        const heard = await voice.dictate();
+        if (!heard) {
+          slashNote("dictation heard nothing (or STT is unavailable)");
+          return true;
+        }
+        return submitSyntheticTurn(heard);
+      }
+      case "speak":
+        if (!lastAssistant) slashNote("nothing to speak");
+        else await voice.speak(lastAssistant);
+        return true;
+      case "read":
+        slashNote("GUI read-aloud is one-shot: use /speak or the 🔊 button on an answer.");
+        return true;
+      case "loop":
+        slashNote("/loop is currently TUI-local; in the GUI, set a Goal for persistent autonomous follow-up.");
+        return true;
+      case "mouse":
+        slashNote("/mouse is terminal-only; the GUI always allows normal text selection.");
+        return true;
+      case "rebuild":
+        slashNote("/rebuild is available in the TUI/dev workflow; rebuild the GUI from a terminal to avoid disrupting daemon sessions.");
+        return true;
+      case "quit":
+      case "exit":
+        slashNote("Close this window from your desktop shell to quit the GUI.");
+        return true;
+      default:
+        slashNote(`/${name} is not implemented in the GUI yet (try /help)`);
+        return true;
+    }
+  }
+
+  async function maybeRunCommand(text: string): Promise<boolean | null> {
+    const parsed = parseSlashCommand(text);
+    if (!parsed) return null;
+    await loadCustomCommands();
+
+    const builtin = await runBuiltinSlashCommand(parsed.name, parsed.args);
+    if (builtin !== null) return builtin;
+
+    const cmd = customCommands.find((c) => c.name.toLowerCase() === parsed.name);
+    if (!cmd) {
+      slashNote(`unknown command /${parsed.rawName} (try /help)`);
+      return true;
+    }
+    if (!sessionId) return false;
+    if (store?.running) {
+      slashNote(`finish or stop the current turn before running /${cmd.name}`);
+      return true;
+    }
+    store?.markPending();
+    try {
+      const prompt = await Bridge.RunCommand(sessionId, cmd.name, parsed.args);
+      store?.appendUserMessage(prompt, []);
+      return true;
+    } catch (e) {
+      store?.clearPending();
       toasts.error(errText(e));
       return false;
     }
@@ -1406,6 +1874,7 @@
           onsend={send}
           oninterrupt={interrupt}
           onvoicemode={online ? toggleVoiceMode : undefined}
+          slashCommands={composerSlashCommands}
         />
       </div>
     </div>

@@ -427,6 +427,13 @@ export function createTranscript(sessionId: string) {
       });
       return uid;
     },
+    appendNote(text: string): number | null {
+      const body = (text ?? "").trim();
+      if (!body) return null;
+      const uid = nextUid();
+      pushHistory({ uid, kind: "note", text: body });
+      return uid;
+    },
     removeBlock(uid: number | null | undefined) {
       if (uid == null) return;
       history = history.filter((b) => b.uid !== uid);
