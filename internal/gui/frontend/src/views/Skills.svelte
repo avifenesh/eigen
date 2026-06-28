@@ -425,7 +425,7 @@
       </div>
       <div class="sheet__head-actions">
         {#if openSkill.source === "user"}
-          <Button variant="ghost" size="sm" loading={removing} onclick={() => removeInstalled(openSkill.name)}>
+          <Button variant="ghost" size="sm" loading={removing} onclick={() => openSkill && removeInstalled(openSkill.name)}>
             Remove
           </Button>
         {/if}

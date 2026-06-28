@@ -115,7 +115,14 @@ func (b *Bridge) remoteSessions(ctx context.Context, target string) ([]SessionIn
 		_ = closer.Close()
 		out := make([]SessionInfoDTO, 0, len(r.infos))
 		for _, in := range r.infos {
-			out = append(out, toSessionInfoDTO(in))
+			dto := toSessionInfoDTO(in)
+			// Re-key the id as a remote session ref so the frontend can open it
+			// in Chat: every per-session Bridge method (Subscribe/State/Input/…)
+			// resolves a remote ref back to this target's daemon (remote_ref.go).
+			// Without this the id would be a bare local-looking "s2" that the
+			// local daemon doesn't have.
+			dto.ID = encodeRemoteRef(target, in.ID)
+			out = append(out, dto)
 		}
 		return out, nil
 	}

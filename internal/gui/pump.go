@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"sync"
@@ -10,10 +11,12 @@ import (
 
 // sessionPump owns ONE dedicated daemon connection streaming a single session's
 // events to the frontend. A control client cannot multiplex a blocking Attach
-// stream, so each subscribed session gets its own connection. The daemon
-// releases the session view automatically when this connection closes
-// ("one connection = one view"), so Close() is the entire detach contract — no
-// protocol-level Detach op is needed.
+// stream, so each subscribed session gets its own connection — a local daemon
+// connection for a local session id, or a dedicated ssh-stdio connection for a
+// remote session ref (remote:<b64 target>:<realID>). The daemon releases the
+// session view automatically when this connection closes ("one connection = one
+// view"), so Close() is the entire detach contract — no protocol-level Detach op
+// is needed, and closing an ssh-stdio connection also tears down its ssh process.
 type sessionPump struct {
 	id        string
 	client    *daemon.Client
@@ -53,9 +56,27 @@ func (b *Bridge) Subscribe(id string) error {
 		return e
 	}
 
-	c, err := b.ensure() // dedicated connection for this stream
-	if err != nil {
-		return fail(err)
+	// A remote session ref streams over its OWN dedicated ssh connection (Attach
+	// is a blocking stream that can't be multiplexed onto the pooled control
+	// client — same reason a local pump uses its own daemon connection). A local
+	// ref dials a dedicated local daemon connection via ensure().
+	target, realID, isRemote := parseSessionRef(id)
+	var (
+		c      *daemon.Client
+		errBuf *bytes.Buffer // remote ssh stderr, for a clearer Attach failure
+	)
+	if isRemote {
+		rc, eb, derr := dialRemoteStream(target)
+		if derr != nil {
+			return fail(derr)
+		}
+		c, errBuf = rc, eb
+	} else {
+		lc, err := b.ensure() // dedicated connection for this stream
+		if err != nil {
+			return fail(err)
+		}
+		c = lc
 	}
 
 	evName := sessionEvent(id)
@@ -68,13 +89,20 @@ func (b *Bridge) Subscribe(id string) error {
 	// so the frontend can reassemble despite Wails' per-event-goroutine dispatch
 	// reordering arrival at the webview.
 	var seq uint64
-	if err := c.Attach(id, func(e daemon.WireEvent, replay bool) {
+	if err := c.Attach(realID, func(e daemon.WireEvent, replay bool) {
 		if b.app != nil {
 			seq++
 			b.app.Event.Emit(evName, StreamEventDTO{Event: toWireEventDTO(e), Replay: replay, Seq: seq})
 		}
 	}); err != nil {
 		_ = c.Close()
+		// For a remote stream, Close flushed ssh stderr into errBuf — surface
+		// its real reason (eigen missing, bad creds) over the bare stream error.
+		if errBuf != nil {
+			if detail := strings.TrimSpace(errBuf.String()); detail != "" {
+				return fail(fmt.Errorf("%s: %s", target, firstRemoteLine(detail)))
+			}
+		}
 		return fail(err)
 	}
 

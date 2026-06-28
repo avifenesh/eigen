@@ -119,15 +119,27 @@ running local sessions and without opening an unsafe raw daemon listener. The
 phone/pocket baseline is considered done; this v2 is about cross-machine control.
 
 Open work:
-- [ ] **Remote control surface.** See running sessions, attach/read recent output,
-  and send user input from another machine.
-- [ ] **Remote approve/deny.** Route decisions back into the existing daemon
-  approval queue; fail closed; audit logged.
-- [ ] **Status/recent.** “What’s running?”, “what changed?”, “show recent result”
-  for a session.
+- [x] **Remote control surface (desktop GUI).** The Machines board now opens a
+  remote session live in Chat: each remote session is addressed by an opaque
+  session ref (`remote:<base64url(target)>:<realID>`) built by `RemoteSessions`,
+  and every per-session bridge call (`Subscribe`/`State`/`SendInput`/…) resolves
+  it back to that host's daemon over ssh via a per-target pooled control client +
+  a dedicated remote-stream pump. Sending input, steering, interrupting, and
+  changing model/effort/etc. all go straight to the remote daemon; the dock's
+  local-only tools (Terminal/Diff/Files/Browser) are hidden for remote sessions
+  since they target the GUI's own machine. The CLI path (`eigen --remote`) was
+  already real; this closes the GUI gap (it used to only copy a shell command).
+- [x] **Remote approve/deny.** The Chat approval dock's Allow/Deny calls
+  `Bridge.Approve`, which now routes through the same ref resolver to the remote
+  daemon's approval queue — gated approvals on a remote session are answerable
+  from the desktop GUI.
+- [x] **Status/recent.** Remote running/working/approval status streams into the
+  Machines drill-in and the live Chat view (the session's own event stream over
+  ssh), so "what's running / what changed" is visible without a terminal.
 - [ ] **Security constraints.** Prefer SSH/Tailscale/outbound relay over a raw
   public listener; allowlist enforced; short-lived/signed callback payloads if a
-  relay is introduced; approvals stay strictly gated.
+  relay is introduced; approvals stay strictly gated. (Transport stays ssh-stdio
+  — no new listener introduced; the pooled remote dials inherit `~/.ssh/config`.)
 
 Non-goals for v2:
 - arbitrary unauthenticated daemon access;
