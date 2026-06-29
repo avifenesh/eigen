@@ -15,7 +15,7 @@
   import { on, ev } from "$lib/events";
   import { errText } from "$lib/errors";
   import { builtinSlashCommands, parseSlashCommand, slashHelpText, type SlashCommandEntry } from "$lib/slash";
-  import { createTranscript, type Transcript, groupRows } from "$lib/stores/transcript.svelte";
+  import { createTranscript, type Transcript, type Row, groupRows } from "$lib/stores/transcript.svelte";
   import type { SessionStateDTO, ModelDTO, ImageDTO, RecentDirDTO, CommandInfoDTO } from "$lib/types";
   import Composer from "$lib/components/Composer.svelte";
   import ToolGroupCard from "$lib/components/ToolGroupCard.svelte";
@@ -158,35 +158,10 @@
   const live = $derived(store?.live ?? null);
 
   let transcriptListEl = $state<HTMLDivElement | undefined>(undefined);
-  let liveScrollEl = $state<HTMLDivElement | undefined>(undefined);
 
-  /** True when the transcript list is scrolled to the bottom (within slack). */
-  function transcriptPinned(): boolean {
-    const el = transcriptListEl;
-    if (!el) return true;
-    return el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-  }
-
-  function scrollTranscriptToBottom() {
-    const el = transcriptListEl;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }
-
-  function scrollLiveToBottom() {
-    const el = liveScrollEl;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }
-
-  // While pinned, keep the streaming live block scrolled to its end (history list
-  // is handled inside VirtualList; live sits in a sibling scroller).
-  $effect(() => {
-    if (!live) return;
-    void live.text;
-    if (!transcriptPinned()) return;
-    requestAnimationFrame(scrollLiveToBottom);
-  });
+  // The streaming reply is now a row INSIDE VirtualList (not a separate pane),
+  // so VirtualList's own pin-to-bottom follows it as it grows — no separate
+  // live-scroll handling needed.
 
   // Fold consecutive tool calls into "N tools" group rows (a burst of calls
   // renders as ONE collapsible item, each tool still individually expandable),
@@ -195,7 +170,22 @@
   // the ~60fps token path (that lands in `live`), so grouping never re-runs per
   // token. The VirtualList keys on the row uid (a group's uid is its first
   // tool's uid — stable as the run grows), so a growing run never remounts.
-  const rows = $derived(groupRows(history));
+  // Sentinel uid for the synthetic live row. Real uids are ++uidSeq (always
+  // ≥1), so -1 never collides — the live row keeps a stable VirtualList key
+  // for the whole turn, then the committed block replaces it with its real uid.
+  const LIVE_UID = -1;
+  // History rows fold tool runs; the in-flight `live` block is appended as ONE
+  // synthetic trailing row so the streaming reply flows in the SAME scroll as
+  // the conversation (continuous — it pushes history up instead of floating in
+  // a separate pane below it). It carries a STABLE key ("__live__"), so a token
+  // append only re-measures that one row, never re-keys/​remounts the list
+  // (the GUI-069 perf intent — avoid re-deriving every row's geometry per
+  // token — holds: groupRows(history) does not re-run while only `live` grows).
+  const historyRows = $derived(groupRows(history));
+  const rows = $derived.by<Row[]>(() => {
+    if (!live) return historyRows;
+    return [...historyRows, { ...live, uid: LIVE_UID } as Row];
+  });
   // The model is streaming prose right now → the live tool's detail folds away.
   const streaming = $derived(!!live);
 
@@ -1697,7 +1687,25 @@
             >
               {#snippet row(block, i)}
                 <div class="chat__row" role="article" aria-label={rowLabel(block)}>
-                  {#if block.kind === "toolgroup"}
+                  {#if block.uid === LIVE_UID}
+                    <!-- The in-flight streaming block, now a real row in the list
+                         (not a separate pane), so it flows continuously with the
+                         conversation. Same Markdown render as committed messages
+                         + a trailing caret. Commits to history (real uid) when the
+                         turn ends, which replaces this synthetic row in place. -->
+                    {#if block.kind === "reasoning"}
+                      <div class="msg msg--reasoning msg--live">
+                        <span class="msg__tag">reasoning</span>
+                        <div class="msg__reasoning-body msg__reasoning-body--live">
+                          {block.text}<span class="caret" aria-hidden="true"></span>
+                        </div>
+                      </div>
+                    {:else if block.kind === "text"}
+                      <div class="msg msg--text msg--live">
+                        <div class="msg__live-prose"><Markdown source={block.text} /><span class="caret" aria-hidden="true"></span></div>
+                      </div>
+                    {/if}
+                  {:else if block.kind === "toolgroup"}
                     <!-- Consecutive tool calls fold into one "N tools" row, each
                          tool individually expandable. The running / just-run
                          tool's detail stays open until the next tool or a stream
@@ -1755,37 +1763,6 @@
               {/snippet}
             </VirtualList>
           </div>
-          {#if live}
-            <!-- The in-flight assistant block, OUTSIDE the windowed list — it
-                 streams as plain text for speed and finalizes to Markdown once
-                 committed to history (where it joins the list above). Rendering
-                 it here, not inside VirtualList, is what keeps a per-frame token
-                 append from re-deriving the whole list's geometry (GUI-069). A
-                 subtle caret trails the live text while it streams. -->
-            <div class="chat__live" bind:this={liveScrollEl}>
-              <div class="chat__row" role="article" aria-label={rowLabel(live)}>
-                {#if live.kind === "reasoning"}
-                  <div class="msg msg--reasoning msg--live">
-                    <span class="msg__tag">reasoning</span>
-                    <div class="msg__reasoning-body msg__reasoning-body--live">
-                      {live.text}<span class="caret" aria-hidden="true"></span>
-                    </div>
-                  </div>
-                {:else}
-                  <div class="msg msg--text msg--live">
-                    <!-- Live prose renders through the SAME Markdown component as
-                         committed messages, so streaming code is syntax-tinted
-                         and math (KaTeX) renders incrementally — no more plain
-                         dump that snaps to formatted on commit. The deltas flush
-                         at most once per animation frame (transcript store), so
-                         the per-frame re-lex is bounded, and Markdown's lex cache
-                         absorbs the unchanged prefix. -->
-                    <div class="msg__live-prose"><Markdown source={live.text} /><span class="caret" aria-hidden="true"></span></div>
-                  </div>
-                {/if}
-              </div>
-            </div>
-          {/if}
           <!-- Off-screen completion announcer. The windowed transcript above
                may not have the just-finalized assistant block mounted, so mirror
                its text here once the turn settles — that gives the SR user the
@@ -2464,10 +2441,6 @@
      to make room, and the SHARED scroll lives on .chat__log's VirtualList. A
      long live reply scrolls with everything else and commits into the list the
      moment the turn ends. */
-  .chat__live {
-    flex: none;
-    min-height: 0;
-  }
   /* Off-screen completion announcer — present in the a11y tree, invisible on
      screen. Standard clip pattern (not display:none, which drops it from the
      tree); mirrors .diff__sr. */
@@ -2647,32 +2620,37 @@
     position: relative;
     white-space: normal;
   }
+  /* The live row now renders Markdown (block elements), so the wrapper must NOT
+     force pre-wrap — that would double the spacing the Markdown margins already
+     give. It just carries the trailing caret inline after the prose. */
   .msg__live-prose {
-    white-space: pre-wrap;
     line-height: var(--lh-prose);
   }
-  .msg__live-prose :global(.msg__live-inline) {
-    font-family: var(--font-mono);
-    font-size: var(--fs-code-sm);
-    background: var(--bg-inset);
-    border: 1px solid var(--border-hairline);
-    border-radius: var(--r-xs);
-    padding: 0.06em 0.32em;
-    color: var(--syn-text);
-  }
-  .msg__live-prose :global(.msg__live-code) {
-    margin: var(--sp-4) 0;
-    padding: var(--sp-4) var(--sp-5);
-    background: var(--syn-bg);
-    border: 1px solid var(--border-hairline);
-    border-radius: var(--r-sm);
-    font: var(--fw-regular) var(--fs-code-sm) / var(--lh-code) var(--font-mono);
-    color: var(--syn-text);
-    overflow-x: auto;
-    white-space: pre;
-  }
+
+  /* USER MESSAGES — visually distinct from assistant prose so the eye reads the
+     transcript as a back-and-forth. A user turn sits in a quiet raised bubble,
+     right-aligned to a comfortable measure, with a brand edge — the assistant's
+     reply stays full-width plain prose. This is what makes a streamed reply read
+     as a clear continuation of "your message → its answer". */
   .msg--user {
-    color: var(--text-secondary);
+    display: block;
+    margin-left: auto;
+    max-width: 80%;
+    width: fit-content;
+    background: var(--bg-raised-2, var(--bg-inset));
+    border: 1px solid var(--border-hairline);
+    border-left: 2px solid var(--brand-dim, var(--brand));
+    border-radius: var(--r-md, 10px);
+    padding: var(--sp-3) var(--sp-4);
+    color: var(--text-primary);
+  }
+  /* Collapse the user bubble's inner Markdown margins so a one-line message
+     doesn't carry paragraph air inside the chip. */
+  .msg--user :global(.md > :first-child) {
+    margin-top: 0;
+  }
+  .msg--user :global(.md > :last-child) {
+    margin-bottom: 0;
   }
   .msg--image-only {
     line-height: 0;
