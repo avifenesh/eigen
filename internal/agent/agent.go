@@ -1477,7 +1477,13 @@ func (s *Session) drive(ctx context.Context) (string, error) {
 				// drains the steer and the model responds to it — making a
 				// late steer behave like a same-turn follow-up, not a silent
 				// wait.
-				s.appendMsg(llm.Message{Role: llm.RoleAssistant, Text: resp.Text})
+				s.appendMsg(llm.Message{
+					Role:               llm.RoleAssistant,
+					Text:               resp.Text,
+					Reasoning:          resp.Reasoning,
+					ReasoningID:        resp.ReasoningID,
+					ReasoningEncrypted: resp.ReasoningEncrypted,
+				})
 				s.persist()
 				if s.hasSteer() {
 					// Non-streaming providers haven't shown this text yet; emit

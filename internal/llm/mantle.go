@@ -122,6 +122,18 @@ const (
 	reasoningSummary = "concise"
 )
 
+// reasoningHiddenMarker is shown when the provider reasoned but exposes no
+// readable trace (GPT-5.5 on Bedrock mantle: encrypted_content only). It lets
+// the UI surface that thinking happened without fabricating its content.
+const reasoningHiddenMarker = "[reasoning hidden by provider]"
+
+// reasoningInclude asks the Responses API to return the reasoning item's
+// encrypted_content. Without it, Bedrock mantle omits the blob entirely
+// (verified by live capture), leaving no signal that the model reasoned. With
+// it, the reasoning output_item carries the opaque blob — enough to show a
+// "thinking happened" marker, and the basis for future reasoning carry-across.
+var reasoningInclude = []string{"reasoning.encrypted_content"}
+
 // responsesInputItem is one entry in the Responses API "input" array. The shape
 // is heterogeneous: plain messages carry role+content, tool turns carry type
 // plus call_id/name/arguments or output, and reasoning turns carry a summary.
@@ -181,9 +193,11 @@ type responsesRequest struct {
 	// store:true / a missing store with "Store must be set to false"). A pointer
 	// so mantle (which omits it) and codex (explicit false) differ cleanly.
 	Store *bool `json:"store,omitempty"`
-	// Include lists extra response data to return. Codex sends
-	// ["reasoning.encrypted_content"] so the model's reasoning carries across
-	// turns (reason-then-act spans multiple Responses turns). Mantle omits it.
+	// Include lists extra response data to return. Both codex and mantle send
+	// ["reasoning.encrypted_content"] so the reasoning item carries the opaque
+	// blob — needed both for reasoning carry-across (reason-then-act spans
+	// multiple turns) and to know the model reasoned at all (Bedrock omits the
+	// item's blob entirely without this).
 	Include []string `json:"include,omitempty"`
 }
 
@@ -204,6 +218,7 @@ type responsesReply struct {
 			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"summary"`
+		Encrypted string `json:"encrypted_content"`
 		CallID    string `json:"call_id"`
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
@@ -235,6 +250,7 @@ func (m *Mantle) Complete(ctx context.Context, req Request) (*Response, error) {
 		Input:     buildInput(req),
 		Tools:     toResponsesTools(req.Tools),
 		Reasoning: &reasoningConfig{Effort: effort, Summary: reasoningSummary},
+		Include:   reasoningInclude,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -288,6 +304,7 @@ func (m *Mantle) Stream(ctx context.Context, req Request, sink StreamSink) (*Res
 		Input:     buildInput(req),
 		Tools:     toResponsesTools(req.Tools),
 		Reasoning: &reasoningConfig{Effort: effort, Summary: reasoningSummary},
+		Include:   reasoningInclude,
 		Stream:    true,
 	}
 	body, err := json.Marshal(payload)
@@ -352,6 +369,10 @@ func (m *Mantle) streamOnce(ctx context.Context, body []byte, sink StreamSink) (
 			Type     string          `json:"type"`
 			Delta    string          `json:"delta"`
 			Response json.RawMessage `json:"response"`
+			Item     struct {
+				Type      string `json:"type"`
+				Encrypted string `json:"encrypted_content"`
+			} `json:"item"`
 		}
 		if err := json.Unmarshal([]byte(data), &ev); err != nil {
 			continue
@@ -362,10 +383,29 @@ func (m *Mantle) streamOnce(ctx context.Context, body []byte, sink StreamSink) (
 			if sink != nil {
 				sink(StreamChunk{Kind: ChunkText, Text: ev.Delta})
 			}
-		case "response.reasoning_summary_text.delta":
+		case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+			// Two reasoning channels exist in the Responses API: the distilled
+			// summary and the full reasoning text. GPT-5.5 on Bedrock mantle
+			// emits NEITHER as of 2026-06 (verified by live capture: summary:[],
+			// content:null, only an opaque encrypted_content blob — see the
+			// reasoningItemMarker case below). These cases stay so the moment
+			// the backend starts streaming readable reasoning, it renders.
 			emitted = true
 			if sink != nil {
 				sink(StreamChunk{Kind: ChunkReasoning, Text: ev.Delta})
+			}
+		case "response.output_item.added":
+			// Bedrock mantle gives no readable GPT-5.5 reasoning — the reasoning
+			// output item carries summary:[] and content:null, only an opaque
+			// encrypted_content blob (carry-across continuity, not for display).
+			// We CAN still tell the user reasoning happened: emit a one-shot
+			// marker so the UI opens a "thinking" block, without inventing text.
+			// The item arrives before any answer delta, so the marker leads the
+			// turn naturally. NOTE: deliberately does NOT set emitted=true — that
+			// flag gates the response.failed retry (codex#27185), and a marker is
+			// not recoverable answer content.
+			if ev.Item.Type == "reasoning" && sink != nil {
+				sink(StreamChunk{Kind: ChunkReasoning, Text: reasoningHiddenMarker})
 			}
 		case "response.completed", "response.incomplete":
 			out, status, reason, perr := parseReply(ev.Response)
@@ -500,6 +540,16 @@ func parseReply(raw []byte) (*Response, string, string, error) {
 			}
 			if out.ReasoningID == "" {
 				out.ReasoningID = item.ID
+			}
+			if item.Encrypted != "" && out.ReasoningEncrypted == "" {
+				out.ReasoningEncrypted = item.Encrypted
+			}
+			// Bedrock mantle returns the reasoning item with an empty summary and
+			// no readable content (only the opaque encrypted blob). Persist the
+			// hidden-reasoning marker so a reloaded transcript still shows that
+			// the model reasoned — matching the live stream indicator.
+			if out.Reasoning == "" {
+				out.Reasoning = reasoningHiddenMarker
 			}
 		case "function_call":
 			out.ToolCalls = append(out.ToolCalls, ToolCall{
