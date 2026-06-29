@@ -1,5 +1,46 @@
 <script module lang="ts">
-  import { marked as markedLib, type Token as TokenT } from "marked";
+  import { Marked, type Token as TokenT } from "marked";
+  import markedKatex from "marked-katex-extension";
+  import katex from "katex";
+
+  // A dedicated Marked instance carrying the KaTeX extension, so math
+  // delimiters become first-class `inlineKatex` / `blockKatex` tokens during
+  // lexing (instead of leaking through as literal "\[" / "\frac{}" text). We
+  // do NOT use its parser/renderer — Markdown.svelte walks the token tree and
+  // emits native Svelte markup for XSS safety; the KaTeX token just carries the
+  // raw math, which we render with katex.renderToString() at the walk (KaTeX
+  // escapes its own output, and the input is the model's math source, so the
+  // single @html here is the one trusted injection point). throwOnError:false
+  // keeps a half-typed equation mid-stream from blanking the whole message.
+  const markedLib = new Marked({ gfm: true, breaks: true });
+  markedLib.use(
+    markedKatex({ throwOnError: false, nonStandard: true }),
+  );
+
+  // Render one KaTeX token's source to HTML. Cached + bounded; returns the raw
+  // (escaped) source on failure so a malformed equation shows its text, never
+  // throws. `display` selects block vs inline layout.
+  const KATEX_CACHE = new Map<string, string>();
+  export function renderKatex(src: string, display: boolean): string {
+    const key = (display ? "d:" : "i:") + src;
+    const hit = KATEX_CACHE.get(key);
+    if (hit !== undefined) return hit;
+    let html: string;
+    try {
+      html = katex.renderToString(src, { displayMode: display, throwOnError: false, output: "html" });
+    } catch {
+      html = escHtmlBasic(src);
+    }
+    KATEX_CACHE.set(key, html);
+    if (KATEX_CACHE.size > 600) {
+      const oldest = KATEX_CACHE.keys().next().value;
+      if (oldest !== undefined) KATEX_CACHE.delete(oldest);
+    }
+    return html;
+  }
+  function escHtmlBasic(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
 
   // Module-scoped lex cache shared by ALL Markdown instances (see the per-
   // instance `tokens` derive for why). Simple bounded LRU keyed by source text.
@@ -16,7 +57,7 @@
     }
     let toks: TokenT[];
     try {
-      toks = markedLib.lexer(src, { gfm: true, breaks: true });
+      toks = markedLib.lexer(src) as TokenT[];
     } catch {
       toks = [];
     }
@@ -122,6 +163,10 @@
         <del>{@render inline((tok as Tokens.Del).tokens)}</del>
       {:else if tok.type === "codespan"}
         <code class="md-code">{(tok as Tokens.Codespan).text}</code>
+      {:else if tok.type === "inlineKatex"}
+        <!-- math source → KaTeX HTML. The @html is the one trusted injection:
+             KaTeX escapes its own output and the input is model math source. -->
+        <span class="md-math md-math--inline">{@html renderKatex((tok as unknown as { text: string }).text, false)}</span>
       {:else if tok.type === "br"}
         <br />
       {:else if tok.type === "link"}
@@ -182,6 +227,10 @@
             {/each}
           </ul>
         {/if}
+      {:else if tok.type === "blockKatex"}
+        <!-- display math: centered KaTeX block. Same trusted-@html rationale
+             as the inline case above. -->
+        <div class="md-math md-math--block">{@html renderKatex((tok as unknown as { text: string }).text, true)}</div>
       {:else if tok.type === "code"}
         {@const c = tok as Tokens.Code}
         <div class="md-codeblock">
@@ -486,6 +535,23 @@
   /* FENCED CODE — delegated to CodeBlock; just give it breathing room. */
   .md :global(.md-codeblock) {
     margin: var(--sp-6) 0;
+  }
+
+  /* MATH (KaTeX) — inline sits in the text run; a display block gets paragraph
+     air and scrolls horizontally rather than overflowing a wide equation. */
+  .md :global(.md-math--inline) {
+    /* KaTeX sets its own font; keep it on the text baseline. */
+    white-space: nowrap;
+  }
+  .md :global(.md-math--block) {
+    margin: var(--sp-6) 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    text-align: center;
+  }
+  .md :global(.katex) {
+    /* Inherit the surrounding color so math matches prose, not KaTeX default. */
+    color: var(--text-primary);
   }
 
   /* HR — a quiet hairline, not a heavy bar. */

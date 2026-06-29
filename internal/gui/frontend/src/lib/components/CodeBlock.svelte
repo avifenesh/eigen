@@ -96,19 +96,10 @@
   // Cheap, defensive syntax tint. We escape first (never inject raw code as
   // HTML), then wrap a few lexical classes in tinted spans. Comments and strings
   // are matched first so keyword/number passes don't reach inside them.
+  // Comments and strings are matched first (kept verbatim, tinted as a whole) so
+  // the keyword/number scan never reaches inside them.
   const COMMENT = /(\/\/[^\n]*|#[^\n]*|\/\*[\s\S]*?\*\/)/;
   const STRING = /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)/;
-  const KEYWORDS = new RegExp(
-    "\\b(?:func|function|return|if|else|for|range|while|switch|case|default|break|continue|" +
-      "var|let|const|type|struct|interface|map|chan|go|defer|import|package|class|extends|" +
-      "new|async|await|try|catch|finally|throw|export|from|def|elif|lambda|nil|null|none|" +
-      "true|false|in|of|not|and|or|is|public|private|static|void|int|string|bool|float)\\b",
-    "g",
-  );
-  const NUMBER = /\b(0x[0-9a-fA-F]+|\d+(?:\.\d+)?)\b/g;
-  const FUNC = /\b([A-Za-z_][\w]*)\s*(?=\()/g;
-  const BUILTIN =
-    /\b(?:console|print|println|len|range|str|int|float|bool|typeof|instanceof|undefined|null|true|false|self|this|super|import|from|as|package|fmt|Error|panic|make|new|delete|sizeof|await|async|yield|raise|except|pass|lambda)\b/g;
 
   function esc(s: string): string {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -134,13 +125,48 @@
     return out;
   });
 
+  // Identifier-ish word run + number, scanned in ONE pass so a token is
+  // classified exactly once. The old approach chained four .replace() calls on
+  // the same string: a keyword that is ALSO a builtin (import, from, lambda…)
+  // got wrapped by the first pass, then a later pass matched the word `class`
+  // INSIDE the injected `class="t-builtin"` attribute and re-wrapped it —
+  // leaking literal `class="t-builtin">` into the rendered code. A single
+  // tokenizing scan over the raw (unescaped) segment, escaping each piece as we
+  // emit it, can't match its own output.
+  const KW_SET = new Set([
+    "func","function","return","if","else","for","range","while","switch","case","default","break","continue",
+    "var","let","const","type","struct","interface","map","chan","go","defer","import","package","class","extends",
+    "new","async","await","try","catch","finally","throw","export","from","def","elif","lambda","nil","null","none",
+    "true","false","in","of","not","and","or","is","public","private","static","void","int","string","bool","float",
+  ]);
+  const BUILTIN_SET = new Set([
+    "console","print","println","len","str","typeof","instanceof","undefined","self","this","super","as","fmt",
+    "Error","panic","make","delete","sizeof","yield","except","pass","raise",
+  ]);
+  // Word, number, or any run of non-word chars (emitted verbatim, escaped).
+  const TOKEN = /([A-Za-z_]\w*)|(0x[0-9a-fA-F]+|\d+(?:\.\d+)?)|([^A-Za-z0-9_]+)/g;
   function tintPlain(seg: string): string {
-    let s = esc(seg);
-    s = s.replace(BUILTIN, '<span class="t-builtin">$&</span>');
-    s = s.replace(KEYWORDS, '<span class="t-kw">$&</span>');
-    s = s.replace(FUNC, '<span class="t-func">$1</span>');
-    s = s.replace(NUMBER, '<span class="t-num">$&</span>');
-    return s;
+    let out = "";
+    let m: RegExpExecArray | null;
+    TOKEN.lastIndex = 0;
+    while ((m = TOKEN.exec(seg)) !== null) {
+      if (m[1] !== undefined) {
+        const w = m[1];
+        // A word immediately followed by "(" is a call (function name); keyword
+        // and builtin sets win over that so `print(` stays a builtin, etc.
+        const rest = seg.slice(TOKEN.lastIndex);
+        const isCall = /^\s*\(/.test(rest);
+        if (KW_SET.has(w)) out += `<span class="t-kw">${esc(w)}</span>`;
+        else if (BUILTIN_SET.has(w)) out += `<span class="t-builtin">${esc(w)}</span>`;
+        else if (isCall) out += `<span class="t-func">${esc(w)}</span>`;
+        else out += esc(w);
+      } else if (m[2] !== undefined) {
+        out += `<span class="t-num">${esc(m[2])}</span>`;
+      } else {
+        out += esc(m[3]);
+      }
+    }
+    return out;
   }
 
   const label = $derived((lang ?? "").trim().toLowerCase());

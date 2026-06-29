@@ -136,7 +136,7 @@
         <div class="outlet__page boundary-fail">
           <div class="boundary-fail__glyph" aria-hidden="true">⚠</div>
           <h2 class="boundary-fail__title">This view hit a snag</h2>
-          <p class="boundary-fail__line">{String(error?.message ?? error)}</p>
+          <p class="boundary-fail__line">{String((error as { message?: unknown })?.message ?? error)}</p>
           <button class="boundary-fail__retry" onclick={reset}>Reload view</button>
         </div>
       {/snippet}
