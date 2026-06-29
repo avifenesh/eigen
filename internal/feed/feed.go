@@ -100,11 +100,18 @@ func Scan(ctx context.Context, projectDirs []string, suggest Suggester) Feed {
 	return f
 }
 
-// Key is a stable identity for dismissals: kind + title + dir. Content-based,
+// Key is a stable identity for dismissals: kind + title + dir + url. Content-based,
 // so a dismissed item stays dismissed across rescans until it CHANGES (e.g.
 // the dirty-file count moves) — at which point it's arguably news again.
+//
+// URL is part of the identity because kind+title+dir alone is NOT unique: two
+// dependabot PRs in the same repo share an identical truncated title and carry
+// no dir, so they collided to the same key. A duplicate key crashes the Svelte
+// {#each (key)} render of the Home feed (each_key_duplicate), which silently
+// froze the whole page. URL (the PR/issue link) disambiguates github/git items;
+// it's empty for memory items, leaving their key unchanged.
 func (it Item) Key() string {
-	h := sha256.Sum256([]byte(it.Kind + "\x00" + it.Title + "\x00" + it.Dir))
+	h := sha256.Sum256([]byte(it.Kind + "\x00" + it.Title + "\x00" + it.Dir + "\x00" + it.URL))
 	return hex.EncodeToString(h[:8])
 }
 

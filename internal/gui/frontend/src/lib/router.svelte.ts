@@ -33,8 +33,16 @@ function parse(): { route: Route; param?: string } {
 
 function createRouter() {
   let current = $state(parse());
+  // Reflect external hash changes (browser back/forward, deep-links) into
+  // state. NOTE: setting location.hash from go() is NOT enough on its own —
+  // under the embedded wails:// custom URI scheme WebKitGTK may not dispatch
+  // a hashchange for a scripted fragment change, so go() also updates `current`
+  // directly. This listener stays for the genuinely external cases.
   addEventListener("hashchange", () => {
-    current = parse();
+    const next = parse();
+    if (next.route !== current.route || next.param !== current.param) {
+      current = next;
+    }
   });
   return {
     get route() {
@@ -44,7 +52,15 @@ function createRouter() {
       return current.param;
     },
     go(route: Route, param?: string) {
-      location.hash = param ? `#/${route}/${param}` : `#/${route}`;
+      const next = { route, param };
+      // Update state immediately so the view swaps without waiting on an event
+      // round-trip that may never arrive under the webview's custom scheme.
+      current = next;
+      // Sync the URL fragment (best-effort; no-op if already there). Skipped
+      // when the new fragment equals the current one so we don't push a
+      // redundant history entry.
+      const frag = param ? `#/${route}/${param}` : `#/${route}`;
+      if (location.hash !== frag) location.hash = frag;
     },
   };
 }

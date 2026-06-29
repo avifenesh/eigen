@@ -82,6 +82,7 @@
   <div class="main">
     <TopBar />
     <div class="outlet">
+      <svelte:boundary>
       {#key router.route}
         <div class="outlet__page" in:fly={{ y: 6, duration: reduceMotion ? 0 : 180, opacity: 0 }}>
         {#if router.route === "home"}
@@ -127,6 +128,19 @@
         {/if}
         </div>
       {/key}
+      <!-- One bad render (e.g. a Svelte each_key_duplicate from colliding feed
+           keys) must not silently freeze the whole shell — the chrome would
+           keep updating while the body stayed stuck. Catch it, show a quiet
+           recoverable state, and let a click re-render the route. -->
+      {#snippet failed(error, reset)}
+        <div class="outlet__page boundary-fail">
+          <div class="boundary-fail__glyph" aria-hidden="true">⚠</div>
+          <h2 class="boundary-fail__title">This view hit a snag</h2>
+          <p class="boundary-fail__line">{String(error?.message ?? error)}</p>
+          <button class="boundary-fail__retry" onclick={reset}>Reload view</button>
+        </div>
+      {/snippet}
+      </svelte:boundary>
     </div>
   </div>
   <CommandPalette />
@@ -154,5 +168,44 @@
     flex: 1;
     overflow: hidden;
     min-height: 0;
+  }
+  /* Error-boundary fallback: a calm, recoverable state when a route's render
+     throws (rather than a silently frozen body). */
+  .boundary-fail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-3, 8px);
+    height: 100%;
+    text-align: center;
+    padding: var(--sp-8, 32px);
+  }
+  .boundary-fail__glyph {
+    font-size: 30px;
+    color: var(--text-ghost, #888);
+  }
+  .boundary-fail__title {
+    margin: 0;
+    font-size: var(--fs-h3, 1.1rem);
+    font-weight: var(--fw-semibold, 600);
+    color: var(--text-secondary, #ccc);
+  }
+  .boundary-fail__line {
+    margin: 0;
+    max-width: 48ch;
+    color: var(--text-muted, #999);
+    font-size: var(--fs-body-sm, 0.85rem);
+    word-break: break-word;
+  }
+  .boundary-fail__retry {
+    margin-top: var(--sp-4, 16px);
+    padding: 6px 14px;
+    border-radius: var(--r-md, 8px);
+    border: 1px solid var(--border-brand-faint, rgba(64,200,180,0.4));
+    background: var(--state-selected, rgba(64,200,180,0.12));
+    color: var(--brand, #40c8b4);
+    font: inherit;
+    cursor: pointer;
   }
 </style>
