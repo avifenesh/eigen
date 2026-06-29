@@ -1434,30 +1434,6 @@
     return t === "interrupted" || t.startsWith("error:") ? "error" : "info";
   }
 
-  /** Lightweight live-stream formatting: escape HTML, then tint inline `code` and **bold**. */
-  function escHtml(s: string): string {
-    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  }
-  function formatLiveProse(raw: string): string {
-    const src = raw ?? "";
-    if (!src) return "";
-    const parts = src.split(/(```[\s\S]*?```|`[^`\n]+`|\*\*[^*\n]+\*\*)/g);
-    let out = "";
-    for (const p of parts) {
-      if (!p) continue;
-      if (p.startsWith("```") && p.endsWith("```")) {
-        const inner = p.slice(3, -3).replace(/^\w+\n/, "");
-        out += `<pre class="msg__live-code">${escHtml(inner)}</pre>`;
-      } else if (p.startsWith("`") && p.endsWith("`") && p.length > 2) {
-        out += `<code class="msg__live-inline">${escHtml(p.slice(1, -1))}</code>`;
-      } else if (p.startsWith("**") && p.endsWith("**") && p.length > 4) {
-        out += `<strong>${escHtml(p.slice(2, -2))}</strong>`;
-      } else {
-        out += escHtml(p);
-      }
-    }
-    return out;
-  }
 
   // Global Escape-to-stop for the chat view. Mirrors the TUI's "esc interrupts"
   // behavior, but yields to overlays and non-composer form fields so Escape can
@@ -1797,7 +1773,14 @@
                   </div>
                 {:else}
                   <div class="msg msg--text msg--live">
-                    <div class="msg__live-prose">{@html formatLiveProse(live.text)}<span class="caret" aria-hidden="true"></span></div>
+                    <!-- Live prose renders through the SAME Markdown component as
+                         committed messages, so streaming code is syntax-tinted
+                         and math (KaTeX) renders incrementally — no more plain
+                         dump that snaps to formatted on commit. The deltas flush
+                         at most once per animation frame (transcript store), so
+                         the per-frame re-lex is bounded, and Markdown's lex cache
+                         absorbs the unchanged prefix. -->
+                    <div class="msg__live-prose"><Markdown source={live.text} /><span class="caret" aria-hidden="true"></span></div>
                   </div>
                 {/if}
               </div>
@@ -2470,14 +2453,20 @@
   /* The in-flight live block, rendered OUTSIDE VirtualList (GUI-069) so a token
      append touches one node instead of re-deriving the whole list's geometry.
      It sits just below the windowed history, where the streaming reply belongs.
-     flex:none keeps it from stealing the list's space; a bounded height with
-     its own scroll keeps a long live reasoning stream from shoving the composer
-     off-screen — it commits into the windowed list above the moment the turn
-     ends. */
+
+     It must NOT be its own scroll island: when it had `max-height:42vh;
+     overflow-y:auto` it became a separate scroller stacked on the windowed
+     list, so a growing live block overlaid the history up to mid-viewport and
+     only snapped into place when it committed into the list (the reported
+     "covers the page, scrollable, then rearranges" bug). Instead it's a normal
+     flow child capped to the column: `flex:none` so it never steals the list's
+     space, `min-height:0` so the flex column can shrink the list (.chat__log)
+     to make room, and the SHARED scroll lives on .chat__log's VirtualList. A
+     long live reply scrolls with everything else and commits into the list the
+     moment the turn ends. */
   .chat__live {
     flex: none;
-    max-height: 42vh;
-    overflow-y: auto;
+    min-height: 0;
   }
   /* Off-screen completion announcer — present in the a11y tree, invisible on
      screen. Standard clip pattern (not display:none, which drops it from the
