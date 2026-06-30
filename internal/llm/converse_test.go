@@ -210,7 +210,7 @@ func TestConverseAdaptiveThinking(t *testing.T) {
 		t.Fatalf("adaptive model should set output_config.effort, got %+v", got)
 	}
 
-	// Budget models (sonnet-4-6) keep the older enabled+budget shape.
+	// Budget models (native sonnet-4-5) keep the older enabled+budget shape.
 	b := &Converse{thinkingBudget: 8192}
 	_ = json.Unmarshal(b.additionalFields(), &got)
 	bt, _ := got["thinking"].(map[string]any)
@@ -218,11 +218,14 @@ func TestConverseAdaptiveThinking(t *testing.T) {
 		t.Fatalf("budget model should use enabled+budget_tokens, got %+v", got)
 	}
 
-	// opus-4-8 from the constructor is adaptive.
+	// opus-4-8 and sonnet-5 from the constructor are adaptive.
 	t.Setenv("AWS_REGION", "us-east-2")
 	// (NewConverse needs creds; just check catalog wiring via a direct lookup)
 	if info, _ := Lookup("us.anthropic.claude-opus-4-8"); info.Effort == "" {
 		t.Fatal("opus-4-8 should carry an Effort (adaptive) in the catalog")
+	}
+	if info, _ := Lookup("us.anthropic.claude-sonnet-5"); info.Effort == "" {
+		t.Fatal("sonnet-5 should carry an Effort (adaptive) in the catalog — it 400s on the old budget shape")
 	}
 }
 

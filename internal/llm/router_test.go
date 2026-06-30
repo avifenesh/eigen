@@ -26,7 +26,7 @@ func TestRouteMediumUsesOpus(t *testing.T) {
 	got, _ := Route(RouteRequest{
 		Kind:       TaskGeneral,
 		Difficulty: DiffMedium,
-		Candidates: []string{"grok-build", "us.anthropic.claude-opus-4-8", "us.anthropic.claude-sonnet-4-6"},
+		Candidates: []string{"grok-build", "us.anthropic.claude-opus-4-8", "us.anthropic.claude-sonnet-5"},
 	})
 	if scoreFor(got).Tier != TierMed {
 		t.Fatalf("medium task should pick tier-3 (opus), got %s (tier %d)", got, scoreFor(got).Tier)
@@ -86,9 +86,9 @@ func TestRouteFallsToHighestWhenBelowTarget(t *testing.T) {
 	got, _ := Route(RouteRequest{
 		Kind:       TaskGeneral,
 		Difficulty: DiffMedium,
-		Candidates: []string{"grok-build", "us.anthropic.claude-sonnet-4-6"},
+		Candidates: []string{"grok-build", "us.anthropic.claude-sonnet-5"},
 	})
-	if got != "us.anthropic.claude-sonnet-4-6" {
+	if got != "us.anthropic.claude-sonnet-5" {
 		t.Fatalf("medium with no opus should take the highest (sonnet), got %s", got)
 	}
 }

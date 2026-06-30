@@ -2315,13 +2315,13 @@ const failoverTurns = 5
 // failoverChain is the ordered fallback ladder used when the active model is
 // persistently overloaded. The default main agent is gpt-5.5 (codex), so the
 // ladder is the OTHER models to try, in order: opus-4-8 first (the strong
-// general fallback), then glm-5.2 (the 1M-ctx cheap seat), then sonnet-4-6.
+// general fallback), then glm-5.2 (the 1M-ctx cheap seat), then sonnet-5.
 // nextFailover picks the first entry that isn't the failing model so a failover
 // never lands on the model that just failed.
 var failoverChain = []string{
 	"us.anthropic.claude-opus-4-8",
 	"glm-5.2",
-	"us.anthropic.claude-sonnet-4-6",
+	"us.anthropic.claude-sonnet-5",
 }
 
 // nextFailover returns the first chain model different from the failing one,
@@ -2338,7 +2338,7 @@ func nextFailover(failing string) string {
 // failoverFor returns the fallback ladder for a specific failing model.
 // gpt-5.5 (codex, the default main agent) fails over to opus-4-8 first — a
 // DIFFERENT backend (Bedrock Converse), so a codex-side outage doesn't take
-// down the fallback too — then the generic chain (glm-5.2, sonnet-4-6). Other
+// down the fallback too — then the generic chain (glm-5.2, sonnet-5). Other
 // models use the generic chain directly.
 func failoverFor(failing string) []string {
 	return failoverChain

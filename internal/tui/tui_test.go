@@ -1327,11 +1327,11 @@ func TestModelSwitchInfersProviderFromCatalog(t *testing.T) {
 	}
 	// Picking a converse model by id alone must infer the converse provider
 	// from the catalog — not keep the current mantle provider.
-	m.command("/model us.anthropic.claude-sonnet-4-6")
+	m.command("/model us.anthropic.claude-sonnet-5")
 	if gotProv != "converse" {
 		t.Fatalf("provider should be inferred from the catalog, got %q", gotProv)
 	}
-	if gotModel != "us.anthropic.claude-sonnet-4-6" {
+	if gotModel != "us.anthropic.claude-sonnet-5" {
 		t.Fatalf("model id wrong, got %q", gotModel)
 	}
 	if m.provName != "converse" {

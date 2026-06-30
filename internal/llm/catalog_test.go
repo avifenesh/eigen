@@ -9,7 +9,7 @@ func TestContextWindowExact(t *testing.T) {
 	if got := lookupWindow("openai.gpt-5.5"); got != 272000 {
 		t.Fatalf("gpt-5.5 window = %d", got)
 	}
-	if got := lookupWindow("us.anthropic.claude-sonnet-4-6"); got != 200000 {
+	if got := lookupWindow("us.anthropic.claude-sonnet-5"); got != 200000 {
 		t.Fatalf("sonnet window = %d", got)
 	}
 }
@@ -68,7 +68,7 @@ func TestModels(t *testing.T) {
 
 func TestLookupCapabilities(t *testing.T) {
 	// Sonnet: caching + 1M context + extended thinking.
-	s, ok := Lookup("us.anthropic.claude-sonnet-4-6")
+	s, ok := Lookup("us.anthropic.claude-sonnet-5")
 	if !ok {
 		t.Fatal("sonnet should be in the catalog")
 	}
@@ -104,7 +104,7 @@ func TestLookupCapabilities(t *testing.T) {
 }
 
 func TestLookupPrefixAndUnknown(t *testing.T) {
-	if m, ok := Lookup("us.anthropic.claude-sonnet-4-6-20990101"); !ok || !m.Cache {
+	if m, ok := Lookup("us.anthropic.claude-sonnet-5-20990101"); !ok || !m.Cache {
 		t.Fatalf("versioned id should prefix-match the catalogued model: %+v (ok=%v)", m, ok)
 	}
 	if _, ok := Lookup("totally-unknown"); ok {

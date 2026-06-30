@@ -104,8 +104,9 @@ func TestModelEffortLevelsPerCatalog(t *testing.T) {
 		// Anthropic adaptive opus on Bedrock (verified live):
 		// low..xhigh|max — auto and minimal rejected
 		{"us.anthropic.claude-opus-4-8", []string{"low", "medium", "high", "xhigh", "max"}},
-		// budget-style sonnet: off (thinking disabled) through xhigh budgets
-		{"us.anthropic.claude-sonnet-4-6", []string{"off", "low", "medium", "high", "xhigh"}},
+		// Anthropic adaptive sonnet-5 on Bedrock — same shape as opus-4-8 (moved
+		// off the older budget-style API sonnet-4-6 used).
+		{"us.anthropic.claude-sonnet-5", []string{"low", "medium", "high", "xhigh", "max"}},
 		// GLM-5.2: graded reasoning_effort (high|max) on top of the thinking
 		// toggle → off|high|max. Older GLM stays a bare on/off toggle.
 		{"glm-5.2", []string{"off", "high", "max"}},
@@ -169,15 +170,17 @@ func TestSetEffortRespectsModelCatalog(t *testing.T) {
 	if c.SetEffort("minimal") {
 		t.Error("opus-4-8 must reject minimal")
 	}
-	// Budget sonnet: off zeroes the thinking budget; max rejected.
-	s := &Converse{Model: "us.anthropic.claude-sonnet-4-6"}
+	// Budget-style sonnet (native Anthropic sonnet-4-5; sonnet-5 on Bedrock
+	// moved to adaptive, see catalog.go): off zeroes the thinking budget; max
+	// rejected.
+	s := &Converse{Model: "claude-sonnet-4-5-20250929"}
 	if !s.SetEffort("off") {
-		t.Error("sonnet-4-6 must accept off")
+		t.Error("sonnet-4-5 must accept off")
 	}
 	if s.thinkingBudget != 0 {
 		t.Errorf("off should zero the budget, got %d", s.thinkingBudget)
 	}
 	if s.SetEffort("max") {
-		t.Error("sonnet-4-6 must reject max")
+		t.Error("sonnet-4-5 must reject max")
 	}
 }
