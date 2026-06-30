@@ -1616,7 +1616,10 @@
           </button>
           {#if !todoCollapsed}
             <ul class="plan__list">
-              {#each todos as t (t.content)}
+              <!-- key by content+index: two plan tasks can carry identical text
+                   (e.g. repeated "investigate" steps), and a bare content key
+                   then throws each_key_duplicate and crashes the whole view. -->
+              {#each todos as t, ti (t.content + " " + ti)}
                 <li class="ptask ptask--{t.status}">
                   <span class="ptask__glyph">{todoGlyph(t.status)}</span>
                   <span class="ptask__text">{t.content}</span>
