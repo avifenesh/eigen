@@ -9,11 +9,15 @@
  * forbidden (the cardinal sin of the deleted GUI).
  */
 :root {
-  /* ELEVATION — darkest well to floating overlay */
+  /* ELEVATION — four clear resting planes (well → base → raised → inset) plus
+     floating overlays. raised-2 was pulled close to raised: it's now a subtle
+     hover tint, not a distinct 5th resting surface, so the eye parses fewer
+     almost-equal planes (the round-2 color audit's top "feels busy" cause).
+     Overlay/overlay-2 stay clearly lighter — they're for floating menus only. */
   --bg-well: #07090a;
   --bg-base: #0b0e0f;
   --bg-raised: #11171a;
-  --bg-raised-2: #161e22;
+  --bg-raised-2: #141b1e;
   --bg-overlay: #1a2428;
   --bg-overlay-2: #212e33;
   --bg-scrim: rgba(7, 9, 10, 0.62);
