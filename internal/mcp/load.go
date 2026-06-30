@@ -282,6 +282,15 @@ func (c *lazyClient) now() time.Time {
 }
 
 func (c *lazyClient) CallToolRich(ctx context.Context, name string, args json.RawMessage) (ToolResult, error) {
+	// Honor an already-cancelled context before doing any work. When the session
+	// is already dialed, get() returns the cached client without touching ctx,
+	// and a fast underlying transport (or the test client) can complete the call
+	// before the cancellation is ever observed — so a tool call the caller has
+	// already cancelled would wrongly succeed. Check up front so a cancelled call
+	// fails fast and deterministically.
+	if err := ctx.Err(); err != nil {
+		return ToolResult{}, err
+	}
 	client, err := c.get(ctx)
 	if err != nil {
 		return ToolResult{}, err

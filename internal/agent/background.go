@@ -414,6 +414,15 @@ func (a *Agent) SubtaskBackground(ctx context.Context, task string, opts Subtask
 				err = fmt.Errorf("attempt 1 %s; attempt 2: %w", firstSummary, err)
 			}
 		}
+		// Remove the cancel marker BEFORE publishing the terminal status, not
+		// after. The registry update is the moment the task becomes visible as
+		// "canceled"; if the marker were cleared afterwards, an observer that
+		// sees "canceled" in that window still finds the marker on disk (the bug
+		// TestBackgroundCancelMarker caught). Clearing first means the terminal
+		// status is never visible with a stale marker still present.
+		if dir := a.Bg.dir; dir != "" {
+			os.Remove(filepath.Join(dir, id+".cancel")) // never leave stale markers
+		}
 		status := "done"
 		a.Bg.update(id, func(t *BgTask) {
 			t.Finished = time.Now()
@@ -429,9 +438,6 @@ func (a *Agent) SubtaskBackground(ctx context.Context, task string, opts Subtask
 			}
 			status = t.Status
 		})
-		if dir := a.Bg.dir; dir != "" {
-			os.Remove(filepath.Join(dir, id+".cancel")) // never leave stale markers
-		}
 		a.emitBgFinished(id, status, err)
 	}()
 
@@ -909,6 +915,12 @@ func (a *Agent) promoteRunning(cctx context.Context, cancel context.CancelFunc, 
 			}
 		}
 
+		// Clear the cancel marker before publishing the terminal status (same
+		// ordering as the primary path above) so "canceled" is never visible
+		// with a stale marker still on disk.
+		if dir := bg.dir; dir != "" {
+			os.Remove(filepath.Join(dir, id+".cancel"))
+		}
 		status := "done"
 		bg.update(id, func(t *BgTask) {
 			t.Finished = time.Now()
@@ -924,9 +936,6 @@ func (a *Agent) promoteRunning(cctx context.Context, cancel context.CancelFunc, 
 			}
 			status = t.Status
 		})
-		if dir := bg.dir; dir != "" {
-			os.Remove(filepath.Join(dir, id+".cancel"))
-		}
 		a.emitBgFinished(id, status, err)
 	}()
 	a.emit(Event{Kind: EventNote, Text: "subtask still working past " + front.String() + " → moved to background " + id + " (task_status " + id + " to collect; you can keep working)"})
