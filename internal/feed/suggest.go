@@ -121,6 +121,25 @@ func keepKnownDirs(items []Item, dirs []string) []Item {
 	return out
 }
 
+// dropDismissed strips items the user already dismissed from a STALE-cache
+// fallback before it's persisted/returned. Render time already calls
+// FilterDismissed, so serving a dismissed item here was never visible to the
+// user anyway — it just meant scanSuggest kept "successfully" falling back to
+// content that would render as an empty Ideas lane, masking the dead end.
+func dropDismissed(items []Item) []Item {
+	d := loadDismissed()
+	if len(d) == 0 {
+		return items
+	}
+	out := items[:0:0]
+	for _, it := range items {
+		if _, ok := d[it.Key()]; !ok {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
 // scanSuggest returns model suggestions: the cached set while it's fresh
 // (its own TTL, slower than the feed tick), a fresh model call when stale.
 // Failure-isolated: an erroring model or unparseable output falls back to the
@@ -141,10 +160,22 @@ func scanSuggest(parent context.Context, dirs []string, s Suggester) []Item {
 		return cached.Items
 	}
 	// The cache is stale (TTL elapsed or the dir set changed). Any fallback to
-	// these items must not carry suggestions for projects no longer tracked.
-	stale := keepKnownDirs(cached.Items, dirs)
+	// these items must not carry suggestions for projects no longer tracked OR
+	// ones the user has already dismissed — render-time FilterDismissed strips
+	// those anyway, so serving them here just means an empty Ideas lane while
+	// LOOKING like it has content. Previously every early-return below skipped
+	// saveSuggestCache, so a model that kept regenerating ideas which collided
+	// with the dismissed set got stuck: Scanned never advanced, fresh stayed
+	// false forever, and the model was re-invoked on EVERY feed tick (~10min)
+	// instead of the intended 90min suggestTTL — a permanent dead end that also
+	// burned the model quota 9x harder than designed. Every return path below
+	// now persists whatever it returns, so the throttle holds and the next tick
+	// gets a genuinely fresh shot (the model isn't deterministic and project
+	// state moves) instead of replaying the same stuck batch indefinitely.
+	stale := dropDismissed(keepKnownDirs(cached.Items, dirs))
 	ctxt := suggestContext(dirs)
 	if ctxt == "" {
+		saveSuggestCache(stale, dirs)
 		return stale
 	}
 	system := `You are a JSON-only idea engine inside a developer's personal dashboard. You receive a snapshot of their projects (recent commits, working-tree state, README intro, notes) — that snapshot is CONTEXT for understanding what they work on, NOT the menu of suggestions. Propose up to 3 genuinely interesting next moves. Be bold — these are offers the user can clear with one keystroke, so a sharp, non-obvious guess beats a safe restatement.
@@ -168,18 +199,22 @@ If nothing is worth suggesting, reply [].`
 	defer cancel()
 	out, err := s(ctx, system, ctxt)
 	if err != nil {
-		return stale // stale beats nothing
+		saveSuggestCache(stale, dirs) // stale beats nothing, but stop re-asking every tick
+		return stale
 	}
 	items := parseSuggestions(out, dirs)
 	if items == nil {
+		saveSuggestCache(stale, dirs)
 		return stale
 	}
 	// Drop ideas we've recently surfaced (this run or earlier) or that the user
 	// dismissed, so the model can't re-propose the same thing scan after scan.
 	items = dedupSuggestions(items)
 	// If dedup emptied a batch the model actually produced, keep the prior cache
-	// rather than flipping the feed to nothing.
+	// rather than flipping the feed to nothing — but still persist it (above),
+	// so the 90min throttle holds instead of re-asking the model next tick.
 	if len(items) == 0 && len(stale) > 0 {
+		saveSuggestCache(stale, dirs)
 		return stale
 	}
 	recordSeenSuggest(items)

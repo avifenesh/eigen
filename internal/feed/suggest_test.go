@@ -216,6 +216,70 @@ func TestScanSuggestDedupAcrossRuns(t *testing.T) {
 	}
 }
 
+// TestScanSuggestDismissedDeadEndRecovers reproduces the stuck-cache bug: every
+// idea the model proposes happens to match something the user already
+// dismissed (a small model converging on the same "obvious next move" given
+// near-identical project state). Before the fix, dedup emptying the batch
+// skipped saveSuggestCache entirely — Scanned never advanced, so the model got
+// re-invoked on every tick instead of the 90min suggestTTL, AND the stale
+// fallback kept including the dismissed item, which render-time
+// FilterDismissed then silently dropped — an Ideas lane that's empty forever
+// while the cache file claims to have content.
+func TestScanSuggestDismissedDeadEndRecovers(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := gitRepo(t)
+	writeAndCommit(t, dir, "a.txt", "hello")
+
+	stuck := Item{Kind: "suggest", Title: "x: stuck idea", Dir: dir, Task: "t"}
+	saveSuggestCache([]Item{stuck}, []string{dir})
+	expireSuggestCache(t)
+	Dismiss(stuck) // the user already cleared this exact idea
+
+	// The model keeps proposing the SAME (now-dismissed) idea every run.
+	reply := `[{"title":"x: stuck idea","detail":"d","dir":"` + dir + `","task":"t"}]`
+	calls := 0
+	s := func(context.Context, string, string) (string, error) {
+		calls++
+		return reply, nil
+	}
+
+	items := scanSuggest(context.Background(), []string{dir}, s)
+	if calls != 1 {
+		t.Fatalf("expired cache should consult the model: calls=%d", calls)
+	}
+	// dedup drops the dismissed idea from the model's batch; the stale fallback
+	// must ALSO drop it (FilterDismissed would strip it at render time anyway —
+	// returning it here just masks the dead end), so the lane is honestly empty.
+	for _, it := range items {
+		if it.Key() == stuck.Key() {
+			t.Fatalf("dismissed idea must not be served even as a stale fallback: %+v", items)
+		}
+	}
+
+	// The critical regression check: Scanned must have advanced. Otherwise the
+	// cache never leaves "stale" and the model gets re-invoked every tick
+	// forever instead of respecting suggestTTL.
+	var c suggestCache
+	b, err := os.ReadFile(suggestCachePath())
+	if err != nil {
+		t.Fatalf("read cache: %v", err)
+	}
+	if err := json.Unmarshal(b, &c); err != nil {
+		t.Fatalf("unmarshal cache: %v", err)
+	}
+	if time.Since(c.Scanned) > time.Minute {
+		t.Fatalf("Scanned did not advance — stuck in the dead-end loop: %v", c.Scanned)
+	}
+
+	// A second scan right after must NOT re-consult the model: the cache is
+	// fresh again (even though it's an empty/stale set), which is the whole
+	// point of persisting Scanned on every path.
+	scanSuggest(context.Background(), []string{dir}, s)
+	if calls != 1 {
+		t.Fatalf("fresh cache (even when empty) must skip the model: calls=%d", calls)
+	}
+}
+
 func TestSuggestCacheStaleWhenDirsChange(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	a := gitRepo(t)
