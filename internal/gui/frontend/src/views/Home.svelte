@@ -226,7 +226,7 @@
       <h1 class="cockpit__greet">{greeting()}.</h1>
       <p class="cockpit__sub">Your agent, everywhere — here's what's worth your attention.</p>
     </div>
-    <Button variant="primary" size="lg" loading={starting} onclick={startSession}>Start a session</Button>
+    <Button variant="primary" loading={starting} onclick={startSession}>Start a session</Button>
   </header>
 
   <button class="strip" onclick={() => router.go("observe")} title="Open Observe" aria-label="Open Observe — telemetry">
@@ -465,13 +465,16 @@
 </div>
 
 <style>
+  /* Tighter cockpit: this is the landing view, so its density sets the app's
+     first impression. Trimmed outer padding (was sp-9/sp-10) and zone gap (was
+     sp-9) so it reads as a dense cockpit, not a spacious marketing page. */
   .home {
     height: 100%;
     overflow-y: auto;
-    padding: var(--sp-9) var(--sp-10) var(--sp-10);
+    padding: var(--sp-6) var(--sp-7) var(--sp-7);
     display: flex;
     flex-direction: column;
-    gap: var(--sp-9);
+    gap: var(--sp-6);
     max-width: 1080px;
   }
 
@@ -484,12 +487,14 @@
   }
   .cockpit__greet {
     margin: 0;
-    font: var(--fw-bold) var(--fs-display) / var(--lh-tight) var(--font-display);
-    letter-spacing: var(--ls-display);
+    /* was --fs-display (28px) — a 28px bold greeting ate a big vertical band
+       before any useful info. h2 (18px) still leads, far less bulk. */
+    font: var(--fw-semibold) var(--fs-h2) / var(--lh-tight) var(--font-display);
+    letter-spacing: var(--ls-heading);
     color: var(--text-primary);
   }
   .cockpit__sub {
-    margin: var(--sp-3) 0 0;
+    margin: var(--sp-2) 0 0;
     color: var(--text-muted);
     font-size: var(--fs-body-sm);
   }
@@ -497,7 +502,7 @@
     display: flex;
     align-items: center;
     gap: var(--sp-6);
-    padding: var(--sp-5) var(--sp-7);
+    padding: var(--sp-4) var(--sp-6);
     background: var(--bg-well);
     border: 1px solid var(--border-hairline);
     border-radius: var(--r-lg);
@@ -518,7 +523,9 @@
     gap: var(--sp-1);
   }
   .strip__v {
-    font: var(--fw-bold) var(--fs-h1) / 1 var(--font-display);
+    /* was --fs-h1 (22px) bold — oversized for a stat chip; h3 (15px) scans
+       like a real cockpit metric, not a hero number. */
+    font: var(--fw-semibold) var(--fs-h3) / 1 var(--font-display);
     color: var(--text-primary);
   }
   .strip__v--live {
@@ -545,9 +552,9 @@
   .panel {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-4);
-    padding: var(--sp-5) var(--sp-6);
-    min-height: 132px;
+    gap: var(--sp-3);
+    padding: var(--sp-4) var(--sp-5);
+    min-height: 110px;
     background: var(--bg-raised);
     border: 1px solid var(--border-hairline);
     border-radius: var(--r-lg);
@@ -827,7 +834,8 @@
   }
   .fc:hover {
     background: var(--bg-raised-2);
-    transform: translateY(-1px);
+    /* no translateY lift — a card jumping on hover is ambient motion on a
+       frequent interaction; the background shift alone signals hover. */
   }
   .fc--warn {
     border-left-color: var(--warn);
