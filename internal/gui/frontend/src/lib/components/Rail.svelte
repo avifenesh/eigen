@@ -191,7 +191,7 @@
               aria-expanded={!folded}
               onclick={() => toggleZone(zone)}
             >
-              <span class="rail__zone-chev" aria-hidden="true">{folded ? "›" : "⌄"}</span>
+              <span class="rail__zone-chev" class:rail__zone-chev--open={!folded} aria-hidden="true">▸</span>
               {zone.name}
               {#if folded}<span class="rail__zone-count tnum">{zone.items.length}</span>{/if}
             </button>
@@ -400,6 +400,12 @@
     font-size: var(--fs-label);
     line-height: 1;
     color: var(--text-ghost);
+    /* One disclosure idiom app-wide: a triangle that rotates 90° on open
+       (matches ToolGroupCard/ToolCallCard/Plugins/Memory), not a glyph swap. */
+    transition: transform var(--dur-fast) var(--ease-out);
+  }
+  .rail__zone-chev--open {
+    transform: rotate(90deg);
   }
   .rail__zone-count {
     margin-left: auto;
@@ -727,7 +733,8 @@
     .rail__edge,
     .rail__glyph,
     .rail__badge,
-    .rail__sub {
+    .rail__sub,
+    .rail__zone-chev {
       transition: none;
     }
     .rail__lambda,

@@ -50,8 +50,33 @@ textarea {
   caret-color: var(--brand);
 }
 
+/* Placeholder text — one quiet ghost tone everywhere. 7 components already set
+   exactly this; the other 8 inputs were falling back to the engine default
+   (a brighter grey that read as real content). One global rule unifies them. */
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-ghost);
+  opacity: 1; /* Firefox/WebKit dim placeholders by default — keep our exact tone. */
+}
+
 button {
   font-family: inherit;
+}
+
+/* Global keyboard-focus baseline. Every interactive element gets a visible
+   brand ring on :focus-visible (keyboard/programmatic focus, NOT mouse click) —
+   previously whole views (Board's filter chips + card actions, Notes rows,
+   native checkboxes) had hover states but no focus ring, so keyboard users lost
+   the cursor. This is the floor: components that want the richer inset look
+   already set `outline: none; box-shadow: var(--shadow-focus)` and override it.
+   outline (not box-shadow) so an overflow:hidden parent can't clip the ring. */
+:focus-visible {
+  outline: 2px solid var(--border-brand);
+  outline-offset: 2px;
+}
+/* Never show the ring for mouse/touch activation — only true keyboard focus. */
+:focus:not(:focus-visible) {
+  outline: none;
 }
 
 /* Tabular numbers for any live metric so digits don't jitter. */

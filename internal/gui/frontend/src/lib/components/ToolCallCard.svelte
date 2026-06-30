@@ -427,7 +427,7 @@
     <span class="tool__status">
       <StatusDot state={dotState} size={7} pulse={!block.done && !block.isError} />
     </span>
-    <span class="tool__chevron" class:tool__chevron--open={open} aria-hidden="true">›</span>
+    <span class="tool__chevron" class:tool__chevron--open={open} aria-hidden="true">▸</span>
   </button>
 
   {#if open}

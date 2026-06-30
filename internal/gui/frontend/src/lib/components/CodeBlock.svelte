@@ -209,7 +209,9 @@
 <style>
   .code {
     border: 1px solid var(--border-hairline);
-    border-radius: var(--r-sm);
+    /* --r-md to match Card/ToolCallCard — a code block is a card-level surface,
+       not a small chip; --r-sm read a touch tighter than the cards around it. */
+    border-radius: var(--r-md);
     background: var(--syn-bg);
     overflow: hidden;
   }

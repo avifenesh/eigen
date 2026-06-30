@@ -20,6 +20,12 @@
   let draft = $state("");
   let loading = $state(true);
   let saving = $state(false);
+  // Inline new-note composer (replaces the native prompt() modal — a GTK dialog
+  // is jarring against the calm panel + can't be themed). `creating` reveals an
+  // input row in the list header; Enter/Create commits, Esc/Cancel dismisses.
+  let creating = $state(false);
+  let newName = $state("");
+  let createInput = $state<HTMLInputElement | null>(null);
 
   let alive = true;
   let seq = 0;
@@ -82,12 +88,33 @@
       saving = false;
     }
   }
+  function startCreate() {
+    creating = true;
+    newName = "";
+    // Focus the field once it renders.
+    setTimeout(() => createInput?.focus(), 0);
+  }
+  function cancelCreate() {
+    creating = false;
+    newName = "";
+  }
+  function onCreateKey(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      newNote();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      cancelCreate();
+    }
+  }
   async function newNote() {
-    const name = prompt("New note path (e.g. Inbox/Idea.md):");
+    const name = newName.trim();
     if (!name) return;
     try {
       const rel = await Bridge.ObsidianWrite(name, "# " + name.replace(/\.md$/, "") + "\n\n", false);
       toasts.success("Created " + rel);
+      creating = false;
+      newName = "";
       await loadNotes();
       await open({ path: rel, title: rel.replace(/\.md$/, "") });
       startEdit();
@@ -104,8 +131,23 @@
     <aside class="notes__list">
       <div class="notes__search">
         <input class="notes__q" placeholder="Search notes…" bind:value={query} oninput={onSearch} />
-        <Button variant="secondary" size="sm" onclick={newNote}>New</Button>
+        <Button variant="secondary" size="sm" onclick={startCreate}>New</Button>
       </div>
+      {#if creating}
+        <!-- Inline note composer — replaces the native prompt() dialog. -->
+        <div class="notes__create">
+          <input
+            bind:this={createInput}
+            class="notes__q notes__create-input"
+            placeholder="Inbox/Idea.md"
+            aria-label="New note path"
+            bind:value={newName}
+            onkeydown={onCreateKey}
+          />
+          <Button variant="primary" size="sm" onclick={newNote}>Create</Button>
+          <Button variant="ghost" size="sm" onclick={cancelCreate}>Cancel</Button>
+        </div>
+      {/if}
       <div class="notes__rows">
         {#if loading && notes.length === 0}
           {#each Array(8) as _, i (i)}<div class="notes__skel"></div>{/each}
@@ -182,6 +224,15 @@
   .notes__q:focus-visible {
     border-color: var(--border-brand-faint);
     box-shadow: var(--shadow-focus);
+  }
+  /* Inline new-note composer row, sits just under the search row. */
+  .notes__create {
+    display: flex;
+    gap: var(--sp-2);
+    padding: 0 var(--sp-5) var(--sp-3);
+  }
+  .notes__create-input {
+    min-width: 0;
   }
   .notes__rows {
     flex: 1;
@@ -292,5 +343,10 @@
     resize: none;
     outline: none;
     color: var(--text-primary);
+  }
+  /* The editor clears the engine outline above; restore a keyboard-focus ring
+     (inset, since it's a full-bleed pane with no border of its own). */
+  .notes__editor:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--border-brand-faint);
   }
 </style>
