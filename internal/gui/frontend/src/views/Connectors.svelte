@@ -375,7 +375,7 @@
           <div class="conn">
             <div class="conn__info">
               <div class="conn__name">
-                <span class="conn__glyph">📅</span>
+                <span class="conn__glyph">◷</span>
                 <span class="conn__title">Google</span>
                 {#if gstatus.connected}
                   <span class="badge badge--ok">connected</span>
@@ -411,7 +411,7 @@
           <div class="conn">
             <div class="conn__info">
               <div class="conn__name">
-                <span class="conn__glyph">🗒</span>
+                <span class="conn__glyph">≣</span>
                 <span class="conn__title">Obsidian</span>
                 {#if obsidian.available}<span class="badge badge--ok">connected</span>{:else}<span class="badge badge--off">no vault</span>{/if}
               </div>
@@ -431,7 +431,7 @@
           <div class="conn">
             <div class="conn__info">
               <div class="conn__name">
-                <span class="conn__glyph">🔍</span>
+                <span class="conn__glyph">⌕</span>
                 <span class="conn__title">Revuto</span>
                 {#if revuto.available}<span class="badge badge--ok">{revuto.count} repo{revuto.count === 1 ? "" : "s"}</span>{:else}<span class="badge badge--off">CLI not found</span>{/if}
                 {#if revuto.available && revuto.paused > 0}<span class="badge badge--off">{revuto.paused} paused</span>{/if}
@@ -619,7 +619,7 @@
                   <div class="conn__name">
                     <span class="conn__title">{s.name}</span>
                     {#if s.disabled}<span class="badge badge--off">disabled</span>{:else}<span class="badge badge--ok">enabled</span>{/if}
-                    {#if s.secretEnvKeys && s.secretEnvKeys.length > 0}<span class="badge badge--secret" title={s.secretEnvKeys.join(", ")}>🔑 {s.secretEnvKeys.length} secret</span>{/if}
+                    {#if s.secretEnvKeys && s.secretEnvKeys.length > 0}<span class="badge badge--secret" title={s.secretEnvKeys.join(", ")}>⚿ {s.secretEnvKeys.length} secret</span>{/if}
                   </div>
                   {#if s.description}<p class="conn__desc">{s.description}</p>{/if}
                   {#if s.command}<p class="conn__url">{s.command.join(" ")}</p>{/if}
@@ -749,7 +749,7 @@
   .badge {
     font: var(--fw-semibold) var(--fs-micro) / 1 var(--font-sans);
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: var(--ls-eyebrow);
     padding: 2px var(--sp-3);
     border-radius: var(--r-full);
     border: 1px solid var(--border-subtle);

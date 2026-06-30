@@ -248,7 +248,7 @@
                   </div>
                   <div class="kc__title">{c.title}</div>
                   <div class="kc__badges">
-                    {#if c.session}<span class="kbadge kbadge--live" title="an eigen session is active here">⚡ session</span>{/if}
+                    {#if c.session}<span class="kbadge kbadge--live" title="an eigen session is active here">◆ session</span>{/if}
                     {#if c.draft}<span class="kbadge">draft</span>{/if}
                     {#if c.review === "changes"}<span class="kbadge kbadge--warn">changes requested</span>
                     {:else if c.review === "approved"}<span class="kbadge kbadge--ok">approved</span>{/if}
@@ -480,7 +480,7 @@
   .kc__kind {
     font-weight: var(--fw-semibold);
     text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: var(--ls-eyebrow);
     padding: 0 var(--sp-2);
     border-radius: var(--r-xs);
   }

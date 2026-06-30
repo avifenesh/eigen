@@ -446,7 +446,7 @@
         aria-label={listening ? "Stop listening" : "Dictate a message"}
         aria-pressed={listening}
         onclick={dictate}
-      >{listening ? "◉" : "🎙"}</button>
+      >{listening ? "◉" : "○"}</button>
     {/if}
     {#if onvoicemode && voice.stt && voice.tts}
       <!-- Voice MODE: the hands-free conversation loop (listen → send → speak →
@@ -461,7 +461,7 @@
         aria-label={voiceModeOn ? "Stop voice conversation" : "Start voice conversation"}
         aria-pressed={voiceModeOn}
         onclick={onvoicemode}
-      >☎</button>
+      >◍</button>
     {/if}
     <Button
       variant="icon"

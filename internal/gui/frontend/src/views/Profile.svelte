@@ -327,6 +327,8 @@
      brand teal keeps meaning "alive" across the app. Only errors carry color. */
   .kpi__v {
     font: var(--fw-bold) var(--fs-h1) / 1 var(--font-display);
+    letter-spacing: var(--ls-display);
+    font-variant-numeric: tabular-nums;
     color: var(--text-primary);
   }
   .kpi__v--err {
