@@ -9,6 +9,7 @@
   import Button from "./Button.svelte";
   import EmptyState from "./EmptyState.svelte";
   import CodeBlock from "./CodeBlock.svelte";
+  import Tooltip from "./Tooltip.svelte";
 
   let { dir }: { dir: string } = $props();
 
@@ -118,7 +119,9 @@
         <div class="fp__view">
           <div class="fp__view-head">
             <span class="fp__view-name" title={viewPath}>{baseName(viewPath)}</span>
-            <Button variant="icon" size="sm" title="Close" onclick={() => (viewPath = null)}>✕</Button>
+            <Tooltip text="Close">
+              <Button variant="icon" size="sm" ariaLabel="Close" onclick={() => (viewPath = null)}>✕</Button>
+            </Tooltip>
           </div>
           <div class="fp__view-body">
             {#if viewLoading}

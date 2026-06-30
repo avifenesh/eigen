@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -51,33 +52,52 @@ func humanizeMicros(us int64) string {
 	return t.Format("2006-01-02 15:04")
 }
 
+// timerRow is the shape systemctl's --output=json emits per timer.
+type timerRow struct {
+	Next      int64  `json:"next"`
+	Last      int64  `json:"last"`
+	Unit      string `json:"unit"`
+	Activates string `json:"activates"`
+}
+
 func loadSystemdTimers() ([]CronDTO, bool) {
 	out, err := exec.Command("systemctl", "--user", "list-timers", "--all", "--output=json").Output()
 	if err != nil {
 		return nil, false
 	}
-	var timers []struct {
-		Next      int64  `json:"next"`
-		Last      int64  `json:"last"`
-		Unit      string `json:"unit"`
-		Activates string `json:"activates"`
-	}
+	var timers []timerRow
 	if json.Unmarshal(out, &timers) != nil {
 		return nil, true // systemd present, just no parseable timers
 	}
-	rows := make([]CronDTO, 0, len(timers))
-	for _, t := range timers {
-		rows = append(rows, CronDTO{
-			Name:    strings.TrimSuffix(t.Unit, ".timer"),
-			Kind:    "timer",
-			Next:    humanizeMicros(t.Next),
-			Last:    humanizeMicros(t.Last),
-			Active:  timerIsActive(t.Unit),
-			Enabled: timerIsEnabled(t.Unit),
-			Command: t.Activates,
-			Unit:    t.Unit,
-		})
+	// is-active/is-enabled each spawn a systemctl process; run them concurrently
+	// (per timer, in parallel with each other) instead of 2N sequential spawns —
+	// on a machine with a dozen timers that's the difference between ~150ms and
+	// ~15ms for a view that re-fetches on every nav click (no caching upstream).
+	rows := make([]CronDTO, len(timers))
+	var wg sync.WaitGroup
+	for i, t := range timers {
+		wg.Add(1)
+		go func(i int, t timerRow) {
+			defer wg.Done()
+			var active, enabled bool
+			var iwg sync.WaitGroup
+			iwg.Add(2)
+			go func() { defer iwg.Done(); active = timerIsActive(t.Unit) }()
+			go func() { defer iwg.Done(); enabled = timerIsEnabled(t.Unit) }()
+			iwg.Wait()
+			rows[i] = CronDTO{
+				Name:    strings.TrimSuffix(t.Unit, ".timer"),
+				Kind:    "timer",
+				Next:    humanizeMicros(t.Next),
+				Last:    humanizeMicros(t.Last),
+				Active:  active,
+				Enabled: enabled,
+				Command: t.Activates,
+				Unit:    t.Unit,
+			}
+		}(i, t)
 	}
+	wg.Wait()
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
 	return rows, true
 }

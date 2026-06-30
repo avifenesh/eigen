@@ -9,6 +9,7 @@
   import { Bridge } from "$lib/bridge";
   import { errText } from "$lib/errors";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { viewCache } from "$lib/stores/viewCache.svelte";
   import type { SkillsDTO, SkillDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
   import Button from "$lib/components/Button.svelte";
@@ -17,9 +18,11 @@
   import EmptyState from "$lib/components/EmptyState.svelte";
   import Segmented from "$lib/components/Segmented.svelte";
   import Skeleton from "$lib/components/Skeleton.svelte";
+  import Tooltip from "$lib/components/Tooltip.svelte";
   import { trapFocus } from "$lib/actions";
 
-  let data = $state<SkillsDTO | null>(null);
+  const CACHE_KEY = "skills";
+  let data = $state<SkillsDTO | null>(viewCache.get<SkillsDTO>(CACHE_KEY) ?? null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let query = $state("");
@@ -85,7 +88,7 @@
     loading = true;
     error = null;
     try {
-      const d = await Bridge.Skills();
+      const d = await viewCache.fetch(CACHE_KEY, () => Bridge.Skills());
       if (seq === loadSeq) data = d;
     } catch (e) {
       if (seq === loadSeq) error = errText(e);
@@ -192,6 +195,7 @@
   function closePreview() {
     openSkill = null;
     body = "";
+    confirmRemove = false;
   }
 
   async function accept(name: string) {
@@ -220,9 +224,10 @@
   }
 
   let removing = $state(false);
+  let confirmRemove = $state(false);
   async function removeInstalled(name: string) {
-    if (!confirm(`Remove skill “${name}” from ~/.eigen/skills?`)) return;
     removing = true;
+    confirmRemove = false;
     try {
       await Bridge.RemoveSkill(name);
       toasts.success(`removed “${name}”`);
@@ -417,11 +422,18 @@
       </div>
       <div class="sheet__head-actions">
         {#if openSkill.source === "user"}
-          <Button variant="ghost" size="sm" loading={removing} onclick={() => openSkill && removeInstalled(openSkill.name)}>
-            Remove
-          </Button>
+          {#if confirmRemove}
+            <Button variant="danger" size="sm" loading={removing} onclick={() => openSkill && removeInstalled(openSkill.name)}>
+              Confirm
+            </Button>
+            <Button variant="ghost" size="sm" disabled={removing} onclick={() => (confirmRemove = false)}>Cancel</Button>
+          {:else}
+            <Button variant="ghost" size="sm" onclick={() => (confirmRemove = true)}>Remove</Button>
+          {/if}
         {/if}
-        <Button variant="icon" size="md" title="Close" onclick={closePreview}>✕</Button>
+        <Tooltip text="Close">
+          <Button variant="icon" size="md" ariaLabel="Close" onclick={closePreview}>✕</Button>
+        </Tooltip>
       </div>
     </header>
     <p class="sheet__desc">{openSkill.description}</p>

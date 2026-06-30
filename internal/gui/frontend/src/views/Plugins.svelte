@@ -10,6 +10,7 @@
   import { Bridge } from "$lib/bridge";
   import { errText } from "$lib/errors";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { viewCache } from "$lib/stores/viewCache.svelte";
   import { relTime } from "$lib/status";
   import type { PluginsDTO, InstalledPluginDTO, PluginPreviewDTO } from "$lib/types";
   import { SvelteSet } from "svelte/reactivity";
@@ -20,7 +21,8 @@
   import EmptyState from "$lib/components/EmptyState.svelte";
   import Skeleton from "$lib/components/Skeleton.svelte";
 
-  let data = $state<PluginsDTO | null>(null);
+  const CACHE_KEY = "plugins";
+  let data = $state<PluginsDTO | null>(viewCache.get<PluginsDTO>(CACHE_KEY) ?? null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let acting = $state<Record<string, boolean>>({});
@@ -136,7 +138,7 @@
     error = null;
     confirming = null; // a refresh clears any dangling inline Uninstall?/Remove?
     try {
-      const d = await Bridge.Plugins();
+      const d = await viewCache.fetch(CACHE_KEY, () => Bridge.Plugins());
       if (seq === loadSeq) data = d;
     } catch (e) {
       if (seq === loadSeq) error = errText(e);

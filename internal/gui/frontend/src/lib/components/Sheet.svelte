@@ -6,6 +6,7 @@
   import type { Snippet } from "svelte";
   import { trapFocus } from "$lib/actions";
   import Button from "./Button.svelte";
+  import Tooltip from "./Tooltip.svelte";
 
   let {
     open,
@@ -49,7 +50,9 @@
   >
     <header class="sheet__head">
       <div class="sheet__title">{@render title()}</div>
-      <Button variant="icon" size="md" title="Close" onclick={onclose}>✕</Button>
+      <Tooltip text="Close">
+        <Button variant="icon" size="md" ariaLabel="Close" onclick={onclose}>✕</Button>
+      </Tooltip>
     </header>
     <div class="sheet__body selectable">{@render children()}</div>
   </div>

@@ -18,6 +18,7 @@
   import Button from "$lib/components/Button.svelte";
   import Badge from "$lib/components/Badge.svelte";
   import StatusDot from "$lib/components/StatusDot.svelte";
+  import Tooltip from "$lib/components/Tooltip.svelte";
 
   let starting = $state(false);
   let acting = $state<Record<string, boolean>>({});
@@ -359,7 +360,9 @@
             <div class="fc__head">
               <span class="fc__glyph">{kindGlyph(it.kind)}</span>
               <span class="fc__title">{it.title}</span>
-              <button class="fc__x" title="Dismiss" aria-label="Dismiss" onclick={() => feed.dismiss(it.key)}>×</button>
+              <Tooltip text="Dismiss">
+                <button class="fc__x" aria-label="Dismiss" onclick={() => feed.dismiss(it.key)}>×</button>
+              </Tooltip>
             </div>
             {#if it.detail}<p class="fc__detail">{it.detail}</p>{/if}
             <div class="fc__foot">
@@ -387,7 +390,9 @@
             <div class="fc__head">
               <span class="fc__glyph">✧</span>
               <span class="fc__title">{it.title}</span>
-              <button class="fc__x" title="Dismiss" aria-label="Dismiss" onclick={() => feed.dismiss(it.key)}>×</button>
+              <Tooltip text="Dismiss">
+                <button class="fc__x" aria-label="Dismiss" onclick={() => feed.dismiss(it.key)}>×</button>
+              </Tooltip>
             </div>
             {#if it.detail}<p class="fc__detail">{it.detail}</p>{/if}
             <div class="fc__foot">

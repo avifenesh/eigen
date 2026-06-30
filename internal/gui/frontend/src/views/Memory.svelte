@@ -9,6 +9,7 @@
   import { errText } from "$lib/errors";
   import { router } from "$lib/router.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { viewCache } from "$lib/stores/viewCache.svelte";
   import type { MemoryScopeDTO, MemoryScopeRefDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
   import Button from "$lib/components/Button.svelte";
@@ -23,11 +24,16 @@
   // binds to `scope` — a scope KEY that round-trips through MemoryForScope (the
   // backend accepts "global", "project"/"", an abs dir, or an on-disk key). We
   // open the cwd project by default ("project") for session continuity.
-  let scopes = $state<MemoryScopeRefDTO[]>([]);
+  let scopes = $state<MemoryScopeRefDTO[]>(viewCache.get<MemoryScopeRefDTO[]>("memory:scopes") ?? []);
   let scope = $state<string>("project");
   // The opened scope's rich DTO — loaded on demand via MemoryForScope, replacing
-  // the old two-field {project, global} payload.
-  let current = $state<MemoryScopeDTO | null>(null);
+  // the old two-field {project, global} payload. Prefilled from cache under the
+  // default scope key ("project" — every mount starts there, see the mount
+  // $effect below) so a revisit paints instantly instead of blanking first.
+  let current = $state<MemoryScopeDTO | null>(viewCache.get<MemoryScopeDTO>("memory:scope:project") ?? null);
+  function scopeCacheKey(key: string): string {
+    return `memory:scope:${key}`;
+  }
   let loadError = $state<string | null>(null);
   let loading = $state(true);
   let composing = $state(false);
@@ -52,6 +58,8 @@
   let removingBan = $state<string | null>(null);
   let removingNote = $state<number | null>(null);
   let removingAdHoc = $state<number | null>(null);
+  let confirmRemoveNote = $state<number | null>(null);
+  let confirmRemoveAdHoc = $state<number | null>(null);
 
   // Backups (snapshot history of MEMORY.md). The scope DTO carries only the
   // count; Bridge.MemoryBackups(scope) lists the actual snapshot paths. Lazy:
@@ -95,7 +103,7 @@
   let alive = true;
   async function loadScopes() {
     try {
-      const refs = await Bridge.ListMemoryScopes();
+      const refs = await viewCache.fetch("memory:scopes", () => Bridge.ListMemoryScopes());
       if (!alive) return;
       scopes = refs;
       // Snap the picker label to the canonical key of the cwd project (the ref
@@ -118,7 +126,7 @@
     loading = true;
     loadError = null;
     try {
-      const d = await Bridge.MemoryForScope(key);
+      const d = await viewCache.fetch(scopeCacheKey(key), () => Bridge.MemoryForScope(key));
       if (seq === loadSeq) current = d;
     } catch (e) {
       const msg = errText(e);
@@ -140,11 +148,17 @@
       loadSeq++;
     };
   });
-  // Switching the picker re-opens the chosen scope.
+  // Switching the picker re-opens the chosen scope. Swap `current` to the new
+  // scope's cached snapshot (or null) immediately — otherwise the old scope's
+  // data stays on screen until the new fetch resolves, since the `{#if loading
+  // && !current}` skeleton gate only triggers when current is empty.
   function selectScope(key: string) {
     if (key === scope) return;
     scope = key;
     composing = false;
+    confirmRemoveNote = null;
+    confirmRemoveAdHoc = null;
+    current = viewCache.get<MemoryScopeDTO>(scopeCacheKey(key)) ?? null;
     loadScope(key);
   }
 
@@ -238,8 +252,8 @@
   }
 
   async function removeNote(index: number) {
-    if (!confirm("Remove this note from memory?")) return;
     removingNote = index;
+    confirmRemoveNote = null;
     try {
       await Bridge.RemoveMemoryNote(scope, index);
       toasts.success("note removed");
@@ -252,8 +266,8 @@
   }
 
   async function removeAdHoc(index: number) {
-    if (!confirm("Delete this saved note?")) return;
     removingAdHoc = index;
+    confirmRemoveAdHoc = null;
     try {
       await Bridge.RemoveAdHocMemoryNote(scope, index);
       toasts.success("saved note deleted");
@@ -446,12 +460,16 @@
                       loading={movingNote === note.index}
                       title="Relocate this note to another scope"
                       onclick={() => openMove(note.text, note.index)}>{moveLabel}</Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      loading={removingAdHoc === note.index}
-                      title="Delete this saved note"
-                      onclick={() => removeAdHoc(note.index)}>Remove</Button>
+                    {#if confirmRemoveAdHoc === note.index}
+                      <Button variant="danger" size="sm" loading={removingAdHoc === note.index} onclick={() => removeAdHoc(note.index)}>Confirm</Button>
+                      <Button variant="ghost" size="sm" disabled={removingAdHoc === note.index} onclick={() => (confirmRemoveAdHoc = null)}>Cancel</Button>
+                    {:else}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Delete this saved note"
+                        onclick={() => (confirmRemoveAdHoc = note.index)}>Remove</Button>
+                    {/if}
                   </div>
                 </Card>
               {/each}
@@ -483,12 +501,16 @@
                       loading={movingNote === note.index}
                       title="Relocate this note to another scope"
                       onclick={() => openMove(note.text, note.index)}>{moveLabel}</Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      loading={removingNote === note.index}
-                      title="Remove this note"
-                      onclick={() => removeNote(note.index)}>Remove</Button>
+                    {#if confirmRemoveNote === note.index}
+                      <Button variant="danger" size="sm" loading={removingNote === note.index} onclick={() => removeNote(note.index)}>Confirm</Button>
+                      <Button variant="ghost" size="sm" disabled={removingNote === note.index} onclick={() => (confirmRemoveNote = null)}>Cancel</Button>
+                    {:else}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Remove this note"
+                        onclick={() => (confirmRemoveNote = note.index)}>Remove</Button>
+                    {/if}
                   </div>
                 </Card>
               {/each}

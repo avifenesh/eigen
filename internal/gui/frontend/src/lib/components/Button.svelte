@@ -22,6 +22,7 @@
     disabled = false,
     type = "button",
     title,
+    ariaLabel,
     full = false,
     icon,
     onclick,
@@ -33,6 +34,10 @@
     disabled?: boolean;
     type?: "button" | "submit";
     title?: string;
+    // Accessible name for icon-only buttons whose visible content is a glyph,
+    // not a word — screen readers read glyph text content literally (e.g. "✕"
+    // as "multiplication x"), so a real label needs to override that.
+    ariaLabel?: string;
     full?: boolean;
     icon?: Snippet;
     onclick?: (e: MouseEvent) => void;
@@ -43,6 +48,7 @@
 <button
   {type}
   {title}
+  aria-label={ariaLabel}
   class="btn btn--{variant} btn--{size}"
   class:btn--full={full}
   class:btn--has-icon={icon && variant !== "icon"}
