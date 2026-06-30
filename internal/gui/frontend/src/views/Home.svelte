@@ -251,7 +251,7 @@
           <p class="panel__empty">No upcoming events.</p>
         {:else}
           <ul class="panel__list">
-            {#each dash.events.slice(0, 5) as e (e.summary + e.start)}
+            {#each dash.events.slice(0, 5) as e, ei (e.summary + " " + e.start + " " + ei)}
               <li class="evt">
                 <span class="evt__time tnum">{eventTime(e)}</span>
                 <span class="evt__sum">{e.summary}</span>
@@ -273,7 +273,7 @@
           <p class="panel__empty">Inbox zero — nothing unread.</p>
         {:else}
           <ul class="panel__list">
-            {#each dash.unread.slice(0, 5) as m (m.from + m.subject)}
+            {#each dash.unread.slice(0, 5) as m, mi (m.from + " " + m.subject + " " + mi)}
               <li class="mail">
                 <span class="mail__from">{fromName(m.from)}</span>
                 <span class="mail__subj">{m.subject}</span>
@@ -361,7 +361,7 @@
       </p>
     {:else}
       <div class="cards">
-        {#each feed.actOn as it (it.key)}
+        {#each feed.actOn as it, fi (it.key + " " + fi)}
           <div class="fc fc--{kindTone(it.kind)}">
             <div class="fc__head">
               <span class="fc__glyph">{kindGlyph(it.kind)}</span>
@@ -389,7 +389,7 @@
         <Badge tone="success">suggested</Badge>
       </div>
       <div class="cards">
-        {#each feed.ideas as it (it.key)}
+        {#each feed.ideas as it, ii (it.key + " " + ii)}
           <div class="fc fc--success">
             <div class="fc__head">
               <span class="fc__glyph">✧</span>
