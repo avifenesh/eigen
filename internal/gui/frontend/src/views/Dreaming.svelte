@@ -17,6 +17,7 @@
   import DiffView from "$lib/components/DiffView.svelte";
   import VirtualList from "$lib/components/VirtualList.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import Segmented from "$lib/components/Segmented.svelte";
   import { trapFocus } from "$lib/actions";
 
   // The selectable scopes (Global first, then every known project). The picker
@@ -195,14 +196,16 @@
         <span class="dream__dir" title={selectedRef.dir}>{shortDir(selectedRef.dir)}</span>
       {/if}
     </div>
-    <div class="dream__strands" role="tablist" aria-label="Timeline strand">
-      <button class="dream__seg" class:dream__seg--on={strand === "rollouts"} role="tab" aria-selected={strand === "rollouts"} onclick={() => (strand = "rollouts")}>
-        Rollouts {#if current}<span class="dream__n tnum">{current.rollouts.length}</span>{/if}
-      </button>
-      <button class="dream__seg" class:dream__seg--on={strand === "consolidations"} role="tab" aria-selected={strand === "consolidations"} onclick={() => (strand = "consolidations")}>
-        Consolidations {#if current}<span class="dream__n tnum">{current.consolidations.length}</span>{/if}
-      </button>
-    </div>
+    <Segmented
+      ariaLabel="Timeline strand"
+      variant="surface"
+      value={strand}
+      onChange={(v) => (strand = v as typeof strand)}
+      options={[
+        { value: "rollouts", label: "Rollouts", count: current?.rollouts.length },
+        { value: "consolidations", label: "Consolidations", count: current?.consolidations.length },
+      ]}
+    />
     <div class="dream__actions">
       <Button variant="secondary" size="sm" loading={dreaming} title="Consolidate this scope's notes into memory + regenerate the injected summary now" onclick={dreamNow}>
         Dream now
@@ -388,48 +391,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .dream__strands {
-    display: inline-flex;
-    background: var(--bg-well);
-    border: 1px solid var(--border-hairline);
-    border-radius: var(--r-md);
-    padding: var(--sp-1);
-    gap: var(--sp-1);
-  }
-  .dream__seg {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--sp-3);
-    height: 28px;
-    padding: 0 var(--sp-5);
-    border: none;
-    background: transparent;
-    color: var(--text-muted);
-    border-radius: var(--r-sm);
-    cursor: pointer;
-    font: var(--fw-medium) var(--fs-body-sm) / 1 var(--font-sans);
-    transition:
-      background var(--dur-fast) var(--ease-out),
-      color var(--dur-fast) var(--ease-out);
-  }
-  .dream__seg:hover {
-    color: var(--text-primary);
-  }
-  .dream__seg:focus-visible {
-    outline: none;
-    box-shadow: var(--shadow-focus);
-  }
-  .dream__seg--on {
-    background: var(--bg-raised-2);
-    color: var(--text-primary);
-  }
-  .dream__n {
-    font-size: var(--fs-micro);
-    color: var(--text-faint);
-  }
-  .dream__seg--on .dream__n {
-    color: var(--brand);
   }
   .dream__body {
     flex: 1;

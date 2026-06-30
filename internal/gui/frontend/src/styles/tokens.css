@@ -77,6 +77,11 @@
      showed a teal filament AND an orange pulsing dot for the same state, the
      one warm-on-teal clash in the app. Teal is the single "alive" accent. */
   --dot-working: var(--brand);
+  /* live = "present + alive, not actively working" — same teal as working but
+     the dot stays STATIC (working breathes). The daemon-online dot and a
+     freshest/unread idle row use this; it's why those reads as teal, not the
+     green --dot-ok (a deliberate phase-11 choice: teal is the one alive hue). */
+  --dot-live: var(--brand);
   --dot-idle: var(--text-muted);
   --dot-ok: var(--success);
   --dot-warn: var(--warn);

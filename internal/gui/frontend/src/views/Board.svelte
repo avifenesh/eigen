@@ -15,6 +15,7 @@
   import Button from "$lib/components/Button.svelte";
   import Badge from "$lib/components/Badge.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import Segmented from "$lib/components/Segmented.svelte";
 
   let data = $state<BoardDTO | null>(null);
   let kanban = $state<KanbanDTO | null>(null);
@@ -35,6 +36,19 @@
     }
     return [...set].sort();
   });
+  // Filter-chip option lists for the shared Segmented control. Owner is the
+  // fixed All/Local prefix plus a chip per present owner; state is fixed.
+  const ownerOptions = $derived([
+    { value: "all", label: "All" },
+    { value: "local", label: "Local" },
+    ...owners.map((o) => ({ value: o, label: o })),
+  ]);
+  const stateOptions = [
+    { value: "all", label: "Everything" },
+    { value: "prs", label: "PRs" },
+    { value: "issues", label: "Issues" },
+    { value: "dirty", label: "Uncommitted" },
+  ];
 
   function laneMatches(l: BoardLaneDTO): boolean {
     if (ownerFilter !== "all") {
@@ -204,19 +218,20 @@
 
   {#if view === "projects" && data && data.lanes.length > 0}
     <div class="filters">
-      <div class="filtergroup">
-        <button class="fchip" class:fchip--on={ownerFilter === "all"} onclick={() => (ownerFilter = "all")}>All</button>
-        <button class="fchip" class:fchip--on={ownerFilter === "local"} onclick={() => (ownerFilter = "local")}>Local</button>
-        {#each owners as o (o)}
-          <button class="fchip" class:fchip--on={ownerFilter === o} onclick={() => (ownerFilter = o)}>{o}</button>
-        {/each}
-      </div>
-      <div class="filtergroup">
-        <button class="fchip" class:fchip--on={stateFilter === "all"} onclick={() => (stateFilter = "all")}>Everything</button>
-        <button class="fchip" class:fchip--on={stateFilter === "prs"} onclick={() => (stateFilter = "prs")}>PRs</button>
-        <button class="fchip" class:fchip--on={stateFilter === "issues"} onclick={() => (stateFilter = "issues")}>Issues</button>
-        <button class="fchip" class:fchip--on={stateFilter === "dirty"} onclick={() => (stateFilter = "dirty")}>Uncommitted</button>
-      </div>
+      <Segmented
+        ariaLabel="Filter by owner"
+        variant="chip"
+        value={ownerFilter}
+        onChange={(v) => (ownerFilter = v)}
+        options={ownerOptions}
+      />
+      <Segmented
+        ariaLabel="Filter by state"
+        variant="chip"
+        value={stateFilter}
+        onChange={(v) => (stateFilter = v as typeof stateFilter)}
+        options={stateOptions}
+      />
     </div>
   {/if}
 
@@ -585,29 +600,6 @@
     flex-wrap: wrap;
     gap: var(--sp-5);
     padding: 0 var(--sp-7) var(--sp-4);
-  }
-  .filtergroup {
-    display: flex;
-    gap: var(--sp-2);
-    flex-wrap: wrap;
-  }
-  .fchip {
-    height: 26px;
-    padding: 0 var(--sp-4);
-    border-radius: var(--r-full);
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-raised-2);
-    color: var(--text-muted);
-    cursor: pointer;
-    font: var(--fw-medium) var(--fs-label) / 1 var(--font-sans);
-  }
-  .fchip:hover {
-    color: var(--text-primary);
-  }
-  .fchip--on {
-    background: var(--state-selected);
-    border-color: var(--border-brand-faint);
-    color: var(--brand-bright);
   }
   .lane__pin {
     margin-left: auto;

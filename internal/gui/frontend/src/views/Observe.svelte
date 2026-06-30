@@ -11,6 +11,7 @@
   import type { ObserveSummaryDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import Tabs from "$lib/components/Tabs.svelte";
 
   type Tab = "overview" | "routes" | "tools" | "models" | "hooks" | "subagents" | "errors";
   let tab = $state<Tab>("overview");
@@ -86,14 +87,14 @@
     return rev ? rev.slice(0, 7) : "";
   }
 
-  const tabs: { key: Tab; label: string }[] = [
-    { key: "overview", label: "Overview" },
-    { key: "routes", label: "Routes" },
-    { key: "tools", label: "Tools" },
-    { key: "models", label: "Models" },
-    { key: "hooks", label: "Hooks" },
-    { key: "subagents", label: "Subagents" },
-    { key: "errors", label: "Errors" },
+  const tabs: { value: Tab; label: string }[] = [
+    { value: "overview", label: "Overview" },
+    { value: "routes", label: "Routes" },
+    { value: "tools", label: "Tools" },
+    { value: "models", label: "Models" },
+    { value: "hooks", label: "Hooks" },
+    { value: "subagents", label: "Subagents" },
+    { value: "errors", label: "Errors" },
   ];
 
   // Max for proportional bars in a count list.
@@ -104,13 +105,12 @@
 
 <div class="obs">
   <header class="obs__head">
-    <div class="obs__tabs" role="tablist" aria-label="Telemetry view">
-      {#each tabs as t (t.key)}
-        <button class="obs__tab" class:obs__tab--on={tab === t.key} role="tab" aria-selected={tab === t.key} onclick={() => (tab = t.key)}>
-          {t.label}
-        </button>
-      {/each}
-    </div>
+    <Tabs
+      ariaLabel="Telemetry view"
+      {tabs}
+      value={tab}
+      onChange={(v) => (tab = v as Tab)}
+    />
   </header>
 
   <div class="obs__scroll selectable">
@@ -386,34 +386,6 @@
     padding: var(--sp-6) var(--sp-7) 0;
     border-bottom: 1px solid var(--border-hairline);
   }
-  .obs__tabs {
-    display: flex;
-    gap: var(--sp-2);
-  }
-  .obs__tab {
-    height: 34px;
-    padding: 0 var(--sp-5);
-    border: none;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    font: var(--fw-medium) var(--fs-body-sm) / 1 var(--font-sans);
-    border-bottom: 2px solid transparent;
-    transition:
-      color var(--dur-fast) var(--ease-out),
-      border-color var(--dur-fast) var(--ease-out);
-  }
-  .obs__tab:hover {
-    color: var(--text-primary);
-  }
-  .obs__tab:focus-visible {
-    outline: none;
-    box-shadow: var(--shadow-focus);
-  }
-  .obs__tab--on {
-    color: var(--brand-bright);
-    border-bottom-color: var(--brand);
-  }
   .obs__scroll {
     flex: 1;
     overflow-y: auto;
@@ -679,8 +651,7 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .gauge__fill,
-    .mbar span,
-    .obs__tab {
+    .mbar span {
       transition: none;
     }
   }
