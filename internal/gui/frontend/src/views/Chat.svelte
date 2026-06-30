@@ -269,7 +269,12 @@
   const todos = $derived(store?.todos ?? []);
   const todosActive = $derived(todos.some((t) => t.status === "pending" || t.status === "in_progress"));
   const todoDone = $derived(todos.filter((t) => t.status === "completed").length);
-  let todoCollapsed = $state(false);
+  // Plan card starts COLLAPSED — the collapsed head already shows "Plan N/M" +
+  // the current in-progress step, which is the high-value bit. Expanded by
+  // default, a 10-step plan claimed ~a quarter of the chat viewport above the
+  // transcript (it's flex:none, pushing the conversation down by its full
+  // height). The full checklist is reference; one click reveals it.
+  let todoCollapsed = $state(true);
   function todoGlyph(status: string): string {
     if (status === "completed") return "✓";
     if (status === "in_progress") return "◐";
@@ -2401,6 +2406,10 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-2);
+    /* Cap the expanded plan so a long (15-step) list can't claim a third of the
+       viewport — scroll within instead of pushing the transcript down. */
+    max-height: 32vh;
+    overflow-y: auto;
   }
   .ptask {
     display: flex;

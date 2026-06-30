@@ -62,6 +62,36 @@
     return (f as ConfigFieldDTO & { allowEmpty?: boolean }).allowEmpty === true;
   }
 
+  // Config is grouped into TABS instead of one long scroll. The DTO has no
+  // category, so map known keys to a tab; anything unmapped falls under
+  // "Advanced" so a newly-added field is never hidden. Order defines tab order.
+  const TAB_ORDER = ["General", "Models", "Behavior", "Integrations", "Advanced"] as const;
+  type Tab = (typeof TAB_ORDER)[number];
+  const KEY_TAB: Record<string, Tab> = {
+    model: "General", perm: "General", input_mode: "General", effort: "General",
+    theme: "General", nerd_font: "General", max_tokens: "General",
+    judge_model: "Models", dream_model: "Models", route_model: "Models",
+    route: "Models", route_providers: "Models",
+    dream_on_idle: "Behavior", dream_batch: "Behavior", idle_minutes: "Behavior",
+    front_window_min: "Behavior", stall_idle_min: "Behavior",
+    tts_cmd: "Integrations", notify_cmd: "Integrations", telegram_token: "Integrations",
+    observe: "Advanced", local_background: "Advanced", daemon_timeout: "Advanced",
+  };
+  function tabOf(key: string): Tab {
+    return KEY_TAB[key] ?? "Advanced";
+  }
+  // Only show tabs that actually have fields (future-proof if the DTO shrinks).
+  const tabs = $derived.by<Tab[]>(() => {
+    const present = new Set((data?.fields ?? []).map((f) => tabOf(f.key)));
+    return TAB_ORDER.filter((t) => present.has(t));
+  });
+  let activeTab = $state<Tab>("General");
+  // Keep activeTab valid as data loads (e.g. if General ever has no fields).
+  $effect(() => {
+    if (tabs.length && !tabs.includes(activeTab)) activeTab = tabs[0];
+  });
+  const tabFields = $derived((data?.fields ?? []).filter((f) => tabOf(f.key) === activeTab));
+
   async function commit(key: string, value: string) {
     saving[key] = true;
     try {
@@ -127,9 +157,25 @@
   {:else}
     <div class="cfg__scroll">
       <div class="cfg__path selectable">{data.path}</div>
-      <RuleChainsEditor />
+      <!-- Tabs instead of one long scroll: pick a category, see only its
+           fields. The path stays pinned above; each tab scrolls its own short
+           list. -->
+      <div class="cfg__tabs" role="tablist">
+        {#each tabs as t (t)}
+          <button
+            class="cfg__tab"
+            class:cfg__tab--active={activeTab === t}
+            role="tab"
+            aria-selected={activeTab === t}
+            onclick={() => (activeTab = t)}
+          >{t}</button>
+        {/each}
+      </div>
+      {#if activeTab === "Models"}
+        <RuleChainsEditor />
+      {/if}
       <div class="cfg__list">
-        {#each data.fields as f (f.key)}
+        {#each tabFields as f (f.key)}
           <Card>
             <div class="field">
               <div class="field__info">
@@ -251,6 +297,34 @@
     font: var(--fw-regular) var(--fs-label) / 1 var(--font-mono);
     color: var(--text-faint);
     padding-bottom: var(--sp-2);
+  }
+  .cfg__tabs {
+    display: flex;
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-5);
+    border-bottom: 1px solid var(--divider);
+  }
+  .cfg__tab {
+    border: none;
+    background: transparent;
+    padding: var(--sp-2) var(--sp-3);
+    margin-bottom: -1px;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    font: var(--fw-medium) var(--fs-body-sm) / 1 var(--font-sans);
+    cursor: pointer;
+    transition: color var(--dur-fast) var(--ease-out);
+  }
+  .cfg__tab:hover {
+    color: var(--text-secondary);
+  }
+  .cfg__tab--active {
+    color: var(--text-primary);
+    border-bottom-color: var(--brand);
+  }
+  .cfg__tab:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
   }
   .cfg__list {
     display: flex;
