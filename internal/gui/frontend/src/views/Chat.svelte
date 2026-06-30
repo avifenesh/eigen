@@ -1102,11 +1102,18 @@
       const v = parseInt(localStorage.getItem("eigen.dockWidth") ?? "", 10);
       if (!Number.isNaN(v)) return Math.min(DOCK_MAX, Math.max(DOCK_MIN, v));
     } catch {}
-    return 340;
+    return 300;
   }
-  let dockCollapsed = $state(false);
+  // Right dock (Info/Terminal/Diff/Files/Browser) defaults CLOSED — a 300px
+  // standing column at rest is the biggest single chrome-bulk source, and at
+  // rest it only shows model + context + a couple edit buttons. Collapsed = a
+  // 48px glyph rail; click a glyph (or a pending approval, see the $effect
+  // below) to expand. A stored value still wins, so a user who opens it keeps
+  // it open.
+  let dockCollapsed = $state(true);
   try {
-    dockCollapsed = localStorage.getItem("eigen.dockCollapsed") === "1";
+    const v = localStorage.getItem("eigen.dockCollapsed");
+    if (v != null) dockCollapsed = v === "1";
   } catch {}
   let dockWidth = $state(readDockWidth());
 

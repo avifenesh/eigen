@@ -35,9 +35,16 @@ func buildGUIApp() (*application.App, *gui.Bridge) {
 	})
 	bridge.SetApp(app)
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:            "Eigen",
-		Width:            1180,
-		Height:           760,
+		Title: "Eigen",
+		// Tighter default than the old 1180×760 — that opened too wide, leaving
+		// the rail + (now-collapsed) dock framing a self-capped content column
+		// with big empty gutters. 1040×720 fills better and reads denser; a
+		// MinWidth/MinHeight keeps the rail+composer layout from breaking when
+		// dragged small.
+		Width:            1040,
+		Height:           720,
+		MinWidth:         720,
+		MinHeight:        520,
 		BackgroundColour: application.NewRGB(11, 14, 15), // --bg-base #0B0E0F
 		URL:              "/",
 	})

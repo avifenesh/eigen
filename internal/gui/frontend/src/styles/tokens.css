@@ -98,8 +98,8 @@
   --fs-h1: 22px;
   --fs-h2: 18px;
   --fs-h3: 15px;
-  --fs-body: 14px;
-  --fs-body-sm: 13px;
+  --fs-body: 13px; /* was 14 — UI chrome + chat scan denser at 13 (VS Code/Linear scale) */
+  --fs-body-sm: 12px; /* was 13 — keep one step below body */
   --fs-label: 12px;
   --fs-micro: 11px;
   --fs-code: 13px;
@@ -110,8 +110,8 @@
   --fw-bold: 700;
   --lh-tight: 1.2;
   --lh-snug: 1.35;
-  --lh-normal: 1.55;
-  --lh-prose: 1.65;
+  --lh-normal: 1.5; /* was 1.55 — chrome scans tighter; reading prose uses --lh-prose */
+  --lh-prose: 1.55; /* was 1.65 — the biggest driver of transcript "air"; still comfortable */
   --lh-code: 1.5;
   --ls-display: -0.02em;
   --ls-heading: -0.01em;
@@ -179,9 +179,9 @@
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
   /* LAYOUT */
-  --rail-w: 212px;
-  --rail-w-collapsed: 60px;
-  --topbar-h: 48px;
+  --rail-w: 184px; /* was 212 — thinner left rail; labels still fit at 13px */
+  --rail-w-collapsed: 56px;
+  --topbar-h: 42px; /* was 48 — trims the top band + the rail brand block (shared token) */
 }
 
 /*
