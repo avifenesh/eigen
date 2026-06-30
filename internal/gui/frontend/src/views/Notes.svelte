@@ -99,7 +99,7 @@
 
 <div class="notes">
   {#if !loading && status && !status.available}
-    <EmptyState glyph="🗒" title="No Obsidian vault" line="Set a vault in Connectors → Obsidian (Choose vault), then notes show here." />
+    <EmptyState glyph="≣" title="No Obsidian vault" line="Set a vault in Connectors → Obsidian (Choose vault), then notes show here." />
   {:else}
     <aside class="notes__list">
       <div class="notes__search">
@@ -284,7 +284,7 @@
     overflow-y: auto;
     margin: 0;
     padding: var(--sp-6);
-    font: var(--fw-regular) var(--fs-body-sm) / var(--lh-relaxed) var(--font-mono);
+    font: var(--fw-regular) var(--fs-body-sm) / var(--lh-prose) var(--font-mono);
     white-space: pre-wrap;
     word-break: break-word;
     border: none;

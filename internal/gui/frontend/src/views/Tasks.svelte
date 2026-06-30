@@ -788,7 +788,7 @@
   .tx__md :global(.md) {
     font-size: inherit;
     color: inherit;
-    line-height: var(--lh-relaxed);
+    line-height: var(--lh-prose);
   }
   .tx__md :global(.md-p) {
     margin: var(--sp-2) 0;

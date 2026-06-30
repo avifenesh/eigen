@@ -94,7 +94,10 @@
     display: flex;
     align-items: center;
     gap: var(--sp-5);
-    padding: 0 var(--sp-6);
+    /* --sp-7 (20px) so the page-title left edge lines up with the content
+       gutter every view uses (was --sp-6/16px — the title sat 4px left of the
+       content beneath it). */
+    padding: 0 var(--sp-7);
     /* Flat fill + a single hairline seam. The bar is flush chrome, not a
        floating surface — the old gradient + 16px-blur drop shadow was pure
        weight on an always-visible band. */

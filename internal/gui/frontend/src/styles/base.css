@@ -35,6 +35,21 @@ pre {
   user-select: text;
 }
 
+/* Themed text selection everywhere — the browser default is a bright blue that
+   clashes on this near-black/teal palette. One global rule covers the whole
+   app (was set on a single input only). */
+::selection {
+  background: var(--state-selected);
+  color: var(--text-primary);
+}
+
+/* Brand caret in every text field — the engine default is a hard white,
+   brighter than the palette (was set on the composer only). */
+input,
+textarea {
+  caret-color: var(--brand);
+}
+
 button {
   font-family: inherit;
 }

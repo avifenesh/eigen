@@ -244,7 +244,7 @@
     <section class="today">
       <!-- Calendar -->
       <button class="panel" onclick={() => router.go("connectors")} title="Manage Google in Connectors">
-        <div class="panel__head"><span class="panel__icon">📅</span><span class="panel__title">Today</span></div>
+        <div class="panel__head"><span class="panel__icon">◷</span><span class="panel__title">Today</span></div>
         {#if !dash.googleConnected}
           <p class="panel__empty">Connect Google to see your calendar.</p>
         {:else if dash.events.length === 0}
@@ -264,7 +264,7 @@
       <!-- Mail -->
       <button class="panel" onclick={() => router.go("connectors")} title="Manage Google in Connectors">
         <div class="panel__head">
-          <span class="panel__icon">✉</span><span class="panel__title">Inbox</span>
+          <span class="panel__icon">⊠</span><span class="panel__title">Inbox</span>
           {#if dash.googleConnected && dash.unreadCount > 0}<span class="panel__badge tnum">{dash.unreadCount}</span>{/if}
         </div>
         {#if !dash.googleConnected}
@@ -528,6 +528,8 @@
     /* was --fs-h1 (22px) bold — oversized for a stat chip; h3 (15px) scans
        like a real cockpit metric, not a hero number. */
     font: var(--fw-semibold) var(--fs-h3) / 1 var(--font-display);
+    letter-spacing: var(--ls-heading);
+    font-variant-numeric: tabular-nums;
     color: var(--text-primary);
   }
   .strip__v--live {
@@ -582,6 +584,7 @@
   }
   .panel__icon {
     font-size: var(--fs-body);
+    color: var(--text-muted);
   }
   .panel__title {
     font: var(--fw-semibold) var(--fs-label) / 1 var(--font-sans);
@@ -785,7 +788,9 @@
     background: var(--warn);
   }
   .bar__fill--hot {
-    background: var(--danger, var(--err));
+    /* was var(--danger, var(--err)) — both undefined, so the >=90% load/temp
+       bar rendered with NO fill. --error is the defined token. */
+    background: var(--error);
   }
 
   /* zones */

@@ -74,9 +74,9 @@
   {#if loading && reviewers.length === 0}
     <div class="rev__rows">{#each Array(6) as _, i (i)}<div class="rev__skel"></div>{/each}</div>
   {:else if !status?.available}
-    <EmptyState glyph="🔍" title="Revuto not installed" line="Install the `revuto` CLI to manage your AI PR-reviewer from here." />
+    <EmptyState glyph="⌕" title="Revuto not installed" line="Install the `revuto` CLI to manage your AI PR-reviewer from here." />
   {:else if reviewers.length === 0}
-    <EmptyState glyph="🔍" title="No reviewers registered" line="Register a repo with `revuto init owner/repo`." />
+    <EmptyState glyph="⌕" title="No reviewers registered" line="Register a repo with `revuto init owner/repo`." />
   {:else}
     <div class="rev__rows">
       {#each reviewers as r (r.repo)}

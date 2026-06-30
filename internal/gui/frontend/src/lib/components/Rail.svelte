@@ -72,10 +72,10 @@
       name: "Knowledge",
       items: [
         { route: "memory", label: "Memory", glyph: "❖" },
-        { route: "notes", label: "Notes", glyph: "🗒" },
+        { route: "notes", label: "Notes", glyph: "≣" },
         { route: "dreaming", label: "Dreaming", glyph: "☾" },
         { route: "skills", label: "Skills", glyph: "✦" },
-        { route: "reviewers", label: "Reviewers", glyph: "🔍" },
+        { route: "reviewers", label: "Reviewers", glyph: "⌕" },
       ],
     },
     {
@@ -290,7 +290,10 @@
     display: flex;
     align-items: center;
     gap: var(--sp-3);
-    padding: 0 var(--sp-5);
+    /* left inset matches the nav glyph column (scroll --sp-3 + item --sp-5 =
+       18px) so the λ wordmark sits directly above the item glyphs — was --sp-5
+       (12px), 6px left of the column. */
+    padding: 0 var(--sp-5) 0 calc(var(--sp-3) + var(--sp-5));
     border-bottom: 1px solid var(--border-hairline);
   }
   .rail__mark {

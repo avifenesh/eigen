@@ -443,6 +443,8 @@
   }
   .kpi__v {
     font: var(--fw-bold) var(--fs-display) / 1 var(--font-display);
+    letter-spacing: var(--ls-display);
+    font-variant-numeric: tabular-nums;
     color: var(--text-primary);
   }
   /* Teal is reserved for counts that mean active work right now; a settled or

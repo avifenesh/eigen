@@ -1812,7 +1812,7 @@
                           title={voice.speaking ? "Stop reading" : "Read aloud"}
                           aria-label={voice.speaking ? "Stop reading aloud" : "Read this message aloud"}
                           onclick={() => (voice.speaking ? voice.stopSpeak() : voice.speak(block.text))}
-                        >{voice.speaking ? "◼" : "🔊"}</button>
+                        >{voice.speaking ? "◼" : "♪"}</button>
                       {/if}
                     </div>
                   {/if}
@@ -2256,13 +2256,13 @@
     display: flex;
     align-items: center;
     gap: var(--sp-3);
-    padding: var(--sp-3) var(--sp-6);
+    padding: var(--sp-2) var(--sp-6);
     border-bottom: 1px solid var(--border-hairline);
     overflow-x: auto;
+    /* scrollbar-width:none hides the bar natively; do NOT add a
+       ::-webkit-scrollbar rule — that drops the row off WebKitGTK's async-scroll
+       fast path (see base.css scroll-perf note). */
     scrollbar-width: none;
-  }
-  .ctl::-webkit-scrollbar {
-    display: none;
   }
   .ctl__new {
     display: inline-flex;
