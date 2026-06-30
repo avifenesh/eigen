@@ -16,6 +16,7 @@
   import Button from "$lib/components/Button.svelte";
   import Badge from "$lib/components/Badge.svelte";
   import Markdown from "$lib/components/Markdown.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
 
   const stats = $derived(daemon.stats);
 
@@ -173,7 +174,7 @@
         <h2 class="pf__section-title">Top models</h2>
       </div>
       {#if summaryLoading && !summary}
-        <div class="pf__skel"></div>
+        <Skeleton height="96px" />
       {:else if summaryError && !summary}
         <p class="pf__note">Usage log unavailable — see above.</p>
       {:else if !summary || !summary.available || summary.models.length === 0}
@@ -209,7 +210,7 @@
       </div>
       <p class="pf__desc">The durable personalization prompt (USER.md) injected into every session — who you are, how you like to work.</p>
       {#if memoryLoading && !memory}
-        <div class="pf__skel"></div>
+        <Skeleton height="96px" />
       {:else if editing}
         <textarea
           bind:value={draft}
@@ -351,18 +352,6 @@
     letter-spacing: normal;
     font-size: var(--fs-micro);
   }
-  .pf__skel {
-    height: 96px;
-    border-radius: var(--r-md);
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: pf-shimmer 1.4s ease-in-out infinite;
-  }
-  @keyframes pf-shimmer {
-    to {
-      background-position: -200% 0;
-    }
-  }
   .pf__textarea {
     width: 100%;
     resize: vertical;
@@ -424,9 +413,6 @@
     font-weight: var(--fw-medium);
   }
   @media (prefers-reduced-motion: reduce) {
-    .pf__skel {
-      animation: none;
-    }
     .pf__textarea {
       transition: none;
     }

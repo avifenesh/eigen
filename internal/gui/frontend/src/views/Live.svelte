@@ -18,6 +18,7 @@
   import Badge from "$lib/components/Badge.svelte";
   import StatusDot from "$lib/components/StatusDot.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
 
   let starting = $state(false);
   // Per-id in-flight guards so a row's buttons disable while acting.
@@ -221,7 +222,7 @@
 
   {#if sessions.loading && sessions.count === 0}
     <div class="live__list live__list--pad">
-      {#each Array(4) as _, i (i)}<div class="live__skel"></div>{/each}
+      <Skeleton count={4} height="52px" gap="var(--sp-4)" />
     </div>
   {:else if sessions.error && sessions.count === 0}
     <EmptyState glyph="◐" title="Couldn't load sessions" line={sessions.error}>
@@ -358,18 +359,6 @@
   }
   .live__list--pad {
     gap: var(--sp-4);
-  }
-  .live__skel {
-    height: 52px;
-    border-radius: var(--r-md);
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: live-shimmer 1.4s ease-in-out infinite;
-  }
-  @keyframes live-shimmer {
-    to {
-      background-position: -200% 0;
-    }
   }
   /* A cell wraps the row plus its (optional) inline approval gate so the gate
      tucks directly under the row it belongs to and they share one outline when
@@ -520,7 +509,6 @@
     gap: var(--sp-2);
   }
   @media (prefers-reduced-motion: reduce) {
-    .live__skel,
     .lrow,
     .lrow--working,
     .lrow--approval {

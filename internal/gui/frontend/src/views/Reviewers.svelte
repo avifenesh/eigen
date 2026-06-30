@@ -9,6 +9,7 @@
   import Button from "$lib/components/Button.svelte";
   import Badge from "$lib/components/Badge.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
 
   let status = $state<RevutoStatusDTO | null>(null);
   let reviewers = $state<RevutoReviewerDTO[]>([]);
@@ -72,7 +73,7 @@
   </header>
 
   {#if loading && reviewers.length === 0}
-    <div class="rev__rows">{#each Array(6) as _, i (i)}<div class="rev__skel"></div>{/each}</div>
+    <div class="rev__rows"><Skeleton count={6} height="44px" gap="var(--sp-2)" /></div>
   {:else if !status?.available}
     <EmptyState glyph="⌕" title="Revuto not installed" line="Install the `revuto` CLI to manage your AI PR-reviewer from here." />
   {:else if reviewers.length === 0}
@@ -126,18 +127,6 @@
     flex-direction: column;
     gap: var(--sp-2);
   }
-  .rev__skel {
-    height: 44px;
-    border-radius: var(--r-md);
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: rev-shimmer 1.4s ease-in-out infinite;
-  }
-  @keyframes rev-shimmer {
-    to {
-      background-position: -200% 0;
-    }
-  }
   .rrow {
     display: flex;
     align-items: center;
@@ -153,10 +142,5 @@
   }
   .rrow__sp {
     flex: 1;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .rev__skel {
-      animation: none;
-    }
   }
 </style>

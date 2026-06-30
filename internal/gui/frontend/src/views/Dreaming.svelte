@@ -18,6 +18,7 @@
   import VirtualList from "$lib/components/VirtualList.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import Segmented from "$lib/components/Segmented.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
   import { trapFocus } from "$lib/actions";
 
   // The selectable scopes (Global first, then every known project). The picker
@@ -215,7 +216,7 @@
 
   {#if loading && !current}
     <div class="dream__body">
-      {#each Array(4) as _, i (i)}<div class="dream__skel"></div>{/each}
+      <Skeleton count={4} height="120px" gap="var(--sp-5)" />
     </div>
   {:else if error && !current}
     <EmptyState glyph="☾" title="Couldn't load dreaming" line={error}>
@@ -420,18 +421,6 @@
     font-size: var(--fs-body-sm);
     margin: 0;
   }
-  .dream__skel {
-    height: 120px;
-    border-radius: var(--r-md);
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: dream-shimmer 1.4s ease-in-out infinite;
-  }
-  @keyframes dream-shimmer {
-    to {
-      background-position: -200% 0;
-    }
-  }
 
   /* TIMELINE — a left rail with a node per entry. */
   .tl {
@@ -609,8 +598,7 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .sheet__scrim,
-    .sheet,
-    .dream__skel {
+    .sheet {
       animation: none;
     }
   }

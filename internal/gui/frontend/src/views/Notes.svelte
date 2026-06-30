@@ -10,6 +10,7 @@
   import Button from "$lib/components/Button.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import Markdown from "$lib/components/Markdown.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
 
   let status = $state<ObsidianStatusDTO | null>(null);
   let notes = $state<NoteDTO[]>([]);
@@ -150,7 +151,7 @@
       {/if}
       <div class="notes__rows">
         {#if loading && notes.length === 0}
-          {#each Array(8) as _, i (i)}<div class="notes__skel"></div>{/each}
+          <Skeleton count={8} height="38px" radius="var(--r-sm)" gap="1px" margin="2px var(--sp-2)" />
         {:else if notes.length === 0}
           <p class="notes__empty">No notes{query ? " match" : ""}.</p>
         {:else}
@@ -247,19 +248,6 @@
     color: var(--text-ghost);
     font-size: var(--fs-label);
     padding: var(--sp-4);
-  }
-  .notes__skel {
-    height: 38px;
-    margin: 2px var(--sp-2);
-    border-radius: var(--r-sm);
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: notes-shimmer 1.4s ease-in-out infinite;
-  }
-  @keyframes notes-shimmer {
-    to {
-      background-position: -200% 0;
-    }
   }
   .noterow {
     display: flex;

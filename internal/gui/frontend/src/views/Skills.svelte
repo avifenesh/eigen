@@ -16,6 +16,7 @@
   import Markdown from "$lib/components/Markdown.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import Segmented from "$lib/components/Segmented.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
   import { trapFocus } from "$lib/actions";
 
   let data = $state<SkillsDTO | null>(null);
@@ -299,8 +300,8 @@
   </header>
 
   {#if loading && !data}
-    <div class="skills__grid skills__grid--pad">
-      {#each Array(6) as _, i (i)}<div class="skills__skel"></div>{/each}
+    <div class="skills__grid--pad">
+      <Skeleton count={6} height="104px" gap="var(--sp-5)" />
     </div>
   {:else if error && !data}
     <EmptyState glyph="✦" title="Couldn't load skills" line={error}>
@@ -516,18 +517,6 @@
   }
   .skills__grid--pad {
     padding: var(--sp-7) var(--sp-7);
-  }
-  .skills__skel {
-    height: 104px;
-    border-radius: var(--r-md);
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: sk-shimmer 1.4s ease-in-out infinite;
-  }
-  @keyframes sk-shimmer {
-    to {
-      background-position: -200% 0;
-    }
   }
 
   /* PINNED REVIEW STRIP — proposals. A warm-edged band with a live pulse that
@@ -877,7 +866,6 @@
     .sheet {
       animation: none;
     }
-    .skills__skel,
     .strip__pulse {
       animation: none;
     }

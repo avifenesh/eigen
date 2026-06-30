@@ -15,6 +15,7 @@
   import EmptyState from "$lib/components/EmptyState.svelte";
   import RuleChainsEditor from "$lib/components/RuleChainsEditor.svelte";
   import Tabs from "$lib/components/Tabs.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
 
   let data = $state<ConfigDTO | null>(null);
   let loading = $state(true);
@@ -147,7 +148,7 @@
 <div class="cfg">
   {#if loading && !data}
     <div class="cfg__pad">
-      {#each Array(6) as _, i (i)}<div class="cfg__skel"></div>{/each}
+      <Skeleton count={6} height="64px" gap="var(--sp-4)" />
     </div>
   {:else if error && !data}
     <EmptyState glyph="⚙" title="Couldn't load config" line={error}>
@@ -279,18 +280,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-4);
-  }
-  .cfg__skel {
-    height: 64px;
-    border-radius: var(--r-md);
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: cfg-shimmer 1.4s ease-in-out infinite;
-  }
-  @keyframes cfg-shimmer {
-    to {
-      background-position: -200% 0;
-    }
   }
   .cfg__path {
     font: var(--fw-regular) var(--fs-label) / 1 var(--font-mono);
@@ -509,9 +498,6 @@
     color: var(--brand-bright);
   }
   @media (prefers-reduced-motion: reduce) {
-    .cfg__skel {
-      animation: none;
-    }
     .toggle__knob,
     .toggle,
     .chip {
