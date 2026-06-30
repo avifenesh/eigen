@@ -304,13 +304,14 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: var(--sp-5) var(--sp-4) var(--sp-6);
+    padding: var(--sp-4) var(--sp-3) var(--sp-5);
   }
 
-  /* ZONE RHYTHM — labels breathe above their group; generous gap between
-     zones, tight binding within. */
+  /* ZONE RHYTHM — tighter than before: a 19-item rail with generous zone gaps
+     scrolled and read as a control panel. Shorter gaps + label margins pack the
+     nav so it fits without its own scrollbar. */
   .rail__zone + .rail__zone {
-    margin-top: var(--sp-7);
+    margin-top: var(--sp-5);
   }
   .rail__zone-label {
     font: var(--fw-semibold) var(--fs-micro) / 1 var(--font-sans);
@@ -319,7 +320,7 @@
     color: var(--text-faint);
     /* align label text to the glyph column, not the item padding edge */
     padding: 0 var(--sp-5);
-    margin-bottom: var(--sp-4);
+    margin-bottom: var(--sp-2);
     user-select: none;
   }
 
@@ -330,8 +331,8 @@
     width: 100%;
     display: flex;
     align-items: center;
-    gap: var(--sp-4);
-    height: 34px;
+    gap: var(--sp-3);
+    height: 30px;
     padding: 0 var(--sp-4) 0 var(--sp-5);
     border: none;
     background: transparent;
