@@ -650,7 +650,7 @@
     flex: 1;
     overflow-y: auto;
     min-height: 0;
-    padding: var(--sp-8) var(--sp-9);
+    padding: var(--sp-6) var(--sp-7);
     display: flex;
     flex-direction: column;
     gap: var(--sp-4);

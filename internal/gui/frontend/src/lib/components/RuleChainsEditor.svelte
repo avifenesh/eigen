@@ -240,7 +240,7 @@
   }
   .rc__error {
     padding: var(--sp-5);
-    color: var(--danger);
+    color: var(--error);
     font-size: var(--fs-body-sm);
   }
   .rc__list {
@@ -347,7 +347,7 @@
     cursor: not-allowed;
   }
   .link__op--rm:hover:not(:disabled) {
-    color: var(--danger);
+    color: var(--error);
   }
   /* The fall-through arrow sits OUTSIDE the chip, between links. */
   .link__arrow {

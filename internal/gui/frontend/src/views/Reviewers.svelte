@@ -105,7 +105,7 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--sp-5);
-    padding: var(--sp-8) var(--sp-9) var(--sp-5);
+    padding: var(--sp-6) var(--sp-7) var(--sp-5);
   }
   .rev__title {
     margin: 0;
@@ -121,7 +121,7 @@
     flex: 1;
     overflow-y: auto;
     min-height: 0;
-    padding: 0 var(--sp-9) var(--sp-8);
+    padding: 0 var(--sp-7) var(--sp-8);
     display: flex;
     flex-direction: column;
     gap: var(--sp-2);

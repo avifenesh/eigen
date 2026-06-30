@@ -818,39 +818,23 @@
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: var(--sp-5);
   }
+  /* Uniform hairline edge — the per-kind color now lives on the glyph only.
+     A column of feed cards used to show amber/blue/teal/green 2px left stripes
+     (one per kind), which was the busiest, most over-colored pattern on the
+     screen and fought the "one living accent" intent. The glyph carries kind;
+     the card edge stays neutral. */
   .fc {
     display: flex;
     flex-direction: column;
     gap: var(--sp-3);
-    padding: var(--sp-5);
+    padding: var(--sp-4) var(--sp-5);
     background: var(--bg-raised);
     border: 1px solid var(--border-hairline);
-    border-left: 2px solid var(--border-subtle);
     border-radius: var(--r-md);
-    transition:
-      background var(--dur-fast) var(--ease-out),
-      border-color var(--dur-fast) var(--ease-out),
-      transform var(--dur-fast) var(--ease-out);
+    transition: background var(--dur-fast) var(--ease-out);
   }
   .fc:hover {
     background: var(--bg-raised-2);
-    /* no translateY lift — a card jumping on hover is ambient motion on a
-       frequent interaction; the background shift alone signals hover. */
-  }
-  .fc--warn {
-    border-left-color: var(--warn);
-  }
-  .fc--info {
-    border-left-color: var(--info);
-  }
-  .fc--brand {
-    border-left-color: var(--brand);
-  }
-  .fc--success {
-    border-left-color: var(--success);
-  }
-  .fc--neutral {
-    border-left-color: var(--border-strong);
   }
   .fc__head {
     display: flex;
@@ -860,6 +844,20 @@
   .fc__glyph {
     color: var(--text-secondary);
     font-size: var(--fs-body);
+  }
+  /* Kind shows via the glyph color (a small accent) instead of a full-height
+     left stripe — the cue stays, the visual weight drops. */
+  .fc--warn .fc__glyph {
+    color: var(--warn);
+  }
+  .fc--info .fc__glyph {
+    color: var(--info);
+  }
+  .fc--brand .fc__glyph {
+    color: var(--brand);
+  }
+  .fc--success .fc__glyph {
+    color: var(--success);
   }
   .fc__title {
     flex: 1;

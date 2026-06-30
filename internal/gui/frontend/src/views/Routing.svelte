@@ -309,7 +309,7 @@
     display: flex;
     align-items: center;
     gap: var(--sp-4);
-    padding: var(--sp-6) var(--sp-9);
+    padding: var(--sp-6) var(--sp-7);
     border-bottom: 1px solid var(--border-hairline);
   }
   .route__search {
@@ -339,7 +339,7 @@
   /* Routing-health strip — leads with how routing behaves before the catalog. */
   .health {
     flex: none;
-    padding: var(--sp-6) var(--sp-9) 0;
+    padding: var(--sp-6) var(--sp-7) 0;
     display: flex;
     flex-direction: column;
     gap: var(--sp-5);
@@ -492,7 +492,7 @@
     flex: 1;
     overflow-y: auto;
     min-height: 0;
-    padding: var(--sp-7) var(--sp-9);
+    padding: var(--sp-7) var(--sp-7);
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: var(--sp-5);

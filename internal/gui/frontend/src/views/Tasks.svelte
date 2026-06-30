@@ -455,7 +455,7 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--sp-5);
-    padding: var(--sp-6) var(--sp-9);
+    padding: var(--sp-6) var(--sp-7);
     border-bottom: 1px solid var(--border-hairline);
   }
   .agents__kpis {
@@ -527,7 +527,7 @@
   /* Skeleton/empty branches scroll + pad normally (no VirtualList). */
   .agents__list--pad {
     overflow-y: auto;
-    padding: var(--sp-7) var(--sp-9);
+    padding: var(--sp-7) var(--sp-7);
     gap: var(--sp-5);
   }
   /* Per-row vertical rhythm + the horizontal page margins VirtualList rows

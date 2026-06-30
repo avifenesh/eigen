@@ -455,7 +455,7 @@
   }
   .skills__head {
     flex: none;
-    padding: var(--sp-6) var(--sp-9);
+    padding: var(--sp-6) var(--sp-7);
     border-bottom: 1px solid var(--border-hairline);
     display: flex;
     align-items: center;
@@ -544,7 +544,7 @@
   .skills__scroll {
     flex: 1;
     overflow-y: auto;
-    padding: var(--sp-7) var(--sp-9);
+    padding: var(--sp-7) var(--sp-7);
     min-height: 0;
     display: flex;
     flex-direction: column;
@@ -556,7 +556,7 @@
     gap: var(--sp-5);
   }
   .skills__grid--pad {
-    padding: var(--sp-7) var(--sp-9);
+    padding: var(--sp-7) var(--sp-7);
   }
   .skills__skel {
     height: 104px;
