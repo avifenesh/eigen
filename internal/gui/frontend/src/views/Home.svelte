@@ -922,34 +922,20 @@
   .lr:hover {
     background: var(--bg-raised-2);
   }
-  /* WORKING — alive: teal edge + a teal halo that breathes, matching Live. The
-     home base's "working now" zone must read as the most alive surface here. */
+  /* WORKING — alive: teal edge + a STATIC teal halo. The "alive" motion is
+     carried by the row's StatusDot (which breathes via opacity/transform).
+     Previously each working row animated box-shadow on its own infinite track —
+     N working sessions = N per-frame main-thread repaints on the dashboard,
+     stacked with the rail/topbar/dot animations. Static halo + the dot's
+     breathe reads alive without the repaint storm. */
   .lr--working {
     border-left-color: var(--brand);
-    animation: lr-live var(--breath) var(--ease-inout) infinite;
+    box-shadow: var(--glow-live);
   }
-  @keyframes lr-live {
-    0%,
-    100% {
-      box-shadow: 0 0 0 1px var(--border-brand-faint);
-    }
-    50% {
-      box-shadow: var(--glow-live);
-    }
-  }
-  /* APPROVAL — blocked on the user: warn edge + warn halo, a distinct register. */
+  /* APPROVAL — blocked on the user: warn edge + static warn halo. */
   .lr--approval {
     border-left-color: var(--warn);
-    animation: lr-wait var(--breath) var(--ease-inout) infinite;
-  }
-  @keyframes lr-wait {
-    0%,
-    100% {
-      box-shadow: 0 0 0 1px rgba(224, 179, 106, 0.25);
-    }
-    50% {
-      box-shadow: var(--glow-warn);
-    }
+    box-shadow: var(--glow-warn);
   }
   .lr:focus-visible {
     outline: none;

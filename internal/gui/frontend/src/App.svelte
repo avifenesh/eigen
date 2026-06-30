@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { fly } from "svelte/transition";
   import { Bridge } from "$lib/bridge";
   import { applyTheme } from "$lib/theme";
   import { installSmoothScroll } from "$lib/smoothscroll";
@@ -63,18 +62,20 @@
   $effect(() => daemon.onReconnect(() => sessions.refresh()));
 
   // Poll session list while online so idle transitions on background chats are
-  // noticed even when only one chat pump is subscribed.
+  // noticed even when only one chat pump is subscribed. Skip the tick while the
+  // window is hidden (other workspace, minimized) — a 4s daemon round-trip that
+  // fans out across the persistent chrome (Rail/TopBar) every 4s is wasted work
+  // and a periodic micro-stutter when nothing is on screen. A reconnect/refresh
+  // catches up the moment the window is shown again.
   $effect(() => {
     if (daemon.status !== "online") return;
-    const t = setInterval(() => void sessions.refresh(), 4000);
+    const t = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      void sessions.refresh();
+    }, 4000);
     return () => clearInterval(t);
   });
 
-  // Honor prefers-reduced-motion: Svelte JS transitions don't check it on their
-  // own, so collapse the route fly to 0ms for reduced-motion users.
-  const reduceMotion =
-    typeof matchMedia === "function" &&
-    matchMedia("(prefers-reduced-motion: reduce)").matches;
 </script>
 
 <div class="shell">
@@ -83,8 +84,13 @@
     <TopBar />
     <div class="outlet">
       <svelte:boundary>
-      {#key router.route}
-        <div class="outlet__page" in:fly={{ y: 6, duration: reduceMotion ? 0 : 180, opacity: 0 }}>
+        <!-- Instant route swap: the {#if} chain already mounts/unmounts the
+             destination view, so no {#key} remount and no in:fly. The old
+             `{#key route}` + 180ms fly destroyed+rebuilt the whole subtree on
+             every rail click — content was invisible/translating for 180ms,
+             view data re-fetched, and skeletons re-flashed on revisit. Nav
+             chrome should be instant; this makes it so. -->
+        <div class="outlet__page">
         {#if router.route === "home"}
           <Home />
         {:else if router.route === "chat"}
@@ -127,7 +133,6 @@
           <EmptyState glyph="λ" title={router.route} line="This view is coming soon." />
         {/if}
         </div>
-      {/key}
       <!-- One bad render (e.g. a Svelte each_key_duplicate from colliding feed
            keys) must not silently freeze the whole shell — the chrome would
            keep updating while the body stayed stuck. Catch it, show a quiet

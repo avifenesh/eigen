@@ -309,6 +309,9 @@
     top: 0;
     left: 0;
     width: 100%;
-    will-change: transform;
+    /* No will-change: it permanently promotes EVERY windowed row (visible +
+       overscan) to its own compositor layer, which on WebKitGTK costs memory
+       and compositing time for static rows that aren't animating. The
+       translateY transform composites on demand without the standing hint. */
   }
 </style>

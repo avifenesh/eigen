@@ -182,9 +182,46 @@
   // (the GUI-069 perf intent — avoid re-deriving every row's geometry per
   // token — holds: groupRows(history) does not re-run while only `live` grows).
   const historyRows = $derived(groupRows(history));
+
+  // Throttled mirror of the live block's text. The live row renders Markdown,
+  // and lexCached is keyed on the exact source string — so a growing live
+  // message is a cache MISS every flush (~60fps), re-lexing the WHOLE message
+  // (GFM + KaTeX) + re-walking its token tree every frame. That is O(message
+  // length) work 60×/sec while streaming, competing with scroll on the main
+  // thread. We re-lex at most ~every 110ms instead: visually still "live"
+  // (~9 updates/sec) but ~6× less lexing. The committed block always carries
+  // the full final text, so nothing is lost. text-only live rows (reasoning
+  // marker) don't go through Markdown, so they're unaffected.
+  const LIVE_RELEX_MS = 110;
+  let liveTextThrottled = $state("");
+  let liveRelexTimer = 0;
+  $effect(() => {
+    const t = live?.text ?? "";
+    if (!live) {
+      // turn ended — reset; the committed history block carries the full text.
+      liveTextThrottled = "";
+      if (liveRelexTimer) { clearTimeout(liveRelexTimer); liveRelexTimer = 0; }
+      return;
+    }
+    if (liveTextThrottled === "") {
+      liveTextThrottled = t; // first token shows immediately (leading edge)
+    } else if (!liveRelexTimer) {
+      // coalesce the next ~110ms of appends into one re-lex (trailing edge);
+      // a timer already pending will read the latest live.text when it fires.
+      liveRelexTimer = window.setTimeout(() => {
+        liveRelexTimer = 0;
+        liveTextThrottled = live?.text ?? "";
+      }, LIVE_RELEX_MS);
+    }
+  });
+
   const rows = $derived.by<Row[]>(() => {
     if (!live) return historyRows;
-    return [...historyRows, { ...live, uid: LIVE_UID } as Row];
+    // Use the throttled text for the (Markdown-rendered) live row so per-frame
+    // token appends don't re-lex the whole message; the row keeps live.uid via
+    // the LIVE_UID sentinel and commits with full text when the turn ends.
+    const liveRow = { ...live, text: liveTextThrottled || live.text, uid: LIVE_UID } as Row;
+    return [...historyRows, liveRow];
   });
   // The model is streaming prose right now → the live tool's detail folds away.
   const streaming = $derived(!!live);
@@ -2741,16 +2778,18 @@
     vertical-align: text-bottom;
     background: var(--brand);
     border-radius: 1px;
-    animation: caret-blink 1.1s steps(1, end) infinite;
+    animation: caret-blink 1.1s var(--ease-inout) infinite;
   }
+  /* Soft eased pulse, not a hard steps() on/off blink. The caret sits right
+     beside smoothly-arriving tokens during a turn; a hard terminal-cursor blink
+     read as jittery against the rest of the system's soft motion. */
   @keyframes caret-blink {
     0%,
-    50% {
+    100% {
       opacity: 1;
     }
-    50.01%,
-    100% {
-      opacity: 0;
+    50% {
+      opacity: 0.2;
     }
   }
 

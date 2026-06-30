@@ -109,24 +109,18 @@
     }
   }
 
-  /* The warm working halo lives only on the working state. It swells in
-     sympathy with the breath — sharing the same track and curve so the glow
-     reads as one soft heartbeat, cresting with the dot rather than blinking
-     against it. */
+  /* The warm working halo lives only on the working state. It is a STATIC
+     box-shadow — the dot's own breathe (opacity + sub-pixel scale) makes the
+     whole dot+halo swell and fade as one heartbeat. Previously the halo
+     animated box-shadow on its own infinite track, which WebKitGTK cannot
+     composite — it repaints the dot's bounding box every frame for the life of
+     the animation, on the main thread, competing with scroll/stream exactly
+     when a turn is working. Static shadow + animated opacity gets the same look
+     for free. */
   .dot--glow {
-    animation:
-      dot-breathe var(--breath) var(--ease-inout) infinite,
-      dot-glow var(--breath) var(--ease-inout) infinite;
-    will-change: opacity, transform, box-shadow;
-  }
-  @keyframes dot-glow {
-    0%,
-    100% {
-      box-shadow: 0 0 0 0 transparent;
-    }
-    45% {
-      box-shadow: var(--glow-working);
-    }
+    animation: dot-breathe var(--breath) var(--ease-inout) infinite;
+    box-shadow: var(--glow-working);
+    will-change: opacity, transform;
   }
 
   @media (prefers-reduced-motion: reduce) {

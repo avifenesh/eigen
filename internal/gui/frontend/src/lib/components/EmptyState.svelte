@@ -55,8 +55,11 @@
     gap: var(--sp-6);
     padding: var(--sp-10) var(--sp-8);
     text-align: center;
-    /* Glyph leads the rise; text + action settle a beat behind (see below). */
-    animation: empty-rise var(--dur-slow) var(--ease-out) both;
+    /* One quick opacity fade — no rise, no per-element stagger. The staggered
+       280ms+60ms+120ms entrance made navigating to an empty/coming-soon view
+       feel slow (compounded with the old route fly, now removed). Empty states
+       should appear immediately. */
+    animation: empty-in var(--dur-fast) var(--ease-out) both;
   }
 
   /* GLYPH — large but quiet; a soft inset disc places it intentionally.
@@ -101,9 +104,6 @@
     flex-direction: column;
     align-items: center;
     gap: var(--sp-3);
-    /* Stagger: text arrives just after the glyph for a settled, crafted feel. */
-    animation: empty-settle var(--dur-slow) var(--ease-out) both;
-    animation-delay: 60ms;
   }
   .empty__title {
     margin: 0;
@@ -128,8 +128,6 @@
   .empty__action {
     position: relative;
     margin-top: var(--sp-4);
-    animation: empty-settle var(--dur-slow) var(--ease-out) both;
-    animation-delay: 120ms;
   }
   .empty__action::before {
     content: "";
@@ -142,24 +140,12 @@
     transform: translateX(-50%);
   }
 
-  @keyframes empty-rise {
+  @keyframes empty-in {
     from {
       opacity: 0;
-      transform: translateY(6px) scale(0.985);
     }
     to {
       opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-  }
-  @keyframes empty-settle {
-    from {
-      opacity: 0;
-      transform: translateY(4px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
     }
   }
   @media (prefers-reduced-motion: reduce) {

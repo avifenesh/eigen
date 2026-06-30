@@ -288,25 +288,16 @@
     margin-left: 0;
   }
   /* λ — eigen's signature mark. The brand spectrum (teal→aqua→cyan→indigo) is
-     clipped to the glyph so it shimmers like the TUI wordmark, and its opacity
-     breathes slowly: the rail's heartbeat, alive at rest. */
+     clipped to the glyph so it shimmers like the TUI wordmark. STATIC — it no
+     longer breathes at rest. An always-on idle animation (this + the footer
+     dot) is the "the UI is never still" feel; reserve motion for transient,
+     meaningful states (a running turn), not the brand mark sitting idle. */
   .rail__lambda {
     font: var(--fw-bold) calc(var(--fs-h2) + 2px) / 1 var(--font-display);
     background: var(--spectrum);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
-    animation: rail-mark-breathe var(--breath) var(--ease-inout) infinite;
-    will-change: opacity;
-  }
-  @keyframes rail-mark-breathe {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.72;
-    }
   }
 
   .rail__scroll {
@@ -609,22 +600,13 @@
     border-radius: var(--r-full);
     background: var(--text-faint);
   }
+  /* Online = static teal dot. Color alone signals the state; the dot no longer
+     breathes at rest (idle ambient motion is the "never still" feel). */
   .rail__foot--online .rail__foot-dot {
     background: var(--brand);
-    animation: rail-foot-breathe var(--breath) var(--ease-inout) infinite;
-    will-change: opacity;
   }
   .rail__foot--offline .rail__foot-dot {
     background: var(--error);
-  }
-  @keyframes rail-foot-breathe {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.45;
-    }
   }
   .rail__foot-status {
     text-transform: uppercase;
