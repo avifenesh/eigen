@@ -354,7 +354,7 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--sp-5);
-    padding: var(--sp-8) var(--sp-9) var(--sp-5);
+    padding: var(--sp-6) var(--sp-7) var(--sp-5);
   }
   .board__title {
     margin: 0;
@@ -398,7 +398,7 @@
     display: flex;
     gap: var(--sp-4);
     overflow-x: auto;
-    padding: 0 var(--sp-9) var(--sp-8);
+    padding: 0 var(--sp-7) var(--sp-8);
     align-items: flex-start;
   }
   .kbcol {
@@ -584,7 +584,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--sp-5);
-    padding: 0 var(--sp-9) var(--sp-4);
+    padding: 0 var(--sp-7) var(--sp-4);
   }
   .filtergroup {
     display: flex;
@@ -633,7 +633,7 @@
     gap: var(--sp-5);
     overflow-x: auto;
     overflow-y: hidden;
-    padding: 0 var(--sp-9) var(--sp-8);
+    padding: 0 var(--sp-7) var(--sp-8);
     align-items: flex-start;
   }
   .lane {

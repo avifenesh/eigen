@@ -94,15 +94,12 @@
     display: flex;
     align-items: center;
     gap: var(--sp-5);
-    padding: 0 var(--sp-7);
-    /* A faint top-down lift so the bar reads as the one owned top band — its
-       weight tapers into the content below rather than floating on a flat
-       fill. The hairline + shadow seat it as a single edge, not a stack. */
-    background: linear-gradient(to bottom, var(--bg-raised) 0%, var(--bg-base) 100%);
+    padding: 0 var(--sp-6);
+    /* Flat fill + a single hairline seam. The bar is flush chrome, not a
+       floating surface — the old gradient + 16px-blur drop shadow was pure
+       weight on an always-visible band. */
+    background: var(--bg-base);
     border-bottom: 1px solid var(--border-hairline);
-    box-shadow:
-      0 1px 0 0 var(--divider),
-      0 6px 16px -10px rgba(0, 0, 0, 0.55);
   }
 
   /* TITLE — a single line naming the current page (the rail carries the brand). */

@@ -234,7 +234,7 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--sp-5);
-    padding: var(--sp-6) var(--sp-9);
+    padding: var(--sp-6) var(--sp-7);
     border-bottom: 1px solid var(--border-hairline);
   }
   .sx__search {
@@ -271,7 +271,7 @@
     flex: 1;
     overflow-y: auto;
     min-height: 0;
-    padding: var(--sp-6) var(--sp-9);
+    padding: var(--sp-6) var(--sp-7);
     display: flex;
     flex-direction: column;
     gap: var(--sp-3);

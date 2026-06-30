@@ -145,7 +145,12 @@
 
   /* SHADOWS + FOCUS */
   --shadow-0: none;
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 0 0 1px var(--border-hairline);
+  /* shadow-1 dropped its `0 0 0 1px` hairline ring: resting cards that use it
+     ALSO set their own 1px border, so the ring drew the edge twice (a doubled
+     line on every card app-wide). Just the soft drop now. shadow-2/3/toast keep
+     the ring — they're for floating elements (hover-lift, popovers, toasts)
+     that often have no border of their own. */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.38), 0 0 0 1px var(--border-subtle);
   --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.46), 0 0 0 1px var(--border-subtle);
   --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.42), 0 0 0 1px var(--border-subtle);

@@ -68,34 +68,34 @@
     position: relative;
     display: grid;
     place-items: center;
-    width: 60px;
-    height: 60px;
+    width: 46px;
+    height: 46px;
     border-radius: var(--r-full);
     background: var(--bg-inset);
-    box-shadow:
-      inset 0 0 0 1px var(--border-hairline),
-      0 0 0 6px var(--state-hover);
+    /* single inset hairline — was a 60px disc with an inset ring PLUS a 6px
+       outer halo; the doubled ring + size made the calmest screen the heaviest
+       ornament. */
+    box-shadow: inset 0 0 0 1px var(--border-hairline);
     color: var(--text-ghost);
     transition:
       color var(--dur-base) var(--ease-out),
       box-shadow var(--dur-base) var(--ease-out);
   }
   .empty__glyph-mark {
-    font-size: 30px;
+    font-size: 22px;
     line-height: 1;
     font-weight: var(--fw-regular);
     /* Optically center common single-glyph marks within the disc. */
     transform: translateY(-0.02em);
   }
 
-  /* When there's a next step, the glyph warms to teal and gains a quiet halo —
-     the one living accent points the eye toward the action below. */
+  /* When there's a next step, the glyph warms to teal — color alone points the
+     eye to the action. Dropped the --glow-live halo: a "live" glow on a
+     zero-activity empty state implied something was running and weighted the
+     screen that should feel lightest. */
   .empty--actionable .empty__glyph {
     color: var(--brand);
-    box-shadow:
-      inset 0 0 0 1px var(--border-brand-faint),
-      0 0 0 6px var(--state-selected),
-      var(--glow-live);
+    box-shadow: inset 0 0 0 1px var(--border-brand-faint);
   }
 
   /* TEXT BLOCK — tight pairing of title + line so they read as one unit. */

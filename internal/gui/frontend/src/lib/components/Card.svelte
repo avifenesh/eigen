@@ -56,28 +56,16 @@
 {/if}
 
 <style>
+  /* A resting card is just fill + hairline — matching the lighter tool cards
+     (.tool/.tg) which were always border+bg only. Previously it stacked
+     border + shadow-1's ring + a drop-shadow + a ::before top-luminance seam =
+     four "raised" cues at rest, which made the universal container heavy and
+     cascaded to every view. Elevation now lives on :hover only. */
   .card {
     position: relative;
     background: var(--bg-raised);
     border: 1px solid var(--border-hairline);
     border-radius: var(--r-md);
-    box-shadow: var(--shadow-1);
-  }
-
-  /* A hair of luminance along the top edge — the "fine edge" detail. */
-  .card::before {
-    content: "";
-    position: absolute;
-    inset: 0 0 auto 0;
-    height: 1px;
-    border-radius: var(--r-md) var(--r-md) 0 0;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      color-mix(in srgb, var(--text-primary) 6%, transparent),
-      transparent
-    );
-    pointer-events: none;
   }
 
   .card--interactive {
@@ -96,18 +84,10 @@
     transform: translateY(-1px);
     box-shadow: var(--shadow-2);
   }
-  .card--interactive:hover::before {
-    background: linear-gradient(
-      90deg,
-      transparent,
-      color-mix(in srgb, var(--text-primary) 10%, transparent),
-      transparent
-    );
-  }
   .card--interactive:active {
     transform: translateY(0);
     background: var(--bg-raised);
-    box-shadow: var(--shadow-1);
+    box-shadow: none;
     transition-duration: var(--dur-instant);
   }
   .card--interactive:focus-visible {

@@ -299,7 +299,7 @@
     align-items: baseline;
     justify-content: space-between;
     gap: var(--sp-5);
-    padding: var(--sp-6) var(--sp-9);
+    padding: var(--sp-6) var(--sp-7);
     border-bottom: 1px solid var(--border-hairline);
   }
   .mx__lead {
@@ -380,7 +380,7 @@
     flex: 1;
     overflow-y: auto;
     min-height: 0;
-    padding: var(--sp-7) var(--sp-9);
+    padding: var(--sp-7) var(--sp-7);
   }
   .mx__grid {
     display: grid;
@@ -388,7 +388,7 @@
     gap: var(--sp-5);
   }
   .mx__grid--pad {
-    padding: var(--sp-7) var(--sp-9);
+    padding: var(--sp-7) var(--sp-7);
   }
   .mx__skel {
     height: 132px;

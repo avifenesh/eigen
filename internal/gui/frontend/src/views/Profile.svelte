@@ -242,10 +242,10 @@
     flex: 1;
     overflow-y: auto;
     min-height: 0;
-    padding: var(--sp-8) var(--sp-9) var(--sp-10);
+    padding: var(--sp-6) var(--sp-8) var(--sp-8);
     display: flex;
     flex-direction: column;
-    gap: var(--sp-9);
+    gap: var(--sp-6);
     max-width: 1000px;
   }
   .pf__section {
