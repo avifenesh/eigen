@@ -1,17 +1,19 @@
 <script lang="ts">
-  // Live — the working-now command surface. The live cockpit: every session at
-  // a glance, sorted so what's running and what's blocked on approval floats to
-  // the top. Reuses the shared `sessions` store and polls it on a ~2s self-
-  // scheduling timer (cleared on unmount). Per-row: Open, Interrupt (only while
-  // working / awaiting approval), Remove (inline confirm). A KPI line counts the
-  // four statuses. This is a control surface — every action does real work.
+  // Live — the working-now command surface. Lists ONLY sessions that are
+  // working or awaiting approval, running first — the rest belong to the
+  // Sessions archive, not this cockpit. Reuses the shared `sessions` store and
+  // polls it on a ~2s self-scheduling timer (cleared on unmount). Per-row:
+  // Open, Interrupt (only while working / awaiting approval), Remove (inline
+  // confirm). A KPI line counts all four statuses for context even though
+  // idle/error don't get a row here. This is a control surface — every action
+  // does real work.
   import { sessions } from "$lib/stores/sessions.svelte";
   import { daemon } from "$lib/stores/daemon.svelte";
   import { router } from "$lib/router.svelte";
   import { Bridge } from "$lib/bridge";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { now } from "$lib/stores/clock.svelte";
-  import { sessionDot } from "$lib/status";
+  import { sessionDot, relTime, baseName } from "$lib/status";
   import { errText } from "$lib/errors";
   import type { SessionInfoDTO, ApprovalInfo } from "$lib/types";
   import Button from "$lib/components/Button.svelte";
@@ -71,16 +73,23 @@
     };
   });
 
-  // Running / approval first (the things to act on), then idle, then error —
-  // newest within each bucket. Sort a copy so the store array isn't mutated.
-  const rank: Record<string, number> = { working: 0, approval: 1, idle: 2, error: 3 };
+  // Live = working or awaiting approval ONLY — idle/error sessions belong to
+  // the Sessions archive, not this cockpit. (Previously this listed every
+  // session sorted by urgency, making Live a near-duplicate of Sessions with
+  // a different sort; the Rail nav badge for this route already counted only
+  // working+approval, so the view now matches the promise the badge makes.)
+  // Running first, then approval — newest within each bucket. Sort a copy so
+  // the store array isn't mutated.
+  const rank: Record<string, number> = { working: 0, approval: 1 };
   const ordered = $derived.by(() => {
-    return [...sessions.list].sort((a, b) => {
-      const ra = rank[a.status] ?? 4;
-      const rb = rank[b.status] ?? 4;
-      if (ra !== rb) return ra - rb;
-      return b.updated - a.updated;
-    });
+    return sessions.list
+      .filter(isLive)
+      .sort((a, b) => {
+        const ra = rank[a.status] ?? 2;
+        const rb = rank[b.status] ?? 2;
+        if (ra !== rb) return ra - rb;
+        return b.updated - a.updated;
+      });
   });
 
   const counts = $derived.by(() => {
@@ -100,18 +109,9 @@
 
   function rel(updatedNano: number): string {
     void now.ms; // tie to shared clock so the label ticks
-    const ms = Date.now() - updatedNano / 1e6;
-    const m = Math.floor(ms / 60000);
-    if (m < 1) return "just now";
-    if (m < 60) return `${m}m ago`;
-    const h = Math.floor(m / 60);
-    if (h < 24) return `${h}h ago`;
-    return `${Math.floor(h / 24)}d ago`;
+    return relTime(updatedNano);
   }
-  function base(dir: string): string {
-    const p = (dir ?? "").replace(/\/$/, "").split("/");
-    return p[p.length - 1] || dir || "—";
-  }
+  const base = baseName;
 
   async function startSession() {
     starting = true;
@@ -231,7 +231,7 @@
       {/snippet}
     </EmptyState>
   {:else if ordered.length === 0}
-    <EmptyState glyph="◐" title="Nothing running" line="No live or idle sessions. Start one and it'll appear here the moment it's working.">
+    <EmptyState glyph="◐" title="Nothing running" line="No sessions are working or awaiting approval right now. Start one and it'll appear here the moment it's working.">
       {#snippet action()}
         <Button variant="primary" loading={starting} onclick={startSession}>New session</Button>
       {/snippet}

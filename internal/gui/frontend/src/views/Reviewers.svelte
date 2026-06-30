@@ -20,8 +20,12 @@
   async function load() {
     loading = true;
     try {
-      status = await Bridge.RevutoStatus();
-      if (status?.available) reviewers = await Bridge.RevutoReviewers();
+      const st = await Bridge.RevutoStatus();
+      if (alive) status = st;
+      if (st?.available) {
+        const list = await Bridge.RevutoReviewers();
+        if (alive) reviewers = list;
+      }
     } catch (e) {
       if (alive) toasts.error(errText(e));
     } finally {

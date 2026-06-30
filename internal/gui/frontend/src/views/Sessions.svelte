@@ -12,7 +12,7 @@
   import { Bridge } from "$lib/bridge";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { now } from "$lib/stores/clock.svelte";
-  import { sessionDot } from "$lib/status";
+  import { sessionDot, relTime, baseName } from "$lib/status";
   import { errText } from "$lib/errors";
   import type { SessionInfoDTO } from "$lib/types";
   import Button from "$lib/components/Button.svelte";
@@ -60,18 +60,9 @@
 
   function rel(updatedNano: number): string {
     void now.ms;
-    const ms = Date.now() - updatedNano / 1e6;
-    const m = Math.floor(ms / 60000);
-    if (m < 1) return "just now";
-    if (m < 60) return `${m}m ago`;
-    const h = Math.floor(m / 60);
-    if (h < 24) return `${h}h ago`;
-    return `${Math.floor(h / 24)}d ago`;
+    return relTime(updatedNano);
   }
-  function base(dir: string): string {
-    const p = (dir ?? "").replace(/\/$/, "").split("/");
-    return p[p.length - 1] || dir || "—";
-  }
+  const base = baseName;
 
   function resume(s: SessionInfoDTO) {
     router.go("chat", s.id);

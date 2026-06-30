@@ -165,17 +165,19 @@
            fields. The path stays pinned above; each tab scrolls its own short
            list. -->
       <Tabs
+        id="cfg-tabs"
         ariaLabel="Config category"
         divider
         tabs={tabItems}
         value={activeTab}
         onChange={(v) => (activeTab = v as Tab)}
       />
-      {#if activeTab === "Models"}
-        <RuleChainsEditor />
-      {/if}
-      <div class="cfg__list">
-        {#each tabFields as f (f.key)}
+      <div id="cfg-tabs-panel-{activeTab}" role="tabpanel" aria-labelledby="cfg-tabs-tab-{activeTab}">
+        {#if activeTab === "Models"}
+          <RuleChainsEditor />
+        {/if}
+        <div class="cfg__list">
+          {#each tabFields as f (f.key)}
           <Card>
             <div class="field">
               <div class="field__info">
@@ -254,6 +256,7 @@
             </div>
           </Card>
         {/each}
+        </div>
       </div>
     </div>
   {/if}

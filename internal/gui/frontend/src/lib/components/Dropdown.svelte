@@ -88,9 +88,10 @@
       {disabled}
       aria-haspopup="listbox"
       aria-expanded={open}
+      aria-label="{label}: {selected ? selected.label : placeholder}"
       onclick={toggle}
     >
-      <span class="dd__value" class:dd__value--placeholder={!selected}>
+      <span class="dd__value" class:dd__value--placeholder={!selected} aria-hidden="true">
         {selected ? selected.label : placeholder}
       </span>
       <span class="dd__chev" aria-hidden="true"></span>
