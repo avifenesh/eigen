@@ -106,6 +106,7 @@
 <div class="obs">
   <header class="obs__head">
     <Tabs
+      id="obs-tabs"
       ariaLabel="Telemetry view"
       {tabs}
       value={tab}
@@ -113,7 +114,7 @@
     />
   </header>
 
-  <div class="obs__scroll selectable">
+  <div class="obs__scroll selectable" id="obs-tabs-panel-{tab}" role="tabpanel" aria-labelledby="obs-tabs-tab-{tab}">
     {#if tab === "overview"}
       {#if !s}
         <EmptyState glyph="◉" title="Waiting for telemetry" line="The daemon pushes a stats snapshot every second." />

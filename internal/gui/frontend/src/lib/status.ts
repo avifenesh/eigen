@@ -49,3 +49,12 @@ export function relTime(nano: number): string {
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
 }
+
+// Last path segment of a project dir, for compact display (Home, Live,
+// Sessions, Machines, Board all want "the directory name" — was hand-rolled
+// in each, with one subtle drift: a missing/empty dir fell back to "" in some
+// and "—" in others). "—" everywhere a dir is genuinely unknown.
+export function baseName(dir: string): string {
+  const p = (dir ?? "").replace(/\/$/, "").split("/");
+  return p[p.length - 1] || dir || "—";
+}

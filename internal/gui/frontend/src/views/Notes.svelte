@@ -51,6 +51,7 @@
     return () => {
       alive = false;
       seq++;
+      clearTimeout(searchTimer);
     };
   });
 
@@ -61,14 +62,20 @@
     searchTimer = setTimeout(loadNotes, 250);
   }
 
+  // openSeq: a rapid second click on another note while the first's
+  // ObsidianRead is still in flight must not let the FIRST (now stale) read
+  // win the race and overwrite the SECOND note's content once it resolves.
+  let openSeq = 0;
   async function open(n: NoteDTO) {
+    const s = ++openSeq;
     selected = n;
     editing = false;
     content = "";
     try {
-      content = await Bridge.ObsidianRead(n.path);
+      const text = await Bridge.ObsidianRead(n.path);
+      if (s === openSeq) content = text;
     } catch (e) {
-      toasts.error(errText(e));
+      if (s === openSeq) toasts.error(errText(e));
     }
   }
   function startEdit() {

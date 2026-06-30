@@ -7,8 +7,14 @@
   //   divider=true  — a hairline rule spans the full row and the active tab's
   //                   underline overlaps it (Config, which separates the tab
   //                   strip from the fields below).
-  // role="tablist" + aria-selected per tab. Brand focus ring is the global
-  // :focus-visible baseline.
+  // role="tablist" + aria-selected per tab, each wired to its panel via
+  // aria-controls/id so a screen reader gets the standard tab/tabpanel pair,
+  // not just an unlinked button list. `id` namespaces the generated ids so
+  // two Tabs instances on one page never collide. The caller must give its
+  // panel element `id="{id}-panel-{value}"` and `role="tabpanel"
+  // aria-labelledby="{id}-tab-{value}"` using the SAME `id` string passed
+  // here (Config/Observe do this).
+  // Brand focus ring is the global :focus-visible baseline.
   type Tab = { value: string; label: string };
   let {
     tabs,
@@ -16,22 +22,26 @@
     onChange,
     divider = false,
     ariaLabel,
+    id,
   }: {
     tabs: Tab[];
     value: string;
     onChange: (value: string) => void;
     divider?: boolean;
     ariaLabel?: string;
+    id: string;
   } = $props();
 </script>
 
 <div class="tabs" class:tabs--divider={divider} role="tablist" aria-label={ariaLabel}>
   {#each tabs as t (t.value)}
     <button
+      id="{id}-tab-{t.value}"
       class="tabs__tab"
       class:tabs__tab--on={value === t.value}
       role="tab"
       aria-selected={value === t.value}
+      aria-controls="{id}-panel-{t.value}"
       onclick={() => onChange(t.value)}
     >{t.label}</button>
   {/each}

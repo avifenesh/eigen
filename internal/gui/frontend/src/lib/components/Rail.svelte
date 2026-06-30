@@ -254,7 +254,11 @@
   <!-- FOOTER — the rail's bottom bookend: engine status + version. Quiet by
        default; the dot carries the living color when online. -->
   <div class="rail__foot rail__foot--{footState}" title={collapsed ? `Daemon ${footState}${version ? ` · ${version}` : ""}` : `Daemon ${footState}`}>
-    <StatusDot size={6} state={online ? "live" : offline ? "error" : "idle"} />
+    <!-- When collapsed, the adjacent status text is hidden and this dot
+         becomes the SOLE carrier of daemon state — give it a label so it's
+         not invisible to assistive tech. Expanded, the text span below
+         already carries it, so the dot stays decorative (no double-announce). -->
+    <StatusDot size={6} state={online ? "live" : offline ? "error" : "idle"} label={collapsed ? `Daemon ${footState}` : false} />
     {#if !collapsed}
       <span class="rail__foot-status">{footState}</span>
       {#if version}

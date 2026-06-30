@@ -115,12 +115,21 @@
   }
   function openLaneChat(lane: BoardLaneDTO) {
     // Start a plain session rooted at the project (no task) for ad-hoc work.
+    // NewSession isn't idempotent — a fast double-click on the lane name
+    // before the first call resolves would mint two sessions, so gate on
+    // the same `acting` busy-map the other Board card actions already use.
+    const key = "lane:" + lane.dir;
+    if (acting[key]) return;
+    acting[key] = true;
     Bridge.NewSession(lane.dir, "", "")
       .then(async (id) => {
         await sessions.refresh();
         router.go("chat", id);
       })
-      .catch((e) => toasts.error(errText(e)));
+      .catch((e) => toasts.error(errText(e)))
+      .finally(() => {
+        delete acting[key];
+      });
   }
   function openURL(url?: string) {
     if (!url) return;
@@ -307,7 +316,7 @@
               <button class="lane__name" title="Open {lane.repo} on GitHub" onclick={() => openURL(lane.url)}>{lane.name}</button>
               <span class="lane__tag" title={lane.repo}>GitHub</span>
             {:else}
-              <button class="lane__name" title="Open a session in {lane.name}" onclick={() => openLaneChat(lane)}>{lane.name}</button>
+              <button class="lane__name" disabled={acting["lane:" + lane.dir]} title="Open a session in {lane.name}" onclick={() => openLaneChat(lane)}>{lane.name}</button>
               {#if lane.branch}<span class="lane__branch">{lane.branch}</span>{/if}
             {/if}
             <button

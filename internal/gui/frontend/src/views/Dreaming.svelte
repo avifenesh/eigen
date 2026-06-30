@@ -8,6 +8,7 @@
   import { Bridge } from "$lib/bridge";
   import { errText } from "$lib/errors";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { relTime as sharedRelTime } from "$lib/status";
   import type { DreamingScopeDTO, ConsolidationDTO, MemoryScopeRefDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
   import Button from "$lib/components/Button.svelte";
@@ -123,7 +124,12 @@
 
   // Build a unified-diff string between a consolidation snapshot (before) and
   // the current memory (after), so DiffView can render what the dream changed.
+  // diffSeq: opening consolidation A then quickly B before A's Promise.all
+  // resolves must not let A's now-stale result land after B's and overwrite
+  // B's correct diff.
+  let diffSeq = 0;
   async function openDiff(c: ConsolidationDTO) {
+    const s = ++diffSeq;
     openCons = c;
     diffPatch = "";
     diffError = null;
@@ -133,12 +139,14 @@
         Bridge.ConsolidationContent(c.path),
         Bridge.CurrentMemory(scope),
       ]);
+      if (s !== diffSeq) return;
       diffPatch = makeUnifiedDiff(before, after, c.label, "current");
     } catch (e) {
+      if (s !== diffSeq) return;
       diffError = errText(e);
       toasts.error(diffError);
     } finally {
-      diffLoading = false;
+      if (s === diffSeq) diffLoading = false;
     }
   }
   function closeDiff() {
@@ -156,15 +164,10 @@
     if (o === "failed") return "error";
     return "neutral";
   }
-  function relTime(ms: number): string {
-    if (!ms) return "";
-    const diff = Date.now() - ms;
-    const m = Math.floor(diff / 60000);
-    if (m < 1) return "just now";
-    if (m < 60) return `${m}m ago`;
-    const h = Math.floor(m / 60);
-    if (h < 24) return `${h}h ago`;
-    return `${Math.floor(h / 24)}d ago`;
+  // Local wrapper: whenMs is unix MILLISECONDS here (unlike the rest of the app,
+  // which carries unix nanos), so convert before calling the shared relTime.
+  function relTimeMs(ms: number): string {
+    return sharedRelTime(ms * 1e6);
   }
   function title(text: string): string {
     const firstLine = text.split("\n").find((l) => l.trim()) ?? "";
@@ -241,7 +244,7 @@
                     <div class="roll__head">
                       <span class="roll__title">{title(r.text)}</span>
                       <div class="roll__meta">
-                        {#if r.whenMs}<span class="roll__when">{relTime(r.whenMs)}</span>{/if}
+                        {#if r.whenMs}<span class="roll__when">{relTimeMs(r.whenMs)}</span>{/if}
                         {#if r.outcome}<Badge tone={outcomeTone(r.outcome)}>{r.outcome}</Badge>{/if}
                       </div>
                     </div>
@@ -270,7 +273,7 @@
                   {#if i === 0}<Badge tone="brand">latest</Badge>{/if}
                 </div>
                 <div class="cons__meta">
-                  {#if c.whenMs}<span class="cons__when">{relTime(c.whenMs)}</span>{/if}
+                  {#if c.whenMs}<span class="cons__when">{relTimeMs(c.whenMs)}</span>{/if}
                   <span class="cons__size tnum">{(c.bytes / 1024).toFixed(1)} KB</span>
                   <span class="cons__action">Diff →</span>
                 </div>

@@ -57,6 +57,7 @@
       bind:value={draft}
       {onkeydown}
       placeholder="Enter a URL (docs, a PR, localhost…)"
+      aria-label="URL address"
       spellcheck="false"
       autocapitalize="off"
       autocomplete="off"
