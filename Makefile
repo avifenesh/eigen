@@ -7,9 +7,20 @@ EIGEN := bin/eigen
 # so that gate adds the `gtk3` tag.
 PKGS := $(shell go list ./... | grep -v '/internal/gui')
 
-.PHONY: build gui-run gui-smoke gui-desktop gui-frontend vet test race fmt gate harness perf perf-soak perf-bench stats clean
+.PHONY: build core gui-run gui-smoke gui-desktop gui-frontend vet test race fmt gate harness perf perf-soak perf-bench stats clean
 
-build:
+# `make` / `make build` builds EVERYTHING: the core CLI/daemon binary
+# (bin/eigen) and the desktop GUI (bin/eigen-gui, Svelte frontend embedded,
+# `wails production` tags). A plain checkout build gives you both, ready to run.
+#
+# `make core` builds ONLY the webkit-free CLI/daemon binary — no GUI, no cgo
+# webkit dependency. Use it when you don't need the desktop shell (and it's
+# what the webkit-free CI Go-gate builds; `gate`/`harness`/`stats` depend on it,
+# never on the GUI).
+build: core gui-desktop
+	@echo "make: OK — bin/eigen (CLI/daemon) + bin/eigen-gui (desktop GUI)"
+
+core:
 	go build -o $(EIGEN) .
 
 # Build the Svelte bundle into internal/gui/frontend/dist, which the Go binary
@@ -41,15 +52,17 @@ race:
 fmt:
 	gofmt -l -w .
 
-# Full pre-commit gate: build, vet, test, fmt-check.
-gate: build vet test
+# Full pre-commit gate: core build (webkit-free, matches CI's Go-gate runner),
+# vet, test, fmt-check. Does NOT build the GUI — that's the separate gui-phase
+# gate (scripts/verify-gui-phase.sh).
+gate: core vet test
 	@test -z "$$(gofmt -l . | grep -v '^vendor/')" || (echo "gofmt needed:"; gofmt -l .; exit 1)
 	@echo "gate: OK"
 
 # Build/install Eigen-bundled helpers for the full local harness
 # (orientation + connector-only chrome bridge + computer-use-linux +
 # agent-workspace-linux). Requires Rust/Cargo only for the desktop helpers.
-harness: build
+harness: core
 	$(EIGEN) harness install
 
 # Tier 23 performance + resource-health guard.
@@ -73,8 +86,8 @@ perf-bench:
 	go test ./internal/daemon/ -run x -bench 'BenchmarkWireEventEncode|BenchmarkHostStats' -benchmem -benchtime 2000x
 
 # Live daemon resource snapshot (default instance). EIGEN_INSTANCE=dev for dev.
-stats: build
+stats: core
 	$(EIGEN) daemon stats
 
 clean:
-	rm -f $(EIGEN)
+	rm -f $(EIGEN) bin/eigen-gui
