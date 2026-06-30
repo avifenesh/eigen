@@ -49,8 +49,11 @@
 </script>
 
 <header class="topbar">
+  <!-- Single-line page title. The "Eigen" eyebrow used to sit above it, but the
+       rail already shows the λ eigen wordmark at the same top-left corner — the
+       eyebrow was pure masthead decoration stuttering the brand. One line also
+       lets --topbar-h stay short. -->
   <div class="topbar__heading">
-    <span class="topbar__eyebrow">Eigen</span>
     <h1 class="topbar__title" class:topbar__title--verbatim={verbatimTitle}>{title}</h1>
   </div>
 
@@ -102,22 +105,11 @@
       0 6px 16px -10px rgba(0, 0, 0, 0.55);
   }
 
-  /* TITLE — an eyebrow wordmark sits flush above the page name, giving the
-     bar a considered masthead feel rather than a lone capitalized word. The
-     eyebrow and title share a 2px-stepped baseline so the cluster reads as
-     one masthead block, tightly bound. */
+  /* TITLE — a single line naming the current page (the rail carries the brand). */
   .topbar__heading {
     display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: var(--sp-1);
+    align-items: center;
     min-width: 0;
-  }
-  .topbar__eyebrow {
-    font: var(--fw-semibold) var(--fs-micro) / 1 var(--font-sans);
-    text-transform: uppercase;
-    letter-spacing: var(--ls-eyebrow);
-    color: var(--text-ghost);
   }
   .topbar__title {
     margin: 0;
