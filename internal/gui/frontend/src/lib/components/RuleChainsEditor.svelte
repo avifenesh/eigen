@@ -14,6 +14,7 @@
   import type { RuleChainsDTO, RuleChainDTO } from "$lib/types";
   import Card from "./Card.svelte";
   import Dropdown from "./Dropdown.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
 
   let data = $state<RuleChainsDTO | null>(null);
   let loading = $state(true);
@@ -114,9 +115,7 @@
   </div>
 
   {#if loading && !data}
-    <div class="rc__skel-wrap">
-      {#each Array(4) as _, i (i)}<div class="rc__skel"></div>{/each}
-    </div>
+    <Skeleton count={4} height="72px" gap="var(--sp-3)" />
   {:else if error && !data}
     <Card><div class="rc__error">Couldn't load chains: {error}</div></Card>
   {:else if data}
@@ -220,23 +219,6 @@
     font-size: var(--fs-label);
     line-height: var(--lh-snug);
     max-width: 70ch;
-  }
-  .rc__skel-wrap {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-3);
-  }
-  .rc__skel {
-    height: 72px;
-    border-radius: var(--r-md);
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: rc-shimmer 1.4s ease-in-out infinite;
-  }
-  @keyframes rc-shimmer {
-    to {
-      background-position: -200% 0;
-    }
   }
   .rc__error {
     padding: var(--sp-5);
@@ -403,7 +385,6 @@
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .rc__skel,
     .row__spinner {
       animation: none;
     }

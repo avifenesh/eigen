@@ -19,6 +19,7 @@
   import Badge from "$lib/components/Badge.svelte";
   import StatusDot from "$lib/components/StatusDot.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
 
   let query = $state("");
   let pruning = $state(false);
@@ -144,7 +145,7 @@
 
   {#if sessions.loading && sessions.count === 0}
     <div class="sx__list sx__list--pad">
-      {#each Array(6) as _, i (i)}<div class="sx__skel"></div>{/each}
+      <Skeleton count={6} height="48px" gap="var(--sp-4)" />
     </div>
   {:else if sessions.error && sessions.count === 0}
     <EmptyState glyph="≡" title="Couldn't load sessions" line={sessions.error}>
@@ -279,18 +280,6 @@
   .sx__list--pad {
     gap: var(--sp-4);
   }
-  .sx__skel {
-    height: 48px;
-    border-radius: var(--r-md);
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: sx-shimmer 1.4s ease-in-out infinite;
-  }
-  @keyframes sx-shimmer {
-    to {
-      background-position: -200% 0;
-    }
-  }
   .sx__empty-note {
     color: var(--text-muted);
     font-size: var(--fs-body-sm);
@@ -384,9 +373,6 @@
     margin-top: var(--sp-4);
   }
   @media (prefers-reduced-motion: reduce) {
-    .sx__skel {
-      animation: none;
-    }
     .srow {
       transition: none;
     }

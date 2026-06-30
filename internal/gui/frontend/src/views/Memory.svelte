@@ -17,6 +17,7 @@
   import Markdown from "$lib/components/Markdown.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import Sheet from "$lib/components/Sheet.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
 
   // The selectable scopes (Global first, then every known project). The picker
   // binds to `scope` — a scope KEY that round-trips through MemoryForScope (the
@@ -388,7 +389,7 @@
 
   {#if loading && !current}
     <div class="mem__loading">
-      {#each Array(3) as _, i (i)}<div class="mem__skel"></div>{/each}
+      <Skeleton count={3} height="88px" gap="var(--sp-5)" />
     </div>
   {:else if loadError && !current}
     <EmptyState glyph="☾" title="Couldn't load {scopeLabel} memory" line={loadError}>
@@ -1097,22 +1098,5 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-5);
-  }
-  .mem__skel {
-    height: 88px;
-    border-radius: var(--r-md);
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: mem-shimmer 1.4s ease-in-out infinite;
-  }
-  @keyframes mem-shimmer {
-    to {
-      background-position: -200% 0;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .mem__skel {
-      animation: none;
-    }
   }
 </style>

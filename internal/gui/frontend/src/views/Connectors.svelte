@@ -24,6 +24,7 @@
   import Card from "$lib/components/Card.svelte";
   import Button from "$lib/components/Button.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
   import { Browser } from "@wailsio/runtime";
 
   let conns = $state<ConnectorsDTO | null>(null);
@@ -361,9 +362,7 @@
     </header>
 
     {#if loading && !conns}
-      <div class="cx__skel-wrap">
-        {#each Array(3) as _, i (i)}<div class="cx__skel"></div>{/each}
-      </div>
+      <Skeleton count={3} height="76px" gap="var(--sp-3)" />
     {:else if error && !conns}
       <EmptyState glyph="⟐" title="Couldn't load connectors" line={error}>
         {#snippet action()}<Button variant="secondary" onclick={() => load()}>Retry</Button>{/snippet}
@@ -679,23 +678,6 @@
     line-height: var(--lh-snug);
     max-width: 72ch;
   }
-  .cx__skel-wrap {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-3);
-  }
-  .cx__skel {
-    height: 76px;
-    border-radius: var(--r-md);
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: cx-shimmer 1.4s ease-in-out infinite;
-  }
-  @keyframes cx-shimmer {
-    to {
-      background-position: -200% 0;
-    }
-  }
   .cx__actions {
     display: flex;
     justify-content: flex-end;
@@ -920,10 +902,5 @@
   }
   .tile--added .tile__cta {
     color: var(--text-faint);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .cx__skel {
-      animation: none;
-    }
   }
 </style>

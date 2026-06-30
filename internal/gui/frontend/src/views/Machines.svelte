@@ -17,6 +17,7 @@
   import StatusDot from "$lib/components/StatusDot.svelte";
   import Sheet from "$lib/components/Sheet.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
 
   let data = $state<MachinesDTO | null>(null);
   let loading = $state(true);
@@ -156,8 +157,8 @@
   </header>
 
   {#if loading && !data}
-    <div class="mx__grid mx__grid--pad">
-      {#each Array(4) as _, i (i)}<div class="mx__skel"></div>{/each}
+    <div class="mx__grid--pad">
+      <Skeleton count={4} height="132px" gap="var(--sp-5)" />
     </div>
   {:else if error && !data}
     <EmptyState glyph="⊟" title="Couldn't load machines" line={error}>
@@ -390,18 +391,6 @@
   .mx__grid--pad {
     padding: var(--sp-7) var(--sp-7);
   }
-  .mx__skel {
-    height: 132px;
-    border-radius: var(--r-md);
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: mx-shimmer 1.4s ease-in-out infinite;
-  }
-  @keyframes mx-shimmer {
-    to {
-      background-position: -200% 0;
-    }
-  }
   .mc {
     padding: var(--sp-5);
     display: flex;
@@ -598,7 +587,6 @@
     text-align: right;
   }
   @media (prefers-reduced-motion: reduce) {
-    .mx__skel,
     .mx__spinner,
     .mx__refresh--spin .mx__refresh-glyph {
       animation: none;

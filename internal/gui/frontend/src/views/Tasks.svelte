@@ -19,6 +19,7 @@
   import Markdown from "$lib/components/Markdown.svelte";
   import VirtualList from "$lib/components/VirtualList.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
 
   let data = $state<TasksDTO | null>(null);
   let loading = $state(true);
@@ -291,7 +292,7 @@
 
   {#if loading && !data}
     <div class="agents__list agents__list--pad">
-      {#each Array(4) as _, i (i)}<div class="agents__skel"></div>{/each}
+      <Skeleton count={4} height="96px" gap="var(--sp-5)" />
     </div>
   {:else if error && !data}
     <EmptyState glyph="⋔" title="Couldn't load tasks" line={error}>
@@ -539,18 +540,6 @@
      can't carry (rows are absolutely positioned full-width). */
   .ag-wrap {
     padding: var(--sp-3) var(--sp-9);
-  }
-  .agents__skel {
-    height: 96px;
-    border-radius: var(--r-md);
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: ag-shimmer 1.4s ease-in-out infinite;
-  }
-  @keyframes ag-shimmer {
-    to {
-      background-position: -200% 0;
-    }
   }
   .agents__empty-note {
     color: var(--text-muted);
@@ -854,8 +843,7 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .sheet__scrim,
-    .sheet,
-    .agents__skel {
+    .sheet {
       animation: none;
     }
   }

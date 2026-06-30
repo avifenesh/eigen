@@ -1021,13 +1021,20 @@
   .row-skel {
     height: 34px;
     border-bottom: 1px solid var(--divider);
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: home-shimmer 1.4s ease-in-out infinite;
+    background: var(--bg-raised-2);
+    /* Compositable opacity pulse (not background-position — see Skeleton.svelte).
+       Stays bespoke: these rows carry a per-row divider the shared Skeleton's
+       gap-stacked rows don't. */
+    animation: home-shimmer 1.4s var(--ease-inout) infinite;
+    will-change: opacity;
   }
   @keyframes home-shimmer {
-    to {
-      background-position: -200% 0;
+    0%,
+    100% {
+      opacity: 0.5;
+    }
+    50% {
+      opacity: 0.85;
     }
   }
   @media (prefers-reduced-motion: reduce) {

@@ -430,9 +430,12 @@
   }
   .kbcol--skel {
     height: 200px;
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: board-shimmer 1.4s ease-in-out infinite;
+    background: var(--bg-raised-2);
+    /* Compositable opacity pulse (not background-position — WebKitGTK can't
+       composite that; see Skeleton.svelte). These two stay bespoke because they
+       fill column/lane layout slots the shared Skeleton's stack doesn't model. */
+    animation: board-shimmer 1.4s var(--ease-inout) infinite;
+    will-change: opacity;
   }
   .kbcol--needs-you {
     border-top: 2px solid var(--warn);
@@ -642,13 +645,17 @@
   }
   .lane--skel {
     height: 220px;
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: board-shimmer 1.4s ease-in-out infinite;
+    background: var(--bg-raised-2);
+    animation: board-shimmer 1.4s var(--ease-inout) infinite;
+    will-change: opacity;
   }
   @keyframes board-shimmer {
-    to {
-      background-position: -200% 0;
+    0%,
+    100% {
+      opacity: 0.5;
+    }
+    50% {
+      opacity: 0.85;
     }
   }
   .lane__head {
@@ -771,7 +778,8 @@
     gap: var(--sp-2);
   }
   @media (prefers-reduced-motion: reduce) {
-    .lane--skel {
+    .lane--skel,
+    .kbcol--skel {
       animation: none;
     }
   }

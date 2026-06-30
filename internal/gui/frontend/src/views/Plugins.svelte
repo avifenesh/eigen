@@ -18,6 +18,7 @@
   import Badge from "$lib/components/Badge.svelte";
   import StatusDot from "$lib/components/StatusDot.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
 
   let data = $state<PluginsDTO | null>(null);
   let loading = $state(true);
@@ -247,7 +248,7 @@
 <div class="plug">
   {#if loading && !data}
     <div class="plug__pad">
-      {#each Array(3) as _, i (i)}<div class="plug__skel"></div>{/each}
+      <Skeleton count={3} height="96px" gap="var(--sp-5)" />
     </div>
   {:else if error && !data}
     <EmptyState glyph="⊞" title="Couldn't load plugins" line={error}>
@@ -468,18 +469,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-5);
-  }
-  .plug__skel {
-    height: 96px;
-    border-radius: var(--r-md);
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: plug-shimmer 1.4s ease-in-out infinite;
-  }
-  @keyframes plug-shimmer {
-    to {
-      background-position: -200% 0;
-    }
   }
   .plug__section {
     display: flex;
@@ -774,10 +763,5 @@
     font-size: var(--fs-body-sm);
     color: var(--error);
     font-weight: var(--fw-medium);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .plug__skel {
-      animation: none;
-    }
   }
 </style>

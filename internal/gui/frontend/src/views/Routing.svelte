@@ -14,6 +14,7 @@
   import Button from "$lib/components/Button.svelte";
   import StatusDot from "$lib/components/StatusDot.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
 
   let data = $state<RoutingDTO | null>(null);
   let loading = $state(true);
@@ -178,7 +179,7 @@
 
     {#if loading && !data}
       <div class="route__grid route__grid--pad">
-        {#each Array(6) as _, i (i)}<div class="route__skel"></div>{/each}
+        <Skeleton count={6} height="104px" gap="var(--sp-5)" />
       </div>
     {:else if error && !data}
       <EmptyState glyph="⇄" title="Couldn't load routing" line={error}>
@@ -501,19 +502,6 @@
   .route__grid--pad {
     display: block;
   }
-  .route__skel {
-    height: 104px;
-    border-radius: var(--r-md);
-    background: linear-gradient(90deg, var(--bg-raised) 0%, var(--bg-raised-2) 50%, var(--bg-raised) 100%);
-    background-size: 200% 100%;
-    animation: route-shimmer 1.4s ease-in-out infinite;
-    margin-bottom: var(--sp-5);
-  }
-  @keyframes route-shimmer {
-    to {
-      background-position: -200% 0;
-    }
-  }
   .route__empty-note {
     color: var(--text-muted);
     font-size: var(--fs-body-sm);
@@ -571,9 +559,6 @@
     color: var(--text-secondary);
   }
   @media (prefers-reduced-motion: reduce) {
-    .route__skel {
-      animation: none;
-    }
     .hbar__track span {
       transition: none;
     }
