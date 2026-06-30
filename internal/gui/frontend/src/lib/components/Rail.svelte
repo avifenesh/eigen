@@ -8,6 +8,7 @@
   import { daemon } from "$lib/stores/daemon.svelte";
   import { feed } from "$lib/stores/feed.svelte";
   import { ui } from "$lib/stores/ui.svelte";
+  import StatusDot from "$lib/components/StatusDot.svelte";
 
   type Item = { route: Route; label: string; glyph: string };
   // collapsible zones fold behind their label (a click toggles). The System
@@ -232,11 +233,12 @@
                   title={shortTitle(s)}
                   onclick={() => router.go("chat", s.id)}
                 >
-                  <span
-                    class="rail__sub-dot"
-                    class:rail__sub-dot--approval={s.status === "approval"}
-                    class:rail__sub-dot--unread={unread && s.status === "idle"}
-                  ></span>
+                  <StatusDot
+                    size={6}
+                    state={s.status === "approval" ? "warn" : "live"}
+                    pulse={s.status === "working" || s.status === "approval"}
+                    bright={unread && s.status === "idle"}
+                  />
                   <span class="rail__sub-label">{shortTitle(s)}</span>
                   {#if unread}<span class="rail__sub-unread" aria-label="Unread reply">●</span>{/if}
                 </button>
@@ -252,7 +254,7 @@
   <!-- FOOTER — the rail's bottom bookend: engine status + version. Quiet by
        default; the dot carries the living color when online. -->
   <div class="rail__foot rail__foot--{footState}" title={collapsed ? `Daemon ${footState}${version ? ` · ${version}` : ""}` : `Daemon ${footState}`}>
-    <span class="rail__foot-dot" aria-hidden="true"></span>
+    <StatusDot size={6} state={online ? "live" : offline ? "error" : "idle"} />
     {#if !collapsed}
       <span class="rail__foot-status">{footState}</span>
       {#if version}
@@ -583,22 +585,6 @@
     background: var(--state-selected);
     color: var(--brand-bright);
   }
-  .rail__sub-dot {
-    flex: none;
-    width: 6px;
-    height: 6px;
-    border-radius: var(--r-full);
-    background: var(--brand);
-    animation: rail-badge-breathe var(--breath) var(--ease-inout) infinite;
-    will-change: opacity;
-  }
-  .rail__sub-dot--approval {
-    background: var(--warn);
-  }
-  .rail__sub-dot--unread {
-    background: var(--brand-bright);
-    animation: none;
-  }
   .rail__sub--unread .rail__sub-label {
     font-weight: var(--fw-semibold);
     color: var(--text-primary);
@@ -688,21 +674,6 @@
     color: var(--text-ghost);
     user-select: none;
   }
-  .rail__foot-dot {
-    width: 6px;
-    height: 6px;
-    flex: 0 0 auto;
-    border-radius: var(--r-full);
-    background: var(--text-faint);
-  }
-  /* Online = static teal dot. Color alone signals the state; the dot no longer
-     breathes at rest (idle ambient motion is the "never still" feel). */
-  .rail__foot--online .rail__foot-dot {
-    background: var(--brand);
-  }
-  .rail__foot--offline .rail__foot-dot {
-    background: var(--error);
-  }
   .rail__foot-status {
     text-transform: uppercase;
     letter-spacing: var(--ls-eyebrow);
@@ -738,9 +709,7 @@
       transition: none;
     }
     .rail__lambda,
-    .rail__badge--live,
-    .rail__sub-dot,
-    .rail__foot--online .rail__foot-dot {
+    .rail__badge--live {
       animation: none;
     }
   }

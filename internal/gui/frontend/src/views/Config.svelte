@@ -14,6 +14,7 @@
   import Button from "$lib/components/Button.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import RuleChainsEditor from "$lib/components/RuleChainsEditor.svelte";
+  import Tabs from "$lib/components/Tabs.svelte";
 
   let data = $state<ConfigDTO | null>(null);
   let loading = $state(true);
@@ -91,6 +92,8 @@
     if (tabs.length && !tabs.includes(activeTab)) activeTab = tabs[0];
   });
   const tabFields = $derived((data?.fields ?? []).filter((f) => tabOf(f.key) === activeTab));
+  // Tab labels === values here (the category names); shape for the Tabs control.
+  const tabItems = $derived(tabs.map((t) => ({ value: t, label: t })));
 
   async function commit(key: string, value: string) {
     saving[key] = true;
@@ -160,17 +163,13 @@
       <!-- Tabs instead of one long scroll: pick a category, see only its
            fields. The path stays pinned above; each tab scrolls its own short
            list. -->
-      <div class="cfg__tabs" role="tablist">
-        {#each tabs as t (t)}
-          <button
-            class="cfg__tab"
-            class:cfg__tab--active={activeTab === t}
-            role="tab"
-            aria-selected={activeTab === t}
-            onclick={() => (activeTab = t)}
-          >{t}</button>
-        {/each}
-      </div>
+      <Tabs
+        ariaLabel="Config category"
+        divider
+        tabs={tabItems}
+        value={activeTab}
+        onChange={(v) => (activeTab = v as Tab)}
+      />
       {#if activeTab === "Models"}
         <RuleChainsEditor />
       {/if}
@@ -298,33 +297,10 @@
     color: var(--text-faint);
     padding-bottom: var(--sp-2);
   }
-  .cfg__tabs {
-    display: flex;
-    gap: var(--sp-2);
+  /* The shared <Tabs divider> strip needs the same breathing room below it the
+     old .cfg__tabs had before the fields begin. */
+  .cfg__scroll > :global(.tabs) {
     margin-bottom: var(--sp-5);
-    border-bottom: 1px solid var(--divider);
-  }
-  .cfg__tab {
-    border: none;
-    background: transparent;
-    padding: var(--sp-2) var(--sp-3);
-    margin-bottom: -1px;
-    border-bottom: 2px solid transparent;
-    color: var(--text-muted);
-    font: var(--fw-medium) var(--fs-body-sm) / 1 var(--font-sans);
-    cursor: pointer;
-    transition: color var(--dur-fast) var(--ease-out);
-  }
-  .cfg__tab:hover {
-    color: var(--text-secondary);
-  }
-  .cfg__tab--active {
-    color: var(--text-primary);
-    border-bottom-color: var(--brand);
-  }
-  .cfg__tab:focus-visible {
-    outline: none;
-    box-shadow: var(--shadow-focus);
   }
   .cfg__list {
     display: flex;

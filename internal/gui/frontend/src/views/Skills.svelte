@@ -15,6 +15,7 @@
   import Badge from "$lib/components/Badge.svelte";
   import Markdown from "$lib/components/Markdown.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import Segmented from "$lib/components/Segmented.svelte";
   import { trapFocus } from "$lib/actions";
 
   let data = $state<SkillsDTO | null>(null);
@@ -272,26 +273,16 @@
          Both routes scan the bundle before writing; a scan-block surfaces as
          an error toast. The segmented toggle picks which bridge runs. -->
     <div class="skills__add">
-      <div class="seg" role="group" aria-label="Install source">
-        <button
-          type="button"
-          class="seg__btn"
-          class:seg__btn--on={addMode === "path"}
-          aria-pressed={addMode === "path"}
-          onclick={() => (addMode = "path")}
-        >
-          Path
-        </button>
-        <button
-          type="button"
-          class="seg__btn"
-          class:seg__btn--on={addMode === "github"}
-          aria-pressed={addMode === "github"}
-          onclick={() => (addMode = "github")}
-        >
-          GitHub
-        </button>
-      </div>
+      <Segmented
+        ariaLabel="Install source"
+        variant="solid"
+        value={addMode}
+        onChange={(v) => (addMode = v as typeof addMode)}
+        options={[
+          { value: "path", label: "Path" },
+          { value: "github", label: "GitHub" },
+        ]}
+      />
       <input
         class="skills__input skills__add-input"
         type="text"
@@ -485,38 +476,6 @@
   .skills__add-input:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-  }
-  /* Segmented Path | GitHub toggle — the lit segment glows teal (alive). */
-  .seg {
-    display: inline-flex;
-    padding: 2px;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--r-md);
-    background: var(--bg-raised);
-  }
-  .seg__btn {
-    height: 28px;
-    padding: 0 var(--sp-4);
-    border: none;
-    border-radius: var(--r-sm);
-    background: transparent;
-    color: var(--text-muted);
-    font: var(--fw-medium) var(--fs-label) / 1 var(--font-sans);
-    cursor: pointer;
-    transition:
-      color var(--dur-fast) var(--ease-out),
-      background var(--dur-fast) var(--ease-out);
-  }
-  .seg__btn:hover:not(.seg__btn--on) {
-    color: var(--text-secondary);
-  }
-  .seg__btn--on {
-    background: var(--brand);
-    color: var(--text-on-brand);
-  }
-  .seg__btn:focus-visible {
-    outline: none;
-    box-shadow: var(--shadow-focus);
   }
   .skills__input {
     flex: 1;

@@ -10,16 +10,23 @@
   // role="img" with that aria-label and drops aria-hidden; `label={true}`
   // uses the sensible default for the current state; omitting it (or false)
   // keeps the dot hidden.
-  type DotState = "working" | "idle" | "ok" | "warn" | "error";
+  // `live` = present + alive but NOT actively working: same teal as working
+  // but static (working breathes). Used for the daemon-online dot and the
+  // freshest/unread row — the reason those read teal, not green `ok`.
+  // `bright` lifts the fill to brand-bright for the one-per-view "freshest"
+  // accent (e.g. an unread chat); it only changes the color, not the motion.
+  type DotState = "working" | "live" | "idle" | "ok" | "warn" | "error";
   let {
     state = "idle",
     size = 8,
     pulse = false,
+    bright = false,
     label = false,
   }: {
     state?: DotState;
     size?: number;
     pulse?: boolean;
+    bright?: boolean;
     label?: string | boolean;
   } = $props();
 
@@ -30,6 +37,7 @@
   // Default-per-state announcement, used when `label={true}` is passed.
   const defaultLabels: Record<DotState, string> = {
     working: "Working",
+    live: "Live",
     idle: "Idle",
     ok: "OK",
     warn: "Warning",
@@ -50,6 +58,7 @@
   class="dot dot--{dotState}"
   class:dot--breathe={breathing}
   class:dot--glow={isWorking}
+  class:dot--bright={bright}
   style="--dot-size:{size}px"
   role={ariaLabel ? "img" : undefined}
   aria-label={ariaLabel ?? undefined}
@@ -71,6 +80,9 @@
   .dot--working {
     --dot-fill: var(--dot-working);
   }
+  .dot--live {
+    --dot-fill: var(--dot-live);
+  }
   .dot--idle {
     --dot-fill: var(--dot-idle);
   }
@@ -82,6 +94,11 @@
   }
   .dot--error {
     --dot-fill: var(--dot-error);
+  }
+  /* `bright` lifts the fill to brand-bright — the one-per-view freshest accent
+     (e.g. an unread idle chat). Color only; motion is unchanged. */
+  .dot--bright {
+    --dot-fill: var(--brand-bright);
   }
 
   /* Gentle, continuous breath — opacity AND a hair of scale, so the dot reads
