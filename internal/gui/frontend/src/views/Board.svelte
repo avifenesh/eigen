@@ -208,10 +208,16 @@
       <p class="board__sub">Every project at a glance — git state, open PRs/issues, loose ends. One place to pick up work.</p>
     </div>
     <div class="board__tools">
-      <div class="viewtoggle" role="tablist" aria-label="Board view">
-        <button class="vt" class:vt--on={view === "projects"} role="tab" aria-selected={view === "projects"} onclick={() => (view = "projects")}>Projects</button>
-        <button class="vt" class:vt--on={view === "kanban"} role="tab" aria-selected={view === "kanban"} onclick={() => (view = "kanban")}>Kanban</button>
-      </div>
+      <Segmented
+        ariaLabel="Board view"
+        variant="solid"
+        value={view}
+        onChange={(v) => (view = v as typeof view)}
+        options={[
+          { value: "projects", label: "Projects" },
+          { value: "kanban", label: "Kanban" },
+        ]}
+      />
       <Button variant="secondary" size="sm" onclick={() => load()}>Refresh</Button>
     </div>
   </header>
@@ -386,24 +392,6 @@
     display: flex;
     align-items: center;
     gap: var(--sp-4);
-  }
-  .viewtoggle {
-    display: inline-flex;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--r-md);
-    overflow: hidden;
-  }
-  .vt {
-    padding: var(--sp-2) var(--sp-4);
-    border: none;
-    background: var(--bg-raised-2);
-    color: var(--text-muted);
-    cursor: pointer;
-    font: var(--fw-medium) var(--fs-label) / 1 var(--font-sans);
-  }
-  .vt--on {
-    background: var(--state-selected);
-    color: var(--brand-bright);
   }
 
   /* KANBAN — horizontally-scrolling fixed columns. */
