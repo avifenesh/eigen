@@ -17,6 +17,19 @@
     markedKatex({ throwOnError: false, nonStandard: true }),
   );
 
+  // KaTeX's stylesheet (~240KB) is loaded ON DEMAND the first time any math
+  // renders, instead of eagerly in main.ts (where it was a render-blocking
+  // <link> on every cold start, even for the vast majority of turns with no
+  // math). Vite code-splits this dynamic CSS import into its own chunk.
+  let katexCssLoaded = false;
+  function ensureKatexCss(): void {
+    if (katexCssLoaded) return;
+    katexCssLoaded = true;
+    // @ts-expect-error — Vite resolves this CSS import at build (code-split into
+    // its own chunk); TS has no module declaration for a dynamic .css import.
+    void import("katex/dist/katex.min.css");
+  }
+
   // Render one KaTeX token's source to HTML. Cached + bounded; returns the raw
   // (escaped) source on failure so a malformed equation shows its text, never
   // throws. `display` selects block vs inline layout.
@@ -25,6 +38,7 @@
     const key = (display ? "d:" : "i:") + src;
     const hit = KATEX_CACHE.get(key);
     if (hit !== undefined) return hit;
+    ensureKatexCss();
     let html: string;
     try {
       html = katex.renderToString(src, { displayMode: display, throwOnError: false, output: "html" });

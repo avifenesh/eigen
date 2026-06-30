@@ -397,35 +397,20 @@
     border-radius: var(--r-md);
     transition: border-color var(--dur-fast) var(--ease-out);
   }
-  /* WORKING — alive. Teal left edge + a soft teal halo that breathes, so the
-     eye lands on what is actually running. This is the view's reason to exist. */
+  /* WORKING — teal edge + a STATIC teal halo. The "alive" motion is the row's
+     StatusDot (opacity/transform breathe). Previously each working/approval row
+     animated box-shadow on its own infinite track — N live sessions = N
+     per-frame main-thread repaints (WebKitGTK can't composite box-shadow). This
+     is the last holdout of the pattern the other views already dropped. */
   .lrow--working {
     border-left-color: var(--brand);
-    animation: lrow-live var(--breath) var(--ease-inout) infinite;
+    box-shadow: var(--glow-live);
   }
-  @keyframes lrow-live {
-    0%,
-    100% {
-      box-shadow: 0 0 0 1px var(--border-brand-faint);
-    }
-    50% {
-      box-shadow: var(--glow-live);
-    }
-  }
-  /* APPROVAL — blocked on the user. Warn edge + a warn halo that breathes, a
-     distinct register from "running": something is waiting, not progressing. */
+  /* APPROVAL — blocked on the user. Warn edge + static warn halo, a distinct
+     register from "running". */
   .lrow--approval {
     border-left-color: var(--warn);
-    animation: lrow-wait var(--breath) var(--ease-inout) infinite;
-  }
-  @keyframes lrow-wait {
-    0%,
-    100% {
-      box-shadow: 0 0 0 1px rgba(224, 179, 106, 0.25);
-    }
-    50% {
-      box-shadow: var(--glow-warn);
-    }
+    box-shadow: var(--glow-warn);
   }
   .lrow__main {
     flex: 1;
