@@ -167,7 +167,7 @@
       <span class="tg__status">
         <StatusDot state={dotState} size={7} pulse={anyRunning} />
       </span>
-      <span class="tg__chevron" class:tg__chevron--open={groupExpanded} aria-hidden="true">›</span>
+      <span class="tg__chevron" class:tg__chevron--open={groupExpanded} aria-hidden="true">▸</span>
     </button>
 
     {#if groupExpanded}
