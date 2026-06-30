@@ -27,7 +27,12 @@
   import StatusDot from "$lib/components/StatusDot.svelte";
   import Popover from "$lib/components/Popover.svelte";
   import Dropdown from "$lib/components/Dropdown.svelte";
-  import Terminal from "$lib/components/Terminal.svelte";
+  // Terminal is lazy-loaded: it statically pulls in xterm (~342KB JS + CSS),
+  // which would otherwise be eager in the startup bundle even though the
+  // terminal dock tab defaults closed and is often never opened. The import()
+  // fires only when terminalOpened flips true (first time the tab is shown),
+  // so xterm leaves the cold-start critical path entirely.
+  const TerminalLazy = () => import("$lib/components/Terminal.svelte");
   import DiffPanel from "$lib/components/DiffPanel.svelte";
   import FilesPanel from "$lib/components/FilesPanel.svelte";
   import BrowserPanel from "$lib/components/BrowserPanel.svelte";
@@ -2199,7 +2204,9 @@
           class="dock__body dock__body--fill"
           class:dock__body--hidden={dockTab !== "terminal"}
         >
-          <Terminal active={dockTab === "terminal"} workdir={primaryRoot} />
+          {#await TerminalLazy() then { default: Terminal }}
+            <Terminal active={dockTab === "terminal"} workdir={primaryRoot} />
+          {/await}
         </div>
       {/if}
 

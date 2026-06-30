@@ -75,7 +75,12 @@
     let timer: ReturnType<typeof setTimeout> | undefined;
     let stopped = false;
     async function tick() {
-      await load();
+      // Skip the /api/tasks round-trip while the window is hidden (other
+      // workspace / minimized) — at 1.5s while a task runs this hammered the
+      // daemon off-screen. Keep rescheduling so it resumes when shown again.
+      if (typeof document === "undefined" || !document.hidden) {
+        await load();
+      }
       if (stopped) return;
       const period = (data?.running ?? 0) > 0 ? 1500 : 4000;
       timer = setTimeout(tick, period);

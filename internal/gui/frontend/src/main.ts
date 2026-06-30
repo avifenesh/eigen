@@ -1,7 +1,9 @@
 import "./styles/tokens.css";
 import "./styles/fonts.css";
 import "./styles/base.css";
-import "katex/dist/katex.min.css";
+// KaTeX CSS is NOT eager here — Markdown.svelte dynamic-imports it the first
+// time math actually renders, keeping ~240KB of math styling off the
+// render-blocking cold-start path.
 import { mount } from "svelte";
 import App from "./App.svelte";
 
