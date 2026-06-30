@@ -54,13 +54,43 @@ func transcriptPath(dir, id string) string { return filepath.Join(dir, id+".json
 func metaPath(dir, id string) string       { return filepath.Join(dir, id+".meta.json") }
 
 // saveMeta writes the sidecar (best-effort; persistence must not break turns).
+//
+// The write is ATOMIC (temp file + rename), not a plain WriteFile. A session's
+// meta is written by several writers that can overlap — a turn's onTokens save,
+// a SetGoal save, and the background titler goroutine (maybeTitle) — and a
+// concurrent reader (Restore on a fresh daemon, ListPersisted from the CLI) can
+// read it at any moment. A non-atomic O_TRUNC write leaves the file truncated
+// mid-write; a reader landing in that window gets a partial/empty file whose
+// Unmarshal fails (m.ID==""), so the session is silently skipped — the "restored
+// 0 sessions" race. Rename is atomic on POSIX: a reader sees either the old
+// complete file or the new one, never a half-written one.
 func saveMeta(dir string, m persistMeta) {
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return
 	}
-	_ = os.MkdirAll(dir, 0o755)
-	_ = os.WriteFile(metaPath(dir, m.ID), b, 0o644)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	// Temp file in the SAME dir so the rename stays on one filesystem (a
+	// cross-device rename is not atomic and would fail).
+	tmp, err := os.CreateTemp(dir, m.ID+".meta.*.tmp")
+	if err != nil {
+		return
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(b); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return
+	}
+	if err := os.Rename(tmpName, metaPath(dir, m.ID)); err != nil {
+		_ = os.Remove(tmpName)
+	}
 }
 
 // loadPersisted scans the sessions dir and returns every resurrectable

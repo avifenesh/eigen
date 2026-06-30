@@ -541,6 +541,11 @@ func (h *Host) isCurrent(id string, s *Session) bool {
 // closing MCP/LSP) WITHOUT touching persisted state — the next daemon start
 // restores them. This is daemon shutdown; Remove is user deletion.
 func (h *Host) Shutdown() {
+	// Drain in-flight background titler goroutines first: each ends in a meta
+	// save (maybeTitle → saveSessionMeta), and a save that lands AFTER shutdown
+	// returns races a fresh daemon's Restore or a TempDir cleanup. waitTitles
+	// makes the "lossless shutdown" promise below actually hold for meta too.
+	h.waitTitles()
 	h.mu.Lock()
 	sessions := make([]*Session, 0, len(h.sessions))
 	for _, s := range h.sessions {
