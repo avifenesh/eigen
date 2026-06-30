@@ -503,7 +503,9 @@
     align-items: center;
     gap: var(--sp-6);
     padding: var(--sp-4) var(--sp-6);
-    background: var(--bg-well);
+    /* sits ON the page, not in a trench — was --bg-well (darker than the
+       --bg-base page), which read as a heavy recessed band across the top. */
+    background: var(--bg-raised);
     border: 1px solid var(--border-hairline);
     border-radius: var(--r-lg);
     cursor: pointer;
@@ -669,10 +671,9 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-4);
-    padding: var(--sp-5) var(--sp-6);
+    padding: var(--sp-4) var(--sp-6);
     background: var(--bg-raised);
     border: 1px solid var(--border-hairline);
-    border-left: 2px solid var(--accent, var(--brand));
     border-radius: var(--r-lg);
   }
   .gpu__head {
@@ -680,8 +681,11 @@
     align-items: center;
     gap: var(--sp-3);
   }
+  /* neutral icon — the GPU card is informational, not a separate semantic zone;
+     the blue --accent left-rail + icon was a competing hue on Home (the only
+     blue among teal chrome). */
   .gpu__icon {
-    color: var(--accent, var(--brand));
+    color: var(--text-muted);
   }
   .gpu__name {
     font: var(--fw-semibold) var(--fs-body-sm) / 1 var(--font-sans);
