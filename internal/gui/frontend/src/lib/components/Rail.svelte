@@ -10,7 +10,11 @@
   import { ui } from "$lib/stores/ui.svelte";
 
   type Item = { route: Route; label: string; glyph: string };
-  type Zone = { name: string; items: Item[] };
+  // collapsible zones fold behind their label (a click toggles). The System
+  // zone (8 configure-once/check-occasionally routes) defaults folded so the
+  // standing rail reads as a workspace, not a daemon control panel — routes
+  // stay valid as deep-links and the label shows a chevron + count when folded.
+  type Zone = { name: string; items: Item[]; collapsible?: boolean };
 
   // Collapsed = icon-only rail (glyphs + badges, no labels/zone headings).
   const collapsed = $derived(ui.railCollapsed);
@@ -76,6 +80,7 @@
     },
     {
       name: "System",
+      collapsible: true,
       items: [
         { route: "observe", label: "Observe", glyph: "◉" },
         { route: "routing", label: "Routing", glyph: "⇄" },
@@ -88,6 +93,37 @@
       ],
     },
   ];
+
+  // Folded state for collapsible zones, keyed by name, persisted. Defaults
+  // folded. A zone auto-expands while one of its own routes is active so the
+  // current page is never hidden.
+  let zoneFolded = $state<Record<string, boolean>>(loadZoneFolded());
+  function loadZoneFolded(): Record<string, boolean> {
+    const out: Record<string, boolean> = {};
+    for (const z of zones) {
+      if (!z.collapsible) continue;
+      let v = true; // default folded
+      try {
+        const s = localStorage.getItem("eigen.rail.zone." + z.name);
+        if (s != null) v = s === "1";
+      } catch {}
+      out[z.name] = v;
+    }
+    return out;
+  }
+  function zoneIsFolded(z: Zone): boolean {
+    if (!z.collapsible) return false;
+    // never hide the active page: if the current route lives in this zone, show it.
+    if (z.items.some((it) => it.route === router.route)) return false;
+    return zoneFolded[z.name] ?? true;
+  }
+  function toggleZone(z: Zone): void {
+    const next = !(zoneFolded[z.name] ?? true);
+    zoneFolded[z.name] = next;
+    try {
+      localStorage.setItem("eigen.rail.zone." + z.name, next ? "1" : "0");
+    } catch {}
+  }
 
   // Home surfaces the proactive-feed "act on" count (what needs attention),
   // not the raw session total — the rail nudges toward action.
@@ -145,8 +181,25 @@
   </div>
   <div class="rail__scroll">
     {#each zones as zone (zone.name)}
+      {@const folded = zoneIsFolded(zone)}
       <div class="rail__zone">
-        {#if !collapsed}<div class="rail__zone-label">{zone.name}</div>{/if}
+        {#if !collapsed}
+          {#if zone.collapsible}
+            <button
+              class="rail__zone-label rail__zone-label--toggle"
+              class:rail__zone-label--folded={folded}
+              aria-expanded={!folded}
+              onclick={() => toggleZone(zone)}
+            >
+              <span class="rail__zone-chev" aria-hidden="true">{folded ? "›" : "⌄"}</span>
+              {zone.name}
+              {#if folded}<span class="rail__zone-count tnum">{zone.items.length}</span>{/if}
+            </button>
+          {:else}
+            <div class="rail__zone-label">{zone.name}</div>
+          {/if}
+        {/if}
+        {#if !folded}
         {#each zone.items as item (item.route)}
           {@const active = router.route === item.route}
           {@const n = badge(item.route)}
@@ -191,6 +244,7 @@
             </div>
           {/if}
         {/each}
+        {/if}
       </div>
     {/each}
   </div>
@@ -322,6 +376,37 @@
     padding: 0 var(--sp-5);
     margin-bottom: var(--sp-2);
     user-select: none;
+  }
+  /* Collapsible zone header — a full-width clickable row with a chevron and,
+     when folded, a count of the hidden items. */
+  .rail__zone-label--toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    width: 100%;
+    border: none;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    transition: color var(--dur-fast) var(--ease-out);
+  }
+  .rail__zone-label--toggle:hover {
+    color: var(--text-muted);
+  }
+  .rail__zone-chev {
+    font-size: var(--fs-label);
+    line-height: 1;
+    color: var(--text-ghost);
+  }
+  .rail__zone-count {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-ghost);
+  }
+  .rail__zone-label--toggle:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+    border-radius: var(--r-xs);
   }
 
   /* ITEM — fixed-height instrument row. The left edge, glyph, label and
