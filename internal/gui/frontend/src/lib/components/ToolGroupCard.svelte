@@ -158,7 +158,9 @@
       title={namesLine}
     >
       <span class="tg__glyphs" aria-hidden="true">
-        {#each previewGlyphs as g (g)}<span class="tg__glyph">{g}</span>{/each}
+        <!-- key by index: a group of same-kind tools repeats a glyph, and a
+             bare glyph key then throws each_key_duplicate and crashes the view. -->
+        {#each previewGlyphs as g, gi (gi)}<span class="tg__glyph">{g}</span>{/each}
       </span>
       <span class="tg__count">{count} tools</span>
       <span class="tg__names">{namesLine}</span>
