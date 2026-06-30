@@ -91,8 +91,14 @@ var Catalog = []ModelInfo{
 	// us.anthropic.claude-opus-4-8.
 	{ID: "us.anthropic.claude-opus-4-8", Provider: "converse", ContextWindow: 200000,
 		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
-	{ID: "us.anthropic.claude-sonnet-4-6", Provider: "converse", ContextWindow: 200000,
-		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, ThinkingBudget: 8192, EffortLevels: []string{"off", "low", "medium", "high", "xhigh"}, Vision: true},
+	// Sonnet 5 replaces sonnet-4-6. It moved to the newer adaptive thinking API
+	// (thinking.type=adaptive + output_config.effort, same as opus-4-8+) —
+	// sending the old thinking.type=enabled + budget_tokens shape 400s with
+	// "thinking.type.enabled is not supported for this model. Use
+	// thinking.type.adaptive". Effort (not ThinkingBudget) is what selects
+	// adaptive in converse.go.
+	{ID: "us.anthropic.claude-sonnet-5", Provider: "converse", ContextWindow: 200000,
+		Cache: true, Context1M: true, ContextWindow1M: 1000000, Reasoning: true, Effort: "high", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, Vision: true},
 	{ID: "us.anthropic.claude-3-5-sonnet", Provider: "converse", ContextWindow: 200000, Cache: true, Vision: true},
 	// Haiku 4.5: the small/fast/cheap model eigen uses for background chores
 	// (session titling, dreaming, skill vulnerability scans).

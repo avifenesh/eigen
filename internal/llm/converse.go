@@ -45,8 +45,9 @@ type Converse struct {
 	context1M bool
 
 	// adaptive selects the newer Anthropic thinking API
-	// (thinking.type=adaptive + output_config.effort) used by opus-4-8+, vs the
-	// older budget API (thinking.type=enabled + budget_tokens) used by sonnet-4-6.
+	// (thinking.type=adaptive + output_config.effort) used by opus-4-8+ and
+	// sonnet-5+, vs the older budget API (thinking.type=enabled +
+	// budget_tokens) used by sonnet-4-5 (native Anthropic) and earlier.
 	adaptive bool
 
 	mu             sync.RWMutex
@@ -561,9 +562,9 @@ func (c *Converse) Stream(ctx context.Context, req Request, sink StreamSink) (*R
 
 // additionalFields builds the additionalModelRequestFields JSON carrying the
 // 1M-context beta flag and the extended-thinking config, or nil when none
-// apply. Adaptive-thinking models (opus-4-8+) use thinking.type=adaptive with
-// output_config.effort; budget-style models (sonnet-4-6) use
-// thinking.type=enabled with budget_tokens.
+// apply. Adaptive-thinking models (opus-4-8+, sonnet-5+) use
+// thinking.type=adaptive with output_config.effort; budget-style models
+// (sonnet-4-5 native) use thinking.type=enabled with budget_tokens.
 func (c *Converse) additionalFields() json.RawMessage {
 	context1M, thinkingBudget, effort, adaptive := c.snapshotSettings()
 	return additionalConverseFields(context1M, thinkingBudget, effort, adaptive)

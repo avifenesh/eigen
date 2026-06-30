@@ -58,9 +58,9 @@ var routerScores = map[string]RouterScore{
 	"us.anthropic.claude-opus-4-8": {Tier: TierMed, Rank: 4, Speed: 48, Design: true},
 
 	// Tier 2 — simple-med (sonnet + glm-5.2). glm-5.2 is the user's flagship GLM
-	// and ranks ABOVE sonnet-4-6 here (Rank 4 > 3) — it wins a simple-med tie.
+	// and ranks ABOVE sonnet-5 here (Rank 4 > 3) — it wins a simple-med tie.
 	"glm-5.2":                        {Tier: TierSimpleMed, Rank: 4, Speed: 76},
-	"us.anthropic.claude-sonnet-4-6": {Tier: TierSimpleMed, Rank: 3, Speed: 74},
+	"us.anthropic.claude-sonnet-5":   {Tier: TierSimpleMed, Rank: 3, Speed: 74},
 	"us.anthropic.claude-3-5-sonnet": {Tier: TierSimpleMed, Rank: 1, Speed: 74},
 
 	// Tier 1 — simple (cheap/fast; grok/composer/glm/haiku/local).

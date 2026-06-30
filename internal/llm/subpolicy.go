@@ -15,7 +15,7 @@ import (
 //     low-but-valid) — not the old one-way "trivial→medium" downshift.
 //   - MODEL per type — capability is NOT price. A cheap model can be the BEST
 //     fit (glm-5.2: 1M ctx + reasoning + included web_search, stronger than
-//     sonnet-4.6 yet far cheaper) and an expensive one wrong for a job (grok has
+//     sonnet-5 yet far cheaper) and an expensive one wrong for a job (grok has
 //     search but is a poor researcher). Each type carries a preference LADDER;
 //     we pick the first model whose provider is credentialed, so the policy
 //     degrades gracefully (e.g. while the GLM account is suspended, research
@@ -124,11 +124,11 @@ func modelLadder(t SubagentType) []string {
 	switch t {
 	case TypeExplore:
 		// Cheap + fast: a fast code/cheap model is plenty to grep+read+report.
-		return []string{"grok-composer-2.5-fast", "glm-5.2", "us.anthropic.claude-haiku-4-5-20251001-v1:0", "us.anthropic.claude-sonnet-4-6"}
+		return []string{"grok-composer-2.5-fast", "glm-5.2", "us.anthropic.claude-haiku-4-5-20251001-v1:0", "us.anthropic.claude-sonnet-5"}
 	case TypeResearch:
 		// Strong reasoner with breadth; glm-5.2 is the cheap+capable sweet spot,
 		// then opus, then gpt. Grok is deliberately ABSENT — search ≠ research.
-		return []string{"glm-5.2", "us.anthropic.claude-opus-4-8", "openai.gpt-5.5", "us.anthropic.claude-sonnet-4-6"}
+		return []string{"glm-5.2", "us.anthropic.claude-opus-4-8", "openai.gpt-5.5", "us.anthropic.claude-sonnet-5"}
 	case TypeCode:
 		// Correctness-first; composer is fast+fine for code, opus for the hard
 		// stuff, glm capable+cheap as the middle.
@@ -139,7 +139,7 @@ func modelLadder(t SubagentType) []string {
 		// NEVER the top-tier default (no point self-grading on the same brain).
 		return []string{"openai.gpt-5.4", "glm-5.2", "us.anthropic.claude-haiku-4-5-20251001-v1:0", "openai.gpt-5.5"}
 	default: // general
-		return []string{"us.anthropic.claude-opus-4-8", "glm-5.2", "openai.gpt-5.5", "us.anthropic.claude-sonnet-4-6"}
+		return []string{"us.anthropic.claude-opus-4-8", "glm-5.2", "openai.gpt-5.5", "us.anthropic.claude-sonnet-5"}
 	}
 }
 
@@ -181,7 +181,7 @@ func modelCredentialed(modelID string) bool {
 // other capable models only if sonnet isn't credentialed.
 func DreamModelLadder() []string {
 	return []string{
-		"us.anthropic.claude-sonnet-4-6",
+		"us.anthropic.claude-sonnet-5",
 		"claude-sonnet-4-5-20250929",
 		"us.anthropic.claude-haiku-4-5-20251001-v1:0",
 		"openai.gpt-5.4",
