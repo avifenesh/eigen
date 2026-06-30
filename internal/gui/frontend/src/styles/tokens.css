@@ -51,9 +51,13 @@
   --brand-strong: #3e9e96;
   --brand-bright: #8ad6cc;
   --brand-dim: #2e7670;
-  --accent: #6f9bd0;
-  --accent-strong: #5577b8;
-  --accent-bright: #9cc0f0;
+  /* accent = a cyan SIBLING of the teal brand (was #6f9bd0, a foreign blue
+     ~40° off-hue that read as a second accent for links/info/tertiary buttons).
+     Pulled to ~H191 cyan so "interactive/info" stays distinct from brand teal
+     but reads as the same family, not a different color. */
+  --accent: #5fb0c4;
+  --accent-strong: #4795a8;
+  --accent-bright: #93cdda;
 
   /* SEMANTIC */
   --success: #8fc98a;
@@ -62,13 +66,17 @@
   --warn-bg: rgba(224, 179, 106, 0.12);
   --error: #d67e72;
   --error-bg: rgba(214, 126, 114, 0.13);
-  --info: #6f9bd0;
-  --info-bg: rgba(111, 155, 208, 0.12);
+  --info: #5fb0c4;
+  --info-bg: rgba(95, 176, 196, 0.12);
   --working: #d08c5e;
   --working-bg: rgba(208, 140, 94, 0.12);
 
   /* STATUS DOTS */
-  --dot-working: var(--working);
+  /* working dot = brand teal (not the orange --working) so it matches the teal
+     edge + halo of its own "working" row — previously a working session row
+     showed a teal filament AND an orange pulsing dot for the same state, the
+     one warm-on-teal clash in the app. Teal is the single "alive" accent. */
+  --dot-working: var(--brand);
   --dot-idle: var(--text-muted);
   --dot-ok: var(--success);
   --dot-warn: var(--warn);

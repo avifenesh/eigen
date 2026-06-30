@@ -109,7 +109,8 @@
     }
   }
 
-  /* The warm working halo lives only on the working state. It is a STATIC
+  /* The teal working halo lives only on the working state (matches the brand
+     "alive" accent + the working dot fill). It is a STATIC
      box-shadow — the dot's own breathe (opacity + sub-pixel scale) makes the
      whole dot+halo swell and fade as one heartbeat. Previously the halo
      animated box-shadow on its own infinite track, which WebKitGTK cannot
@@ -119,7 +120,7 @@
      for free. */
   .dot--glow {
     animation: dot-breathe var(--breath) var(--ease-inout) infinite;
-    box-shadow: var(--glow-working);
+    box-shadow: var(--glow-live);
     will-change: opacity, transform;
   }
 
@@ -132,7 +133,7 @@
     }
     /* Hold the working halo statically so the state still reads as alive. */
     .dot--glow {
-      box-shadow: var(--glow-working);
+      box-shadow: var(--glow-live);
     }
   }
 </style>
