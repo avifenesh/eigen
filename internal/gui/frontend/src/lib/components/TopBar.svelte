@@ -160,25 +160,27 @@
     background: var(--state-selected);
     color: var(--brand-bright);
   }
+  /* Opacity-only pulse — composites, no per-frame repaint. The old version
+     animated an expanding box-shadow ring (0→4px), which WebKitGTK repaints
+     every frame on the main thread; this bar is persistent and the pulse runs
+     the whole time ANY turn is active, so it competed with streaming/scroll
+     exactly when it mattered. A soft opacity breath reads the same. */
   .topbar__running-pulse {
     width: 7px;
     height: 7px;
     flex: 0 0 auto;
     border-radius: var(--r-full);
     background: var(--brand);
-    box-shadow: 0 0 0 0 var(--brand);
     animation: topbar-run-pulse var(--breath) var(--ease-inout) infinite;
-    will-change: opacity, box-shadow;
+    will-change: opacity;
   }
   @keyframes topbar-run-pulse {
     0%,
     100% {
       opacity: 1;
-      box-shadow: 0 0 0 0 rgba(105, 194, 184, 0.35);
     }
     50% {
-      opacity: 0.6;
-      box-shadow: 0 0 0 4px rgba(105, 194, 184, 0);
+      opacity: 0.5;
     }
   }
   .topbar__running-count {
