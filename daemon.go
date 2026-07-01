@@ -1051,8 +1051,7 @@ func telegramConfigured(cfg config.Config) bool {
 
 // telegramSupervisor keeps `eigen telegram` running: spawn it, and if it exits,
 // restart with capped backoff. Runs for the daemon's lifetime. The child shares
-// the daemon's env (token/allowlist) and is killed when the daemon's process
-// group is torn down.
+// the daemon's env (token/allowlist) and dies with the daemon (Pdeathsig).
 func telegramSupervisor() {
 	exe, err := os.Executable()
 	if err != nil {
@@ -1060,11 +1059,43 @@ func telegramSupervisor() {
 	}
 	backoff := 2 * time.Second
 	const maxBackoff = 60 * time.Second
+	standingBy := false
 	for {
+		// Probe the global bridge flock BEFORE spawning. When another process
+		// already holds the bot (an older daemon's orphaned bridge, a manual
+		// `eigen telegram`), spawning a child that instantly exits code 3 every
+		// backoff period is pure churn — thousands of failed starts in the
+		// daemon log. Probe-then-release races another starter, but the child
+		// re-acquires the lock itself, so losing the race just lands in the
+		// code-3 path once and returns here. Only a HELD lock (EWOULDBLOCK)
+		// means "stand by": any other error (lock file unwritable, bad perms)
+		// is a real failure that spawning wouldn't survive either — log it and
+		// retry with backoff rather than silently standing by forever.
+		if probe, perr := acquireTelegramLock(); perr != nil {
+			if errors.Is(perr, syscall.EWOULDBLOCK) {
+				if !standingBy {
+					fmt.Fprintln(os.Stderr, "eigen daemon: telegram bridge held elsewhere — standing by until the lock frees")
+					standingBy = true
+				}
+			} else {
+				fmt.Fprintf(os.Stderr, "eigen daemon: telegram lock probe failed: %v\n", perr)
+			}
+			time.Sleep(maxBackoff)
+			continue
+		} else {
+			probe.Close()
+		}
+		standingBy = false
 		cmd := exec.Command(exe, "telegram")
 		cmd.Env = os.Environ()
 		cmd.Stdout = os.Stderr // bridge logs ride the daemon log
 		cmd.Stderr = os.Stderr
+		// The bridge must not outlive this daemon: an orphaned bridge keeps the
+		// flock forever, so every later daemon's bridge loses the singleton and
+		// the bot silently answers from a stale binary. Death-with-parent kills
+		// the child when the spawning process dies, restart or crash alike
+		// (Linux PR_SET_PDEATHSIG; no-op elsewhere).
+		setDeathSig(cmd)
 		start := time.Now()
 		if err := cmd.Start(); err != nil {
 			fmt.Fprintf(os.Stderr, "eigen daemon: telegram bridge spawn failed: %v\n", err)
@@ -1074,11 +1105,9 @@ func telegramSupervisor() {
 		}
 		fmt.Fprintf(os.Stderr, "eigen daemon: telegram bridge started (pid %d)\n", cmd.Process.Pid)
 		werr := cmd.Wait()
-		// Exit code 3 = "another bridge already holds the bot" (lost the
-		// singleton lock). Don't tight-loop respawning a duplicate — back off
-		// to the max; the healthy bridge owns the bot.
+		// Exit code 3 = lost the singleton race after our probe passed. Loop
+		// back to the probe, which now sees the lock held and stands by quietly.
 		if exitCode(werr) == 3 {
-			time.Sleep(maxBackoff)
 			continue
 		}
 		// Ran a healthy while → reset backoff; crash-looped → keep backing off.

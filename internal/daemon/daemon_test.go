@@ -996,6 +996,82 @@ func TestGoalSetWakesAndContinuesUntilJudgeClears(t *testing.T) {
 	t.Fatalf("goal loop did not run until judge cleared it; goal=%q calls=%d", a.CurrentGoal(), prov.callCount())
 }
 
+// neverDoneProvider always answers with prose and never calls goal_achieved —
+// the judge never confirms, so without a cap the goal loop would wake forever.
+type neverDoneProvider struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (p *neverDoneProvider) Name() string    { return "never-done" }
+func (p *neverDoneProvider) ModelID() string { return "never-done" }
+func (p *neverDoneProvider) Complete(_ context.Context, _ llm.Request) (*llm.Response, error) {
+	p.mu.Lock()
+	p.calls++
+	p.mu.Unlock()
+	return &llm.Response{Text: "still not done"}, nil
+}
+
+func (p *neverDoneProvider) callCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.calls
+}
+
+func TestGoalWakeCapStopsUnconfirmedLoop(t *testing.T) {
+	prov := &neverDoneProvider{}
+	reg, _ := tool.NewRegistry(tool.GoalAchieved(func(context.Context, string) (bool, string, error) {
+		return false, "not confirmed", nil
+	}))
+	a := &agent.Agent{Provider: prov, Tools: reg, Perm: agent.PermAuto}
+	s := newSession("goalcap", "/tmp", "", a)
+	s.setGoal("a goal the judge never confirms")
+
+	// The loop must stop on its own: setGoal's start wake + maxGoalWakes
+	// continues, then the cap pauses it. Wait for the turn count to settle.
+	deadline := time.Now().Add(10 * time.Second)
+	settled := 0
+	last := -1
+	for time.Now().Before(deadline) {
+		s.mu.Lock()
+		running := s.running
+		s.mu.Unlock()
+		calls := prov.callCount()
+		if !running && calls == last {
+			settled++
+			if settled > 10 { // ~200ms with no new turns → loop stopped
+				break
+			}
+		} else {
+			settled = 0
+			last = calls
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	calls := prov.callCount()
+	// start wake (1) + maxGoalWakes continues; a small margin for scheduling.
+	if calls == 0 || calls > maxGoalWakes+2 {
+		t.Fatalf("goal wake loop did not stop at the cap: %d turns (cap %d)", calls, maxGoalWakes)
+	}
+	if a.CurrentGoal() == "" {
+		t.Fatal("goal should still be set after the cap pauses auto-continue")
+	}
+
+	// User input resets the budget: the wake loop resumes for another turn.
+	s.resetGoalWakes()
+	if !s.send("keep going", nil, nil) {
+		t.Fatal("send after cap should start a turn")
+	}
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if prov.callCount() > calls+1 { // the user turn plus at least one fresh auto-wake
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("goal auto-continue did not resume after user input; calls=%d (was %d)", prov.callCount(), calls)
+}
+
 func TestStatsOp(t *testing.T) {
 	sock := filepath.Join(t.TempDir(), "d.sock")
 	host := NewHost()
