@@ -8,7 +8,33 @@
   import { daemon } from "$lib/stores/daemon.svelte";
   import { feed } from "$lib/stores/feed.svelte";
   import { ui } from "$lib/stores/ui.svelte";
+  import { prefetch } from "$lib/prefetch";
   import StatusDot from "$lib/components/StatusDot.svelte";
+
+  // Hover-intent prefetch: the router fully unmounts/remounts a view on every
+  // nav switch, so the click itself starts the fetch the user is about to wait
+  // on. Firing the same fetch on a deliberate hover (not a cursor sweep) means
+  // it's often done — or well underway — by the time the click lands. Shorter
+  // than Tooltip's 400ms: hovering long enough to read a label/aim a click
+  // already implies real intent, no need to wait as long as a label reveal.
+  const HOVER_DELAY = 150;
+  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+  function scheduleHoverPrefetch(route: Route) {
+    clearHoverPrefetch();
+    hoverTimer = setTimeout(() => prefetch(route), HOVER_DELAY);
+  }
+  function clearHoverPrefetch() {
+    if (hoverTimer !== undefined) {
+      clearTimeout(hoverTimer);
+      hoverTimer = undefined;
+    }
+  }
+  // Rail is rendered outside the route {#if} chain (see App.svelte), so it
+  // only unmounts on full app teardown — but a pending timer firing into a
+  // dead app on close is a needless leak regardless of how rarely it matters.
+  $effect(() => {
+    return () => clearHoverPrefetch();
+  });
 
   type Item = { route: Route; label: string; glyph: string };
   // collapsible zones fold behind their label (a click toggles). The System
@@ -211,6 +237,8 @@
             aria-current={active ? "page" : undefined}
             title={collapsed ? item.label : undefined}
             onclick={() => router.go(item.route)}
+            onpointerenter={() => scheduleHoverPrefetch(item.route)}
+            onpointerleave={clearHoverPrefetch}
           >
             <span class="rail__edge" aria-hidden="true"></span>
             <span class="rail__glyph" aria-hidden="true">{item.glyph}</span>

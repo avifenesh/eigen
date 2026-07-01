@@ -10,6 +10,7 @@
   import { Bridge } from "$lib/bridge";
   import { errText } from "$lib/errors";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { viewCache } from "$lib/stores/viewCache.svelte";
   import { relTime } from "$lib/status";
   import type { PluginsDTO, InstalledPluginDTO, PluginPreviewDTO } from "$lib/types";
   import { SvelteSet } from "svelte/reactivity";
@@ -20,7 +21,8 @@
   import EmptyState from "$lib/components/EmptyState.svelte";
   import Skeleton from "$lib/components/Skeleton.svelte";
 
-  let data = $state<PluginsDTO | null>(null);
+  const CACHE_KEY = "plugins";
+  let data = $state<PluginsDTO | null>(viewCache.get<PluginsDTO>(CACHE_KEY) ?? null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let acting = $state<Record<string, boolean>>({});
@@ -76,6 +78,7 @@
       toasts.success(`added marketplace ${mkt.name}`);
       mktSource = "";
       await loadPreviews(mkt.name);
+      viewCache.invalidate(CACHE_KEY);
       await load(); // the new marketplace lands in the Marketplaces section too
     } catch (e) {
       toasts.error(errText(e));
@@ -111,6 +114,7 @@
       const inst = await Bridge.InstallPlugin(p.name, p.marketplace);
       toasts.success(`installed ${inst?.name ?? p.name}`);
       previews = previews.filter((x) => x.name !== p.name);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       const msg = errText(e);
@@ -118,6 +122,7 @@
         // Benign: we already have it. Drop the row and refresh so it shows up.
         toasts.info(msg);
         previews = previews.filter((x) => x.name !== p.name);
+        viewCache.invalidate(CACHE_KEY);
         await load();
       } else {
         // RISKY bundle (no force path by design) or no credentialed scanner —
@@ -136,7 +141,7 @@
     error = null;
     confirming = null; // a refresh clears any dangling inline Uninstall?/Remove?
     try {
-      const d = await Bridge.Plugins();
+      const d = await viewCache.fetch(CACHE_KEY, () => Bridge.Plugins());
       if (seq === loadSeq) data = d;
     } catch (e) {
       if (seq === loadSeq) error = errText(e);
@@ -179,6 +184,7 @@
       const ok = await Bridge.RemovePlugin(name);
       if (ok) toasts.success(`uninstalled ${name}`);
       else toasts.info(`${name} was not installed`);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -191,6 +197,7 @@
     try {
       await Bridge.SetMarketEnabled(name, enabled);
       toasts.success(`${enabled ? "enabled" : "disabled"} ${name}`);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -204,6 +211,7 @@
     try {
       const ok = await Bridge.RemoveMarketplace(name);
       toasts.info(ok ? `removed marketplace ${name}` : `${name} not found`);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));

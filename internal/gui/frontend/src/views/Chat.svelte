@@ -36,6 +36,7 @@
   import DiffPanel from "$lib/components/DiffPanel.svelte";
   import FilesPanel from "$lib/components/FilesPanel.svelte";
   import BrowserPanel from "$lib/components/BrowserPanel.svelte";
+  import Tooltip from "$lib/components/Tooltip.svelte";
 
   let { param }: { param?: string } = $props();
 
@@ -1920,7 +1921,9 @@
         <!-- COLLAPSED — a thin glyph rail. The toggle expands; a glyph expands to
              that tab. -->
         <div class="dock__rail">
-          <button class="dock__railbtn" onclick={toggleDockCollapsed} title="Expand tools panel" aria-label="Expand tools panel">«</button>
+          <Tooltip text="Expand tools panel" placement="right">
+            <button class="dock__railbtn" onclick={toggleDockCollapsed} aria-label="Expand tools panel">«</button>
+          </Tooltip>
           {#each dockTabs as t (t.id)}
             <button
               class="dock__railbtn"
@@ -1946,7 +1949,9 @@
             onclick={() => setDockTab(t.id)}
           >{t.label}</button>
         {/each}
-        <button class="dock__collapse" onclick={toggleDockCollapsed} title="Collapse tools panel" aria-label="Collapse tools panel">»</button>
+        <Tooltip text="Collapse tools panel" placement="left">
+          <button class="dock__collapse" onclick={toggleDockCollapsed} aria-label="Collapse tools panel">»</button>
+        </Tooltip>
       </div>
       {/if}
 
@@ -2109,7 +2114,9 @@
           <span class="dock__label">session</span>
           <Popover label="Session actions" align="end" bind:open={menuOpen}>
             {#snippet trigger(toggle)}
-              <Button variant="icon" size="sm" onclick={toggle} title="Session actions">⋯</Button>
+              <Tooltip text="Session actions">
+                <Button variant="icon" size="sm" onclick={toggle} ariaLabel="Session actions">⋯</Button>
+              </Tooltip>
             {/snippet}
             {@const busy = store?.running ?? false}
             <div class="menu">

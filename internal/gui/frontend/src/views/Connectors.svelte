@@ -8,6 +8,7 @@
   import { Bridge } from "$lib/bridge";
   import { errText } from "$lib/errors";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { viewCache } from "$lib/stores/viewCache.svelte";
   import { ev, on } from "$lib/events";
   import type {
     ConnectorsDTO,
@@ -27,9 +28,12 @@
   import Skeleton from "$lib/components/Skeleton.svelte";
   import { Browser } from "@wailsio/runtime";
 
-  let conns = $state<ConnectorsDTO | null>(null);
-  let servers = $state<MCPServersDTO | null>(null);
-  let gstatus = $state<GoogleStatusDTO | null>(null);
+  const CACHE_KEY = "connectors";
+  type CachedConnectors = { c: ConnectorsDTO; s: MCPServersDTO; g: GoogleStatusDTO };
+  const cached = viewCache.get<CachedConnectors>(CACHE_KEY);
+  let conns = $state<ConnectorsDTO | null>(cached?.c ?? null);
+  let servers = $state<MCPServersDTO | null>(cached?.s ?? null);
+  let gstatus = $state<GoogleStatusDTO | null>(cached?.g ?? null);
   let gBusy = $state(false);
   let obsidian = $state<ObsidianStatusDTO | null>(null);
   let revuto = $state<RevutoStatusDTO | null>(null);
@@ -42,6 +46,8 @@
   let error = $state<string | null>(null);
   let busy = $state<Record<string, boolean>>({});
   let connecting = $state<Record<string, boolean>>({}); // name → OAuth flow in flight
+  let confirmRemoveConnector = $state<Record<string, boolean>>({});
+  let confirmRemoveServer = $state<Record<string, boolean>>({});
 
   // Add-connector form.
   let addOpen = $state(false);
@@ -67,7 +73,10 @@
     loading = true;
     error = null;
     try {
-      const [c, s, g] = await Promise.all([Bridge.Connectors(), Bridge.MCPServers(), Bridge.GoogleStatus()]);
+      const { c, s, g } = await viewCache.fetch(CACHE_KEY, async () => {
+        const [c, s, g] = await Promise.all([Bridge.Connectors(), Bridge.MCPServers(), Bridge.GoogleStatus()]);
+        return { c, s, g };
+      });
       if (alive && seq === loadSeq) {
         conns = c;
         servers = s;
@@ -95,6 +104,7 @@
       connecting[d.name] = false;
       if (d.ok) toasts.success(`${d.name} connected`);
       else toasts.error(`${d.name}: ${d.error || "authorization failed"}`);
+      viewCache.invalidate(CACHE_KEY);
       load();
     });
     return () => {
@@ -118,6 +128,7 @@
       toasts.info(`Opening browser to authorize ${name}…`);
       addOpen = false;
       addName = addURL = addDesc = "";
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -132,6 +143,7 @@
     try {
       await Bridge.AddCatalogConnector(e.name);
       toasts.info(`Opening browser to authorize ${e.display}…`);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (err) {
       connecting[e.name] = false;
@@ -155,6 +167,7 @@
     try {
       await Bridge.DisconnectConnector(c.name);
       toasts.success(`${c.name} disconnected`);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -165,9 +178,11 @@
 
   async function removeConnector(c: ConnectorDTO) {
     busy[c.name] = true;
+    delete confirmRemoveConnector[c.name];
     try {
       await Bridge.RemoveConnector(c.name);
       toasts.success(`${c.name} removed`);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -180,6 +195,7 @@
     busy[s.name] = true;
     try {
       await Bridge.SetMCPServerDisabled(s.name, !s.disabled);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -190,9 +206,11 @@
 
   async function removeServer(s: MCPServerDTO) {
     busy[s.name] = true;
+    delete confirmRemoveServer[s.name];
     try {
       await Bridge.RemoveMCPServer(s.name);
       toasts.success(`${s.name} removed`);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -265,6 +283,7 @@
       const imported = await Bridge.ImportGoogleClient();
       if (imported) {
         toasts.success("Google client imported — now click Connect");
+        viewCache.invalidate(CACHE_KEY);
         await load();
       }
     } catch (e) {
@@ -280,6 +299,7 @@
       toasts.info("Opening browser to authorize Google…");
       await Bridge.ConnectGoogle();
       toasts.success("Google connected");
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -292,6 +312,7 @@
     try {
       await Bridge.DisconnectGoogle();
       toasts.success("Google disconnected");
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -330,6 +351,7 @@
       toasts.success(`${name} saved`);
       srvOpen = false;
       srvName = srvCommand = srvDesc = srvEnv = srvSecret = "";
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -526,7 +548,12 @@
                       {connecting[c.name] ? "Authorizing…" : "Connect"}
                     </Button>
                   {/if}
-                  <Button variant="ghost" disabled={busy[c.name]} onclick={() => removeConnector(c)}>Remove</Button>
+                  {#if confirmRemoveConnector[c.name]}
+                    <Button variant="danger" loading={busy[c.name]} onclick={() => removeConnector(c)}>Confirm</Button>
+                    <Button variant="ghost" disabled={busy[c.name]} onclick={() => delete confirmRemoveConnector[c.name]}>Cancel</Button>
+                  {:else}
+                    <Button variant="ghost" disabled={busy[c.name]} onclick={() => (confirmRemoveConnector[c.name] = true)}>Remove</Button>
+                  {/if}
                 </div>
               </div>
             </Card>
@@ -627,7 +654,12 @@
                   <Button variant="secondary" disabled={busy[s.name]} onclick={() => toggleServer(s)}>
                     {s.disabled ? "Enable" : "Disable"}
                   </Button>
-                  <Button variant="ghost" disabled={busy[s.name]} onclick={() => removeServer(s)}>Remove</Button>
+                  {#if confirmRemoveServer[s.name]}
+                    <Button variant="danger" loading={busy[s.name]} onclick={() => removeServer(s)}>Confirm</Button>
+                    <Button variant="ghost" disabled={busy[s.name]} onclick={() => delete confirmRemoveServer[s.name]}>Cancel</Button>
+                  {:else}
+                    <Button variant="ghost" disabled={busy[s.name]} onclick={() => (confirmRemoveServer[s.name] = true)}>Remove</Button>
+                  {/if}
                 </div>
               </div>
             </Card>

@@ -20,6 +20,7 @@
   import EmptyState from "$lib/components/EmptyState.svelte";
   import Segmented from "$lib/components/Segmented.svelte";
   import Skeleton from "$lib/components/Skeleton.svelte";
+  import Tooltip from "$lib/components/Tooltip.svelte";
   import { trapFocus } from "$lib/actions";
 
   // The selectable scopes (Global first, then every known project). The picker
@@ -301,7 +302,9 @@
         <h2 class="sheet__title">Consolidation diff</h2>
         <Badge tone="neutral">{openCons.label} → current</Badge>
       </div>
-      <Button variant="icon" size="md" title="Close" onclick={closeDiff}>✕</Button>
+      <Tooltip text="Close">
+        <Button variant="icon" size="md" ariaLabel="Close" onclick={closeDiff}>✕</Button>
+      </Tooltip>
     </header>
     <div class="sheet__body">
       {#if diffLoading}

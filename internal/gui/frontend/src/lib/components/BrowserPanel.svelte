@@ -7,6 +7,7 @@
   // Wails Browser.OpenURL. No history/tabs — one navigable frame, kept simple.
   import { untrack } from "svelte";
   import { Browser } from "@wailsio/runtime";
+  import Tooltip from "./Tooltip.svelte";
 
   let { initialUrl = "" }: { initialUrl?: string } = $props();
 
@@ -64,7 +65,9 @@
     />
     <button class="bp__btn" onclick={go} title="Go">go</button>
     {#if url}
-      <button class="bp__btn" onclick={openExternal} title="Open in your default browser">↗</button>
+      <Tooltip text="Open in your default browser">
+        <button class="bp__btn" onclick={openExternal} aria-label="Open in your default browser">↗</button>
+      </Tooltip>
     {/if}
   </div>
   <div class="bp__view">

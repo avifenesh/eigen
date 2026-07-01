@@ -13,6 +13,7 @@
   import { Bridge } from "$lib/bridge";
   import { errText } from "$lib/errors";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { viewCache } from "$lib/stores/viewCache.svelte";
   import type { CronsDTO, CronDTO } from "$lib/types";
   import Card from "$lib/components/Card.svelte";
   import Button from "$lib/components/Button.svelte";
@@ -21,18 +22,25 @@
   import EmptyState from "$lib/components/EmptyState.svelte";
   import Skeleton from "$lib/components/Skeleton.svelte";
 
-  let data = $state<CronsDTO | null>(null);
+  const CACHE_KEY = "crons";
+  let data = $state<CronsDTO | null>(viewCache.get<CronsDTO>(CACHE_KEY) ?? null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let acting = $state<Record<string, boolean>>({});
+  let confirmRemove = $state<Record<string, boolean>>({});
 
+  // The router fully unmounts/remounts this view on every nav switch (no
+  // keep-alive), so without a cache every revisit re-fetches from zero —
+  // Bridge.Crons() fans out into systemctl subprocess spawns underneath, the
+  // single most expensive bridge call in the app. viewCache lets a revisit
+  // paint the previous result instantly while this refresh runs behind it.
   let loadSeq = 0;
   async function load() {
     const seq = ++loadSeq;
     loading = true;
     error = null;
     try {
-      const d = await Bridge.Crons();
+      const d = await viewCache.fetch(CACHE_KEY, () => Bridge.Crons());
       if (seq === loadSeq) data = d;
     } catch (e) {
       if (seq === loadSeq) error = errText(e);
@@ -202,6 +210,7 @@
     try {
       await Bridge.SetTimer(c.unit, verb);
       toasts.success(`${verb} ${c.name}`);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -236,6 +245,7 @@
       toasts.success("Scheduled job added");
       addOpen = false;
       addSpec = addCmd = "";
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -247,9 +257,11 @@
   async function removeJob(c: CronRow) {
     const key = c.next + c.command;
     acting[key] = true;
+    delete confirmRemove[key];
     try {
       await Bridge.RemoveCrontab(c.next, c.command);
       toasts.success("Removed");
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -396,7 +408,12 @@
                     <div class="cron__cmd selectable">{c.command}</div>
                   </div>
                   <div class="cron__actions">
-                    <Button variant="ghost" size="sm" loading={acting[c.next + c.command]} onclick={() => removeJob(c)}>Remove</Button>
+                    {#if confirmRemove[c.next + c.command]}
+                      <Button variant="danger" size="sm" loading={acting[c.next + c.command]} onclick={() => removeJob(c)}>Confirm</Button>
+                      <Button variant="ghost" size="sm" disabled={acting[c.next + c.command]} onclick={() => delete confirmRemove[c.next + c.command]}>Cancel</Button>
+                    {:else}
+                      <Button variant="ghost" size="sm" onclick={() => (confirmRemove[c.next + c.command] = true)}>Remove</Button>
+                    {/if}
                   </div>
                 </div>
               </Card>

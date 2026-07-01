@@ -20,6 +20,7 @@
   import VirtualList from "$lib/components/VirtualList.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import Skeleton from "$lib/components/Skeleton.svelte";
+  import Tooltip from "$lib/components/Tooltip.svelte";
 
   let data = $state<TasksDTO | null>(null);
   let loading = $state(true);
@@ -380,7 +381,9 @@
         <h2 class="sheet__title tnum">{openTask.id}</h2>
         <Badge tone={tone(openTask.status)}>{openTask.status}</Badge>
       </div>
-      <Button variant="icon" size="md" title="Close" onclick={closeTranscript}>✕</Button>
+      <Tooltip text="Close">
+        <Button variant="icon" size="md" ariaLabel="Close" onclick={closeTranscript}>✕</Button>
+      </Tooltip>
     </header>
     {#if openTask.model || openTask.kind || openTask.difficulty || openTask.where}
       <div class="sheet__route">
