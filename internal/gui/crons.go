@@ -73,6 +73,10 @@ func loadSystemdTimers() ([]CronDTO, bool) {
 	// (per timer, in parallel with each other) instead of 2N sequential spawns —
 	// on a machine with a dozen timers that's the difference between ~150ms and
 	// ~15ms for a view that re-fetches on every nav click (no caching upstream).
+	// A semaphore caps how many of those spawns run at once — unbounded fan-out
+	// on a machine with dozens of timers would otherwise hit fd/process limits.
+	const maxConcurrentSpawns = 8
+	sem := make(chan struct{}, maxConcurrentSpawns)
 	rows := make([]CronDTO, len(timers))
 	var wg sync.WaitGroup
 	for i, t := range timers {
@@ -82,8 +86,18 @@ func loadSystemdTimers() ([]CronDTO, bool) {
 			var active, enabled bool
 			var iwg sync.WaitGroup
 			iwg.Add(2)
-			go func() { defer iwg.Done(); active = timerIsActive(t.Unit) }()
-			go func() { defer iwg.Done(); enabled = timerIsEnabled(t.Unit) }()
+			go func() {
+				defer iwg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				active = timerIsActive(t.Unit)
+			}()
+			go func() {
+				defer iwg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				enabled = timerIsEnabled(t.Unit)
+			}()
 			iwg.Wait()
 			rows[i] = CronDTO{
 				Name:    strings.TrimSuffix(t.Unit, ".timer"),

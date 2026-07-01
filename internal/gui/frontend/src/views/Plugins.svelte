@@ -78,6 +78,7 @@
       toasts.success(`added marketplace ${mkt.name}`);
       mktSource = "";
       await loadPreviews(mkt.name);
+      viewCache.invalidate(CACHE_KEY);
       await load(); // the new marketplace lands in the Marketplaces section too
     } catch (e) {
       toasts.error(errText(e));
@@ -113,6 +114,7 @@
       const inst = await Bridge.InstallPlugin(p.name, p.marketplace);
       toasts.success(`installed ${inst?.name ?? p.name}`);
       previews = previews.filter((x) => x.name !== p.name);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       const msg = errText(e);
@@ -120,6 +122,7 @@
         // Benign: we already have it. Drop the row and refresh so it shows up.
         toasts.info(msg);
         previews = previews.filter((x) => x.name !== p.name);
+        viewCache.invalidate(CACHE_KEY);
         await load();
       } else {
         // RISKY bundle (no force path by design) or no credentialed scanner —
@@ -181,6 +184,7 @@
       const ok = await Bridge.RemovePlugin(name);
       if (ok) toasts.success(`uninstalled ${name}`);
       else toasts.info(`${name} was not installed`);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -193,6 +197,7 @@
     try {
       await Bridge.SetMarketEnabled(name, enabled);
       toasts.success(`${enabled ? "enabled" : "disabled"} ${name}`);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -206,6 +211,7 @@
     try {
       const ok = await Bridge.RemoveMarketplace(name);
       toasts.info(ok ? `removed marketplace ${name}` : `${name} not found`);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));

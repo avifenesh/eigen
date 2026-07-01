@@ -33,14 +33,21 @@ function createViewCache() {
     }
     const p = fn()
       .then((data) => {
-        entries.set(key, { data, ts: Date.now() });
+        // Only write back if this is still the entry's active promise — an
+        // invalidate() or a newer fetchKey() call for the same key may have
+        // superseded it while this one was in flight, and writing a late
+        // result over that newer state would resurrect stale data.
+        const cur = entries.get(key);
+        if (cur && cur.promise === p) {
+          entries.set(key, { data, ts: Date.now() });
+        }
         return data;
       })
       .catch((err) => {
         // Drop the in-flight marker but keep any prior stale data — a failed
         // refresh shouldn't strand the cache pointing at a dead promise.
         const cur = entries.get(key);
-        if (cur) cur.promise = undefined;
+        if (cur && cur.promise === p) cur.promise = undefined;
         throw err;
       });
     entries.set(key, { data: e?.data, ts: e?.ts ?? 0, promise: p });

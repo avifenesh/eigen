@@ -104,6 +104,7 @@
       connecting[d.name] = false;
       if (d.ok) toasts.success(`${d.name} connected`);
       else toasts.error(`${d.name}: ${d.error || "authorization failed"}`);
+      viewCache.invalidate(CACHE_KEY);
       load();
     });
     return () => {
@@ -127,6 +128,7 @@
       toasts.info(`Opening browser to authorize ${name}…`);
       addOpen = false;
       addName = addURL = addDesc = "";
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -141,6 +143,7 @@
     try {
       await Bridge.AddCatalogConnector(e.name);
       toasts.info(`Opening browser to authorize ${e.display}…`);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (err) {
       connecting[e.name] = false;
@@ -164,6 +167,7 @@
     try {
       await Bridge.DisconnectConnector(c.name);
       toasts.success(`${c.name} disconnected`);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -178,6 +182,7 @@
     try {
       await Bridge.RemoveConnector(c.name);
       toasts.success(`${c.name} removed`);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -190,6 +195,7 @@
     busy[s.name] = true;
     try {
       await Bridge.SetMCPServerDisabled(s.name, !s.disabled);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -204,6 +210,7 @@
     try {
       await Bridge.RemoveMCPServer(s.name);
       toasts.success(`${s.name} removed`);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -276,6 +283,7 @@
       const imported = await Bridge.ImportGoogleClient();
       if (imported) {
         toasts.success("Google client imported — now click Connect");
+        viewCache.invalidate(CACHE_KEY);
         await load();
       }
     } catch (e) {
@@ -291,6 +299,7 @@
       toasts.info("Opening browser to authorize Google…");
       await Bridge.ConnectGoogle();
       toasts.success("Google connected");
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -303,6 +312,7 @@
     try {
       await Bridge.DisconnectGoogle();
       toasts.success("Google disconnected");
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -341,6 +351,7 @@
       toasts.success(`${name} saved`);
       srvOpen = false;
       srvName = srvCommand = srvDesc = srvEnv = srvSecret = "";
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));

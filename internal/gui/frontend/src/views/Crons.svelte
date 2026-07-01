@@ -210,6 +210,7 @@
     try {
       await Bridge.SetTimer(c.unit, verb);
       toasts.success(`${verb} ${c.name}`);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -244,6 +245,7 @@
       toasts.success("Scheduled job added");
       addOpen = false;
       addSpec = addCmd = "";
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -259,6 +261,7 @@
     try {
       await Bridge.RemoveCrontab(c.next, c.command);
       toasts.success("Removed");
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));

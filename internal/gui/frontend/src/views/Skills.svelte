@@ -56,6 +56,7 @@
       if (res) {
         toasts.success(`installed “${res.name}” → ${res.path}`);
         addInput = "";
+        viewCache.invalidate(CACHE_KEY);
         await load();
       } else {
         toasts.info("nothing installed");
@@ -203,6 +204,7 @@
     try {
       await Bridge.AcceptSkill(name);
       toasts.success(`accepted “${name}”`);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -215,6 +217,7 @@
     try {
       await Bridge.RejectSkill(name);
       toasts.info(`rejected “${name}”`);
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));
@@ -232,6 +235,7 @@
       await Bridge.RemoveSkill(name);
       toasts.success(`removed “${name}”`);
       closePreview();
+      viewCache.invalidate(CACHE_KEY);
       await load();
     } catch (e) {
       toasts.error(errText(e));

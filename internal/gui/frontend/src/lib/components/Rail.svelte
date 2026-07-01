@@ -29,6 +29,12 @@
       hoverTimer = undefined;
     }
   }
+  // Rail is rendered outside the route {#if} chain (see App.svelte), so it
+  // only unmounts on full app teardown — but a pending timer firing into a
+  // dead app on close is a needless leak regardless of how rarely it matters.
+  $effect(() => {
+    return () => clearHoverPrefetch();
+  });
 
   type Item = { route: Route; label: string; glyph: string };
   // collapsible zones fold behind their label (a click toggles). The System

@@ -177,6 +177,7 @@
       draft = "";
       composing = false;
       toasts.success("note saved");
+      viewCache.invalidate(scopeCacheKey(scope));
       await loadScope(scope);
     } catch (e) {
       toasts.error(errText(e));
@@ -208,6 +209,10 @@
     try {
       await Bridge.MoveMemoryNote(scope, dstKey, text);
       toasts.success(`moved to ${dstName} memory`);
+      // The note lands in dstKey's scope too — bust its cache so a later visit
+      // there doesn't show a pre-move snapshot missing the moved note.
+      viewCache.invalidate(scopeCacheKey(scope));
+      viewCache.invalidate(scopeCacheKey(dstKey));
       await loadScope(scope);
     } catch (e) {
       toasts.error(errText(e));
@@ -231,6 +236,7 @@
       banRule = "";
       addingBan = false;
       toasts.success(replaced ? "ban updated" : "ban added");
+      viewCache.invalidate(scopeCacheKey(scope));
       await loadScope(scope);
     } catch (e) {
       toasts.error(errText(e));
@@ -243,6 +249,7 @@
     try {
       const removed = await Bridge.RemoveBan(scope, title);
       if (removed) toasts.success("ban removed");
+      viewCache.invalidate(scopeCacheKey(scope));
       await loadScope(scope);
     } catch (e) {
       toasts.error(errText(e));
@@ -257,6 +264,7 @@
     try {
       await Bridge.RemoveMemoryNote(scope, index);
       toasts.success("note removed");
+      viewCache.invalidate(scopeCacheKey(scope));
       await loadScope(scope);
     } catch (e) {
       toasts.error(errText(e));
@@ -271,6 +279,7 @@
     try {
       await Bridge.RemoveAdHocMemoryNote(scope, index);
       toasts.success("saved note deleted");
+      viewCache.invalidate(scopeCacheKey(scope));
       await loadScope(scope);
     } catch (e) {
       toasts.error(errText(e));
@@ -332,6 +341,7 @@
       await Bridge.WriteUserProfile(profileDraft);
       editingProfile = false;
       toasts.success("profile saved");
+      viewCache.invalidate(scopeCacheKey(scope));
       await loadScope(scope);
     } catch (e) {
       toasts.error(errText(e));
