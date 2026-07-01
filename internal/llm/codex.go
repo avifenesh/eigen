@@ -11,8 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // Codex drives an OpenAI model through the **Codex** backend — the same path
@@ -345,10 +346,10 @@ func (c *Codex) refreshWithLock(ctx context.Context, refresh string) error {
 		return fmt.Errorf("open lock file: %w", err)
 	}
 	defer lockFile.Close()
-	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX); err != nil {
 		return fmt.Errorf("acquire flock: %w", err)
 	}
-	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+	defer unix.Flock(int(lockFile.Fd()), unix.LOCK_UN)
 	// RE-CHECK: the other process may have already refreshed while we waited.
 	// Read auth.json again and see if the tokens changed (last_refresh updated
 	// or access_token changed). If so, load the new tokens and skip our refresh.

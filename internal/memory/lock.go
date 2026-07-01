@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 // lockStore acquires an exclusive advisory lock on this store's .memory.lock
@@ -32,7 +33,7 @@ func (s *Store) lockStore() (release func(), err error) {
 		return nil, fmt.Errorf("open lock file: %w", err)
 	}
 	// Exclusive (LOCK_EX) advisory lock — blocks until acquired.
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX); err != nil {
 		_ = f.Close()
 		return nil, fmt.Errorf("flock: %w", err)
 	}
@@ -40,7 +41,7 @@ func (s *Store) lockStore() (release func(), err error) {
 	// (idempotent) — the second call is a no-op once f is nil.
 	return func() {
 		if f != nil {
-			_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) // unlock (redundant: close does it)
+			_ = unix.Flock(int(f.Fd()), unix.LOCK_UN) // unlock (redundant: close does it)
 			_ = f.Close()
 			f = nil
 		}

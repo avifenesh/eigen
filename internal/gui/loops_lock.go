@@ -3,6 +3,7 @@ package gui
 import (
 	"os"
 	"path/filepath"
+	"sync"
 
 	"golang.org/x/sys/unix"
 )
@@ -26,12 +27,26 @@ import (
 // surviving process crashes (kernel releases it), so a crashed GUI doesn't
 // strand loop ownership.
 func AcquireLoopOwnership() (release func(), acquired bool) {
+	return acquireLoopOwnershipAt(defaultLockPath())
+}
+
+// defaultLockPath returns ~/.eigen/gui-loops.lock (the production lock path).
+func defaultLockPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".eigen", "gui-loops.lock")
+}
+
+// acquireLoopOwnershipAt is the internal implementation; AcquireLoopOwnership
+// calls it with defaultLockPath(), tests call it with a temp-isolated path.
+func acquireLoopOwnershipAt(lockPath string) (release func(), acquired bool) {
+	if lockPath == "" {
 		return func() {}, false
 	}
-	lockPath := filepath.Join(home, ".eigen", "gui-loops.lock")
-	// Ensure .eigen exists (the daemon already creates it, but this is defensive).
+	// Ensure the parent dir exists (the daemon already creates ~/.eigen, but
+	// this is defensive + required for test temp dirs).
 	_ = os.MkdirAll(filepath.Dir(lockPath), 0755)
 
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
@@ -46,9 +61,13 @@ func AcquireLoopOwnership() (release func(), acquired bool) {
 	}
 	// Acquired. Return a release func that unlocks + closes the file. Stop() MUST
 	// call this or the lock leaks (the kernel releases it on process exit, but we
-	// want explicit release so a GUI restart can immediately reacquire).
+	// want explicit release so a GUI restart can immediately reacquire). The
+	// release func is idempotent: double-release (defer + explicit) is safe.
+	var once sync.Once
 	return func() {
-		_ = unix.Flock(int(f.Fd()), unix.LOCK_UN)
-		_ = f.Close()
+		once.Do(func() {
+			_ = unix.Flock(int(f.Fd()), unix.LOCK_UN)
+			_ = f.Close()
+		})
 	}, true
 }

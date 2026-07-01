@@ -58,6 +58,7 @@ func runGUIServerCmd() {
 	}
 	if err := os.Chmod(sockPath, 0600); err != nil {
 		ln.Close()
+		_ = os.Remove(sockPath) // clean up the socket file on chmod failure
 		fail(fmt.Errorf("guiserver chmod: %w", err))
 	}
 	defer func() {
@@ -142,6 +143,9 @@ func (s *guiServer) handleConn(ctx context.Context, raw net.Conn) {
 
 	// First line declares role: {"role":"rpc"} or {"role":"events"}.
 	if !sc.Scan() {
+		if err := sc.Err(); err != nil {
+			fmt.Fprintf(os.Stderr, "guiserver: scanner error on role read: %v\n", err)
+		}
 		return
 	}
 	var roleMsg struct {
@@ -230,6 +234,10 @@ func (s *guiServer) handleRPC(gc *guiConn, sc *bufio.Scanner) {
 			_ = send(rpcResponse{ID: r.ID, Result: result})
 		}(req)
 	}
+	// Log scanner errors (e.g., line exceeds 32MB budget).
+	if err := sc.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "guiserver: rpc scanner error: %v\n", err)
+	}
 }
 
 func (s *guiServer) handleEvents(gc *guiConn, sc *bufio.Scanner) {
@@ -270,6 +278,10 @@ func (s *guiServer) handleEvents(gc *guiConn, sc *bufio.Scanner) {
 		for _, ch := range msg.Unsub {
 			sub.unsubscribe(ch)
 		}
+	}
+	// Log scanner errors (e.g., line exceeds 32MB budget).
+	if err := sc.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "guiserver: events scanner error: %v\n", err)
 	}
 }
 
@@ -412,7 +424,13 @@ func (d *rpcDispatcher) dispatch(ctx context.Context, name string, args []json.R
 	)
 	for _, r := range results {
 		if r.Type().Implements(reflect.TypeOf((*error)(nil)).Elem()) {
-			if !r.IsNil() {
+			// Only call IsNil() for kinds that support it (Chan, Func, Interface,
+			// Map, Pointer, Slice). A Bridge method returning a concrete non-pointer
+			// error type (e.g., func() MyError) would panic here otherwise.
+			if canBeNil(r.Kind()) && !r.IsNil() {
+				err = r.Interface().(error)
+			} else if !canBeNil(r.Kind()) {
+				// Concrete error type (non-nil by definition if it exists).
 				err = r.Interface().(error)
 			}
 			continue
@@ -432,6 +450,18 @@ func (d *rpcDispatcher) dispatch(ctx context.Context, name string, args []json.R
 		return out[0], nil
 	}
 	return out, nil
+}
+
+// canBeNil reports whether a reflect.Kind supports IsNil(). Calling IsNil() on
+// kinds not in this set panics with "reflect: call of reflect.Value.IsNil on
+// <kind> Value". Used to guard the error-extraction logic above.
+func canBeNil(k reflect.Kind) bool {
+	switch k {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return true
+	default:
+		return false
+	}
 }
 
 // ---- Events protocol ----
@@ -480,13 +510,16 @@ func (e *socketEmitter) unregister(sub *subscription) {
 }
 
 // subscription is one client's event stream with per-connection subscriptions
-// and a bounded queue. Overflow → drop + send "dropped" notice once.
+// and a bounded queue. Overflow → drop + send "dropped" notice once. The
+// closed flag guards against send-on-closed-channel races when unregister()
+// closes the queue while a concurrent emit() still holds a queue ref.
 type subscription struct {
 	mu       sync.Mutex
 	channels map[string]bool
 	queue    chan eventWire
 	send     func(any) error
 	dropping bool
+	closed   bool
 }
 
 type eventWire struct {
@@ -518,11 +551,13 @@ func (sub *subscription) unsubscribe(ch string) {
 }
 
 func (sub *subscription) emit(channel string, data any) {
+	// Acquire the lock ONCE and hold it for the entire channel-check + queue-send
+	// decision. This prevents the send-on-closed-channel race: unregister() can
+	// now only close the queue AFTER all emits have either sent or seen closed=true.
 	sub.mu.Lock()
-	subscribed := sub.channels[channel]
-	sub.mu.Unlock()
+	defer sub.mu.Unlock()
 
-	if !subscribed {
+	if sub.closed || !sub.channels[channel] {
 		return
 	}
 
@@ -530,22 +565,18 @@ func (sub *subscription) emit(channel string, data any) {
 
 	select {
 	case sub.queue <- ev:
-		sub.mu.Lock()
 		sub.dropping = false
-		sub.mu.Unlock()
 	default:
-		// Queue full. Send "dropped" notice once per burst.
-		sub.mu.Lock()
+		// Queue full. Send "dropped" notice once per burst (best-effort; if the
+		// queue is STILL full after setting dropping=true, the notice is silently
+		// lost — acceptable since the client is already behind).
 		if !sub.dropping {
 			sub.dropping = true
-			sub.mu.Unlock()
 			dropped := eventWire{Event: "dropped", Channel: channel}
 			select {
 			case sub.queue <- dropped:
 			default:
 			}
-		} else {
-			sub.mu.Unlock()
 		}
 	}
 }
@@ -557,6 +588,12 @@ func (sub *subscription) pump() {
 }
 
 func (sub *subscription) close() {
+	sub.mu.Lock()
+	defer sub.mu.Unlock()
+	if sub.closed {
+		return // idempotent: double-close is a no-op
+	}
+	sub.closed = true
 	close(sub.queue)
 }
 

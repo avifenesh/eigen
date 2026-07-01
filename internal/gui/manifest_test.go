@@ -27,8 +27,9 @@ import (
 // the guiserver reflect dispatcher, a renamed JSON tag becomes a silent null
 // in Qt. The test runs tagless so it's part of `make gate`.
 func TestManifestUpToDate(t *testing.T) {
-	// Regenerate manifest in a temp dir
+	// Regenerate manifest in a temp file (not the source tree).
 	tempDir := t.TempDir()
+	generatedPath := filepath.Join(tempDir, "bridge.manifest.json")
 
 	// Find repo root
 	repoRoot, err := findRepoRoot()
@@ -36,10 +37,10 @@ func TestManifestUpToDate(t *testing.T) {
 		t.Fatalf("find repo root: %v", err)
 	}
 
-	// Run the generator
-	cmd := exec.Command("go", "run", "./internal/gui/gen/manifest")
+	// Run the generator with the temp output path as argv[1] (prevents dirtying
+	// the working tree during `go test`).
+	cmd := exec.Command("go", "run", "./internal/gui/gen/manifest", generatedPath)
 	cmd.Dir = repoRoot
-	cmd.Env = append(os.Environ(), "TMPDIR="+tempDir)
 
 	// Capture stderr to see the generator output
 	var stderr bytes.Buffer
@@ -49,8 +50,7 @@ func TestManifestUpToDate(t *testing.T) {
 		t.Fatalf("generate manifest: %v\nstderr:\n%s", err, stderr.String())
 	}
 
-	// Load the freshly generated manifest
-	generatedPath := filepath.Join(repoRoot, "internal", "gui", "bridge.manifest.json")
+	// Load the freshly generated manifest from the temp file.
 	generatedBytes, err := os.ReadFile(generatedPath)
 	if err != nil {
 		t.Fatalf("read generated manifest: %v", err)

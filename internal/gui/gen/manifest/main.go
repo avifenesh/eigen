@@ -32,12 +32,19 @@ func main() {
 		fail(fmt.Errorf("marshal manifest: %w", err))
 	}
 
-	// Write to internal/gui/bridge.manifest.json
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		fail(err)
+	// Write to argv[1] if provided (for test isolation), else to the committed
+	// internal/gui/bridge.manifest.json in the repo root.
+	var outPath string
+	if len(os.Args) > 1 && os.Args[1] != "" {
+		outPath = os.Args[1]
+	} else {
+		repoRoot, err := findRepoRoot()
+		if err != nil {
+			fail(err)
+		}
+		outPath = filepath.Join(repoRoot, "internal", "gui", "bridge.manifest.json")
 	}
-	outPath := filepath.Join(repoRoot, "internal", "gui", "bridge.manifest.json")
+
 	if err := os.WriteFile(outPath, data, 0644); err != nil {
 		fail(fmt.Errorf("write manifest: %w", err))
 	}
