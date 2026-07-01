@@ -1067,11 +1067,18 @@ func telegramSupervisor() {
 		// backoff period is pure churn — thousands of failed starts in the
 		// daemon log. Probe-then-release races another starter, but the child
 		// re-acquires the lock itself, so losing the race just lands in the
-		// code-3 path once and returns here.
+		// code-3 path once and returns here. Only a HELD lock (EWOULDBLOCK)
+		// means "stand by": any other error (lock file unwritable, bad perms)
+		// is a real failure that spawning wouldn't survive either — log it and
+		// retry with backoff rather than silently standing by forever.
 		if probe, perr := acquireTelegramLock(); perr != nil {
-			if !standingBy {
-				fmt.Fprintln(os.Stderr, "eigen daemon: telegram bridge held elsewhere — standing by until the lock frees")
-				standingBy = true
+			if errors.Is(perr, syscall.EWOULDBLOCK) {
+				if !standingBy {
+					fmt.Fprintln(os.Stderr, "eigen daemon: telegram bridge held elsewhere — standing by until the lock frees")
+					standingBy = true
+				}
+			} else {
+				fmt.Fprintf(os.Stderr, "eigen daemon: telegram lock probe failed: %v\n", perr)
 			}
 			time.Sleep(maxBackoff)
 			continue
@@ -1085,9 +1092,10 @@ func telegramSupervisor() {
 		cmd.Stderr = os.Stderr
 		// The bridge must not outlive this daemon: an orphaned bridge keeps the
 		// flock forever, so every later daemon's bridge loses the singleton and
-		// the bot silently answers from a stale binary. Pdeathsig kills the
-		// child when the spawning process dies, restart or crash alike.
-		cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
+		// the bot silently answers from a stale binary. Death-with-parent kills
+		// the child when the spawning process dies, restart or crash alike
+		// (Linux PR_SET_PDEATHSIG; no-op elsewhere).
+		setDeathSig(cmd)
 		start := time.Now()
 		if err := cmd.Start(); err != nil {
 			fmt.Fprintf(os.Stderr, "eigen daemon: telegram bridge spawn failed: %v\n", err)
