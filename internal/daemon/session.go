@@ -98,6 +98,13 @@ type Session struct {
 	onClose    func() // releases the session's external resources (MCP/LSP/observe)
 	onInactive func() // host hook: unload cold resources once idle + detached
 
+	// goalWakes counts CONSECUTIVE goal auto-continuations (wakeForGoalContinue)
+	// with no user input in between. A goal the judge never confirms would
+	// otherwise re-wake the session after every turn forever — an unbounded
+	// billing loop on an unattended session. Reset by user activity or a goal
+	// change; capped at maxGoalWakes.
+	goalWakes int
+
 	// gated-permission approvals awaiting a view's verdict
 	approvals   map[string]*pendingApproval
 	approvalSeq int
@@ -235,11 +242,35 @@ func (s *Session) wakeForGoalStart() {
 	s.send(agent.GoalStartInstruction, nil, nil)
 }
 
+// maxGoalWakes bounds consecutive goal auto-continuations with no user input in
+// between. A goal the judge never confirms would otherwise keep the session hot
+// (and billing) forever with nobody watching. Generous enough for a long
+// multi-turn goal; the user resets the counter just by talking to the session.
+const maxGoalWakes = 25
+
 func (s *Session) wakeForGoalContinue() {
 	if !s.goalJudgeAvailable() || strings.TrimSpace(s.agent.CurrentGoal()) == "" {
 		return
 	}
+	s.mu.Lock()
+	s.goalWakes++
+	wakes := s.goalWakes
+	s.mu.Unlock()
+	if wakes > maxGoalWakes {
+		s.dispatch(agent.Event{Kind: agent.EventNote, Text: fmt.Sprintf(
+			"goal auto-continue paused after %d consecutive turns without user input — the goal is still set; send any message to resume working toward it", maxGoalWakes)})
+		return
+	}
 	s.send(agent.GoalContinueInstruction, nil, nil)
+}
+
+// resetGoalWakes clears the consecutive auto-wake counter — called on genuine
+// user activity (input/steer/resend) and on goal changes, so the cap only ever
+// stops UNATTENDED loops.
+func (s *Session) resetGoalWakes() {
+	s.mu.Lock()
+	s.goalWakes = 0
+	s.mu.Unlock()
 }
 
 // maxReplayEvents bounds the per-session replay buffer — large enough to cover
@@ -657,6 +688,7 @@ func (s *Session) state() *SessionState {
 func (s *Session) setPerm(p string) { s.agent.SetPerm(agent.Permission(p)) }
 func (s *Session) setGoal(g string) {
 	s.agent.SetGoal(g)
+	s.resetGoalWakes() // a fresh/changed goal earns a fresh auto-continue budget
 	if strings.TrimSpace(g) != "" {
 		s.wakeForGoalStart()
 	}

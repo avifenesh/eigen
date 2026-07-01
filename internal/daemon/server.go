@@ -250,6 +250,7 @@ func (s *Server) handle(conn net.Conn) {
 			})
 		case "resend":
 			withLiveSession(req.ID, func(sess *Session) {
+				sess.resetGoalWakes() // user-initiated: refresh the auto-continue budget
 				if !sess.resend() {
 					send(Response{Type: "error", Error: "session busy"})
 					return
@@ -283,6 +284,7 @@ func (s *Server) handle(conn net.Conn) {
 			})
 		case "input":
 			withLiveSession(req.ID, func(sess *Session) {
+				sess.resetGoalWakes() // user-initiated: refresh the auto-continue budget
 				if sess.send(req.Text, req.Images, req.AllowTools) {
 					send(Response{Type: "ok"})
 					return
