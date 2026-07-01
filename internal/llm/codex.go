@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -307,7 +308,17 @@ func isUnauthorized(err error) bool {
 }
 
 // refreshToken exchanges the refresh_token for a new access_token and persists
-// it back to auth.json (matching the codex CLI's rotation).
+// it back to auth.json (matching the codex CLI's rotation). Codex uses ROTATING
+// refresh tokens: each refresh call returns a NEW refresh_token and invalidates
+// the old one. If two processes refresh concurrently (two GUI windows, CLI + GUI)
+// the loser's write clobbers the winner's rotated token → both invalidated → user
+// forced to re-login. We guard the critical section with an flock on auth.json.lock:
+// acquire → RE-CHECK freshness by re-reading auth.json (the other process may have
+// already refreshed while we waited for the lock) → only refresh+write if STILL
+// stale → release. The re-check after acquiring is essential: without it a second
+// process that sees "token expired" before the first's refresh completes will
+// still issue its own refresh once it gets the lock, clobbering the first's new
+// rotated token.
 func (c *Codex) refreshToken(ctx context.Context) error {
 	c.mu.Lock()
 	refresh := c.refresh
@@ -315,6 +326,62 @@ func (c *Codex) refreshToken(ctx context.Context) error {
 	if refresh == "" {
 		return fmt.Errorf("no refresh token (run `codex login`)")
 	}
+	return c.refreshWithLock(ctx, refresh)
+}
+
+// refreshWithLock guards the refresh critical section: acquire flock → re-check
+// freshness → refresh+write only if still stale. Factored out for testing the
+// lock+recheck logic with a fake refresh function.
+func (c *Codex) refreshWithLock(ctx context.Context, refresh string) error {
+	if c.authPath == "" {
+		return fmt.Errorf("no auth path (cannot lock)")
+	}
+	// Acquire an exclusive flock on auth.json.lock. This blocks if another
+	// process is mid-refresh; once we acquire it the other process has finished
+	// writing auth.json and we should re-check before issuing our own refresh.
+	lockPath := c.authPath + ".lock"
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("open lock file: %w", err)
+	}
+	defer lockFile.Close()
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("acquire flock: %w", err)
+	}
+	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+	// RE-CHECK: the other process may have already refreshed while we waited.
+	// Read auth.json again and see if the tokens changed (last_refresh updated
+	// or access_token changed). If so, load the new tokens and skip our refresh.
+	// This is the essential concurrency guard: without it we'd refresh with the
+	// OLD refresh_token (now invalidated by the first process's rotation) and
+	// clobber the NEW tokens.
+	auth, err := readCodexAuth(c.authPath)
+	if err == nil {
+		c.mu.Lock()
+		// If the access token on disk is DIFFERENT from what we last loaded, the
+		// other process refreshed it — adopt the new tokens and skip refresh.
+		if auth.Tokens.AccessToken != "" && auth.Tokens.AccessToken != c.token {
+			c.token = auth.Tokens.AccessToken
+			if auth.Tokens.RefreshToken != "" {
+				c.refresh = auth.Tokens.RefreshToken
+			}
+			if auth.Tokens.AccountID != "" {
+				c.accountID = auth.Tokens.AccountID
+			}
+			c.mu.Unlock()
+			return nil // other process already refreshed; we're done
+		}
+		c.mu.Unlock()
+	}
+	// Still stale (no concurrent refresh updated auth.json while we waited for
+	// the lock) — proceed with our own refresh + write.
+	return c.doRefresh(ctx, refresh)
+}
+
+// doRefresh performs the actual OAuth token exchange + persist, extracted so
+// the lock+recheck logic above doesn't hold the flock during the network call
+// (we already hold it here, but the factoring makes testing simpler).
+func (c *Codex) doRefresh(ctx context.Context, refresh string) error {
 	form := url.Values{
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {refresh},

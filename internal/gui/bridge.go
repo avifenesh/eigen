@@ -48,6 +48,12 @@ type Bridge struct {
 	pollStop chan struct{}
 	feedStop chan struct{}
 
+	// Loop ownership: when multiple GUI processes run (Wails + guiserver during
+	// migration), exactly one owns feedLoop/gpuSampleLoop (LLM spend + notifications);
+	// the other serves reads/RPC only. loopRelease is non-nil when this Bridge owns
+	// the loops; Stop() must call it to release the flock (loops_lock.go).
+	loopRelease func()
+
 	// Remote control clients, one pooled per ssh target, dialed lazily when a
 	// remote session ref is first acted on and reused while alive (remote_ref.go).
 	// remoteDial singleflights the per-target ssh dial so concurrent RPCs for a
@@ -88,8 +94,16 @@ func (b *Bridge) SetEmitter(e Emitter) { b.emitter = e }
 // initial daemon probe. Host-agnostic: the Wails ServiceStartup hook (wails.go)
 // and guiserver both call this — the lifecycle must not live behind the wails
 // tag or the tagless build would silently run no loops.
+//
+// Loop ownership (coexistence during migration): when TWO GUIs run (Wails +
+// guiserver), exactly one acquires loop ownership via flock; that one runs
+// feedLoop + gpuSampleLoop (LLM spend + notifications happen once). The other
+// serves reads/RPC only. healthLoop ALWAYS runs (each process needs its own
+// daemon-status UI). See loops_lock.go.
 func (b *Bridge) Start() {
+	release, acquired := AcquireLoopOwnership()
 	b.mu.Lock()
+	b.loopRelease = release
 	b.pollStop = make(chan struct{})
 	b.feedStop = make(chan struct{})
 	stop := b.pollStop
@@ -107,9 +121,16 @@ func (b *Bridge) Start() {
 			b.emit(eventDaemonHealth, HealthDTO{OK: false, Error: err.Error()})
 		}
 	}()
+	// healthLoop: ALWAYS run — each process drives its own daemon-status UI.
 	go b.healthLoop(stop)
-	go b.feedLoop(feedStop)
-	go b.gpuSampleLoop(stop) // GPU history + training hot-GPU alerts (no-op without a GPU)
+	// feedLoop: GATED — suggester LLM calls spend real money (run once across all GUIs).
+	if acquired {
+		go b.feedLoop(feedStop)
+	}
+	// gpuSampleLoop: GATED — duplicate desktop notifications are bad UX (run once).
+	if acquired {
+		go b.gpuSampleLoop(stop)
+	}
 }
 
 // Stop tears down every pump + the control client so no goroutine, connection,
@@ -251,7 +272,17 @@ func (b *Bridge) Shutdown() {
 	b.pollStop = nil
 	feedStop := b.feedStop
 	b.feedStop = nil
+	// Release loop ownership (if held) so another GUI can immediately acquire it.
+	release := b.loopRelease
+	b.loopRelease = nil
 	b.mu.Unlock()
+
+	// Release the loop lock OUTSIDE the Bridge mutex — the release calls unix.Flock
+	// which is a syscall; holding mu during a syscall invites deadlock risk if
+	// another goroutine tries to acquire mu while blocked on unrelated IO.
+	if release != nil {
+		release()
+	}
 
 	if stop != nil {
 		close(stop)

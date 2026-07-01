@@ -1,0 +1,6007 @@
+{
+  "methods": [
+    {
+      "name": "AcceptSkill",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "AddBan",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "bool"
+      ]
+    },
+    {
+      "name": "AddCatalogConnector",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "AddConnector",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "AddCrontab",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "AddDir",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "AddMarketplace",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "*gui.MarketplaceDTO"
+      ]
+    },
+    {
+      "name": "AgentHistory",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "[]gui.BgTaskDTO"
+      ]
+    },
+    {
+      "name": "AgentTranscript",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "Agents",
+      "params": null,
+      "results": [
+        "*gui.AgentsDTO"
+      ]
+    },
+    {
+      "name": "AppendMemory",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "Approve",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "bool"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "Board",
+      "params": null,
+      "results": [
+        "*gui.BoardDTO"
+      ]
+    },
+    {
+      "name": "CancelAgent",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "ChooseObsidianVault",
+      "params": null,
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "Clear",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "Commands",
+      "params": null,
+      "results": [
+        "[]gui.CommandInfoDTO"
+      ]
+    },
+    {
+      "name": "Compact",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "int"
+        }
+      ],
+      "results": [
+        "gui.CompactResultDTO"
+      ]
+    },
+    {
+      "name": "Config",
+      "params": null,
+      "results": [
+        "*gui.ConfigDTO"
+      ]
+    },
+    {
+      "name": "ConnectConnector",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "ConnectGoogle",
+      "params": null,
+      "results": null
+    },
+    {
+      "name": "Connectors",
+      "params": null,
+      "results": [
+        "*gui.ConnectorsDTO"
+      ]
+    },
+    {
+      "name": "ConsolidationContent",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "Crons",
+      "params": null,
+      "results": [
+        "*gui.CronsDTO"
+      ]
+    },
+    {
+      "name": "CurrentMemory",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "params": null,
+      "results": [
+        "*gui.DashboardDTO"
+      ]
+    },
+    {
+      "name": "DetachBash",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "bool"
+      ]
+    },
+    {
+      "name": "DisconnectConnector",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "DisconnectGoogle",
+      "params": null,
+      "results": null
+    },
+    {
+      "name": "DismissFeed",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "DreamNow",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "*gui.DreamReportDTO"
+      ]
+    },
+    {
+      "name": "Dreaming",
+      "params": null,
+      "results": [
+        "*gui.DreamingDTO"
+      ]
+    },
+    {
+      "name": "DreamingForScope",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "*gui.DreamingScopeDTO"
+      ]
+    },
+    {
+      "name": "ExportSession",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "Feed",
+      "params": null,
+      "results": [
+        "*gui.FeedDTO"
+      ]
+    },
+    {
+      "name": "FeedFor",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "[]gui.FeedItemDTO"
+      ]
+    },
+    {
+      "name": "FileTree",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "*gui.FileTreeDTO"
+      ]
+    },
+    {
+      "name": "GPUHistory",
+      "params": null,
+      "results": [
+        "map[string][]gui.GPUSampleDTO"
+      ]
+    },
+    {
+      "name": "GUIVersion",
+      "params": null,
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "GoogleStatus",
+      "params": null,
+      "results": [
+        "*gui.GoogleStatusDTO"
+      ]
+    },
+    {
+      "name": "ImportGoogleClient",
+      "params": null,
+      "results": [
+        "bool"
+      ]
+    },
+    {
+      "name": "InstallPlugin",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "*gui.InstalledPluginDTO"
+      ]
+    },
+    {
+      "name": "InstallSkillFromGitHub",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "*gui.SkillInstallDTO"
+      ]
+    },
+    {
+      "name": "InstallSkillFromPath",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "*gui.SkillInstallDTO"
+      ]
+    },
+    {
+      "name": "Interrupt",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "bool"
+      ]
+    },
+    {
+      "name": "Kanban",
+      "params": null,
+      "results": [
+        "*gui.KanbanDTO"
+      ]
+    },
+    {
+      "name": "KillShell",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "bool"
+      ]
+    },
+    {
+      "name": "ListMemoryScopes",
+      "params": null,
+      "results": [
+        "[]gui.MemoryScopeRefDTO"
+      ]
+    },
+    {
+      "name": "MCPSecretsAvailable",
+      "params": null,
+      "results": [
+        "bool"
+      ]
+    },
+    {
+      "name": "MCPServers",
+      "params": null,
+      "results": [
+        "*gui.MCPServersDTO"
+      ]
+    },
+    {
+      "name": "Machines",
+      "params": null,
+      "results": [
+        "*gui.MachinesDTO"
+      ]
+    },
+    {
+      "name": "MarketplacePlugins",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "[]gui.PluginPreviewDTO"
+      ]
+    },
+    {
+      "name": "Memory",
+      "params": null,
+      "results": [
+        "*gui.MemoryDTO"
+      ]
+    },
+    {
+      "name": "MemoryBackups",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "[]string"
+      ]
+    },
+    {
+      "name": "MemoryForScope",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "*gui.MemoryScopeDTO"
+      ]
+    },
+    {
+      "name": "MergeMemoryScope",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "MoveMemoryNote",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "NewSession",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "NotifyChatReply",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "ObserveSummary",
+      "params": [
+        {
+          "type": "int"
+        }
+      ],
+      "results": [
+        "*gui.ObserveSummaryDTO"
+      ]
+    },
+    {
+      "name": "ObsidianNotes",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "[]gui.NoteDTO"
+      ]
+    },
+    {
+      "name": "ObsidianRead",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "ObsidianStatus",
+      "params": null,
+      "results": [
+        "*gui.ObsidianStatusDTO"
+      ]
+    },
+    {
+      "name": "ObsidianWrite",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "bool"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "PickDirectory",
+      "params": null,
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "PinLane",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "Ping",
+      "params": null,
+      "results": null
+    },
+    {
+      "name": "Plugins",
+      "params": null,
+      "results": [
+        "*gui.PluginsDTO"
+      ]
+    },
+    {
+      "name": "PruneSessions",
+      "params": null,
+      "results": [
+        "[]string"
+      ]
+    },
+    {
+      "name": "ReadFileForView",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "RecentDirs",
+      "params": null,
+      "results": [
+        "[]gui.RecentDirDTO"
+      ]
+    },
+    {
+      "name": "RejectSkill",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "RemoteSessions",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "[]gui.SessionInfoDTO"
+      ]
+    },
+    {
+      "name": "RemoveAdHocMemoryNote",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "int"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "RemoveBan",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "bool"
+      ]
+    },
+    {
+      "name": "RemoveConnector",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "bool"
+      ]
+    },
+    {
+      "name": "RemoveCrontab",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "RemoveMCPServer",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "bool"
+      ]
+    },
+    {
+      "name": "RemoveMarketplace",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "bool"
+      ]
+    },
+    {
+      "name": "RemoveMemoryNote",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "int"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "RemovePlugin",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "bool"
+      ]
+    },
+    {
+      "name": "RemoveSession",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "RemoveSkill",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "RescanFeed",
+      "params": null,
+      "results": null
+    },
+    {
+      "name": "Resend",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "ReviewPR",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "RevutoReviewers",
+      "params": null,
+      "results": [
+        "[]gui.RevutoReviewerDTO"
+      ]
+    },
+    {
+      "name": "RevutoSetPaused",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "bool"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "RevutoStatus",
+      "params": null,
+      "results": [
+        "*gui.RevutoStatusDTO"
+      ]
+    },
+    {
+      "name": "RevutoTrigger",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "Routing",
+      "params": null,
+      "results": [
+        "*gui.RoutingDTO"
+      ]
+    },
+    {
+      "name": "RuleChains",
+      "params": null,
+      "results": [
+        "*gui.RuleChainsDTO"
+      ]
+    },
+    {
+      "name": "RunCommand",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "RunWorkflow",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "map[string]string"
+        }
+      ],
+      "results": [
+        "*gui.WorkflowResultDTO"
+      ]
+    },
+    {
+      "name": "SaveMCPServer",
+      "params": [
+        {
+          "type": "gui.MCPServerDTO"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "SendInput",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "[]gui.ImageDTO"
+        },
+        {
+          "type": "[]string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "Sessions",
+      "params": null,
+      "results": [
+        "[]gui.SessionInfoDTO"
+      ]
+    },
+    {
+      "name": "SetConfig",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "SetConnectorDisabled",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "bool"
+        }
+      ],
+      "results": [
+        "bool"
+      ]
+    },
+    {
+      "name": "SetEffort",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "*gui.SessionStateDTO"
+      ]
+    },
+    {
+      "name": "SetFast",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "bool"
+        }
+      ],
+      "results": [
+        "*gui.SessionStateDTO"
+      ]
+    },
+    {
+      "name": "SetGoal",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "*gui.SessionStateDTO"
+      ]
+    },
+    {
+      "name": "SetMCPServerDisabled",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "bool"
+        }
+      ],
+      "results": [
+        "bool"
+      ]
+    },
+    {
+      "name": "SetMarketEnabled",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "bool"
+        }
+      ],
+      "results": [
+        "bool"
+      ]
+    },
+    {
+      "name": "SetModel",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "*gui.SessionStateDTO"
+      ]
+    },
+    {
+      "name": "SetPerm",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "*gui.SessionStateDTO"
+      ]
+    },
+    {
+      "name": "SetPluginEnabled",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "bool"
+        }
+      ],
+      "results": [
+        "bool"
+      ]
+    },
+    {
+      "name": "SetRuleChain",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "[]string"
+        }
+      ],
+      "results": [
+        "[]string"
+      ]
+    },
+    {
+      "name": "SetSearch",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "*gui.SessionStateDTO"
+      ]
+    },
+    {
+      "name": "SetTimer",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "SetTitle",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "*gui.SessionStateDTO"
+      ]
+    },
+    {
+      "name": "SkillBody",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "Skills",
+      "params": null,
+      "results": [
+        "*gui.SkillsDTO"
+      ]
+    },
+    {
+      "name": "StartFromFeed",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "StartWorkingFromFeed",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "State",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "*gui.SessionStateDTO"
+      ]
+    },
+    {
+      "name": "Stats",
+      "params": null,
+      "results": [
+        "*daemon.DaemonStats"
+      ]
+    },
+    {
+      "name": "SteerInput",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "[]gui.ImageDTO"
+        }
+      ],
+      "results": [
+        "bool"
+      ]
+    },
+    {
+      "name": "Subscribe",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "TerminalKill",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "TerminalResize",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "int"
+        },
+        {
+          "type": "int"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "TerminalStart",
+      "params": [
+        {
+          "type": "int"
+        },
+        {
+          "type": "int"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "TerminalWrite",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "UnpinLane",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "Unsubscribe",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "VoiceCancelListen",
+      "params": null,
+      "results": null
+    },
+    {
+      "name": "VoiceListen",
+      "params": null,
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "VoiceModeStart",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "VoiceModeStop",
+      "params": null,
+      "results": null
+    },
+    {
+      "name": "VoiceSpeak",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    },
+    {
+      "name": "VoiceStatus",
+      "params": null,
+      "results": [
+        "*gui.VoiceStatusDTO"
+      ]
+    },
+    {
+      "name": "VoiceStopSpeak",
+      "params": null,
+      "results": null
+    },
+    {
+      "name": "WorkIssue",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
+      "name": "Workflows",
+      "params": null,
+      "results": [
+        "[]gui.WorkflowInfoDTO"
+      ]
+    },
+    {
+      "name": "WorkingDiff",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "*gui.WorkingDiffDTO"
+      ]
+    },
+    {
+      "name": "WriteUserProfile",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": null
+    }
+  ],
+  "types": {
+    "*daemon.DaemonStats": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "BgTasks",
+          "type": "int",
+          "jsonTag": "bg_tasks",
+          "tags": {
+            "json": "bg_tasks"
+          }
+        },
+        {
+          "name": "BinarySHA256",
+          "type": "string",
+          "jsonTag": "binary_sha256,omitempty",
+          "tags": {
+            "json": "binary_sha256,omitempty"
+          }
+        },
+        {
+          "name": "CacheReadTokens",
+          "type": "int64",
+          "jsonTag": "cache_read_tokens,omitempty",
+          "tags": {
+            "json": "cache_read_tokens,omitempty"
+          }
+        },
+        {
+          "name": "CacheWriteTokens",
+          "type": "int64",
+          "jsonTag": "cache_write_tokens,omitempty",
+          "tags": {
+            "json": "cache_write_tokens,omitempty"
+          }
+        },
+        {
+          "name": "Executable",
+          "type": "string",
+          "jsonTag": "executable,omitempty",
+          "tags": {
+            "json": "executable,omitempty"
+          }
+        },
+        {
+          "name": "GoVersion",
+          "type": "string",
+          "jsonTag": "go_version,omitempty",
+          "tags": {
+            "json": "go_version,omitempty"
+          }
+        },
+        {
+          "name": "Goroutines",
+          "type": "int",
+          "jsonTag": "goroutines",
+          "tags": {
+            "json": "goroutines"
+          }
+        },
+        {
+          "name": "HeapAllocB",
+          "type": "uint64",
+          "jsonTag": "heap_alloc_b",
+          "tags": {
+            "json": "heap_alloc_b"
+          }
+        },
+        {
+          "name": "HeapSysB",
+          "type": "uint64",
+          "jsonTag": "heap_sys_b",
+          "tags": {
+            "json": "heap_sys_b"
+          }
+        },
+        {
+          "name": "InputTokens",
+          "type": "int64",
+          "jsonTag": "input_tokens,omitempty",
+          "tags": {
+            "json": "input_tokens,omitempty"
+          }
+        },
+        {
+          "name": "NumGC",
+          "type": "uint32",
+          "jsonTag": "num_gc",
+          "tags": {
+            "json": "num_gc"
+          }
+        },
+        {
+          "name": "OutputTokens",
+          "type": "int64",
+          "jsonTag": "output_tokens,omitempty",
+          "tags": {
+            "json": "output_tokens,omitempty"
+          }
+        },
+        {
+          "name": "RSSB",
+          "type": "uint64",
+          "jsonTag": "rss_b",
+          "tags": {
+            "json": "rss_b"
+          }
+        },
+        {
+          "name": "RunningTurns",
+          "type": "int",
+          "jsonTag": "running_turns",
+          "tags": {
+            "json": "running_turns"
+          }
+        },
+        {
+          "name": "Sessions",
+          "type": "int",
+          "jsonTag": "sessions",
+          "tags": {
+            "json": "sessions"
+          }
+        },
+        {
+          "name": "UptimeSec",
+          "type": "int64",
+          "jsonTag": "uptime_sec",
+          "tags": {
+            "json": "uptime_sec"
+          }
+        },
+        {
+          "name": "VCSModified",
+          "type": "bool",
+          "jsonTag": "vcs_modified,omitempty",
+          "tags": {
+            "json": "vcs_modified,omitempty"
+          }
+        },
+        {
+          "name": "VCSRevision",
+          "type": "string",
+          "jsonTag": "vcs_revision,omitempty",
+          "tags": {
+            "json": "vcs_revision,omitempty"
+          }
+        },
+        {
+          "name": "Version",
+          "type": "string",
+          "jsonTag": "version,omitempty",
+          "tags": {
+            "json": "version,omitempty"
+          }
+        },
+        {
+          "name": "Views",
+          "type": "int",
+          "jsonTag": "views",
+          "tags": {
+            "json": "views"
+          }
+        }
+      ],
+      "hash": "6ec8c4595895721c"
+    },
+    "*gui.AgentsDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Dir",
+          "type": "string",
+          "jsonTag": "dir",
+          "tags": {
+            "json": "dir"
+          }
+        },
+        {
+          "name": "Done",
+          "type": "int",
+          "jsonTag": "done",
+          "tags": {
+            "json": "done"
+          }
+        },
+        {
+          "name": "Errored",
+          "type": "int",
+          "jsonTag": "errored",
+          "tags": {
+            "json": "errored"
+          }
+        },
+        {
+          "name": "Running",
+          "type": "int",
+          "jsonTag": "running",
+          "tags": {
+            "json": "running"
+          }
+        },
+        {
+          "name": "Tasks",
+          "type": "[]gui.BgTaskDTO",
+          "jsonTag": "tasks",
+          "tags": {
+            "json": "tasks"
+          }
+        }
+      ],
+      "hash": "7826e23c2de3ebae"
+    },
+    "*gui.BoardDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Lanes",
+          "type": "[]gui.BoardLaneDTO",
+          "jsonTag": "lanes",
+          "tags": {
+            "json": "lanes"
+          }
+        },
+        {
+          "name": "Scanned",
+          "type": "string",
+          "jsonTag": "scanned,omitempty",
+          "tags": {
+            "json": "scanned,omitempty"
+          }
+        }
+      ],
+      "hash": "9a6e203bae549b04"
+    },
+    "*gui.ConfigDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Fields",
+          "type": "[]gui.ConfigFieldDTO",
+          "jsonTag": "fields",
+          "tags": {
+            "json": "fields"
+          }
+        },
+        {
+          "name": "Path",
+          "type": "string",
+          "jsonTag": "path",
+          "tags": {
+            "json": "path"
+          }
+        }
+      ],
+      "hash": "c412f7dea4f97c77"
+    },
+    "*gui.ConnectorsDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Connectors",
+          "type": "[]gui.ConnectorDTO",
+          "jsonTag": "connectors",
+          "tags": {
+            "json": "connectors"
+          }
+        },
+        {
+          "name": "Directory",
+          "type": "[]gui.CatalogEntryDTO",
+          "jsonTag": "directory",
+          "tags": {
+            "json": "directory"
+          }
+        }
+      ],
+      "hash": "24fdea5bc3c8f246"
+    },
+    "*gui.CronsDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Crons",
+          "type": "[]gui.CronDTO",
+          "jsonTag": "crons",
+          "tags": {
+            "json": "crons"
+          }
+        },
+        {
+          "name": "Crontab",
+          "type": "int",
+          "jsonTag": "crontab",
+          "tags": {
+            "json": "crontab"
+          }
+        },
+        {
+          "name": "SystemdAvail",
+          "type": "bool",
+          "jsonTag": "systemdAvail",
+          "tags": {
+            "json": "systemdAvail"
+          }
+        },
+        {
+          "name": "Timers",
+          "type": "int",
+          "jsonTag": "timers",
+          "tags": {
+            "json": "timers"
+          }
+        }
+      ],
+      "hash": "38e4736ab9a3d940"
+    },
+    "*gui.DashboardDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Events",
+          "type": "[]gui.CalEventDTO",
+          "jsonTag": "events",
+          "tags": {
+            "json": "events"
+          }
+        },
+        {
+          "name": "GoogleConnected",
+          "type": "bool",
+          "jsonTag": "googleConnected",
+          "tags": {
+            "json": "googleConnected"
+          }
+        },
+        {
+          "name": "Health",
+          "type": "gui.SysHealthDTO",
+          "jsonTag": "health",
+          "tags": {
+            "json": "health"
+          }
+        },
+        {
+          "name": "Unread",
+          "type": "[]gui.MailMsgDTO",
+          "jsonTag": "unread",
+          "tags": {
+            "json": "unread"
+          }
+        },
+        {
+          "name": "UnreadCount",
+          "type": "int",
+          "jsonTag": "unreadCount",
+          "tags": {
+            "json": "unreadCount"
+          }
+        }
+      ],
+      "hash": "05c10c5a0056acfa"
+    },
+    "*gui.DreamReportDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Changed",
+          "type": "bool",
+          "jsonTag": "changed",
+          "tags": {
+            "json": "changed"
+          }
+        },
+        {
+          "name": "Consolidated",
+          "type": "bool",
+          "jsonTag": "consolidated",
+          "tags": {
+            "json": "consolidated"
+          }
+        },
+        {
+          "name": "Report",
+          "type": "string",
+          "jsonTag": "report",
+          "tags": {
+            "json": "report"
+          }
+        },
+        {
+          "name": "Scope",
+          "type": "string",
+          "jsonTag": "scope",
+          "tags": {
+            "json": "scope"
+          }
+        },
+        {
+          "name": "SummaryRegened",
+          "type": "bool",
+          "jsonTag": "summaryRegened",
+          "tags": {
+            "json": "summaryRegened"
+          }
+        }
+      ],
+      "hash": "87b6583a2df01f51"
+    },
+    "*gui.DreamingDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Global",
+          "type": "*gui.DreamingScopeDTO",
+          "jsonTag": "global",
+          "tags": {
+            "json": "global"
+          }
+        },
+        {
+          "name": "Project",
+          "type": "*gui.DreamingScopeDTO",
+          "jsonTag": "project",
+          "tags": {
+            "json": "project"
+          }
+        }
+      ],
+      "hash": "d57db4061ed49441"
+    },
+    "*gui.DreamingScopeDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Consolidations",
+          "type": "[]gui.ConsolidationDTO",
+          "jsonTag": "consolidations",
+          "tags": {
+            "json": "consolidations"
+          }
+        },
+        {
+          "name": "CurrentBytes",
+          "type": "int",
+          "jsonTag": "currentBytes",
+          "tags": {
+            "json": "currentBytes"
+          }
+        },
+        {
+          "name": "Rollouts",
+          "type": "[]gui.RolloutDTO",
+          "jsonTag": "rollouts",
+          "tags": {
+            "json": "rollouts"
+          }
+        },
+        {
+          "name": "Scope",
+          "type": "string",
+          "jsonTag": "scope",
+          "tags": {
+            "json": "scope"
+          }
+        }
+      ],
+      "hash": "ec4dffd69c278c80"
+    },
+    "*gui.FeedDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Fresh",
+          "type": "bool",
+          "jsonTag": "fresh",
+          "tags": {
+            "json": "fresh"
+          }
+        },
+        {
+          "name": "Items",
+          "type": "[]gui.FeedItemDTO",
+          "jsonTag": "items",
+          "tags": {
+            "json": "items"
+          }
+        },
+        {
+          "name": "ScannedMs",
+          "type": "int64",
+          "jsonTag": "scannedMs",
+          "tags": {
+            "json": "scannedMs"
+          }
+        }
+      ],
+      "hash": "bd38b36fa12d582b"
+    },
+    "*gui.FileTreeDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Dir",
+          "type": "string",
+          "jsonTag": "dir",
+          "tags": {
+            "json": "dir"
+          }
+        },
+        {
+          "name": "Entries",
+          "type": "[]gui.FileEntryDTO",
+          "jsonTag": "entries",
+          "tags": {
+            "json": "entries"
+          }
+        },
+        {
+          "name": "Truncated",
+          "type": "bool",
+          "jsonTag": "truncated",
+          "tags": {
+            "json": "truncated"
+          }
+        }
+      ],
+      "hash": "afd167ecc488fb34"
+    },
+    "*gui.GoogleStatusDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "ClientPath",
+          "type": "string",
+          "jsonTag": "clientPath",
+          "tags": {
+            "json": "clientPath"
+          }
+        },
+        {
+          "name": "Configured",
+          "type": "bool",
+          "jsonTag": "configured",
+          "tags": {
+            "json": "configured"
+          }
+        },
+        {
+          "name": "Connected",
+          "type": "bool",
+          "jsonTag": "connected",
+          "tags": {
+            "json": "connected"
+          }
+        },
+        {
+          "name": "SetupHint",
+          "type": "string",
+          "jsonTag": "setupHint",
+          "tags": {
+            "json": "setupHint"
+          }
+        },
+        {
+          "name": "SetupURL",
+          "type": "string",
+          "jsonTag": "setupUrl",
+          "tags": {
+            "json": "setupUrl"
+          }
+        }
+      ],
+      "hash": "3e87bd4882ef38ba"
+    },
+    "*gui.InstalledPluginDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Agents",
+          "type": "[]string",
+          "jsonTag": "agents,omitempty",
+          "tags": {
+            "json": "agents,omitempty"
+          }
+        },
+        {
+          "name": "Commands",
+          "type": "[]string",
+          "jsonTag": "commands,omitempty",
+          "tags": {
+            "json": "commands,omitempty"
+          }
+        },
+        {
+          "name": "Description",
+          "type": "string",
+          "jsonTag": "description,omitempty",
+          "tags": {
+            "json": "description,omitempty"
+          }
+        },
+        {
+          "name": "Enabled",
+          "type": "bool",
+          "jsonTag": "enabled",
+          "tags": {
+            "json": "enabled"
+          }
+        },
+        {
+          "name": "Hooks",
+          "type": "int",
+          "jsonTag": "hooks,omitempty",
+          "tags": {
+            "json": "hooks,omitempty"
+          }
+        },
+        {
+          "name": "InstalledMs",
+          "type": "int64",
+          "jsonTag": "installedMs",
+          "tags": {
+            "json": "installedMs"
+          }
+        },
+        {
+          "name": "MCPServers",
+          "type": "[]string",
+          "jsonTag": "mcpServers,omitempty",
+          "tags": {
+            "json": "mcpServers,omitempty"
+          }
+        },
+        {
+          "name": "Marketplace",
+          "type": "string",
+          "jsonTag": "marketplace,omitempty",
+          "tags": {
+            "json": "marketplace,omitempty"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "ScanCount",
+          "type": "int",
+          "jsonTag": "scanCount,omitempty",
+          "tags": {
+            "json": "scanCount,omitempty"
+          }
+        },
+        {
+          "name": "ScanStatus",
+          "type": "string",
+          "jsonTag": "scanStatus,omitempty",
+          "tags": {
+            "json": "scanStatus,omitempty"
+          }
+        },
+        {
+          "name": "Scans",
+          "type": "[]gui.ScanFindingDTO",
+          "jsonTag": "scans,omitempty",
+          "tags": {
+            "json": "scans,omitempty"
+          }
+        },
+        {
+          "name": "Skills",
+          "type": "[]string",
+          "jsonTag": "skills,omitempty",
+          "tags": {
+            "json": "skills,omitempty"
+          }
+        },
+        {
+          "name": "Version",
+          "type": "string",
+          "jsonTag": "version,omitempty",
+          "tags": {
+            "json": "version,omitempty"
+          }
+        },
+        {
+          "name": "Warnings",
+          "type": "[]string",
+          "jsonTag": "warnings,omitempty",
+          "tags": {
+            "json": "warnings,omitempty"
+          }
+        }
+      ],
+      "hash": "6ca94ea04946f9e9"
+    },
+    "*gui.KanbanDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Columns",
+          "type": "[]gui.KanbanColumnDTO",
+          "jsonTag": "columns",
+          "tags": {
+            "json": "columns"
+          }
+        }
+      ],
+      "hash": "1d0cadd00e316a87"
+    },
+    "*gui.MCPServersDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Servers",
+          "type": "[]gui.MCPServerDTO",
+          "jsonTag": "servers",
+          "tags": {
+            "json": "servers"
+          }
+        }
+      ],
+      "hash": "78a0b96009338782"
+    },
+    "*gui.MachinesDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Machines",
+          "type": "[]gui.MachineDTO",
+          "jsonTag": "machines",
+          "tags": {
+            "json": "machines"
+          }
+        }
+      ],
+      "hash": "fc1b099b359b6745"
+    },
+    "*gui.MarketplaceDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "AddedMs",
+          "type": "int64",
+          "jsonTag": "addedMs",
+          "tags": {
+            "json": "addedMs"
+          }
+        },
+        {
+          "name": "Description",
+          "type": "string",
+          "jsonTag": "description,omitempty",
+          "tags": {
+            "json": "description,omitempty"
+          }
+        },
+        {
+          "name": "Disabled",
+          "type": "bool",
+          "jsonTag": "disabled",
+          "tags": {
+            "json": "disabled"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "Owner",
+          "type": "string",
+          "jsonTag": "owner,omitempty",
+          "tags": {
+            "json": "owner,omitempty"
+          }
+        },
+        {
+          "name": "PluginCount",
+          "type": "int",
+          "jsonTag": "pluginCount,omitempty",
+          "tags": {
+            "json": "pluginCount,omitempty"
+          }
+        },
+        {
+          "name": "Source",
+          "type": "string",
+          "jsonTag": "source",
+          "tags": {
+            "json": "source"
+          }
+        },
+        {
+          "name": "Version",
+          "type": "string",
+          "jsonTag": "version,omitempty",
+          "tags": {
+            "json": "version,omitempty"
+          }
+        }
+      ],
+      "hash": "a085f90929d5cd1b"
+    },
+    "*gui.MemoryDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Global",
+          "type": "*gui.MemoryScopeDTO",
+          "jsonTag": "global",
+          "tags": {
+            "json": "global"
+          }
+        },
+        {
+          "name": "Project",
+          "type": "*gui.MemoryScopeDTO",
+          "jsonTag": "project",
+          "tags": {
+            "json": "project"
+          }
+        }
+      ],
+      "hash": "2df510daedde7eff"
+    },
+    "*gui.MemoryScopeDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "AdHoc",
+          "type": "[]gui.MemoryNoteDTO",
+          "jsonTag": "adHoc",
+          "tags": {
+            "json": "adHoc"
+          }
+        },
+        {
+          "name": "Backups",
+          "type": "int",
+          "jsonTag": "backups",
+          "tags": {
+            "json": "backups"
+          }
+        },
+        {
+          "name": "BanList",
+          "type": "[]memory.Ban",
+          "jsonTag": "banList",
+          "tags": {
+            "json": "banList"
+          }
+        },
+        {
+          "name": "Bans",
+          "type": "string",
+          "jsonTag": "bans",
+          "tags": {
+            "json": "bans"
+          }
+        },
+        {
+          "name": "Bytes",
+          "type": "int",
+          "jsonTag": "bytes",
+          "tags": {
+            "json": "bytes"
+          }
+        },
+        {
+          "name": "Dir",
+          "type": "string",
+          "jsonTag": "dir",
+          "tags": {
+            "json": "dir"
+          }
+        },
+        {
+          "name": "HasSummary",
+          "type": "bool",
+          "jsonTag": "hasSummary",
+          "tags": {
+            "json": "hasSummary"
+          }
+        },
+        {
+          "name": "NoteCount",
+          "type": "int",
+          "jsonTag": "noteCount",
+          "tags": {
+            "json": "noteCount"
+          }
+        },
+        {
+          "name": "Notes",
+          "type": "[]gui.MemoryNoteDTO",
+          "jsonTag": "notes",
+          "tags": {
+            "json": "notes"
+          }
+        },
+        {
+          "name": "Path",
+          "type": "string",
+          "jsonTag": "path",
+          "tags": {
+            "json": "path"
+          }
+        },
+        {
+          "name": "Profile",
+          "type": "string",
+          "jsonTag": "profile,omitempty",
+          "tags": {
+            "json": "profile,omitempty"
+          }
+        },
+        {
+          "name": "ProfileLearned",
+          "type": "string",
+          "jsonTag": "profileLearned,omitempty",
+          "tags": {
+            "json": "profileLearned,omitempty"
+          }
+        },
+        {
+          "name": "Scope",
+          "type": "string",
+          "jsonTag": "scope",
+          "tags": {
+            "json": "scope"
+          }
+        },
+        {
+          "name": "Summary",
+          "type": "string",
+          "jsonTag": "summary",
+          "tags": {
+            "json": "summary"
+          }
+        }
+      ],
+      "hash": "1608e192121159c9"
+    },
+    "*gui.ObserveSummaryDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Available",
+          "type": "bool",
+          "jsonTag": "available",
+          "tags": {
+            "json": "available"
+          }
+        },
+        {
+          "name": "ByKind",
+          "type": "[]gui.CountDTO",
+          "jsonTag": "byKind",
+          "tags": {
+            "json": "byKind"
+          }
+        },
+        {
+          "name": "Errors",
+          "type": "[]gui.CountDTO",
+          "jsonTag": "errors",
+          "tags": {
+            "json": "errors"
+          }
+        },
+        {
+          "name": "Hooks",
+          "type": "[]gui.HookStatDTO",
+          "jsonTag": "hooks",
+          "tags": {
+            "json": "hooks"
+          }
+        },
+        {
+          "name": "Models",
+          "type": "[]gui.ModelStatDTO",
+          "jsonTag": "models",
+          "tags": {
+            "json": "models"
+          }
+        },
+        {
+          "name": "Records",
+          "type": "int",
+          "jsonTag": "records",
+          "tags": {
+            "json": "records"
+          }
+        },
+        {
+          "name": "Routes",
+          "type": "gui.RouteStatsDTO",
+          "jsonTag": "routes",
+          "tags": {
+            "json": "routes"
+          }
+        },
+        {
+          "name": "Subagents",
+          "type": "gui.SubagentStatsDTO",
+          "jsonTag": "subagents",
+          "tags": {
+            "json": "subagents"
+          }
+        },
+        {
+          "name": "Tools",
+          "type": "[]gui.ToolStatDTO",
+          "jsonTag": "tools",
+          "tags": {
+            "json": "tools"
+          }
+        }
+      ],
+      "hash": "b8ee20713874110b"
+    },
+    "*gui.ObsidianStatusDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Available",
+          "type": "bool",
+          "jsonTag": "available",
+          "tags": {
+            "json": "available"
+          }
+        },
+        {
+          "name": "Vault",
+          "type": "string",
+          "jsonTag": "vault",
+          "tags": {
+            "json": "vault"
+          }
+        }
+      ],
+      "hash": "23dad72caac2cdf4"
+    },
+    "*gui.PluginsDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Marketplaces",
+          "type": "[]gui.MarketplaceDTO",
+          "jsonTag": "marketplaces",
+          "tags": {
+            "json": "marketplaces"
+          }
+        },
+        {
+          "name": "Plugins",
+          "type": "[]gui.InstalledPluginDTO",
+          "jsonTag": "plugins",
+          "tags": {
+            "json": "plugins"
+          }
+        }
+      ],
+      "hash": "39a791e00f5c5749"
+    },
+    "*gui.RevutoStatusDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Available",
+          "type": "bool",
+          "jsonTag": "available",
+          "tags": {
+            "json": "available"
+          }
+        },
+        {
+          "name": "Count",
+          "type": "int",
+          "jsonTag": "count",
+          "tags": {
+            "json": "count"
+          }
+        },
+        {
+          "name": "Paused",
+          "type": "int",
+          "jsonTag": "paused",
+          "tags": {
+            "json": "paused"
+          }
+        }
+      ],
+      "hash": "355ec4a0b6a78d9e"
+    },
+    "*gui.RoutingDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Models",
+          "type": "[]gui.ModelDTO",
+          "jsonTag": "models",
+          "tags": {
+            "json": "models"
+          }
+        },
+        {
+          "name": "Providers",
+          "type": "[]gui.ProviderDTO",
+          "jsonTag": "providers",
+          "tags": {
+            "json": "providers"
+          }
+        }
+      ],
+      "hash": "51746b85a105f238"
+    },
+    "*gui.RuleChainsDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Models",
+          "type": "[]string",
+          "jsonTag": "models",
+          "tags": {
+            "json": "models"
+          }
+        },
+        {
+          "name": "Roles",
+          "type": "[]gui.RuleChainDTO",
+          "jsonTag": "roles",
+          "tags": {
+            "json": "roles"
+          }
+        }
+      ],
+      "hash": "530973065e8808a1"
+    },
+    "*gui.SessionStateDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Effort",
+          "type": "string",
+          "jsonTag": "effort,omitempty",
+          "tags": {
+            "json": "effort,omitempty"
+          }
+        },
+        {
+          "name": "Fast",
+          "type": "bool",
+          "jsonTag": "fast,omitempty",
+          "tags": {
+            "json": "fast,omitempty"
+          }
+        },
+        {
+          "name": "FastOK",
+          "type": "bool",
+          "jsonTag": "fastOk,omitempty",
+          "tags": {
+            "json": "fastOk,omitempty"
+          }
+        },
+        {
+          "name": "Goal",
+          "type": "string",
+          "jsonTag": "goal",
+          "tags": {
+            "json": "goal"
+          }
+        },
+        {
+          "name": "MaxTokens",
+          "type": "int",
+          "jsonTag": "maxTokens",
+          "tags": {
+            "json": "maxTokens"
+          }
+        },
+        {
+          "name": "Messages",
+          "type": "[]gui.MessageDTO",
+          "jsonTag": "messages",
+          "tags": {
+            "json": "messages"
+          }
+        },
+        {
+          "name": "Model",
+          "type": "string",
+          "jsonTag": "model",
+          "tags": {
+            "json": "model"
+          }
+        },
+        {
+          "name": "Pending",
+          "type": "[]daemon.ApprovalInfo",
+          "jsonTag": "pending,omitempty",
+          "tags": {
+            "json": "pending,omitempty"
+          }
+        },
+        {
+          "name": "Perm",
+          "type": "string",
+          "jsonTag": "perm",
+          "tags": {
+            "json": "perm"
+          }
+        },
+        {
+          "name": "Provider",
+          "type": "string",
+          "jsonTag": "provider",
+          "tags": {
+            "json": "provider"
+          }
+        },
+        {
+          "name": "Roots",
+          "type": "[]string",
+          "jsonTag": "roots,omitempty",
+          "tags": {
+            "json": "roots,omitempty"
+          }
+        },
+        {
+          "name": "Running",
+          "type": "bool",
+          "jsonTag": "running,omitempty",
+          "tags": {
+            "json": "running,omitempty"
+          }
+        },
+        {
+          "name": "Search",
+          "type": "string",
+          "jsonTag": "search,omitempty",
+          "tags": {
+            "json": "search,omitempty"
+          }
+        },
+        {
+          "name": "Shells",
+          "type": "[]daemon.ShellInfo",
+          "jsonTag": "shells,omitempty",
+          "tags": {
+            "json": "shells,omitempty"
+          }
+        },
+        {
+          "name": "Title",
+          "type": "string",
+          "jsonTag": "title,omitempty",
+          "tags": {
+            "json": "title,omitempty"
+          }
+        },
+        {
+          "name": "Tokens",
+          "type": "int",
+          "jsonTag": "tokens",
+          "tags": {
+            "json": "tokens"
+          }
+        },
+        {
+          "name": "Tools",
+          "type": "[]daemon.ToolInfo",
+          "jsonTag": "tools,omitempty",
+          "tags": {
+            "json": "tools,omitempty"
+          }
+        }
+      ],
+      "hash": "cb98f3303322a006"
+    },
+    "*gui.SkillInstallDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "Path",
+          "type": "string",
+          "jsonTag": "path",
+          "tags": {
+            "json": "path"
+          }
+        }
+      ],
+      "hash": "e5abd5c3f81874e1"
+    },
+    "*gui.SkillsDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Proposals",
+          "type": "[]gui.SkillProposalDTO",
+          "jsonTag": "proposals",
+          "tags": {
+            "json": "proposals"
+          }
+        },
+        {
+          "name": "Skills",
+          "type": "[]gui.SkillDTO",
+          "jsonTag": "skills",
+          "tags": {
+            "json": "skills"
+          }
+        }
+      ],
+      "hash": "e35a3c32e09c6293"
+    },
+    "*gui.VoiceStatusDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "STT",
+          "type": "bool",
+          "jsonTag": "stt",
+          "tags": {
+            "json": "stt"
+          }
+        },
+        {
+          "name": "TTS",
+          "type": "bool",
+          "jsonTag": "tts",
+          "tags": {
+            "json": "tts"
+          }
+        }
+      ],
+      "hash": "1a56bdb042d61f4e"
+    },
+    "*gui.WorkflowResultDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Completed",
+          "type": "[]string",
+          "jsonTag": "completed",
+          "tags": {
+            "json": "completed"
+          }
+        },
+        {
+          "name": "FailedAt",
+          "type": "string",
+          "jsonTag": "failedAt,omitempty",
+          "tags": {
+            "json": "failedAt,omitempty"
+          }
+        },
+        {
+          "name": "Outputs",
+          "type": "map[string]string",
+          "jsonTag": "outputs",
+          "tags": {
+            "json": "outputs"
+          }
+        }
+      ],
+      "hash": "f56c0d64c0c35ecc"
+    },
+    "*gui.WorkingDiffDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Branch",
+          "type": "string",
+          "jsonTag": "branch",
+          "tags": {
+            "json": "branch"
+          }
+        },
+        {
+          "name": "Clean",
+          "type": "bool",
+          "jsonTag": "clean",
+          "tags": {
+            "json": "clean"
+          }
+        },
+        {
+          "name": "Dir",
+          "type": "string",
+          "jsonTag": "dir",
+          "tags": {
+            "json": "dir"
+          }
+        },
+        {
+          "name": "Files",
+          "type": "[]gui.DiffFileDTO",
+          "jsonTag": "files",
+          "tags": {
+            "json": "files"
+          }
+        },
+        {
+          "name": "IsRepo",
+          "type": "bool",
+          "jsonTag": "isRepo",
+          "tags": {
+            "json": "isRepo"
+          }
+        },
+        {
+          "name": "Patch",
+          "type": "string",
+          "jsonTag": "patch",
+          "tags": {
+            "json": "patch"
+          }
+        },
+        {
+          "name": "Truncated",
+          "type": "bool",
+          "jsonTag": "truncated",
+          "tags": {
+            "json": "truncated"
+          }
+        }
+      ],
+      "hash": "40bc78f92092f40f"
+    },
+    "[]daemon.ApprovalInfo": {
+      "kind": "slice",
+      "elem": "daemon.ApprovalInfo",
+      "hash": "aea5b37797c09111"
+    },
+    "[]daemon.ShellInfo": {
+      "kind": "slice",
+      "elem": "daemon.ShellInfo",
+      "hash": "45837b987b489fbe"
+    },
+    "[]daemon.ToolInfo": {
+      "kind": "slice",
+      "elem": "daemon.ToolInfo",
+      "hash": "51687a485e119ade"
+    },
+    "[]gui.BgTaskDTO": {
+      "kind": "slice",
+      "elem": "gui.BgTaskDTO",
+      "hash": "acbcc5784cc05e5e"
+    },
+    "[]gui.BoardItemDTO": {
+      "kind": "slice",
+      "elem": "gui.BoardItemDTO",
+      "hash": "4e05d82346365769"
+    },
+    "[]gui.BoardLaneDTO": {
+      "kind": "slice",
+      "elem": "gui.BoardLaneDTO",
+      "hash": "846bbb0e0dba5e91"
+    },
+    "[]gui.CalEventDTO": {
+      "kind": "slice",
+      "elem": "gui.CalEventDTO",
+      "hash": "a7d41cb983c5cd77"
+    },
+    "[]gui.CatalogEntryDTO": {
+      "kind": "slice",
+      "elem": "gui.CatalogEntryDTO",
+      "hash": "68f2c0d3a6ece185"
+    },
+    "[]gui.CommandInfoDTO": {
+      "kind": "slice",
+      "elem": "gui.CommandInfoDTO",
+      "hash": "8a73e8566d8f73dc"
+    },
+    "[]gui.ConfigFieldDTO": {
+      "kind": "slice",
+      "elem": "gui.ConfigFieldDTO",
+      "hash": "108d60cbd3d7a8b8"
+    },
+    "[]gui.ConnectorDTO": {
+      "kind": "slice",
+      "elem": "gui.ConnectorDTO",
+      "hash": "f7bd6483d668aec2"
+    },
+    "[]gui.ConsolidationDTO": {
+      "kind": "slice",
+      "elem": "gui.ConsolidationDTO",
+      "hash": "0a953e80bc7f1e3b"
+    },
+    "[]gui.CountDTO": {
+      "kind": "slice",
+      "elem": "gui.CountDTO",
+      "hash": "c619a09e0861530a"
+    },
+    "[]gui.CronDTO": {
+      "kind": "slice",
+      "elem": "gui.CronDTO",
+      "hash": "243c170133ca8cd8"
+    },
+    "[]gui.DiffFileDTO": {
+      "kind": "slice",
+      "elem": "gui.DiffFileDTO",
+      "hash": "4767aa57c9b5f4fa"
+    },
+    "[]gui.FeedItemDTO": {
+      "kind": "slice",
+      "elem": "gui.FeedItemDTO",
+      "hash": "402ec4b8cd447e03"
+    },
+    "[]gui.FileEntryDTO": {
+      "kind": "slice",
+      "elem": "gui.FileEntryDTO",
+      "hash": "031c50df20d1e05c"
+    },
+    "[]gui.GPUDTO": {
+      "kind": "slice",
+      "elem": "gui.GPUDTO",
+      "hash": "4008e44c12b87bc3"
+    },
+    "[]gui.GPUSampleDTO": {
+      "kind": "slice",
+      "elem": "gui.GPUSampleDTO",
+      "hash": "579298083be2ae29"
+    },
+    "[]gui.HookStatDTO": {
+      "kind": "slice",
+      "elem": "gui.HookStatDTO",
+      "hash": "e61c39b3ff5c162c"
+    },
+    "[]gui.ImageDTO": {
+      "kind": "slice",
+      "elem": "gui.ImageDTO",
+      "hash": "445b01cfef7a410e"
+    },
+    "[]gui.InstalledPluginDTO": {
+      "kind": "slice",
+      "elem": "gui.InstalledPluginDTO",
+      "hash": "de47fb75a28c39c8"
+    },
+    "[]gui.KanbanCardDTO": {
+      "kind": "slice",
+      "elem": "gui.KanbanCardDTO",
+      "hash": "53608def0bf7b1bb"
+    },
+    "[]gui.KanbanColumnDTO": {
+      "kind": "slice",
+      "elem": "gui.KanbanColumnDTO",
+      "hash": "6af913553be0c695"
+    },
+    "[]gui.MCPServerDTO": {
+      "kind": "slice",
+      "elem": "gui.MCPServerDTO",
+      "hash": "b06e3fd537d1fbb3"
+    },
+    "[]gui.MachineDTO": {
+      "kind": "slice",
+      "elem": "gui.MachineDTO",
+      "hash": "71a2413ee57689c5"
+    },
+    "[]gui.MailMsgDTO": {
+      "kind": "slice",
+      "elem": "gui.MailMsgDTO",
+      "hash": "4368def36f4edb78"
+    },
+    "[]gui.MarketplaceDTO": {
+      "kind": "slice",
+      "elem": "gui.MarketplaceDTO",
+      "hash": "71dd0fce3cf0f2d5"
+    },
+    "[]gui.MemoryNoteDTO": {
+      "kind": "slice",
+      "elem": "gui.MemoryNoteDTO",
+      "hash": "bbc593462daca4b9"
+    },
+    "[]gui.MemoryScopeRefDTO": {
+      "kind": "slice",
+      "elem": "gui.MemoryScopeRefDTO",
+      "hash": "c437a5f9f127e11c"
+    },
+    "[]gui.MessageDTO": {
+      "kind": "slice",
+      "elem": "gui.MessageDTO",
+      "hash": "b2e5e248baeb0e1b"
+    },
+    "[]gui.ModelDTO": {
+      "kind": "slice",
+      "elem": "gui.ModelDTO",
+      "hash": "14d7c0f13c52d257"
+    },
+    "[]gui.ModelStatDTO": {
+      "kind": "slice",
+      "elem": "gui.ModelStatDTO",
+      "hash": "a77b3ca7b569d94a"
+    },
+    "[]gui.NoteDTO": {
+      "kind": "slice",
+      "elem": "gui.NoteDTO",
+      "hash": "1f4d10c0ab0cadf5"
+    },
+    "[]gui.PluginPreviewDTO": {
+      "kind": "slice",
+      "elem": "gui.PluginPreviewDTO",
+      "hash": "5c90ac55656da9bc"
+    },
+    "[]gui.ProviderDTO": {
+      "kind": "slice",
+      "elem": "gui.ProviderDTO",
+      "hash": "929b2a50aacabe9e"
+    },
+    "[]gui.RecentDirDTO": {
+      "kind": "slice",
+      "elem": "gui.RecentDirDTO",
+      "hash": "9e6ebd68f57c03e3"
+    },
+    "[]gui.RevutoReviewerDTO": {
+      "kind": "slice",
+      "elem": "gui.RevutoReviewerDTO",
+      "hash": "d67613557cd18270"
+    },
+    "[]gui.RolloutDTO": {
+      "kind": "slice",
+      "elem": "gui.RolloutDTO",
+      "hash": "b20e0f8160908ac2"
+    },
+    "[]gui.RuleChainDTO": {
+      "kind": "slice",
+      "elem": "gui.RuleChainDTO",
+      "hash": "678a90878581fa67"
+    },
+    "[]gui.ScanFindingDTO": {
+      "kind": "slice",
+      "elem": "gui.ScanFindingDTO",
+      "hash": "dcd8c8210e9e17d7"
+    },
+    "[]gui.SessionInfoDTO": {
+      "kind": "slice",
+      "elem": "gui.SessionInfoDTO",
+      "hash": "50d1cb32786e01bd"
+    },
+    "[]gui.SkillDTO": {
+      "kind": "slice",
+      "elem": "gui.SkillDTO",
+      "hash": "b99994bd9239cf91"
+    },
+    "[]gui.SkillProposalDTO": {
+      "kind": "slice",
+      "elem": "gui.SkillProposalDTO",
+      "hash": "7e77c1f886e4e8ef"
+    },
+    "[]gui.ToolCallDTO": {
+      "kind": "slice",
+      "elem": "gui.ToolCallDTO",
+      "hash": "7e098234306184bc"
+    },
+    "[]gui.ToolStatDTO": {
+      "kind": "slice",
+      "elem": "gui.ToolStatDTO",
+      "hash": "19543a02f3b93e82"
+    },
+    "[]gui.WorkflowInfoDTO": {
+      "kind": "slice",
+      "elem": "gui.WorkflowInfoDTO",
+      "hash": "231adcfbcb726678"
+    },
+    "[]memory.Ban": {
+      "kind": "slice",
+      "elem": "memory.Ban",
+      "hash": "56b92ccfa72968b4"
+    },
+    "[]string": {
+      "kind": "slice",
+      "elem": "string",
+      "hash": "2d6ff95f38c1b0a6"
+    },
+    "daemon.ApprovalInfo": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Args",
+          "type": "string",
+          "jsonTag": "args",
+          "tags": {
+            "json": "args"
+          }
+        },
+        {
+          "name": "ID",
+          "type": "string",
+          "jsonTag": "id",
+          "tags": {
+            "json": "id"
+          }
+        },
+        {
+          "name": "Tool",
+          "type": "string",
+          "jsonTag": "tool",
+          "tags": {
+            "json": "tool"
+          }
+        }
+      ],
+      "hash": "1aa3096e0bc5565d"
+    },
+    "daemon.ShellInfo": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Command",
+          "type": "string",
+          "jsonTag": "command",
+          "tags": {
+            "json": "command"
+          }
+        },
+        {
+          "name": "ExitCode",
+          "type": "int",
+          "jsonTag": "exit_code",
+          "tags": {
+            "json": "exit_code"
+          }
+        },
+        {
+          "name": "FinishedMs",
+          "type": "int64",
+          "jsonTag": "finished_ms,omitempty",
+          "tags": {
+            "json": "finished_ms,omitempty"
+          }
+        },
+        {
+          "name": "ID",
+          "type": "string",
+          "jsonTag": "id",
+          "tags": {
+            "json": "id"
+          }
+        },
+        {
+          "name": "LastLine",
+          "type": "string",
+          "jsonTag": "last_line,omitempty",
+          "tags": {
+            "json": "last_line,omitempty"
+          }
+        },
+        {
+          "name": "StartedMs",
+          "type": "int64",
+          "jsonTag": "started_ms,omitempty",
+          "tags": {
+            "json": "started_ms,omitempty"
+          }
+        },
+        {
+          "name": "Status",
+          "type": "string",
+          "jsonTag": "status",
+          "tags": {
+            "json": "status"
+          }
+        }
+      ],
+      "hash": "eb7ef87bd5c2603d"
+    },
+    "daemon.ToolInfo": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "ReadOnly",
+          "type": "bool",
+          "jsonTag": "read_only",
+          "tags": {
+            "json": "read_only"
+          }
+        }
+      ],
+      "hash": "57debe870c6452d9"
+    },
+    "gui.BgTaskDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Attempts",
+          "type": "int",
+          "jsonTag": "attempts,omitempty",
+          "tags": {
+            "json": "attempts,omitempty"
+          }
+        },
+        {
+          "name": "Canceling",
+          "type": "bool",
+          "jsonTag": "canceling,omitempty",
+          "tags": {
+            "json": "canceling,omitempty"
+          }
+        },
+        {
+          "name": "Difficulty",
+          "type": "string",
+          "jsonTag": "difficulty,omitempty",
+          "tags": {
+            "json": "difficulty,omitempty"
+          }
+        },
+        {
+          "name": "Error",
+          "type": "string",
+          "jsonTag": "error,omitempty",
+          "tags": {
+            "json": "error,omitempty"
+          }
+        },
+        {
+          "name": "Escalated",
+          "type": "bool",
+          "jsonTag": "escalated,omitempty",
+          "tags": {
+            "json": "escalated,omitempty"
+          }
+        },
+        {
+          "name": "FinishedMs",
+          "type": "int64",
+          "jsonTag": "finishedMs,omitempty",
+          "tags": {
+            "json": "finishedMs,omitempty"
+          }
+        },
+        {
+          "name": "Host",
+          "type": "string",
+          "jsonTag": "host,omitempty",
+          "tags": {
+            "json": "host,omitempty"
+          }
+        },
+        {
+          "name": "ID",
+          "type": "string",
+          "jsonTag": "id",
+          "tags": {
+            "json": "id"
+          }
+        },
+        {
+          "name": "InTokens",
+          "type": "int",
+          "jsonTag": "inTokens,omitempty",
+          "tags": {
+            "json": "inTokens,omitempty"
+          }
+        },
+        {
+          "name": "Kind",
+          "type": "string",
+          "jsonTag": "kind,omitempty",
+          "tags": {
+            "json": "kind,omitempty"
+          }
+        },
+        {
+          "name": "LastNote",
+          "type": "string",
+          "jsonTag": "lastNote,omitempty",
+          "tags": {
+            "json": "lastNote,omitempty"
+          }
+        },
+        {
+          "name": "LastTool",
+          "type": "string",
+          "jsonTag": "lastTool,omitempty",
+          "tags": {
+            "json": "lastTool,omitempty"
+          }
+        },
+        {
+          "name": "Model",
+          "type": "string",
+          "jsonTag": "model,omitempty",
+          "tags": {
+            "json": "model,omitempty"
+          }
+        },
+        {
+          "name": "OutTokens",
+          "type": "int",
+          "jsonTag": "outTokens,omitempty",
+          "tags": {
+            "json": "outTokens,omitempty"
+          }
+        },
+        {
+          "name": "Pid",
+          "type": "int",
+          "jsonTag": "pid,omitempty",
+          "tags": {
+            "json": "pid,omitempty"
+          }
+        },
+        {
+          "name": "Result",
+          "type": "string",
+          "jsonTag": "result,omitempty",
+          "tags": {
+            "json": "result,omitempty"
+          }
+        },
+        {
+          "name": "Role",
+          "type": "string",
+          "jsonTag": "role,omitempty",
+          "tags": {
+            "json": "role,omitempty"
+          }
+        },
+        {
+          "name": "StartedMs",
+          "type": "int64",
+          "jsonTag": "startedMs",
+          "tags": {
+            "json": "startedMs"
+          }
+        },
+        {
+          "name": "Status",
+          "type": "string",
+          "jsonTag": "status",
+          "tags": {
+            "json": "status"
+          }
+        },
+        {
+          "name": "Steps",
+          "type": "int",
+          "jsonTag": "steps,omitempty",
+          "tags": {
+            "json": "steps,omitempty"
+          }
+        },
+        {
+          "name": "Task",
+          "type": "string",
+          "jsonTag": "task",
+          "tags": {
+            "json": "task"
+          }
+        },
+        {
+          "name": "UpdatedMs",
+          "type": "int64",
+          "jsonTag": "updatedMs,omitempty",
+          "tags": {
+            "json": "updatedMs,omitempty"
+          }
+        },
+        {
+          "name": "Where",
+          "type": "string",
+          "jsonTag": "where,omitempty",
+          "tags": {
+            "json": "where,omitempty"
+          }
+        }
+      ],
+      "hash": "ba2668991d41aeb2"
+    },
+    "gui.BoardItemDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Detail",
+          "type": "string",
+          "jsonTag": "detail,omitempty",
+          "tags": {
+            "json": "detail,omitempty"
+          }
+        },
+        {
+          "name": "Dir",
+          "type": "string",
+          "jsonTag": "dir,omitempty",
+          "tags": {
+            "json": "dir,omitempty"
+          }
+        },
+        {
+          "name": "Key",
+          "type": "string",
+          "jsonTag": "key",
+          "tags": {
+            "json": "key"
+          }
+        },
+        {
+          "name": "Kind",
+          "type": "string",
+          "jsonTag": "kind",
+          "tags": {
+            "json": "kind"
+          }
+        },
+        {
+          "name": "Task",
+          "type": "string",
+          "jsonTag": "task,omitempty",
+          "tags": {
+            "json": "task,omitempty"
+          }
+        },
+        {
+          "name": "Title",
+          "type": "string",
+          "jsonTag": "title",
+          "tags": {
+            "json": "title"
+          }
+        },
+        {
+          "name": "URL",
+          "type": "string",
+          "jsonTag": "url,omitempty",
+          "tags": {
+            "json": "url,omitempty"
+          }
+        }
+      ],
+      "hash": "53535893076837b1"
+    },
+    "gui.BoardLaneDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Behind",
+          "type": "int",
+          "jsonTag": "behind",
+          "tags": {
+            "json": "behind"
+          }
+        },
+        {
+          "name": "Branch",
+          "type": "string",
+          "jsonTag": "branch",
+          "tags": {
+            "json": "branch"
+          }
+        },
+        {
+          "name": "Dir",
+          "type": "string",
+          "jsonTag": "dir",
+          "tags": {
+            "json": "dir"
+          }
+        },
+        {
+          "name": "Dirty",
+          "type": "int",
+          "jsonTag": "dirty",
+          "tags": {
+            "json": "dirty"
+          }
+        },
+        {
+          "name": "Items",
+          "type": "[]gui.BoardItemDTO",
+          "jsonTag": "items",
+          "tags": {
+            "json": "items"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "OpenIss",
+          "type": "int",
+          "jsonTag": "openIss",
+          "tags": {
+            "json": "openIss"
+          }
+        },
+        {
+          "name": "OpenPRs",
+          "type": "int",
+          "jsonTag": "openPrs",
+          "tags": {
+            "json": "openPrs"
+          }
+        },
+        {
+          "name": "Pinned",
+          "type": "bool",
+          "jsonTag": "pinned",
+          "tags": {
+            "json": "pinned"
+          }
+        },
+        {
+          "name": "Remote",
+          "type": "bool",
+          "jsonTag": "remote",
+          "tags": {
+            "json": "remote"
+          }
+        },
+        {
+          "name": "Repo",
+          "type": "string",
+          "jsonTag": "repo",
+          "tags": {
+            "json": "repo"
+          }
+        },
+        {
+          "name": "Todos",
+          "type": "int",
+          "jsonTag": "todos",
+          "tags": {
+            "json": "todos"
+          }
+        },
+        {
+          "name": "URL",
+          "type": "string",
+          "jsonTag": "url",
+          "tags": {
+            "json": "url"
+          }
+        },
+        {
+          "name": "Unpushed",
+          "type": "int",
+          "jsonTag": "unpushed",
+          "tags": {
+            "json": "unpushed"
+          }
+        }
+      ],
+      "hash": "de1ea288cfd2c9b0"
+    },
+    "gui.CalEventDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "AllDay",
+          "type": "bool",
+          "jsonTag": "allDay",
+          "tags": {
+            "json": "allDay"
+          }
+        },
+        {
+          "name": "Location",
+          "type": "string",
+          "jsonTag": "location",
+          "tags": {
+            "json": "location"
+          }
+        },
+        {
+          "name": "Start",
+          "type": "string",
+          "jsonTag": "start",
+          "tags": {
+            "json": "start"
+          }
+        },
+        {
+          "name": "Summary",
+          "type": "string",
+          "jsonTag": "summary",
+          "tags": {
+            "json": "summary"
+          }
+        }
+      ],
+      "hash": "0b9fe6f19f62e9ae"
+    },
+    "gui.CatalogEntryDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Added",
+          "type": "bool",
+          "jsonTag": "added",
+          "tags": {
+            "json": "added"
+          }
+        },
+        {
+          "name": "Category",
+          "type": "string",
+          "jsonTag": "category",
+          "tags": {
+            "json": "category"
+          }
+        },
+        {
+          "name": "Description",
+          "type": "string",
+          "jsonTag": "description",
+          "tags": {
+            "json": "description"
+          }
+        },
+        {
+          "name": "Display",
+          "type": "string",
+          "jsonTag": "display",
+          "tags": {
+            "json": "display"
+          }
+        },
+        {
+          "name": "Glyph",
+          "type": "string",
+          "jsonTag": "glyph",
+          "tags": {
+            "json": "glyph"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "URL",
+          "type": "string",
+          "jsonTag": "url",
+          "tags": {
+            "json": "url"
+          }
+        }
+      ],
+      "hash": "4de3faa9c65b1082"
+    },
+    "gui.CommandInfoDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "AllowedTools",
+          "type": "[]string",
+          "jsonTag": "allowedTools,omitempty",
+          "tags": {
+            "json": "allowedTools,omitempty"
+          }
+        },
+        {
+          "name": "ArgHint",
+          "type": "string",
+          "jsonTag": "argHint,omitempty",
+          "tags": {
+            "json": "argHint,omitempty"
+          }
+        },
+        {
+          "name": "Description",
+          "type": "string",
+          "jsonTag": "description",
+          "tags": {
+            "json": "description"
+          }
+        },
+        {
+          "name": "Model",
+          "type": "string",
+          "jsonTag": "model,omitempty",
+          "tags": {
+            "json": "model,omitempty"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "Scope",
+          "type": "string",
+          "jsonTag": "scope",
+          "tags": {
+            "json": "scope"
+          }
+        }
+      ],
+      "hash": "1b2448aa7a59bdfc"
+    },
+    "gui.CompactResultDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "After",
+          "type": "int",
+          "jsonTag": "after",
+          "tags": {
+            "json": "after"
+          }
+        },
+        {
+          "name": "Before",
+          "type": "int",
+          "jsonTag": "before",
+          "tags": {
+            "json": "before"
+          }
+        }
+      ],
+      "hash": "b92b987a4db22600"
+    },
+    "gui.ConfigFieldDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "AllowEmpty",
+          "type": "bool",
+          "jsonTag": "allowEmpty,omitempty",
+          "tags": {
+            "json": "allowEmpty,omitempty"
+          }
+        },
+        {
+          "name": "Desc",
+          "type": "string",
+          "jsonTag": "desc",
+          "tags": {
+            "json": "desc"
+          }
+        },
+        {
+          "name": "Key",
+          "type": "string",
+          "jsonTag": "key",
+          "tags": {
+            "json": "key"
+          }
+        },
+        {
+          "name": "Multi",
+          "type": "bool",
+          "jsonTag": "multi,omitempty",
+          "tags": {
+            "json": "multi,omitempty"
+          }
+        },
+        {
+          "name": "Options",
+          "type": "[]string",
+          "jsonTag": "options,omitempty",
+          "tags": {
+            "json": "options,omitempty"
+          }
+        },
+        {
+          "name": "Value",
+          "type": "string",
+          "jsonTag": "value",
+          "tags": {
+            "json": "value"
+          }
+        }
+      ],
+      "hash": "3b32ae8cce97b55c"
+    },
+    "gui.ConnectorDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Connected",
+          "type": "bool",
+          "jsonTag": "connected",
+          "tags": {
+            "json": "connected"
+          }
+        },
+        {
+          "name": "Description",
+          "type": "string",
+          "jsonTag": "description",
+          "tags": {
+            "json": "description"
+          }
+        },
+        {
+          "name": "Disabled",
+          "type": "bool",
+          "jsonTag": "disabled",
+          "tags": {
+            "json": "disabled"
+          }
+        },
+        {
+          "name": "Display",
+          "type": "string",
+          "jsonTag": "display",
+          "tags": {
+            "json": "display"
+          }
+        },
+        {
+          "name": "Expiry",
+          "type": "string",
+          "jsonTag": "expiry,omitempty",
+          "tags": {
+            "json": "expiry,omitempty"
+          }
+        },
+        {
+          "name": "Glyph",
+          "type": "string",
+          "jsonTag": "glyph",
+          "tags": {
+            "json": "glyph"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "RequiresAuth",
+          "type": "bool",
+          "jsonTag": "requiresAuth",
+          "tags": {
+            "json": "requiresAuth"
+          }
+        },
+        {
+          "name": "Type",
+          "type": "string",
+          "jsonTag": "type",
+          "tags": {
+            "json": "type"
+          }
+        },
+        {
+          "name": "URL",
+          "type": "string",
+          "jsonTag": "url",
+          "tags": {
+            "json": "url"
+          }
+        }
+      ],
+      "hash": "375cb4386f32e3f6"
+    },
+    "gui.ConsolidationDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Bytes",
+          "type": "int",
+          "jsonTag": "bytes",
+          "tags": {
+            "json": "bytes"
+          }
+        },
+        {
+          "name": "Label",
+          "type": "string",
+          "jsonTag": "label",
+          "tags": {
+            "json": "label"
+          }
+        },
+        {
+          "name": "Path",
+          "type": "string",
+          "jsonTag": "path",
+          "tags": {
+            "json": "path"
+          }
+        },
+        {
+          "name": "WhenMs",
+          "type": "int64",
+          "jsonTag": "whenMs",
+          "tags": {
+            "json": "whenMs"
+          }
+        }
+      ],
+      "hash": "703c8ea6f02e6653"
+    },
+    "gui.CountDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Count",
+          "type": "int",
+          "jsonTag": "count",
+          "tags": {
+            "json": "count"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        }
+      ],
+      "hash": "556e662b2f37e40f"
+    },
+    "gui.CronDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Active",
+          "type": "bool",
+          "jsonTag": "active",
+          "tags": {
+            "json": "active"
+          }
+        },
+        {
+          "name": "Command",
+          "type": "string",
+          "jsonTag": "command",
+          "tags": {
+            "json": "command"
+          }
+        },
+        {
+          "name": "Enabled",
+          "type": "bool",
+          "jsonTag": "enabled",
+          "tags": {
+            "json": "enabled"
+          }
+        },
+        {
+          "name": "Kind",
+          "type": "string",
+          "jsonTag": "kind",
+          "tags": {
+            "json": "kind"
+          }
+        },
+        {
+          "name": "Last",
+          "type": "string",
+          "jsonTag": "last",
+          "tags": {
+            "json": "last"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "Next",
+          "type": "string",
+          "jsonTag": "next",
+          "tags": {
+            "json": "next"
+          }
+        },
+        {
+          "name": "Unit",
+          "type": "string",
+          "jsonTag": "unit,omitempty",
+          "tags": {
+            "json": "unit,omitempty"
+          }
+        }
+      ],
+      "hash": "aed079b8dbd93e80"
+    },
+    "gui.DiffFileDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Adds",
+          "type": "int",
+          "jsonTag": "adds",
+          "tags": {
+            "json": "adds"
+          }
+        },
+        {
+          "name": "Dels",
+          "type": "int",
+          "jsonTag": "dels",
+          "tags": {
+            "json": "dels"
+          }
+        },
+        {
+          "name": "Path",
+          "type": "string",
+          "jsonTag": "path",
+          "tags": {
+            "json": "path"
+          }
+        }
+      ],
+      "hash": "2aa81fd86f4119c3"
+    },
+    "gui.FeedItemDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Detail",
+          "type": "string",
+          "jsonTag": "detail,omitempty",
+          "tags": {
+            "json": "detail,omitempty"
+          }
+        },
+        {
+          "name": "Dir",
+          "type": "string",
+          "jsonTag": "dir,omitempty",
+          "tags": {
+            "json": "dir,omitempty"
+          }
+        },
+        {
+          "name": "DirName",
+          "type": "string",
+          "jsonTag": "dirName,omitempty",
+          "tags": {
+            "json": "dirName,omitempty"
+          }
+        },
+        {
+          "name": "Key",
+          "type": "string",
+          "jsonTag": "key",
+          "tags": {
+            "json": "key"
+          }
+        },
+        {
+          "name": "Kind",
+          "type": "string",
+          "jsonTag": "kind",
+          "tags": {
+            "json": "kind"
+          }
+        },
+        {
+          "name": "Task",
+          "type": "string",
+          "jsonTag": "task",
+          "tags": {
+            "json": "task"
+          }
+        },
+        {
+          "name": "Title",
+          "type": "string",
+          "jsonTag": "title",
+          "tags": {
+            "json": "title"
+          }
+        },
+        {
+          "name": "URL",
+          "type": "string",
+          "jsonTag": "url,omitempty",
+          "tags": {
+            "json": "url,omitempty"
+          }
+        }
+      ],
+      "hash": "d4369fe5d37abf95"
+    },
+    "gui.FileEntryDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Children",
+          "type": "[]gui.FileEntryDTO",
+          "jsonTag": "children,omitempty",
+          "tags": {
+            "json": "children,omitempty"
+          }
+        },
+        {
+          "name": "IsDir",
+          "type": "bool",
+          "jsonTag": "isDir",
+          "tags": {
+            "json": "isDir"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "Path",
+          "type": "string",
+          "jsonTag": "path",
+          "tags": {
+            "json": "path"
+          }
+        }
+      ],
+      "hash": "29635ee04168a42f"
+    },
+    "gui.GPUDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "MemTotalGB",
+          "type": "float64",
+          "jsonTag": "memTotalGb",
+          "tags": {
+            "json": "memTotalGb"
+          }
+        },
+        {
+          "name": "MemUsedGB",
+          "type": "float64",
+          "jsonTag": "memUsedGb",
+          "tags": {
+            "json": "memUsedGb"
+          }
+        },
+        {
+          "name": "MemUsedPct",
+          "type": "float64",
+          "jsonTag": "memUsedPct",
+          "tags": {
+            "json": "memUsedPct"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "PowerW",
+          "type": "float64",
+          "jsonTag": "powerW",
+          "tags": {
+            "json": "powerW"
+          }
+        },
+        {
+          "name": "TempC",
+          "type": "float64",
+          "jsonTag": "tempC",
+          "tags": {
+            "json": "tempC"
+          }
+        },
+        {
+          "name": "UtilPct",
+          "type": "float64",
+          "jsonTag": "utilPct",
+          "tags": {
+            "json": "utilPct"
+          }
+        }
+      ],
+      "hash": "2f3b2ec2cde2ff58"
+    },
+    "gui.GPUSampleDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "TempC",
+          "type": "float64",
+          "jsonTag": "tempC",
+          "tags": {
+            "json": "tempC"
+          }
+        },
+        {
+          "name": "UtilPct",
+          "type": "float64",
+          "jsonTag": "utilPct",
+          "tags": {
+            "json": "utilPct"
+          }
+        }
+      ],
+      "hash": "7588498ea1546870"
+    },
+    "gui.HookStatDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Done",
+          "type": "int",
+          "jsonTag": "done",
+          "tags": {
+            "json": "done"
+          }
+        },
+        {
+          "name": "DurationMS",
+          "type": "int64",
+          "jsonTag": "durationMs",
+          "tags": {
+            "json": "durationMs"
+          }
+        },
+        {
+          "name": "Errors",
+          "type": "int",
+          "jsonTag": "errors",
+          "tags": {
+            "json": "errors"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "Starts",
+          "type": "int",
+          "jsonTag": "starts",
+          "tags": {
+            "json": "starts"
+          }
+        }
+      ],
+      "hash": "c2dfb3791bbac54f"
+    },
+    "gui.ImageDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Data",
+          "type": "string",
+          "jsonTag": "data",
+          "tags": {
+            "json": "data"
+          }
+        },
+        {
+          "name": "MediaType",
+          "type": "string",
+          "jsonTag": "mediaType",
+          "tags": {
+            "json": "mediaType"
+          }
+        }
+      ],
+      "hash": "ebd0dc27f575ca25"
+    },
+    "gui.InstalledPluginDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Agents",
+          "type": "[]string",
+          "jsonTag": "agents,omitempty",
+          "tags": {
+            "json": "agents,omitempty"
+          }
+        },
+        {
+          "name": "Commands",
+          "type": "[]string",
+          "jsonTag": "commands,omitempty",
+          "tags": {
+            "json": "commands,omitempty"
+          }
+        },
+        {
+          "name": "Description",
+          "type": "string",
+          "jsonTag": "description,omitempty",
+          "tags": {
+            "json": "description,omitempty"
+          }
+        },
+        {
+          "name": "Enabled",
+          "type": "bool",
+          "jsonTag": "enabled",
+          "tags": {
+            "json": "enabled"
+          }
+        },
+        {
+          "name": "Hooks",
+          "type": "int",
+          "jsonTag": "hooks,omitempty",
+          "tags": {
+            "json": "hooks,omitempty"
+          }
+        },
+        {
+          "name": "InstalledMs",
+          "type": "int64",
+          "jsonTag": "installedMs",
+          "tags": {
+            "json": "installedMs"
+          }
+        },
+        {
+          "name": "MCPServers",
+          "type": "[]string",
+          "jsonTag": "mcpServers,omitempty",
+          "tags": {
+            "json": "mcpServers,omitempty"
+          }
+        },
+        {
+          "name": "Marketplace",
+          "type": "string",
+          "jsonTag": "marketplace,omitempty",
+          "tags": {
+            "json": "marketplace,omitempty"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "ScanCount",
+          "type": "int",
+          "jsonTag": "scanCount,omitempty",
+          "tags": {
+            "json": "scanCount,omitempty"
+          }
+        },
+        {
+          "name": "ScanStatus",
+          "type": "string",
+          "jsonTag": "scanStatus,omitempty",
+          "tags": {
+            "json": "scanStatus,omitempty"
+          }
+        },
+        {
+          "name": "Scans",
+          "type": "[]gui.ScanFindingDTO",
+          "jsonTag": "scans,omitempty",
+          "tags": {
+            "json": "scans,omitempty"
+          }
+        },
+        {
+          "name": "Skills",
+          "type": "[]string",
+          "jsonTag": "skills,omitempty",
+          "tags": {
+            "json": "skills,omitempty"
+          }
+        },
+        {
+          "name": "Version",
+          "type": "string",
+          "jsonTag": "version,omitempty",
+          "tags": {
+            "json": "version,omitempty"
+          }
+        },
+        {
+          "name": "Warnings",
+          "type": "[]string",
+          "jsonTag": "warnings,omitempty",
+          "tags": {
+            "json": "warnings,omitempty"
+          }
+        }
+      ],
+      "hash": "6ca94ea04946f9e9"
+    },
+    "gui.KanbanCardDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "AgeHours",
+          "type": "int",
+          "jsonTag": "ageHours,omitempty",
+          "tags": {
+            "json": "ageHours,omitempty"
+          }
+        },
+        {
+          "name": "Dir",
+          "type": "string",
+          "jsonTag": "dir,omitempty",
+          "tags": {
+            "json": "dir,omitempty"
+          }
+        },
+        {
+          "name": "Draft",
+          "type": "bool",
+          "jsonTag": "draft,omitempty",
+          "tags": {
+            "json": "draft,omitempty"
+          }
+        },
+        {
+          "name": "Key",
+          "type": "string",
+          "jsonTag": "key",
+          "tags": {
+            "json": "key"
+          }
+        },
+        {
+          "name": "Kind",
+          "type": "string",
+          "jsonTag": "kind",
+          "tags": {
+            "json": "kind"
+          }
+        },
+        {
+          "name": "NeedsYou",
+          "type": "bool",
+          "jsonTag": "needsYou,omitempty",
+          "tags": {
+            "json": "needsYou,omitempty"
+          }
+        },
+        {
+          "name": "Number",
+          "type": "int",
+          "jsonTag": "number,omitempty",
+          "tags": {
+            "json": "number,omitempty"
+          }
+        },
+        {
+          "name": "Repo",
+          "type": "string",
+          "jsonTag": "repo",
+          "tags": {
+            "json": "repo"
+          }
+        },
+        {
+          "name": "Review",
+          "type": "string",
+          "jsonTag": "review,omitempty",
+          "tags": {
+            "json": "review,omitempty"
+          }
+        },
+        {
+          "name": "Session",
+          "type": "bool",
+          "jsonTag": "session,omitempty",
+          "tags": {
+            "json": "session,omitempty"
+          }
+        },
+        {
+          "name": "Task",
+          "type": "string",
+          "jsonTag": "task,omitempty",
+          "tags": {
+            "json": "task,omitempty"
+          }
+        },
+        {
+          "name": "Title",
+          "type": "string",
+          "jsonTag": "title",
+          "tags": {
+            "json": "title"
+          }
+        },
+        {
+          "name": "URL",
+          "type": "string",
+          "jsonTag": "url,omitempty",
+          "tags": {
+            "json": "url,omitempty"
+          }
+        }
+      ],
+      "hash": "e8e4ff5184372d89"
+    },
+    "gui.KanbanColumnDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Cards",
+          "type": "[]gui.KanbanCardDTO",
+          "jsonTag": "cards",
+          "tags": {
+            "json": "cards"
+          }
+        },
+        {
+          "name": "ID",
+          "type": "string",
+          "jsonTag": "id",
+          "tags": {
+            "json": "id"
+          }
+        },
+        {
+          "name": "Title",
+          "type": "string",
+          "jsonTag": "title",
+          "tags": {
+            "json": "title"
+          }
+        }
+      ],
+      "hash": "71f3200aef291494"
+    },
+    "gui.MCPServerDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Command",
+          "type": "[]string",
+          "jsonTag": "command,omitempty",
+          "tags": {
+            "json": "command,omitempty"
+          }
+        },
+        {
+          "name": "Description",
+          "type": "string",
+          "jsonTag": "description,omitempty",
+          "tags": {
+            "json": "description,omitempty"
+          }
+        },
+        {
+          "name": "Disabled",
+          "type": "bool",
+          "jsonTag": "disabled",
+          "tags": {
+            "json": "disabled"
+          }
+        },
+        {
+          "name": "EnvPairs",
+          "type": "[]string",
+          "jsonTag": "envPairs,omitempty",
+          "tags": {
+            "json": "envPairs,omitempty"
+          }
+        },
+        {
+          "name": "ExcludeTools",
+          "type": "[]string",
+          "jsonTag": "excludeTools,omitempty",
+          "tags": {
+            "json": "excludeTools,omitempty"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "Remote",
+          "type": "bool",
+          "jsonTag": "remote",
+          "tags": {
+            "json": "remote"
+          }
+        },
+        {
+          "name": "SecretEnvKeys",
+          "type": "[]string",
+          "jsonTag": "secretEnvKeys,omitempty",
+          "tags": {
+            "json": "secretEnvKeys,omitempty"
+          }
+        },
+        {
+          "name": "SecretEnvPairs",
+          "type": "[]string",
+          "jsonTag": "secretEnvPairs,omitempty",
+          "tags": {
+            "json": "secretEnvPairs,omitempty"
+          }
+        },
+        {
+          "name": "Tools",
+          "type": "[]string",
+          "jsonTag": "tools,omitempty",
+          "tags": {
+            "json": "tools,omitempty"
+          }
+        },
+        {
+          "name": "Type",
+          "type": "string",
+          "jsonTag": "type,omitempty",
+          "tags": {
+            "json": "type,omitempty"
+          }
+        },
+        {
+          "name": "URL",
+          "type": "string",
+          "jsonTag": "url,omitempty",
+          "tags": {
+            "json": "url,omitempty"
+          }
+        }
+      ],
+      "hash": "3550fb6b9a258807"
+    },
+    "gui.MachineDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Addr",
+          "type": "string",
+          "jsonTag": "addr,omitempty",
+          "tags": {
+            "json": "addr,omitempty"
+          }
+        },
+        {
+          "name": "Detected",
+          "type": "bool",
+          "jsonTag": "detected",
+          "tags": {
+            "json": "detected"
+          }
+        },
+        {
+          "name": "Dir",
+          "type": "string",
+          "jsonTag": "dir,omitempty",
+          "tags": {
+            "json": "dir,omitempty"
+          }
+        },
+        {
+          "name": "Model",
+          "type": "string",
+          "jsonTag": "model,omitempty",
+          "tags": {
+            "json": "model,omitempty"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "Perm",
+          "type": "string",
+          "jsonTag": "perm,omitempty",
+          "tags": {
+            "json": "perm,omitempty"
+          }
+        },
+        {
+          "name": "SSH",
+          "type": "string",
+          "jsonTag": "ssh",
+          "tags": {
+            "json": "ssh"
+          }
+        },
+        {
+          "name": "Saved",
+          "type": "bool",
+          "jsonTag": "saved",
+          "tags": {
+            "json": "saved"
+          }
+        }
+      ],
+      "hash": "7d899fba193e827e"
+    },
+    "gui.MailMsgDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "From",
+          "type": "string",
+          "jsonTag": "from",
+          "tags": {
+            "json": "from"
+          }
+        },
+        {
+          "name": "Subject",
+          "type": "string",
+          "jsonTag": "subject",
+          "tags": {
+            "json": "subject"
+          }
+        }
+      ],
+      "hash": "70e55177e3e349eb"
+    },
+    "gui.MarketplaceDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "AddedMs",
+          "type": "int64",
+          "jsonTag": "addedMs",
+          "tags": {
+            "json": "addedMs"
+          }
+        },
+        {
+          "name": "Description",
+          "type": "string",
+          "jsonTag": "description,omitempty",
+          "tags": {
+            "json": "description,omitempty"
+          }
+        },
+        {
+          "name": "Disabled",
+          "type": "bool",
+          "jsonTag": "disabled",
+          "tags": {
+            "json": "disabled"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "Owner",
+          "type": "string",
+          "jsonTag": "owner,omitempty",
+          "tags": {
+            "json": "owner,omitempty"
+          }
+        },
+        {
+          "name": "PluginCount",
+          "type": "int",
+          "jsonTag": "pluginCount,omitempty",
+          "tags": {
+            "json": "pluginCount,omitempty"
+          }
+        },
+        {
+          "name": "Source",
+          "type": "string",
+          "jsonTag": "source",
+          "tags": {
+            "json": "source"
+          }
+        },
+        {
+          "name": "Version",
+          "type": "string",
+          "jsonTag": "version,omitempty",
+          "tags": {
+            "json": "version,omitempty"
+          }
+        }
+      ],
+      "hash": "a085f90929d5cd1b"
+    },
+    "gui.MemoryNoteDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Index",
+          "type": "int",
+          "jsonTag": "index",
+          "tags": {
+            "json": "index"
+          }
+        },
+        {
+          "name": "Text",
+          "type": "string",
+          "jsonTag": "text",
+          "tags": {
+            "json": "text"
+          }
+        }
+      ],
+      "hash": "a50a41ee9a7b48cc"
+    },
+    "gui.MemoryScopeRefDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Current",
+          "type": "bool",
+          "jsonTag": "current,omitempty",
+          "tags": {
+            "json": "current,omitempty"
+          }
+        },
+        {
+          "name": "Dir",
+          "type": "string",
+          "jsonTag": "dir",
+          "tags": {
+            "json": "dir"
+          }
+        },
+        {
+          "name": "Key",
+          "type": "string",
+          "jsonTag": "key",
+          "tags": {
+            "json": "key"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "NoteCount",
+          "type": "int",
+          "jsonTag": "noteCount",
+          "tags": {
+            "json": "noteCount"
+          }
+        }
+      ],
+      "hash": "1351b18c594839c3"
+    },
+    "gui.MessageDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Images",
+          "type": "[]gui.ImageDTO",
+          "jsonTag": "images,omitempty",
+          "tags": {
+            "json": "images,omitempty"
+          }
+        },
+        {
+          "name": "Reasoning",
+          "type": "string",
+          "jsonTag": "reasoning,omitempty",
+          "tags": {
+            "json": "reasoning,omitempty"
+          }
+        },
+        {
+          "name": "Role",
+          "type": "string",
+          "jsonTag": "role",
+          "tags": {
+            "json": "role"
+          }
+        },
+        {
+          "name": "Text",
+          "type": "string",
+          "jsonTag": "text",
+          "tags": {
+            "json": "text"
+          }
+        },
+        {
+          "name": "ToolCallID",
+          "type": "string",
+          "jsonTag": "toolCallId,omitempty",
+          "tags": {
+            "json": "toolCallId,omitempty"
+          }
+        },
+        {
+          "name": "ToolCalls",
+          "type": "[]gui.ToolCallDTO",
+          "jsonTag": "toolCalls,omitempty",
+          "tags": {
+            "json": "toolCalls,omitempty"
+          }
+        },
+        {
+          "name": "ToolError",
+          "type": "bool",
+          "jsonTag": "toolError,omitempty",
+          "tags": {
+            "json": "toolError,omitempty"
+          }
+        },
+        {
+          "name": "ToolName",
+          "type": "string",
+          "jsonTag": "toolName,omitempty",
+          "tags": {
+            "json": "toolName,omitempty"
+          }
+        }
+      ],
+      "hash": "a06c6bdd03ea166b"
+    },
+    "gui.ModelDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Available",
+          "type": "bool",
+          "jsonTag": "available",
+          "tags": {
+            "json": "available"
+          }
+        },
+        {
+          "name": "Cache",
+          "type": "bool",
+          "jsonTag": "cache",
+          "tags": {
+            "json": "cache"
+          }
+        },
+        {
+          "name": "Context1M",
+          "type": "bool",
+          "jsonTag": "context1m",
+          "tags": {
+            "json": "context1m"
+          }
+        },
+        {
+          "name": "ContextWindow",
+          "type": "int",
+          "jsonTag": "contextWindow",
+          "tags": {
+            "json": "contextWindow"
+          }
+        },
+        {
+          "name": "Effort",
+          "type": "string",
+          "jsonTag": "effort,omitempty",
+          "tags": {
+            "json": "effort,omitempty"
+          }
+        },
+        {
+          "name": "EffortLevels",
+          "type": "[]string",
+          "jsonTag": "effortLevels,omitempty",
+          "tags": {
+            "json": "effortLevels,omitempty"
+          }
+        },
+        {
+          "name": "ID",
+          "type": "string",
+          "jsonTag": "id",
+          "tags": {
+            "json": "id"
+          }
+        },
+        {
+          "name": "Provider",
+          "type": "string",
+          "jsonTag": "provider",
+          "tags": {
+            "json": "provider"
+          }
+        },
+        {
+          "name": "Reasoning",
+          "type": "bool",
+          "jsonTag": "reasoning",
+          "tags": {
+            "json": "reasoning"
+          }
+        },
+        {
+          "name": "Search",
+          "type": "bool",
+          "jsonTag": "search,omitempty",
+          "tags": {
+            "json": "search,omitempty"
+          }
+        },
+        {
+          "name": "Social",
+          "type": "bool",
+          "jsonTag": "social,omitempty",
+          "tags": {
+            "json": "social,omitempty"
+          }
+        },
+        {
+          "name": "ThinkingBudget",
+          "type": "int",
+          "jsonTag": "thinkingBudget,omitempty",
+          "tags": {
+            "json": "thinkingBudget,omitempty"
+          }
+        },
+        {
+          "name": "Vision",
+          "type": "bool",
+          "jsonTag": "vision,omitempty",
+          "tags": {
+            "json": "vision,omitempty"
+          }
+        }
+      ],
+      "hash": "478124d7f259b341"
+    },
+    "gui.ModelStatDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "CacheReadTokens",
+          "type": "int",
+          "jsonTag": "cacheReadTokens",
+          "tags": {
+            "json": "cacheReadTokens"
+          }
+        },
+        {
+          "name": "CacheWriteTokens",
+          "type": "int",
+          "jsonTag": "cacheWriteTokens",
+          "tags": {
+            "json": "cacheWriteTokens"
+          }
+        },
+        {
+          "name": "DurationMS",
+          "type": "int64",
+          "jsonTag": "durationMs",
+          "tags": {
+            "json": "durationMs"
+          }
+        },
+        {
+          "name": "InTokens",
+          "type": "int",
+          "jsonTag": "inTokens",
+          "tags": {
+            "json": "inTokens"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "OutTokens",
+          "type": "int",
+          "jsonTag": "outTokens",
+          "tags": {
+            "json": "outTokens"
+          }
+        },
+        {
+          "name": "Turns",
+          "type": "int",
+          "jsonTag": "turns",
+          "tags": {
+            "json": "turns"
+          }
+        }
+      ],
+      "hash": "6e7c7aa27b0b6601"
+    },
+    "gui.NoteDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Path",
+          "type": "string",
+          "jsonTag": "path",
+          "tags": {
+            "json": "path"
+          }
+        },
+        {
+          "name": "Title",
+          "type": "string",
+          "jsonTag": "title",
+          "tags": {
+            "json": "title"
+          }
+        }
+      ],
+      "hash": "a86a4c998731e874"
+    },
+    "gui.PluginPreviewDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Agents",
+          "type": "int",
+          "jsonTag": "agents",
+          "tags": {
+            "json": "agents"
+          }
+        },
+        {
+          "name": "Commands",
+          "type": "int",
+          "jsonTag": "commands",
+          "tags": {
+            "json": "commands"
+          }
+        },
+        {
+          "name": "Description",
+          "type": "string",
+          "jsonTag": "description,omitempty",
+          "tags": {
+            "json": "description,omitempty"
+          }
+        },
+        {
+          "name": "Hooks",
+          "type": "int",
+          "jsonTag": "hooks",
+          "tags": {
+            "json": "hooks"
+          }
+        },
+        {
+          "name": "MCPServers",
+          "type": "int",
+          "jsonTag": "mcpServers",
+          "tags": {
+            "json": "mcpServers"
+          }
+        },
+        {
+          "name": "Marketplace",
+          "type": "string",
+          "jsonTag": "marketplace",
+          "tags": {
+            "json": "marketplace"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "Skills",
+          "type": "int",
+          "jsonTag": "skills",
+          "tags": {
+            "json": "skills"
+          }
+        },
+        {
+          "name": "Version",
+          "type": "string",
+          "jsonTag": "version,omitempty",
+          "tags": {
+            "json": "version,omitempty"
+          }
+        }
+      ],
+      "hash": "53d695b3826c1a10"
+    },
+    "gui.ProviderDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Credentialed",
+          "type": "bool",
+          "jsonTag": "credentialed",
+          "tags": {
+            "json": "credentialed"
+          }
+        },
+        {
+          "name": "ModelCount",
+          "type": "int",
+          "jsonTag": "modelCount",
+          "tags": {
+            "json": "modelCount"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        }
+      ],
+      "hash": "132c24e7ec37f42a"
+    },
+    "gui.RecentDirDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Dir",
+          "type": "string",
+          "jsonTag": "dir",
+          "tags": {
+            "json": "dir"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        }
+      ],
+      "hash": "3c8949581dd2d094"
+    },
+    "gui.RevutoReviewerDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Paused",
+          "type": "bool",
+          "jsonTag": "paused",
+          "tags": {
+            "json": "paused"
+          }
+        },
+        {
+          "name": "Repo",
+          "type": "string",
+          "jsonTag": "repo",
+          "tags": {
+            "json": "repo"
+          }
+        }
+      ],
+      "hash": "d9c2f23a565b10e7"
+    },
+    "gui.RolloutDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Index",
+          "type": "int",
+          "jsonTag": "index",
+          "tags": {
+            "json": "index"
+          }
+        },
+        {
+          "name": "Outcome",
+          "type": "string",
+          "jsonTag": "outcome,omitempty",
+          "tags": {
+            "json": "outcome,omitempty"
+          }
+        },
+        {
+          "name": "Text",
+          "type": "string",
+          "jsonTag": "text",
+          "tags": {
+            "json": "text"
+          }
+        },
+        {
+          "name": "WhenMs",
+          "type": "int64",
+          "jsonTag": "whenMs",
+          "tags": {
+            "json": "whenMs"
+          }
+        }
+      ],
+      "hash": "5d62a19f5a8f9ec7"
+    },
+    "gui.RouteStatsDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Assessed",
+          "type": "int",
+          "jsonTag": "assessed",
+          "tags": {
+            "json": "assessed"
+          }
+        },
+        {
+          "name": "ByDifficulty",
+          "type": "[]gui.CountDTO",
+          "jsonTag": "byDifficulty",
+          "tags": {
+            "json": "byDifficulty"
+          }
+        },
+        {
+          "name": "ByKind",
+          "type": "[]gui.CountDTO",
+          "jsonTag": "byKind",
+          "tags": {
+            "json": "byKind"
+          }
+        },
+        {
+          "name": "ByModel",
+          "type": "[]gui.CountDTO",
+          "jsonTag": "byModel",
+          "tags": {
+            "json": "byModel"
+          }
+        },
+        {
+          "name": "Orchestrator",
+          "type": "int",
+          "jsonTag": "orchestrator",
+          "tags": {
+            "json": "orchestrator"
+          }
+        },
+        {
+          "name": "Routed",
+          "type": "int",
+          "jsonTag": "routed",
+          "tags": {
+            "json": "routed"
+          }
+        },
+        {
+          "name": "SkipReasons",
+          "type": "[]gui.CountDTO",
+          "jsonTag": "skipReasons",
+          "tags": {
+            "json": "skipReasons"
+          }
+        },
+        {
+          "name": "Skipped",
+          "type": "int",
+          "jsonTag": "skipped",
+          "tags": {
+            "json": "skipped"
+          }
+        }
+      ],
+      "hash": "4e7e6f443b4f79f2"
+    },
+    "gui.RuleChainDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Chain",
+          "type": "[]string",
+          "jsonTag": "chain",
+          "tags": {
+            "json": "chain"
+          }
+        },
+        {
+          "name": "Custom",
+          "type": "bool",
+          "jsonTag": "custom",
+          "tags": {
+            "json": "custom"
+          }
+        },
+        {
+          "name": "Desc",
+          "type": "string",
+          "jsonTag": "desc",
+          "tags": {
+            "json": "desc"
+          }
+        },
+        {
+          "name": "Role",
+          "type": "string",
+          "jsonTag": "role",
+          "tags": {
+            "json": "role"
+          }
+        }
+      ],
+      "hash": "cadee5ad5ce562b5"
+    },
+    "gui.ScanFindingDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Component",
+          "type": "string",
+          "jsonTag": "component",
+          "tags": {
+            "json": "component"
+          }
+        },
+        {
+          "name": "Reasons",
+          "type": "[]string",
+          "jsonTag": "reasons,omitempty",
+          "tags": {
+            "json": "reasons,omitempty"
+          }
+        }
+      ],
+      "hash": "3064463477402d4d"
+    },
+    "gui.SessionInfoDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Dir",
+          "type": "string",
+          "jsonTag": "dir",
+          "tags": {
+            "json": "dir"
+          }
+        },
+        {
+          "name": "ID",
+          "type": "string",
+          "jsonTag": "id",
+          "tags": {
+            "json": "id"
+          }
+        },
+        {
+          "name": "Model",
+          "type": "string",
+          "jsonTag": "model",
+          "tags": {
+            "json": "model"
+          }
+        },
+        {
+          "name": "Status",
+          "type": "string",
+          "jsonTag": "status",
+          "tags": {
+            "json": "status"
+          }
+        },
+        {
+          "name": "Title",
+          "type": "string",
+          "jsonTag": "title",
+          "tags": {
+            "json": "title"
+          }
+        },
+        {
+          "name": "Turns",
+          "type": "int",
+          "jsonTag": "turns",
+          "tags": {
+            "json": "turns"
+          }
+        },
+        {
+          "name": "Updated",
+          "type": "int64",
+          "jsonTag": "updated",
+          "tags": {
+            "json": "updated"
+          }
+        },
+        {
+          "name": "Views",
+          "type": "int",
+          "jsonTag": "views",
+          "tags": {
+            "json": "views"
+          }
+        }
+      ],
+      "hash": "7c9e1989f7371a19"
+    },
+    "gui.SkillDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Description",
+          "type": "string",
+          "jsonTag": "description",
+          "tags": {
+            "json": "description"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "Path",
+          "type": "string",
+          "jsonTag": "path",
+          "tags": {
+            "json": "path"
+          }
+        },
+        {
+          "name": "Source",
+          "type": "string",
+          "jsonTag": "source",
+          "tags": {
+            "json": "source"
+          }
+        }
+      ],
+      "hash": "31851ac72a3e3076"
+    },
+    "gui.SkillProposalDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Description",
+          "type": "string",
+          "jsonTag": "description",
+          "tags": {
+            "json": "description"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "Path",
+          "type": "string",
+          "jsonTag": "path",
+          "tags": {
+            "json": "path"
+          }
+        }
+      ],
+      "hash": "aeb1f64b183c2c8b"
+    },
+    "gui.SubagentStatsDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "BackgroundDone",
+          "type": "int",
+          "jsonTag": "backgroundDone",
+          "tags": {
+            "json": "backgroundDone"
+          }
+        },
+        {
+          "name": "BackgroundNotes",
+          "type": "int",
+          "jsonTag": "backgroundNotes",
+          "tags": {
+            "json": "backgroundNotes"
+          }
+        },
+        {
+          "name": "GroupCalls",
+          "type": "int",
+          "jsonTag": "groupCalls",
+          "tags": {
+            "json": "groupCalls"
+          }
+        },
+        {
+          "name": "GroupErrors",
+          "type": "int",
+          "jsonTag": "groupErrors",
+          "tags": {
+            "json": "groupErrors"
+          }
+        },
+        {
+          "name": "MutatingCalls",
+          "type": "int",
+          "jsonTag": "mutatingCalls",
+          "tags": {
+            "json": "mutatingCalls"
+          }
+        },
+        {
+          "name": "MutatingErrors",
+          "type": "int",
+          "jsonTag": "mutatingErrors",
+          "tags": {
+            "json": "mutatingErrors"
+          }
+        },
+        {
+          "name": "PromoteErrors",
+          "type": "int",
+          "jsonTag": "promoteErrors",
+          "tags": {
+            "json": "promoteErrors"
+          }
+        },
+        {
+          "name": "Promotes",
+          "type": "int",
+          "jsonTag": "promotes",
+          "tags": {
+            "json": "promotes"
+          }
+        },
+        {
+          "name": "RouteNotes",
+          "type": "int",
+          "jsonTag": "routeNotes",
+          "tags": {
+            "json": "routeNotes"
+          }
+        },
+        {
+          "name": "StatusChecks",
+          "type": "int",
+          "jsonTag": "statusChecks",
+          "tags": {
+            "json": "statusChecks"
+          }
+        },
+        {
+          "name": "TaskCalls",
+          "type": "int",
+          "jsonTag": "taskCalls",
+          "tags": {
+            "json": "taskCalls"
+          }
+        },
+        {
+          "name": "TaskErrors",
+          "type": "int",
+          "jsonTag": "taskErrors",
+          "tags": {
+            "json": "taskErrors"
+          }
+        }
+      ],
+      "hash": "9ad605ba963d2f82"
+    },
+    "gui.SysHealthDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "CPUTempC",
+          "type": "float64",
+          "jsonTag": "cpuTempC",
+          "tags": {
+            "json": "cpuTempC"
+          }
+        },
+        {
+          "name": "CPUs",
+          "type": "int",
+          "jsonTag": "cpus",
+          "tags": {
+            "json": "cpus"
+          }
+        },
+        {
+          "name": "DiskTotalGB",
+          "type": "float64",
+          "jsonTag": "diskTotalGb",
+          "tags": {
+            "json": "diskTotalGb"
+          }
+        },
+        {
+          "name": "DiskUsedGB",
+          "type": "float64",
+          "jsonTag": "diskUsedGb",
+          "tags": {
+            "json": "diskUsedGb"
+          }
+        },
+        {
+          "name": "DiskUsedPct",
+          "type": "float64",
+          "jsonTag": "diskUsedPct",
+          "tags": {
+            "json": "diskUsedPct"
+          }
+        },
+        {
+          "name": "GPUs",
+          "type": "[]gui.GPUDTO",
+          "jsonTag": "gpus,omitempty",
+          "tags": {
+            "json": "gpus,omitempty"
+          }
+        },
+        {
+          "name": "LoadPerCPU",
+          "type": "float64",
+          "jsonTag": "loadPerCpu",
+          "tags": {
+            "json": "loadPerCpu"
+          }
+        },
+        {
+          "name": "MemTotalGB",
+          "type": "float64",
+          "jsonTag": "memTotalGb",
+          "tags": {
+            "json": "memTotalGb"
+          }
+        },
+        {
+          "name": "MemUsedGB",
+          "type": "float64",
+          "jsonTag": "memUsedGb",
+          "tags": {
+            "json": "memUsedGb"
+          }
+        },
+        {
+          "name": "MemUsedPct",
+          "type": "float64",
+          "jsonTag": "memUsedPct",
+          "tags": {
+            "json": "memUsedPct"
+          }
+        },
+        {
+          "name": "SwapTotalGB",
+          "type": "float64",
+          "jsonTag": "swapTotalGb",
+          "tags": {
+            "json": "swapTotalGb"
+          }
+        },
+        {
+          "name": "SwapUsedGB",
+          "type": "float64",
+          "jsonTag": "swapUsedGb",
+          "tags": {
+            "json": "swapUsedGb"
+          }
+        },
+        {
+          "name": "SwapUsedPct",
+          "type": "float64",
+          "jsonTag": "swapUsedPct",
+          "tags": {
+            "json": "swapUsedPct"
+          }
+        },
+        {
+          "name": "UptimeHours",
+          "type": "float64",
+          "jsonTag": "uptimeHours",
+          "tags": {
+            "json": "uptimeHours"
+          }
+        }
+      ],
+      "hash": "56fcbd9f20f198c6"
+    },
+    "gui.ToolCallDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Args",
+          "type": "string",
+          "jsonTag": "args",
+          "tags": {
+            "json": "args"
+          }
+        },
+        {
+          "name": "ID",
+          "type": "string",
+          "jsonTag": "id",
+          "tags": {
+            "json": "id"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        }
+      ],
+      "hash": "4deaad3ea3c13521"
+    },
+    "gui.ToolStatDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Calls",
+          "type": "int",
+          "jsonTag": "calls",
+          "tags": {
+            "json": "calls"
+          }
+        },
+        {
+          "name": "DurationMS",
+          "type": "int64",
+          "jsonTag": "durationMs",
+          "tags": {
+            "json": "durationMs"
+          }
+        },
+        {
+          "name": "Errors",
+          "type": "int",
+          "jsonTag": "errors",
+          "tags": {
+            "json": "errors"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        }
+      ],
+      "hash": "3df15edb7bbdcc7f"
+    },
+    "gui.WorkflowInfoDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Description",
+          "type": "string",
+          "jsonTag": "description",
+          "tags": {
+            "json": "description"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "Steps",
+          "type": "int",
+          "jsonTag": "steps",
+          "tags": {
+            "json": "steps"
+          }
+        }
+      ],
+      "hash": "8bd6eb2d504d8393"
+    },
+    "map[string][]gui.GPUSampleDTO": {
+      "kind": "map",
+      "key": "string",
+      "value": "[]gui.GPUSampleDTO",
+      "hash": "f09bcf9094c8b4b8"
+    },
+    "map[string]string": {
+      "kind": "map",
+      "key": "string",
+      "value": "string",
+      "hash": "edb7c4330eb99dba"
+    },
+    "memory.Ban": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Rule",
+          "type": "string",
+          "jsonTag": "rule",
+          "tags": {
+            "json": "rule"
+          }
+        },
+        {
+          "name": "Title",
+          "type": "string",
+          "jsonTag": "title",
+          "tags": {
+            "json": "title"
+          }
+        }
+      ],
+      "hash": "628f378eec8b68bf"
+    }
+  }
+}

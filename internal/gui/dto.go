@@ -7,6 +7,8 @@
 // reshaped into strings the TS bindings can consume.
 package gui
 
+//go:generate go run ./gen/manifest
+
 import (
 	"encoding/base64"
 	"fmt"

@@ -247,6 +247,14 @@ func main() {
 		return
 	}
 
+	// `eigen guiserver`: headless Bridge service over a Unix socket. This is the
+	// tagless (no webkitgtk) guiserver subcommand for the Qt migration: RPC conn
+	// for request/reply, events conn for push streams. Compiles into `make gate`.
+	if flag.Arg(0) == "guiserver" {
+		runGUIServerCmd()
+		return
+	}
+
 	// `eigen daemon [status|stop]`: run / inspect / stop the long-lived session
 	// host (the real app). Windows attach to it as views; sessions keep running
 	// with no window.

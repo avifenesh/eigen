@@ -48,6 +48,13 @@ func (s *Store) MergeFrom(src *Store, when time.Time) (*MergeResult, error) {
 	if s.global || src.global {
 		return nil, fmt.Errorf("MergeFrom is for project scopes; use promote/demote for global")
 	}
+	// RMW guard: two Bridges can race on reading src + dst, then Rewrite dst.
+	// Lock the destination (the store being mutated). Source is read-only here.
+	release, err := s.lockStore()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	res := &MergeResult{SrcKey: baseName(src.dir), DstKey: baseName(s.dir)}
 
 	// 1) Fold source MEMORY.md into the destination under a provenance header.

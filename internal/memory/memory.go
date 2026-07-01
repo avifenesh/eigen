@@ -1031,6 +1031,12 @@ func (s *Store) AddBan(title, rule string) (replaced bool, err error) {
 	if title == "" || rule == "" {
 		return false, fmt.Errorf("a ban needs a title and a rule")
 	}
+	// RMW guard: two Bridges can race on read → modify → writeBans.
+	release, err := s.lockStore()
+	if err != nil {
+		return false, err
+	}
+	defer release()
 	bans := s.ListBans()
 	for i := range bans {
 		if strings.EqualFold(bans[i].Title, title) {
@@ -1051,6 +1057,12 @@ func (s *Store) RemoveBan(title string) (bool, error) {
 		return false, fmt.Errorf("memory unavailable")
 	}
 	title = strings.TrimSpace(title)
+	// RMW guard: two Bridges can race on read → modify → writeBans.
+	release, err := s.lockStore()
+	if err != nil {
+		return false, err
+	}
+	defer release()
 	bans := s.ListBans()
 	kept := bans[:0]
 	removed := false

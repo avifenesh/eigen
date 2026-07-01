@@ -393,6 +393,14 @@ func (p *Pipeline) MaybeConsolidate(ctx context.Context, force bool) (bool, erro
 	if p.Store == nil || p.Consolidate == nil {
 		return false, nil
 	}
+	// RMW guard: two Bridges can race on phase2Input (reads MEMORY.md + ad-hoc
+	// + Stage1) → consolidate → Rewrite. Hold the lock across the ENTIRE span
+	// so the read snapshot and the final write are atomic together.
+	release, err := p.Store.lockStore()
+	if err != nil {
+		return false, err
+	}
+	defer release()
 	cur, selected, adHocPaths := p.phase2Input()
 	limit := p.ConsolidateBytes
 	if limit <= 0 {

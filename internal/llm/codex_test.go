@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // writeCodexAuth writes a chatgpt-mode auth.json and points EIGEN_CODEX_AUTH at it.
@@ -314,5 +316,70 @@ func TestApplyOutputItemPairsReasoningIDWithBlob(t *testing.T) {
 	// with BLOB_B.
 	if out.ReasoningID == "rs_AAA" && out.ReasoningEncrypted == "BLOB_B" {
 		t.Fatal("id/blob mispaired across reasoning items (the 400 bug)")
+	}
+}
+
+// TestCodexConcurrentRefreshRace verifies that the flock+recheck guard prevents
+// concurrent token refresh races. Codex uses ROTATING refresh tokens: each
+// refresh call returns a NEW refresh_token and invalidates the old one. Two
+// processes that both see "token expired" and race to refresh → the loser's
+// write clobbers the winner's rotated token → both invalidated → user must
+// re-login. We guard with an flock on auth.json.lock: acquire → RE-CHECK
+// freshness by re-reading auth.json → only refresh+write if still stale. This
+// test simulates two goroutines racing to refresh and asserts that only ONE
+// refresh call happens (the second sees the first's result after acquiring the
+// lock and skips its refresh).
+func TestCodexConcurrentRefreshRace(t *testing.T) {
+	authPath := writeCodexAuth(t, "stale-tok", "ref-tok-1", "acct-1")
+	var refreshCalls int
+	var mu sync.Mutex
+	oauth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		refreshCalls++
+		call := refreshCalls
+		mu.Unlock()
+		// Each refresh issues a NEW rotated refresh_token (ref-tok-2, ref-tok-3, …).
+		// The second refresh (if it runs) will use the stale ref-tok-1 → BOTH are
+		// invalidated (the first's ref-tok-2 is clobbered by the second's write).
+		_, _ = w.Write([]byte(`{"access_token":"fresh-tok-` + string(rune('0'+call)) + `","refresh_token":"ref-tok-` + string(rune('1'+call)) + `"}`))
+	}))
+	defer oauth.Close()
+
+	c1 := &Codex{authPath: authPath, oauthURL: oauth.URL, token: "stale-tok", refresh: "ref-tok-1", http: &http.Client{Timeout: 30 * time.Second}}
+	c2 := &Codex{authPath: authPath, oauthURL: oauth.URL, token: "stale-tok", refresh: "ref-tok-1", http: &http.Client{Timeout: 30 * time.Second}}
+
+	// Race two goroutines, both seeing expired token → both call refreshWithLock.
+	// The flock ensures they run sequentially; the recheck inside refreshWithLock
+	// makes the second one see the first's result and skip its refresh.
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_ = c1.refreshWithLock(context.Background(), "ref-tok-1")
+	}()
+	go func() {
+		defer wg.Done()
+		_ = c2.refreshWithLock(context.Background(), "ref-tok-1")
+	}()
+	wg.Wait()
+
+	mu.Lock()
+	calls := refreshCalls
+	mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("expected exactly ONE refresh (the other should recheck+skip), got %d", calls)
+	}
+	// Both Codex instances should see the refreshed token in memory (loaded by
+	// the recheck path for the one that acquired the lock second).
+	if c1.token != "fresh-tok-1" && c2.token != "fresh-tok-1" {
+		t.Fatalf("at least one instance should have token=fresh-tok-1, got c1=%q c2=%q", c1.token, c2.token)
+	}
+	// auth.json on disk should have the single refresh's result.
+	a, _ := readCodexAuth(authPath)
+	if a.Tokens.AccessToken != "fresh-tok-1" {
+		t.Fatalf("auth.json token = %q, want fresh-tok-1", a.Tokens.AccessToken)
+	}
+	if a.Tokens.RefreshToken != "ref-tok-2" {
+		t.Fatalf("auth.json refresh = %q, want ref-tok-2 (rotated once)", a.Tokens.RefreshToken)
 	}
 }
