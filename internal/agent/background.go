@@ -780,7 +780,9 @@ func (a *Agent) emitBgFinished(id, status string, err error) {
 		suggestPromote = true
 	}
 	note += " — task_status " + id + " to collect"
-	if suggestPromote {
+	// TranscriptPath is "" for an in-memory registry (dir unset) — there's no
+	// transcript on disk to promote from, so the hint would only mislead.
+	if suggestPromote && a.Bg.TranscriptPath(id) != "" {
 		// The task's transcript is written continuously (sub.Persist), so even a
 		// deadline-exhausted/stalled/canceled run still has a resumable transcript
 		// on disk — task_promote turns it into a normal session to continue from,
