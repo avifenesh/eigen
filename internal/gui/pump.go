@@ -83,17 +83,16 @@ func (b *Bridge) Subscribe(id string) error {
 	closeName := sessionClosed(id)
 
 	// The Attach handler runs on the client's event-loop goroutine — a single
-	// goroutine, so a plain counter here increments in strict emit order. v3
-	// Event.Emit is non-blocking (dispatches via go func), so the handler can
-	// never stall the daemon connection. Each event carries that ordinal (Seq)
-	// so the frontend can reassemble despite Wails' per-event-goroutine dispatch
-	// reordering arrival at the webview.
+	// goroutine, so a plain counter here increments in strict emit order. The
+	// Emitter contract requires Emit to be non-blocking (Wails v3 Event.Emit
+	// dispatches via go func; guiserver's fan-out uses bounded queues), so the
+	// handler can never stall the daemon connection. Each event carries that
+	// ordinal (Seq) so the frontend can reassemble despite per-event dispatch
+	// reordering arrival at the view.
 	var seq uint64
 	if err := c.Attach(realID, func(e daemon.WireEvent, replay bool) {
-		if b.app != nil {
-			seq++
-			b.app.Event.Emit(evName, StreamEventDTO{Event: toWireEventDTO(e), Replay: replay, Seq: seq})
-		}
+		seq++
+		b.emit(evName, StreamEventDTO{Event: toWireEventDTO(e), Replay: replay, Seq: seq})
 	}); err != nil {
 		_ = c.Close()
 		// For a remote stream, Close flushed ssh stderr into errBuf — surface
@@ -122,9 +121,7 @@ func (b *Bridge) Subscribe(id string) error {
 		select {
 		case <-p.stop:
 		case <-c.Done():
-			if b.app != nil {
-				b.app.Event.Emit(closeName, struct{}{})
-			}
+			b.emit(closeName, struct{}{})
 		}
 		b.mu.Lock()
 		if b.pumps[id] == p {

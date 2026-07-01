@@ -33,6 +33,10 @@ func buildGUIApp() (*application.App, *gui.Bridge) {
 		Assets:      application.AssetOptions{Handler: gui.TasksAPIHandler(application.AssetFileServerFS(guiAssets))},
 		Mac:         application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
 	})
+	// Two wires, two concerns: the Emitter seam carries all event emission (so
+	// internal/gui compiles tagless for guiserver); SetApp carries the native
+	// dialog handle, the only remaining Wails coupling.
+	bridge.SetEmitter(gui.NewWailsEmitter(app))
 	bridge.SetApp(app)
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title: "Eigen",

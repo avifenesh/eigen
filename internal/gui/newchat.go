@@ -1,7 +1,6 @@
 package gui
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -55,32 +54,16 @@ func (b *Bridge) RecentDirs() ([]RecentDirDTO, error) {
 
 // PickDirectory opens the native OS folder dialog and returns the chosen
 // absolute path, or "" if the user cancelled (a cancel is NOT an error — the
-// caller just keeps its current selection). It needs the wired Wails app to
-// reach the dialog manager; with no app there's no window to host a dialog, so
-// it fails closed with "no window".
+// caller just keeps its current selection). The dialog itself is host-UI work
+// behind promptForPath (wails.go): the Wails build shows the real dialog; the
+// tagless build fails closed telling the client to pass an explicit path (the
+// Qt client uses QFileDialog and never calls this).
 //
-// The dialog is scoped to directories only (CanChooseDirectories/CanChooseFiles)
-// and starts at a sensible default (the user's home, else the cwd) so the user
-// isn't dropped at the filesystem root. It attaches to the current window when
-// one is available — Window.Current() may be nil (e.g. during startup), in which
-// case we prompt unattached, which is acceptable on Linux.
+// The dialog is scoped to directories only and starts at a sensible default
+// (the user's home, else the cwd) so the user isn't dropped at the filesystem
+// root.
 func (b *Bridge) PickDirectory() (string, error) {
-	if b.app == nil {
-		return "", fmt.Errorf("no window")
-	}
-	start := defaultPickDir()
-	dlg := b.app.Dialog.OpenFile().
-		CanChooseDirectories(true).
-		CanChooseFiles(false).
-		SetTitle("Choose project directory")
-	if start != "" {
-		dlg = dlg.SetDirectory(start)
-	}
-	if win := b.app.Window.Current(); win != nil {
-		dlg = dlg.AttachToWindow(win)
-	}
-	// An empty return is the user cancelling — surface "" without an error.
-	return dlg.PromptForSingleSelection()
+	return b.promptForPath("Choose project directory", defaultPickDir(), true)
 }
 
 // defaultPickDir picks a friendly start dir for the folder dialog: the user's

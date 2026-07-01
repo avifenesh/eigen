@@ -2,7 +2,6 @@ package gui
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/avifenesh/eigen/internal/obsidian"
@@ -63,18 +62,10 @@ func (b *Bridge) ObsidianWrite(path, content string, append bool) (string, error
 // ChooseObsidianVault opens a native folder picker and pins the chosen dir as
 // the Obsidian vault (must contain a .obsidian folder). Returns the new vault
 // path, or "" when the user cancelled. Lets the user point eigen at ANY vault.
+// The picker is host-UI work behind promptForPath (wails.go); the tagless
+// build fails closed and the Qt client passes the dir as a plain arg instead.
 func (b *Bridge) ChooseObsidianVault() (string, error) {
-	if b.app == nil {
-		return "", fmt.Errorf("no window")
-	}
-	dlg := b.app.Dialog.OpenFile().
-		CanChooseDirectories(true).
-		CanChooseFiles(false).
-		SetTitle("Choose your Obsidian vault")
-	if win := b.app.Window.Current(); win != nil {
-		dlg = dlg.AttachToWindow(win)
-	}
-	dir, err := dlg.PromptForSingleSelection()
+	dir, err := b.promptForPath("Choose your Obsidian vault", "", true)
 	if err != nil {
 		return "", err
 	}
