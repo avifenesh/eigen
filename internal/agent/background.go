@@ -766,6 +766,7 @@ func truncateForNote(s string) string {
 // fresh turn on it); front-ends that don't wake just render the note.
 func (a *Agent) emitBgFinished(id, status string, err error) {
 	note := "background task " + id + " finished"
+	suggestPromote := false
 	switch status {
 	case "error":
 		if err != nil {
@@ -773,10 +774,22 @@ func (a *Agent) emitBgFinished(id, status string, err error) {
 		} else {
 			note = "background task " + id + " FAILED"
 		}
+		suggestPromote = true
 	case "canceled":
 		note = "background task " + id + " canceled"
+		suggestPromote = true
 	}
-	a.emit(Event{Kind: EventNote, Text: note + " — task_status " + id + " to collect"})
+	note += " — task_status " + id + " to collect"
+	// TranscriptPath is "" for an in-memory registry (dir unset) — there's no
+	// transcript on disk to promote from, so the hint would only mislead.
+	if suggestPromote && a.Bg.TranscriptPath(id) != "" {
+		// The task's transcript is written continuously (sub.Persist), so even a
+		// deadline-exhausted/stalled/canceled run still has a resumable transcript
+		// on disk — task_promote turns it into a normal session to continue from,
+		// instead of the work just being stranded past bgMaxRuntime.
+		note += "; task_promote " + id + " to continue from its transcript"
+	}
+	a.emit(Event{Kind: EventNote, Text: note})
 	a.emit(Event{Kind: EventBgDone, Result: id, Text: note})
 }
 
