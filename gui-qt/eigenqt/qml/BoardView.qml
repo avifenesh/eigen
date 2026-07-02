@@ -1,0 +1,971 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import "Theme.js" as Theme
+
+// BoardView — cross-project work board with lanes (git state + cards) and kanban view
+Rectangle {
+    id: root
+    color: Theme.colors.bgBase
+
+    // View toggle: "projects" or "kanban"
+    property string viewMode: "projects"
+
+    // Filter state
+    property string ownerFilter: "all"
+    property string stateFilter: "all"
+
+    // Models (injected as context properties from Python)
+    // property var boardModel
+    // property var kanbanModel
+
+    // Role constants (Qt.UserRole + N, matching BoardModel Python roles)
+    readonly property int dirRole: 257
+    readonly property int nameRole: 258
+    readonly property int repoRole: 259
+    readonly property int branchRole: 260
+    readonly property int urlRole: 261
+    readonly property int remoteRole: 262
+    readonly property int pinnedRole: 263
+    readonly property int dirtyRole: 264
+    readonly property int unpushedRole: 265
+    readonly property int behindRole: 266
+    readonly property int todosRole: 267
+    readonly property int openPrsRole: 268
+    readonly property int openIssRole: 269
+    readonly property int itemsRole: 270
+
+    // Owners derived from lanes
+    function computeOwners() {
+        if (!boardModel) return []
+        var ownerSet = {}
+        for (var i = 0; i < boardModel.rowCount(); i++) {
+            var idx = boardModel.index(i, 0)
+            var remote = boardModel.data(idx, remoteRole)
+            var repo = boardModel.data(idx, repoRole)
+            if (remote && repo && repo.indexOf("/") >= 0) {
+                var owner = repo.split("/")[0]
+                ownerSet[owner] = true
+            }
+        }
+        var result = []
+        for (var o in ownerSet) {
+            result.push(o)
+        }
+        return result.sort()
+    }
+    property var owners: computeOwners()
+
+    // Owner filter options
+    property var ownerOptions: {
+        var opts = [
+            { value: "all", label: "All" },
+            { value: "local", label: "Local" }
+        ]
+        for (var i = 0; i < owners.length; i++) {
+            opts.push({ value: owners[i], label: owners[i] })
+        }
+        return opts
+    }
+
+    readonly property var stateOptions: [
+        { value: "all", label: "Everything" },
+        { value: "prs", label: "PRs" },
+        { value: "issues", label: "Issues" },
+        { value: "dirty", label: "Uncommitted" }
+    ]
+
+    Component.onCompleted: {
+        if (boardModel) boardModel.load()
+        if (kanbanModel) kanbanModel.load()
+    }
+
+    // Helpers
+    function laneMatches(idx) {
+        var remote = boardModel.data(idx, remoteRole)
+        var repo = boardModel.data(idx, repoRole)
+        var dir = boardModel.data(idx, dirRole)
+        var openPrs = boardModel.data(idx, openPrsRole) || 0
+        var openIss = boardModel.data(idx, openIssRole) || 0
+        var dirty = boardModel.data(idx, dirtyRole) || 0
+        var unpushed = boardModel.data(idx, unpushedRole) || 0
+        var behind = boardModel.data(idx, behindRole) || 0
+
+        // Owner filter
+        if (ownerFilter !== "all") {
+            if (ownerFilter === "local") {
+                if (remote) return false
+            } else {
+                if (!remote || !repo || !repo.startsWith(ownerFilter + "/")) return false
+            }
+        }
+
+        // State filter
+        if (stateFilter === "prs" && openPrs === 0) return false
+        if (stateFilter === "issues" && openIss === 0) return false
+        if (stateFilter === "dirty" && dirty === 0 && unpushed === 0 && behind === 0) return false
+
+        return true
+    }
+
+    function ageClass(hours) {
+        if (!hours) return ""
+        if (hours >= 168) return "old"
+        if (hours >= 48) return "warn"
+        return ""
+    }
+
+    function ageLabel(hours) {
+        if (!hours) return ""
+        if (hours >= 48) return Math.round(hours / 24) + "d"
+        return hours + "h"
+    }
+
+    function cardVerb(kind) {
+        if (kind === "pr") return "Review →"
+        if (kind === "issue") return "Work →"
+        return "Start →"
+    }
+
+    ColumnLayout {
+        anchors.fill: parent
+        spacing: 0
+
+        // Header
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 90
+            color: Theme.colors.bgBase
+            border.width: 1
+            border.color: Theme.colors.borderHairline
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: Theme.space.xl
+                spacing: Theme.space.xl
+
+                ColumnLayout {
+                    spacing: Theme.space.xs
+                    Layout.fillWidth: true
+
+                    Label {
+                        text: "Work board"
+                        font.family: Theme.uiFonts[0]
+                        font.pixelSize: Theme.fontSize.h3
+                        font.weight: Theme.fontWeight.semibold
+                        color: Theme.colors.textPrimary
+                    }
+
+                    Label {
+                        text: "Every project at a glance — git state, open PRs/issues, loose ends. One place to pick up work."
+                        font.family: Theme.uiFonts[0]
+                        font.pixelSize: Theme.fontSize.label
+                        color: Theme.colors.textMuted
+                        wrapMode: Text.WordWrap
+                        Layout.maximumWidth: 600
+                    }
+                }
+
+                RowLayout {
+                    spacing: Theme.space.md
+
+                    // View toggle (Segmented-style)
+                    Row {
+                        spacing: 2
+                        Repeater {
+                            model: [
+                                { value: "projects", label: "Projects" },
+                                { value: "kanban", label: "Kanban" }
+                            ]
+                            delegate: Rectangle {
+                                width: 90
+                                height: 32
+                                radius: Theme.radius.sm
+                                color: modelData.value === viewMode ? Theme.colors.brandBright : "transparent"
+                                border.width: 1
+                                border.color: modelData.value === viewMode ? Theme.colors.brandBright : Theme.colors.borderSubtle
+
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: modelData.label
+                                    font.family: Theme.uiFonts[0]
+                                    font.pixelSize: Theme.fontSize.label
+                                    font.weight: Theme.fontWeight.medium
+                                    color: modelData.value === viewMode ? Theme.colors.bgBase : Theme.colors.textSecondary
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: viewMode = modelData.value
+                                }
+                            }
+                        }
+                    }
+
+                    Button {
+                        text: "Refresh"
+                        onClicked: {
+                            if (boardModel) boardModel.load()
+                            if (kanbanModel) kanbanModel.load()
+                        }
+                    }
+                }
+            }
+        }
+
+        // Filters row (only for projects view)
+        Rectangle {
+            visible: viewMode === "projects" && boardModel && boardModel.rowCount() > 0
+            Layout.fillWidth: true
+            Layout.preferredHeight: visible ? 50 : 0
+            color: Theme.colors.bgBase
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: Theme.space.xl
+                anchors.rightMargin: Theme.space.xl
+                spacing: Theme.space.xl
+
+                // Owner filter chips
+                Row {
+                    spacing: Theme.space.xs
+                    Repeater {
+                        model: ownerOptions
+                        delegate: Rectangle {
+                            width: ownerLabel.implicitWidth + Theme.space.lg
+                            height: 28
+                            radius: Theme.radius.full
+                            color: modelData.value === ownerFilter ? Theme.colors.brandBright : Theme.colors.bgRaised
+                            border.width: 1
+                            border.color: modelData.value === ownerFilter ? Theme.colors.brandBright : Theme.colors.borderSubtle
+
+                            Label {
+                                id: ownerLabel
+                                anchors.centerIn: parent
+                                text: modelData.label
+                                font.family: Theme.uiFonts[0]
+                                font.pixelSize: Theme.fontSize.label
+                                font.weight: Theme.fontWeight.medium
+                                color: modelData.value === ownerFilter ? Theme.colors.bgBase : Theme.colors.textSecondary
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: ownerFilter = modelData.value
+                            }
+                        }
+                    }
+                }
+
+                // State filter chips
+                Row {
+                    spacing: Theme.space.xs
+                    Repeater {
+                        model: stateOptions
+                        delegate: Rectangle {
+                            width: stateLabel.implicitWidth + Theme.space.lg
+                            height: 28
+                            radius: Theme.radius.full
+                            color: modelData.value === stateFilter ? Theme.colors.brandBright : Theme.colors.bgRaised
+                            border.width: 1
+                            border.color: modelData.value === stateFilter ? Theme.colors.brandBright : Theme.colors.borderSubtle
+
+                            Label {
+                                id: stateLabel
+                                anchors.centerIn: parent
+                                text: modelData.label
+                                font.family: Theme.uiFonts[0]
+                                font.pixelSize: Theme.fontSize.label
+                                font.weight: Theme.fontWeight.medium
+                                color: modelData.value === stateFilter ? Theme.colors.bgBase : Theme.colors.textSecondary
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: stateFilter = modelData.value
+                            }
+                        }
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+            }
+        }
+
+        // Content area
+        Item {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+
+            // Projects view (horizontal scroll lanes)
+            Flickable {
+                visible: viewMode === "projects"
+                anchors.fill: parent
+                anchors.margins: Theme.space.xl
+                contentWidth: lanesRow.implicitWidth
+                contentHeight: height
+                clip: true
+
+                Row {
+                    id: lanesRow
+                    spacing: Theme.space.lg
+                    height: parent.height
+
+                    Repeater {
+                        model: boardModel ? boardModel.rowCount() : 0
+                        delegate: Rectangle {
+                            readonly property int idx: model.index
+                            visible: laneMatches(boardModel.index(model.index, 0))
+                            width: 300
+                            height: parent.height
+                            color: Theme.colors.bgRaised
+                            border.width: 1
+                            border.color: boardModel.data(boardModel.index(model.index, 0), remoteRole) ? Theme.colors.borderSubtle : Theme.colors.borderHairline
+                            radius: Theme.radius.lg
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: Theme.space.lg
+                                spacing: Theme.space.md
+
+                                // Lane header
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: Theme.space.sm
+
+                                    Label {
+                                        text: boardModel.data(boardModel.index(idx, 0), nameRole)
+                                        font.family: Theme.monoFonts[0]
+                                        font.pixelSize: Theme.fontSize.bodySm
+                                        font.weight: Theme.fontWeight.semibold
+                                        color: Theme.colors.textPrimary
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                var remote = boardModel.data(boardModel.index(idx, 0), remoteRole)
+                                                var url = boardModel.data(boardModel.index(idx, 0), urlRole)
+                                                var dir = boardModel.data(boardModel.index(idx, 0), dirRole)
+                                                if (remote && url) {
+                                                    Qt.openUrlExternally(url)
+                                                } else {
+                                                    boardModel.open_lane_chat(dir)
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Branch (local only)
+                                    Label {
+                                        visible: !boardModel.data(boardModel.index(idx, 0), remoteRole)
+                                        text: boardModel.data(boardModel.index(idx, 0), branchRole)
+                                        font.family: Theme.monoFonts[0]
+                                        font.pixelSize: Theme.fontSize.micro
+                                        color: Theme.colors.textFaint
+                                        elide: Text.ElideRight
+                                    }
+
+                                    // Pin button
+                                    Label {
+                                        text: boardModel.data(boardModel.index(idx, 0), pinnedRole) ? "★" : "☆"
+                                        font.pixelSize: Theme.fontSize.body
+                                        color: boardModel.data(boardModel.index(idx, 0), pinnedRole) ? Theme.colors.warn : Theme.colors.textFaint
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                var remote = boardModel.data(boardModel.index(idx, 0), remoteRole)
+                                                var key = remote ? boardModel.data(boardModel.index(idx, 0), repoRole) : boardModel.data(boardModel.index(idx, 0), dirRole)
+                                                boardModel.toggle_pin(key)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Git stats badges
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: Theme.space.xs
+
+                                    // Uncommitted
+                                    Rectangle {
+                                        visible: boardModel.data(boardModel.index(idx, 0), dirtyRole) > 0
+                                        width: dirtyLabel.implicitWidth + Theme.space.sm
+                                        height: 20
+                                        radius: Theme.radius.full
+                                        color: Theme.colors.bgRaised2
+                                        border.width: 1
+                                        border.color: Theme.colors.warn
+
+                                        Label {
+                                            id: dirtyLabel
+                                            anchors.centerIn: parent
+                                            text: "±" + boardModel.data(boardModel.index(idx, 0), dirtyRole)
+                                            font.family: Theme.monoFonts[0]
+                                            font.pixelSize: Theme.fontSize.micro
+                                            font.weight: Theme.fontWeight.medium
+                                            color: Theme.colors.warn
+                                        }
+                                    }
+
+                                    // Unpushed
+                                    Rectangle {
+                                        visible: boardModel.data(boardModel.index(idx, 0), unpushedRole) > 0
+                                        width: unpushedLabel.implicitWidth + Theme.space.sm
+                                        height: 20
+                                        radius: Theme.radius.full
+                                        color: Theme.colors.bgRaised2
+                                        border.width: 1
+                                        border.color: Theme.colors.borderSubtle
+
+                                        Label {
+                                            id: unpushedLabel
+                                            anchors.centerIn: parent
+                                            text: "↑" + boardModel.data(boardModel.index(idx, 0), unpushedRole)
+                                            font.family: Theme.monoFonts[0]
+                                            font.pixelSize: Theme.fontSize.micro
+                                            font.weight: Theme.fontWeight.medium
+                                            color: Theme.colors.textSecondary
+                                        }
+                                    }
+
+                                    // Behind
+                                    Rectangle {
+                                        visible: boardModel.data(boardModel.index(idx, 0), behindRole) > 0
+                                        width: behindLabel.implicitWidth + Theme.space.sm
+                                        height: 20
+                                        radius: Theme.radius.full
+                                        color: Theme.colors.bgRaised2
+                                        border.width: 1
+                                        border.color: Theme.colors.borderSubtle
+
+                                        Label {
+                                            id: behindLabel
+                                            anchors.centerIn: parent
+                                            text: "↓" + boardModel.data(boardModel.index(idx, 0), behindRole)
+                                            font.family: Theme.monoFonts[0]
+                                            font.pixelSize: Theme.fontSize.micro
+                                            font.weight: Theme.fontWeight.medium
+                                            color: Theme.colors.textSecondary
+                                        }
+                                    }
+
+                                    // TODOs
+                                    Rectangle {
+                                        visible: boardModel.data(boardModel.index(idx, 0), todosRole) > 0
+                                        width: todosLabel.implicitWidth + Theme.space.sm
+                                        height: 20
+                                        radius: Theme.radius.full
+                                        color: Theme.colors.bgRaised2
+                                        border.width: 1
+                                        border.color: Theme.colors.borderSubtle
+
+                                        Label {
+                                            id: todosLabel
+                                            anchors.centerIn: parent
+                                            text: "⊙" + boardModel.data(boardModel.index(idx, 0), todosRole)
+                                            font.family: Theme.monoFonts[0]
+                                            font.pixelSize: Theme.fontSize.micro
+                                            font.weight: Theme.fontWeight.medium
+                                            color: Theme.colors.textFaint
+                                        }
+                                    }
+
+                                    // Open PRs
+                                    Rectangle {
+                                        visible: boardModel.data(boardModel.index(idx, 0), openPrsRole) > 0
+                                        width: prsLabel.implicitWidth + Theme.space.sm
+                                        height: 20
+                                        radius: Theme.radius.full
+                                        color: Theme.colors.bgRaised2
+                                        border.width: 1
+                                        border.color: Theme.colors.borderBrandFaint
+
+                                        Label {
+                                            id: prsLabel
+                                            anchors.centerIn: parent
+                                            text: "PR " + boardModel.data(boardModel.index(idx, 0), openPrsRole)
+                                            font.family: Theme.monoFonts[0]
+                                            font.pixelSize: Theme.fontSize.micro
+                                            font.weight: Theme.fontWeight.medium
+                                            color: Theme.colors.info
+                                        }
+                                    }
+
+                                    // Open issues
+                                    Rectangle {
+                                        visible: boardModel.data(boardModel.index(idx, 0), openIssRole) > 0
+                                        width: issLabel.implicitWidth + Theme.space.sm
+                                        height: 20
+                                        radius: Theme.radius.full
+                                        color: Theme.colors.bgRaised2
+                                        border.width: 1
+                                        border.color: Theme.colors.borderBrandFaint
+
+                                        Label {
+                                            id: issLabel
+                                            anchors.centerIn: parent
+                                            text: "⊘" + boardModel.data(boardModel.index(idx, 0), openIssRole)
+                                            font.family: Theme.monoFonts[0]
+                                            font.pixelSize: Theme.fontSize.micro
+                                            font.weight: Theme.fontWeight.medium
+                                            color: Theme.colors.info
+                                        }
+                                    }
+
+                                    // Clean state (when nothing to show)
+                                    Label {
+                                        visible: {
+                                            var remote = boardModel.data(boardModel.index(idx, 0), remoteRole)
+                                            var dirty = boardModel.data(boardModel.index(idx, 0), dirtyRole) || 0
+                                            var unpushed = boardModel.data(boardModel.index(idx, 0), unpushedRole) || 0
+                                            var behind = boardModel.data(boardModel.index(idx, 0), behindRole) || 0
+                                            var prs = boardModel.data(boardModel.index(idx, 0), openPrsRole) || 0
+                                            var iss = boardModel.data(boardModel.index(idx, 0), openIssRole) || 0
+                                            var items = boardModel.data(boardModel.index(idx, 0), itemsRole) || []
+
+                                            if (remote) return prs === 0 && iss === 0
+                                            return dirty === 0 && unpushed === 0 && behind === 0 && items.length === 0
+                                        }
+                                        text: boardModel.data(boardModel.index(idx, 0), remoteRole) ? "no open work" : "clean"
+                                        font.family: Theme.monoFonts[0]
+                                        font.pixelSize: Theme.fontSize.micro
+                                        font.weight: Theme.fontWeight.medium
+                                        color: Theme.colors.success
+                                    }
+                                }
+
+                                // Cards (items)
+                                Flickable {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    contentWidth: width
+                                    contentHeight: cardsColumn.implicitHeight
+                                    clip: true
+
+                                    ColumnLayout {
+                                        id: cardsColumn
+                                        width: parent.width
+                                        spacing: Theme.space.md
+
+                                        Repeater {
+                                            model: boardModel.data(boardModel.index(idx, 0), itemsRole)
+                                            delegate: Rectangle {
+                                                Layout.fillWidth: true
+                                                implicitHeight: cardContent.implicitHeight + Theme.space.lg
+                                                color: Theme.colors.bgRaised2
+                                                border.width: 1
+                                                border.color: Theme.colors.borderHairline
+                                                radius: Theme.radius.md
+
+                                                // Left border accent
+                                                Rectangle {
+                                                    anchors.left: parent.left
+                                                    anchors.top: parent.top
+                                                    anchors.bottom: parent.bottom
+                                                    width: 2
+                                                    color: modelData.kind === "github" ? Theme.colors.info : Theme.colors.warn
+                                                }
+
+                                                ColumnLayout {
+                                                    id: cardContent
+                                                    anchors.fill: parent
+                                                    anchors.margins: Theme.space.md
+                                                    spacing: Theme.space.xs
+
+                                                    RowLayout {
+                                                        spacing: Theme.space.xs
+
+                                                        Label {
+                                                            text: modelData.kind === "github" ? "◉" : "±"
+                                                            font.pixelSize: Theme.fontSize.label
+                                                            color: Theme.colors.textMuted
+                                                        }
+
+                                                        Label {
+                                                            text: modelData.title || ""
+                                                            font.family: Theme.uiFonts[0]
+                                                            font.pixelSize: Theme.fontSize.label
+                                                            font.weight: Theme.fontWeight.medium
+                                                            color: Theme.colors.textPrimary
+                                                            wrapMode: Text.WordWrap
+                                                            Layout.fillWidth: true
+                                                        }
+                                                    }
+
+                                                    Label {
+                                                        visible: modelData.detail
+                                                        text: modelData.detail || ""
+                                                        font.family: Theme.uiFonts[0]
+                                                        font.pixelSize: Theme.fontSize.micro
+                                                        color: Theme.colors.textMuted
+                                                        wrapMode: Text.WordWrap
+                                                        Layout.fillWidth: true
+                                                    }
+
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: Theme.space.xs
+
+                                                        Item { Layout.fillWidth: true }
+
+                                                        Button {
+                                                            visible: modelData.url
+                                                            text: "Open"
+                                                            onClicked: Qt.openUrlExternally(modelData.url)
+                                                        }
+
+                                                        Button {
+                                                            visible: modelData.kind === "github" || modelData.task
+                                                            text: {
+                                                                if (modelData.kind === "github") {
+                                                                    return (modelData.detail || "").startsWith("PR") ? "Review →" : "Work →"
+                                                                }
+                                                                return "Start →"
+                                                            }
+                                                            onClicked: {
+                                                                // TODO: wire actions (ReviewPR, WorkIssue, StartFromFeed)
+                                                                console.log("Card action:", modelData.key)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Empty state
+                                        Label {
+                                            visible: {
+                                                var items = boardModel.data(boardModel.index(idx, 0), itemsRole) || []
+                                                var remote = boardModel.data(boardModel.index(idx, 0), remoteRole)
+                                                return items.length === 0 && !remote
+                                            }
+                                            text: "Nothing loose here."
+                                            font.family: Theme.uiFonts[0]
+                                            font.pixelSize: Theme.fontSize.label
+                                            color: Theme.colors.textGhost
+                                            Layout.alignment: Qt.AlignHCenter
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Kanban view (horizontal scroll columns)
+            Flickable {
+                visible: viewMode === "kanban"
+                anchors.fill: parent
+                anchors.margins: Theme.space.xl
+                contentWidth: kanbanRow.implicitWidth
+                contentHeight: height
+                clip: true
+
+                Row {
+                    id: kanbanRow
+                    spacing: Theme.space.md
+                    height: parent.height
+
+                    Repeater {
+                        model: kanbanModel ? kanbanModel.columns : []
+                        delegate: Rectangle {
+                            width: 270
+                            height: parent.height
+                            color: Theme.colors.bgWell
+                            border.width: 1
+                            border.color: Theme.colors.borderHairline
+                            radius: Theme.radius.lg
+
+                            // Top border accent by column
+                            Rectangle {
+                                anchors.top: parent.top
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                height: 2
+                                color: {
+                                    var colId = modelData.id
+                                    if (colId === "needs-you") return Theme.colors.warn
+                                    if (colId === "in-review") return Theme.colors.info
+                                    if (colId === "done") return Theme.colors.success
+                                    return "transparent"
+                                }
+                            }
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: Theme.space.md
+                                spacing: Theme.space.md
+
+                                // Column header
+                                RowLayout {
+                                    spacing: Theme.space.sm
+
+                                    Label {
+                                        text: modelData.title || ""
+                                        font.family: Theme.uiFonts[0]
+                                        font.pixelSize: Theme.fontSize.label
+                                        font.weight: Theme.fontWeight.semibold
+                                        font.capitalization: Font.AllUppercase
+                                        // letterSpacing: 0.8
+                                        color: Theme.colors.textFaint
+                                    }
+
+                                    Label {
+                                        text: (modelData.cards || []).length
+                                        font.family: Theme.uiFonts[0]
+                                        font.pixelSize: Theme.fontSize.label
+                                        color: {
+                                            var count = (modelData.cards || []).length
+                                            if (modelData.id === "in-review" && count > 6) return Theme.colors.warn
+                                            return Theme.colors.textGhost
+                                        }
+                                        font.weight: {
+                                            var count = (modelData.cards || []).length
+                                            if (modelData.id === "in-review" && count > 6) return Theme.fontWeight.bold
+                                            return Theme.fontWeight.regular
+                                        }
+                                    }
+                                }
+
+                                // Cards
+                                Flickable {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    contentWidth: width
+                                    contentHeight: kcardsColumn.implicitHeight
+                                    clip: true
+
+                                    ColumnLayout {
+                                        id: kcardsColumn
+                                        width: parent.width
+                                        spacing: Theme.space.md
+
+                                        Repeater {
+                                            model: modelData.cards
+                                            delegate: Rectangle {
+                                                Layout.fillWidth: true
+                                                implicitHeight: kcardContent.implicitHeight + Theme.space.md
+                                                color: Theme.colors.bgRaised
+                                                border.width: 1
+                                                border.color: Theme.colors.borderHairline
+                                                radius: Theme.radius.md
+
+                                                // Left border accent for cards needing attention
+                                                Rectangle {
+                                                    visible: modelData.needsYou
+                                                    anchors.left: parent.left
+                                                    anchors.top: parent.top
+                                                    anchors.bottom: parent.bottom
+                                                    width: 2
+                                                    color: Theme.colors.warn
+                                                }
+
+                                                ColumnLayout {
+                                                    id: kcardContent
+                                                    anchors.fill: parent
+                                                    anchors.margins: Theme.space.md
+                                                    spacing: Theme.space.xs
+
+                                                    // Card top (kind + repo + number + age)
+                                                    RowLayout {
+                                                        spacing: Theme.space.xs
+
+                                                        Label {
+                                                            text: {
+                                                                if (modelData.kind === "pr") return "PR"
+                                                                if (modelData.kind === "issue") return "issue"
+                                                                return "git"
+                                                            }
+                                                            font.family: Theme.uiFonts[0]
+                                                            font.pixelSize: Theme.fontSize.micro
+                                                            font.weight: Theme.fontWeight.semibold
+                                                            font.capitalization: Font.AllUppercase
+                                                            color: {
+                                                                if (modelData.kind === "pr") return Theme.colors.info
+                                                                if (modelData.kind === "issue") return Theme.colors.success
+                                                                return Theme.colors.warn
+                                                            }
+                                                        }
+
+                                                        Label {
+                                                            text: modelData.repo || ""
+                                                            font.family: Theme.uiFonts[0]
+                                                            font.pixelSize: Theme.fontSize.micro
+                                                            color: Theme.colors.textMuted
+                                                            elide: Text.ElideRight
+                                                            Layout.fillWidth: true
+                                                        }
+
+                                                        Label {
+                                                            visible: modelData.number
+                                                            text: "#" + (modelData.number || "")
+                                                            font.family: Theme.monoFonts[0]
+                                                            font.pixelSize: Theme.fontSize.micro
+                                                            color: Theme.colors.textFaint
+                                                        }
+
+                                                        Label {
+                                                            visible: modelData.ageHours
+                                                            text: ageLabel(modelData.ageHours)
+                                                            font.family: Theme.uiFonts[0]
+                                                            font.pixelSize: Theme.fontSize.micro
+                                                            color: {
+                                                                var cls = ageClass(modelData.ageHours)
+                                                                if (cls === "old") return Theme.colors.error
+                                                                if (cls === "warn") return Theme.colors.warn
+                                                                return Theme.colors.textFaint
+                                                            }
+                                                            font.weight: ageClass(modelData.ageHours) === "old" ? Theme.fontWeight.bold : Theme.fontWeight.regular
+                                                        }
+                                                    }
+
+                                                    // Card title
+                                                    Label {
+                                                        text: modelData.title || ""
+                                                        font.family: Theme.uiFonts[0]
+                                                        font.pixelSize: Theme.fontSize.bodySm
+                                                        color: Theme.colors.textPrimary
+                                                        wrapMode: Text.WordWrap
+                                                        maximumLineCount: 2
+                                                        elide: Text.ElideRight
+                                                        Layout.fillWidth: true
+                                                    }
+
+                                                    // Badges (session, draft, review)
+                                                    Flow {
+                                                        Layout.fillWidth: true
+                                                        spacing: Theme.space.xs
+
+                                                        Rectangle {
+                                                            visible: modelData.session
+                                                            width: sessionBadge.implicitWidth + Theme.space.sm
+                                                            height: 18
+                                                            radius: Theme.radius.full
+                                                            color: Theme.colors.bgRaised2
+                                                            border.width: 1
+                                                            border.color: Theme.colors.borderBrandFaint
+
+                                                            Label {
+                                                                id: sessionBadge
+                                                                anchors.centerIn: parent
+                                                                text: "◆ session"
+                                                                font.family: Theme.uiFonts[0]
+                                                                font.pixelSize: Theme.fontSize.micro
+                                                                font.weight: Theme.fontWeight.medium
+                                                                color: Theme.colors.brandBright
+                                                            }
+                                                        }
+
+                                                        Rectangle {
+                                                            visible: modelData.draft
+                                                            width: draftBadge.implicitWidth + Theme.space.sm
+                                                            height: 18
+                                                            radius: Theme.radius.full
+                                                            color: Theme.colors.bgRaised2
+                                                            border.width: 1
+                                                            border.color: Theme.colors.borderSubtle
+
+                                                            Label {
+                                                                id: draftBadge
+                                                                anchors.centerIn: parent
+                                                                text: "draft"
+                                                                font.family: Theme.uiFonts[0]
+                                                                font.pixelSize: Theme.fontSize.micro
+                                                                font.weight: Theme.fontWeight.medium
+                                                                color: Theme.colors.textMuted
+                                                            }
+                                                        }
+
+                                                        Rectangle {
+                                                            visible: modelData.review === "changes"
+                                                            width: changesBadge.implicitWidth + Theme.space.sm
+                                                            height: 18
+                                                            radius: Theme.radius.full
+                                                            color: Theme.colors.bgRaised2
+                                                            border.width: 1
+                                                            border.color: Theme.colors.warn
+
+                                                            Label {
+                                                                id: changesBadge
+                                                                anchors.centerIn: parent
+                                                                text: "changes requested"
+                                                                font.family: Theme.uiFonts[0]
+                                                                font.pixelSize: Theme.fontSize.micro
+                                                                font.weight: Theme.fontWeight.medium
+                                                                color: Theme.colors.warn
+                                                            }
+                                                        }
+
+                                                        Rectangle {
+                                                            visible: modelData.review === "approved"
+                                                            width: approvedBadge.implicitWidth + Theme.space.sm
+                                                            height: 18
+                                                            radius: Theme.radius.full
+                                                            color: Theme.colors.bgRaised2
+                                                            border.width: 1
+                                                            border.color: Theme.colors.success
+
+                                                            Label {
+                                                                id: approvedBadge
+                                                                anchors.centerIn: parent
+                                                                text: "approved"
+                                                                font.family: Theme.uiFonts[0]
+                                                                font.pixelSize: Theme.fontSize.micro
+                                                                font.weight: Theme.fontWeight.medium
+                                                                color: Theme.colors.success
+                                                            }
+                                                        }
+                                                    }
+
+                                                    // Card actions
+                                                    RowLayout {
+                                                        spacing: Theme.space.sm
+
+                                                        Item { Layout.fillWidth: true }
+
+                                                        Button {
+                                                            visible: modelData.url
+                                                            text: "Open"
+                                                            onClicked: Qt.openUrlExternally(modelData.url)
+                                                        }
+
+                                                        Button {
+                                                            text: cardVerb(modelData.kind)
+                                                            onClicked: {
+                                                                // TODO: wire actions
+                                                                console.log("Kanban card action:", modelData.key)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Empty column state
+                                        Label {
+                                            visible: (modelData.cards || []).length === 0
+                                            text: "—"
+                                            font.family: Theme.uiFonts[0]
+                                            font.pixelSize: Theme.fontSize.label
+                                            color: Theme.colors.textGhost
+                                            Layout.alignment: Qt.AlignHCenter
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

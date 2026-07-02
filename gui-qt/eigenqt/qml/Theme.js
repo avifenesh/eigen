@@ -36,6 +36,7 @@ var colors = {
     success: "#8fc98a",
     successBg: "rgba(143,201,138,0.12)",
     warn: "#e0b36a",
+    info: "#5fb0c4",
     warnBg: "rgba(224,179,106,0.12)",
     error: "#d67e72",
     errorBg: "rgba(214,126,114,0.13)",
@@ -70,10 +71,12 @@ var colors = {
 
     // Additional tokens
     bgRaised: "#11171a",
+    bgRaised2: "#141b1e",
     bgOverlay: "#1a2428",
     borderBrandFaint: "rgba(105,194,184,0.22)",
     stateFocusBg: "rgba(105,194,184,0.06)",
-    textFaint: "#37423f"
+    textFaint: "#37423f",
+    brandBg: "rgba(105,194,184,0.1)"
 }
 
 var uiFonts = ["Inter", "Noto Sans", "sans-serif"]
@@ -99,9 +102,12 @@ var sp5 = 8
 var sp6 = 12
 
 var radius = {
+    xs: 3,
     sm: 5,   // rSm
     md: 6,
-    lg: 8
+    lg: 8,
+    xl: 16,
+    full: 9999
 }
 
 var rSm = 5

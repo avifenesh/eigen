@@ -232,6 +232,19 @@ Rectangle {
                         Layout.fillWidth: true
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
+                        route: "board"
+                        label: "Board"
+                        glyph: "▤"
+                        badge: 0
+                        badgeLive: false
+                        isActive: root.currentRoute === "board"
+                        onClicked: root.routeChanged("board")
+                    }
+
+                    NavItem {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Theme.space.sm
+                        Layout.rightMargin: Theme.space.sm
                         route: "tasks"
                         label: "Tasks"
                         glyph: "⋔"
@@ -239,6 +252,122 @@ Rectangle {
                         badgeLive: root.tasksModel && root.tasksModel.running_count > 0
                         isActive: root.currentRoute === "tasks"
                         onClicked: root.routeChanged("tasks")
+                    }
+
+                    NavItem {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Theme.space.sm
+                        Layout.rightMargin: Theme.space.sm
+                        route: "skills"
+                        label: "Skills"
+                        glyph: "✦"
+                        badge: 0
+                        badgeLive: false
+                        isActive: root.currentRoute === "skills"
+                        onClicked: root.routeChanged("skills")
+                    }
+                }
+
+                // ZONE: Knowledge
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: Theme.space.lg
+                    spacing: 0
+
+                    // Zone label
+                    Label {
+                        text: "Knowledge"
+                        font.family: Theme.uiFonts[0]
+                        font.pixelSize: Theme.fontSize.micro
+                        font.weight: Theme.fontWeight.semibold
+                        font.capitalization: Font.AllUppercase
+                        color: Theme.colors.textFaint
+                        Layout.leftMargin: Theme.space.lg
+                        Layout.bottomMargin: Theme.space.xs
+                    }
+
+                    NavItem {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Theme.space.sm
+                        Layout.rightMargin: Theme.space.sm
+                        route: "memory"
+                        label: "Memory"
+                        glyph: "❖"
+                        badge: 0
+                        badgeLive: false
+                        isActive: root.currentRoute === "memory"
+                        onClicked: root.routeChanged("memory")
+                    }
+
+                    NavItem {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Theme.space.sm
+                        Layout.rightMargin: Theme.space.sm
+                        route: "notes"
+                        label: "Notes"
+                        glyph: "≣"
+                        badge: 0
+                        badgeLive: false
+                        isActive: root.currentRoute === "notes"
+                        onClicked: root.routeChanged("notes")
+                    }
+                }
+
+                // ZONE: System
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: Theme.space.lg
+                    spacing: 0
+
+                    // Zone label
+                    Label {
+                        text: "System"
+                        font.family: Theme.uiFonts[0]
+                        font.pixelSize: Theme.fontSize.micro
+                        font.weight: Theme.fontWeight.semibold
+                        font.capitalization: Font.AllUppercase
+                        color: Theme.colors.textFaint
+                        Layout.leftMargin: Theme.space.lg
+                        Layout.bottomMargin: Theme.space.xs
+                    }
+
+                    NavItem {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Theme.space.sm
+                        Layout.rightMargin: Theme.space.sm
+                        route: "connectors"
+                        label: "Connectors"
+                        glyph: "⟐"
+                        badge: 0
+                        badgeLive: false
+                        isActive: root.currentRoute === "connectors"
+                        onClicked: root.routeChanged("connectors")
+                    }
+
+                    NavItem {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Theme.space.sm
+                        Layout.rightMargin: Theme.space.sm
+                        route: "config"
+                        label: "Config"
+                        glyph: "⚙"
+                        badge: 0
+                        badgeLive: false
+                        isActive: root.currentRoute === "config"
+                        onClicked: root.routeChanged("config")
+                    }
+
+                    NavItem {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Theme.space.sm
+                        Layout.rightMargin: Theme.space.sm
+                        route: "reviewers"
+                        label: "Reviewers"
+                        glyph: "⌕"
+                        badge: 0
+                        badgeLive: false
+                        isActive: root.currentRoute === "reviewers"
+                        onClicked: root.routeChanged("reviewers")
                     }
                 }
             }

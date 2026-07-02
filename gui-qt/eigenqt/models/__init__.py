@@ -22,6 +22,9 @@ from .worktree import DiffModel, FileTreeModel
 from .live import LiveSessionsModel
 from .tasks import TasksModel
 from .home import DashboardModel, FeedModel
+from .board import BoardModel, KanbanModel
+from .skills import SkillsModel, ProposalsModel
+from .memory import MemoryModel
 
 __all__ = [
     "SessionsModel",
@@ -36,4 +39,9 @@ __all__ = [
     "TasksModel",
     "DashboardModel",
     "FeedModel",
+    "BoardModel",
+    "KanbanModel",
+    "SkillsModel",
+    "ProposalsModel",
+    "MemoryModel",
 ]

@@ -16,19 +16,29 @@ from PySide6.QtQuickControls2 import QQuickStyle
 from eigenqt.models.worktree import DiffModel, FileTreeModel
 from eigenqt.models import (
     ApprovalsModel,
+    BoardModel,
     CommandsModel,
     DashboardModel,
     FeedModel,
+    KanbanModel,
     LiveSessionsModel,
+    MemoryModel,
+    ProposalsModel,
     ReplyWatcher,
     SessionsModel,
     SessionStateModel,
+    SkillsModel,
     TasksModel,
     TranscriptModel,
 )
+from eigenqt.models.connectors import ConnectorsModel
+from eigenqt.models.notes import NotesController
+from eigenqt.models.config import ConfigModel, RuleChainsModel
+from eigenqt.models.reviewers import ReviewersModel
 from eigenqt.rpc import GuiserverSupervisor, RpcClient
 from eigenqt.clipboard_helper import ClipboardHelper
 from eigenqt.highlighter_helper import HighlighterHelper
+from eigenqt.markdown_helper import MarkdownHelper
 
 ROOT = Path(__file__).resolve().parent
 
@@ -55,6 +65,16 @@ class AppContext(QObject):
         self.tasks_model = TasksModel(self.rpc_client, self)
         self.dashboard_model = DashboardModel(self.rpc_client, self)
         self.feed_model = FeedModel(self.rpc_client, self)
+        self.board_model = BoardModel(self.rpc_client, self)
+        self.kanban_model = KanbanModel(self.rpc_client, self)
+        self.skills_model = SkillsModel(self.rpc_client, self)
+        self.proposals_model = ProposalsModel(self.rpc_client, self)
+        self.memory_model = MemoryModel(self.rpc_client, self)
+        self.notes_controller = NotesController(self.rpc_client, self)
+        self.connectors_model = ConnectorsModel(self.rpc_client, self)
+        self.config_model = ConfigModel(self.rpc_client, self)
+        self.rule_chains_model = RuleChainsModel(self.rpc_client, self)
+        self.reviewers_model = ReviewersModel(self.rpc_client, self)
 
         # ReplyWatcher for background session notifications
         self.reply_watcher = ReplyWatcher(
@@ -249,14 +269,26 @@ def main():
     # Create helpers
     clipboard_helper = ClipboardHelper(app)
     highlighter_helper = HighlighterHelper(app)
+    markdown_helper = MarkdownHelper(app)
 
     # Expose to QML
     ctx.setContextProperty("rpcClient", app_context.rpc_client)
+    ctx.setContextProperty("client", app_context.rpc_client)  # alias for SkillsView
     ctx.setContextProperty("sessionsModel", app_context.sessions_model)
     ctx.setContextProperty("liveSessionsModel", app_context.live_sessions_model)
     ctx.setContextProperty("tasksModel", app_context.tasks_model)
     ctx.setContextProperty("dashboardModel", app_context.dashboard_model)
     ctx.setContextProperty("feedModel", app_context.feed_model)
+    ctx.setContextProperty("boardModel", app_context.board_model)
+    ctx.setContextProperty("kanbanModel", app_context.kanban_model)
+    ctx.setContextProperty("skillsModel", app_context.skills_model)
+    ctx.setContextProperty("proposalsModel", app_context.proposals_model)
+    ctx.setContextProperty("memoryModel", app_context.memory_model)
+    ctx.setContextProperty("notesController", app_context.notes_controller)
+    ctx.setContextProperty("connectorsModel", app_context.connectors_model)
+    ctx.setContextProperty("configModel", app_context.config_model)
+    ctx.setContextProperty("ruleChainsModel", app_context.rule_chains_model)
+    ctx.setContextProperty("reviewersModel", app_context.reviewers_model)
     ctx.setContextProperty("sessionController", session_controller)
     ctx.setContextProperty("transcriptModel", session_controller.transcript_model)
     ctx.setContextProperty("approvalsModel", session_controller.approvals_model)
@@ -265,6 +297,7 @@ def main():
     ctx.setContextProperty("statsData", app_context.stats)
     ctx.setContextProperty("clipboardHelper", clipboard_helper)
     ctx.setContextProperty("highlighter", highlighter_helper)
+    ctx.setContextProperty("markdownParser", markdown_helper)
 
     # Bind property changes
     app_context.daemonOnlineChanged.connect(lambda: ctx.setContextProperty("daemonOnline", app_context.daemonOnline))
