@@ -102,6 +102,7 @@ class ApprovalsModel(QAbstractListModel):
         self._approvals.append(approval)
         self.endInsertRows()
 
+    @Slot(str, bool)
     def approve(self, approval_id: str, allow: bool):
         """
         Approve or deny an approval (RPC Approve).
@@ -121,7 +122,7 @@ class ApprovalsModel(QAbstractListModel):
                         break
 
         self._client.call(
-            "Approve", args=[self._session_id, approval_id, allow], callback=on_result
+            "Approve", self._session_id, approval_id, allow, callback=on_result
         )
 
     def detach(self):

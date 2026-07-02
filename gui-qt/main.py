@@ -13,8 +13,17 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
-from eigenqt.models import ApprovalsModel, SessionsModel, TranscriptModel
+from eigenqt.models import (
+    ApprovalsModel,
+    CommandsModel,
+    ReplyWatcher,
+    SessionsModel,
+    SessionStateModel,
+    TranscriptModel,
+)
 from eigenqt.rpc import GuiserverSupervisor, RpcClient
+from eigenqt.clipboard_helper import ClipboardHelper
+from eigenqt.highlighter_helper import HighlighterHelper
 
 ROOT = Path(__file__).resolve().parent
 
@@ -35,6 +44,14 @@ class AppContext(QObject):
 
         # Models
         self.sessions_model = SessionsModel(self.rpc_client, self)
+
+        # ReplyWatcher for background session notifications
+        self.reply_watcher = ReplyWatcher(
+            self.rpc_client, self.sessions_model, self
+        )
+
+        # Connect reply watcher unread signal to sessions model
+        self.reply_watcher.unread.connect(self.sessions_model.mark_unread)
 
         # Connect signals
         self.rpc_client.connected.connect(self._on_connected)
@@ -87,18 +104,35 @@ class SessionController(QObject):
     """Controller for managing session state + models."""
 
     sessionIdChanged = Signal()
+    sessionStateModelChanged = Signal()
+    commandsModelChanged = Signal()
 
-    def __init__(self, client: RpcClient, parent=None):
+    def __init__(
+        self, client: RpcClient, reply_watcher: ReplyWatcher, parent=None
+    ):
         super().__init__(parent)
         self._client = client
+        self._reply_watcher = reply_watcher
         self._session_id = ""
         self.transcript_model = TranscriptModel(client, "", parent)
         self.approvals_model = ApprovalsModel(client, "", parent)
+        self._session_state_model = SessionStateModel(client, "", parent)
+        self._commands_model = CommandsModel(client, parent)
 
     @Property(str, notify=sessionIdChanged)
     def session_id(self):
         """Get current session ID."""
         return self._session_id
+
+    @Property(QObject, notify=sessionStateModelChanged)
+    def session_state_model(self):
+        """Get session state model."""
+        return self._session_state_model
+
+    @Property(QObject, notify=commandsModelChanged)
+    def commands_model(self):
+        """Get commands model."""
+        return self._commands_model
 
     @Slot(str)
     def open_session(self, session_id: str):
@@ -109,9 +143,13 @@ class SessionController(QObject):
         self._session_id = session_id
         self.sessionIdChanged.emit()
 
+        # Notify reply watcher (clears unread for this session)
+        self._reply_watcher.set_current_session(session_id)
+
         # Update models
         self.transcript_model._session_id = session_id
         self.approvals_model._session_id = session_id
+        self._session_state_model._session_id = session_id
 
         # Subscribe to events
         channel = f"session:{session_id}"
@@ -127,6 +165,7 @@ class SessionController(QObject):
         if "result" in result:
             self.transcript_model.seed(result["result"])
             self.approvals_model.seed(result["result"])
+            self._session_state_model.seed(result["result"])
 
     @Slot()
     def detach(self):
@@ -161,8 +200,14 @@ def main():
     # Create app context
     app_context = AppContext()
 
-    # Create session controller
-    session_controller = SessionController(app_context.rpc_client, app)
+    # Create session controller (pass reply_watcher)
+    session_controller = SessionController(
+        app_context.rpc_client, app_context.reply_watcher, app
+    )
+
+    # Create helpers
+    clipboard_helper = ClipboardHelper(app)
+    highlighter_helper = HighlighterHelper(app)
 
     # Expose to QML
     ctx.setContextProperty("rpcClient", app_context.rpc_client)
@@ -172,6 +217,8 @@ def main():
     ctx.setContextProperty("approvalsModel", session_controller.approvals_model)
     ctx.setContextProperty("daemonOnline", app_context.daemonOnline)
     ctx.setContextProperty("guiserverSha", app_context.guiserverSha)
+    ctx.setContextProperty("clipboardHelper", clipboard_helper)
+    ctx.setContextProperty("highlighter", highlighter_helper)
 
     # Bind property changes
     app_context.daemonOnlineChanged.connect(lambda: ctx.setContextProperty("daemonOnline", app_context.daemonOnline))

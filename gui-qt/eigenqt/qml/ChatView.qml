@@ -3,12 +3,14 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import "Theme.js" as Theme
 
-// Chat view for a single session
+// Chat view for a single session (with tool cards, session settings, slash commands, image paste, steer)
 Rectangle {
     id: root
     color: Theme.colors.bgBase
 
     property string sessionId
+    property var sessionStateModel  // SessionStateModel
+    property var commandsModel  // CommandsModel
 
     signal backClicked()
 
@@ -16,7 +18,7 @@ Rectangle {
         anchors.fill: parent
         spacing: 0
 
-        // Header
+        // Back button + session settings strip
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 56
@@ -49,15 +51,6 @@ Rectangle {
                     }
                 }
 
-                Label {
-                    text: "Session"
-                    font.family: Theme.uiFonts[0]
-                    font.pixelSize: Theme.fontSize.h3
-                    font.weight: Theme.fontWeight.semibold
-                    color: Theme.colors.textPrimary
-                    Layout.fillWidth: true
-                }
-
                 Button {
                     text: "Interrupt"
                     font.family: Theme.uiFonts[0]
@@ -83,6 +76,11 @@ Rectangle {
             }
         }
 
+        // Session settings strip
+        SessionSettingsStrip {
+            sessionState: root.sessionStateModel
+        }
+
         // Transcript
         ListView {
             id: transcriptListView
@@ -102,9 +100,12 @@ Rectangle {
                 kind: model.kind
                 text: model.text
                 toolName: model.toolName
+                toolId: model.toolId || ""
+                toolArgs: model.toolArgs || ""
                 toolStatus: model.toolStatus
                 streaming: model.streaming
                 reasoning: model.reasoning
+                blocks: model.blocks || []
             }
 
             // Auto-scroll to bottom while at bottom
@@ -144,6 +145,59 @@ Rectangle {
                 anchors.margins: Theme.space.lg
                 spacing: Theme.space.md
 
+                // Attachment preview (if image pasted)
+                Loader {
+                    active: attachedImage.length > 0
+                    Layout.fillWidth: true
+                    sourceComponent: RowLayout {
+                        spacing: Theme.space.md
+
+                        Rectangle {
+                            width: 48
+                            height: 48
+                            color: Theme.colors.bgInset
+                            radius: Theme.radius.sm
+                            border.width: 1
+                            border.color: Theme.colors.borderSubtle
+
+                            Label {
+                                anchors.centerIn: parent
+                                text: "🖼"
+                                font.pixelSize: Theme.fontSize.h2
+                            }
+                        }
+
+                        Label {
+                            text: "Image attached"
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.bodySm
+                            color: Theme.colors.textSecondary
+                            Layout.fillWidth: true
+                        }
+
+                        Button {
+                            text: "✕"
+                            font.pixelSize: Theme.fontSize.body
+                            onClicked: attachedImage = ""
+
+                            background: Rectangle {
+                                color: parent.hovered ? Theme.colors.errorBg : "transparent"
+                                radius: Theme.radius.sm
+                                implicitWidth: 24
+                                implicitHeight: 24
+                            }
+
+                            contentItem: Label {
+                                text: parent.text
+                                font: parent.font
+                                color: Theme.colors.error
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+                    }
+                }
+
                 ScrollView {
                     Layout.fillWidth: true
                     Layout.preferredHeight: Math.min(composerTextArea.contentHeight + Theme.space.md * 2, 120)
@@ -151,7 +205,7 @@ Rectangle {
 
                     TextArea {
                         id: composerTextArea
-                        placeholderText: "Type a message (Enter to send, Shift+Enter for newline)"
+                        placeholderText: "Type a message (Enter to send, Shift+Enter for newline, / for commands)"
                         font.family: Theme.uiFonts[0]
                         font.pixelSize: Theme.fontSize.body
                         color: Theme.colors.textPrimary
@@ -173,6 +227,30 @@ Rectangle {
                                 event.accepted = true
                             }
                         }
+
+                        // Slash-command popup trigger
+                        onTextChanged: {
+                            if (text === "/" && cursorPosition === 1) {
+                                slashPopup.filterText = ""
+                                slashPopup.open()
+                            } else if (slashPopup.opened && text.startsWith("/")) {
+                                slashPopup.filterText = text.substring(1)
+                            } else if (slashPopup.opened && !text.startsWith("/")) {
+                                slashPopup.close()
+                            }
+                        }
+
+                        // Image paste
+                        Keys.onPressed: function(event) {
+                            if ((event.key === Qt.Key_V) && (event.modifiers & Qt.ControlModifier)) {
+                                // Paste event: check clipboard for image
+                                var base64 = clipboardHelper.pasteImage()
+                                if (base64.length > 0) {
+                                    attachedImage = base64
+                                    event.accepted = true
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -184,7 +262,7 @@ Rectangle {
 
                     Button {
                         id: sendButton
-                        text: "Send"
+                        text: isStreaming ? "Steer" : "Send"
                         font.family: Theme.uiFonts[0]
                         font.pixelSize: Theme.fontSize.body
                         font.weight: Theme.fontWeight.medium
@@ -193,8 +271,22 @@ Rectangle {
                         onClicked: {
                             var msg = composerTextArea.text.trim()
                             if (msg.length === 0) return
-                            rpcClient.call("SendInput", [root.sessionId, msg, [], []])
+
+                            var images = []
+                            if (attachedImage.length > 0) {
+                                images.push({"data": attachedImage, "mediaType": "image/png"})
+                            }
+
+                            if (isStreaming) {
+                                // Steer (send while streaming)
+                                rpcClient.call("SteerInput", [root.sessionId, msg, images])
+                            } else {
+                                // Normal send
+                                rpcClient.call("SendInput", [root.sessionId, msg, images, []])
+                            }
+
                             composerTextArea.text = ""
+                            attachedImage = ""
                         }
 
                         background: Rectangle {
@@ -217,6 +309,20 @@ Rectangle {
         }
     }
 
+    // Slash-command popup
+    SlashCommandPopup {
+        id: slashPopup
+        x: composerTextArea.x
+        y: composerTextArea.y - height - Theme.space.md
+        commandsModel: root.commandsModel
+
+        onCommandSelected: function(commandName) {
+            composerTextArea.text = "/" + commandName + " "
+            composerTextArea.cursorPosition = composerTextArea.text.length
+            composerTextArea.forceActiveFocus()
+        }
+    }
+
     property bool isStreaming: {
         if (!transcriptModel) return false
         for (var i = 0; i < transcriptModel.rowCount(); i++) {
@@ -225,4 +331,6 @@ Rectangle {
         }
         return false
     }
+
+    property string attachedImage: ""  // base64 image data
 }

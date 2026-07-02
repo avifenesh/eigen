@@ -12,6 +12,7 @@ from typing import Optional
 from PySide6.QtCore import QAbstractListModel, QModelIndex, QObject, QTimer, Qt, Slot
 
 from eigenqt.rpc import RpcClient
+from eigenqt.markdown import parse as parse_markdown
 
 from .transcript_logic import RowOp, TranscriptRow, fold_event, rebuild_from_state, seed_from_state
 
@@ -29,6 +30,7 @@ class TranscriptModel(QAbstractListModel):
     StreamingRole = Qt.UserRole + 7
     ReasoningRole = Qt.UserRole + 8
     StepRole = Qt.UserRole + 9
+    BlocksRole = Qt.UserRole + 10  # Markdown blocks (list of dicts)
 
     def __init__(self, client: RpcClient, session_id: str, parent: Optional[QObject] = None):
         super().__init__(parent)
@@ -65,6 +67,7 @@ class TranscriptModel(QAbstractListModel):
             self.StreamingRole: b"streaming",
             self.ReasoningRole: b"reasoning",
             self.StepRole: b"step",
+            self.BlocksRole: b"blocks",
         }
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
@@ -97,6 +100,26 @@ class TranscriptModel(QAbstractListModel):
             return row_data.get("reasoning", "")
         if role == self.StepRole:
             return row_data.get("step", 0)
+        if role == self.BlocksRole:
+            # Parse markdown blocks for assistant rows
+            if row_data.get("kind") == "assistant":
+                text = row_data.get("text", "")
+                blocks = parse_markdown(text)
+                # Convert Block dataclasses → list of dicts for QML
+                return [
+                    {
+                        "type": b.type,
+                        "content": b.content,
+                        "lang": b.lang,
+                        "source": b.source,
+                        "level": b.level,
+                        "rows": b.rows,
+                        "items": b.items,
+                        "ordered": b.ordered,
+                    }
+                    for b in blocks
+                ]
+            return []
         return None
 
     def seed(self, state: dict):
