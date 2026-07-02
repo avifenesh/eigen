@@ -9,6 +9,7 @@ CommandsModel: slash-command list for composer popup
 ReplyWatcher: detects background session replies → desktop notify + unread marker
 DiffModel: parse unified diffs into rows for the diff view
 FileTreeModel: flatten nested file trees with expand state
+TasksModel: background agents/tasks with polling and cancel
 """
 
 from .sessions import SessionsModel
@@ -18,6 +19,9 @@ from .session_state import SessionStateModel
 from .commands import CommandsModel
 from .reply_watch import ReplyWatcher
 from .worktree import DiffModel, FileTreeModel
+from .live import LiveSessionsModel
+from .tasks import TasksModel
+from .home import DashboardModel, FeedModel
 
 __all__ = [
     "SessionsModel",
@@ -28,4 +32,8 @@ __all__ = [
     "ReplyWatcher",
     "DiffModel",
     "FileTreeModel",
+    "LiveSessionsModel",
+    "TasksModel",
+    "DashboardModel",
+    "FeedModel",
 ]

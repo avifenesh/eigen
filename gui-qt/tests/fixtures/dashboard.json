@@ -1,0 +1,39 @@
+{
+  "googleConnected": true,
+  "events": [
+    {"summary": "Team standup", "start": "2026-07-02T10:00:00Z", "allDay": false, "location": ""},
+    {"summary": "Code review", "start": "2026-07-02T14:30:00Z", "allDay": false, "location": ""}
+  ],
+  "unreadCount": 3,
+  "unread": [
+    {"from": "Alice <alice@example.com>", "subject": "RE: Design review feedback"},
+    {"from": "Bob", "subject": "PR ready for review"},
+    {"from": "notifications@github.com", "subject": "Issue assigned"}
+  ],
+  "health": {
+    "loadPerCpu": 0.42,
+    "cpus": 8,
+    "memUsedPct": 68.5,
+    "memUsedGb": 10.96,
+    "memTotalGb": 16.0,
+    "diskUsedPct": 72.3,
+    "diskUsedGb": 650.5,
+    "diskTotalGb": 900.0,
+    "swapUsedPct": 0.0,
+    "swapUsedGb": 0.0,
+    "swapTotalGb": 0.0,
+    "cpuTempC": 62.0,
+    "gpus": [
+      {
+        "name": "NVIDIA RTX 3090",
+        "utilPct": 45.0,
+        "memUsedGb": 12.5,
+        "memTotalGb": 24.0,
+        "memUsedPct": 52.08,
+        "tempC": 68.0,
+        "powerW": 285.0
+      }
+    ],
+    "uptimeHours": 48.5
+  }
+}
