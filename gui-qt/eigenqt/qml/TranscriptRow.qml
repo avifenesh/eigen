@@ -11,9 +11,12 @@ Item {
     property string kind
     property string text
     property string toolName
+    property string toolId
+    property string toolArgs
     property string toolStatus
     property bool streaming
     property string reasoning
+    property var blocks: []  // markdown blocks for assistant rows
 
     ColumnLayout {
         id: column
@@ -97,15 +100,10 @@ Item {
                         }
                     }
 
-                    // Text (markdown-rendered via Qt Text.MarkdownText)
-                    Label {
+                    // Text (markdown-rendered via MarkdownBlocks)
+                    MarkdownBlocks {
                         Layout.fillWidth: true
-                        text: root.text
-                        font.family: Theme.uiFonts[0]
-                        font.pixelSize: Theme.fontSize.body
-                        color: Theme.colors.textPrimary
-                        wrapMode: Text.Wrap
-                        textFormat: Text.MarkdownText  // Qt 6.2+ markdown support (v1)
+                        blocks: root.blocks
                     }
 
                     // Streaming pulse
@@ -130,62 +128,19 @@ Item {
             }
         }
 
-        // Tool invocation (collapsed, name + status badge)
+        // Tool invocation (expandable card)
         Loader {
             active: root.kind === "tool"
             Layout.fillWidth: true
-            sourceComponent: Rectangle {
-                width: parent.width * 0.7
-                height: 40
-                color: Theme.colors.surfaceRaised
-                radius: Theme.radius.sm
-                border.width: 1
-                border.color: Theme.colors.borderSubtle
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: Theme.space.md
-                    spacing: Theme.space.md
-
-                    Label {
-                        text: "⚙"
-                        font.pixelSize: Theme.fontSize.body
-                        color: Theme.colors.textMuted
-                    }
-
-                    Label {
-                        text: root.toolName
-                        font.family: Theme.monoFonts[0]
-                        font.pixelSize: Theme.fontSize.bodySm
-                        color: Theme.colors.textPrimary
-                        Layout.fillWidth: true
-                    }
-
-                    Rectangle {
-                        width: statusLabel.contentWidth + Theme.space.md * 2
-                        height: 20
-                        radius: Theme.radius.sm
-                        color: {
-                            if (root.toolStatus === "success") return Theme.colors.successBg
-                            if (root.toolStatus === "error") return Theme.colors.errorBg
-                            return Theme.colors.workingBg
-                        }
-
-                        Label {
-                            id: statusLabel
-                            anchors.centerIn: parent
-                            text: root.toolStatus || "running"
-                            font.family: Theme.uiFonts[0]
-                            font.pixelSize: Theme.fontSize.micro
-                            font.weight: Theme.fontWeight.medium
-                            color: {
-                                if (root.toolStatus === "success") return Theme.colors.success
-                                if (root.toolStatus === "error") return Theme.colors.error
-                                return Theme.colors.working
-                            }
-                        }
-                    }
-                }
+            sourceComponent: ToolCallCard {
+                toolName: root.toolName
+                toolId: root.toolId
+                toolArgs: root.toolArgs
+                toolResult: root.text  // result stored in text field
+                toolStatus: root.toolStatus
+                done: root.toolStatus === "success" || root.toolStatus === "error"
+                // Auto-open running tools
+                open: root.toolStatus === "running"
             }
         }
 

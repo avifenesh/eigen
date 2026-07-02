@@ -101,6 +101,8 @@ def main():
         session_id = first_session.get("id")
         session_title = first_session.get("title", "(untitled)")
         print(f"  First session: id={session_id} title={session_title:.40}")
+        print(f"  DEBUG: Session keys: {list(first_session.keys())}")
+        print(f"  DEBUG: Session sample: {json.dumps(first_session, indent=2)}")
 
         # Subscribe to stats + first session
         channels = ["eigen:daemon:stats"]
