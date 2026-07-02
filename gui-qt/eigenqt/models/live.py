@@ -1,7 +1,8 @@
 """
-sessions.py — SessionsModel (QAbstractListModel) for session list view.
+live.py — LiveSessionsModel (filtered sessions: working + approval only).
 
-Populated by RPC Sessions; live-updated from subscribed events. Sort: newest-updated first.
+Reuses SessionsModel infrastructure but filters to active sessions only
+(working/approval), sorted by urgency (running first, then approval).
 """
 
 import sys
@@ -9,13 +10,13 @@ from typing import Optional
 
 from PySide6.QtCore import QAbstractListModel, QModelIndex, QObject, Qt, Slot
 
-from eigenqt.rpc import RpcClient
+from eigenqt.rpc.client import RpcClient
 
 
-class SessionsModel(QAbstractListModel):
-    """Sessions list model (id, title, dir, model, status, turns, updated, unread)."""
+class LiveSessionsModel(QAbstractListModel):
+    """Live sessions model (filtered to working+approval, urgency sorted)."""
 
-    # Qt roles
+    # Qt roles (same as SessionsModel for consistency)
     IdRole = Qt.UserRole + 1
     TitleRole = Qt.UserRole + 2
     DirRole = Qt.UserRole + 3
@@ -23,13 +24,11 @@ class SessionsModel(QAbstractListModel):
     StatusRole = Qt.UserRole + 5
     TurnsRole = Qt.UserRole + 6
     UpdatedRole = Qt.UserRole + 7
-    UnreadRole = Qt.UserRole + 8
 
     def __init__(self, client: RpcClient, parent: Optional[QObject] = None):
         super().__init__(parent)
         self._client = client
         self._sessions: list[dict] = []
-        self._unread: set[str] = set()  # Session IDs with unread status
 
         # Connect to RPC + events
         self._client.connected.connect(self._on_connected)
@@ -41,15 +40,14 @@ class SessionsModel(QAbstractListModel):
             self.IdRole: b"sessionId",
             self.TitleRole: b"title",
             self.DirRole: b"dir",
-            self.ModelRole: b"modelName",  # Avoid 'model' keyword conflict in QML
+            self.ModelRole: b"modelName",
             self.StatusRole: b"status",
             self.TurnsRole: b"turns",
             self.UpdatedRole: b"updated",
-            self.UnreadRole: b"unread",
         }
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
-        """Row count (sessions list length)."""
+        """Row count (filtered sessions list length)."""
         if parent.isValid():
             return 0
         return len(self._sessions)
@@ -57,7 +55,7 @@ class SessionsModel(QAbstractListModel):
     def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
         """Return data for index/role."""
         if not index.isValid() or index.row() >= len(self._sessions):
-            return ""  # Return empty string instead of None
+            return ""
 
         session = self._sessions[index.row()]
         if role == self.IdRole:
@@ -69,36 +67,38 @@ class SessionsModel(QAbstractListModel):
         if role == self.ModelRole:
             return session.get("model", "")
         if role == self.StatusRole:
-            return session.get("status", "idle")  # Default status
+            return session.get("status", "idle")
         if role == self.TurnsRole:
             return session.get("turns") or 0
         if role == self.UpdatedRole:
             return session.get("updated") or 0
-        if role == self.UnreadRole:
-            session_id = session.get("id", "")
-            return session_id in self._unread
-        return ""  # Return empty string for unknown roles
+        return ""
 
     @Slot()
     def _on_connected(self):
         """Fetch sessions on connect (async)."""
         self._client.call("Sessions", callback=self._on_sessions_result)
 
-        # Subscribe to daemon stats to get global session list updates
+        # Subscribe to daemon stats + session events for live updates
         self._client.subscribe(["eigen:daemon:stats"])
 
     @Slot(dict)
     def _on_sessions_result(self, result: dict):
-        """Handle Sessions RPC result (list of SessionInfoDTO)."""
+        """Handle Sessions RPC result, filter and sort."""
         if "error" in result:
             return
 
         sessions = result.get("result") or []
-        # Sort by updated descending (newest first)
-        sessions.sort(key=lambda s: (s.get("updated") or 0), reverse=True)
+
+        # Filter to live sessions only (working or approval)
+        filtered = [s for s in sessions if _is_live(s.get("status"))]
+
+        # Sort by urgency: working=0, approval=1, then newest within each bucket
+        rank = {"working": 0, "approval": 1}
+        filtered.sort(key=lambda s: (rank.get(s.get("status"), 2), -(s.get("updated") or 0)))
 
         self.beginResetModel()
-        self._sessions = sessions
+        self._sessions = filtered
         self.endResetModel()
 
     @Slot(str, dict)
@@ -106,41 +106,35 @@ class SessionsModel(QAbstractListModel):
         """
         Handle events that signal session-list changes.
 
-        Events that affect sessions list (from Svelte stores/sessions.svelte.ts):
-        - "eigen:session:*:event" with event.kind == "done" → refetch (turn finished, turns incremented)
-        - State changes from other RPCs (SetTitle, etc.) → partial update
-
-        For simplicity: on any session-affecting event, refetch the list.
+        On any session-affecting event, refetch and refilter the list.
         """
         # Session events are "eigen:session:<id>:event"
         if channel.startswith("eigen:session:") and channel.endswith(":event"):
             event = data.get("event", {})
             if event.get("kind") == "done":
-                # Turn finished → refetch to update turns count
+                # Turn finished → refetch to update turns count + status
                 self._client.call("Sessions", callback=self._on_sessions_result)
+        # Also refresh on daemon stats changes (session lifecycle)
+        elif channel == "eigen:daemon:stats":
+            self._client.call("Sessions", callback=self._on_sessions_result)
 
     def refresh(self):
-        """Manually trigger a refresh (e.g., after RemoveSession)."""
+        """Manually trigger a refresh (e.g., after RemoveSession, Interrupt)."""
         self._client.call("Sessions", callback=self._on_sessions_result)
 
-    def mark_unread(self, session_id: str):
-        """Mark a session as unread."""
-        if session_id and session_id not in self._unread:
-            self._unread.add(session_id)
-            # Notify QML of change
-            self._notify_unread_changed(session_id)
 
-    def mark_read(self, session_id: str):
-        """Mark a session as read (clear unread)."""
-        if session_id and session_id in self._unread:
-            self._unread.discard(session_id)
-            # Notify QML of change
-            self._notify_unread_changed(session_id)
+def _is_live(status: str) -> bool:
+    """Filter predicate: live = working or approval."""
+    return status in ("working", "approval")
 
-    def _notify_unread_changed(self, session_id: str):
-        """Emit dataChanged for a session's unread role."""
-        for row in range(len(self._sessions)):
-            if self._sessions[row].get("id") == session_id:
-                idx = self.index(row, 0)
-                self.dataChanged.emit(idx, idx, [self.UnreadRole])
-                break
+
+def filter_and_sort_live(sessions: list[dict]) -> list[dict]:
+    """
+    Pure function for testing: filter to live sessions, sort by urgency.
+
+    Returns: filtered+sorted list (working first, then approval, newest within each).
+    """
+    filtered = [s for s in sessions if _is_live(s.get("status"))]
+    rank = {"working": 0, "approval": 1}
+    filtered.sort(key=lambda s: (rank.get(s.get("status"), 2), -(s.get("updated") or 0)))
+    return filtered

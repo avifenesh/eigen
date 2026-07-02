@@ -19,91 +19,95 @@ ApplicationWindow {
         anchors.fill: parent
         spacing: 0
 
-        // Left rail (sessions zone)
-        Rectangle {
+        // Left rail (navigation)
+        Rail {
+            id: rail
             Layout.preferredWidth: 200
             Layout.fillHeight: true
-            color: Theme.colors.bgWell
 
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: Theme.space.md
-                spacing: Theme.space.lg
+            currentRoute: root.currentRoute
+            sessionsModel: root.ctxSessions
+            liveSessionsModel: root.ctxLive
+            tasksModel: root.ctxTasks
+            statsData: root.ctxStats
+            daemonOnline: root.ctxDaemonOnline
+            guiserverSha: root.ctxSha
 
-                // Header
-                Label {
-                    text: "Sessions"
-                    font.family: Theme.uiFonts[0]
-                    font.pixelSize: Theme.fontSize.h3
-                    font.weight: Theme.fontWeight.semibold
-                    color: Theme.colors.textPrimary
-                    Layout.fillWidth: true
-                }
-
-                // Sessions list
-                ListView {
-                    id: sessionsListView
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    clip: true
-                    spacing: Theme.space.xs
-                    model: sessionsModel
-                    currentIndex: -1
-
-                    delegate: SessionRow {
-                        width: ListView.view.width
-                        sessionId: model.sessionId
-                        title: model.title
-                        status: model.status
-                        dir: model.dir
-                        modelBadge: model.modelName
-                        updated: model.updated
-                        isActive: ListView.isCurrentItem
-
-                        onClicked: {
-                            sessionsListView.currentIndex = index
-                            stackLayout.currentIndex = 1  // show chat
-                            sessionController.open_session(model.sessionId)
-                        }
-                    }
-                }
+            onRouteChanged: function(route) {
+                root.currentRoute = route
             }
         }
 
-        // Center: sessions list OR chat view
+        // Center: view routing via StackLayout
         StackLayout {
             id: stackLayout
             Layout.fillWidth: true
             Layout.fillHeight: true
-            currentIndex: 0
+            currentIndex: routeToIndex(root.currentRoute)
 
-            // Index 0: Sessions view (full list)
-            SessionsView {
+            function routeToIndex(route) {
+                if (route === "home") return 0
+                if (route === "sessions") return 1
+                if (route === "live") return 2
+                if (route === "chat") return 3
+                if (route === "tasks") return 4
+                return 0  // default to home
+            }
+
+            // Index 0: Home dashboard (default)
+            HomeView {
+                dashboardModel: root.ctxDashboard
+                feedModel: root.ctxFeed
+                sessionsModel: root.ctxSessions
+                statsData: root.ctxStats
+
                 onSessionClicked: function(sessionId) {
-                    stackLayout.currentIndex = 1
+                    root.currentRoute = "chat"
                     sessionController.open_session(sessionId)
-                    // Set active in left rail
-                    for (var i = 0; i < sessionsModel.rowCount(); i++) {
-                        var itemId = sessionsModel.data(sessionsModel.index(i, 0), 257)  // IdRole
-                        if (itemId === sessionId) {
-                            sessionsListView.currentIndex = i
-                            break
-                        }
-                    }
+                }
+
+                onNewSessionClicked: {
+                    // TODO: wire NewSession RPC
+                    console.log("New session clicked")
                 }
             }
 
-            // Index 1: Chat view
+            // Index 1: Sessions view (full list)
+            SessionsView {
+                onSessionClicked: function(sessionId) {
+                    root.currentRoute = "chat"
+                    sessionController.open_session(sessionId)
+                }
+            }
+
+            // Index 2: Live view (working/approval sessions)
+            LiveView {
+                onOpenSession: function(sessionId) {
+                    root.currentRoute = "chat"
+                    sessionController.open_session(sessionId)
+                }
+
+                onNewSessionRequested: {
+                    // TODO: New session dialog (for now, just a placeholder)
+                    console.log("New session requested")
+                }
+            }
+
+            // Index 3: Chat view
             ChatView {
                 sessionId: sessionController.session_id
                 sessionStateModel: sessionController.session_state_model
                 commandsModel: sessionController.commands_model
 
                 onBackClicked: {
-                    stackLayout.currentIndex = 0
-                    sessionsListView.currentIndex = -1
+                    root.currentRoute = "sessions"
                     sessionController.detach()
                 }
+            }
+
+            // Index 4: Tasks view (background agents)
+            TasksView {
+                tasksModel: root.ctxTasks
             }
         }
     }
@@ -155,7 +159,7 @@ ApplicationWindow {
 
             // Current session
             Label {
-                text: stackLayout.currentIndex === 1 ? "session: " + sessionController.session_id : ""
+                text: stackLayout.currentIndex === 3 ? "session: " + sessionController.session_id : ""
                 font.family: Theme.monoFonts[0]
                 font.pixelSize: Theme.fontSize.micro
                 color: Theme.colors.textMuted
@@ -163,7 +167,25 @@ ApplicationWindow {
         }
     }
 
-    // Properties bound from Python
-    property bool daemonOnline: false
-    property string guiserverSha: ""
+    // Unshadowed aliases for the Python context properties: inside a child
+    // instantiation `Foo { sessionsModel: root.ctxSessions }` the RHS resolves
+    // to Foo's OWN property (self-shadow). Bind through these instead.
+    readonly property var ctxSessions: sessionsModel
+    readonly property var ctxLive: liveSessionsModel
+    readonly property var ctxTasks: tasksModel
+    readonly property var ctxDashboard: dashboardModel
+    readonly property var ctxFeed: feedModel
+    readonly property var ctxStats: statsData
+    readonly property bool ctxDaemonOnline: daemonOnline
+    readonly property string ctxSha: guiserverSha
+
+    // NOTE: the Python-side models/values (sessionsModel, dashboardModel,
+    // feedModel, tasksModel, liveSessionsModel, statsData, daemonOnline,
+    // guiserverSha) are CONTEXT PROPERTIES — visible in every QML scope
+    // without declaration. Declaring same-named `property var X: null` here
+    // SHADOWED them all with null (fourth sighting of the QML shadowing
+    // footgun — this one blanked the entire app's data). Do not re-add.
+
+    // Current route (navigation state)
+    property string currentRoute: "home"
 }

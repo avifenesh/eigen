@@ -80,11 +80,11 @@ def seed_from_state(state: dict) -> list[TranscriptRow]:
     - tool results → already handled by tool rows from prior assistant
     """
     rows: list[TranscriptRow] = []
-    for msg in state.get("messages", []):
+    for msg in state.get("messages") or []:
         role = msg.get("role", "")
         text = msg.get("text", "")
         reasoning = msg.get("reasoning", "")
-        tool_calls = msg.get("toolCalls", [])
+        tool_calls = msg.get("toolCalls") or []
         tool_call_id = msg.get("toolCallId", "")
         tool_name = msg.get("toolName", "")
         tool_error = msg.get("toolError", False)

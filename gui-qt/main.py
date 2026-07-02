@@ -17,9 +17,13 @@ from eigenqt.models.worktree import DiffModel, FileTreeModel
 from eigenqt.models import (
     ApprovalsModel,
     CommandsModel,
+    DashboardModel,
+    FeedModel,
+    LiveSessionsModel,
     ReplyWatcher,
     SessionsModel,
     SessionStateModel,
+    TasksModel,
     TranscriptModel,
 )
 from eigenqt.rpc import GuiserverSupervisor, RpcClient
@@ -34,17 +38,23 @@ class AppContext(QObject):
 
     daemonOnlineChanged = Signal()
     guiserverShaChanged = Signal()
+    statsChanged = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._daemon_online = False
         self._guiserver_sha = ""
+        self._stats = {}
 
         # RPC client (auto-connects on init)
         self.rpc_client = RpcClient(parent=self)
 
         # Models
         self.sessions_model = SessionsModel(self.rpc_client, self)
+        self.live_sessions_model = LiveSessionsModel(self.rpc_client, self)
+        self.tasks_model = TasksModel(self.rpc_client, self)
+        self.dashboard_model = DashboardModel(self.rpc_client, self)
+        self.feed_model = FeedModel(self.rpc_client, self)
 
         # ReplyWatcher for background session notifications
         self.reply_watcher = ReplyWatcher(
@@ -61,6 +71,12 @@ class AppContext(QObject):
 
         # Fetch hello once connected
         QTimer.singleShot(500, self._fetch_hello)
+
+        # Poll Stats every 5s for the stats strip
+        self._stats_timer = QTimer(self)
+        self._stats_timer.setInterval(5000)
+        self._stats_timer.timeout.connect(self._fetch_stats)
+        self._stats_timer.start()
 
     def _on_connected(self):
         """Handle RPC connected signal."""
@@ -91,6 +107,19 @@ class AppContext(QObject):
             self._guiserver_sha = "error"
             self.guiserverShaChanged.emit()
 
+    def _fetch_stats(self):
+        """Fetch daemon Stats."""
+        self.rpc_client.call("Stats", callback=self._on_stats)
+
+    def _on_stats(self, result):
+        """Handle Stats RPC result. Guard None: Stats returns null while the
+        daemon connection is coming up — assigning None to the dict-typed
+        context property spams _pythonToCppCopy warnings."""
+        payload = result.get("result")
+        if isinstance(payload, dict):
+            self._stats = payload
+            self.statsChanged.emit()
+
     @Property(bool, notify=daemonOnlineChanged)
     def daemonOnline(self):
         """Daemon online status."""
@@ -100,6 +129,11 @@ class AppContext(QObject):
     def guiserverSha(self):
         """Guiserver SHA."""
         return self._guiserver_sha
+
+    @Property("QVariantMap", notify=statsChanged)
+    def stats(self):
+        """Daemon stats (for home stats strip)."""
+        return self._stats
 
 
 class SessionController(QObject):
@@ -219,17 +253,23 @@ def main():
     # Expose to QML
     ctx.setContextProperty("rpcClient", app_context.rpc_client)
     ctx.setContextProperty("sessionsModel", app_context.sessions_model)
+    ctx.setContextProperty("liveSessionsModel", app_context.live_sessions_model)
+    ctx.setContextProperty("tasksModel", app_context.tasks_model)
+    ctx.setContextProperty("dashboardModel", app_context.dashboard_model)
+    ctx.setContextProperty("feedModel", app_context.feed_model)
     ctx.setContextProperty("sessionController", session_controller)
     ctx.setContextProperty("transcriptModel", session_controller.transcript_model)
     ctx.setContextProperty("approvalsModel", session_controller.approvals_model)
     ctx.setContextProperty("daemonOnline", app_context.daemonOnline)
     ctx.setContextProperty("guiserverSha", app_context.guiserverSha)
+    ctx.setContextProperty("statsData", app_context.stats)
     ctx.setContextProperty("clipboardHelper", clipboard_helper)
     ctx.setContextProperty("highlighter", highlighter_helper)
 
     # Bind property changes
     app_context.daemonOnlineChanged.connect(lambda: ctx.setContextProperty("daemonOnline", app_context.daemonOnline))
     app_context.guiserverShaChanged.connect(lambda: ctx.setContextProperty("guiserverSha", app_context.guiserverSha))
+    app_context.statsChanged.connect(lambda: ctx.setContextProperty("statsData", app_context.stats))
 
     # Parse CLI args for --session <id>
     session_arg = None

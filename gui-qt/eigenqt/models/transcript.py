@@ -188,7 +188,7 @@ class TranscriptModel(QAbstractListModel):
         if "error" in result:
             return
 
-        state = result.get("result", {})
+        state = result.get("result") or {}
         rows = rebuild_from_state(state)
         self.beginResetModel()
         self._rows = rows
