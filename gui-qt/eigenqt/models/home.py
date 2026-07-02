@@ -226,7 +226,7 @@ class FeedModel(QAbstractListModel):
                 break
 
         # Fire RPC (errors silently fail; feed will rescan eventually)
-        self._client.call("DismissFeed", params=[key], callback=lambda r: None)
+        self._client.call("DismissFeed", key, callback=lambda r: None)
 
     @Slot(str, str, result=str)
     def start_from_feed(self, dir_path: str, task: str) -> str:

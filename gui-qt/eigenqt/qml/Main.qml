@@ -50,7 +50,14 @@ ApplicationWindow {
                 if (route === "sessions") return 1
                 if (route === "live") return 2
                 if (route === "chat") return 3
-                if (route === "tasks") return 4
+                if (route === "board") return 4
+                if (route === "tasks") return 5
+                if (route === "skills") return 6
+                if (route === "memory") return 7
+                if (route === "notes") return 8
+                if (route === "connectors") return 9
+                if (route === "config") return 10
+                if (route === "reviewers") return 11
                 return 0  // default to home
             }
 
@@ -105,9 +112,46 @@ ApplicationWindow {
                 }
             }
 
-            // Index 4: Tasks view (background agents)
+            // Index 4: Board view
+            BoardView {
+                // boardModel and kanbanModel are context properties
+            }
+
+            // Index 5: Tasks view (background agents)
             TasksView {
                 tasksModel: root.ctxTasks
+            }
+
+            // Index 6: Skills view (capability gallery)
+            SkillsView {
+                skillsModel: root.ctxSkills
+                proposalsModel: root.ctxProposals
+            }
+
+            // Index 7: Memory view (durable notes browser)
+            MemoryView {
+                // memoryModel is a context property
+            }
+
+            // Index 8: Notes view (Obsidian vault browser)
+            NotesView {
+                notesController: root.ctxNotes
+            }
+
+            // Index 9: Connectors view (MCP connectors management)
+            ConnectorsView {
+                // connectorsModel is a context property
+            }
+
+            // Index 10: Config view (editable config fields + rule chains)
+            ConfigView {
+                configModel: root.ctxConfigModel
+                ruleChainsModel: root.ctxRuleChainsModel
+            }
+
+            // Index 11: Reviewers view (revuto cockpit)
+            ReviewersView {
+                reviewersModel: root.ctxReviewersModel
             }
         }
     }
@@ -175,6 +219,12 @@ ApplicationWindow {
     readonly property var ctxTasks: tasksModel
     readonly property var ctxDashboard: dashboardModel
     readonly property var ctxFeed: feedModel
+    readonly property var ctxSkills: skillsModel
+    readonly property var ctxProposals: proposalsModel
+    readonly property var ctxNotes: notesController
+    readonly property var ctxConfigModel: configModel
+    readonly property var ctxRuleChainsModel: ruleChainsModel
+    readonly property var ctxReviewersModel: reviewersModel
     readonly property var ctxStats: statsData
     readonly property bool ctxDaemonOnline: daemonOnline
     readonly property string ctxSha: guiserverSha
