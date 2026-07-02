@@ -26,6 +26,9 @@ class ReplyWatcher(QObject):
     # Signal emitted when a session gets a reply while user is not viewing it
     unread = Signal(str)  # session_id
 
+    # Signal emitted when a session is opened (to clear unread)
+    read = Signal(str)  # session_id
+
     def __init__(
         self,
         client: RpcClient,
@@ -70,6 +73,7 @@ class ReplyWatcher(QObject):
         """
         if session_id and session_id in self._unread_ids:
             self._unread_ids.discard(session_id)
+            self.read.emit(session_id)
             logger.info(f"Cleared unread for session {session_id[:8]}")
         self._current_session_id = session_id
 

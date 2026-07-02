@@ -49,12 +49,12 @@ class LiveTest:
 
     def _on_connected(self):
         logger.info("RPC connected, starting test sequence")
-        # Step 1: Create scratch session
+        # Step 1: Create scratch session (dir, model, perm)
         self.client.call(
             "NewSession",
-            "/tmp/qt-test",
-            "",
-            "",
+            "/tmp/qt-test",  # dir
+            "",              # model (empty = default)
+            "",              # perm (empty = default)
             callback=self._on_scratch_created,
         )
 
@@ -67,12 +67,12 @@ class LiveTest:
         self.scratch_id = result["result"]
         logger.info(f"Created scratch session: {self.scratch_id[:8]}")
 
-        # Step 2: Create a dummy session (to open as "current")
+        # Step 2: Create a dummy session (to open as "current") (dir, model, perm)
         self.client.call(
             "NewSession",
-            "/tmp/qt-test-dummy",
-            "",
-            "",
+            "/tmp/qt-test-dummy",  # dir
+            "",                     # model
+            "",                     # perm
             callback=self._on_dummy_created,
         )
 

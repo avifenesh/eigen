@@ -44,7 +44,7 @@ Rectangle {
                     id: mouseArea
                     anchors.fill: parent
                     hoverEnabled: true
-                    onClicked: root.sessionClicked(sessionId)
+                    onClicked: root.sessionClicked(model.sessionId)
                 }
 
                 RowLayout {
@@ -57,12 +57,12 @@ Rectangle {
                         width: 12
                         height: 12
                         radius: 6
-                        color: Theme.statusColor(status)
+                        color: Theme.statusColor(model.status)
                         Layout.alignment: Qt.AlignVCenter
 
                         // Breathing animation for working status
                         SequentialAnimation on opacity {
-                            running: status === "working"
+                            running: model.status === "working"
                             loops: Animation.Infinite
                             NumberAnimation { from: 1.0; to: 0.3; duration: Theme.duration.breath / 2; easing.type: Easing.InOutQuad }
                             NumberAnimation { from: 0.3; to: 1.0; duration: Theme.duration.breath / 2; easing.type: Easing.InOutQuad }
@@ -74,7 +74,7 @@ Rectangle {
                         spacing: Theme.space.xs
 
                         Label {
-                            text: title
+                            text: model.title
                             font.family: Theme.uiFonts[0]
                             font.pixelSize: Theme.fontSize.h3
                             font.weight: Theme.fontWeight.semibold
@@ -87,7 +87,7 @@ Rectangle {
                             Layout.fillWidth: true
 
                             Label {
-                                text: dir
+                                text: model.dir
                                 font.family: Theme.uiFonts[0]
                                 font.pixelSize: Theme.fontSize.bodySm
                                 color: Theme.colors.textMuted
@@ -96,7 +96,7 @@ Rectangle {
                             }
 
                             Label {
-                                text: modelName
+                                text: model.modelName
                                 font.family: Theme.uiFonts[0]
                                 font.pixelSize: Theme.fontSize.bodySm
                                 font.weight: Theme.fontWeight.medium
@@ -104,14 +104,14 @@ Rectangle {
                             }
 
                             Label {
-                                text: turns + " turns"
+                                text: model.turns + " turns"
                                 font.family: Theme.uiFonts[0]
                                 font.pixelSize: Theme.fontSize.bodySm
                                 color: Theme.colors.textMuted
                             }
 
                             Label {
-                                text: formatTimestamp(updated)
+                                text: formatTimestamp(model.updated)
                                 font.family: Theme.uiFonts[0]
                                 font.pixelSize: Theme.fontSize.bodySm
                                 color: Theme.colors.textMuted

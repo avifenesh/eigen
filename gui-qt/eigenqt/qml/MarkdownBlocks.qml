@@ -212,7 +212,7 @@ Column {
         id: tableBlock
         Rectangle {
             width: parent.width
-            implicitHeight: tableColumn.height
+            implicitHeight: tableColumn.implicitHeight
             color: "transparent"
             border.width: 1
             border.color: Theme.colors.borderSubtle
@@ -220,7 +220,7 @@ Column {
 
             Column {
                 id: tableColumn
-                anchors.fill: parent
+                width: parent.width
                 spacing: 0
 
                 Repeater {

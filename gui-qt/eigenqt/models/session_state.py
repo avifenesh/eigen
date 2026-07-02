@@ -22,6 +22,8 @@ class SessionStateModel(QObject):
     goalChanged = Signal()
     catalogChanged = Signal()
     effortLevelsChanged = Signal()
+    statusChanged = Signal()
+    dirChanged = Signal()
 
     def __init__(self, client: RpcClient, session_id: str, parent: Optional[QObject] = None):
         super().__init__(parent)
@@ -34,6 +36,11 @@ class SessionStateModel(QObject):
         self._goal = ""
         self._catalog = []  # list of model names
         self._effort_levels = []  # list of effort levels for current model
+        self._status = "idle"  # Computed from State RPC "running" field
+        # The session's primary working directory (first Roots entry — the
+        # State DTO carries roots, not a single dir). The diff/files dock
+        # scopes to this.
+        self._dir = ""
 
     @Property(str, notify=modelChanged)
     def model(self) -> str:
@@ -63,6 +70,14 @@ class SessionStateModel(QObject):
     def effortLevels(self) -> list:
         return self._effort_levels
 
+    @Property(str, notify=statusChanged)
+    def status(self) -> str:
+        return self._status
+
+    @Property(str, notify=dirChanged)
+    def dir(self) -> str:
+        return self._dir
+
     @Slot(dict)
     def seed(self, state: dict) -> None:
         """Seed from State RPC result."""
@@ -71,6 +86,14 @@ class SessionStateModel(QObject):
         self._perm = state.get("perm", "")
         self._title = state.get("title", "")
         self._goal = state.get("goal", "")
+
+        # Compute status from "running" field
+        running = state.get("running", False)
+        self._status = "working" if running else "idle"
+
+        # Primary working dir = first sandbox root (State has roots, not dir).
+        roots = state.get("roots") or []
+        self._dir = roots[0] if roots else ""
 
         # Extract catalog (from routing.catalog)
         catalog_data = state.get("catalog", {})
@@ -98,6 +121,8 @@ class SessionStateModel(QObject):
         self.goalChanged.emit()
         self.catalogChanged.emit()
         self.effortLevelsChanged.emit()
+        self.statusChanged.emit()
+        self.dirChanged.emit()
 
     @Slot(str)
     def setModel(self, model: str) -> None:
@@ -147,3 +172,15 @@ class SessionStateModel(QObject):
             self.seed(result["result"])
 
         self._client.call("SetTitle", self._session_id, title, callback=on_result)
+
+    @Slot()
+    def refresh(self) -> None:
+        """Refresh session state from RPC State."""
+
+        def on_result(result: dict) -> None:
+            if "error" in result:
+                print(f"State refresh error: {result['error']}")
+                return
+            self.seed(result["result"])
+
+        self._client.call("State", self._session_id, callback=on_result)

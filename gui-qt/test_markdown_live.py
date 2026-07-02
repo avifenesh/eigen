@@ -55,11 +55,8 @@ def main():
         else:
             print(f"ERROR: {result.get('error', 'unknown')}")
 
-    client.call(
-        "NewSession",
-        args=["", "/tmp/qt-markdown-test", ""],
-        callback=on_new_session
-    )
+    # NewSession(dir, model, perm)
+    client.call("NewSession", "/tmp/qt-markdown-test", "", "", callback=on_new_session)
 
     # Wait for session creation
     for _ in range(50):
@@ -85,7 +82,7 @@ def main():
 
 Format everything nicely."""
 
-    client.call("SendInput", args=[session_id, demo_prompt, [], []])
+    client.call("SendInput", session_id, demo_prompt, [], [])
 
     print("Waiting for response (30s)...")
     print("NOTE: This test requires a live guiserver with a working daemon.")
@@ -96,7 +93,7 @@ Format everything nicely."""
 
     # Cleanup
     print("Cleaning up...")
-    client.call("RemoveSession", args=[session_id])
+    client.call("RemoveSession", session_id)
     time.sleep(1)
 
     print("\nDone. To test rendering:")

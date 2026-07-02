@@ -6,9 +6,8 @@ Provides pasteImage() -> str for image paste (returns base64 data URL).
 """
 
 import base64
-from io import BytesIO
 
-from PySide6.QtCore import QObject, Slot
+from PySide6.QtCore import QObject, Slot, QIODevice, QBuffer, QByteArray
 from PySide6.QtGui import QGuiApplication, QImage
 
 
@@ -33,10 +32,13 @@ class ClipboardHelper(QObject):
         if image.isNull():
             return ""
 
-        # Convert QImage to PNG bytes
-        buffer = BytesIO()
-        image.save(buffer, "PNG")  # type: ignore
-        png_bytes = buffer.getvalue()
+        # Convert QImage to PNG bytes (PySide6 requires QIODevice not io.BytesIO)
+        byte_array = QByteArray()
+        buffer = QBuffer(byte_array)
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        image.save(buffer, "PNG")
+        buffer.close()
+        png_bytes = byte_array.data()
 
         # Encode to base64
         b64 = base64.b64encode(png_bytes).decode("utf-8")

@@ -11,6 +11,12 @@ Rectangle {
     property string sessionId
     property var sessionStateModel  // SessionStateModel
     property var commandsModel  // CommandsModel
+    property bool dockOpen: false
+    // Context property captured under an unshadowed name: inside
+    // `DockPanel { rpcClient: ... }` a bare `rpcClient` RHS resolves to
+    // DockPanel's OWN property (self-binding → undefined) — the QML
+    // delegate-scope footgun, third sighting in this port.
+    property var rpcRef: rpcClient
 
     signal backClicked()
 
@@ -56,7 +62,7 @@ Rectangle {
                     font.family: Theme.uiFonts[0]
                     font.pixelSize: Theme.fontSize.body
                     visible: isStreaming
-                    onClicked: rpcClient.call("Interrupt", [root.sessionId])
+                    onClicked: rpcClient.callFire("Interrupt", [root.sessionId])
 
                     background: Rectangle {
                         color: parent.hovered ? Theme.colors.errorBg : "transparent"
@@ -73,6 +79,31 @@ Rectangle {
                         verticalAlignment: Text.AlignVCenter
                     }
                 }
+
+                Item { Layout.fillWidth: true }
+
+                // Diff/files dock toggle — the worktree panel on the right.
+                Button {
+                    text: root.dockOpen ? "Dock ▸" : "◂ Dock"
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.body
+                    onClicked: root.dockOpen = !root.dockOpen
+
+                    background: Rectangle {
+                        color: parent.hovered ? Theme.colors.stateHover : "transparent"
+                        border.width: root.dockOpen ? 1 : 0
+                        border.color: Theme.colors.borderBrandFaint
+                        radius: Theme.radius.sm
+                    }
+
+                    contentItem: Label {
+                        text: parent.text
+                        font: parent.font
+                        color: root.dockOpen ? Theme.colors.brand : Theme.colors.textSecondary
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
             }
         }
 
@@ -81,7 +112,12 @@ Rectangle {
             sessionState: root.sessionStateModel
         }
 
-        // Transcript
+        // Transcript row: transcript fills; the diff/files dock docks right.
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 0
+
         ListView {
             id: transcriptListView
             Layout.fillWidth: true
@@ -116,6 +152,26 @@ Rectangle {
                 }
             }
 
+            // QML ListView's default wheel step is a few px per notch — felt
+            // "stuck" on long transcripts. Take over wheel input: ~110px per
+            // notch (VS Code-ish), clamped to content bounds.
+            WheelHandler {
+                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                onWheel: (wheel) => {
+                    const step = wheel.angleDelta.y / 120
+                    let y = transcriptListView.contentY - step * 110
+                    const minY = transcriptListView.originY
+                    const maxY = transcriptListView.originY
+                        + transcriptListView.contentHeight
+                        - transcriptListView.height
+                    transcriptListView.contentY = Math.max(minY, Math.min(y, Math.max(minY, maxY)))
+                }
+            }
+
+            // Larger offscreen delegate cache: markdown delegates are tall and
+            // expensive to instantiate — pre-render a screenful each side.
+            cacheBuffer: 1600
+
             // Approval overlay (if pending approvals)
             Loader {
                 active: approvalsModel && approvalsModel.rowCount() > 0
@@ -127,6 +183,20 @@ Rectangle {
                 }
                 anchors.centerIn: parent
             }
+        }
+
+        // Diff/files dock — lazy so closed docks cost nothing.
+        Loader {
+            active: root.dockOpen
+            visible: active
+            Layout.preferredWidth: active ? Math.min(520, root.width * 0.42) : 0
+            Layout.fillHeight: true
+            sourceComponent: DockPanel {
+                sessionDir: root.sessionStateModel ? root.sessionStateModel.dir : ""
+                rpcClient: root.rpcRef
+                onClosed: root.dockOpen = false
+            }
+        }
         }
 
         // Composer
@@ -279,10 +349,10 @@ Rectangle {
 
                             if (isStreaming) {
                                 // Steer (send while streaming)
-                                rpcClient.call("SteerInput", [root.sessionId, msg, images])
+                                rpcClient.callFire("SteerInput", [root.sessionId, msg, images])
                             } else {
                                 // Normal send
-                                rpcClient.call("SendInput", [root.sessionId, msg, images, []])
+                                rpcClient.callFire("SendInput", [root.sessionId, msg, images, []])
                             }
 
                             composerTextArea.text = ""

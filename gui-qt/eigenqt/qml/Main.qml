@@ -52,18 +52,18 @@ ApplicationWindow {
 
                     delegate: SessionRow {
                         width: ListView.view.width
-                        sessionId: sessionId
-                        title: title
-                        status: status
-                        dir: dir
-                        modelBadge: modelName
-                        updated: updated
+                        sessionId: model.sessionId
+                        title: model.title
+                        status: model.status
+                        dir: model.dir
+                        modelBadge: model.modelName
+                        updated: model.updated
                         isActive: ListView.isCurrentItem
 
                         onClicked: {
                             sessionsListView.currentIndex = index
                             stackLayout.currentIndex = 1  // show chat
-                            sessionController.open_session(sessionId)
+                            sessionController.open_session(model.sessionId)
                         }
                     }
                 }

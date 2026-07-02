@@ -48,7 +48,7 @@ class ModelVerifier:
         else:
             # Create new session
             print("Creating new session...")
-            self.client.call("NewSession", args=["", "", ""], callback=self.on_new_session)
+            self.client.call("NewSession", "", "", "", callback=self.on_new_session)
 
     def on_new_session(self, result: dict):
         """Handle NewSession result."""
@@ -63,7 +63,7 @@ class ModelVerifier:
 
     def load_session(self):
         """Load session state, seed model."""
-        self.client.call("State", args=[self.session_id], callback=self.on_state)
+        self.client.call("State", self.session_id, callback=self.on_state)
 
     def on_state(self, result: dict):
         """Handle State result."""

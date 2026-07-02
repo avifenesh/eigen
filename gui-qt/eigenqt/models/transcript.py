@@ -38,6 +38,12 @@ class TranscriptModel(QAbstractListModel):
         self._session_id = session_id
         self._rows: list[TranscriptRow] = []
         self._pending_ops: list[RowOp] = []
+        # data() is a scroll-time hot path: ListView refetches roles for every
+        # visible row on relayout. Parsing markdown there uncached froze
+        # scrolling on long transcripts. Cache blocks per row index, keyed by
+        # the exact text parsed — a streaming row's text change naturally
+        # misses and re-parses; finished rows hit forever.
+        self._blocks_cache: dict[int, tuple[str, list]] = {}
 
         # 16ms coalescing timer (single-shot, restarts on each delta)
         self._flush_timer = QTimer(self)
@@ -77,49 +83,56 @@ class TranscriptModel(QAbstractListModel):
         return len(self._rows)
 
     def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
-        """Return data for index/role."""
-        if not index.isValid() or index.row() >= len(self._rows):
+        """Return data for index/role.
+
+        HOT PATH: ListView refetches roles for every visible row on every
+        relayout/scroll tick — no per-call dict copies, and markdown parses
+        are cached (parsing every scroll frame froze the view).
+        """
+        row_idx = index.row()
+        if not index.isValid() or row_idx >= len(self._rows):
             return None
 
-        row_data = self._rows[index.row()].to_dict()
+        row = self._rows[row_idx]
         if role == self.KindRole:
-            return row_data.get("kind", "")
+            return row.kind
         if role == self.TextRole:
-            return row_data.get("text", "")
+            return row.text
         if role == self.ToolNameRole:
-            return row_data.get("toolName", "")
+            return row.tool_name
         if role == self.ToolIdRole:
-            return row_data.get("toolId", "")
+            return row.tool_id
         if role == self.ToolArgsRole:
-            return row_data.get("toolArgs", "")
+            return row.tool_args
         if role == self.ToolStatusRole:
-            return row_data.get("toolStatus", "")
+            return row.tool_status
         if role == self.StreamingRole:
-            return row_data.get("streaming", False)
+            return row.streaming
         if role == self.ReasoningRole:
-            return row_data.get("reasoning", "")
+            return row.reasoning
         if role == self.StepRole:
-            return row_data.get("step", 0)
+            return row.step
         if role == self.BlocksRole:
-            # Parse markdown blocks for assistant rows
-            if row_data.get("kind") == "assistant":
-                text = row_data.get("text", "")
-                blocks = parse_markdown(text)
-                # Convert Block dataclasses → list of dicts for QML
-                return [
-                    {
-                        "type": b.type,
-                        "content": b.content,
-                        "lang": b.lang,
-                        "source": b.source,
-                        "level": b.level,
-                        "rows": b.rows,
-                        "items": b.items,
-                        "ordered": b.ordered,
-                    }
-                    for b in blocks
-                ]
-            return []
+            if row.kind != "assistant":
+                return []
+            cached = self._blocks_cache.get(row_idx)
+            if cached is not None and cached[0] == row.text:
+                return cached[1]
+            blocks = [
+                {
+                    "type": b.type,
+                    "content": b.content,
+                    "lang": b.lang,
+                    "source": b.source,
+                    "level": b.level,
+                    "rows": b.rows,
+                    "items": b.items,
+                    "ordered": b.ordered,
+                }
+                for b in parse_markdown(row.text)
+            ]
+            self._blocks_cache[row_idx] = (row.text, blocks)
+            return blocks
         return None
 
     def seed(self, state: dict):
@@ -131,6 +144,7 @@ class TranscriptModel(QAbstractListModel):
         rows = seed_from_state(state)
         self.beginResetModel()
         self._rows = rows
+        self._blocks_cache.clear()  # indices shifted — stale parses invalid
         self.endResetModel()
 
     @Slot(str, dict)
@@ -166,9 +180,7 @@ class TranscriptModel(QAbstractListModel):
             return
 
         # Refetch State → rebuild
-        self._client.call(
-            "State", args=[self._session_id], callback=self._on_state_for_rebuild
-        )
+        self._client.call("State", self._session_id, callback=self._on_state_for_rebuild)
 
     @Slot(dict)
     def _on_state_for_rebuild(self, result: dict):
@@ -181,6 +193,7 @@ class TranscriptModel(QAbstractListModel):
         self.beginResetModel()
         self._rows = rows
         self._pending_ops.clear()
+        self._blocks_cache.clear()
         self.endResetModel()
 
     @Slot()

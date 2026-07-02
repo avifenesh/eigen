@@ -25,20 +25,15 @@ Popup {
         border.color: Theme.colors.borderSubtle
     }
 
+    // Filter update handler (replaces hidden TextField listener)
+    onFilterTextChanged: {
+        if (root.commandsModel) {
+            root.commandsModel.setFilter(filterText)
+        }
+    }
+
     contentItem: ColumnLayout {
         spacing: 0
-
-        // Filter text (hidden input, controlled externally)
-        TextField {
-            id: filterField
-            visible: false
-            text: root.filterText
-            onTextChanged: {
-                if (root.commandsModel) {
-                    root.commandsModel.setFilter(text)
-                }
-            }
-        }
 
         // Command list
         ListView {
@@ -102,9 +97,12 @@ Popup {
                 if (currentIndex < count - 1) currentIndex++
             }
             Keys.onReturnPressed: {
-                if (currentIndex >= 0) {
-                    var item = itemAtIndex(currentIndex)
-                    if (item) item.clicked()
+                if (currentIndex >= 0 && currentIndex < count) {
+                    var cmdName = root.commandsModel.data(root.commandsModel.index(currentIndex, 0), 257)  // NameRole = 257
+                    if (cmdName) {
+                        root.commandSelected(cmdName)
+                        root.close()
+                    }
                 }
             }
         }

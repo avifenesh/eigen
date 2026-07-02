@@ -47,10 +47,10 @@ class E2ETest:
         """Run the full E2E test sequence."""
         self.log("Starting E2E test suite")
 
-        # Step 1: Create scratch session
+        # Step 1: Create scratch session (dir, model, perm)
         self.log("Step 1: Creating scratch session")
         try:
-            result = self.client.call_sync("NewSession", "/tmp/qt-e2e-test")
+            result = self.client.call_sync("NewSession", "/tmp/qt-e2e-test", "", "")
             self.scratch_session_id = result
             self.log(f"Created session: {self.scratch_session_id}")
         except Exception as e:

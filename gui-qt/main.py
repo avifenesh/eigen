@@ -10,9 +10,10 @@ from pathlib import Path
 
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType
 from PySide6.QtQuickControls2 import QQuickStyle
 
+from eigenqt.models.worktree import DiffModel, FileTreeModel
 from eigenqt.models import (
     ApprovalsModel,
     CommandsModel,
@@ -50,8 +51,9 @@ class AppContext(QObject):
             self.rpc_client, self.sessions_model, self
         )
 
-        # Connect reply watcher unread signal to sessions model
+        # Connect reply watcher unread/read signals to sessions model
         self.reply_watcher.unread.connect(self.sessions_model.mark_unread)
+        self.reply_watcher.read.connect(self.sessions_model.mark_read)
 
         # Connect signals
         self.rpc_client.connected.connect(self._on_connected)
@@ -158,7 +160,7 @@ class SessionController(QObject):
         self._client.subscribe([channel])
 
         # Fetch initial state
-        self._client.call("State", args=[session_id], callback=self._on_state)
+        self._client.call("State", session_id, callback=self._on_state)
 
     def _on_state(self, result):
         """Handle State RPC result."""
@@ -193,6 +195,11 @@ def main():
     app = QGuiApplication(sys.argv)
     app.setOrganizationName("eigen")
     app.setApplicationName("eigen")
+
+    # QML-instantiated model types (DiffTab/FilesTab declare DiffModel{} /
+    # FileTreeModel{} inline) — registered under the Eigen module.
+    qmlRegisterType(DiffModel, "Eigen", 1, 0, "DiffModel")
+    qmlRegisterType(FileTreeModel, "Eigen", 1, 0, "FileTreeModel")
 
     engine = QQmlApplicationEngine()
     ctx = engine.rootContext()

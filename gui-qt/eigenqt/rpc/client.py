@@ -25,7 +25,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 
 
 class RpcClient(QObject):
@@ -36,8 +36,10 @@ class RpcClient(QObject):
     disconnected = Signal(str)  # Disconnect reason
     event = Signal(str, dict)  # (channel, data)
     dropped = Signal(str)  # channel
+    callDone = Signal(int, "QVariantMap")  # (token, payload) — QML token-call results
 
     def __init__(self, sock_path: Optional[Path] = None, parent: Optional[QObject] = None):
+        self._qml_token = 0
         super().__init__(parent)
         self.sock_path = sock_path or (Path.home() / ".eigen" / "guiserver.sock")
 
@@ -163,6 +165,39 @@ class RpcClient(QObject):
             return
 
         self._rpc_worker.enqueue_call(method, args, callback)
+
+    # Token-based QML variant: QJSValue callbacks captured across event-loop
+    # turns are unreliable in PySide6 (the JS function can be collected before
+    # the response lands, silently dropping the callback). Instead QML calls
+    # callToken() and listens for the callDone(token, payload) signal
+    # (declared with the other class-level Signals above).
+    @Slot(str, "QVariantList", result=int)
+    def callToken(self, method: str, args: list) -> int:
+        self._qml_token += 1
+        token = self._qml_token
+        # Always deliver on the NEXT event-loop turn: call() invokes the
+        # callback synchronously when disconnected, i.e. before callToken has
+        # even returned the token to QML — the QML side hasn't stored it yet
+        # and would drop the response. A 0-timer makes delivery order uniform.
+        self.call(
+            method,
+            *list(args or []),
+            callback=lambda payload, t=token: QTimer.singleShot(
+                0, lambda: self.callDone.emit(t, payload)
+            ),
+        )
+        return token
+
+    # Fire-and-forget QML variant. Python's *args form of call() carries no
+    # Slot metadata, so it is INVISIBLE to the QML engine — a QML
+    # `rpcClient.call(...)` throws "not a function". Mutations that don't
+    # need the response (Interrupt, SendInput, ...) use this; calls that DO
+    # need the result use callToken() + the callDone signal (QJSValue
+    # callbacks held across event-loop turns proved unreliable in PySide6 —
+    # the JS function can be collected before the response lands).
+    @Slot(str, "QVariantList")
+    def callFire(self, method: str, args: list) -> None:
+        self.call(method, *list(args or []))
 
     def call_sync(self, method: str, *args, timeout: float = 5.0) -> Any:
         """Sync RPC call (blocks until response or timeout). Returns result or raises RuntimeError."""
