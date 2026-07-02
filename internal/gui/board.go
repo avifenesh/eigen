@@ -416,23 +416,24 @@ func setLanePinned(key string, pinned bool) error {
 	if key == "" {
 		return fmt.Errorf("empty lane key")
 	}
-	cfg := config.Load()
-	out := cfg.BoardPinned[:0]
-	has := false
-	for _, k := range cfg.BoardPinned {
-		if k == key {
-			has = true
-			if !pinned {
-				continue // drop it
+	return config.LoadModifySave(func(cfg *config.Config) error {
+		out := cfg.BoardPinned[:0]
+		has := false
+		for _, k := range cfg.BoardPinned {
+			if k == key {
+				has = true
+				if !pinned {
+					continue // drop it
+				}
 			}
+			out = append(out, k)
 		}
-		out = append(out, k)
-	}
-	if pinned && !has {
-		out = append(out, key)
-	}
-	cfg.BoardPinned = out
-	return config.Save(cfg)
+		if pinned && !has {
+			out = append(out, key)
+		}
+		cfg.BoardPinned = out
+		return nil
+	})
 }
 
 // ReviewPR starts a session that reviews a specific GitHub PR by URL. The agent

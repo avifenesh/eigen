@@ -14,21 +14,25 @@ import (
 	"github.com/avifenesh/eigen/internal/feed"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/workflow"
-	"github.com/wailsapp/wails/v3/pkg/application"
 	"golang.org/x/sync/singleflight"
 )
 
-// Bridge is the Wails-bound service exposed to the frontend. Every method here
-// becomes a generated TS binding. It holds ONE long-lived control client for
-// request/response RPCs, and a map of streaming pumps (one dedicated daemon
-// connection per subscribed session — see pump.go).
+// Bridge is the host-agnostic service exposed to the frontend. Under the
+// `wails` tag every method becomes a generated TS binding (wails.go); headless
+// (guiserver) the same methods are reached over the socket dispatcher. It holds
+// ONE long-lived control client for request/response RPCs, and a map of
+// streaming pumps (one dedicated daemon connection per subscribed session —
+// see pump.go).
 //
 // All daemon IO (ensure/retry/sleep) is done OUTSIDE the mutex so a down daemon
 // can never stall unrelated RPCs, and every teardown path is guarded by
 // sync.Once so concurrent Shutdown/Unsubscribe/watchdog races can't double-close.
 type Bridge struct {
-	app    *application.App
-	ensure func() (*daemon.Client, error)
+	// emitter delivers events to whatever frontend host is attached (Wails app
+	// or guiserver socket fan-out — see Emitter in emitter.go). nil = no host
+	// yet; emit() then drops events, matching the old nil-app behavior.
+	emitter Emitter
+	ensure  func() (*daemon.Client, error)
 
 	// Proactive-feed inputs (the home base's "act on" surface). suggest is the
 	// LLM suggester (nil = suggestions off; git/github/memory signals still
@@ -43,6 +47,12 @@ type Bridge struct {
 	closing  bool
 	pollStop chan struct{}
 	feedStop chan struct{}
+
+	// Loop ownership: when multiple GUI processes run (Wails + guiserver during
+	// migration), exactly one owns feedLoop/gpuSampleLoop (LLM spend + notifications);
+	// the other serves reads/RPC only. loopRelease is non-nil when this Bridge owns
+	// the loops; Stop() must call it to release the flock (loops_lock.go).
+	loopRelease func()
 
 	// Remote control clients, one pooled per ssh target, dialed lazily when a
 	// remote session ref is first acted on and reused while alive (remote_ref.go).
@@ -60,6 +70,12 @@ type Bridge struct {
 	// conversation-mode lifecycle. See voice.go.
 	voiceOnce sync.Once
 	voiceCtl  *voiceCtl
+
+	// wailsHost carries the Wails-only state (the *application.App handle for
+	// native dialogs). Under `wails` it holds the app (wails.go); tagless it is
+	// an empty struct (wails_stub.go) — the pattern that keeps this file, and
+	// therefore the whole package, free of any Wails import.
+	wailsHost
 }
 
 // NewBridge constructs the bridge. ensure connects to (and lazily spawns) the
@@ -69,14 +85,25 @@ func NewBridge(ensure func() (*daemon.Client, error), suggest feed.Suggester, di
 	return &Bridge{ensure: ensure, suggest: suggest, dirs: dirs, pumps: map[string]*sessionPump{}, remoteCtrls: map[string]*daemon.Client{}}
 }
 
-// SetApp wires the Wails app for event emission. Called from the bootstrap
-// before Run.
-func (b *Bridge) SetApp(app *application.App) { b.app = app }
+// SetEmitter wires the event sink for emission. Called from the bootstrap
+// before the host runs (Wails: the wailsEmitter adapter in wails.go; guiserver:
+// its socket fan-out).
+func (b *Bridge) SetEmitter(e Emitter) { b.emitter = e }
 
-// ServiceStartup is the Wails v3 service lifecycle hook (optional interface).
-// Verified signature at v3.0.0-alpha2.105: (context.Context, ServiceOptions) error.
-func (b *Bridge) ServiceStartup(_ context.Context, _ application.ServiceOptions) error {
+// Start launches the bridge's background loops (health/feed/GPU) and kicks the
+// initial daemon probe. Host-agnostic: the Wails ServiceStartup hook (wails.go)
+// and guiserver both call this — the lifecycle must not live behind the wails
+// tag or the tagless build would silently run no loops.
+//
+// Loop ownership (coexistence during migration): when TWO GUIs run (Wails +
+// guiserver), exactly one acquires loop ownership via flock; that one runs
+// feedLoop + gpuSampleLoop (LLM spend + notifications happen once). The other
+// serves reads/RPC only. healthLoop ALWAYS runs (each process needs its own
+// daemon-status UI). See loops_lock.go.
+func (b *Bridge) Start() {
+	release, acquired := AcquireLoopOwnership()
 	b.mu.Lock()
+	b.loopRelease = release
 	b.pollStop = make(chan struct{})
 	b.feedStop = make(chan struct{})
 	stop := b.pollStop
@@ -94,18 +121,22 @@ func (b *Bridge) ServiceStartup(_ context.Context, _ application.ServiceOptions)
 			b.emit(eventDaemonHealth, HealthDTO{OK: false, Error: err.Error()})
 		}
 	}()
+	// healthLoop: ALWAYS run — each process drives its own daemon-status UI.
 	go b.healthLoop(stop)
-	go b.feedLoop(feedStop)
-	go b.gpuSampleLoop(stop) // GPU history + training hot-GPU alerts (no-op without a GPU)
-	return nil
+	// feedLoop: GATED — suggester LLM calls spend real money (run once across all GUIs).
+	if acquired {
+		go b.feedLoop(feedStop)
+	}
+	// gpuSampleLoop: GATED — duplicate desktop notifications are bad UX (run once).
+	if acquired {
+		go b.gpuSampleLoop(stop)
+	}
 }
 
-// ServiceShutdown is the Wails v3 shutdown hook. Tears down every pump + the
-// control client so no goroutine, connection, or daemon-side view leaks.
-func (b *Bridge) ServiceShutdown() error {
-	b.Shutdown()
-	return nil
-}
+// Stop tears down every pump + the control client so no goroutine, connection,
+// or daemon-side view leaks. Alias for Shutdown kept as Start's symmetric peer
+// so guiserver reads Start()/Stop().
+func (b *Bridge) Stop() { b.Shutdown() }
 
 const (
 	eventDaemonStats  = "eigen:daemon:stats"
@@ -161,9 +192,13 @@ func (b *Bridge) healthLoop(stop chan struct{}) {
 	}
 }
 
+// emit delivers one event to the attached host, dropping it when no host is
+// wired yet (startup, tests). Every emission in the package MUST route through
+// here (or b.emitter directly) — never through a Wails type — so the package
+// stays tagless-compilable.
 func (b *Bridge) emit(name string, data any) {
-	if b.app != nil {
-		b.app.Event.Emit(name, data)
+	if b.emitter != nil {
+		b.emitter.Emit(name, data)
 	}
 }
 
@@ -237,7 +272,17 @@ func (b *Bridge) Shutdown() {
 	b.pollStop = nil
 	feedStop := b.feedStop
 	b.feedStop = nil
+	// Release loop ownership (if held) so another GUI can immediately acquire it.
+	release := b.loopRelease
+	b.loopRelease = nil
 	b.mu.Unlock()
+
+	// Release the loop lock OUTSIDE the Bridge mutex — the release calls unix.Flock
+	// which is a syscall; holding mu during a syscall invites deadlock risk if
+	// another goroutine tries to acquire mu while blocked on unrelated IO.
+	if release != nil {
+		release()
+	}
 
 	if stop != nil {
 		close(stop)

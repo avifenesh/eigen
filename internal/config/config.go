@@ -8,9 +8,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/theme"
+	"golang.org/x/sys/unix"
 )
 
 // knownTheme reports whether name is a registered palette.
@@ -182,7 +184,78 @@ func SaveTo(path string, c Config) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(b, '\n'), 0o644)
+	// Atomic write: temp file in the same directory → os.Rename. The same-dir
+	// constraint ensures rename is atomic (same filesystem). Concurrent Save()
+	// calls from multiple GUI processes (Wails + guiserver) won't tear or lose
+	// writes; one wins, the other overwrites cleanly.
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".config.*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath) // cleanup on failure; no-op if rename succeeded
+	if _, err := tmp.Write(append(b, '\n')); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpPath, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
+}
+
+// withLock runs fn under an flock on path + ".lock". Ensures read-modify-write
+// cycles (Load → mutate → Save) from concurrent processes don't race. The lock
+// file lives alongside the config; CreateTemp + Flock handles creation races.
+// Callers that only read (Load) don't need this; callers that do full RMW do.
+func withLock(path string, fn func() error) error {
+	lockPath := path + ".lock"
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	// LOCK_EX blocks until the lock is free; no timeout — config ops are fast.
+	// Two GUI processes racing to Save will serialize here, one RMW completes
+	// before the next Load sees the file.
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX); err != nil {
+		return err
+	}
+	defer unix.Flock(int(f.Fd()), unix.LOCK_UN)
+	return fn()
+}
+
+// locksForTest tracks locks held by test goroutines for test ordering proofs.
+// Real callers ignore this; tests use it to demonstrate serialization.
+var locksForTest sync.Map
+
+// LoadModifySave runs a read-modify-write cycle under the config lock. Use when
+// you need to atomically update part of the config (e.g. SetConfig, SetRuleChain,
+// ToggleBoardPin). load() + save() run serially with no other RMW interleavers.
+func LoadModifySave(modify func(*Config) error) error {
+	path := Path()
+	if path == "" {
+		return os.ErrNotExist
+	}
+	return loadModifySaveTo(path, modify)
+}
+
+// loadModifySaveTo is the path-explicit form for tests (internal/gui paths use
+// LoadModifySave, which pins the canonical config).
+func loadModifySaveTo(path string, modify func(*Config) error) error {
+	return withLock(path, func() error {
+		c := LoadFrom(path)
+		if err := modify(&c); err != nil {
+			return err
+		}
+		return SaveTo(path, c)
+	})
 }
 
 // Set applies a named key to the config, parsing the value as that key's type.

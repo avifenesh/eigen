@@ -52,6 +52,12 @@ func (s *Store) RemoveCuratedNote(index int) error {
 	if s == nil {
 		return fmt.Errorf("memory unavailable")
 	}
+	// RMW guard: two Bridges can race on Read → modify → Rewrite.
+	release, err := s.lockStore()
+	if err != nil {
+		return err
+	}
+	defer release()
 	raw := s.Read()
 	sections := splitNotesForEdit(raw)
 	if index < 0 || index >= len(sections) {

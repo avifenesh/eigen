@@ -85,14 +85,15 @@ func (b *Bridge) Config() (*ConfigDTO, error) {
 // SetConfig validates + persists a single config key. Returns the value as
 // stored (config.Get may normalize it, e.g. a model ref).
 func (b *Bridge) SetConfig(key, value string) (string, error) {
-	c := config.Load()
-	if err := config.Set(&c, key, value); err != nil {
-		return "", err
-	}
-	if err := config.Save(c); err != nil {
-		return "", err
-	}
-	return config.Get(c, key), nil
+	var final string
+	err := config.LoadModifySave(func(c *config.Config) error {
+		if err := config.Set(c, key, value); err != nil {
+			return err
+		}
+		final = config.Get(*c, key)
+		return nil
+	})
+	return final, err
 }
 
 // ── per-role fallback chains ────────────────────────────────────────────────
@@ -146,18 +147,19 @@ func (b *Bridge) RuleChains() (*RuleChainsDTO, error) {
 // SetRuleChain persists one role's chain (ordered model names). An empty chain
 // clears the role back to its built-in default. Returns the stored chain.
 func (b *Bridge) SetRuleChain(role string, chain []string) ([]string, error) {
-	c := config.Load()
-	clean := make([]string, 0, len(chain))
-	for _, m := range chain {
-		if m = strings.TrimSpace(m); m != "" {
-			clean = append(clean, m)
+	var final []string
+	err := config.LoadModifySave(func(c *config.Config) error {
+		clean := make([]string, 0, len(chain))
+		for _, m := range chain {
+			if m = strings.TrimSpace(m); m != "" {
+				clean = append(clean, m)
+			}
 		}
-	}
-	config.SetRuleChain(&c, role, clean)
-	if err := config.Save(c); err != nil {
-		return nil, err
-	}
-	return c.ChainFor(role), nil
+		config.SetRuleChain(c, role, clean)
+		final = c.ChainFor(role)
+		return nil
+	})
+	return final, err
 }
 
 // chainModelChoices lists the model names the chain editor offers: the friendly

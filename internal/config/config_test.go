@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -304,5 +305,109 @@ func TestLoadFromNormalizesRef(t *testing.T) {
 	c := LoadFrom(path)
 	if c.Provider != "ant" || c.Model != "claude-opus-4-8" {
 		t.Fatalf("hand-edited ref should normalize: %+v", c)
+	}
+}
+
+// TestConcurrentSave verifies SaveTo is safe for concurrent calls from multiple
+// processes/goroutines (Wails + guiserver): no torn writes, final file is valid
+// JSON, and every write persists atomically or is cleanly overwritten.
+func TestConcurrentSave(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	// Each goroutine writes a distinct config N times; at the end we verify the
+	// file is valid JSON from one of the writers (no partial/torn state).
+	const writers = 3
+	const writes = 20
+
+	var start sync.WaitGroup
+	start.Add(writers)
+	var done sync.WaitGroup
+	done.Add(writers)
+
+	for i := 0; i < writers; i++ {
+		id := i
+		go func() {
+			start.Done()
+			start.Wait() // all goroutines start at once
+			for j := 0; j < writes; j++ {
+				c := Config{
+					Provider:  "test",
+					Model:     "model-" + string(rune('A'+id)),
+					Perm:      "auto",
+					MaxTokens: (id+1)*1000 + j,
+				}
+				if err := SaveTo(path, c); err != nil {
+					t.Errorf("writer %d write %d: %v", id, j, err)
+				}
+			}
+			done.Done()
+		}()
+	}
+	done.Wait()
+
+	// The final file must be valid JSON (not torn across writers).
+	c := LoadFrom(path)
+	if c.Provider != "test" || c.Perm != "auto" {
+		t.Fatalf("final config torn or invalid: %+v", c)
+	}
+	// One of the writers won; model should be model-A/B/C.
+	if !strings.HasPrefix(c.Model, "model-") {
+		t.Fatalf("model field corrupted: %q", c.Model)
+	}
+	// MaxTokens should match the model's writer id range.
+	winnerID := int(c.Model[len(c.Model)-1] - 'A')
+	minExpected := (winnerID + 1) * 1000
+	maxExpected := minExpected + writes - 1
+	if c.MaxTokens < minExpected || c.MaxTokens > maxExpected {
+		t.Fatalf("max_tokens %d outside winner-%d range [%d..%d]", c.MaxTokens, winnerID, minExpected, maxExpected)
+	}
+}
+
+// TestLoadModifySave verifies RMW cycles don't race when multiple goroutines
+// concurrently increment the same field. Without locking, some increments would
+// be lost (two goroutines read 5, both write 6); with locking, all serialize and
+// the final value is the expected sum.
+func TestLoadModifySave(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	// Start with a known value.
+	if err := SaveTo(path, Config{MaxTokens: 100}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Each goroutine increments MaxTokens N times. If the RMW cycles serialize
+	// correctly, the final value = 100 + (workers × increments).
+	const workers = 5
+	const increments = 10
+
+	var start sync.WaitGroup
+	start.Add(workers)
+	var done sync.WaitGroup
+	done.Add(workers)
+
+	for i := 0; i < workers; i++ {
+		go func() {
+			start.Done()
+			start.Wait()
+			for j := 0; j < increments; j++ {
+				err := loadModifySaveTo(path, func(c *Config) error {
+					c.MaxTokens++
+					return nil
+				})
+				if err != nil {
+					t.Errorf("increment failed: %v", err)
+				}
+			}
+			done.Done()
+		}()
+	}
+	done.Wait()
+
+	final := LoadFrom(path)
+	expected := 100 + (workers * increments)
+	if final.MaxTokens != expected {
+		t.Fatalf("lost updates: got %d, want %d (without locking, some increments would be lost)", final.MaxTokens, expected)
 	}
 }

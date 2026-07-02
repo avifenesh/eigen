@@ -1,11 +1,11 @@
 EIGEN := bin/eigen
-# All packages EXCEPT internal/gui: the GUI package imports Wails, which pulls in
-# webkitgtk via cgo. The default gate (CI's Go-gate job) builds webkit-free, so
-# it skips internal/gui — that package is built/vetted/tested under the wails
-# tag by the separate gui-phase gate (scripts/verify-gui-phase.sh). Local builds
-# use the default gtk4/webkitgtk-6.0 backend; CI's runner has only webkit2gtk-4.1
-# so that gate adds the `gtk3` tag.
-PKGS := $(shell go list ./... | grep -v '/internal/gui')
+# All packages including internal/gui (now tagless after guiserver migration).
+# The GUI package previously imported Wails (webkitgtk via cgo) and was excluded
+# from the default gate. Post-guiserver it compiles headless, so it joins the
+# webkit-free gate. The Wails build (bin/eigen-gui) stays separate with its own
+# gui-phase gate (scripts/verify-gui-phase.sh), but internal/gui tests run in
+# both contexts (tagless for contract tests, wails tag for integration).
+PKGS := $(shell go list ./...)
 
 .PHONY: build core gui-run gui-smoke gui-desktop gui-frontend vet test race fmt gate harness perf perf-soak perf-bench stats clean
 
