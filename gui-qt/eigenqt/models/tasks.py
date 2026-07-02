@@ -68,7 +68,9 @@ class TasksModel(QAbstractListModel):
 
         # Track app state (pause polling when hidden)
         self._app_visible = True
-        # TODO: pause polling when app hidden (needs QGuiApplication from QtGui, not QtCore)
+        app = QGuiApplication.instance()
+        if app:
+            app.applicationStateChanged.connect(self._on_app_state_changed)
 
         # Connect to RPC
         self._client.connected.connect(self._on_connected)
@@ -158,8 +160,8 @@ class TasksModel(QAbstractListModel):
 
     def _compute_elapsed(self, task: dict) -> str:
         """Compute elapsed time string (live for running tasks)."""
-        started = task.get("startedMs", 0)
-        finished = task.get("finishedMs", 0)
+        started = task.get("startedMs") or 0
+        finished = task.get("finishedMs") or 0
         if not started:
             return ""
 
@@ -195,8 +197,8 @@ class TasksModel(QAbstractListModel):
             self._schedule_next_poll()
             return
 
-        data = result.get("result", {})
-        tasks = data.get("tasks", [])
+        data = result.get("result") or {}
+        tasks = data.get("tasks") or []
 
         # Update counts
         self._running_count = sum(1 for t in tasks if t.get("status") == "running")
@@ -220,11 +222,16 @@ class TasksModel(QAbstractListModel):
         interval = 1500 if self._running_count > 0 else 4000
         self._poll_timer.start(interval)
 
-    # @Slot(Qt.ApplicationState)
-    # def _on_app_state_changed(self, state):
-    #     """Pause polling when app is hidden (minimize/background)."""
-    #     # TODO: re-enable when QGuiApplication import is fixed
-    #     self._app_visible = state == Qt.ApplicationActive
+    @Slot()
+    def _on_app_state_changed(self, state):
+        """Pause polling when app is hidden (minimize/background)."""
+        was_visible = self._app_visible
+        from PySide6.QtCore import Qt
+        self._app_visible = (state == Qt.ApplicationState.ApplicationActive)
+
+        # If becoming visible again, poll immediately + reschedule
+        if not was_visible and self._app_visible:
+            self._poll()
 
     @Slot(str)
     def cancel(self, task_id: str):

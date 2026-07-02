@@ -69,7 +69,7 @@ class ApprovalsModel(QAbstractListModel):
 
         State.pending is []ApprovalInfo {id, tool, args}.
         """
-        pending = state.get("pending", [])
+        pending = state.get("pending") or []
         self.beginResetModel()
         self._approvals = pending
         self.endResetModel()

@@ -66,13 +66,13 @@ class DashboardModel(QObject):
         if "error" in result:
             return
 
-        data = result.get("result", {})
+        data = result.get("result") or {}
         self._google_connected = data.get("googleConnected", False)
-        self._events = data.get("events", [])
+        self._events = data.get("events") or []
         self._unread_count = data.get("unreadCount", 0)
-        self._unread = data.get("unread", [])
-        self._health = data.get("health", {})
-        self._gpus = self._health.get("gpus", [])
+        self._unread = data.get("unread") or []
+        self._health = data.get("health") or {}
+        self._gpus = self._health.get("gpus") or []
 
         self.dataChanged.emit()
 
@@ -199,8 +199,8 @@ class FeedModel(QAbstractListModel):
         if "error" in result:
             return
 
-        data = result.get("result", {})
-        items = data.get("items", [])
+        data = result.get("result") or {}
+        items = data.get("items") or []
         self._fresh = data.get("fresh", False)
 
         self.beginResetModel()

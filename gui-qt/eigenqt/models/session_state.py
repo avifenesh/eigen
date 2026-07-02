@@ -96,9 +96,9 @@ class SessionStateModel(QObject):
         self._dir = roots[0] if roots else ""
 
         # Extract catalog (from routing.catalog)
-        catalog_data = state.get("catalog", {})
+        catalog_data = state.get("catalog") or {}
         if isinstance(catalog_data, dict):
-            models = catalog_data.get("models", [])
+            models = catalog_data.get("models") or []
             self._catalog = [m.get("id", "") for m in models if isinstance(m, dict)]
         else:
             self._catalog = []
@@ -106,10 +106,10 @@ class SessionStateModel(QObject):
         # Extract effort levels for current model (from catalog.models[].effortLevels)
         self._effort_levels = []
         if isinstance(catalog_data, dict):
-            models = catalog_data.get("models", [])
+            models = catalog_data.get("models") or []
             for m in models:
                 if isinstance(m, dict) and m.get("id") == self._model:
-                    levels = m.get("effortLevels", [])
+                    levels = m.get("effortLevels") or []
                     if isinstance(levels, list):
                         self._effort_levels = levels
                     break

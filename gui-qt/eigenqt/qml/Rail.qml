@@ -152,8 +152,9 @@ Rectangle {
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
+                                            // Open the session FIRST (sets active session), then switch route
+                                            sessionController.open_session(modelData.id)
                                             root.routeChanged("chat")
-                                            // TODO: need to pass sessionId to parent for session switching
                                         }
                                     }
 

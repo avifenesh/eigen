@@ -71,9 +71,9 @@ class SessionsModel(QAbstractListModel):
         if role == self.StatusRole:
             return session.get("status", "idle")  # Default status
         if role == self.TurnsRole:
-            return session.get("turns", 0)
+            return session.get("turns") or 0
         if role == self.UpdatedRole:
-            return session.get("updated", 0)
+            return session.get("updated") or 0
         if role == self.UnreadRole:
             session_id = session.get("id", "")
             return session_id in self._unread
@@ -93,9 +93,9 @@ class SessionsModel(QAbstractListModel):
         if "error" in result:
             return
 
-        sessions = result.get("result", [])
+        sessions = result.get("result") or []
         # Sort by updated descending (newest first)
-        sessions.sort(key=lambda s: s.get("updated", 0), reverse=True)
+        sessions.sort(key=lambda s: (s.get("updated") or 0), reverse=True)
 
         self.beginResetModel()
         self._sessions = sessions

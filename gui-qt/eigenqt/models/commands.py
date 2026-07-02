@@ -81,7 +81,7 @@ class CommandsModel(QAbstractListModel):
             if "error" in result:
                 print(f"Commands RPC error: {result['error']}")
                 return
-            commands = result.get("result", [])
+            commands = result.get("result") or []
             if not isinstance(commands, list):
                 return
             self.beginResetModel()

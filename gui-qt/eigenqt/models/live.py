@@ -69,9 +69,9 @@ class LiveSessionsModel(QAbstractListModel):
         if role == self.StatusRole:
             return session.get("status", "idle")
         if role == self.TurnsRole:
-            return session.get("turns", 0)
+            return session.get("turns") or 0
         if role == self.UpdatedRole:
-            return session.get("updated", 0)
+            return session.get("updated") or 0
         return ""
 
     @Slot()
@@ -88,14 +88,14 @@ class LiveSessionsModel(QAbstractListModel):
         if "error" in result:
             return
 
-        sessions = result.get("result", [])
+        sessions = result.get("result") or []
 
         # Filter to live sessions only (working or approval)
         filtered = [s for s in sessions if _is_live(s.get("status"))]
 
         # Sort by urgency: working=0, approval=1, then newest within each bucket
         rank = {"working": 0, "approval": 1}
-        filtered.sort(key=lambda s: (rank.get(s.get("status"), 2), -s.get("updated", 0)))
+        filtered.sort(key=lambda s: (rank.get(s.get("status"), 2), -(s.get("updated") or 0)))
 
         self.beginResetModel()
         self._sessions = filtered
@@ -136,5 +136,5 @@ def filter_and_sort_live(sessions: list[dict]) -> list[dict]:
     """
     filtered = [s for s in sessions if _is_live(s.get("status"))]
     rank = {"working": 0, "approval": 1}
-    filtered.sort(key=lambda s: (rank.get(s.get("status"), 2), -s.get("updated", 0)))
+    filtered.sort(key=lambda s: (rank.get(s.get("status"), 2), -(s.get("updated") or 0)))
     return filtered

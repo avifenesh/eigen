@@ -42,7 +42,8 @@ Rectangle {
         if (!sessionsModel) return
         for (var i = 0; i < sessionsModel.rowCount(); i++) {
             var idx = sessionsModel.index(i, 0)
-            var st = sessionsModel.data(idx, sessionsModel.StatusRole)
+            // StatusRole = Qt.UserRole + 5 = 261 (see sessions.py:24)
+            var st = sessionsModel.data(idx, 261)
             if (st === "working") wc++
             else if (st === "approval") ac++
             else if (st === "error") ec++
