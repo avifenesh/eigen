@@ -48,18 +48,43 @@ var colors = {
     dotIdle: "#7e8e8b",     // textMuted
     dotOk: "#8fc98a",       // success
     dotWarn: "#e0b36a",     // warn
-    dotError: "#d67e72"     // error
+    dotError: "#d67e72",    // error
+
+    // Diff colors (from tokens.css --diff-*)
+    diffAddBg: "rgba(16,38,28,0.85)",
+    diffAddGutter: "#3a6b4c",
+    diffDelBg: "rgba(42,21,23,0.85)",
+    diffDelGutter: "#7a4640",
+
+    // Syntax highlighting (code surfaces)
+    synBg: "#0a1012",
+    synText: "#c7d2d0",
+    synKeyword: "#c58fd8",
+    synType: "#e0b36a",
+    synFunc: "#6fb7e8",
+    synString: "#8fc98a",
+    synNumber: "#e8a878",
+    synComment: "#5e6e6a",
+    synPunct: "#9ab0ac",
+    synBuiltin: "#69c2b8",
+
+    // Additional tokens
+    bgRaised: "#11171a",
+    bgOverlay: "#1a2428",
+    borderBrandFaint: "rgba(105,194,184,0.22)",
+    stateFocusBg: "rgba(105,194,184,0.06)",
+    textFaint: "#37423f"
 }
 
 var uiFonts = ["Inter", "Noto Sans", "sans-serif"]
 var monoFonts = ["JetBrains Mono", "JetBrainsMono Nerd Font", "DejaVu Sans Mono", "monospace"]
 
-// 4px base spacing scale
+// 4px base spacing scale (matching tokens.css --sp-* naming)
 var space = {
     xxs: 2,
-    xs: 4,
-    sm: 6,
-    md: 8,
+    xs: 4,   // sp3
+    sm: 6,   // sp4
+    md: 8,   // sp5
     lg: 12,
     xl: 16,
     xxl: 20,
@@ -67,30 +92,48 @@ var space = {
     xxxxl: 32
 }
 
+// Named spacing (matching QML references)
+var sp3 = 4
+var sp4 = 6
+var sp5 = 8
+var sp6 = 12
+
 var radius = {
-    sm: 5,
+    sm: 5,   // rSm
     md: 6,
     lg: 8
 }
+
+var rSm = 5
 
 var fontSize = {
     display: 28,
     h1: 22,
     h2: 18,
     h3: 15,
-    body: 13,
-    bodySm: 12,
-    label: 12,
+    body: 13,     // fsBody
+    bodySm: 12,   // fsBodySm
+    label: 12,    // fsLabel
     micro: 11,
-    code: 13
+    code: 13,     // fsCode
+    codeSm: 12    // fsCodeSm
 }
 
+// Named font sizes (matching QML references)
+var fsBodySm = 12
+var fsLabel = 12
+var fsCodeSm = 12
+
 var fontWeight = {
-    regular: 400,
+    regular: 400,   // fwRegular
     medium: 500,
-    semibold: 600,
+    semibold: 600,  // fwSemibold
     bold: 700
 }
+
+// Named font weights
+var fwRegular = 400
+var fwSemibold = 600
 
 var duration = {
     instant: 80,

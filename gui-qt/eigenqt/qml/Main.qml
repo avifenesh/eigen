@@ -12,10 +12,8 @@ ApplicationWindow {
 
     color: Theme.colors.bgBase
 
-    // Fonts for Inter (blueprint-verified approach)
-    FontLoader { id: interRegular; source: "qrc:/fonts/Inter-Regular.ttf" }
-    FontLoader { id: interMedium; source: "qrc:/fonts/Inter-Medium.ttf" }
-    FontLoader { id: interSemiBold; source: "qrc:/fonts/Inter-SemiBold.ttf" }
+    // Fonts: rely on system font stack (Inter if installed, else system sans-serif)
+    // No qrc:/ resource compilation exists; Theme.js provides fallback stack
 
     RowLayout {
         anchors.fill: parent
@@ -54,18 +52,18 @@ ApplicationWindow {
 
                     delegate: SessionRow {
                         width: ListView.view.width
-                        sessionId: model.id
+                        sessionId: model.sessionId
                         title: model.title
                         status: model.status
                         dir: model.dir
-                        modelBadge: model.model
+                        modelBadge: model.modelName
                         updated: model.updated
                         isActive: ListView.isCurrentItem
 
                         onClicked: {
                             sessionsListView.currentIndex = index
                             stackLayout.currentIndex = 1  // show chat
-                            sessionController.open_session(sessionId)
+                            sessionController.open_session(model.sessionId)
                         }
                     }
                 }
@@ -98,6 +96,8 @@ ApplicationWindow {
             // Index 1: Chat view
             ChatView {
                 sessionId: sessionController.session_id
+                sessionStateModel: sessionController.session_state_model
+                commandsModel: sessionController.commands_model
 
                 onBackClicked: {
                     stackLayout.currentIndex = 0

@@ -44,7 +44,7 @@ Rectangle {
                     id: mouseArea
                     anchors.fill: parent
                     hoverEnabled: true
-                    onClicked: root.sessionClicked(model.id)
+                    onClicked: root.sessionClicked(model.sessionId)
                 }
 
                 RowLayout {
@@ -96,7 +96,7 @@ Rectangle {
                             }
 
                             Label {
-                                text: model.model
+                                text: model.modelName
                                 font.family: Theme.uiFonts[0]
                                 font.pixelSize: Theme.fontSize.bodySm
                                 font.weight: Theme.fontWeight.medium
