@@ -442,7 +442,13 @@ class MemoryModel(QObject):
         """Handle MemoryForScope RPC result."""
         self.loading = False
         if "error" in result:
-            self.load_error = result.get("error", "Unknown error")
+            e = result.get("error")
+            if isinstance(e, str):
+                self.load_error = e or "Unknown error"
+            elif isinstance(e, dict):
+                self.load_error = e.get("message", "Unknown error")
+            else:
+                self.load_error = str(e) if e else "Unknown error"
             return
 
         self.current = result.get("result")
@@ -460,7 +466,7 @@ class MemoryModel(QObject):
     @Slot()
     def save_note(self):
         """Append a new note to the current scope."""
-        note = self._draft.strip()
+        note = (self._draft or "").strip()
         if not note:
             return
 
@@ -565,8 +571,8 @@ class MemoryModel(QObject):
     @Slot()
     def add_ban(self):
         """Add a ban to the current scope."""
-        title = self._ban_title.strip()
-        rule = self._ban_rule.strip()
+        title = (self._ban_title or "").strip()
+        rule = (self._ban_rule or "").strip()
         if not title or not rule:
             return
 

@@ -400,9 +400,9 @@ class ConnectorsModel(QObject):
         self._client.call("GoogleStatus", callback=on_google)
 
         # Best-effort loads for Obsidian/Revuto
-        self._client.call("ObsidianStatus", callback=lambda r: setattr(self, "obsidian_status", r))
-        self._client.call("RevutoStatus", callback=lambda r: setattr(self, "revuto_status", r))
-        self._client.call("MCPSecretsAvailable", callback=lambda r: setattr(self, "secrets_ok", r))
+        self._client.call("ObsidianStatus", callback=lambda r: setattr(self, "obsidian_status", r.get("result") or {}))
+        self._client.call("RevutoStatus", callback=lambda r: setattr(self, "revuto_status", r.get("result") or {}))
+        self._client.call("MCPSecretsAvailable", callback=lambda r: setattr(self, "secrets_ok", bool(r.get("result", True))))
 
     @Slot(str)
     def add_connector(self, name: str):
@@ -581,14 +581,14 @@ class ConnectorsModel(QObject):
     @Slot()
     def save_local_server(self):
         """Save a local MCP server (stdio)."""
-        name = self._srv_name.strip()
-        cmd = [c for c in self._srv_command.strip().split() if c]
+        name = (self._srv_name or "").strip()
+        cmd = [c for c in (self._srv_command or "").strip().split() if c]
         if not name or not cmd:
             print("Name and command required")
             return
 
         def split_lines(s: str) -> list[str]:
-            return [line.strip() for line in s.split("\n") if line.strip()]
+            return [line.strip() for line in (s or "").split("\n") if line.strip()]
 
         env_pairs = split_lines(self._srv_env)
         secret_pairs = split_lines(self._srv_secret) if self._secrets_ok else []
@@ -598,7 +598,7 @@ class ConnectorsModel(QObject):
         server_dto = {
             "name": name,
             "command": cmd,
-            "description": self._srv_desc.strip(),
+            "description": (self._srv_desc or "").strip(),
             "disabled": False,
             "remote": False,
             "envPairs": env_pairs,
@@ -634,7 +634,7 @@ class ConnectorsModel(QObject):
             self.obsidian_busy = False
             if result:
                 # Refresh Obsidian status
-                self._client.call("ObsidianStatus", callback=lambda r: setattr(self, "obsidian_status", r))
+                self._client.call("ObsidianStatus", callback=lambda r: setattr(self, "obsidian_status", r.get("result") or {}))
 
         def on_error(err):
             self.obsidian_busy = False
@@ -649,7 +649,7 @@ class ConnectorsModel(QObject):
         """Toggle revuto reviewer panel."""
         self.revuto_open = not self._revuto_open
         if self._revuto_open and not self._reviewers:
-            self._client.call("RevutoReviewers", callback=lambda r: setattr(self, "reviewers", r or []))
+            self._client.call("RevutoReviewers", callback=lambda r: setattr(self, "reviewers", r.get("result") or []))
 
     @Slot(str, bool)
     def revuto_pause(self, repo: str, paused: bool):
@@ -662,8 +662,8 @@ class ConnectorsModel(QObject):
                 del self._revuto_busy[repo]
             self.revuto_busy_changed.emit()
             # Refresh reviewers + status
-            self._client.call("RevutoReviewers", callback=lambda r: setattr(self, "reviewers", r or []))
-            self._client.call("RevutoStatus", callback=lambda r: setattr(self, "revuto_status", r))
+            self._client.call("RevutoReviewers", callback=lambda r: setattr(self, "reviewers", r.get("result") or []))
+            self._client.call("RevutoStatus", callback=lambda r: setattr(self, "revuto_status", r.get("result") or {}))
 
         def on_error(err):
             if repo in self._revuto_busy:

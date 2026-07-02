@@ -22,6 +22,16 @@ from PySide6.QtCore import (
 from eigenqt.rpc.client import RpcClient
 
 
+def _err_text(result: dict) -> str:
+    """Extract error message from RPC result, handling string or dict errors."""
+    e = result.get("error")
+    if isinstance(e, str):
+        return e or "Unknown error"
+    if isinstance(e, dict):
+        return e.get("message", "Unknown error")
+    return str(e) if e else "Unknown error"
+
+
 class ConfigModel(QAbstractListModel):
     """
     Config fields model — editable ~/.eigen/config.json.
@@ -137,7 +147,7 @@ class ConfigModel(QAbstractListModel):
     def _on_set_config_result(self, key: str, result: dict):
         """Handle SetConfig RPC result."""
         if "error" in result:
-            error_msg = result.get("error", {}).get("message", "Unknown error")
+            error_msg = _err_text(result)
             self.set_config_done.emit(key, "", False, error_msg)
             return
 
@@ -271,7 +281,7 @@ class RuleChainsModel(QAbstractListModel):
     def _on_set_rule_chain_result(self, role_name: str, result: dict):
         """Handle SetRuleChain RPC result."""
         if "error" in result:
-            error_msg = result.get("error", {}).get("message", "Unknown error")
+            error_msg = _err_text(result)
             self.set_rule_chain_done.emit(role_name, [], False, error_msg)
             return
 

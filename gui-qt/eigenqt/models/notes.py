@@ -318,7 +318,7 @@ class NotesController(QObject):
     @Slot()
     def create_note(self):
         """Create a new note."""
-        name = self.new_name.strip()
+        name = (self.new_name or "").strip()
         if not name:
             return
 

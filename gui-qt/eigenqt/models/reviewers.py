@@ -22,6 +22,16 @@ from PySide6.QtCore import (
 from eigenqt.rpc.client import RpcClient
 
 
+def _err_text(result: dict) -> str:
+    """Extract error message from RPC result, handling string or dict errors."""
+    e = result.get("error")
+    if isinstance(e, str):
+        return e or "Unknown error"
+    if isinstance(e, dict):
+        return e.get("message", "Unknown error")
+    return str(e) if e else "Unknown error"
+
+
 class ReviewersModel(QAbstractListModel):
     """
     Revuto reviewers model — per-repo AI PR reviewer list.
@@ -152,7 +162,7 @@ class ReviewersModel(QAbstractListModel):
     def _on_trigger_result(self, repo: str, job: str, result: dict):
         """Handle RevutoTrigger RPC result."""
         if "error" in result:
-            error_msg = result.get("error", {}).get("message", "Unknown error")
+            error_msg = _err_text(result)
             self.trigger_done.emit(repo, job, False, error_msg)
             return
 
@@ -173,7 +183,7 @@ class ReviewersModel(QAbstractListModel):
     def _on_set_paused_result(self, repo: str, result: dict):
         """Handle RevutoSetPaused RPC result."""
         if "error" in result:
-            error_msg = result.get("error", {}).get("message", "Unknown error")
+            error_msg = _err_text(result)
             self.set_paused_done.emit(repo, False, error_msg)
             return
 
