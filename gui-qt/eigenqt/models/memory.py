@@ -23,6 +23,7 @@ class MemoryModel(QObject):
     current_changed = Signal()
     loading_changed = Signal()
     load_error_changed = Signal()
+    action_error_changed = Signal()
     composing_changed = Signal()
     draft_changed = Signal()
     saving_changed = Signal()
@@ -53,6 +54,7 @@ class MemoryModel(QObject):
         self._current: Optional[dict] = None
         self._loading: bool = True
         self._load_error: str = ""
+        self._action_error: str = ""
         self._composing: bool = False
         self._draft: str = ""
         self._saving: bool = False
@@ -133,6 +135,17 @@ class MemoryModel(QObject):
         if self._load_error != value:
             self._load_error = value
             self.load_error_changed.emit()
+
+    # Property: action_error
+    @Property(str, notify=action_error_changed)
+    def action_error(self) -> str:
+        return self._action_error
+
+    @action_error.setter
+    def action_error(self, value: str):
+        if self._action_error != value:
+            self._action_error = value
+            self.action_error_changed.emit()
 
     # Property: composing
     @Property(bool, notify=composing_changed)
@@ -408,6 +421,19 @@ class MemoryModel(QObject):
     def move_targets(self) -> list[dict]:
         return [s for s in self._scopes if s.get("key") != self._scope_key]
 
+    def _err_text(self, result: dict | None) -> str:
+        if not result or "error" not in result:
+            return "unknown error"
+        e = result.get("error")
+        if isinstance(e, str):
+            return e or "unknown error"
+        if isinstance(e, dict):
+            return e.get("message") or "unknown error"
+        return str(e) if e else "unknown error"
+
+    def _fail_action(self, label: str, result: dict | None):
+        self.action_error = f"{label}: {self._err_text(result)}"
+
     @Slot()
     def _on_connected(self):
         """Load scopes + initial scope on connect."""
@@ -417,16 +443,21 @@ class MemoryModel(QObject):
     def _on_scopes_result(self, result: dict):
         """Handle ListMemoryScopes RPC result."""
         if "error" in result:
+            self.load_error = self._err_text(result)
             return
 
         refs = result.get("result") or []
         self.scopes = refs
 
         # Resolve "project" alias to canonical key
+        selected_key = self._scope_key
         for r in refs:
             if r.get("current"):
-                self.scope_key = r.get("key", "project")
+                selected_key = r.get("key", "project")
                 break
+        if selected_key != self._scope_key:
+            self._scope_key = selected_key
+            self.scope_key_changed.emit()
 
         # Load the default scope
         self._load_scope(self._scope_key)
@@ -453,7 +484,7 @@ class MemoryModel(QObject):
 
         self.current = result.get("result")
 
-    @Slot()
+    @Slot(str)
     def select_scope(self, key: str):
         """Switch scope (user dropdown selection)."""
         if key == self._scope_key:
@@ -461,6 +492,7 @@ class MemoryModel(QObject):
         self.composing = False
         self.confirm_remove_note = -1
         self.confirm_remove_ad_hoc = -1
+        self.action_error = ""
         self.scope_key = key
 
     @Slot()
@@ -470,6 +502,7 @@ class MemoryModel(QObject):
         if not note:
             return
 
+        self.action_error = ""
         self.saving = True
         self._client.call(
             "AppendMemory", self._scope_key, note, callback=self._on_save_note_result
@@ -480,7 +513,7 @@ class MemoryModel(QObject):
         """Handle AppendMemory result."""
         self.saving = False
         if "error" in result:
-            # TODO: surface error toast
+            self._fail_action("Could not save note", result)
             return
 
         self.draft = ""
@@ -491,6 +524,7 @@ class MemoryModel(QObject):
     @Slot(int)
     def remove_note(self, index: int):
         """Remove a distilled note by index."""
+        self.action_error = ""
         self.removing_note = index
         self.confirm_remove_note = -1
         self._client.call(
@@ -505,6 +539,7 @@ class MemoryModel(QObject):
         """Handle RemoveMemoryNote result."""
         self.removing_note = -1
         if "error" in result:
+            self._fail_action("Could not remove note", result)
             return
 
         # Reload scope
@@ -513,6 +548,7 @@ class MemoryModel(QObject):
     @Slot(int)
     def remove_ad_hoc(self, index: int):
         """Remove an ad-hoc saved note by index."""
+        self.action_error = ""
         self.removing_ad_hoc = index
         self.confirm_remove_ad_hoc = -1
         self._client.call(
@@ -527,6 +563,7 @@ class MemoryModel(QObject):
         """Handle RemoveAdHocMemoryNote result."""
         self.removing_ad_hoc = -1
         if "error" in result:
+            self._fail_action("Could not remove saved note", result)
             return
 
         # Reload scope
@@ -548,6 +585,7 @@ class MemoryModel(QObject):
         idx = self._move_pending.get("idx", -1)
         self.move_open = False
         self.moving_note = idx
+        self.action_error = ""
 
         self._client.call(
             "MoveMemoryNote",
@@ -561,10 +599,12 @@ class MemoryModel(QObject):
     def _on_move_note_result(self, result: dict):
         """Handle MoveMemoryNote result."""
         self.moving_note = -1
-        self.move_pending = None
         if "error" in result:
+            self.move_open = True
+            self._fail_action("Could not move note", result)
             return
 
+        self.move_pending = None
         # Reload current scope
         self._load_scope(self._scope_key)
 
@@ -576,6 +616,7 @@ class MemoryModel(QObject):
         if not title or not rule:
             return
 
+        self.action_error = ""
         self.saving_ban = True
         self._client.call(
             "AddBan",
@@ -590,6 +631,7 @@ class MemoryModel(QObject):
         """Handle AddBan result."""
         self.saving_ban = False
         if "error" in result:
+            self._fail_action("Could not save ban", result)
             return
 
         self.ban_title = ""
@@ -601,6 +643,7 @@ class MemoryModel(QObject):
     @Slot(str)
     def remove_ban(self, title: str):
         """Remove a ban by title."""
+        self.action_error = ""
         self.removing_ban = title
         self._client.call(
             "RemoveBan",
@@ -614,6 +657,7 @@ class MemoryModel(QObject):
         """Handle RemoveBan result."""
         self.removing_ban = ""
         if "error" in result:
+            self._fail_action("Could not remove ban", result)
             return
 
         # Reload scope
@@ -628,6 +672,7 @@ class MemoryModel(QObject):
     @Slot()
     def save_profile(self):
         """Save the USER.md profile."""
+        self.action_error = ""
         self.saving_profile = True
         self._client.call(
             "WriteUserProfile",
@@ -640,6 +685,7 @@ class MemoryModel(QObject):
         """Handle WriteUserProfile result."""
         self.saving_profile = False
         if "error" in result:
+            self._fail_action("Could not save profile", result)
             return
 
         self.editing_profile = False
@@ -650,11 +696,14 @@ class MemoryModel(QObject):
     def toggle_backups(self):
         """Toggle the backups list visibility."""
         self.backups_open = not self._backups_open
+        if not self._backups_open:
+            self.action_error = ""
         if self._backups_open:
             self._load_backups()
 
     def _load_backups(self):
         """Load backup paths for the current scope."""
+        self.action_error = ""
         self.backups_loading = True
         self._client.call(
             "MemoryBackups",
@@ -667,6 +716,7 @@ class MemoryModel(QObject):
         """Handle MemoryBackups result."""
         self.backups_loading = False
         if "error" in result:
+            self._fail_action("Could not load memory backups", result)
             return
 
         paths = result.get("result") or []
@@ -693,6 +743,10 @@ class MemoryModel(QObject):
         date = f"{d[0:4]}-{d[4:6]}-{d[6:8]}"
         time = f"{t[0:2]}:{t[2:4]}:{t[4:6]}"
         return f"{date} {time}"
+
+    @Slot()
+    def clear_action_error(self):
+        self.action_error = ""
 
     @Slot(str, result=str)
     def short_dir(self, d: str) -> str:

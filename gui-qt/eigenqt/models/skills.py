@@ -3,7 +3,7 @@ skills.py — Skills view models (SkillsModel for active skills, ProposalsModel 
 
 SkillsModel exposes all active skills (user/project/extra) via QAbstractListModel.
 ProposalsModel exposes dream-proposed skills awaiting review (accept/reject).
-Both poll Skills() RPC every 60s; also reload on window visibility (skills can be added externally).
+Both poll Skills() RPC every 60s while the Skills route is active.
 """
 
 from typing import Optional
@@ -20,6 +20,16 @@ from PySide6.QtCore import (
 )
 
 from eigenqt.rpc import RpcClient
+
+
+def _err_text(result: dict) -> str:
+    """Extract a displayable RPC error from either string or envelope-shaped errors."""
+    error = result.get("error")
+    if isinstance(error, str):
+        return error or "Unknown error"
+    if isinstance(error, dict):
+        return error.get("message", "Unknown error")
+    return str(error) if error else "Unknown error"
 
 
 class SkillsModel(QAbstractListModel):
@@ -39,6 +49,7 @@ class SkillsModel(QAbstractListModel):
         super().__init__(parent)
         self._client = client
         self._skills: list[dict] = []
+        self._active = False
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(60_000)  # 60s
         self._poll_timer.timeout.connect(self._fetch_skills)
@@ -78,9 +89,9 @@ class SkillsModel(QAbstractListModel):
 
     @Slot()
     def _on_connected(self):
-        """Fetch skills on connect and start polling."""
-        self._fetch_skills()
-        self._poll_timer.start()
+        """Fetch skills on connect only while the route is active."""
+        if self._active:
+            self.start_polling()
 
     def _fetch_skills(self):
         """Async fetch Skills RPC."""
@@ -101,8 +112,19 @@ class SkillsModel(QAbstractListModel):
 
     @Slot()
     def refresh(self):
-        """Manually refresh skills (called by QML on window visibility change)."""
+        """Manually refresh skills after a user action."""
         self._fetch_skills()
+
+    @Slot(bool)
+    def set_active(self, active: bool):
+        """Start/stop route-scoped polling."""
+        if self._active == active:
+            return
+        self._active = active
+        if active:
+            self.start_polling()
+        else:
+            self.stop_polling()
 
     def stop_polling(self):
         """Stop polling when view is inactive."""
@@ -126,11 +148,13 @@ class ProposalsModel(QAbstractListModel):
     NameRole = Qt.UserRole + 1
     DescriptionRole = Qt.UserRole + 2
     PathRole = Qt.UserRole + 3
+    proposal_done = Signal(str, str, bool, str)  # (name, action, success, error_msg)
 
     def __init__(self, client: RpcClient, parent: Optional[QObject] = None):
         super().__init__(parent)
         self._client = client
         self._proposals: list[dict] = []
+        self._active = False
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(60_000)  # 60s
         self._poll_timer.timeout.connect(self._fetch_proposals)
@@ -167,9 +191,9 @@ class ProposalsModel(QAbstractListModel):
 
     @Slot()
     def _on_connected(self):
-        """Fetch proposals on connect and start polling."""
-        self._fetch_proposals()
-        self._poll_timer.start()
+        """Fetch proposals on connect only while the route is active."""
+        if self._active:
+            self.start_polling()
 
     def _fetch_proposals(self):
         """Async fetch Skills RPC (extract proposals)."""
@@ -190,22 +214,33 @@ class ProposalsModel(QAbstractListModel):
 
     @Slot(str)
     def accept(self, name: str):
-        """Accept a proposal (optimistic remove + RPC AcceptSkill)."""
-        # Find and remove row
-        for i, proposal in enumerate(self._proposals):
-            if proposal.get("name") == name:
-                self.beginRemoveRows(QModelIndex(), i, i)
-                del self._proposals[i]
-                self.endRemoveRows()
-                break
-
-        # Fire RPC (errors silently fail; proposals will rescan eventually)
-        self._client.call("AcceptSkill", name, callback=lambda r: None)
+        """Accept a proposal and remove it only after the RPC succeeds."""
+        self._client.call(
+            "AcceptSkill",
+            name,
+            callback=lambda r: self._on_action_result(name, "accept", r),
+        )
 
     @Slot(str)
     def reject(self, name: str):
-        """Reject a proposal (optimistic remove + RPC RejectSkill)."""
-        # Find and remove row
+        """Reject a proposal and remove it only after the RPC succeeds."""
+        self._client.call(
+            "RejectSkill",
+            name,
+            callback=lambda r: self._on_action_result(name, "reject", r),
+        )
+
+    def _on_action_result(self, name: str, action: str, result: dict):
+        """Handle proposal accept/reject completion."""
+        if "error" in result:
+            self.proposal_done.emit(name, action, False, _err_text(result))
+            return
+
+        self._remove_proposal(name)
+        self.proposal_done.emit(name, action, True, "")
+
+    def _remove_proposal(self, name: str) -> None:
+        """Remove a proposal by name if it is still present."""
         for i, proposal in enumerate(self._proposals):
             if proposal.get("name") == name:
                 self.beginRemoveRows(QModelIndex(), i, i)
@@ -213,13 +248,21 @@ class ProposalsModel(QAbstractListModel):
                 self.endRemoveRows()
                 break
 
-        # Fire RPC (errors silently fail; proposals will rescan eventually)
-        self._client.call("RejectSkill", name, callback=lambda r: None)
-
     @Slot()
     def refresh(self):
-        """Manually refresh proposals (called by QML on window visibility change)."""
+        """Manually refresh proposals after a user action."""
         self._fetch_proposals()
+
+    @Slot(bool)
+    def set_active(self, active: bool):
+        """Start/stop route-scoped polling."""
+        if self._active == active:
+            return
+        self._active = active
+        if active:
+            self.start_polling()
+        else:
+            self.stop_polling()
 
     def stop_polling(self):
         """Stop polling when view is inactive."""

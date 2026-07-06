@@ -13,6 +13,7 @@ import "Theme.js" as Theme
 
 Rectangle {
     id: root
+    objectName: "dockPanel"
 
     // Props
     required property string sessionDir  // Session's working directory
@@ -26,6 +27,10 @@ Rectangle {
     signal closed()
 
     property int currentTab: 0  // 0=Diff, 1=Files
+    property int preferredTab: 0
+
+    Component.onCompleted: currentTab = preferredTab
+    onPreferredTabChanged: currentTab = preferredTab
 
     ColumnLayout {
         anchors.fill: parent
@@ -47,55 +52,30 @@ Rectangle {
                 Repeater {
                     model: ["Diff", "Files"]
 
-                    Rectangle {
+                    AppButton {
+                        objectName: "dockTab_" + modelData
+                        text: modelData
+                        compact: true
+                        variant: "ghost"
+                        selected: root.currentTab === index
+                        segmentPosition: index === 0 ? "first" : "last"
+                        toolTipText: modelData === "Diff" ? "Show working diff" : "Show files"
                         Layout.preferredHeight: 32
-                        Layout.preferredWidth: tabLabel.implicitWidth + Theme.space.lg * 2
-                        color: currentTab === index ? Theme.colors.stateFocusBg : "transparent"
-                        radius: Theme.radius.sm
-                        border.width: currentTab === index ? 1 : 0
-                        border.color: Theme.colors.borderBrandFaint
-
-                        Text {
-                            id: tabLabel
-                            anchors.centerIn: parent
-                            text: modelData
-                            font.family: Theme.uiFonts[0]
-                            font.pixelSize: Theme.fontSize.bodySm
-                            font.weight: currentTab === index ? Theme.fontWeight.semibold : Theme.fontWeight.regular
-                            color: currentTab === index ? Theme.colors.brandBright : Theme.colors.textSecondary
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: currentTab = index
-                        }
+                        onClicked: root.currentTab = index
                     }
                 }
 
                 Item { Layout.fillWidth: true }
 
-                // Close button
-                Rectangle {
+                AppButton {
+                    objectName: "dockCloseButton"
+                    text: "✕"
+                    compact: true
+                    variant: "ghost"
+                    toolTipText: "Close dock"
                     Layout.preferredWidth: 32
                     Layout.preferredHeight: 32
-                    color: closeArea.containsMouse ? Theme.colors.stateHover : "transparent"
-                    radius: Theme.radius.sm
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "✕"
-                        font.pixelSize: Theme.fontSize.body
-                        color: Theme.colors.textMuted
-                    }
-
-                    MouseArea {
-                        id: closeArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.closed()
-                    }
+                    onClicked: root.closed()
                 }
             }
         }

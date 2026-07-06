@@ -19,10 +19,10 @@ Usage:
         print(f"guiserver spawn/connect failed: {e}")
 """
 
-import hashlib
 import json
 import os
 import signal
+import shutil
 import socket
 import subprocess
 import time
@@ -55,14 +55,18 @@ class GuiserverSupervisor(QObject):
     def _find_binary_path(self) -> Path:
         """Discover eigen binary path (EIGEN_BIN env or ../bin/eigen sibling)."""
         if "EIGEN_BIN" in os.environ:
-            return Path(os.environ["EIGEN_BIN"])
+            return Path(os.environ["EIGEN_BIN"]).expanduser()
 
-        # Sibling: ../bin/eigen relative to gui-qt/ (this file is in gui-qt/eigenqt/rpc/)
-        sibling = Path(__file__).parent.parent.parent / "bin" / "eigen"
-        if sibling.exists():
-            return sibling
+        # Repo checkout: gui-qt/eigenqt/rpc/supervise.py -> ../../.. -> repo.
+        repo_binary = Path(__file__).resolve().parents[3] / "bin" / "eigen"
+        if repo_binary.exists():
+            return repo_binary
 
-        # Fallback: assume 'eigen' is in PATH
+        resolved = shutil.which("eigen")
+        if resolved:
+            return Path(resolved)
+
+        # Preserve the old fallback for clearer error text in _spawn_guiserver.
         return Path("eigen")
 
     def ensure_running(self, timeout: float = 10.0) -> dict[str, Any]:
@@ -162,9 +166,16 @@ class GuiserverSupervisor(QObject):
         hello_sha = hello["sha"]
         hello_manifest = hello["manifest"]
 
-        # Compute expected manifest from on-disk binary (cached)
+        # Compute expected manifest from the source manifest (cached).
         if self._expected_manifest is None:
             self._expected_manifest = self._compute_expected_manifest()
+
+        # Packaged/installed runs may not have the source manifest next to the
+        # Python files. In that case, do not kill a responsive guiserver just
+        # because we cannot locally recompute the build-time manifest hash.
+        if not self._expected_manifest:
+            self._respawn_attempted = False
+            return hello
 
         # If match, we're done
         if hello_manifest == self._expected_manifest:
@@ -192,26 +203,26 @@ class GuiserverSupervisor(QObject):
         hello = self._poll_hello(timeout=10.0)
         return self._check_manifest(hello)
 
-    def _compute_expected_manifest(self) -> str:
+    def _compute_expected_manifest(self) -> Optional[str]:
         """
-        Compute expected manifest hash from on-disk binary.
-
-        Ideally we'd parse internal/gui/bridge.manifest.json and hash it,
-        but that requires knowing the repo structure. Instead, we hash the
-        binary's mtime + size as a proxy for freshness. This is a pragmatic
-        heuristic: the plan's actual contract is "manifest hash in hello";
-        matching that requires either reading the manifest JSON or embedding
-        it in the binary. For now, use mtime+size — good enough to catch
-        stale inode trap.
-
-        TODO(qt): read internal/gui/bridge.manifest.json and hash it for real.
+        Compute the expected manifest hash using the same FNV-1a contract as
+        internal/gui/manifest.go. The guiserver's hello response embeds the
+        hash of internal/gui/bridge.manifest.json, not a binary freshness proxy.
         """
-        if not self.binary_path.exists():
-            return "unknown"
+        manifest_path = (
+            Path(__file__).resolve().parents[3]
+            / "internal"
+            / "gui"
+            / "bridge.manifest.json"
+        )
+        if not manifest_path.exists():
+            return None
 
-        stat = self.binary_path.stat()
-        proxy = f"{stat.st_mtime}:{stat.st_size}"
-        return hashlib.sha256(proxy.encode()).hexdigest()[:16]
+        h = 14695981039346656037
+        for b in manifest_path.read_bytes():
+            h ^= b
+            h = (h * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+        return f"{h:016x}"
 
     def _kill_running_guiserver(self) -> None:
         """

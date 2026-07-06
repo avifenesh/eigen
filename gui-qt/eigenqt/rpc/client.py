@@ -103,6 +103,8 @@ class RpcClient(QObject):
     @Slot(str)
     def _on_rpc_error(self, reason: str) -> None:
         self._rpc_ready = False
+        if self._rpc_worker:
+            self._rpc_worker.fail_pending(f"rpc: {reason}")
         self._handle_disconnect(f"rpc: {reason}")
 
     @Slot(str)
@@ -129,6 +131,8 @@ class RpcClient(QObject):
 
     def _reconnect(self) -> None:
         """Tear down and restart workers."""
+        if self._rpc_worker:
+            self._rpc_worker.fail_pending("rpc: reconnecting")
         self._stop_workers()
         self._start_workers()
 
@@ -155,7 +159,8 @@ class RpcClient(QObject):
     @Slot(int, dict)
     def _on_rpc_response(self, req_id: int, payload: dict) -> None:
         """Dispatch RPC response to waiting callback."""
-        self._rpc_worker.dispatch_response(req_id, payload)
+        if self._rpc_worker:
+            self._rpc_worker.dispatch_response(req_id, payload)
 
     def call(self, method: str, *args, callback: Optional[Callable[[Any], None]] = None) -> None:
         """Async RPC call (id-multiplexed). Result delivered to callback on GUI thread."""
@@ -164,7 +169,16 @@ class RpcClient(QObject):
                 callback({"error": "not connected"})
             return
 
-        self._rpc_worker.enqueue_call(method, args, callback)
+        try:
+            ok, error = self._rpc_worker.enqueue_call(method, args, callback)
+        except Exception as exc:
+            ok, error = False, f"send failed: {exc}"
+
+        if not ok:
+            self._rpc_ready = False
+            if callback:
+                callback({"error": error})
+            self._handle_disconnect(f"rpc: {error}")
 
     # Token-based QML variant: QJSValue callbacks captured across event-loop
     # turns are unreliable in PySide6 (the JS function can be collected before
@@ -211,7 +225,14 @@ class RpcClient(QObject):
             result_box["payload"] = payload
             event.set()
 
-        self._rpc_worker.enqueue_call(method, args, cb)
+        try:
+            ok, error = self._rpc_worker.enqueue_call(method, args, cb)
+        except Exception as exc:
+            ok, error = False, f"send failed: {exc}"
+        if not ok:
+            self._rpc_ready = False
+            self._handle_disconnect(f"rpc: {error}")
+            raise RuntimeError(error)
 
         if not event.wait(timeout):
             raise TimeoutError(f"call_sync({method}) timed out after {timeout}s")
@@ -225,13 +246,21 @@ class RpcClient(QObject):
         """Subscribe to event channels."""
         if not self._events_worker or not self._events_ready:
             return
-        self._events_worker.subscribe(channels)
+        try:
+            self._events_worker.subscribe(channels)
+        except Exception as exc:
+            self._events_ready = False
+            self._handle_disconnect(f"events: send failed: {exc}")
 
     def unsubscribe(self, channels: list[str]) -> None:
         """Unsubscribe from event channels."""
         if not self._events_worker or not self._events_ready:
             return
-        self._events_worker.unsubscribe(channels)
+        try:
+            self._events_worker.unsubscribe(channels)
+        except Exception as exc:
+            self._events_ready = False
+            self._handle_disconnect(f"events: send failed: {exc}")
 
     def shutdown(self) -> None:
         """Gracefully shut down both workers and threads."""
@@ -297,8 +326,8 @@ class _RpcWorker(QObject):
                 self._sock.close()
             self._running = False
 
-    def enqueue_call(self, method: str, args: tuple, callback: Optional[Callable]) -> None:
-        """Thread-safe: enqueue an RPC call (to be sent from worker thread)."""
+    def enqueue_call(self, method: str, args: tuple, callback: Optional[Callable]) -> tuple[bool, str]:
+        """Thread-safe socket send for an RPC call."""
         with self._lock:
             req_id = self._next_id
             self._next_id += 1
@@ -307,7 +336,14 @@ class _RpcWorker(QObject):
                 self._pending[req_id] = callback
 
             payload = {"id": req_id, "call": method, "args": list(args)}
-            self._send(payload)
+            try:
+                self._send(payload)
+            except Exception as exc:
+                self._pending.pop(req_id, None)
+                self._running = False
+                return False, f"send failed: {exc}"
+
+        return True, ""
 
     def dispatch_response(self, req_id: int, payload: dict) -> None:
         """Dispatch response to callback (called on GUI thread via signal)."""
@@ -319,6 +355,15 @@ class _RpcWorker(QObject):
                 cb({"error": payload["error"]})
             else:
                 cb(payload)
+
+    def fail_pending(self, reason: str) -> None:
+        """Complete pending callbacks with an error before dropping a dead worker."""
+        with self._lock:
+            pending = list(self._pending.values())
+            self._pending.clear()
+
+        for cb in pending:
+            cb({"error": reason})
 
     def stop(self) -> None:
         """Stop the worker."""

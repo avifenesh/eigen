@@ -56,6 +56,8 @@ class ConfigModel(QAbstractListModel):
         self._client = client
         self._config_path = ""
         self._fields: list[dict] = []
+        self._active = False
+        self._load_seq = 0
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(60_000)  # 60s
         self._poll_timer.timeout.connect(self._fetch_config)
@@ -108,17 +110,24 @@ class ConfigModel(QAbstractListModel):
 
     @Slot()
     def _on_connected(self):
-        """Fetch config on connect and start polling."""
-        self._fetch_config()
-        self._poll_timer.start()
+        """Fetch config on connect only while the route is active."""
+        if self._active:
+            self.start_polling()
 
     def _fetch_config(self):
         """Async fetch Config RPC."""
-        self._client.call("Config", callback=self._on_config_result)
+        self._load_seq += 1
+        seq = self._load_seq
+        self._client.call(
+            "Config",
+            callback=lambda result: self._on_config_result(result, seq),
+        )
 
     @Slot(dict)
-    def _on_config_result(self, result: dict):
+    def _on_config_result(self, result: dict, seq: Optional[int] = None):
         """Handle Config RPC result."""
+        if seq is not None and seq != self._load_seq:
+            return
         if "error" in result:
             return
 
@@ -138,6 +147,8 @@ class ConfigModel(QAbstractListModel):
         Persist a config field mutation via SetConfig RPC.
         Emits set_config_done(key, stored_value, success, error_msg) on completion.
         """
+        # A user edit is newer than any already in-flight poll result.
+        self._load_seq += 1
         self._client.call(
             "SetConfig",
             key, value,
@@ -167,9 +178,21 @@ class ConfigModel(QAbstractListModel):
         """Manually refresh config (called by QML on window visibility change)."""
         self._fetch_config()
 
+    @Slot(bool)
+    def set_active(self, active: bool):
+        """Start/stop route-scoped polling."""
+        if self._active == active:
+            return
+        self._active = active
+        if active:
+            self.start_polling()
+        else:
+            self.stop_polling()
+
     def stop_polling(self):
         """Stop polling when view is inactive."""
         self._poll_timer.stop()
+        self._load_seq += 1
 
     def start_polling(self):
         """Resume polling when view becomes active."""
@@ -201,6 +224,8 @@ class RuleChainsModel(QAbstractListModel):
         self._client = client
         self._roles: list[dict] = []
         self._models: list[str] = []
+        self._active = False
+        self._load_seq = 0
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(60_000)  # 60s
         self._poll_timer.timeout.connect(self._fetch_rule_chains)
@@ -243,17 +268,24 @@ class RuleChainsModel(QAbstractListModel):
 
     @Slot()
     def _on_connected(self):
-        """Fetch rule chains on connect and start polling."""
-        self._fetch_rule_chains()
-        self._poll_timer.start()
+        """Fetch rule chains on connect only while the route is active."""
+        if self._active:
+            self.start_polling()
 
     def _fetch_rule_chains(self):
         """Async fetch RuleChains RPC."""
-        self._client.call("RuleChains", callback=self._on_rule_chains_result)
+        self._load_seq += 1
+        seq = self._load_seq
+        self._client.call(
+            "RuleChains",
+            callback=lambda result: self._on_rule_chains_result(result, seq),
+        )
 
     @Slot(dict)
-    def _on_rule_chains_result(self, result: dict):
+    def _on_rule_chains_result(self, result: dict, seq: Optional[int] = None):
         """Handle RuleChains RPC result."""
+        if seq is not None and seq != self._load_seq:
+            return
         if "error" in result:
             return
 
@@ -272,6 +304,8 @@ class RuleChainsModel(QAbstractListModel):
         Persist a role's chain mutation via SetRuleChain RPC.
         Emits set_rule_chain_done(role, stored_chain, success, error_msg) on completion.
         """
+        # A user edit is newer than any already in-flight poll result.
+        self._load_seq += 1
         self._client.call(
             "SetRuleChain",
             role_name, chain,
@@ -302,9 +336,21 @@ class RuleChainsModel(QAbstractListModel):
         """Manually refresh rule chains (called by QML on window visibility change)."""
         self._fetch_rule_chains()
 
+    @Slot(bool)
+    def set_active(self, active: bool):
+        """Start/stop route-scoped polling."""
+        if self._active == active:
+            return
+        self._active = active
+        if active:
+            self.start_polling()
+        else:
+            self.stop_polling()
+
     def stop_polling(self):
         """Stop polling when view is inactive."""
         self._poll_timer.stop()
+        self._load_seq += 1
 
     def start_polling(self):
         """Resume polling when view becomes active."""

@@ -12,13 +12,23 @@ Rectangle {
     property int badge: 0
     property bool badgeLive: false
     property bool isActive: false
+    readonly property int baseHeight: 30
+    readonly property bool qaVisualFocus: activeFocus
+    readonly property bool qaTextFits: !navLabel.truncated
     signal clicked()
 
     default property alias contentData: subContainer.data
 
-    implicitHeight: 30
+    objectName: route ? "navItem_" + route : ""
+    implicitHeight: baseHeight + subContainer.implicitHeight
     radius: Theme.radius.sm
-    color: navItem.isActive ? Theme.colors.stateSelected : (mouseArea.containsMouse ? Theme.colors.stateHover : "transparent")
+    activeFocusOnTab: true
+    focusPolicy: Qt.StrongFocus
+    Accessible.role: Accessible.Button
+    Accessible.name: label
+    Accessible.description: isActive ? "Current route" : "Open " + label
+    Accessible.onPressAction: activate()
+    color: navItem.isActive ? Theme.colors.stateSelected : (mainMouseArea.containsMouse ? Theme.colors.stateHover : "transparent")
 
     Behavior on color {
         ColorAnimation { duration: Theme.duration.fast }
@@ -29,7 +39,7 @@ Rectangle {
         visible: navItem.isActive
         anchors.left: parent.left
         anchors.leftMargin: -Theme.space.sm
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.verticalCenter: mainArea.verticalCenter
         width: 2
         height: 24
         radius: 9
@@ -46,12 +56,19 @@ Rectangle {
         }
     }
 
+    Item {
+        id: mainArea
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: navItem.baseHeight
+
     MouseArea {
-        id: mouseArea
+        id: mainMouseArea
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: navItem.clicked()
+        onClicked: navItem.activate()
     }
 
     RowLayout {
@@ -75,6 +92,7 @@ Rectangle {
 
         // Label
         Label {
+            id: navLabel
             text: navItem.label
             font.family: Theme.uiFonts[0]
             font.pixelSize: Theme.fontSize.bodySm
@@ -115,14 +133,35 @@ Rectangle {
             }
         }
     }
+    }
 
     // Container for sub-content (like running sessions under Chat)
     Item {
         id: subContainer
-        anchors.top: parent.bottom
+        anchors.top: mainArea.bottom
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.topMargin: 0
-        height: childrenRect.height
+        implicitHeight: childrenRect.height
+        height: implicitHeight
+    }
+
+    Keys.onReturnPressed: function(event) {
+        activate()
+        event.accepted = true
+    }
+
+    Keys.onEnterPressed: function(event) {
+        activate()
+        event.accepted = true
+    }
+
+    Keys.onSpacePressed: function(event) {
+        activate()
+        event.accepted = true
+    }
+
+    function activate() {
+        navItem.clicked()
     }
 }

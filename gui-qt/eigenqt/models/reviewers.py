@@ -47,6 +47,7 @@ class ReviewersModel(QAbstractListModel):
 
     # Signals
     status_changed = Signal()  # Fired when status (available/count/paused) changes
+    loading_changed = Signal()
     trigger_done = Signal(str, str, bool, str)  # (repo, job, success, error_msg)
     set_paused_done = Signal(str, bool, str)  # (repo, success, error_msg)
 
@@ -57,6 +58,8 @@ class ReviewersModel(QAbstractListModel):
         self._available = False
         self._count = 0
         self._paused = 0
+        self._loading = False
+        self._active = False
 
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(60_000)  # 60s
@@ -105,20 +108,37 @@ class ReviewersModel(QAbstractListModel):
         """Paused reviewer count."""
         return self._paused
 
+    @Property(bool, notify=loading_changed)
+    def loading(self) -> bool:
+        """Is a reviewers refresh in flight?"""
+        return self._loading
+
+    def _set_loading(self, value: bool):
+        if self._loading == value:
+            return
+        self._loading = value
+        self.loading_changed.emit()
+
     @Slot()
     def _on_connected(self):
-        """Fetch data on connect and start polling."""
-        self._fetch_data()
-        self._poll_timer.start()
+        """Fetch data on connect only while the route is active."""
+        if self._active:
+            self.start_polling()
 
     def _fetch_data(self):
         """Async fetch RevutoStatus + RevutoReviewers RPCs (sequential)."""
+        self._set_loading(True)
         self._client.call("RevutoStatus", callback=self._on_status_result)
 
     @Slot(dict)
     def _on_status_result(self, result: dict):
         """Handle RevutoStatus RPC result."""
         if "error" in result:
+            self._set_loading(False)
+            if self._reviewers:
+                self.beginResetModel()
+                self._reviewers = []
+                self.endResetModel()
             self._available = False
             self._count = 0
             self._paused = 0
@@ -134,11 +154,19 @@ class ReviewersModel(QAbstractListModel):
         # If available, fetch reviewers
         if self._available:
             self._client.call("RevutoReviewers", callback=self._on_reviewers_result)
+        elif self._reviewers:
+            self.beginResetModel()
+            self._reviewers = []
+            self.endResetModel()
+            self._set_loading(False)
+        else:
+            self._set_loading(False)
 
     @Slot(dict)
     def _on_reviewers_result(self, result: dict):
         """Handle RevutoReviewers RPC result."""
         if "error" in result:
+            self._set_loading(False)
             return
 
         reviewers = result.get("result") or []
@@ -146,6 +174,10 @@ class ReviewersModel(QAbstractListModel):
         self.beginResetModel()
         self._reviewers = reviewers
         self.endResetModel()
+        self._count = len(reviewers)
+        self._paused = sum(1 for reviewer in reviewers if reviewer.get("paused", False))
+        self._set_loading(False)
+        self.status_changed.emit()
 
     @Slot(str, str)
     def trigger(self, repo: str, job: str):
@@ -177,24 +209,49 @@ class ReviewersModel(QAbstractListModel):
         self._client.call(
             "RevutoSetPaused",
             repo, paused,
-            callback=lambda r: self._on_set_paused_result(repo, r),
+            callback=lambda r: self._on_set_paused_result(repo, paused, r),
         )
 
-    def _on_set_paused_result(self, repo: str, result: dict):
+    def _on_set_paused_result(self, repo: str, paused: bool, result: dict):
         """Handle RevutoSetPaused RPC result."""
         if "error" in result:
             error_msg = _err_text(result)
             self.set_paused_done.emit(repo, False, error_msg)
             return
 
+        self._set_reviewer_paused(repo, paused)
         self.set_paused_done.emit(repo, True, "")
-        # Refresh data (status + reviewers)
-        self._fetch_data()
+
+    def _set_reviewer_paused(self, repo: str, paused: bool) -> None:
+        """Update one reviewer row after a successful pause/resume mutation."""
+        for row, reviewer in enumerate(self._reviewers):
+            if reviewer.get("repo", "") != repo:
+                continue
+            next_reviewer = dict(reviewer)
+            next_reviewer["paused"] = bool(paused)
+            self._reviewers[row] = next_reviewer
+            index = self.index(row, 0)
+            self.dataChanged.emit(index, index, [self.PausedRole])
+            self._count = len(self._reviewers)
+            self._paused = sum(1 for item in self._reviewers if item.get("paused", False))
+            self.status_changed.emit()
+            return
 
     @Slot()
     def refresh(self):
         """Manually refresh data (called by QML on window visibility change)."""
         self._fetch_data()
+
+    @Slot(bool)
+    def set_active(self, active: bool):
+        """Start/stop route-scoped polling."""
+        if self._active == active:
+            return
+        self._active = active
+        if active:
+            self.start_polling()
+        else:
+            self.stop_polling()
 
     def stop_polling(self):
         """Stop polling when view is inactive."""

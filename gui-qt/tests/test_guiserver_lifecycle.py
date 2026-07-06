@@ -1,0 +1,235 @@
+from pathlib import Path
+
+from PySide6.QtCore import QCoreApplication, QObject, Signal
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def _fnv1a_64(data: bytes) -> str:
+    value = 14695981039346656037
+    for byte in data:
+        value ^= byte
+        value = (value * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+    return f"{value:016x}"
+
+
+def test_supervisor_finds_checkout_binary_and_manifest():
+    from eigenqt.rpc.supervise import GuiserverSupervisor
+
+    supervisor = GuiserverSupervisor()
+    assert supervisor.binary_path == ROOT / "bin" / "eigen"
+    assert supervisor._compute_expected_manifest() == _fnv1a_64(
+        (ROOT / "internal" / "gui" / "bridge.manifest.json").read_bytes()
+    )
+
+
+def test_app_context_starts_guiserver_and_tracks_daemon_health(monkeypatch):
+    app = QCoreApplication.instance() or QCoreApplication([])
+
+    import main
+
+    class FakeSupervisor(QObject):
+        instances = []
+
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.ensure_calls = []
+            FakeSupervisor.instances.append(self)
+
+        def ensure_running(self, timeout=10.0):
+            self.ensure_calls.append(timeout)
+            return {"sha": "abcdef1234567890", "manifest": "manifest-ok"}
+
+    class FakeRpcClient(QObject):
+        connected = Signal()
+        event = Signal(str, dict)
+        dropped = Signal(str)
+        callDone = Signal(int, "QVariantMap")
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(kwargs.get("parent"))
+            self.calls = []
+            self.subscriptions = []
+
+        def call(self, method, *args, callback=None):
+            self.calls.append((method, args))
+            if callback is None:
+                return
+            if method == "hello":
+                callback(
+                    {
+                        "result": {
+                            "sha": "feedfacecafebeef",
+                            "manifest": "manifest-ok",
+                        }
+                    }
+                )
+            elif method == "Stats":
+                callback({"result": {"sessions": 4, "running_turns": 1}})
+            else:
+                callback({"result": {}})
+
+        def subscribe(self, channels):
+            self.subscriptions.append(list(channels))
+
+        def unsubscribe(self, channels):
+            self.subscriptions.append([f"unsub:{ch}" for ch in channels])
+
+        def shutdown(self):
+            pass
+
+    class DummyModel(QObject):
+        def __init__(self, *args, **kwargs):
+            parent = kwargs.get("parent")
+            if parent is None and args and isinstance(args[-1], QObject):
+                parent = args[-1]
+            super().__init__(parent)
+
+        def mark_unread(self, session_id):
+            pass
+
+        def mark_read(self, session_id):
+            pass
+
+    class DummyReplyWatcher(QObject):
+        unread = Signal(str)
+        read = Signal(str)
+
+        def __init__(self, *args, **kwargs):
+            parent = kwargs.get("parent")
+            if parent is None and args and isinstance(args[-1], QObject):
+                parent = args[-1]
+            super().__init__(parent)
+
+    monkeypatch.setattr(main, "GuiserverSupervisor", FakeSupervisor)
+    monkeypatch.setattr(main, "RpcClient", FakeRpcClient)
+    for attr in (
+        "ApprovalsModel",
+        "BoardModel",
+        "CommandsModel",
+        "ConfigModel",
+        "ConnectorsModel",
+        "DashboardModel",
+        "FeedModel",
+        "KanbanModel",
+        "LiveSessionsModel",
+        "MemoryModel",
+        "NotesController",
+        "ProposalsModel",
+        "ReviewersModel",
+        "RuleChainsModel",
+        "SessionsModel",
+        "SessionStateModel",
+        "SkillsModel",
+        "TasksModel",
+        "TranscriptModel",
+    ):
+        monkeypatch.setattr(main, attr, DummyModel)
+    monkeypatch.setattr(main, "ReplyWatcher", DummyReplyWatcher)
+
+    ctx = main.AppContext()
+    ctx._stats_timer.stop()
+
+    assert FakeSupervisor.instances[0].ensure_calls == [10.0]
+    assert ctx.guiserverSha == "abcdef1234567890"
+
+    ctx._on_hello({"error": "not connected"})
+    assert ctx.guiserverSha == "abcdef1234567890"
+
+    ctx.rpc_client.connected.emit()
+    app.processEvents()
+
+    assert ctx.rpc_client.subscriptions[-1] == [
+        "eigen:daemon:stats",
+        "eigen:daemon:health",
+    ]
+    assert ("hello", ()) in ctx.rpc_client.calls
+    assert ("Stats", ()) in ctx.rpc_client.calls
+    assert ctx.guiserverSha == "feedfacecafebeef"
+    assert ctx.daemonOnline is True
+    assert ctx.stats["sessions"] == 4
+
+    ctx.rpc_client.event.emit(
+        "eigen:daemon:stats", {"sessions": 8, "running_turns": 2}
+    )
+    app.processEvents()
+    assert ctx.daemonOnline is True
+    assert ctx.stats["sessions"] == 8
+
+    ctx.rpc_client.event.emit(
+        "eigen:daemon:health", {"ok": False, "error": "daemon down"}
+    )
+    app.processEvents()
+    assert ctx.daemonOnline is False
+
+    ctx.rpc_client.event.emit(
+        "eigen:daemon:stats", {"sessions": 9, "running_turns": 0}
+    )
+    app.processEvents()
+    assert ctx.daemonOnline is True
+    assert ctx.stats["sessions"] == 9
+
+
+def test_rpc_call_send_failure_reports_error_without_raising(monkeypatch):
+    from eigenqt.rpc.client import RpcClient
+
+    monkeypatch.setattr(RpcClient, "_start_workers", lambda self: None)
+
+    client = RpcClient(sock_path=Path("/tmp/eigen-missing-guiserver.sock"))
+
+    class BrokenWorker:
+        def enqueue_call(self, method, args, callback):
+            raise BrokenPipeError("dead guiserver socket")
+
+        def stop(self):
+            pass
+
+    client._rpc_worker = BrokenWorker()
+    client._rpc_ready = True
+    reconnects = []
+    disconnected = []
+    payloads = []
+    client._schedule_reconnect = lambda: reconnects.append(True)
+    client.disconnected.connect(disconnected.append)
+
+    client.call("Stats", callback=payloads.append)
+
+    assert payloads == [{"error": "send failed: dead guiserver socket"}]
+    assert disconnected == ["rpc: send failed: dead guiserver socket"]
+    assert reconnects == [True]
+    assert client._rpc_ready is False
+    client.shutdown()
+
+
+def test_rpc_worker_send_failure_clears_pending_callback():
+    from eigenqt.rpc.client import _RpcWorker
+
+    worker = _RpcWorker(Path("/tmp/eigen-missing-guiserver.sock"))
+
+    def fail_send(_payload):
+        raise BrokenPipeError("dead guiserver socket")
+
+    worker._send = fail_send
+    payloads = []
+
+    ok, error = worker.enqueue_call("Stats", (), payloads.append)
+
+    assert ok is False
+    assert error == "send failed: dead guiserver socket"
+    assert worker._pending == {}
+    assert payloads == []
+
+
+def test_rpc_worker_disconnect_fails_pending_callbacks_once():
+    from eigenqt.rpc.client import _RpcWorker
+
+    worker = _RpcWorker(Path("/tmp/eigen-missing-guiserver.sock"))
+    payloads = []
+    worker._pending[7] = payloads.append
+
+    worker.fail_pending("rpc: recv error: socket closed")
+    worker.fail_pending("rpc: reconnecting")
+
+    assert payloads == [{"error": "rpc: recv error: socket closed"}]
+    assert worker._pending == {}

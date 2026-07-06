@@ -123,6 +123,50 @@ def test_notes_controller_open_note(qt_app, mock_client):
     callback({"result": "# Note\n\nContent here."})
 
     assert controller.content == "# Note\n\nContent here."
+    assert controller.action_error == ""
+
+
+def test_notes_controller_open_note_error_surfaces_action_error(qt_app, mock_client):
+    """Open-note errors stay visible to the UI."""
+    controller = NotesController(mock_client)
+    controller.status = {"available": True, "vault": "/home/user/vault"}
+
+    controller.open_note("Inbox/Missing.md", "Missing")
+
+    callback = mock_client.call.call_args[1]["callback"]
+    callback({"error": {"message": "read denied"}})
+
+    assert controller.selected == {"path": "Inbox/Missing.md", "title": "Missing"}
+    assert controller.content == ""
+    assert controller.action_error == "Could not open Inbox/Missing.md: read denied"
+
+
+def test_notes_controller_ignores_stale_read_results(qt_app, mock_client):
+    """A slow first note read must not overwrite a later selected note."""
+    controller = NotesController(mock_client)
+    controller.status = {"available": True, "vault": "/home/user/vault"}
+
+    controller.open_note("Inbox/First.md", "First")
+    first_callback = mock_client.call.call_args_list[-1][1]["callback"]
+
+    controller.open_note("Inbox/Second.md", "Second")
+    second_callback = mock_client.call.call_args_list[-1][1]["callback"]
+
+    first_callback({"result": "# First\n\nLate result."})
+
+    assert controller.selected == {"path": "Inbox/Second.md", "title": "Second"}
+    assert controller.content == ""
+    assert controller.action_error == ""
+
+    first_callback({"error": "late denied"})
+    assert controller.content == ""
+    assert controller.action_error == ""
+
+    second_callback({"result": "# Second\n\nCurrent result."})
+
+    assert controller.selected == {"path": "Inbox/Second.md", "title": "Second"}
+    assert controller.content == "# Second\n\nCurrent result."
+    assert controller.action_error == ""
 
 
 def test_notes_controller_edit_save(qt_app, mock_client):
@@ -157,6 +201,27 @@ def test_notes_controller_edit_save(qt_app, mock_client):
     assert not controller.saving
     assert not controller.editing
     assert controller.content == "# Note\n\nEdited."
+    assert controller.action_error == ""
+
+
+def test_notes_controller_save_error_keeps_draft_editing(qt_app, mock_client):
+    """Failed saves keep the editor and draft intact for retry."""
+    controller = NotesController(mock_client)
+    controller.selected = {"path": "Inbox/Note.md", "title": "Note"}
+    controller.content = "# Note\n\nOriginal."
+    controller.start_edit()
+    controller.draft = "# Note\n\nEdited."
+
+    controller.save()
+
+    callback = mock_client.call.call_args[1]["callback"]
+    callback({"error": "write denied"})
+
+    assert not controller.saving
+    assert controller.editing
+    assert controller.draft == "# Note\n\nEdited."
+    assert controller.content == "# Note\n\nOriginal."
+    assert controller.action_error == "Could not save Inbox/Note.md: write denied"
 
 
 def test_notes_controller_create_note(qt_app, mock_client):
@@ -183,3 +248,25 @@ def test_notes_controller_create_note(qt_app, mock_client):
 
     assert not controller.creating
     assert controller.new_name == ""
+    assert not controller.creating_busy
+    assert controller.action_error == ""
+
+
+def test_notes_controller_create_error_keeps_composer(qt_app, mock_client):
+    """Failed note creation keeps the pending path visible for retry."""
+    controller = NotesController(mock_client)
+    controller.status = {"available": True, "vault": "/home/user/vault"}
+
+    controller.start_create()
+    controller.new_name = "Ideas/NewIdea.md"
+    controller.create_note()
+
+    assert controller.creating_busy
+
+    callback = mock_client.call.call_args[1]["callback"]
+    callback({"error": {"message": "write denied"}})
+
+    assert controller.creating
+    assert not controller.creating_busy
+    assert controller.new_name == "Ideas/NewIdea.md"
+    assert controller.action_error == "Could not create Ideas/NewIdea.md: write denied"

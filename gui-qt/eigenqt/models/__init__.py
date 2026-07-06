@@ -4,7 +4,7 @@ models/ — Qt models bridging eigenqt.rpc to QML views.
 TranscriptModel: session transcript with 16ms delta coalescing
 SessionsModel: sessions list with live updates
 ApprovalsModel: pending approvals per session
-SessionStateModel: session state for control strip (model, effort, perm, title, goal)
+SessionStateModel: session state for control strip (model, effort, perm, title, goal, provider modes)
 CommandsModel: slash-command list for composer popup
 ReplyWatcher: detects background session replies → desktop notify + unread marker
 DiffModel: parse unified diffs into rows for the diff view

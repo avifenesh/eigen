@@ -10,11 +10,94 @@ Rectangle {
 
     signal sessionClicked(string sessionId)
     signal newSessionClicked()
+    signal sessionStarted(string sessionId)
 
     property var dashboardModel: null  // DashboardModel from Python
     property var feedModel: null       // FeedModel from Python
     property var sessionsModel: null   // SessionsModel (for working/recent slices)
     property var statsData: null       // daemon.DaemonStats from main
+    property var rpcClient: null       // RpcClient from Python
+    property var pendingActions: ({})
+    property var tokenActions: ({})
+    property string actionError: ""
+
+    Connections {
+        target: root.rpcClient ? root.rpcClient : null
+        function onCallDone(token, payload) {
+            root.handleCallDone(token, payload)
+        }
+    }
+
+    function safeObjectName(value) {
+        return String(value || "").replace(/[^A-Za-z0-9_]+/g, "_")
+    }
+
+    function errorText(error) {
+        if (error === undefined || error === null) return "Something went wrong."
+        if (typeof error === "string") return error
+        if (error.message) return String(error.message)
+        return JSON.stringify(error)
+    }
+
+    function isPending(key) {
+        return pendingActions[key] === true
+    }
+
+    function setPending(key, pending) {
+        var next = Object.assign({}, pendingActions)
+        if (pending) next[key] = true
+        else delete next[key]
+        pendingActions = next
+    }
+
+    function rememberToken(token, key, method) {
+        var next = Object.assign({}, tokenActions)
+        next[token] = { key: key, method: method }
+        tokenActions = next
+    }
+
+    function forgetToken(token) {
+        var next = Object.assign({}, tokenActions)
+        delete next[token]
+        tokenActions = next
+    }
+
+    function startNewSession() {
+        var key = "new-session"
+        if (!rpcClient || isPending(key)) return
+        actionError = ""
+        setPending(key, true)
+        var token = rpcClient.callToken("NewSession", ["", "", ""])
+        rememberToken(token, key, "NewSession")
+    }
+
+    function startFeedItem(feedKey, dir, task, url) {
+        if (!task) {
+            if (url) Qt.openUrlExternally(url)
+            return
+        }
+        var key = "feed:" + feedKey
+        if (!rpcClient || isPending(key)) return
+        actionError = ""
+        setPending(key, true)
+        var token = rpcClient.callToken("StartFromFeed", [dir || "", task])
+        rememberToken(token, key, "StartFromFeed")
+    }
+
+    function handleCallDone(token, payload) {
+        var action = tokenActions[token]
+        if (!action) return
+        forgetToken(token)
+        setPending(action.key, false)
+        if (payload && payload.error !== undefined && payload.error !== null) {
+            actionError = errorText(payload.error)
+            return
+        }
+        var sessionId = payload ? String(payload.result || "") : ""
+        if (sessionId !== "") {
+            sessionStarted(sessionId)
+        }
+    }
 
     // Inline component definitions
     component StatItem: ColumnLayout {
@@ -202,7 +285,7 @@ Rectangle {
                 }
 
                 Label {
-                    visible: gpu
+                    visible: !!gpu
                     text: Math.round(gpu.tempC) + "°C"
                     font.pixelSize: Theme.fontSize.label
                     color: {
@@ -241,6 +324,7 @@ Rectangle {
         property string url: ""
         property string task: ""
         property string feedKey: ""
+        property bool starting: false
 
         signal dismissed()
         signal startClicked()
@@ -283,21 +367,13 @@ Rectangle {
                     Layout.fillWidth: true
                 }
 
-                Button {
+                AppButton {
+                    objectName: "homeFeedDismiss_" + root.safeObjectName(feedKey)
                     text: "×"
                     onClicked: dismissed()
-                    flat: true
-                    background: Rectangle {
-                        color: parent.hovered ? Theme.colors.stateHover : "transparent"
-                        radius: Theme.radius.sm
-                    }
-                    contentItem: Label {
-                        text: parent.text
-                        font.pixelSize: 15
-                        color: parent.hovered ? Theme.colors.textPrimary : Theme.colors.textGhost
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
+                    variant: "ghost"
+                    compact: true
+                    toolTipText: "Dismiss"
                     Layout.preferredWidth: 24
                     Layout.preferredHeight: 24
                 }
@@ -335,46 +411,24 @@ Rectangle {
 
                 Item { Layout.fillWidth: true }
 
-                Button {
+                AppButton {
+                    objectName: "homeFeedOpen_" + root.safeObjectName(feedKey)
                     visible: url !== ""
                     text: "Open"
-                    flat: true
                     onClicked: Qt.openUrlExternally(url)
-                    background: Rectangle {
-                        color: parent.down ? Theme.colors.stateActive : (parent.hovered ? Theme.colors.stateHover : "transparent")
-                        radius: Theme.radius.sm
-                        border.width: 1
-                        border.color: Theme.colors.borderSubtle
-                    }
-                    contentItem: Label {
-                        text: parent.text
-                        font.pixelSize: Theme.fontSize.bodySm
-                        color: Theme.colors.textSecondary
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
+                    variant: "ghost"
+                    compact: true
                     Layout.preferredHeight: 28
                 }
 
-                Button {
+                AppButton {
+                    objectName: "homeFeedStart_" + root.safeObjectName(feedKey)
                     visible: task !== ""
-                    text: "Start →"
+                    enabled: !starting
+                    text: starting ? "Starting..." : "Start →"
                     onClicked: startClicked()
-                    background: Rectangle {
-                        color: parent.down ? Theme.colors.brandStrong : (parent.hovered ? Theme.colors.brand : Theme.colors.surfaceRaised)
-                        radius: Theme.radius.sm
-                        border.width: 1
-                        border.color: Theme.colors.borderSubtle
-                        Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
-                    }
-                    contentItem: Label {
-                        text: parent.text
-                        font.pixelSize: Theme.fontSize.bodySm
-                        font.weight: Theme.fontWeight.medium
-                        color: Theme.colors.textPrimary
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
+                    variant: "primary"
+                    compact: true
                     Layout.preferredHeight: 28
                 }
             }
@@ -551,13 +605,22 @@ Rectangle {
         }
 
         function relTime(ts) {
+            ts = timestampMs(ts)
             if (!ts) return ""
             var now = Date.now()
-            var diff = Math.floor((now - ts) / 1000)
+            var diff = Math.max(0, Math.floor((now - ts) / 1000))
             if (diff < 60) return "just now"
             if (diff < 3600) return Math.floor(diff / 60) + "m ago"
             if (diff < 86400) return Math.floor(diff / 3600) + "h ago"
             return Math.floor(diff / 86400) + "d ago"
+        }
+
+        function timestampMs(ts) {
+            var value = Number(ts || 0)
+            if (!isFinite(value) || value <= 0) return 0
+            if (value > 100000000000000) return Math.floor(value / 1000000)  // ns -> ms
+            if (value < 10000000000) return value * 1000  // s -> ms
+            return value
         }
     }
 
@@ -599,26 +662,24 @@ Rectangle {
                     }
                 }
 
-                Button {
-                    text: "Start a session"
-                    onClicked: root.newSessionClicked()
-                    background: Rectangle {
-                        color: parent.down ? Theme.colors.brandStrong : (parent.hovered ? Theme.colors.brand : Theme.colors.brandDim)
-                        radius: Theme.radius.md
-                        Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
-                    }
-                    contentItem: Label {
-                        text: parent.text
-                        font.family: Theme.uiFonts[0]
-                        font.pixelSize: Theme.fontSize.body
-                        font.weight: Theme.fontWeight.medium
-                        color: Theme.colors.textPrimary
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
+                AppButton {
+                    objectName: "homeStartSessionButton"
+                    text: root.isPending("new-session") ? "Starting..." : "Start a session"
+                    enabled: !root.isPending("new-session")
+                    onClicked: root.startNewSession()
+                    variant: "primary"
                     Layout.preferredHeight: 36
                     Layout.preferredWidth: 140
                 }
+            }
+
+            Label {
+                visible: root.actionError !== ""
+                text: root.actionError
+                font.pixelSize: Theme.fontSize.label
+                color: Theme.colors.error
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
             }
 
             // Stats strip
@@ -895,9 +956,10 @@ Rectangle {
                             url: model.url
                             task: model.task
                             feedKey: model.key
+                            starting: root.isPending("feed:" + model.key)
                             onDismissed: feedModel.dismiss(feedKey)
                             onStartClicked: {
-                                // TODO: wire StartFromFeed RPC
+                                root.startFeedItem(feedKey, model.dir, model.task, model.url)
                             }
                             Layout.fillWidth: true
                         }
@@ -1044,7 +1106,8 @@ Rectangle {
     property var recentList: []
 
     Connections {
-        target: sessionsModel
+        target: root.sessionsModel ? root.sessionsModel : null
+        ignoreUnknownSignals: true
         function onModelReset() { root.recentList = recentSessions() }
         function onRowsInserted() { root.recentList = recentSessions() }
         function onRowsRemoved() { root.recentList = recentSessions() }

@@ -111,28 +111,14 @@ Rectangle {
                         }
                     }
 
-                    Button {
+                    AppButton {
+                        objectName: "notesNewButton"
                         text: "New"
+                        toolTipText: "Create a note"
                         onClicked: {
                             if (root.notesController) {
                                 root.notesController.start_create()
                             }
-                        }
-
-                        background: Rectangle {
-                            color: parent.down ? Theme.colors.stateActive : (parent.hovered ? Theme.colors.stateHover : "transparent")
-                            radius: Theme.radius.sm
-                            border.width: 1
-                            border.color: Theme.colors.borderSubtle
-                            Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
-                        }
-
-                        contentItem: Label {
-                            text: parent.text
-                            font.pixelSize: Theme.fontSize.bodySm
-                            color: Theme.colors.textSecondary
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
                         }
 
                         Layout.preferredHeight: 32
@@ -151,17 +137,31 @@ Rectangle {
 
                     TextField {
                         id: createField
+                        objectName: "notesCreateNameInput"
                         Layout.fillWidth: true
                         placeholderText: "Inbox/Idea.md"
                         text: root.notesController ? root.notesController.new_name : ""
+                        enabled: !(root.notesController && root.notesController.creating_busy)
+                        property bool qaForceKeyboardFocus: false
+                        readonly property bool qaVisualFocus: activeFocus
+                        readonly property bool qaTextFits: !createField.contentItem || !createField.contentItem.text
+                            || (!createField.contentItem.truncated
+                                && createField.contentItem.paintedWidth <= createField.contentItem.width + 0.5)
+                        readonly property string qaText: text || placeholderText
                         onTextChanged: {
                             if (root.notesController) {
                                 root.notesController.new_name = text
                             }
                         }
 
+                        onQaForceKeyboardFocusChanged: {
+                            if (qaForceKeyboardFocus) {
+                                forceActiveFocus(Qt.TabFocusReason)
+                            }
+                        }
+
                         Keys.onReturnPressed: {
-                            if (root.notesController && root.notesController.new_name.trim() !== "") {
+                            if (root.notesController && !root.notesController.creating_busy && root.notesController.new_name.trim() !== "") {
                                 root.notesController.create_note()
                             }
                         }
@@ -199,57 +199,79 @@ Rectangle {
                         }
                     }
 
-                    Button {
-                        text: "Create"
+                    AppButton {
+                        objectName: "notesCreateButton"
+                        text: root.notesController && root.notesController.creating_busy ? "Creating" : "Create"
+                        variant: "primary"
+                        toolTipText: "Create note"
+                        enabled: root.notesController && !root.notesController.creating_busy && root.notesController.new_name.trim() !== ""
                         onClicked: {
-                            if (root.notesController && root.notesController.new_name.trim() !== "") {
+                            if (root.notesController && !root.notesController.creating_busy && root.notesController.new_name.trim() !== "") {
                                 root.notesController.create_note()
                             }
-                        }
-
-                        background: Rectangle {
-                            color: parent.down ? Theme.colors.brandStrong : (parent.hovered ? Theme.colors.brand : Theme.colors.brandDim)
-                            radius: Theme.radius.sm
-                            Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
-                        }
-
-                        contentItem: Label {
-                            text: parent.text
-                            font.pixelSize: Theme.fontSize.bodySm
-                            font.weight: Theme.fontWeight.medium
-                            color: Theme.colors.textPrimary
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
                         }
 
                         Layout.preferredHeight: 32
                     }
 
-                    Button {
+                    AppButton {
+                        objectName: "notesCancelCreateButton"
                         text: "Cancel"
+                        toolTipText: "Cancel note creation"
+                        enabled: !(root.notesController && root.notesController.creating_busy)
                         onClicked: {
                             if (root.notesController) {
                                 root.notesController.cancel_create()
                             }
                         }
 
-                        background: Rectangle {
-                            color: parent.down ? Theme.colors.stateActive : (parent.hovered ? Theme.colors.stateHover : "transparent")
-                            radius: Theme.radius.sm
-                            border.width: 1
-                            border.color: Theme.colors.borderSubtle
-                            Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
-                        }
-
-                        contentItem: Label {
-                            text: parent.text
-                            font.pixelSize: Theme.fontSize.bodySm
-                            color: Theme.colors.textSecondary
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-
                         Layout.preferredHeight: 32
+                    }
+                }
+
+                Rectangle {
+                    objectName: "notesActionError"
+                    visible: root.notesController && root.notesController.action_error !== ""
+                    Layout.fillWidth: true
+                    Layout.leftMargin: Theme.space.lg
+                    Layout.rightMargin: Theme.space.lg
+                    Layout.bottomMargin: visible ? Theme.space.sm : 0
+                    Layout.preferredHeight: visible ? Math.max(36, notesActionErrorRow.implicitHeight + Theme.space.md) : 0
+                    color: Theme.colors.errorBg
+                    border.width: visible ? 1 : 0
+                    border.color: Theme.colors.error
+                    radius: Theme.radius.sm
+                    clip: true
+
+                    RowLayout {
+                        id: notesActionErrorRow
+                        anchors.fill: parent
+                        anchors.leftMargin: Theme.space.md
+                        anchors.rightMargin: Theme.space.md
+                        spacing: Theme.space.md
+
+                        Label {
+                            text: root.notesController ? root.notesController.action_error : ""
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.label
+                            color: Theme.colors.error
+                            wrapMode: Text.Wrap
+                            Layout.fillWidth: true
+                        }
+
+                        AppButton {
+                            objectName: "notesDismissActionError"
+                            text: "Dismiss"
+                            compact: true
+                            toolTipText: "Dismiss notes error"
+                            Layout.preferredWidth: 84
+                            Layout.minimumWidth: 84
+                            onClicked: {
+                                if (root.notesController) {
+                                    root.notesController.clear_action_error()
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -266,28 +288,63 @@ Rectangle {
                     }
 
                     delegate: Rectangle {
+                        id: noteRow
+                        objectName: "notesRow_" + index
                         width: notesList.width
                         implicitHeight: 48
+                        radius: Theme.radius.sm
+                        activeFocusOnTab: true
+                        focusPolicy: Qt.StrongFocus
+                        property bool qaForceKeyboardFocus: false
+                        readonly property bool qaVisualFocus: activeFocus
+                        readonly property bool isSelected: !!(root.notesController && root.notesController.selected &&
+                            root.notesController.selected.path === model.path)
                         color: {
-                            if (root.notesController && root.notesController.selected &&
-                                root.notesController.selected.path === model.path) {
+                            if (noteRow.isSelected) {
                                 return Theme.colors.stateSelected
+                            }
+                            if (noteRow.activeFocus) {
+                                return Theme.colors.stateFocusBg
                             }
                             return mouseArea.containsMouse ? Theme.colors.stateHover : "transparent"
                         }
+                        border.width: activeFocus ? 1 : 0
+                        border.color: Theme.colors.brandBright
 
                         Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
+                        Behavior on border.color { ColorAnimation { duration: Theme.duration.fast } }
+
+                        function openCurrentNote() {
+                            if (root.notesController) {
+                                notesList.currentIndex = index
+                                root.notesController.open_note(model.path, model.title)
+                            }
+                        }
+
+                        onQaForceKeyboardFocusChanged: {
+                            if (qaForceKeyboardFocus) {
+                                forceActiveFocus(Qt.TabFocusReason)
+                            }
+                        }
+
+                        Keys.onReturnPressed: {
+                            openCurrentNote()
+                        }
+
+                        Keys.onEnterPressed: {
+                            openCurrentNote()
+                        }
+
+                        Keys.onSpacePressed: {
+                            openCurrentNote()
+                        }
 
                         MouseArea {
                             id: mouseArea
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                if (root.notesController) {
-                                    root.notesController.open_note(model.path, model.title)
-                                }
-                            }
+                            onClicked: noteRow.openCurrentNote()
                         }
 
                         ColumnLayout {
@@ -407,13 +464,17 @@ Rectangle {
                         Item { Layout.fillWidth: true }
 
                         // Action buttons
-                        RowLayout {
-                            spacing: Theme.space.sm
+                        Item {
+                            Layout.preferredWidth: root.notesController && root.notesController.editing ? 136 : 52
+                            Layout.preferredHeight: 32
 
                             // Edit mode buttons
-                            Button {
+                            AppButton {
+                                objectName: "notesSaveEditButton"
                                 visible: root.notesController && root.notesController.editing
                                 text: root.notesController && root.notesController.saving ? "Saving…" : "Save"
+                                variant: "primary"
+                                toolTipText: "Save note"
                                 enabled: root.notesController && !root.notesController.saving
                                 onClicked: {
                                     if (root.notesController) {
@@ -421,80 +482,42 @@ Rectangle {
                                     }
                                 }
 
-                                background: Rectangle {
-                                    color: parent.down ? Theme.colors.brandStrong : (parent.hovered ? Theme.colors.brand : Theme.colors.brandDim)
-                                    radius: Theme.radius.sm
-                                    opacity: parent.enabled ? 1.0 : 0.6
-                                    Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
-                                }
-
-                                contentItem: Label {
-                                    text: parent.text
-                                    font.pixelSize: Theme.fontSize.bodySm
-                                    font.weight: Theme.fontWeight.medium
-                                    color: Theme.colors.textPrimary
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-
-                                Layout.preferredHeight: 32
+                                x: 0
+                                width: 56
+                                height: 32
                             }
 
-                            Button {
+                            AppButton {
+                                objectName: "notesCancelEditButton"
                                 visible: root.notesController && root.notesController.editing
                                 text: "Cancel"
+                                toolTipText: "Cancel editing"
                                 onClicked: {
                                     if (root.notesController) {
                                         root.notesController.cancel_edit()
                                     }
                                 }
 
-                                background: Rectangle {
-                                    color: parent.down ? Theme.colors.stateActive : (parent.hovered ? Theme.colors.stateHover : "transparent")
-                                    radius: Theme.radius.sm
-                                    border.width: 1
-                                    border.color: Theme.colors.borderSubtle
-                                    Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
-                                }
-
-                                contentItem: Label {
-                                    text: parent.text
-                                    font.pixelSize: Theme.fontSize.bodySm
-                                    color: Theme.colors.textSecondary
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-
-                                Layout.preferredHeight: 32
+                                x: 64
+                                width: 72
+                                height: 32
                             }
 
                             // Read mode button
-                            Button {
+                            AppButton {
+                                objectName: "notesEditButton"
                                 visible: root.notesController && !root.notesController.editing
                                 text: "Edit"
+                                toolTipText: "Edit note"
                                 onClicked: {
                                     if (root.notesController) {
                                         root.notesController.start_edit()
                                     }
                                 }
 
-                                background: Rectangle {
-                                    color: parent.down ? Theme.colors.stateActive : (parent.hovered ? Theme.colors.stateHover : "transparent")
-                                    radius: Theme.radius.sm
-                                    border.width: 1
-                                    border.color: Theme.colors.borderSubtle
-                                    Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
-                                }
-
-                                contentItem: Label {
-                                    text: parent.text
-                                    font.pixelSize: Theme.fontSize.bodySm
-                                    color: Theme.colors.textSecondary
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-
-                                Layout.preferredHeight: 32
+                                x: 0
+                                width: 52
+                                height: 32
                             }
                         }
                     }
@@ -507,16 +530,45 @@ Rectangle {
 
                     // Edit mode: textarea
                     ScrollView {
+                        id: editScroll
                         visible: root.notesController && root.notesController.editing
                         anchors.fill: parent
                         clip: true
+                        contentWidth: availableWidth
 
                         TextArea {
                             id: editor
+                            objectName: "notesEditorTextArea"
+                            width: editScroll.availableWidth
                             text: root.notesController ? root.notesController.draft : ""
+                            property bool qaForceKeyboardFocus: false
+                            readonly property bool qaVisualFocus: activeFocus
+                            readonly property bool qaTextFits: true
+                            readonly property string qaText: text || placeholderText
                             onTextChanged: {
                                 if (root.notesController && root.notesController.editing) {
                                     root.notesController.draft = text
+                                }
+                            }
+
+                            onQaForceKeyboardFocusChanged: {
+                                if (qaForceKeyboardFocus) {
+                                    forceActiveFocus(Qt.TabFocusReason)
+                                }
+                            }
+
+                            Keys.onPressed: function(event) {
+                                if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                                        && (event.modifiers & Qt.ControlModifier)) {
+                                    if (root.notesController && !root.notesController.saving) {
+                                        root.notesController.save()
+                                    }
+                                    event.accepted = true
+                                } else if (event.key === Qt.Key_Escape) {
+                                    if (root.notesController) {
+                                        root.notesController.cancel_edit()
+                                    }
+                                    event.accepted = true
                                 }
                             }
 
@@ -540,12 +592,17 @@ Rectangle {
 
                     // Read mode: markdown-rendered text (simplified — just plain text for now)
                     ScrollView {
+                        id: readScroll
                         visible: root.notesController && !root.notesController.editing
                         anchors.fill: parent
                         clip: true
+                        contentWidth: availableWidth
 
                         Label {
-                            width: parent.width - Theme.space.xxxl * 2
+                            id: markdownBody
+                            objectName: "notesMarkdownBody"
+                            width: Math.max(0, readScroll.availableWidth - Theme.space.xxxl * 2)
+                            readonly property real qaContentWidth: width
                             text: root.notesController ? root.notesController.content : ""
                             font.family: Theme.uiFonts[0]
                             font.pixelSize: Theme.fontSize.bodySm

@@ -18,15 +18,24 @@ sys.path.insert(0, str(Path(__file__).parent))
 from PySide6.QtCore import QCoreApplication, QTimer
 
 from eigenqt.models.board import BoardModel, KanbanModel
-from eigenqt.rpc import RpcClient
 
 
-def test_board_model(app):
+class FakeRpcClient:
+    def __init__(self):
+        self.calls = []
+
+    def call(self, method, *args, callback=None):
+        self.calls.append((method, args))
+        if callback:
+            callback({"result": {}})
+
+
+def test_board_model():
     """Test BoardModel with mock data."""
     print("Testing BoardModel...")
 
     # Create model (no real RPC needed for data tests)
-    client = RpcClient()
+    client = FakeRpcClient()
     model = BoardModel(client)
 
     # Inject mock data directly (simulating RPC result)
@@ -109,14 +118,13 @@ def test_board_model(app):
     assert remote1 is False, f"Expected False, got {remote1}"
 
     print("✓ BoardModel tests passed")
-    return True
 
 
-def test_kanban_model(app):
+def test_kanban_model():
     """Test KanbanModel with mock data."""
     print("Testing KanbanModel...")
 
-    client = RpcClient()
+    client = FakeRpcClient()
     model = KanbanModel(client)
 
     # Inject mock columns
@@ -160,7 +168,6 @@ def test_kanban_model(app):
     assert columns[0]["cards"][0]["key"] == "card1", f"Expected 'card1', got {columns[0]['cards'][0]['key']}"
 
     print("✓ KanbanModel tests passed")
-    return True
 
 
 def main():
@@ -168,10 +175,8 @@ def main():
     app = QCoreApplication(sys.argv)
 
     try:
-        if not test_board_model(app):
-            sys.exit(1)
-        if not test_kanban_model(app):
-            sys.exit(1)
+        test_board_model()
+        test_kanban_model()
 
         print("\n✓ All board tests passed!")
         sys.exit(0)

@@ -9,7 +9,16 @@ Handle dropped signal → refetch State, rebuild.
 
 from typing import Optional
 
-from PySide6.QtCore import QAbstractListModel, QModelIndex, QObject, QTimer, Qt, Slot
+from PySide6.QtCore import (
+    Property,
+    QAbstractListModel,
+    QModelIndex,
+    QObject,
+    QTimer,
+    Qt,
+    Signal,
+    Slot,
+)
 
 from eigenqt.rpc import RpcClient
 from eigenqt.markdown import parse as parse_markdown
@@ -19,6 +28,8 @@ from .transcript_logic import RowOp, TranscriptRow, fold_event, rebuild_from_sta
 
 class TranscriptModel(QAbstractListModel):
     """Transcript model for a single session (event-driven, 16ms delta coalescing)."""
+
+    streamingChanged = Signal()
 
     # Qt roles
     KindRole = Qt.UserRole + 1
@@ -38,6 +49,7 @@ class TranscriptModel(QAbstractListModel):
         self._session_id = session_id
         self._rows: list[TranscriptRow] = []
         self._pending_ops: list[RowOp] = []
+        self._has_streaming = False
         # data() is a scroll-time hot path: ListView refetches roles for every
         # visible row on relayout. Parsing markdown there uncached froze
         # scrolling on long transcripts. Cache blocks per row index, keyed by
@@ -52,14 +64,20 @@ class TranscriptModel(QAbstractListModel):
         self._flush_timer.timeout.connect(self._flush_pending_ops)
 
         # Event channel for this session
-        self._event_channel = f"session:{session_id}"
+        self._event_channel = f"session:{session_id}" if session_id else ""
 
         # Connect to RPC + events
         self._client.event.connect(self._on_event)
         self._client.dropped.connect(self._on_dropped)
 
-        # Subscribe to session events
-        self._client.subscribe([self._event_channel])
+        # Subscribe to session events once a real session is attached.
+        if self._event_channel:
+            self._client.subscribe([self._event_channel])
+
+    @Property(bool, notify=streamingChanged)
+    def hasStreaming(self) -> bool:
+        """Whether any visible assistant row is actively streaming."""
+        return self._has_streaming
 
     def roleNames(self) -> dict[int, bytes]:
         """Expose roles to QML."""
@@ -146,6 +164,7 @@ class TranscriptModel(QAbstractListModel):
         self._rows = rows
         self._blocks_cache.clear()  # indices shifted — stale parses invalid
         self.endResetModel()
+        self._sync_streaming_state()
 
     @Slot(str, dict)
     def _on_event(self, channel: str, data: dict):
@@ -164,6 +183,7 @@ class TranscriptModel(QAbstractListModel):
         # Fold event → row ops
         ops = fold_event(self._rows, event, replay)
         self._pending_ops.extend(ops)
+        self._sync_streaming_state()
 
         # Restart 16ms timer (coalesce deltas)
         if self._pending_ops and not self._flush_timer.isActive():
@@ -195,6 +215,45 @@ class TranscriptModel(QAbstractListModel):
         self._pending_ops.clear()
         self._blocks_cache.clear()
         self.endResetModel()
+        self._sync_streaming_state()
+
+    @Slot(str)
+    def appendNote(self, text: str) -> None:
+        """Append a local UI note row.
+
+        Used for GUI-only slash command feedback. These notes are not persisted
+        by the daemon; the next State rebuild remains authoritative.
+        """
+        row = TranscriptRow(kind="note", text=text)
+        self.beginInsertRows(QModelIndex(), len(self._rows), len(self._rows))
+        self._rows.append(row)
+        self.endInsertRows()
+
+    @Slot(str)
+    def appendUserMessage(self, text: str) -> None:
+        """Append a local optimistic user row for custom command expansion."""
+        row = TranscriptRow(kind="user", text=text)
+        self.beginInsertRows(QModelIndex(), len(self._rows), len(self._rows))
+        self._rows.append(row)
+        self.endInsertRows()
+
+    @Slot(result=str)
+    def lastAssistantText(self) -> str:
+        """Return the latest finalized assistant text row, for /copy and read-aloud."""
+        for row in reversed(self._rows):
+            if row.kind == "assistant" and row.text and not row.streaming:
+                return row.text
+        return ""
+
+    @Slot()
+    def clearRows(self) -> None:
+        """Clear visible transcript rows after a successful Clear RPC."""
+        self.beginResetModel()
+        self._rows.clear()
+        self._pending_ops.clear()
+        self._blocks_cache.clear()
+        self.endResetModel()
+        self._sync_streaming_state()
 
     @Slot()
     def _flush_pending_ops(self):
@@ -262,8 +321,19 @@ class TranscriptModel(QAbstractListModel):
             self.beginRemoveRows(QModelIndex(), row, row)
             del self._rows[row]
             self.endRemoveRows()
+        if removes:
+            self._sync_streaming_state()
+
+    def _sync_streaming_state(self) -> None:
+        """Emit hasStreaming only when the aggregate streaming state changes."""
+        has_streaming = any(row.streaming for row in self._rows)
+        if self._has_streaming == has_streaming:
+            return
+        self._has_streaming = has_streaming
+        self.streamingChanged.emit()
 
     def detach(self):
         """Detach from session (unsubscribe, stop timer)."""
         self._flush_timer.stop()
-        self._client.unsubscribe([self._event_channel])
+        if self._event_channel:
+            self._client.unsubscribe([self._event_channel])

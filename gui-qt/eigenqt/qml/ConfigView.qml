@@ -20,8 +20,15 @@ Rectangle {
     // Function-call bindings are NOT reactive to model resets (the recurring
     // QML footgun) — Config data lands AFTER first render, so tabFields()
     // bindings froze on the initial empty model → black content pane.
-    property var currentTabFields: []
+    property var currentTabFields
     onActiveTabChanged: currentTabFields = tabFields()
+    onConfigModelChanged: {
+        syncValuesFromModel()
+        currentTabFields = tabFields()
+        syncActiveModels()
+    }
+    onRuleChainsModelChanged: syncActiveModels()
+    onVisibleChanged: syncActiveModels()
 
     // Key → tab mapping (matches Svelte Config.svelte)
     property var keyTab: ({
@@ -37,9 +44,15 @@ Rectangle {
 
     // Saving state (per key)
     property var saving: ({})
+    property var ruleChainSaving: ({})
+    readonly property int qaRuleChainSavingCount: Object.keys(ruleChainSaving || {}).length
 
     // Working values (optimistic update before commit)
-    property var values: ({})
+    property var values
+    property string actionError: ""
+
+    // Visual QA hook: lets the screenshot harness prove dropdown popups.
+    property string qaOpenCombo: ""
 
     ColumnLayout {
         anchors.fill: parent
@@ -81,43 +94,60 @@ Rectangle {
 
                 Repeater {
                     model: availableTabs()
-                    delegate: Button {
+                    delegate: AppButton {
+                        id: tabButton
+                        objectName: "configTab_" + modelData
                         text: modelData
-                        checkable: false
+                        variant: "ghost"
+                        selected: root.activeTab === modelData
+                        compact: true
+                        toolTipText: "Show " + modelData + " settings"
                         Layout.preferredHeight: 40
-
-                        background: Rectangle {
-                            color: root.activeTab === modelData ? Theme.colors.bgBase : "transparent"
-                            border.width: root.activeTab === modelData ? 1 : 0
-                            border.color: Theme.colors.borderHairline
-                            Rectangle {
-                                visible: root.activeTab === modelData
-                                anchors.bottom: parent.bottom
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                height: 2
-                                color: Theme.colors.brandBright
-                            }
-                        }
-
-                        contentItem: Label {
-                            text: parent.text
-                            font.family: Theme.uiFonts[0]
-                            font.pixelSize: 13
-                            font.weight: root.activeTab === modelData ? Theme.fontWeight.semibold : Theme.fontWeight.regular
-                            color: root.activeTab === modelData ? Theme.colors.textPrimary : Theme.colors.textMuted
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-
                         onClicked: root.activeTab = modelData
                     }
                 }
             }
         }
 
+        Rectangle {
+            objectName: "configActionError"
+            visible: root.actionError !== ""
+            Layout.fillWidth: true
+            Layout.preferredHeight: visible ? Math.max(40, configActionErrorRow.implicitHeight + Theme.space.md) : 0
+            color: Theme.colors.errorBg
+            border.width: 1
+            border.color: Theme.colors.error
+            clip: true
+
+            RowLayout {
+                id: configActionErrorRow
+                anchors.fill: parent
+                anchors.leftMargin: Theme.space.xxxl
+                anchors.rightMargin: Theme.space.xxxl
+                spacing: Theme.space.md
+
+                Label {
+                    text: root.actionError
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.label
+                    color: Theme.colors.error
+                    wrapMode: Text.WrapAnywhere
+                    Layout.fillWidth: true
+                }
+
+                AppButton {
+                    objectName: "configDismissErrorButton"
+                    text: "Dismiss"
+                    variant: "ghost"
+                    toolTipText: "Dismiss error"
+                    onClicked: root.actionError = ""
+                }
+            }
+        }
+
         // TAB CONTENT
         Flickable {
+            objectName: "configFlick"
             Layout.fillWidth: true
             Layout.fillHeight: true
             contentWidth: width
@@ -134,9 +164,16 @@ Rectangle {
 
                 // RULE CHAINS EDITOR (Models tab only)
                 Rectangle {
-                    visible: root.activeTab === "Models" && root.ruleChainsModel
+                    readonly property bool active: root.activeTab === "Models" && root.ruleChainsModel
+                    visible: true
+                    enabled: active
+                    opacity: active ? 1 : 0
+                    clip: true
                     Layout.fillWidth: true
-                    implicitHeight: ruleChainsContent.implicitHeight + Theme.space.xxxl
+                    Layout.preferredHeight: active ? implicitHeight : 0
+                    Layout.minimumHeight: active ? 260 : 0
+                    Layout.maximumHeight: active ? implicitHeight : 0
+                    implicitHeight: Math.max(260, ruleChainsContent.implicitHeight + Theme.space.xxxl)
                     color: "transparent"
 
                     ColumnLayout {
@@ -176,8 +213,11 @@ Rectangle {
                                 // parent.parent chains to reach the outer
                                 // model were fragile and threw on undefined.
                                 required property var model
+                                readonly property bool chainSaving: !!root.ruleChainSaving[model.roleName]
                                 Layout.fillWidth: true
-                                implicitHeight: chainRow.implicitHeight + Theme.space.xxxl
+                                Layout.preferredHeight: implicitHeight
+                                Layout.minimumHeight: 96
+                                implicitHeight: Math.max(96, chainRow.implicitHeight + Theme.space.xxxl)
                                 color: Theme.colors.bgRaised
                                 border.width: 1
                                 border.color: Theme.colors.borderHairline
@@ -277,68 +317,43 @@ Rectangle {
                                                             Layout.fillWidth: true
                                                         }
 
-                                                        Button {
-                                                            text: "←"
-                                                            enabled: index > 0
-                                                            implicitWidth: 28
-                                                            implicitHeight: 24
+                                                        AppButton {
+                                                            objectName: "configChainMoveUp_" + chainDelegate.model.roleName + "_" + index
+                                                            text: "↑"
+                                                            toolTipText: "Move " + modelData + " earlier"
+                                                            variant: "ghost"
+                                                            enabled: !chainDelegate.chainSaving && index > 0
+                                                            leftPadding: Theme.space.sm
+                                                            rightPadding: Theme.space.sm
+                                                            Layout.preferredWidth: 28
+                                                            Layout.preferredHeight: 24
                                                             onClicked: moveChainItem(chainDelegate.model.roleName, index, -1)
-
-                                                            background: Rectangle {
-                                                                color: parent.down ? Theme.colors.stateActive : (parent.hovered ? Theme.colors.stateHover : "transparent")
-                                                                radius: Theme.radius.sm
-                                                                opacity: parent.enabled ? 1.0 : 0.4
-                                                            }
-
-                                                            contentItem: Label {
-                                                                text: parent.text
-                                                                font.pixelSize: 11
-                                                                color: Theme.colors.textSecondary
-                                                                horizontalAlignment: Text.AlignHCenter
-                                                                verticalAlignment: Text.AlignVCenter
-                                                            }
                                                         }
 
-                                                        Button {
-                                                            text: "→"
-                                                            enabled: index < (chainDelegate.model.chain.length - 1)
-                                                            implicitWidth: 28
-                                                            implicitHeight: 24
+                                                        AppButton {
+                                                            objectName: "configChainMoveDown_" + chainDelegate.model.roleName + "_" + index
+                                                            text: "↓"
+                                                            toolTipText: "Move " + modelData + " later"
+                                                            variant: "ghost"
+                                                            enabled: !chainDelegate.chainSaving && index < (chainDelegate.model.chain.length - 1)
+                                                            leftPadding: Theme.space.sm
+                                                            rightPadding: Theme.space.sm
+                                                            Layout.preferredWidth: 28
+                                                            Layout.preferredHeight: 24
                                                             onClicked: moveChainItem(chainDelegate.model.roleName, index, 1)
-
-                                                            background: Rectangle {
-                                                                color: parent.down ? Theme.colors.stateActive : (parent.hovered ? Theme.colors.stateHover : "transparent")
-                                                                radius: Theme.radius.sm
-                                                                opacity: parent.enabled ? 1.0 : 0.4
-                                                            }
-
-                                                            contentItem: Label {
-                                                                text: parent.text
-                                                                font.pixelSize: 11
-                                                                color: Theme.colors.textSecondary
-                                                                horizontalAlignment: Text.AlignHCenter
-                                                                verticalAlignment: Text.AlignVCenter
-                                                            }
                                                         }
 
-                                                        Button {
+                                                        AppButton {
+                                                            objectName: "configChainRemove_" + chainDelegate.model.roleName + "_" + index
                                                             text: "✕"
-                                                            implicitWidth: 28
-                                                            implicitHeight: 24
+                                                            toolTipText: "Remove " + modelData
+                                                            variant: "danger"
+                                                            enabled: !chainDelegate.chainSaving
+                                                            leftPadding: Theme.space.sm
+                                                            rightPadding: Theme.space.sm
+                                                            Layout.preferredWidth: 28
+                                                            Layout.preferredHeight: 24
                                                             onClicked: removeChainItem(chainDelegate.model.roleName, index)
-
-                                                            background: Rectangle {
-                                                                color: parent.down ? Theme.colors.stateActive : (parent.hovered ? Theme.colors.stateHover : "transparent")
-                                                                radius: Theme.radius.sm
-                                                            }
-
-                                                            contentItem: Label {
-                                                                text: parent.text
-                                                                font.pixelSize: 11
-                                                                color: Theme.colors.error
-                                                                horizontalAlignment: Text.AlignHCenter
-                                                                verticalAlignment: Text.AlignVCenter
-                                                            }
                                                         }
                                                     }
                                                 }
@@ -357,76 +372,56 @@ Rectangle {
                                             Layout.fillWidth: true
                                             spacing: Theme.space.sm
 
-                                            ComboBox {
+                                            AppComboBox {
                                                 id: addModelCombo
+                                                objectName: "configAddModelCombo_" + chainDelegate.model.roleName
+                                                qaPopupOpen: root.qaOpenCombo === ("configAddModelCombo_" + chainDelegate.model.roleName)
                                                 Layout.fillWidth: true
                                                 Layout.preferredHeight: 32
+                                                enabled: !chainDelegate.chainSaving
                                                 model: availableModelsForRole(chainDelegate.model.roleName, chainDelegate.model.chain, chainDelegate.model.models)
                                                 displayText: currentIndex >= 0 ? currentText : "Add model…"
-
-                                                background: Rectangle {
-                                                    color: Theme.colors.bgRaised
-                                                    border.width: 1
-                                                    border.color: addModelCombo.activeFocus ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
-                                                    radius: Theme.radius.sm
-                                                }
-
-                                                contentItem: Label {
-                                                    text: parent.displayText
-                                                    font.pixelSize: Theme.fontSize.bodySm
-                                                    color: Theme.colors.textPrimary
-                                                    verticalAlignment: Text.AlignVCenter
-                                                    leftPadding: Theme.space.md
-                                                }
+                                                accessibleName: "Model to add to " + chainDelegate.model.roleName
+                                                toolTipText: "Choose a model to add"
                                             }
 
-                                            Button {
+                                            AppButton {
+                                                objectName: "configAddModelButton_" + chainDelegate.model.roleName
                                                 text: "Add"
-                                                enabled: addModelCombo.currentIndex >= 0
-                                                implicitHeight: 32
+                                                variant: "primary"
+                                                enabled: !chainDelegate.chainSaving && addModelCombo.currentIndex >= 0
                                                 onClicked: {
                                                     if (addModelCombo.currentIndex >= 0) {
                                                         addChainItem(chainDelegate.model.roleName, addModelCombo.currentText)
                                                         addModelCombo.currentIndex = -1
                                                     }
                                                 }
-
-                                                background: Rectangle {
-                                                    color: parent.down ? Theme.colors.brandStrong : (parent.hovered ? Theme.colors.brand : Theme.colors.brandDim)
-                                                    radius: Theme.radius.sm
-                                                    opacity: parent.enabled ? 1.0 : 0.5
-                                                }
-
-                                                contentItem: Label {
-                                                    text: parent.text
-                                                    font.pixelSize: Theme.fontSize.bodySm
-                                                    font.weight: Theme.fontWeight.medium
-                                                    color: Theme.colors.textPrimary
-                                                    horizontalAlignment: Text.AlignHCenter
-                                                    verticalAlignment: Text.AlignVCenter
-                                                }
                                             }
 
-                                            Button {
+                                            AppButton {
+                                                objectName: "configResetChain_" + chainDelegate.model.roleName
                                                 text: "Reset"
-                                                enabled: model.custom
-                                                implicitHeight: 32
+                                                enabled: !chainDelegate.chainSaving && model.custom
                                                 onClicked: resetChain(chainDelegate.model.roleName)
+                                            }
 
-                                                background: Rectangle {
-                                                    color: parent.down ? Theme.colors.stateActive : (parent.hovered ? Theme.colors.stateHover : "transparent")
-                                                    border.width: 1
-                                                    border.color: Theme.colors.borderSubtle
-                                                    radius: Theme.radius.sm
-                                                    opacity: parent.enabled ? 1.0 : 0.5
+                                            RowLayout {
+                                                objectName: "configChainSaving_" + chainDelegate.model.roleName
+                                                visible: chainDelegate.chainSaving
+                                                spacing: Theme.space.xs
+                                                Layout.preferredHeight: visible ? 24 : 0
+
+                                                Rectangle {
+                                                    Layout.preferredWidth: 10
+                                                    Layout.preferredHeight: 10
+                                                    radius: 5
+                                                    color: Theme.colors.working
                                                 }
 
-                                                contentItem: Label {
-                                                    text: parent.text
-                                                    font.pixelSize: Theme.fontSize.bodySm
-                                                    color: Theme.colors.textSecondary
-                                                    horizontalAlignment: Text.AlignHCenter
-                                                    verticalAlignment: Text.AlignVCenter
+                                                Label {
+                                                    text: "saving"
+                                                    font.pixelSize: Theme.fontSize.label
+                                                    color: Theme.colors.working
                                                 }
                                             }
                                         }
@@ -439,20 +434,38 @@ Rectangle {
 
                 // CONFIG FIELDS (current tab)
                 Repeater {
-                    model: root.currentTabFields
+                    model: root.currentTabFields || []
                     delegate: Rectangle {
                         id: fieldDelegate
-                        // Capture the field dict once — nested Repeaters
-                        // rebind modelData, so inner scopes must reference
-                        // fieldDelegate.field, never fieldContent.modelData
-                        // (fieldContent is a RowLayout; it has no modelData).
-                        property var field: modelData
+                        // Capture the outer Repeater's field dict explicitly.
+                        // Nested Repeaters also expose modelData, so every
+                        // inner scope must use these field* properties.
+                        required property var modelData
+                        readonly property string fieldKey: modelData.key || ""
+                        readonly property string fieldDesc: modelData.desc || ""
+                        readonly property string fieldValue: modelData.value || ""
+                        readonly property var fieldOptions: modelData.options || []
+                        readonly property bool fieldMulti: modelData.multi || false
+                        readonly property bool fieldAllowEmpty: modelData.allowEmpty || false
                         Layout.fillWidth: true
-                        implicitHeight: fieldContent.implicitHeight + Theme.space.xxxl
+                        Layout.preferredHeight: implicitHeight
+                        Layout.minimumHeight: 72
+                        implicitHeight: Math.max(72, fieldContent.implicitHeight + Theme.space.xxxl)
                         color: Theme.colors.bgRaised
                         border.width: 1
                         border.color: Theme.colors.borderHairline
                         radius: Theme.radius.md
+
+                        function fieldSpec() {
+                            return {
+                                key: fieldKey,
+                                desc: fieldDesc,
+                                value: fieldValue,
+                                options: fieldOptions,
+                                multi: fieldMulti,
+                                allowEmpty: fieldAllowEmpty
+                            }
+                        }
 
                         RowLayout {
                             id: fieldContent
@@ -467,7 +480,7 @@ Rectangle {
                                 spacing: Theme.space.xs
 
                                 Label {
-                                    text: modelData.key
+                                    text: fieldDelegate.fieldKey
                                     font.family: Theme.monoFonts[0]
                                     font.pixelSize: Theme.fontSize.bodySm
                                     font.weight: Theme.fontWeight.semibold
@@ -475,7 +488,7 @@ Rectangle {
                                 }
 
                                 Label {
-                                    text: modelData.desc
+                                    text: fieldDelegate.fieldDesc
                                     font.pixelSize: Theme.fontSize.label
                                     color: Theme.colors.textMuted
                                     wrapMode: Text.WordWrap
@@ -491,7 +504,7 @@ Rectangle {
 
                                 // Saving indicator
                                 Row {
-                                    visible: root.saving[modelData.key] || false
+                                    visible: root.saving[fieldDelegate.fieldKey] || false
                                     spacing: Theme.space.xs
 
                                     Rectangle {
@@ -528,112 +541,71 @@ Rectangle {
                                 }
 
                                 // TOGGLE (boolean)
-                                Button {
-                                    visible: !!(!root.saving[modelData.key] && isBool(modelData.options))
-                                    checkable: false
+                                AppSwitch {
+                                    id: boolToggle
+                                    visible: !!(!root.saving[fieldDelegate.fieldKey] && isBool(fieldDelegate.fieldOptions))
+                                    objectName: "configBoolToggle_" + fieldDelegate.fieldKey
                                     Layout.preferredWidth: 44
                                     Layout.preferredHeight: 24
-
-                                    background: Rectangle {
-                                        color: (root.values[modelData.key] === "true") ? Theme.colors.brandDim : Theme.colors.bgInset
-                                        border.width: 1
-                                        border.color: (root.values[modelData.key] === "true") ? Theme.colors.brand : Theme.colors.borderSubtle
-                                        radius: Theme.radius.full
-
-                                        Rectangle {
-                                            x: (root.values[modelData.key] === "true") ? parent.width - width - 2 : 2
-                                            y: 2
-                                            width: 18
-                                            height: 18
-                                            radius: 9
-                                            color: (root.values[modelData.key] === "true") ? Theme.colors.brandBright : Theme.colors.textSecondary
-
-                                            Behavior on x {
-                                                NumberAnimation { duration: Theme.duration.fast; easing.type: Easing.OutCubic }
-                                            }
-                                        }
-                                    }
-
-                                    onClicked: commitConfig(modelData.key, (root.values[modelData.key] === "true") ? "false" : "true")
+                                    checked: root.values[fieldDelegate.fieldKey] === "true"
+                                    accessibleName: fieldDelegate.fieldKey + " setting"
+                                    toolTipText: (checked ? "Turn off " : "Turn on ") + fieldDelegate.fieldKey
+                                    onClicked: commitConfig(fieldDelegate.fieldKey, checked ? "true" : "false")
                                 }
 
                                 // CHIPS (multi-select)
                                 Flow {
-                                    visible: !!(!root.saving[modelData.key] && modelData.multi && modelData.options)
+                                    visible: !!(!root.saving[fieldDelegate.fieldKey] && fieldDelegate.fieldMulti && fieldDelegate.fieldOptions)
                                     Layout.fillWidth: true
                                     spacing: Theme.space.xs
 
                                     Repeater {
-                                        model: modelData.options || []
-                                        delegate: Button {
-                                            text: modelData
-                                            checkable: false
-                                            implicitHeight: 24
-
-                                            background: Rectangle {
-                                                color: multiHas(fieldDelegate.field.key, modelData) ? Theme.colors.stateSelected : Theme.colors.bgRaised2
-                                                border.width: 1
-                                                border.color: multiHas(fieldDelegate.field.key, modelData) ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
-                                                radius: Theme.radius.full
-                                            }
-
-                                            contentItem: Label {
-                                                text: parent.text
-                                                font.pixelSize: Theme.fontSize.label
-                                                font.weight: Theme.fontWeight.medium
-                                                color: multiHas(fieldDelegate.field.key, modelData) ? Theme.colors.brandBright : Theme.colors.textMuted
-                                                horizontalAlignment: Text.AlignHCenter
-                                                verticalAlignment: Text.AlignVCenter
-                                                leftPadding: Theme.space.md
-                                                rightPadding: Theme.space.md
-                                            }
-
-                                            onClicked: toggleMulti(fieldDelegate.field.key, modelData)
+                                        model: fieldDelegate.fieldOptions || []
+                                        delegate: AppButton {
+                                            id: multiChip
+                                            required property string modelData
+                                            readonly property string optionValue: modelData
+                                            objectName: "configMultiChip_" + fieldDelegate.fieldKey + "_" + optionValue
+                                            text: optionValue
+                                            selected: multiHas(fieldDelegate.fieldKey, optionValue)
+                                            compact: true
+                                            pill: true
+                                            toolTipText: (multiHas(fieldDelegate.fieldKey, optionValue) ? "Remove " : "Add ") + optionValue
+                                            onClicked: toggleMulti(fieldDelegate.fieldKey, optionValue)
                                         }
                                     }
                                 }
 
                                 // SELECT (single-select from options)
-                                ComboBox {
-                                    visible: !!(!root.saving[modelData.key] && !modelData.multi && modelData.options && modelData.options.length > 0 && !isBool(modelData.options))
+                                AppComboBox {
+                                    visible: !!(!root.saving[fieldDelegate.fieldKey] && !fieldDelegate.fieldMulti && fieldDelegate.fieldOptions && fieldDelegate.fieldOptions.length > 0 && !isBool(fieldDelegate.fieldOptions))
+                                    objectName: "configSelect_" + fieldDelegate.fieldKey
+                                    qaPopupOpen: root.qaOpenCombo === ("configSelect_" + fieldDelegate.fieldKey)
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 32
-                                    model: buildSelectOptions(modelData)
-                                    currentIndex: findSelectIndex(modelData)
+                                    model: buildSelectOptions(fieldDelegate.fieldSpec())
+                                    currentIndex: findSelectIndex(fieldDelegate.fieldSpec())
+                                    activationUpdatesCurrentIndex: false
+                                    accessibleName: fieldDelegate.fieldKey
+                                    toolTipText: "Change " + fieldDelegate.fieldKey
                                     onActivated: function(index) {
                                         if (index >= 0) {
-                                            var opts = buildSelectOptions(modelData)
-                                            commitConfig(modelData.key, opts[index])
+                                            var opts = buildSelectOptions(fieldDelegate.fieldSpec())
+                                            commitConfig(fieldDelegate.fieldKey, opts[index])
                                         }
-                                    }
-
-                                    background: Rectangle {
-                                        color: Theme.colors.bgRaised2
-                                        border.width: 1
-                                        border.color: parent.activeFocus ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
-                                        radius: Theme.radius.sm
-                                    }
-
-                                    contentItem: Label {
-                                        text: parent.displayText
-                                        font.pixelSize: Theme.fontSize.bodySm
-                                        color: Theme.colors.textPrimary
-                                        verticalAlignment: Text.AlignVCenter
-                                        leftPadding: Theme.space.md
-                                        elide: Text.ElideRight
                                     }
                                 }
 
                                 // TEXT INPUT (free-form)
                                 TextField {
-                                    visible: !root.saving[modelData.key] && (!modelData.options || modelData.options.length === 0)
+                                    visible: !root.saving[fieldDelegate.fieldKey] && (!fieldDelegate.fieldOptions || fieldDelegate.fieldOptions.length === 0)
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 32
-                                    text: root.values[modelData.key] || ""
+                                    text: root.values[fieldDelegate.fieldKey] || ""
                                     placeholderText: "(unset)"
                                     onEditingFinished: {
-                                        if (text !== modelData.value) {
-                                            commitConfig(modelData.key, text)
+                                        if (text !== fieldDelegate.fieldValue) {
+                                            commitConfig(fieldDelegate.fieldKey, text)
                                         }
                                     }
 
@@ -654,6 +626,64 @@ Rectangle {
                     }
                 }
 
+                Rectangle {
+                    objectName: "configEmptyState"
+                    visible: root.configModel !== null
+                        && root.configModel.rowCount() === 0
+                        && (root.ruleChainsModel === null || root.ruleChainsModel.rowCount() === 0)
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: visible ? 260 : 0
+                    color: "transparent"
+                    clip: true
+
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        spacing: Theme.space.lg
+
+                        Label {
+                            text: "⚙"
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: 44
+                            color: Theme.colors.textFaint
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        Label {
+                            text: "No config fields loaded"
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.h3
+                            font.weight: Theme.fontWeight.semibold
+                            color: Theme.colors.textSecondary
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        Label {
+                            text: "Refresh after the daemon finishes starting."
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.bodySm
+                            color: Theme.colors.textMuted
+                            horizontalAlignment: Text.AlignHCenter
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        AppButton {
+                            objectName: "configEmptyRefreshButton"
+                            text: "Refresh"
+                            variant: "primary"
+                            toolTipText: "Reload config"
+                            Layout.alignment: Qt.AlignHCenter
+                            onClicked: {
+                                if (root.configModel && root.configModel.refresh) {
+                                    root.configModel.refresh()
+                                }
+                                if (root.ruleChainsModel && root.ruleChainsModel.refresh) {
+                                    root.ruleChainsModel.refresh()
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Item { height: Theme.space.xxxl }
             }
         }
@@ -665,7 +695,10 @@ Rectangle {
         if (root.configModel) {
             syncValuesFromModel()
         }
+        syncActiveModels()
     }
+
+    Component.onDestruction: syncActiveModels(false)
 
     Connections {
         target: root.configModel
@@ -678,17 +711,20 @@ Rectangle {
     Connections {
         target: root.configModel
         function onSet_config_done(key, stored_value, success, error_msg) {
-            var newSaving = root.saving
+            var newSaving = root.cloneMap(root.saving)
             delete newSaving[key]
             root.saving = newSaving
 
             if (success) {
-                var newValues = root.values
+                root.actionError = ""
+                var newValues = root.cloneMap(root.values)
                 newValues[key] = stored_value
                 root.values = newValues
-                console.log(key + " saved")
             } else {
-                console.error("SetConfig failed for " + key + ": " + error_msg)
+                var reverted = root.cloneMap(root.values)
+                reverted[key] = root.currentModelValue(key)
+                root.values = reverted
+                root.actionError = "Could not save " + key + ": " + (error_msg || "unknown error")
             }
         }
     }
@@ -696,15 +732,47 @@ Rectangle {
     Connections {
         target: root.ruleChainsModel
         function onSet_rule_chain_done(role_name, stored_chain, success, error_msg) {
-            if (success) {
-                console.log(role_name + " chain saved")
+            root.setRuleChainSaving(role_name, false)
+            if (!success) {
+                root.actionError = "Could not save " + role_name + " chain: " + (error_msg || "unknown error")
             } else {
-                console.error("SetRuleChain failed for " + role_name + ": " + error_msg)
+                root.actionError = ""
             }
         }
     }
 
     // Helper functions
+    function cloneMap(map) {
+        var next = {}
+        var source = map || {}
+        for (var key in source) next[key] = source[key]
+        return next
+    }
+
+    function syncActiveModels(activeOverride) {
+        var active = activeOverride === undefined ? root.visible : activeOverride
+        if (root.configModel) {
+            root.configModel.set_active(active)
+        }
+        if (root.ruleChainsModel) {
+            root.ruleChainsModel.set_active(active)
+        }
+    }
+
+    function setRuleChainSaving(roleName, active) {
+        var next = root.cloneMap(root.ruleChainSaving)
+        if (active) {
+            next[roleName] = true
+        } else {
+            delete next[roleName]
+        }
+        root.ruleChainSaving = next
+    }
+
+    function isRuleChainSaving(roleName) {
+        return !!root.ruleChainSaving[roleName]
+    }
+
     function syncValuesFromModel() {
         if (!root.configModel) return
         var vals = {}
@@ -715,6 +783,17 @@ Rectangle {
             vals[key] = value
         }
         root.values = vals
+    }
+
+    function currentModelValue(key) {
+        if (!root.configModel) return ""
+        for (var i = 0; i < root.configModel.rowCount(); i++) {
+            var idx = root.configModel.index(i, 0)
+            if (root.configModel.data(idx, 257) === key) {
+                return root.configModel.data(idx, 259) || ""
+            }
+        }
+        return ""
     }
 
     function availableTabs() {
@@ -762,11 +841,12 @@ Rectangle {
     }
 
     function commitConfig(key, value) {
-        var newSaving = root.saving
+        root.actionError = ""
+        var newSaving = root.cloneMap(root.saving)
         newSaving[key] = true
         root.saving = newSaving
 
-        var newValues = root.values
+        var newValues = root.cloneMap(root.values)
         newValues[key] = value
         root.values = newValues
 
@@ -774,14 +854,11 @@ Rectangle {
     }
 
     function multiHas(key, opt) {
-        var val = root.values[key] || ""
-        var parts = val.split(/\s+/).filter(function(s) { return s !== "" })
-        return parts.indexOf(opt) >= 0
+        return multiParts(root.values[key]).indexOf(opt) >= 0
     }
 
     function toggleMulti(key, opt) {
-        var val = root.values[key] || ""
-        var parts = val.split(/\s+/).filter(function(s) { return s !== "" })
+        var parts = multiParts(root.values[key])
         var idx = parts.indexOf(opt)
         if (idx >= 0) {
             parts.splice(idx, 1)
@@ -789,6 +866,10 @@ Rectangle {
             parts.push(opt)
         }
         commitConfig(key, parts.join(" "))
+    }
+
+    function multiParts(value) {
+        return (value || "").split(/[\s,]+/).filter(function(s) { return s !== "" })
     }
 
     function buildSelectOptions(field) {
@@ -827,6 +908,7 @@ Rectangle {
 
     function moveChainItem(roleName, index, delta) {
         if (!root.ruleChainsModel) return
+        if (root.isRuleChainSaving(roleName)) return
         for (var i = 0; i < root.ruleChainsModel.rowCount(); i++) {
             var idx = root.ruleChainsModel.index(i, 0)
             var rn = root.ruleChainsModel.data(idx, 257)  // RoleNameRole
@@ -838,6 +920,7 @@ Rectangle {
                 var tmp = newChain[index]
                 newChain[index] = newChain[j]
                 newChain[j] = tmp
+                root.setRuleChainSaving(roleName, true)
                 root.ruleChainsModel.set_rule_chain(roleName, newChain)
                 break
             }
@@ -846,12 +929,14 @@ Rectangle {
 
     function removeChainItem(roleName, index) {
         if (!root.ruleChainsModel) return
+        if (root.isRuleChainSaving(roleName)) return
         for (var i = 0; i < root.ruleChainsModel.rowCount(); i++) {
             var idx = root.ruleChainsModel.index(i, 0)
             var rn = root.ruleChainsModel.data(idx, 257)
             if (rn === roleName) {
                 var chain = root.ruleChainsModel.data(idx, 259) || []
                 var newChain = chain.filter(function(_, k) { return k !== index })
+                root.setRuleChainSaving(roleName, true)
                 root.ruleChainsModel.set_rule_chain(roleName, newChain)
                 break
             }
@@ -860,17 +945,19 @@ Rectangle {
 
     function addChainItem(roleName, model) {
         if (!root.ruleChainsModel || !model) return
+        if (root.isRuleChainSaving(roleName)) return
         for (var i = 0; i < root.ruleChainsModel.rowCount(); i++) {
             var idx = root.ruleChainsModel.index(i, 0)
             var rn = root.ruleChainsModel.data(idx, 257)
             if (rn === roleName) {
                 var chain = root.ruleChainsModel.data(idx, 259) || []
                 if (chain.indexOf(model) >= 0) {
-                    console.error(model + " is already in the " + roleName + " chain")
+                    root.actionError = model + " is already in the " + roleName + " chain"
                     return
                 }
                 var newChain = chain.slice()
                 newChain.push(model)
+                root.setRuleChainSaving(roleName, true)
                 root.ruleChainsModel.set_rule_chain(roleName, newChain)
                 break
             }
@@ -879,6 +966,8 @@ Rectangle {
 
     function resetChain(roleName) {
         if (!root.ruleChainsModel) return
+        if (root.isRuleChainSaving(roleName)) return
+        root.setRuleChainSaving(roleName, true)
         root.ruleChainsModel.set_rule_chain(roleName, [])
     }
 }

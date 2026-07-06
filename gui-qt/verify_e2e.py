@@ -44,7 +44,7 @@ def main():
         # NewSession signature: (dir, model, perm string)
         result = send_rpc("NewSession", [
             "/home/avifenesh/projects/eigen",  # dir
-            "claude-sonnet-4",                  # model
+            "gpt-5",                            # model
             ""                                  # perm
         ])
 
@@ -92,7 +92,7 @@ def hello():
     try:
         result = send_rpc("NewSession", [
             "/home/avifenesh/projects/eigen",  # dir
-            "claude-sonnet-4",                  # model
+            "gpt-5",                            # model
             ""                                  # perm
         ])
 

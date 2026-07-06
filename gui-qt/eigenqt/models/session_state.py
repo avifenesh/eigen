@@ -1,8 +1,10 @@
 """
 session_state.py — SessionStateModel wrapping State RPC for session control strip.
 
-Exposes: model name, effort, perm, title, goal, catalog (available models + effort levels).
-Methods: setModel, setEffort, setPerm, setTitle (invoke RPC, update on success).
+Exposes: model name, effort, perm, title, goal, search/fast modes, tools, roots,
+catalog (available models + effort levels).
+Methods: setModel, setEffort, setPerm, setTitle, setGoal, setSearch, setFast
+(invoke RPC, update on success).
 """
 
 from typing import Optional
@@ -20,6 +22,11 @@ class SessionStateModel(QObject):
     permChanged = Signal()
     titleChanged = Signal()
     goalChanged = Signal()
+    searchChanged = Signal()
+    fastChanged = Signal()
+    fastOkChanged = Signal()
+    toolsChanged = Signal()
+    rootsChanged = Signal()
     catalogChanged = Signal()
     effortLevelsChanged = Signal()
     statusChanged = Signal()
@@ -34,6 +41,11 @@ class SessionStateModel(QObject):
         self._perm = ""
         self._title = ""
         self._goal = ""
+        self._search = ""
+        self._fast = False
+        self._fast_ok = False
+        self._tools: list[dict] = []
+        self._roots: list[str] = []
         self._catalog = []  # list of model names
         self._effort_levels = []  # list of effort levels for current model
         self._status = "idle"  # Computed from State RPC "running" field
@@ -62,6 +74,26 @@ class SessionStateModel(QObject):
     def goal(self) -> str:
         return self._goal
 
+    @Property(str, notify=searchChanged)
+    def search(self) -> str:
+        return self._search
+
+    @Property(bool, notify=fastChanged)
+    def fast(self) -> bool:
+        return self._fast
+
+    @Property(bool, notify=fastOkChanged)
+    def fastOk(self) -> bool:
+        return self._fast_ok
+
+    @Property(list, notify=toolsChanged)
+    def tools(self) -> list[dict]:
+        return self._tools
+
+    @Property(list, notify=rootsChanged)
+    def roots(self) -> list[str]:
+        return self._roots
+
     @Property(list, notify=catalogChanged)
     def catalog(self) -> list:
         return self._catalog
@@ -86,6 +118,17 @@ class SessionStateModel(QObject):
         self._perm = state.get("perm", "")
         self._title = state.get("title", "")
         self._goal = state.get("goal", "")
+        self._search = state.get("search", "")
+        self._fast = bool(state.get("fast", False))
+        self._fast_ok = bool(state.get("fastOk", False))
+        self._tools = [
+            {
+                "name": str(tool.get("name", "")),
+                "read_only": bool(tool.get("read_only", tool.get("readOnly", False))),
+            }
+            for tool in (state.get("tools") or [])
+            if isinstance(tool, dict) and tool.get("name")
+        ]
 
         # Compute status from "running" field
         running = state.get("running", False)
@@ -93,7 +136,8 @@ class SessionStateModel(QObject):
 
         # Primary working dir = first sandbox root (State has roots, not dir).
         roots = state.get("roots") or []
-        self._dir = roots[0] if roots else ""
+        self._roots = [str(root) for root in roots if root]
+        self._dir = self._roots[0] if self._roots else ""
 
         # Extract catalog (from routing.catalog)
         catalog_data = state.get("catalog") or {}
@@ -119,6 +163,11 @@ class SessionStateModel(QObject):
         self.permChanged.emit()
         self.titleChanged.emit()
         self.goalChanged.emit()
+        self.searchChanged.emit()
+        self.fastChanged.emit()
+        self.fastOkChanged.emit()
+        self.toolsChanged.emit()
+        self.rootsChanged.emit()
         self.catalogChanged.emit()
         self.effortLevelsChanged.emit()
         self.statusChanged.emit()
@@ -172,6 +221,42 @@ class SessionStateModel(QObject):
             self.seed(result["result"])
 
         self._client.call("SetTitle", self._session_id, title, callback=on_result)
+
+    @Slot(str)
+    def setGoal(self, goal: str) -> None:
+        """Set persistent goal via RPC SetGoal, update on success."""
+
+        def on_result(result: dict) -> None:
+            if "error" in result:
+                print(f"SetGoal error: {result['error']}")
+                return
+            self.seed(result["result"])
+
+        self._client.call("SetGoal", self._session_id, goal, callback=on_result)
+
+    @Slot(str)
+    def setSearch(self, search: str) -> None:
+        """Set live-search mode via RPC SetSearch, update on success."""
+
+        def on_result(result: dict) -> None:
+            if "error" in result:
+                print(f"SetSearch error: {result['error']}")
+                return
+            self.seed(result["result"])
+
+        self._client.call("SetSearch", self._session_id, search, callback=on_result)
+
+    @Slot(bool)
+    def setFast(self, fast: bool) -> None:
+        """Toggle fast/priority tier via RPC SetFast, update on success."""
+
+        def on_result(result: dict) -> None:
+            if "error" in result:
+                print(f"SetFast error: {result['error']}")
+                return
+            self.seed(result["result"])
+
+        self._client.call("SetFast", self._session_id, bool(fast), callback=on_result)
 
     @Slot()
     def refresh(self) -> None:

@@ -32,6 +32,8 @@ var colors = {
     brandDim: "#2e7670",
 
     accent: "#5fb0c4",
+    accentBg: "rgba(95,176,196,0.1)",
+    borderAccentFaint: "rgba(95,176,196,0.22)",
 
     success: "#8fc98a",
     successBg: "rgba(143,201,138,0.12)",

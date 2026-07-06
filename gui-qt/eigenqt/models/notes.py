@@ -14,6 +14,14 @@ from PySide6.QtCore import QAbstractListModel, QModelIndex, QObject, Property, Q
 from eigenqt.rpc import RpcClient
 
 
+def _err_text(result: dict) -> str:
+    """Extract a readable RPC error message."""
+    err = result.get("error")
+    if isinstance(err, dict):
+        return err.get("message", "Unknown error")
+    return str(err) if err else "Unknown error"
+
+
 class NotesModel(QAbstractListModel):
     """Note list model — NoteDTO {path, title} from ObsidianNotes."""
 
@@ -108,8 +116,10 @@ class NotesController(QObject):
     editing_changed = Signal()
     draft_changed = Signal()
     saving_changed = Signal()
+    action_error_changed = Signal()
     # Creating note signals
     creating_changed = Signal()
+    creating_busy_changed = Signal()
     new_name_changed = Signal()
 
     def __init__(self, client: RpcClient, parent: Optional[QObject] = None):
@@ -122,8 +132,11 @@ class NotesController(QObject):
         self._editing: bool = False
         self._draft: str = ""
         self._saving: bool = False
+        self._action_error: str = ""
         self._creating: bool = False
+        self._creating_busy: bool = False
         self._new_name: str = ""
+        self._open_seq: int = 0
 
         # Load on connected
         self._client.connected.connect(self._on_connected)
@@ -199,6 +212,17 @@ class NotesController(QObject):
             self._saving = value
             self.saving_changed.emit()
 
+    # Property: action_error
+    @Property(str, notify=action_error_changed)
+    def action_error(self):
+        return self._action_error
+
+    @action_error.setter
+    def action_error(self, value: str):
+        if self._action_error != value:
+            self._action_error = value
+            self.action_error_changed.emit()
+
     # Property: creating
     @Property(bool, notify=creating_changed)
     def creating(self):
@@ -209,6 +233,17 @@ class NotesController(QObject):
         if self._creating != value:
             self._creating = value
             self.creating_changed.emit()
+
+    # Property: creating_busy
+    @Property(bool, notify=creating_busy_changed)
+    def creating_busy(self):
+        return self._creating_busy
+
+    @creating_busy.setter
+    def creating_busy(self, value: bool):
+        if self._creating_busy != value:
+            self._creating_busy = value
+            self.creating_busy_changed.emit()
 
     # Property: new_name
     @Property(str, notify=new_name_changed)
@@ -256,38 +291,53 @@ class NotesController(QObject):
     @Slot(str, str)
     def open_note(self, path: str, title: str):
         """Open a note by path."""
+        self._open_seq += 1
+        seq = self._open_seq
         self.selected = {"path": path, "title": title}
         self.editing = False
         self.content = ""
+        self.action_error = ""
 
-        self._client.call("ObsidianRead", path, callback=self._on_read_result)
+        self._client.call(
+            "ObsidianRead",
+            path,
+            callback=lambda result, seq=seq, path=path: self._on_read_result(seq, path, result),
+        )
 
-    def _on_read_result(self, result: dict):
+    def _on_read_result(self, seq: int, path: str, result: dict):
         """Handle ObsidianRead RPC result."""
+        if seq != self._open_seq:
+            return
         if "error" in result:
-            # Could surface error toast, but for now just leave content empty
+            self.action_error = f"Could not open {path}: {_err_text(result)}"
             return
 
         self.content = result.get("result", "")
+        self.action_error = ""
 
     @Slot()
     def start_edit(self):
         """Start editing the current note."""
         self.draft = self.content
         self.editing = True
+        self.action_error = ""
 
     @Slot()
     def cancel_edit(self):
         """Cancel editing."""
         self.editing = False
+        self.action_error = ""
 
     @Slot()
     def save(self):
         """Save the edited note."""
         if not self.selected:
             return
+        if self.saving:
+            return
 
         self.saving = True
+        self.action_error = ""
         path = self.selected.get("path", "")
         self._client.call(
             "ObsidianWrite", path, self.draft, False, callback=self._on_save_result
@@ -297,27 +347,34 @@ class NotesController(QObject):
         """Handle ObsidianWrite result."""
         self.saving = False
         if "error" in result:
-            # Could surface error toast
+            path = (self.selected or {}).get("path", "note")
+            self.action_error = f"Could not save {path}: {_err_text(result)}"
             return
 
         self.content = self.draft
         self.editing = False
+        self.action_error = ""
 
     @Slot()
     def start_create(self):
         """Start the inline new-note composer."""
         self.creating = True
         self.new_name = ""
+        self.action_error = ""
 
     @Slot()
     def cancel_create(self):
         """Cancel the inline new-note composer."""
         self.creating = False
+        self.creating_busy = False
         self.new_name = ""
+        self.action_error = ""
 
     @Slot()
     def create_note(self):
         """Create a new note."""
+        if self.creating_busy:
+            return
         name = (self.new_name or "").strip()
         if not name:
             return
@@ -326,19 +383,24 @@ class NotesController(QObject):
         title = name.replace(".md", "")
         template = f"# {title}\n\n"
 
+        self.creating_busy = True
+        self.action_error = ""
         self._client.call(
             "ObsidianWrite", name, template, False, callback=self._on_create_result
         )
 
     def _on_create_result(self, result: dict):
         """Handle ObsidianWrite result for new note."""
+        self.creating_busy = False
         if "error" in result:
-            # Could surface error toast
+            name = (self.new_name or "").strip() or "note"
+            self.action_error = f"Could not create {name}: {_err_text(result)}"
             return
 
         rel = result.get("result", "")
         self.creating = False
         self.new_name = ""
+        self.action_error = ""
 
         # Reload note list
         self._notes_model.load("")
@@ -347,3 +409,8 @@ class NotesController(QObject):
         title = rel.replace(".md", "")
         self.open_note(rel, title)
         self.start_edit()
+
+    @Slot()
+    def clear_action_error(self):
+        """Dismiss the current action error."""
+        self.action_error = ""

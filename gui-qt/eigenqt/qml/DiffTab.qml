@@ -17,6 +17,7 @@ import "Theme.js" as Theme
 
 Item {
     id: root
+    objectName: "diffTabRoot"
 
     required property string sessionDir
     required property var rpcClient
@@ -118,30 +119,16 @@ Item {
 
                 Item { Layout.fillWidth: true }
 
-                // Refresh button
-                Rectangle {
-                    Layout.preferredWidth: 60
+                AppButton {
+                    objectName: "diffRefreshButton"
+                    text: root.loading ? "…" : "Refresh"
+                    compact: true
+                    variant: "ghost"
+                    toolTipText: "Refresh diff"
+                    enabled: !root.loading
+                    Layout.preferredWidth: 72
                     Layout.preferredHeight: 28
-                    color: refreshArea.containsMouse ? Theme.colors.stateHover : "transparent"
-                    radius: Theme.radius.sm
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: root.loading ? "…" : "refresh"
-                        font.family: Theme.uiFonts[0]
-                        font.pixelSize: Theme.fontSize.bodySm
-                        font.weight: Theme.fontWeight.medium
-                        color: Theme.colors.textMuted
-                    }
-
-                    MouseArea {
-                        id: refreshArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        enabled: !root.loading
-                        onClicked: load()
-                    }
+                    onClicked: root.load()
                 }
             }
         }

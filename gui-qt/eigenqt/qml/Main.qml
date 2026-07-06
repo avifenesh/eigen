@@ -1,28 +1,52 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 import "Theme.js" as Theme
 
 ApplicationWindow {
     id: root
+    objectName: "mainWindow"
     visible: true
+    readonly property int initialDesktopMarginX: 64
+    readonly property int initialDesktopMarginY: 96
+    readonly property int initialAvailableWidth: Screen.desktopAvailableWidth > 0 ? Screen.desktopAvailableWidth : 1280
+    readonly property int initialAvailableHeight: Screen.desktopAvailableHeight > 0 ? Screen.desktopAvailableHeight : 800
+    readonly property int initialWindowWidth: Math.min(1280, Math.max(minimumWidth, initialAvailableWidth - initialDesktopMarginX))
+    readonly property int initialWindowHeight: Math.min(800, Math.max(minimumHeight, initialAvailableHeight - initialDesktopMarginY))
+    minimumWidth: Math.min(900, Math.max(720, initialAvailableWidth - initialDesktopMarginX))
+    minimumHeight: Math.min(420, Math.max(320, initialAvailableHeight - initialDesktopMarginY))
     width: 1280
     height: 800
     title: "eigen"
+    property bool railVisible: true
+    Component.onCompleted: {
+        width = initialWindowWidth
+        height = initialWindowHeight
+    }
 
     color: Theme.colors.bgBase
 
     // Fonts: rely on system font stack (Inter if installed, else system sans-serif)
     // No qrc:/ resource compilation exists; Theme.js provides fallback stack
 
-    RowLayout {
+    ColumnLayout {
         anchors.fill: parent
+        spacing: 0
+
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.fillHeight: true
         spacing: 0
 
         // Left rail (navigation)
         Rail {
             id: rail
-            Layout.preferredWidth: 200
+            objectName: "mainRail"
+            visible: root.railVisible
+            Layout.preferredWidth: root.railVisible ? 200 : 0
+            Layout.minimumWidth: root.railVisible ? 200 : 0
+            Layout.maximumWidth: root.railVisible ? 200 : 0
             Layout.fillHeight: true
 
             currentRoute: root.currentRoute
@@ -32,6 +56,7 @@ ApplicationWindow {
             statsData: root.ctxStats
             daemonOnline: root.ctxDaemonOnline
             guiserverSha: root.ctxSha
+            sessionController: root.ctxSessionController
 
             onRouteChanged: function(route) {
                 root.currentRoute = route
@@ -41,6 +66,7 @@ ApplicationWindow {
         // Center: view routing via StackLayout
         StackLayout {
             id: stackLayout
+            objectName: "mainStackLayout"
             Layout.fillWidth: true
             Layout.fillHeight: true
             currentIndex: routeToIndex(root.currentRoute)
@@ -67,70 +93,92 @@ ApplicationWindow {
                 feedModel: root.ctxFeed
                 sessionsModel: root.ctxSessions
                 statsData: root.ctxStats
+                rpcClient: root.ctxRpc
 
                 onSessionClicked: function(sessionId) {
-                    root.currentRoute = "chat"
-                    sessionController.open_session(sessionId)
+                    root.openCreatedSession(sessionId)
                 }
 
-                onNewSessionClicked: {
-                    // TODO: wire NewSession RPC
-                    console.log("New session clicked")
+                onSessionStarted: function(sessionId) {
+                    root.openCreatedSession(sessionId)
                 }
             }
 
             // Index 1: Sessions view (full list)
             SessionsView {
+                sessionsModel: root.ctxSessions
                 onSessionClicked: function(sessionId) {
                     root.currentRoute = "chat"
-                    sessionController.open_session(sessionId)
+                    root.ctxSessionController.open_session(sessionId)
                 }
             }
 
             // Index 2: Live view (working/approval sessions)
             LiveView {
+                sessionsModel: root.ctxSessions
+                liveSessionsModel: root.ctxLive
+                rpcClient: root.ctxRpc
+                newSessionPending: root.pendingNewSessionToken !== 0
                 onOpenSession: function(sessionId) {
                     root.currentRoute = "chat"
                     sessionController.open_session(sessionId)
                 }
 
                 onNewSessionRequested: {
-                    // TODO: New session dialog (for now, just a placeholder)
-                    console.log("New session requested")
+                    root.requestNewSession("")
                 }
             }
 
             // Index 3: Chat view
             ChatView {
-                sessionId: sessionController.session_id
-                sessionStateModel: sessionController.session_state_model
-                commandsModel: sessionController.commands_model
+                sessionId: root.ctxSessionController ? root.ctxSessionController.session_id : ""
+                sessionStateModel: root.ctxSessionController ? root.ctxSessionController.session_state_model : null
+                commandsModel: root.ctxSessionController ? root.ctxSessionController.commands_model : null
+                transcriptModel: root.ctxTranscript
+                approvalsModel: root.ctxApprovals
+                rpcClient: root.ctxRpc
+                clipboardHelper: root.ctxClipboard
+                highlighter: root.ctxHighlighter
 
                 onBackClicked: {
                     root.currentRoute = "sessions"
-                    sessionController.detach()
+                    root.ctxSessionController.detach()
+                }
+                onRouteRequested: function(route) {
+                    root.currentRoute = route
+                }
+                onRailToggleRequested: {
+                    root.railVisible = !root.railVisible
                 }
             }
 
             // Index 4: Board view
             BoardView {
-                // boardModel and kanbanModel are context properties
+                boardModel: root.ctxBoard
+                kanbanModel: root.ctxKanban
+                rpcClient: root.ctxRpc
+                sessionsModel: root.ctxSessions
+                onSessionStarted: function(sessionId) {
+                    root.openCreatedSession(sessionId)
+                }
             }
 
             // Index 5: Tasks view (background agents)
             TasksView {
                 tasksModel: root.ctxTasks
+                rpcClient: root.ctxRpc
             }
 
             // Index 6: Skills view (capability gallery)
             SkillsView {
                 skillsModel: root.ctxSkills
                 proposalsModel: root.ctxProposals
+                rpcClient: root.ctxRpc
             }
 
             // Index 7: Memory view (durable notes browser)
             MemoryView {
-                // memoryModel is a context property
+                memoryModel: root.ctxMemory
             }
 
             // Index 8: Notes view (Obsidian vault browser)
@@ -140,7 +188,7 @@ ApplicationWindow {
 
             // Index 9: Connectors view (MCP connectors management)
             ConnectorsView {
-                // connectorsModel is a context property
+                connectorsModel: root.ctxConnectors
             }
 
             // Index 10: Config view (editable config fields + rule chains)
@@ -158,10 +206,10 @@ ApplicationWindow {
 
     // Status strip (bottom)
     Rectangle {
-        anchors.bottom: parent.bottom
-        anchors.left: parent.left
-        anchors.right: parent.right
-        height: 28
+        objectName: "mainStatusStrip"
+        Layout.fillWidth: true
+        Layout.preferredHeight: 28
+        Layout.minimumHeight: 28
         color: Theme.colors.bgWell
         border.width: 1
         border.color: Theme.colors.borderHairline
@@ -174,6 +222,7 @@ ApplicationWindow {
 
             // Daemon status
             Row {
+                objectName: "mainDaemonStatus"
                 spacing: Theme.space.sm
                 Rectangle {
                     width: 8
@@ -193,6 +242,7 @@ ApplicationWindow {
 
             // Guiserver SHA
             Label {
+                objectName: "mainGuiserverSha"
                 text: "guiserver: " + (guiserverSha.substring(0, 8) || "unknown")
                 font.family: Theme.monoFonts[0]
                 font.pixelSize: Theme.fontSize.micro
@@ -203,12 +253,14 @@ ApplicationWindow {
 
             // Current session
             Label {
-                text: stackLayout.currentIndex === 3 ? "session: " + sessionController.session_id : ""
+                objectName: "mainSessionStatus"
+                text: stackLayout.currentIndex === 3 && root.ctxSessionController ? "session: " + root.ctxSessionController.session_id : ""
                 font.family: Theme.monoFonts[0]
                 font.pixelSize: Theme.fontSize.micro
                 color: Theme.colors.textMuted
             }
         }
+    }
     }
 
     // Unshadowed aliases for the Python context properties: inside a child
@@ -219,12 +271,22 @@ ApplicationWindow {
     readonly property var ctxTasks: tasksModel
     readonly property var ctxDashboard: dashboardModel
     readonly property var ctxFeed: feedModel
+    readonly property var ctxBoard: boardModel
+    readonly property var ctxKanban: kanbanModel
     readonly property var ctxSkills: skillsModel
     readonly property var ctxProposals: proposalsModel
+    readonly property var ctxMemory: memoryModel
     readonly property var ctxNotes: notesController
+    readonly property var ctxConnectors: connectorsModel
     readonly property var ctxConfigModel: configModel
     readonly property var ctxRuleChainsModel: ruleChainsModel
     readonly property var ctxReviewersModel: reviewersModel
+    readonly property var ctxTranscript: transcriptModel
+    readonly property var ctxApprovals: approvalsModel
+    readonly property var ctxClipboard: clipboardHelper
+    readonly property var ctxHighlighter: highlighter
+    readonly property var ctxRpc: rpcClient
+    readonly property var ctxSessionController: sessionController
     readonly property var ctxStats: statsData
     readonly property bool ctxDaemonOnline: daemonOnline
     readonly property string ctxSha: guiserverSha
@@ -238,4 +300,38 @@ ApplicationWindow {
 
     // Current route (navigation state)
     property string currentRoute: "home"
+    readonly property int activeRouteIndex: stackLayout.currentIndex
+    property int pendingNewSessionToken: 0
+    property string actionError: ""
+
+    Connections {
+        target: root.ctxRpc ? root.ctxRpc : null
+        function onCallDone(token, payload) {
+            if (token !== root.pendingNewSessionToken) return
+            root.pendingNewSessionToken = 0
+            if (payload && payload.error !== undefined && payload.error !== null) {
+                root.actionError = typeof payload.error === "string" ? payload.error : JSON.stringify(payload.error)
+                return
+            }
+            root.openCreatedSession(payload ? String(payload.result || "") : "")
+        }
+    }
+
+    function refreshSessionLists() {
+        if (root.ctxSessions && root.ctxSessions.refresh) root.ctxSessions.refresh()
+        if (root.ctxLive && root.ctxLive.refresh) root.ctxLive.refresh()
+    }
+
+    function requestNewSession(dir) {
+        if (!root.ctxRpc || root.pendingNewSessionToken !== 0) return
+        root.actionError = ""
+        root.pendingNewSessionToken = root.ctxRpc.callToken("NewSession", [dir || "", "", ""])
+    }
+
+    function openCreatedSession(sessionId) {
+        if (!sessionId) return
+        root.currentRoute = "chat"
+        root.ctxSessionController.open_session(sessionId)
+        root.refreshSessionLists()
+    }
 }

@@ -230,11 +230,7 @@ class FeedModel(QAbstractListModel):
 
     @Slot(str, str, result=str)
     def start_from_feed(self, dir_path: str, task: str) -> str:
-        """
-        Start session from feed (async RPC, returns empty; actual session ID via callback).
-        For QML: use callToken pattern.
-        """
-        # This is a placeholder; QML should use client.callToken("StartFromFeed", [dir, task])
+        """Legacy no-op slot; HomeView starts feed work through the RPC token path."""
         return ""
 
     @Slot()

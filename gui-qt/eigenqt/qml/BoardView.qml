@@ -8,6 +8,8 @@ Rectangle {
     id: root
     color: Theme.colors.bgBase
 
+    signal sessionStarted(string sessionId)
+
     // View toggle: "projects" or "kanban"
     property string viewMode: "projects"
 
@@ -15,9 +17,13 @@ Rectangle {
     property string ownerFilter: "all"
     property string stateFilter: "all"
 
-    // Models (injected as context properties from Python)
-    // property var boardModel
-    // property var kanbanModel
+    property var boardModel: null
+    property var kanbanModel: null
+    property var rpcClient: null
+    property var sessionsModel: null
+    property var pendingActions: ({})
+    property var tokenActions: ({})
+    property string actionError: ""
 
     // Role constants (Qt.UserRole + N, matching BoardModel Python roles)
     readonly property int dirRole: 257
@@ -54,7 +60,8 @@ Rectangle {
         }
         return result.sort()
     }
-    property var owners: computeOwners()
+    property int boardRows: 0
+    property var owners: []
 
     // Owner filter options
     property var ownerOptions: {
@@ -75,12 +82,132 @@ Rectangle {
         { value: "dirty", label: "Uncommitted" }
     ]
 
+    Connections {
+        target: root.rpcClient ? root.rpcClient : null
+        function onCallDone(token, payload) {
+            root.handleCallDone(token, payload)
+        }
+    }
+
+    Connections {
+        target: root.boardModel ? root.boardModel : null
+        ignoreUnknownSignals: true
+        function onModelReset() { root.syncBoardRows() }
+        function onRowsInserted() { root.syncBoardRows() }
+        function onRowsRemoved() { root.syncBoardRows() }
+        function onDataChanged() { root.syncBoardRows() }
+    }
+
     Component.onCompleted: {
+        syncBoardRows()
         if (boardModel) boardModel.load()
         if (kanbanModel) kanbanModel.load()
     }
 
     // Helpers
+    function syncBoardRows() {
+        boardRows = boardModel ? boardModel.rowCount() : 0
+        owners = computeOwners()
+    }
+
+    function safeObjectName(value) {
+        return String(value || "").replace(/[^A-Za-z0-9_]+/g, "_")
+    }
+
+    function errorText(error) {
+        if (error === undefined || error === null) return "Something went wrong."
+        if (typeof error === "string") return error
+        if (error.message) return String(error.message)
+        return JSON.stringify(error)
+    }
+
+    function isPending(key) {
+        return pendingActions[key] === true
+    }
+
+    function setPending(key, pending) {
+        var next = Object.assign({}, pendingActions)
+        if (pending) next[key] = true
+        else delete next[key]
+        pendingActions = next
+    }
+
+    function rememberToken(token, key, method) {
+        var next = Object.assign({}, tokenActions)
+        next[token] = { key: key, method: method }
+        tokenActions = next
+    }
+
+    function forgetToken(token) {
+        var next = Object.assign({}, tokenActions)
+        delete next[token]
+        tokenActions = next
+    }
+
+    function startAction(key, method, args) {
+        if (!rpcClient || isPending(key)) return
+        actionError = ""
+        setPending(key, true)
+        var token = rpcClient.callToken(method, args || [])
+        rememberToken(token, key, method)
+    }
+
+    function handleCallDone(token, payload) {
+        var action = tokenActions[token]
+        if (!action) return
+        forgetToken(token)
+        setPending(action.key, false)
+        if (payload && payload.error !== undefined && payload.error !== null) {
+            actionError = errorText(payload.error)
+            return
+        }
+        var sessionId = payload ? String(payload.result || "") : ""
+        if (sessionId !== "") {
+            sessionStarted(sessionId)
+        }
+    }
+
+    function startLaneSession(dir) {
+        if (!dir) return
+        startAction("lane:" + dir, "NewSession", [dir, "", ""])
+    }
+
+    function startBoardItem(item) {
+        if (item.kind === "github" && item.url) {
+            startAction(
+                "item:" + item.key,
+                isPrItem(item) ? "ReviewPR" : "WorkIssue",
+                [item.url]
+            )
+            return
+        }
+        if (item.task) {
+            startAction("item:" + item.key, "StartFromFeed", [item.dir || "", item.task])
+            return
+        }
+        if (item.url) Qt.openUrlExternally(item.url)
+    }
+
+    function startKanbanCard(card) {
+        if (card.kind === "pr" && card.url) {
+            startAction("card:" + card.key, "ReviewPR", [card.url])
+            return
+        }
+        if (card.kind === "issue" && card.url) {
+            startAction("card:" + card.key, "WorkIssue", [card.url])
+            return
+        }
+        if (card.kind === "git" && card.task) {
+            startAction("card:" + card.key, "StartFromFeed", [card.dir || "", card.task])
+            return
+        }
+        if (card.url) Qt.openUrlExternally(card.url)
+    }
+
+    function isPrItem(item) {
+        return (item.detail || "").indexOf("PR") === 0
+    }
+
     function laneMatches(idx) {
         var remote = boardModel.data(idx, remoteRole)
         var repo = boardModel.data(idx, repoRole)
@@ -124,6 +251,13 @@ Rectangle {
     function cardVerb(kind) {
         if (kind === "pr") return "Review →"
         if (kind === "issue") return "Work →"
+        return "Start →"
+    }
+
+    function itemVerb(item) {
+        if (item.kind === "github") {
+            return isPrItem(item) ? "Review →" : "Work →"
+        }
         return "Start →"
     }
 
@@ -214,9 +348,21 @@ Rectangle {
             }
         }
 
+        Label {
+            visible: root.actionError !== ""
+            text: root.actionError
+            font.pixelSize: Theme.fontSize.label
+            color: Theme.colors.error
+            wrapMode: Text.WordWrap
+            Layout.fillWidth: true
+            Layout.leftMargin: Theme.space.xl
+            Layout.rightMargin: Theme.space.xl
+            Layout.topMargin: Theme.space.sm
+        }
+
         // Filters row (only for projects view)
         Rectangle {
-            visible: viewMode === "projects" && boardModel && boardModel.rowCount() > 0
+            visible: viewMode === "projects" && boardModel && boardRows > 0
             Layout.fillWidth: true
             Layout.preferredHeight: visible ? 50 : 0
             color: Theme.colors.bgBase
@@ -315,15 +461,15 @@ Rectangle {
                     height: parent.height
 
                     Repeater {
-                        model: boardModel ? boardModel.rowCount() : 0
+                        model: boardModel ? boardRows : 0
                         delegate: Rectangle {
-                            readonly property int idx: model.index
-                            visible: laneMatches(boardModel.index(model.index, 0))
+                            readonly property int idx: index
+                            visible: laneMatches(boardModel.index(index, 0))
                             width: 300
                             height: parent.height
                             color: Theme.colors.bgRaised
                             border.width: 1
-                            border.color: boardModel.data(boardModel.index(model.index, 0), remoteRole) ? Theme.colors.borderSubtle : Theme.colors.borderHairline
+                            border.color: boardModel.data(boardModel.index(index, 0), remoteRole) ? Theme.colors.borderSubtle : Theme.colors.borderHairline
                             radius: Theme.radius.lg
 
                             ColumnLayout {
@@ -337,6 +483,12 @@ Rectangle {
                                     spacing: Theme.space.sm
 
                                     Label {
+                                        objectName: {
+                                            var laneKey = boardModel.data(boardModel.index(idx, 0), remoteRole)
+                                                ? boardModel.data(boardModel.index(idx, 0), repoRole)
+                                                : boardModel.data(boardModel.index(idx, 0), dirRole)
+                                            return "boardLaneName_" + root.safeObjectName(laneKey)
+                                        }
                                         text: boardModel.data(boardModel.index(idx, 0), nameRole)
                                         font.family: Theme.monoFonts[0]
                                         font.pixelSize: Theme.fontSize.bodySm
@@ -344,6 +496,7 @@ Rectangle {
                                         color: Theme.colors.textPrimary
                                         elide: Text.ElideRight
                                         Layout.fillWidth: true
+                                        opacity: root.isPending("lane:" + boardModel.data(boardModel.index(idx, 0), dirRole)) ? 0.55 : 1.0
 
                                         MouseArea {
                                             anchors.fill: parent
@@ -355,7 +508,7 @@ Rectangle {
                                                 if (remote && url) {
                                                     Qt.openUrlExternally(url)
                                                 } else {
-                                                    boardModel.open_lane_chat(dir)
+                                                    root.startLaneSession(dir)
                                                 }
                                             }
                                         }
@@ -601,7 +754,7 @@ Rectangle {
                                                     }
 
                                                     Label {
-                                                        visible: modelData.detail
+                                                        visible: !!modelData.detail
                                                         text: modelData.detail || ""
                                                         font.family: Theme.uiFonts[0]
                                                         font.pixelSize: Theme.fontSize.micro
@@ -616,23 +769,24 @@ Rectangle {
 
                                                         Item { Layout.fillWidth: true }
 
-                                                        Button {
-                                                            visible: modelData.url
+                                                        AppButton {
+                                                            objectName: "boardItemOpen_" + root.safeObjectName(modelData.key)
+                                                            visible: !!modelData.url
                                                             text: "Open"
                                                             onClicked: Qt.openUrlExternally(modelData.url)
+                                                            variant: "ghost"
+                                                            compact: true
                                                         }
 
-                                                        Button {
-                                                            visible: modelData.kind === "github" || modelData.task
-                                                            text: {
-                                                                if (modelData.kind === "github") {
-                                                                    return (modelData.detail || "").startsWith("PR") ? "Review →" : "Work →"
-                                                                }
-                                                                return "Start →"
-                                                            }
+                                                        AppButton {
+                                                            objectName: "boardItemAction_" + root.safeObjectName(modelData.key)
+                                                            visible: modelData.kind === "github" || !!modelData.task
+                                                            enabled: !root.isPending("item:" + modelData.key)
+                                                            text: root.isPending("item:" + modelData.key) ? "Starting..." : root.itemVerb(modelData)
+                                                            variant: "secondary"
+                                                            compact: true
                                                             onClicked: {
-                                                                // TODO: wire actions (ReviewPR, WorkIssue, StartFromFeed)
-                                                                console.log("Card action:", modelData.key)
+                                                                root.startBoardItem(modelData)
                                                             }
                                                         }
                                                     }
@@ -761,7 +915,7 @@ Rectangle {
 
                                                 // Left border accent for cards needing attention
                                                 Rectangle {
-                                                    visible: modelData.needsYou
+                                                    visible: !!modelData.needsYou
                                                     anchors.left: parent.left
                                                     anchors.top: parent.top
                                                     anchors.bottom: parent.bottom
@@ -806,7 +960,7 @@ Rectangle {
                                                         }
 
                                                         Label {
-                                                            visible: modelData.number
+                                                            visible: !!modelData.number
                                                             text: "#" + (modelData.number || "")
                                                             font.family: Theme.monoFonts[0]
                                                             font.pixelSize: Theme.fontSize.micro
@@ -814,7 +968,7 @@ Rectangle {
                                                         }
 
                                                         Label {
-                                                            visible: modelData.ageHours
+                                                            visible: !!modelData.ageHours
                                                             text: ageLabel(modelData.ageHours)
                                                             font.family: Theme.uiFonts[0]
                                                             font.pixelSize: Theme.fontSize.micro
@@ -846,7 +1000,7 @@ Rectangle {
                                                         spacing: Theme.space.xs
 
                                                         Rectangle {
-                                                            visible: modelData.session
+                                                            visible: !!modelData.session
                                                             width: sessionBadge.implicitWidth + Theme.space.sm
                                                             height: 18
                                                             radius: Theme.radius.full
@@ -866,7 +1020,7 @@ Rectangle {
                                                         }
 
                                                         Rectangle {
-                                                            visible: modelData.draft
+                                                            visible: !!modelData.draft
                                                             width: draftBadge.implicitWidth + Theme.space.sm
                                                             height: 18
                                                             radius: Theme.radius.full
@@ -932,17 +1086,23 @@ Rectangle {
 
                                                         Item { Layout.fillWidth: true }
 
-                                                        Button {
-                                                            visible: modelData.url
+                                                        AppButton {
+                                                            objectName: "kanbanCardOpen_" + root.safeObjectName(modelData.key)
+                                                            visible: !!modelData.url
                                                             text: "Open"
                                                             onClicked: Qt.openUrlExternally(modelData.url)
+                                                            variant: "ghost"
+                                                            compact: true
                                                         }
 
-                                                        Button {
-                                                            text: cardVerb(modelData.kind)
+                                                        AppButton {
+                                                            objectName: "kanbanCardAction_" + root.safeObjectName(modelData.key)
+                                                            enabled: !root.isPending("card:" + modelData.key)
+                                                            text: root.isPending("card:" + modelData.key) ? "Starting..." : cardVerb(modelData.kind)
+                                                            variant: "secondary"
+                                                            compact: true
                                                             onClicked: {
-                                                                // TODO: wire actions
-                                                                console.log("Kanban card action:", modelData.key)
+                                                                root.startKanbanCard(modelData)
                                                             }
                                                         }
                                                     }

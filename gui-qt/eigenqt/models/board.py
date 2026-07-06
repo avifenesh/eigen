@@ -36,6 +36,7 @@ class BoardModel(QAbstractListModel):
 
     loadingChanged = Signal()
     errorChanged = Signal()
+    sessionStarted = Signal(str)
 
     def __init__(self, client: RpcClient, parent: Optional[QObject] = None):
         super().__init__(parent)
@@ -180,7 +181,9 @@ class BoardModel(QAbstractListModel):
         if "error" in result:
             print(f"NewSession error: {result['error']}", file=sys.stderr)
             return
-        # TODO: emit signal with session ID for routing
+        session_id = result.get("result") or ""
+        if session_id:
+            self.sessionStarted.emit(session_id)
 
 
 class KanbanModel(QObject):

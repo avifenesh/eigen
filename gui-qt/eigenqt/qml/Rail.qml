@@ -23,6 +23,10 @@ Rectangle {
     // Daemon status for footer
     property bool daemonOnline: false
     property string guiserverSha: ""
+    property var sessionController: null
+    property int sessionsEpoch: 0
+
+    onSessionsModelChanged: sessionsEpoch += 1
 
     ColumnLayout {
         anchors.fill: parent
@@ -105,6 +109,7 @@ Rectangle {
 
                     // Nav items
                     NavItem {
+                        id: homeNavItem
                         Layout.fillWidth: true
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
@@ -117,6 +122,7 @@ Rectangle {
                     }
 
                     NavItem {
+                        id: chatNavItem
                         Layout.fillWidth: true
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
@@ -129,18 +135,27 @@ Rectangle {
                         onClicked: root.routeChanged("chat")
 
                         // Running session sub-list (expanded under Chat when there are live sessions)
-                        property var runningSessions: getRunningSessionsList()
+                        property var runningSessions: {
+                            root.sessionsEpoch
+                            return root.getRunningSessionsList()
+                        }
+                        readonly property int qaRunningSessionCount: runningSessions ? runningSessions.length : 0
+                        readonly property int qaRunningDelegateCount: runningSessionsRepeater.count
 
                         ColumnLayout {
-                            visible: parent.runningSessions ? parent.runningSessions.length > 0 : false
+                            visible: chatNavItem.runningSessions ? chatNavItem.runningSessions.length > 0 : false
                             width: parent.width
                             Layout.fillWidth: true
                             Layout.leftMargin: Theme.space.xxxl
                             spacing: 1
 
                             Repeater {
-                                model: parent.parent.runningSessions
+                                id: runningSessionsRepeater
+                                model: chatNavItem.qaRunningSessionCount
                                 delegate: Rectangle {
+                                    readonly property var session: chatNavItem.runningSessions[index] || ({})
+
+                                    objectName: "navRunningSession_" + root.safeObjectName(root.sessionValue(session, "id"))
                                     Layout.fillWidth: true
                                     implicitHeight: 26
                                     color: subMouseArea.containsMouse ? Theme.colors.stateHover : "transparent"
@@ -153,7 +168,9 @@ Rectangle {
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
                                             // Open the session FIRST (sets active session), then switch route
-                                            sessionController.open_session(modelData.id)
+                                            if (root.sessionController) {
+                                                root.sessionController.open_session(root.sessionValue(session, "id"))
+                                            }
                                             root.routeChanged("chat")
                                         }
                                     }
@@ -169,7 +186,7 @@ Rectangle {
                                             width: 6
                                             height: 6
                                             radius: 3
-                                            color: modelData.status === "approval" ? Theme.colors.dotWarn : Theme.colors.dotLive
+                                            color: root.sessionValue(session, "status") === "approval" ? Theme.colors.dotWarn : Theme.colors.dotLive
 
                                             // Pulse animation for live sessions
                                             SequentialAnimation on opacity {
@@ -181,7 +198,7 @@ Rectangle {
                                         }
 
                                         Label {
-                                            text: shortTitle(modelData)
+                                            text: shortTitle(session)
                                             font.family: Theme.uiFonts[0]
                                             font.pixelSize: Theme.fontSize.label
                                             color: Theme.colors.textSecondary
@@ -209,7 +226,10 @@ Rectangle {
                         route: "sessions"
                         label: "Sessions"
                         glyph: "≡"
-                        badge: root.sessionsModel ? root.sessionsModel.rowCount() : 0
+                        badge: {
+                            root.sessionsEpoch
+                            return root.sessionsModel ? root.sessionsModel.rowCount() : 0
+                        }
                         badgeLive: false
                         isActive: root.currentRoute === "sessions"
                         onClicked: root.routeChanged("sessions")
@@ -432,6 +452,16 @@ Rectangle {
         }
     }
 
+    Connections {
+        target: root.sessionsModel ? root.sessionsModel : null
+        ignoreUnknownSignals: true
+
+        function onModelReset() { root.sessionsEpoch += 1 }
+        function onRowsInserted() { root.sessionsEpoch += 1 }
+        function onRowsRemoved() { root.sessionsEpoch += 1 }
+        function onDataChanged() { root.sessionsEpoch += 1 }
+    }
+
     // Helper functions
     function runningSessionsCount() {
         if (!root.statsData) return 0
@@ -439,6 +469,7 @@ Rectangle {
     }
 
     function workingAndApprovalCount() {
+        root.sessionsEpoch
         if (!root.sessionsModel) return 0
         var count = 0
         for (var i = 0; i < root.sessionsModel.rowCount(); i++) {
@@ -452,6 +483,7 @@ Rectangle {
     }
 
     function getRunningSessionsList() {
+        root.sessionsEpoch
         if (!root.sessionsModel) return []
         var running = []
         for (var i = 0; i < root.sessionsModel.rowCount(); i++) {
@@ -470,10 +502,20 @@ Rectangle {
     }
 
     function shortTitle(session) {
-        var t = (session.title || "").trim()
+        var t = root.sessionValue(session, "title").trim()
         if (t) return t
-        var d = (session.dir || "").replace(/\/+$/, "")
+        var d = root.sessionValue(session, "dir").replace(/\/+$/, "")
         return d.slice(d.lastIndexOf("/") + 1) || "session"
     }
-}
 
+    function sessionValue(session, key) {
+        if (!session) return ""
+        var value = session[key]
+        if (value === undefined || value === null) return ""
+        return String(value)
+    }
+
+    function safeObjectName(value) {
+        return String(value || "").replace(/[^A-Za-z0-9_]/g, "_")
+    }
+}
