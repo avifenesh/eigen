@@ -18,6 +18,11 @@ Rectangle {
     signal sessionClicked(string sessionId)
 
     Component.onCompleted: scheduleAutoPrune()
+    onSessionsModelChanged: {
+        root.confirmRemove = ({})
+        root.autoPruneAttempted = false
+        root.scheduleAutoPrune()
+    }
     onVisibleChanged: {
         if (visible) scheduleAutoPrune()
     }

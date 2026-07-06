@@ -374,6 +374,34 @@ def capture_qt_message(mode, context, message):
 
 previous_handler = qInstallMessageHandler(capture_qt_message)
 try:
+    late_sessions = FakeSessionsModel()
+    late_view = QQuickView()
+    late_view.setResizeMode(QQuickView.SizeRootObjectToView)
+    late_view.setWidth(SIZE.width())
+    late_view.setHeight(SIZE.height())
+    late_view.engine().addImportPath(str(ROOT / "eigenqt" / "qml"))
+    late_view.setSource(QUrl.fromLocalFile(str(ROOT / "eigenqt" / "qml" / "SessionsView.qml")))
+    if late_view.status() == QQuickView.Error or late_view.rootObject() is None:
+        raise AssertionError([error.toString() for error in late_view.errors()])
+    late_view.show()
+    late_root = late_view.rootObject()
+    pump(app, 20)
+    if late_root.property("qaAutoPruneAttempted") is not False:
+        raise AssertionError("Sessions view auto-pruned before a model was attached")
+    late_root.setProperty("sessionsModel", late_sessions)
+    pump(app, 20)
+    QTest.qWait(180)
+    pump(app, 30)
+    if ("PruneSessions",) not in late_sessions.calls:
+        raise AssertionError(f"Late sessions model did not auto-prune: {late_sessions.calls}")
+    if late_root.property("qaAutoPruneAttempted") is not True:
+        raise AssertionError("Late sessions model did not record auto-prune attempt")
+    if late_sessions.totalCount != 1:
+        raise AssertionError(f"Late auto-prune did not remove empty session: total={late_sessions.totalCount}")
+    late_view.hide()
+    late_view.setSource(QUrl())
+    pump(app, 8)
+
     sessions = FakeSessionsModel()
     view = QQuickView()
     view.setResizeMode(QQuickView.SizeRootObjectToView)
