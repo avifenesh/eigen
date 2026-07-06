@@ -499,7 +499,6 @@ class ConnectorsModel(QObject):
             url,
             desc,
             callback=on_done,
-            error_callback=on_error,
         )
 
     @Slot()
@@ -528,9 +527,7 @@ class ConnectorsModel(QObject):
             self._clear_connecting(name)
             self._fail_action(f"Could not add {name}", err)
 
-        self._client.call(
-            "AddCatalogConnector", name, callback=on_done, error_callback=on_error
-        )
+        self._client.call("AddCatalogConnector", name, callback=on_done)
 
     @Slot(str)
     def connect_connector(self, name: str):
@@ -543,7 +540,11 @@ class ConnectorsModel(QObject):
             self._clear_connecting(name)
             self._fail_action(f"Could not connect {name}", err)
 
-        self._client.call("ConnectConnector", name, error_callback=on_error)
+        def on_done(result):
+            if "error" in result:
+                on_error(result["error"])
+
+        self._client.call("ConnectConnector", name, callback=on_done)
 
     @Slot(str)
     def disconnect_connector(self, name: str):
@@ -563,9 +564,7 @@ class ConnectorsModel(QObject):
             self._clear_busy(name)
             self._fail_action(f"Could not disconnect {name}", err)
 
-        self._client.call(
-            "DisconnectConnector", name, callback=on_done, error_callback=on_error
-        )
+        self._client.call("DisconnectConnector", name, callback=on_done)
 
     @Slot(str)
     def remove_connector(self, name: str):
@@ -588,9 +587,7 @@ class ConnectorsModel(QObject):
             self._clear_busy(name)
             self._fail_action(f"Could not remove {name}", err)
 
-        self._client.call(
-            "RemoveConnector", name, callback=on_done, error_callback=on_error
-        )
+        self._client.call("RemoveConnector", name, callback=on_done)
 
     @Slot(str)
     def confirm_remove_connector_set(self, name: str):
@@ -623,9 +620,7 @@ class ConnectorsModel(QObject):
             self._clear_busy(name)
             self._fail_action(f"Could not update {name}", err)
 
-        self._client.call(
-            "SetMCPServerDisabled", name, disabled, callback=on_done, error_callback=on_error
-        )
+        self._client.call("SetMCPServerDisabled", name, disabled, callback=on_done)
 
     @Slot(str)
     def remove_server(self, name: str):
@@ -648,9 +643,7 @@ class ConnectorsModel(QObject):
             self._clear_busy(name)
             self._fail_action(f"Could not remove MCP server {name}", err)
 
-        self._client.call(
-            "RemoveMCPServer", name, callback=on_done, error_callback=on_error
-        )
+        self._client.call("RemoveMCPServer", name, callback=on_done)
 
     @Slot(str)
     def confirm_remove_server_set(self, name: str):
@@ -712,9 +705,7 @@ class ConnectorsModel(QObject):
             self.srv_saving = False
             self.action_error = f"Could not save MCP server {name}: {_err_text(err)}"
 
-        self._client.call(
-            "SaveMCPServer", server_dto, callback=on_done, error_callback=on_error
-        )
+        self._client.call("SaveMCPServer", server_dto, callback=on_done)
 
     @Slot()
     def cancel_local_server(self):
@@ -751,9 +742,7 @@ class ConnectorsModel(QObject):
             self.obsidian_busy = False
             self._fail_action("Could not choose Obsidian vault", err)
 
-        self._client.call(
-            "ChooseObsidianVault", path, callback=on_done, error_callback=on_error
-        )
+        self._client.call("ChooseObsidianVault", path, callback=on_done)
 
     @Slot()
     def toggle_revuto(self):
@@ -782,9 +771,7 @@ class ConnectorsModel(QObject):
             self._clear_revuto_busy(repo)
             self._fail_action(f"Could not update {repo}", err)
 
-        self._client.call(
-            "RevutoSetPaused", repo, paused, callback=on_done, error_callback=on_error
-        )
+        self._client.call("RevutoSetPaused", repo, paused, callback=on_done)
 
     @Slot(str)
     def revuto_trigger(self, repo: str):
@@ -803,9 +790,7 @@ class ConnectorsModel(QObject):
             self._clear_revuto_busy(repo)
             self._fail_action(f"Could not run review for {repo}", err)
 
-        self._client.call(
-            "RevutoTrigger", repo, "review", callback=on_done, error_callback=on_error
-        )
+        self._client.call("RevutoTrigger", repo, "review", callback=on_done)
 
     @Slot()
     def setup_google(self):
@@ -825,9 +810,7 @@ class ConnectorsModel(QObject):
             self.google_busy = False
             self._fail_action("Could not import Google client", err)
 
-        self._client.call(
-            "ImportGoogleClient", callback=on_done, error_callback=on_error
-        )
+        self._client.call("ImportGoogleClient", callback=on_done)
 
     @Slot()
     def connect_google(self):
@@ -846,9 +829,7 @@ class ConnectorsModel(QObject):
             self.google_busy = False
             self._fail_action("Could not connect Google", err)
 
-        self._client.call(
-            "ConnectGoogle", callback=on_done, error_callback=on_error
-        )
+        self._client.call("ConnectGoogle", callback=on_done)
 
     @Slot()
     def disconnect_google(self):
@@ -867,6 +848,4 @@ class ConnectorsModel(QObject):
             self.google_busy = False
             self._fail_action("Could not disconnect Google", err)
 
-        self._client.call(
-            "DisconnectGoogle", callback=on_done, error_callback=on_error
-        )
+        self._client.call("DisconnectGoogle", callback=on_done)

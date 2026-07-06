@@ -20,13 +20,11 @@ class MockRpcClient:
         self.calls = []
         self.failures = {}
 
-    def call(self, method, *args, callback=None, error_callback=None):
+    def call(self, method, *args, callback=None):
         self.calls.append((method, args))
         if method in self.failures:
             if callback:
                 callback({"error": self.failures[method]})
-            elif error_callback:
-                error_callback(self.failures[method])
             return
         if callback:
             callback({"result": self._mock_result(method, *args)})
@@ -54,13 +52,12 @@ class DeferredRpcClient:
         self.connected = MockSignal()
         self.calls = []
 
-    def call(self, method, *args, callback=None, error_callback=None):
+    def call(self, method, *args, callback=None):
         self.calls.append(
             {
                 "method": method,
                 "args": args,
                 "callback": callback,
-                "error_callback": error_callback,
             }
         )
 

@@ -354,7 +354,7 @@ Rectangle {
                                 slashPopup.acceptSelection()
                                 event.accepted = true
                             } else {
-                                sendButton.clicked()
+                                root.sendComposer()
                                 event.accepted = true
                             }
                         }

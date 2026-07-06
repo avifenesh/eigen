@@ -1432,6 +1432,20 @@ if composer.property("text") != "":
 if call_count(client, "SendInput") + call_count(client, "SteerInput") != send_start:
     raise AssertionError(f"Custom slash command leaked into SendInput/SteerInput: {client.calls}")
 
+normal_send_start = call_count(client, "SendInput") + call_count(client, "SteerInput")
+composer.setProperty("text", "Plain Enter follow up")
+composer.forceActiveFocus()
+pump(app, 8)
+QTest.keyClick(chat_view, Qt.Key_Return)
+pump(app, 18)
+if ("SendInput", ("s-chat", "Plain Enter follow up", [], [])) not in client.calls:
+    raise AssertionError(f"Plain Return did not send composer text: {client.calls}")
+if composer.property("text") != "":
+    raise AssertionError("Plain Return did not clear the composer after sending")
+if call_count(client, "SendInput") + call_count(client, "SteerInput") != normal_send_start + 1:
+    raise AssertionError(f"Plain Return made the wrong number of sends: {client.calls}")
+send_start += 1
+
 composer.setProperty("text", "/rename")
 pump(app, 8)
 click_item(app, chat_view, chat, "chatSendButton")
