@@ -20,10 +20,16 @@ Rectangle {
     property int dockTabIndex: 0
     property string actionError: ""
     property string dismissedSessionActionError: ""
+    property string dismissedCommandsLoadError: ""
     readonly property string sessionActionError: sessionStateModel ? sessionStateModel.actionError : ""
     readonly property string visibleSessionActionError: sessionActionError !== "" && sessionActionError !== dismissedSessionActionError
         ? sessionActionError : ""
-    readonly property string visibleActionError: visibleSessionActionError !== "" ? visibleSessionActionError : actionError
+    readonly property string commandsLoadError: commandsModel ? commandsModel.loadError : ""
+    readonly property string visibleCommandsLoadError: commandsLoadError !== "" && commandsLoadError !== dismissedCommandsLoadError
+        ? commandsLoadError : ""
+    readonly property string visibleActionError: visibleSessionActionError !== ""
+        ? visibleSessionActionError
+        : (visibleCommandsLoadError !== "" ? visibleCommandsLoadError : actionError)
     property string inputMode: "steer"
     property var queuedInputs: []
     readonly property int qaTranscriptRows: transcriptListView.count
@@ -54,6 +60,11 @@ Rectangle {
     onSessionActionErrorChanged: {
         if (root.sessionActionError === "") {
             root.dismissedSessionActionError = ""
+        }
+    }
+    onCommandsLoadErrorChanged: {
+        if (root.commandsLoadError === "") {
+            root.dismissedCommandsLoadError = ""
         }
     }
 
@@ -361,6 +372,7 @@ Rectangle {
                             toolTipText: "Dismiss chat action error"
                             onClicked: {
                                 root.dismissedSessionActionError = root.sessionActionError
+                                root.dismissedCommandsLoadError = root.commandsLoadError
                                 root.actionError = ""
                             }
                             Layout.preferredWidth: 28

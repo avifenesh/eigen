@@ -6,9 +6,19 @@ Returns: list of {name, description, scope} for filterable slash-command dropdow
 
 from typing import Optional
 
-from PySide6.QtCore import QAbstractListModel, QModelIndex, QObject, Qt, Slot
+from PySide6.QtCore import QAbstractListModel, QModelIndex, QObject, Property, Qt, Signal, Slot
 
 from eigenqt.rpc import RpcClient
+
+
+def _err_text(value) -> str:
+    if isinstance(value, dict):
+        nested = value.get("message") or value.get("error")
+        if nested:
+            return str(nested)
+    if value is None:
+        return "Unknown error"
+    return str(value)
 
 
 BUILTIN_COMMANDS: tuple[dict[str, str], ...] = (
@@ -71,6 +81,8 @@ BUILTIN_COMMANDS: tuple[dict[str, str], ...] = (
 class CommandsModel(QAbstractListModel):
     """Commands list for slash-command popup (filterable)."""
 
+    loadErrorChanged = Signal()
+
     # Qt roles
     NameRole = Qt.UserRole + 1
     DescriptionRole = Qt.UserRole + 2
@@ -82,6 +94,7 @@ class CommandsModel(QAbstractListModel):
         self._commands: list[dict] = [dict(command) for command in BUILTIN_COMMANDS]
         self._filtered: list[dict] = self._commands[:]
         self._filter = ""
+        self._load_error = ""
 
         # Fetch commands on init
         self._fetch_commands()
@@ -113,6 +126,10 @@ class CommandsModel(QAbstractListModel):
         if role == self.ScopeRole:
             return cmd.get("scope", "")
         return None
+
+    @Property(str, notify=loadErrorChanged)
+    def loadError(self) -> str:
+        return self._load_error
 
     @Slot(str)
     def setFilter(self, filter_text: str) -> None:
@@ -147,6 +164,10 @@ class CommandsModel(QAbstractListModel):
                 return str(command.get("scope", ""))
         return ""
 
+    @Slot()
+    def clearLoadError(self) -> None:
+        self._set_load_error("")
+
     def _filtered_commands(self) -> list[dict]:
         """Return commands matching the current filter."""
         if not self._filter:
@@ -170,11 +191,12 @@ class CommandsModel(QAbstractListModel):
 
         def on_result(result: dict) -> None:
             if "error" in result:
-                print(f"Commands RPC error: {result['error']}")
+                self._set_load_error(f"Could not load custom slash commands: {_err_text(result.get('error'))}")
                 return
             commands = result.get("result") or []
             if not isinstance(commands, list):
                 return
+            self._set_load_error("")
             merged = [dict(command) for command in BUILTIN_COMMANDS]
             seen = {command["name"].lower() for command in merged}
             for command in commands:
@@ -198,3 +220,9 @@ class CommandsModel(QAbstractListModel):
             self._replace_filtered(self._filtered_commands())
 
         self._client.call("Commands", callback=on_result)
+
+    def _set_load_error(self, value: str) -> None:
+        if value == self._load_error:
+            return
+        self._load_error = value
+        self.loadErrorChanged.emit()

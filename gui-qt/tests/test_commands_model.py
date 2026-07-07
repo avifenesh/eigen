@@ -4,12 +4,17 @@ from eigenqt.models.commands import CommandsModel
 
 
 class FakeRpcClient(QObject):
-    def __init__(self):
+    def __init__(self, error=None):
         super().__init__()
         self.calls = []
+        self.error = error
 
     def call(self, method, *args, callback=None):
         self.calls.append((method, args))
+        if self.error is not None:
+            if callback:
+                callback({"error": self.error})
+            return
         if callback:
             callback(
                 {
@@ -73,3 +78,18 @@ def test_commands_model_merges_builtins_with_custom_commands():
             "scope": "user",
         },
     ]
+    assert model.loadError == ""
+
+
+def test_commands_model_surfaces_custom_command_load_error_and_keeps_builtins():
+    model = CommandsModel(FakeRpcClient({"message": "daemon offline"}))
+    names = [row["name"] for row in model_rows(model)]
+
+    assert "help" in names
+    assert "ship-it" not in names
+    assert model.hasCommand("help") is True
+    assert model.hasCommand("ship-it") is False
+    assert model.loadError == "Could not load custom slash commands: daemon offline"
+
+    model.clearLoadError()
+    assert model.loadError == ""

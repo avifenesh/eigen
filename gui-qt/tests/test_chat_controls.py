@@ -521,6 +521,8 @@ class ApprovalModel(QAbstractListModel):
 
 
 class CommandModel(QAbstractListModel):
+    loadErrorChanged = Signal()
+
     NameRole = Qt.UserRole + 1
     DescriptionRole = Qt.UserRole + 2
     ScopeRole = Qt.UserRole + 3
@@ -546,6 +548,7 @@ class CommandModel(QAbstractListModel):
         ]
         self._filtered = list(self._commands)
         self.filters = []
+        self._load_error = ""
 
     def roleNames(self):
         return {
@@ -603,6 +606,18 @@ class CommandModel(QAbstractListModel):
             if row["name"].lower() == needle:
                 return row.get("scope", "")
         return ""
+
+    @Property(str, notify=loadErrorChanged)
+    def loadError(self):
+        return self._load_error
+
+    def setLoadError(self, message):
+        self._load_error = message
+        self.loadErrorChanged.emit()
+
+    @Slot()
+    def clearLoadError(self):
+        self.setLoadError("")
 
 
 class FakeClipboard(QObject):
@@ -1013,6 +1028,25 @@ chat.setProperty("dismissedSessionActionError", chat.property("sessionActionErro
 pump(app, 18)
 if chat.property("visibleActionError") != "":
     raise AssertionError("Session setting action error did not dismiss")
+
+commands.setLoadError("Could not load custom slash commands: daemon offline")
+pump(app, 18)
+if "custom slash commands" not in chat.property("visibleActionError"):
+    raise AssertionError(f"Commands load error did not surface in chat banner: {chat.property('visibleActionError')!r}")
+error_banner = find_item(chat, "chatActionError")
+error_text = find_item(chat, "chatActionErrorText")
+if error_banner is None or error_banner.property("visible") is not True:
+    raise AssertionError("Commands load error did not show a visible chat action error")
+if error_text is None or "daemon offline" not in error_text.property("text"):
+    raise AssertionError(f"Commands load error text was wrong: {error_text.property('text') if error_text else None}")
+dismiss = find_item(chat, "chatDismissActionError")
+if dismiss is None or not dismiss.property("qaTextFits"):
+    raise AssertionError("Commands load error dismiss button did not render cleanly")
+assert_item_inside_window(dismiss, "chatDismissActionError commands")
+chat.setProperty("dismissedCommandsLoadError", chat.property("commandsLoadError"))
+pump(app, 18)
+if chat.property("visibleActionError") != "":
+    raise AssertionError("Commands load error did not dismiss")
 
 composer = find_item(chat, "chatComposerTextArea")
 if composer is None:
