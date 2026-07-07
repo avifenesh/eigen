@@ -220,6 +220,7 @@ Rectangle {
                         objectName: "memoryComposeTextArea"
                         text: activeMemoryModel.draft
                         placeholderText: "A durable note for " + activeMemoryModel.scope_label + " memory…"
+                        placeholderTextColor: Theme.colors.textGhost
                         font.family: Theme.uiFonts[0]
                         font.pixelSize: Theme.fontSize.bodySm
                         color: Theme.colors.textPrimary
@@ -882,6 +883,7 @@ Rectangle {
                                             objectName: "memoryProfileTextArea"
                                             text: activeMemoryModel.profile_draft
                                             placeholderText: "Add your own notes — eigen keeps the rest current…"
+                                            placeholderTextColor: Theme.colors.textGhost
                                             font.family: Theme.uiFonts[0]
                                             font.pixelSize: Theme.fontSize.bodySm
                                             color: Theme.colors.textPrimary
@@ -1019,6 +1021,7 @@ Rectangle {
                                         objectName: "memoryBanTitleInput"
                                         Layout.fillWidth: true
                                         placeholderText: "Short title"
+                                        placeholderTextColor: Theme.colors.textGhost
                                         text: activeMemoryModel.ban_title
                                         font.family: Theme.uiFonts[0]
                                         font.pixelSize: Theme.fontSize.bodySm
@@ -1055,6 +1058,7 @@ Rectangle {
                                             objectName: "memoryBanRuleTextArea"
                                             text: activeMemoryModel.ban_rule
                                             placeholderText: "What the agent must not do (" + activeMemoryModel.scope_label + " scope)…"
+                                            placeholderTextColor: Theme.colors.textGhost
                                             font.family: Theme.uiFonts[0]
                                             font.pixelSize: Theme.fontSize.bodySm
                                             color: Theme.colors.textPrimary

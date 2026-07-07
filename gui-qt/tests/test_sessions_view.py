@@ -42,6 +42,13 @@ ISSUE_MARKERS = (
     "Cannot assign",
     "Cannot read property",
 )
+EXPECTED_PLACEHOLDER_COLOR = "#52605e"
+
+
+def color_name(value):
+    if hasattr(value, "name"):
+        return value.name().lower()
+    return str(value).lower()
 
 
 class FakeSessionsModel(QAbstractListModel):
@@ -428,6 +435,10 @@ try:
         raise AssertionError(f"Auto-prune did not remove the empty session: total={sessions.totalCount}")
 
     search = click_item(app, view, root, "sessionsSearchField")
+    if color_name(search.property("placeholderTextColor")) != EXPECTED_PLACEHOLDER_COLOR:
+        raise AssertionError(
+            f"Sessions search placeholder color regressed: {color_name(search.property('placeholderTextColor'))}"
+        )
     for key in (Qt.Key_G, Qt.Key_U, Qt.Key_I):
         QTest.keyClick(view, key)
     pump(app, 20)

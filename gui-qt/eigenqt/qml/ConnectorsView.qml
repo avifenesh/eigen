@@ -374,7 +374,7 @@ Rectangle {
                                 font.family: Theme.monoFonts[0]
                                 font.pixelSize: Theme.fontSize.bodySm
                                 color: Theme.colors.textPrimary
-                                placeholderTextColor: Theme.colors.textFaint
+                                placeholderTextColor: Theme.colors.textGhost
                                 leftPadding: Theme.space.lg
                                 rightPadding: Theme.space.lg
                                 property bool qaForceKeyboardFocus: false
@@ -418,7 +418,7 @@ Rectangle {
                                 font.family: Theme.monoFonts[0]
                                 font.pixelSize: Theme.fontSize.bodySm
                                 color: Theme.colors.textPrimary
-                                placeholderTextColor: Theme.colors.textFaint
+                                placeholderTextColor: Theme.colors.textGhost
                                 leftPadding: Theme.space.lg
                                 rightPadding: Theme.space.lg
                                 property bool qaForceKeyboardFocus: false
@@ -461,7 +461,7 @@ Rectangle {
                                 onTextChanged: if (connectorsModel) connectorsModel.add_desc = text
                                 font.pixelSize: Theme.fontSize.bodySm
                                 color: Theme.colors.textPrimary
-                                placeholderTextColor: Theme.colors.textFaint
+                                placeholderTextColor: Theme.colors.textGhost
                                 leftPadding: Theme.space.lg
                                 rightPadding: Theme.space.lg
                                 property bool qaForceKeyboardFocus: false
@@ -730,7 +730,7 @@ Rectangle {
                                     font.family: Theme.monoFonts[0]
                                     font.pixelSize: Theme.fontSize.bodySm
                                     color: Theme.colors.textPrimary
-                                    placeholderTextColor: Theme.colors.textFaint
+                                    placeholderTextColor: Theme.colors.textGhost
                                     leftPadding: Theme.space.lg
                                     rightPadding: Theme.space.lg
                                     property bool qaForceKeyboardFocus: false
@@ -774,7 +774,7 @@ Rectangle {
                                     font.family: Theme.monoFonts[0]
                                     font.pixelSize: Theme.fontSize.bodySm
                                     color: Theme.colors.textPrimary
-                                    placeholderTextColor: Theme.colors.textFaint
+                                    placeholderTextColor: Theme.colors.textGhost
                                     leftPadding: Theme.space.lg
                                     rightPadding: Theme.space.lg
                                     property bool qaForceKeyboardFocus: false
@@ -817,7 +817,7 @@ Rectangle {
                                     onTextChanged: if (connectorsModel) connectorsModel.srv_desc = text
                                     font.pixelSize: Theme.fontSize.bodySm
                                     color: Theme.colors.textPrimary
-                                    placeholderTextColor: Theme.colors.textFaint
+                                    placeholderTextColor: Theme.colors.textGhost
                                     leftPadding: Theme.space.lg
                                     rightPadding: Theme.space.lg
                                     property bool qaForceKeyboardFocus: false
@@ -862,7 +862,7 @@ Rectangle {
                                     font.family: Theme.monoFonts[0]
                                     font.pixelSize: Theme.fontSize.bodySm
                                     color: Theme.colors.textPrimary
-                                    placeholderTextColor: Theme.colors.textFaint
+                                    placeholderTextColor: Theme.colors.textGhost
                                     leftPadding: Theme.space.lg
                                     rightPadding: Theme.space.lg
                                     topPadding: Theme.space.sm
@@ -907,7 +907,7 @@ Rectangle {
                                     font.family: Theme.monoFonts[0]
                                     font.pixelSize: Theme.fontSize.bodySm
                                     color: Theme.colors.textPrimary
-                                    placeholderTextColor: Theme.colors.textFaint
+                                    placeholderTextColor: Theme.colors.textGhost
                                     leftPadding: Theme.space.lg
                                     rightPadding: Theme.space.lg
                                     topPadding: Theme.space.sm

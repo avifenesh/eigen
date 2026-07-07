@@ -82,6 +82,7 @@ Rectangle {
                         id: searchField
                         Layout.fillWidth: true
                         placeholderText: "Search notes…"
+                        placeholderTextColor: Theme.colors.textGhost
                         onTextChanged: {
                             searchTimer.restart()
                         }
@@ -142,6 +143,7 @@ Rectangle {
                         objectName: "notesCreateNameInput"
                         Layout.fillWidth: true
                         placeholderText: "Inbox/Idea.md"
+                        placeholderTextColor: Theme.colors.textGhost
                         text: root.notesController ? root.notesController.new_name : ""
                         enabled: !(root.notesController && root.notesController.creating_busy)
                         property bool qaForceKeyboardFocus: false

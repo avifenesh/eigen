@@ -320,6 +320,7 @@ Rectangle {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 32
                         placeholderText: "Filter skills…"
+                        placeholderTextColor: Theme.colors.textGhost
                         text: root.query
                         onTextChanged: root.query = text
 
@@ -393,6 +394,7 @@ Rectangle {
                         Layout.preferredWidth: 240
                         Layout.preferredHeight: 32
                         placeholderText: root.addMode === "path" ? "Skill path or SKILL.md" : "owner/repo"
+                        placeholderTextColor: Theme.colors.textGhost
                         text: root.addInput
                         onTextChanged: root.addInput = text
                         enabled: !root.installing
@@ -896,7 +898,7 @@ Rectangle {
                 ColumnLayout {
                     readonly property bool canRemove: !!(root.openSkill && root.openSkill.source === "user")
 
-                    Layout.preferredWidth: root.confirmRemove ? 164 : 84
+                    Layout.preferredWidth: root.confirmRemove ? (root.removing ? 192 : 164) : 84
                     Layout.preferredHeight: canRemove ? 72 : 32
                     Layout.maximumHeight: Layout.preferredHeight
                     spacing: Theme.space.sm
@@ -913,7 +915,7 @@ Rectangle {
                             toolTipText: root.openSkill ? "Remove " + root.openSkill.name : "Remove skill"
                             variant: "danger"
                             enabled: !root.removing
-                            Layout.preferredWidth: 84
+                            Layout.preferredWidth: root.removing ? 112 : 84
                             Layout.preferredHeight: 32
                             onClicked: removeSkill()
                         }
@@ -941,6 +943,7 @@ Rectangle {
                         text: "✕"
                         toolTipText: "Close preview"
                         variant: "ghost"
+                        enabled: !root.removing
                         leftPadding: Theme.space.sm
                         rightPadding: Theme.space.sm
                         Layout.alignment: Qt.AlignRight

@@ -610,6 +610,7 @@ Rectangle {
                                     Layout.preferredHeight: 32
                                     text: root.values[fieldDelegate.fieldKey] || ""
                                     placeholderText: "(unset)"
+                                    placeholderTextColor: Theme.colors.textGhost
                                     onEditingFinished: {
                                         if (text !== fieldDelegate.fieldValue) {
                                             commitConfig(fieldDelegate.fieldKey, text)

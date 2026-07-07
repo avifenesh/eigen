@@ -1264,6 +1264,19 @@ def main():
 
     ok = capture_view("skills-markdown-preview", "SkillsView.qml", setup_skills, show_skills_markdown_preview) and ok
 
+    def show_skills_remove_confirm(_view, root):
+        show_skills_markdown_preview(_view, root)
+        root.setProperty("confirmRemove", True)
+
+    ok = capture_view("skills-remove-confirm", "SkillsView.qml", setup_skills, show_skills_remove_confirm) and ok
+
+    def show_skills_remove_pending(_view, root):
+        show_skills_markdown_preview(_view, root)
+        root.setProperty("confirmRemove", True)
+        root.setProperty("removing", True)
+
+    ok = capture_view("skills-remove-pending", "SkillsView.qml", setup_skills, show_skills_remove_pending) and ok
+
     def show_skills_rpc_error(_view, root):
         root.setProperty(
             "openSkill",

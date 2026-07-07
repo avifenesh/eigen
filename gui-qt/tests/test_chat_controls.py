@@ -40,6 +40,7 @@ SIZE = QSize(1180, 820)
 VALID_PNG_BASE64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAG0lEQVQImWPUb3j7/4deMQPjp5M+/3/2cTMAAFRICM+3aAs3AAAAAElFTkSuQmCC"
 )
+EXPECTED_PLACEHOLDER_COLOR = "#52605e"
 
 
 class FakeRpcClient(QObject):
@@ -608,6 +609,12 @@ def pump(app, rounds=12):
         app.processEvents()
 
 
+def color_name(value):
+    if hasattr(value, "name"):
+        return value.name().lower()
+    return str(value).lower()
+
+
 def item_visibility_score(item):
     width = float(item.property("width") or 0)
     height = float(item.property("height") or 0)
@@ -777,6 +784,10 @@ offline_view, offline_chat = make_view(
 offline_composer = find_item(offline_chat, "chatComposerTextArea")
 if offline_composer is None:
     raise AssertionError("Offline composer did not render")
+if color_name(offline_composer.property("placeholderTextColor")) != EXPECTED_PLACEHOLDER_COLOR:
+    raise AssertionError(
+        f"Chat composer placeholder color regressed: {color_name(offline_composer.property('placeholderTextColor'))}"
+    )
 click_item(app, offline_view, offline_chat, "chatDockToggleButton")
 if offline_chat.property("dockOpen") is not False:
     raise AssertionError("Offline dock toggle opened the dock without RPC")

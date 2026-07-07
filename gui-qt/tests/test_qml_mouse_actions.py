@@ -32,6 +32,19 @@ from eigenqt.models.skills import ProposalsModel, SkillsModel
 
 ROOT = Path.cwd()
 SIZE = QSize(1200, 800)
+EXPECTED_PLACEHOLDER_COLOR = "#52605e"
+
+
+def color_name(value):
+    if hasattr(value, "name"):
+        return value.name().lower()
+    return str(value).lower()
+
+
+def assert_placeholder_color(item, name):
+    color = color_name(item.property("placeholderTextColor")) if item is not None else ""
+    if color != EXPECTED_PLACEHOLDER_COLOR:
+        raise AssertionError(f"{name} placeholder color regressed: {color}")
 
 
 class FakeRpcClient(QObject):
@@ -619,6 +632,10 @@ def check_connectors(app, client):
             raise AssertionError("missing connector add authorize button")
         if add_button.property("enabled"):
             raise AssertionError("empty connector form should not be submittable")
+        add_name = find_visual_item(root, "connectorsAddNameInput")
+        if add_name is None:
+            raise AssertionError("missing connector name input")
+        assert_placeholder_color(add_name, "connector name")
         set_text(app, root, "connectorsAddNameInput", "linear")
         if add_button.property("enabled"):
             raise AssertionError("connector form without URL should not be submittable")
@@ -682,6 +699,10 @@ def check_connectors(app, client):
             raise AssertionError("missing local server save button")
         if save_button.property("enabled"):
             raise AssertionError("empty local server form should not be submittable")
+        server_name = find_visual_item(root, "connectorsServerNameInput")
+        if server_name is None:
+            raise AssertionError("missing local server name input")
+        assert_placeholder_color(server_name, "local server name")
         set_text(app, root, "connectorsServerNameInput", "github-local")
         if save_button.property("enabled"):
             raise AssertionError("local server form without command should not be submittable")
@@ -729,6 +750,10 @@ def check_memory(app, client):
         if not memory.composing:
             invoke_click(button)
             pump(app)
+        compose = find_visual_item(root, "memoryComposeTextArea")
+        if compose is None:
+            raise AssertionError("missing memory compose input")
+        assert_placeholder_color(compose, "memory compose")
         set_text(app, root, "memoryComposeTextArea", "Mouse action memory proof")
         client.failures["AppendMemory"] = "save denied"
         client.delays["AppendMemory"] = 45
@@ -939,6 +964,10 @@ def check_notes(app, client):
         if not notes.creating:
             invoke_click(button)
             pump(app)
+        create_name = find_visual_item(root, "notesCreateNameInput")
+        if create_name is None:
+            raise AssertionError("missing notes create input")
+        assert_placeholder_color(create_name, "notes create")
         set_text(app, root, "notesCreateNameInput", "Inbox/Mouse.md")
 
         client.failures["ObsidianWrite"] = "create denied"
@@ -1191,9 +1220,18 @@ def check_skills(app, client):
             raise AssertionError("skill remove submitted duplicate calls while pending")
         if not root.property("removing"):
             raise AssertionError("skill remove did not expose pending state")
+        pending_confirm = find_visual_item(root, "skillRemoveConfirmButton_frontend-design")
+        if pending_confirm is None:
+            raise AssertionError("missing pending skill remove button")
+        if pending_confirm.property("qaText") != "Removing…":
+            raise AssertionError(f"skill remove pending button had wrong text: {pending_confirm.property('qaText')!r}")
+        if pending_confirm.property("qaTextFits") is not True:
+            raise AssertionError("skill remove pending button text does not fit")
         close = find_visual_item(root, "skillPreviewCloseButton")
         if close is None:
             raise AssertionError("missing skill preview close button while removing")
+        if close.property("enabled") is not False:
+            raise AssertionError("skill preview close button stayed enabled while remove was pending")
         if not close.property("qaTextFits"):
             raise AssertionError("skill preview close button text does not fit")
         invoke_click(close)
@@ -1241,6 +1279,10 @@ def check_skills(app, client):
             raise AssertionError("missing skills add-mode segmented buttons")
         if root.property("addMode") != "path" or not path_mode.property("selected") or github_mode.property("selected"):
             raise AssertionError("skills add-mode did not start on the path segment")
+        input_item = find_visual_item(root, "skillsAddInput")
+        if input_item is None:
+            raise AssertionError("missing skills add input")
+        assert_placeholder_color(input_item, "skills add")
         set_text(app, root, "skillsAddInput", "/tmp/missing-skill")
         client.failures["InstallSkillFromPath"] = "install denied"
         start = len(client.calls)

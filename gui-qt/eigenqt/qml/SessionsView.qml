@@ -100,6 +100,7 @@ Rectangle {
                     enabled: root.sessionsModel !== null
                     text: root.queryText()
                     placeholderText: "Search sessions..."
+                    placeholderTextColor: Theme.colors.textGhost
                     font.family: Theme.uiFonts[0]
                     font.pixelSize: Theme.fontSize.bodySm
                     color: Theme.colors.textPrimary

@@ -360,6 +360,7 @@ Rectangle {
                         id: composerTextArea
                         objectName: "chatComposerTextArea"
                         placeholderText: "Type a message (Enter to send, Shift+Enter for newline, / for commands)"
+                        placeholderTextColor: Theme.colors.textGhost
                         font.family: Theme.uiFonts[0]
                         font.pixelSize: Theme.fontSize.body
                         color: Theme.colors.textPrimary
