@@ -891,12 +891,50 @@ perm_combo = find_item(chat, "sessionPermCombo")
 effort_combo = find_item(chat, "sessionEffortCombo")
 search_combo = find_item(chat, "sessionSearchCombo")
 fast_switch = find_item(chat, "sessionFastSwitch")
-if model_combo is None or perm_combo is None or effort_combo is None or search_combo is None or fast_switch is None:
+title_field = find_item(chat, "sessionTitleField")
+if (
+    model_combo is None
+    or perm_combo is None
+    or effort_combo is None
+    or search_combo is None
+    or fast_switch is None
+    or title_field is None
+):
     raise AssertionError("Session settings controls did not render")
 if model_combo.property("qaText") != "gpt-5":
     raise AssertionError(f"Model combo did not show current model: {model_combo.property('qaText')}")
 if search_combo.property("qaText") != "off":
     raise AssertionError(f"Search combo did not show current search mode: {search_combo.property('qaText')}")
+if title_field.property("qaText") != "Qt chat controls":
+    raise AssertionError(f"Title field did not show current title: {title_field.property('qaText')}")
+if title_field.property("qaTextFits") is not True:
+    raise AssertionError(f"Title field text does not fit: {title_field.property('qaText')!r}")
+assert_item_inside_window(title_field, "sessionTitleField")
+QTest.mouseDClick(chat_view, Qt.LeftButton, Qt.NoModifier, item_center(chat_view, title_field))
+pump(app, 18)
+if title_field.property("qaEditing") is not True:
+    raise AssertionError("Double-click did not put the session title field into edit mode")
+title_field.setProperty("text", "Qt title edited from field")
+QTest.keyClick(chat_view, Qt.Key_Return)
+pump(app, 18)
+if ("SetTitle", "Qt title edited from field") not in state.calls:
+    raise AssertionError(f"Title field did not call setTitle: {state.calls}")
+if title_field.property("qaEditing") is not False:
+    raise AssertionError("Return did not leave the title field read-only after editing")
+if title_field.property("qaTextFits") is not True:
+    raise AssertionError(f"Edited title field text does not fit: {title_field.property('qaText')!r}")
+title_field.forceActiveFocus()
+QTest.keyClick(chat_view, Qt.Key_F2)
+pump(app, 18)
+if title_field.property("qaEditing") is not True:
+    raise AssertionError("F2 did not put the session title field into edit mode")
+title_field.setProperty("text", "Qt title edited with keyboard")
+QTest.keyClick(chat_view, Qt.Key_Return)
+pump(app, 18)
+if ("SetTitle", "Qt title edited with keyboard") not in state.calls:
+    raise AssertionError(f"Title field F2 edit did not call setTitle: {state.calls}")
+if title_field.property("qaEditing") is not False:
+    raise AssertionError("Return did not leave the F2 title edit read-only")
 assert_combo_popup_clean(chat_view, chat, model_combo, "session model combo", 0)
 assert_combo_popup_clean(chat_view, chat, perm_combo, "session permission combo", 0)
 assert_combo_popup_clean(chat_view, chat, effort_combo, "session effort combo", 0)

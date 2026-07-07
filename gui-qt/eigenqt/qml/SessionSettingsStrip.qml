@@ -148,13 +148,30 @@ Rectangle {
         // Title (double-click to rename)
         TextField {
             id: titleField
+            objectName: "sessionTitleField"
             text: sessionState ? sessionState.title : ""
             font.family: Theme.uiFonts[0]
             font.pixelSize: Theme.fontSize.h3
             font.weight: Theme.fontWeight.semibold
             color: Theme.colors.textPrimary
             Layout.fillWidth: true
-            readOnly: !activeFocus
+            readOnly: true
+            focusPolicy: Qt.StrongFocus
+            selectByMouse: !readOnly
+            Accessible.name: "Session title"
+            readonly property bool qaEditing: !readOnly
+            readonly property bool qaTextFits: !titleField.contentItem || !titleField.contentItem.text
+                || (titleField.contentItem.paintedWidth <= Math.max(0, width - leftPadding - rightPadding) + 0.5)
+            readonly property string qaText: text
+
+            function beginEdit() {
+                if (!sessionState) {
+                    return
+                }
+                readOnly = false
+                forceActiveFocus()
+                selectAll()
+            }
 
             background: Rectangle {
                 color: titleField.activeFocus ? Theme.colors.surfaceRaised : "transparent"
@@ -168,16 +185,20 @@ Rectangle {
                     sessionState.setTitle(text)
                 }
                 readOnly = true
+                deselect()
+            }
+
+            Keys.onPressed: function(event) {
+                if (event.key === Qt.Key_F2 && titleField.readOnly) {
+                    titleField.beginEdit()
+                    event.accepted = true
+                }
             }
 
             MouseArea {
                 anchors.fill: parent
                 enabled: titleField.readOnly
-                onDoubleClicked: {
-                    titleField.readOnly = false
-                    titleField.forceActiveFocus()
-                    titleField.selectAll()
-                }
+                onDoubleClicked: titleField.beginEdit()
             }
         }
 
