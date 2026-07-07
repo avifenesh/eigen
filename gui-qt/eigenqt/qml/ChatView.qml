@@ -19,6 +19,11 @@ Rectangle {
     property bool dockOpen: false
     property int dockTabIndex: 0
     property string actionError: ""
+    property string dismissedSessionActionError: ""
+    readonly property string sessionActionError: sessionStateModel ? sessionStateModel.actionError : ""
+    readonly property string visibleSessionActionError: sessionActionError !== "" && sessionActionError !== dismissedSessionActionError
+        ? sessionActionError : ""
+    readonly property string visibleActionError: visibleSessionActionError !== "" ? visibleSessionActionError : actionError
     property string inputMode: "steer"
     property var queuedInputs: []
     readonly property int qaTranscriptRows: transcriptListView.count
@@ -45,6 +50,11 @@ Rectangle {
     Component.onCompleted: refreshApprovalRows()
     onIsStreamingChanged: {
         if (!root.isStreaming) Qt.callLater(root.drainQueuedInput)
+    }
+    onSessionActionErrorChanged: {
+        if (root.sessionActionError === "") {
+            root.dismissedSessionActionError = ""
+        }
     }
 
     Connections {
@@ -234,10 +244,7 @@ Rectangle {
             id: composerPanel
             Layout.fillWidth: true
             Layout.preferredHeight: composerColumn.implicitHeight + Theme.space.lg * 2
-            Layout.minimumHeight: Theme.space.lg * 2
-                + composerColumn.spacing
-                + composerPanel.minimumTextHeight
-                + composerActionsRow.implicitHeight
+            Layout.minimumHeight: composerColumn.implicitHeight + Theme.space.lg * 2
             color: Theme.colors.bgWell
             border.width: 1
             border.color: Theme.colors.borderHairline
@@ -320,7 +327,8 @@ Rectangle {
 
                 Rectangle {
                     objectName: "chatActionError"
-                    visible: root.actionError !== ""
+                    visible: root.visibleActionError !== ""
+                    z: visible ? 20 : 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: visible ? Math.max(36, chatActionErrorRow.implicitHeight + Theme.space.md) : 0
                     color: Theme.colors.errorBg
@@ -338,7 +346,7 @@ Rectangle {
 
                         Label {
                             objectName: "chatActionErrorText"
-                            text: root.actionError
+                            text: root.visibleActionError
                             font.family: Theme.uiFonts[0]
                             font.pixelSize: Theme.fontSize.bodySm
                             color: Theme.colors.error
@@ -351,7 +359,10 @@ Rectangle {
                             text: "X"
                             compact: true
                             toolTipText: "Dismiss chat action error"
-                            onClicked: root.actionError = ""
+                            onClicked: {
+                                root.dismissedSessionActionError = root.sessionActionError
+                                root.actionError = ""
+                            }
                             Layout.preferredWidth: 28
                             Layout.preferredHeight: 28
                         }

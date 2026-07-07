@@ -79,6 +79,12 @@ def reply(call, payload):
     callback({"result": payload})
 
 
+def fail(call, message):
+    callback = call["callback"]
+    assert callback is not None
+    callback({"error": message})
+
+
 def test_session_state_exposes_provider_modes_and_roots():
     client = FakeRpcClient()
     model = SessionStateModel(client, "s-chat")
@@ -164,3 +170,44 @@ def test_session_state_ignores_stale_external_initial_state():
     model.applyState(state_payload(search="off"), initial_state_seq)
 
     assert model.search == "on"
+
+
+def test_session_state_surfaces_action_errors_and_clears_on_retry():
+    client = DeferredRpcClient()
+    model = SessionStateModel(client, "s-chat")
+    model.seed(state_payload(model="gpt-5"))
+
+    model.setModel("local-qwen")
+    model_change = client.calls[-1]
+    fail(model_change, "daemon offline")
+
+    assert model.model == "gpt-5"
+    assert model.actionError == "Could not set model: daemon offline"
+
+    model.setSearch("on")
+    search_change = client.calls[-1]
+
+    assert model.actionError == ""
+
+    reply(search_change, state_payload(model="gpt-5", search="on"))
+
+    assert model.search == "on"
+    assert model.actionError == ""
+
+
+def test_session_state_ignores_stale_action_errors():
+    client = DeferredRpcClient()
+    model = SessionStateModel(client, "s-chat")
+    model.seed(state_payload(search="auto", fast=False))
+
+    model.refresh()
+    stale_refresh = client.calls[-1]
+
+    model.setFast(True)
+    fast_change = client.calls[-1]
+    reply(fast_change, state_payload(search="auto", fast=True))
+
+    fail(stale_refresh, "late daemon offline")
+
+    assert model.fast is True
+    assert model.actionError == ""

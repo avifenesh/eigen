@@ -228,6 +228,7 @@ class FakeSessionState(QObject):
     catalogChanged = Signal()
     effortLevelsChanged = Signal()
     dirChanged = Signal()
+    actionErrorChanged = Signal()
 
     def __init__(self):
         super().__init__()
@@ -248,6 +249,7 @@ class FakeSessionState(QObject):
         self._catalog = ["gpt-5", "local-qwen", "grok-4"]
         self._effort_levels = ["low", "medium", "high"]
         self._dir = "/repo/eigen"
+        self._action_error = ""
 
     @Property(str, notify=modelChanged)
     def model(self):
@@ -300,6 +302,19 @@ class FakeSessionState(QObject):
     @Property(str, notify=dirChanged)
     def dir(self):
         return self._dir
+
+    @Property(str, notify=actionErrorChanged)
+    def actionError(self):
+        return self._action_error
+
+    @Slot(str)
+    def setActionError(self, message):
+        self._action_error = message
+        self.actionErrorChanged.emit()
+
+    @Slot()
+    def clearActionError(self):
+        self.setActionError("")
 
     @Slot(str)
     def setModel(self, model):
@@ -979,6 +994,25 @@ if ("SetSearch", "on") not in state.calls:
     raise AssertionError(f"Search combo did not call setSearch: {state.calls}")
 if ("SetFast", True) not in state.calls:
     raise AssertionError(f"Fast switch did not call setFast: {state.calls}")
+
+QTest.keyClick(chat_view, Qt.Key_Escape)
+pump(app, 18)
+state.setActionError("Could not set model: daemon offline")
+pump(app, 18)
+error_banner = find_item(chat, "chatActionError")
+error_text = find_item(chat, "chatActionErrorText")
+if error_banner is None or error_banner.property("visible") is not True:
+    raise AssertionError("Session setting error did not show a visible chat action error")
+if error_text is None or "daemon offline" not in error_text.property("text"):
+    raise AssertionError(f"Session setting error text was wrong: {error_text.property('text') if error_text else None}")
+dismiss = find_item(chat, "chatDismissActionError")
+if dismiss is None or not dismiss.property("qaTextFits"):
+    raise AssertionError("Session setting error dismiss button did not render cleanly")
+assert_item_inside_window(dismiss, "chatDismissActionError")
+chat.setProperty("dismissedSessionActionError", chat.property("sessionActionError"))
+pump(app, 18)
+if chat.property("visibleActionError") != "":
+    raise AssertionError("Session setting action error did not dismiss")
 
 composer = find_item(chat, "chatComposerTextArea")
 if composer is None:

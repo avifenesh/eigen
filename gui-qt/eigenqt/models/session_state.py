@@ -7,11 +7,21 @@ Methods: setModel, setEffort, setPerm, setTitle, setGoal, setSearch, setFast
 (invoke RPC, update on success).
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 from PySide6.QtCore import QObject, Property, Signal, Slot
 
 from eigenqt.rpc import RpcClient
+
+
+def _err_text(value: Any) -> str:
+    """Extract a readable RPC error string."""
+    if isinstance(value, dict):
+        nested = value.get("message") or value.get("error")
+        if nested is not None and nested is not value:
+            return _err_text(nested)
+        return "Unknown error"
+    return str(value) if value else "Unknown error"
 
 
 class SessionStateModel(QObject):
@@ -31,6 +41,7 @@ class SessionStateModel(QObject):
     effortLevelsChanged = Signal()
     statusChanged = Signal()
     dirChanged = Signal()
+    actionErrorChanged = Signal()
 
     def __init__(self, client: RpcClient, session_id: str, parent: Optional[QObject] = None):
         super().__init__(parent)
@@ -50,6 +61,7 @@ class SessionStateModel(QObject):
         self._effort_levels = []  # list of effort levels for current model
         self._status = "idle"  # Computed from State RPC "running" field
         self._load_seq = 0
+        self._action_error = ""
         # The session's primary working directory (first Roots entry — the
         # State DTO carries roots, not a single dir). The diff/files dock
         # scopes to this.
@@ -110,6 +122,10 @@ class SessionStateModel(QObject):
     @Property(str, notify=dirChanged)
     def dir(self) -> str:
         return self._dir
+
+    @Property(str, notify=actionErrorChanged)
+    def actionError(self) -> str:
+        return self._action_error
 
     @Slot(dict)
     def seed(self, state: dict) -> None:
@@ -190,82 +206,95 @@ class SessionStateModel(QObject):
     @Slot(str)
     def setModel(self, model: str) -> None:
         """Set model via RPC SetModel, update on success."""
-        seq = self._next_seq()
+        seq = self._begin_action()
 
         def on_result(result: dict) -> None:
-            self._on_state_result(result, seq, "SetModel")
+            self._on_state_result(result, seq, "set model")
 
         self._client.call("SetModel", self._session_id, model, callback=on_result)
 
     @Slot(str)
     def setEffort(self, effort: str) -> None:
         """Set effort via RPC SetEffort, update on success."""
-        seq = self._next_seq()
+        seq = self._begin_action()
 
         def on_result(result: dict) -> None:
-            self._on_state_result(result, seq, "SetEffort")
+            self._on_state_result(result, seq, "set reasoning effort")
 
         self._client.call("SetEffort", self._session_id, effort, callback=on_result)
 
     @Slot(str)
     def setPerm(self, perm: str) -> None:
         """Set perm via RPC SetPerm, update on success."""
-        seq = self._next_seq()
+        seq = self._begin_action()
 
         def on_result(result: dict) -> None:
-            self._on_state_result(result, seq, "SetPerm")
+            self._on_state_result(result, seq, "set permission mode")
 
         self._client.call("SetPerm", self._session_id, perm, callback=on_result)
 
     @Slot(str)
     def setTitle(self, title: str) -> None:
         """Set title via RPC SetTitle, update on success."""
-        seq = self._next_seq()
+        seq = self._begin_action()
 
         def on_result(result: dict) -> None:
-            self._on_state_result(result, seq, "SetTitle")
+            self._on_state_result(result, seq, "rename session")
 
         self._client.call("SetTitle", self._session_id, title, callback=on_result)
 
     @Slot(str)
     def setGoal(self, goal: str) -> None:
         """Set persistent goal via RPC SetGoal, update on success."""
-        seq = self._next_seq()
+        seq = self._begin_action()
 
         def on_result(result: dict) -> None:
-            self._on_state_result(result, seq, "SetGoal")
+            self._on_state_result(result, seq, "set goal")
 
         self._client.call("SetGoal", self._session_id, goal, callback=on_result)
 
     @Slot(str)
     def setSearch(self, search: str) -> None:
         """Set live-search mode via RPC SetSearch, update on success."""
-        seq = self._next_seq()
+        seq = self._begin_action()
 
         def on_result(result: dict) -> None:
-            self._on_state_result(result, seq, "SetSearch")
+            self._on_state_result(result, seq, "set live search")
 
         self._client.call("SetSearch", self._session_id, search, callback=on_result)
 
     @Slot(bool)
     def setFast(self, fast: bool) -> None:
         """Toggle fast/priority tier via RPC SetFast, update on success."""
-        seq = self._next_seq()
+        seq = self._begin_action()
 
         def on_result(result: dict) -> None:
-            self._on_state_result(result, seq, "SetFast")
+            self._on_state_result(result, seq, "set fast tier")
 
         self._client.call("SetFast", self._session_id, bool(fast), callback=on_result)
 
     @Slot()
     def refresh(self) -> None:
         """Refresh session state from RPC State."""
-        seq = self._next_seq()
+        seq = self._begin_action()
 
         def on_result(result: dict) -> None:
-            self._on_state_result(result, seq, "State refresh")
+            self._on_state_result(result, seq, "refresh session state")
 
         self._client.call("State", self._session_id, callback=on_result)
+
+    @Slot()
+    def clearActionError(self) -> None:
+        self._set_action_error("")
+
+    @Slot(str)
+    def setActionError(self, message: str) -> None:
+        self._set_action_error(message)
+
+    def _begin_action(self) -> int:
+        seq = self._next_seq()
+        self._set_action_error("")
+        return seq
 
     def _next_seq(self) -> int:
         self._load_seq += 1
@@ -275,6 +304,13 @@ class SessionStateModel(QObject):
         if seq != self._load_seq:
             return
         if "error" in result:
-            print(f"{label} error: {result['error']}")
+            self._set_action_error(f"Could not {label}: {_err_text(result.get('error'))}")
             return
+        self._set_action_error("")
         self._apply_state(result["result"])
+
+    def _set_action_error(self, message: str) -> None:
+        if message == self._action_error:
+            return
+        self._action_error = message
+        self.actionErrorChanged.emit()
