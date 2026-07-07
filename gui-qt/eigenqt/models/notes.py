@@ -325,6 +325,8 @@ class NotesController(QObject):
     @Slot()
     def cancel_edit(self):
         """Cancel editing."""
+        if self.saving:
+            return
         self.editing = False
         self.action_error = ""
 
@@ -347,6 +349,7 @@ class NotesController(QObject):
         """Handle ObsidianWrite result."""
         self.saving = False
         if "error" in result:
+            self.editing = True
             path = (self.selected or {}).get("path", "note")
             self.action_error = f"Could not save {path}: {_err_text(result)}"
             return

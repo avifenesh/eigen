@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from PySide6.QtCore import QObject, Property, QPointF, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, Property, QPointF, QTimer, QUrl, Qt, Signal, Slot
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickView
@@ -640,6 +640,13 @@ def main():
         return {"sessionsModel": sessions_model}
 
     ok = capture_view("sessions", "SessionsView.qml", setup_sessions) and ok
+
+    def show_sessions_row_focus(_view, root):
+        row = find_item(root, "sessionsRow_s_qa_chat")
+        if row is not None:
+            row.forceActiveFocus(Qt.TabFocusReason)
+
+    ok = capture_view("sessions-row-focus", "SessionsView.qml", setup_sessions, show_sessions_row_focus) and ok
 
     def show_sessions_remove_confirm(_view, root):
         root.setConfirming("s-qa-chat", True)

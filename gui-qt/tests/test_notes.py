@@ -224,6 +224,32 @@ def test_notes_controller_save_error_keeps_draft_editing(qt_app, mock_client):
     assert controller.action_error == "Could not save Inbox/Note.md: write denied"
 
 
+def test_notes_controller_pending_save_owns_edit_mode(qt_app, mock_client):
+    """Cancel and a later failure cannot strand a pending draft in read mode."""
+    controller = NotesController(mock_client)
+    controller.selected = {"path": "Inbox/Note.md", "title": "Note"}
+    controller.content = "# Note\n\nOriginal."
+    controller.start_edit()
+    controller.draft = "# Note\n\nEdited."
+
+    controller.save()
+    controller.cancel_edit()
+
+    assert controller.saving
+    assert controller.editing
+    assert controller.draft == "# Note\n\nEdited."
+
+    controller.editing = False
+    callback = mock_client.call.call_args[1]["callback"]
+    callback({"error": "write denied"})
+
+    assert not controller.saving
+    assert controller.editing
+    assert controller.draft == "# Note\n\nEdited."
+    assert controller.content == "# Note\n\nOriginal."
+    assert controller.action_error == "Could not save Inbox/Note.md: write denied"
+
+
 def test_notes_controller_create_note(qt_app, mock_client):
     """NotesController.create_note() creates a new note."""
     controller = NotesController(mock_client)

@@ -501,6 +501,7 @@ Rectangle {
                                 visible: root.notesController && root.notesController.editing
                                 text: "Cancel"
                                 toolTipText: "Cancel editing"
+                                enabled: root.notesController && !root.notesController.saving
                                 onClicked: {
                                     if (root.notesController) {
                                         root.notesController.cancel_edit()
@@ -574,7 +575,7 @@ Rectangle {
                                     }
                                     event.accepted = true
                                 } else if (event.key === Qt.Key_Escape) {
-                                    if (root.notesController) {
+                                    if (root.notesController && !root.notesController.saving) {
                                         root.notesController.cancel_edit()
                                     }
                                     event.accepted = true

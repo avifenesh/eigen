@@ -165,16 +165,26 @@ Rectangle {
                     height: 86
                     radius: Theme.radius.md
                     color: rowHover.hovered ? Theme.colors.surfaceRaised2 : Theme.colors.surfaceRaised
-                    border.width: 1
-                    border.color: Theme.colors.borderHairline
+                    border.width: activeFocus ? 2 : 1
+                    border.color: activeFocus ? Theme.colors.brandBright : Theme.colors.borderHairline
+                    activeFocusOnTab: true
+                    Accessible.name: root.textOrFallback(model.title, "untitled session")
 
                     readonly property string sessionId: root.textOrEmpty(model.sessionId)
                     readonly property string safeId: root.safeObjectName(sessionId)
                     readonly property bool removeConfirming: root.isConfirming(sessionId)
                     readonly property bool removeBusy: root.isRemoving(sessionId)
                     readonly property bool exportBusy: root.isExporting(sessionId)
+                    readonly property bool qaVisualFocus: activeFocus
 
                     Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
+
+                    Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                            root.sessionClicked(row.sessionId)
+                            event.accepted = true
+                        }
+                    }
 
                     HoverHandler {
                         id: rowHover
@@ -210,7 +220,10 @@ Rectangle {
                             MouseArea {
                                 anchors.fill: parent
                                 hoverEnabled: true
-                                onClicked: root.sessionClicked(row.sessionId)
+                                onClicked: {
+                                    row.forceActiveFocus(Qt.MouseFocusReason)
+                                    root.sessionClicked(row.sessionId)
+                                }
                             }
 
                             ColumnLayout {

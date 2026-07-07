@@ -452,6 +452,19 @@ try:
     ):
         raise AssertionError(f"Sessions updated timestamp was not normalized: {updated_text!r}")
 
+    row = find_item(root, "sessionsRow_s_run")
+    if row is None:
+        raise AssertionError("Sessions row did not expose a keyboard target")
+    row.forceActiveFocus(Qt.TabFocusReason)
+    pump(app, 8)
+    if row.property("qaVisualFocus") is not True:
+        raise AssertionError("Sessions row did not expose visual keyboard focus")
+    QTest.keyClick(view, Qt.Key_Return)
+    pump(app, 12)
+    if opened != ["s-run"]:
+        raise AssertionError(f"Focused session row did not open with Return: {opened}")
+    opened.clear()
+
     export = click_item(app, view, root, "sessionsExportButton_s_run")
     if not export.property("qaTextFits"):
         raise AssertionError("Export button text does not fit")
