@@ -858,6 +858,12 @@ def check_notes(app, client):
             invoke_click(row)
             pump(app)
         assert_call(client, start, "ObsidianRead", ("Inbox/Existing.md",))
+        markdown_body = find_visual_item(root, "notesMarkdownBody")
+        if markdown_body is None or markdown_body.property("visible") is not True:
+            raise AssertionError("note read mode did not render the markdown body")
+        markdown_blocks = markdown_body.property("blocks") or []
+        if len(markdown_blocks) < 2:
+            raise AssertionError(f"note markdown body did not parse into blocks: {markdown_blocks}")
 
         edit = click_item(app, view, root, "notesEditButton")
         if not notes.editing:

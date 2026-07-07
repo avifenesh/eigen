@@ -9,6 +9,8 @@ Rectangle {
     color: Theme.colors.bgBase
 
     property var notesController: null  // NotesController from Python (context property)
+    readonly property string readContent: root.notesController ? root.notesController.content : ""
+    readonly property var readBlocks: parseMarkdown(readContent)
 
     // Empty state when vault is not available
     Rectangle {
@@ -590,7 +592,7 @@ Rectangle {
                         }
                     }
 
-                    // Read mode: markdown-rendered text (simplified — just plain text for now)
+                    // Read mode: markdown-rendered text
                     ScrollView {
                         id: readScroll
                         visible: root.notesController && !root.notesController.editing
@@ -598,25 +600,49 @@ Rectangle {
                         clip: true
                         contentWidth: availableWidth
 
-                        Label {
-                            id: markdownBody
-                            objectName: "notesMarkdownBody"
-                            width: Math.max(0, readScroll.availableWidth - Theme.space.xxxl * 2)
-                            readonly property real qaContentWidth: width
-                            text: root.notesController ? root.notesController.content : ""
-                            font.family: Theme.uiFonts[0]
-                            font.pixelSize: Theme.fontSize.bodySm
-                            color: Theme.colors.textPrimary
-                            wrapMode: Text.Wrap
-                            textFormat: Text.MarkdownText
-                            leftPadding: Theme.space.xxxl
-                            rightPadding: Theme.space.xxxl
-                            topPadding: Theme.space.xxxl
-                            bottomPadding: Theme.space.xxxl
+                        Item {
+                            width: readScroll.availableWidth
+                            implicitHeight: readColumn.implicitHeight + Theme.space.xxxl * 2
+
+                            Column {
+                                id: readColumn
+                                x: Theme.space.xxxl
+                                y: Theme.space.xxxl
+                                width: Math.max(0, parent.width - Theme.space.xxxl * 2)
+                                spacing: Theme.space.md
+
+                                MarkdownBlocks {
+                                    objectName: "notesMarkdownBody"
+                                    visible: root.readBlocks.length > 0
+                                    width: parent.width
+                                    readonly property real qaContentWidth: width
+                                    blocks: root.readBlocks
+                                }
+
+                                Label {
+                                    objectName: "notesMarkdownFallback"
+                                    visible: root.readContent !== "" && root.readBlocks.length === 0
+                                    width: parent.width
+                                    text: root.readContent
+                                    font.family: Theme.uiFonts[0]
+                                    font.pixelSize: Theme.fontSize.bodySm
+                                    color: Theme.colors.textPrimary
+                                    wrapMode: Text.Wrap
+                                    textFormat: Text.PlainText
+                                }
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    function parseMarkdown(source) {
+        if (!source) return []
+        if (typeof markdownParser === "undefined" || !markdownParser) {
+            return [{type: "para", content: source}]
+        }
+        return markdownParser.parse(source)
     }
 }

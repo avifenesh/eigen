@@ -1357,6 +1357,9 @@ def main():
         notes_controller.content = "# Project ideas\n\nUse the Qt follow-up for focused surface hardening."
 
         ctx.setContextProperty("notesController", notes_controller)
+        ctx.setContextProperty("markdownParser", markdown_parser)
+        ctx.setContextProperty("highlighter", highlighter)
+        ctx.setContextProperty("clipboardHelper", clipboard_helper)
         return {"notesController": notes_controller}
 
     ok = capture_view("notes", "NotesView.qml", setup_notes) and ok
