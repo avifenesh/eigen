@@ -171,6 +171,99 @@ def test_app_context_starts_guiserver_and_tracks_daemon_health(monkeypatch):
     assert ctx.stats["sessions"] == 9
 
 
+def test_session_controller_ignores_stale_initial_state_reply():
+    app = QCoreApplication.instance() or QCoreApplication([])
+
+    import main
+
+    class DeferredClient(QObject):
+        event = Signal(str, dict)
+        dropped = Signal(str)
+
+        def __init__(self):
+            super().__init__()
+            self.calls = []
+            self.subscriptions = []
+
+        def call(self, method, *args, callback=None):
+            self.calls.append({"method": method, "args": args, "callback": callback})
+
+        def subscribe(self, channels):
+            self.subscriptions.append(list(channels))
+
+        def unsubscribe(self, channels):
+            self.subscriptions.append([f"unsub:{channel}" for channel in channels])
+
+    class Watcher:
+        def __init__(self):
+            self.current = []
+
+        def set_current_session(self, session_id):
+            self.current.append(session_id)
+
+    def state(model, text, approval_id):
+        return {
+            "model": model,
+            "effort": "high",
+            "perm": "gated",
+            "title": "Qt chat",
+            "goal": "",
+            "search": "auto",
+            "fast": False,
+            "fastOk": True,
+            "tools": [],
+            "running": False,
+            "roots": ["/repo/eigen"],
+            "catalog": {"models": [{"id": model, "effortLevels": ["low", "high"]}]},
+            "messages": [{"role": "user", "text": text}],
+            "pending": [{"id": approval_id, "tool": "shell", "args": "ls"}],
+        }
+
+    client = DeferredClient()
+    controller = main.SessionController(client, Watcher())
+
+    controller.open_session("s-old")
+    old_state = client.calls[-1]
+    controller.open_session("s-new")
+    new_state = client.calls[-1]
+
+    new_state["callback"]({"result": state("local-qwen", "new transcript", "p-new")})
+    app.processEvents()
+
+    assert controller.session_id == "s-new"
+    assert controller.session_state_model.model == "local-qwen"
+    assert controller.transcript_model.rowCount() == 1
+    assert (
+        controller.transcript_model.data(
+            controller.transcript_model.index(0, 0),
+            controller.transcript_model.TextRole,
+        )
+        == "new transcript"
+    )
+    assert controller.approvals_model.rowCount() == 1
+
+    old_state["callback"]({"result": state("gpt-5", "old transcript", "p-old")})
+    app.processEvents()
+
+    assert controller.session_state_model.model == "local-qwen"
+    assert controller.transcript_model.rowCount() == 1
+    assert (
+        controller.transcript_model.data(
+            controller.transcript_model.index(0, 0),
+            controller.transcript_model.TextRole,
+        )
+        == "new transcript"
+    )
+    assert controller.approvals_model.rowCount() == 1
+    assert (
+        controller.approvals_model.data(
+            controller.approvals_model.index(0, 0),
+            controller.approvals_model.IdRole,
+        )
+        == "p-new"
+    )
+
+
 def test_rpc_call_send_failure_reports_error_without_raising(monkeypatch):
     from eigenqt.rpc.client import RpcClient
 

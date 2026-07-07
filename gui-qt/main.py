@@ -223,6 +223,7 @@ class SessionController(QObject):
         self.approvals_model = ApprovalsModel(client, "", parent)
         self._session_state_model = SessionStateModel(client, "", parent)
         self._commands_model = CommandsModel(client, parent)
+        self._state_seq = 0
 
     @Property(str, notify=sessionIdChanged)
     def session_id(self):
@@ -263,15 +264,23 @@ class SessionController(QObject):
         self._client.subscribe([channel])
 
         # Fetch initial state
+        self._state_seq += 1
+        controller_seq = self._state_seq
         state_seq = self._session_state_model.beginStateRequest()
         self._client.call(
             "State",
             session_id,
-            callback=lambda result, seq=state_seq: self._on_state(result, seq),
+            callback=lambda result, seq=controller_seq, state_seq=state_seq: self._on_state(
+                result,
+                seq,
+                state_seq,
+            ),
         )
 
-    def _on_state(self, result, state_seq=None):
+    def _on_state(self, result, controller_seq=None, state_seq=None):
         """Handle State RPC result."""
+        if controller_seq is not None and controller_seq != self._state_seq:
+            return
         if "result" in result:
             self.transcript_model.seed(result["result"])
             self.approvals_model.seed(result["result"])
@@ -281,6 +290,7 @@ class SessionController(QObject):
     def detach(self):
         """Detach from current session."""
         if self._session_id:
+            self._state_seq += 1
             channel = f"session:{self._session_id}"
             self._client.unsubscribe([channel])
 
