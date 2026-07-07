@@ -214,6 +214,20 @@ class FakeSessionsModel(QAbstractListModel):
         self.pruningChanged.emit()
         QTimer.singleShot(0, self._finish_prune)
 
+    @Slot()
+    def clearActionError(self):
+        self._action_error = ""
+        self.actionErrorChanged.emit()
+
+    @Slot()
+    def clearActionMessage(self):
+        self._action_message = ""
+        self.actionMessageChanged.emit()
+
+    def set_action_error(self, text):
+        self._action_error = text
+        self.actionErrorChanged.emit()
+
     def _finish_export(self, session_id):
         self._exporting.discard(session_id)
         self.exportingChanged.emit()
@@ -483,6 +497,35 @@ try:
         raise AssertionError(f"Export did not call model slot: {sessions.calls}")
     if "s-run" not in sessions.actionMessage:
         raise AssertionError(f"Export did not surface an action message: {sessions.actionMessage!r}")
+    action_message = find_item(root, "sessionsActionMessage")
+    action_message_text = find_item(root, "sessionsActionMessageText")
+    action_message_dismiss = find_item(root, "sessionsActionMessageDismissButton")
+    if action_message is None or action_message.property("visible") is not True:
+        raise AssertionError("Sessions action message banner did not render")
+    if action_message_text is None or "s-run" not in action_message_text.property("text"):
+        raise AssertionError(f"Sessions action message text was wrong: {action_message_text.property('text') if action_message_text else None}")
+    if action_message_dismiss is None or not action_message_dismiss.property("qaTextFits"):
+        raise AssertionError("Sessions action message dismiss button did not fit")
+    action_message_dismiss.click()
+    pump(app, 18)
+    if sessions.actionMessage != "":
+        raise AssertionError("Sessions action message dismiss did not clear the model")
+
+    sessions.set_action_error("Could not remove s-run: daemon offline")
+    pump(app, 20)
+    action_error = find_item(root, "sessionsActionError")
+    action_error_text = find_item(root, "sessionsActionErrorText")
+    action_error_dismiss = find_item(root, "sessionsActionErrorDismissButton")
+    if action_error is None or action_error.property("visible") is not True:
+        raise AssertionError("Sessions action error banner did not render")
+    if action_error_text is None or "daemon offline" not in action_error_text.property("text"):
+        raise AssertionError(f"Sessions action error text was wrong: {action_error_text.property('text') if action_error_text else None}")
+    if action_error_dismiss is None or not action_error_dismiss.property("qaTextFits"):
+        raise AssertionError("Sessions action error dismiss button did not fit")
+    action_error_dismiss.click()
+    pump(app, 18)
+    if sessions.actionError != "":
+        raise AssertionError("Sessions action error dismiss did not clear the model")
 
     prune = find_item(root, "sessionsPruneButton")
     if prune is None or not prune.property("qaTextFits"):

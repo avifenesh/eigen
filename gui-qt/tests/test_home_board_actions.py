@@ -37,6 +37,7 @@ class FakeRpcClient(QObject):
         super().__init__()
         self.calls = []
         self._token = 0
+        self.failures = {}
         self.delays = {"NewSession": 80}
         self.board_payload = {
             "lanes": [
@@ -102,9 +103,14 @@ class FakeRpcClient(QObject):
         token = self._token
         call_args = tuple(args or [])
         self.calls.append((method, call_args))
+        payload = (
+            {"error": self.failures[method]}
+            if method in self.failures
+            else {"result": self._result(method, call_args)}
+        )
         QTimer.singleShot(
             int(self.delays.get(method, 0)),
-            lambda: self.callDone.emit(token, {"result": self._result(method, call_args)}),
+            lambda: self.callDone.emit(token, payload),
         )
         return token
 
@@ -251,6 +257,11 @@ home_started = []
 home.sessionStarted.connect(lambda session_id: home_started.append(session_id))
 
 start = len(client.calls)
+feed_start = find_item(home, "homeFeedStart_home_git")
+if feed_start is None or feed_start.property("text") != "Start":
+    raise AssertionError(f"home feed start button label was {feed_start.property('text') if feed_start else None}")
+if feed_start.property("qaTextFits") is not True:
+    raise AssertionError("home feed start button text did not fit")
 click_item(app, home_view, home, "homeFeedStart_home_git")
 if ("StartFromFeed", ("/repo/eigen", "Review and commit the focused diff.")) not in client.calls[start:]:
     raise AssertionError(f"home feed did not call StartFromFeed: {client.calls[start:]}")
@@ -261,12 +272,41 @@ start = len(client.calls)
 button = click_item(app, home_view, home, "homeStartSessionButton")
 if button.property("enabled") is not False:
     raise AssertionError("home new-session button did not disable while pending")
+if button.property("qaTextFits") is not True:
+    raise AssertionError("home new-session pending text did not fit")
 QTest.qWait(120)
 pump(app, 20)
 if ("NewSession", ("", "", "")) not in client.calls[start:]:
     raise AssertionError(f"home start did not call NewSession: {client.calls[start:]}")
 if home_started[-1:] != ["s-new"]:
     raise AssertionError(f"home new session did not route: {home_started}")
+
+client.failures["NewSession"] = "daemon offline"
+start = len(client.calls)
+button = click_item(app, home_view, home, "homeStartSessionButton")
+if button.property("enabled") is not False:
+    raise AssertionError("home failed new-session button did not enter pending state")
+QTest.qWait(120)
+pump(app, 20)
+if ("NewSession", ("", "", "")) not in client.calls[start:]:
+    raise AssertionError(f"home failed start did not call NewSession: {client.calls[start:]}")
+button = find_item(home, "homeStartSessionButton")
+if button is None or button.property("enabled") is not True:
+    raise AssertionError("home failed new-session did not re-enable the button")
+if "daemon offline" not in home.property("actionError"):
+    raise AssertionError(f"home failed new-session did not expose action error: {home.property('actionError')}")
+error_banner = find_item(home, "homeActionErrorBanner")
+error_text = find_item(home, "homeActionErrorText")
+if error_banner is None or error_banner.property("visible") is not True:
+    raise AssertionError("home failed new-session did not render the action error banner")
+if error_text is None or "daemon offline" not in error_text.property("text"):
+    raise AssertionError(f"home action error text was wrong: {error_text.property('text') if error_text else None}")
+dismiss = click_item(app, home_view, home, "homeActionErrorDismissButton")
+if dismiss.property("qaTextFits") is not True:
+    raise AssertionError("home action error dismiss text did not fit")
+if home.property("actionError") != "":
+    raise AssertionError("home action error dismiss did not clear the error")
+del client.failures["NewSession"]
 home_view.close()
 
 board = BoardModel(client)

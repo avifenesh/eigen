@@ -127,24 +127,92 @@ Rectangle {
             }
         }
 
-        Label {
+        Rectangle {
+            objectName: "sessionsActionError"
             Layout.fillWidth: true
-            text: root.sessionsModel ? root.sessionsModel.actionError : ""
-            visible: text.length > 0
-            font.family: Theme.uiFonts[0]
-            font.pixelSize: Theme.fontSize.bodySm
-            color: Theme.colors.error
-            wrapMode: Text.Wrap
+            Layout.preferredHeight: visible ? Math.max(38, sessionsActionErrorRow.implicitHeight + Theme.space.md) : 0
+            visible: root.sessionsModel && root.sessionsModel.actionError !== ""
+            color: Theme.colors.errorBg
+            border.width: visible ? 1 : 0
+            border.color: Theme.colors.error
+            radius: Theme.radius.sm
+            clip: true
+
+            RowLayout {
+                id: sessionsActionErrorRow
+                anchors.fill: parent
+                anchors.leftMargin: Theme.space.lg
+                anchors.rightMargin: Theme.space.lg
+                spacing: Theme.space.md
+
+                Label {
+                    objectName: "sessionsActionErrorText"
+                    text: root.sessionsModel ? root.sessionsModel.actionError : ""
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.bodySm
+                    color: Theme.colors.error
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+
+                AppButton {
+                    objectName: "sessionsActionErrorDismissButton"
+                    text: "Dismiss"
+                    compact: true
+                    toolTipText: "Dismiss sessions error"
+                    Layout.preferredWidth: 88
+                    Layout.preferredHeight: 28
+                    onClicked: {
+                        if (root.sessionsModel) {
+                            root.sessionsModel.clearActionError()
+                        }
+                    }
+                }
+            }
         }
 
-        Label {
+        Rectangle {
+            objectName: "sessionsActionMessage"
             Layout.fillWidth: true
-            text: root.sessionsModel ? root.sessionsModel.actionMessage : ""
-            visible: text.length > 0
-            font.family: Theme.uiFonts[0]
-            font.pixelSize: Theme.fontSize.bodySm
-            color: Theme.colors.textSecondary
-            elide: Text.ElideMiddle
+            Layout.preferredHeight: visible ? Math.max(38, sessionsActionMessageRow.implicitHeight + Theme.space.md) : 0
+            visible: root.sessionsModel && root.sessionsModel.actionMessage !== ""
+            color: Theme.colors.successBg
+            border.width: visible ? 1 : 0
+            border.color: Theme.colors.success
+            radius: Theme.radius.sm
+            clip: true
+
+            RowLayout {
+                id: sessionsActionMessageRow
+                anchors.fill: parent
+                anchors.leftMargin: Theme.space.lg
+                anchors.rightMargin: Theme.space.lg
+                spacing: Theme.space.md
+
+                Label {
+                    objectName: "sessionsActionMessageText"
+                    text: root.sessionsModel ? root.sessionsModel.actionMessage : ""
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.bodySm
+                    color: Theme.colors.success
+                    elide: Text.ElideMiddle
+                    Layout.fillWidth: true
+                }
+
+                AppButton {
+                    objectName: "sessionsActionMessageDismissButton"
+                    text: "Dismiss"
+                    compact: true
+                    toolTipText: "Dismiss sessions message"
+                    Layout.preferredWidth: 88
+                    Layout.preferredHeight: 28
+                    onClicked: {
+                        if (root.sessionsModel) {
+                            root.sessionsModel.clearActionMessage()
+                        }
+                    }
+                }
+            }
         }
 
         Rectangle {

@@ -425,7 +425,7 @@ Rectangle {
                     objectName: "homeFeedStart_" + root.safeObjectName(feedKey)
                     visible: task !== ""
                     enabled: !starting
-                    text: starting ? "Starting..." : "Start →"
+                    text: starting ? "Starting..." : "Start"
                     onClicked: startClicked()
                     variant: "primary"
                     compact: true
@@ -673,13 +673,45 @@ Rectangle {
                 }
             }
 
-            Label {
+            Rectangle {
+                objectName: "homeActionErrorBanner"
                 visible: root.actionError !== ""
-                text: root.actionError
-                font.pixelSize: Theme.fontSize.label
-                color: Theme.colors.error
-                wrapMode: Text.WordWrap
                 Layout.fillWidth: true
+                Layout.preferredHeight: visible ? homeActionErrorText.implicitHeight + Theme.space.lg * 2 : 0
+                color: Theme.colors.errorBg
+                border.width: 1
+                border.color: Theme.colors.error
+                radius: Theme.radius.md
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: Theme.space.lg
+                    anchors.rightMargin: Theme.space.lg
+                    anchors.topMargin: Theme.space.lg
+                    anchors.bottomMargin: Theme.space.lg
+                    spacing: Theme.space.lg
+
+                    Label {
+                        id: homeActionErrorText
+                        objectName: "homeActionErrorText"
+                        text: root.actionError
+                        font.pixelSize: Theme.fontSize.label
+                        color: Theme.colors.error
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+
+                    AppButton {
+                        objectName: "homeActionErrorDismissButton"
+                        text: "X"
+                        onClicked: root.actionError = ""
+                        variant: "ghost"
+                        compact: true
+                        toolTipText: "Dismiss home error"
+                        Layout.preferredWidth: 28
+                        Layout.preferredHeight: 28
+                    }
+                }
             }
 
             // Stats strip

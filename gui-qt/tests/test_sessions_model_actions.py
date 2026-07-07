@@ -112,10 +112,26 @@ def test_sessions_model_actions_surface_rpc_errors_without_dropping_rows():
     client = FakeRpcClient()
     model = SessionsModel(client)
     model._on_sessions_result({"result": [dict(session) for session in client.sessions]})
-    client.errors["RemoveSession"] = "daemon offline"
+    client.errors["RemoveSession"] = {"message": "daemon offline"}
 
     model.removeSession("s-run")
 
     assert model.rowCount() == 2
     assert model.actionError == "daemon offline"
     assert model.removing == []
+
+    model.clearActionError()
+    assert model.actionError == ""
+
+    client.errors.clear()
+    client.errors["ExportSession"] = {"error": {"message": "export denied"}}
+    model.exportSession("s-run")
+    assert model.actionError == "export denied"
+    assert model.exporting == []
+
+    model.clearActionError()
+    client.errors.clear()
+    client.errors["PruneSessions"] = {"message": "prune denied"}
+    model.pruneSessions()
+    assert model.actionError == "prune denied"
+    assert model.pruning is False

@@ -615,7 +615,135 @@ def main():
     atexit.register(client.shutdown)
     ok = True
 
-    # 1. SessionsView
+    # 1. HomeView
+    def setup_home(ctx):
+        dashboard_model = DashboardModel(client)
+        dashboard_model._on_dashboard_result({
+            "result": {
+                "googleConnected": True,
+                "events": [
+                    {
+                        "summary": "Qt parity review",
+                        "start": "2026-07-07T17:00:00+03:00",
+                        "allDay": False,
+                    },
+                    {
+                        "summary": "Ship follow-up",
+                        "start": "2026-07-07T19:30:00+03:00",
+                        "allDay": False,
+                    },
+                ],
+                "unreadCount": 2,
+                "unread": [
+                    {"from": "Revuto <bot@example.test>", "subject": "Review finished"},
+                    {"from": "GitHub <noreply@example.test>", "subject": "PR checks passed"},
+                ],
+                "health": {
+                    "cpuTempC": 62,
+                    "loadPerCpu": 0.42,
+                    "memUsedGb": 22.4,
+                    "memTotalGb": 64.0,
+                    "memUsedPct": 35,
+                    "diskUsedPct": 58,
+                    "gpus": [
+                        {
+                            "name": "RTX PRO 6000",
+                            "utilPct": 36,
+                            "memUsedGb": 18.2,
+                            "memTotalGb": 96.0,
+                            "memUsedPct": 19,
+                            "tempC": 54,
+                            "powerW": 182,
+                        }
+                    ],
+                },
+            }
+        })
+        feed_model = FeedModel(client)
+        feed_model._on_feed_result({
+            "result": {
+                "items": [
+                    {
+                        "key": "home-qt-follow-up",
+                        "kind": "git",
+                        "title": "Qt follow-up",
+                        "detail": "Keep the desktop shell honest",
+                        "dir": "/home/user/eigen",
+                        "dirName": "eigen",
+                        "task": "Tighten the Qt desktop shell.",
+                    },
+                    {
+                        "key": "home-review-ready",
+                        "kind": "github",
+                        "title": "PR #76 checks",
+                        "detail": "Review the green follow-up before merge",
+                        "dir": "/home/user/eigen",
+                        "dirName": "eigen",
+                        "url": "https://github.com/avifenesh/eigen/pull/76",
+                    },
+                ],
+                "fresh": True,
+            }
+        })
+        sessions_model = SessionsModel(client)
+        sessions_model._on_sessions_result(
+            {
+                "result": [
+                    {
+                        "id": "s-home-working",
+                        "title": "Qt shell polish",
+                        "dir": "/home/user/eigen/gui-qt",
+                        "model": "gpt-5",
+                        "status": "working",
+                        "turns": 4,
+                        "updated": 1783155600000,
+                    },
+                    {
+                        "id": "s-home-approval",
+                        "title": "Approval check",
+                        "dir": "/home/user/eigen",
+                        "model": "local-qwen",
+                        "status": "approval",
+                        "turns": 2,
+                        "updated": 1783152000000,
+                    },
+                    {
+                        "id": "s-home-recent",
+                        "title": "Recent notes cleanup",
+                        "dir": "/home/user/eigen",
+                        "model": "grok-4",
+                        "status": "idle",
+                        "turns": 5,
+                        "updated": 1783148400000,
+                    },
+                ]
+            }
+        )
+        ctx.setContextProperty("dashboardModel", dashboard_model)
+        ctx.setContextProperty("feedModel", feed_model)
+        ctx.setContextProperty("sessionsModel", sessions_model)
+        ctx.setContextProperty("rpcClient", client)
+        return {
+            "dashboardModel": dashboard_model,
+            "feedModel": feed_model,
+            "sessionsModel": sessions_model,
+            "rpcClient": client,
+            "statsData": {"sessions": 71, "running_turns": 2, "bg_tasks": 1, "input_tokens": 12000, "cache_read_tokens": 4200},
+        }
+
+    ok = capture_view("home", "HomeView.qml", setup_home) and ok
+
+    def show_home_start_pending(_view, root):
+        root.setPending("new-session", True)
+
+    ok = capture_view("home-start-pending", "HomeView.qml", setup_home, show_home_start_pending) and ok
+
+    def show_home_action_error(_view, root):
+        root.setProperty("actionError", "Could not start session: daemon offline")
+
+    ok = capture_view("home-action-error", "HomeView.qml", setup_home, show_home_action_error) and ok
+
+    # 2. SessionsView
     def setup_sessions(ctx):
         sessions_model = SessionsModel(client)
         client.session_rows = [
@@ -656,7 +784,22 @@ def main():
 
     ok = capture_view("sessions-remove-confirm", "SessionsView.qml", setup_sessions, show_sessions_remove_confirm) and ok
 
-    # 2. ChatView
+    def show_sessions_action_message(_view, root):
+        model = root.property("sessionsModel")
+        if model is not None:
+            model._set_action_message("Exported s-qa-chat to /home/user/eigen-exports/s-qa-chat.jsonl")
+
+    ok = capture_view("sessions-action-message", "SessionsView.qml", setup_sessions, show_sessions_action_message) and ok
+
+    def show_sessions_action_error(_view, root):
+        model = root.property("sessionsModel")
+        if model is not None:
+            model._set_action_message("")
+            model._set_action_error("Could not remove s-qa-chat: daemon offline")
+
+    ok = capture_view("sessions-action-error", "SessionsView.qml", setup_sessions, show_sessions_action_error) and ok
+
+    # 3. ChatView
     def setup_chat(ctx):
         transcript_model = TranscriptModel(client, "")
         transcript_model._rows = [

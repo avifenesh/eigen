@@ -5,11 +5,21 @@ Populated by RPC Sessions; live-updated from subscribed events. Sort: newest-upd
 """
 
 import sys
-from typing import Optional
+from typing import Any, Optional
 
 from PySide6.QtCore import Property, QAbstractListModel, QModelIndex, QObject, Qt, Signal, Slot
 
 from eigenqt.rpc import RpcClient
+
+
+def _err_text(value: Any) -> str:
+    """Extract a readable RPC error string."""
+    if isinstance(value, dict):
+        nested = value.get("message") or value.get("error")
+        if nested is not None and nested is not value:
+            return _err_text(nested)
+        return "Unknown error"
+    return str(value) if value else "Unknown error"
 
 
 class SessionsModel(QAbstractListModel):
@@ -223,7 +233,7 @@ class SessionsModel(QAbstractListModel):
             self._removing.discard(session_id)
             self.removingChanged.emit()
             if "error" in result:
-                self._set_action_error(str(result.get("error") or "failed to remove session"))
+                self._set_action_error(_err_text(result.get("error")))
                 return
             self._remove_local(session_id)
             self._set_action_message(f"Removed {session_id}")
@@ -247,7 +257,7 @@ class SessionsModel(QAbstractListModel):
             self._exporting.discard(session_id)
             self.exportingChanged.emit()
             if "error" in result:
-                self._set_action_error(str(result.get("error") or "failed to export session"))
+                self._set_action_error(_err_text(result.get("error")))
                 return
             path = str(result.get("result") or "")
             self._set_action_message(f"Exported {session_id}" + (f" to {path}" if path else ""))
@@ -267,7 +277,7 @@ class SessionsModel(QAbstractListModel):
         def on_result(result: dict):
             self._set_pruning(False)
             if "error" in result:
-                self._set_action_error(str(result.get("error") or "failed to prune sessions"))
+                self._set_action_error(_err_text(result.get("error")))
                 return
             removed = result.get("result") or []
             if isinstance(removed, list):
@@ -280,6 +290,16 @@ class SessionsModel(QAbstractListModel):
             self.refresh()
 
         self._client.call("PruneSessions", callback=on_result)
+
+    @Slot()
+    def clearActionError(self):
+        """Clear the visible session action error banner."""
+        self._set_action_error("")
+
+    @Slot()
+    def clearActionMessage(self):
+        """Clear the visible session action success/info banner."""
+        self._set_action_message("")
 
     def mark_unread(self, session_id: str):
         """Mark a session as unread."""
