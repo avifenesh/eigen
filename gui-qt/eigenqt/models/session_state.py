@@ -49,6 +49,7 @@ class SessionStateModel(QObject):
         self._catalog = []  # list of model names
         self._effort_levels = []  # list of effort levels for current model
         self._status = "idle"  # Computed from State RPC "running" field
+        self._load_seq = 0
         # The session's primary working directory (first Roots entry — the
         # State DTO carries roots, not a single dir). The diff/files dock
         # scopes to this.
@@ -113,6 +114,19 @@ class SessionStateModel(QObject):
     @Slot(dict)
     def seed(self, state: dict) -> None:
         """Seed from State RPC result."""
+        self._apply_state(state)
+
+    def beginStateRequest(self) -> int:
+        """Start an external State request and return its freshness token."""
+        return self._next_seq()
+
+    def applyState(self, state: dict, seq: Optional[int] = None) -> None:
+        """Apply a State response if it belongs to the newest request."""
+        if seq is not None and seq != self._load_seq:
+            return
+        self._apply_state(state)
+
+    def _apply_state(self, state: dict) -> None:
         self._model = state.get("model", "")
         self._effort = state.get("effort", "")
         self._perm = state.get("perm", "")
@@ -176,96 +190,91 @@ class SessionStateModel(QObject):
     @Slot(str)
     def setModel(self, model: str) -> None:
         """Set model via RPC SetModel, update on success."""
+        seq = self._next_seq()
 
         def on_result(result: dict) -> None:
-            if "error" in result:
-                print(f"SetModel error: {result['error']}")
-                return
-            # Re-seed from the returned SessionStateDTO
-            self.seed(result["result"])
+            self._on_state_result(result, seq, "SetModel")
 
         self._client.call("SetModel", self._session_id, model, callback=on_result)
 
     @Slot(str)
     def setEffort(self, effort: str) -> None:
         """Set effort via RPC SetEffort, update on success."""
+        seq = self._next_seq()
 
         def on_result(result: dict) -> None:
-            if "error" in result:
-                print(f"SetEffort error: {result['error']}")
-                return
-            self.seed(result["result"])
+            self._on_state_result(result, seq, "SetEffort")
 
         self._client.call("SetEffort", self._session_id, effort, callback=on_result)
 
     @Slot(str)
     def setPerm(self, perm: str) -> None:
         """Set perm via RPC SetPerm, update on success."""
+        seq = self._next_seq()
 
         def on_result(result: dict) -> None:
-            if "error" in result:
-                print(f"SetPerm error: {result['error']}")
-                return
-            self.seed(result["result"])
+            self._on_state_result(result, seq, "SetPerm")
 
         self._client.call("SetPerm", self._session_id, perm, callback=on_result)
 
     @Slot(str)
     def setTitle(self, title: str) -> None:
         """Set title via RPC SetTitle, update on success."""
+        seq = self._next_seq()
 
         def on_result(result: dict) -> None:
-            if "error" in result:
-                print(f"SetTitle error: {result['error']}")
-                return
-            self.seed(result["result"])
+            self._on_state_result(result, seq, "SetTitle")
 
         self._client.call("SetTitle", self._session_id, title, callback=on_result)
 
     @Slot(str)
     def setGoal(self, goal: str) -> None:
         """Set persistent goal via RPC SetGoal, update on success."""
+        seq = self._next_seq()
 
         def on_result(result: dict) -> None:
-            if "error" in result:
-                print(f"SetGoal error: {result['error']}")
-                return
-            self.seed(result["result"])
+            self._on_state_result(result, seq, "SetGoal")
 
         self._client.call("SetGoal", self._session_id, goal, callback=on_result)
 
     @Slot(str)
     def setSearch(self, search: str) -> None:
         """Set live-search mode via RPC SetSearch, update on success."""
+        seq = self._next_seq()
 
         def on_result(result: dict) -> None:
-            if "error" in result:
-                print(f"SetSearch error: {result['error']}")
-                return
-            self.seed(result["result"])
+            self._on_state_result(result, seq, "SetSearch")
 
         self._client.call("SetSearch", self._session_id, search, callback=on_result)
 
     @Slot(bool)
     def setFast(self, fast: bool) -> None:
         """Toggle fast/priority tier via RPC SetFast, update on success."""
+        seq = self._next_seq()
 
         def on_result(result: dict) -> None:
-            if "error" in result:
-                print(f"SetFast error: {result['error']}")
-                return
-            self.seed(result["result"])
+            self._on_state_result(result, seq, "SetFast")
 
         self._client.call("SetFast", self._session_id, bool(fast), callback=on_result)
 
     @Slot()
     def refresh(self) -> None:
         """Refresh session state from RPC State."""
+        seq = self._next_seq()
 
         def on_result(result: dict) -> None:
-            if "error" in result:
-                print(f"State refresh error: {result['error']}")
-                return
-            self.seed(result["result"])
+            self._on_state_result(result, seq, "State refresh")
 
         self._client.call("State", self._session_id, callback=on_result)
+
+    def _next_seq(self) -> int:
+        self._load_seq += 1
+        return self._load_seq
+
+    def _on_state_result(self, result: dict, seq: int, label: str) -> None:
+        if seq != self._load_seq:
+            return
+        if "error" in result:
+            print(f"{label} error: {result['error']}")
+            return
+        self._apply_state(result["result"])

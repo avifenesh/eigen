@@ -37,6 +37,48 @@ class FakeRpcClient(QObject):
             callback({"result": dict(self.state)})
 
 
+class DeferredRpcClient(QObject):
+    def __init__(self):
+        super().__init__()
+        self.calls = []
+
+    def call(self, method, *args, callback=None):
+        self.calls.append({"method": method, "args": args, "callback": callback})
+
+
+def state_payload(
+    *,
+    model="gpt-5",
+    effort="high",
+    perm="gated",
+    search="auto",
+    fast=False,
+    levels=None,
+):
+    if levels is None:
+        levels = ["low", "high"]
+    return {
+        "model": model,
+        "effort": effort,
+        "perm": perm,
+        "title": "Qt shell",
+        "goal": "Tighten provider controls",
+        "search": search,
+        "fast": fast,
+        "fastOk": True,
+        "tools": [{"name": "read_file", "read_only": True}],
+        "running": False,
+        "roots": ["/repo/eigen"],
+        "catalog": {"models": [{"id": model, "effortLevels": levels}]},
+    }
+
+
+def reply(call, payload):
+    callback = call["callback"]
+    assert callback is not None
+    callback({"result": payload})
+
+
 def test_session_state_exposes_provider_modes_and_roots():
     client = FakeRpcClient()
     model = SessionStateModel(client, "s-chat")
@@ -82,3 +124,43 @@ def test_session_state_exposes_provider_modes_and_roots():
     assert model.goal == "Ship the Qt shell"
     assert model.search == "auto"
     assert model.fast is False
+
+
+def test_session_state_ignores_stale_refresh_after_newer_model_change():
+    client = DeferredRpcClient()
+    model = SessionStateModel(client, "s-chat")
+    model.seed(state_payload(model="gpt-5", levels=["low", "high"]))
+
+    model.refresh()
+    stale_refresh = client.calls[-1]
+
+    model.setModel("local-qwen")
+    model_change = client.calls[-1]
+    reply(
+        model_change,
+        state_payload(model="local-qwen", effort="medium", levels=["low", "medium"]),
+    )
+
+    assert model.model == "local-qwen"
+    assert model.effort == "medium"
+    assert model.effortLevels == ["low", "medium"]
+
+    reply(stale_refresh, state_payload(model="gpt-5", effort="high", levels=["low", "high"]))
+
+    assert model.model == "local-qwen"
+    assert model.effort == "medium"
+    assert model.effortLevels == ["low", "medium"]
+
+
+def test_session_state_ignores_stale_external_initial_state():
+    client = DeferredRpcClient()
+    model = SessionStateModel(client, "s-chat")
+
+    initial_state_seq = model.beginStateRequest()
+    model.setSearch("on")
+    search_change = client.calls[-1]
+    reply(search_change, state_payload(search="on"))
+
+    model.applyState(state_payload(search="off"), initial_state_seq)
+
+    assert model.search == "on"

@@ -263,14 +263,19 @@ class SessionController(QObject):
         self._client.subscribe([channel])
 
         # Fetch initial state
-        self._client.call("State", session_id, callback=self._on_state)
+        state_seq = self._session_state_model.beginStateRequest()
+        self._client.call(
+            "State",
+            session_id,
+            callback=lambda result, seq=state_seq: self._on_state(result, seq),
+        )
 
-    def _on_state(self, result):
+    def _on_state(self, result, state_seq=None):
         """Handle State RPC result."""
         if "result" in result:
             self.transcript_model.seed(result["result"])
             self.approvals_model.seed(result["result"])
-            self._session_state_model.seed(result["result"])
+            self._session_state_model.applyState(result["result"], state_seq)
 
     @Slot()
     def detach(self):
