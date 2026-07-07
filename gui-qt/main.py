@@ -27,6 +27,7 @@ from eigenqt.models import (
     MachinesModel,
     ObserveModel,
     PluginsModel,
+    ProfileModel,
     ProposalsModel,
     ReplyWatcher,
     RoutingModel,
@@ -85,6 +86,7 @@ class AppContext(QObject):
         self.machines_model = MachinesModel(self.rpc_client, self)
         self.crons_model = CronsModel(self.rpc_client, self)
         self.plugins_model = PluginsModel(self.rpc_client, self)
+        self.profile_model = ProfileModel(self.rpc_client, self)
         self.config_model = ConfigModel(self.rpc_client, self)
         self.rule_chains_model = RuleChainsModel(self.rpc_client, self)
         self.reviewers_model = ReviewersModel(self.rpc_client, self)
@@ -336,6 +338,7 @@ def main():
     ctx.setContextProperty("machinesModel", app_context.machines_model)
     ctx.setContextProperty("cronsModel", app_context.crons_model)
     ctx.setContextProperty("pluginsModel", app_context.plugins_model)
+    ctx.setContextProperty("profileModel", app_context.profile_model)
     ctx.setContextProperty("configModel", app_context.config_model)
     ctx.setContextProperty("ruleChainsModel", app_context.rule_chains_model)
     ctx.setContextProperty("reviewersModel", app_context.reviewers_model)

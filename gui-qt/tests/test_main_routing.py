@@ -34,6 +34,7 @@ from eigenqt.models import (
     MemoryModel,
     ObserveModel,
     PluginsModel,
+    ProfileModel,
     ProposalsModel,
     RoutingModel,
     SessionStateModel,
@@ -141,7 +142,16 @@ class FakeRpcClient(QObject):
         if method == "ListMemoryScopes":
             return []
         if method == "MemoryForScope":
-            return {"summary": "", "notes": [], "adHoc": [], "profile": "", "banList": []}
+            scope = args[0] if args else ""
+            return {
+                "scope": scope,
+                "summary": "",
+                "notes": [],
+                "adHoc": [],
+                "profile": "Qt profile proof" if scope == "global" else "",
+                "profileLearned": "Prefers direct Qt checks." if scope == "global" else "",
+                "banList": [],
+            }
         if method == "ObsidianStatus":
             return {"available": False, "vault": ""}
         if method == "ObsidianNotes":
@@ -658,6 +668,7 @@ try:
     rule_chains_model = RuleChainsModel(client)
     reviewers_model = ReviewersModel(client)
     plugins_model = PluginsModel(client)
+    profile_model = ProfileModel(client)
     controller = FakeSessionController(client)
     transcript_model = TranscriptModel(client, "")
     approvals_model = ApprovalsModel(client, "")
@@ -690,12 +701,13 @@ try:
     ctx.setContextProperty("ruleChainsModel", rule_chains_model)
     ctx.setContextProperty("reviewersModel", reviewers_model)
     ctx.setContextProperty("pluginsModel", plugins_model)
+    ctx.setContextProperty("profileModel", profile_model)
     ctx.setContextProperty("sessionController", controller)
     ctx.setContextProperty("transcriptModel", transcript_model)
     ctx.setContextProperty("approvalsModel", approvals_model)
     ctx.setContextProperty("daemonOnline", True)
     ctx.setContextProperty("guiserverSha", "abcdef1234567890")
-    ctx.setContextProperty("statsData", {"running_turns": 2})
+    ctx.setContextProperty("statsData", {"running_turns": 2, "sessions": 7})
     ctx.setContextProperty("clipboardHelper", clipboard)
     ctx.setContextProperty("highlighter", highlighter)
     ctx.setContextProperty("markdownParser", markdown)
@@ -775,8 +787,9 @@ try:
         ("navItem_crons", "crons", 12),
         ("navItem_plugins", "plugins", 13),
         ("navItem_connectors", "connectors", 14),
-        ("navItem_config", "config", 15),
-        ("navItem_reviewers", "reviewers", 16),
+        ("navItem_profile", "profile", 15),
+        ("navItem_config", "config", 16),
+        ("navItem_reviewers", "reviewers", 17),
     ]
     for object_name, route, index in route_expectations:
         nav = click_item(app, window, object_name)
@@ -904,6 +917,47 @@ try:
         )
     if installed_row.property("qaTextFits") is not True or risk_row.property("qaTextFits") is not True or market_row.property("qaTextFits") is not True:
         raise AssertionError("Plugins inventory row text did not fit")
+
+    click_item(app, window, "navItem_profile")
+    pump(app, 24)
+    if ("ObserveSummary", (5000,)) not in client.calls:
+        raise AssertionError(f"Profile view did not fetch usage: {client.calls}")
+    if ("MemoryForScope", ("global",)) not in client.calls:
+        raise AssertionError(f"Profile view did not fetch the global profile: {client.calls}")
+    profile_view = find_item_in_window(window, "profileView")
+    turns_kpi = find_item_in_window(window, "profileKpi_turns")
+    sessions_kpi = find_item_in_window(window, "profileKpi_sessions")
+    model_row = find_item_in_window(window, "profileModelRow_gpt_5")
+    profile_card = find_item_in_window(window, "profileUserCard")
+    profile_edit = find_item_in_window(window, "profileEditButton")
+    if profile_view is None or turns_kpi is None or sessions_kpi is None or model_row is None or profile_card is None:
+        raise AssertionError("Profile view did not render usage and profile sections")
+    if profile_view.property("qaRecordCount") != 4 or profile_view.property("qaModelCount") != 1:
+        raise AssertionError(
+            "Profile view usage counts were wrong: "
+            f"records={profile_view.property('qaRecordCount')} "
+            f"models={profile_view.property('qaModelCount')}"
+        )
+    if turns_kpi.property("qaTextFits") is not True or sessions_kpi.property("qaTextFits") is not True:
+        raise AssertionError("Profile KPI text did not fit")
+    if model_row.property("qaTextFits") is not True:
+        raise AssertionError("Profile model row text did not fit")
+    if profile_edit is None or profile_edit.property("qaTextFits") is not True:
+        raise AssertionError("Profile edit button did not render cleanly")
+    click_item(app, window, "profileEditButton")
+    pump(app, 12)
+    profile_text = find_item_in_window(window, "profileTextArea")
+    profile_save = find_item_in_window(window, "profileSaveButton")
+    if profile_text is None or profile_save is None:
+        raise AssertionError("Profile editor did not open")
+    profile_text.setProperty("text", "Updated Qt profile proof")
+    pump(app, 12)
+    if profile_save.property("qaTextFits") is not True:
+        raise AssertionError("Profile save button text did not fit")
+    click_item(app, window, "profileSaveButton")
+    pump(app, 18)
+    if ("WriteUserProfile", ("Updated Qt profile proof",)) not in client.calls:
+        raise AssertionError(f"Profile save did not call WriteUserProfile: {client.calls}")
 
     client.failures["NewSession"] = "daemon offline"
     click_item(app, window, "navItem_live")

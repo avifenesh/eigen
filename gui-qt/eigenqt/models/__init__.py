@@ -15,6 +15,7 @@ RoutingModel: model/provider routing catalog with route-health stats
 MachinesModel: remote host list plus on-demand remote session drill-in
 CronsModel: scheduled-work snapshot with route-scoped polling
 PluginsModel: installed plugin and marketplace inventory
+ProfileModel: usage summary plus global USER.md profile editor
 """
 
 from .sessions import SessionsModel
@@ -35,6 +36,7 @@ from .routing import RoutingModel
 from .machines import MachinesModel
 from .crons import CronsModel
 from .plugins import PluginsModel
+from .profile import ProfileModel
 
 __all__ = [
     "SessionsModel",
@@ -59,4 +61,5 @@ __all__ = [
     "MachinesModel",
     "CronsModel",
     "PluginsModel",
+    "ProfileModel",
 ]

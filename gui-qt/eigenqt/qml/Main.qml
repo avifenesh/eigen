@@ -88,8 +88,9 @@ ApplicationWindow {
                 if (route === "crons") return 12
                 if (route === "plugins") return 13
                 if (route === "connectors") return 14
-                if (route === "config") return 15
-                if (route === "reviewers") return 16
+                if (route === "profile") return 15
+                if (route === "config") return 16
+                if (route === "reviewers") return 17
                 return 0  // default to home
             }
 
@@ -227,13 +228,19 @@ ApplicationWindow {
                 connectorsModel: root.ctxConnectors
             }
 
-            // Index 15: Config view (editable config fields + rule chains)
+            // Index 15: Profile view (usage and USER.md profile)
+            ProfileView {
+                profileModel: root.ctxProfileModel
+                statsData: root.ctxStats
+            }
+
+            // Index 16: Config view (editable config fields + rule chains)
             ConfigView {
                 configModel: root.ctxConfigModel
                 ruleChainsModel: root.ctxRuleChainsModel
             }
 
-            // Index 16: Reviewers view (revuto cockpit)
+            // Index 17: Reviewers view (revuto cockpit)
             ReviewersView {
                 reviewersModel: root.ctxReviewersModel
             }
@@ -359,6 +366,7 @@ ApplicationWindow {
     readonly property var ctxMachinesModel: machinesModel
     readonly property var ctxCronsModel: cronsModel
     readonly property var ctxPluginsModel: pluginsModel
+    readonly property var ctxProfileModel: profileModel
     readonly property var ctxConfigModel: configModel
     readonly property var ctxRuleChainsModel: ruleChainsModel
     readonly property var ctxReviewersModel: reviewersModel

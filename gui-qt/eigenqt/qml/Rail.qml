@@ -438,6 +438,19 @@ Rectangle {
                         Layout.fillWidth: true
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
+                        route: "profile"
+                        label: "Profile"
+                        glyph: "◑"
+                        badge: 0
+                        badgeLive: false
+                        isActive: root.currentRoute === "profile"
+                        onClicked: root.routeChanged("profile")
+                    }
+
+                    NavItem {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Theme.space.sm
+                        Layout.rightMargin: Theme.space.sm
                         route: "config"
                         label: "Config"
                         glyph: "⚙"

@@ -31,6 +31,7 @@ from eigenqt.models.routing import RoutingModel
 from eigenqt.models.machines import MachinesModel
 from eigenqt.models.crons import CronsModel
 from eigenqt.models.plugins import PluginsModel
+from eigenqt.models.profile import ProfileModel
 from eigenqt.models import (
     ApprovalsModel,
     CommandsModel,
@@ -166,7 +167,16 @@ class ScreenshotRpcClient(QObject):
         if method == "ListMemoryScopes":
             return []
         if method == "MemoryForScope":
-            return {}
+            scope = args[0] if args else ""
+            return {
+                "scope": scope,
+                "summary": "",
+                "notes": [],
+                "adHoc": [],
+                "profile": "# User profile\n\nDeveloper working on eigen GUI." if scope == "global" else "",
+                "profileLearned": "Works on Qt/QML interfaces" if scope == "global" else "",
+                "banList": [],
+            }
         if method == "Config":
             return self.config_payload
         if method == "RuleChains":
@@ -674,6 +684,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser):
         "machinesModel": MachinesModel(client),
         "cronsModel": CronsModel(client),
         "pluginsModel": PluginsModel(client),
+        "profileModel": ProfileModel(client),
         "configModel": ConfigModel(client),
         "ruleChainsModel": RuleChainsModel(client),
         "reviewersModel": ReviewersModel(client),
@@ -682,7 +693,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser):
         "approvalsModel": ApprovalsModel(client, ""),
         "daemonOnline": True,
         "guiserverSha": "qa1234567890",
-        "statsData": {"running_turns": 2},
+        "statsData": {"running_turns": 2, "sessions": 7},
         "clipboardHelper": clipboard_helper,
         "highlighter": highlighter,
         "markdownParser": markdown_parser,
@@ -1908,7 +1919,42 @@ def main():
 
     ok = capture_view("plugins", "PluginsView.qml", setup_plugins, show_plugins) and ok
 
-    # 14. ConnectorsView
+    # 14. ProfileView
+    def setup_profile(ctx):
+        profile_model = ProfileModel(client)
+        stats = {"sessions": 7}
+        ctx.setContextProperty("profileModel", profile_model)
+        ctx.setContextProperty("statsData", stats)
+        ctx.setContextProperty("markdownParser", markdown_parser)
+        ctx.setContextProperty("clipboardHelper", clipboard_helper)
+        ctx.setContextProperty("highlighter", highlighter)
+        return {"profileModel": profile_model, "statsData": stats}
+
+    def show_profile(_view, root):
+        for _ in range(8):
+            app.processEvents()
+        if root.property("qaRecordCount") != 4 or root.property("qaModelCount") != 1:
+            raise AssertionError(
+                "profile screenshot expected 4 records and 1 model, saw "
+                f"{root.property('qaRecordCount')} records and {root.property('qaModelCount')} models"
+            )
+        sessions_kpi = find_item(root, "profileKpi_sessions")
+        turns_kpi = find_item(root, "profileKpi_turns")
+        model_row = find_item(root, "profileModelRow_gpt_5")
+        profile_card = find_item(root, "profileUserCard")
+        edit_button = find_item(root, "profileEditButton")
+        if sessions_kpi is None or turns_kpi is None or model_row is None or profile_card is None:
+            raise AssertionError("profile screenshot did not render usage/profile sections")
+        if sessions_kpi.property("qaTextFits") is not True or turns_kpi.property("qaTextFits") is not True:
+            raise AssertionError("profile screenshot rendered clipped KPI text")
+        if model_row.property("qaTextFits") is not True:
+            raise AssertionError("profile screenshot rendered clipped model row")
+        if edit_button is None or edit_button.property("qaTextFits") is not True:
+            raise AssertionError("profile screenshot did not render a clean edit button")
+
+    ok = capture_view("profile", "ProfileView.qml", setup_profile, show_profile) and ok
+
+    # 15. ConnectorsView
     def setup_connectors(ctx):
         connectors_model = ConnectorsModel(client)
         connectors_model._loading = False
