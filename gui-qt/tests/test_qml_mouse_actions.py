@@ -897,6 +897,8 @@ def check_notes(app, client):
             )
         if cancel is None or not cancel.property("qaTextFits"):
             raise AssertionError("notes cancel edit button text does not fit")
+        if cancel.property("enabled") is not False:
+            raise AssertionError("notes cancel edit button stayed enabled while save was pending")
         QTest.qWait(70)
         pump(app, 12)
         assert_call(client, start, "ObsidianWrite", ("Inbox/Existing.md", "# Existing\n\nEdited body", False))

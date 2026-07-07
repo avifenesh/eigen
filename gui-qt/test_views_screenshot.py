@@ -1389,6 +1389,30 @@ def main():
     ok = capture_view("notes", "NotesView.qml", setup_notes) and ok
     ok = capture_view("notes-edit", "NotesView.qml", lambda ctx: setup_notes(ctx, editing=True)) and ok
 
+    def show_notes_save_pending(_view, root):
+        notes_controller = root.property("notesController")
+        if notes_controller is not None:
+            notes_controller.saving = True
+
+    ok = capture_view(
+        "notes-save-pending",
+        "NotesView.qml",
+        lambda ctx: setup_notes(ctx, editing=True),
+        show_notes_save_pending,
+    ) and ok
+
+    def show_notes_save_error(_view, root):
+        notes_controller = root.property("notesController")
+        if notes_controller is not None:
+            notes_controller.action_error = "Could not save Inbox/Ideas.md: save denied"
+
+    ok = capture_view(
+        "notes-save-error",
+        "NotesView.qml",
+        lambda ctx: setup_notes(ctx, editing=True),
+        show_notes_save_error,
+    ) and ok
+
     # 11. MemoryView
     def setup_memory(ctx):
         memory_model = MemoryModel(client)
