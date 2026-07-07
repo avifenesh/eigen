@@ -202,9 +202,11 @@ func (b *Bridge) DreamingForScope(scope string) (*DreamingScopeDTO, error) {
 // ConsolidationContent returns the raw content of a consolidation snapshot, so
 // the frontend can diff it against the current memory.
 func (b *Bridge) ConsolidationContent(path string) (string, error) {
-	// Only serve files that look like a memory backup (defense against a path
-	// the frontend shouldn't reach).
-	if !strings.HasSuffix(path, ".bak") || !strings.Contains(filepath.Base(path), "MEMORY.md.") {
+	allowed, err := memoryBackupPathAllowed(path)
+	if err != nil {
+		return "", err
+	}
+	if !allowed {
 		return "", os.ErrPermission
 	}
 	data, err := os.ReadFile(path)
@@ -212,6 +214,49 @@ func (b *Bridge) ConsolidationContent(path string) (string, error) {
 		return "", err
 	}
 	return string(data), nil
+}
+
+func memoryBackupPathAllowed(path string) (bool, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false, nil
+	}
+
+	// Only serve files that look like a memory backup, and only from the memory
+	// workspace. This method is reachable from the GUI bridge, so the frontend
+	// must not be able to turn it into a generic local file reader.
+	baseName := filepath.Base(path)
+	if !strings.HasPrefix(baseName, "MEMORY.md.") || !strings.HasSuffix(baseName, ".bak") {
+		return false, nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false, err
+	}
+	base, err := filepath.Abs(filepath.Join(home, ".eigen", "memory"))
+	if err != nil {
+		return false, err
+	}
+	target, err := filepath.Abs(path)
+	if err != nil {
+		return false, err
+	}
+
+	// Resolve symlinks for existing paths so a backup-looking link inside the
+	// memory workspace cannot escape to arbitrary files.
+	if realBase, err := filepath.EvalSymlinks(base); err == nil {
+		base = realBase
+	}
+	if realTarget, err := filepath.EvalSymlinks(target); err == nil {
+		target = realTarget
+	}
+
+	rel, err := filepath.Rel(base, target)
+	if err != nil {
+		return false, err
+	}
+	return rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != "..", nil
 }
 
 // CurrentMemory returns the current MEMORY.md content for a scope (the "after"
