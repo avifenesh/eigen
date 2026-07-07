@@ -124,23 +124,19 @@ Rectangle {
                 Item { height: Theme.space.lg }
 
                 // REPO ROWS
-                Item {
+                ColumnLayout {
                     id: reviewersList
+                    objectName: "reviewersList"
                     Layout.fillWidth: true
-                    Layout.preferredHeight: implicitHeight
-                    implicitHeight: {
-                        var count = root.reviewersModel ? root.reviewersModel.count : 0
-                        return count <= 0 ? 0 : count * 56 + (count - 1) * Theme.space.sm
-                    }
+                    spacing: Theme.space.sm
 
                     Repeater {
                         model: root.reviewersModel
                         delegate: Rectangle {
                             id: reviewerRow
                             objectName: "reviewerRow_" + reviewerKey
-                            width: reviewersList.width
-                            height: 56
-                            y: index * (height + Theme.space.sm)
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 56
                             color: Theme.colors.bgRaised
                             border.width: 1
                             border.color: repoBusy ? Theme.colors.borderBrandFaint : Theme.colors.borderHairline

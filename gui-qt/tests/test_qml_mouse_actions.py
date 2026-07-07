@@ -931,6 +931,18 @@ def check_reviewers(app, client):
         if not reviewers._poll_timer.isActive():
             raise AssertionError("reviewers view did not activate route-scoped polling while visible")
 
+        reviewers_list = find_visual_item(root, "reviewersList")
+        row = find_visual_item(root, "reviewerRow_avifenesh_eigen")
+        if reviewers_list is None or row is None:
+            raise AssertionError("reviewers list did not expose its seeded row")
+        row_width = float(row.property("width") or 0)
+        row_height = float(row.property("height") or 0)
+        list_width = float(reviewers_list.property("width") or 0)
+        if row_width <= 0 or row_height < 55:
+            raise AssertionError(f"reviewers row has unstable geometry: {row_width}x{row_height}")
+        if abs(row_width - list_width) > 1.0:
+            raise AssertionError(f"reviewers row no longer fills list width: row={row_width}, list={list_width}")
+
         refresh = find_visual_item(root, "reviewersRefreshButton")
         if refresh is None or refresh.property("qaTextFits") is not True:
             raise AssertionError("reviewers refresh button text does not fit")
