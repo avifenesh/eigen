@@ -23,6 +23,7 @@ from eigenqt.models import (
     KanbanModel,
     LiveSessionsModel,
     MemoryModel,
+    MachinesModel,
     ObserveModel,
     ProposalsModel,
     ReplyWatcher,
@@ -79,6 +80,7 @@ class AppContext(QObject):
         self.connectors_model = ConnectorsModel(self.rpc_client, self)
         self.observe_model = ObserveModel(self.rpc_client, self)
         self.routing_model = RoutingModel(self.rpc_client, self)
+        self.machines_model = MachinesModel(self.rpc_client, self)
         self.config_model = ConfigModel(self.rpc_client, self)
         self.rule_chains_model = RuleChainsModel(self.rpc_client, self)
         self.reviewers_model = ReviewersModel(self.rpc_client, self)
@@ -327,6 +329,7 @@ def main():
     ctx.setContextProperty("connectorsModel", app_context.connectors_model)
     ctx.setContextProperty("observeModel", app_context.observe_model)
     ctx.setContextProperty("routingModel", app_context.routing_model)
+    ctx.setContextProperty("machinesModel", app_context.machines_model)
     ctx.setContextProperty("configModel", app_context.config_model)
     ctx.setContextProperty("ruleChainsModel", app_context.rule_chains_model)
     ctx.setContextProperty("reviewersModel", app_context.reviewers_model)

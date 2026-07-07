@@ -84,9 +84,10 @@ ApplicationWindow {
                 if (route === "notes") return 8
                 if (route === "observe") return 9
                 if (route === "routing") return 10
-                if (route === "connectors") return 11
-                if (route === "config") return 12
-                if (route === "reviewers") return 13
+                if (route === "machines") return 11
+                if (route === "connectors") return 12
+                if (route === "config") return 13
+                if (route === "reviewers") return 14
                 return 0  // default to home
             }
 
@@ -199,18 +200,28 @@ ApplicationWindow {
                 routingModel: root.ctxRoutingModel
             }
 
-            // Index 11: Connectors view (MCP connectors management)
+            // Index 11: Machines view (remote host/session drill-in)
+            MachinesView {
+                machinesModel: root.ctxMachinesModel
+                onOpenSession: function(sessionId) {
+                    if (!sessionId) return
+                    root.currentRoute = "chat"
+                    root.ctxSessionController.open_session(sessionId)
+                }
+            }
+
+            // Index 12: Connectors view (MCP connectors management)
             ConnectorsView {
                 connectorsModel: root.ctxConnectors
             }
 
-            // Index 12: Config view (editable config fields + rule chains)
+            // Index 13: Config view (editable config fields + rule chains)
             ConfigView {
                 configModel: root.ctxConfigModel
                 ruleChainsModel: root.ctxRuleChainsModel
             }
 
-            // Index 13: Reviewers view (revuto cockpit)
+            // Index 14: Reviewers view (revuto cockpit)
             ReviewersView {
                 reviewersModel: root.ctxReviewersModel
             }
@@ -333,6 +344,7 @@ ApplicationWindow {
     readonly property var ctxConnectors: connectorsModel
     readonly property var ctxObserveModel: observeModel
     readonly property var ctxRoutingModel: routingModel
+    readonly property var ctxMachinesModel: machinesModel
     readonly property var ctxConfigModel: configModel
     readonly property var ctxRuleChainsModel: ruleChainsModel
     readonly property var ctxReviewersModel: reviewersModel

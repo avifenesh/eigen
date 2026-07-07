@@ -28,6 +28,7 @@ from eigenqt.models.connectors import ConnectorsModel
 from eigenqt.models.reviewers import ReviewersModel
 from eigenqt.models.observe import ObserveModel
 from eigenqt.models.routing import RoutingModel
+from eigenqt.models.machines import MachinesModel
 from eigenqt.models import (
     ApprovalsModel,
     CommandsModel,
@@ -267,6 +268,54 @@ class ScreenshotRpcClient(QObject):
                     "routeNotes": 1,
                 },
             }
+        if method == "Machines":
+            return {
+                "machines": [
+                    {
+                        "name": "codex-box",
+                        "ssh": "codex-box",
+                        "addr": "10.0.0.5",
+                        "dir": "/home/user/eigen",
+                        "model": "gpt-5",
+                        "perm": "gated",
+                        "saved": True,
+                        "detected": False,
+                    },
+                    {
+                        "name": "lab-node",
+                        "ssh": "lab-node",
+                        "dir": "/srv/eigen",
+                        "model": "local-qwen",
+                        "perm": "manual",
+                        "saved": False,
+                        "detected": True,
+                    },
+                ]
+            }
+        if method == "RemoteSessions":
+            target = args[0] if args else "codex-box"
+            return [
+                {
+                    "id": f"remote:{target}:s1",
+                    "title": "Remote Qt polish",
+                    "dir": "/home/user/eigen/gui-qt",
+                    "model": "gpt-5",
+                    "status": "working",
+                    "turns": 4,
+                    "views": 1,
+                    "updated": 1783155600000,
+                },
+                {
+                    "id": f"remote:{target}:s2",
+                    "title": "Remote notes",
+                    "dir": "/home/user/eigen",
+                    "model": "local-qwen",
+                    "status": "idle",
+                    "turns": 1,
+                    "views": 1,
+                    "updated": 1783144800000,
+                },
+            ]
         if method == "SetTitle":
             return {
                 "model": "gpt-5",
@@ -535,6 +584,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser):
         "connectorsModel": ConnectorsModel(client),
         "observeModel": ObserveModel(client),
         "routingModel": RoutingModel(client),
+        "machinesModel": MachinesModel(client),
         "configModel": ConfigModel(client),
         "ruleChainsModel": RuleChainsModel(client),
         "reviewersModel": ReviewersModel(client),
@@ -1691,7 +1741,38 @@ def main():
 
     ok = capture_view("routing", "RoutingView.qml", setup_routing, show_routing) and ok
 
-    # 11. ConnectorsView
+    # 11. MachinesView
+    def setup_machines(ctx):
+        machines_model = MachinesModel(client)
+        ctx.setContextProperty("machinesModel", machines_model)
+        return {"machinesModel": machines_model}
+
+    def show_machines(_view, root):
+        for _ in range(8):
+            app.processEvents()
+        if root.property("qaMachineCount") != 2:
+            raise AssertionError(f"machines screenshot expected 2 hosts, saw {root.property('qaMachineCount')}")
+        codex_card = find_item(root, "machinesCard_codex_box")
+        lab_card = find_item(root, "machinesCard_lab_node")
+        if codex_card is None or lab_card is None:
+            raise AssertionError("machines screenshot did not render host cards")
+        if codex_card.property("qaTextFits") is not True or lab_card.property("qaTextFits") is not True:
+            raise AssertionError("machines screenshot rendered clipped host text")
+        root.property("machinesModel").select_machine("codex-box")
+        for _ in range(12):
+            app.processEvents()
+        if root.property("qaRemoteCount") != 2:
+            raise AssertionError(f"machines screenshot expected 2 remote sessions, saw {root.property('qaRemoteCount')}")
+        remote_row = find_item(root, "machinesRemoteRow_remote_codex_box_s1")
+        remote_open = find_item(root, "machinesRemoteOpen_remote_codex_box_s1")
+        if remote_row is None or remote_open is None:
+            raise AssertionError("machines screenshot did not render remote sessions")
+        if remote_row.property("qaTextFits") is not True or remote_open.property("qaTextFits") is not True:
+            raise AssertionError("machines screenshot rendered clipped remote session text")
+
+    ok = capture_view("machines", "MachinesView.qml", setup_machines, show_machines) and ok
+
+    # 12. ConnectorsView
     def setup_connectors(ctx):
         connectors_model = ConnectorsModel(client)
         connectors_model._loading = False

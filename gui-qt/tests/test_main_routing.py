@@ -29,6 +29,7 @@ from eigenqt.models import (
     FeedModel,
     KanbanModel,
     LiveSessionsModel,
+    MachinesModel,
     MemoryModel,
     ObserveModel,
     ProposalsModel,
@@ -211,6 +212,54 @@ class FakeRpcClient(QObject):
                     {"name": "llama", "credentialed": True, "modelCount": 1},
                 ],
             }
+        if method == "Machines":
+            return {
+                "machines": [
+                    {
+                        "name": "codex-box",
+                        "ssh": "codex-box",
+                        "addr": "10.0.0.5",
+                        "dir": "/home/user/eigen",
+                        "model": "gpt-5",
+                        "perm": "gated",
+                        "saved": True,
+                        "detected": False,
+                    },
+                    {
+                        "name": "lab-node",
+                        "ssh": "lab-node",
+                        "dir": "/srv/eigen",
+                        "model": "local-qwen",
+                        "perm": "manual",
+                        "saved": False,
+                        "detected": True,
+                    },
+                ]
+            }
+        if method == "RemoteSessions":
+            target = args[0] if args else "codex-box"
+            return [
+                {
+                    "id": f"remote:{target}:s1",
+                    "title": "Remote Qt polish",
+                    "dir": "/home/user/eigen/gui-qt",
+                    "model": "gpt-5",
+                    "status": "working",
+                    "turns": 4,
+                    "views": 1,
+                    "updated": 1783155600000,
+                },
+                {
+                    "id": f"remote:{target}:s2",
+                    "title": "Remote notes",
+                    "dir": "/home/user/eigen",
+                    "model": "local-qwen",
+                    "status": "idle",
+                    "turns": 1,
+                    "views": 1,
+                    "updated": 1783144800000,
+                },
+            ]
         if method == "ObserveSummary":
             return {
                 "available": True,
@@ -512,6 +561,7 @@ try:
     skills_model = SkillsModel(client)
     proposals_model = ProposalsModel(client)
     memory_model = MemoryModel(client)
+    machines_model = MachinesModel(client)
     notes_controller = NotesController(client)
     connectors_model = ConnectorsModel(client)
     observe_model = ObserveModel(client)
@@ -541,6 +591,7 @@ try:
     ctx.setContextProperty("skillsModel", skills_model)
     ctx.setContextProperty("proposalsModel", proposals_model)
     ctx.setContextProperty("memoryModel", memory_model)
+    ctx.setContextProperty("machinesModel", machines_model)
     ctx.setContextProperty("notesController", notes_controller)
     ctx.setContextProperty("connectorsModel", connectors_model)
     ctx.setContextProperty("observeModel", observe_model)
@@ -629,9 +680,10 @@ try:
         ("navItem_notes", "notes", 8),
         ("navItem_observe", "observe", 9),
         ("navItem_routing", "routing", 10),
-        ("navItem_connectors", "connectors", 11),
-        ("navItem_config", "config", 12),
-        ("navItem_reviewers", "reviewers", 13),
+        ("navItem_machines", "machines", 11),
+        ("navItem_connectors", "connectors", 12),
+        ("navItem_config", "config", 13),
+        ("navItem_reviewers", "reviewers", 14),
     ]
     for object_name, route, index in route_expectations:
         nav = click_item(app, window, object_name)
@@ -690,6 +742,38 @@ try:
     grok_card = find_item_in_window(window, "routingModelCard_grok_4")
     if grok_card is None or grok_card.property("qaTextFits") is not True:
         raise AssertionError("Routing provider filter did not keep the grok model card clean")
+
+    click_item(app, window, "navItem_machines")
+    pump(app, 24)
+    if ("Machines", ()) not in client.calls:
+        raise AssertionError(f"Machines view did not fetch hosts: {client.calls}")
+    machines_view = find_item_in_window(window, "machinesView")
+    codex_card = find_item_in_window(window, "machinesCard_codex_box")
+    lab_card = find_item_in_window(window, "machinesCard_lab_node")
+    remote_panel = find_item_in_window(window, "machinesRemotePanel")
+    if machines_view is None or codex_card is None or lab_card is None or remote_panel is None:
+        raise AssertionError("Machines view did not render host cards and remote panel")
+    if machines_view.property("qaMachineCount") != 2:
+        raise AssertionError(f"Machines view host count was wrong: {machines_view.property('qaMachineCount')}")
+    if codex_card.property("qaTextFits") is not True or lab_card.property("qaTextFits") is not True:
+        raise AssertionError("Machines host card text did not fit")
+    click_item(app, window, "machinesCard_codex_box")
+    pump(app, 24)
+    if ("RemoteSessions", ("codex-box",)) not in client.calls:
+        raise AssertionError(f"Machines drill-in did not fetch remote sessions: {client.calls}")
+    remote_row = find_item_in_window(window, "machinesRemoteRow_remote_codex_box_s1")
+    remote_open = find_item_in_window(window, "machinesRemoteOpen_remote_codex_box_s1")
+    if remote_row is None or remote_open is None:
+        raise AssertionError("Machines drill-in did not render remote session rows")
+    if machines_view.property("qaRemoteCount") != 2:
+        raise AssertionError(f"Machines remote count was wrong: {machines_view.property('qaRemoteCount')}")
+    if remote_row.property("qaTextFits") is not True or remote_open.property("qaTextFits") is not True:
+        raise AssertionError("Machines remote session row text did not fit")
+    click_item(app, window, "machinesRemoteOpen_remote_codex_box_s1")
+    if controller.opened[-1:] != ["remote:codex-box:s1"]:
+        raise AssertionError(f"Remote session open did not attach chat: {controller.opened}")
+    if window.property("currentRoute") != "chat" or window.property("activeRouteIndex") != 3:
+        raise AssertionError("Remote session open did not switch to chat")
 
     client.failures["NewSession"] = "daemon offline"
     click_item(app, window, "navItem_live")

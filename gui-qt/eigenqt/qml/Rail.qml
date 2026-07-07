@@ -386,6 +386,19 @@ Rectangle {
                         Layout.fillWidth: true
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
+                        route: "machines"
+                        label: "Machines"
+                        glyph: "M"
+                        badge: 0
+                        badgeLive: false
+                        isActive: root.currentRoute === "machines"
+                        onClicked: root.routeChanged("machines")
+                    }
+
+                    NavItem {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Theme.space.sm
+                        Layout.rightMargin: Theme.space.sm
                         route: "connectors"
                         label: "Connectors"
                         glyph: "⟐"
