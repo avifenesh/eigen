@@ -112,6 +112,7 @@ Rectangle {
                 }
 
                 Rectangle {
+                    objectName: "machinesLoadError"
                     visible: root.machinesModel && root.machinesModel.load_error !== "" && root.qaMachineCount === 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: visible ? 132 : 0
@@ -134,6 +135,7 @@ Rectangle {
                         }
 
                         Label {
+                            objectName: "machinesLoadErrorText"
                             text: root.machinesModel ? root.machinesModel.load_error : ""
                             font.family: Theme.uiFonts[0]
                             font.pixelSize: Theme.fontSize.label
@@ -142,6 +144,7 @@ Rectangle {
                         }
 
                         AppButton {
+                            objectName: "machinesLoadErrorRetry"
                             text: "Retry"
                             compact: true
                             Layout.alignment: Qt.AlignHCenter
@@ -505,6 +508,7 @@ Rectangle {
 
                                     Label {
                                         id: remoteErrorText
+                                        objectName: "machinesRemoteErrorText"
                                         text: root.machinesModel ? root.machinesModel.remote_error : ""
                                         font.family: Theme.uiFonts[0]
                                         font.pixelSize: Theme.fontSize.label
@@ -514,6 +518,7 @@ Rectangle {
                                     }
 
                                     AppButton {
+                                        objectName: "machinesRemoteErrorRetry"
                                         text: "Retry"
                                         compact: true
                                         variant: "secondary"

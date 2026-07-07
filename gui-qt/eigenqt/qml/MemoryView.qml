@@ -45,6 +45,7 @@ Rectangle {
         move_pending: null,
         move_targets: [],
         short_dir: function(dir) { return dir || "" },
+        reload_current: function() {},
         select_scope: function(_key) {},
         save_note: function() {},
         open_move: function(_text, _index) {},
@@ -345,6 +346,7 @@ Rectangle {
 
             // Error state
             ColumnLayout {
+                objectName: "memoryLoadError"
                 visible: activeMemoryModel.load_error && !activeMemoryModel.current
                 anchors.centerIn: parent
                 spacing: Theme.space.lg
@@ -365,6 +367,7 @@ Rectangle {
                 }
 
                 Label {
+                    objectName: "memoryLoadErrorText"
                     text: activeMemoryModel.load_error
                     font.family: Theme.uiFonts[0]
                     font.pixelSize: Theme.fontSize.bodySm
@@ -373,8 +376,9 @@ Rectangle {
                 }
 
                 AppButton {
+                    objectName: "memoryLoadErrorRetry"
                     text: "Retry"
-                    onClicked: activeMemoryModel.select_scope(activeMemoryModel.scope_key)
+                    onClicked: activeMemoryModel.reload_current()
                     Layout.alignment: Qt.AlignHCenter
                 }
             }

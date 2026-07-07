@@ -2289,6 +2289,25 @@ def main():
 
     ok = capture_view("memory", "MemoryView.qml", setup_memory) and ok
 
+    def show_memory_load_error(_view, root):
+        model = root.property("memoryModel")
+        if model is not None:
+            model.current = None
+            model.load_error = "daemon offline"
+        for _ in range(8):
+            app.processEvents()
+        banner = find_item(root, "memoryLoadError")
+        text = find_item(root, "memoryLoadErrorText")
+        retry = find_item(root, "memoryLoadErrorRetry")
+        if banner is None or banner.property("visible") is not True:
+            raise AssertionError("memory load error screenshot did not render the banner")
+        if text is None or "daemon offline" not in text.property("text"):
+            raise AssertionError("memory load error screenshot rendered the wrong text")
+        if retry is None or retry.property("qaTextFits") is not True:
+            raise AssertionError("memory load error screenshot did not render a clean retry button")
+
+    ok = capture_view("memory-load-error", "MemoryView.qml", setup_memory, show_memory_load_error) and ok
+
     def show_memory_save_pending(_view, root):
         model = root.property("memoryModel")
         if model is not None:

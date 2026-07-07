@@ -506,6 +506,11 @@ class MemoryModel(QObject):
         self.scope_key = key
 
     @Slot()
+    def reload_current(self):
+        """Reload the active memory scope, even when the selected key is unchanged."""
+        self._load_scope(self._scope_key)
+
+    @Slot()
     def save_note(self):
         """Append a new note to the current scope."""
         if self.saving:

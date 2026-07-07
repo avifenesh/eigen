@@ -167,6 +167,7 @@ Rectangle {
                 }
 
                 Rectangle {
+                    objectName: "dreamingLoadError"
                     visible: root.dreamingModel && root.dreamingModel.load_error !== "" && root.qaRolloutCount === 0 && root.qaConsolidationCount === 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: visible ? 132 : 0
@@ -189,6 +190,7 @@ Rectangle {
                         }
 
                         Label {
+                            objectName: "dreamingLoadErrorText"
                             text: root.dreamingModel ? root.dreamingModel.load_error : ""
                             font.family: Theme.uiFonts[0]
                             font.pixelSize: Theme.fontSize.label
@@ -199,6 +201,7 @@ Rectangle {
                         }
 
                         AppButton {
+                            objectName: "dreamingLoadErrorRetry"
                             text: "Retry"
                             compact: true
                             Layout.alignment: Qt.AlignHCenter

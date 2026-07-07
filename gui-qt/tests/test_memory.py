@@ -84,6 +84,35 @@ def test_select_scope_resets_ui_state_and_loads_scope(model, client):
     assert client.calls[-1]["args"] == ("global",)
 
 
+def test_reload_current_loads_scope_even_when_key_is_unchanged(model, client):
+    model.scope_key = "global"
+    model.load_error = "daemon offline"
+    client.calls.clear()
+
+    model.select_scope("global")
+    assert client.calls == []
+
+    model.reload_current()
+
+    assert model.load_error == ""
+    assert client.calls[-1]["method"] == "MemoryForScope"
+    assert client.calls[-1]["args"] == ("global",)
+
+
+def test_reload_current_refetches_same_scope_after_load_error(model, client):
+    model.scope_key = "global"
+    model.current = None
+    model.load_error = "daemon offline"
+    client.calls.clear()
+
+    model.reload_current()
+
+    assert model.loading is True
+    assert model.load_error == ""
+    assert client.calls[-1]["method"] == "MemoryForScope"
+    assert client.calls[-1]["args"] == ("global",)
+
+
 def test_scope_load_ignores_stale_results(model, client):
     """A slow previous scope load must not overwrite the currently selected scope."""
     client.calls.clear()

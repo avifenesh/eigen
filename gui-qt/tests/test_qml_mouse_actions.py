@@ -24,8 +24,13 @@ from eigenqt.highlighter_helper import HighlighterHelper
 from eigenqt.markdown_helper import MarkdownHelper
 from eigenqt.models.config import ConfigModel, RuleChainsModel
 from eigenqt.models.connectors import ConnectorsModel
+from eigenqt.models.crons import CronsModel
+from eigenqt.models.dreaming import DreamingModel
+from eigenqt.models.machines import MachinesModel
 from eigenqt.models.memory import MemoryModel
 from eigenqt.models.notes import NotesController
+from eigenqt.models.observe import ObserveModel
+from eigenqt.models.plugins import PluginsModel
 from eigenqt.models.reviewers import ReviewersModel
 from eigenqt.models.skills import ProposalsModel, SkillsModel
 
@@ -132,6 +137,16 @@ class FakeRpcClient(QObject):
             ]
         if method == "MemoryForScope":
             return seeded_global_memory()
+        if method == "ObserveSummary":
+            return {}
+        if method == "DreamingForScope":
+            return {"scope": args[0] if args else "project", "rollouts": [], "consolidations": [], "currentBytes": 0}
+        if method == "Plugins":
+            return {"plugins": [], "marketplaces": []}
+        if method == "Machines":
+            return {"machines": []}
+        if method == "Crons":
+            return {"crons": [], "timers": 0, "crontab": 0, "systemdAvail": False}
         if method in ("AppendMemory", "WriteUserProfile", "AddBan", "RemoveMemoryNote", "RemoveAdHocMemoryNote", "MoveMemoryNote"):
             return {}
         if method == "ObsidianStatus":
@@ -765,6 +780,26 @@ def check_connectors(app, client):
 
 
 def check_memory(app, client):
+    load_error_memory = seeded_memory_model(client)
+    load_error_memory.current = None
+    load_error_memory.load_error = "daemon offline"
+    view, root = load_view(app, client, "MemoryView.qml", context={"memoryModel": load_error_memory}, root_props={"memoryModel": load_error_memory})
+    try:
+        load_error = find_visual_item(root, "memoryLoadError")
+        load_error_text = find_visual_item(root, "memoryLoadErrorText")
+        retry = find_visual_item(root, "memoryLoadErrorRetry")
+        if load_error is None or not load_error.property("visible"):
+            raise AssertionError("memory load error did not render")
+        if load_error_text is None or "daemon offline" not in load_error_text.property("text"):
+            raise AssertionError(f"memory load error text was wrong: {load_error_text.property('text') if load_error_text else None}")
+        if retry is None or not retry.property("qaTextFits"):
+            raise AssertionError("memory load error retry did not render cleanly")
+        start = len(client.calls)
+        click_item(app, view, root, "memoryLoadErrorRetry")
+        assert_call(client, start, "MemoryForScope", ("global",))
+    finally:
+        close_view(app, view)
+
     memory = seeded_memory_model(client)
     view, root = load_view(app, client, "MemoryView.qml", context={"memoryModel": memory}, root_props={"memoryModel": memory})
     try:
@@ -907,6 +942,137 @@ def check_memory(app, client):
         press_key_on_item(app, view, root, "memoryBanTitleInput", Qt.Key_Escape, flick_name="memoryFlick")
         if memory.adding_ban or memory.ban_title or memory.ban_rule:
             raise AssertionError("ban Escape did not cancel and clear the form")
+    finally:
+        close_view(app, view)
+
+
+def assert_load_error_retry(app, view, root, banner_name, text_name, retry_name, expected_text="daemon offline"):
+    pump(app, 12)
+    banner = find_visual_item(root, banner_name)
+    error_text = find_visual_item(root, text_name)
+    retry = find_visual_item(root, retry_name)
+    if banner is None or banner.property("visible") is not True:
+        raise AssertionError(f"{banner_name} did not render")
+    if error_text is None or expected_text not in str(error_text.property("text")):
+        raise AssertionError(f"{text_name} rendered wrong text: {error_text.property('text') if error_text else None!r}")
+    if retry is None or retry.property("qaTextFits") is not True:
+        raise AssertionError(f"{retry_name} did not render cleanly")
+    return retry
+
+
+def seed_model_load_error(app, model, clear_state):
+    clear_state()
+    if hasattr(model, "_set_loading"):
+        model._set_loading(False)
+    elif hasattr(model, "loading"):
+        model.loading = False
+    if hasattr(model, "_set_load_error"):
+        model._set_load_error("daemon offline")
+    else:
+        model.load_error = "daemon offline"
+    pump(app, 12)
+
+
+def check_utility_load_errors(app, client):
+    observe = ObserveModel(client)
+    view, root = load_view(app, client, "ObserveView.qml", context={"observeModel": observe}, root_props={"observeModel": observe})
+    try:
+        def clear_observe():
+            observe._summary = {}
+            observe.summary_changed.emit()
+
+        seed_model_load_error(app, observe, clear_observe)
+        assert_load_error_retry(app, view, root, "observeLoadError", "observeLoadErrorText", "observeLoadErrorRetry")
+        start = len(client.calls)
+        click_item(app, view, root, "observeLoadErrorRetry", flick_name="observeFlick")
+        assert_call(client, start, "ObserveSummary", (5000,))
+    finally:
+        close_view(app, view)
+
+    dreaming = DreamingModel(client)
+    view, root = load_view(app, client, "DreamingView.qml", context={"dreamingModel": dreaming}, root_props={"dreamingModel": dreaming})
+    try:
+        def clear_dreaming():
+            dreaming._scope_key = "global"
+            dreaming.scope_key_changed.emit()
+            dreaming._current = {}
+            dreaming.current_changed.emit()
+            dreaming.summary_changed.emit()
+
+        seed_model_load_error(app, dreaming, clear_dreaming)
+        assert_load_error_retry(app, view, root, "dreamingLoadError", "dreamingLoadErrorText", "dreamingLoadErrorRetry")
+        start = len(client.calls)
+        click_item(app, view, root, "dreamingLoadErrorRetry", flick_name="dreamingFlick")
+        assert_call(client, start, "ListMemoryScopes", ())
+        assert_call(client, start, "DreamingForScope", ("global",))
+    finally:
+        close_view(app, view)
+
+    plugins = PluginsModel(client)
+    view, root = load_view(app, client, "PluginsView.qml", context={"pluginsModel": plugins}, root_props={"pluginsModel": plugins})
+    try:
+        def clear_plugins():
+            plugins._plugins = []
+            plugins._marketplaces = []
+            plugins.plugins_changed.emit()
+            plugins.marketplaces_changed.emit()
+            plugins.summary_changed.emit()
+
+        seed_model_load_error(app, plugins, clear_plugins)
+        assert_load_error_retry(app, view, root, "pluginsLoadError", "pluginsLoadErrorText", "pluginsLoadErrorRetry")
+        start = len(client.calls)
+        click_item(app, view, root, "pluginsLoadErrorRetry", flick_name="pluginsFlick")
+        assert_call(client, start, "Plugins", ())
+    finally:
+        close_view(app, view)
+
+    machines = MachinesModel(client)
+    view, root = load_view(app, client, "MachinesView.qml", context={"machinesModel": machines}, root_props={"machinesModel": machines})
+    try:
+        def clear_machines():
+            machines._machines = []
+            machines.machines_changed.emit()
+            machines.summary_changed.emit()
+
+        seed_model_load_error(app, machines, clear_machines)
+        assert_load_error_retry(app, view, root, "machinesLoadError", "machinesLoadErrorText", "machinesLoadErrorRetry")
+        start = len(client.calls)
+        click_item(app, view, root, "machinesLoadErrorRetry", flick_name="machinesFlick")
+        assert_call(client, start, "Machines", ())
+    finally:
+        close_view(app, view)
+
+    crons = CronsModel(client)
+    view, root = load_view(app, client, "CronsView.qml", context={"cronsModel": crons}, root_props={"cronsModel": crons})
+    try:
+        def clear_crons():
+            crons._crons = []
+            crons._timers = 0
+            crons._crontab = 0
+            crons.crons_changed.emit()
+            crons.summary_changed.emit()
+
+        seed_model_load_error(app, crons, clear_crons)
+        assert_load_error_retry(app, view, root, "cronsLoadError", "cronsLoadErrorText", "cronsLoadErrorRetry")
+        start = len(client.calls)
+        click_item(app, view, root, "cronsLoadErrorRetry", flick_name="cronsFlick")
+        assert_call(client, start, "Crons", ())
+    finally:
+        close_view(app, view)
+
+    memory = MemoryModel(client)
+    memory.scopes = [{"key": "global", "name": "Global", "dir": "", "noteCount": 0, "current": True}]
+    memory.scope_key = "global"
+    view, root = load_view(app, client, "MemoryView.qml", context={"memoryModel": memory}, root_props={"memoryModel": memory})
+    try:
+        def clear_memory():
+            memory.current = None
+
+        seed_model_load_error(app, memory, clear_memory)
+        assert_load_error_retry(app, view, root, "memoryLoadError", "memoryLoadErrorText", "memoryLoadErrorRetry")
+        start = len(client.calls)
+        click_item(app, view, root, "memoryLoadErrorRetry")
+        assert_call(client, start, "MemoryForScope", ("global",))
     finally:
         close_view(app, view)
 
@@ -1354,7 +1520,7 @@ def main():
     QQuickStyle.setStyle("Basic")
     app = QGuiApplication([])
     client = FakeRpcClient()
-    for check in (check_config, check_connectors, check_memory, check_notes, check_reviewers, check_skills):
+    for check in (check_config, check_connectors, check_memory, check_utility_load_errors, check_notes, check_reviewers, check_skills):
         check(app, client)
     return 0
 

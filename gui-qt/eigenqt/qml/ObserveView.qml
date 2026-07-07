@@ -109,6 +109,7 @@ Rectangle {
                 }
 
                 Rectangle {
+                    objectName: "observeLoadError"
                     visible: root.observeModel && root.observeModel.load_error !== "" && root.qaRecordCount === 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: visible ? 128 : 0
@@ -131,6 +132,7 @@ Rectangle {
                         }
 
                         Label {
+                            objectName: "observeLoadErrorText"
                             text: root.observeModel ? root.observeModel.load_error : ""
                             font.family: Theme.uiFonts[0]
                             font.pixelSize: Theme.fontSize.label
@@ -139,6 +141,7 @@ Rectangle {
                         }
 
                         AppButton {
+                            objectName: "observeLoadErrorRetry"
                             text: "Retry"
                             compact: true
                             Layout.alignment: Qt.AlignHCenter

@@ -110,6 +110,7 @@ Rectangle {
                 }
 
                 Rectangle {
+                    objectName: "cronsLoadError"
                     visible: root.cronsModel && root.cronsModel.load_error !== "" && root.crons.length === 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: visible ? 132 : 0
@@ -132,6 +133,7 @@ Rectangle {
                         }
 
                         Label {
+                            objectName: "cronsLoadErrorText"
                             text: root.cronsModel ? root.cronsModel.load_error : ""
                             font.family: Theme.uiFonts[0]
                             font.pixelSize: Theme.fontSize.label
@@ -140,6 +142,7 @@ Rectangle {
                         }
 
                         AppButton {
+                            objectName: "cronsLoadErrorRetry"
                             text: "Retry"
                             compact: true
                             Layout.alignment: Qt.AlignHCenter

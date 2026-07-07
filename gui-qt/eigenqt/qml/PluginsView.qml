@@ -109,6 +109,7 @@ Rectangle {
                 }
 
                 Rectangle {
+                    objectName: "pluginsLoadError"
                     visible: root.pluginsModel && root.pluginsModel.load_error !== "" && root.qaPluginCount === 0 && root.qaMarketplaceCount === 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: visible ? 132 : 0
@@ -131,6 +132,7 @@ Rectangle {
                         }
 
                         Label {
+                            objectName: "pluginsLoadErrorText"
                             text: root.pluginsModel ? root.pluginsModel.load_error : ""
                             font.family: Theme.uiFonts[0]
                             font.pixelSize: Theme.fontSize.label
@@ -139,6 +141,7 @@ Rectangle {
                         }
 
                         AppButton {
+                            objectName: "pluginsLoadErrorRetry"
                             text: "Retry"
                             compact: true
                             Layout.alignment: Qt.AlignHCenter
