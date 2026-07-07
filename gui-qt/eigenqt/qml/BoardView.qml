@@ -24,6 +24,8 @@ Rectangle {
     property var pendingActions: ({})
     property var tokenActions: ({})
     property string actionError: ""
+    property string boardActionError: ""
+    readonly property string visibleActionError: actionError !== "" ? actionError : boardActionError
 
     // Role constants (Qt.UserRole + N, matching BoardModel Python roles)
     readonly property int dirRole: 257
@@ -96,10 +98,12 @@ Rectangle {
         function onRowsInserted() { root.syncBoardRows() }
         function onRowsRemoved() { root.syncBoardRows() }
         function onDataChanged() { root.syncBoardRows() }
+        function onActionErrorChanged() { root.syncActionError() }
     }
 
     Component.onCompleted: {
         syncBoardRows()
+        syncActionError()
         if (boardModel) boardModel.load()
         if (kanbanModel) kanbanModel.load()
     }
@@ -111,6 +115,10 @@ Rectangle {
         owners = computeOwners()
     }
 
+    function syncActionError() {
+        boardActionError = boardModel ? String(boardModel.actionError || "") : ""
+    }
+
     function safeObjectName(value) {
         return String(value || "").replace(/[^A-Za-z0-9_]+/g, "_")
     }
@@ -120,6 +128,11 @@ Rectangle {
         if (typeof error === "string") return error
         if (error.message) return String(error.message)
         return JSON.stringify(error)
+    }
+
+    function clearActionError() {
+        actionError = ""
+        if (boardModel) boardModel.clearActionError()
     }
 
     function isPending(key) {
@@ -147,7 +160,7 @@ Rectangle {
 
     function startAction(key, method, args) {
         if (!rpcClient || isPending(key)) return
-        actionError = ""
+        clearActionError()
         setPending(key, true)
         var token = rpcClient.callToken(method, args || [])
         rememberToken(token, key, method)
@@ -406,16 +419,43 @@ Rectangle {
             }
         }
 
-        Label {
-            visible: root.actionError !== ""
-            text: root.actionError
-            font.pixelSize: Theme.fontSize.label
-            color: Theme.colors.error
-            wrapMode: Text.WordWrap
+        Rectangle {
+            objectName: "boardActionErrorBanner"
+            visible: root.visibleActionError !== ""
             Layout.fillWidth: true
+            Layout.preferredHeight: visible ? Math.max(44, boardActionErrorText.implicitHeight + Theme.space.md) : 0
             Layout.leftMargin: Theme.space.xl
             Layout.rightMargin: Theme.space.xl
             Layout.topMargin: Theme.space.sm
+            color: Theme.colors.bgRaised
+            border.width: 1
+            border.color: Theme.colors.error
+            radius: Theme.radius.md
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: Theme.space.md
+                anchors.rightMargin: Theme.space.sm
+                spacing: Theme.space.sm
+
+                Label {
+                    objectName: "boardActionErrorText"
+                    id: boardActionErrorText
+                    text: root.visibleActionError
+                    font.pixelSize: Theme.fontSize.label
+                    color: Theme.colors.error
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+
+                AppButton {
+                    objectName: "boardActionErrorDismissButton"
+                    text: "Dismiss"
+                    variant: "ghost"
+                    compact: true
+                    onClicked: root.clearActionError()
+                }
+            }
         }
 
         // Filters row (only for projects view)
@@ -584,6 +624,11 @@ Rectangle {
 
                                     // Pin button
                                     Label {
+                                        objectName: {
+                                            var pinRemote = boardModel.data(boardModel.index(idx, 0), remoteRole)
+                                            var pinKey = pinRemote ? boardModel.data(boardModel.index(idx, 0), repoRole) : boardModel.data(boardModel.index(idx, 0), dirRole)
+                                            return "boardPinButton_" + root.safeObjectName(pinKey)
+                                        }
                                         text: boardModel.data(boardModel.index(idx, 0), pinnedRole) ? "★" : "☆"
                                         font.pixelSize: Theme.fontSize.body
                                         color: boardModel.data(boardModel.index(idx, 0), pinnedRole) ? Theme.colors.warn : Theme.colors.textFaint

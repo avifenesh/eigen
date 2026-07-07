@@ -1564,6 +1564,25 @@ def main():
 
     ok = capture_view("board", "BoardView.qml", setup_board) and ok
 
+    def show_board_action_error(_view, root):
+        for _ in range(8):
+            app.processEvents()
+        model = root.property("boardModel")
+        model._set_action_error("Could not pin lane: daemon offline")
+        for _ in range(8):
+            app.processEvents()
+        banner = find_item(root, "boardActionErrorBanner")
+        text = find_item(root, "boardActionErrorText")
+        dismiss = find_item(root, "boardActionErrorDismissButton")
+        if banner is None or banner.property("visible") is not True:
+            raise AssertionError("board action error screenshot did not render the banner")
+        if text is None or "daemon offline" not in text.property("text"):
+            raise AssertionError("board action error screenshot rendered the wrong text")
+        if dismiss is None or dismiss.property("qaTextFits") is not True:
+            raise AssertionError("board action error screenshot did not render a clean dismiss button")
+
+    ok = capture_view("board-action-error", "BoardView.qml", setup_board, show_board_action_error) and ok
+
     # 5. LiveView with an action failure row
     def setup_live(ctx):
         live_rows = [

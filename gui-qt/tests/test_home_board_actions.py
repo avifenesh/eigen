@@ -93,7 +93,11 @@ class FakeRpcClient(QObject):
 
     def call(self, method, *args, callback=None, error_callback=None):
         self.calls.append((method, args))
-        payload = {"result": self._result(method, args)}
+        payload = (
+            {"error": self.failures[method]}
+            if method in self.failures
+            else {"result": self._result(method, args)}
+        )
         if callback:
             QTimer.singleShot(0, lambda: callback(payload))
 
@@ -334,6 +338,28 @@ if board_root.property("stateFilter") != "all" or board_root.property("ownerFilt
     raise AssertionError("filtered board reset did not restore all filters")
 if find_item(board_root, "boardLaneName__repo_eigen") is None:
     raise AssertionError("board lane did not return after resetting filters")
+
+client.failures["PinLane"] = "daemon offline"
+start = len(client.calls)
+click_item(app, board_view, board_root, "boardPinButton__repo_eigen")
+if ("PinLane", ("/repo/eigen",)) not in client.calls[start:]:
+    raise AssertionError(f"board pin did not call PinLane: {client.calls[start:]}")
+if board.isPinning("/repo/eigen"):
+    raise AssertionError("failed board pin left the lane in pinning state")
+if "daemon offline" not in board.property("actionError"):
+    raise AssertionError(f"failed board pin did not expose model action error: {board.property('actionError')}")
+error_banner = find_item(board_root, "boardActionErrorBanner")
+error_text = find_item(board_root, "boardActionErrorText")
+if error_banner is None or error_banner.property("visible") is not True:
+    raise AssertionError("failed board pin did not render the action error banner")
+if error_text is None or "daemon offline" not in error_text.property("text"):
+    raise AssertionError(f"board action error text was wrong: {error_text.property('text') if error_text else None}")
+dismiss = click_item(app, board_view, board_root, "boardActionErrorDismissButton")
+if dismiss.property("qaTextFits") is not True:
+    raise AssertionError("board action error dismiss text did not fit")
+if board.property("actionError") != "" or board_root.property("visibleActionError") != "":
+    raise AssertionError("board action error dismiss did not clear the error")
+del client.failures["PinLane"]
 
 start = len(client.calls)
 click_item(app, board_view, board_root, "boardLaneName__repo_eigen", pump_after=False)
