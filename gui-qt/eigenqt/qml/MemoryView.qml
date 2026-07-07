@@ -309,11 +309,12 @@ Rectangle {
 
                 AppButton {
                     objectName: "memoryDismissActionError"
-                    text: "Dismiss"
+                    text: "X"
                     compact: true
                     toolTipText: "Dismiss memory error"
-                    Layout.preferredWidth: 84
-                    Layout.minimumWidth: 84
+                    Layout.preferredWidth: 28
+                    Layout.minimumWidth: 28
+                    Layout.preferredHeight: 28
                     onClicked: activeMemoryModel.clear_action_error()
                 }
             }

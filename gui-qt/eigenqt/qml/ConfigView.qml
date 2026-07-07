@@ -144,9 +144,12 @@ Rectangle {
 
                 AppButton {
                     objectName: "configDismissErrorButton"
-                    text: "Dismiss"
+                    text: "X"
                     variant: "ghost"
+                    compact: true
                     toolTipText: "Dismiss error"
+                    Layout.preferredWidth: 28
+                    Layout.preferredHeight: 28
                     onClicked: root.actionError = ""
                 }
             }

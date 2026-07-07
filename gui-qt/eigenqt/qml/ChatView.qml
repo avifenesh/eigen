@@ -35,6 +35,7 @@ Rectangle {
     property var rpcRef: rpcClient
     property int approvalRows: 0
     property var slashTokens: ({})
+    property var actionTokens: ({})
 
     signal backClicked()
     signal routeRequested(string route)
@@ -57,11 +58,19 @@ Rectangle {
         target: root.rpcClient ? root.rpcClient : null
         function onCallDone(token, payload) {
             var pending = root.slashTokens[token]
+            if (pending) {
+                var nextSlash = Object.assign({}, root.slashTokens)
+                delete nextSlash[token]
+                root.slashTokens = nextSlash
+                root.handleSlashRpcResult(pending, payload || {})
+                return
+            }
+            pending = root.actionTokens[token]
             if (!pending) return
-            var next = Object.assign({}, root.slashTokens)
-            delete next[token]
-            root.slashTokens = next
-            root.handleSlashRpcResult(pending, payload || {})
+            var nextAction = Object.assign({}, root.actionTokens)
+            delete nextAction[token]
+            root.actionTokens = nextAction
+            root.handleActionRpcResult(pending, payload || {})
         }
     }
 
@@ -339,11 +348,11 @@ Rectangle {
 
                         AppButton {
                             objectName: "chatDismissActionError"
-                            text: "Dismiss"
+                            text: "X"
                             compact: true
                             toolTipText: "Dismiss chat action error"
                             onClicked: root.actionError = ""
-                            Layout.preferredWidth: 88
+                            Layout.preferredWidth: 28
                             Layout.preferredHeight: 28
                         }
                     }
@@ -530,14 +539,43 @@ Rectangle {
         })
     }
 
-    function fireRpcAction(method, args, errorPrefix) {
+    function fireRpcAction(method, args, errorPrefix, meta) {
         if (!root.rpcClient) {
             root.actionError = errorPrefix + ": RPC client is unavailable."
             return false
         }
         root.actionError = ""
-        root.rpcClient.callFire(method, args)
-        return true
+        if (typeof root.rpcClient.callToken === "function") {
+            var token = root.rpcClient.callToken(method, args || [])
+            var next = Object.assign({}, root.actionTokens)
+            next[token] = Object.assign({"method": method, "errorPrefix": errorPrefix}, meta || {})
+            root.actionTokens = next
+            return true
+        }
+        if (typeof root.rpcClient.callFire === "function") {
+            root.rpcClient.callFire(method, args || [])
+            return true
+        }
+        root.actionError = errorPrefix + ": RPC client is unavailable."
+        return false
+    }
+
+    function handleActionRpcResult(pending, payload) {
+        var error = root.payloadError(payload)
+        if (error === "") return
+        root.actionError = (pending.errorPrefix || "Action failed") + ": " + error
+        if (pending.restoreText && composerTextArea.text.trim().length === 0) {
+            composerTextArea.text = String(pending.restoreText)
+            composerTextArea.cursorPosition = composerTextArea.text.length
+        }
+        if (pending.restoreImage && attachedImage.length === 0) {
+            attachedImage = String(pending.restoreImage)
+        }
+        if (pending.restoreQueue) {
+            var restored = root.queuedInputs ? root.queuedInputs.slice() : []
+            restored.unshift(pending.restoreQueue)
+            root.queuedInputs = restored
+        }
     }
 
     function appendSlashNote(text) {
@@ -843,8 +881,12 @@ Rectangle {
         var next = queue.shift()
         root.queuedInputs = queue
         var images = next && next.images ? next.images : []
-        var sent = root.fireRpcAction("SendInput", [root.sessionId, String(next ? next.text || "" : ""), images, []],
-            "Could not send queued message")
+        var sent = root.fireRpcAction(
+            "SendInput",
+            [root.sessionId, String(next ? next.text || "" : ""), images, []],
+            "Could not send queued message",
+            {"restoreQueue": next}
+        )
         if (!sent) {
             var restore = root.queuedInputs ? root.queuedInputs.slice() : []
             restore.unshift(next)
@@ -1478,8 +1520,18 @@ Rectangle {
         }
 
         var sent = root.isStreaming
-            ? root.fireRpcAction("SteerInput", [root.sessionId, msg, images], "Could not steer message")
-            : root.fireRpcAction("SendInput", [root.sessionId, msg, images, []], "Could not send message")
+            ? root.fireRpcAction(
+                "SteerInput",
+                [root.sessionId, msg, images],
+                "Could not steer message",
+                {"restoreText": msg, "restoreImage": attachedImage}
+            )
+            : root.fireRpcAction(
+                "SendInput",
+                [root.sessionId, msg, images, []],
+                "Could not send message",
+                {"restoreText": msg, "restoreImage": attachedImage}
+            )
         if (!sent) return
 
         composerTextArea.text = ""

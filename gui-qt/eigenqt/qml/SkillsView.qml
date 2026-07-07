@@ -491,11 +491,11 @@ Rectangle {
 
                 AppButton {
                     objectName: "skillsDismissErrorButton"
-                    text: "Dismiss"
+                    text: "X"
                     toolTipText: "Dismiss skills action error"
                     compact: true
                     onClicked: root.actionError = ""
-                    Layout.preferredWidth: 88
+                    Layout.preferredWidth: 28
                     Layout.preferredHeight: 28
                 }
             }

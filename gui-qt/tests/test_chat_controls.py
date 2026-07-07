@@ -52,6 +52,7 @@ class FakeRpcClient(QObject):
     def __init__(self):
         super().__init__()
         self.calls = []
+        self.failures = {}
         self._token = 0
 
     def call(self, method, *args, callback=None, error_callback=None):
@@ -66,7 +67,12 @@ class FakeRpcClient(QObject):
         token = self._token
         call_args = tuple(args or [])
         self.calls.append((method, call_args))
-        QTimer.singleShot(0, lambda: self.callDone.emit(token, {"result": self._result(method, call_args)}))
+        payload = (
+            {"error": self.failures[method]}
+            if method in self.failures
+            else {"result": self._result(method, call_args)}
+        )
+        QTimer.singleShot(0, lambda: self.callDone.emit(token, payload))
         return token
 
     @Slot(str, "QVariantList")
@@ -1614,6 +1620,30 @@ if composer.property("text") != "":
     raise AssertionError("Composer did not clear after send")
 if not send.property("qaTextFits"):
     raise AssertionError("Send button text does not fit")
+
+client.failures["SendInput"] = "daemon offline"
+composer.setProperty("text", "keep this when daemon fails")
+pump(app, 8)
+failed_start = call_count(client, "SendInput")
+click_item(app, chat_view, chat, "chatSendButton")
+QTest.qWait(40)
+pump(app, 20)
+if call_count(client, "SendInput") != failed_start + 1:
+    raise AssertionError(f"Failed send did not call SendInput: {client.calls}")
+if "daemon offline" not in chat.property("actionError"):
+    raise AssertionError(f"Failed send did not surface daemon error: {chat.property('actionError')!r}")
+error_banner = find_item(chat, "chatActionError")
+error_text = find_item(chat, "chatActionErrorText")
+if error_banner is None or error_banner.property("visible") is not True:
+    raise AssertionError("Failed send did not show a visible chat action error")
+if error_text is None or "daemon offline" not in error_text.property("text"):
+    raise AssertionError(f"Failed send error text was wrong: {error_text.property('text') if error_text else None}")
+if composer.property("text") != "keep this when daemon fails":
+    raise AssertionError("Failed send did not restore the composer draft")
+click_item(app, chat_view, chat, "chatDismissActionError")
+if chat.property("actionError") != "":
+    raise AssertionError("Failed send action error did not dismiss")
+del client.failures["SendInput"]
 
 chat.setProperty("attachedImage", VALID_PNG_BASE64)
 QTest.qWait(40)

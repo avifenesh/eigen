@@ -157,10 +157,10 @@ Rectangle {
 
                 AppButton {
                     objectName: "sessionsActionErrorDismissButton"
-                    text: "Dismiss"
+                    text: "X"
                     compact: true
                     toolTipText: "Dismiss sessions error"
-                    Layout.preferredWidth: 88
+                    Layout.preferredWidth: 28
                     Layout.preferredHeight: 28
                     onClicked: {
                         if (root.sessionsModel) {
@@ -201,10 +201,10 @@ Rectangle {
 
                 AppButton {
                     objectName: "sessionsActionMessageDismissButton"
-                    text: "Dismiss"
+                    text: "X"
                     compact: true
                     toolTipText: "Dismiss sessions message"
-                    Layout.preferredWidth: 88
+                    Layout.preferredWidth: 28
                     Layout.preferredHeight: 28
                     onClicked: {
                         if (root.sessionsModel) {

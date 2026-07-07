@@ -314,11 +314,12 @@ Rectangle {
 
                         AppButton {
                             objectName: "connectorsDismissActionError"
-                            text: "Dismiss"
+                            text: "X"
                             compact: true
                             toolTipText: "Dismiss connector error"
-                            Layout.preferredWidth: 84
-                            Layout.minimumWidth: 84
+                            Layout.preferredWidth: 28
+                            Layout.minimumWidth: 28
+                            Layout.preferredHeight: 28
                             onClicked: {
                                 if (connectorsModel) connectorsModel.clear_action_error()
                             }
@@ -957,11 +958,12 @@ Rectangle {
 
                                     AppButton {
                                         objectName: "connectorsDismissServerActionError"
-                                        text: "Dismiss"
+                                        text: "X"
                                         compact: true
                                         toolTipText: "Dismiss connector error"
-                                        Layout.preferredWidth: 84
-                                        Layout.minimumWidth: 84
+                                        Layout.preferredWidth: 28
+                                        Layout.minimumWidth: 28
+                                        Layout.preferredHeight: 28
                                         onClicked: {
                                             if (connectorsModel) connectorsModel.clear_action_error()
                                         }

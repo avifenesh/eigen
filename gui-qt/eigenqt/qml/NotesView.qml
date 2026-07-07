@@ -265,11 +265,12 @@ Rectangle {
 
                         AppButton {
                             objectName: "notesDismissActionError"
-                            text: "Dismiss"
+                            text: "X"
                             compact: true
                             toolTipText: "Dismiss notes error"
-                            Layout.preferredWidth: 84
-                            Layout.minimumWidth: 84
+                            Layout.preferredWidth: 28
+                            Layout.minimumWidth: 28
+                            Layout.preferredHeight: 28
                             onClicked: {
                                 if (root.notesController) {
                                     root.notesController.clear_action_error()

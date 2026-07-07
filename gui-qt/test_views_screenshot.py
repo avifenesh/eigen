@@ -904,8 +904,8 @@ def main():
     def show_chat_action_error(_view, root):
         composer = find_item(root, "chatComposerTextArea")
         if composer is not None:
-            composer.setProperty("text", "draft preserved while RPC is unavailable")
-        root.setProperty("actionError", "Could not send message: RPC client is unavailable.")
+            composer.setProperty("text", "draft preserved while daemon is offline")
+        root.setProperty("actionError", "Could not send message: daemon offline")
 
     ok = capture_view("chat-action-error", "ChatView.qml", setup_chat, show_chat_action_error) and ok
 
@@ -1551,6 +1551,43 @@ def main():
             model.confirm_remove_server_set("github-local")
 
     ok = capture_view("connectors-remove-confirm", "ConnectorsView.qml", setup_connectors, show_connectors_remove_confirm) and ok
+
+    def show_connectors_action_error(_view, root):
+        model = root.property("connectorsModel")
+        if model is not None:
+            model.add_open = True
+            model.add_name = "linear"
+            model.add_url = "https://mcp.linear.app/mcp"
+            model.add_desc = "Linear issues"
+            model.action_error = "Could not add connector linear: add denied"
+        for _ in range(4):
+            app.processEvents()
+        dismiss = find_item(root, "connectorsDismissActionError")
+        if dismiss is None or dismiss.property("qaTextFits") is not True:
+            raise AssertionError("connector add-form error dismiss button did not render cleanly")
+
+    ok = capture_view("connectors-action-error", "ConnectorsView.qml", setup_connectors, show_connectors_action_error) and ok
+
+    def show_connectors_server_action_error(_view, root):
+        model = root.property("connectorsModel")
+        if model is not None:
+            model.srv_open = True
+            model.srv_name = "linear-local"
+            model.srv_command = "uvx linear-mcp"
+            model.srv_desc = "Local Linear MCP"
+            model.action_error = "Could not save server linear-local: daemon offline"
+        for _ in range(4):
+            app.processEvents()
+        flick = find_item(root, "connectorsFlick")
+        if flick is not None:
+            flick.setProperty("contentY", 520)
+            for _ in range(4):
+                app.processEvents()
+        dismiss = find_item(root, "connectorsDismissServerActionError")
+        if dismiss is None or dismiss.property("qaTextFits") is not True:
+            raise AssertionError("connector server error dismiss button did not render cleanly")
+
+    ok = capture_view("connectors-server-action-error", "ConnectorsView.qml", setup_connectors, show_connectors_server_action_error) and ok
 
     # 10. NotesView
     def setup_notes(ctx, editing=False):
