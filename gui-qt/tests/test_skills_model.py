@@ -49,6 +49,40 @@ def test_skills_model_fetch_result(fake_client):
     assert model.data(idx, model.PathRole) == "/path/1"
 
 
+def test_skills_model_ignores_stale_fetch_callbacks(fake_client):
+    """Older Skills replies must not overwrite a newer installed-skills refresh."""
+    callbacks = []
+    fake_client.call.side_effect = lambda method, callback=None, **kwargs: callbacks.append(callback)
+    model = SkillsModel(fake_client)
+
+    model.refresh()
+    first_callback = callbacks[-1]
+    model.refresh()
+    second_callback = callbacks[-1]
+
+    second_callback({
+        "result": {
+            "skills": [{"name": "qt-proof", "description": "fresh", "source": "project", "path": "/fresh"}],
+            "proposals": [],
+        }
+    })
+    assert model.rowCount() == 1
+    idx = model.index(0, 0)
+    assert model.data(idx, model.NameRole) == "qt-proof"
+    assert model.data(idx, model.PathRole) == "/fresh"
+
+    first_callback({
+        "result": {
+            "skills": [{"name": "old-proof", "description": "stale", "source": "user", "path": "/stale"}],
+            "proposals": [],
+        }
+    })
+    assert model.rowCount() == 1
+    idx = model.index(0, 0)
+    assert model.data(idx, model.NameRole) == "qt-proof"
+    assert model.data(idx, model.PathRole) == "/fresh"
+
+
 def test_proposals_model_init(fake_client):
     """Test ProposalsModel initialization."""
     model = ProposalsModel(fake_client)
@@ -81,6 +115,40 @@ def test_proposals_model_fetch_result(fake_client):
     assert model.data(idx, model.NameRole) == "prop1"
     assert model.data(idx, model.DescriptionRole) == "dream skill 1"
     assert model.data(idx, model.PathRole) == "/dream/1"
+
+
+def test_proposals_model_ignores_stale_fetch_callbacks(fake_client):
+    """Older Skills replies must not overwrite a newer proposals refresh."""
+    callbacks = []
+    fake_client.call.side_effect = lambda method, callback=None, **kwargs: callbacks.append(callback)
+    model = ProposalsModel(fake_client)
+
+    model.refresh()
+    first_callback = callbacks[-1]
+    model.refresh()
+    second_callback = callbacks[-1]
+
+    second_callback({
+        "result": {
+            "skills": [],
+            "proposals": [{"name": "qt-qa", "description": "fresh proposal", "path": "/fresh"}],
+        }
+    })
+    assert model.rowCount() == 1
+    idx = model.index(0, 0)
+    assert model.data(idx, model.NameRole) == "qt-qa"
+    assert model.data(idx, model.PathRole) == "/fresh"
+
+    first_callback({
+        "result": {
+            "skills": [],
+            "proposals": [{"name": "old-qa", "description": "stale proposal", "path": "/stale"}],
+        }
+    })
+    assert model.rowCount() == 1
+    idx = model.index(0, 0)
+    assert model.data(idx, model.NameRole) == "qt-qa"
+    assert model.data(idx, model.PathRole) == "/fresh"
 
 
 def test_proposals_model_accept(fake_client):

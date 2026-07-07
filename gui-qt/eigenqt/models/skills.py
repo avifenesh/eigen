@@ -50,6 +50,7 @@ class SkillsModel(QAbstractListModel):
         self._client = client
         self._skills: list[dict] = []
         self._active = False
+        self._load_seq = 0
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(60_000)  # 60s
         self._poll_timer.timeout.connect(self._fetch_skills)
@@ -95,11 +96,15 @@ class SkillsModel(QAbstractListModel):
 
     def _fetch_skills(self):
         """Async fetch Skills RPC."""
-        self._client.call("Skills", callback=self._on_skills_result)
+        self._load_seq += 1
+        seq = self._load_seq
+        self._client.call("Skills", callback=lambda result: self._on_skills_result(result, seq))
 
     @Slot(dict)
-    def _on_skills_result(self, result: dict):
+    def _on_skills_result(self, result: dict, seq: Optional[int] = None):
         """Handle Skills RPC result."""
+        if seq is not None and seq != self._load_seq:
+            return
         if "error" in result:
             return
 
@@ -129,6 +134,7 @@ class SkillsModel(QAbstractListModel):
     def stop_polling(self):
         """Stop polling when view is inactive."""
         self._poll_timer.stop()
+        self._load_seq += 1
 
     def start_polling(self):
         """Resume polling when view becomes active."""
@@ -155,6 +161,7 @@ class ProposalsModel(QAbstractListModel):
         self._client = client
         self._proposals: list[dict] = []
         self._active = False
+        self._load_seq = 0
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(60_000)  # 60s
         self._poll_timer.timeout.connect(self._fetch_proposals)
@@ -197,11 +204,15 @@ class ProposalsModel(QAbstractListModel):
 
     def _fetch_proposals(self):
         """Async fetch Skills RPC (extract proposals)."""
-        self._client.call("Skills", callback=self._on_skills_result)
+        self._load_seq += 1
+        seq = self._load_seq
+        self._client.call("Skills", callback=lambda result: self._on_skills_result(result, seq))
 
     @Slot(dict)
-    def _on_skills_result(self, result: dict):
+    def _on_skills_result(self, result: dict, seq: Optional[int] = None):
         """Handle Skills RPC result (extract proposals)."""
+        if seq is not None and seq != self._load_seq:
+            return
         if "error" in result:
             return
 
@@ -267,6 +278,7 @@ class ProposalsModel(QAbstractListModel):
     def stop_polling(self):
         """Stop polling when view is inactive."""
         self._poll_timer.stop()
+        self._load_seq += 1
 
     def start_polling(self):
         """Resume polling when view becomes active."""
