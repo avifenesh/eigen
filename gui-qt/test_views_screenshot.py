@@ -2038,6 +2038,25 @@ def main():
 
     ok = capture_view("profile", "ProfileView.qml", setup_profile, show_profile) and ok
 
+    def show_profile_action_error(_view, root):
+        model = root.property("profileModel")
+        if model is not None:
+            model.start_edit()
+            model._set_action_error("Could not save profile: daemon offline")
+        for _ in range(8):
+            app.processEvents()
+        banner = find_item(root, "profileActionError")
+        text = find_item(root, "profileActionErrorText")
+        dismiss = find_item(root, "profileDismissActionError")
+        if banner is None or banner.property("visible") is not True:
+            raise AssertionError("profile action error screenshot did not render the banner")
+        if text is None or "daemon offline" not in text.property("text"):
+            raise AssertionError("profile action error screenshot rendered the wrong text")
+        if dismiss is None or dismiss.property("qaTextFits") is not True:
+            raise AssertionError("profile action error screenshot did not render a clean dismiss button")
+
+    ok = capture_view("profile-action-error", "ProfileView.qml", setup_profile, show_profile_action_error) and ok
+
     # 15. ConnectorsView
     def setup_connectors(ctx):
         connectors_model = ConnectorsModel(client)

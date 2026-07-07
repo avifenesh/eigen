@@ -226,6 +226,10 @@ class ProfileModel(QObject):
             callback=self._on_save_profile_result,
         )
 
+    @Slot()
+    def clear_action_error(self):
+        self._set_action_error("")
+
     def start_polling(self):
         if not self._poll_timer.isActive():
             self.refresh()

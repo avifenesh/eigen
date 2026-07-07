@@ -1090,6 +1090,34 @@ try:
     if ("WriteUserProfile", ("Updated Qt profile proof",)) not in client.calls:
         raise AssertionError(f"Profile save did not call WriteUserProfile: {client.calls}")
 
+    client.failures["WriteUserProfile"] = "profile daemon offline"
+    click_item(app, window, "profileEditButton")
+    pump(app, 12)
+    profile_text = find_item_in_window(window, "profileTextArea")
+    if profile_text is None:
+        raise AssertionError("Profile editor did not reopen")
+    profile_text.setProperty("text", "Retryable Qt profile proof")
+    pump(app, 12)
+    start = len(client.calls)
+    click_item(app, window, "profileSaveButton")
+    pump(app, 18)
+    if ("WriteUserProfile", ("Retryable Qt profile proof",)) not in client.calls[start:]:
+        raise AssertionError(f"Failed profile save did not call WriteUserProfile: {client.calls[start:]}")
+    profile_error = find_item_in_window(window, "profileActionError")
+    profile_error_text = find_item_in_window(window, "profileActionErrorText")
+    profile_dismiss = find_item_in_window(window, "profileDismissActionError")
+    if profile_error is None or profile_error.property("visible") is not True:
+        raise AssertionError("Failed profile save did not render an action error")
+    if profile_error_text is None or "profile daemon offline" not in profile_error_text.property("text"):
+        raise AssertionError(f"Profile action error text was wrong: {profile_error_text.property('text') if profile_error_text else None}")
+    if profile_dismiss is None or profile_dismiss.property("qaTextFits") is not True:
+        raise AssertionError("Profile dismiss error button did not fit")
+    click_item(app, window, "profileDismissActionError")
+    pump(app, 12)
+    if profile_view.property("profileModel").property("action_error") != "":
+        raise AssertionError("Profile action error did not dismiss")
+    del client.failures["WriteUserProfile"]
+
     client.failures["NewSession"] = "daemon offline"
     click_item(app, window, "navItem_live")
     start_calls = sum(1 for call in client.calls if call[0] == "NewSession")

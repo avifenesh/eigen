@@ -150,6 +150,9 @@ def test_profile_model_save_error_keeps_draft_retryable():
     assert model.profile_draft == "Retry me"
     assert model.action_error == "Could not save profile: write denied"
 
+    model.clear_action_error()
+    assert model.action_error == ""
+
 
 def test_profile_model_guards_duplicate_profile_save():
     client = fake_client()

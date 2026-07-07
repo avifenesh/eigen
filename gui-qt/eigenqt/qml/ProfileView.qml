@@ -383,23 +383,39 @@ Rectangle {
                     }
 
                     Rectangle {
+                        objectName: "profileActionError"
                         visible: root.profileModel && root.profileModel.action_error !== ""
                         Layout.fillWidth: true
-                        Layout.preferredHeight: visible ? Math.max(44, actionErrorLabel.implicitHeight + Theme.space.md) : 0
+                        Layout.preferredHeight: visible ? Math.max(44, actionErrorRow.implicitHeight + Theme.space.md) : 0
                         radius: Theme.radius.sm
                         color: Theme.colors.errorBg
                         border.width: 1
                         border.color: Theme.colors.error
 
-                        Label {
-                            id: actionErrorLabel
+                        RowLayout {
+                            id: actionErrorRow
                             anchors.fill: parent
                             anchors.margins: Theme.space.md
-                            text: root.profileModel ? root.profileModel.action_error : ""
-                            font.family: Theme.uiFonts[0]
-                            font.pixelSize: Theme.fontSize.bodySm
-                            color: Theme.colors.error
-                            wrapMode: Text.Wrap
+                            spacing: Theme.space.sm
+
+                            Label {
+                                objectName: "profileActionErrorText"
+                                text: root.profileModel ? root.profileModel.action_error : ""
+                                font.family: Theme.uiFonts[0]
+                                font.pixelSize: Theme.fontSize.bodySm
+                                color: Theme.colors.error
+                                wrapMode: Text.Wrap
+                                Layout.fillWidth: true
+                            }
+
+                            AppButton {
+                                objectName: "profileDismissActionError"
+                                text: "Dismiss"
+                                compact: true
+                                variant: "ghost"
+                                toolTipText: "Dismiss profile error"
+                                onClicked: if (root.profileModel) root.profileModel.clear_action_error()
+                            }
                         }
                     }
 
