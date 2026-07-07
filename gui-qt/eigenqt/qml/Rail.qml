@@ -412,6 +412,19 @@ Rectangle {
                         Layout.fillWidth: true
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
+                        route: "plugins"
+                        label: "Plugins"
+                        glyph: "+"
+                        badge: 0
+                        badgeLive: false
+                        isActive: root.currentRoute === "plugins"
+                        onClicked: root.routeChanged("plugins")
+                    }
+
+                    NavItem {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Theme.space.sm
+                        Layout.rightMargin: Theme.space.sm
                         route: "connectors"
                         label: "Connectors"
                         glyph: "⟐"

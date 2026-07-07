@@ -30,6 +30,7 @@ from eigenqt.models.observe import ObserveModel
 from eigenqt.models.routing import RoutingModel
 from eigenqt.models.machines import MachinesModel
 from eigenqt.models.crons import CronsModel
+from eigenqt.models.plugins import PluginsModel
 from eigenqt.models import (
     ApprovalsModel,
     CommandsModel,
@@ -354,6 +355,54 @@ class ScreenshotRpcClient(QObject):
                 "crontab": 1,
                 "systemdAvail": True,
             }
+        if method == "Plugins":
+            return {
+                "plugins": [
+                    {
+                        "name": "agentsys",
+                        "marketplace": "core",
+                        "version": "5.1.0",
+                        "description": "Agent workflow tools",
+                        "installedMs": 1783155600000,
+                        "enabled": True,
+                        "skills": ["audit-project"],
+                        "agents": ["reviewer"],
+                        "mcpServers": ["github"],
+                        "commands": ["enhance"],
+                        "hooks": 2,
+                        "scanStatus": "clean",
+                        "scanCount": 0,
+                    },
+                    {
+                        "name": "local-risk",
+                        "marketplace": "lab",
+                        "version": "0.1.0",
+                        "description": "Local experiment",
+                        "installedMs": 1783144800000,
+                        "enabled": False,
+                        "skills": ["scratch"],
+                        "scanStatus": "forced",
+                        "scanCount": 1,
+                        "scans": [{"component": "skills/scratch", "reasons": ["network shell"]}],
+                        "warnings": ["installed with scan flags"],
+                    },
+                ],
+                "marketplaces": [
+                    {
+                        "name": "core",
+                        "source": "github.com/avifenesh/eigen-plugins",
+                        "owner": "Avi",
+                        "disabled": False,
+                        "addedMs": 1783152000000,
+                    },
+                    {
+                        "name": "lab",
+                        "source": "/home/user/plugins/lab",
+                        "disabled": True,
+                        "addedMs": 1783141200000,
+                    },
+                ],
+            }
         if method == "SetTitle":
             return {
                 "model": "gpt-5",
@@ -624,6 +673,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser):
         "routingModel": RoutingModel(client),
         "machinesModel": MachinesModel(client),
         "cronsModel": CronsModel(client),
+        "pluginsModel": PluginsModel(client),
         "configModel": ConfigModel(client),
         "ruleChainsModel": RuleChainsModel(client),
         "reviewersModel": ReviewersModel(client),
@@ -1834,7 +1884,31 @@ def main():
 
     ok = capture_view("crons", "CronsView.qml", setup_crons, show_crons) and ok
 
-    # 13. ConnectorsView
+    # 13. PluginsView
+    def setup_plugins(ctx):
+        plugins_model = PluginsModel(client)
+        ctx.setContextProperty("pluginsModel", plugins_model)
+        return {"pluginsModel": plugins_model}
+
+    def show_plugins(_view, root):
+        for _ in range(8):
+            app.processEvents()
+        if root.property("qaPluginCount") != 2 or root.property("qaMarketplaceCount") != 2:
+            raise AssertionError(
+                "plugins screenshot expected 2 plugins and 2 marketplaces, saw "
+                f"{root.property('qaPluginCount')} plugins and {root.property('qaMarketplaceCount')} marketplaces"
+            )
+        installed_row = find_item(root, "pluginsInstalledRow_agentsys")
+        risk_row = find_item(root, "pluginsInstalledRow_local_risk")
+        market_row = find_item(root, "pluginsMarketRow_core")
+        if installed_row is None or risk_row is None or market_row is None:
+            raise AssertionError("plugins screenshot did not render installed and marketplace rows")
+        if installed_row.property("qaTextFits") is not True or risk_row.property("qaTextFits") is not True or market_row.property("qaTextFits") is not True:
+            raise AssertionError("plugins screenshot rendered clipped inventory text")
+
+    ok = capture_view("plugins", "PluginsView.qml", setup_plugins, show_plugins) and ok
+
+    # 14. ConnectorsView
     def setup_connectors(ctx):
         connectors_model = ConnectorsModel(client)
         connectors_model._loading = False

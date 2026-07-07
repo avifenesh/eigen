@@ -33,6 +33,7 @@ from eigenqt.models import (
     MachinesModel,
     MemoryModel,
     ObserveModel,
+    PluginsModel,
     ProposalsModel,
     RoutingModel,
     SessionStateModel,
@@ -297,6 +298,54 @@ class FakeRpcClient(QObject):
                 "timers": 2,
                 "crontab": 1,
                 "systemdAvail": True,
+            }
+        if method == "Plugins":
+            return {
+                "plugins": [
+                    {
+                        "name": "agentsys",
+                        "marketplace": "core",
+                        "version": "5.1.0",
+                        "description": "Agent workflow tools",
+                        "installedMs": 1783155600000,
+                        "enabled": True,
+                        "skills": ["audit-project"],
+                        "agents": ["reviewer"],
+                        "mcpServers": ["github"],
+                        "commands": ["enhance"],
+                        "hooks": 2,
+                        "scanStatus": "clean",
+                        "scanCount": 0,
+                    },
+                    {
+                        "name": "local-risk",
+                        "marketplace": "lab",
+                        "version": "0.1.0",
+                        "description": "Local experiment",
+                        "installedMs": 1783144800000,
+                        "enabled": False,
+                        "skills": ["scratch"],
+                        "scanStatus": "forced",
+                        "scanCount": 1,
+                        "scans": [{"component": "skills/scratch", "reasons": ["network shell"]}],
+                        "warnings": ["installed with scan flags"],
+                    },
+                ],
+                "marketplaces": [
+                    {
+                        "name": "core",
+                        "source": "github.com/avifenesh/eigen-plugins",
+                        "owner": "Avi",
+                        "disabled": False,
+                        "addedMs": 1783152000000,
+                    },
+                    {
+                        "name": "lab",
+                        "source": "/home/user/plugins/lab",
+                        "disabled": True,
+                        "addedMs": 1783141200000,
+                    },
+                ],
             }
         if method == "ObserveSummary":
             return {
@@ -608,6 +657,7 @@ try:
     config_model = ConfigModel(client)
     rule_chains_model = RuleChainsModel(client)
     reviewers_model = ReviewersModel(client)
+    plugins_model = PluginsModel(client)
     controller = FakeSessionController(client)
     transcript_model = TranscriptModel(client, "")
     approvals_model = ApprovalsModel(client, "")
@@ -639,6 +689,7 @@ try:
     ctx.setContextProperty("configModel", config_model)
     ctx.setContextProperty("ruleChainsModel", rule_chains_model)
     ctx.setContextProperty("reviewersModel", reviewers_model)
+    ctx.setContextProperty("pluginsModel", plugins_model)
     ctx.setContextProperty("sessionController", controller)
     ctx.setContextProperty("transcriptModel", transcript_model)
     ctx.setContextProperty("approvalsModel", approvals_model)
@@ -722,9 +773,10 @@ try:
         ("navItem_routing", "routing", 10),
         ("navItem_machines", "machines", 11),
         ("navItem_crons", "crons", 12),
-        ("navItem_connectors", "connectors", 13),
-        ("navItem_config", "config", 14),
-        ("navItem_reviewers", "reviewers", 15),
+        ("navItem_plugins", "plugins", 13),
+        ("navItem_connectors", "connectors", 14),
+        ("navItem_config", "config", 15),
+        ("navItem_reviewers", "reviewers", 16),
     ]
     for object_name, route, index in route_expectations:
         nav = click_item(app, window, object_name)
@@ -833,6 +885,25 @@ try:
         )
     if timer_row.property("qaTextFits") is not True or tab_row.property("qaTextFits") is not True:
         raise AssertionError("Crons schedule row text did not fit")
+
+    click_item(app, window, "navItem_plugins")
+    pump(app, 24)
+    if ("Plugins", ()) not in client.calls:
+        raise AssertionError(f"Plugins view did not fetch inventory: {client.calls}")
+    plugins_view = find_item_in_window(window, "pluginsView")
+    installed_row = find_item_in_window(window, "pluginsInstalledRow_agentsys")
+    risk_row = find_item_in_window(window, "pluginsInstalledRow_local_risk")
+    market_row = find_item_in_window(window, "pluginsMarketRow_core")
+    if plugins_view is None or installed_row is None or risk_row is None or market_row is None:
+        raise AssertionError("Plugins view did not render installed plugins and marketplaces")
+    if plugins_view.property("qaPluginCount") != 2 or plugins_view.property("qaMarketplaceCount") != 2:
+        raise AssertionError(
+            "Plugins view summary counts were wrong: "
+            f"plugins={plugins_view.property('qaPluginCount')} "
+            f"markets={plugins_view.property('qaMarketplaceCount')}"
+        )
+    if installed_row.property("qaTextFits") is not True or risk_row.property("qaTextFits") is not True or market_row.property("qaTextFits") is not True:
+        raise AssertionError("Plugins inventory row text did not fit")
 
     client.failures["NewSession"] = "daemon offline"
     click_item(app, window, "navItem_live")

@@ -86,9 +86,10 @@ ApplicationWindow {
                 if (route === "routing") return 10
                 if (route === "machines") return 11
                 if (route === "crons") return 12
-                if (route === "connectors") return 13
-                if (route === "config") return 14
-                if (route === "reviewers") return 15
+                if (route === "plugins") return 13
+                if (route === "connectors") return 14
+                if (route === "config") return 15
+                if (route === "reviewers") return 16
                 return 0  // default to home
             }
 
@@ -216,18 +217,23 @@ ApplicationWindow {
                 cronsModel: root.ctxCronsModel
             }
 
-            // Index 13: Connectors view (MCP connectors management)
+            // Index 13: Plugins view (installed plugins and marketplaces)
+            PluginsView {
+                pluginsModel: root.ctxPluginsModel
+            }
+
+            // Index 14: Connectors view (MCP connectors management)
             ConnectorsView {
                 connectorsModel: root.ctxConnectors
             }
 
-            // Index 14: Config view (editable config fields + rule chains)
+            // Index 15: Config view (editable config fields + rule chains)
             ConfigView {
                 configModel: root.ctxConfigModel
                 ruleChainsModel: root.ctxRuleChainsModel
             }
 
-            // Index 15: Reviewers view (revuto cockpit)
+            // Index 16: Reviewers view (revuto cockpit)
             ReviewersView {
                 reviewersModel: root.ctxReviewersModel
             }
@@ -352,6 +358,7 @@ ApplicationWindow {
     readonly property var ctxRoutingModel: routingModel
     readonly property var ctxMachinesModel: machinesModel
     readonly property var ctxCronsModel: cronsModel
+    readonly property var ctxPluginsModel: pluginsModel
     readonly property var ctxConfigModel: configModel
     readonly property var ctxRuleChainsModel: ruleChainsModel
     readonly property var ctxReviewersModel: reviewersModel
