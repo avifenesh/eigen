@@ -102,9 +102,16 @@ Rectangle {
                         selected: root.activeTab === modelData
                         compact: true
                         toolTipText: "Show " + modelData + " settings"
+                        Layout.fillWidth: false
+                        Layout.preferredWidth: tabButton.implicitWidth
                         Layout.preferredHeight: 40
                         onClicked: root.activeTab = modelData
                     }
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 1
                 }
             }
         }

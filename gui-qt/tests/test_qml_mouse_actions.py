@@ -474,6 +474,24 @@ def check_config(app, client):
         press_key_on_item(app, view, root, "configSelect_model", Qt.Key_Return, flick_name="configFlick")
         assert_call(client, start, "SetConfig", ("model", "local-qwen"))
 
+        general_tab = find_visual_item(root, "configTab_General")
+        models_tab = find_visual_item(root, "configTab_Models")
+        integrations_tab = find_visual_item(root, "configTab_Integrations")
+        if general_tab is None or models_tab is None:
+            raise AssertionError("config tabs did not render all expected tabs")
+        general_right = general_tab.mapToScene(QPointF(float(general_tab.property("width") or 0), 0)).x()
+        models_left = models_tab.mapToScene(QPointF(0, 0)).x()
+        models_right = models_tab.mapToScene(QPointF(float(models_tab.property("width") or 0), 0)).x()
+        integrations_gap = 0
+        if integrations_tab is not None:
+            integrations_left = integrations_tab.mapToScene(QPointF(0, 0)).x()
+            integrations_gap = integrations_left - models_right
+        if models_left - general_right > 12 or integrations_gap > 12:
+            raise AssertionError(
+                "config tabs are spread across the toolbar instead of forming a compact row: "
+                f"gaps={models_left - general_right:.1f},{integrations_gap:.1f}"
+            )
+
         click_item(app, view, root, "configTab_Models")
         if root.property("activeTab") != "Models":
             raise AssertionError("config Models tab did not activate")
