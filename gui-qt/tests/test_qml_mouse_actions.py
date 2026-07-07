@@ -1120,6 +1120,41 @@ def check_utility_load_errors(app, client):
 
 
 def check_notes(app, client):
+    status_error_notes = NotesController(client)
+    status_error_notes.status_error = "daemon offline"
+    view, root = load_view(app, client, "NotesView.qml", context={"notesController": status_error_notes}, root_props={"notesController": status_error_notes})
+    try:
+        assert_load_error_retry(app, view, root, "notesStatusLoadError", "notesStatusLoadErrorText", "notesStatusLoadErrorRetry")
+        start = len(client.calls)
+        click_item(app, view, root, "notesStatusLoadErrorRetry")
+        assert_call(client, start, "ObsidianStatus", ())
+    finally:
+        close_view(app, view)
+
+    list_error_notes = NotesController(client)
+    list_error_notes.status = {"available": True, "vault": "/home/user/notes"}
+    list_error_notes.notes_model._set_error("daemon offline")
+    view, root = load_view(app, client, "NotesView.qml", context={"notesController": list_error_notes}, root_props={"notesController": list_error_notes})
+    try:
+        assert_load_error_retry(app, view, root, "notesLoadError", "notesLoadErrorText", "notesLoadErrorRetry")
+        start = len(client.calls)
+        click_item(app, view, root, "notesLoadErrorRetry")
+        assert_call(client, start, "ObsidianNotes", ("",))
+    finally:
+        close_view(app, view)
+
+    stale_error_notes = seeded_notes_controller(client)
+    stale_error_notes.notes_model._set_error("daemon offline")
+    view, root = load_view(app, client, "NotesView.qml", context={"notesController": stale_error_notes}, root_props={"notesController": stale_error_notes})
+    try:
+        retry = assert_load_error_retry(app, view, root, "notesRefreshErrorBanner", "notesRefreshErrorText", "notesRefreshErrorRetry")
+        start = len(client.calls)
+        invoke_click(retry)
+        pump(app)
+        assert_call(client, start, "ObsidianNotes", ("",))
+    finally:
+        close_view(app, view)
+
     notes = seeded_notes_controller(client)
     view, root = load_view(app, client, "NotesView.qml", context={"notesController": notes}, root_props={"notesController": notes})
     try:
@@ -1618,8 +1653,11 @@ def check_skills(app, client):
                 f"inputText={github_input.property('text') if github_input else None!r}"
             )
         start = len(client.calls)
-        add = click_item(app, view, root, "skillsAddButton")
+        press_key_on_item(app, view, root, "skillsAddInput", Qt.Key_Return)
+        add = find_visual_item(root, "skillsAddButton")
         if ("InstallSkillFromGitHub", ("owner/repo",)) not in client.calls[start:]:
+            add = click_item(app, view, root, "skillsAddButton")
+        if ("InstallSkillFromGitHub", ("owner/repo",)) not in client.calls[start:] and add is not None:
             invoke_click(add)
             pump(app)
         assert_call(client, start, "InstallSkillFromGitHub", ("owner/repo",))

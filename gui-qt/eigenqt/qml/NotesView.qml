@@ -12,10 +12,68 @@ Rectangle {
     readonly property string readContent: root.notesController ? root.notesController.content : ""
     readonly property var readBlocks: parseMarkdown(readContent)
 
+    // Status-load failure when the vault availability check itself failed.
+    Rectangle {
+        id: statusLoadError
+        objectName: "notesStatusLoadError"
+        visible: root.notesController && root.notesController.status_error !== "" && !root.notesController.available
+        anchors.fill: parent
+        color: Theme.colors.bgBase
+
+        ColumnLayout {
+            anchors.centerIn: parent
+            spacing: Theme.space.lg
+            width: Math.max(0, Math.min(parent.width - Theme.space.xxxxl, 420))
+
+            Label {
+                text: "≣"
+                font.family: Theme.uiFonts[0]
+                font.pixelSize: 48
+                color: Theme.colors.error
+                Layout.alignment: Qt.AlignHCenter
+            }
+
+            Label {
+                text: "Could not load notes"
+                font.family: Theme.uiFonts[0]
+                font.pixelSize: Theme.fontSize.h2
+                font.weight: Theme.fontWeight.semibold
+                color: Theme.colors.textPrimary
+                Layout.alignment: Qt.AlignHCenter
+            }
+
+            Label {
+                objectName: "notesStatusLoadErrorText"
+                text: root.notesController ? root.notesController.status_error : ""
+                font.pixelSize: Theme.fontSize.bodySm
+                color: Theme.colors.error
+                wrapMode: Text.WrapAnywhere
+                maximumLineCount: 3
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+            }
+
+            AppButton {
+                objectName: "notesStatusLoadErrorRetry"
+                text: "Retry"
+                variant: "primary"
+                toolTipText: "Retry loading notes"
+                Layout.preferredWidth: 88
+                Layout.preferredHeight: 32
+                Layout.alignment: Qt.AlignHCenter
+                onClicked: {
+                    if (root.notesController) {
+                        root.notesController.refresh_status()
+                    }
+                }
+            }
+        }
+    }
+
     // Empty state when vault is not available
     Rectangle {
         id: emptyState
-        visible: root.notesController && !root.notesController.available
+        visible: root.notesController && !root.notesController.available && root.notesController.status_error === ""
         anchors.fill: parent
         color: Theme.colors.bgBase
 
@@ -280,6 +338,49 @@ Rectangle {
                     }
                 }
 
+                Rectangle {
+                    objectName: "notesRefreshErrorBanner"
+                    visible: root.hasNotesLoadError() && notesList.count > 0
+                    Layout.fillWidth: true
+                    Layout.leftMargin: Theme.space.lg
+                    Layout.rightMargin: Theme.space.lg
+                    Layout.bottomMargin: visible ? Theme.space.sm : 0
+                    Layout.preferredHeight: visible ? Math.max(36, notesRefreshErrorRow.implicitHeight + Theme.space.md) : 0
+                    color: Theme.colors.errorBg
+                    border.width: visible ? 1 : 0
+                    border.color: Theme.colors.error
+                    radius: Theme.radius.sm
+                    clip: true
+
+                    RowLayout {
+                        id: notesRefreshErrorRow
+                        anchors.fill: parent
+                        anchors.leftMargin: Theme.space.md
+                        anchors.rightMargin: Theme.space.md
+                        spacing: Theme.space.md
+
+                        Label {
+                            objectName: "notesRefreshErrorText"
+                            text: root.notesController && root.notesController.notes_model ? root.notesController.notes_model.error : ""
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.label
+                            color: Theme.colors.error
+                            wrapMode: Text.WrapAnywhere
+                            Layout.fillWidth: true
+                        }
+
+                        AppButton {
+                            objectName: "notesRefreshErrorRetry"
+                            text: "Retry"
+                            compact: true
+                            toolTipText: "Retry loading notes"
+                            Layout.preferredWidth: 64
+                            Layout.preferredHeight: 28
+                            onClicked: root.retryNotesList()
+                        }
+                    }
+                }
+
                 // Note list
                 ListView {
                     id: notesList
@@ -383,7 +484,7 @@ Rectangle {
 
                     // Empty state (loading or no notes)
                     Label {
-                        visible: notesList.count === 0 && (!root.notesController || !root.notesController.notes_model.loading)
+                        visible: notesList.count === 0 && !root.hasNotesLoadError() && (!root.notesController || !root.notesController.notes_model.loading)
                         anchors.centerIn: parent
                         text: {
                             if (!root.notesController) return ""
@@ -394,6 +495,60 @@ Rectangle {
                         }
                         font.pixelSize: Theme.fontSize.bodySm
                         color: Theme.colors.textGhost
+                    }
+
+                    Rectangle {
+                        objectName: "notesLoadError"
+                        visible: root.hasNotesLoadError() && notesList.count === 0 && root.notesController && !root.notesController.notes_model.loading
+                        anchors.centerIn: parent
+                        width: Math.max(0, Math.min(parent.width - Theme.space.xxxl, 260))
+                        height: Math.max(104, notesLoadErrorColumn.implicitHeight + Theme.space.xl)
+                        color: Theme.colors.errorBg
+                        border.width: visible ? 1 : 0
+                        border.color: Theme.colors.error
+                        radius: Theme.radius.md
+                        clip: true
+
+                        ColumnLayout {
+                            id: notesLoadErrorColumn
+                            anchors.fill: parent
+                            anchors.margins: Theme.space.md
+                            spacing: Theme.space.sm
+
+                            Label {
+                                text: "Could not load notes"
+                                font.family: Theme.uiFonts[0]
+                                font.pixelSize: Theme.fontSize.bodySm
+                                font.weight: Theme.fontWeight.semibold
+                                color: Theme.colors.textPrimary
+                                Layout.fillWidth: true
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+
+                            Label {
+                                objectName: "notesLoadErrorText"
+                                text: root.notesController && root.notesController.notes_model ? root.notesController.notes_model.error : ""
+                                font.family: Theme.uiFonts[0]
+                                font.pixelSize: Theme.fontSize.label
+                                color: Theme.colors.error
+                                wrapMode: Text.WrapAnywhere
+                                maximumLineCount: 2
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+
+                            AppButton {
+                                objectName: "notesLoadErrorRetry"
+                                text: "Retry"
+                                compact: true
+                                toolTipText: "Retry loading notes"
+                                Layout.preferredWidth: 64
+                                Layout.preferredHeight: 28
+                                Layout.alignment: Qt.AlignHCenter
+                                onClicked: root.retryNotesList()
+                            }
+                        }
                     }
 
                     // Loading state
@@ -655,5 +810,22 @@ Rectangle {
             return [{type: "para", content: source}]
         }
         return markdownParser.parse(source)
+    }
+
+    function hasNotesLoadError() {
+        return !!(root.notesController
+            && root.notesController.notes_model
+            && root.notesController.notes_model.error !== "")
+    }
+
+    function retryNotesList() {
+        if (!root.notesController) {
+            return
+        }
+        if (!root.notesController.available) {
+            root.notesController.refresh_status()
+            return
+        }
+        root.notesController.search(searchField.text.trim())
     }
 }

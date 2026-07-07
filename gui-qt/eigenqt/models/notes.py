@@ -87,6 +87,13 @@ class NotesModel(QAbstractListModel):
 
         self._client.call("ObsidianNotes", query, callback=lambda result: self._on_notes_result(result, seq))
 
+    def _set_error(self, value: str):
+        """Set the current list load error."""
+        value = value or ""
+        if self._error != value:
+            self._error = value
+            self.errorChanged.emit()
+
     def _on_notes_result(self, result: dict, seq: Optional[int] = None):
         """Handle ObsidianNotes RPC result."""
         if seq is not None and seq != self._load_seq:
@@ -95,16 +102,11 @@ class NotesModel(QAbstractListModel):
         self.loadingChanged.emit()
 
         if "error" in result:
-            err = result.get("error", "")
-            # Error can be a string or dict
-            if isinstance(err, dict):
-                self._error = err.get("message", "Unknown error")
-            else:
-                self._error = str(err) or "Unknown error"
-            self.errorChanged.emit()
+            self._set_error(_err_text(result))
             return
 
         notes = result.get("result") or []
+        self._set_error("")
         self.beginResetModel()
         self._notes = notes
         self.endResetModel()
@@ -115,6 +117,7 @@ class NotesController(QObject):
 
     # Status signals
     status_changed = Signal()
+    status_error_changed = Signal()
     # Selected note signals
     selected_changed = Signal()
     content_changed = Signal()
@@ -132,6 +135,7 @@ class NotesController(QObject):
         self._client = client
         self._status: Optional[dict] = None
         self._notes_model = NotesModel(client, self)
+        self._status_error: str = ""
         self._selected: Optional[dict] = None  # {path, title}
         self._content: str = ""
         self._editing: bool = False
@@ -156,6 +160,18 @@ class NotesController(QObject):
         if self._status != value:
             self._status = value
             self.status_changed.emit()
+
+    # Property: status_error (ObsidianStatus load error)
+    @Property(str, notify=status_error_changed)
+    def status_error(self):
+        return self._status_error
+
+    @status_error.setter
+    def status_error(self, value: str):
+        value = value or ""
+        if self._status_error != value:
+            self._status_error = value
+            self.status_error_changed.emit()
 
     # Property: notes_model (QAbstractListModel)
     @Property(QObject, constant=True)
@@ -274,13 +290,21 @@ class NotesController(QObject):
     @Slot()
     def _on_connected(self):
         """Load status on connect."""
+        self.refresh_status()
+
+    @Slot()
+    def refresh_status(self):
+        """Reload Obsidian vault status."""
+        self.status_error = ""
         self._client.call("ObsidianStatus", callback=self._on_status_result)
 
     def _on_status_result(self, result: dict):
         """Handle ObsidianStatus RPC result."""
         if "error" in result:
+            self.status_error = _err_text(result)
             return
 
+        self.status_error = ""
         self.status = result.get("result")
         # If vault available, load initial empty-query note list
         if self.available:

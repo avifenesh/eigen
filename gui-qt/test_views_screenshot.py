@@ -2333,6 +2333,22 @@ def main():
         show_notes_save_error,
     ) and ok
 
+    def setup_notes_load_error(ctx):
+        notes_controller = NotesController(client)
+        notes_controller.status = {"available": True, "vault": "/home/user/notes"}
+
+        from eigenqt.models.notes import NotesModel
+        notes_controller._notes_model = NotesModel(client)
+        notes_controller._notes_model._set_error("daemon offline")
+
+        ctx.setContextProperty("notesController", notes_controller)
+        ctx.setContextProperty("markdownParser", markdown_parser)
+        ctx.setContextProperty("highlighter", highlighter)
+        ctx.setContextProperty("clipboardHelper", clipboard_helper)
+        return {"notesController": notes_controller}
+
+    ok = capture_view("notes-load-error", "NotesView.qml", setup_notes_load_error) and ok
+
     # 11. DreamingView
     def setup_dreaming(ctx):
         dreaming_model = DreamingModel(client)

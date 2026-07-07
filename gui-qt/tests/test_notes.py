@@ -125,6 +125,31 @@ def test_notes_controller_status(qt_app, mock_client):
 
     assert controller.available
     assert controller.vault == "/home/user/vault"
+    assert controller.status_error == ""
+
+
+def test_notes_controller_status_error_surfaces_load_error(qt_app, mock_client):
+    """ObsidianStatus failures stay visible for the Notes view."""
+    controller = NotesController(mock_client)
+
+    controller._on_connected()
+    callback = mock_client.call.call_args[1]["callback"]
+    callback({"error": {"message": "daemon offline"}})
+
+    assert not controller.available
+    assert controller.status_error == "daemon offline"
+
+
+def test_notes_controller_refresh_status_clears_error_and_retries(qt_app, mock_client):
+    """Retrying status reload clears the old error and calls ObsidianStatus again."""
+    controller = NotesController(mock_client)
+    controller.status_error = "daemon offline"
+
+    controller.refresh_status()
+
+    assert controller.status_error == ""
+    args = mock_client.call.call_args[0]
+    assert args[0] == "ObsidianStatus"
 
 
 def test_notes_controller_open_note(qt_app, mock_client):
