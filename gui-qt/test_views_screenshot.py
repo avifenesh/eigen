@@ -26,6 +26,7 @@ from eigenqt.models.memory import MemoryModel
 from eigenqt.models.notes import NotesController
 from eigenqt.models.connectors import ConnectorsModel
 from eigenqt.models.reviewers import ReviewersModel
+from eigenqt.models.routing import RoutingModel
 from eigenqt.models import (
     ApprovalsModel,
     CommandsModel,
@@ -166,6 +167,73 @@ class ScreenshotRpcClient(QObject):
             return self.config_payload
         if method == "RuleChains":
             return self.rule_chains_payload
+        if method == "Routing":
+            return {
+                "models": [
+                    {
+                        "id": "gpt-5",
+                        "provider": "codex",
+                        "contextWindow": 400000,
+                        "cache": True,
+                        "context1m": False,
+                        "reasoning": True,
+                        "effort": "medium",
+                        "effortLevels": ["low", "medium", "high"],
+                        "thinkingBudget": 0,
+                        "search": True,
+                        "vision": True,
+                        "social": False,
+                        "available": True,
+                    },
+                    {
+                        "id": "grok-4",
+                        "provider": "grok",
+                        "contextWindow": 256000,
+                        "cache": False,
+                        "context1m": False,
+                        "reasoning": True,
+                        "effort": "high",
+                        "effortLevels": ["low", "high"],
+                        "thinkingBudget": 0,
+                        "search": True,
+                        "vision": False,
+                        "social": True,
+                        "available": False,
+                    },
+                    {
+                        "id": "local-qwen",
+                        "provider": "llama",
+                        "contextWindow": 128000,
+                        "cache": False,
+                        "context1m": False,
+                        "reasoning": False,
+                        "search": False,
+                        "vision": False,
+                        "social": False,
+                        "available": True,
+                    },
+                ],
+                "providers": [
+                    {"name": "codex", "credentialed": True, "modelCount": 1},
+                    {"name": "grok", "credentialed": False, "modelCount": 1},
+                    {"name": "llama", "credentialed": True, "modelCount": 1},
+                ],
+            }
+        if method == "ObserveSummary":
+            return {
+                "available": True,
+                "records": 4,
+                "routes": {
+                    "routed": 2,
+                    "assessed": 1,
+                    "skipped": 1,
+                    "orchestrator": 0,
+                    "byModel": [{"name": "gpt-5", "count": 2}],
+                    "byKind": [],
+                    "byDifficulty": [],
+                    "skipReasons": [],
+                },
+            }
         if method == "SetTitle":
             return {
                 "model": "gpt-5",
@@ -432,6 +500,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser):
         "memoryModel": MemoryModel(client),
         "notesController": NotesController(client),
         "connectorsModel": ConnectorsModel(client),
+        "routingModel": RoutingModel(client),
         "configModel": ConfigModel(client),
         "ruleChainsModel": RuleChainsModel(client),
         "reviewersModel": ReviewersModel(client),
@@ -1539,7 +1608,30 @@ def main():
 
     ok = capture_view("reviewers-action-error", "ReviewersView.qml", setup_reviewers, show_reviewers_action_error) and ok
 
-    # 9. ConnectorsView
+    # 9. RoutingView
+    def setup_routing(ctx):
+        routing_model = RoutingModel(client)
+        ctx.setContextProperty("routingModel", routing_model)
+        return {"routingModel": routing_model}
+
+    def show_routing(_view, root):
+        for _ in range(8):
+            app.processEvents()
+        if root.property("qaFilteredModelCount") != 3:
+            raise AssertionError(f"routing screenshot expected 3 models, saw {root.property('qaFilteredModelCount')}")
+        health = find_item(root, "routingHealthStrip")
+        provider = find_item(root, "routingProvider_grok")
+        model_card = find_item(root, "routingModelCard_gpt_5")
+        if health is None or health.property("visible") is not True:
+            raise AssertionError("routing screenshot did not render the route-health strip")
+        if provider is None or provider.property("qaTextFits") is not True:
+            raise AssertionError("routing screenshot did not render a clean provider row")
+        if model_card is None or model_card.property("qaTextFits") is not True:
+            raise AssertionError("routing screenshot did not render a clean model card")
+
+    ok = capture_view("routing", "RoutingView.qml", setup_routing, show_routing) and ok
+
+    # 10. ConnectorsView
     def setup_connectors(ctx):
         connectors_model = ConnectorsModel(client)
         connectors_model._loading = False

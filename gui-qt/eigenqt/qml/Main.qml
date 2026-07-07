@@ -82,9 +82,10 @@ ApplicationWindow {
                 if (route === "skills") return 6
                 if (route === "memory") return 7
                 if (route === "notes") return 8
-                if (route === "connectors") return 9
-                if (route === "config") return 10
-                if (route === "reviewers") return 11
+                if (route === "routing") return 9
+                if (route === "connectors") return 10
+                if (route === "config") return 11
+                if (route === "reviewers") return 12
                 return 0  // default to home
             }
 
@@ -187,18 +188,23 @@ ApplicationWindow {
                 notesController: root.ctxNotes
             }
 
-            // Index 9: Connectors view (MCP connectors management)
+            // Index 9: Routing view (model/provider catalog)
+            RoutingView {
+                routingModel: root.ctxRoutingModel
+            }
+
+            // Index 10: Connectors view (MCP connectors management)
             ConnectorsView {
                 connectorsModel: root.ctxConnectors
             }
 
-            // Index 10: Config view (editable config fields + rule chains)
+            // Index 11: Config view (editable config fields + rule chains)
             ConfigView {
                 configModel: root.ctxConfigModel
                 ruleChainsModel: root.ctxRuleChainsModel
             }
 
-            // Index 11: Reviewers view (revuto cockpit)
+            // Index 12: Reviewers view (revuto cockpit)
             ReviewersView {
                 reviewersModel: root.ctxReviewersModel
             }
@@ -319,6 +325,7 @@ ApplicationWindow {
     readonly property var ctxMemory: memoryModel
     readonly property var ctxNotes: notesController
     readonly property var ctxConnectors: connectorsModel
+    readonly property var ctxRoutingModel: routingModel
     readonly property var ctxConfigModel: configModel
     readonly property var ctxRuleChainsModel: ruleChainsModel
     readonly property var ctxReviewersModel: reviewersModel

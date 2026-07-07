@@ -31,6 +31,7 @@ from eigenqt.models import (
     LiveSessionsModel,
     MemoryModel,
     ProposalsModel,
+    RoutingModel,
     SessionStateModel,
     SessionsModel,
     SkillsModel,
@@ -157,6 +158,73 @@ class FakeRpcClient(QObject):
             return {"available": False, "count": 0, "paused": 0}
         if method == "RevutoReviewers":
             return []
+        if method == "Routing":
+            return {
+                "models": [
+                    {
+                        "id": "gpt-5",
+                        "provider": "codex",
+                        "contextWindow": 400000,
+                        "cache": True,
+                        "context1m": False,
+                        "reasoning": True,
+                        "effort": "medium",
+                        "effortLevels": ["low", "medium", "high"],
+                        "thinkingBudget": 0,
+                        "search": True,
+                        "vision": True,
+                        "social": False,
+                        "available": True,
+                    },
+                    {
+                        "id": "grok-4",
+                        "provider": "grok",
+                        "contextWindow": 256000,
+                        "cache": False,
+                        "context1m": False,
+                        "reasoning": True,
+                        "effort": "high",
+                        "effortLevels": ["low", "high"],
+                        "thinkingBudget": 0,
+                        "search": True,
+                        "vision": False,
+                        "social": True,
+                        "available": False,
+                    },
+                    {
+                        "id": "local-qwen",
+                        "provider": "llama",
+                        "contextWindow": 128000,
+                        "cache": False,
+                        "context1m": False,
+                        "reasoning": False,
+                        "search": False,
+                        "vision": False,
+                        "social": False,
+                        "available": True,
+                    },
+                ],
+                "providers": [
+                    {"name": "codex", "credentialed": True, "modelCount": 1},
+                    {"name": "grok", "credentialed": False, "modelCount": 1},
+                    {"name": "llama", "credentialed": True, "modelCount": 1},
+                ],
+            }
+        if method == "ObserveSummary":
+            return {
+                "available": True,
+                "records": 4,
+                "routes": {
+                    "routed": 2,
+                    "assessed": 1,
+                    "skipped": 1,
+                    "orchestrator": 0,
+                    "byModel": [{"name": "gpt-5", "count": 2}],
+                    "byKind": [],
+                    "byDifficulty": [],
+                    "skipReasons": [],
+                },
+            }
         return {}
 
 
@@ -413,6 +481,7 @@ try:
     memory_model = MemoryModel(client)
     notes_controller = NotesController(client)
     connectors_model = ConnectorsModel(client)
+    routing_model = RoutingModel(client)
     config_model = ConfigModel(client)
     rule_chains_model = RuleChainsModel(client)
     reviewers_model = ReviewersModel(client)
@@ -440,6 +509,7 @@ try:
     ctx.setContextProperty("memoryModel", memory_model)
     ctx.setContextProperty("notesController", notes_controller)
     ctx.setContextProperty("connectorsModel", connectors_model)
+    ctx.setContextProperty("routingModel", routing_model)
     ctx.setContextProperty("configModel", config_model)
     ctx.setContextProperty("ruleChainsModel", rule_chains_model)
     ctx.setContextProperty("reviewersModel", reviewers_model)
@@ -522,9 +592,10 @@ try:
         ("navItem_tasks", "tasks", 5),
         ("navItem_memory", "memory", 7),
         ("navItem_notes", "notes", 8),
-        ("navItem_connectors", "connectors", 9),
-        ("navItem_config", "config", 10),
-        ("navItem_reviewers", "reviewers", 11),
+        ("navItem_routing", "routing", 9),
+        ("navItem_connectors", "connectors", 10),
+        ("navItem_config", "config", 11),
+        ("navItem_reviewers", "reviewers", 12),
     ]
     for object_name, route, index in route_expectations:
         nav = click_item(app, window, object_name)
@@ -535,6 +606,33 @@ try:
             )
         if nav.property("qaTextFits") is not True:
             raise AssertionError(f"{object_name} label does not fit")
+
+    click_item(app, window, "navItem_routing")
+    pump(app, 24)
+    if ("Routing", ()) not in client.calls:
+        raise AssertionError(f"Routing view did not fetch the catalog: {client.calls}")
+    if ("ObserveSummary", (5000,)) not in client.calls:
+        raise AssertionError(f"Routing view did not fetch route stats: {client.calls}")
+    routing_view = find_item_in_window(window, "routingView")
+    health_strip = find_item_in_window(window, "routingHealthStrip")
+    all_provider = find_item_in_window(window, "routingProvider_all")
+    grok_provider = find_item_in_window(window, "routingProvider_grok")
+    gpt_card = find_item_in_window(window, "routingModelCard_gpt_5")
+    if routing_view is None or health_strip is None or all_provider is None or grok_provider is None or gpt_card is None:
+        raise AssertionError("Routing view did not render providers, health, and model cards")
+    if routing_view.property("qaFilteredModelCount") != 3:
+        raise AssertionError(f"Routing view filtered count was wrong: {routing_view.property('qaFilteredModelCount')}")
+    if all_provider.property("qaTextFits") is not True or grok_provider.property("qaTextFits") is not True:
+        raise AssertionError("Routing provider row text did not fit")
+    if gpt_card.property("qaTextFits") is not True:
+        raise AssertionError("Routing model card text did not fit")
+    click_item(app, window, "routingProvider_grok")
+    pump(app, 18)
+    if routing_view.property("qaFilteredModelCount") != 1:
+        raise AssertionError(f"Routing provider filter did not narrow to one model: {routing_view.property('qaFilteredModelCount')}")
+    grok_card = find_item_in_window(window, "routingModelCard_grok_4")
+    if grok_card is None or grok_card.property("qaTextFits") is not True:
+        raise AssertionError("Routing provider filter did not keep the grok model card clean")
 
     client.failures["NewSession"] = "daemon offline"
     click_item(app, window, "navItem_live")

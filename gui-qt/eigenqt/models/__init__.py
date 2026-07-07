@@ -10,6 +10,7 @@ ReplyWatcher: detects background session replies → desktop notify + unread mar
 DiffModel: parse unified diffs into rows for the diff view
 FileTreeModel: flatten nested file trees with expand state
 TasksModel: background agents/tasks with polling and cancel
+RoutingModel: model/provider routing catalog with route-health stats
 """
 
 from .sessions import SessionsModel
@@ -25,6 +26,7 @@ from .home import DashboardModel, FeedModel
 from .board import BoardModel, KanbanModel
 from .skills import SkillsModel, ProposalsModel
 from .memory import MemoryModel
+from .routing import RoutingModel
 
 __all__ = [
     "SessionsModel",
@@ -44,4 +46,5 @@ __all__ = [
     "SkillsModel",
     "ProposalsModel",
     "MemoryModel",
+    "RoutingModel",
 ]

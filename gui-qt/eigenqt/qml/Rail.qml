@@ -360,9 +360,22 @@ Rectangle {
                         Layout.fillWidth: true
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
+                        route: "routing"
+                        label: "Routing"
+                        glyph: "⇄"
+                        badge: 0
+                        badgeLive: false
+                        isActive: root.currentRoute === "routing"
+                        onClicked: root.routeChanged("routing")
+                    }
+
+                    NavItem {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Theme.space.sm
+                        Layout.rightMargin: Theme.space.sm
                         route: "connectors"
                         label: "Connectors"
-                        glyph: "⇄"
+                        glyph: "⟐"
                         badge: 0
                         badgeLive: false
                         isActive: root.currentRoute === "connectors"
