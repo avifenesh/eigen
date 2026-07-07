@@ -440,6 +440,9 @@ func (h *Host) saveSessionMeta(s *Session) {
 	if h.persistDir == "" {
 		return
 	}
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
+
 	s.mu.Lock()
 	perm, goal := s.coldPerm, s.coldGoal
 	var roots []string
