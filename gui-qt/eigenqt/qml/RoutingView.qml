@@ -318,6 +318,61 @@ Rectangle {
                         Item { Layout.preferredHeight: Theme.space.xl }
 
                         Rectangle {
+                            id: refreshErrorBanner
+                            objectName: "routingRefreshErrorBanner"
+                            readonly property bool qaTextFits: !refreshErrorTitle.truncated
+                                && !refreshErrorText.truncated
+                                && refreshErrorRetry.qaTextFits
+                            readonly property string qaErrorText: root.routingModel ? root.routingModel.load_error : ""
+                            visible: root.routingModel && root.routingModel.load_error !== "" && root.routingModel.model_count > 0
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: visible ? 56 : 0
+                            radius: Theme.radius.md
+                            color: Theme.colors.errorBg
+                            border.width: 1
+                            border.color: Theme.colors.error
+                            clip: true
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: Theme.space.lg
+                                spacing: Theme.space.md
+
+                                Label {
+                                    id: refreshErrorTitle
+                                    text: "Refresh failed"
+                                    font.family: Theme.uiFonts[0]
+                                    font.pixelSize: Theme.fontSize.bodySm
+                                    font.weight: Theme.fontWeight.semibold
+                                    color: Theme.colors.error
+                                    elide: Text.ElideRight
+                                }
+
+                                Label {
+                                    id: refreshErrorText
+                                    text: refreshErrorBanner.qaErrorText
+                                    font.family: Theme.uiFonts[0]
+                                    font.pixelSize: Theme.fontSize.label
+                                    color: Theme.colors.textMuted
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+
+                                AppButton {
+                                    id: refreshErrorRetry
+                                    objectName: "routingRefreshErrorRetry"
+                                    text: "Retry"
+                                    compact: true
+                                    variant: "danger"
+                                    toolTipText: "Retry routing refresh"
+                                    Layout.preferredWidth: 68
+                                    Layout.preferredHeight: 28
+                                    onClicked: if (root.routingModel) root.routingModel.refresh()
+                                }
+                            }
+                        }
+
+                        Rectangle {
                             id: healthStrip
                             objectName: "routingHealthStrip"
                             visible: root.routingModel && root.routingModel.route_total > 0
@@ -416,6 +471,7 @@ Rectangle {
                         }
 
                         Rectangle {
+                            objectName: "routingEmptyErrorPanel"
                             visible: root.routingModel && root.routingModel.load_error !== "" && root.routingModel.model_count === 0
                             Layout.fillWidth: true
                             Layout.preferredHeight: visible ? 128 : 0
@@ -446,6 +502,7 @@ Rectangle {
                                 }
 
                                 AppButton {
+                                    objectName: "routingEmptyErrorRetry"
                                     text: "Retry"
                                     compact: true
                                     Layout.alignment: Qt.AlignHCenter

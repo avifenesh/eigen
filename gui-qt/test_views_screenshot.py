@@ -1880,6 +1880,27 @@ def main():
 
     ok = capture_view("routing", "RoutingView.qml", setup_routing, show_routing) and ok
 
+    def show_routing_refresh_error(_view, root):
+        for _ in range(8):
+            app.processEvents()
+        model = root.property("routingModel")
+        model._on_routing_result({"error": {"message": "daemon offline"}})
+        for _ in range(8):
+            app.processEvents()
+        banner = find_item(root, "routingRefreshErrorBanner")
+        retry = find_item(root, "routingRefreshErrorRetry")
+        model_card = find_item(root, "routingModelCard_gpt_5")
+        if banner is None or banner.property("visible") is not True:
+            raise AssertionError("routing refresh error screenshot did not render the banner")
+        if banner.property("qaTextFits") is not True or "daemon offline" not in banner.property("qaErrorText"):
+            raise AssertionError("routing refresh error screenshot rendered clipped or wrong text")
+        if retry is None or retry.property("qaTextFits") is not True:
+            raise AssertionError("routing refresh error screenshot did not render a clean retry button")
+        if root.property("qaFilteredModelCount") != 3 or model_card is None:
+            raise AssertionError("routing refresh error screenshot dropped the catalog")
+
+    ok = capture_view("routing-refresh-error", "RoutingView.qml", setup_routing, show_routing_refresh_error) and ok
+
     # 11. MachinesView
     def setup_machines(ctx):
         machines_model = MachinesModel(client)

@@ -76,7 +76,11 @@ class FakeRpcClient(QObject):
 
     def call(self, method, *args, callback=None, error_callback=None):
         self.calls.append((method, args))
-        payload = {"result": self._result(method, args)}
+        payload = (
+            {"error": self.failures[method]}
+            if method in self.failures
+            else {"result": self._result(method, args)}
+        )
         if callback:
             QTimer.singleShot(0, lambda: callback(payload))
 
@@ -945,6 +949,36 @@ try:
     grok_card = find_item_in_window(window, "routingModelCard_grok_4")
     if grok_card is None or grok_card.property("qaTextFits") is not True:
         raise AssertionError("Routing provider filter did not keep the grok model card clean")
+    click_item(app, window, "routingProvider_all")
+    pump(app, 18)
+    if routing_view.property("qaFilteredModelCount") != 3:
+        raise AssertionError("Routing provider filter did not clear before refresh-error proof")
+    client.failures["Routing"] = {"message": "daemon offline"}
+    click_item(app, window, "routingRefreshButton")
+    QTest.qWait(40)
+    pump(app, 24)
+    refresh_error = find_item_in_window(window, "routingRefreshErrorBanner")
+    refresh_retry = find_item_in_window(window, "routingRefreshErrorRetry")
+    gpt_card = find_item_in_window(window, "routingModelCard_gpt_5")
+    if refresh_error is None or refresh_error.property("visible") is not True:
+        raise AssertionError("Routing refresh failure did not show an inline error banner")
+    if refresh_error.property("qaTextFits") is not True or "daemon offline" not in refresh_error.property("qaErrorText"):
+        raise AssertionError(
+            "Routing refresh error banner did not render cleanly: "
+            f"text={refresh_error.property('qaErrorText') if refresh_error else None} "
+            f"fits={refresh_error.property('qaTextFits') if refresh_error else None}"
+        )
+    if refresh_retry is None or refresh_retry.property("qaTextFits") is not True:
+        raise AssertionError("Routing refresh retry button did not render cleanly")
+    assert_item_inside_window(refresh_error, "routingRefreshErrorBanner")
+    if routing_view.property("qaFilteredModelCount") != 3 or gpt_card is None:
+        raise AssertionError("Routing refresh failure dropped the usable catalog")
+    del client.failures["Routing"]
+    click_item(app, window, "routingRefreshErrorRetry")
+    pump(app, 24)
+    refresh_error = find_item_in_window(window, "routingRefreshErrorBanner")
+    if refresh_error is not None and refresh_error.property("visible") is True:
+        raise AssertionError("Routing refresh error banner did not clear after retry")
 
     click_item(app, window, "navItem_machines")
     pump(app, 24)
