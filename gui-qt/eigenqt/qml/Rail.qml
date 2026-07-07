@@ -357,7 +357,7 @@ Rectangle {
                         Layout.rightMargin: Theme.space.sm
                         route: "connectors"
                         label: "Connectors"
-                        glyph: "⟐"
+                        glyph: "⇄"
                         badge: 0
                         badgeLive: false
                         isActive: root.currentRoute === "connectors"

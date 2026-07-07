@@ -93,11 +93,22 @@ Rectangle {
                     anchors.centerIn: parent
                     spacing: Theme.space.md
 
-                    Label {
-                        text: "⟐"
-                        font.pixelSize: 32
-                        color: Theme.colors.textFaint
+                    Rectangle {
+                        implicitWidth: 48
+                        implicitHeight: 30
+                        radius: Theme.radius.sm
+                        color: Theme.colors.bgInset
+                        border.width: 1
+                        border.color: Theme.colors.borderHairline
                         Layout.alignment: Qt.AlignHCenter
+
+                        Label {
+                            anchors.centerIn: parent
+                            text: "MCP"
+                            font.pixelSize: Theme.fontSize.label
+                            font.weight: Theme.fontWeight.bold
+                            color: Theme.colors.textMuted
+                        }
                     }
 
                     Label {
@@ -542,11 +553,22 @@ Rectangle {
                         anchors.centerIn: parent
                         spacing: Theme.space.sm
 
-                        Label {
-                            text: "⟐"
-                            font.pixelSize: 32
-                            color: Theme.colors.textFaint
+                        Rectangle {
+                            implicitWidth: 48
+                            implicitHeight: 30
+                            radius: Theme.radius.sm
+                            color: Theme.colors.bgInset
+                            border.width: 1
+                            border.color: Theme.colors.borderHairline
                             Layout.alignment: Qt.AlignHCenter
+
+                            Label {
+                                anchors.centerIn: parent
+                                text: "MCP"
+                                font.pixelSize: Theme.fontSize.label
+                                font.weight: Theme.fontWeight.bold
+                                color: Theme.colors.textMuted
+                            }
                         }
 
                         Label {
