@@ -181,6 +181,46 @@ Rectangle {
             }
         }
 
+        Rectangle {
+            objectName: "taskActionErrorBanner"
+            visible: root.tasksModel && root.tasksModel.actionError !== ""
+            Layout.fillWidth: true
+            Layout.preferredHeight: visible ? taskActionErrorText.implicitHeight + Theme.space.lg * 2 : 0
+            color: Theme.colors.errorBg
+            border.width: 1
+            border.color: Theme.colors.error
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: Theme.space.xxxl
+                anchors.rightMargin: Theme.space.xxxl
+                anchors.topMargin: Theme.space.lg
+                anchors.bottomMargin: Theme.space.lg
+                spacing: Theme.space.lg
+
+                Label {
+                    id: taskActionErrorText
+                    objectName: "taskActionErrorText"
+                    text: root.tasksModel ? root.tasksModel.actionError : ""
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.bodySm
+                    color: Theme.colors.error
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+
+                AppButton {
+                    objectName: "taskActionErrorDismissButton"
+                    text: "✕"
+                    compact: true
+                    toolTipText: "Dismiss task error"
+                    Layout.preferredWidth: 32
+                    Layout.preferredHeight: 32
+                    onClicked: if (root.tasksModel) root.tasksModel.clear_action_error()
+                }
+            }
+        }
+
         // Tasks list
         ListView {
             id: tasksListView
@@ -430,6 +470,7 @@ Rectangle {
                     // Actions
                     ColumnLayout {
                         Layout.alignment: Qt.AlignTop
+                        Layout.preferredWidth: 116
                         spacing: Theme.space.sm
 
                         AppButton {
@@ -437,7 +478,7 @@ Rectangle {
                             text: "Transcript"
                             compact: true
                             toolTipText: "Open task transcript"
-                            Layout.preferredWidth: 100
+                            Layout.fillWidth: true
                             onClicked: openTranscript(model)
                         }
 
@@ -447,9 +488,9 @@ Rectangle {
                             objectName: "taskCancelButton_" + root.safeName(model.taskId)
                             variant: "danger"
                             compact: true
-                            toolTipText: "Cancel running task"
+                            toolTipText: model.canceling ? "Task cancel request is pending" : "Cancel running task"
                             text: model.canceling ? "Stopping…" : "Cancel"
-                            Layout.preferredWidth: 100
+                            Layout.fillWidth: true
                             onClicked: root.tasksModel.cancel(model.taskId)
                         }
                     }

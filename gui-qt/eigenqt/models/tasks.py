@@ -8,7 +8,7 @@ cancel(id) slot → CancelAgent RPC.
 """
 
 import time
-from typing import Optional
+from typing import Any, Optional
 
 from PySide6.QtCore import (
     Property,
@@ -25,8 +25,23 @@ from PySide6.QtGui import QGuiApplication
 from eigenqt.rpc import RpcClient
 
 
+def _err_text(value: Any) -> str:
+    if value is None:
+        return "unknown error"
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        for key in ("message", "error", "cause"):
+            inner = value.get(key)
+            if inner:
+                return _err_text(inner)
+    return str(value)
+
+
 class TasksModel(QAbstractListModel):
     countsChanged = Signal()  # running/done/error counts changed (rail badges bind these)
+    cancelingChanged = Signal()
+    actionErrorChanged = Signal()
     """Background agents/tasks model (polled, status-filtered)."""
 
     # Qt roles
@@ -61,6 +76,8 @@ class TasksModel(QAbstractListModel):
         self._running_count = 0
         self._done_count = 0
         self._error_count = 0
+        self._canceling_ids: set[str] = set()
+        self._action_error = ""
 
         # Polling timer (adaptive cadence)
         self._poll_timer = QTimer(self)
@@ -135,7 +152,8 @@ class TasksModel(QAbstractListModel):
         if role == self.ErrorRole:
             return task.get("error", "")
         if role == self.CancelingRole:
-            return task.get("canceling", False)
+            task_id = str(task.get("id", ""))
+            return task.get("canceling", False) or task_id in self._canceling_ids
         if role == self.RoleNameRole:
             return task.get("role", "")
         if role == self.KindRole:
@@ -198,7 +216,21 @@ class TasksModel(QAbstractListModel):
             return
 
         data = result.get("result") or {}
-        tasks = data.get("tasks") or []
+        tasks = [dict(t) for t in (data.get("tasks") or [])]
+        running_ids = {
+            str(t.get("id", ""))
+            for t in tasks
+            if t.get("id") and t.get("status") == "running"
+        }
+        if self._canceling_ids:
+            previous_canceling = set(self._canceling_ids)
+            self._canceling_ids.intersection_update(running_ids)
+            if self._canceling_ids != previous_canceling:
+                self.cancelingChanged.emit()
+            for task in tasks:
+                task_id = str(task.get("id", ""))
+                if task_id in self._canceling_ids:
+                    task["canceling"] = True
 
         # Update counts
         self._running_count = sum(1 for t in tasks if t.get("status") == "running")
@@ -236,18 +268,58 @@ class TasksModel(QAbstractListModel):
     @Slot(str)
     def cancel(self, task_id: str):
         """Cancel a running task (fire-and-forget RPC)."""
-        if not task_id:
+        task_id = (task_id or "").strip()
+        if not task_id or task_id in self._canceling_ids:
             return
-        self._client.call("CancelAgent", task_id)
-        # Optimistically mark as canceling (will be confirmed on next poll)
+        self._set_action_error("")
+        self._canceling_ids.add(task_id)
+        self.cancelingChanged.emit()
+        # Optimistically mark as canceling while the bridge request is in flight.
         for task in self._tasks:
             if task.get("id") == task_id:
                 task["canceling"] = True
-                # Notify QML
                 row = self._tasks.index(task)
                 idx = self.index(row, 0)
                 self.dataChanged.emit(idx, idx, [self.CancelingRole])
                 break
+
+        def on_result(result: dict):
+            if "error" in result:
+                self._canceling_ids.discard(task_id)
+                self.cancelingChanged.emit()
+                self._set_action_error(
+                    f"Could not cancel {task_id}: {_err_text(result.get('error'))}"
+                )
+                self._set_task_canceling(task_id, False)
+                return
+            self._canceling_ids.discard(task_id)
+            self.cancelingChanged.emit()
+            self.refresh()
+
+        self._client.call("CancelAgent", task_id, callback=on_result)
+
+    @Slot(str, result=bool)
+    def isCanceling(self, task_id: str) -> bool:
+        return (task_id or "").strip() in self._canceling_ids
+
+    @Slot()
+    def clear_action_error(self):
+        self._set_action_error("")
+
+    def _set_task_canceling(self, task_id: str, canceling: bool) -> None:
+        for task in self._tasks:
+            if str(task.get("id", "")) == task_id:
+                task["canceling"] = canceling
+                row = self._tasks.index(task)
+                idx = self.index(row, 0)
+                self.dataChanged.emit(idx, idx, [self.CancelingRole])
+                break
+
+    def _set_action_error(self, value: str) -> None:
+        if self._action_error == value:
+            return
+        self._action_error = value
+        self.actionErrorChanged.emit()
 
     def refresh(self):
         """Manually trigger a refresh."""
@@ -290,3 +362,7 @@ class TasksModel(QAbstractListModel):
     @Property(int, notify=countsChanged)
     def error_count(self) -> int:
         return self._error_count
+
+    @Property(str, notify=actionErrorChanged)
+    def actionError(self) -> str:
+        return self._action_error

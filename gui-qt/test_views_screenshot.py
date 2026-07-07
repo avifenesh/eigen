@@ -1012,6 +1012,17 @@ def main():
 
     ok = capture_view("config-model-dropdown", "ConfigView.qml", setup_config, open_config_model_dropdown) and ok
 
+    def show_config_models(_view, root):
+        root.setProperty("activeTab", "Models")
+
+    ok = capture_view("config-models", "ConfigView.qml", setup_config, show_config_models) and ok
+
+    def open_config_chain_dropdown(_view, root):
+        root.setProperty("activeTab", "Models")
+        root.setProperty("qaOpenCombo", "configAddModelCombo_primary")
+
+    ok = capture_view("config-chain-dropdown", "ConfigView.qml", setup_config, open_config_chain_dropdown) and ok
+
     def show_config_models_error(_view, root):
         root.setProperty("activeTab", "Models")
         root.setProperty("ruleChainSaving", {"primary": True})
@@ -1174,6 +1185,21 @@ def main():
         return {"tasksModel": tasks_model, "rpcClient": client}
 
     ok = capture_view("tasks", "TasksView.qml", setup_tasks) and ok
+
+    def show_tasks_cancel_pending(_view, root):
+        model = root.property("tasksModel")
+        if model:
+            model._canceling_ids.add("task-run")
+            model._set_task_canceling("task-run", True)
+
+    ok = capture_view("tasks-cancel-pending", "TasksView.qml", setup_tasks, show_tasks_cancel_pending) and ok
+
+    def show_tasks_cancel_error(_view, root):
+        model = root.property("tasksModel")
+        if model:
+            model._set_action_error("Could not cancel task-run: daemon offline")
+
+    ok = capture_view("tasks-cancel-error", "TasksView.qml", setup_tasks, show_tasks_cancel_error) and ok
 
     def show_tasks_transcript_empty(_view, root):
         root.setProperty(

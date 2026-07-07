@@ -36,6 +36,7 @@ class FakeRpcClient(QObject):
         self.calls = []
         self.failures = {}
         self.delays = {}
+        self.canceling = set()
         self.transcript_text = (
             '{"Role":"assistant","Text":"Task filter proof ready",'
             '"ToolCalls":[{"name":"apply_patch","args":"{}"}]}\n'
@@ -45,8 +46,12 @@ class FakeRpcClient(QObject):
     def call(self, method, *args, callback=None, error_callback=None):
         self.calls.append((method, args))
         if callback:
-            payload = {"result": self._result(method, args)}
-            QTimer.singleShot(0, lambda: callback(payload))
+            payload = (
+                {"error": self.failures[method]}
+                if method in self.failures
+                else {"result": self._result(method, args)}
+            )
+            QTimer.singleShot(self.delays.get(method, 0), lambda: callback(payload))
 
     @Slot(str, "QVariantList", result=int)
     def callToken(self, method, args):
@@ -90,6 +95,7 @@ class FakeRpcClient(QObject):
                         "lastNote": "Wiring keyboard chips",
                         "inTokens": 1200,
                         "outTokens": 320,
+                        "canceling": "task-run" in self.canceling,
                     },
                     {
                         "id": "task-done",
@@ -122,6 +128,10 @@ class FakeRpcClient(QObject):
             }
         if method == "AgentTranscript":
             return {"transcript": self.transcript_text}
+        if method == "CancelAgent":
+            if args:
+                self.canceling.add(str(args[0]))
+            return {}
         return {}
 
 
@@ -306,12 +316,45 @@ if error_text is None or "daemon offline" not in error_text.property("text"):
 key_item(app, view, root, "taskTranscriptCloseButton", Qt.Key_Space)
 del client.failures["AgentTranscript"]
 
+client.failures["CancelAgent"] = "daemon offline"
 start = len(client.calls)
 cancel_button = key_item(app, view, root, "taskCancelButton_task_run", Qt.Key_Space)
 if ("CancelAgent", ("task-run",)) not in client.calls[start:]:
     raise AssertionError(f"cancel button did not call CancelAgent: {client.calls[start:]}")
+if cancel_button.property("enabled") is not True:
+    raise AssertionError("failed cancel did not re-enable the cancel button")
+if cancel_button.property("qaTextFits") is not True:
+    raise AssertionError("cancel button text did not fit after failed cancel")
+if "daemon offline" not in tasks.property("actionError"):
+    raise AssertionError(f"failed cancel did not expose an action error: {tasks.property('actionError')}")
+error_banner = find_item(root, "taskActionErrorBanner")
+error_text = find_item(root, "taskActionErrorText")
+if error_banner is None or error_banner.property("visible") is not True:
+    raise AssertionError("failed cancel did not render the action error banner")
+if error_text is None or "daemon offline" not in error_text.property("text"):
+    raise AssertionError(f"failed cancel error text was wrong: {error_text.property('text') if error_text else None}")
+key_item(app, view, root, "taskActionErrorDismissButton", Qt.Key_Return)
+if tasks.property("actionError") != "":
+    raise AssertionError("task action error dismiss did not clear the model error")
+del client.failures["CancelAgent"]
+
+start = len(client.calls)
+key_item(app, view, root, "taskCancelButton_task_run", Qt.Key_Space)
+if ("CancelAgent", ("task-run",)) not in client.calls[start:]:
+    raise AssertionError(f"cancel button did not call CancelAgent: {client.calls[start:]}")
+cancel_button = find_item(root, "taskCancelButton_task_run")
+if cancel_button is None:
+    raise AssertionError("cancel button disappeared after successful cancel refresh")
 if cancel_button.property("enabled") is not False:
     raise AssertionError("cancel button did not disable while canceling")
+if cancel_button.property("text") != "Stopping…":
+    raise AssertionError(f"cancel button pending label was {cancel_button.property('text')!r}")
+if cancel_button.property("qaTextFits") is not True:
+    raise AssertionError("cancel button pending label did not fit")
+start = len(client.calls)
+key_item(app, view, root, "taskCancelButton_task_run", Qt.Key_Space)
+if any(call == ("CancelAgent", ("task-run",)) for call in client.calls[start:]):
+    raise AssertionError(f"disabled cancel button issued a duplicate call: {client.calls[start:]}")
 """
     env = os.environ.copy()
     env.setdefault("QT_QPA_PLATFORM", "offscreen")
