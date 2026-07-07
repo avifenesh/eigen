@@ -27,6 +27,7 @@ from eigenqt.models import (
     CommandsModel,
     CronsModel,
     DashboardModel,
+    DreamingModel,
     FeedModel,
     KanbanModel,
     LiveSessionsModel,
@@ -140,7 +141,16 @@ class FakeRpcClient(QObject):
         if method == "ProposedSkills":
             return {"proposals": []}
         if method == "ListMemoryScopes":
-            return []
+            return [
+                {"key": "global", "name": "Global", "dir": "", "noteCount": 3},
+                {
+                    "key": "project:/repo/eigen",
+                    "name": "eigen",
+                    "dir": "/repo/eigen",
+                    "noteCount": 5,
+                    "current": True,
+                },
+            ]
         if method == "MemoryForScope":
             scope = args[0] if args else ""
             return {
@@ -151,6 +161,34 @@ class FakeRpcClient(QObject):
                 "profile": "Qt profile proof" if scope == "global" else "",
                 "profileLearned": "Prefers direct Qt checks." if scope == "global" else "",
                 "banList": [],
+            }
+        if method == "DreamingForScope":
+            scope = args[0] if args else "project:/repo/eigen"
+            return {
+                "scope": scope,
+                "currentBytes": 4096,
+                "rollouts": [
+                    {
+                        "index": 1,
+                        "text": "# Outcome: success\n\nCaptured focused Qt proof.",
+                        "outcome": "success",
+                        "whenMs": 1783155600000,
+                    },
+                    {
+                        "index": 0,
+                        "text": "# Outcome: partial\n\nNeeds visual pass.",
+                        "outcome": "partial",
+                        "whenMs": 1783144800000,
+                    },
+                ],
+                "consolidations": [
+                    {
+                        "path": "/repo/eigen/.eigen/memory/MEMORY.md.20260707-120000.bak",
+                        "label": "Jul 7, 12:00",
+                        "whenMs": 1783152000000,
+                        "bytes": 2048,
+                    }
+                ],
             }
         if method == "ObsidianStatus":
             return {"available": False, "vault": ""}
@@ -598,6 +636,25 @@ def click_item(app, window, object_name):
     item = find_item_in_window(window, object_name)
     if item is None:
         raise AssertionError(f"missing item {object_name}")
+    if object_name.startswith("navItem_"):
+        flick = find_item_in_window(window, "railNavFlick")
+        if flick is not None:
+            top = item.mapToItem(flick, QPointF(0, 0)).y()
+            bottom = item.mapToItem(flick, QPointF(0, float(item.property("height") or 0))).y()
+            view_height = float(flick.property("height") or 0)
+            content_y = float(flick.property("contentY") or 0)
+            next_y = content_y
+            if top < 0:
+                next_y = max(0, content_y + top - 4)
+            elif bottom > view_height:
+                max_y = max(0, float(flick.property("contentHeight") or 0) - view_height)
+                next_y = min(max_y, content_y + (bottom - view_height) + 4)
+            if abs(next_y - content_y) > 0.5:
+                flick.setProperty("contentY", next_y)
+                pump(app, 12)
+                item = find_item_in_window(window, object_name)
+                if item is None:
+                    raise AssertionError(f"missing item {object_name} after rail scroll")
     assert_item_inside_window(item, object_name)
     QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, item_center(item))
     QTest.qWait(20)
@@ -655,6 +712,7 @@ try:
     feed_model._on_feed_result({"result": {"items": seeded_feed(), "fresh": True}})
     board_model = BoardModel(client)
     kanban_model = KanbanModel(client)
+    dreaming_model = DreamingModel(client)
     skills_model = SkillsModel(client)
     proposals_model = ProposalsModel(client)
     memory_model = MemoryModel(client)
@@ -688,6 +746,7 @@ try:
     ctx.setContextProperty("feedModel", feed_model)
     ctx.setContextProperty("boardModel", board_model)
     ctx.setContextProperty("kanbanModel", kanban_model)
+    ctx.setContextProperty("dreamingModel", dreaming_model)
     ctx.setContextProperty("skillsModel", skills_model)
     ctx.setContextProperty("proposalsModel", proposals_model)
     ctx.setContextProperty("memoryModel", memory_model)
@@ -781,15 +840,16 @@ try:
         ("navItem_tasks", "tasks", 5),
         ("navItem_memory", "memory", 7),
         ("navItem_notes", "notes", 8),
-        ("navItem_observe", "observe", 9),
-        ("navItem_routing", "routing", 10),
-        ("navItem_machines", "machines", 11),
-        ("navItem_crons", "crons", 12),
-        ("navItem_plugins", "plugins", 13),
-        ("navItem_connectors", "connectors", 14),
-        ("navItem_profile", "profile", 15),
-        ("navItem_config", "config", 16),
-        ("navItem_reviewers", "reviewers", 17),
+        ("navItem_dreaming", "dreaming", 9),
+        ("navItem_observe", "observe", 10),
+        ("navItem_routing", "routing", 11),
+        ("navItem_machines", "machines", 12),
+        ("navItem_crons", "crons", 13),
+        ("navItem_plugins", "plugins", 14),
+        ("navItem_connectors", "connectors", 15),
+        ("navItem_profile", "profile", 16),
+        ("navItem_config", "config", 17),
+        ("navItem_reviewers", "reviewers", 18),
     ]
     for object_name, route, index in route_expectations:
         nav = click_item(app, window, object_name)
@@ -800,6 +860,43 @@ try:
             )
         if nav.property("qaTextFits") is not True:
             raise AssertionError(f"{object_name} label does not fit")
+
+    click_item(app, window, "navItem_dreaming")
+    pump(app, 30)
+    if ("ListMemoryScopes", ()) not in client.calls:
+        raise AssertionError(f"Dreaming view did not fetch memory scopes: {client.calls}")
+    if not any(call[0] == "DreamingForScope" for call in client.calls):
+        raise AssertionError(f"Dreaming view did not fetch the timeline: {client.calls}")
+    dreaming_view = find_item_in_window(window, "dreamingView")
+    dreaming_combo = find_item_in_window(window, "dreamingScopeCombo")
+    rollout_row = find_item_in_window(window, "dreamingRolloutRow_1")
+    if dreaming_view is None or dreaming_combo is None or rollout_row is None:
+        raise AssertionError("Dreaming view did not render scope picker and rollout rows")
+    if dreaming_view.property("qaRolloutCount") != 2 or dreaming_view.property("qaConsolidationCount") != 1:
+        raise AssertionError(
+            "Dreaming view counts were wrong: "
+            f"rollouts={dreaming_view.property('qaRolloutCount')} "
+            f"consolidations={dreaming_view.property('qaConsolidationCount')}"
+        )
+    if dreaming_combo.property("qaTextFits") is not True or rollout_row.property("qaTextFits") is not True:
+        raise AssertionError("Dreaming scope or rollout text did not fit")
+    click_item(app, window, "dreamingTab_consolidations")
+    pump(app, 30)
+    if dreaming_view.property("qaStrand") != "consolidations":
+        raise AssertionError(f"Dreaming tab did not switch to consolidations: {dreaming_view.property('qaStrand')}")
+    consolidation_row = find_item_in_window(window, "dreamingConsolidationRow_0")
+    if consolidation_row is None or consolidation_row.property("qaTextFits") is not True:
+        raise AssertionError(
+            "Dreaming consolidation row did not render cleanly: "
+            f"row={consolidation_row is not None} "
+            f"visible={consolidation_row.property('visible') if consolidation_row else None} "
+            f"width={consolidation_row.property('width') if consolidation_row else None} "
+            f"labelTruncated={consolidation_row.property('qaLabelTruncated') if consolidation_row else None} "
+            f"metaTruncated={consolidation_row.property('qaMetaTruncated') if consolidation_row else None} "
+            f"meta={consolidation_row.property('qaMetaText') if consolidation_row else None} "
+            f"names={object_names_with_prefix(window.contentItem(), 'dreaming')[:40]} "
+            f"messages={messages[:6]}"
+        )
 
     click_item(app, window, "navItem_observe")
     pump(app, 24)

@@ -20,6 +20,7 @@ from eigenqt.models import (
     CommandsModel,
     CronsModel,
     DashboardModel,
+    DreamingModel,
     FeedModel,
     KanbanModel,
     LiveSessionsModel,
@@ -79,6 +80,7 @@ class AppContext(QObject):
         self.skills_model = SkillsModel(self.rpc_client, self)
         self.proposals_model = ProposalsModel(self.rpc_client, self)
         self.memory_model = MemoryModel(self.rpc_client, self)
+        self.dreaming_model = DreamingModel(self.rpc_client, self)
         self.notes_controller = NotesController(self.rpc_client, self)
         self.connectors_model = ConnectorsModel(self.rpc_client, self)
         self.observe_model = ObserveModel(self.rpc_client, self)
@@ -331,6 +333,7 @@ def main():
     ctx.setContextProperty("skillsModel", app_context.skills_model)
     ctx.setContextProperty("proposalsModel", app_context.proposals_model)
     ctx.setContextProperty("memoryModel", app_context.memory_model)
+    ctx.setContextProperty("dreamingModel", app_context.dreaming_model)
     ctx.setContextProperty("notesController", app_context.notes_controller)
     ctx.setContextProperty("connectorsModel", app_context.connectors_model)
     ctx.setContextProperty("observeModel", app_context.observe_model)

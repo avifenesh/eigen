@@ -22,6 +22,7 @@ from PySide6.QtTest import QTest
 
 from eigenqt.models.board import BoardModel, KanbanModel
 from eigenqt.models.config import ConfigModel, RuleChainsModel
+from eigenqt.models.dreaming import DreamingModel
 from eigenqt.models.memory import MemoryModel
 from eigenqt.models.notes import NotesController
 from eigenqt.models.connectors import ConnectorsModel
@@ -165,7 +166,16 @@ class ScreenshotRpcClient(QObject):
         if method == "ObsidianNotes":
             return []
         if method == "ListMemoryScopes":
-            return []
+            return [
+                {"key": "global", "name": "Global", "dir": "", "noteCount": 3},
+                {
+                    "key": "project:/home/user/eigen",
+                    "name": "eigen",
+                    "dir": "/home/user/eigen",
+                    "noteCount": 5,
+                    "current": True,
+                },
+            ]
         if method == "MemoryForScope":
             scope = args[0] if args else ""
             return {
@@ -176,6 +186,34 @@ class ScreenshotRpcClient(QObject):
                 "profile": "# User profile\n\nDeveloper working on eigen GUI." if scope == "global" else "",
                 "profileLearned": "Works on Qt/QML interfaces" if scope == "global" else "",
                 "banList": [],
+            }
+        if method == "DreamingForScope":
+            scope = args[0] if args else "project:/home/user/eigen"
+            return {
+                "scope": scope,
+                "currentBytes": 4096,
+                "rollouts": [
+                    {
+                        "index": 1,
+                        "text": "# Outcome: success\n\nCaptured focused Qt proof.",
+                        "outcome": "success",
+                        "whenMs": 1783155600000,
+                    },
+                    {
+                        "index": 0,
+                        "text": "# Outcome: partial\n\nNeeds visual pass.",
+                        "outcome": "partial",
+                        "whenMs": 1783144800000,
+                    },
+                ],
+                "consolidations": [
+                    {
+                        "path": "/home/user/eigen/.eigen/memory/MEMORY.md.20260707-120000.bak",
+                        "label": "Jul 7, 12:00",
+                        "whenMs": 1783152000000,
+                        "bytes": 2048,
+                    }
+                ],
             }
         if method == "Config":
             return self.config_payload
@@ -677,6 +715,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser):
         "skillsModel": SkillsModel(client),
         "proposalsModel": ProposalsModel(client),
         "memoryModel": MemoryModel(client),
+        "dreamingModel": DreamingModel(client),
         "notesController": NotesController(client),
         "connectorsModel": ConnectorsModel(client),
         "observeModel": ObserveModel(client),
@@ -2095,7 +2134,37 @@ def main():
         show_notes_save_error,
     ) and ok
 
-    # 11. MemoryView
+    # 11. DreamingView
+    def setup_dreaming(ctx):
+        dreaming_model = DreamingModel(client)
+        ctx.setContextProperty("dreamingModel", dreaming_model)
+        return {"dreamingModel": dreaming_model}
+
+    def show_dreaming(_view, root):
+        for _ in range(10):
+            app.processEvents()
+        if root.property("qaRolloutCount") != 2 or root.property("qaConsolidationCount") != 1:
+            raise AssertionError(
+                "dreaming screenshot expected 2 rollouts and 1 consolidation, saw "
+                f"{root.property('qaRolloutCount')} rollouts and {root.property('qaConsolidationCount')} consolidations"
+            )
+        combo = find_item(root, "dreamingScopeCombo")
+        rollout_row = find_item(root, "dreamingRolloutRow_1")
+        tab = find_item(root, "dreamingTab_consolidations")
+        if combo is None or rollout_row is None or tab is None:
+            raise AssertionError("dreaming screenshot did not render scope, rollout row, and tab")
+        if combo.property("qaTextFits") is not True or rollout_row.property("qaTextFits") is not True:
+            raise AssertionError("dreaming screenshot rendered clipped rollout text")
+        root.setProperty("strand", "consolidations")
+        for _ in range(8):
+            app.processEvents()
+        cons_row = find_item(root, "dreamingConsolidationRow_0")
+        if cons_row is None or cons_row.property("qaTextFits") is not True:
+            raise AssertionError("dreaming screenshot did not render a clean consolidation row")
+
+    ok = capture_view("dreaming", "DreamingView.qml", setup_dreaming, show_dreaming) and ok
+
+    # 12. MemoryView
     def setup_memory(ctx):
         memory_model = MemoryModel(client)
         memory_model._scopes = [

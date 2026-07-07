@@ -16,6 +16,7 @@ MachinesModel: remote host list plus on-demand remote session drill-in
 CronsModel: scheduled-work snapshot with route-scoped polling
 PluginsModel: installed plugin and marketplace inventory
 ProfileModel: usage summary plus global USER.md profile editor
+DreamingModel: read-only memory rollout/consolidation timeline
 """
 
 from .sessions import SessionsModel
@@ -37,6 +38,7 @@ from .machines import MachinesModel
 from .crons import CronsModel
 from .plugins import PluginsModel
 from .profile import ProfileModel
+from .dreaming import DreamingModel
 
 __all__ = [
     "SessionsModel",
@@ -62,4 +64,5 @@ __all__ = [
     "CronsModel",
     "PluginsModel",
     "ProfileModel",
+    "DreamingModel",
 ]

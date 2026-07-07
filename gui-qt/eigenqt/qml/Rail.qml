@@ -80,6 +80,8 @@ Rectangle {
 
         // Scrollable nav area
         Flickable {
+            id: navFlick
+            objectName: "railNavFlick"
             Layout.fillWidth: true
             Layout.fillHeight: true
             contentWidth: width
@@ -335,6 +337,19 @@ Rectangle {
                         badgeLive: false
                         isActive: root.currentRoute === "notes"
                         onClicked: root.routeChanged("notes")
+                    }
+
+                    NavItem {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Theme.space.sm
+                        Layout.rightMargin: Theme.space.sm
+                        route: "dreaming"
+                        label: "Dreaming"
+                        glyph: "☾"
+                        badge: 0
+                        badgeLive: false
+                        isActive: root.currentRoute === "dreaming"
+                        onClicked: root.routeChanged("dreaming")
                     }
                 }
 

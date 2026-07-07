@@ -82,15 +82,16 @@ ApplicationWindow {
                 if (route === "skills") return 6
                 if (route === "memory") return 7
                 if (route === "notes") return 8
-                if (route === "observe") return 9
-                if (route === "routing") return 10
-                if (route === "machines") return 11
-                if (route === "crons") return 12
-                if (route === "plugins") return 13
-                if (route === "connectors") return 14
-                if (route === "profile") return 15
-                if (route === "config") return 16
-                if (route === "reviewers") return 17
+                if (route === "dreaming") return 9
+                if (route === "observe") return 10
+                if (route === "routing") return 11
+                if (route === "machines") return 12
+                if (route === "crons") return 13
+                if (route === "plugins") return 14
+                if (route === "connectors") return 15
+                if (route === "profile") return 16
+                if (route === "config") return 17
+                if (route === "reviewers") return 18
                 return 0  // default to home
             }
 
@@ -193,17 +194,22 @@ ApplicationWindow {
                 notesController: root.ctxNotes
             }
 
-            // Index 9: Observe view (telemetry summary)
+            // Index 9: Dreaming view (memory rollout/consolidation timeline)
+            DreamingView {
+                dreamingModel: root.ctxDreamingModel
+            }
+
+            // Index 10: Observe view (telemetry summary)
             ObserveView {
                 observeModel: root.ctxObserveModel
             }
 
-            // Index 10: Routing view (model/provider catalog)
+            // Index 11: Routing view (model/provider catalog)
             RoutingView {
                 routingModel: root.ctxRoutingModel
             }
 
-            // Index 11: Machines view (remote host/session drill-in)
+            // Index 12: Machines view (remote host/session drill-in)
             MachinesView {
                 machinesModel: root.ctxMachinesModel
                 onOpenSession: function(sessionId) {
@@ -213,34 +219,34 @@ ApplicationWindow {
                 }
             }
 
-            // Index 12: Crons view (scheduled work snapshot)
+            // Index 13: Crons view (scheduled work snapshot)
             CronsView {
                 cronsModel: root.ctxCronsModel
             }
 
-            // Index 13: Plugins view (installed plugins and marketplaces)
+            // Index 14: Plugins view (installed plugins and marketplaces)
             PluginsView {
                 pluginsModel: root.ctxPluginsModel
             }
 
-            // Index 14: Connectors view (MCP connectors management)
+            // Index 15: Connectors view (MCP connectors management)
             ConnectorsView {
                 connectorsModel: root.ctxConnectors
             }
 
-            // Index 15: Profile view (usage and USER.md profile)
+            // Index 16: Profile view (usage and USER.md profile)
             ProfileView {
                 profileModel: root.ctxProfileModel
                 statsData: root.ctxStats
             }
 
-            // Index 16: Config view (editable config fields + rule chains)
+            // Index 17: Config view (editable config fields + rule chains)
             ConfigView {
                 configModel: root.ctxConfigModel
                 ruleChainsModel: root.ctxRuleChainsModel
             }
 
-            // Index 17: Reviewers view (revuto cockpit)
+            // Index 18: Reviewers view (revuto cockpit)
             ReviewersView {
                 reviewersModel: root.ctxReviewersModel
             }
@@ -359,6 +365,7 @@ ApplicationWindow {
     readonly property var ctxSkills: skillsModel
     readonly property var ctxProposals: proposalsModel
     readonly property var ctxMemory: memoryModel
+    readonly property var ctxDreamingModel: dreamingModel
     readonly property var ctxNotes: notesController
     readonly property var ctxConnectors: connectorsModel
     readonly property var ctxObserveModel: observeModel
