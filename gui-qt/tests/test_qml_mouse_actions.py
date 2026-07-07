@@ -559,6 +559,10 @@ def check_connectors(app, client):
     connectors = seeded_connectors_model(client)
     view, root = load_view(app, client, "ConnectorsView.qml", context={"connectorsModel": connectors}, root_props={"connectorsModel": connectors})
     try:
+        connector_card = find_visual_item(root, "connectorCard_connector_notion")
+        if connector_card is None or connector_card.property("qaIconText") != "N":
+            raise AssertionError(f"connector card did not derive a useful icon initial: {connector_card.property('qaIconText') if connector_card is not None else None!r}")
+
         remove = click_item(app, view, root, "connectorRemoveButton_connector_notion", flick_name="connectorsFlick")
         if not connectors.confirm_remove_connector.get("notion"):
             invoke_click(remove)
@@ -583,6 +587,8 @@ def check_connectors(app, client):
             raise AssertionError("connector catalog tile did not expose keyboard focus")
         if tile.property("qaAccessibleName") != "Connect Slack":
             raise AssertionError(f"connector catalog tile accessible name was wrong: {tile.property('qaAccessibleName')}")
+        if tile.property("qaIconText") != "S":
+            raise AssertionError(f"connector catalog tile did not derive a useful icon initial: {tile.property('qaIconText')!r}")
         QTest.keyClick(view, Qt.Key_Space)
         pump(app)
         if ("AddCatalogConnector", ("slack",)) not in client.calls[start:]:
@@ -646,6 +652,10 @@ def check_connectors(app, client):
     connectors = seeded_connectors_model(client)
     view, root = load_view(app, client, "ConnectorsView.qml", context={"connectorsModel": connectors}, root_props={"connectorsModel": connectors})
     try:
+        server_card = find_visual_item(root, "connectorCard_server_github-local")
+        if server_card is None or server_card.property("qaIconText") != "GL":
+            raise AssertionError(f"server card did not derive a useful icon initial: {server_card.property('qaIconText') if server_card is not None else None!r}")
+
         server_remove = click_item(app, view, root, "connectorRemoveButton_server_github-local", flick_name="connectorsFlick")
         if not connectors.confirm_remove_server.get("github-local"):
             invoke_click(server_remove)

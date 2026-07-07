@@ -1023,6 +1023,7 @@ Rectangle {
     // Inline component: ConnectorCard
     component ConnectorCard: Rectangle {
         id: card
+        objectName: actionKey ? ("connectorCard_" + actionKey) : ""
         color: Theme.colors.bgRaised
         border.width: 1
         border.color: Theme.colors.borderSubtle
@@ -1042,11 +1043,22 @@ Rectangle {
         property string primaryLabel: ""
         property bool secondaryActions: false
         property bool showRemoveConfirm: false
+        readonly property string qaIconText: iconText()
         default property alias extraContent: cardExtra.data
 
         signal primaryClicked()
         signal removeClicked()
         signal removeCancelled()
+
+        function iconText() {
+            var source = (connectorName || glyph || "").trim()
+            if (!source) return ""
+            var parts = source.split(/[\s._-]+/).filter(function(part) { return part.length > 0 })
+            if (parts.length === 0) return source.charAt(0).toUpperCase()
+            var initials = parts[0].charAt(0)
+            if (parts.length > 1) initials += parts[1].charAt(0)
+            return initials.toUpperCase()
+        }
 
         ColumnLayout {
             id: cardColumn
@@ -1068,10 +1080,23 @@ Rectangle {
                     RowLayout {
                         spacing: Theme.space.md
 
-                        Label {
-                            visible: glyph
-                            text: glyph
-                            font.pixelSize: Theme.fontSize.body
+                        Rectangle {
+                            visible: card.qaIconText !== ""
+                            Layout.preferredWidth: 24
+                            Layout.preferredHeight: 24
+                            radius: 7
+                            color: Theme.colors.bgInset
+                            border.width: 1
+                            border.color: Theme.colors.borderSubtle
+
+                            Label {
+                                anchors.centerIn: parent
+                                text: card.qaIconText
+                                font.family: Theme.monoFonts[0]
+                                font.pixelSize: Theme.fontSize.micro
+                                font.weight: Theme.fontWeight.semibold
+                                color: Theme.colors.brandBright
+                            }
                         }
 
                         Label {
@@ -1219,6 +1244,7 @@ Rectangle {
         property bool qaForceKeyboardFocus: false
         readonly property bool qaVisualFocus: activeFocus
         readonly property string qaAccessibleName: accessibleName()
+        readonly property string qaIconText: iconText()
         readonly property bool isInteractive: !isAdded && !isConnecting
 
         signal clicked()
@@ -1256,6 +1282,16 @@ Rectangle {
             return "Connect " + displayName
         }
 
+        function iconText() {
+            var source = (displayName || entryName || "").trim()
+            if (!source) return ""
+            var parts = source.split(/[\s._-]+/).filter(function(part) { return part.length > 0 })
+            if (parts.length === 0) return source.charAt(0).toUpperCase()
+            var initials = parts[0].charAt(0)
+            if (parts.length > 1) initials += parts[1].charAt(0)
+            return initials.toUpperCase()
+        }
+
         MouseArea {
             id: tileMouseArea
             anchors.fill: parent
@@ -1271,10 +1307,23 @@ Rectangle {
             anchors.margins: Theme.space.lg
             spacing: Theme.space.xs
 
-            Label {
-                text: glyph
-                font.pixelSize: 22
+            Rectangle {
+                Layout.preferredWidth: 28
+                Layout.preferredHeight: 28
                 Layout.alignment: Qt.AlignLeft
+                radius: 8
+                color: tile.isAdded ? Theme.colors.bgInset : Theme.colors.stateSelected
+                border.width: 1
+                border.color: tile.isAdded ? Theme.colors.borderSubtle : Theme.colors.borderBrandFaint
+
+                Label {
+                    anchors.centerIn: parent
+                    text: tile.qaIconText
+                    font.family: Theme.monoFonts[0]
+                    font.pixelSize: Theme.fontSize.label
+                    font.weight: Theme.fontWeight.semibold
+                    color: tile.isAdded ? Theme.colors.textFaint : Theme.colors.brandBright
+                }
             }
 
             Label {
