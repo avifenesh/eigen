@@ -205,6 +205,46 @@ ApplicationWindow {
         }
     }
 
+    Rectangle {
+        objectName: "mainActionError"
+        Layout.fillWidth: true
+        Layout.preferredHeight: visible ? Math.max(38, mainActionErrorRow.implicitHeight + Theme.space.md) : 0
+        Layout.minimumHeight: visible ? 38 : 0
+        visible: root.actionError !== ""
+        color: Theme.colors.errorBg
+        border.width: visible ? 1 : 0
+        border.color: Theme.colors.error
+        clip: true
+
+        RowLayout {
+            id: mainActionErrorRow
+            anchors.fill: parent
+            anchors.leftMargin: Theme.space.lg
+            anchors.rightMargin: Theme.space.lg
+            spacing: Theme.space.md
+
+            Label {
+                objectName: "mainActionErrorText"
+                text: root.actionError
+                font.family: Theme.uiFonts[0]
+                font.pixelSize: Theme.fontSize.bodySm
+                color: Theme.colors.error
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+
+            AppButton {
+                objectName: "mainDismissActionError"
+                text: "X"
+                compact: true
+                toolTipText: "Dismiss shell error"
+                Layout.preferredWidth: 28
+                Layout.preferredHeight: 28
+                onClicked: root.actionError = ""
+            }
+        }
+    }
+
     // Status strip (bottom)
     Rectangle {
         objectName: "mainStatusStrip"
@@ -311,7 +351,8 @@ ApplicationWindow {
             if (token !== root.pendingNewSessionToken) return
             root.pendingNewSessionToken = 0
             if (payload && payload.error !== undefined && payload.error !== null) {
-                root.actionError = typeof payload.error === "string" ? payload.error : JSON.stringify(payload.error)
+                var error = typeof payload.error === "string" ? payload.error : JSON.stringify(payload.error)
+                root.actionError = "Could not start session: " + (error || "unknown error")
                 return
             }
             root.openCreatedSession(payload ? String(payload.result || "") : "")
@@ -324,7 +365,11 @@ ApplicationWindow {
     }
 
     function requestNewSession(dir) {
-        if (!root.ctxRpc || root.pendingNewSessionToken !== 0) return
+        if (root.pendingNewSessionToken !== 0) return
+        if (!root.ctxRpc || typeof root.ctxRpc.callToken !== "function") {
+            root.actionError = "Could not start session: RPC client is unavailable."
+            return
+        }
         root.actionError = ""
         root.pendingNewSessionToken = root.ctxRpc.callToken("NewSession", [dir || "", "", ""])
     }

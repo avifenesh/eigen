@@ -64,6 +64,7 @@ class FakeRpcClient(QObject):
     def __init__(self):
         super().__init__()
         self.calls = []
+        self.failures = {}
         self._token = 0
 
     def call(self, method, *args, callback=None, error_callback=None):
@@ -78,7 +79,12 @@ class FakeRpcClient(QObject):
         token = self._token
         call_args = tuple(args or [])
         self.calls.append((method, call_args))
-        QTimer.singleShot(0, lambda: self.callDone.emit(token, {"result": self._result(method, call_args)}))
+        payload = (
+            {"error": self.failures[method]}
+            if method in self.failures
+            else {"result": self._result(method, call_args)}
+        )
+        QTimer.singleShot(0, lambda: self.callDone.emit(token, payload))
         return token
 
     @Slot(str, "QVariantList")
@@ -529,6 +535,31 @@ try:
             )
         if nav.property("qaTextFits") is not True:
             raise AssertionError(f"{object_name} label does not fit")
+
+    client.failures["NewSession"] = "daemon offline"
+    click_item(app, window, "navItem_live")
+    start_calls = sum(1 for call in client.calls if call[0] == "NewSession")
+    click_item(app, window, "liveNewSessionButton")
+    QTest.qWait(40)
+    pump(app, 18)
+    if sum(1 for call in client.calls if call[0] == "NewSession") != start_calls + 1:
+        raise AssertionError(f"Live new session did not call NewSession: {client.calls}")
+    if window.property("pendingNewSessionToken") != 0:
+        raise AssertionError("Failed shell NewSession left the pending token set")
+    main_error = find_item_in_window(window, "mainActionError")
+    main_error_text = find_item_in_window(window, "mainActionErrorText")
+    main_error_dismiss = find_item_in_window(window, "mainDismissActionError")
+    if main_error is None or main_error.property("visible") is not True:
+        raise AssertionError("Main shell did not render failed NewSession error")
+    if main_error_text is None or main_error_text.property("text") != "Could not start session: daemon offline":
+        raise AssertionError(f"Main shell error text was wrong: {main_error_text.property('text') if main_error_text else None}")
+    if main_error_dismiss is None or main_error_dismiss.property("qaTextFits") is not True:
+        raise AssertionError("Main shell error dismiss button did not fit")
+    assert_item_inside_window(main_error, "mainActionError")
+    click_item(app, window, "mainDismissActionError")
+    if window.property("actionError") != "":
+        raise AssertionError("Main shell error did not dismiss")
+    del client.failures["NewSession"]
 
     click_item(app, window, "navRunningSession_s_work")
     if controller.opened[-1:] != ["s-work"]:

@@ -492,6 +492,45 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser):
     else:
         print(f"✗ Failed to save {output}")
 
+    window.setProperty("actionError", "Could not start session: daemon offline")
+    for _ in range(10):
+        app.processEvents()
+    status_strip = find_item(window.contentItem(), "mainStatusStrip")
+    shell_error = find_item(window.contentItem(), "mainActionError")
+    shell_error_text = find_item(window.contentItem(), "mainActionErrorText")
+    shell_error_dismiss = find_item(window.contentItem(), "mainDismissActionError")
+    if shell_error is None or shell_error.property("visible") is not True:
+        print("✗ Main shell action error proof did not render the error banner")
+        window.hide()
+        return False
+    if shell_error_text is None or "daemon offline" not in shell_error_text.property("text"):
+        print("✗ Main shell action error proof rendered the wrong error text")
+        window.hide()
+        return False
+    if shell_error_dismiss is None or shell_error_dismiss.property("qaTextFits") is not True:
+        print("✗ Main shell action error proof did not render a clean dismiss button")
+        window.hide()
+        return False
+    if status_strip is None or scene_bottom(shell_error) > scene_top(status_strip) + 0.5:
+        print(
+            "✗ Main shell action error proof overlapped the status strip: "
+            f"error bottom={scene_bottom(shell_error):.1f}, "
+            f"status top={scene_top(status_strip) if status_strip is not None else -1:.1f}"
+        )
+        window.hide()
+        return False
+
+    output_error = SCREENSHOTS / "qa-fix-main-shell-action-error.png"
+    image_error = window.grabWindow()
+    success_error = image_error.save(str(output_error))
+    if success_error:
+        print(f"✓ Saved {output_error}")
+    else:
+        print(f"✗ Failed to save {output_error}")
+    window.setProperty("actionError", "")
+    for _ in range(10):
+        app.processEvents()
+
     window.setProperty("width", 900)
     window.setProperty("height", 420)
     QTest.qWait(80)
@@ -599,7 +638,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser):
         print(f"✗ Failed to save {output_safe}")
 
     window.hide()
-    return success and success_min and success_compact and success_safe
+    return success and success_error and success_min and success_compact and success_safe
 
 
 def main():
