@@ -2077,6 +2077,27 @@ def main():
 
     ok = capture_view("connectors", "ConnectorsView.qml", setup_connectors) and ok
 
+    def show_connectors_load_error(_view, root):
+        model = root.property("connectorsModel")
+        if model is not None:
+            model.connectors = None
+            model.servers = None
+            model.loading = False
+            model.load_error = "daemon offline"
+        for _ in range(8):
+            app.processEvents()
+        banner = find_item(root, "connectorsLoadError")
+        text = find_item(root, "connectorsLoadErrorText")
+        retry = find_item(root, "connectorsLoadErrorRetry")
+        if banner is None or banner.property("visible") is not True:
+            raise AssertionError("connectors load error screenshot did not render the banner")
+        if text is None or "daemon offline" not in text.property("text"):
+            raise AssertionError("connectors load error screenshot rendered the wrong text")
+        if retry is None or retry.property("qaTextFits") is not True:
+            raise AssertionError("connectors load error screenshot did not render a clean retry button")
+
+    ok = capture_view("connectors-load-error", "ConnectorsView.qml", setup_connectors, show_connectors_load_error) and ok
+
     def show_connectors_remove_confirm(_view, root):
         model = root.property("connectorsModel")
         if model is not None:

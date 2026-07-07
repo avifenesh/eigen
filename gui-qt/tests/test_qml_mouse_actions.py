@@ -569,6 +569,28 @@ def check_config(app, client):
 
 
 def check_connectors(app, client):
+    load_error_model = ConnectorsModel(client)
+    load_error_model.loading = False
+    load_error_model.load_error = "daemon offline"
+    view, root = load_view(app, client, "ConnectorsView.qml", context={"connectorsModel": load_error_model}, root_props={"connectorsModel": load_error_model})
+    try:
+        load_error = find_visual_item(root, "connectorsLoadError")
+        load_error_text = find_visual_item(root, "connectorsLoadErrorText")
+        retry = find_visual_item(root, "connectorsLoadErrorRetry")
+        if load_error is None or not load_error.property("visible"):
+            raise AssertionError("connectors load error did not render")
+        if load_error_text is None or "daemon offline" not in load_error_text.property("text"):
+            raise AssertionError(f"connectors load error text was wrong: {load_error_text.property('text') if load_error_text else None}")
+        if retry is None or not retry.property("qaTextFits"):
+            raise AssertionError("connectors load error retry did not render cleanly")
+        start = len(client.calls)
+        click_item(app, view, root, "connectorsLoadErrorRetry", flick_name="connectorsFlick")
+        assert_call(client, start, "Connectors", ())
+        assert_call(client, start, "MCPServers", ())
+        assert_call(client, start, "GoogleStatus", ())
+    finally:
+        close_view(app, view)
+
     connectors = seeded_connectors_model(client)
     view, root = load_view(app, client, "ConnectorsView.qml", context={"connectorsModel": connectors}, root_props={"connectorsModel": connectors})
     try:

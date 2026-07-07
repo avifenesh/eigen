@@ -64,7 +64,7 @@ Rectangle {
 
             // Loading skeleton
             ColumnLayout {
-                visible: !!(connectorsModel && connectorsModel.loading && !connectorsModel.connectors)
+                visible: !!(connectorsModel && connectorsModel.loading && !connectorsLoaded())
                 Layout.fillWidth: true
                 spacing: Theme.space.md
 
@@ -81,7 +81,8 @@ Rectangle {
 
             // Error state
             Rectangle {
-                visible: !!(connectorsModel && connectorsModel.load_error && !connectorsModel.connectors)
+                objectName: "connectorsLoadError"
+                visible: !!(connectorsModel && connectorsModel.load_error)
                 Layout.fillWidth: true
                 Layout.preferredHeight: 120
                 color: Theme.colors.bgRaised
@@ -120,6 +121,7 @@ Rectangle {
                     }
 
                     Label {
+                        objectName: "connectorsLoadErrorText"
                         text: connectorsModel ? connectorsModel.load_error : ""
                         font.pixelSize: Theme.fontSize.label
                         color: Theme.colors.textMuted
@@ -127,6 +129,7 @@ Rectangle {
                     }
 
                     AppButton {
+                        objectName: "connectorsLoadErrorRetry"
                         text: "Retry"
                         onClicked: connectorsModel.load()
                         Layout.alignment: Qt.AlignHCenter
