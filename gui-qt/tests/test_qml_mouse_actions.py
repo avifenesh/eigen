@@ -477,6 +477,40 @@ def seeded_skill_models(client):
 
 
 def check_config(app, client):
+    load_error_config = ConfigModel(client)
+    load_error_chains = RuleChainsModel(client)
+    view, root = load_view(
+        app,
+        client,
+        "ConfigView.qml",
+        context={"configModel": load_error_config, "ruleChainsModel": load_error_chains},
+        root_props={"configModel": load_error_config, "ruleChainsModel": load_error_chains},
+    )
+    try:
+        if load_error_config.rowCount() > 0:
+            load_error_config.beginResetModel()
+            load_error_config._fields = []
+            load_error_config.endResetModel()
+        if load_error_chains.rowCount() > 0:
+            load_error_chains.beginResetModel()
+            load_error_chains._roles = []
+            load_error_chains._models = []
+            load_error_chains.endResetModel()
+        load_error_config._set_load_error("daemon offline")
+        load_error_chains._set_load_error("daemon offline")
+        assert_load_error_retry(app, view, root, "configLoadError", "configLoadErrorText", "configLoadErrorRetry")
+        current_tabs = root.property("currentTabs")
+        if hasattr(current_tabs, "toVariant"):
+            current_tabs = current_tabs.toVariant()
+        if current_tabs:
+            raise AssertionError(f"config load error kept stale tabs: {current_tabs}")
+        start = len(client.calls)
+        click_item(app, view, root, "configLoadErrorRetry", flick_name="configFlick")
+        assert_call(client, start, "Config", ())
+        assert_call(client, start, "RuleChains", ())
+    finally:
+        close_view(app, view)
+
     config = seeded_config_model(client)
     chains = seeded_rule_chains_model(client)
     view, root = load_view(app, client, "ConfigView.qml", context={"configModel": config, "ruleChainsModel": chains}, root_props={"configModel": config, "ruleChainsModel": chains})
@@ -519,6 +553,14 @@ def check_config(app, client):
                 "config tabs are spread across the toolbar instead of forming a compact row: "
                 f"gaps={models_left - general_right:.1f},{integrations_gap:.1f}"
             )
+
+        config._set_load_error("daemon offline")
+        retry = assert_load_error_retry(app, view, root, "configRefreshErrorBanner", "configRefreshErrorText", "configRefreshErrorRetry")
+        start = len(client.calls)
+        invoke_click(retry)
+        pump(app)
+        assert_call(client, start, "Config", ())
+        assert_call(client, start, "RuleChains", ())
 
         click_item(app, view, root, "configTab_Models")
         if root.property("activeTab") != "Models":

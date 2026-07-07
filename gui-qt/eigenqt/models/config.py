@@ -50,6 +50,7 @@ class ConfigModel(QAbstractListModel):
 
     # Signals
     set_config_done = Signal(str, str, bool, str)  # (key, stored_value, success, error_msg)
+    load_error_changed = Signal()
 
     def __init__(self, client: RpcClient, parent: Optional[QObject] = None):
         super().__init__(parent)
@@ -58,6 +59,7 @@ class ConfigModel(QAbstractListModel):
         self._fields: list[dict] = []
         self._active = False
         self._load_seq = 0
+        self._load_error = ""
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(60_000)  # 60s
         self._poll_timer.timeout.connect(self._fetch_config)
@@ -108,6 +110,17 @@ class ConfigModel(QAbstractListModel):
         """Config file path (for QML display)."""
         return self._config_path
 
+    @Property(str, notify=load_error_changed)
+    def load_error(self) -> str:
+        """Last Config load error."""
+        return self._load_error
+
+    def _set_load_error(self, value: str):
+        if self._load_error == value:
+            return
+        self._load_error = value
+        self.load_error_changed.emit()
+
     @Slot()
     def _on_connected(self):
         """Fetch config on connect only while the route is active."""
@@ -118,6 +131,7 @@ class ConfigModel(QAbstractListModel):
         """Async fetch Config RPC."""
         self._load_seq += 1
         seq = self._load_seq
+        self._set_load_error("")
         self._client.call(
             "Config",
             callback=lambda result: self._on_config_result(result, seq),
@@ -129,6 +143,7 @@ class ConfigModel(QAbstractListModel):
         if seq is not None and seq != self._load_seq:
             return
         if "error" in result:
+            self._set_load_error(_err_text(result))
             return
 
         data = result.get("result") or {}
@@ -218,6 +233,7 @@ class RuleChainsModel(QAbstractListModel):
 
     # Signals
     set_rule_chain_done = Signal(str, list, bool, str)  # (role, stored_chain, success, error_msg)
+    load_error_changed = Signal()
 
     def __init__(self, client: RpcClient, parent: Optional[QObject] = None):
         super().__init__(parent)
@@ -226,6 +242,7 @@ class RuleChainsModel(QAbstractListModel):
         self._models: list[str] = []
         self._active = False
         self._load_seq = 0
+        self._load_error = ""
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(60_000)  # 60s
         self._poll_timer.timeout.connect(self._fetch_rule_chains)
@@ -266,6 +283,17 @@ class RuleChainsModel(QAbstractListModel):
             return self._models
         return None
 
+    @Property(str, notify=load_error_changed)
+    def load_error(self) -> str:
+        """Last RuleChains load error."""
+        return self._load_error
+
+    def _set_load_error(self, value: str):
+        if self._load_error == value:
+            return
+        self._load_error = value
+        self.load_error_changed.emit()
+
     @Slot()
     def _on_connected(self):
         """Fetch rule chains on connect only while the route is active."""
@@ -276,6 +304,7 @@ class RuleChainsModel(QAbstractListModel):
         """Async fetch RuleChains RPC."""
         self._load_seq += 1
         seq = self._load_seq
+        self._set_load_error("")
         self._client.call(
             "RuleChains",
             callback=lambda result: self._on_rule_chains_result(result, seq),
@@ -287,6 +316,7 @@ class RuleChainsModel(QAbstractListModel):
         if seq is not None and seq != self._load_seq:
             return
         if "error" in result:
+            self._set_load_error(_err_text(result))
             return
 
         data = result.get("result") or {}

@@ -91,18 +91,23 @@ def test_config_view_loads():
     view.show()
     errors = []
 
-    def assert_empty_state():
+    def assert_load_state():
         empty = find_item(root, "configEmptyState")
-        refresh = find_item(root, "configEmptyRefreshButton")
-        if empty is None:
-            errors.append("ConfigView missing no-fields empty state")
-        elif empty.property("visible") is not True:
-            errors.append("ConfigView empty state is hidden")
-        if refresh is None:
-            errors.append("ConfigView missing no-fields refresh action")
+        empty_refresh = find_item(root, "configEmptyRefreshButton")
+        load_error = find_item(root, "configLoadError")
+        load_retry = find_item(root, "configLoadErrorRetry")
+
+        if load_error is not None and load_error.property("visible") is True:
+            if load_retry is None or load_retry.property("qaTextFits") is not True:
+                errors.append("ConfigView load-error retry action is missing or clipped")
+        elif empty is not None and empty.property("visible") is True:
+            if empty_refresh is None:
+                errors.append("ConfigView missing no-fields refresh action")
+        else:
+            errors.append("ConfigView showed neither empty state nor load-error state")
         app.quit()
 
-    QTimer.singleShot(50, assert_empty_state)
+    QTimer.singleShot(50, assert_load_state)
     QTimer.singleShot(1000, app.quit)
     app.exec()
     view.hide()

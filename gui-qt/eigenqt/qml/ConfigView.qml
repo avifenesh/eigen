@@ -20,10 +20,12 @@ Rectangle {
     // Function-call bindings are NOT reactive to model resets (the recurring
     // QML footgun) — Config data lands AFTER first render, so tabFields()
     // bindings froze on the initial empty model → black content pane.
+    property var currentTabs: []
     property var currentTabFields
     onActiveTabChanged: currentTabFields = tabFields()
     onConfigModelChanged: {
         syncValuesFromModel()
+        currentTabs = availableTabs()
         currentTabFields = tabFields()
         syncActiveModels()
     }
@@ -93,7 +95,7 @@ Rectangle {
                 spacing: 0
 
                 Repeater {
-                    model: availableTabs()
+                    model: root.currentTabs || []
                     delegate: AppButton {
                         id: tabButton
                         objectName: "configTab_" + modelData
@@ -171,6 +173,91 @@ Rectangle {
                 spacing: Theme.space.lg
 
                 Item { height: Theme.space.lg }
+
+                Rectangle {
+                    objectName: "configLoadError"
+                    visible: root.hasInitialLoadError()
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: visible ? 132 : 0
+                    color: Theme.colors.bgRaised
+                    border.width: visible ? 1 : 0
+                    border.color: Theme.colors.borderHairline
+                    radius: Theme.radius.md
+
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        spacing: Theme.space.md
+
+                        Label {
+                            text: "Could not load config"
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.body
+                            font.weight: Theme.fontWeight.semibold
+                            color: Theme.colors.textPrimary
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        Label {
+                            objectName: "configLoadErrorText"
+                            text: root.configLoadError()
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.label
+                            color: Theme.colors.textMuted
+                            elide: Text.ElideRight
+                            Layout.maximumWidth: 720
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        AppButton {
+                            objectName: "configLoadErrorRetry"
+                            text: "Retry"
+                            compact: true
+                            toolTipText: "Retry loading config"
+                            Layout.alignment: Qt.AlignHCenter
+                            onClicked: root.retryLoad()
+                        }
+                    }
+                }
+
+                Rectangle {
+                    objectName: "configRefreshErrorBanner"
+                    visible: root.hasRefreshLoadError()
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: visible ? Math.max(44, configRefreshErrorRow.implicitHeight + Theme.space.md) : 0
+                    color: Theme.colors.errorBg
+                    border.width: visible ? 1 : 0
+                    border.color: Theme.colors.error
+                    radius: Theme.radius.md
+                    clip: true
+
+                    RowLayout {
+                        id: configRefreshErrorRow
+                        anchors.fill: parent
+                        anchors.leftMargin: Theme.space.lg
+                        anchors.rightMargin: Theme.space.lg
+                        spacing: Theme.space.md
+
+                        Label {
+                            objectName: "configRefreshErrorText"
+                            text: root.configLoadError()
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.label
+                            color: Theme.colors.error
+                            wrapMode: Text.WrapAnywhere
+                            Layout.fillWidth: true
+                        }
+
+                        AppButton {
+                            objectName: "configRefreshErrorRetry"
+                            text: "Retry"
+                            compact: true
+                            toolTipText: "Retry loading config"
+                            Layout.preferredWidth: 64
+                            Layout.preferredHeight: 28
+                            onClicked: root.retryLoad()
+                        }
+                    }
+                }
 
                 // RULE CHAINS EDITOR (Models tab only)
                 Rectangle {
@@ -640,6 +727,7 @@ Rectangle {
                 Rectangle {
                     objectName: "configEmptyState"
                     visible: root.configModel !== null
+                        && !root.hasInitialLoadError()
                         && root.configModel.rowCount() === 0
                         && (root.ruleChainsModel === null || root.ruleChainsModel.rowCount() === 0)
                     Layout.fillWidth: true
@@ -683,14 +771,7 @@ Rectangle {
                             variant: "primary"
                             toolTipText: "Reload config"
                             Layout.alignment: Qt.AlignHCenter
-                            onClicked: {
-                                if (root.configModel && root.configModel.refresh) {
-                                    root.configModel.refresh()
-                                }
-                                if (root.ruleChainsModel && root.ruleChainsModel.refresh) {
-                                    root.ruleChainsModel.refresh()
-                                }
-                            }
+                            onClicked: root.retryLoad()
                         }
                     }
                 }
@@ -702,6 +783,7 @@ Rectangle {
 
     // Initialize values from model on startup
     Component.onCompleted: {
+        currentTabs = availableTabs()
         currentTabFields = tabFields()
         if (root.configModel) {
             syncValuesFromModel()
@@ -715,6 +797,7 @@ Rectangle {
         target: root.configModel
         function onModelReset() {
             syncValuesFromModel()
+            root.currentTabs = root.availableTabs()
             root.currentTabFields = root.tabFields()
         }
     }
@@ -767,6 +850,41 @@ Rectangle {
         }
         if (root.ruleChainsModel) {
             root.ruleChainsModel.set_active(active)
+        }
+    }
+
+    function configLoadError() {
+        if (root.configModel && root.configModel.load_error) {
+            return String(root.configModel.load_error)
+        }
+        if (root.ruleChainsModel && root.ruleChainsModel.load_error) {
+            return String(root.ruleChainsModel.load_error)
+        }
+        return ""
+    }
+
+    function hasInitialLoadError() {
+        return root.configLoadError() !== "" && root.configRowCount() === 0 && root.ruleChainRowCount() === 0
+    }
+
+    function hasRefreshLoadError() {
+        return root.configLoadError() !== "" && !root.hasInitialLoadError()
+    }
+
+    function configRowCount() {
+        return root.configModel ? root.configModel.rowCount() : 0
+    }
+
+    function ruleChainRowCount() {
+        return root.ruleChainsModel ? root.ruleChainsModel.rowCount() : 0
+    }
+
+    function retryLoad() {
+        if (root.configModel && root.configModel.refresh) {
+            root.configModel.refresh()
+        }
+        if (root.ruleChainsModel && root.ruleChainsModel.refresh) {
+            root.ruleChainsModel.refresh()
         }
     }
 

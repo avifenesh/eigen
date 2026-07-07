@@ -120,6 +120,22 @@ def test_config_model_instantiation(client):
     assert b"options" in roles.values()
     assert b"multi" in roles.values()
     assert b"allowEmpty" in roles.values()
+    assert model.load_error == ""
+
+
+def test_config_model_surfaces_load_error(app):
+    """Failed Config loads expose a retryable load_error."""
+    client = DeferredRpcClient()
+    model = ConfigModel(client)
+
+    model.refresh()
+    _reply(_call_by_method(client.calls, "Config"), error={"message": "daemon offline"})
+
+    assert model.load_error == "daemon offline"
+    assert model.rowCount() == 0
+
+    model.refresh()
+    assert model.load_error == ""
 
 
 def test_config_model_ignores_stale_refresh_callbacks(app):
@@ -176,6 +192,22 @@ def test_rule_chains_model_instantiation(client):
     assert b"chain" in roles.values()
     assert b"custom" in roles.values()
     assert b"models" in roles.values()
+    assert model.load_error == ""
+
+
+def test_rule_chains_model_surfaces_load_error(app):
+    """Failed RuleChains loads expose a retryable load_error."""
+    client = DeferredRpcClient()
+    model = RuleChainsModel(client)
+
+    model.refresh()
+    _reply(_call_by_method(client.calls, "RuleChains"), error="rule chain daemon offline")
+
+    assert model.load_error == "rule chain daemon offline"
+    assert model.rowCount() == 0
+
+    model.refresh()
+    assert model.load_error == ""
 
 
 def test_rule_chains_model_ignores_stale_refresh_callbacks(app):

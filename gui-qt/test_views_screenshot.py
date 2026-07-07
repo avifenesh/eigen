@@ -1403,6 +1403,19 @@ def main():
     ok = capture_view("chat-approval", "ChatView.qml", setup_chat, show_chat_approval) and ok
 
     # 3. ConfigView
+    def assert_config_load_error_state(root, banner_name, text_name, retry_name, expected_text="daemon offline"):
+        for _ in range(8):
+            app.processEvents()
+        banner = find_item(root, banner_name)
+        error_text = find_item(root, text_name)
+        retry = find_item(root, retry_name)
+        if banner is None or banner.property("visible") is not True:
+            raise AssertionError(f"{banner_name} did not render")
+        if error_text is None or expected_text not in str(error_text.property("text")):
+            raise AssertionError(f"{text_name} rendered wrong text: {error_text.property('text') if error_text else None!r}")
+        if retry is None or retry.property("qaTextFits") is not True:
+            raise AssertionError(f"{retry_name} did not render cleanly")
+
     def setup_config(ctx):
         client.config_payload = {
             "path": "/home/user/.eigen/config.json",
@@ -1480,6 +1493,24 @@ def main():
         return {"configModel": config_model, "ruleChainsModel": rule_chains_model}
 
     ok = capture_view("config", "ConfigView.qml", setup_config) and ok
+
+    def show_config_load_error(_view, root):
+        config_model = root.property("configModel")
+        rule_chains_model = root.property("ruleChainsModel")
+        config_model.beginResetModel()
+        config_model._fields = []
+        config_model._config_path = ""
+        config_model.configPathChanged.emit()
+        config_model.endResetModel()
+        rule_chains_model.beginResetModel()
+        rule_chains_model._roles = []
+        rule_chains_model._models = []
+        rule_chains_model.endResetModel()
+        config_model._set_load_error("daemon offline")
+        rule_chains_model._set_load_error("daemon offline")
+        assert_config_load_error_state(root, "configLoadError", "configLoadErrorText", "configLoadErrorRetry")
+
+    ok = capture_view("config-load-error", "ConfigView.qml", setup_config, show_config_load_error) and ok
 
     def open_config_model_dropdown(_view, root):
         root.setProperty("qaOpenCombo", "configSelect_model")
