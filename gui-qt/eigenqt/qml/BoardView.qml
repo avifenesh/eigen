@@ -107,6 +107,7 @@ Rectangle {
     // Helpers
     function syncBoardRows() {
         boardRows = boardModel ? boardModel.rowCount() : 0
+        filteredBoardRows = computeFilteredBoardRows(boardRows)
         owners = computeOwners()
     }
 
@@ -259,6 +260,63 @@ Rectangle {
             return isPrItem(item) ? "Review →" : "Work →"
         }
         return "Start →"
+    }
+
+    property int filteredBoardRows: 0
+    readonly property bool boardLoading: !!(boardModel && boardModel.loading)
+    readonly property string boardLoadError: boardModel ? String(boardModel.error || "") : ""
+    readonly property bool kanbanLoading: !!(kanbanModel && kanbanModel.loading)
+    readonly property string kanbanLoadError: kanbanModel ? String(kanbanModel.error || "") : ""
+    readonly property int kanbanColumns: (kanbanModel && kanbanModel.columns) ? kanbanModel.columns.length : 0
+    readonly property string projectsState: {
+        if (viewMode !== "projects") return ""
+        if (!boardModel) return "missing"
+        if (boardLoading && boardRows === 0) return "loading"
+        if (boardLoadError !== "") return "error"
+        if (boardRows === 0) return "empty"
+        if (filteredBoardRows === 0) return "filtered"
+        return ""
+    }
+    readonly property string kanbanState: {
+        if (viewMode !== "kanban") return ""
+        if (!kanbanModel) return "missing"
+        if (kanbanLoading && kanbanColumns === 0) return "loading"
+        if (kanbanLoadError !== "") return "error"
+        if (kanbanColumns === 0) return "empty"
+        return ""
+    }
+
+    onOwnerFilterChanged: syncBoardRows()
+    onStateFilterChanged: syncBoardRows()
+
+    function computeFilteredBoardRows(rowCount) {
+        if (!boardModel) return 0
+        var rows = rowCount === undefined ? boardModel.rowCount() : rowCount
+        var visibleRows = 0
+        for (var i = 0; i < rows; i++) {
+            if (laneMatches(boardModel.index(i, 0))) {
+                visibleRows += 1
+            }
+        }
+        return visibleRows
+    }
+
+    function stateTitle(state, view) {
+        if (state === "loading") return "Loading " + view
+        if (state === "error") return "Could not load " + view
+        if (state === "filtered") return "No projects match these filters"
+        if (state === "missing") return "Board model unavailable"
+        return view === "kanban" ? "No kanban cards yet" : "No projects on the board yet"
+    }
+
+    function stateDetail(state, view) {
+        if (state === "loading") return "Fetching the latest workspace state."
+        if (state === "error") return view === "kanban" ? kanbanLoadError : boardLoadError
+        if (state === "filtered") return "Try another owner or state filter to bring lanes back into view."
+        if (state === "missing") return "Reconnect the desktop shell and refresh."
+        return view === "kanban"
+            ? "When PRs, issues, or git work appear, cards will be grouped here."
+            : "When Eigen finds local or remote work, project lanes will appear here."
     }
 
     ColumnLayout {
@@ -465,8 +523,8 @@ Rectangle {
                         delegate: Rectangle {
                             readonly property int idx: index
                             visible: laneMatches(boardModel.index(index, 0))
-                            width: 300
-                            height: parent.height
+                            width: visible ? 300 : 0
+                            height: visible ? parent.height : 0
                             color: Theme.colors.bgRaised
                             border.width: 1
                             border.color: boardModel.data(boardModel.index(index, 0), remoteRole) ? Theme.colors.borderSubtle : Theme.colors.borderHairline
@@ -1123,6 +1181,98 @@ Rectangle {
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            Column {
+                objectName: root.projectsState === "" ? "boardProjectsStatePanel" : "boardProjectsState_" + root.projectsState
+                visible: root.projectsState !== ""
+                anchors.centerIn: parent
+                width: Math.max(240, Math.min(parent.width - Theme.space.xl * 2, 480))
+                spacing: Theme.space.md
+
+                Label {
+                    objectName: "boardProjectsStateTitle"
+                    width: parent.width
+                    text: root.stateTitle(root.projectsState, "projects")
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.h3
+                    font.weight: Theme.fontWeight.semibold
+                    color: root.projectsState === "error" ? Theme.colors.error : Theme.colors.textPrimary
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                }
+
+                Label {
+                    objectName: "boardProjectsStateDetail"
+                    width: parent.width
+                    text: root.stateDetail(root.projectsState, "projects")
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.bodySm
+                    color: Theme.colors.textMuted
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                }
+
+                AppButton {
+                    objectName: "boardProjectsStateAction"
+                    visible: !!boardModel && root.projectsState !== "loading"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: root.projectsState === "filtered" ? "Reset filters" : "Refresh"
+                    variant: "secondary"
+                    toolTipText: root.projectsState === "filtered" ? "Show all board lanes" : "Refresh board data"
+                    onClicked: {
+                        if (root.projectsState === "filtered") {
+                            root.ownerFilter = "all"
+                            root.stateFilter = "all"
+                        } else {
+                            boardModel.load()
+                            if (kanbanModel) kanbanModel.load()
+                        }
+                    }
+                }
+            }
+
+            Column {
+                objectName: root.kanbanState === "" ? "boardKanbanStatePanel" : "boardKanbanState_" + root.kanbanState
+                visible: root.kanbanState !== ""
+                anchors.centerIn: parent
+                width: Math.max(240, Math.min(parent.width - Theme.space.xl * 2, 480))
+                spacing: Theme.space.md
+
+                Label {
+                    objectName: "boardKanbanStateTitle"
+                    width: parent.width
+                    text: root.stateTitle(root.kanbanState, "kanban")
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.h3
+                    font.weight: Theme.fontWeight.semibold
+                    color: root.kanbanState === "error" ? Theme.colors.error : Theme.colors.textPrimary
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                }
+
+                Label {
+                    objectName: "boardKanbanStateDetail"
+                    width: parent.width
+                    text: root.stateDetail(root.kanbanState, "kanban")
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.bodySm
+                    color: Theme.colors.textMuted
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                }
+
+                AppButton {
+                    objectName: "boardKanbanStateAction"
+                    visible: !!kanbanModel && root.kanbanState !== "loading"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "Refresh"
+                    variant: "secondary"
+                    toolTipText: "Refresh kanban data"
+                    onClicked: {
+                        if (kanbanModel) kanbanModel.load()
                     }
                 }
             }

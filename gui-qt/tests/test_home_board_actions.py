@@ -38,6 +38,57 @@ class FakeRpcClient(QObject):
         self.calls = []
         self._token = 0
         self.delays = {"NewSession": 80}
+        self.board_payload = {
+            "lanes": [
+                {
+                    "name": "eigen",
+                    "dir": "/repo/eigen",
+                    "branch": "fix/qt",
+                    "dirty": 2,
+                    "unpushed": 0,
+                    "behind": 0,
+                    "todos": 1,
+                    "openPrs": 1,
+                    "openIss": 0,
+                    "items": [
+                        {
+                            "key": "git-eigen",
+                            "kind": "git",
+                            "title": "2 uncommitted files",
+                            "detail": "Review the local diff",
+                            "dir": "/repo/eigen",
+                            "task": "Review the working tree and commit coherent chunks.",
+                        },
+                        {
+                            "key": "pr-eigen-71",
+                            "kind": "github",
+                            "title": "Qt replacement follow-up",
+                            "detail": "PR #71",
+                            "url": "https://github.com/avifenesh/eigen/pull/71",
+                        },
+                    ],
+                }
+            ]
+        }
+        self.kanban_payload = {
+            "columns": [
+                {
+                    "id": "needs-you",
+                    "title": "Needs you",
+                    "cards": [
+                        {
+                            "key": "issue-eigen-5",
+                            "repo": "avifenesh/eigen",
+                            "title": "Fix desktop routing",
+                            "kind": "issue",
+                            "url": "https://github.com/avifenesh/eigen/issues/5",
+                            "needsYou": True,
+                        }
+                    ],
+                },
+                {"id": "todo", "title": "Todo", "cards": []},
+            ]
+        }
 
     def call(self, method, *args, callback=None, error_callback=None):
         self.calls.append((method, args))
@@ -72,58 +123,9 @@ class FakeRpcClient(QObject):
 
     def _result(self, method, args):
         if method == "Board":
-            return {
-                "lanes": [
-                    {
-                        "name": "eigen",
-                        "dir": "/repo/eigen",
-                        "branch": "fix/qt",
-                        "dirty": 2,
-                        "unpushed": 0,
-                        "behind": 0,
-                        "todos": 1,
-                        "openPrs": 1,
-                        "openIss": 0,
-                        "items": [
-                            {
-                                "key": "git-eigen",
-                                "kind": "git",
-                                "title": "2 uncommitted files",
-                                "detail": "Review the local diff",
-                                "dir": "/repo/eigen",
-                                "task": "Review the working tree and commit coherent chunks.",
-                            },
-                            {
-                                "key": "pr-eigen-71",
-                                "kind": "github",
-                                "title": "Qt replacement follow-up",
-                                "detail": "PR #71",
-                                "url": "https://github.com/avifenesh/eigen/pull/71",
-                            },
-                        ],
-                    }
-                ]
-            }
+            return self.board_payload
         if method == "Kanban":
-            return {
-                "columns": [
-                    {
-                        "id": "needs-you",
-                        "title": "Needs you",
-                        "cards": [
-                            {
-                                "key": "issue-eigen-5",
-                                "repo": "avifenesh/eigen",
-                                "title": "Fix desktop routing",
-                                "kind": "issue",
-                                "url": "https://github.com/avifenesh/eigen/issues/5",
-                                "needsYou": True,
-                            }
-                        ],
-                    },
-                    {"id": "todo", "title": "Todo", "cards": []},
-                ]
-            }
+            return self.kanban_payload
         if method == "StartFromFeed":
             return "s-feed"
         if method == "NewSession":
@@ -282,6 +284,17 @@ board_view, board_root = make_view(
 board_started = []
 board_root.sessionStarted.connect(lambda session_id: board_started.append(session_id))
 
+board_root.setProperty("stateFilter", "issues")
+pump(app, 20)
+filtered_state = find_item(board_root, "boardProjectsState_filtered")
+if filtered_state is None or filtered_state.property("visible") is not True:
+    raise AssertionError("board did not show the filtered empty state")
+click_item(app, board_view, board_root, "boardProjectsStateAction")
+if board_root.property("stateFilter") != "all" or board_root.property("ownerFilter") != "all":
+    raise AssertionError("filtered board reset did not restore all filters")
+if find_item(board_root, "boardLaneName__repo_eigen") is None:
+    raise AssertionError("board lane did not return after resetting filters")
+
 start = len(client.calls)
 click_item(app, board_view, board_root, "boardLaneName__repo_eigen", pump_after=False)
 click_item(app, board_view, board_root, "boardLaneName__repo_eigen", pump_after=False)
@@ -317,6 +330,30 @@ if board_started[-1:] != ["s-issue"]:
     raise AssertionError(f"issue card did not route: {board_started}")
 
 board_view.close()
+
+client.board_payload = {"lanes": []}
+client.kanban_payload = {"columns": []}
+empty_board = BoardModel(client)
+empty_kanban = KanbanModel(client)
+empty_view, empty_root = make_view(
+    "BoardView.qml",
+    client,
+    {
+        "rpcClient": client,
+        "boardModel": empty_board,
+        "kanbanModel": empty_kanban,
+        "sessionsModel": None,
+    },
+)
+empty_state = find_item(empty_root, "boardProjectsState_empty")
+if empty_state is None or empty_state.property("visible") is not True:
+    raise AssertionError("empty projects board did not render an empty state")
+empty_root.setProperty("viewMode", "kanban")
+pump(app, 20)
+empty_kanban_state = find_item(empty_root, "boardKanbanState_empty")
+if empty_kanban_state is None or empty_kanban_state.property("visible") is not True:
+    raise AssertionError("empty kanban board did not render an empty state")
+empty_view.close()
 client.shutdown()
 """
     env = os.environ.copy()

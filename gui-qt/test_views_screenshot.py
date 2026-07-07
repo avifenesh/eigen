@@ -64,6 +64,8 @@ class ScreenshotRpcClient(QObject):
         self.session_rows = []
         self.config_payload = {"path": "", "fields": []}
         self.rule_chains_payload = {"models": [], "roles": []}
+        self.board_payload = {"lanes": []}
+        self.kanban_payload = {"columns": []}
 
     def call(self, method, *args, callback=None, error_callback=None):
         self.calls.append((method, args))
@@ -131,7 +133,11 @@ class ScreenshotRpcClient(QObject):
             removed = [session.get("id", "") for session in self.session_rows if not session.get("turns")]
             self.session_rows = [session for session in self.session_rows if session.get("id", "") not in removed]
             return removed
-        if method in {"Tasks", "Board", "Kanban", "Skills", "ProposedSkills"}:
+        if method == "Board":
+            return self.board_payload
+        if method == "Kanban":
+            return self.kanban_payload
+        if method in {"Tasks", "Skills", "ProposedSkills"}:
             return {}
         if method == "Dashboard":
             return {"googleConnected": False, "events": [], "unreadCount": 0, "unread": [], "health": {"gpus": []}}
@@ -988,37 +994,58 @@ def main():
         board_model = BoardModel(client)
         kanban_model = KanbanModel(client)
 
-        # Mock data
-        board_model._lanes = [
-            {
-                "dir": "/home/user/eigen",
-                "name": "eigen",
-                "repo": "avifenesh/eigen",
-                "branch": "main",
-                "url": "https://github.com/avifenesh/eigen",
-                "remote": True,
-                "pinned": True,
-                "dirty": 3,
-                "unpushed": 2,
-                "behind": 0,
-                "todos": 5,
-                "openPrs": 2,
-                "openIss": 1,
-                "items": [
-                    {
-                        "key": "pr-123",
-                        "kind": "github",
-                        "title": "feat: Qt GUI board view",
-                        "detail": "PR #123",
-                        "url": "https://github.com/avifenesh/eigen/pull/123",
-                    }
-                ]
-            }
-        ]
-        board_model.layoutChanged.emit()
+        client.board_payload = {
+            "lanes": [
+                {
+                    "dir": "/home/user/eigen",
+                    "name": "eigen",
+                    "repo": "avifenesh/eigen",
+                    "branch": "main",
+                    "url": "https://github.com/avifenesh/eigen",
+                    "remote": True,
+                    "pinned": True,
+                    "dirty": 3,
+                    "unpushed": 2,
+                    "behind": 0,
+                    "todos": 5,
+                    "openPrs": 2,
+                    "openIss": 1,
+                    "items": [
+                        {
+                            "key": "pr-123",
+                            "kind": "github",
+                            "title": "feat: Qt GUI board view",
+                            "detail": "PR #123",
+                            "url": "https://github.com/avifenesh/eigen/pull/123",
+                        }
+                    ],
+                }
+            ]
+        }
+        client.kanban_payload = {
+            "columns": [
+                {
+                    "id": "needs-you",
+                    "title": "Needs you",
+                    "cards": [
+                        {
+                            "key": "pr-qt-followup",
+                            "kind": "pr",
+                            "repo": "avifenesh/eigen",
+                            "number": 76,
+                            "title": "Qt parity hardening",
+                            "url": "https://github.com/avifenesh/eigen/pull/76",
+                            "needsYou": True,
+                        }
+                    ],
+                },
+                {"id": "done", "title": "Done", "cards": []},
+            ]
+        }
 
         ctx.setContextProperty("boardModel", board_model)
         ctx.setContextProperty("kanbanModel", kanban_model)
+        return {"boardModel": board_model, "kanbanModel": kanban_model, "rpcClient": client, "sessionsModel": None}
 
     ok = capture_view("board", "BoardView.qml", setup_board) and ok
 
