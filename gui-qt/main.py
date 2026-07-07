@@ -23,6 +23,7 @@ from eigenqt.models import (
     KanbanModel,
     LiveSessionsModel,
     MemoryModel,
+    ObserveModel,
     ProposalsModel,
     ReplyWatcher,
     RoutingModel,
@@ -76,6 +77,7 @@ class AppContext(QObject):
         self.memory_model = MemoryModel(self.rpc_client, self)
         self.notes_controller = NotesController(self.rpc_client, self)
         self.connectors_model = ConnectorsModel(self.rpc_client, self)
+        self.observe_model = ObserveModel(self.rpc_client, self)
         self.routing_model = RoutingModel(self.rpc_client, self)
         self.config_model = ConfigModel(self.rpc_client, self)
         self.rule_chains_model = RuleChainsModel(self.rpc_client, self)
@@ -323,6 +325,7 @@ def main():
     ctx.setContextProperty("memoryModel", app_context.memory_model)
     ctx.setContextProperty("notesController", app_context.notes_controller)
     ctx.setContextProperty("connectorsModel", app_context.connectors_model)
+    ctx.setContextProperty("observeModel", app_context.observe_model)
     ctx.setContextProperty("routingModel", app_context.routing_model)
     ctx.setContextProperty("configModel", app_context.config_model)
     ctx.setContextProperty("ruleChainsModel", app_context.rule_chains_model)

@@ -30,6 +30,7 @@ from eigenqt.models import (
     KanbanModel,
     LiveSessionsModel,
     MemoryModel,
+    ObserveModel,
     ProposalsModel,
     RoutingModel,
     SessionStateModel,
@@ -223,6 +224,38 @@ class FakeRpcClient(QObject):
                     "byKind": [],
                     "byDifficulty": [],
                     "skipReasons": [],
+                },
+                "tools": [
+                    {"name": "read_file", "calls": 4, "errors": 0, "durationMs": 80},
+                    {"name": "run_shell", "calls": 2, "errors": 1, "durationMs": 420},
+                ],
+                "models": [
+                    {
+                        "name": "gpt-5",
+                        "turns": 3,
+                        "inTokens": 12000,
+                        "outTokens": 2100,
+                        "cacheReadTokens": 6000,
+                        "cacheWriteTokens": 200,
+                        "durationMs": 1800,
+                    }
+                ],
+                "hooks": [],
+                "errors": [{"name": "rpc timeout", "count": 1}],
+                "byKind": [],
+                "subagents": {
+                    "taskCalls": 2,
+                    "taskErrors": 0,
+                    "groupCalls": 1,
+                    "groupErrors": 0,
+                    "mutatingCalls": 1,
+                    "mutatingErrors": 0,
+                    "statusChecks": 3,
+                    "promotes": 0,
+                    "promoteErrors": 0,
+                    "backgroundDone": 1,
+                    "backgroundNotes": 1,
+                    "routeNotes": 1,
                 },
             }
         return {}
@@ -481,6 +514,7 @@ try:
     memory_model = MemoryModel(client)
     notes_controller = NotesController(client)
     connectors_model = ConnectorsModel(client)
+    observe_model = ObserveModel(client)
     routing_model = RoutingModel(client)
     config_model = ConfigModel(client)
     rule_chains_model = RuleChainsModel(client)
@@ -509,6 +543,7 @@ try:
     ctx.setContextProperty("memoryModel", memory_model)
     ctx.setContextProperty("notesController", notes_controller)
     ctx.setContextProperty("connectorsModel", connectors_model)
+    ctx.setContextProperty("observeModel", observe_model)
     ctx.setContextProperty("routingModel", routing_model)
     ctx.setContextProperty("configModel", config_model)
     ctx.setContextProperty("ruleChainsModel", rule_chains_model)
@@ -592,10 +627,11 @@ try:
         ("navItem_tasks", "tasks", 5),
         ("navItem_memory", "memory", 7),
         ("navItem_notes", "notes", 8),
-        ("navItem_routing", "routing", 9),
-        ("navItem_connectors", "connectors", 10),
-        ("navItem_config", "config", 11),
-        ("navItem_reviewers", "reviewers", 12),
+        ("navItem_observe", "observe", 9),
+        ("navItem_routing", "routing", 10),
+        ("navItem_connectors", "connectors", 11),
+        ("navItem_config", "config", 12),
+        ("navItem_reviewers", "reviewers", 13),
     ]
     for object_name, route, index in route_expectations:
         nav = click_item(app, window, object_name)
@@ -606,6 +642,27 @@ try:
             )
         if nav.property("qaTextFits") is not True:
             raise AssertionError(f"{object_name} label does not fit")
+
+    click_item(app, window, "navItem_observe")
+    pump(app, 24)
+    observe_view = find_item_in_window(window, "observeView")
+    observe_records = find_item_in_window(window, "observeKpi_records")
+    observe_route_mix = find_item_in_window(window, "observeRouteMix")
+    observe_tool = find_item_in_window(window, "observeToolRow_read_file")
+    observe_model_row = find_item_in_window(window, "observeModelRow_gpt_5")
+    observe_error = find_item_in_window(window, "observeErrorRow_rpc_timeout")
+    if observe_view is None or observe_records is None or observe_route_mix is None:
+        raise AssertionError("Observe view did not render summary cards and route mix")
+    if observe_view.property("qaRecordCount") != 4:
+        raise AssertionError(f"Observe view record count was wrong: {observe_view.property('qaRecordCount')}")
+    if observe_view.property("qaToolCount") != 2 or observe_view.property("qaModelCount") != 1:
+        raise AssertionError("Observe view did not expose tool/model counts")
+    if observe_tool is None or observe_tool.property("qaTextFits") is not True:
+        raise AssertionError("Observe tool row did not render cleanly")
+    if observe_model_row is None or observe_model_row.property("qaTextFits") is not True:
+        raise AssertionError("Observe model row did not render cleanly")
+    if observe_error is None or observe_error.property("qaTextFits") is not True:
+        raise AssertionError("Observe error row did not render cleanly")
 
     click_item(app, window, "navItem_routing")
     pump(app, 24)

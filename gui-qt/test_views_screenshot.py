@@ -26,6 +26,7 @@ from eigenqt.models.memory import MemoryModel
 from eigenqt.models.notes import NotesController
 from eigenqt.models.connectors import ConnectorsModel
 from eigenqt.models.reviewers import ReviewersModel
+from eigenqt.models.observe import ObserveModel
 from eigenqt.models.routing import RoutingModel
 from eigenqt.models import (
     ApprovalsModel,
@@ -232,6 +233,38 @@ class ScreenshotRpcClient(QObject):
                     "byKind": [],
                     "byDifficulty": [],
                     "skipReasons": [],
+                },
+                "tools": [
+                    {"name": "read_file", "calls": 4, "errors": 0, "durationMs": 80},
+                    {"name": "run_shell", "calls": 2, "errors": 1, "durationMs": 420},
+                ],
+                "models": [
+                    {
+                        "name": "gpt-5",
+                        "turns": 3,
+                        "inTokens": 12000,
+                        "outTokens": 2100,
+                        "cacheReadTokens": 6000,
+                        "cacheWriteTokens": 200,
+                        "durationMs": 1800,
+                    }
+                ],
+                "hooks": [],
+                "errors": [{"name": "rpc timeout", "count": 1}],
+                "byKind": [],
+                "subagents": {
+                    "taskCalls": 2,
+                    "taskErrors": 0,
+                    "groupCalls": 1,
+                    "groupErrors": 0,
+                    "mutatingCalls": 1,
+                    "mutatingErrors": 0,
+                    "statusChecks": 3,
+                    "promotes": 0,
+                    "promoteErrors": 0,
+                    "backgroundDone": 1,
+                    "backgroundNotes": 1,
+                    "routeNotes": 1,
                 },
             }
         if method == "SetTitle":
@@ -500,6 +533,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser):
         "memoryModel": MemoryModel(client),
         "notesController": NotesController(client),
         "connectorsModel": ConnectorsModel(client),
+        "observeModel": ObserveModel(client),
         "routingModel": RoutingModel(client),
         "configModel": ConfigModel(client),
         "ruleChainsModel": RuleChainsModel(client),
@@ -1608,7 +1642,33 @@ def main():
 
     ok = capture_view("reviewers-action-error", "ReviewersView.qml", setup_reviewers, show_reviewers_action_error) and ok
 
-    # 9. RoutingView
+    # 9. ObserveView
+    def setup_observe(ctx):
+        observe_model = ObserveModel(client)
+        ctx.setContextProperty("observeModel", observe_model)
+        return {"observeModel": observe_model}
+
+    def show_observe(_view, root):
+        for _ in range(8):
+            app.processEvents()
+        if root.property("qaRecordCount") != 4:
+            raise AssertionError(f"observe screenshot expected 4 records, saw {root.property('qaRecordCount')}")
+        route_mix = find_item(root, "observeRouteMix")
+        tool_row = find_item(root, "observeToolRow_read_file")
+        model_row = find_item(root, "observeModelRow_gpt_5")
+        error_row = find_item(root, "observeErrorRow_rpc_timeout")
+        if route_mix is None or route_mix.property("visible") is not True:
+            raise AssertionError("observe screenshot did not render route mix")
+        if tool_row is None or tool_row.property("qaTextFits") is not True:
+            raise AssertionError("observe screenshot did not render a clean tool row")
+        if model_row is None or model_row.property("qaTextFits") is not True:
+            raise AssertionError("observe screenshot did not render a clean model row")
+        if error_row is None or error_row.property("qaTextFits") is not True:
+            raise AssertionError("observe screenshot did not render a clean error row")
+
+    ok = capture_view("observe", "ObserveView.qml", setup_observe, show_observe) and ok
+
+    # 10. RoutingView
     def setup_routing(ctx):
         routing_model = RoutingModel(client)
         ctx.setContextProperty("routingModel", routing_model)
@@ -1631,7 +1691,7 @@ def main():
 
     ok = capture_view("routing", "RoutingView.qml", setup_routing, show_routing) and ok
 
-    # 10. ConnectorsView
+    # 11. ConnectorsView
     def setup_connectors(ctx):
         connectors_model = ConnectorsModel(client)
         connectors_model._loading = False

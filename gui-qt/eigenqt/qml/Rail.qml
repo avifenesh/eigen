@@ -360,6 +360,19 @@ Rectangle {
                         Layout.fillWidth: true
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
+                        route: "observe"
+                        label: "Observe"
+                        glyph: "◉"
+                        badge: 0
+                        badgeLive: false
+                        isActive: root.currentRoute === "observe"
+                        onClicked: root.routeChanged("observe")
+                    }
+
+                    NavItem {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Theme.space.sm
+                        Layout.rightMargin: Theme.space.sm
                         route: "routing"
                         label: "Routing"
                         glyph: "⇄"
