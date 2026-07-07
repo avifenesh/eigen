@@ -498,6 +498,8 @@ class MemoryModel(QObject):
     @Slot()
     def save_note(self):
         """Append a new note to the current scope."""
+        if self.saving:
+            return
         note = (self._draft or "").strip()
         if not note:
             return
@@ -513,6 +515,7 @@ class MemoryModel(QObject):
         """Handle AppendMemory result."""
         self.saving = False
         if "error" in result:
+            self.composing = True
             self._fail_action("Could not save note", result)
             return
 
@@ -611,6 +614,8 @@ class MemoryModel(QObject):
     @Slot()
     def add_ban(self):
         """Add a ban to the current scope."""
+        if self.saving_ban:
+            return
         title = (self._ban_title or "").strip()
         rule = (self._ban_rule or "").strip()
         if not title or not rule:
@@ -631,6 +636,7 @@ class MemoryModel(QObject):
         """Handle AddBan result."""
         self.saving_ban = False
         if "error" in result:
+            self.adding_ban = True
             self._fail_action("Could not save ban", result)
             return
 
@@ -672,6 +678,8 @@ class MemoryModel(QObject):
     @Slot()
     def save_profile(self):
         """Save the USER.md profile."""
+        if self.saving_profile:
+            return
         self.action_error = ""
         self.saving_profile = True
         self._client.call(
@@ -685,6 +693,7 @@ class MemoryModel(QObject):
         """Handle WriteUserProfile result."""
         self.saving_profile = False
         if "error" in result:
+            self.editing_profile = True
             self._fail_action("Could not save profile", result)
             return
 

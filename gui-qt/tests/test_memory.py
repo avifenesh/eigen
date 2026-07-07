@@ -165,6 +165,64 @@ def test_profile_and_ban_errors_keep_forms_retryable(model, client):
     assert model.action_error == "Could not save ban: ban denied"
 
 
+def test_pending_memory_writes_own_retry_forms(model, client):
+    model.scope_key = "global"
+    client.calls.clear()
+
+    model.composing = True
+    model.draft = "Pending memory note"
+    model.save_note()
+    first_note_callback = client.calls[-1]["callback"]
+    model.save_note()
+
+    assert model.saving is True
+    assert [call["method"] for call in client.calls].count("AppendMemory") == 1
+
+    model.composing = False
+    first_note_callback({"error": "write denied"})
+
+    assert model.saving is False
+    assert model.composing is True
+    assert model.draft == "Pending memory note"
+    assert model.action_error == "Could not save note: write denied"
+
+    model.editing_profile = True
+    model.profile_draft = "Pending profile"
+    model.save_profile()
+    first_profile_callback = client.calls[-1]["callback"]
+    model.save_profile()
+
+    assert model.saving_profile is True
+    assert [call["method"] for call in client.calls].count("WriteUserProfile") == 1
+
+    model.editing_profile = False
+    first_profile_callback({"error": "profile denied"})
+
+    assert model.saving_profile is False
+    assert model.editing_profile is True
+    assert model.profile_draft == "Pending profile"
+    assert model.action_error == "Could not save profile: profile denied"
+
+    model.adding_ban = True
+    model.ban_title = "Pending ban"
+    model.ban_rule = "Do not hide pending ban forms."
+    model.add_ban()
+    first_ban_callback = client.calls[-1]["callback"]
+    model.add_ban()
+
+    assert model.saving_ban is True
+    assert [call["method"] for call in client.calls].count("AddBan") == 1
+
+    model.adding_ban = False
+    first_ban_callback({"error": "ban denied"})
+
+    assert model.saving_ban is False
+    assert model.adding_ban is True
+    assert model.ban_title == "Pending ban"
+    assert model.ban_rule == "Do not hide pending ban forms."
+    assert model.action_error == "Could not save ban: ban denied"
+
+
 def test_backup_helpers_use_the_model_implementation(model, client):
     model.scope_key = "global"
     client.calls.clear()

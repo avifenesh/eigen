@@ -731,12 +731,27 @@ def check_memory(app, client):
             pump(app)
         set_text(app, root, "memoryComposeTextArea", "Mouse action memory proof")
         client.failures["AppendMemory"] = "save denied"
+        client.delays["AppendMemory"] = 45
         start = len(client.calls)
         save = click_item(app, view, root, "memorySaveNoteButton")
         if ("AppendMemory", ("global", "Mouse action memory proof")) not in client.calls[start:]:
             invoke_click(save)
             pump(app)
         assert_call(client, start, "AppendMemory", ("global", "Mouse action memory proof"))
+        if not memory.saving:
+            raise AssertionError("memory note save did not expose a pending state")
+        discard = find_visual_item(root, "memoryDiscardNoteButton")
+        cancel_add = find_visual_item(root, "memoryAddNoteButton")
+        if discard is None or cancel_add is None:
+            raise AssertionError("memory pending save controls did not render")
+        if discard.property("enabled") is not False or cancel_add.property("enabled") is not False:
+            raise AssertionError("memory pending save allowed the composer to close")
+        click_item(app, view, root, "memorySaveNoteButton")
+        pump(app, 4)
+        if client.calls[start:].count(("AppendMemory", ("global", "Mouse action memory proof"))) != 1:
+            raise AssertionError("memory pending save submitted a duplicate AppendMemory")
+        QTest.qWait(70)
+        pump(app, 12)
         error_box = find_visual_item(root, "memoryActionError")
         if error_box is None or not error_box.property("visible"):
             raise AssertionError("failed memory note save did not render an action error")
@@ -745,6 +760,7 @@ def check_memory(app, client):
         if not memory.composing or memory.draft != "Mouse action memory proof":
             raise AssertionError("failed memory note save did not preserve the draft")
         del client.failures["AppendMemory"]
+        del client.delays["AppendMemory"]
 
         start = len(client.calls)
         save = click_item(app, view, root, "memorySaveNoteButton")

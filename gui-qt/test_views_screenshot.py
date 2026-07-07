@@ -1453,6 +1453,24 @@ def main():
 
     ok = capture_view("memory", "MemoryView.qml", setup_memory) and ok
 
+    def show_memory_save_pending(_view, root):
+        model = root.property("memoryModel")
+        if model is not None:
+            model.composing = True
+            model.draft = "Memory pending save proof"
+            model.saving = True
+
+    ok = capture_view("memory-save-pending", "MemoryView.qml", setup_memory, show_memory_save_pending) and ok
+
+    def show_memory_save_error(_view, root):
+        model = root.property("memoryModel")
+        if model is not None:
+            model.composing = True
+            model.draft = "Memory retry draft stays visible"
+            model.action_error = "Could not save note: save denied"
+
+    ok = capture_view("memory-save-error", "MemoryView.qml", setup_memory, show_memory_save_error) and ok
+
     def show_memory_remove_confirm(_view, root):
         model = root.property("memoryModel")
         if model is not None:

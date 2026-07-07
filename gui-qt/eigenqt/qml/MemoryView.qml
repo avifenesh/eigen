@@ -178,8 +178,12 @@ Rectangle {
                 AppButton {
                     objectName: "memoryAddNoteButton"
                     text: activeMemoryModel.composing ? "Cancel" : "Add note"
-                    enabled: activeMemoryModel.current !== null
-                    onClicked: activeMemoryModel.composing = !activeMemoryModel.composing
+                    enabled: activeMemoryModel.current !== null && !activeMemoryModel.saving
+                    onClicked: {
+                        if (!activeMemoryModel.saving) {
+                            activeMemoryModel.composing = !activeMemoryModel.composing
+                        }
+                    }
                 }
             }
         }
@@ -240,7 +244,7 @@ Rectangle {
 
                         Keys.onPressed: (event) => {
                             if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && (event.modifiers & Qt.ControlModifier)) {
-                                activeMemoryModel.save_note()
+                                root.saveMemoryNoteIfReady()
                                 event.accepted = true
                             }
                         }
@@ -260,9 +264,9 @@ Rectangle {
                     AppButton {
                         objectName: "memoryDiscardNoteButton"
                         text: "Discard"
+                        enabled: !activeMemoryModel.saving
                         onClicked: {
-                            activeMemoryModel.composing = false
-                            activeMemoryModel.draft = ""
+                            root.cancelMemoryNoteCompose()
                         }
                     }
 
@@ -893,10 +897,14 @@ Rectangle {
 
                                             Keys.onPressed: (event) => {
                                                 if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && (event.modifiers & Qt.ControlModifier)) {
-                                                    activeMemoryModel.save_profile()
+                                                    if (!activeMemoryModel.saving_profile) {
+                                                        activeMemoryModel.save_profile()
+                                                    }
                                                     event.accepted = true
                                                 } else if (event.key === Qt.Key_Escape) {
-                                                    root.cancelProfileEdit()
+                                                    if (!activeMemoryModel.saving_profile) {
+                                                        root.cancelProfileEdit()
+                                                    }
                                                     event.accepted = true
                                                 }
                                             }
@@ -909,6 +917,7 @@ Rectangle {
                                         AppButton {
                                             objectName: "memoryCancelProfileButton"
                                             text: "Cancel"
+                                            enabled: !activeMemoryModel.saving_profile
                                             onClicked: root.cancelProfileEdit()
                                         }
 
@@ -1028,7 +1037,9 @@ Rectangle {
                                                 root.saveBanIfReady()
                                                 event.accepted = true
                                             } else if (event.key === Qt.Key_Escape) {
-                                                root.cancelBanEdit()
+                                                if (!activeMemoryModel.saving_ban) {
+                                                    root.cancelBanEdit()
+                                                }
                                                 event.accepted = true
                                             }
                                         }
@@ -1062,7 +1073,9 @@ Rectangle {
                                                     root.saveBanIfReady()
                                                     event.accepted = true
                                                 } else if (event.key === Qt.Key_Escape) {
-                                                    root.cancelBanEdit()
+                                                    if (!activeMemoryModel.saving_ban) {
+                                                        root.cancelBanEdit()
+                                                    }
                                                     event.accepted = true
                                                 }
                                             }
@@ -1075,6 +1088,7 @@ Rectangle {
                                         AppButton {
                                             objectName: "memoryCancelBanButton"
                                             text: "Cancel"
+                                            enabled: !activeMemoryModel.saving_ban
                                             onClicked: root.cancelBanEdit()
                                         }
 
@@ -1485,7 +1499,24 @@ Rectangle {
         return model && model.move_targets ? model.move_targets : []
     }
 
+    function saveMemoryNoteIfReady() {
+        if (activeMemoryModel.draft.trim().length > 0 && !activeMemoryModel.saving) {
+            activeMemoryModel.save_note()
+        }
+    }
+
+    function cancelMemoryNoteCompose() {
+        if (activeMemoryModel.saving) {
+            return
+        }
+        activeMemoryModel.composing = false
+        activeMemoryModel.draft = ""
+    }
+
     function cancelProfileEdit() {
+        if (activeMemoryModel.saving_profile) {
+            return
+        }
         activeMemoryModel.profile_draft = activeMemoryModel.current ? (activeMemoryModel.current.profile || "") : ""
         activeMemoryModel.editing_profile = false
     }
@@ -1499,6 +1530,9 @@ Rectangle {
     }
 
     function cancelBanEdit() {
+        if (activeMemoryModel.saving_ban) {
+            return
+        }
         activeMemoryModel.adding_ban = false
         activeMemoryModel.ban_title = ""
         activeMemoryModel.ban_rule = ""
