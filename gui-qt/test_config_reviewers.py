@@ -87,6 +87,11 @@ def _first_chain(model):
     return model.data(model.index(0, 0), RuleChainsModel.ChainRole)
 
 
+def _first_reviewer_repo(model):
+    assert model.rowCount() == 1
+    return model.data(model.index(0, 0), ReviewersModel.RepoRole)
+
+
 @pytest.fixture
 def app():
     """Create QGuiApplication."""
@@ -257,6 +262,59 @@ def test_reviewers_model_loading_lifecycle(app):
     assert model.loading is False
     assert model.count == 2
     assert model.paused_count == 1
+
+
+def test_reviewers_model_ignores_stale_status_callbacks(app):
+    """Older RevutoStatus replies must not repaint the reviewer list."""
+    client = DeferredRpcClient()
+    model = ReviewersModel(client)
+
+    model.refresh()
+    first = list(client.calls)
+    model.refresh()
+    second = client.calls[len(first):]
+
+    _reply(_call_by_method(second, "RevutoStatus"), result={"available": True, "count": 1, "paused": 0})
+    _reply(
+        _call_by_method(client.calls, "RevutoReviewers"),
+        result=[{"repo": "avifenesh/eigen", "paused": False}],
+    )
+    assert model.available is True
+    assert model.count == 1
+    assert _first_reviewer_repo(model) == "avifenesh/eigen"
+
+    reviewer_call_count = len([call for call in client.calls if call["method"] == "RevutoReviewers"])
+    _reply(_call_by_method(first, "RevutoStatus"), result={"available": False, "count": 0, "paused": 0})
+
+    assert len([call for call in client.calls if call["method"] == "RevutoReviewers"]) == reviewer_call_count
+    assert model.available is True
+    assert model.count == 1
+    assert _first_reviewer_repo(model) == "avifenesh/eigen"
+
+
+def test_reviewers_model_ignores_stale_reviewers_callbacks(app):
+    """Older RevutoReviewers replies must not overwrite a newer refresh."""
+    client = DeferredRpcClient()
+    model = ReviewersModel(client)
+
+    model.refresh()
+    first_status = _call_by_method(client.calls, "RevutoStatus")
+    _reply(first_status, result={"available": True, "count": 1, "paused": 0})
+    first_reviewers = _call_by_method(client.calls, "RevutoReviewers")
+
+    model.refresh()
+    second_status = _call_by_method(client.calls, "RevutoStatus")
+    _reply(second_status, result={"available": True, "count": 1, "paused": 0})
+    second_reviewers = _call_by_method(client.calls, "RevutoReviewers")
+
+    _reply(second_reviewers, result=[{"repo": "avifenesh/eigen", "paused": False}])
+    assert model.count == 1
+    assert _first_reviewer_repo(model) == "avifenesh/eigen"
+
+    _reply(first_reviewers, result=[{"repo": "avifenesh/old-reviewer", "paused": True}])
+    assert model.count == 1
+    assert model.paused_count == 0
+    assert _first_reviewer_repo(model) == "avifenesh/eigen"
 
 
 if __name__ == "__main__":

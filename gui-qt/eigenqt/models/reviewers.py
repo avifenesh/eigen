@@ -60,6 +60,7 @@ class ReviewersModel(QAbstractListModel):
         self._paused = 0
         self._loading = False
         self._active = False
+        self._load_seq = 0
 
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(60_000)  # 60s
@@ -127,12 +128,16 @@ class ReviewersModel(QAbstractListModel):
 
     def _fetch_data(self):
         """Async fetch RevutoStatus + RevutoReviewers RPCs (sequential)."""
+        self._load_seq += 1
+        seq = self._load_seq
         self._set_loading(True)
-        self._client.call("RevutoStatus", callback=self._on_status_result)
+        self._client.call("RevutoStatus", callback=lambda result: self._on_status_result(result, seq))
 
     @Slot(dict)
-    def _on_status_result(self, result: dict):
+    def _on_status_result(self, result: dict, seq: Optional[int] = None):
         """Handle RevutoStatus RPC result."""
+        if seq is not None and seq != self._load_seq:
+            return
         if "error" in result:
             self._set_loading(False)
             if self._reviewers:
@@ -153,7 +158,7 @@ class ReviewersModel(QAbstractListModel):
 
         # If available, fetch reviewers
         if self._available:
-            self._client.call("RevutoReviewers", callback=self._on_reviewers_result)
+            self._client.call("RevutoReviewers", callback=lambda result: self._on_reviewers_result(result, seq))
         elif self._reviewers:
             self.beginResetModel()
             self._reviewers = []
@@ -163,8 +168,10 @@ class ReviewersModel(QAbstractListModel):
             self._set_loading(False)
 
     @Slot(dict)
-    def _on_reviewers_result(self, result: dict):
+    def _on_reviewers_result(self, result: dict, seq: Optional[int] = None):
         """Handle RevutoReviewers RPC result."""
+        if seq is not None and seq != self._load_seq:
+            return
         if "error" in result:
             self._set_loading(False)
             return
@@ -256,6 +263,7 @@ class ReviewersModel(QAbstractListModel):
     def stop_polling(self):
         """Stop polling when view is inactive."""
         self._poll_timer.stop()
+        self._load_seq += 1
 
     def start_polling(self):
         """Resume polling when view becomes active."""
