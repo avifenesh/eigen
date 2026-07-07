@@ -154,6 +154,7 @@ Rectangle {
                                 model: chatNavItem.qaRunningSessionCount
                                 delegate: Rectangle {
                                     readonly property var session: chatNavItem.runningSessions[index] || ({})
+                                    readonly property bool qaUnread: !!session.unread
 
                                     objectName: "navRunningSession_" + root.safeObjectName(root.sessionValue(session, "id"))
                                     Layout.fillWidth: true
@@ -206,11 +207,12 @@ Rectangle {
                                             Layout.fillWidth: true
                                         }
 
-                                        // Unread dot (if session has unread — TODO: wire ReplyWatcher unread state)
-                                        Label {
-                                            visible: false  // TODO: wire unread state from ReplyWatcher
-                                            text: "●"
-                                            font.pixelSize: 8
+                                        Rectangle {
+                                            objectName: "navRunningUnread_" + root.safeObjectName(root.sessionValue(session, "id"))
+                                            visible: qaUnread
+                                            width: 7
+                                            height: 7
+                                            radius: 4
                                             color: Theme.colors.brandBright
                                         }
                                     }
@@ -494,7 +496,8 @@ Rectangle {
                     id: root.sessionsModel.data(idx, 257),  // IdRole
                     title: root.sessionsModel.data(idx, 258),
                     dir: root.sessionsModel.data(idx, 259),
-                    status: status
+                    status: status,
+                    unread: root.sessionsModel.data(idx, 264) === true  // UnreadRole
                 })
             }
         }

@@ -378,6 +378,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser):
             ]
         }
     )
+    sessions_model.mark_unread("s-qa-chat")
 
     controller = ScreenshotSessionController(client)
     transcript_model = TranscriptModel(client, "")
@@ -437,6 +438,17 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser):
         composer.setProperty("text", "Send button stays visible above the status strip")
     for _ in range(10):
         app.processEvents()
+
+    unread_dot = find_item(window.contentItem(), "navRunningUnread_s_qa_chat")
+    read_dot = find_item(window.contentItem(), "navRunningUnread_s_qa_approval")
+    if unread_dot is None or unread_dot.property("visible") is not True:
+        print("✗ Main chat proof did not show unread rail marker")
+        window.hide()
+        return False
+    if read_dot is None or read_dot.property("visible") is not False:
+        print("✗ Main chat proof showed unread rail marker for a read session")
+        window.hide()
+        return False
 
     output = SCREENSHOTS / "qa-fix-main-chat.png"
     image = window.grabWindow()

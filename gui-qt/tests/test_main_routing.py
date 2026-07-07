@@ -371,6 +371,7 @@ try:
     client = FakeRpcClient()
     sessions_model = SessionsModel(client)
     sessions_model._on_sessions_result({"result": seeded_sessions()})
+    sessions_model.mark_unread("s-work")
     live_model = LiveSessionsModel(client)
     tasks_model = TasksModel(client)
     dashboard_model = DashboardModel(client)
@@ -466,6 +467,16 @@ try:
         raise AssertionError("Sessions nav item overlaps the expanded chat running list")
     if chat_nav.property("qaTextFits") is not True:
         raise AssertionError("Chat nav label does not fit")
+    if running_row.property("qaUnread") is not True:
+        raise AssertionError("Unread running session did not expose qaUnread")
+    if approval_row.property("qaUnread") is not False:
+        raise AssertionError("Read approval session was incorrectly marked unread")
+    running_unread = find_item_in_window(window, "navRunningUnread_s_work")
+    approval_unread = find_item_in_window(window, "navRunningUnread_s_approval")
+    if running_unread is None or running_unread.property("visible") is not True:
+        raise AssertionError("Unread rail dot did not render for s-work")
+    if approval_unread is None or approval_unread.property("visible") is not False:
+        raise AssertionError("Unread rail dot rendered for read approval session")
 
     route_expectations = [
         ("navItem_sessions", "sessions", 1),
