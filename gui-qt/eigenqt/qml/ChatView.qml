@@ -250,17 +250,43 @@ Rectangle {
                         spacing: Theme.space.md
 
                         Rectangle {
+                            objectName: "chatAttachmentPreview"
                             width: 48
                             height: 48
                             color: Theme.colors.bgInset
                             radius: Theme.radius.sm
                             border.width: 1
                             border.color: Theme.colors.borderSubtle
+                            clip: true
+
+                            Image {
+                                id: attachmentPreviewImage
+                                objectName: "chatAttachmentPreviewImage"
+                                anchors.fill: parent
+                                anchors.margins: 3
+                                source: attachedImage.length > 0 ? "data:image/png;base64," + attachedImage : ""
+                                sourceSize.width: 96
+                                sourceSize.height: 96
+                                fillMode: Image.PreserveAspectFit
+                                smooth: true
+                                cache: false
+
+                                readonly property bool qaImageReady: status === Image.Ready
+                                readonly property bool qaImageError: status === Image.Error
+                                readonly property int qaSourceSizeWidth: sourceSize.width
+                                readonly property int qaSourceSizeHeight: sourceSize.height
+                                readonly property real qaPaintedWidth: paintedWidth
+                                readonly property real qaPaintedHeight: paintedHeight
+                            }
 
                             Label {
+                                objectName: "chatAttachmentPreviewFallback"
+                                visible: !attachmentPreviewImage.qaImageReady
                                 anchors.centerIn: parent
-                                text: "🖼"
-                                font.pixelSize: Theme.fontSize.h2
+                                text: "img"
+                                font.family: Theme.monoFonts[0]
+                                font.pixelSize: Theme.fontSize.micro
+                                color: Theme.colors.textMuted
                             }
                         }
 

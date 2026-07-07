@@ -37,6 +37,9 @@ import eigenqt.models.worktree  # registers DiffModel/FileTreeModel for DockPane
 
 ROOT = Path.cwd()
 SIZE = QSize(1180, 820)
+VALID_PNG_BASE64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAG0lEQVQImWPUb3j7/4deMQPjp5M+/3/2cTMAAFRICM+3aAs3AAAAAElFTkSuQmCC"
+)
 
 
 class FakeRpcClient(QObject):
@@ -1601,8 +1604,32 @@ if composer.property("text") != "":
 if not send.property("qaTextFits"):
     raise AssertionError("Send button text does not fit")
 
-chat.setProperty("attachedImage", "ZmFrZQ==")
-pump(app, 12)
+chat.setProperty("attachedImage", VALID_PNG_BASE64)
+QTest.qWait(40)
+pump(app, 20)
+preview = find_item(chat, "chatAttachmentPreviewImage")
+if preview is None:
+    raise AssertionError("Attachment preview image did not render")
+for _ in range(20):
+    if preview.property("qaImageReady") is True:
+        break
+    QTest.qWait(10)
+    pump(app, 1)
+source = preview.property("source")
+source_text = source.toString() if hasattr(source, "toString") else str(source)
+if "data:image/png;base64," not in source_text:
+    raise AssertionError(f"Attachment preview did not use an image data URL: {source_text!r}")
+if preview.property("qaImageError") is True or preview.property("qaImageReady") is not True:
+    raise AssertionError("Attachment preview image did not load")
+if preview.property("qaSourceSizeWidth") != 96 or preview.property("qaSourceSizeHeight") != 96:
+    raise AssertionError(
+        f"Attachment preview sourceSize was not bounded: "
+        f"{preview.property('qaSourceSizeWidth')}x{preview.property('qaSourceSizeHeight')}"
+    )
+painted_width = float(preview.property("qaPaintedWidth") or 0)
+painted_height = float(preview.property("qaPaintedHeight") or 0)
+if not (0 < painted_width <= 42 and 0 < painted_height <= 42):
+    raise AssertionError(f"Attachment preview painted outside its thumbnail: {painted_width}x{painted_height}")
 clear = find_item(chat, "chatClearAttachmentButton")
 if clear is None:
     raise AssertionError("Attachment clear button did not render")

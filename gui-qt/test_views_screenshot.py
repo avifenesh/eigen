@@ -47,6 +47,9 @@ from eigenqt.markdown_helper import MarkdownHelper
 ROOT = Path(__file__).resolve().parent
 SCREENSHOTS = ROOT / "screenshots"
 SCREENSHOTS.mkdir(exist_ok=True)
+VALID_PNG_BASE64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAG0lEQVQImWPUb3j7/4deMQPjp5M+/3/2cTMAAFRICM+3aAs3AAAAAElFTkSuQmCC"
+)
 
 
 class ScreenshotRpcClient(QObject):
@@ -720,6 +723,12 @@ def main():
         }
 
     ok = capture_view("chat", "ChatView.qml", setup_chat) and ok
+
+    def show_chat_attachment(_view, root):
+        root.setProperty("attachedImage", VALID_PNG_BASE64)
+        QTest.qWait(80)
+
+    ok = capture_view("chat-attachment", "ChatView.qml", setup_chat, show_chat_attachment) and ok
 
     def open_chat_model_dropdown(_view, root):
         combo = find_item(root, "sessionModelCombo")
