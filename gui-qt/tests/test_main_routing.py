@@ -25,6 +25,7 @@ from eigenqt.models import (
     ApprovalsModel,
     BoardModel,
     CommandsModel,
+    CronsModel,
     DashboardModel,
     FeedModel,
     KanbanModel,
@@ -260,6 +261,43 @@ class FakeRpcClient(QObject):
                     "updated": 1783144800000,
                 },
             ]
+        if method == "Crons":
+            return {
+                "crons": [
+                    {
+                        "name": "eigen-dream",
+                        "kind": "timer",
+                        "next": "today 19:30",
+                        "last": "today 17:00",
+                        "active": True,
+                        "enabled": True,
+                        "command": "eigen-dream.service",
+                        "unit": "eigen-dream.timer",
+                    },
+                    {
+                        "name": "eigen-clean",
+                        "kind": "timer",
+                        "next": "2026-07-08 09:00",
+                        "last": "",
+                        "active": False,
+                        "enabled": True,
+                        "command": "eigen-clean.service",
+                        "unit": "eigen-clean.timer",
+                    },
+                    {
+                        "name": "eigen run daily",
+                        "kind": "crontab",
+                        "next": "0 9 * * *",
+                        "last": "",
+                        "active": True,
+                        "enabled": True,
+                        "command": "eigen run daily",
+                    },
+                ],
+                "timers": 2,
+                "crontab": 1,
+                "systemdAvail": True,
+            }
         if method == "ObserveSummary":
             return {
                 "available": True,
@@ -562,6 +600,7 @@ try:
     proposals_model = ProposalsModel(client)
     memory_model = MemoryModel(client)
     machines_model = MachinesModel(client)
+    crons_model = CronsModel(client)
     notes_controller = NotesController(client)
     connectors_model = ConnectorsModel(client)
     observe_model = ObserveModel(client)
@@ -592,6 +631,7 @@ try:
     ctx.setContextProperty("proposalsModel", proposals_model)
     ctx.setContextProperty("memoryModel", memory_model)
     ctx.setContextProperty("machinesModel", machines_model)
+    ctx.setContextProperty("cronsModel", crons_model)
     ctx.setContextProperty("notesController", notes_controller)
     ctx.setContextProperty("connectorsModel", connectors_model)
     ctx.setContextProperty("observeModel", observe_model)
@@ -681,9 +721,10 @@ try:
         ("navItem_observe", "observe", 9),
         ("navItem_routing", "routing", 10),
         ("navItem_machines", "machines", 11),
-        ("navItem_connectors", "connectors", 12),
-        ("navItem_config", "config", 13),
-        ("navItem_reviewers", "reviewers", 14),
+        ("navItem_crons", "crons", 12),
+        ("navItem_connectors", "connectors", 13),
+        ("navItem_config", "config", 14),
+        ("navItem_reviewers", "reviewers", 15),
     ]
     for object_name, route, index in route_expectations:
         nav = click_item(app, window, object_name)
@@ -774,6 +815,24 @@ try:
         raise AssertionError(f"Remote session open did not attach chat: {controller.opened}")
     if window.property("currentRoute") != "chat" or window.property("activeRouteIndex") != 3:
         raise AssertionError("Remote session open did not switch to chat")
+
+    click_item(app, window, "navItem_crons")
+    pump(app, 24)
+    if ("Crons", ()) not in client.calls:
+        raise AssertionError(f"Crons view did not fetch scheduled work: {client.calls}")
+    crons_view = find_item_in_window(window, "cronsView")
+    timer_row = find_item_in_window(window, "cronsTimerRow_eigen_dream_timer")
+    tab_row = find_item_in_window(window, "cronsTabRow_0_9_______eigen_run_daily")
+    if crons_view is None or timer_row is None or tab_row is None:
+        raise AssertionError("Crons view did not render timer and crontab rows")
+    if crons_view.property("qaTimerCount") != 2 or crons_view.property("qaCrontabCount") != 1:
+        raise AssertionError(
+            "Crons view summary counts were wrong: "
+            f"timers={crons_view.property('qaTimerCount')} "
+            f"crontab={crons_view.property('qaCrontabCount')}"
+        )
+    if timer_row.property("qaTextFits") is not True or tab_row.property("qaTextFits") is not True:
+        raise AssertionError("Crons schedule row text did not fit")
 
     client.failures["NewSession"] = "daemon offline"
     click_item(app, window, "navItem_live")

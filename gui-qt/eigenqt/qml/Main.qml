@@ -85,9 +85,10 @@ ApplicationWindow {
                 if (route === "observe") return 9
                 if (route === "routing") return 10
                 if (route === "machines") return 11
-                if (route === "connectors") return 12
-                if (route === "config") return 13
-                if (route === "reviewers") return 14
+                if (route === "crons") return 12
+                if (route === "connectors") return 13
+                if (route === "config") return 14
+                if (route === "reviewers") return 15
                 return 0  // default to home
             }
 
@@ -210,18 +211,23 @@ ApplicationWindow {
                 }
             }
 
-            // Index 12: Connectors view (MCP connectors management)
+            // Index 12: Crons view (scheduled work snapshot)
+            CronsView {
+                cronsModel: root.ctxCronsModel
+            }
+
+            // Index 13: Connectors view (MCP connectors management)
             ConnectorsView {
                 connectorsModel: root.ctxConnectors
             }
 
-            // Index 13: Config view (editable config fields + rule chains)
+            // Index 14: Config view (editable config fields + rule chains)
             ConfigView {
                 configModel: root.ctxConfigModel
                 ruleChainsModel: root.ctxRuleChainsModel
             }
 
-            // Index 14: Reviewers view (revuto cockpit)
+            // Index 15: Reviewers view (revuto cockpit)
             ReviewersView {
                 reviewersModel: root.ctxReviewersModel
             }
@@ -345,6 +351,7 @@ ApplicationWindow {
     readonly property var ctxObserveModel: observeModel
     readonly property var ctxRoutingModel: routingModel
     readonly property var ctxMachinesModel: machinesModel
+    readonly property var ctxCronsModel: cronsModel
     readonly property var ctxConfigModel: configModel
     readonly property var ctxRuleChainsModel: ruleChainsModel
     readonly property var ctxReviewersModel: reviewersModel

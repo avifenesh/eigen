@@ -399,6 +399,19 @@ Rectangle {
                         Layout.fillWidth: true
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
+                        route: "crons"
+                        label: "Crons"
+                        glyph: "◷"
+                        badge: 0
+                        badgeLive: false
+                        isActive: root.currentRoute === "crons"
+                        onClicked: root.routeChanged("crons")
+                    }
+
+                    NavItem {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Theme.space.sm
+                        Layout.rightMargin: Theme.space.sm
                         route: "connectors"
                         label: "Connectors"
                         glyph: "⟐"

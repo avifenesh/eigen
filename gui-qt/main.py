@@ -18,6 +18,7 @@ from eigenqt.models import (
     ApprovalsModel,
     BoardModel,
     CommandsModel,
+    CronsModel,
     DashboardModel,
     FeedModel,
     KanbanModel,
@@ -81,6 +82,7 @@ class AppContext(QObject):
         self.observe_model = ObserveModel(self.rpc_client, self)
         self.routing_model = RoutingModel(self.rpc_client, self)
         self.machines_model = MachinesModel(self.rpc_client, self)
+        self.crons_model = CronsModel(self.rpc_client, self)
         self.config_model = ConfigModel(self.rpc_client, self)
         self.rule_chains_model = RuleChainsModel(self.rpc_client, self)
         self.reviewers_model = ReviewersModel(self.rpc_client, self)
@@ -330,6 +332,7 @@ def main():
     ctx.setContextProperty("observeModel", app_context.observe_model)
     ctx.setContextProperty("routingModel", app_context.routing_model)
     ctx.setContextProperty("machinesModel", app_context.machines_model)
+    ctx.setContextProperty("cronsModel", app_context.crons_model)
     ctx.setContextProperty("configModel", app_context.config_model)
     ctx.setContextProperty("ruleChainsModel", app_context.rule_chains_model)
     ctx.setContextProperty("reviewersModel", app_context.reviewers_model)

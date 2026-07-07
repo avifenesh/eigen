@@ -29,6 +29,7 @@ from eigenqt.models.reviewers import ReviewersModel
 from eigenqt.models.observe import ObserveModel
 from eigenqt.models.routing import RoutingModel
 from eigenqt.models.machines import MachinesModel
+from eigenqt.models.crons import CronsModel
 from eigenqt.models import (
     ApprovalsModel,
     CommandsModel,
@@ -316,6 +317,43 @@ class ScreenshotRpcClient(QObject):
                     "updated": 1783144800000,
                 },
             ]
+        if method == "Crons":
+            return {
+                "crons": [
+                    {
+                        "name": "eigen-dream",
+                        "kind": "timer",
+                        "next": "today 19:30",
+                        "last": "today 17:00",
+                        "active": True,
+                        "enabled": True,
+                        "command": "eigen-dream.service",
+                        "unit": "eigen-dream.timer",
+                    },
+                    {
+                        "name": "eigen-clean",
+                        "kind": "timer",
+                        "next": "2026-07-08 09:00",
+                        "last": "",
+                        "active": False,
+                        "enabled": True,
+                        "command": "eigen-clean.service",
+                        "unit": "eigen-clean.timer",
+                    },
+                    {
+                        "name": "eigen run daily",
+                        "kind": "crontab",
+                        "next": "0 9 * * *",
+                        "last": "",
+                        "active": True,
+                        "enabled": True,
+                        "command": "eigen run daily",
+                    },
+                ],
+                "timers": 2,
+                "crontab": 1,
+                "systemdAvail": True,
+            }
         if method == "SetTitle":
             return {
                 "model": "gpt-5",
@@ -585,6 +623,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser):
         "observeModel": ObserveModel(client),
         "routingModel": RoutingModel(client),
         "machinesModel": MachinesModel(client),
+        "cronsModel": CronsModel(client),
         "configModel": ConfigModel(client),
         "ruleChainsModel": RuleChainsModel(client),
         "reviewersModel": ReviewersModel(client),
@@ -1772,7 +1811,30 @@ def main():
 
     ok = capture_view("machines", "MachinesView.qml", setup_machines, show_machines) and ok
 
-    # 12. ConnectorsView
+    # 12. CronsView
+    def setup_crons(ctx):
+        crons_model = CronsModel(client)
+        ctx.setContextProperty("cronsModel", crons_model)
+        return {"cronsModel": crons_model}
+
+    def show_crons(_view, root):
+        for _ in range(8):
+            app.processEvents()
+        if root.property("qaTimerCount") != 2 or root.property("qaCrontabCount") != 1:
+            raise AssertionError(
+                "crons screenshot expected 2 timers and 1 crontab row, saw "
+                f"{root.property('qaTimerCount')} timers and {root.property('qaCrontabCount')} crontab"
+            )
+        timer_row = find_item(root, "cronsTimerRow_eigen_dream_timer")
+        tab_row = find_item(root, "cronsTabRow_0_9_______eigen_run_daily")
+        if timer_row is None or tab_row is None:
+            raise AssertionError("crons screenshot did not render timer and crontab rows")
+        if timer_row.property("qaTextFits") is not True or tab_row.property("qaTextFits") is not True:
+            raise AssertionError("crons screenshot rendered clipped schedule text")
+
+    ok = capture_view("crons", "CronsView.qml", setup_crons, show_crons) and ok
+
+    # 13. ConnectorsView
     def setup_connectors(ctx):
         connectors_model = ConnectorsModel(client)
         connectors_model._loading = False

@@ -13,6 +13,7 @@ TasksModel: background agents/tasks with polling and cancel
 ObserveModel: observability summary with route-scoped polling
 RoutingModel: model/provider routing catalog with route-health stats
 MachinesModel: remote host list plus on-demand remote session drill-in
+CronsModel: scheduled-work snapshot with route-scoped polling
 """
 
 from .sessions import SessionsModel
@@ -31,6 +32,7 @@ from .memory import MemoryModel
 from .observe import ObserveModel
 from .routing import RoutingModel
 from .machines import MachinesModel
+from .crons import CronsModel
 
 __all__ = [
     "SessionsModel",
@@ -53,4 +55,5 @@ __all__ = [
     "ObserveModel",
     "RoutingModel",
     "MachinesModel",
+    "CronsModel",
 ]
