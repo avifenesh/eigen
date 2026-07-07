@@ -469,6 +469,9 @@ class MemoryModel(QObject):
         self._scope_seq += 1
         self._backups_seq += 1
         seq = self._scope_seq
+        self.backups_open = False
+        self.backups_loading = False
+        self.backup_paths = []
         self.loading = True
         self.load_error = ""
         self._client.call("MemoryForScope", key, callback=lambda result: self._on_scope_result(result, seq))

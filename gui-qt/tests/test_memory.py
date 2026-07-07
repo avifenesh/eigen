@@ -67,6 +67,9 @@ def test_select_scope_resets_ui_state_and_loads_scope(model, client):
     model.composing = True
     model.confirm_remove_note = 2
     model.confirm_remove_ad_hoc = 3
+    model.backups_open = True
+    model.backups_loading = True
+    model.backup_paths = ["/tmp/MEMORY.md.20240101-010203.bak"]
 
     model.select_scope("global")
 
@@ -74,6 +77,9 @@ def test_select_scope_resets_ui_state_and_loads_scope(model, client):
     assert model.composing is False
     assert model.confirm_remove_note == -1
     assert model.confirm_remove_ad_hoc == -1
+    assert model.backups_open is False
+    assert model.backups_loading is False
+    assert model.backup_paths == []
     assert client.calls[-1]["method"] == "MemoryForScope"
     assert client.calls[-1]["args"] == ("global",)
 
