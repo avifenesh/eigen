@@ -60,7 +60,7 @@ Rectangle {
 
                 AppButton {
                     objectName: "reviewersRefreshButton"
-                    visible: root.reviewersModel && root.reviewersModel.available
+                    visible: root.reviewersModel && (root.reviewersModel.available || root.hasLoadError())
                     text: root.reviewersModel && root.reviewersModel.loading ? "Refreshing…" : "Refresh"
                     toolTipText: "Refresh reviewers"
                     enabled: root.reviewersModel && !root.reviewersModel.loading
@@ -125,6 +125,46 @@ Rectangle {
                 spacing: Theme.space.sm
 
                 Item { height: Theme.space.lg }
+
+                Rectangle {
+                    objectName: "reviewersRefreshErrorBanner"
+                    visible: root.hasLoadError() && root.reviewersRowCount() > 0
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: visible ? Math.max(44, reviewersRefreshErrorRow.implicitHeight + Theme.space.md) : 0
+                    color: Theme.colors.errorBg
+                    border.width: visible ? 1 : 0
+                    border.color: Theme.colors.error
+                    radius: Theme.radius.md
+                    clip: true
+
+                    RowLayout {
+                        id: reviewersRefreshErrorRow
+                        anchors.fill: parent
+                        anchors.leftMargin: Theme.space.lg
+                        anchors.rightMargin: Theme.space.lg
+                        spacing: Theme.space.md
+
+                        Label {
+                            objectName: "reviewersRefreshErrorText"
+                            text: root.reviewersModel ? root.reviewersModel.load_error : ""
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.label
+                            color: Theme.colors.error
+                            wrapMode: Text.WrapAnywhere
+                            Layout.fillWidth: true
+                        }
+
+                        AppButton {
+                            objectName: "reviewersRefreshErrorRetry"
+                            text: "Retry"
+                            compact: true
+                            toolTipText: "Retry loading reviewers"
+                            Layout.preferredWidth: 64
+                            Layout.preferredHeight: 28
+                            onClicked: root.retryLoad()
+                        }
+                    }
+                }
 
                 // REPO ROWS
                 ColumnLayout {
@@ -245,7 +285,7 @@ Rectangle {
                 // LOADING STATE — first status/reviewer fetch is still resolving
                 Rectangle {
                     objectName: "reviewersLoadingState"
-                    visible: root.reviewersModel && root.reviewersModel.loading && root.reviewersModel.count === 0
+                    visible: root.reviewersModel && root.reviewersModel.loading && root.reviewersRowCount() === 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: 240
                     Layout.topMargin: Theme.space.xxxxl
@@ -277,10 +317,57 @@ Rectangle {
                     }
                 }
 
+                Rectangle {
+                    objectName: "reviewersLoadError"
+                    visible: root.reviewersModel && !root.reviewersModel.loading && root.hasLoadError() && root.reviewersRowCount() === 0
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: visible ? 132 : 0
+                    Layout.topMargin: Theme.space.xxxxl
+                    color: Theme.colors.bgRaised
+                    border.width: visible ? 1 : 0
+                    border.color: Theme.colors.borderHairline
+                    radius: Theme.radius.md
+
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        spacing: Theme.space.md
+
+                        Label {
+                            text: "Could not load reviewers"
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.h3
+                            font.weight: Theme.fontWeight.semibold
+                            color: Theme.colors.textSecondary
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        Label {
+                            objectName: "reviewersLoadErrorText"
+                            text: root.reviewersModel ? root.reviewersModel.load_error : ""
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.bodySm
+                            color: Theme.colors.textMuted
+                            wrapMode: Text.WrapAnywhere
+                            horizontalAlignment: Text.AlignHCenter
+                            Layout.maximumWidth: 720
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        AppButton {
+                            objectName: "reviewersLoadErrorRetry"
+                            text: "Retry"
+                            compact: true
+                            toolTipText: "Retry loading reviewers"
+                            Layout.alignment: Qt.AlignHCenter
+                            onClicked: root.retryLoad()
+                        }
+                    }
+                }
+
                 // EMPTY STATE — no revuto
                 Rectangle {
                     objectName: "reviewersUnavailableEmpty"
-                    visible: root.reviewersModel && !root.reviewersModel.loading && !root.reviewersModel.available
+                    visible: root.reviewersModel && !root.reviewersModel.loading && !root.hasLoadError() && !root.reviewersModel.available
                     Layout.fillWidth: true
                     Layout.preferredHeight: 240
                     Layout.topMargin: Theme.space.xxxxl
@@ -318,7 +405,7 @@ Rectangle {
                 // EMPTY STATE — no reviewers registered
                 Rectangle {
                     objectName: "reviewersNoReviewersEmpty"
-                    visible: root.reviewersModel && !root.reviewersModel.loading && root.reviewersModel.available && root.reviewersModel.count === 0
+                    visible: root.reviewersModel && !root.reviewersModel.loading && !root.hasLoadError() && root.reviewersModel.available && root.reviewersRowCount() === 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: 240
                     Layout.topMargin: Theme.space.xxxxl
@@ -424,7 +511,10 @@ Rectangle {
 
     function statusSummary() {
         if (!root.reviewersModel) return ""
-        if (root.reviewersModel.loading && root.reviewersModel.count === 0) {
+        if (root.hasLoadError()) {
+            return "Could not refresh revuto"
+        }
+        if (root.reviewersModel.loading && root.reviewersRowCount() === 0) {
             return "Checking revuto…"
         }
         if (!root.reviewersModel.available) {
@@ -441,6 +531,20 @@ Rectangle {
             msg += ", " + paused + " paused"
         }
         return "Your revuto AI PR-reviewer — " + msg + "."
+    }
+
+    function hasLoadError() {
+        return !!(root.reviewersModel && root.reviewersModel.load_error && root.reviewersModel.load_error !== "")
+    }
+
+    function reviewersRowCount() {
+        return root.reviewersModel ? root.reviewersModel.rowCount() : 0
+    }
+
+    function retryLoad() {
+        if (root.reviewersModel) {
+            root.reviewersModel.refresh()
+        }
     }
 
     function triggerJob(repo, job) {

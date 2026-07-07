@@ -48,6 +48,7 @@ class ReviewersModel(QAbstractListModel):
     # Signals
     status_changed = Signal()  # Fired when status (available/count/paused) changes
     loading_changed = Signal()
+    load_error_changed = Signal()
     trigger_done = Signal(str, str, bool, str)  # (repo, job, success, error_msg)
     set_paused_done = Signal(str, bool, str)  # (repo, success, error_msg)
 
@@ -59,6 +60,7 @@ class ReviewersModel(QAbstractListModel):
         self._count = 0
         self._paused = 0
         self._loading = False
+        self._load_error = ""
         self._active = False
         self._load_seq = 0
 
@@ -114,11 +116,22 @@ class ReviewersModel(QAbstractListModel):
         """Is a reviewers refresh in flight?"""
         return self._loading
 
+    @Property(str, notify=load_error_changed)
+    def load_error(self) -> str:
+        """Last RevutoStatus/RevutoReviewers load error."""
+        return self._load_error
+
     def _set_loading(self, value: bool):
         if self._loading == value:
             return
         self._loading = value
         self.loading_changed.emit()
+
+    def _set_load_error(self, value: str):
+        if self._load_error == value:
+            return
+        self._load_error = value
+        self.load_error_changed.emit()
 
     @Slot()
     def _on_connected(self):
@@ -131,6 +144,7 @@ class ReviewersModel(QAbstractListModel):
         self._load_seq += 1
         seq = self._load_seq
         self._set_loading(True)
+        self._set_load_error("")
         self._client.call("RevutoStatus", callback=lambda result: self._on_status_result(result, seq))
 
     @Slot(dict)
@@ -140,6 +154,7 @@ class ReviewersModel(QAbstractListModel):
             return
         if "error" in result:
             self._set_loading(False)
+            self._set_load_error(_err_text(result))
             if self._reviewers:
                 self.beginResetModel()
                 self._reviewers = []
@@ -174,6 +189,7 @@ class ReviewersModel(QAbstractListModel):
             return
         if "error" in result:
             self._set_loading(False)
+            self._set_load_error(_err_text(result))
             return
 
         reviewers = result.get("result") or []

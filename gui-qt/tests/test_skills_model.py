@@ -19,6 +19,7 @@ def test_skills_model_init(fake_client):
     model = SkillsModel(fake_client)
 
     assert model.rowCount() == 0
+    assert model.load_error == ""
     assert fake_client.connected.connect.called
 
 
@@ -47,6 +48,56 @@ def test_skills_model_fetch_result(fake_client):
     assert model.data(idx, model.DescriptionRole) == "desc1"
     assert model.data(idx, model.SourceRole) == "user"
     assert model.data(idx, model.PathRole) == "/path/1"
+
+
+def test_skills_model_surfaces_load_error_and_clears_on_retry(fake_client):
+    """Failed Skills loads expose a retryable load_error."""
+    callbacks = []
+    fake_client.call.side_effect = lambda method, callback=None, **kwargs: callbacks.append(callback)
+    model = SkillsModel(fake_client)
+
+    model.refresh()
+    callbacks[-1]({"error": {"message": "daemon offline"}})
+
+    assert model.load_error == "daemon offline"
+    assert model.rowCount() == 0
+
+    model.refresh()
+
+    assert model.load_error == ""
+    callbacks[-1]({
+        "result": {
+            "skills": [{"name": "qt-proof", "description": "fresh", "source": "project", "path": "/fresh"}],
+            "proposals": [],
+        }
+    })
+    assert model.rowCount() == 1
+    idx = model.index(0, 0)
+    assert model.data(idx, model.NameRole) == "qt-proof"
+    assert model.load_error == ""
+
+
+def test_skills_model_surfaces_load_error_without_dropping_rows(fake_client):
+    """Skills RPC errors should be visible without clearing the last good list."""
+    model = SkillsModel(fake_client)
+    model._on_skills_result({
+        "result": {
+            "skills": [{"name": "skill1", "description": "desc1", "source": "user", "path": "/path/1"}],
+            "proposals": [],
+        }
+    })
+
+    model._on_skills_result({"error": {"message": "daemon offline"}})
+
+    assert model.load_error == "daemon offline"
+    assert model.rowCount() == 1
+
+    callbacks = []
+    fake_client.call.side_effect = lambda method, callback=None, **kwargs: callbacks.append(callback)
+    model.refresh()
+
+    assert model.load_error == ""
+    assert fake_client.call.call_args[0][0] == "Skills"
 
 
 def test_skills_model_ignores_stale_fetch_callbacks(fake_client):
@@ -88,6 +139,7 @@ def test_proposals_model_init(fake_client):
     model = ProposalsModel(fake_client)
 
     assert model.rowCount() == 0
+    assert model.load_error == ""
     assert fake_client.connected.connect.called
 
 
@@ -115,6 +167,56 @@ def test_proposals_model_fetch_result(fake_client):
     assert model.data(idx, model.NameRole) == "prop1"
     assert model.data(idx, model.DescriptionRole) == "dream skill 1"
     assert model.data(idx, model.PathRole) == "/dream/1"
+
+
+def test_proposals_model_surfaces_load_error_and_clears_on_retry(fake_client):
+    """Failed proposal refreshes expose a retryable load_error."""
+    callbacks = []
+    fake_client.call.side_effect = lambda method, callback=None, **kwargs: callbacks.append(callback)
+    model = ProposalsModel(fake_client)
+
+    model.refresh()
+    callbacks[-1]({"error": "daemon offline"})
+
+    assert model.load_error == "daemon offline"
+    assert model.rowCount() == 0
+
+    model.refresh()
+
+    assert model.load_error == ""
+    callbacks[-1]({
+        "result": {
+            "skills": [],
+            "proposals": [{"name": "qt-qa", "description": "fresh proposal", "path": "/fresh"}],
+        }
+    })
+    assert model.rowCount() == 1
+    idx = model.index(0, 0)
+    assert model.data(idx, model.NameRole) == "qt-qa"
+    assert model.load_error == ""
+
+
+def test_proposals_model_surfaces_load_error_without_dropping_rows(fake_client):
+    """Proposal load errors should be visible without clearing the proposal list."""
+    model = ProposalsModel(fake_client)
+    model._on_skills_result({
+        "result": {
+            "skills": [],
+            "proposals": [{"name": "prop1", "description": "dream skill 1", "path": "/dream/1"}],
+        }
+    })
+
+    model._on_skills_result({"error": "proposal daemon offline"})
+
+    assert model.load_error == "proposal daemon offline"
+    assert model.rowCount() == 1
+
+    callbacks = []
+    fake_client.call.side_effect = lambda method, callback=None, **kwargs: callbacks.append(callback)
+    model.refresh()
+
+    assert model.load_error == ""
+    assert fake_client.call.call_args[0][0] == "Skills"
 
 
 def test_proposals_model_ignores_stale_fetch_callbacks(fake_client):

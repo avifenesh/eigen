@@ -1183,6 +1183,26 @@ def check_notes(app, client):
 
 
 def check_reviewers(app, client):
+    load_error_reviewers = ReviewersModel(client)
+    view, root = load_view(app, client, "ReviewersView.qml", context={"reviewersModel": load_error_reviewers}, root_props={"reviewersModel": load_error_reviewers})
+    try:
+        if load_error_reviewers.rowCount() > 0:
+            load_error_reviewers.beginResetModel()
+            load_error_reviewers._reviewers = []
+            load_error_reviewers.endResetModel()
+        load_error_reviewers._available = False
+        load_error_reviewers._count = 0
+        load_error_reviewers._paused = 0
+        load_error_reviewers.status_changed.emit()
+        load_error_reviewers._set_loading(False)
+        load_error_reviewers._set_load_error("daemon offline")
+        assert_load_error_retry(app, view, root, "reviewersLoadError", "reviewersLoadErrorText", "reviewersLoadErrorRetry")
+        start = len(client.calls)
+        click_item(app, view, root, "reviewersLoadErrorRetry")
+        assert_call(client, start, "RevutoStatus", ())
+    finally:
+        close_view(app, view)
+
     reviewers = seeded_reviewers_model(client)
     view, root = load_view(app, client, "ReviewersView.qml", context={"reviewersModel": reviewers}, root_props={"reviewersModel": reviewers})
     try:
@@ -1204,6 +1224,13 @@ def check_reviewers(app, client):
         refresh = find_visual_item(root, "reviewersRefreshButton")
         if refresh is None or refresh.property("qaTextFits") is not True:
             raise AssertionError("reviewers refresh button text does not fit")
+
+        reviewers._set_load_error("daemon offline")
+        retry = assert_load_error_retry(app, view, root, "reviewersRefreshErrorBanner", "reviewersRefreshErrorText", "reviewersRefreshErrorRetry")
+        start = len(client.calls)
+        invoke_click(retry)
+        pump(app)
+        assert_call(client, start, "RevutoStatus", ())
 
         start = len(client.calls)
         button = click_item(app, view, root, "reviewerReviewButton_avifenesh_eigen")
@@ -1232,6 +1259,10 @@ def check_reviewers(app, client):
         if dismiss is None or dismiss.property("qaTextFits") is not True:
             raise AssertionError("reviewers dismiss error button text does not fit")
         del client.failures["RevutoTrigger"]
+
+        client.revuto_paused = False
+        reviewers._set_reviewer_paused("avifenesh/eigen", False)
+        pump(app, 4)
 
         client.delays["RevutoSetPaused"] = 45
         start = len(client.calls)
@@ -1288,6 +1319,28 @@ def check_reviewers(app, client):
 
 
 def check_skills(app, client):
+    load_error_skills = SkillsModel(client)
+    load_error_proposals = ProposalsModel(client)
+    view, root = load_view(app, client, "SkillsView.qml", context={"skillsModel": load_error_skills, "proposalsModel": load_error_proposals}, root_props={"skillsModel": load_error_skills, "proposalsModel": load_error_proposals})
+    try:
+        if load_error_skills.rowCount() > 0:
+            load_error_skills.beginResetModel()
+            load_error_skills._skills = []
+            load_error_skills.endResetModel()
+        if load_error_proposals.rowCount() > 0:
+            load_error_proposals.beginResetModel()
+            load_error_proposals._proposals = []
+            load_error_proposals.endResetModel()
+        load_error_skills._set_load_error("daemon offline")
+        load_error_proposals._set_load_error("daemon offline")
+        assert_load_error_retry(app, view, root, "skillsLoadError", "skillsLoadErrorText", "skillsLoadErrorRetry")
+        start = len(client.calls)
+        click_item(app, view, root, "skillsLoadErrorRetry", flick_name="skillsFlick")
+        if client.calls[start:].count(("Skills", ())) < 2:
+            raise AssertionError(f"skills load retry did not refresh both models: {client.calls[start:]}")
+    finally:
+        close_view(app, view)
+
     skills, proposals = seeded_skill_models(client)
     offline_view, offline_root = load_view(app, client, "SkillsView.qml", context={"skillsModel": skills, "proposalsModel": proposals}, root_props={"skillsModel": skills, "proposalsModel": proposals})
     try:
@@ -1333,6 +1386,14 @@ def check_skills(app, client):
             raise AssertionError(f"single proposal strip is too tall: {root.property('qaProposalStripHeight')}")
         if float(root.property("qaProposalScrollerHeight") or 0) > 130:
             raise AssertionError(f"single proposal scroller is too tall: {root.property('qaProposalScrollerHeight')}")
+
+        skills._set_load_error("daemon offline")
+        retry = assert_load_error_retry(app, view, root, "skillsRefreshErrorBanner", "skillsRefreshErrorText", "skillsRefreshErrorRetry")
+        start = len(client.calls)
+        invoke_click(retry)
+        pump(app)
+        if client.calls[start:].count(("Skills", ())) < 2:
+            raise AssertionError(f"skills refresh retry did not refresh both models: {client.calls[start:]}")
 
         client.delays["SkillBody"] = 70
         start = len(client.calls)
@@ -1504,6 +1565,16 @@ def check_skills(app, client):
         if not github_mode.property("qaVisualFocus"):
             raise AssertionError("skills GitHub segment did not expose keyboard focus")
         set_text(app, root, "skillsAddInput", "owner/repo")
+        github_add = find_visual_item(root, "skillsAddButton")
+        github_input = find_visual_item(root, "skillsAddInput")
+        if github_add is None or github_add.property("enabled") is not True:
+            raise AssertionError(
+                "skills GitHub add button was disabled: "
+                f"addMode={root.property('addMode')!r}, "
+                f"addInput={root.property('addInput')!r}, "
+                f"installing={root.property('installing')!r}, "
+                f"inputText={github_input.property('text') if github_input else None!r}"
+            )
         start = len(client.calls)
         add = click_item(app, view, root, "skillsAddButton")
         if ("InstallSkillFromGitHub", ("owner/repo",)) not in client.calls[start:]:

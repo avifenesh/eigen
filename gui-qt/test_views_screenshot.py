@@ -1730,6 +1730,19 @@ def main():
 
     ok = capture_view("tasks-transcript-error", "TasksView.qml", setup_tasks, show_tasks_transcript_error) and ok
 
+    def assert_load_error_state(root, banner_name, text_name, retry_name, expected_text="daemon offline"):
+        for _ in range(8):
+            app.processEvents()
+        banner = find_item(root, banner_name)
+        error_text = find_item(root, text_name)
+        retry = find_item(root, retry_name)
+        if banner is None or banner.property("visible") is not True:
+            raise AssertionError(f"{banner_name} did not render")
+        if error_text is None or expected_text not in str(error_text.property("text")):
+            raise AssertionError(f"{text_name} rendered wrong text: {error_text.property('text') if error_text else None!r}")
+        if retry is None or retry.property("qaTextFits") is not True:
+            raise AssertionError(f"{retry_name} did not render cleanly")
+
     # 7. SkillsView with unavailable RPC feedback
     def setup_skills(ctx):
         skills_model = SkillsModel(client)
@@ -1816,6 +1829,21 @@ def main():
 
     ok = capture_view("skills-rpc-error", "SkillsView.qml", setup_skills, show_skills_rpc_error) and ok
 
+    def show_skills_load_error(_view, root):
+        skills_model = root.property("skillsModel")
+        proposals_model = root.property("proposalsModel")
+        skills_model.beginResetModel()
+        skills_model._skills = []
+        skills_model.endResetModel()
+        proposals_model.beginResetModel()
+        proposals_model._proposals = []
+        proposals_model.endResetModel()
+        skills_model._set_load_error("daemon offline")
+        proposals_model._set_load_error("daemon offline")
+        assert_load_error_state(root, "skillsLoadError", "skillsLoadErrorText", "skillsLoadErrorRetry")
+
+    ok = capture_view("skills-load-error", "SkillsView.qml", setup_skills, show_skills_load_error) and ok
+
     # 8. ReviewersView
     reviewer_rows = [
         {"repo": "avifenesh/eigen", "paused": False},
@@ -1855,18 +1883,13 @@ def main():
 
     ok = capture_view("reviewers-action-error", "ReviewersView.qml", setup_reviewers, show_reviewers_action_error) and ok
 
-    def assert_load_error_state(root, banner_name, text_name, retry_name, expected_text="daemon offline"):
-        for _ in range(8):
-            app.processEvents()
-        banner = find_item(root, banner_name)
-        error_text = find_item(root, text_name)
-        retry = find_item(root, retry_name)
-        if banner is None or banner.property("visible") is not True:
-            raise AssertionError(f"{banner_name} did not render")
-        if error_text is None or expected_text not in str(error_text.property("text")):
-            raise AssertionError(f"{text_name} rendered wrong text: {error_text.property('text') if error_text else None!r}")
-        if retry is None or retry.property("qaTextFits") is not True:
-            raise AssertionError(f"{retry_name} did not render cleanly")
+    def show_reviewers_load_error(_view, root):
+        model = root.property("reviewersModel")
+        seed_reviewers_state(model, [], available=False, loading=False)
+        model._set_load_error("daemon offline")
+        assert_load_error_state(root, "reviewersLoadError", "reviewersLoadErrorText", "reviewersLoadErrorRetry")
+
+    ok = capture_view("reviewers-load-error", "ReviewersView.qml", setup_reviewers, show_reviewers_load_error) and ok
 
     # 9. ObserveView
     def setup_observe(ctx):

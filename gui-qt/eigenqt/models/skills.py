@@ -44,6 +44,7 @@ class SkillsModel(QAbstractListModel):
     DescriptionRole = Qt.UserRole + 2
     SourceRole = Qt.UserRole + 3
     PathRole = Qt.UserRole + 4
+    load_error_changed = Signal()
 
     def __init__(self, client: RpcClient, parent: Optional[QObject] = None):
         super().__init__(parent)
@@ -51,6 +52,7 @@ class SkillsModel(QAbstractListModel):
         self._skills: list[dict] = []
         self._active = False
         self._load_seq = 0
+        self._load_error = ""
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(60_000)  # 60s
         self._poll_timer.timeout.connect(self._fetch_skills)
@@ -88,6 +90,10 @@ class SkillsModel(QAbstractListModel):
             return skill.get("path", "")
         return ""
 
+    @Property(str, notify=load_error_changed)
+    def load_error(self) -> str:
+        return self._load_error
+
     @Slot()
     def _on_connected(self):
         """Fetch skills on connect only while the route is active."""
@@ -98,6 +104,7 @@ class SkillsModel(QAbstractListModel):
         """Async fetch Skills RPC."""
         self._load_seq += 1
         seq = self._load_seq
+        self._set_load_error("")
         self._client.call("Skills", callback=lambda result: self._on_skills_result(result, seq))
 
     @Slot(dict)
@@ -106,6 +113,7 @@ class SkillsModel(QAbstractListModel):
         if seq is not None and seq != self._load_seq:
             return
         if "error" in result:
+            self._set_load_error(_err_text(result))
             return
 
         data = result.get("result") or {}
@@ -142,6 +150,12 @@ class SkillsModel(QAbstractListModel):
             self._fetch_skills()
             self._poll_timer.start()
 
+    def _set_load_error(self, value: str):
+        if self._load_error == value:
+            return
+        self._load_error = value
+        self.load_error_changed.emit()
+
 
 class ProposalsModel(QAbstractListModel):
     """
@@ -155,6 +169,7 @@ class ProposalsModel(QAbstractListModel):
     DescriptionRole = Qt.UserRole + 2
     PathRole = Qt.UserRole + 3
     proposal_done = Signal(str, str, bool, str)  # (name, action, success, error_msg)
+    load_error_changed = Signal()
 
     def __init__(self, client: RpcClient, parent: Optional[QObject] = None):
         super().__init__(parent)
@@ -162,6 +177,7 @@ class ProposalsModel(QAbstractListModel):
         self._proposals: list[dict] = []
         self._active = False
         self._load_seq = 0
+        self._load_error = ""
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(60_000)  # 60s
         self._poll_timer.timeout.connect(self._fetch_proposals)
@@ -196,6 +212,10 @@ class ProposalsModel(QAbstractListModel):
             return proposal.get("path", "")
         return ""
 
+    @Property(str, notify=load_error_changed)
+    def load_error(self) -> str:
+        return self._load_error
+
     @Slot()
     def _on_connected(self):
         """Fetch proposals on connect only while the route is active."""
@@ -206,6 +226,7 @@ class ProposalsModel(QAbstractListModel):
         """Async fetch Skills RPC (extract proposals)."""
         self._load_seq += 1
         seq = self._load_seq
+        self._set_load_error("")
         self._client.call("Skills", callback=lambda result: self._on_skills_result(result, seq))
 
     @Slot(dict)
@@ -214,6 +235,7 @@ class ProposalsModel(QAbstractListModel):
         if seq is not None and seq != self._load_seq:
             return
         if "error" in result:
+            self._set_load_error(_err_text(result))
             return
 
         data = result.get("result") or {}
@@ -285,3 +307,9 @@ class ProposalsModel(QAbstractListModel):
         if not self._poll_timer.isActive():
             self._fetch_proposals()
             self._poll_timer.start()
+
+    def _set_load_error(self, value: str):
+        if self._load_error == value:
+            return
+        self._load_error = value
+        self.load_error_changed.emit()

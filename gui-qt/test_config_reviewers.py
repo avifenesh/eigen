@@ -225,6 +225,7 @@ def test_reviewers_model_instantiation(client):
     assert model.count == 0
     assert model.paused_count == 0
     assert model.loading == False
+    assert model.load_error == ""
 
 
 def test_reviewers_model_loading_lifecycle(app):
@@ -262,6 +263,39 @@ def test_reviewers_model_loading_lifecycle(app):
     assert model.loading is False
     assert model.count == 2
     assert model.paused_count == 1
+
+
+def test_reviewers_model_surfaces_status_load_error(app):
+    """Failed RevutoStatus loads expose a retryable load_error."""
+    client = DeferredRpcClient()
+    model = ReviewersModel(client)
+
+    model.refresh()
+    _reply(_call_by_method(client.calls, "RevutoStatus"), error={"message": "daemon offline"})
+
+    assert model.loading is False
+    assert model.available is False
+    assert model.count == 0
+    assert model.load_error == "daemon offline"
+
+    model.refresh()
+    assert model.load_error == ""
+
+
+def test_reviewers_model_surfaces_reviewers_load_error(app):
+    """A failed RevutoReviewers call is visible even after status reports rows."""
+    client = DeferredRpcClient()
+    model = ReviewersModel(client)
+
+    model.refresh()
+    _reply(_call_by_method(client.calls, "RevutoStatus"), result={"available": True, "count": 1, "paused": 0})
+    _reply(_call_by_method(client.calls, "RevutoReviewers"), error="reviewer socket offline")
+
+    assert model.loading is False
+    assert model.available is True
+    assert model.count == 1
+    assert model.rowCount() == 0
+    assert model.load_error == "reviewer socket offline"
 
 
 def test_reviewers_model_ignores_stale_status_callbacks(app):

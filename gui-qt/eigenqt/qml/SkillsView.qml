@@ -16,6 +16,7 @@ Rectangle {
 
     // Filter state
     property string query: ""
+    property int modelEpoch: 0
 
     // Slide-over preview state
     property var openSkill: null  // {name, description, source, path}
@@ -46,8 +47,14 @@ Rectangle {
     readonly property int qaProposalCount: proposalCount()
     property int proposalsShown: pageSize
     property int activeShown: pageSize
-    onSkillsModelChanged: syncActiveModels()
-    onProposalsModelChanged: syncActiveModels()
+    onSkillsModelChanged: {
+        root.modelEpoch += 1
+        syncActiveModels()
+    }
+    onProposalsModelChanged: {
+        root.modelEpoch += 1
+        syncActiveModels()
+    }
     onVisibleChanged: syncActiveModels()
 
     Component.onCompleted: syncActiveModels()
@@ -518,6 +525,91 @@ Rectangle {
 
                 Item { height: Theme.space.lg }
 
+                Rectangle {
+                    objectName: "skillsLoadError"
+                    visible: root.hasInitialLoadError()
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: visible ? 132 : 0
+                    color: Theme.colors.bgRaised
+                    border.width: visible ? 1 : 0
+                    border.color: Theme.colors.borderHairline
+                    radius: Theme.radius.md
+
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        spacing: Theme.space.md
+
+                        Label {
+                            text: "Could not load skills"
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.body
+                            font.weight: Theme.fontWeight.semibold
+                            color: Theme.colors.textPrimary
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        Label {
+                            objectName: "skillsLoadErrorText"
+                            text: root.skillsLoadError()
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.label
+                            color: Theme.colors.textMuted
+                            elide: Text.ElideRight
+                            Layout.maximumWidth: 720
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        AppButton {
+                            objectName: "skillsLoadErrorRetry"
+                            text: "Retry"
+                            compact: true
+                            toolTipText: "Retry loading skills"
+                            Layout.alignment: Qt.AlignHCenter
+                            onClicked: root.retryLoad()
+                        }
+                    }
+                }
+
+                Rectangle {
+                    objectName: "skillsRefreshErrorBanner"
+                    visible: root.hasRefreshLoadError()
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: visible ? Math.max(44, skillsRefreshErrorRow.implicitHeight + Theme.space.md) : 0
+                    color: Theme.colors.errorBg
+                    border.width: visible ? 1 : 0
+                    border.color: Theme.colors.error
+                    radius: Theme.radius.md
+                    clip: true
+
+                    RowLayout {
+                        id: skillsRefreshErrorRow
+                        anchors.fill: parent
+                        anchors.leftMargin: Theme.space.lg
+                        anchors.rightMargin: Theme.space.lg
+                        spacing: Theme.space.md
+
+                        Label {
+                            objectName: "skillsRefreshErrorText"
+                            text: root.skillsLoadError()
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.label
+                            color: Theme.colors.error
+                            wrapMode: Text.WrapAnywhere
+                            Layout.fillWidth: true
+                        }
+
+                        AppButton {
+                            objectName: "skillsRefreshErrorRetry"
+                            text: "Retry"
+                            compact: true
+                            toolTipText: "Retry loading skills"
+                            Layout.preferredWidth: 64
+                            Layout.preferredHeight: 28
+                            onClicked: root.retryLoad()
+                        }
+                    }
+                }
+
                 // PROPOSALS STRIP (if any)
                 Rectangle {
                     id: proposalReviewStrip
@@ -779,7 +871,7 @@ Rectangle {
 
                 // Empty state — no skills at all
                 Label {
-                    visible: !root.skillsModel || (root.skillsModel.rowCount() === 0 && (!root.proposalsModel || root.proposalsModel.rowCount() === 0))
+                    visible: !root.hasInitialLoadError() && (!root.skillsModel || (root.skillsModel.rowCount() === 0 && (!root.proposalsModel || root.proposalsModel.rowCount() === 0)))
                     text: "No skills yet — add one above."
                     font.pixelSize: Theme.fontSize.bodySm
                     color: Theme.colors.textMuted
@@ -788,6 +880,32 @@ Rectangle {
 
                 Item { height: Theme.space.xxxl }
             }
+        }
+    }
+
+    Connections {
+        target: root.skillsModel ? root.skillsModel : null
+        function onModelReset() {
+            root.modelEpoch += 1
+        }
+        function onRowsInserted() {
+            root.modelEpoch += 1
+        }
+        function onRowsRemoved() {
+            root.modelEpoch += 1
+        }
+    }
+
+    Connections {
+        target: root.proposalsModel ? root.proposalsModel : null
+        function onModelReset() {
+            root.modelEpoch += 1
+        }
+        function onRowsInserted() {
+            root.modelEpoch += 1
+        }
+        function onRowsRemoved() {
+            root.modelEpoch += 1
         }
     }
 
@@ -1103,6 +1221,37 @@ Rectangle {
         }
     }
 
+    function skillsLoadError() {
+        if (root.skillsModel && root.skillsModel.load_error) {
+            return String(root.skillsModel.load_error)
+        }
+        if (root.proposalsModel && root.proposalsModel.load_error) {
+            return String(root.proposalsModel.load_error)
+        }
+        return ""
+    }
+
+    function hasInitialLoadError() {
+        return root.skillsLoadError() !== "" && skillsRowCount() === 0 && proposalCount() === 0
+    }
+
+    function hasRefreshLoadError() {
+        return root.skillsLoadError() !== "" && !root.hasInitialLoadError()
+    }
+
+    function skillsRowCount() {
+        return root.skillsModel ? root.skillsModel.rowCount() : 0
+    }
+
+    function retryLoad() {
+        if (root.skillsModel) {
+            root.skillsModel.refresh()
+        }
+        if (root.proposalsModel) {
+            root.proposalsModel.refresh()
+        }
+    }
+
     function cloneMap(map) {
         var next = {}
         var source = map || {}
@@ -1130,6 +1279,7 @@ Rectangle {
     }
 
     function proposalCount() {
+        root.modelEpoch
         return root.proposalsModel ? root.proposalsModel.rowCount() : 0
     }
 
@@ -1138,6 +1288,7 @@ Rectangle {
     }
 
     function filteredSkills() {
+        root.modelEpoch
         if (!root.skillsModel) return []
         var q = root.query.trim().toLowerCase()
         var all = []
