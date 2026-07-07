@@ -75,7 +75,7 @@ Rectangle {
                     activationUpdatesCurrentIndex: false
                     accessibleName: "Dreaming scope"
                     toolTipText: "Change dreaming scope"
-                    enabled: root.dreamingModel && !root.dreamingModel.loading && count > 0
+                    enabled: !!root.dreamingModel && !root.dreamingModel.loading && count > 0
                     onActivated: function(index) {
                         var scope = model[index]
                         if (root.dreamingModel && scope && scope.key) {
@@ -89,7 +89,7 @@ Rectangle {
                     text: root.dreamingModel && root.dreamingModel.loading ? "Refreshing..." : "Refresh"
                     compact: true
                     toolTipText: "Refresh dreaming"
-                    enabled: root.dreamingModel && !root.dreamingModel.loading
+                    enabled: !!root.dreamingModel && !root.dreamingModel.loading
                     Layout.preferredWidth: Math.max(86, implicitWidth)
                     Layout.preferredHeight: 32
                     onClicked: if (root.dreamingModel) root.dreamingModel.refresh()

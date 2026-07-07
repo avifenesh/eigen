@@ -31,12 +31,19 @@ from eigenqt.models import (
     ApprovalsModel,
     BoardModel,
     CommandsModel,
+    CronsModel,
     DashboardModel,
+    DreamingModel,
     FeedModel,
     KanbanModel,
     LiveSessionsModel,
+    MachinesModel,
     MemoryModel,
+    ObserveModel,
+    PluginsModel,
+    ProfileModel,
     ProposalsModel,
+    RoutingModel,
     SessionStateModel,
     SessionsModel,
     SkillsModel,
@@ -66,7 +73,14 @@ ROUTES = [
     "skills",
     "memory",
     "notes",
+    "dreaming",
+    "observe",
+    "routing",
+    "machines",
+    "crons",
+    "plugins",
     "connectors",
+    "profile",
     "config",
     "reviewers",
 ]
@@ -204,7 +218,16 @@ class OfflineRpcClient(QObject):
         if method == "ProposedSkills":
             return {"proposals": [{"name": "qt-qa", "description": "Route screenshot discipline"}]}
         if method == "ListMemoryScopes":
-            return [{"key": "global", "name": "Global", "dir": "", "noteCount": 2, "current": True}]
+            return [
+                {"key": "global", "name": "Global", "dir": "", "noteCount": 2},
+                {
+                    "key": "project:/home/user/eigen",
+                    "name": "eigen",
+                    "dir": "/home/user/eigen",
+                    "noteCount": 5,
+                    "current": True,
+                },
+            ]
         if method == "MemoryForScope":
             return {
                 "summary": "Eigen Qt work favors visible proof and installed launcher checks.",
@@ -216,6 +239,34 @@ class OfflineRpcClient(QObject):
                 "banList": [],
                 "backups": 1,
                 "bytes": 512,
+            }
+        if method == "DreamingForScope":
+            scope = args[0] if args else "project:/home/user/eigen"
+            return {
+                "scope": scope,
+                "currentBytes": 4096,
+                "rollouts": [
+                    {
+                        "index": 1,
+                        "text": "# Outcome: success\n\nCaptured focused Qt route proof.",
+                        "outcome": "success",
+                        "whenMs": 1783155600000,
+                    },
+                    {
+                        "index": 0,
+                        "text": "# Outcome: partial\n\nNeeds one visual follow-up.",
+                        "outcome": "partial",
+                        "whenMs": 1783144800000,
+                    },
+                ],
+                "consolidations": [
+                    {
+                        "path": "/home/user/eigen/.eigen/memory/MEMORY.md.20260707-120000.bak",
+                        "label": "Jul 7, 12:00",
+                        "whenMs": 1783152000000,
+                        "bytes": 2048,
+                    }
+                ],
             }
         if method == "ObsidianStatus":
             return {"available": True, "vault": "/home/user/notes"}
@@ -255,6 +306,199 @@ class OfflineRpcClient(QObject):
             return {"available": True, "count": 1, "paused": 0}
         if method == "RevutoReviewers":
             return [{"repo": "avifenesh/eigen", "paused": False}]
+        if method == "ObserveSummary":
+            return {
+                "available": True,
+                "records": 4,
+                "routes": {
+                    "routed": 2,
+                    "assessed": 1,
+                    "skipped": 1,
+                    "orchestrator": 0,
+                    "byModel": [{"name": "gpt-5", "count": 2}],
+                    "byKind": [],
+                    "byDifficulty": [],
+                    "skipReasons": [],
+                },
+                "tools": [
+                    {"name": "read_file", "calls": 4, "errors": 0, "durationMs": 80},
+                    {"name": "run_shell", "calls": 2, "errors": 1, "durationMs": 420},
+                ],
+                "models": [
+                    {
+                        "name": "gpt-5",
+                        "turns": 3,
+                        "inTokens": 12000,
+                        "outTokens": 2100,
+                        "cacheReadTokens": 6000,
+                        "cacheWriteTokens": 200,
+                        "durationMs": 1800,
+                    }
+                ],
+                "hooks": [],
+                "errors": [{"name": "rpc timeout", "count": 1}],
+                "byKind": [],
+                "subagents": {
+                    "taskCalls": 2,
+                    "taskErrors": 0,
+                    "groupCalls": 1,
+                    "groupErrors": 0,
+                    "mutatingCalls": 1,
+                    "mutatingErrors": 0,
+                    "statusChecks": 3,
+                    "promotes": 0,
+                    "promoteErrors": 0,
+                    "backgroundDone": 1,
+                    "backgroundNotes": 1,
+                    "routeNotes": 1,
+                },
+            }
+        if method == "Routing":
+            return {
+                "models": [
+                    {
+                        "id": "gpt-5",
+                        "provider": "codex",
+                        "contextWindow": 400000,
+                        "cache": True,
+                        "context1m": False,
+                        "reasoning": True,
+                        "effort": "medium",
+                        "effortLevels": ["low", "medium", "high"],
+                        "thinkingBudget": 0,
+                        "search": True,
+                        "vision": True,
+                        "social": False,
+                        "available": True,
+                    },
+                    {
+                        "id": "grok-4",
+                        "provider": "grok",
+                        "contextWindow": 256000,
+                        "cache": False,
+                        "context1m": False,
+                        "reasoning": True,
+                        "effort": "high",
+                        "effortLevels": ["low", "high"],
+                        "thinkingBudget": 0,
+                        "search": True,
+                        "vision": False,
+                        "social": True,
+                        "available": False,
+                    },
+                    {
+                        "id": "local-qwen",
+                        "provider": "llama",
+                        "contextWindow": 128000,
+                        "cache": False,
+                        "context1m": False,
+                        "reasoning": False,
+                        "search": False,
+                        "vision": False,
+                        "social": False,
+                        "available": True,
+                    },
+                ],
+                "providers": [
+                    {"name": "codex", "credentialed": True, "modelCount": 1},
+                    {"name": "grok", "credentialed": False, "modelCount": 1},
+                    {"name": "llama", "credentialed": True, "modelCount": 1},
+                ],
+            }
+        if method == "Machines":
+            return {
+                "machines": [
+                    {
+                        "name": "codex-box",
+                        "ssh": "codex-box",
+                        "addr": "10.0.0.5",
+                        "dir": "/home/user/eigen",
+                        "model": "gpt-5",
+                        "perm": "gated",
+                        "saved": True,
+                        "detected": False,
+                    },
+                    {
+                        "name": "lab-node",
+                        "ssh": "lab-node",
+                        "dir": "/srv/eigen",
+                        "model": "local-qwen",
+                        "perm": "manual",
+                        "saved": False,
+                        "detected": True,
+                    },
+                ]
+            }
+        if method == "RemoteSessions":
+            target = args[0] if args else "codex-box"
+            return [
+                {
+                    "id": f"remote:{target}:s1",
+                    "title": "Remote Qt polish",
+                    "dir": "/home/user/eigen/gui-qt",
+                    "model": "gpt-5",
+                    "status": "working",
+                    "turns": 4,
+                    "views": 1,
+                    "updated": 1783155600000,
+                }
+            ]
+        if method == "Crons":
+            return {
+                "crons": [
+                    {
+                        "name": "eigen-dream",
+                        "kind": "timer",
+                        "next": "today 19:30",
+                        "last": "today 17:00",
+                        "active": True,
+                        "enabled": True,
+                        "command": "eigen-dream.service",
+                        "unit": "eigen-dream.timer",
+                    },
+                    {
+                        "name": "eigen run daily",
+                        "kind": "crontab",
+                        "next": "0 9 * * *",
+                        "last": "",
+                        "active": True,
+                        "enabled": True,
+                        "command": "eigen run daily",
+                    },
+                ],
+                "timers": 1,
+                "crontab": 1,
+                "systemdAvail": True,
+            }
+        if method == "Plugins":
+            return {
+                "plugins": [
+                    {
+                        "name": "agentsys",
+                        "marketplace": "core",
+                        "version": "5.1.0",
+                        "description": "Agent workflow tools",
+                        "installedMs": 1783155600000,
+                        "enabled": True,
+                        "skills": ["audit-project"],
+                        "agents": ["reviewer"],
+                        "mcpServers": ["github"],
+                        "commands": ["enhance"],
+                        "hooks": 2,
+                        "scanStatus": "clean",
+                        "scanCount": 0,
+                    }
+                ],
+                "marketplaces": [
+                    {
+                        "name": "core",
+                        "source": "github.com/avifenesh/eigen-plugins",
+                        "owner": "Avi",
+                        "disabled": False,
+                        "addedMs": 1783152000000,
+                    }
+                ],
+            }
         if method == "WorkingDiff":
             return {"isRepo": True, "clean": False, "branch": "fix/qt", "truncated": False, "patch": "", "files": []}
         if method == "FileTree":
@@ -406,6 +650,35 @@ def seed_models(client):
     reviewers._on_status_result({"result": client._result("RevutoStatus", ())})
     reviewers._on_reviewers_result({"result": client._result("RevutoReviewers", ())})
 
+    dreaming = DreamingModel(client)
+    dreaming._scopes = client._result("ListMemoryScopes", ())
+    dreaming._scope_key = "project:/home/user/eigen"
+    dreaming._current = client._result("DreamingForScope", (dreaming._scope_key,))
+    dreaming.scopes_changed.emit()
+    dreaming.scope_key_changed.emit()
+    dreaming.current_changed.emit()
+    dreaming.summary_changed.emit()
+
+    observe = ObserveModel(client)
+    observe._on_summary_result({"result": client._result("ObserveSummary", (5000,))})
+
+    routing = RoutingModel(client)
+    routing._on_routing_result({"result": client._result("Routing", ())})
+    routing._on_observe_result({"result": client._result("ObserveSummary", (5000,))})
+
+    machines = MachinesModel(client)
+    machines._on_machines_result({"result": client._result("Machines", ())})
+
+    crons = CronsModel(client)
+    crons._on_crons_result({"result": client._result("Crons", ())})
+
+    plugins = PluginsModel(client)
+    plugins._on_plugins_result({"result": client._result("Plugins", ())})
+
+    profile = ProfileModel(client)
+    profile._on_summary_result({"result": client._result("ObserveSummary", (5000,))})
+    profile._on_memory_result({"result": client._result("MemoryForScope", ("global",))})
+
     transcript = TranscriptModel(client, "s-qa-chat")
     transcript._rows = [
         TranscriptRow(kind="user", text="Refresh every route after the shell fixes."),
@@ -426,8 +699,15 @@ def seed_models(client):
         "skillsModel": skills,
         "proposalsModel": proposals,
         "memoryModel": memory,
+        "dreamingModel": dreaming,
         "notesController": notes,
         "connectorsModel": connectors,
+        "observeModel": observe,
+        "routingModel": routing,
+        "machinesModel": machines,
+        "cronsModel": crons,
+        "pluginsModel": plugins,
+        "profileModel": profile,
         "configModel": config,
         "ruleChainsModel": rule_chains,
         "reviewersModel": reviewers,
