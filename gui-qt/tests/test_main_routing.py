@@ -118,7 +118,7 @@ class FakeRpcClient(QObject):
         if method == "Dashboard":
             return {"googleConnected": False, "events": [], "unreadCount": 0, "unread": [], "health": {"gpus": []}}
         if method == "Feed":
-            return {"items": [], "fresh": False}
+            return {"items": seeded_feed(), "fresh": True}
         if method == "Board":
             return {"lanes": []}
         if method == "Kanban":
@@ -218,6 +218,29 @@ def seeded_sessions():
             "status": "approval",
             "turns": 2,
             "updated": 15,
+        },
+    ]
+
+
+def seeded_feed():
+    return [
+        {
+            "key": "feed-git",
+            "kind": "git",
+            "title": "Dirty checkout",
+            "detail": "Review focused diff",
+            "dir": "/repo/eigen",
+            "dirName": "eigen",
+            "task": "Review and commit the focused diff.",
+        },
+        {
+            "key": "feed-pr",
+            "kind": "github",
+            "title": "PR needs polish",
+            "detail": "Qt follow-up",
+            "dir": "/repo/eigen",
+            "dirName": "eigen",
+            "task": "Tighten the Qt shell.",
         },
     ]
 
@@ -376,6 +399,7 @@ try:
     tasks_model = TasksModel(client)
     dashboard_model = DashboardModel(client)
     feed_model = FeedModel(client)
+    feed_model._on_feed_result({"result": {"items": seeded_feed(), "fresh": True}})
     board_model = BoardModel(client)
     kanban_model = KanbanModel(client)
     skills_model = SkillsModel(client)
@@ -447,18 +471,25 @@ try:
         raise AssertionError("Main did not start on the home route")
 
     chat_nav = find_item_in_window(window, "navItem_chat")
+    home_nav = find_item_in_window(window, "navItem_home")
     sessions_nav = find_item_in_window(window, "navItem_sessions")
     running_row = find_item_in_window(window, "navRunningSession_s_work")
     approval_row = find_item_in_window(window, "navRunningSession_s_approval")
-    if chat_nav is None or sessions_nav is None or running_row is None or approval_row is None:
+    if chat_nav is None or home_nav is None or sessions_nav is None or running_row is None or approval_row is None:
         raise AssertionError(
-            "Rail did not render chat, sessions, and live sub-rows: "
-            f"chat={chat_nav is not None} sessions={sessions_nav is not None} "
+            "Rail did not render home, chat, sessions, and live sub-rows: "
+            f"home={home_nav is not None} chat={chat_nav is not None} sessions={sessions_nav is not None} "
             f"running={running_row is not None} approval={approval_row is not None}"
             f" count={chat_nav.property('qaRunningSessionCount') if chat_nav is not None else None}"
             f" delegates={chat_nav.property('qaRunningDelegateCount') if chat_nav is not None else None}"
             f" names={object_names_with_prefix(window.contentItem(), 'navRunning')}"
         )
+    if home_nav.property("badge") != 2:
+        raise AssertionError(f"Home nav did not show feed count: {home_nav.property('badge')}")
+    feed_model.dismiss("feed-git")
+    pump(app, 12)
+    if home_nav.property("badge") != 1:
+        raise AssertionError(f"Home nav did not react to feed dismiss: {home_nav.property('badge')}")
     if float(chat_nav.property("height") or 0) <= 30:
         raise AssertionError("Chat nav item did not expand for running-session rows")
     if scene_top(running_row) < scene_top(chat_nav) + 30 - 0.5:

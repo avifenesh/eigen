@@ -53,6 +53,7 @@ ApplicationWindow {
             sessionsModel: root.ctxSessions
             liveSessionsModel: root.ctxLive
             tasksModel: root.ctxTasks
+            feedModel: root.ctxFeed
             statsData: root.ctxStats
             daemonOnline: root.ctxDaemonOnline
             guiserverSha: root.ctxSha

@@ -18,6 +18,7 @@ Rectangle {
     property var sessionsModel: null
     property var liveSessionsModel: null
     property var tasksModel: null
+    property var feedModel: null
     property var statsData: null
 
     // Daemon status for footer
@@ -25,8 +26,10 @@ Rectangle {
     property string guiserverSha: ""
     property var sessionController: null
     property int sessionsEpoch: 0
+    property int feedEpoch: 0
 
     onSessionsModelChanged: sessionsEpoch += 1
+    onFeedModelChanged: feedEpoch += 1
 
     ColumnLayout {
         anchors.fill: parent
@@ -116,7 +119,7 @@ Rectangle {
                         route: "home"
                         label: "Home"
                         glyph: "◆"
-                        badge: 0  // TODO: feed actOn count when FeedModel exposes it
+                        badge: actionFeedCount()
                         isActive: root.currentRoute === "home"
                         onClicked: root.routeChanged("home")
                     }
@@ -464,7 +467,23 @@ Rectangle {
         function onDataChanged() { root.sessionsEpoch += 1 }
     }
 
+    Connections {
+        target: root.feedModel ? root.feedModel : null
+        ignoreUnknownSignals: true
+
+        function onModelReset() { root.feedEpoch += 1 }
+        function onRowsInserted() { root.feedEpoch += 1 }
+        function onRowsRemoved() { root.feedEpoch += 1 }
+        function onDataChanged() { root.feedEpoch += 1 }
+    }
+
     // Helper functions
+    function actionFeedCount() {
+        root.feedEpoch
+        if (!root.feedModel) return 0
+        return root.feedModel.rowCount()
+    }
+
     function runningSessionsCount() {
         if (!root.statsData) return 0
         return root.statsData.running_turns || 0

@@ -388,6 +388,26 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser):
     ]
     transcript_model.layoutChanged.emit()
 
+    feed_model = FeedModel(client)
+    feed_model._on_feed_result(
+        {
+            "result": {
+                "items": [
+                    {
+                        "key": "rail-feed",
+                        "kind": "git",
+                        "title": "Qt follow-up",
+                        "detail": "Keep the desktop shell honest",
+                        "dir": "/home/user/eigen",
+                        "dirName": "eigen",
+                        "task": "Tighten the Qt desktop shell.",
+                    }
+                ],
+                "fresh": True,
+            }
+        }
+    )
+
     context = {
         "rpcClient": client,
         "client": client,
@@ -395,7 +415,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser):
         "liveSessionsModel": LiveSessionsModel(client),
         "tasksModel": TasksModel(client),
         "dashboardModel": DashboardModel(client),
-        "feedModel": FeedModel(client),
+        "feedModel": feed_model,
         "boardModel": BoardModel(client),
         "kanbanModel": KanbanModel(client),
         "skillsModel": SkillsModel(client),
@@ -447,6 +467,11 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser):
         return False
     if read_dot is None or read_dot.property("visible") is not False:
         print("✗ Main chat proof showed unread rail marker for a read session")
+        window.hide()
+        return False
+    home_nav = find_item(window.contentItem(), "navItem_home")
+    if home_nav is None or home_nav.property("badge") != 1:
+        print("✗ Main chat proof did not show feed badge on the Home rail item")
         window.hide()
         return False
 
