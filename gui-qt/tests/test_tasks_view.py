@@ -309,12 +309,24 @@ if "daemon offline" not in root.property("transcriptError"):
     raise AssertionError(f"failed transcript did not expose error: {root.property('transcriptError')}")
 error_box = find_item(root, "taskTranscriptError")
 error_text = find_item(root, "taskTranscriptErrorText")
+retry_button = find_item(root, "taskTranscriptErrorRetryButton")
 if error_box is None or error_box.property("visible") is not True:
     raise AssertionError("failed transcript did not render the error box")
 if error_text is None or "daemon offline" not in error_text.property("text"):
     raise AssertionError(f"failed transcript error text was wrong: {error_text.property('text') if error_text else None}")
-key_item(app, view, root, "taskTranscriptCloseButton", Qt.Key_Space)
+if retry_button is None or retry_button.property("qaTextFits") is not True:
+    raise AssertionError("failed transcript did not render a clean retry button")
 del client.failures["AgentTranscript"]
+client.transcript_text = '{"Role":"assistant","Text":"retried transcript loaded"}\n'
+start = len(client.calls)
+key_item(app, view, root, "taskTranscriptErrorRetryButton", Qt.Key_Return)
+if ("AgentTranscript", ("task-run",)) not in client.calls[start:]:
+    raise AssertionError(f"transcript retry did not call AgentTranscript: {client.calls[start:]}")
+if root.property("transcriptError") != "":
+    raise AssertionError(f"successful transcript retry left an error: {root.property('transcriptError')}")
+if "retried transcript loaded" not in root.property("transcriptText"):
+    raise AssertionError(f"transcript retry did not populate text: {root.property('transcriptText')}")
+key_item(app, view, root, "taskTranscriptCloseButton", Qt.Key_Space)
 
 client.failures["CancelAgent"] = "daemon offline"
 start = len(client.calls)

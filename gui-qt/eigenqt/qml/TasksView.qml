@@ -686,22 +686,37 @@ Rectangle {
                         objectName: "taskTranscriptError"
                         visible: !root.transcriptLoading && root.transcriptError !== ""
                         Layout.fillWidth: true
-                        implicitHeight: transcriptErrorText.implicitHeight + Theme.space.lg * 2
+                        implicitHeight: transcriptErrorContent.implicitHeight + Theme.space.lg * 2
                         color: Theme.colors.errorBg
                         border.width: 1
                         border.color: Theme.colors.error
                         radius: Theme.radius.sm
 
-                        Label {
-                            id: transcriptErrorText
-                            objectName: "taskTranscriptErrorText"
+                        RowLayout {
+                            id: transcriptErrorContent
                             anchors.fill: parent
                             anchors.margins: Theme.space.lg
-                            text: root.transcriptError
-                            font.family: Theme.uiFonts[0]
-                            font.pixelSize: Theme.fontSize.bodySm
-                            color: Theme.colors.error
-                            wrapMode: Text.Wrap
+                            spacing: Theme.space.md
+
+                            Label {
+                                id: transcriptErrorText
+                                objectName: "taskTranscriptErrorText"
+                                text: root.transcriptError
+                                font.family: Theme.uiFonts[0]
+                                font.pixelSize: Theme.fontSize.bodySm
+                                color: Theme.colors.error
+                                wrapMode: Text.Wrap
+                                Layout.fillWidth: true
+                            }
+
+                            AppButton {
+                                objectName: "taskTranscriptErrorRetryButton"
+                                text: "Retry"
+                                variant: "ghost"
+                                compact: true
+                                toolTipText: "Retry transcript load"
+                                onClicked: root.retryTranscript()
+                            }
                         }
                     }
 
@@ -1003,6 +1018,11 @@ Rectangle {
         root.transcriptLoaded = false
         root.transcriptElidedCount = 0
         transcriptEntries.clear()
+    }
+
+    function retryTranscript() {
+        if (root.openTask === null || root.transcriptLoading) return
+        root.openTranscript(root.openTask)
     }
 
     // Track transcript RPC tokens

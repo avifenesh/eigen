@@ -1722,6 +1722,11 @@ def main():
         )
         root.setProperty("transcriptLoading", False)
         root.setProperty("transcriptError", "Could not load transcript: daemon offline")
+        for _ in range(4):
+            app.processEvents()
+        retry = find_item(root, "taskTranscriptErrorRetryButton")
+        if retry is None or retry.property("qaTextFits") is not True:
+            raise AssertionError("task transcript error retry did not render cleanly")
 
     ok = capture_view("tasks-transcript-error", "TasksView.qml", setup_tasks, show_tasks_transcript_error) and ok
 
