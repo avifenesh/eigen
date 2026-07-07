@@ -893,42 +893,45 @@ Rectangle {
                     }
                 }
 
-                Item {
+                ColumnLayout {
                     readonly property bool canRemove: !!(root.openSkill && root.openSkill.source === "user")
 
                     Layout.preferredWidth: root.confirmRemove ? 164 : 84
                     Layout.preferredHeight: canRemove ? 72 : 32
+                    Layout.maximumHeight: Layout.preferredHeight
+                    spacing: Theme.space.sm
 
-                    AppButton {
-                        objectName: root.openSkill ? "skillRemoveConfirmButton_" + root.openSkill.name : ""
-                        visible: parent.canRemove && root.confirmRemove
-                        text: root.removing ? "Removing…" : "Confirm"
-                        toolTipText: root.openSkill ? "Remove " + root.openSkill.name : "Remove skill"
-                        variant: "danger"
-                        enabled: !root.removing
-                        x: 0
-                        y: 0
-                        width: 84
-                        height: 32
-                        onClicked: removeSkill()
-                    }
-
-                    AppButton {
-                        objectName: root.openSkill ? "skillRemoveButton_" + root.openSkill.name : ""
+                    RowLayout {
                         visible: parent.canRemove
-                        text: root.confirmRemove ? "Cancel" : "Remove"
-                        toolTipText: root.confirmRemove ? "Cancel removal" : (root.openSkill ? "Remove " + root.openSkill.name : "Remove skill")
-                        variant: root.confirmRemove ? "secondary" : "danger"
-                        enabled: !root.removing
-                        x: root.confirmRemove ? 92 : parent.width - width
-                        y: 0
-                        width: 72
-                        height: 32
-                        onClicked: {
-                            if (root.confirmRemove) {
-                                root.confirmRemove = false
-                            } else {
-                                root.confirmRemove = true
+                        Layout.alignment: Qt.AlignRight
+                        spacing: Theme.space.sm
+
+                        AppButton {
+                            objectName: root.openSkill ? "skillRemoveConfirmButton_" + root.openSkill.name : ""
+                            visible: root.confirmRemove
+                            text: root.removing ? "Removing…" : "Confirm"
+                            toolTipText: root.openSkill ? "Remove " + root.openSkill.name : "Remove skill"
+                            variant: "danger"
+                            enabled: !root.removing
+                            Layout.preferredWidth: 84
+                            Layout.preferredHeight: 32
+                            onClicked: removeSkill()
+                        }
+
+                        AppButton {
+                            objectName: root.openSkill ? "skillRemoveButton_" + root.openSkill.name : ""
+                            text: root.confirmRemove ? "Cancel" : "Remove"
+                            toolTipText: root.confirmRemove ? "Cancel removal" : (root.openSkill ? "Remove " + root.openSkill.name : "Remove skill")
+                            variant: root.confirmRemove ? "secondary" : "danger"
+                            enabled: !root.removing
+                            Layout.preferredWidth: 72
+                            Layout.preferredHeight: 32
+                            onClicked: {
+                                if (root.confirmRemove) {
+                                    root.confirmRemove = false
+                                } else {
+                                    root.confirmRemove = true
+                                }
                             }
                         }
                     }
@@ -940,10 +943,9 @@ Rectangle {
                         variant: "ghost"
                         leftPadding: Theme.space.sm
                         rightPadding: Theme.space.sm
-                        x: parent.width - width
-                        y: parent.canRemove ? 40 : 0
-                        width: 32
-                        height: 32
+                        Layout.alignment: Qt.AlignRight
+                        Layout.preferredWidth: 32
+                        Layout.preferredHeight: 32
                         onClicked: closePreview()
                     }
                 }

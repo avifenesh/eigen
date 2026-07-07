@@ -1117,12 +1117,19 @@ def check_skills(app, client):
         QTest.qWait(20)
         pump(app, 8)
         remove = click_item(app, view, root, "skillRemoveButton_frontend-design")
+        if not remove.property("qaTextFits"):
+            raise AssertionError("skill remove button text does not fit")
         if not root.property("confirmRemove"):
             invoke_click(remove)
             pump(app)
         confirm = find_visual_item(root, "skillRemoveConfirmButton_frontend-design")
         if confirm is None:
             raise AssertionError("missing skill remove confirm button")
+        cancel = find_visual_item(root, "skillRemoveButton_frontend-design")
+        if cancel is None:
+            raise AssertionError("missing skill remove cancel button")
+        if not confirm.property("qaTextFits") or not cancel.property("qaTextFits"):
+            raise AssertionError("skill remove confirm/cancel text does not fit")
         start = len(client.calls)
         invoke_click(confirm)
         invoke_click(confirm)
@@ -1134,6 +1141,8 @@ def check_skills(app, client):
         close = find_visual_item(root, "skillPreviewCloseButton")
         if close is None:
             raise AssertionError("missing skill preview close button while removing")
+        if not close.property("qaTextFits"):
+            raise AssertionError("skill preview close button text does not fit")
         invoke_click(close)
         pump(app, 4)
         if not root.property("qaPreviewOpen"):
