@@ -865,18 +865,40 @@ def check_notes(app, client):
         if len(markdown_blocks) < 2:
             raise AssertionError(f"note markdown body did not parse into blocks: {markdown_blocks}")
 
+        actions = find_visual_item(root, "notesHeaderActions")
+        if actions is None or float(actions.property("width") or 0) <= 0:
+            raise AssertionError("notes header action row did not expose stable geometry")
+
         edit = click_item(app, view, root, "notesEditButton")
+        if not edit.property("qaTextFits"):
+            raise AssertionError("notes edit button text does not fit")
         if not notes.editing:
             invoke_click(edit)
             pump(app)
         set_text(app, root, "notesEditorTextArea", "# Existing\n\nEdited body")
 
         client.failures["ObsidianWrite"] = "save denied"
+        client.delays["ObsidianWrite"] = 45
         start = len(client.calls)
         save = click_item(app, view, root, "notesSaveEditButton")
         if ("ObsidianWrite", ("Inbox/Existing.md", "# Existing\n\nEdited body", False)) not in client.calls[start:]:
             invoke_click(save)
             pump(app)
+        if not notes.saving:
+            raise AssertionError("note save did not expose a pending state")
+        pending_save = find_visual_item(root, "notesSaveEditButton")
+        cancel = find_visual_item(root, "notesCancelEditButton")
+        if pending_save is None or pending_save.property("qaText") != "Saving…" or not pending_save.property("qaTextFits"):
+            raise AssertionError(
+                "notes pending save button did not render cleanly: "
+                f"text={pending_save.property('qaText') if pending_save else None!r}, "
+                f"fits={pending_save.property('qaTextFits') if pending_save else None}, "
+                f"width={pending_save.property('width') if pending_save else None}"
+            )
+        if cancel is None or not cancel.property("qaTextFits"):
+            raise AssertionError("notes cancel edit button text does not fit")
+        QTest.qWait(70)
+        pump(app, 12)
         assert_call(client, start, "ObsidianWrite", ("Inbox/Existing.md", "# Existing\n\nEdited body", False))
         error_box = find_visual_item(root, "notesActionError")
         if error_box is None or not error_box.property("visible"):
@@ -884,6 +906,7 @@ def check_notes(app, client):
         if not notes.editing or notes.draft != "# Existing\n\nEdited body":
             raise AssertionError("failed note save did not keep the editor draft alive")
         del client.failures["ObsidianWrite"]
+        del client.delays["ObsidianWrite"]
 
         start = len(client.calls)
         save = click_item(app, view, root, "notesSaveEditButton")

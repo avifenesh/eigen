@@ -1341,7 +1341,7 @@ def main():
     ok = capture_view("connectors-remove-confirm", "ConnectorsView.qml", setup_connectors, show_connectors_remove_confirm) and ok
 
     # 10. NotesView
-    def setup_notes(ctx):
+    def setup_notes(ctx, editing=False):
         notes_controller = NotesController(client)
         notes_controller.status = {"available": True, "vault": "/home/user/notes"}
 
@@ -1355,6 +1355,9 @@ def main():
         notes_controller._notes_model.layoutChanged.emit()
         notes_controller.selected = {"path": "Inbox/Ideas.md", "title": "Project ideas"}
         notes_controller.content = "# Project ideas\n\nUse the Qt follow-up for focused surface hardening."
+        notes_controller.editing = editing
+        if editing:
+            notes_controller.draft = notes_controller.content + "\n\nEditing action controls stay aligned."
 
         ctx.setContextProperty("notesController", notes_controller)
         ctx.setContextProperty("markdownParser", markdown_parser)
@@ -1363,6 +1366,7 @@ def main():
         return {"notesController": notes_controller}
 
     ok = capture_view("notes", "NotesView.qml", setup_notes) and ok
+    ok = capture_view("notes-edit", "NotesView.qml", lambda ctx: setup_notes(ctx, editing=True)) and ok
 
     # 11. MemoryView
     def setup_memory(ctx):

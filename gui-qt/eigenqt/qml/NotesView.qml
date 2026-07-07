@@ -466,9 +466,16 @@ Rectangle {
                         Item { Layout.fillWidth: true }
 
                         // Action buttons
-                        Item {
-                            Layout.preferredWidth: root.notesController && root.notesController.editing ? 136 : 52
+                        RowLayout {
+                            id: notesHeaderActions
+                            objectName: "notesHeaderActions"
+                            readonly property real targetWidth: root.notesController && root.notesController.editing
+                                ? (96 + 72 + Theme.space.sm)
+                                : 52
+                            Layout.preferredWidth: targetWidth
+                            Layout.minimumWidth: targetWidth
                             Layout.preferredHeight: 32
+                            spacing: Theme.space.sm
 
                             // Edit mode buttons
                             AppButton {
@@ -484,9 +491,9 @@ Rectangle {
                                     }
                                 }
 
-                                x: 0
-                                width: 56
-                                height: 32
+                                Layout.preferredWidth: 96
+                                Layout.minimumWidth: 96
+                                Layout.preferredHeight: 32
                             }
 
                             AppButton {
@@ -500,9 +507,9 @@ Rectangle {
                                     }
                                 }
 
-                                x: 64
-                                width: 72
-                                height: 32
+                                Layout.preferredWidth: 72
+                                Layout.minimumWidth: 72
+                                Layout.preferredHeight: 32
                             }
 
                             // Read mode button
@@ -517,9 +524,9 @@ Rectangle {
                                     }
                                 }
 
-                                x: 0
-                                width: 52
-                                height: 32
+                                Layout.preferredWidth: 52
+                                Layout.minimumWidth: 52
+                                Layout.preferredHeight: 32
                             }
                         }
                     }
