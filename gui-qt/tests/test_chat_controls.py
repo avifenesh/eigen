@@ -667,6 +667,32 @@ def assert_item_inside_window(item, label):
         )
 
 
+def assert_combo_popup_clean(window, root, combo, label, option_index=0):
+    if combo.property("qaTextFits") is not True:
+        raise AssertionError(f"{label} text does not fit: {combo.property('qaText')!r}")
+    assert_item_inside_window(combo, label)
+    combo.setProperty("qaPopupOpen", True)
+    pump(app, 12)
+    if combo.property("qaPopupActuallyOpen") is not True:
+        raise AssertionError(f"{label} popup did not open")
+    if combo.property("qaPopupInsideWindow") is not True:
+        raise AssertionError(
+            f"{label} popup escaped the window: "
+            f"above={combo.property('qaPopupAvailableAbove')} "
+            f"below={combo.property('qaPopupAvailableBelow')} "
+            f"height={combo.property('qaPopupEffectiveHeight')}"
+        )
+    option = find_item_in(window, root, f"{combo.objectName()}_option_{option_index}")
+    if option is None:
+        raise AssertionError(f"{label} popup did not expose option {option_index}")
+    if option.property("qaTextFits") is not True:
+        raise AssertionError(f"{label} popup option text does not fit: {option.property('qaText')!r}")
+    combo.setProperty("qaPopupOpen", False)
+    pump(app, 8)
+    if combo.property("qaPopupActuallyOpen") is True:
+        raise AssertionError(f"{label} popup did not close")
+
+
 def item_center(window, item):
     width = float(item.property("width") or 0)
     height = float(item.property("height") or 0)
@@ -871,6 +897,10 @@ if model_combo.property("qaText") != "gpt-5":
     raise AssertionError(f"Model combo did not show current model: {model_combo.property('qaText')}")
 if search_combo.property("qaText") != "off":
     raise AssertionError(f"Search combo did not show current search mode: {search_combo.property('qaText')}")
+assert_combo_popup_clean(chat_view, chat, model_combo, "session model combo", 0)
+assert_combo_popup_clean(chat_view, chat, perm_combo, "session permission combo", 0)
+assert_combo_popup_clean(chat_view, chat, effort_combo, "session effort combo", 0)
+assert_combo_popup_clean(chat_view, chat, search_combo, "session search combo", 0)
 click_item(app, chat_view, chat, "sessionModelCombo")
 click_item(app, chat_view, chat, "sessionModelCombo_option_1")
 click_item(app, chat_view, chat, "sessionPermCombo")

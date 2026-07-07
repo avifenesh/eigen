@@ -721,6 +721,20 @@ def main():
 
     ok = capture_view("chat-model-dropdown", "ChatView.qml", setup_chat, open_chat_model_dropdown) and ok
 
+    def open_chat_perm_dropdown(_view, root):
+        combo = find_item(root, "sessionPermCombo")
+        if combo is not None:
+            combo.setProperty("qaPopupOpen", True)
+
+    ok = capture_view("chat-perm-dropdown", "ChatView.qml", setup_chat, open_chat_perm_dropdown) and ok
+
+    def open_chat_effort_dropdown(_view, root):
+        combo = find_item(root, "sessionEffortCombo")
+        if combo is not None:
+            combo.setProperty("qaPopupOpen", True)
+
+    ok = capture_view("chat-effort-dropdown", "ChatView.qml", setup_chat, open_chat_effort_dropdown) and ok
+
     def open_chat_search_dropdown(_view, root):
         combo = find_item(root, "sessionSearchCombo")
         if combo is not None:
