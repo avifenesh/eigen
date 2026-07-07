@@ -326,6 +326,51 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
+            Rectangle {
+                id: memoryRefreshErrorBanner
+                objectName: "memoryRefreshErrorBanner"
+                visible: !!(activeMemoryModel.load_error && activeMemoryModel.current)
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: Theme.space.lg
+                height: visible ? Math.max(40, memoryRefreshErrorRow.implicitHeight + Theme.space.md) : 0
+                color: Theme.colors.errorBg
+                border.width: visible ? 1 : 0
+                border.color: Theme.colors.error
+                radius: Theme.radius.md
+                clip: true
+                z: 2
+
+                RowLayout {
+                    id: memoryRefreshErrorRow
+                    anchors.fill: parent
+                    anchors.leftMargin: Theme.space.lg
+                    anchors.rightMargin: Theme.space.lg
+                    spacing: Theme.space.md
+
+                    Label {
+                        objectName: "memoryRefreshErrorText"
+                        text: activeMemoryModel.load_error
+                        font.family: Theme.uiFonts[0]
+                        font.pixelSize: Theme.fontSize.label
+                        color: Theme.colors.error
+                        wrapMode: Text.WrapAnywhere
+                        Layout.fillWidth: true
+                    }
+
+                    AppButton {
+                        objectName: "memoryRefreshErrorRetry"
+                        text: "Retry"
+                        compact: true
+                        toolTipText: "Retry loading memory"
+                        Layout.preferredWidth: 64
+                        Layout.preferredHeight: 28
+                        onClicked: activeMemoryModel.reload_current()
+                    }
+                }
+            }
+
             // Loading skeleton
             ColumnLayout {
                 visible: activeMemoryModel.loading && !activeMemoryModel.current
@@ -457,6 +502,7 @@ Rectangle {
             RowLayout {
                 visible: !!(activeMemoryModel.current && !activeMemoryModel.is_empty)
                 anchors.fill: parent
+                anchors.topMargin: memoryRefreshErrorBanner.visible ? memoryRefreshErrorBanner.height + Theme.space.sm : 0
                 spacing: 0
 
                 // Main content (left)

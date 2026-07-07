@@ -185,6 +185,27 @@ def test_scope_payload_drives_derived_state(model):
     assert model.has_backup_history is True
 
 
+def test_scope_load_error_preserves_stale_current(model):
+    """Refresh errors should surface without clearing the last usable memory."""
+    model.current = {
+        "scope": "global",
+        "summary": "Existing memory",
+        "notes": [{"index": 0, "text": "Keep the stale view readable."}],
+        "adHoc": [],
+        "noteCount": 1,
+        "profile": "",
+        "profileLearned": "",
+        "banList": [],
+        "backups": 0,
+    }
+
+    model._on_scope_result({"error": {"message": "daemon offline"}})
+
+    assert model.loading is False
+    assert model.current["summary"] == "Existing memory"
+    assert model.load_error == "daemon offline"
+
+
 def test_save_note_trims_note_and_reloads_scope(model, client):
     model.scope_key = "global"
     client.calls.clear()

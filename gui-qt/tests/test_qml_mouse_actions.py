@@ -842,6 +842,18 @@ def check_memory(app, client):
     finally:
         close_view(app, view)
 
+    stale_error_memory = seeded_memory_model(client)
+    stale_error_memory.load_error = "daemon offline"
+    view, root = load_view(app, client, "MemoryView.qml", context={"memoryModel": stale_error_memory}, root_props={"memoryModel": stale_error_memory})
+    try:
+        retry = assert_load_error_retry(app, view, root, "memoryRefreshErrorBanner", "memoryRefreshErrorText", "memoryRefreshErrorRetry")
+        start = len(client.calls)
+        invoke_click(retry)
+        pump(app)
+        assert_call(client, start, "MemoryForScope", ("global",))
+    finally:
+        close_view(app, view)
+
     memory = seeded_memory_model(client)
     view, root = load_view(app, client, "MemoryView.qml", context={"memoryModel": memory}, root_props={"memoryModel": memory})
     try:
