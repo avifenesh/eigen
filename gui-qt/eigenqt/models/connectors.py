@@ -95,9 +95,11 @@ class ConnectorsModel(QObject):
         self._srv_secret: str = ""
         self._srv_saving: bool = False
         self._load_seq: int = 0
+        self._connector_event_channel = "eigen:connector"
 
         # Load on connected
         self._client.connected.connect(self._on_connected)
+        self._client.event.connect(self._on_event)
 
     # Properties
     @Property("QVariant", notify=connectors_changed)
@@ -375,6 +377,24 @@ class ConnectorsModel(QObject):
     # Methods
     def _on_connected(self):
         """Load data on daemon connection."""
+        self._client.subscribe([self._connector_event_channel])
+        self.load()
+
+    @Slot(str, dict)
+    def _on_event(self, channel: str, data: dict):
+        """Handle connector OAuth completion events from guiserver."""
+        if channel != self._connector_event_channel:
+            return
+        name = str((data or {}).get("name") or "").strip()
+        if name:
+            self._clear_connecting(name)
+        if not (data or {}).get("ok", False):
+            message = (data or {}).get("error") or "authorization failed"
+            self.action_error = (
+                f"Could not authorize {name}: {message}"
+                if name
+                else f"Connector authorization failed: {message}"
+            )
         self.load()
 
     @Slot()

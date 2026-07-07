@@ -56,6 +56,7 @@ class SessionsModel(QAbstractListModel):
         self._action_error = ""
         self._action_message = ""
         self._query = ""
+        self._load_seq = 0
 
         # Connect to RPC + events
         self._client.connected.connect(self._on_connected)
@@ -157,14 +158,16 @@ class SessionsModel(QAbstractListModel):
     @Slot()
     def _on_connected(self):
         """Fetch sessions on connect (async)."""
-        self._client.call("Sessions", callback=self._on_sessions_result)
+        self._fetch_sessions()
 
         # Subscribe to daemon stats to get global session list updates
         self._client.subscribe(["eigen:daemon:stats"])
 
     @Slot(dict)
-    def _on_sessions_result(self, result: dict):
+    def _on_sessions_result(self, result: dict, seq: Optional[int] = None):
         """Handle Sessions RPC result (list of SessionInfoDTO)."""
+        if seq is not None and seq != self._load_seq:
+            return
         if "error" in result:
             return
 
@@ -200,12 +203,18 @@ class SessionsModel(QAbstractListModel):
             event = data.get("event", {})
             if event.get("kind") == "done":
                 # Turn finished → refetch to update turns count
-                self._client.call("Sessions", callback=self._on_sessions_result)
+                self._fetch_sessions()
 
     @Slot()
     def refresh(self):
         """Manually trigger a refresh (e.g., after RemoveSession)."""
-        self._client.call("Sessions", callback=self._on_sessions_result)
+        self._fetch_sessions()
+
+    def _fetch_sessions(self):
+        """Fetch the session list, ignoring replies from older refreshes."""
+        self._load_seq += 1
+        seq = self._load_seq
+        self._client.call("Sessions", callback=lambda result: self._on_sessions_result(result, seq))
 
     @Slot(str, result=bool)
     def isRemoving(self, session_id: str) -> bool:

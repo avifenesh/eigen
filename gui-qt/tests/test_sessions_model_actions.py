@@ -57,8 +57,43 @@ class FakeRpcClient(QObject):
         self.calls.append(("subscribe", tuple(channels or [])))
 
 
+class DeferredRpcClient(QObject):
+    connected = Signal()
+    event = Signal(str, dict)
+
+    def __init__(self):
+        super().__init__()
+        self.calls = []
+
+    def call(self, method, *args, callback=None):
+        self.calls.append({"method": method, "args": args, "callback": callback})
+        if method == "RemoveSession" and callback:
+            callback({"result": None})
+
+    def subscribe(self, channels):
+        self.calls.append({"method": "subscribe", "args": tuple(channels or []), "callback": None})
+
+
 def ensure_qt_app():
     return QCoreApplication.instance() or QCoreApplication([])
+
+
+def _reply(call, result):
+    callback = call["callback"]
+    assert callback is not None
+    callback({"result": result})
+
+
+def _session(session_id, *, updated):
+    return {
+        "id": session_id,
+        "title": session_id,
+        "dir": "/repo/eigen",
+        "model": "gpt-5",
+        "status": "idle",
+        "turns": 1,
+        "updated": updated,
+    }
 
 
 def test_sessions_model_remove_and_prune_refresh_rows():
@@ -135,3 +170,47 @@ def test_sessions_model_actions_surface_rpc_errors_without_dropping_rows():
     model.pruneSessions()
     assert model.actionError == "prune denied"
     assert model.pruning is False
+
+
+def test_sessions_model_ignores_stale_refresh_callbacks():
+    ensure_qt_app()
+    client = DeferredRpcClient()
+    model = SessionsModel(client)
+
+    model.refresh()
+    first = client.calls[-1]
+    model.refresh()
+    second = client.calls[-1]
+
+    _reply(second, [_session("s-fresh", updated=20)])
+    assert model.rowCount() == 1
+    assert model.data(model.index(0, 0), model.IdRole) == "s-fresh"
+
+    _reply(first, [_session("s-stale", updated=10)])
+    assert model.rowCount() == 1
+    assert model.data(model.index(0, 0), model.IdRole) == "s-fresh"
+
+
+def test_sessions_model_remove_ignores_older_list_snapshot():
+    ensure_qt_app()
+    client = DeferredRpcClient()
+    model = SessionsModel(client)
+    model._on_sessions_result({"result": [_session("s-run", updated=20), _session("s-empty", updated=10)]})
+
+    model.refresh()
+    stale_list_call = client.calls[-1]
+
+    model.removeSession("s-run")
+    current_list_call = client.calls[-1]
+
+    assert model.rowCount() == 1
+    assert model.data(model.index(0, 0), model.IdRole) == "s-empty"
+    assert model.actionMessage == "Removed s-run"
+
+    _reply(stale_list_call, [_session("s-run", updated=20), _session("s-empty", updated=10)])
+    assert model.rowCount() == 1
+    assert model.data(model.index(0, 0), model.IdRole) == "s-empty"
+
+    _reply(current_list_call, [_session("s-empty", updated=10)])
+    assert model.rowCount() == 1
+    assert model.data(model.index(0, 0), model.IdRole) == "s-empty"

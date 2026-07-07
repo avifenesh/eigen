@@ -8,8 +8,15 @@ from eigenqt.models.connectors import ConnectorsModel
 
 
 class MockSignal:
-    def connect(self, _):
-        pass
+    def __init__(self):
+        self._callbacks = []
+
+    def connect(self, callback):
+        self._callbacks.append(callback)
+
+    def emit(self, *args):
+        for callback in list(self._callbacks):
+            callback(*args)
 
 
 class MockRpcClient:
@@ -17,8 +24,13 @@ class MockRpcClient:
 
     def __init__(self):
         self.connected = MockSignal()
+        self.event = MockSignal()
         self.calls = []
         self.failures = {}
+        self.subscribed = []
+
+    def subscribe(self, channels):
+        self.subscribed.extend(channels or [])
 
     def call(self, method, *args, callback=None):
         self.calls.append((method, args))
@@ -50,7 +62,12 @@ class DeferredRpcClient:
 
     def __init__(self):
         self.connected = MockSignal()
+        self.event = MockSignal()
         self.calls = []
+        self.subscribed = []
+
+    def subscribe(self, channels):
+        self.subscribed.extend(channels or [])
 
     def call(self, method, *args, callback=None):
         self.calls.append(
@@ -119,6 +136,13 @@ def test_load(model, client):
     assert model.revuto_status == {"available": False, "count": 0, "paused": 0}
     assert model.secrets_ok is True
     assert model.loading is False
+
+
+def test_connected_subscribes_to_connector_events(model, client):
+    """ConnectorsModel listens for OAuth completion events."""
+    model._on_connected()
+
+    assert "eigen:connector" in client.subscribed
 
 
 def test_load_ignores_stale_callbacks_from_older_refresh():
@@ -234,6 +258,45 @@ def test_catalog_and_connect_errors_clear_connecting_state(model, client):
 
     assert model.connecting == {}
     assert model.action_error == "Could not connect slack: oauth denied"
+
+
+def test_connector_event_clears_authorizing_state_and_refreshes(model, client):
+    """OAuth completion events clear the chip and refresh connector status."""
+    model.connect_connector("slack")
+    assert model.connecting == {"slack": True}
+
+    client.calls.clear()
+    client.event.emit("eigen:connector", {"name": "slack", "ok": True})
+
+    assert model.connecting == {}
+    assert model.action_error == ""
+    assert [method for method, _ in client.calls] == [
+        "Connectors",
+        "MCPServers",
+        "GoogleStatus",
+        "ObsidianStatus",
+        "RevutoStatus",
+        "MCPSecretsAvailable",
+    ]
+
+
+def test_connector_event_failure_clears_authorizing_state_and_surfaces_error(model, client):
+    """Failed OAuth completion events leave the row retryable with a visible error."""
+    model.connect_connector("slack")
+
+    client.calls.clear()
+    client.event.emit("eigen:connector", {"name": "slack", "ok": False, "error": "denied"})
+
+    assert model.connecting == {}
+    assert model.action_error == "Could not authorize slack: denied"
+    assert [method for method, _ in client.calls] == [
+        "Connectors",
+        "MCPServers",
+        "GoogleStatus",
+        "ObsidianStatus",
+        "RevutoStatus",
+        "MCPSecretsAvailable",
+    ]
 
 
 def test_disconnect_connector(model, client):
