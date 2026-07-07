@@ -76,6 +76,8 @@ class MemoryModel(QObject):
         self._moving_note: int = -1
         self._move_open: bool = False
         self._move_pending: Optional[dict] = None
+        self._scope_seq: int = 0
+        self._backups_seq: int = 0
 
         # Load on connected
         self._client.connected.connect(self._on_connected)
@@ -464,13 +466,18 @@ class MemoryModel(QObject):
 
     def _load_scope(self, key: str):
         """Load a scope via MemoryForScope."""
+        self._scope_seq += 1
+        self._backups_seq += 1
+        seq = self._scope_seq
         self.loading = True
         self.load_error = ""
-        self._client.call("MemoryForScope", key, callback=self._on_scope_result)
+        self._client.call("MemoryForScope", key, callback=lambda result: self._on_scope_result(result, seq))
 
     @Slot(dict)
-    def _on_scope_result(self, result: dict):
+    def _on_scope_result(self, result: dict, seq: Optional[int] = None):
         """Handle MemoryForScope RPC result."""
+        if seq is not None and seq != self._scope_seq:
+            return
         self.loading = False
         if "error" in result:
             e = result.get("error")
@@ -707,22 +714,28 @@ class MemoryModel(QObject):
         self.backups_open = not self._backups_open
         if not self._backups_open:
             self.action_error = ""
+            self._backups_seq += 1
+            self.backups_loading = False
         if self._backups_open:
             self._load_backups()
 
     def _load_backups(self):
         """Load backup paths for the current scope."""
+        self._backups_seq += 1
+        seq = self._backups_seq
         self.action_error = ""
         self.backups_loading = True
         self._client.call(
             "MemoryBackups",
             self._scope_key,
-            callback=self._on_backups_result,
+            callback=lambda result: self._on_backups_result(result, seq),
         )
 
     @Slot(dict)
-    def _on_backups_result(self, result: dict):
+    def _on_backups_result(self, result: dict, seq: Optional[int] = None):
         """Handle MemoryBackups result."""
+        if seq is not None and seq != self._backups_seq:
+            return
         self.backups_loading = False
         if "error" in result:
             self._fail_action("Could not load memory backups", result)

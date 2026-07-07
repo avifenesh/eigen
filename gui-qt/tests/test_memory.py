@@ -78,6 +78,53 @@ def test_select_scope_resets_ui_state_and_loads_scope(model, client):
     assert client.calls[-1]["args"] == ("global",)
 
 
+def test_scope_load_ignores_stale_results(model, client):
+    """A slow previous scope load must not overwrite the currently selected scope."""
+    client.calls.clear()
+
+    model.select_scope("global")
+    first_callback = client.calls[-1]["callback"]
+
+    model.select_scope("project:/home/user/eigen")
+    second_callback = client.calls[-1]["callback"]
+
+    second_callback(
+        {
+            "result": {
+                "scope": "project",
+                "summary": "Fresh project memory",
+                "notes": [],
+                "adHoc": [],
+                "noteCount": 0,
+                "profile": "",
+                "profileLearned": "",
+                "banList": [],
+                "backups": 0,
+            }
+        }
+    )
+    assert model.loading is False
+    assert model.current["summary"] == "Fresh project memory"
+
+    first_callback(
+        {
+            "result": {
+                "scope": "global",
+                "summary": "Stale global memory",
+                "notes": [],
+                "adHoc": [],
+                "noteCount": 0,
+                "profile": "",
+                "profileLearned": "",
+                "banList": [],
+                "backups": 0,
+            }
+        }
+    )
+    assert model.loading is False
+    assert model.current["summary"] == "Fresh project memory"
+
+
 def test_scope_payload_drives_derived_state(model):
     model._on_scope_result(
         {
@@ -248,3 +295,28 @@ def test_backup_helpers_use_the_model_implementation(model, client):
     assert model.backup_name(model.backup_paths[0]) == "MEMORY.md.20240102-030405.bak"
     assert model.backup_when(model.backup_paths[0]) == "2024-01-02 03:04:05"
     assert model.short_dir("/home/user/eigen/") == "eigen"
+
+
+def test_backups_ignore_stale_results(model, client):
+    """A stale or closed backup load must not populate the current backup list."""
+    model.scope_key = "global"
+    client.calls.clear()
+
+    model.toggle_backups()
+    first_callback = client.calls[-1]["callback"]
+    assert model.backups_open is True
+    assert model.backups_loading is True
+
+    model.toggle_backups()
+    assert model.backups_open is False
+    assert model.backups_loading is False
+    first_callback({"result": ["/tmp/MEMORY.md.20240101-010203.bak"]})
+    assert model.backup_paths == []
+
+    model.toggle_backups()
+    second_callback = client.calls[-1]["callback"]
+    second_callback({"result": ["/tmp/MEMORY.md.20240102-030405.bak"]})
+    assert model.backup_paths == ["/tmp/MEMORY.md.20240102-030405.bak"]
+
+    first_callback({"result": ["/tmp/MEMORY.md.20240101-010203.bak"]})
+    assert model.backup_paths == ["/tmp/MEMORY.md.20240102-030405.bak"]
