@@ -81,6 +81,31 @@ def test_notes_model_load_error(qt_app, mock_client):
     assert model.error == "vault not configured"
 
 
+def test_notes_model_ignores_stale_load_results(qt_app, mock_client):
+    """A slow first note search must not overwrite a newer note list."""
+    model = NotesModel(mock_client)
+
+    model.load("first")
+    first_callback = mock_client.call.call_args_list[-1][1]["callback"]
+
+    model.load("second")
+    second_callback = mock_client.call.call_args_list[-1][1]["callback"]
+
+    second_callback({"result": [{"path": "Inbox/Second.md", "title": "Second"}]})
+    assert not model.loading
+    assert model.error == ""
+    assert model.rowCount() == 1
+    idx = model.index(0, 0)
+    assert model.data(idx, model.PathRole) == "Inbox/Second.md"
+
+    first_callback({"result": [{"path": "Inbox/First.md", "title": "First"}]})
+    assert not model.loading
+    assert model.error == ""
+    assert model.rowCount() == 1
+    idx = model.index(0, 0)
+    assert model.data(idx, model.PathRole) == "Inbox/Second.md"
+
+
 def test_notes_controller_status(qt_app, mock_client):
     """NotesController fetches status on connect."""
     controller = NotesController(mock_client)

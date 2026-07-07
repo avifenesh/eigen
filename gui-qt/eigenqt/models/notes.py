@@ -38,6 +38,7 @@ class NotesModel(QAbstractListModel):
         self._notes: list[dict] = []
         self._loading = False
         self._error = ""
+        self._load_seq = 0
 
     def roleNames(self) -> dict[int, bytes]:
         """Expose roles to QML."""
@@ -77,15 +78,19 @@ class NotesModel(QAbstractListModel):
     @Slot(str)
     def load(self, query: str):
         """Fetch notes matching query from daemon."""
+        self._load_seq += 1
+        seq = self._load_seq
         self._loading = True
         self.loadingChanged.emit()
         self._error = ""
         self.errorChanged.emit()
 
-        self._client.call("ObsidianNotes", query, callback=self._on_notes_result)
+        self._client.call("ObsidianNotes", query, callback=lambda result: self._on_notes_result(result, seq))
 
-    def _on_notes_result(self, result: dict):
+    def _on_notes_result(self, result: dict, seq: Optional[int] = None):
         """Handle ObsidianNotes RPC result."""
+        if seq is not None and seq != self._load_seq:
+            return
         self._loading = False
         self.loadingChanged.emit()
 
