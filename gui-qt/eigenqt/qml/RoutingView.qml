@@ -280,22 +280,13 @@ Rectangle {
                             }
                         }
 
-                        Rectangle {
-                            implicitWidth: Math.max(34, countLabel.implicitWidth + Theme.space.lg)
-                            implicitHeight: 24
-                            radius: 12
-                            color: Theme.colors.bgOverlay
-                            border.width: 1
-                            border.color: Theme.colors.borderHairline
-
-                            Label {
-                                id: countLabel
-                                anchors.centerIn: parent
-                                text: String(root.qaFilteredModelCount)
-                                font.family: Theme.monoFonts[0]
-                                font.pixelSize: Theme.fontSize.micro
-                                color: Theme.colors.textSecondary
-                            }
+                        AppTag {
+                            text: String(root.qaFilteredModelCount)
+                            backgroundColor: Theme.colors.bgOverlay
+                            borderColor: Theme.colors.borderHairline
+                            textColor: Theme.colors.textSecondary
+                            fontFamily: Theme.monoFonts[0]
+                            minimumHeight: 24
                         }
                     }
                 }
@@ -597,22 +588,12 @@ Rectangle {
 
                                             Repeater {
                                                 model: root.capList(modelInfo)
-                                                delegate: Rectangle {
-                                                    height: 22
-                                                    implicitWidth: capLabel.implicitWidth + Theme.space.md
-                                                    radius: 11
-                                                    color: Theme.colors.bgOverlay
-                                                    border.width: 1
-                                                    border.color: Theme.colors.borderHairline
-
-                                                    Label {
-                                                        id: capLabel
-                                                        anchors.centerIn: parent
-                                                        text: String(modelData)
-                                                        font.family: Theme.uiFonts[0]
-                                                        font.pixelSize: Theme.fontSize.micro
-                                                        color: Theme.colors.textSecondary
-                                                    }
+                                                delegate: AppTag {
+                                                    text: String(modelData)
+                                                    backgroundColor: Theme.colors.bgOverlay
+                                                    borderColor: Theme.colors.borderHairline
+                                                    textColor: Theme.colors.textSecondary
+                                                    minimumHeight: 22
                                                 }
                                             }
                                         }

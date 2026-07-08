@@ -211,28 +211,19 @@ Rectangle {
                 }
             }
 
-            Rectangle {
+            AppTag {
                 objectName: "browserLoadingBadge"
                 visible: root.webView && root.webView.loading
                 anchors.top: parent.top
                 anchors.right: parent.right
                 anchors.topMargin: Theme.space.md
                 anchors.rightMargin: Theme.space.md
-                width: browserLoadingLabel.implicitWidth + Theme.space.lg
-                height: 24
-                radius: Theme.radius.sm
-                color: Theme.colors.bgOverlay
-                border.width: 1
-                border.color: Theme.colors.borderHairline
-
-                Label {
-                    id: browserLoadingLabel
-                    anchors.centerIn: parent
-                    text: "Loading"
-                    font.family: Theme.uiFonts[0]
-                    font.pixelSize: Theme.fontSize.micro
-                    color: Theme.colors.textMuted
-                }
+                text: "Loading"
+                backgroundColor: Theme.colors.bgOverlay
+                borderColor: Theme.colors.borderHairline
+                textColor: Theme.colors.textMuted
+                minimumHeight: 24
+                pill: false
             }
         }
     }

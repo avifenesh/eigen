@@ -176,6 +176,14 @@ import QtQuick.Layouts
             onClicked: root.disabledButtonClicks += 1
         }
 
+        AppTag {
+            objectName: "sampleTag"
+            text: "forced:1"
+            backgroundColor: "#1a2428"
+            borderColor: "#2b3b40"
+            textColor: "#dde4e3"
+        }
+
         AppComboBox {
             objectName: "modelCombo"
             Layout.preferredWidth: 220
@@ -229,11 +237,12 @@ import QtQuick.Layouts
     button = find_item(root_item, "primaryAction")
     custom_button = find_item(root_item, "customContentAction")
     disabled_button = find_item(root_item, "disabledPrimaryAction")
+    sample_tag = find_item(root_item, "sampleTag")
     combo = find_item(root_item, "modelCombo")
     object_combo = find_item(root_item, "objectCombo")
     bottom_combo = find_item(root_item, "bottomCombo")
     route_switch = find_item(root_item, "routeSwitch")
-    if button is None or custom_button is None or disabled_button is None or combo is None or object_combo is None or bottom_combo is None or route_switch is None:
+    if button is None or custom_button is None or disabled_button is None or sample_tag is None or combo is None or object_combo is None or bottom_combo is None or route_switch is None:
         raise AssertionError("control harness did not render all controls")
 
     button.setProperty("qaForceKeyboardFocus", True)
@@ -266,6 +275,13 @@ import QtQuick.Layouts
     pump(app)
     if root.property("disabledButtonClicks") != 0:
         raise AssertionError("Disabled primary AppButton activated")
+
+    if sample_tag.property("qaIsAppTag") is not True:
+        raise AssertionError("AppTag did not expose its QA marker")
+    if sample_tag.property("qaTextFits") is not True:
+        raise AssertionError("AppTag text does not fit")
+    if float(sample_tag.property("qaHorizontalPadding") or 0) < 7.5:
+        raise AssertionError(f"AppTag padding too small: {sample_tag.property('qaHorizontalPadding')}")
 
     combo.setProperty("qaForceKeyboardFocus", True)
     pump(app)

@@ -541,23 +541,15 @@ Rectangle {
                                     color: Theme.colors.textFaint
                                 }
 
-                                Rectangle {
+                                AppTag {
                                     visible: !!(activeMemoryModel.current && activeMemoryModel.current.hasSummary)
-                                    implicitWidth: distilledLabel.implicitWidth + Theme.space.sm * 2
-                                    implicitHeight: 18
-                                    radius: Theme.radius.sm
-                                    color: Theme.colors.brandBg || "transparent"
-                                    border.width: 1
-                                    border.color: Theme.colors.brand
-                                    Label {
-                                        id: distilledLabel
-                                        anchors.centerIn: parent
-                                        text: "distilled"
-                                        font.family: Theme.uiFonts[0]
-                                        font.pixelSize: Theme.fontSize.micro
-                                        font.weight: Theme.fontWeight.medium
-                                        color: Theme.colors.brand
-                                    }
+                                    text: "distilled"
+                                    backgroundColor: Theme.colors.brandBg || "transparent"
+                                    borderColor: Theme.colors.brand
+                                    textColor: Theme.colors.brand
+                                    fontWeight: Theme.fontWeight.medium
+                                    minimumHeight: 18
+                                    pill: false
                                 }
                             }
 
@@ -604,21 +596,13 @@ Rectangle {
                                     color: Theme.colors.textGhost
                                 }
 
-                                Rectangle {
-                                    implicitWidth: manualLabel.implicitWidth + Theme.space.sm * 2
-                                    implicitHeight: 18
-                                    radius: Theme.radius.sm
-                                    color: "transparent"
-                                    border.width: 1
-                                    border.color: Theme.colors.borderSubtle
-                                    Label {
-                                        id: manualLabel
-                                        anchors.centerIn: parent
-                                        text: "manual"
-                                        font.family: Theme.uiFonts[0]
-                                        font.pixelSize: Theme.fontSize.micro
-                                        color: Theme.colors.textSecondary
-                                    }
+                                AppTag {
+                                    text: "manual"
+                                    backgroundColor: "transparent"
+                                    borderColor: Theme.colors.borderSubtle
+                                    textColor: Theme.colors.textSecondary
+                                    minimumHeight: 18
+                                    pill: false
                                 }
                             }
 
@@ -841,22 +825,14 @@ Rectangle {
                                         color: Theme.colors.textFaint
                                     }
 
-                                    Rectangle {
-                                        implicitWidth: userMdLabel.implicitWidth + Theme.space.sm * 2
-                                        implicitHeight: 18
-                                        radius: Theme.radius.sm
-                                        color: Theme.colors.brandBg || "transparent"
-                                        border.width: 1
-                                        border.color: Theme.colors.brand
-                                        Label {
-                                            id: userMdLabel
-                                            anchors.centerIn: parent
-                                            text: "USER.md"
-                                            font.family: Theme.uiFonts[0]
-                                            font.pixelSize: Theme.fontSize.micro
-                                            font.weight: Theme.fontWeight.medium
-                                            color: Theme.colors.brand
-                                        }
+                                    AppTag {
+                                        text: "USER.md"
+                                        backgroundColor: Theme.colors.brandBg || "transparent"
+                                        borderColor: Theme.colors.brand
+                                        textColor: Theme.colors.brand
+                                        fontWeight: Theme.fontWeight.medium
+                                        minimumHeight: 18
+                                        pill: false
                                     }
 
                                     AppButton {
@@ -1037,23 +1013,15 @@ Rectangle {
                                         color: Theme.colors.textFaint
                                     }
 
-                                    Rectangle {
+                                    AppTag {
                                         visible: !!(activeMemoryModel.current && activeMemoryModel.current.banList && activeMemoryModel.current.banList.length > 0)
-                                        implicitWidth: enforcedLabel.implicitWidth + Theme.space.sm * 2
-                                        implicitHeight: 18
-                                        radius: Theme.radius.sm
-                                        color: Theme.colors.errorBg
-                                        border.width: 1
-                                        border.color: Theme.colors.error
-                                        Label {
-                                            id: enforcedLabel
-                                            anchors.centerIn: parent
-                                            text: "enforced"
-                                            font.family: Theme.uiFonts[0]
-                                            font.pixelSize: Theme.fontSize.micro
-                                            font.weight: Theme.fontWeight.medium
-                                            color: Theme.colors.error
-                                        }
+                                        text: "enforced"
+                                        backgroundColor: Theme.colors.errorBg
+                                        borderColor: Theme.colors.error
+                                        textColor: Theme.colors.error
+                                        fontWeight: Theme.fontWeight.medium
+                                        minimumHeight: 18
+                                        pill: false
                                     }
 
                                     AppButton {

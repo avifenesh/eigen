@@ -330,23 +330,15 @@ Rectangle {
                                         Layout.fillWidth: true
 
                                         // Approval badge
-                                        Rectangle {
+                                        AppTag {
                                             visible: delegateRoot.status === "approval"
-                                            implicitWidth: approvalBadgeLabel.implicitWidth + Theme.space.md
-                                            implicitHeight: 18
-                                            radius: Theme.radius.sm
-                                            color: Theme.colors.warnBg
-                                            border.width: 1
-                                            border.color: Theme.colors.warn
-                                            Label {
-                                                id: approvalBadgeLabel
-                                                anchors.centerIn: parent
-                                                text: "needs approval"
-                                                font.family: Theme.uiFonts[0]
-                                                font.pixelSize: Theme.fontSize.micro
-                                                font.weight: Theme.fontWeight.medium
-                                                color: Theme.colors.warn
-                                            }
+                                            text: "needs approval"
+                                            backgroundColor: Theme.colors.warnBg
+                                            borderColor: Theme.colors.warn
+                                            textColor: Theme.colors.warn
+                                            fontWeight: Theme.fontWeight.medium
+                                            minimumHeight: 18
+                                            pill: false
                                         }
 
                                         Label {
@@ -362,23 +354,14 @@ Rectangle {
                             }
 
                             // Model badge
-                            Rectangle {
+                            AppTag {
                                 visible: delegateRoot.modelName !== ""
-                                implicitWidth: modelLabel.implicitWidth + Theme.space.md
-                                implicitHeight: 20
-                                radius: Theme.radius.sm
-                                color: "transparent"
-                                border.width: 1
-                                border.color: Theme.colors.borderSubtle
-                                Label {
-                                    id: modelLabel
-                                    anchors.centerIn: parent
-                                    text: delegateRoot.modelName
-                                    font.family: Theme.uiFonts[0]
-                                    font.pixelSize: Theme.fontSize.micro
-                                    color: Theme.colors.textSecondary
-                                    elide: Text.ElideRight
-                                }
+                                text: delegateRoot.modelName
+                                backgroundColor: "transparent"
+                                borderColor: Theme.colors.borderSubtle
+                                textColor: Theme.colors.textSecondary
+                                minimumHeight: 20
+                                pill: false
                             }
 
                             // Turns

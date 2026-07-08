@@ -207,42 +207,28 @@ Rectangle {
                                 }
 
                                 // Status badge
-                                Rectangle {
+                                AppTag {
                                     visible: reviewerRow.repoPaused
-                                    implicitWidth: pausedLabel.implicitWidth + Theme.space.lg
-                                    implicitHeight: 22
-                                    radius: Theme.radius.sm
-                                    color: Theme.colors.bgInset
-                                    border.width: 1
-                                    border.color: Theme.colors.borderSubtle
-
-                                    Label {
-                                        id: pausedLabel
-                                        anchors.centerIn: parent
-                                        text: "paused"
-                                        font.pixelSize: Theme.fontSize.label
-                                        font.weight: Theme.fontWeight.medium
-                                        color: Theme.colors.textMuted
-                                    }
+                                    text: "paused"
+                                    backgroundColor: Theme.colors.bgInset
+                                    borderColor: Theme.colors.borderSubtle
+                                    textColor: Theme.colors.textMuted
+                                    fontPixelSize: Theme.fontSize.label
+                                    fontWeight: Theme.fontWeight.medium
+                                    minimumHeight: 22
+                                    pill: false
                                 }
 
-                                Rectangle {
+                                AppTag {
                                     visible: !reviewerRow.repoPaused
-                                    implicitWidth: activeLabel.implicitWidth + Theme.space.lg
-                                    implicitHeight: 22
-                                    radius: Theme.radius.sm
-                                    color: Theme.colors.successBg
-                                    border.width: 1
-                                    border.color: Theme.colors.success
-
-                                    Label {
-                                        id: activeLabel
-                                        anchors.centerIn: parent
-                                        text: "active"
-                                        font.pixelSize: Theme.fontSize.label
-                                        font.weight: Theme.fontWeight.medium
-                                        color: Theme.colors.success
-                                    }
+                                    text: "active"
+                                    backgroundColor: Theme.colors.successBg
+                                    borderColor: Theme.colors.success
+                                    textColor: Theme.colors.success
+                                    fontPixelSize: Theme.fontSize.label
+                                    fontWeight: Theme.fontWeight.medium
+                                    minimumHeight: 22
+                                    pill: false
                                 }
 
                                 // Actions

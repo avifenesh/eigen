@@ -344,23 +344,16 @@ Rectangle {
                                                 color: Theme.colors.textPrimary
                                             }
 
-                                            Rectangle {
+                                            AppTag {
                                                 visible: model.custom
-                                                implicitWidth: customLabel.implicitWidth + Theme.space.md
-                                                implicitHeight: 18
-                                                radius: Theme.radius.sm
-                                                color: Theme.colors.stateSelected
-                                                border.width: 1
-                                                border.color: Theme.colors.borderBrandFaint
-
-                                                Label {
-                                                    id: customLabel
-                                                    anchors.centerIn: parent
-                                                    text: "custom"
-                                                    font.pixelSize: 10
-                                                    font.weight: Theme.fontWeight.semibold
-                                                    color: Theme.colors.brand
-                                                }
+                                                text: "custom"
+                                                backgroundColor: Theme.colors.stateSelected
+                                                borderColor: Theme.colors.borderBrandFaint
+                                                textColor: Theme.colors.brand
+                                                fontPixelSize: 10
+                                                fontWeight: Theme.fontWeight.semibold
+                                                minimumHeight: 18
+                                                pill: false
                                             }
                                         }
 

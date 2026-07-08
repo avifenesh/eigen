@@ -480,7 +480,7 @@ Rectangle {
                     Repeater {
                         model: ownerOptions
                         delegate: Rectangle {
-                            width: ownerLabel.implicitWidth + Theme.space.lg
+                            width: ownerLabel.implicitWidth + Theme.space.md * 2
                             height: 28
                             radius: Theme.radius.full
                             color: modelData.value === ownerFilter ? Theme.colors.brandBright : Theme.colors.bgRaised
@@ -512,7 +512,7 @@ Rectangle {
                     Repeater {
                         model: stateOptions
                         delegate: Rectangle {
-                            width: stateLabel.implicitWidth + Theme.space.lg
+                            width: stateLabel.implicitWidth + Theme.space.md * 2
                             height: 28
                             radius: Theme.radius.full
                             color: modelData.value === stateFilter ? Theme.colors.brandBright : Theme.colors.bgRaised
@@ -656,7 +656,7 @@ Rectangle {
                                     // Uncommitted
                                     Rectangle {
                                         visible: boardModel.data(boardModel.index(idx, 0), dirtyRole) > 0
-                                        width: dirtyLabel.implicitWidth + Theme.space.sm
+                                        width: dirtyLabel.implicitWidth + Theme.space.md * 2
                                         height: 20
                                         radius: Theme.radius.full
                                         color: Theme.colors.bgRaised2
@@ -677,7 +677,7 @@ Rectangle {
                                     // Unpushed
                                     Rectangle {
                                         visible: boardModel.data(boardModel.index(idx, 0), unpushedRole) > 0
-                                        width: unpushedLabel.implicitWidth + Theme.space.sm
+                                        width: unpushedLabel.implicitWidth + Theme.space.md * 2
                                         height: 20
                                         radius: Theme.radius.full
                                         color: Theme.colors.bgRaised2
@@ -698,7 +698,7 @@ Rectangle {
                                     // Behind
                                     Rectangle {
                                         visible: boardModel.data(boardModel.index(idx, 0), behindRole) > 0
-                                        width: behindLabel.implicitWidth + Theme.space.sm
+                                        width: behindLabel.implicitWidth + Theme.space.md * 2
                                         height: 20
                                         radius: Theme.radius.full
                                         color: Theme.colors.bgRaised2
@@ -719,7 +719,7 @@ Rectangle {
                                     // TODOs
                                     Rectangle {
                                         visible: boardModel.data(boardModel.index(idx, 0), todosRole) > 0
-                                        width: todosLabel.implicitWidth + Theme.space.sm
+                                        width: todosLabel.implicitWidth + Theme.space.md * 2
                                         height: 20
                                         radius: Theme.radius.full
                                         color: Theme.colors.bgRaised2
@@ -740,7 +740,7 @@ Rectangle {
                                     // Open PRs
                                     Rectangle {
                                         visible: boardModel.data(boardModel.index(idx, 0), openPrsRole) > 0
-                                        width: prsLabel.implicitWidth + Theme.space.sm
+                                        width: prsLabel.implicitWidth + Theme.space.md * 2
                                         height: 20
                                         radius: Theme.radius.full
                                         color: Theme.colors.bgRaised2
@@ -761,7 +761,7 @@ Rectangle {
                                     // Open issues
                                     Rectangle {
                                         visible: boardModel.data(boardModel.index(idx, 0), openIssRole) > 0
-                                        width: issLabel.implicitWidth + Theme.space.sm
+                                        width: issLabel.implicitWidth + Theme.space.md * 2
                                         height: 20
                                         radius: Theme.radius.full
                                         color: Theme.colors.bgRaised2
