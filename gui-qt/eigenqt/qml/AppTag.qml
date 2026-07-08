@@ -15,9 +15,9 @@ Rectangle {
     property int fontWeight: Theme.fontWeight.regular
     property int capitalization: Font.MixedCase
     property int elideMode: Text.ElideRight
-    property real horizontalPadding: Theme.space.md
-    property real verticalPadding: Theme.space.xxs
-    property real minimumHeight: 20
+    property real horizontalPadding: Theme.space.lg
+    property real verticalPadding: Theme.space.xs
+    property real minimumHeight: 22
     property bool pill: true
     property int borderWidth: 1
 
@@ -25,7 +25,10 @@ Rectangle {
     readonly property bool qaTextFits: tagLabel.implicitWidth <= tagLabel.width + 1.0
     readonly property real qaLeftTextInset: tagLabel.x + Math.max(0, (tagLabel.width - tagLabel.paintedWidth) / 2)
     readonly property real qaRightTextInset: root.width - (tagLabel.x + tagLabel.width / 2 + tagLabel.paintedWidth / 2)
+    readonly property real qaTopTextInset: tagLabel.y + Math.max(0, (tagLabel.height - tagLabel.paintedHeight) / 2)
+    readonly property real qaBottomTextInset: root.height - (tagLabel.y + tagLabel.height / 2 + tagLabel.paintedHeight / 2)
     readonly property real qaHorizontalPadding: Math.min(qaLeftTextInset, qaRightTextInset)
+    readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
 
     implicitWidth: Math.max(tagLabel.implicitWidth + horizontalPadding * 2, horizontalPadding * 2 + 4)
     implicitHeight: Math.max(minimumHeight, tagLabel.implicitHeight + verticalPadding * 2)
@@ -44,6 +47,8 @@ Rectangle {
         anchors.fill: parent
         anchors.leftMargin: root.horizontalPadding
         anchors.rightMargin: root.horizontalPadding
+        anchors.topMargin: root.verticalPadding
+        anchors.bottomMargin: root.verticalPadding
         text: root.text
         font.family: root.fontFamily
         font.pixelSize: root.fontPixelSize

@@ -703,11 +703,14 @@ def assert_app_tags_have_padding(view_name, root_item):
             height = float(item.property("height") or 0)
             visible = item.isVisible() if hasattr(item, "isVisible") else item.property("visible")
             if visible and width > 0 and height > 0:
-                padding = float(item.property("qaHorizontalPadding") or 0)
-                if item.property("qaTextFits") is not True or padding < 7.5:
+                horizontal_padding = float(item.property("qaHorizontalPadding") or 0)
+                vertical_padding = float(item.property("qaVerticalPadding") or 0)
+                if item.property("qaTextFits") is not True or horizontal_padding < 11.5 or vertical_padding < 3.5:
                     failures.append(
                         f"{item.objectName() or '<unnamed>'} "
-                        f"fits={item.property('qaTextFits')} padding={padding:.1f} size={width:.1f}x{height:.1f}"
+                        f"fits={item.property('qaTextFits')} "
+                        f"padding={horizontal_padding:.1f}x{vertical_padding:.1f} "
+                        f"size={width:.1f}x{height:.1f}"
                     )
         if hasattr(item, "childItems"):
             for child in item.childItems():
