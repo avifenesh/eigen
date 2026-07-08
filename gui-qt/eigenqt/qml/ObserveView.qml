@@ -110,7 +110,7 @@ Rectangle {
 
                 Rectangle {
                     objectName: "observeLoadError"
-                    visible: root.observeModel && root.observeModel.load_error !== "" && root.qaRecordCount === 0
+                    visible: root.observeModel && root.observeModel.load_error !== "" && root.qaRecordCount === 0 && !root.observeModel.available
                     Layout.fillWidth: true
                     Layout.preferredHeight: visible ? 128 : 0
                     radius: Theme.radius.md
@@ -148,6 +148,16 @@ Rectangle {
                             onClicked: if (root.observeModel) root.observeModel.refresh()
                         }
                     }
+                }
+
+                RefreshErrorBanner {
+                    objectName: "observeRefreshErrorBanner"
+                    visible: root.observeModel && root.observeModel.load_error !== "" && root.observeModel.available
+                    message: root.observeModel ? root.observeModel.load_error : ""
+                    textObjectName: "observeRefreshErrorText"
+                    retryObjectName: "observeRefreshErrorRetry"
+                    retryToolTipText: "Retry loading telemetry"
+                    onRetry: if (root.observeModel) root.observeModel.refresh()
                 }
 
                 Rectangle {

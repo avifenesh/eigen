@@ -149,6 +149,16 @@ Rectangle {
                     }
                 }
 
+                RefreshErrorBanner {
+                    objectName: "profileSummaryRefreshErrorBanner"
+                    visible: root.profileModel && root.profileModel.summary_error !== "" && (root.qaRecordCount > 0 || root.qaModelCount > 0)
+                    message: root.profileModel ? root.profileModel.summary_error : ""
+                    textObjectName: "profileSummaryRefreshErrorText"
+                    retryObjectName: "profileSummaryRefreshErrorRetry"
+                    retryToolTipText: "Retry loading usage"
+                    onRetry: if (root.profileModel) root.profileModel.refresh()
+                }
+
                 Flow {
                     objectName: "profileKpiFlow"
                     visible: root.profileModel && (!root.profileModel.summary_loading || root.qaRecordCount > 0 || root.qaModelCount > 0)

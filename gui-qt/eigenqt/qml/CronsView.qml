@@ -151,6 +151,16 @@ Rectangle {
                     }
                 }
 
+                RefreshErrorBanner {
+                    objectName: "cronsRefreshErrorBanner"
+                    visible: root.cronsModel && root.cronsModel.load_error !== "" && root.crons.length > 0
+                    message: root.cronsModel ? root.cronsModel.load_error : ""
+                    textObjectName: "cronsRefreshErrorText"
+                    retryObjectName: "cronsRefreshErrorRetry"
+                    retryToolTipText: "Retry loading scheduled work"
+                    onRetry: if (root.cronsModel) root.cronsModel.refresh()
+                }
+
                 Rectangle {
                     visible: root.cronsModel && !root.cronsModel.loading && root.cronsModel.load_error === "" && root.crons.length === 0
                     Layout.fillWidth: true

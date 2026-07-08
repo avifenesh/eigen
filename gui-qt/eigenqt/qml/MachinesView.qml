@@ -153,6 +153,16 @@ Rectangle {
                     }
                 }
 
+                RefreshErrorBanner {
+                    objectName: "machinesRefreshErrorBanner"
+                    visible: root.machinesModel && root.machinesModel.load_error !== "" && root.qaMachineCount > 0
+                    message: root.machinesModel ? root.machinesModel.load_error : ""
+                    textObjectName: "machinesRefreshErrorText"
+                    retryObjectName: "machinesRefreshErrorRetry"
+                    retryToolTipText: "Retry loading machines"
+                    onRetry: if (root.machinesModel) root.machinesModel.refresh()
+                }
+
                 Rectangle {
                     visible: root.machinesModel && !root.machinesModel.loading && root.machinesModel.load_error === "" && root.qaMachineCount === 0
                     Layout.fillWidth: true

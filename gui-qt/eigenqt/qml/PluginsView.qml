@@ -150,6 +150,16 @@ Rectangle {
                     }
                 }
 
+                RefreshErrorBanner {
+                    objectName: "pluginsRefreshErrorBanner"
+                    visible: root.pluginsModel && root.pluginsModel.load_error !== "" && (root.qaPluginCount > 0 || root.qaMarketplaceCount > 0)
+                    message: root.pluginsModel ? root.pluginsModel.load_error : ""
+                    textObjectName: "pluginsRefreshErrorText"
+                    retryObjectName: "pluginsRefreshErrorRetry"
+                    retryToolTipText: "Retry loading plugins"
+                    onRetry: if (root.pluginsModel) root.pluginsModel.refresh()
+                }
+
                 Rectangle {
                     visible: root.pluginsModel && !root.pluginsModel.loading && root.pluginsModel.load_error === "" && root.qaPluginCount === 0 && root.qaMarketplaceCount === 0
                     Layout.fillWidth: true

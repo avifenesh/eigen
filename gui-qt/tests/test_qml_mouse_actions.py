@@ -31,6 +31,7 @@ from eigenqt.models.memory import MemoryModel
 from eigenqt.models.notes import NotesController
 from eigenqt.models.observe import ObserveModel
 from eigenqt.models.plugins import PluginsModel
+from eigenqt.models.profile import ProfileModel
 from eigenqt.models.reviewers import ReviewersModel
 from eigenqt.models.skills import ProposalsModel, SkillsModel
 
@@ -1036,6 +1037,83 @@ def assert_load_error_retry(app, view, root, banner_name, text_name, retry_name,
     return retry
 
 
+def assert_refresh_error_preserves_item(app, view, root, banner_name, text_name, retry_name, initial_name, preserved_name, expected_text="daemon offline"):
+    retry = assert_load_error_retry(app, view, root, banner_name, text_name, retry_name, expected_text)
+    initial = find_visual_item(root, initial_name) if initial_name else None
+    if initial is not None and initial.property("visible") is True:
+        raise AssertionError(f"{banner_name} rendered by replacing stale content with {initial_name}")
+    preserved = find_visual_item(root, preserved_name)
+    if preserved is None or preserved.property("visible") is not True:
+        raise AssertionError(f"{banner_name} hid preserved item {preserved_name}")
+    if preserved.property("qaTextFits") is False:
+        raise AssertionError(f"{banner_name} left preserved item {preserved_name} clipped")
+    return retry
+
+
+def seed_observe_summary(model):
+    model._summary = {
+        "available": True,
+        "records": 4,
+        "routes": {"routed": 2, "assessed": 1, "skipped": 1, "orchestrator": 0, "byModel": [], "byKind": [], "byDifficulty": [], "skipReasons": []},
+        "tools": [{"name": "read_file", "calls": 4, "errors": 0, "durationMs": 80}],
+        "models": [{"name": "gpt-5", "turns": 3, "inTokens": 1200, "outTokens": 320, "cacheReadTokens": 200, "cacheWriteTokens": 0, "durationMs": 1200}],
+        "hooks": [],
+        "errors": [],
+        "byKind": [],
+    }
+    model.summary_changed.emit()
+
+
+def seed_dreaming_current(model):
+    model._scopes = [{"key": "global", "name": "Global", "dir": "", "noteCount": 2, "current": True}]
+    model._scope_key = "global"
+    model._current = {
+        "scope": "global",
+        "currentBytes": 1024,
+        "rollouts": [{"index": 1, "text": "# Outcome: success\n\nFocused Qt proof.", "outcome": "success", "whenMs": 1783155600000}],
+        "consolidations": [],
+    }
+    model.scopes_changed.emit()
+    model.scope_key_changed.emit()
+    model.current_changed.emit()
+    model.summary_changed.emit()
+
+
+def seed_plugins_inventory(model):
+    model._plugins = [{"name": "agentsys", "marketplace": "core", "version": "5.1.0", "description": "Agent workflow tools", "enabled": True, "skills": ["audit-project"], "scanStatus": "clean", "scanCount": 0}]
+    model._marketplaces = [{"name": "core", "source": "github.com/avifenesh/eigen-plugins", "owner": "Avi", "disabled": False}]
+    model.plugins_changed.emit()
+    model.marketplaces_changed.emit()
+    model.summary_changed.emit()
+
+
+def seed_machines_inventory(model):
+    model._machines = [{"name": "codex-box", "ssh": "codex-box", "addr": "10.0.0.5", "dir": "/home/user/eigen", "model": "gpt-5", "perm": "gated", "saved": True, "detected": False}]
+    model.machines_changed.emit()
+    model.summary_changed.emit()
+
+
+def seed_crons_inventory(model):
+    model._crons = [{"name": "eigen-dream", "kind": "timer", "next": "today 19:30", "last": "today 17:00", "active": True, "enabled": True, "command": "eigen-dream.service", "unit": "eigen-dream.timer"}]
+    model._timers = 1
+    model._crontab = 0
+    model._systemd_available = True
+    model.crons_changed.emit()
+    model.summary_changed.emit()
+
+
+def seed_profile_summary(model):
+    model._summary = {
+        "available": True,
+        "records": 4,
+        "models": [{"name": "gpt-5", "turns": 3, "inTokens": 1200, "outTokens": 320, "cacheReadTokens": 200, "cacheWriteTokens": 0, "durationMs": 1200}],
+        "errors": [],
+    }
+    model._memory = {"profile": "Existing profile", "profileLearned": "Prefers focused Qt proof."}
+    model.summary_changed.emit()
+    model.memory_changed.emit()
+
+
 def seed_model_load_error(app, model, clear_state):
     clear_state()
     if hasattr(model, "_set_loading"):
@@ -1062,6 +1140,23 @@ def check_utility_load_errors(app, client):
         start = len(client.calls)
         click_item(app, view, root, "observeLoadErrorRetry", flick_name="observeFlick")
         assert_call(client, start, "ObserveSummary", (5000,))
+
+        seed_observe_summary(observe)
+        observe._set_loading(False)
+        observe._set_load_error("daemon offline")
+        assert_refresh_error_preserves_item(
+            app,
+            view,
+            root,
+            "observeRefreshErrorBanner",
+            "observeRefreshErrorText",
+            "observeRefreshErrorRetry",
+            "observeLoadError",
+            "observeToolRow_read_file",
+        )
+        start = len(client.calls)
+        click_item(app, view, root, "observeRefreshErrorRetry", flick_name="observeFlick")
+        assert_call(client, start, "ObserveSummary", (5000,))
     finally:
         close_view(app, view)
 
@@ -1079,6 +1174,24 @@ def check_utility_load_errors(app, client):
         assert_load_error_retry(app, view, root, "dreamingLoadError", "dreamingLoadErrorText", "dreamingLoadErrorRetry")
         start = len(client.calls)
         click_item(app, view, root, "dreamingLoadErrorRetry", flick_name="dreamingFlick")
+        assert_call(client, start, "ListMemoryScopes", ())
+        assert_call(client, start, "DreamingForScope", ("global",))
+
+        seed_dreaming_current(dreaming)
+        dreaming._set_loading(False)
+        dreaming._set_load_error("daemon offline")
+        assert_refresh_error_preserves_item(
+            app,
+            view,
+            root,
+            "dreamingRefreshErrorBanner",
+            "dreamingRefreshErrorText",
+            "dreamingRefreshErrorRetry",
+            "dreamingLoadError",
+            "dreamingRolloutRow_1",
+        )
+        start = len(client.calls)
+        click_item(app, view, root, "dreamingRefreshErrorRetry", flick_name="dreamingFlick")
         assert_call(client, start, "ListMemoryScopes", ())
         assert_call(client, start, "DreamingForScope", ("global",))
     finally:
@@ -1099,6 +1212,23 @@ def check_utility_load_errors(app, client):
         start = len(client.calls)
         click_item(app, view, root, "pluginsLoadErrorRetry", flick_name="pluginsFlick")
         assert_call(client, start, "Plugins", ())
+
+        seed_plugins_inventory(plugins)
+        plugins._set_loading(False)
+        plugins._set_load_error("daemon offline")
+        assert_refresh_error_preserves_item(
+            app,
+            view,
+            root,
+            "pluginsRefreshErrorBanner",
+            "pluginsRefreshErrorText",
+            "pluginsRefreshErrorRetry",
+            "pluginsLoadError",
+            "pluginsInstalledRow_agentsys",
+        )
+        start = len(client.calls)
+        click_item(app, view, root, "pluginsRefreshErrorRetry", flick_name="pluginsFlick")
+        assert_call(client, start, "Plugins", ())
     finally:
         close_view(app, view)
 
@@ -1114,6 +1244,23 @@ def check_utility_load_errors(app, client):
         assert_load_error_retry(app, view, root, "machinesLoadError", "machinesLoadErrorText", "machinesLoadErrorRetry")
         start = len(client.calls)
         click_item(app, view, root, "machinesLoadErrorRetry", flick_name="machinesFlick")
+        assert_call(client, start, "Machines", ())
+
+        seed_machines_inventory(machines)
+        machines._set_loading(False)
+        machines._set_load_error("daemon offline")
+        assert_refresh_error_preserves_item(
+            app,
+            view,
+            root,
+            "machinesRefreshErrorBanner",
+            "machinesRefreshErrorText",
+            "machinesRefreshErrorRetry",
+            "machinesLoadError",
+            "machinesCard_codex_box",
+        )
+        start = len(client.calls)
+        click_item(app, view, root, "machinesRefreshErrorRetry", flick_name="machinesFlick")
         assert_call(client, start, "Machines", ())
     finally:
         close_view(app, view)
@@ -1133,6 +1280,46 @@ def check_utility_load_errors(app, client):
         start = len(client.calls)
         click_item(app, view, root, "cronsLoadErrorRetry", flick_name="cronsFlick")
         assert_call(client, start, "Crons", ())
+
+        seed_crons_inventory(crons)
+        crons._set_loading(False)
+        crons._set_load_error("daemon offline")
+        assert_refresh_error_preserves_item(
+            app,
+            view,
+            root,
+            "cronsRefreshErrorBanner",
+            "cronsRefreshErrorText",
+            "cronsRefreshErrorRetry",
+            "cronsLoadError",
+            "cronsTimerRow_eigen_dream_timer",
+        )
+        start = len(client.calls)
+        click_item(app, view, root, "cronsRefreshErrorRetry", flick_name="cronsFlick")
+        assert_call(client, start, "Crons", ())
+    finally:
+        close_view(app, view)
+
+    profile = ProfileModel(client)
+    view, root = load_view(app, client, "ProfileView.qml", context={"profileModel": profile, "statsData": {"sessions": 7}}, root_props={"profileModel": profile, "statsData": {"sessions": 7}})
+    try:
+        seed_profile_summary(profile)
+        profile._set_summary_loading(False)
+        profile._set_summary_error("daemon offline")
+        assert_refresh_error_preserves_item(
+            app,
+            view,
+            root,
+            "profileSummaryRefreshErrorBanner",
+            "profileSummaryRefreshErrorText",
+            "profileSummaryRefreshErrorRetry",
+            "",
+            "profileModelRow_gpt_5",
+        )
+        start = len(client.calls)
+        click_item(app, view, root, "profileSummaryRefreshErrorRetry", flick_name="profileFlick")
+        assert_call(client, start, "ObserveSummary", (5000,))
+        assert_call(client, start, "MemoryForScope", ("global",))
     finally:
         close_view(app, view)
 

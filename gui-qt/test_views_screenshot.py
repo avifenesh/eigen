@@ -1774,6 +1774,17 @@ def main():
         if retry is None or retry.property("qaTextFits") is not True:
             raise AssertionError(f"{retry_name} did not render cleanly")
 
+    def assert_refresh_error_state(root, banner_name, text_name, retry_name, initial_name, preserved_name, expected_text="daemon offline"):
+        assert_load_error_state(root, banner_name, text_name, retry_name, expected_text)
+        initial = find_item(root, initial_name) if initial_name else None
+        if initial is not None and initial.property("visible") is True:
+            raise AssertionError(f"{banner_name} hid stale content behind {initial_name}")
+        preserved = find_item(root, preserved_name)
+        if preserved is None or preserved.property("visible") is not True:
+            raise AssertionError(f"{banner_name} dropped preserved item {preserved_name}")
+        if preserved.property("qaTextFits") is False:
+            raise AssertionError(f"{banner_name} left preserved item {preserved_name} clipped")
+
     # 7. SkillsView with unavailable RPC feedback
     def setup_skills(ctx):
         skills_model = SkillsModel(client)
@@ -1958,6 +1969,23 @@ def main():
 
     ok = capture_view("observe-load-error", "ObserveView.qml", setup_observe, show_observe_load_error) and ok
 
+    def show_observe_refresh_error(_view, root):
+        for _ in range(8):
+            app.processEvents()
+        model = root.property("observeModel")
+        model._set_loading(False)
+        model._set_load_error("daemon offline")
+        assert_refresh_error_state(
+            root,
+            "observeRefreshErrorBanner",
+            "observeRefreshErrorText",
+            "observeRefreshErrorRetry",
+            "observeLoadError",
+            "observeToolRow_read_file",
+        )
+
+    ok = capture_view("observe-refresh-error", "ObserveView.qml", setup_observe, show_observe_refresh_error) and ok
+
     # 10. RoutingView
     def setup_routing(ctx):
         routing_model = RoutingModel(client)
@@ -2044,6 +2072,23 @@ def main():
 
     ok = capture_view("machines-load-error", "MachinesView.qml", setup_machines, show_machines_load_error) and ok
 
+    def show_machines_refresh_error(_view, root):
+        for _ in range(8):
+            app.processEvents()
+        model = root.property("machinesModel")
+        model._set_loading(False)
+        model._set_load_error("daemon offline")
+        assert_refresh_error_state(
+            root,
+            "machinesRefreshErrorBanner",
+            "machinesRefreshErrorText",
+            "machinesRefreshErrorRetry",
+            "machinesLoadError",
+            "machinesCard_codex_box",
+        )
+
+    ok = capture_view("machines-refresh-error", "MachinesView.qml", setup_machines, show_machines_refresh_error) and ok
+
     # 12. CronsView
     def setup_crons(ctx):
         crons_model = CronsModel(client)
@@ -2079,6 +2124,23 @@ def main():
         assert_load_error_state(root, "cronsLoadError", "cronsLoadErrorText", "cronsLoadErrorRetry")
 
     ok = capture_view("crons-load-error", "CronsView.qml", setup_crons, show_crons_load_error) and ok
+
+    def show_crons_refresh_error(_view, root):
+        for _ in range(8):
+            app.processEvents()
+        model = root.property("cronsModel")
+        model._set_loading(False)
+        model._set_load_error("daemon offline")
+        assert_refresh_error_state(
+            root,
+            "cronsRefreshErrorBanner",
+            "cronsRefreshErrorText",
+            "cronsRefreshErrorRetry",
+            "cronsLoadError",
+            "cronsTimerRow_eigen_dream_timer",
+        )
+
+    ok = capture_view("crons-refresh-error", "CronsView.qml", setup_crons, show_crons_refresh_error) and ok
 
     # 13. PluginsView
     def setup_plugins(ctx):
@@ -2117,6 +2179,23 @@ def main():
 
     ok = capture_view("plugins-load-error", "PluginsView.qml", setup_plugins, show_plugins_load_error) and ok
 
+    def show_plugins_refresh_error(_view, root):
+        for _ in range(8):
+            app.processEvents()
+        model = root.property("pluginsModel")
+        model._set_loading(False)
+        model._set_load_error("daemon offline")
+        assert_refresh_error_state(
+            root,
+            "pluginsRefreshErrorBanner",
+            "pluginsRefreshErrorText",
+            "pluginsRefreshErrorRetry",
+            "pluginsLoadError",
+            "pluginsInstalledRow_agentsys",
+        )
+
+    ok = capture_view("plugins-refresh-error", "PluginsView.qml", setup_plugins, show_plugins_refresh_error) and ok
+
     # 14. ProfileView
     def setup_profile(ctx):
         profile_model = ProfileModel(client)
@@ -2151,6 +2230,23 @@ def main():
             raise AssertionError("profile screenshot did not render a clean edit button")
 
     ok = capture_view("profile", "ProfileView.qml", setup_profile, show_profile) and ok
+
+    def show_profile_summary_refresh_error(_view, root):
+        for _ in range(8):
+            app.processEvents()
+        model = root.property("profileModel")
+        model._set_summary_loading(False)
+        model._set_summary_error("daemon offline")
+        assert_refresh_error_state(
+            root,
+            "profileSummaryRefreshErrorBanner",
+            "profileSummaryRefreshErrorText",
+            "profileSummaryRefreshErrorRetry",
+            "",
+            "profileModelRow_gpt_5",
+        )
+
+    ok = capture_view("profile-summary-refresh-error", "ProfileView.qml", setup_profile, show_profile_summary_refresh_error) and ok
 
     def show_profile_action_error(_view, root):
         model = root.property("profileModel")
@@ -2445,6 +2541,23 @@ def main():
         assert_load_error_state(root, "dreamingLoadError", "dreamingLoadErrorText", "dreamingLoadErrorRetry")
 
     ok = capture_view("dreaming-load-error", "DreamingView.qml", setup_dreaming, show_dreaming_load_error) and ok
+
+    def show_dreaming_refresh_error(_view, root):
+        for _ in range(8):
+            app.processEvents()
+        model = root.property("dreamingModel")
+        model._set_loading(False)
+        model._set_load_error("daemon offline")
+        assert_refresh_error_state(
+            root,
+            "dreamingRefreshErrorBanner",
+            "dreamingRefreshErrorText",
+            "dreamingRefreshErrorRetry",
+            "dreamingLoadError",
+            "dreamingRolloutRow_1",
+        )
+
+    ok = capture_view("dreaming-refresh-error", "DreamingView.qml", setup_dreaming, show_dreaming_refresh_error) and ok
 
     # 12. MemoryView
     def setup_memory(ctx):

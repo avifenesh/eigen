@@ -210,6 +210,16 @@ Rectangle {
                     }
                 }
 
+                RefreshErrorBanner {
+                    objectName: "dreamingRefreshErrorBanner"
+                    visible: root.dreamingModel && root.dreamingModel.load_error !== "" && (root.qaRolloutCount > 0 || root.qaConsolidationCount > 0)
+                    message: root.dreamingModel ? root.dreamingModel.load_error : ""
+                    textObjectName: "dreamingRefreshErrorText"
+                    retryObjectName: "dreamingRefreshErrorRetry"
+                    retryToolTipText: "Retry loading dreaming"
+                    onRetry: if (root.dreamingModel) root.dreamingModel.refresh()
+                }
+
                 Rectangle {
                     visible: root.dreamingModel && !root.dreamingModel.loading && root.dreamingModel.load_error === "" && root.qaRolloutCount === 0 && root.qaConsolidationCount === 0
                     Layout.fillWidth: true
