@@ -325,22 +325,13 @@ Rectangle {
                             color: Theme.colors.textPrimary
                         }
 
-                        Rectangle {
-                            implicitWidth: userBadgeLabel.implicitWidth + Theme.space.md
-                            implicitHeight: 22
-                            radius: 11
-                            color: Theme.colors.stateSelected
-                            border.width: 1
-                            border.color: Theme.colors.borderBrandFaint
-
-                            Label {
-                                id: userBadgeLabel
-                                anchors.centerIn: parent
-                                text: "USER.md"
-                                font.family: Theme.monoFonts[0]
-                                font.pixelSize: Theme.fontSize.micro
-                                color: Theme.colors.brandBright
-                            }
+                        AppTag {
+                            text: "USER.md"
+                            backgroundColor: Theme.colors.stateSelected
+                            borderColor: Theme.colors.borderBrandFaint
+                            textColor: Theme.colors.brandBright
+                            fontFamily: Theme.monoFonts[0]
+                            minimumHeight: 22
                         }
 
                         Item { Layout.fillWidth: true }

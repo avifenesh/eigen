@@ -142,22 +142,14 @@ Rectangle {
                         Layout.fillWidth: true
                     }
 
-                    Rectangle {
-                        Layout.preferredWidth: sourceLabel.implicitWidth + Theme.space.md
-                        Layout.preferredHeight: 20
-                        radius: Theme.radius.sm
-                        color: sourceBackground(skillSource)
-                        border.width: 1
-                        border.color: sourceBorder(skillSource)
-
-                        Label {
-                            id: sourceLabel
-                            anchors.centerIn: parent
-                            text: skillSource
-                            font.pixelSize: Theme.fontSize.micro
-                            font.weight: Theme.fontWeight.semibold
-                            color: sourceTint(skillSource)
-                        }
+                    AppTag {
+                        text: skillSource
+                        backgroundColor: sourceBackground(skillSource)
+                        borderColor: sourceBorder(skillSource)
+                        textColor: sourceTint(skillSource)
+                        fontWeight: Theme.fontWeight.semibold
+                        minimumHeight: 20
+                        pill: false
                     }
                 }
 
@@ -302,24 +294,15 @@ Rectangle {
                             Layout.fillWidth: true
                         }
 
-                        Rectangle {
+                        AppTag {
                             visible: root.skillsModel
-                            Layout.preferredWidth: activeCountLabel.implicitWidth + Theme.space.lg
-                            Layout.preferredHeight: 24
-                            radius: Theme.radius.sm
-                            color: Theme.colors.brandBg
-                            border.width: 1
-                            border.color: Theme.colors.borderBrandFaint
-
-                            Label {
-                                id: activeCountLabel
-                                anchors.centerIn: parent
-                                text: filteredSkills().length + (root.query.trim() === "" ? " active" : " shown")
-                                font.family: Theme.uiFonts[0]
-                                font.pixelSize: Theme.fontSize.micro
-                                font.weight: Theme.fontWeight.semibold
-                                color: Theme.colors.brandBright
-                            }
+                            text: filteredSkills().length + (root.query.trim() === "" ? " active" : " shown")
+                            backgroundColor: Theme.colors.brandBg
+                            borderColor: Theme.colors.borderBrandFaint
+                            textColor: Theme.colors.brandBright
+                            fontWeight: Theme.fontWeight.semibold
+                            minimumHeight: 24
+                            pill: false
                         }
                     }
 
@@ -678,22 +661,14 @@ Rectangle {
                                 color: Theme.colors.working
                             }
 
-                            Rectangle {
-                                Layout.preferredWidth: countLabel.implicitWidth + Theme.space.md
-                                Layout.preferredHeight: 20
-                                radius: Theme.radius.sm
-                                color: Theme.colors.warnBg
-                                border.width: 1
-                                border.color: Theme.colors.warnBg
-
-                                Label {
-                                    id: countLabel
-                                    anchors.centerIn: parent
-                                    text: proposalCount()
-                                    font.pixelSize: Theme.fontSize.micro
-                                    font.weight: Theme.fontWeight.bold
-                                    color: Theme.colors.warn
-                                }
+                            AppTag {
+                                text: proposalCount()
+                                backgroundColor: Theme.colors.warnBg
+                                borderColor: Theme.colors.warnBg
+                                textColor: Theme.colors.warn
+                                fontWeight: Theme.fontWeight.bold
+                                minimumHeight: 20
+                                pill: false
                             }
                         }
 
@@ -805,22 +780,14 @@ Rectangle {
                                     color: Theme.colors.textSecondary
                                 }
 
-                                Rectangle {
-                                    Layout.preferredWidth: shelfCountLabel.implicitWidth + Theme.space.md
-                                    Layout.preferredHeight: 18
-                                    radius: Theme.radius.sm
-                                    color: Theme.colors.bgRaised
-                                    border.width: 1
-                                    border.color: Theme.colors.borderHairline
-
-                                    Label {
-                                        id: shelfCountLabel
-                                        anchors.centerIn: parent
-                                        text: modelData.total
-                                        font.pixelSize: Theme.fontSize.micro
-                                        font.weight: Theme.fontWeight.semibold
-                                        color: Theme.colors.textFaint
-                                    }
+                                AppTag {
+                                    text: modelData.total
+                                    backgroundColor: Theme.colors.bgRaised
+                                    borderColor: Theme.colors.borderHairline
+                                    textColor: Theme.colors.textFaint
+                                    fontWeight: Theme.fontWeight.semibold
+                                    minimumHeight: 18
+                                    pill: false
                                 }
                             }
 
@@ -976,23 +943,15 @@ Rectangle {
                             Layout.fillWidth: true
                         }
 
-                        Rectangle {
+                        AppTag {
                             visible: root.openSkill !== null
-                            Layout.preferredWidth: sourceSheetLabel.implicitWidth + Theme.space.md
-                            Layout.preferredHeight: 20
-                            radius: Theme.radius.sm
-                            color: sourceBackground(root.openSkill ? root.openSkill.source : "")
-                            border.width: 1
-                            border.color: sourceBorder(root.openSkill ? root.openSkill.source : "")
-
-                            Label {
-                                id: sourceSheetLabel
-                                anchors.centerIn: parent
-                                text: root.openSkill ? root.openSkill.source : ""
-                                font.pixelSize: Theme.fontSize.micro
-                                font.weight: Theme.fontWeight.semibold
-                                color: sourceTint(root.openSkill ? root.openSkill.source : "")
-                            }
+                            text: root.openSkill ? root.openSkill.source : ""
+                            backgroundColor: sourceBackground(root.openSkill ? root.openSkill.source : "")
+                            borderColor: sourceBorder(root.openSkill ? root.openSkill.source : "")
+                            textColor: sourceTint(root.openSkill ? root.openSkill.source : "")
+                            fontWeight: Theme.fontWeight.semibold
+                            minimumHeight: 20
+                            pill: false
                         }
                     }
 

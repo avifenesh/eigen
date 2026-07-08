@@ -259,22 +259,12 @@ Rectangle {
 
                                             Repeater {
                                                 model: root.machineTags(machine)
-                                                delegate: Rectangle {
-                                                    height: 20
-                                                    implicitWidth: tagLabel.implicitWidth + Theme.space.md
-                                                    radius: 10
-                                                    color: modelData === "saved" ? Theme.colors.brandBg : Theme.colors.accentBg
-                                                    border.width: 1
-                                                    border.color: modelData === "saved" ? Theme.colors.borderBrandFaint : Theme.colors.borderAccentFaint
-
-                                                    Label {
-                                                        id: tagLabel
-                                                        anchors.centerIn: parent
-                                                        text: String(modelData)
-                                                        font.family: Theme.uiFonts[0]
-                                                        font.pixelSize: Theme.fontSize.micro
-                                                        color: Theme.colors.textSecondary
-                                                    }
+                                                delegate: AppTag {
+                                                    text: String(modelData)
+                                                    backgroundColor: modelData === "saved" ? Theme.colors.brandBg : Theme.colors.accentBg
+                                                    borderColor: modelData === "saved" ? Theme.colors.borderBrandFaint : Theme.colors.borderAccentFaint
+                                                    textColor: Theme.colors.textSecondary
+                                                    minimumHeight: 20
                                                 }
                                             }
                                         }
@@ -357,22 +347,12 @@ Rectangle {
 
                                         Repeater {
                                             model: root.machineBadges(machine)
-                                            delegate: Rectangle {
-                                                height: 21
-                                                implicitWidth: badgeLabel.implicitWidth + Theme.space.md
-                                                radius: 11
-                                                color: Theme.colors.bgOverlay
-                                                border.width: 1
-                                                border.color: Theme.colors.borderHairline
-
-                                                Label {
-                                                    id: badgeLabel
-                                                    anchors.centerIn: parent
-                                                    text: String(modelData)
-                                                    font.family: Theme.uiFonts[0]
-                                                    font.pixelSize: Theme.fontSize.micro
-                                                    color: Theme.colors.textSecondary
-                                                }
+                                            delegate: AppTag {
+                                                text: String(modelData)
+                                                backgroundColor: Theme.colors.bgOverlay
+                                                borderColor: Theme.colors.borderHairline
+                                                textColor: Theme.colors.textSecondary
+                                                minimumHeight: 21
                                             }
                                         }
                                     }

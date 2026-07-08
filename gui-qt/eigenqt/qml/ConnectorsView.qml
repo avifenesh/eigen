@@ -1176,43 +1176,27 @@ Rectangle {
                             color: Theme.colors.textPrimary
                         }
 
-                        Rectangle {
+                        AppTag {
                             visible: statusBadge
-                            implicitWidth: statusLabel.implicitWidth + Theme.space.md
-                            implicitHeight: 18
-                            radius: Theme.radius.full
-                            color: Qt.rgba(statusColor.r, statusColor.g, statusColor.b, 0.1)
-                            border.width: 1
-                            border.color: Qt.rgba(statusColor.r, statusColor.g, statusColor.b, 0.2)
-
-                            Label {
-                                id: statusLabel
-                                anchors.centerIn: parent
-                                text: statusBadge
-                                font.pixelSize: Theme.fontSize.micro
-                                font.weight: Theme.fontWeight.semibold
-                                font.capitalization: Font.AllUppercase
-                                color: statusColor
-                            }
+                            text: statusBadge
+                            backgroundColor: Qt.rgba(statusColor.r, statusColor.g, statusColor.b, 0.1)
+                            borderColor: Qt.rgba(statusColor.r, statusColor.g, statusColor.b, 0.2)
+                            textColor: statusColor
+                            fontPixelSize: Theme.fontSize.micro
+                            fontWeight: Theme.fontWeight.semibold
+                            capitalization: Font.AllUppercase
+                            minimumHeight: 18
                         }
 
-                        Rectangle {
+                        AppTag {
                             visible: secretBadge
-                            implicitWidth: secretLabel.implicitWidth + Theme.space.md
-                            implicitHeight: 18
-                            radius: Theme.radius.full
-                            color: Theme.colors.bgRaised2
-                            border.width: 1
-                            border.color: Theme.colors.borderBrandFaint
-
-                            Label {
-                                id: secretLabel
-                                anchors.centerIn: parent
-                                text: secretBadge
-                                font.pixelSize: Theme.fontSize.micro
-                                font.weight: Theme.fontWeight.semibold
-                                color: Theme.colors.textMuted
-                            }
+                            text: secretBadge
+                            backgroundColor: Theme.colors.bgRaised2
+                            borderColor: Theme.colors.borderBrandFaint
+                            textColor: Theme.colors.textMuted
+                            fontPixelSize: Theme.fontSize.micro
+                            fontWeight: Theme.fontWeight.semibold
+                            minimumHeight: 18
                         }
                     }
 

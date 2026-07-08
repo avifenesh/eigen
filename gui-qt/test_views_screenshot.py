@@ -11,6 +11,7 @@ Screenshots saved to screenshots/qa-fix-*.png
 import sys
 import atexit
 import base64
+import os
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -622,6 +623,32 @@ def scene_right(item):
     return item.mapToScene(QPointF(float(item.property("width") or 0), 0)).x()
 
 
+def assert_app_tags_have_padding(view_name, root_item):
+    failures = []
+
+    def visit(item):
+        if item is None:
+            return
+        if item.property("qaIsAppTag") is True:
+            width = float(item.property("width") or 0)
+            height = float(item.property("height") or 0)
+            visible = item.isVisible() if hasattr(item, "isVisible") else item.property("visible")
+            if visible and width > 0 and height > 0:
+                padding = float(item.property("qaHorizontalPadding") or 0)
+                if item.property("qaTextFits") is not True or padding < 7.5:
+                    failures.append(
+                        f"{item.objectName() or '<unnamed>'} "
+                        f"fits={item.property('qaTextFits')} padding={padding:.1f} size={width:.1f}x{height:.1f}"
+                    )
+        if hasattr(item, "childItems"):
+            for child in item.childItems():
+                visit(child)
+
+    visit(root_item)
+    if failures:
+        raise AssertionError(f"{view_name} rendered cramped AppTag text: {failures[:8]}")
+
+
 def click_item(view, item):
     width = float(item.property("width") or 0)
     height = float(item.property("height") or 0)
@@ -665,6 +692,7 @@ def capture_view(view_name: str, qml_file: str, setup_context, after_render=None
         after_render(view, view.rootObject())
         for _ in range(12):
             app.processEvents()
+    assert_app_tags_have_padding(view_name, view.rootObject())
 
     output = SCREENSHOTS / f"qa-fix-{view_name}.png"
     image = view.grabWindow()
@@ -1427,7 +1455,10 @@ def main():
         if browser_tab.property("qaEmptyStateVisible") is not False:
             raise AssertionError("chat browser dock kept the empty state over a loaded page")
 
-    ok = capture_view("chat-dock-browser-loaded", "ChatView.qml", setup_chat, open_chat_browser_loaded) and ok
+    if os.environ.get("EIGEN_QT_SKIP_WEBENGINE_LOADED") == "1":
+        print("Skipping chat-dock-browser-loaded (EIGEN_QT_SKIP_WEBENGINE_LOADED=1)")
+    else:
+        ok = capture_view("chat-dock-browser-loaded", "ChatView.qml", setup_chat, open_chat_browser_loaded) and ok
 
     def open_chat_terminal_dock(_view, root):
         before_starts = sum(1 for call in client.calls if call[0] == "TerminalStart")

@@ -106,24 +106,16 @@ Popup {
                         }
                     }
 
-                    Rectangle {
+                    AppTag {
                         visible: modelData && modelData.scope && String(modelData.scope).length > 0
-                        color: Theme.colors.bgInset
-                        radius: Theme.radius.xs
-                        border.width: 1
-                        border.color: Theme.colors.borderSubtle
-                        Layout.preferredWidth: scopeLabel.implicitWidth + Theme.space.md
-                        Layout.preferredHeight: 22
+                        text: modelData && modelData.scope ? String(modelData.scope) : ""
+                        backgroundColor: Theme.colors.bgInset
+                        borderColor: Theme.colors.borderSubtle
+                        textColor: Theme.colors.textFaint
+                        fontFamily: Theme.monoFonts[0]
+                        minimumHeight: 22
+                        pill: false
                         Layout.alignment: Qt.AlignVCenter
-
-                        Label {
-                            id: scopeLabel
-                            anchors.centerIn: parent
-                            text: modelData && modelData.scope ? String(modelData.scope) : ""
-                            font.family: Theme.monoFonts[0]
-                            font.pixelSize: Theme.fontSize.micro
-                            color: Theme.colors.textFaint
-                        }
                     }
                 }
                 readonly property bool qaSelected: highlighted

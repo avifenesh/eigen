@@ -233,42 +233,23 @@ Rectangle {
                                         Layout.fillWidth: true
                                     }
 
-                                    Rectangle {
+                                    AppTag {
                                         visible: String(plugin.version || "") !== ""
-                                        height: 21
-                                        implicitWidth: versionLabel.implicitWidth + Theme.space.md
-                                        radius: 11
-                                        color: Theme.colors.bgOverlay
-                                        border.width: 1
-                                        border.color: Theme.colors.borderHairline
-
-                                        Label {
-                                            id: versionLabel
-                                            anchors.centerIn: parent
-                                            text: plugin.version || ""
-                                            font.family: Theme.monoFonts[0]
-                                            font.pixelSize: Theme.fontSize.micro
-                                            color: Theme.colors.textSecondary
-                                        }
+                                        text: plugin.version || ""
+                                        backgroundColor: Theme.colors.bgOverlay
+                                        borderColor: Theme.colors.borderHairline
+                                        textColor: Theme.colors.textSecondary
+                                        fontFamily: Theme.monoFonts[0]
+                                        minimumHeight: 21
                                     }
 
-                                    Rectangle {
+                                    AppTag {
                                         visible: root.scanStatus(plugin) !== ""
-                                        height: 21
-                                        implicitWidth: scanLabel.implicitWidth + Theme.space.md
-                                        radius: 11
-                                        color: root.scanStatus(plugin) === "forced" ? Theme.colors.warnBg : Theme.colors.successBg
-                                        border.width: 1
-                                        border.color: root.scanStatus(plugin) === "forced" ? Theme.colors.warn : Theme.colors.success
-
-                                        Label {
-                                            id: scanLabel
-                                            anchors.centerIn: parent
-                                            text: root.scanText(plugin)
-                                            font.family: Theme.uiFonts[0]
-                                            font.pixelSize: Theme.fontSize.micro
-                                            color: Theme.colors.textSecondary
-                                        }
+                                        text: root.scanText(plugin)
+                                        backgroundColor: root.scanStatus(plugin) === "forced" ? Theme.colors.warnBg : Theme.colors.successBg
+                                        borderColor: root.scanStatus(plugin) === "forced" ? Theme.colors.warn : Theme.colors.success
+                                        textColor: Theme.colors.textSecondary
+                                        minimumHeight: 21
                                     }
                                 }
 
@@ -299,22 +280,12 @@ Rectangle {
 
                                     Repeater {
                                         model: root.components(plugin)
-                                        delegate: Rectangle {
-                                            height: 22
-                                            implicitWidth: componentLabel.implicitWidth + Theme.space.md
-                                            radius: 11
-                                            color: Theme.colors.bgOverlay
-                                            border.width: 1
-                                            border.color: Theme.colors.borderHairline
-
-                                            Label {
-                                                id: componentLabel
-                                                anchors.centerIn: parent
-                                                text: String(modelData.n) + " " + modelData.label
-                                                font.family: Theme.uiFonts[0]
-                                                font.pixelSize: Theme.fontSize.micro
-                                                color: Theme.colors.textSecondary
-                                            }
+                                        delegate: AppTag {
+                                            text: String(modelData.n) + " " + modelData.label
+                                            backgroundColor: Theme.colors.bgOverlay
+                                            borderColor: Theme.colors.borderHairline
+                                            textColor: Theme.colors.textSecondary
+                                            minimumHeight: 22
                                         }
                                     }
                                 }
@@ -391,22 +362,12 @@ Rectangle {
                                             Layout.fillWidth: true
                                         }
 
-                                        Rectangle {
-                                            height: 21
-                                            implicitWidth: marketStateLabel.implicitWidth + Theme.space.md
-                                            radius: 11
-                                            color: market.disabled ? Theme.colors.bgOverlay : Theme.colors.successBg
-                                            border.width: 1
-                                            border.color: market.disabled ? Theme.colors.borderHairline : Theme.colors.success
-
-                                            Label {
-                                                id: marketStateLabel
-                                                anchors.centerIn: parent
-                                                text: market.disabled ? "disabled" : "enabled"
-                                                font.family: Theme.uiFonts[0]
-                                                font.pixelSize: Theme.fontSize.micro
-                                                color: Theme.colors.textSecondary
-                                            }
+                                        AppTag {
+                                            text: market.disabled ? "disabled" : "enabled"
+                                            backgroundColor: market.disabled ? Theme.colors.bgOverlay : Theme.colors.successBg
+                                            borderColor: market.disabled ? Theme.colors.borderHairline : Theme.colors.success
+                                            textColor: Theme.colors.textSecondary
+                                            minimumHeight: 21
                                         }
                                     }
 

@@ -284,23 +284,14 @@ Rectangle {
                                         Layout.fillWidth: true
                                     }
 
-                                    Rectangle {
+                                    AppTag {
                                         visible: String(rollout.outcome || "") !== ""
-                                        implicitWidth: outcomeLabel.implicitWidth + Theme.space.md
-                                        implicitHeight: 22
-                                        radius: 11
-                                        color: root.outcomeTone(rollout.outcome)
-                                        border.width: 1
-                                        border.color: Theme.colors.borderHairline
-
-                                        Label {
-                                            id: outcomeLabel
-                                            anchors.centerIn: parent
-                                            text: rollout.outcome || ""
-                                            font.family: Theme.monoFonts[0]
-                                            font.pixelSize: Theme.fontSize.micro
-                                            color: Theme.colors.textPrimary
-                                        }
+                                        text: rollout.outcome || ""
+                                        backgroundColor: root.outcomeTone(rollout.outcome)
+                                        borderColor: Theme.colors.borderHairline
+                                        textColor: Theme.colors.textPrimary
+                                        fontFamily: Theme.monoFonts[0]
+                                        minimumHeight: 22
                                     }
 
                                     Label {

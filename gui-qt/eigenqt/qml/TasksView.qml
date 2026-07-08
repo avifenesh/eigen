@@ -285,81 +285,52 @@ Rectangle {
                             }
 
                             // Status badge
-                            Rectangle {
-                                implicitWidth: statusLabel.implicitWidth + 12
-                                implicitHeight: 20
-                                radius: Theme.radius.sm
-                                color: statusBgColor(model.status)
-                                Label {
-                                    id: statusLabel
-                                    anchors.centerIn: parent
-                                    text: model.canceling ? "canceling" : model.status
-                                    font.family: Theme.uiFonts[0]
-                                    font.pixelSize: Theme.fontSize.label
-                                    font.weight: Theme.fontWeight.medium
-                                    color: statusTextColor(model.status)
-                                }
+                            AppTag {
+                                objectName: "taskStatusTag_" + root.safeName(model.taskId)
+                                text: model.canceling ? "canceling" : model.status
+                                backgroundColor: statusBgColor(model.status)
+                                borderColor: "transparent"
+                                textColor: statusTextColor(model.status)
+                                fontPixelSize: Theme.fontSize.label
+                                fontWeight: Theme.fontWeight.medium
+                                pill: false
                             }
 
                             // Role badge (if present)
-                            Rectangle {
+                            AppTag {
+                                objectName: "taskRoleTag_" + root.safeName(model.taskId)
                                 visible: model.roleName
-                                implicitWidth: roleLabel.implicitWidth + 12
-                                implicitHeight: 20
-                                radius: Theme.radius.sm
-                                color: Theme.colors.bgWell
-                                border.width: 1
-                                border.color: Theme.colors.borderHairline
-                                Label {
-                                    id: roleLabel
-                                    anchors.centerIn: parent
-                                    text: model.roleName
-                                    font.family: Theme.uiFonts[0]
-                                    font.pixelSize: Theme.fontSize.label
-                                    color: Theme.colors.textSecondary
-                                }
+                                text: model.roleName
+                                backgroundColor: Theme.colors.bgWell
+                                borderColor: Theme.colors.borderHairline
+                                textColor: Theme.colors.textSecondary
+                                fontPixelSize: Theme.fontSize.label
+                                pill: false
                             }
 
                             // Model badge (if present)
-                            Rectangle {
+                            AppTag {
+                                objectName: "taskModelTag_" + root.safeName(model.taskId)
                                 visible: model.modelName
-                                implicitWidth: modelLabel.implicitWidth + 12
-                                implicitHeight: 20
-                                radius: Theme.radius.sm
-                                color: "transparent"
-                                border.width: 1
-                                border.color: Theme.colors.borderBrand
-                                Label {
-                                    id: modelLabel
-                                    anchors.centerIn: parent
-                                    text: model.modelName
-                                    font.family: Theme.uiFonts[0]
-                                    font.pixelSize: Theme.fontSize.label
-                                    color: Theme.colors.brand
-                                    elide: Text.ElideRight
-                                    maximumLineCount: 1
-                                }
+                                text: model.modelName
+                                backgroundColor: "transparent"
+                                borderColor: Theme.colors.borderBrand
+                                textColor: Theme.colors.brand
+                                fontPixelSize: Theme.fontSize.label
+                                pill: false
                             }
 
                             // Where badge (if present)
-                            Rectangle {
+                            AppTag {
+                                objectName: "taskWhereTag_" + root.safeName(model.taskId)
                                 visible: model.where
-                                implicitWidth: whereLabel.implicitWidth + 12
-                                implicitHeight: 20
-                                radius: Theme.radius.sm
-                                color: Theme.colors.bgWell
-                                border.width: 1
-                                border.color: Theme.colors.borderHairline
-                                Label {
-                                    id: whereLabel
-                                    anchors.centerIn: parent
-                                    text: model.where
-                                    font.family: Theme.uiFonts[0]
-                                    font.pixelSize: Theme.fontSize.label
-                                    color: Theme.colors.textMuted
-                                    elide: Text.ElideMiddle
-                                    maximumLineCount: 1
-                                }
+                                text: model.where
+                                backgroundColor: Theme.colors.bgWell
+                                borderColor: Theme.colors.borderHairline
+                                textColor: Theme.colors.textMuted
+                                fontPixelSize: Theme.fontSize.label
+                                elideMode: Text.ElideMiddle
+                                pill: false
                             }
 
                             Item { Layout.fillWidth: true }
@@ -575,20 +546,15 @@ Rectangle {
                     color: Theme.colors.textPrimary
                 }
 
-                Rectangle {
-                    implicitWidth: statusLabelSheet.implicitWidth + 12
-                    implicitHeight: 20
-                    radius: Theme.radius.sm
-                    color: root.openTask ? statusBgColor(root.openTask.status) : "transparent"
-                    Label {
-                        id: statusLabelSheet
-                        anchors.centerIn: parent
-                        text: root.openTask ? root.openTask.status : ""
-                        font.family: Theme.uiFonts[0]
-                        font.pixelSize: Theme.fontSize.label
-                        font.weight: Theme.fontWeight.medium
-                        color: root.openTask ? statusTextColor(root.openTask.status) : Theme.colors.textPrimary
-                    }
+                AppTag {
+                    objectName: "taskTranscriptStatusTag"
+                    text: root.openTask ? root.openTask.status : ""
+                    backgroundColor: root.openTask ? statusBgColor(root.openTask.status) : "transparent"
+                    borderColor: "transparent"
+                    textColor: root.openTask ? statusTextColor(root.openTask.status) : Theme.colors.textPrimary
+                    fontPixelSize: Theme.fontSize.label
+                    fontWeight: Theme.fontWeight.medium
+                    pill: false
                 }
 
                 Item { Layout.fillWidth: true }
@@ -777,19 +743,13 @@ Rectangle {
                                     spacing: Theme.space.sm
                                     Layout.fillWidth: true
 
-                                    Rectangle {
-                                        implicitWidth: roleEntryLabel.implicitWidth + 12
-                                        implicitHeight: 20
-                                        radius: Theme.radius.sm
-                                        color: roleToneBg(transcriptEntries.get(index).role)
-                                        Label {
-                                            id: roleEntryLabel
-                                            anchors.centerIn: parent
-                                            text: transcriptEntries.get(index).role
-                                            font.family: Theme.uiFonts[0]
-                                            font.pixelSize: Theme.fontSize.label
-                                            color: roleToneText(transcriptEntries.get(index).role)
-                                        }
+                                    AppTag {
+                                        text: transcriptEntries.get(index).role
+                                        backgroundColor: roleToneBg(transcriptEntries.get(index).role)
+                                        borderColor: "transparent"
+                                        textColor: roleToneText(transcriptEntries.get(index).role)
+                                        fontPixelSize: Theme.fontSize.label
+                                        pill: false
                                     }
 
                                     Label {
@@ -800,20 +760,14 @@ Rectangle {
                                         color: Theme.colors.textSecondary
                                     }
 
-                                    Rectangle {
+                                    AppTag {
                                         visible: transcriptEntries.get(index).toolError
-                                        implicitWidth: errorEntryLabel.implicitWidth + 12
-                                        implicitHeight: 20
-                                        radius: Theme.radius.sm
-                                        color: Theme.colors.errorBg
-                                        Label {
-                                            id: errorEntryLabel
-                                            anchors.centerIn: parent
-                                            text: "error"
-                                            font.family: Theme.uiFonts[0]
-                                            font.pixelSize: Theme.fontSize.label
-                                            color: Theme.colors.error
-                                        }
+                                        text: "error"
+                                        backgroundColor: Theme.colors.errorBg
+                                        borderColor: "transparent"
+                                        textColor: Theme.colors.error
+                                        fontPixelSize: Theme.fontSize.label
+                                        pill: false
                                     }
                                 }
 

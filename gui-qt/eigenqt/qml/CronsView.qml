@@ -308,40 +308,20 @@ Rectangle {
                                             Layout.fillWidth: true
                                         }
 
-                                        Rectangle {
-                                            height: 21
-                                            implicitWidth: activeBadgeLabel.implicitWidth + Theme.space.md
-                                            radius: 11
-                                            color: cron.active ? Theme.colors.successBg : Theme.colors.bgOverlay
-                                            border.width: 1
-                                            border.color: cron.active ? Theme.colors.success : Theme.colors.borderHairline
-
-                                            Label {
-                                                id: activeBadgeLabel
-                                                anchors.centerIn: parent
-                                                text: cron.active ? "running" : "stopped"
-                                                font.family: Theme.uiFonts[0]
-                                                font.pixelSize: Theme.fontSize.micro
-                                                color: Theme.colors.textSecondary
-                                            }
+                                        AppTag {
+                                            text: cron.active ? "running" : "stopped"
+                                            backgroundColor: cron.active ? Theme.colors.successBg : Theme.colors.bgOverlay
+                                            borderColor: cron.active ? Theme.colors.success : Theme.colors.borderHairline
+                                            textColor: Theme.colors.textSecondary
+                                            minimumHeight: 21
                                         }
 
-                                        Rectangle {
-                                            height: 21
-                                            implicitWidth: enabledBadgeLabel.implicitWidth + Theme.space.md
-                                            radius: 11
-                                            color: cron.enabled ? Theme.colors.accentBg : Theme.colors.bgOverlay
-                                            border.width: 1
-                                            border.color: cron.enabled ? Theme.colors.borderAccentFaint : Theme.colors.borderHairline
-
-                                            Label {
-                                                id: enabledBadgeLabel
-                                                anchors.centerIn: parent
-                                                text: cron.enabled ? "enabled" : "disabled"
-                                                font.family: Theme.uiFonts[0]
-                                                font.pixelSize: Theme.fontSize.micro
-                                                color: Theme.colors.textSecondary
-                                            }
+                                        AppTag {
+                                            text: cron.enabled ? "enabled" : "disabled"
+                                            backgroundColor: cron.enabled ? Theme.colors.accentBg : Theme.colors.bgOverlay
+                                            borderColor: cron.enabled ? Theme.colors.borderAccentFaint : Theme.colors.borderHairline
+                                            textColor: Theme.colors.textSecondary
+                                            minimumHeight: 21
                                         }
                                     }
 
@@ -410,7 +390,7 @@ Rectangle {
                         delegate: Rectangle {
                             id: tabRow
                             readonly property var cron: modelData || ({})
-                            readonly property bool qaTextFits: !tabCadenceLabel.truncated && !tabSpecLabel.truncated && !tabCommandLabel.truncated
+                            readonly property bool qaTextFits: !tabCadenceLabel.truncated && tabSpecTag.qaTextFits && !tabCommandLabel.truncated
                             objectName: "cronsTabRow_" + root.safeObjectName(cron.next + "_" + cron.command || index)
                             Layout.fillWidth: true
                             implicitHeight: Math.max(64, tabRowLayout.implicitHeight + Theme.space.lg)
@@ -441,22 +421,15 @@ Rectangle {
                                         Layout.fillWidth: true
                                     }
 
-                                    Rectangle {
-                                        implicitWidth: tabSpecLabel.implicitWidth + Theme.space.md
-                                        implicitHeight: 22
-                                        radius: Theme.radius.xs
-                                        color: Theme.colors.bgOverlay
-                                        border.width: 1
-                                        border.color: Theme.colors.borderHairline
-
-                                        Label {
-                                            id: tabSpecLabel
-                                            anchors.centerIn: parent
-                                            text: cron.next || ""
-                                            font.family: Theme.monoFonts[0]
-                                            font.pixelSize: Theme.fontSize.micro
-                                            color: Theme.colors.brandBright
-                                        }
+                                    AppTag {
+                                        id: tabSpecTag
+                                        text: cron.next || ""
+                                        backgroundColor: Theme.colors.bgOverlay
+                                        borderColor: Theme.colors.borderHairline
+                                        textColor: Theme.colors.brandBright
+                                        fontFamily: Theme.monoFonts[0]
+                                        minimumHeight: 22
+                                        pill: false
                                     }
                                 }
 
