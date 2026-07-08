@@ -339,6 +339,13 @@ if board_root.property("stateFilter") != "all" or board_root.property("ownerFilt
 if find_item(board_root, "boardLaneName__repo_eigen") is None:
     raise AssertionError("board lane did not return after resetting filters")
 
+start = len(client.calls)
+refresh = click_item(app, board_view, board_root, "boardRefreshButton")
+if refresh.property("qaTextFits") is not True:
+    raise AssertionError("board refresh button text did not fit")
+if ("Board", ()) not in client.calls[start:] or ("Kanban", ()) not in client.calls[start:]:
+    raise AssertionError(f"board refresh did not reload both board models: {client.calls[start:]}")
+
 client.failures["PinLane"] = "daemon offline"
 start = len(client.calls)
 click_item(app, board_view, board_root, "boardPinButton__repo_eigen")
