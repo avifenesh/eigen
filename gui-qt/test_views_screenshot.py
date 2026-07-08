@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from PySide6.QtCore import QObject, Property, QPointF, QTimer, QUrl, Qt, Signal, Slot
+from PySide6.QtCore import QObject, Property, QPoint, QPointF, QTimer, QUrl, Qt, Signal, Slot
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickView
@@ -610,6 +610,17 @@ def scene_top(item):
 
 def scene_bottom(item):
     return item.mapToScene(QPointF(0, float(item.property("height") or 0))).y()
+
+
+def click_item(view, item):
+    width = float(item.property("width") or 0)
+    height = float(item.property("height") or 0)
+    if width <= 0 or height <= 0:
+        raise AssertionError(f"{item.objectName()} has invalid size {width}x{height}")
+    point = item.mapToItem(view.contentItem(), QPointF(width / 2, height / 2))
+    QTest.mouseClick(view, Qt.LeftButton, Qt.NoModifier, QPoint(int(point.x()), int(point.y())))
+    QTest.mouseMove(view, QPoint(2, 2))
+    QTest.qWait(80)
 
 
 def capture_view(view_name: str, qml_file: str, setup_context, after_render=None):
@@ -1275,17 +1286,48 @@ def main():
         root.setProperty("dockTabIndex", 3)
         root.setProperty("dockOpen", True)
         QTest.qWait(240)
+        browser_tab = find_item(root, "browserTab")
         address = find_item(root, "browserAddressField")
         go_button = find_item(root, "browserGoButton")
+        empty = find_item(root, "browserEmptyState")
         browser = find_item(root, "browserWebView")
-        if address is None or go_button is None or browser is None:
+        if browser_tab is None or address is None or go_button is None or empty is None:
             raise AssertionError("chat browser dock did not render browser controls")
-        if address.property("text") != "about:blank":
+        if address.property("text") != "":
             raise AssertionError(f"chat browser dock address was wrong: {address.property('text')}")
+        if browser_tab.property("qaBrowserLoaded") is not False or browser is not None:
+            raise AssertionError("chat browser dock loaded WebEngine before a page was opened")
+        if browser_tab.property("qaEmptyStateVisible") is not True:
+            raise AssertionError("chat browser dock did not show the empty state")
         if go_button.property("qaTextFits") is not True:
             raise AssertionError("chat browser dock Go button text did not fit")
 
     ok = capture_view("chat-dock-browser", "ChatView.qml", setup_chat, open_chat_browser_dock) and ok
+
+    def open_chat_browser_loaded(view, root):
+        root.setProperty("dockTabIndex", 3)
+        root.setProperty("dockOpen", True)
+        QTest.qWait(240)
+        browser_tab = find_item(root, "browserTab")
+        address = find_item(root, "browserAddressField")
+        go_button = find_item(root, "browserGoButton")
+        if browser_tab is None or address is None or go_button is None:
+            raise AssertionError("chat browser dock did not render controls before navigation")
+        proof = Path("/tmp/eigen-qt-browser-proof.html")
+        proof.write_text(
+            "<body style='background:#091010;color:#e5f8f6;font:16px sans-serif'>Qt browser proof</body>",
+            encoding="utf-8",
+        )
+        address.setProperty("text", proof.as_uri())
+        click_item(view, go_button)
+        QTest.qWait(600)
+        browser = find_item(root, "browserWebView")
+        if browser is None or browser_tab.property("qaBrowserLoaded") is not True:
+            raise AssertionError("chat browser dock did not lazy-load WebEngine after navigation")
+        if browser_tab.property("qaEmptyStateVisible") is not False:
+            raise AssertionError("chat browser dock kept the empty state over a loaded page")
+
+    ok = capture_view("chat-dock-browser-loaded", "ChatView.qml", setup_chat, open_chat_browser_loaded) and ok
 
     def show_chat_attachment(_view, root):
         root.setProperty("attachedImage", VALID_PNG_BASE64)

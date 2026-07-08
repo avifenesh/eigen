@@ -10,7 +10,11 @@ Rectangle {
 
     color: Theme.colors.bgRaised
 
-    property string currentUrl: "about:blank"
+    property string currentUrl: ""
+    property bool hasPage: false
+    readonly property var webView: browserLoader.item
+    readonly property bool qaBrowserLoaded: browserLoader.item !== null
+    readonly property bool qaEmptyStateVisible: browserEmptyState.visible
     readonly property string qaUrlText: addressField.text
 
     ColumnLayout {
@@ -34,34 +38,37 @@ Rectangle {
                     objectName: "browserBackButton"
                     text: "<"
                     compact: true
-                    enabled: webView.canGoBack
+                    enabled: root.webView && root.webView.canGoBack
                     toolTipText: "Back"
                     Layout.preferredWidth: 32
                     Layout.preferredHeight: 30
-                    onClicked: webView.goBack()
+                    onClicked: if (root.webView) root.webView.goBack()
                 }
 
                 AppButton {
                     objectName: "browserForwardButton"
                     text: ">"
                     compact: true
-                    enabled: webView.canGoForward
+                    enabled: root.webView && root.webView.canGoForward
                     toolTipText: "Forward"
                     Layout.preferredWidth: 32
                     Layout.preferredHeight: 30
-                    onClicked: webView.goForward()
+                    onClicked: if (root.webView) root.webView.goForward()
                 }
 
                 AppButton {
                     objectName: "browserReloadButton"
-                    text: webView.loading ? "X" : "R"
+                    text: root.webView && root.webView.loading ? "X" : "R"
                     compact: true
-                    toolTipText: webView.loading ? "Stop" : "Reload"
+                    enabled: root.hasPage
+                    toolTipText: root.webView && root.webView.loading ? "Stop" : "Reload"
                     Layout.preferredWidth: 32
                     Layout.preferredHeight: 30
                     onClicked: {
-                        if (webView.loading) webView.stop()
-                        else webView.reload()
+                        if (root.webView) {
+                            if (root.webView.loading) root.webView.stop()
+                            else root.webView.reload()
+                        }
                     }
                 }
 
@@ -112,10 +119,11 @@ Rectangle {
                     objectName: "browserOpenExternalButton"
                     text: "^"
                     compact: true
+                    enabled: root.hasPage
                     toolTipText: "Open externally"
                     Layout.preferredWidth: 32
                     Layout.preferredHeight: 30
-                    onClicked: Qt.openUrlExternally(root.currentUrl)
+                    onClicked: if (root.hasPage) Qt.openUrlExternally(root.currentUrl)
                 }
             }
         }
@@ -130,7 +138,9 @@ Rectangle {
                 anchors.left: parent.left
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                width: webView.loading ? parent.width * Math.max(0, Math.min(100, webView.loadProgress)) / 100 : 0
+                width: root.webView && root.webView.loading
+                    ? parent.width * Math.max(0, Math.min(100, root.webView.loadProgress)) / 100
+                    : 0
                 color: Theme.colors.brand
             }
         }
@@ -141,29 +151,123 @@ Rectangle {
             color: Theme.colors.bgWell
             clip: true
 
-            WebEngineView {
-                id: webView
-                objectName: "browserWebView"
+            Loader {
+                id: browserLoader
+                objectName: "browserWebViewLoader"
                 anchors.fill: parent
-                url: root.currentUrl
-                backgroundColor: Theme.colors.bgWell
+                active: root.hasPage
+                onLoaded: {
+                    if (item && root.hasPage) {
+                        item.url = root.currentUrl
+                    }
+                }
+                sourceComponent: WebEngineView {
+                    objectName: "browserWebView"
+                    backgroundColor: Theme.colors.bgWell
 
-                onUrlChanged: {
-                    var next = String(url)
-                    if (next !== "" && next !== root.currentUrl) {
-                        root.currentUrl = next
-                        addressField.text = next
+                    onUrlChanged: {
+                        var next = String(url)
+                        if (next !== "" && next !== root.currentUrl) {
+                            root.setCurrentUrl(next)
+                            addressField.text = next
+                        }
                     }
                 }
             }
+
+            Rectangle {
+                id: browserEmptyState
+                objectName: "browserEmptyState"
+                anchors.fill: parent
+                visible: !root.hasPage
+                color: Theme.colors.bgWell
+
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    width: Math.min(parent.width - Theme.space.xxxl * 2, 320)
+                    spacing: Theme.space.sm
+
+                    Label {
+                        objectName: "browserEmptyTitle"
+                        text: "No page open"
+                        font.family: Theme.uiFonts[0]
+                        font.pixelSize: Theme.fontSize.body
+                        font.weight: Theme.fontWeight.semibold
+                        color: Theme.colors.textSecondary
+                        horizontalAlignment: Text.AlignHCenter
+                        Layout.fillWidth: true
+                    }
+
+                    Label {
+                        objectName: "browserEmptyHint"
+                        text: "Docs, PRs, localhost."
+                        font.family: Theme.uiFonts[0]
+                        font.pixelSize: Theme.fontSize.bodySm
+                        color: Theme.colors.textMuted
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.Wrap
+                        Layout.fillWidth: true
+                    }
+                }
+            }
+
+            Rectangle {
+                objectName: "browserLoadingBadge"
+                visible: root.webView && root.webView.loading
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.topMargin: Theme.space.md
+                anchors.rightMargin: Theme.space.md
+                width: browserLoadingLabel.implicitWidth + Theme.space.lg
+                height: 24
+                radius: Theme.radius.sm
+                color: Theme.colors.bgOverlay
+                border.width: 1
+                border.color: Theme.colors.borderHairline
+
+                Label {
+                    id: browserLoadingLabel
+                    anchors.centerIn: parent
+                    text: "Loading"
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.micro
+                    color: Theme.colors.textMuted
+                }
+            }
+        }
+    }
+
+    onCurrentUrlChanged: {
+        if (addressField.text !== root.currentUrl) {
+            addressField.text = root.currentUrl
+        }
+        var nextHasPage = root.isPageUrl(root.currentUrl)
+        if (root.hasPage !== nextHasPage) {
+            root.hasPage = nextHasPage
+        }
+        if (root.webView && String(root.webView.url) !== root.currentUrl) {
+            root.webView.url = root.currentUrl
         }
     }
 
     function navigate() {
         var next = normalizeUrl(addressField.text)
         if (next === "") return
-        root.currentUrl = next
         addressField.text = next
+        if (next === root.currentUrl && root.webView) {
+            root.webView.reload()
+        } else {
+            root.setCurrentUrl(next)
+        }
+    }
+
+    function setCurrentUrl(next) {
+        root.currentUrl = next
+        root.hasPage = root.isPageUrl(next)
+    }
+
+    function isPageUrl(value) {
+        return value !== "" && value !== "about:blank"
     }
 
     function normalizeUrl(value) {

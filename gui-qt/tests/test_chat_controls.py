@@ -1015,16 +1015,27 @@ if QGuiApplication.platformName().lower() != "offscreen":
     browser_tab = click_item(app, chat_view, chat, "dockTab_Browser")
     if browser_tab.property("selected") is not True:
         raise AssertionError("Browser dock tab did not become selected")
+    browser_root = find_item(chat, "browserTab")
     browser_address = find_item(chat, "browserAddressField")
     browser_go = find_item(chat, "browserGoButton")
     browser_external = find_item(chat, "browserOpenExternalButton")
+    browser_empty = find_item(chat, "browserEmptyState")
     browser_view = find_item(chat, "browserWebView")
-    if None in (browser_address, browser_go, browser_external, browser_view):
+    if None in (browser_root, browser_address, browser_go, browser_external, browser_empty):
         raise AssertionError("Browser dock tab did not render its controls")
+    if browser_view is not None or browser_root.property("qaBrowserLoaded") is not False:
+        raise AssertionError("Browser dock eagerly loaded WebEngine before navigation")
+    if browser_root.property("qaEmptyStateVisible") is not True:
+        raise AssertionError("Browser dock did not show its blank state")
     browser_address.setProperty("text", "localhost:4321/docs")
     pump(app, 8)
     click_item(app, chat_view, chat, "browserGoButton")
     pump(app, 20)
+    browser_view = find_item(chat, "browserWebView")
+    if browser_view is None or browser_root.property("qaBrowserLoaded") is not True:
+        raise AssertionError("Browser dock did not lazy-load WebEngine after navigation")
+    if browser_root.property("qaEmptyStateVisible") is not False:
+        raise AssertionError("Browser dock kept the empty state after navigation")
     if browser_address.property("text") != "http://localhost:4321/docs":
         raise AssertionError(f"Browser dock did not normalize localhost URL: {browser_address.property('text')}")
     if not browser_go.property("qaTextFits"):
