@@ -952,16 +952,28 @@ try:
         raise AssertionError(f"Routing view filtered count was wrong: {routing_view.property('qaFilteredModelCount')}")
     if all_provider.property("qaTextFits") is not True or grok_provider.property("qaTextFits") is not True:
         raise AssertionError("Routing provider row text did not fit")
+    grok_provider.forceActiveFocus(Qt.TabFocusReason)
+    pump(app, 12)
+    if grok_provider.property("qaVisualFocus") is not True:
+        raise AssertionError("Routing provider row did not expose keyboard focus")
+    if grok_provider.property("qaAccessibleName") != "grok provider":
+        raise AssertionError(f"Routing provider accessible name was {grok_provider.property('qaAccessibleName')!r}")
     if gpt_card.property("qaTextFits") is not True:
         raise AssertionError("Routing model card text did not fit")
-    click_item(app, window, "routingProvider_grok")
+    QTest.keyClick(window, Qt.Key_Return)
     pump(app, 18)
     if routing_view.property("qaFilteredModelCount") != 1:
         raise AssertionError(f"Routing provider filter did not narrow to one model: {routing_view.property('qaFilteredModelCount')}")
     grok_card = find_item_in_window(window, "routingModelCard_grok_4")
     if grok_card is None or grok_card.property("qaTextFits") is not True:
         raise AssertionError("Routing provider filter did not keep the grok model card clean")
-    click_item(app, window, "routingProvider_all")
+    all_provider.forceActiveFocus(Qt.TabFocusReason)
+    pump(app, 12)
+    if all_provider.property("qaVisualFocus") is not True:
+        raise AssertionError("Routing all-provider row did not expose keyboard focus")
+    if all_provider.property("qaAccessibleName") != "All providers":
+        raise AssertionError(f"Routing all-provider accessible name was {all_provider.property('qaAccessibleName')!r}")
+    QTest.keyClick(window, Qt.Key_Space)
     pump(app, 18)
     if routing_view.property("qaFilteredModelCount") != 3:
         raise AssertionError("Routing provider filter did not clear before refresh-error proof")
