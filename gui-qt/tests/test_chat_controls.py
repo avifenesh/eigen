@@ -34,6 +34,7 @@ from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtTest import QTest
 
 import eigenqt.models.worktree  # registers DiffModel/FileTreeModel for DockPanel
+from eigenqt.models.commands import filter_command_rows
 from eigenqt.terminal_helper import TerminalHelper
 from eigenqt.webengine import initialize_webengine
 
@@ -634,11 +635,7 @@ class CommandModel(QAbstractListModel):
     @Slot(str)
     def setFilter(self, filter_text):
         self.filters.append(filter_text)
-        needle = (filter_text or "").lower().strip()
-        next_filtered = [
-            row for row in self._commands
-            if not needle or row["name"].lower().startswith(needle)
-        ]
+        next_filtered = filter_command_rows(self._commands, filter_text)
         old_count = len(self._filtered)
         if old_count:
             self.beginRemoveRows(QModelIndex(), 0, old_count - 1)
@@ -652,11 +649,7 @@ class CommandModel(QAbstractListModel):
     @Slot(str, result="QVariantList")
     def filteredCommands(self, filter_text):
         self.filters.append(filter_text)
-        needle = (filter_text or "").lower().strip()
-        return [
-            dict(row) for row in self._commands
-            if not needle or row["name"].lower().startswith(needle)
-        ]
+        return filter_command_rows(self._commands, filter_text)
 
     @Slot(str, result=str)
     def commandScope(self, name):
@@ -1225,6 +1218,11 @@ QTest.keyClick(chat_view, Qt.Key_C)
 pump(app, 18)
 if composer.property("text") != "/c" or commands.filters[-1:] != ["c"]:
     raise AssertionError(f"Slash command filter did not track composer text: text={composer.property('text')!r} filters={commands.filters}")
+if chat.property("qaSlashSelectedCommand") != "compact":
+    raise AssertionError(f"Slash command popup did not select the first ranked match: {chat.property('qaSlashSelectedCommand')!r}")
+compact_option = find_item_in(chat_view, chat, "slashCommandOption_compact")
+if compact_option is None or compact_option.property("qaSelected") is not True:
+    raise AssertionError("Slash command popup did not expose selected row state for /compact")
 QTest.keyClick(chat_view, Qt.Key_Return)
 pump(app, 18)
 if composer.property("text") != "/compact ":
@@ -1233,6 +1231,27 @@ if chat.property("qaSlashPopupOpen") is True:
     raise AssertionError("Slash popup stayed open after keyboard completion")
 if any(call[0] in {"SendInput", "SteerInput"} for call in client.calls):
     raise AssertionError(f"Completing slash command submitted chat input: {client.calls}")
+
+composer.setProperty("text", "/rvw")
+composer.setProperty("cursorPosition", 4)
+composer.forceActiveFocus()
+pump(app, 18)
+if commands.filters[-1:] != ["rvw"] or chat.property("qaSlashSelectedCommand") != "review":
+    raise AssertionError(f"Fuzzy slash ranking did not select review: filters={commands.filters} selected={chat.property('qaSlashSelectedCommand')!r}")
+QTest.keyClick(chat_view, Qt.Key_Return)
+pump(app, 18)
+if composer.property("text") != "/review ":
+    raise AssertionError(f"Fuzzy slash completion was wrong: {composer.property('text')!r}")
+
+composer.setProperty("text", "/zzx")
+composer.setProperty("cursorPosition", 4)
+composer.forceActiveFocus()
+pump(app, 18)
+if chat.property("qaSlashPopupOpen") is not True or chat.property("qaSlashCommandCount") != 0:
+    raise AssertionError("Slash command popup did not stay open with a zero-result state")
+empty_slash = find_item_in(chat_view, chat, "slashCommandEmptyState")
+if empty_slash is None or not empty_slash.property("visible") or not empty_slash.property("qaTextFits"):
+    raise AssertionError("Slash command empty state did not render cleanly")
 
 composer.setProperty("text", "/h")
 composer.setProperty("cursorPosition", 2)

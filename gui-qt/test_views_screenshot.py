@@ -1489,6 +1489,24 @@ def main():
 
     ok = capture_view("chat-custom-slash", "ChatView.qml", setup_chat, open_chat_custom_slash) and ok
 
+    def open_chat_fuzzy_slash(_view, root):
+        composer = find_item(root, "chatComposerTextArea")
+        if composer is not None:
+            composer.setProperty("text", "/rvw")
+            composer.setProperty("cursorPosition", 4)
+            composer.forceActiveFocus()
+
+    ok = capture_view("chat-fuzzy-slash", "ChatView.qml", setup_chat, open_chat_fuzzy_slash) and ok
+
+    def open_chat_empty_slash(_view, root):
+        composer = find_item(root, "chatComposerTextArea")
+        if composer is not None:
+            composer.setProperty("text", "/zzx")
+            composer.setProperty("cursorPosition", 4)
+            composer.forceActiveFocus()
+
+    ok = capture_view("chat-empty-slash", "ChatView.qml", setup_chat, open_chat_empty_slash) and ok
+
     def show_chat_slash_note(_view, root):
         model = root.property("transcriptModel")
         if model is not None:

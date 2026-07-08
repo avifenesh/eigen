@@ -78,6 +78,58 @@ BUILTIN_COMMANDS: tuple[dict[str, str], ...] = (
 )
 
 
+def _subsequence_score(haystack: str, needle: str) -> tuple[int, int, int] | None:
+    """Return start/span/gap score when needle appears in order."""
+    start = 0
+    positions: list[int] = []
+    for char in needle:
+        index = haystack.find(char, start)
+        if index < 0:
+            return None
+        positions.append(index)
+        start = index + 1
+    span = positions[-1] - positions[0] + 1
+    gaps = span - len(needle)
+    return positions[0], span, gaps
+
+
+def _command_match_key(command: dict, needle: str, ordinal: int) -> tuple | None:
+    name = str(command.get("name", "") or "").lower()
+    description = str(command.get("description", "") or "").lower()
+    if not needle:
+        return (0, ordinal)
+    if name == needle:
+        return (0, ordinal)
+    if name.startswith(needle):
+        return (1, ordinal)
+    tokens = [token for token in name.replace("-", " ").replace("_", " ").split() if token]
+    for token_index, token in enumerate(tokens):
+        if token.startswith(needle):
+            return (2, token_index, ordinal)
+    if len(needle) >= 3:
+        subsequence = _subsequence_score(name, needle)
+        if subsequence is not None:
+            start, span, gaps = subsequence
+            return (3, gaps, span, start, len(name), ordinal)
+    if len(needle) >= 3:
+        description_index = description.find(needle)
+        if description_index >= 0:
+            return (4, description_index, len(name), ordinal)
+    return None
+
+
+def filter_command_rows(commands: list[dict], filter_text: str) -> list[dict]:
+    """Return slash commands ranked for prefix, token, and fuzzy matches."""
+    needle = str(filter_text or "").lower().strip()
+    ranked: list[tuple[tuple, dict]] = []
+    for ordinal, command in enumerate(commands):
+        key = _command_match_key(command, needle, ordinal)
+        if key is not None:
+            ranked.append((key, command))
+    ranked.sort(key=lambda item: item[0])
+    return [dict(command) for _, command in ranked]
+
+
 class CommandsModel(QAbstractListModel):
     """Commands list for slash-command popup (filterable)."""
 
@@ -140,14 +192,7 @@ class CommandsModel(QAbstractListModel):
     @Slot(str, result="QVariantList")
     def filteredCommands(self, filter_text: str) -> list[dict]:
         """Return command dictionaries matching a prefix filter for QML views."""
-        needle = str(filter_text or "").lower().strip()
-        if not needle:
-            return [dict(command) for command in self._commands]
-        return [
-            dict(command)
-            for command in self._commands
-            if command.get("name", "").lower().startswith(needle)
-        ]
+        return filter_command_rows(self._commands, filter_text)
 
     @Slot(str, result=bool)
     def hasCommand(self, name: str) -> bool:
@@ -170,9 +215,7 @@ class CommandsModel(QAbstractListModel):
 
     def _filtered_commands(self) -> list[dict]:
         """Return commands matching the current filter."""
-        if not self._filter:
-            return self._commands[:]
-        return [c for c in self._commands if c.get("name", "").lower().startswith(self._filter)]
+        return filter_command_rows(self._commands, self._filter)
 
     def _replace_filtered(self, filtered: list[dict]) -> None:
         """Replace visible rows without resetting an active QML ListView."""

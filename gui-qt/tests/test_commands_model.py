@@ -1,6 +1,6 @@
 from PySide6.QtCore import QObject
 
-from eigenqt.models.commands import CommandsModel
+from eigenqt.models.commands import CommandsModel, filter_command_rows
 
 
 class FakeRpcClient(QObject):
@@ -79,6 +79,35 @@ def test_commands_model_merges_builtins_with_custom_commands():
         },
     ]
     assert model.loadError == ""
+
+
+def test_commands_model_ranks_fuzzy_slash_matches():
+    model = CommandsModel(FakeRpcClient())
+
+    model.setFilter("cnfg")
+    assert model_rows(model)[0]["name"] == "config"
+
+    rvw = model.filteredCommands("rvw")
+    assert rvw[0]["name"] == "review"
+
+    custom = model.filteredCommands("shp")
+    assert custom[0]["name"] == "ship-it"
+
+    description = model.filteredCommands("current diff")
+    assert description == [
+        {
+            "name": "ship-it",
+            "description": "Turn the current diff into a PR",
+            "scope": "user",
+        }
+    ]
+
+    assert model.filteredCommands("zz-no-command") == []
+
+
+def test_filter_command_rows_preserves_builtin_order_when_unfiltered():
+    rows = filter_command_rows([{"name": "b"}, {"name": "a"}], "")
+    assert [row["name"] for row in rows] == ["b", "a"]
 
 
 def test_commands_model_surfaces_custom_command_load_error_and_keeps_builtins():
