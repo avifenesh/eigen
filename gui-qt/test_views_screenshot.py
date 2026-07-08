@@ -2874,6 +2874,30 @@ def main():
 
     ok = capture_view("routing", "RoutingView.qml", setup_routing, show_routing) and ok
 
+    def show_routing_provider_focus(view, root):
+        for _ in range(8):
+            app.processEvents()
+        provider = find_item(root, "routingProvider_grok")
+        if provider is None or provider.property("qaTextFits") is not True:
+            raise AssertionError("routing provider focus screenshot did not render a clean provider row")
+        provider.forceActiveFocus(Qt.TabFocusReason)
+        for _ in range(8):
+            app.processEvents()
+        if provider.property("qaVisualFocus") is not True:
+            raise AssertionError("routing provider focus screenshot did not expose focus")
+        if provider.property("qaAccessibleName") != "grok provider":
+            raise AssertionError(f"routing provider accessible name was {provider.property('qaAccessibleName')!r}")
+        QTest.keyClick(view, Qt.Key_Return)
+        for _ in range(8):
+            app.processEvents()
+        if root.property("qaFilteredModelCount") != 1:
+            raise AssertionError("routing provider keyboard activation did not filter the catalog")
+        model_card = find_item(root, "routingModelCard_grok_4")
+        if model_card is None or model_card.property("qaTextFits") is not True:
+            raise AssertionError("routing provider keyboard activation did not keep the filtered model card clean")
+
+    ok = capture_view("routing-provider-focus", "RoutingView.qml", setup_routing, show_routing_provider_focus) and ok
+
     def show_routing_refresh_error(_view, root):
         for _ in range(8):
             app.processEvents()

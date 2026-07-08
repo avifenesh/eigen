@@ -116,21 +116,37 @@ Rectangle {
                         Rectangle {
                             objectName: "routingProvider_all"
                             readonly property bool qaTextFits: !allProviderLabel.truncated
+                            readonly property bool qaVisualFocus: activeFocus
+                            readonly property string qaAccessibleName: "All providers"
                             Layout.fillWidth: true
                             Layout.leftMargin: Theme.space.sm
                             Layout.rightMargin: Theme.space.sm
                             implicitHeight: 32
                             radius: Theme.radius.sm
-                            color: root.providerFilter === "" ? Theme.colors.stateSelected : (allProviderMouse.containsMouse ? Theme.colors.stateHover : "transparent")
-                            border.width: root.providerFilter === "" ? 1 : 0
-                            border.color: Theme.colors.borderBrandFaint
+                            activeFocusOnTab: true
+                            focusPolicy: Qt.StrongFocus
+                            Accessible.role: Accessible.Button
+                            Accessible.name: qaAccessibleName
+                            Accessible.description: root.providerFilter === "" ? "Showing all routing providers" : "Show all routing providers"
+                            Accessible.onPressAction: activate()
+                            color: root.providerFilter === "" ? Theme.colors.stateSelected : (activeFocus ? Theme.colors.stateFocusBg : (allProviderMouse.containsMouse ? Theme.colors.stateHover : "transparent"))
+                            border.width: activeFocus || root.providerFilter === "" ? 1 : 0
+                            border.color: activeFocus ? Theme.colors.brandBright : Theme.colors.borderBrandFaint
+
+                            function activate() {
+                                root.providerFilter = ""
+                            }
+
+                            Keys.onReturnPressed: activate()
+                            Keys.onEnterPressed: activate()
+                            Keys.onSpacePressed: activate()
 
                             MouseArea {
                                 id: allProviderMouse
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: root.providerFilter = ""
+                                onClicked: parent.activate()
                             }
 
                             RowLayout {
@@ -166,22 +182,38 @@ Rectangle {
                                 readonly property string providerName: String(provider.name || "")
                                 readonly property bool selected: root.providerFilter === providerName
                                 readonly property bool qaTextFits: !providerNameLabel.truncated
+                                readonly property bool qaVisualFocus: activeFocus
+                                readonly property string qaAccessibleName: providerName + " provider"
                                 objectName: "routingProvider_" + root.safeObjectName(providerName)
                                 Layout.fillWidth: true
                                 Layout.leftMargin: Theme.space.sm
                                 Layout.rightMargin: Theme.space.sm
                                 implicitHeight: 32
                                 radius: Theme.radius.sm
-                                color: selected ? Theme.colors.stateSelected : (providerMouse.containsMouse ? Theme.colors.stateHover : "transparent")
-                                border.width: selected ? 1 : 0
-                                border.color: Theme.colors.borderBrandFaint
+                                activeFocusOnTab: true
+                                focusPolicy: Qt.StrongFocus
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qaAccessibleName
+                                Accessible.description: selected ? "Clear " + providerName + " routing provider filter" : "Filter routing providers to " + providerName
+                                Accessible.onPressAction: activate()
+                                color: selected ? Theme.colors.stateSelected : (activeFocus ? Theme.colors.stateFocusBg : (providerMouse.containsMouse ? Theme.colors.stateHover : "transparent"))
+                                border.width: activeFocus || selected ? 1 : 0
+                                border.color: activeFocus ? Theme.colors.brandBright : Theme.colors.borderBrandFaint
+
+                                function activate() {
+                                    root.providerFilter = selected ? "" : providerName
+                                }
+
+                                Keys.onReturnPressed: activate()
+                                Keys.onEnterPressed: activate()
+                                Keys.onSpacePressed: activate()
 
                                 MouseArea {
                                     id: providerMouse
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: root.providerFilter = selected ? "" : providerName
+                                    onClicked: parent.activate()
                                 }
 
                                 RowLayout {
