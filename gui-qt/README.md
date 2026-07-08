@@ -43,7 +43,13 @@ gui-qt/
 ~/.local/bin/eigen-qt
 ```
 
-The launcher checks for stale Go source, rebuilds `bin/eigen` (which includes guiserver) if needed, bootstraps the Qt venv, then launches `main.py`.
+Install or refresh the launcher and desktop entries with:
+
+```bash
+./install-desktop.sh
+```
+
+The installer writes `~/.local/bin/eigen-qt`, `~/.local/share/applications/eigen-qt.desktop`, and the primary `~/.local/share/applications/eigen-gui.desktop`. The launcher checks for stale Go source, rebuilds `bin/eigen` (which includes guiserver) if needed, bootstraps the Qt venv, then launches `main.py`.
 
 **Directly** (for development):
 
@@ -61,7 +67,7 @@ python3 main.py
 
 **Via desktop entry:**
 
-The desktop icon is at `~/.local/share/applications/eigen-qt.desktop` (Name: "Eigen (Qt)"). Both the Qt and legacy Wails GUIs coexist until the user flips the primary `eigen-gui.desktop` Exec line.
+The dedicated desktop icon is at `~/.local/share/applications/eigen-qt.desktop` (Name: "Eigen (Qt)"). The primary `eigen-gui.desktop` entry also points at the Qt launcher; the Wails GUI remains available as `bin/eigen-gui-legacy` for fallback.
 
 ## Footguns (all bit us already — violating these wastes a round)
 
@@ -107,6 +113,6 @@ Both GUIs attach to the **same daemon** (proven fan-out; any view may approve to
 
 - **Phase A (Go surgery + vertical slice):** ✓ COMPLETE
 - **Phase B (port by annoyance):** ✓ COMPLETE — all 12 views ported (Chat, Home, Sessions, Live, Tasks, Board, Skills, Notes, Config, Reviewers, Connectors, Memory)
-- **Phase C (flip + delete):** READY — daily-drive Qt, then flip `eigen-gui.desktop` Exec to `eigen-qt` launcher
+- **Phase C (flip + delete):** FLIPPED — primary desktop entry points at the Qt launcher; keep `bin/eigen-gui-legacy` for fallback until the legacy frontend is removed
 
 See `/home/avifenesh/projects/eigen/docs/qt-migration-plan.md` for full architecture and decision log.
