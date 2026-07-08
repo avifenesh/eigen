@@ -2022,10 +2022,27 @@ def main():
                             "title": "Qt parity hardening",
                             "url": "https://github.com/avifenesh/eigen/pull/76",
                             "needsYou": True,
+                            "session": "s-qa-board",
+                            "draft": True,
+                            "review": "changes",
                         }
                     ],
                 },
-                {"id": "done", "title": "Done", "cards": []},
+                {
+                    "id": "done",
+                    "title": "Done",
+                    "cards": [
+                        {
+                            "key": "pr-qt-approved",
+                            "kind": "pr",
+                            "repo": "avifenesh/eigen",
+                            "number": 75,
+                            "title": "Qt compact shell polish",
+                            "url": "https://github.com/avifenesh/eigen/pull/75",
+                            "review": "approved",
+                        }
+                    ],
+                },
             ]
         }
 
@@ -2034,6 +2051,27 @@ def main():
         return {"boardModel": board_model, "kanbanModel": kanban_model, "rpcClient": client, "sessionsModel": None}
 
     ok = capture_view("board", "BoardView.qml", setup_board) and ok
+
+    def show_board_kanban(_view, root):
+        root.setProperty("viewMode", "kanban")
+        for _ in range(8):
+            app.processEvents()
+        for object_name in (
+            "kanbanSessionTag_pr_qt_followup",
+            "kanbanDraftTag_pr_qt_followup",
+            "kanbanChangesTag_pr_qt_followup",
+            "kanbanApprovedTag_pr_qt_approved",
+        ):
+            tag = find_item(root, object_name)
+            if tag is None or tag.property("qaIsAppTag") is not True:
+                raise AssertionError(f"kanban tag {object_name} did not use AppTag")
+            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 7.5:
+                raise AssertionError(
+                    f"kanban tag {object_name} is cramped: "
+                    f"fits={tag.property('qaTextFits')} padding={tag.property('qaHorizontalPadding')}"
+                )
+
+    ok = capture_view("board-kanban", "BoardView.qml", setup_board, show_board_kanban) and ok
 
     def show_board_action_error(_view, root):
         for _ in range(8):
