@@ -1094,6 +1094,10 @@ if QGuiApplication.platformName().lower() != "offscreen":
         raise AssertionError("Browser dock eagerly loaded WebEngine before navigation")
     if browser_root.property("qaEmptyStateVisible") is not True:
         raise AssertionError("Browser dock did not show its blank state")
+    if browser_address.property("qaIsAppTextField") is not True:
+        raise AssertionError("Browser address did not use shared AppTextField")
+    if browser_address.property("qaTextFits") is not True:
+        raise AssertionError("Browser address text does not fit")
     browser_address.setProperty("text", "localhost:4321/docs")
     pump(app, 8)
     click_item(app, chat_view, chat, "browserGoButton")
@@ -1143,6 +1147,8 @@ if search_combo.property("qaText") != "off":
     raise AssertionError(f"Search combo did not show current search mode: {search_combo.property('qaText')}")
 if title_field.property("qaText") != "Qt chat controls":
     raise AssertionError(f"Title field did not show current title: {title_field.property('qaText')}")
+if title_field.property("qaIsAppTextField") is not True:
+    raise AssertionError("Title field did not use shared AppTextField")
 if title_field.property("qaTextFits") is not True:
     raise AssertionError(f"Title field text does not fit: {title_field.property('qaText')!r}")
 assert_item_inside_window(title_field, "sessionTitleField")
@@ -1569,6 +1575,10 @@ terminal_stop = find_item(chat, "terminalStopButton")
 terminal_clear = find_item(chat, "terminalClearButton")
 if None in (terminal_root, terminal_status, terminal_output, terminal_command, terminal_send, terminal_start, terminal_stop, terminal_clear):
     raise AssertionError("Terminal dock did not render its controls")
+if terminal_command.property("qaIsAppTextField") is not True:
+    raise AssertionError("Terminal command did not use shared AppTextField")
+if terminal_command.property("qaTextFits") is not True:
+    raise AssertionError("Terminal command text does not fit")
 if terminal_status.property("qaIsAppTag") is not True:
     raise AssertionError("Terminal status did not use shared AppTag")
 if terminal_status.property("qaTextFits") is not True:

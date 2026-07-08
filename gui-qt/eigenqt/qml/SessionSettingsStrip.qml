@@ -148,14 +148,18 @@ Rectangle {
         }
 
         // Title (double-click to rename)
-        TextField {
+        AppTextField {
             id: titleField
             objectName: "sessionTitleField"
             text: sessionState ? sessionState.title : ""
             font.family: Theme.uiFonts[0]
             font.pixelSize: Theme.fontSize.h3
             font.weight: Theme.fontWeight.semibold
-            color: Theme.colors.textPrimary
+            backgroundColor: activeFocus ? Theme.colors.surfaceRaised : "transparent"
+            borderColor: "transparent"
+            focusBorderColor: Theme.colors.borderBrand
+            normalBorderWidth: 0
+            focusedBorderWidth: activeFocus ? 1 : 0
             Layout.fillWidth: true
             Layout.minimumWidth: 0
             readOnly: true
@@ -164,9 +168,6 @@ Rectangle {
             selectByMouse: !readOnly
             Accessible.name: "Session title"
             readonly property bool qaEditing: !readOnly
-            readonly property bool qaTextFits: !titleField.contentItem || !titleField.contentItem.text
-                || (titleField.contentItem.paintedWidth <= Math.max(0, width - leftPadding - rightPadding) + 0.5)
-            readonly property string qaText: text
 
             function beginEdit() {
                 if (!sessionState) {
@@ -175,13 +176,6 @@ Rectangle {
                 readOnly = false
                 forceActiveFocus()
                 selectAll()
-            }
-
-            background: Rectangle {
-                color: titleField.activeFocus ? Theme.colors.surfaceRaised : "transparent"
-                radius: Theme.radius.sm
-                border.width: titleField.activeFocus ? 1 : 0
-                border.color: Theme.colors.borderBrand
             }
 
             onEditingFinished: {

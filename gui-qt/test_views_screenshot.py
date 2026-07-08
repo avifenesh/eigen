@@ -1769,6 +1769,10 @@ def main():
             raise AssertionError("chat browser dock loaded WebEngine before a page was opened")
         if browser_tab.property("qaEmptyStateVisible") is not True:
             raise AssertionError("chat browser dock did not show the empty state")
+        if address.property("qaIsAppTextField") is not True:
+            raise AssertionError("chat browser dock address did not use AppTextField")
+        if address.property("qaTextFits") is not True:
+            raise AssertionError("chat browser dock address text did not fit")
         if go_button.property("qaTextFits") is not True:
             raise AssertionError("chat browser dock Go button text did not fit")
 
@@ -1817,6 +1821,10 @@ def main():
         clear_button = find_item(root, "terminalClearButton")
         if None in (terminal_tab, status_tag, output_area, command_field, send_button, start_button, stop_button, clear_button):
             raise AssertionError("chat terminal dock did not render controls")
+        if command_field.property("qaIsAppTextField") is not True:
+            raise AssertionError("chat terminal command did not use AppTextField")
+        if command_field.property("qaTextFits") is not True:
+            raise AssertionError("chat terminal command text did not fit")
         if status_tag.property("qaIsAppTag") is not True:
             raise AssertionError("chat terminal status did not use AppTag")
         if status_tag.property("qaTextFits") is not True or float(status_tag.property("qaHorizontalPadding") or 0) < 31.5 or float(status_tag.property("qaVerticalPadding") or 0) < 9.5:

@@ -268,26 +268,19 @@ Rectangle {
                 anchors.rightMargin: Theme.space.md
                 spacing: Theme.space.sm
 
-                TextField {
+                AppTextField {
                     id: terminalCommandField
                     objectName: "terminalCommandField"
                     Layout.fillWidth: true
                     Layout.preferredHeight: 30
+                    backgroundColor: Theme.colors.bgInset
+                    borderColor: Theme.colors.borderHairline
+                    focusBorderColor: Theme.colors.borderBrand
                     enabled: root.started
-                    selectByMouse: true
                     placeholderText: root.started ? "Run a shell command" : "Terminal is not running"
-                    placeholderTextColor: Theme.colors.textGhost
                     font.family: Theme.monoFonts[0]
                     font.pixelSize: Theme.fontSize.codeSm
-                    color: Theme.colors.textPrimary
                     Accessible.name: "Terminal command"
-
-                    background: Rectangle {
-                        color: Theme.colors.bgInset
-                        radius: Theme.radius.sm
-                        border.width: 1
-                        border.color: terminalCommandField.activeFocus ? Theme.colors.borderBrand : Theme.colors.borderHairline
-                    }
 
                     Keys.onReturnPressed: function(event) {
                         root.sendCommand()

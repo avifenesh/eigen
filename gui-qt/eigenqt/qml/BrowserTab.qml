@@ -72,28 +72,19 @@ Rectangle {
                     }
                 }
 
-                TextField {
+                AppTextField {
                     id: addressField
                     objectName: "browserAddressField"
                     Layout.fillWidth: true
                     Layout.preferredHeight: 30
+                    backgroundColor: Theme.colors.bgInset
+                    borderColor: Theme.colors.borderHairline
+                    focusBorderColor: Theme.colors.borderBrand
                     text: root.currentUrl
-                    selectByMouse: true
                     font.family: Theme.monoFonts[0]
                     font.pixelSize: Theme.fontSize.codeSm
-                    color: Theme.colors.textPrimary
                     placeholderText: "Enter a URL"
-                    placeholderTextColor: Theme.colors.textGhost
                     Accessible.name: "Browser URL"
-                    readonly property bool qaTextFits: !addressField.contentItem || !addressField.contentItem.text
-                        || (addressField.contentItem.paintedWidth <= Math.max(0, width - leftPadding - rightPadding) + 0.5)
-
-                    background: Rectangle {
-                        color: Theme.colors.bgInset
-                        radius: Theme.radius.sm
-                        border.width: 1
-                        border.color: addressField.activeFocus ? Theme.colors.borderBrand : Theme.colors.borderHairline
-                    }
 
                     Keys.onReturnPressed: function(event) {
                         root.navigate()
