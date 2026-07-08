@@ -1631,14 +1631,23 @@ def main():
         root.setProperty("dockOpen", True)
         QTest.qWait(240)
         terminal_tab = find_item(root, "terminalTab")
+        status_tag = find_item(root, "terminalStatusTag")
         output_area = find_item(root, "terminalOutputArea")
         command_field = find_item(root, "terminalCommandField")
         send_button = find_item(root, "terminalSendButton")
         start_button = find_item(root, "terminalStartButton")
         stop_button = find_item(root, "terminalStopButton")
         clear_button = find_item(root, "terminalClearButton")
-        if None in (terminal_tab, output_area, command_field, send_button, start_button, stop_button, clear_button):
+        if None in (terminal_tab, status_tag, output_area, command_field, send_button, start_button, stop_button, clear_button):
             raise AssertionError("chat terminal dock did not render controls")
+        if status_tag.property("qaIsAppTag") is not True:
+            raise AssertionError("chat terminal status did not use AppTag")
+        if status_tag.property("qaTextFits") is not True or float(status_tag.property("qaHorizontalPadding") or 0) < 11.5 or float(status_tag.property("qaVerticalPadding") or 0) < 3.5:
+            raise AssertionError(
+                "chat terminal status rendered cramped: "
+                f"fits={status_tag.property('qaTextFits')} "
+                f"padding={status_tag.property('qaHorizontalPadding')}x{status_tag.property('qaVerticalPadding')}"
+            )
         if sum(1 for call in client.calls if call[0] == "TerminalStart") <= before_starts:
             raise AssertionError("chat terminal dock did not start a PTY")
         event_data = base64.b64encode(b"$ pytest -q\ncollecting tests\n").decode("ascii")

@@ -1541,14 +1541,23 @@ terminal_tab = find_item(chat, "dockTab_Terminal")
 if terminal_tab is None or terminal_tab.property("selected") is not True:
     raise AssertionError("/term did not select the Terminal dock tab")
 terminal_root = find_item(chat, "terminalTab")
+terminal_status = find_item(chat, "terminalStatusTag")
 terminal_output = find_item(chat, "terminalOutputArea")
 terminal_command = find_item(chat, "terminalCommandField")
 terminal_send = find_item(chat, "terminalSendButton")
 terminal_start = find_item(chat, "terminalStartButton")
 terminal_stop = find_item(chat, "terminalStopButton")
 terminal_clear = find_item(chat, "terminalClearButton")
-if None in (terminal_root, terminal_output, terminal_command, terminal_send, terminal_start, terminal_stop, terminal_clear):
+if None in (terminal_root, terminal_status, terminal_output, terminal_command, terminal_send, terminal_start, terminal_stop, terminal_clear):
     raise AssertionError("Terminal dock did not render its controls")
+if terminal_status.property("qaIsAppTag") is not True:
+    raise AssertionError("Terminal status did not use shared AppTag")
+if terminal_status.property("qaTextFits") is not True:
+    raise AssertionError("Terminal status text does not fit")
+if float(terminal_status.property("qaHorizontalPadding") or 0) < 11.5:
+    raise AssertionError(f"Terminal status horizontal padding too small: {terminal_status.property('qaHorizontalPadding')}")
+if float(terminal_status.property("qaVerticalPadding") or 0) < 3.5:
+    raise AssertionError(f"Terminal status vertical padding too small: {terminal_status.property('qaVerticalPadding')}")
 if call_count(client, "TerminalStart") <= term_start_count:
     raise AssertionError(f"/term did not start a terminal: {client.calls}")
 if ("subscribe", ("eigen:terminal",)) not in client.calls:
