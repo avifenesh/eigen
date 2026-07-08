@@ -960,8 +960,8 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
     else:
         print(f"✗ Failed to save {output_compact_dropdown}")
     compact_model_combo.setProperty("qaPopupOpen", False)
-    QTest.qWait(40)
-    for _ in range(8):
+    QTest.qWait(80)
+    for _ in range(14):
         app.processEvents()
 
     safe_bottom_inset = 40
