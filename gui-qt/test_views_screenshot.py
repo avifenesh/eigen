@@ -872,8 +872,17 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
 
     send_button = find_item(window.contentItem(), "chatSendButton")
     status_strip = find_item(window.contentItem(), "mainStatusStrip")
-    if send_button is None or status_strip is None:
-        print("✗ Main minimum chat proof could not find send button/status strip")
+    fast_switch = find_item(window.contentItem(), "sessionFastSwitch")
+    if send_button is None or status_strip is None or fast_switch is None:
+        print("✗ Main minimum chat proof could not find send button/status strip/fast switch")
+        window.hide()
+        return False
+    if scene_right(fast_switch) > float(window.width()) + 0.5:
+        print(
+            "✗ Main minimum chat proof clipped fast switch: "
+            f"switch right={scene_right(fast_switch):.1f}, "
+            f"window width={float(window.width()):.1f}"
+        )
         window.hide()
         return False
     if scene_bottom(send_button) > scene_top(status_strip) + 0.5:
@@ -921,6 +930,14 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
             "✗ Main compact chat proof clipped status strip: "
             f"status bottom={scene_bottom(status_strip):.1f}, "
             f"window height={float(window.height()):.1f}"
+        )
+        window.hide()
+        return False
+    if scene_right(fast_switch) > float(window.width()) + 0.5:
+        print(
+            "✗ Main compact chat proof clipped fast switch: "
+            f"switch right={scene_right(fast_switch):.1f}, "
+            f"window width={float(window.width()):.1f}"
         )
         window.hide()
         return False
