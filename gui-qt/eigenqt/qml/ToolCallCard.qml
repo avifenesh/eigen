@@ -6,7 +6,7 @@ import "Theme.js" as Theme
 // Expandable tool call card (collapsed = glyph + name + summary + status; expanded = args + result)
 Rectangle {
     id: root
-    width: parent.width * 0.85
+    width: parent ? parent.width * widthFactor : 900
     implicitHeight: column.height
     color: open ? Theme.colors.surfaceRaised2 : Theme.colors.surfaceRaised
     radius: Theme.radius.md
@@ -20,6 +20,7 @@ Rectangle {
     property string toolStatus  // "running", "success", "error"
     property bool done
     property bool open: false
+    property real widthFactor: 0.85
 
     readonly property bool isError: toolStatus === "error"
     readonly property bool isRunning: toolStatus === "running"
@@ -172,23 +173,25 @@ Rectangle {
 
                     ScrollView {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: Math.min(argsText.contentHeight + Theme.space.md * 2, 200)
+                        Layout.preferredHeight: Math.min(argsText.implicitHeight, 200)
                         clip: true
 
-                        TextArea {
+                        AppTextArea {
                             id: argsText
+                            objectName: "toolArgsText"
                             text: root.toolArgs || ""
                             font.family: Theme.monoFonts[0]
                             font.pixelSize: Theme.fontSize.bodySm
                             color: Theme.colors.textPrimary
                             wrapMode: TextArea.Wrap
                             readOnly: true
-                            selectByMouse: true
-
-                            background: Rectangle {
-                                color: Theme.colors.bgInset
-                                radius: Theme.radius.sm
-                            }
+                            backgroundColor: Theme.colors.bgInset
+                            borderColor: Theme.colors.borderHairline
+                            focusBorderColor: Theme.colors.borderBrandFaint
+                            normalBorderWidth: 0
+                            focusedBorderWidth: 1
+                            backgroundRadius: Theme.radius.sm
+                            Accessible.name: "Tool arguments"
                         }
                     }
                 }
@@ -213,25 +216,25 @@ Rectangle {
 
                         ScrollView {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: Math.min(resultText.contentHeight + Theme.space.md * 2, 400)
+                            Layout.preferredHeight: Math.min(resultText.implicitHeight, 400)
                             clip: true
 
-                            TextArea {
+                            AppTextArea {
                                 id: resultText
+                                objectName: "toolResultText"
                                 text: root.toolResult || ""
                                 font.family: Theme.monoFonts[0]
                                 font.pixelSize: Theme.fontSize.bodySm
                                 color: Theme.colors.textPrimary
                                 wrapMode: TextArea.Wrap
                                 readOnly: true
-                                selectByMouse: true
-
-                                background: Rectangle {
-                                    color: Theme.colors.bgInset
-                                    radius: Theme.radius.sm
-                                    border.width: root.isError ? 1 : 0
-                                    border.color: root.isError ? Theme.colors.error : "transparent"
-                                }
+                                backgroundColor: Theme.colors.bgInset
+                                borderColor: root.isError ? Theme.colors.error : Theme.colors.borderHairline
+                                focusBorderColor: root.isError ? Theme.colors.error : Theme.colors.borderBrandFaint
+                                normalBorderWidth: root.isError ? 1 : 0
+                                focusedBorderWidth: 1
+                                backgroundRadius: Theme.radius.sm
+                                Accessible.name: root.isError ? "Tool error output" : "Tool result"
                             }
                         }
                     }

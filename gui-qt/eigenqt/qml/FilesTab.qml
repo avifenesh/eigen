@@ -386,17 +386,23 @@ Item {
                             visible: !viewLoading && viewError === ""
                             clip: true
 
-                            TextArea {
+                            AppTextArea {
+                                id: filesViewerTextArea
+                                objectName: "filesViewerTextArea"
                                 text: viewText
                                 font.family: Theme.monoFonts[0]
                                 font.pixelSize: Theme.fontSize.codeSm
                                 color: Theme.colors.synText
                                 readOnly: true
-                                selectByMouse: true
                                 wrapMode: TextArea.NoWrap
-                                background: Rectangle {
-                                    color: Theme.colors.synBg
-                                }
+                                qaAllowHorizontalOverflow: true
+                                backgroundColor: Theme.colors.synBg
+                                borderColor: Theme.colors.borderHairline
+                                focusBorderColor: Theme.colors.borderBrand
+                                normalBorderWidth: 0
+                                focusedBorderWidth: 1
+                                backgroundRadius: 0
+                                Accessible.name: "File viewer contents"
                             }
                         }
                     }

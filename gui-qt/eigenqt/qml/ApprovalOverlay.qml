@@ -105,20 +105,28 @@ Rectangle {
                             anchors.margins: Theme.space.sm
                             clip: true
 
-                            TextArea {
+                            AppTextArea {
                                 id: argsText
                                 objectName: "approvalArgsText_" + qaKey
                                 text: shownArgs
                                 readOnly: true
-                                selectByMouse: true
                                 wrapMode: TextEdit.WrapAnywhere
                                 color: Theme.colors.textSecondary
                                 selectedTextColor: Theme.colors.bgBase
                                 selectionColor: Theme.colors.brandBright
                                 font.family: Theme.monoFonts[0]
                                 font.pixelSize: Theme.fontSize.codeSm
-                                padding: 0
-                                background: Item {}
+                                leftPadding: Theme.space.xl
+                                rightPadding: Theme.space.xl
+                                topPadding: Theme.space.lg
+                                bottomPadding: Theme.space.lg
+                                backgroundColor: "transparent"
+                                borderColor: "transparent"
+                                focusBorderColor: Theme.colors.borderBrandFaint
+                                normalBorderWidth: 0
+                                focusedBorderWidth: 1
+                                backgroundRadius: Theme.radius.xs
+                                Accessible.name: "Approval arguments"
                             }
                         }
                     }
