@@ -53,6 +53,19 @@ def assert_placeholder_color(item, name):
         raise AssertionError(f"{name} placeholder color regressed: {color}")
 
 
+def assert_app_text_field(item, name):
+    if item is None:
+        raise AssertionError(f"missing {name} input")
+    if item.property("qaIsAppTextField") is not True:
+        raise AssertionError(f"{name} input did not use AppTextField")
+    if item.property("qaTextFits") is not True:
+        raise AssertionError(f"{name} input text did not fit")
+    if float(item.property("qaHorizontalPadding") or 0) < 11.5:
+        raise AssertionError(f"{name} input horizontal padding too small: {item.property('qaHorizontalPadding')}")
+    if float(item.property("qaVerticalPadding") or 0) < 5.5:
+        raise AssertionError(f"{name} input vertical padding too small: {item.property('qaVerticalPadding')}")
+
+
 class FakeRpcClient(QObject):
     connected = Signal()
     callDone = Signal(int, "QVariantMap")
@@ -829,8 +842,11 @@ def check_connectors(app, client):
         if add_button.property("enabled"):
             raise AssertionError("empty connector form should not be submittable")
         add_name = find_visual_item(root, "connectorsAddNameInput")
-        if add_name is None:
-            raise AssertionError("missing connector name input")
+        add_url = find_visual_item(root, "connectorsAddUrlInput")
+        add_desc = find_visual_item(root, "connectorsAddDescInput")
+        assert_app_text_field(add_name, "connector name")
+        assert_app_text_field(add_url, "connector URL")
+        assert_app_text_field(add_desc, "connector description")
         assert_placeholder_color(add_name, "connector name")
         set_text(app, root, "connectorsAddNameInput", "linear")
         if add_button.property("enabled"):
@@ -896,8 +912,11 @@ def check_connectors(app, client):
         if save_button.property("enabled"):
             raise AssertionError("empty local server form should not be submittable")
         server_name = find_visual_item(root, "connectorsServerNameInput")
-        if server_name is None:
-            raise AssertionError("missing local server name input")
+        server_command = find_visual_item(root, "connectorsServerCommandInput")
+        server_desc = find_visual_item(root, "connectorsServerDescInput")
+        assert_app_text_field(server_name, "local server name")
+        assert_app_text_field(server_command, "local server command")
+        assert_app_text_field(server_desc, "local server description")
         assert_placeholder_color(server_name, "local server name")
         set_text(app, root, "connectorsServerNameInput", "github-local")
         if save_button.property("enabled"):

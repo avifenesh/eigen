@@ -14,15 +14,6 @@ Rectangle {
 
     property var connectorsModel: null  // ConnectorsModel from Python
 
-    component FormFieldBackground: Rectangle {
-        property bool focused: false
-
-        color: Theme.colors.bgRaised2
-        border.width: 1
-        border.color: focused ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
-        radius: Theme.radius.sm
-    }
-
     Flickable {
         id: connectorsFlick
         objectName: "connectorsFlick"
@@ -408,35 +399,19 @@ Rectangle {
                                 color: Theme.colors.textMuted
                             }
 
-                            TextField {
+                            AppTextField {
                                 id: addNameField
                                 objectName: "connectorsAddNameInput"
                                 Layout.fillWidth: true
+                                backgroundColor: Theme.colors.bgRaised2
                                 placeholderText: "notion"
                                 text: connectorsModel ? connectorsModel.add_name : ""
                                 enabled: connectorsModel && !connectorsModel.adding
                                 onTextChanged: if (connectorsModel) connectorsModel.add_name = text
                                 font.family: Theme.monoFonts[0]
-                                font.pixelSize: Theme.fontSize.bodySm
-                                color: Theme.colors.textPrimary
-                                placeholderTextColor: Theme.colors.textGhost
-                                leftPadding: Theme.space.lg
-                                rightPadding: Theme.space.lg
-                                property bool qaForceKeyboardFocus: false
-                                readonly property bool qaVisualFocus: activeFocus
-                                readonly property bool qaTextFits: !addNameField.contentItem || !addNameField.contentItem.text
-                                    || (!addNameField.contentItem.truncated
-                                        && addNameField.contentItem.paintedWidth <= addNameField.contentItem.width + 0.5)
-                                readonly property string qaText: text || placeholderText
                                 Keys.onPressed: function(event) {
                                     root.handleAddConnectorKey(event)
                                 }
-                                onQaForceKeyboardFocusChanged: {
-                                    if (qaForceKeyboardFocus) {
-                                        forceActiveFocus(Qt.TabFocusReason)
-                                    }
-                                }
-                                background: FormFieldBackground { focused: addNameField.activeFocus }
                             }
                         }
 
@@ -452,35 +427,19 @@ Rectangle {
                                 color: Theme.colors.textMuted
                             }
 
-                            TextField {
+                            AppTextField {
                                 id: addUrlField
                                 objectName: "connectorsAddUrlInput"
                                 Layout.fillWidth: true
+                                backgroundColor: Theme.colors.bgRaised2
                                 placeholderText: "https://mcp.notion.com/mcp"
                                 text: connectorsModel ? connectorsModel.add_url : ""
                                 enabled: connectorsModel && !connectorsModel.adding
                                 onTextChanged: if (connectorsModel) connectorsModel.add_url = text
                                 font.family: Theme.monoFonts[0]
-                                font.pixelSize: Theme.fontSize.bodySm
-                                color: Theme.colors.textPrimary
-                                placeholderTextColor: Theme.colors.textGhost
-                                leftPadding: Theme.space.lg
-                                rightPadding: Theme.space.lg
-                                property bool qaForceKeyboardFocus: false
-                                readonly property bool qaVisualFocus: activeFocus
-                                readonly property bool qaTextFits: !addUrlField.contentItem || !addUrlField.contentItem.text
-                                    || (!addUrlField.contentItem.truncated
-                                        && addUrlField.contentItem.paintedWidth <= addUrlField.contentItem.width + 0.5)
-                                readonly property string qaText: text || placeholderText
                                 Keys.onPressed: function(event) {
                                     root.handleAddConnectorKey(event)
                                 }
-                                onQaForceKeyboardFocusChanged: {
-                                    if (qaForceKeyboardFocus) {
-                                        forceActiveFocus(Qt.TabFocusReason)
-                                    }
-                                }
-                                background: FormFieldBackground { focused: addUrlField.activeFocus }
                             }
                         }
 
@@ -496,34 +455,18 @@ Rectangle {
                                 color: Theme.colors.textMuted
                             }
 
-                            TextField {
+                            AppTextField {
                                 id: addDescField
                                 objectName: "connectorsAddDescInput"
                                 Layout.fillWidth: true
+                                backgroundColor: Theme.colors.bgRaised2
                                 placeholderText: "Notion workspace (optional)"
                                 text: connectorsModel ? connectorsModel.add_desc : ""
                                 enabled: connectorsModel && !connectorsModel.adding
                                 onTextChanged: if (connectorsModel) connectorsModel.add_desc = text
-                                font.pixelSize: Theme.fontSize.bodySm
-                                color: Theme.colors.textPrimary
-                                placeholderTextColor: Theme.colors.textGhost
-                                leftPadding: Theme.space.lg
-                                rightPadding: Theme.space.lg
-                                property bool qaForceKeyboardFocus: false
-                                readonly property bool qaVisualFocus: activeFocus
-                                readonly property bool qaTextFits: !addDescField.contentItem || !addDescField.contentItem.text
-                                    || (!addDescField.contentItem.truncated
-                                        && addDescField.contentItem.paintedWidth <= addDescField.contentItem.width + 0.5)
-                                readonly property string qaText: text || placeholderText
                                 Keys.onPressed: function(event) {
                                     root.handleAddConnectorKey(event)
                                 }
-                                onQaForceKeyboardFocusChanged: {
-                                    if (qaForceKeyboardFocus) {
-                                        forceActiveFocus(Qt.TabFocusReason)
-                                    }
-                                }
-                                background: FormFieldBackground { focused: addDescField.activeFocus }
                             }
                         }
 
@@ -764,35 +707,19 @@ Rectangle {
                                     color: Theme.colors.textMuted
                                 }
 
-                                TextField {
+                                AppTextField {
                                     id: serverNameField
                                     objectName: "connectorsServerNameInput"
                                     Layout.fillWidth: true
+                                    backgroundColor: Theme.colors.bgRaised2
                                     placeholderText: "github"
                                     text: connectorsModel ? connectorsModel.srv_name : ""
                                     enabled: connectorsModel && !connectorsModel.srv_saving
                                     onTextChanged: if (connectorsModel) connectorsModel.srv_name = text
                                     font.family: Theme.monoFonts[0]
-                                    font.pixelSize: Theme.fontSize.bodySm
-                                    color: Theme.colors.textPrimary
-                                    placeholderTextColor: Theme.colors.textGhost
-                                    leftPadding: Theme.space.lg
-                                    rightPadding: Theme.space.lg
-                                    property bool qaForceKeyboardFocus: false
-                                    readonly property bool qaVisualFocus: activeFocus
-                                    readonly property bool qaTextFits: !serverNameField.contentItem || !serverNameField.contentItem.text
-                                        || (!serverNameField.contentItem.truncated
-                                            && serverNameField.contentItem.paintedWidth <= serverNameField.contentItem.width + 0.5)
-                                    readonly property string qaText: text || placeholderText
                                     Keys.onPressed: function(event) {
                                         root.handleServerLineKey(event)
                                     }
-                                    onQaForceKeyboardFocusChanged: {
-                                        if (qaForceKeyboardFocus) {
-                                            forceActiveFocus(Qt.TabFocusReason)
-                                        }
-                                    }
-                                    background: FormFieldBackground { focused: serverNameField.activeFocus }
                                 }
                             }
 
@@ -808,35 +735,19 @@ Rectangle {
                                     color: Theme.colors.textMuted
                                 }
 
-                                TextField {
+                                AppTextField {
                                     id: serverCommandField
                                     objectName: "connectorsServerCommandInput"
                                     Layout.fillWidth: true
+                                    backgroundColor: Theme.colors.bgRaised2
                                     placeholderText: "docker run ghcr.io/github/github-mcp-server"
                                     text: connectorsModel ? connectorsModel.srv_command : ""
                                     enabled: connectorsModel && !connectorsModel.srv_saving
                                     onTextChanged: if (connectorsModel) connectorsModel.srv_command = text
                                     font.family: Theme.monoFonts[0]
-                                    font.pixelSize: Theme.fontSize.bodySm
-                                    color: Theme.colors.textPrimary
-                                    placeholderTextColor: Theme.colors.textGhost
-                                    leftPadding: Theme.space.lg
-                                    rightPadding: Theme.space.lg
-                                    property bool qaForceKeyboardFocus: false
-                                    readonly property bool qaVisualFocus: activeFocus
-                                    readonly property bool qaTextFits: !serverCommandField.contentItem || !serverCommandField.contentItem.text
-                                        || (!serverCommandField.contentItem.truncated
-                                            && serverCommandField.contentItem.paintedWidth <= serverCommandField.contentItem.width + 0.5)
-                                    readonly property string qaText: text || placeholderText
                                     Keys.onPressed: function(event) {
                                         root.handleServerLineKey(event)
                                     }
-                                    onQaForceKeyboardFocusChanged: {
-                                        if (qaForceKeyboardFocus) {
-                                            forceActiveFocus(Qt.TabFocusReason)
-                                        }
-                                    }
-                                    background: FormFieldBackground { focused: serverCommandField.activeFocus }
                                 }
                             }
 
@@ -852,34 +763,18 @@ Rectangle {
                                     color: Theme.colors.textMuted
                                 }
 
-                                TextField {
+                                AppTextField {
                                     id: serverDescField
                                     objectName: "connectorsServerDescInput"
                                     Layout.fillWidth: true
+                                    backgroundColor: Theme.colors.bgRaised2
                                     placeholderText: "GitHub MCP (optional)"
                                     text: connectorsModel ? connectorsModel.srv_desc : ""
                                     enabled: connectorsModel && !connectorsModel.srv_saving
                                     onTextChanged: if (connectorsModel) connectorsModel.srv_desc = text
-                                    font.pixelSize: Theme.fontSize.bodySm
-                                    color: Theme.colors.textPrimary
-                                    placeholderTextColor: Theme.colors.textGhost
-                                    leftPadding: Theme.space.lg
-                                    rightPadding: Theme.space.lg
-                                    property bool qaForceKeyboardFocus: false
-                                    readonly property bool qaVisualFocus: activeFocus
-                                    readonly property bool qaTextFits: !serverDescField.contentItem || !serverDescField.contentItem.text
-                                        || (!serverDescField.contentItem.truncated
-                                            && serverDescField.contentItem.paintedWidth <= serverDescField.contentItem.width + 0.5)
-                                    readonly property string qaText: text || placeholderText
                                     Keys.onPressed: function(event) {
                                         root.handleServerLineKey(event)
                                     }
-                                    onQaForceKeyboardFocusChanged: {
-                                        if (qaForceKeyboardFocus) {
-                                            forceActiveFocus(Qt.TabFocusReason)
-                                        }
-                                    }
-                                    background: FormFieldBackground { focused: serverDescField.activeFocus }
                                 }
                             }
 
