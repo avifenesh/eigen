@@ -292,6 +292,53 @@ Rectangle {
                 }
 
                 Rectangle {
+                    objectName: "notesStatusRefreshErrorBanner"
+                    visible: root.hasStatusRefreshError()
+                    Layout.fillWidth: true
+                    Layout.leftMargin: Theme.space.lg
+                    Layout.rightMargin: Theme.space.lg
+                    Layout.bottomMargin: visible ? Theme.space.sm : 0
+                    Layout.preferredHeight: visible ? Math.max(36, notesStatusRefreshErrorRow.implicitHeight + Theme.space.md) : 0
+                    color: Theme.colors.errorBg
+                    border.width: visible ? 1 : 0
+                    border.color: Theme.colors.error
+                    radius: Theme.radius.sm
+                    clip: true
+
+                    RowLayout {
+                        id: notesStatusRefreshErrorRow
+                        anchors.fill: parent
+                        anchors.leftMargin: Theme.space.md
+                        anchors.rightMargin: Theme.space.md
+                        spacing: Theme.space.md
+
+                        Label {
+                            objectName: "notesStatusRefreshErrorText"
+                            text: root.notesController ? root.notesController.status_error : ""
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.label
+                            color: Theme.colors.error
+                            wrapMode: Text.WrapAnywhere
+                            Layout.fillWidth: true
+                        }
+
+                        AppButton {
+                            objectName: "notesStatusRefreshErrorRetry"
+                            text: "Retry"
+                            compact: true
+                            toolTipText: "Retry loading notes"
+                            Layout.preferredWidth: 64
+                            Layout.preferredHeight: 28
+                            onClicked: {
+                                if (root.notesController) {
+                                    root.notesController.refresh_status()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
                     objectName: "notesActionError"
                     visible: root.notesController && root.notesController.action_error !== ""
                     Layout.fillWidth: true
@@ -816,6 +863,12 @@ Rectangle {
         return !!(root.notesController
             && root.notesController.notes_model
             && root.notesController.notes_model.error !== "")
+    }
+
+    function hasStatusRefreshError() {
+        return !!(root.notesController
+            && root.notesController.available
+            && root.notesController.status_error !== "")
     }
 
     function retryNotesList() {

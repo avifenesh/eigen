@@ -2358,6 +2358,35 @@ def main():
         show_notes_save_error,
     ) and ok
 
+    def show_notes_status_refresh_error(_view, root):
+        notes_controller = root.property("notesController")
+        if notes_controller is not None:
+            notes_controller.status_error = "daemon offline"
+        for _ in range(6):
+            app.processEvents()
+        initial = find_item(root, "notesStatusLoadError")
+        banner = find_item(root, "notesStatusRefreshErrorBanner")
+        text = find_item(root, "notesStatusRefreshErrorText")
+        retry = find_item(root, "notesStatusRefreshErrorRetry")
+        new_button = find_item(root, "notesNewButton")
+        if initial is not None and initial.property("visible") is True:
+            raise AssertionError("notes status refresh screenshot hid stale notes behind the initial error")
+        if banner is None or banner.property("visible") is not True:
+            raise AssertionError("notes status refresh screenshot did not render the banner")
+        if text is None or "daemon offline" not in text.property("text"):
+            raise AssertionError("notes status refresh screenshot rendered the wrong text")
+        if retry is None or retry.property("qaTextFits") is not True:
+            raise AssertionError("notes status refresh screenshot did not render a clean retry button")
+        if new_button is None or new_button.property("visible") is not True:
+            raise AssertionError("notes status refresh screenshot dropped usable note controls")
+
+    ok = capture_view(
+        "notes-status-refresh-error",
+        "NotesView.qml",
+        setup_notes,
+        show_notes_status_refresh_error,
+    ) and ok
+
     def setup_notes_load_error(ctx):
         notes_controller = NotesController(client)
         notes_controller.status = {"available": True, "vault": "/home/user/notes"}

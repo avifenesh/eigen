@@ -1165,6 +1165,32 @@ def check_notes(app, client):
     finally:
         close_view(app, view)
 
+    status_refresh_notes = NotesController(client)
+    status_refresh_notes.status = {"available": True, "vault": "/home/user/notes"}
+    status_refresh_notes.status_error = "daemon offline"
+    view, root = load_view(app, client, "NotesView.qml", context={"notesController": status_refresh_notes}, root_props={"notesController": status_refresh_notes})
+    try:
+        initial_error = find_visual_item(root, "notesStatusLoadError")
+        refresh_error = find_visual_item(root, "notesStatusRefreshErrorBanner")
+        refresh_text = find_visual_item(root, "notesStatusRefreshErrorText")
+        refresh_retry = find_visual_item(root, "notesStatusRefreshErrorRetry")
+        new_button = find_visual_item(root, "notesNewButton")
+        if initial_error is not None and initial_error.property("visible"):
+            raise AssertionError("notes status refresh error replaced stale notes with the initial error state")
+        if refresh_error is None or not refresh_error.property("visible"):
+            raise AssertionError("notes status refresh error banner did not render")
+        if refresh_text is None or "daemon offline" not in refresh_text.property("text"):
+            raise AssertionError(f"notes status refresh error text was wrong: {refresh_text.property('text') if refresh_text else None}")
+        if refresh_retry is None or not refresh_retry.property("qaTextFits"):
+            raise AssertionError("notes status refresh retry did not render cleanly")
+        if new_button is None or new_button.property("visible") is not True:
+            raise AssertionError("notes status refresh error hid the usable notes controls")
+        start = len(client.calls)
+        click_item(app, view, root, "notesStatusRefreshErrorRetry")
+        assert_call(client, start, "ObsidianStatus", ())
+    finally:
+        close_view(app, view)
+
     list_error_notes = NotesController(client)
     list_error_notes.status = {"available": True, "vault": "/home/user/notes"}
     list_error_notes.notes_model._set_error("daemon offline")
