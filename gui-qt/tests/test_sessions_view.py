@@ -100,6 +100,7 @@ class FakeSessionsModel(QAbstractListModel):
         self._action_error = ""
         self._action_message = ""
         self._query = ""
+        self.remove_delay_ms = 0
 
     def roleNames(self):
         return {
@@ -205,7 +206,7 @@ class FakeSessionsModel(QAbstractListModel):
         self.calls.append(("RemoveSession", session_id))
         self._removing.add(session_id)
         self.removingChanged.emit()
-        QTimer.singleShot(0, lambda: self._finish_remove(session_id))
+        QTimer.singleShot(self.remove_delay_ms, lambda: self._finish_remove(session_id))
 
     @Slot()
     def pruneSessions(self):
@@ -559,9 +560,31 @@ try:
         raise AssertionError("Confirm remove button did not render")
     if not confirm.property("qaTextFits"):
         raise AssertionError("Confirm remove button text does not fit")
+    sessions.remove_delay_ms = 70
     click_item(app, view, root, "sessionsRemoveConfirmButton_s_run")
     if ("RemoveSession", "s-run") not in sessions.calls:
         raise AssertionError(f"Confirm did not call remove: {sessions.calls}")
+    pending_confirm = find_item(root, "sessionsRemoveConfirmButton_s_run")
+    pending_cancel = find_item(root, "sessionsRemoveCancelButton_s_run")
+    pending_remove = find_item(root, "sessionsRemoveButton_s_run")
+    if pending_confirm is None:
+        raise AssertionError("Pending remove confirm button disappeared")
+    if pending_confirm.property("qaText") != "Removing..." or pending_confirm.property("enabled") is not False:
+        raise AssertionError(
+            "Pending remove did not render a disabled Removing button: "
+            f"text={pending_confirm.property('qaText')!r} enabled={pending_confirm.property('enabled')}"
+        )
+    if pending_confirm.property("qaTextFits") is not True:
+        raise AssertionError("Pending remove text does not fit")
+    if pending_cancel is None or pending_cancel.property("enabled") is not False:
+        raise AssertionError("Pending remove did not keep cancel disabled in the confirm group")
+    if pending_remove is not None and pending_remove.property("visible") is True:
+        raise AssertionError("Pending remove fell back to the non-confirm Remove button")
+    click_item(app, view, root, "sessionsRemoveConfirmButton_s_run")
+    if sessions.calls.count(("RemoveSession", "s-run")) != 1:
+        raise AssertionError(f"Pending remove allowed duplicate calls: {sessions.calls}")
+    QTest.qWait(90)
+    pump(app, 18)
     if sessions.rowCount() != 0:
         raise AssertionError(f"Confirm remove did not remove the row: {sessions.rowCount()}")
 

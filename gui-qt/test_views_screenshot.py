@@ -1154,6 +1154,26 @@ def main():
 
     ok = capture_view("sessions-remove-confirm", "SessionsView.qml", setup_sessions, show_sessions_remove_confirm) and ok
 
+    def show_sessions_remove_pending(_view, root):
+        root.setConfirming("s-qa-chat", True)
+        model = root.property("sessionsModel")
+        if model is not None:
+            model._removing.add("s-qa-chat")
+            model.removingChanged.emit()
+        for _ in range(8):
+            app.processEvents()
+        confirm = find_item(root, "sessionsRemoveConfirmButton_s_qa_chat")
+        cancel = find_item(root, "sessionsRemoveCancelButton_s_qa_chat")
+        remove = find_item(root, "sessionsRemoveButton_s_qa_chat")
+        if confirm is None or confirm.property("qaText") != "Removing..." or confirm.property("enabled") is not False:
+            raise AssertionError("sessions pending remove screenshot did not render a disabled Removing button")
+        if cancel is None or cancel.property("enabled") is not False:
+            raise AssertionError("sessions pending remove screenshot did not disable cancel")
+        if remove is not None and remove.property("visible") is True:
+            raise AssertionError("sessions pending remove screenshot fell back to the plain Remove button")
+
+    ok = capture_view("sessions-remove-pending", "SessionsView.qml", setup_sessions, show_sessions_remove_pending) and ok
+
     def show_sessions_action_message(_view, root):
         model = root.property("sessionsModel")
         if model is not None:

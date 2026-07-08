@@ -401,7 +401,6 @@ Rectangle {
                             Layout.preferredWidth: 104
                             onClicked: {
                                 root.sessionsModel.removeSession(row.sessionId)
-                                root.setConfirming(row.sessionId, false)
                             }
                         }
 
