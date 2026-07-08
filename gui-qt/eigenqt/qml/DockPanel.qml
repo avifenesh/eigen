@@ -1,9 +1,10 @@
 /*
- * Right-side dock panel with Diff | Files | Info | Browser tabs.
+ * Right-side dock panel with Diff | Files | Info | Browser | Terminal tabs.
  *
  * Toggleable from SessionSettingsStrip; state is per-session.
  * Tabs switch between DiffTab (git working-tree diff), FilesTab (file
- * explorer), DockInfoTab (session metadata), and BrowserTab (embedded web).
+ * explorer), DockInfoTab (session metadata), BrowserTab (embedded web), and
+ * TerminalTab (interactive PTY).
  */
 
 import QtQuick
@@ -19,6 +20,7 @@ Rectangle {
     // Props
     required property string sessionDir  // Session's working directory
     required property var rpcClient      // RPC client for bridge calls
+    property var terminalHelper: null
     property var sessionStateModel: null
 
     color: Theme.colors.bgRaised
@@ -28,12 +30,21 @@ Rectangle {
     // Signals
     signal closed()
 
-    property int currentTab: 0  // 0=Diff, 1=Files, 2=Info, 3=Browser
+    property int currentTab: 0  // 0=Diff, 1=Files, 2=Info, 3=Browser, 4=Terminal
     property int preferredTab: 0
-    readonly property var tabLabels: ["Diff", "Files", "Info", "Browser"]
+    property bool browserOpened: false
+    property bool terminalOpened: false
+    readonly property var tabLabels: ["Diff", "Files", "Info", "Browser", "Terminal"]
 
-    Component.onCompleted: currentTab = clampTab(preferredTab)
-    onPreferredTabChanged: currentTab = clampTab(preferredTab)
+    Component.onCompleted: {
+        currentTab = clampTab(preferredTab)
+        markOpened(currentTab)
+    }
+    onPreferredTabChanged: {
+        currentTab = clampTab(preferredTab)
+        markOpened(currentTab)
+    }
+    onCurrentTabChanged: markOpened(currentTab)
 
     ColumnLayout {
         anchors.fill: parent
@@ -113,10 +124,21 @@ Rectangle {
                 sessionStateModel: root.sessionStateModel
             }
 
-            // Browser tab: lazy-load so the Chromium surface only exists when selected.
+            // Browser tab: lazy-load once, then keep mounted across tab switches.
             Loader {
-                active: root.currentTab === 3
+                active: root.browserOpened
                 sourceComponent: BrowserTab {}
+            }
+
+            // Terminal tab: lazy-load once, then keep the PTY alive across tab switches.
+            Loader {
+                active: root.terminalOpened
+                sourceComponent: TerminalTab {
+                    sessionDir: root.sessionDir
+                    rpcClient: root.rpcClient
+                    terminalHelper: root.terminalHelper
+                    active: root.currentTab === 4
+                }
             }
         }
     }
@@ -131,6 +153,15 @@ Rectangle {
         if (label === "Diff") return "Show working diff"
         if (label === "Files") return "Show files"
         if (label === "Info") return "Show session info"
-        return "Open embedded browser"
+        if (label === "Browser") return "Open embedded browser"
+        return "Open terminal"
+    }
+
+    function markOpened(tabIndex) {
+        if (tabIndex === 3) {
+            browserOpened = true
+        } else if (tabIndex === 4) {
+            terminalOpened = true
+        }
     }
 }

@@ -10,6 +10,7 @@ Screenshots saved to screenshots/qa-fix-*.png
 
 import sys
 import atexit
+import base64
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -50,6 +51,7 @@ from eigenqt.models.transcript_logic import TranscriptRow
 from eigenqt.clipboard_helper import ClipboardHelper
 from eigenqt.highlighter_helper import HighlighterHelper
 from eigenqt.markdown_helper import MarkdownHelper
+from eigenqt.terminal_helper import TerminalHelper
 from eigenqt.webengine import initialize_webengine
 
 ROOT = Path(__file__).resolve().parent
@@ -96,9 +98,11 @@ class ScreenshotRpcClient(QObject):
     def callFire(self, method, args):
         self.calls.append((method, tuple(args or [])))
 
+    @Slot("QVariantList")
     def subscribe(self, channels):
         self.calls.append(("subscribe", tuple(channels or [])))
 
+    @Slot("QVariantList")
     def unsubscribe(self, channels):
         self.calls.append(("unsubscribe", tuple(channels or [])))
 
@@ -112,6 +116,8 @@ class ScreenshotRpcClient(QObject):
             return {"truncated": False, "entries": [{"name": "README.md", "path": "/home/user/eigen/README.md", "isDir": False}]}
         if method == "ReadFileForView":
             return "# Eigen\n"
+        if method == "TerminalStart":
+            return "term-shot"
         if method == "Commands":
             return [
                 {"name": "ship-it", "description": "Turn the current diff into a PR", "scope": "user"},
@@ -669,7 +675,7 @@ def capture_view(view_name: str, qml_file: str, setup_context, after_render=None
     return success
 
 
-def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser):
+def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, terminal_helper):
     """Capture the real Main.qml shell on Chat so bottom composer geometry is visible."""
     print("Capturing main-chat...")
 
@@ -766,6 +772,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser):
         "clipboardHelper": clipboard_helper,
         "highlighter": highlighter,
         "markdownParser": markdown_parser,
+        "terminalHelper": terminal_helper,
     }
     for name, value in context.items():
         ctx.setContextProperty(name, value)
@@ -974,6 +981,7 @@ def main():
     clipboard_helper = ClipboardHelper(app)
     highlighter = HighlighterHelper(app)
     markdown_parser = MarkdownHelper(app)
+    terminal_helper = TerminalHelper(app)
     atexit.register(client.shutdown)
     ok = True
 
@@ -1231,6 +1239,7 @@ def main():
         ctx.setContextProperty("commandsModel", commands_model)
         ctx.setContextProperty("clipboardHelper", clipboard_helper)
         ctx.setContextProperty("highlighter", highlighter)
+        ctx.setContextProperty("terminalHelper", terminal_helper)
         return {
             "sessionId": "s-qa-chat",
             "sessionStateModel": session_state,
@@ -1240,6 +1249,7 @@ def main():
             "rpcClient": client,
             "clipboardHelper": clipboard_helper,
             "highlighter": highlighter,
+            "terminalHelper": terminal_helper,
         }
 
     ok = capture_view("chat", "ChatView.qml", setup_chat) and ok
@@ -1328,6 +1338,41 @@ def main():
             raise AssertionError("chat browser dock kept the empty state over a loaded page")
 
     ok = capture_view("chat-dock-browser-loaded", "ChatView.qml", setup_chat, open_chat_browser_loaded) and ok
+
+    def open_chat_terminal_dock(_view, root):
+        before_starts = sum(1 for call in client.calls if call[0] == "TerminalStart")
+        root.setProperty("dockTabIndex", 4)
+        root.setProperty("dockOpen", True)
+        QTest.qWait(240)
+        terminal_tab = find_item(root, "terminalTab")
+        output_area = find_item(root, "terminalOutputArea")
+        command_field = find_item(root, "terminalCommandField")
+        send_button = find_item(root, "terminalSendButton")
+        start_button = find_item(root, "terminalStartButton")
+        stop_button = find_item(root, "terminalStopButton")
+        clear_button = find_item(root, "terminalClearButton")
+        if None in (terminal_tab, output_area, command_field, send_button, start_button, stop_button, clear_button):
+            raise AssertionError("chat terminal dock did not render controls")
+        if sum(1 for call in client.calls if call[0] == "TerminalStart") <= before_starts:
+            raise AssertionError("chat terminal dock did not start a PTY")
+        event_data = base64.b64encode(b"$ pytest -q\ncollecting tests\n").decode("ascii")
+        client.event.emit("eigen:terminal", {"id": "term-shot", "data": event_data})
+        QTest.qWait(160)
+        if "collecting tests" not in output_area.property("text"):
+            raise AssertionError(f"chat terminal dock did not render decoded output: {output_area.property('text')!r}")
+        command_field.setProperty("text", "pwd")
+        QTest.qWait(80)
+        if send_button.property("qaTextFits") is not True:
+            raise AssertionError("chat terminal Send button text did not fit")
+        for button, name in (
+            (start_button, "Start"),
+            (stop_button, "Stop"),
+            (clear_button, "Clear"),
+        ):
+            if button.property("qaTextFits") is not True:
+                raise AssertionError(f"chat terminal {name} button text did not fit")
+
+    ok = capture_view("chat-dock-terminal", "ChatView.qml", setup_chat, open_chat_terminal_dock) and ok
 
     def show_chat_attachment(_view, root):
         root.setProperty("attachedImage", VALID_PNG_BASE64)
@@ -2803,7 +2848,7 @@ def main():
     ok = capture_view("memory-move-dialog", "MemoryView.qml", setup_memory, show_memory_move_dialog) and ok
 
     # 12. Main shell with Chat route, proving the send button is not clipped by the status strip.
-    ok = capture_main_shell(client, clipboard_helper, highlighter, markdown_parser) and ok
+    ok = capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, terminal_helper) and ok
 
     if ok:
         print("\n✓ All screenshots captured")

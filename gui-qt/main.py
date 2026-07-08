@@ -46,6 +46,7 @@ from eigenqt.rpc import GuiserverSupervisor, RpcClient
 from eigenqt.clipboard_helper import ClipboardHelper
 from eigenqt.highlighter_helper import HighlighterHelper
 from eigenqt.markdown_helper import MarkdownHelper
+from eigenqt.terminal_helper import TerminalHelper
 from eigenqt.webengine import initialize_webengine
 
 ROOT = Path(__file__).resolve().parent
@@ -336,6 +337,7 @@ def main():
     clipboard_helper = ClipboardHelper(app)
     highlighter_helper = HighlighterHelper(app)
     markdown_helper = MarkdownHelper(app)
+    terminal_helper = TerminalHelper(app)
 
     # Expose to QML
     ctx.setContextProperty("rpcClient", app_context.rpc_client)
@@ -371,6 +373,7 @@ def main():
     ctx.setContextProperty("clipboardHelper", clipboard_helper)
     ctx.setContextProperty("highlighter", highlighter_helper)
     ctx.setContextProperty("markdownParser", markdown_helper)
+    ctx.setContextProperty("terminalHelper", terminal_helper)
 
     # Bind property changes
     app_context.daemonOnlineChanged.connect(lambda: ctx.setContextProperty("daemonOnline", app_context.daemonOnline))

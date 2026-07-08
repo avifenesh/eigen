@@ -242,6 +242,7 @@ class RpcClient(QObject):
             raise RuntimeError(payload["error"])
         return payload.get("result")
 
+    @Slot("QVariantList")
     def subscribe(self, channels: list[str]) -> None:
         """Subscribe to event channels."""
         if not self._events_worker or not self._events_ready:
@@ -252,6 +253,7 @@ class RpcClient(QObject):
             self._events_ready = False
             self._handle_disconnect(f"events: send failed: {exc}")
 
+    @Slot("QVariantList")
     def unsubscribe(self, channels: list[str]) -> None:
         """Unsubscribe from event channels."""
         if not self._events_worker or not self._events_ready:

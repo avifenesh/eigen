@@ -16,6 +16,7 @@ Rectangle {
     property var rpcClient: null
     property var clipboardHelper: null
     property var highlighter: null
+    property var terminalHelper: null
     property bool dockOpen: false
     property int dockTabIndex: 0
     property string actionError: ""
@@ -244,6 +245,7 @@ Rectangle {
             sourceComponent: DockPanel {
                 sessionDir: root.sessionStateModel ? root.sessionStateModel.dir : ""
                 rpcClient: root.rpcRef
+                terminalHelper: root.terminalHelper
                 sessionStateModel: root.sessionStateModel
                 preferredTab: root.dockTabIndex
                 onClosed: root.dockOpen = false
@@ -618,7 +620,7 @@ Rectangle {
         }
         var nextTab = Number(tabIndex)
         if (isNaN(nextTab)) nextTab = 0
-        root.dockTabIndex = Math.max(0, Math.min(3, nextTab))
+        root.dockTabIndex = Math.max(0, Math.min(4, nextTab))
         root.actionError = ""
         root.dockOpen = true
         return true
@@ -1471,8 +1473,8 @@ Rectangle {
         case "rail":
             return root.runRailSlash()
         case "term":
-            if (root.openWorktreeDock(1)) {
-                root.appendSlashNote("opened worktree dock; terminal sessions remain in the TUI/web console")
+            if (root.openWorktreeDock(4)) {
+                root.appendSlashNote("opened Terminal dock")
             }
             return true
         case "shells":

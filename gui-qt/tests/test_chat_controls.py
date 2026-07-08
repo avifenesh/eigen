@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_chat_controls_use_shared_actions_and_keep_rpc_contracts():
     script = r"""
+import base64
 from pathlib import Path
 
 from PySide6.QtCore import (
@@ -33,6 +34,7 @@ from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtTest import QTest
 
 import eigenqt.models.worktree  # registers DiffModel/FileTreeModel for DockPanel
+from eigenqt.terminal_helper import TerminalHelper
 from eigenqt.webengine import initialize_webengine
 
 
@@ -80,11 +82,13 @@ class FakeRpcClient(QObject):
     def callFire(self, method, args):
         self.calls.append((method, tuple(args or [])))
 
+    @Slot("QVariantList")
     def subscribe(self, channels):
-        pass
+        self.calls.append(("subscribe", tuple(channels or [])))
 
+    @Slot("QVariantList")
     def unsubscribe(self, channels):
-        pass
+        self.calls.append(("unsubscribe", tuple(channels or [])))
 
     def shutdown(self):
         pass
@@ -96,6 +100,8 @@ class FakeRpcClient(QObject):
             return {"truncated": False, "entries": [{"name": "README.md", "path": "/repo/eigen/README.md", "isDir": False}]}
         if method == "ReadFileForView":
             return "# Eigen\n"
+        if method == "TerminalStart":
+            return "term-chat"
         if method == "Config":
             return {
                 "fields": [
@@ -832,6 +838,7 @@ state = FakeSessionState()
 commands = CommandModel()
 clipboard = FakeClipboard()
 highlighter = FakeHighlighter()
+terminal_helper = TerminalHelper(app)
 transcript = StaticTranscript(
     [
         {
@@ -857,6 +864,7 @@ offline_view, offline_chat = make_view(
         "approvalsModel": ApprovalModel(),
         "clipboardHelper": clipboard,
         "highlighter": highlighter,
+        "terminalHelper": terminal_helper,
     },
 )
 offline_composer = find_item(offline_chat, "chatComposerTextArea")
@@ -910,6 +918,7 @@ chat_view, chat = make_view(
         "rpcClient": client,
         "clipboardHelper": clipboard,
         "highlighter": highlighter,
+        "terminalHelper": terminal_helper,
     },
 )
 back_count = []
@@ -1436,20 +1445,65 @@ if len(rail_events) != 1:
 if "toggled navigation rail" not in transcript.rows[-1]["text"]:
     raise AssertionError(f"/rail did not append feedback: {transcript.rows[-1:]}")
 
-term_file_tree_count = call_count(client, "FileTree")
+term_start_count = call_count(client, "TerminalStart")
 composer.setProperty("text", "/term")
 pump(app, 8)
 click_item(app, chat_view, chat, "chatSendButton")
 pump(app, 18)
 if chat.property("dockOpen") is not True:
     raise AssertionError("/term did not open the worktree dock")
-files_tab = find_item(chat, "dockTab_Files")
-if files_tab is None or files_tab.property("selected") is not True:
-    raise AssertionError("/term did not select the Files dock tab")
-if call_count(client, "FileTree") <= term_file_tree_count:
-    raise AssertionError(f"/term did not load file tree data: {client.calls}")
-if "opened worktree dock; terminal sessions remain in the TUI/web console" not in transcript.rows[-1]["text"]:
+terminal_tab = find_item(chat, "dockTab_Terminal")
+if terminal_tab is None or terminal_tab.property("selected") is not True:
+    raise AssertionError("/term did not select the Terminal dock tab")
+terminal_root = find_item(chat, "terminalTab")
+terminal_output = find_item(chat, "terminalOutputArea")
+terminal_command = find_item(chat, "terminalCommandField")
+terminal_send = find_item(chat, "terminalSendButton")
+terminal_start = find_item(chat, "terminalStartButton")
+terminal_stop = find_item(chat, "terminalStopButton")
+terminal_clear = find_item(chat, "terminalClearButton")
+if None in (terminal_root, terminal_output, terminal_command, terminal_send, terminal_start, terminal_stop, terminal_clear):
+    raise AssertionError("Terminal dock did not render its controls")
+if call_count(client, "TerminalStart") <= term_start_count:
+    raise AssertionError(f"/term did not start a terminal: {client.calls}")
+if ("subscribe", ("eigen:terminal",)) not in client.calls:
+    raise AssertionError(f"Terminal dock did not subscribe to terminal events: {client.calls}")
+encoded_output = base64.b64encode(b"\x1b[32mready\n\x1b[0m").decode("ascii")
+client.event.emit("eigen:terminal", {"id": "term-chat", "data": encoded_output})
+pump(app, 18)
+if "ready\n" not in terminal_output.property("text"):
+    raise AssertionError(f"Terminal output did not decode event bytes: {terminal_output.property('text')!r}")
+terminal_command.setProperty("text", "pwd")
+pump(app, 8)
+click_item(app, chat_view, chat, "terminalSendButton")
+if ("TerminalWrite", ("term-chat", "pwd\r")) not in client.calls:
+    raise AssertionError(f"Terminal command did not write to PTY: {client.calls}")
+if terminal_command.property("text") != "":
+    raise AssertionError("Terminal command field did not clear after send")
+for button, name in (
+    (terminal_send, "terminalSendButton"),
+    (terminal_start, "terminalStartButton"),
+    (terminal_stop, "terminalStopButton"),
+    (terminal_clear, "terminalClearButton"),
+):
+    if not button.property("qaTextFits"):
+        raise AssertionError(f"{name} text does not fit")
+terminal_start_after_send = call_count(client, "TerminalStart")
+click_item(app, chat_view, chat, "dockTab_Diff")
+pump(app, 8)
+click_item(app, chat_view, chat, "dockTab_Terminal")
+pump(app, 18)
+terminal_output = find_item(chat, "terminalOutputArea")
+if call_count(client, "TerminalStart") != terminal_start_after_send:
+    raise AssertionError(f"Switching back to Terminal restarted the PTY: {client.calls}")
+if terminal_output is None or "ready\n" not in terminal_output.property("text"):
+    raise AssertionError("Terminal output was not preserved across dock tab switches")
+if "opened Terminal dock" not in transcript.rows[-1]["text"]:
     raise AssertionError(f"/term did not append expected feedback: {transcript.rows[-1:]}")
+click_item(app, chat_view, chat, "dockCloseButton")
+pump(app, 18)
+if ("TerminalKill", ("term-chat",)) not in client.calls:
+    raise AssertionError(f"Closing the dock did not kill the terminal: {client.calls}")
 
 composer.setProperty("text", "/shells")
 pump(app, 8)
