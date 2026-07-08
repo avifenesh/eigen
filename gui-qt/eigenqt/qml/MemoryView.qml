@@ -627,9 +627,9 @@ Rectangle {
                                             blocks: parseMarkdown(modelData.text || "")
                                         }
 
-                                        ColumnLayout {
-                                            spacing: Theme.space.xs
-                                            Layout.alignment: Qt.AlignTop
+                                        RowLayout {
+                                            spacing: Theme.space.sm
+                                            Layout.alignment: Qt.AlignTop | Qt.AlignRight
 
                                             AppButton {
                                                 objectName: "memoryAdHocMoveButton_" + modelData.index
@@ -730,9 +730,9 @@ Rectangle {
                                             blocks: parseMarkdown(modelData.text || "")
                                         }
 
-                                        ColumnLayout {
-                                            spacing: Theme.space.xs
-                                            Layout.alignment: Qt.AlignTop
+                                        RowLayout {
+                                            spacing: Theme.space.sm
+                                            Layout.alignment: Qt.AlignTop | Qt.AlignRight
 
                                             AppButton {
                                                 objectName: "memoryNoteMoveButton_" + modelData.index
