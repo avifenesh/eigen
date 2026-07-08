@@ -216,6 +216,10 @@ Rectangle {
                         root.handleTerminalKey(event)
                     }
 
+                    onPressed: function(_event) {
+                        terminalOutputArea.forceActiveFocus()
+                    }
+
                     onWidthChanged: root.requestResize()
                     onHeightChanged: root.requestResize()
                 }

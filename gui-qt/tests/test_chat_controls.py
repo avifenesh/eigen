@@ -1492,6 +1492,42 @@ if ("TerminalWrite", ("term-chat", "pwd\r")) not in client.calls:
     raise AssertionError(f"Terminal command did not write to PTY: {client.calls}")
 if terminal_command.property("text") != "":
     raise AssertionError("Terminal command field did not clear after send")
+composer.forceActiveFocus()
+pump(app, 8)
+click_item(app, chat_view, chat, "terminalOutputArea")
+if terminal_output.property("activeFocus") is not True:
+    raise AssertionError("Terminal output did not take focus after click")
+direct_key_start = len(client.calls)
+QTest.keyClick(chat_view, Qt.Key_W)
+QTest.keyClick(chat_view, Qt.Key_H)
+QTest.keyClick(chat_view, Qt.Key_O)
+QTest.keyClick(chat_view, Qt.Key_Return)
+QTest.keyClick(chat_view, Qt.Key_Backspace)
+QTest.keyClick(chat_view, Qt.Key_Tab)
+QTest.keyClick(chat_view, Qt.Key_Up)
+QTest.keyClick(chat_view, Qt.Key_Down)
+QTest.keyClick(chat_view, Qt.Key_Right)
+QTest.keyClick(chat_view, Qt.Key_Left)
+QTest.keyClick(chat_view, Qt.Key_C, Qt.ControlModifier)
+QTest.keyClick(chat_view, Qt.Key_D, Qt.ControlModifier)
+pump(app, 18)
+direct_writes = [call for call in client.calls[direct_key_start:] if call[0] == "TerminalWrite"]
+for expected in (
+    ("TerminalWrite", ("term-chat", "w")),
+    ("TerminalWrite", ("term-chat", "h")),
+    ("TerminalWrite", ("term-chat", "o")),
+    ("TerminalWrite", ("term-chat", "\r")),
+    ("TerminalWrite", ("term-chat", "\x7f")),
+    ("TerminalWrite", ("term-chat", "\t")),
+    ("TerminalWrite", ("term-chat", "\x1b[A")),
+    ("TerminalWrite", ("term-chat", "\x1b[B")),
+    ("TerminalWrite", ("term-chat", "\x1b[C")),
+    ("TerminalWrite", ("term-chat", "\x1b[D")),
+    ("TerminalWrite", ("term-chat", "\x03")),
+    ("TerminalWrite", ("term-chat", "\x04")),
+):
+    if expected not in direct_writes:
+        raise AssertionError(f"Terminal output did not send direct key {expected!r}: {direct_writes!r}")
 for button, name in (
     (terminal_send, "terminalSendButton"),
     (terminal_start, "terminalStartButton"),
