@@ -619,7 +619,7 @@ Rectangle {
                                                 compact: true
                                                 variant: "primary"
                                                 toolTipText: "Open remote session"
-                                                Layout.preferredWidth: 54
+                                                Layout.preferredWidth: Math.max(64, implicitWidth)
                                                 Layout.preferredHeight: 28
                                                 onClicked: root.openSession(sessionId)
                                             }

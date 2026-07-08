@@ -14,6 +14,8 @@ Button {
     property color leadingDotColor: Theme.colors.textFaint
     property string badgeText: ""
     property string segmentPosition: "none" // none | first | middle | last
+    property real compactHorizontalPadding: Theme.space.lg
+    property real compactIconHorizontalPadding: Theme.space.md
     property int contentAlignment: Text.AlignHCenter
     property bool qaForceKeyboardFocus: false
     readonly property bool qaIsAppButton: true
@@ -28,8 +30,8 @@ Button {
     implicitHeight: Math.max(compact ? 24 : 32, contentItem.implicitHeight + topPadding + bottomPadding)
     focusPolicy: Qt.StrongFocus
     hoverEnabled: true
-    leftPadding: compact ? Theme.space.md : Theme.space.xl
-    rightPadding: compact ? Theme.space.md : Theme.space.xl
+    leftPadding: compact ? effectiveCompactHorizontalPadding() : Theme.space.xl
+    rightPadding: compact ? effectiveCompactHorizontalPadding() : Theme.space.xl
     topPadding: compact ? Theme.space.xs : Theme.space.sm
     bottomPadding: compact ? Theme.space.xs : Theme.space.sm
     Accessible.name: toolTipText || text
@@ -161,6 +163,13 @@ Button {
         if (qaForceKeyboardFocus) {
             forceActiveFocus(Qt.TabFocusReason)
         }
+    }
+
+    function effectiveCompactHorizontalPadding() {
+        if (String(text).length <= 1 && badgeText === "" && !leadingDotVisible) {
+            return compactIconHorizontalPadding
+        }
+        return compactHorizontalPadding
     }
 
     function textContentFits(item) {
