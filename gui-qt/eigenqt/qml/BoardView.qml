@@ -93,7 +93,7 @@ Rectangle {
         property string fontFamily: Theme.monoFonts[0]
         property int fontPixelSize: Theme.fontSize.micro
         property int fontWeight: Theme.fontWeight.medium
-        property real horizontalPadding: Theme.space.xxxl
+        property real horizontalPadding: Theme.space.xxxl + Theme.space.xs
         property real verticalPadding: Theme.space.md
 
         readonly property bool qaIsBoardBadge: true
@@ -539,7 +539,7 @@ Rectangle {
                         model: ownerOptions
                         delegate: Rectangle {
                             objectName: "boardOwnerFilterChip_" + root.safeObjectName(modelData.value)
-                            readonly property real horizontalInset: Theme.space.xxxl
+                            readonly property real horizontalInset: Theme.space.xxxl + Theme.space.xs
                             readonly property real verticalInset: Theme.space.md
                             readonly property bool qaIsBoardChip: true
                             readonly property bool qaTextFits: ownerLabel.implicitWidth <= ownerLabel.width + 1.0
@@ -587,7 +587,7 @@ Rectangle {
                         model: stateOptions
                         delegate: Rectangle {
                             objectName: "boardStateFilterChip_" + root.safeObjectName(modelData.value)
-                            readonly property real horizontalInset: Theme.space.xxxl
+                            readonly property real horizontalInset: Theme.space.xxxl + Theme.space.xs
                             readonly property real verticalInset: Theme.space.md
                             readonly property bool qaIsBoardChip: true
                             readonly property bool qaTextFits: stateLabel.implicitWidth <= stateLabel.width + 1.0

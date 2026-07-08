@@ -318,7 +318,7 @@ import "Theme.js" as Theme
         raise AssertionError("AppTag did not expose its QA marker")
     if sample_tag.property("qaTextFits") is not True:
         raise AssertionError("AppTag text does not fit")
-    if float(sample_tag.property("qaHorizontalPadding") or 0) < 31.5:
+    if float(sample_tag.property("qaHorizontalPadding") or 0) < 35.5:
         raise AssertionError(f"AppTag horizontal padding too small: {sample_tag.property('qaHorizontalPadding')}")
     if float(sample_tag.property("qaVerticalPadding") or 0) < 9.5:
         raise AssertionError(f"AppTag vertical padding too small: {sample_tag.property('qaVerticalPadding')}")
