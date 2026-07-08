@@ -142,7 +142,7 @@ Rectangle {
 
                                 objectName: "taskFilterChip_" + root.safeName(modelData)
                                 Layout.preferredHeight: 28
-                                Layout.preferredWidth: chipLabel.implicitWidth + Theme.space.xl * 2
+                                Layout.preferredWidth: chipLabel.implicitWidth + Theme.space.xxl * 2
                                 radius: Theme.radius.sm
                                 activeFocusOnTab: true
                                 focusPolicy: Qt.StrongFocus
@@ -169,8 +169,8 @@ Rectangle {
                                 Label {
                                     id: chipLabel
                                     anchors.fill: parent
-                                    anchors.leftMargin: Theme.space.xl
-                                    anchors.rightMargin: Theme.space.xl
+                                    anchors.leftMargin: Theme.space.xxl
+                                    anchors.rightMargin: Theme.space.xxl
                                     anchors.topMargin: Theme.space.sm
                                     anchors.bottomMargin: Theme.space.sm
                                     text: modelData.charAt(0).toUpperCase() + modelData.slice(1)
