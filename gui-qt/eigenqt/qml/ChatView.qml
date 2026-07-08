@@ -37,6 +37,8 @@ Rectangle {
     readonly property real qaTranscriptContentHeight: transcriptListView.contentHeight
     readonly property bool qaSlashPopupOpen: slashPopup.opened
     readonly property bool qaSlashPopupInsideWindow: slashPopup.qaPopupInsideWindow
+    readonly property int qaSlashCommandCount: slashPopup.qaCommandCount
+    readonly property string qaSlashSelectedCommand: slashPopup.qaSelectedCommand
     readonly property string qaInputMode: inputMode
     readonly property int queuedInputCount: queuedInputs ? queuedInputs.length : 0
     readonly property int qaQueuedInputCount: queuedInputCount

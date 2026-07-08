@@ -23,7 +23,9 @@ Popup {
     signal commandSelected(string commandName)
 
     width: 400
-    height: Math.min(Math.max(commandListView.contentHeight, 48) + Theme.space.md * 2, 300)
+    height: commandListView.count > 0
+        ? Math.min(Math.max(commandListView.contentHeight, 48) + Theme.space.md * 2, 300)
+        : 64
 
     onCommandsModelChanged: refreshFilteredCommands()
 
@@ -40,19 +42,17 @@ Popup {
         refreshFilteredCommands()
     }
 
-    contentItem: ColumnLayout {
-        spacing: 0
-
-        // Command list
+    contentItem: Item {
         ListView {
             id: commandListView
             objectName: "slashCommandList"
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+            anchors.fill: parent
+            anchors.margins: Theme.space.sm
             clip: true
             focus: false
             keyNavigationEnabled: false
             boundsBehavior: Flickable.StopAtBounds
+            visible: count > 0
 
             model: root.filteredCommands
             onCountChanged: root.clampCurrentIndex()
@@ -64,35 +64,69 @@ Popup {
                 objectName: commandName ? ("slashCommandOption_" + root.safeObjectName(commandName)) : ""
                 width: commandListView.width
                 height: 48
+                highlighted: ListView.isCurrentItem
+                Accessible.role: Accessible.MenuItem
+                Accessible.name: "/" + commandName
 
                 background: Rectangle {
-                    color: parent.highlighted || parent.hovered ? Theme.colors.stateHover : "transparent"
+                    color: parent.highlighted
+                        ? Theme.colors.bgRaised
+                        : (parent.hovered ? Theme.colors.stateHover : "transparent")
+                    radius: Theme.radius.sm
+                    border.width: parent.highlighted ? 1 : 0
+                    border.color: Theme.colors.borderBrand
                 }
 
-                contentItem: ColumnLayout {
+                contentItem: RowLayout {
                     anchors.fill: parent
                     anchors.margins: Theme.space.md
-                    spacing: Theme.space.xs
+                    spacing: Theme.space.md
 
-                    Label {
-                        text: "/" + commandName
-                        font.family: Theme.monoFonts[0]
-                        font.pixelSize: Theme.fontSize.body
-                        font.weight: Theme.fontWeight.semibold
-                        color: Theme.colors.textPrimary
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        elide: Text.ElideRight
+                        spacing: Theme.space.xs
+
+                        Label {
+                            text: "/" + commandName
+                            font.family: Theme.monoFonts[0]
+                            font.pixelSize: Theme.fontSize.body
+                            font.weight: Theme.fontWeight.semibold
+                            color: Theme.colors.textPrimary
+                            Layout.fillWidth: true
+                            elide: Text.ElideRight
+                        }
+
+                        Label {
+                            text: commandDescription
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.micro
+                            color: Theme.colors.textMuted
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
                     }
 
-                    Label {
-                        text: commandDescription
-                        font.family: Theme.uiFonts[0]
-                        font.pixelSize: Theme.fontSize.micro
-                        color: Theme.colors.textMuted
-                        elide: Text.ElideRight
-                        Layout.fillWidth: true
+                    Rectangle {
+                        visible: modelData && modelData.scope && String(modelData.scope).length > 0
+                        color: Theme.colors.bgInset
+                        radius: Theme.radius.xs
+                        border.width: 1
+                        border.color: Theme.colors.borderSubtle
+                        Layout.preferredWidth: scopeLabel.implicitWidth + Theme.space.md
+                        Layout.preferredHeight: 22
+                        Layout.alignment: Qt.AlignVCenter
+
+                        Label {
+                            id: scopeLabel
+                            anchors.centerIn: parent
+                            text: modelData && modelData.scope ? String(modelData.scope) : ""
+                            font.family: Theme.monoFonts[0]
+                            font.pixelSize: Theme.fontSize.micro
+                            color: Theme.colors.textFaint
+                        }
                     }
                 }
+                readonly property bool qaSelected: highlighted
                 readonly property bool qaTextFits: !contentItem || root.textFits(contentItem)
                 readonly property string qaText: "/" + commandName
 
@@ -102,12 +136,24 @@ Popup {
                 }
             }
 
-            // Highlight first item by default
             highlightMoveDuration: 0
-            highlight: Rectangle {
-                color: Theme.colors.stateHover
-            }
+            highlight: Item {}
             currentIndex: -1
+        }
+
+        Label {
+            objectName: "slashCommandEmptyState"
+            anchors.centerIn: parent
+            width: Math.max(0, parent.width - Theme.space.xl)
+            visible: commandListView.count === 0
+            text: "No command matches /" + root.filterText
+            font.family: Theme.uiFonts[0]
+            font.pixelSize: Theme.fontSize.bodySm
+            color: Theme.colors.textMuted
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
+
+            readonly property bool qaTextFits: !truncated && paintedWidth <= width + 0.5
         }
     }
 
