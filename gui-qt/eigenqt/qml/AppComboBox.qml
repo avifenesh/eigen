@@ -11,6 +11,8 @@ ComboBox {
     property string toolTipText: ""
     property string fallbackText: ""
     property bool activationUpdatesCurrentIndex: true
+    property int popupMinWidth: 220
+    readonly property int popupHorizontalMargin: Theme.space.md
     property bool qaPopupOpen: false
     property bool qaForceKeyboardFocus: false
     property int qaActivateIndex: -1
@@ -22,6 +24,8 @@ ComboBox {
     readonly property real popupAvailableBelow: popupSpaceBelow()
     readonly property bool popupOpensUp: popupAvailableBelow < popupTargetHeight && popupAvailableAbove > popupAvailableBelow
     readonly property real popupEffectiveHeight: Math.max(32, Math.min(popupTargetHeight, popupOpensUp ? popupAvailableAbove : popupAvailableBelow))
+    readonly property real popupEffectiveWidth: popupWidth()
+    readonly property real popupEffectiveX: popupXOffset()
     readonly property bool qaPopupActuallyOpen: popup.opened
     readonly property int qaCurrentIndex: currentIndex
     readonly property int qaKeyboardIndex: keyboardIndex
@@ -31,6 +35,7 @@ ComboBox {
     readonly property real qaPopupAvailableAbove: popupAvailableAbove
     readonly property real qaPopupAvailableBelow: popupAvailableBelow
     readonly property real qaPopupEffectiveHeight: popupEffectiveHeight
+    readonly property real qaPopupEffectiveWidth: popupEffectiveWidth
     readonly property bool qaPopupOpensUp: popupOpensUp
     readonly property bool qaPopupInsideWindow: popupInsideWindow()
     readonly property bool qaTextFits: !contentItem || !contentItem.text
@@ -110,7 +115,7 @@ ComboBox {
 
     delegate: ItemDelegate {
         objectName: control.objectName ? (control.objectName + "_option_" + index) : ""
-        width: control.width
+        width: control.popupEffectiveWidth
         height: 32
         implicitHeight: 32
         text: control.optionText(modelData)
@@ -152,8 +157,9 @@ ComboBox {
     }
 
     popup: Popup {
+        x: control.popupEffectiveX
         y: control.popupOpensUp ? -implicitHeight - control.popupSpacing : control.height + control.popupSpacing
-        width: control.width
+        width: control.popupEffectiveWidth
         implicitHeight: control.popupEffectiveHeight
         padding: 0
         onOpened: control.keyboardIndex = control.validKeyboardIndex(control.currentIndex)
@@ -289,9 +295,34 @@ ComboBox {
         var win = control.Window.window
         var content = win && win.contentItem ? win.contentItem : null
         if (!win || !content) return true
+        var popupLeft = controlLeftInWindow(content) + popup.x
+        var popupRight = popupLeft + popup.width
         var popupTop = controlTopInWindow(content) + popup.y
         var popupBottom = popupTop + popup.height
-        return popupTop >= -0.5 && popupBottom <= win.height + 0.5
+        return popupLeft >= -0.5 && popupRight <= win.width + 0.5
+            && popupTop >= -0.5 && popupBottom <= win.height + 0.5
+    }
+
+    function popupWidth() {
+        var win = control.Window.window
+        var maxWidth = win ? Math.max(control.width, win.width - popupHorizontalMargin * 2) : popupMinWidth
+        return Math.min(Math.max(control.width, popupMinWidth), maxWidth)
+    }
+
+    function popupXOffset() {
+        var win = control.Window.window
+        var content = win && win.contentItem ? win.contentItem : null
+        if (!win || !content) return 0
+        var left = controlLeftInWindow(content)
+        var popupWidth = control.popupEffectiveWidth
+        var x = 0
+        if (left + x + popupWidth > win.width - popupHorizontalMargin) {
+            x = win.width - popupHorizontalMargin - popupWidth - left
+        }
+        if (left + x < popupHorizontalMargin) {
+            x = popupHorizontalMargin - left
+        }
+        return x
     }
 
     function controlTopInWindow(content) {
@@ -302,6 +333,16 @@ ComboBox {
             item = item.parent
         }
         return y
+    }
+
+    function controlLeftInWindow(content) {
+        var x = 0
+        var item = control
+        while (item && item !== content) {
+            x += item.x || 0
+            item = item.parent
+        }
+        return x
     }
 
     function activateIndex(index) {
