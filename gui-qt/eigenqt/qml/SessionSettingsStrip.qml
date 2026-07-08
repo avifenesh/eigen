@@ -13,11 +13,12 @@ Rectangle {
     border.color: Theme.colors.borderHairline
 
     property var sessionState  // SessionStateModel instance
+    readonly property bool compactControls: width > 0 && width < 760
 
     RowLayout {
         anchors.fill: parent
         anchors.margins: Theme.space.lg
-        spacing: Theme.space.lg
+        spacing: root.compactControls ? Theme.space.md : Theme.space.lg
 
         // Model badge (clickable → dropdown)
         AppComboBox {
@@ -27,7 +28,7 @@ Rectangle {
             fallbackText: sessionState ? sessionState.model : ""
             accessibleName: "Model"
             toolTipText: "Model"
-            Layout.preferredWidth: 220
+            Layout.preferredWidth: root.compactControls ? 200 : 220
             activationUpdatesCurrentIndex: false
             currentIndex: {
                 if (!sessionState || !sessionState.catalog) return -1
@@ -48,7 +49,7 @@ Rectangle {
             model: ["gated", "auto"]
             accessibleName: "Permission mode"
             toolTipText: "Permission mode"
-            Layout.preferredWidth: 112
+            Layout.preferredWidth: root.compactControls ? 104 : 112
             activationUpdatesCurrentIndex: false
             currentIndex: {
                 if (!sessionState) return 0
@@ -90,7 +91,7 @@ Rectangle {
         // Live search selector (only for providers that expose the mode).
         Loader {
             active: sessionState && sessionState.search !== ""
-            Layout.preferredWidth: active ? 112 : 0
+            Layout.preferredWidth: active ? (root.compactControls ? 104 : 112) : 0
             Layout.preferredHeight: active ? 32 : 0
             sourceComponent: AppComboBox {
                 objectName: "sessionSearchCombo"
@@ -115,13 +116,14 @@ Rectangle {
         // Fast/priority service tier. Kept compact so the title still breathes.
         Loader {
             active: sessionState && sessionState.fastOk
-            Layout.preferredWidth: active ? 80 : 0
+            Layout.preferredWidth: active ? (root.compactControls ? 44 : 80) : 0
             Layout.preferredHeight: active ? 32 : 0
             sourceComponent: RowLayout {
-                spacing: Theme.space.sm
+                spacing: root.compactControls ? 0 : Theme.space.sm
 
                 Label {
                     text: "fast"
+                    visible: !root.compactControls
                     font.family: Theme.uiFonts[0]
                     font.pixelSize: Theme.fontSize.micro
                     font.weight: Theme.fontWeight.semibold
@@ -155,7 +157,9 @@ Rectangle {
             font.weight: Theme.fontWeight.semibold
             color: Theme.colors.textPrimary
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
             readOnly: true
+            visible: !root.compactControls
             focusPolicy: Qt.StrongFocus
             selectByMouse: !readOnly
             Accessible.name: "Session title"
@@ -211,6 +215,7 @@ Rectangle {
             elide: Text.ElideRight
             Layout.maximumWidth: 200
             visible: text.length > 0
+                && !root.compactControls
         }
     }
 }
