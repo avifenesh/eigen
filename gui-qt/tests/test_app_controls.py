@@ -288,13 +288,21 @@ import QtQuick.Layouts
         raise AssertionError("AppTag did not expose its QA marker")
     if sample_tag.property("qaTextFits") is not True:
         raise AssertionError("AppTag text does not fit")
-    if float(sample_tag.property("qaHorizontalPadding") or 0) < 15.5:
+    if float(sample_tag.property("qaHorizontalPadding") or 0) < 19.5:
         raise AssertionError(f"AppTag horizontal padding too small: {sample_tag.property('qaHorizontalPadding')}")
-    if float(sample_tag.property("qaVerticalPadding") or 0) < 5.5:
+    if float(sample_tag.property("qaVerticalPadding") or 0) < 7.5:
         raise AssertionError(f"AppTag vertical padding too small: {sample_tag.property('qaVerticalPadding')}")
 
     combo.setProperty("qaForceKeyboardFocus", True)
     pump(app)
+    if combo.property("qaIsAppComboBox") is not True:
+        raise AssertionError("AppComboBox did not expose its QA marker")
+    if combo.property("qaTextFits") is not True:
+        raise AssertionError(f"AppComboBox text does not fit: {combo.property('qaText')!r}")
+    if float(combo.property("qaHorizontalPadding") or 0) < 11.5:
+        raise AssertionError(f"AppComboBox horizontal padding too small: {combo.property('qaHorizontalPadding')}")
+    if float(combo.property("qaVerticalPadding") or 0) < 5.5:
+        raise AssertionError(f"AppComboBox vertical padding too small: {combo.property('qaVerticalPadding')}")
     if not combo.property("qaVisualFocus"):
         raise AssertionError("AppComboBox did not expose keyboard focus")
     QTest.keyClick(root, Qt.Key_Down)
@@ -309,6 +317,15 @@ import QtQuick.Layouts
         raise AssertionError("AppComboBox current option was not visually marked")
     if highlighted_option.property("qaSelected") is True or highlighted_option.property("qaKeyboardHighlighted") is not True:
         raise AssertionError("AppComboBox keyboard highlight was conflated with the selected option")
+    for option, label in ((selected_option, "selected"), (highlighted_option, "highlighted")):
+        if option.property("qaIsAppComboBoxOption") is not True:
+            raise AssertionError(f"AppComboBox {label} option did not expose its QA marker")
+        if option.property("qaTextFits") is not True:
+            raise AssertionError(f"AppComboBox {label} option text does not fit: {option.property('qaText')!r}")
+        if float(option.property("qaHorizontalPadding") or 0) < 11.5:
+            raise AssertionError(f"AppComboBox {label} option horizontal padding too small: {option.property('qaHorizontalPadding')}")
+        if float(option.property("qaVerticalPadding") or 0) < 5.5:
+            raise AssertionError(f"AppComboBox {label} option vertical padding too small: {option.property('qaVerticalPadding')}")
     QTest.keyClick(root, Qt.Key_Home)
     pump(app)
     if combo.property("qaKeyboardIndex") != 0:

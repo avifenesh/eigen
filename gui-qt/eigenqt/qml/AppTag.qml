@@ -15,9 +15,9 @@ Rectangle {
     property int fontWeight: Theme.fontWeight.regular
     property int capitalization: Font.MixedCase
     property int elideMode: Text.ElideRight
-    property real horizontalPadding: Theme.space.xl
-    property real verticalPadding: Theme.space.sm
-    property real minimumHeight: 24
+    property real horizontalPadding: Theme.space.xxl
+    property real verticalPadding: Theme.space.md
+    property real minimumHeight: 26
     property bool pill: true
     property int borderWidth: 1
 
