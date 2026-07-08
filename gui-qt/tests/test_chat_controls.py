@@ -894,6 +894,14 @@ offline_view, offline_chat = make_view(
 offline_composer = find_item(offline_chat, "chatComposerTextArea")
 if offline_composer is None:
     raise AssertionError("Offline composer did not render")
+if offline_composer.property("qaIsAppTextArea") is not True:
+    raise AssertionError("Chat composer did not use shared AppTextArea")
+if offline_composer.property("qaTextFits") is not True:
+    raise AssertionError("Chat composer placeholder text does not fit")
+if float(offline_composer.property("qaHorizontalPadding") or 0) < 15.5:
+    raise AssertionError(f"Chat composer horizontal padding too small: {offline_composer.property('qaHorizontalPadding')}")
+if float(offline_composer.property("qaVerticalPadding") or 0) < 7.5:
+    raise AssertionError(f"Chat composer vertical padding too small: {offline_composer.property('qaVerticalPadding')}")
 if color_name(offline_composer.property("placeholderTextColor")) != EXPECTED_PLACEHOLDER_COLOR:
     raise AssertionError(
         f"Chat composer placeholder color regressed: {color_name(offline_composer.property('placeholderTextColor'))}"

@@ -1065,6 +1065,18 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
     composer = find_item(window.contentItem(), "chatComposerTextArea")
     if composer is not None:
         composer.setProperty("text", "Send button stays visible above the status strip")
+        if composer.property("qaIsAppTextArea") is not True:
+            print("✗ Main chat proof composer did not use AppTextArea")
+            window.hide()
+            return False
+        if composer.property("qaTextFits") is not True or float(composer.property("qaHorizontalPadding") or 0) < 15.5 or float(composer.property("qaVerticalPadding") or 0) < 7.5:
+            print(
+                "✗ Main chat proof composer rendered cramped: "
+                f"fits={composer.property('qaTextFits')} "
+                f"padding={composer.property('qaHorizontalPadding')}x{composer.property('qaVerticalPadding')}"
+            )
+            window.hide()
+            return False
     for _ in range(10):
         app.processEvents()
 

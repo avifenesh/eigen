@@ -416,26 +416,23 @@ Rectangle {
                 ScrollView {
                     id: composerTextScroll
                     Layout.fillWidth: true
-                    Layout.preferredHeight: Math.min(composerTextArea.contentHeight + Theme.space.md * 2, 120)
+                    Layout.preferredHeight: Math.min(composerTextArea.contentHeight + composerTextArea.topPadding + composerTextArea.bottomPadding, 120)
                     Layout.minimumHeight: composerPanel.minimumTextHeight
                     clip: true
 
-                    TextArea {
+                    AppTextArea {
                         id: composerTextArea
                         objectName: "chatComposerTextArea"
                         placeholderText: "Type a message (Enter to send, Shift+Enter for newline, / for commands)"
-                        placeholderTextColor: Theme.colors.textGhost
                         font.family: Theme.uiFonts[0]
                         font.pixelSize: Theme.fontSize.body
-                        color: Theme.colors.textPrimary
                         wrapMode: TextArea.Wrap
-
-                        background: Rectangle {
-                            color: Theme.colors.surfaceRaised
-                            radius: Theme.radius.md
-                            border.width: composerTextArea.activeFocus ? 1 : 0
-                            border.color: Theme.colors.borderBrand
-                        }
+                        backgroundColor: Theme.colors.surfaceRaised
+                        borderColor: "transparent"
+                        focusBorderColor: Theme.colors.borderBrand
+                        normalBorderWidth: 0
+                        focusedBorderWidth: 1
+                        backgroundRadius: Theme.radius.md
 
                         Keys.onReturnPressed: function(event) {
                             if (event.modifiers & Qt.ShiftModifier) {

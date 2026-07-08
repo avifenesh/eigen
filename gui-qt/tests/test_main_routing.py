@@ -1173,6 +1173,14 @@ try:
     status_strip = find_item_in_window(window, "mainStatusStrip")
     if composer is None or send_button is None or status_strip is None:
         raise AssertionError("Main chat route did not render composer, send button, and status strip")
+    if composer.property("qaIsAppTextArea") is not True:
+        raise AssertionError("Main chat composer did not use shared AppTextArea")
+    if composer.property("qaTextFits") is not True:
+        raise AssertionError("Main chat composer text did not fit")
+    if float(composer.property("qaHorizontalPadding") or 0) < 15.5:
+        raise AssertionError(f"Main chat composer horizontal padding too small: {composer.property('qaHorizontalPadding')}")
+    if float(composer.property("qaVerticalPadding") or 0) < 7.5:
+        raise AssertionError(f"Main chat composer vertical padding too small: {composer.property('qaVerticalPadding')}")
     composer.setProperty("text", "prove main chat send")
     pump(app, 12)
     assert_item_inside_window(send_button, "chatSendButton")
