@@ -721,6 +721,35 @@ def assert_app_tags_have_padding(view_name, root_item):
         raise AssertionError(f"{view_name} rendered cramped AppTag text: {failures[:8]}")
 
 
+def assert_board_chips_have_padding(view_name, root_item):
+    failures = []
+
+    def visit(item):
+        if item is None:
+            return
+        if item.property("qaIsBoardBadge") is True or item.property("qaIsBoardChip") is True:
+            width = float(item.property("width") or 0)
+            height = float(item.property("height") or 0)
+            visible = item.isVisible() if hasattr(item, "isVisible") else item.property("visible")
+            if visible and width > 0 and height > 0:
+                horizontal_padding = float(item.property("qaHorizontalPadding") or 0)
+                vertical_padding = float(item.property("qaVerticalPadding") or 0)
+                if item.property("qaTextFits") is not True or horizontal_padding < 11.5 or vertical_padding < 3.5:
+                    failures.append(
+                        f"{item.objectName() or '<unnamed>'} "
+                        f"fits={item.property('qaTextFits')} "
+                        f"padding={horizontal_padding:.1f}x{vertical_padding:.1f} "
+                        f"size={width:.1f}x{height:.1f}"
+                    )
+        if hasattr(item, "childItems"):
+            for child in item.childItems():
+                visit(child)
+
+    visit(root_item)
+    if failures:
+        raise AssertionError(f"{view_name} rendered cramped board chip text: {failures[:8]}")
+
+
 def click_item(view, item):
     width = float(item.property("width") or 0)
     height = float(item.property("height") or 0)
@@ -2053,7 +2082,10 @@ def main():
         ctx.setContextProperty("kanbanModel", kanban_model)
         return {"boardModel": board_model, "kanbanModel": kanban_model, "rpcClient": client, "sessionsModel": None}
 
-    ok = capture_view("board", "BoardView.qml", setup_board) and ok
+    def show_board_projects(_view, root):
+        assert_board_chips_have_padding("board", root)
+
+    ok = capture_view("board", "BoardView.qml", setup_board, show_board_projects) and ok
 
     def show_board_kanban(_view, root):
         root.setProperty("viewMode", "kanban")
