@@ -183,7 +183,7 @@ Rectangle {
                         }
 
                         Layout.preferredHeight: 32
-                        Layout.preferredWidth: 56
+                        Layout.preferredWidth: Math.max(64, implicitWidth)
                     }
                 }
 
@@ -730,8 +730,8 @@ Rectangle {
                                     }
                                 }
 
-                                Layout.preferredWidth: 52
-                                Layout.minimumWidth: 52
+                                Layout.preferredWidth: Math.max(64, implicitWidth)
+                                Layout.minimumWidth: 64
                                 Layout.preferredHeight: 32
                             }
                         }
