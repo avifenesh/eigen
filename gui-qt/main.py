@@ -46,6 +46,7 @@ from eigenqt.rpc import GuiserverSupervisor, RpcClient
 from eigenqt.clipboard_helper import ClipboardHelper
 from eigenqt.highlighter_helper import HighlighterHelper
 from eigenqt.markdown_helper import MarkdownHelper
+from eigenqt.webengine import initialize_webengine
 
 ROOT = Path(__file__).resolve().parent
 
@@ -308,6 +309,7 @@ class SessionController(QObject):
 
 
 def main():
+    initialize_webengine()
     QQuickStyle.setStyle("Basic")  # Unstyled base for custom theme
 
     app = QGuiApplication(sys.argv)

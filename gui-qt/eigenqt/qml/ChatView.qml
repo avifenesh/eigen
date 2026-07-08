@@ -618,7 +618,7 @@ Rectangle {
         }
         var nextTab = Number(tabIndex)
         if (isNaN(nextTab)) nextTab = 0
-        root.dockTabIndex = Math.max(0, Math.min(2, nextTab))
+        root.dockTabIndex = Math.max(0, Math.min(3, nextTab))
         root.actionError = ""
         root.dockOpen = true
         return true

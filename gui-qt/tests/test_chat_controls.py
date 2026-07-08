@@ -33,6 +33,7 @@ from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtTest import QTest
 
 import eigenqt.models.worktree  # registers DiffModel/FileTreeModel for DockPanel
+from eigenqt.webengine import initialize_webengine
 
 
 ROOT = Path.cwd()
@@ -824,6 +825,7 @@ def make_view(source, context_props=None, initial=None):
 
 
 QQuickStyle.setStyle("Basic")
+initialize_webengine()
 app = QGuiApplication([])
 client = FakeRpcClient()
 state = FakeSessionState()
@@ -1008,6 +1010,27 @@ if info_pending_summary.property("text") != "1 approval":
     raise AssertionError(f"Info dock approval summary was wrong: {info_pending_summary.property('text')}")
 if info_tools.property("text") != "2 tools (1 read, 1 write)":
     raise AssertionError(f"Info dock tool summary was wrong: {info_tools.property('text')}")
+
+if QGuiApplication.platformName().lower() != "offscreen":
+    browser_tab = click_item(app, chat_view, chat, "dockTab_Browser")
+    if browser_tab.property("selected") is not True:
+        raise AssertionError("Browser dock tab did not become selected")
+    browser_address = find_item(chat, "browserAddressField")
+    browser_go = find_item(chat, "browserGoButton")
+    browser_external = find_item(chat, "browserOpenExternalButton")
+    browser_view = find_item(chat, "browserWebView")
+    if None in (browser_address, browser_go, browser_external, browser_view):
+        raise AssertionError("Browser dock tab did not render its controls")
+    browser_address.setProperty("text", "localhost:4321/docs")
+    pump(app, 8)
+    click_item(app, chat_view, chat, "browserGoButton")
+    pump(app, 20)
+    if browser_address.property("text") != "http://localhost:4321/docs":
+        raise AssertionError(f"Browser dock did not normalize localhost URL: {browser_address.property('text')}")
+    if not browser_go.property("qaTextFits"):
+        raise AssertionError("Browser Go button text does not fit")
+    if not browser_external.property("qaTextFits"):
+        raise AssertionError("Browser external button text does not fit")
 
 diff_tab = click_item(app, chat_view, chat, "dockTab_Diff")
 if diff_tab.property("selected") is not True:

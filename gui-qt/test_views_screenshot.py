@@ -50,6 +50,7 @@ from eigenqt.models.transcript_logic import TranscriptRow
 from eigenqt.clipboard_helper import ClipboardHelper
 from eigenqt.highlighter_helper import HighlighterHelper
 from eigenqt.markdown_helper import MarkdownHelper
+from eigenqt.webengine import initialize_webengine
 
 ROOT = Path(__file__).resolve().parent
 SCREENSHOTS = ROOT / "screenshots"
@@ -955,6 +956,7 @@ def main():
     global app
 
     # Create one app instance for all views
+    initialize_webengine()
     app = QGuiApplication(sys.argv)
 
     client = ScreenshotRpcClient()
@@ -1268,6 +1270,22 @@ def main():
             raise AssertionError(f"chat info dock tool summary was wrong: {info_tools.property('text')}")
 
     ok = capture_view("chat-dock-info", "ChatView.qml", setup_chat, open_chat_info_dock) and ok
+
+    def open_chat_browser_dock(_view, root):
+        root.setProperty("dockTabIndex", 3)
+        root.setProperty("dockOpen", True)
+        QTest.qWait(240)
+        address = find_item(root, "browserAddressField")
+        go_button = find_item(root, "browserGoButton")
+        browser = find_item(root, "browserWebView")
+        if address is None or go_button is None or browser is None:
+            raise AssertionError("chat browser dock did not render browser controls")
+        if address.property("text") != "about:blank":
+            raise AssertionError(f"chat browser dock address was wrong: {address.property('text')}")
+        if go_button.property("qaTextFits") is not True:
+            raise AssertionError("chat browser dock Go button text did not fit")
+
+    ok = capture_view("chat-dock-browser", "ChatView.qml", setup_chat, open_chat_browser_dock) and ok
 
     def show_chat_attachment(_view, root):
         root.setProperty("attachedImage", VALID_PNG_BASE64)

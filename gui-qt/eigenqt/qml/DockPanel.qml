@@ -1,9 +1,9 @@
 /*
- * Right-side dock panel with Diff | Files | Info tabs.
+ * Right-side dock panel with Diff | Files | Info | Browser tabs.
  *
  * Toggleable from SessionSettingsStrip; state is per-session.
  * Tabs switch between DiffTab (git working-tree diff), FilesTab (file
- * explorer), and DockInfoTab (session metadata).
+ * explorer), DockInfoTab (session metadata), and BrowserTab (embedded web).
  */
 
 import QtQuick
@@ -28,9 +28,9 @@ Rectangle {
     // Signals
     signal closed()
 
-    property int currentTab: 0  // 0=Diff, 1=Files, 2=Info
+    property int currentTab: 0  // 0=Diff, 1=Files, 2=Info, 3=Browser
     property int preferredTab: 0
-    readonly property var tabLabels: ["Diff", "Files", "Info"]
+    readonly property var tabLabels: ["Diff", "Files", "Info", "Browser"]
 
     Component.onCompleted: currentTab = clampTab(preferredTab)
     onPreferredTabChanged: currentTab = clampTab(preferredTab)
@@ -112,6 +112,12 @@ Rectangle {
             DockInfoTab {
                 sessionStateModel: root.sessionStateModel
             }
+
+            // Browser tab: lazy-load so the Chromium surface only exists when selected.
+            Loader {
+                active: root.currentTab === 3
+                sourceComponent: BrowserTab {}
+            }
         }
     }
 
@@ -124,6 +130,7 @@ Rectangle {
     function tabToolTip(label) {
         if (label === "Diff") return "Show working diff"
         if (label === "Files") return "Show files"
-        return "Show session info"
+        if (label === "Info") return "Show session info"
+        return "Open embedded browser"
     }
 }
