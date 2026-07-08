@@ -138,6 +138,16 @@ def test_load(model, client):
     assert model.loading is False
 
 
+def test_load_error_uses_readable_rpc_message(model, client):
+    """Dict-shaped RPC errors should surface as readable messages."""
+    client.failures["Connectors"] = {"message": "daemon offline"}
+
+    model.load()
+
+    assert model.load_error == "daemon offline"
+    assert model.loading is False
+
+
 def test_connected_subscribes_to_connector_events(model, client):
     """ConnectorsModel listens for OAuth completion events."""
     model._on_connected()

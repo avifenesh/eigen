@@ -425,7 +425,7 @@ class ConnectorsModel(QObject):
             if not is_current():
                 return
             if "error" in r:
-                self.load_error = str(r["error"])
+                self.load_error = _err_text(r["error"])
             else:
                 self.connectors = r.get("result") or {}
             done_one()
@@ -434,7 +434,7 @@ class ConnectorsModel(QObject):
             if not is_current():
                 return
             if "error" in r:
-                self.load_error = str(r["error"])
+                self.load_error = _err_text(r["error"])
             else:
                 self.servers = r.get("result") or {}
             done_one()
@@ -443,7 +443,7 @@ class ConnectorsModel(QObject):
             if not is_current():
                 return
             if "error" in r:
-                self.load_error = str(r["error"])
+                self.load_error = _err_text(r["error"])
             else:
                 self.google_status = r.get("result") or {}
             done_one()

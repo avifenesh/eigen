@@ -655,6 +655,28 @@ def check_connectors(app, client):
         if connector_card is None or connector_card.property("qaIconText") != "N":
             raise AssertionError(f"connector card did not derive a useful icon initial: {connector_card.property('qaIconText') if connector_card is not None else None!r}")
 
+        connectors.load_error = "daemon offline"
+        pump(app, 12)
+        initial_error = find_visual_item(root, "connectorsLoadError")
+        refresh_error = find_visual_item(root, "connectorsRefreshErrorBanner")
+        refresh_text = find_visual_item(root, "connectorsRefreshErrorText")
+        refresh_retry = find_visual_item(root, "connectorsRefreshErrorRetry")
+        if initial_error is not None and initial_error.property("visible"):
+            raise AssertionError("connectors refresh error replaced stale content with the initial error state")
+        if refresh_error is None or not refresh_error.property("visible"):
+            raise AssertionError("connectors refresh error banner did not render")
+        if refresh_text is None or "daemon offline" not in refresh_text.property("text"):
+            raise AssertionError(f"connectors refresh error text was wrong: {refresh_text.property('text') if refresh_text else None}")
+        if refresh_retry is None or not refresh_retry.property("qaTextFits"):
+            raise AssertionError("connectors refresh retry did not render cleanly")
+        if connector_card.property("visible") is not True:
+            raise AssertionError("connectors refresh error hid the stale connector card")
+        start = len(client.calls)
+        click_item(app, view, root, "connectorsRefreshErrorRetry", flick_name="connectorsFlick")
+        assert_call(client, start, "Connectors", ())
+        assert_call(client, start, "MCPServers", ())
+        assert_call(client, start, "GoogleStatus", ())
+
         remove = click_item(app, view, root, "connectorRemoveButton_connector_notion", flick_name="connectorsFlick")
         if not connectors.confirm_remove_connector.get("notion"):
             invoke_click(remove)

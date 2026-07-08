@@ -64,7 +64,7 @@ Rectangle {
 
             // Loading skeleton
             ColumnLayout {
-                visible: !!(connectorsModel && connectorsModel.loading && !connectorsLoaded())
+                visible: !!(connectorsModel && connectorsModel.loading && !connectorsLoaded() && !root.hasInitialLoadError())
                 Layout.fillWidth: true
                 spacing: Theme.space.md
 
@@ -82,7 +82,7 @@ Rectangle {
             // Error state
             Rectangle {
                 objectName: "connectorsLoadError"
-                visible: !!(connectorsModel && connectorsModel.load_error)
+                visible: root.hasInitialLoadError()
                 Layout.fillWidth: true
                 Layout.preferredHeight: 120
                 color: Theme.colors.bgRaised
@@ -133,6 +133,47 @@ Rectangle {
                         text: "Retry"
                         onClicked: connectorsModel.load()
                         Layout.alignment: Qt.AlignHCenter
+                    }
+                }
+            }
+
+            Rectangle {
+                objectName: "connectorsRefreshErrorBanner"
+                visible: root.hasRefreshLoadError()
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? Math.max(40, connectorsRefreshErrorRow.implicitHeight + Theme.space.md) : 0
+                color: Theme.colors.errorBg
+                border.width: visible ? 1 : 0
+                border.color: Theme.colors.error
+                radius: Theme.radius.sm
+                clip: true
+
+                RowLayout {
+                    id: connectorsRefreshErrorRow
+                    anchors.fill: parent
+                    anchors.leftMargin: Theme.space.md
+                    anchors.rightMargin: Theme.space.md
+                    spacing: Theme.space.md
+
+                    Label {
+                        objectName: "connectorsRefreshErrorText"
+                        text: connectorsModel ? connectorsModel.load_error : ""
+                        font.family: Theme.uiFonts[0]
+                        font.pixelSize: Theme.fontSize.label
+                        color: Theme.colors.error
+                        wrapMode: Text.Wrap
+                        Layout.fillWidth: true
+                    }
+
+                    AppButton {
+                        objectName: "connectorsRefreshErrorRetry"
+                        text: "Retry"
+                        compact: true
+                        toolTipText: "Retry loading connectors"
+                        Layout.preferredWidth: 72
+                        onClicked: {
+                            if (connectorsModel) connectorsModel.load()
+                        }
                     }
                 }
             }
@@ -1497,6 +1538,14 @@ Rectangle {
 
     function connectorsLoaded() {
         return !!(connectorsModel && connectorsModel.connectors)
+    }
+
+    function hasInitialLoadError() {
+        return !!(connectorsModel && connectorsModel.load_error && !connectorsLoaded())
+    }
+
+    function hasRefreshLoadError() {
+        return !!(connectorsModel && connectorsModel.load_error && connectorsLoaded())
     }
 
     function remoteConnectors() {

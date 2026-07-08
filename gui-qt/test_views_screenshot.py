@@ -2236,6 +2236,31 @@ def main():
 
     ok = capture_view("connectors-load-error", "ConnectorsView.qml", setup_connectors, show_connectors_load_error) and ok
 
+    def show_connectors_refresh_error(_view, root):
+        model = root.property("connectorsModel")
+        if model is not None:
+            model.loading = False
+            model.load_error = "daemon offline"
+        for _ in range(8):
+            app.processEvents()
+        initial = find_item(root, "connectorsLoadError")
+        banner = find_item(root, "connectorsRefreshErrorBanner")
+        text = find_item(root, "connectorsRefreshErrorText")
+        retry = find_item(root, "connectorsRefreshErrorRetry")
+        card = find_item(root, "connectorCard_connector_notion")
+        if initial is not None and initial.property("visible") is True:
+            raise AssertionError("connectors refresh error screenshot hid stale content behind the initial error")
+        if banner is None or banner.property("visible") is not True:
+            raise AssertionError("connectors refresh error screenshot did not render the banner")
+        if text is None or "daemon offline" not in text.property("text"):
+            raise AssertionError("connectors refresh error screenshot rendered the wrong text")
+        if retry is None or retry.property("qaTextFits") is not True:
+            raise AssertionError("connectors refresh error screenshot did not render a clean retry button")
+        if card is None or card.property("visible") is not True:
+            raise AssertionError("connectors refresh error screenshot dropped stale connector content")
+
+    ok = capture_view("connectors-refresh-error", "ConnectorsView.qml", setup_connectors, show_connectors_refresh_error) and ok
+
     def show_connectors_remove_confirm(_view, root):
         model = root.property("connectorsModel")
         if model is not None:
