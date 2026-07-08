@@ -615,6 +615,13 @@ def check_config(app, client):
         chip = focus_item(app, root, "configMultiChip_route_providers_local", flick_name="configFlick")
         if not chip.property("qaVisualFocus"):
             raise AssertionError("config route_providers chip did not expose keyboard focus")
+        if float(chip.property("leftPadding") or 0) < 15.5 or float(chip.property("rightPadding") or 0) < 15.5:
+            raise AssertionError(
+                "config route_providers chip side padding too small: "
+                f"{chip.property('leftPadding')}x{chip.property('rightPadding')}"
+            )
+        if float(chip.property("height") or 0) < 27.5:
+            raise AssertionError(f"config route_providers chip height too small: {chip.property('height')}")
         QTest.keyClick(view, Qt.Key_Space)
         pump(app)
         assert_call(client, start, "SetConfig", ("route_providers", "openai xai local"))
@@ -1128,10 +1135,18 @@ def check_memory(app, client):
         if not memory.editing_profile:
             invoke_click(edit_profile)
             pump(app)
-        set_text(app, root, "memoryProfileTextArea", "Keyboard profile proof")
+        profile_text = "Keyboard profile proof " + ("longprofiletoken" * 16)
+        set_text(app, root, "memoryProfileTextArea", profile_text)
+        profile_editor = find_visual_item(root, "memoryProfileTextArea")
+        if profile_editor is None or profile_editor.property("qaTextFits") is not True:
+            raise AssertionError(
+                "memory profile editor did not wrap long text cleanly: "
+                f"content={profile_editor.property('qaContentWidth') if profile_editor else None} "
+                f"available={profile_editor.property('qaTextAvailableWidth') if profile_editor else None}"
+            )
         start = len(client.calls)
         press_key_on_item(app, view, root, "memoryProfileTextArea", Qt.Key_Return, Qt.ControlModifier, flick_name="memoryFlick")
-        assert_call(client, start, "WriteUserProfile", ("Keyboard profile proof",))
+        assert_call(client, start, "WriteUserProfile", (profile_text,))
 
         memory.editing_profile = True
         memory.profile_draft = "cancel me"
@@ -1145,10 +1160,18 @@ def check_memory(app, client):
             invoke_click(add_ban)
             pump(app)
         set_text(app, root, "memoryBanTitleInput", "No broad rewrites")
-        set_text(app, root, "memoryBanRuleTextArea", "Do not expand a Qt follow-up without evidence.")
+        ban_rule = "Do not expand a Qt follow-up without evidence " + ("longbanrule" * 18)
+        set_text(app, root, "memoryBanRuleTextArea", ban_rule)
+        ban_editor = find_visual_item(root, "memoryBanRuleTextArea")
+        if ban_editor is None or ban_editor.property("qaTextFits") is not True:
+            raise AssertionError(
+                "memory ban editor did not wrap long text cleanly: "
+                f"content={ban_editor.property('qaContentWidth') if ban_editor else None} "
+                f"available={ban_editor.property('qaTextAvailableWidth') if ban_editor else None}"
+            )
         start = len(client.calls)
         press_key_on_item(app, view, root, "memoryBanRuleTextArea", Qt.Key_Return, Qt.ControlModifier, flick_name="memoryFlick")
-        assert_call(client, start, "AddBan", ("global", "No broad rewrites", "Do not expand a Qt follow-up without evidence."))
+        assert_call(client, start, "AddBan", ("global", "No broad rewrites", ban_rule))
 
         memory.adding_ban = True
         memory.ban_title = "discard"

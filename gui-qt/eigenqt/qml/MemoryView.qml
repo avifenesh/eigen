@@ -909,20 +909,27 @@ Rectangle {
                                     spacing: Theme.space.md
 
                                     ScrollView {
+                                        id: profileScroll
                                         Layout.fillWidth: true
                                         Layout.preferredHeight: Math.min(profileTextArea.contentHeight + Theme.space.md * 2, 300)
+                                        contentWidth: availableWidth
                                         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
                                         TextArea {
                                             id: profileTextArea
                                             objectName: "memoryProfileTextArea"
+                                            width: profileScroll.availableWidth
                                             text: activeMemoryModel.profile_draft
                                             placeholderText: "Add your own notes — eigen keeps the rest current…"
                                             placeholderTextColor: Theme.colors.textGhost
                                             font.family: Theme.uiFonts[0]
                                             font.pixelSize: Theme.fontSize.bodySm
                                             color: Theme.colors.textPrimary
-                                            wrapMode: Text.Wrap
+                                            wrapMode: TextEdit.Wrap
+                                            readonly property real qaContentWidth: contentWidth
+                                            readonly property real qaTextAvailableWidth: Math.max(0, width - leftPadding - rightPadding)
+                                            readonly property bool qaTextFits: !visible || qaContentWidth <= qaTextAvailableWidth + 1.0
+                                            readonly property string qaText: text || placeholderText
                                             background: Rectangle {
                                                 color: Theme.colors.bgRaised
                                                 border.width: 1
@@ -1076,20 +1083,27 @@ Rectangle {
                                     }
 
                                     ScrollView {
+                                        id: banRuleScroll
                                         Layout.fillWidth: true
                                         Layout.preferredHeight: Math.min(banRuleTextArea.contentHeight + Theme.space.md * 2, 150)
+                                        contentWidth: availableWidth
                                         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
                                         TextArea {
                                             id: banRuleTextArea
                                             objectName: "memoryBanRuleTextArea"
+                                            width: banRuleScroll.availableWidth
                                             text: activeMemoryModel.ban_rule
                                             placeholderText: "What the agent must not do (" + activeMemoryModel.scope_label + " scope)…"
                                             placeholderTextColor: Theme.colors.textGhost
                                             font.family: Theme.uiFonts[0]
                                             font.pixelSize: Theme.fontSize.bodySm
                                             color: Theme.colors.textPrimary
-                                            wrapMode: Text.Wrap
+                                            wrapMode: TextEdit.Wrap
+                                            readonly property real qaContentWidth: contentWidth
+                                            readonly property real qaTextAvailableWidth: Math.max(0, width - leftPadding - rightPadding)
+                                            readonly property bool qaTextFits: !visible || qaContentWidth <= qaTextAvailableWidth + 1.0
+                                            readonly property string qaText: text || placeholderText
                                             background: Rectangle {
                                                 color: Theme.colors.bgRaised
                                                 border.width: 1

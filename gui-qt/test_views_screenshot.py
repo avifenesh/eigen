@@ -705,7 +705,7 @@ def assert_app_tags_have_padding(view_name, root_item):
             if visible and width > 0 and height > 0:
                 horizontal_padding = float(item.property("qaHorizontalPadding") or 0)
                 vertical_padding = float(item.property("qaVerticalPadding") or 0)
-                if item.property("qaTextFits") is not True or horizontal_padding < 11.5 or vertical_padding < 3.5:
+                if item.property("qaTextFits") is not True or horizontal_padding < 15.5 or vertical_padding < 5.5:
                     failures.append(
                         f"{item.objectName() or '<unnamed>'} "
                         f"fits={item.property('qaTextFits')} "
@@ -734,7 +734,7 @@ def assert_marked_chips_have_padding(view_name, root_item, markers, label):
             if visible and width > 0 and height > 0:
                 horizontal_padding = float(item.property("qaHorizontalPadding") or 0)
                 vertical_padding = float(item.property("qaVerticalPadding") or 0)
-                if item.property("qaTextFits") is not True or horizontal_padding < 11.5 or vertical_padding < 3.5:
+                if item.property("qaTextFits") is not True or horizontal_padding < 15.5 or vertical_padding < 5.5:
                     failures.append(
                         f"{item.objectName() or '<unnamed>'} "
                         f"fits={item.property('qaTextFits')} "
@@ -962,7 +962,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
         print("✗ Main chat Home rail badge did not expose nav badge QA")
         window.hide()
         return False
-    if home_badge.property("qaTextFits") is not True or float(home_badge.property("qaHorizontalPadding") or 0) < 7.5 or float(home_badge.property("qaVerticalPadding") or 0) < 3.0:
+    if home_badge.property("qaTextFits") is not True or float(home_badge.property("qaHorizontalPadding") or 0) < 11.5 or float(home_badge.property("qaVerticalPadding") or 0) < 5.5:
         print(
             "✗ Main chat Home rail badge rendered cramped: "
             f"fits={home_badge.property('qaTextFits')} "
@@ -1329,10 +1329,10 @@ def main():
             tag = find_item(root, object_name)
             if tag is None or tag.property("qaIsAppTag") is not True:
                 raise AssertionError(f"home tag {object_name} did not use AppTag")
-            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 7.5:
+            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 15.5 or float(tag.property("qaVerticalPadding") or 0) < 5.5:
                 raise AssertionError(
                     f"home tag {object_name} is cramped: "
-                    f"fits={tag.property('qaTextFits')} padding={tag.property('qaHorizontalPadding')}"
+                    f"fits={tag.property('qaTextFits')} padding={tag.property('qaHorizontalPadding')}x{tag.property('qaVerticalPadding')}"
                 )
 
     ok = capture_view("home", "HomeView.qml", setup_home, assert_home_tags) and ok
@@ -1668,7 +1668,7 @@ def main():
             raise AssertionError("chat terminal dock did not render controls")
         if status_tag.property("qaIsAppTag") is not True:
             raise AssertionError("chat terminal status did not use AppTag")
-        if status_tag.property("qaTextFits") is not True or float(status_tag.property("qaHorizontalPadding") or 0) < 11.5 or float(status_tag.property("qaVerticalPadding") or 0) < 3.5:
+        if status_tag.property("qaTextFits") is not True or float(status_tag.property("qaHorizontalPadding") or 0) < 15.5 or float(status_tag.property("qaVerticalPadding") or 0) < 5.5:
             raise AssertionError(
                 "chat terminal status rendered cramped: "
                 f"fits={status_tag.property('qaTextFits')} "
@@ -2143,10 +2143,10 @@ def main():
             tag = find_item(root, object_name)
             if tag is None or tag.property("qaIsAppTag") is not True:
                 raise AssertionError(f"kanban tag {object_name} did not use AppTag")
-            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 7.5:
+            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 15.5 or float(tag.property("qaVerticalPadding") or 0) < 5.5:
                 raise AssertionError(
                     f"kanban tag {object_name} is cramped: "
-                    f"fits={tag.property('qaTextFits')} padding={tag.property('qaHorizontalPadding')}"
+                    f"fits={tag.property('qaTextFits')} padding={tag.property('qaHorizontalPadding')}x{tag.property('qaVerticalPadding')}"
                 )
 
     ok = capture_view("board-kanban", "BoardView.qml", setup_board, show_board_kanban) and ok
@@ -3226,6 +3226,7 @@ def main():
         memory_model._scope_label = "Global"
         memory_model._loading = False
         memory_model._current = {
+            "scope": "global",
             "summary": "Eigen is a personal AI operating system.",
             "hasSummary": True,
             "notes": [
@@ -3328,6 +3329,57 @@ def main():
             )
 
     ok = capture_view("memory-save-error", "MemoryView.qml", setup_memory, show_memory_save_error) and ok
+
+    def show_memory_profile_edit(_view, root):
+        model = root.property("memoryModel")
+        if model is not None:
+            model.editing_profile = True
+            model.profile_draft = "Profile editor proof " + ("longprofiletoken" * 16)
+        for _ in range(8):
+            app.processEvents()
+        sidebar = find_item(root, "memorySidebarFlick")
+        if sidebar is not None:
+            sidebar.setProperty("contentY", 0)
+            for _ in range(6):
+                app.processEvents()
+        editor = find_item(root, "memoryProfileTextArea")
+        if editor is None or editor.property("qaTextFits") is not True:
+            raise AssertionError(
+                "memory profile edit screenshot clipped long text: "
+                f"content={editor.property('qaContentWidth') if editor else None} "
+                f"available={editor.property('qaTextAvailableWidth') if editor else None}"
+            )
+        if sidebar is not None and (scene_top(editor) < scene_top(sidebar) - 1 or scene_bottom(editor) > scene_bottom(sidebar) + 1):
+            raise AssertionError("memory profile edit screenshot did not keep the editor in frame")
+
+    ok = capture_view("memory-profile-edit", "MemoryView.qml", setup_memory, show_memory_profile_edit) and ok
+
+    def show_memory_ban_edit(_view, root):
+        model = root.property("memoryModel")
+        if model is not None:
+            model.adding_ban = True
+            model.ban_title = "No broad rewrites"
+            model.ban_rule = "Do not expand a Qt follow-up without evidence " + ("longbanrule" * 18)
+        for _ in range(8):
+            app.processEvents()
+        sidebar = find_item(root, "memorySidebarFlick")
+        editor = find_item(root, "memoryBanRuleTextArea")
+        if sidebar is not None and editor is not None:
+            current_y = float(sidebar.property("contentY") or 0)
+            target_y = max(0, current_y + scene_top(editor) - scene_top(sidebar) - 56)
+            sidebar.setProperty("contentY", target_y)
+            for _ in range(6):
+                app.processEvents()
+        if editor is None or editor.property("qaTextFits") is not True:
+            raise AssertionError(
+                "memory ban edit screenshot clipped long text: "
+                f"content={editor.property('qaContentWidth') if editor else None} "
+                f"available={editor.property('qaTextAvailableWidth') if editor else None}"
+            )
+        if sidebar is not None and (scene_top(editor) < scene_top(sidebar) - 1 or scene_bottom(editor) > scene_bottom(sidebar) + 1):
+            raise AssertionError("memory ban edit screenshot did not keep the editor in frame")
+
+    ok = capture_view("memory-ban-edit", "MemoryView.qml", setup_memory, show_memory_ban_edit) and ok
 
     def show_memory_remove_confirm(_view, root):
         model = root.property("memoryModel")

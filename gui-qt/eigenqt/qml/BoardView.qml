@@ -105,8 +105,8 @@ Rectangle {
 
         width: implicitWidth
         height: implicitHeight
-        implicitWidth: Math.max(badgeLabel.implicitWidth + Theme.space.lg * 2, Theme.space.lg * 2 + 4)
-        implicitHeight: Math.max(22, badgeLabel.implicitHeight + Theme.space.xs * 2)
+        implicitWidth: Math.max(badgeLabel.implicitWidth + Theme.space.xl * 2, Theme.space.xl * 2 + 4)
+        implicitHeight: Math.max(24, badgeLabel.implicitHeight + Theme.space.sm * 2)
         radius: Theme.radius.full
         color: backgroundColor
         border.width: 1
@@ -116,10 +116,10 @@ Rectangle {
         Label {
             id: badgeLabel
             anchors.fill: parent
-            anchors.leftMargin: Theme.space.lg
-            anchors.rightMargin: Theme.space.lg
-            anchors.topMargin: Theme.space.xs
-            anchors.bottomMargin: Theme.space.xs
+            anchors.leftMargin: Theme.space.xl
+            anchors.rightMargin: Theme.space.xl
+            anchors.topMargin: Theme.space.sm
+            anchors.bottomMargin: Theme.space.sm
             text: badge.text
             font.family: badge.fontFamily
             font.pixelSize: badge.fontPixelSize
@@ -546,8 +546,8 @@ Rectangle {
                             readonly property real qaHorizontalPadding: Math.min(qaLeftTextInset, qaRightTextInset)
                             readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
 
-                            width: ownerLabel.implicitWidth + Theme.space.lg * 2
-                            height: 28
+                            width: ownerLabel.implicitWidth + Theme.space.xl * 2
+                            height: 30
                             radius: Theme.radius.full
                             color: modelData.value === ownerFilter ? Theme.colors.brandBright : Theme.colors.bgRaised
                             border.width: 1
@@ -588,8 +588,8 @@ Rectangle {
                             readonly property real qaHorizontalPadding: Math.min(qaLeftTextInset, qaRightTextInset)
                             readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
 
-                            width: stateLabel.implicitWidth + Theme.space.lg * 2
-                            height: 28
+                            width: stateLabel.implicitWidth + Theme.space.xl * 2
+                            height: 30
                             radius: Theme.radius.full
                             color: modelData.value === stateFilter ? Theme.colors.brandBright : Theme.colors.bgRaised
                             border.width: 1
