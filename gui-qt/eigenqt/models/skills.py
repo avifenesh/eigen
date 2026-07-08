@@ -178,6 +178,7 @@ class ProposalsModel(QAbstractListModel):
         self._active = False
         self._load_seq = 0
         self._load_error = ""
+        self._pending_actions: dict[str, str] = {}
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(60_000)  # 60s
         self._poll_timer.timeout.connect(self._fetch_proposals)
@@ -248,6 +249,8 @@ class ProposalsModel(QAbstractListModel):
     @Slot(str)
     def accept(self, name: str):
         """Accept a proposal and remove it only after the RPC succeeds."""
+        if not self._mark_pending(name, "accept"):
+            return
         self._client.call(
             "AcceptSkill",
             name,
@@ -257,6 +260,8 @@ class ProposalsModel(QAbstractListModel):
     @Slot(str)
     def reject(self, name: str):
         """Reject a proposal and remove it only after the RPC succeeds."""
+        if not self._mark_pending(name, "reject"):
+            return
         self._client.call(
             "RejectSkill",
             name,
@@ -265,6 +270,7 @@ class ProposalsModel(QAbstractListModel):
 
     def _on_action_result(self, name: str, action: str, result: dict):
         """Handle proposal accept/reject completion."""
+        self._clear_pending(name, action)
         if "error" in result:
             self.proposal_done.emit(name, action, False, _err_text(result))
             return
@@ -280,6 +286,17 @@ class ProposalsModel(QAbstractListModel):
                 del self._proposals[i]
                 self.endRemoveRows()
                 break
+
+    def _mark_pending(self, name: str, action: str) -> bool:
+        name = (name or "").strip()
+        if not name or name in self._pending_actions:
+            return False
+        self._pending_actions[name] = action
+        return True
+
+    def _clear_pending(self, name: str, action: str) -> None:
+        if self._pending_actions.get(name) == action:
+            del self._pending_actions[name]
 
     @Slot()
     def refresh(self):

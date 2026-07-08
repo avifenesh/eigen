@@ -179,7 +179,8 @@ Rectangle {
         objectName: proposalName ? "proposalCard_" + proposalName : ""
         property string proposalName: ""
         property string proposalDescription: ""
-        property bool isActing: false
+        property string actingAction: ""
+        readonly property bool isActing: actingAction !== ""
         property bool qaForceKeyboardFocus: false
         readonly property bool qaVisualFocus: activeFocus
         signal accepted()
@@ -233,7 +234,7 @@ Rectangle {
 
                 AppButton {
                     objectName: proposalCard.proposalName ? "proposalAcceptButton_" + proposalCard.proposalName : ""
-                    text: "Accept"
+                    text: proposalCard.actingAction === "accept" ? "Accepting…" : "Accept"
                     toolTipText: "Accept " + proposalCard.proposalName
                     variant: "primary"
                     enabled: !isActing
@@ -245,7 +246,7 @@ Rectangle {
 
                 AppButton {
                     objectName: proposalCard.proposalName ? "proposalRejectButton_" + proposalCard.proposalName : ""
-                    text: "Reject"
+                    text: proposalCard.actingAction === "reject" ? "Rejecting…" : "Reject"
                     toolTipText: "Reject " + proposalCard.proposalName
                     enabled: !isActing
                     onClicked: rejected()
@@ -715,7 +716,7 @@ Rectangle {
                                     delegate: ProposalCard {
                                         proposalName: modelData.name
                                         proposalDescription: modelData.description
-                                        isActing: root.acting[modelData.name] || false
+                                        actingAction: root.acting[modelData.name] || ""
 
                                         onAccepted: {
                                             root.runProposalAction(modelData.name, "accept")
@@ -1269,7 +1270,7 @@ Rectangle {
         if (!root.proposalsModel || !name || root.acting[name]) return
         root.actionError = ""
         var next = cloneMap(root.acting)
-        next[name] = true
+        next[name] = action
         root.acting = next
         if (action === "accept") {
             root.proposalsModel.accept(name)

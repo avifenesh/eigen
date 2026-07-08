@@ -2004,15 +2004,34 @@ def main():
             }
         })
         skills_model._poll_timer.stop()
+        skills_model._active = True
         proposals_model = ProposalsModel(client)
         proposals_model._on_skills_result({"result": {"proposals": []}})
         proposals_model._poll_timer.stop()
+        proposals_model._active = True
         ctx.setContextProperty("skillsModel", skills_model)
         ctx.setContextProperty("proposalsModel", proposals_model)
         ctx.setContextProperty("markdownParser", markdown_parser)
         ctx.setContextProperty("highlighter", highlighter)
         ctx.setContextProperty("clipboardHelper", clipboard_helper)
         return {"skillsModel": skills_model, "proposalsModel": proposals_model}
+
+    def setup_skills_with_proposal(ctx):
+        props = setup_skills(ctx)
+        props["proposalsModel"]._on_skills_result(
+            {
+                "result": {
+                    "proposals": [
+                        {
+                            "name": "qt-qa",
+                            "description": "Visual QML proof for pending proposal actions",
+                            "path": "/tmp/qt-qa/SKILL.md",
+                        }
+                    ]
+                }
+            }
+        )
+        return props
 
     def show_skills_markdown_preview(_view, root):
         body = (
@@ -2051,6 +2070,19 @@ def main():
         root.setProperty("removing", True)
 
     ok = capture_view("skills-remove-pending", "SkillsView.qml", setup_skills, show_skills_remove_pending) and ok
+
+    def show_skills_proposal_pending(_view, root):
+        root.setProperty("acting", {"qt-qa": "accept"})
+        accept = find_item(root, "proposalAcceptButton_qt-qa")
+        reject = find_item(root, "proposalRejectButton_qt-qa")
+        if accept is None or accept.property("qaText") != "Accepting…" or accept.property("enabled") is not False:
+            raise AssertionError("skills pending proposal screenshot did not render a disabled Accepting button")
+        if accept.property("qaTextFits") is not True:
+            raise AssertionError("skills pending proposal accept button text does not fit")
+        if reject is None or reject.property("enabled") is not False or reject.property("qaTextFits") is not True:
+            raise AssertionError("skills pending proposal screenshot did not disable the sibling reject action")
+
+    ok = capture_view("skills-proposal-pending", "SkillsView.qml", setup_skills_with_proposal, show_skills_proposal_pending) and ok
 
     def show_skills_rpc_error(_view, root):
         root.setProperty(

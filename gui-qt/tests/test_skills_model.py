@@ -360,3 +360,35 @@ def test_proposals_model_action_failure_keeps_row(fake_client):
     idx = model.index(0, 0)
     assert model.data(idx, model.NameRole) == "prop1"
     assert events == [("prop1", "accept", False, "write denied")]
+
+
+def test_proposals_model_pending_actions_do_not_duplicate(fake_client):
+    """A pending proposal action blocks duplicate and opposite actions for that proposal."""
+    model = ProposalsModel(fake_client)
+    callbacks = []
+    fake_client.call.side_effect = lambda *args, callback=None, **kwargs: callbacks.append(callback)
+
+    model._on_skills_result({
+        "result": {
+            "skills": [],
+            "proposals": [
+                {"name": "prop1", "description": "dream skill 1", "path": "/dream/1"},
+                {"name": "prop2", "description": "dream skill 2", "path": "/dream/2"},
+            ],
+        }
+    })
+
+    model.accept("prop1")
+    model.accept("prop1")
+    model.reject("prop1")
+    model.reject("prop2")
+
+    assert [call.args for call in fake_client.call.call_args_list] == [
+        ("AcceptSkill", "prop1"),
+        ("RejectSkill", "prop2"),
+    ]
+
+    callbacks[0]({"error": "accept denied"})
+    model.reject("prop1")
+
+    assert fake_client.call.call_args_list[-1].args == ("RejectSkill", "prop1")
