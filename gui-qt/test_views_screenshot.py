@@ -929,6 +929,41 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
     else:
         print(f"✗ Failed to save {output_compact}")
 
+    compact_model_combo = find_item(window.contentItem(), "sessionModelCombo")
+    if compact_model_combo is None:
+        print("✗ Main compact dropdown proof could not find the model combo")
+        window.hide()
+        return False
+    compact_model_combo.setProperty("qaPopupOpen", True)
+    QTest.qWait(80)
+    for _ in range(14):
+        app.processEvents()
+    if compact_model_combo.property("qaPopupActuallyOpen") is not True:
+        print("✗ Main compact dropdown proof did not open the model dropdown")
+        window.hide()
+        return False
+    if compact_model_combo.property("qaPopupInsideWindow") is not True:
+        print(
+            "✗ Main compact dropdown proof clipped model dropdown: "
+            f"above={compact_model_combo.property('qaPopupAvailableAbove')}, "
+            f"below={compact_model_combo.property('qaPopupAvailableBelow')}, "
+            f"height={compact_model_combo.property('qaPopupEffectiveHeight')}"
+        )
+        window.hide()
+        return False
+
+    output_compact_dropdown = SCREENSHOTS / "qa-fix-main-chat-compact-dropdown.png"
+    image_compact_dropdown = window.grabWindow()
+    success_compact_dropdown = image_compact_dropdown.save(str(output_compact_dropdown))
+    if success_compact_dropdown:
+        print(f"✓ Saved {output_compact_dropdown}")
+    else:
+        print(f"✗ Failed to save {output_compact_dropdown}")
+    compact_model_combo.setProperty("qaPopupOpen", False)
+    QTest.qWait(80)
+    for _ in range(14):
+        app.processEvents()
+
     safe_bottom_inset = 40
     if not window.setProperty("bottomPadding", safe_bottom_inset):
         print("✗ Main safe-area chat proof could not set bottomPadding")
@@ -967,7 +1002,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
         print(f"✗ Failed to save {output_safe}")
 
     window.hide()
-    return success and success_error and success_min and success_compact and success_safe
+    return success and success_error and success_min and success_compact and success_compact_dropdown and success_safe
 
 
 def main():
