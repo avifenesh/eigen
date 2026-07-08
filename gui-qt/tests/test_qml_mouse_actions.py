@@ -695,6 +695,36 @@ def check_connectors(app, client):
         if connectors.confirm_remove_connector.get("notion"):
             raise AssertionError("connector remove cancel did not reset confirmation")
 
+        remove = click_item(app, view, root, "connectorRemoveButton_connector_notion", flick_name="connectorsFlick")
+        if not connectors.confirm_remove_connector.get("notion"):
+            invoke_click(remove)
+            pump(app)
+        confirm = find_visual_item(root, "connectorConfirmRemoveButton_connector_notion")
+        if confirm is None:
+            raise AssertionError("connector remove confirm did not return after cancel")
+        client.delays["RemoveConnector"] = 45
+        start = len(client.calls)
+        invoke_click(confirm)
+        pump(app, 2)
+        remove_calls = [call for call in client.calls[start:] if call[0] == "RemoveConnector" and call[1] == ("notion",)]
+        if len(remove_calls) != 1:
+            raise AssertionError(f"expected one pending RemoveConnector call, got {remove_calls}")
+        pending_remove = find_visual_item(root, "connectorRemoveButton_connector_notion")
+        pending_primary = find_visual_item(root, "connectorPrimaryButton_connector_notion")
+        if pending_remove is None or pending_remove.property("enabled") is not False:
+            raise AssertionError("pending connector remove did not disable the remove button")
+        if pending_primary is None or pending_primary.property("enabled") is not False:
+            raise AssertionError("pending connector remove did not disable the primary action")
+        invoke_click(pending_remove)
+        invoke_click(pending_primary)
+        pump(app, 2)
+        remove_calls = [call for call in client.calls[start:] if call[0] == "RemoveConnector" and call[1] == ("notion",)]
+        if len(remove_calls) != 1:
+            raise AssertionError(f"pending connector remove duplicated RPCs: {remove_calls}")
+        QTest.qWait(70)
+        pump(app)
+        del client.delays["RemoveConnector"]
+
         client.failures["AddCatalogConnector"] = "catalog denied"
         start = len(client.calls)
         tile = focus_item(app, root, "catalogTile_slack", flick_name="connectorsFlick")

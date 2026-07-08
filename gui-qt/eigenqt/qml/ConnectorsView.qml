@@ -564,7 +564,7 @@ Rectangle {
                         statusBadge: connStatusBadge(connector)
                         statusColor: connStatusColor(connector)
                         metaLine: connector.url
-                        busy: isBusy(connector.name)
+                        busy: isBusy(connector.name) || connectorIsConnecting(connector.name)
                         primaryAction: connector.connected ? "secondary" : "primary"
                         primaryLabel: connPrimaryLabel(connector)
                         secondaryActions: true

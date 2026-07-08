@@ -487,6 +487,8 @@ class ConnectorsModel(QObject):
     @Slot(str)
     def add_connector(self, name: str):
         """Add a custom connector by name, URL, description."""
+        if self._adding:
+            return
         if not name.strip() or not self._add_url.strip():
             self.action_error = "Connector name and URL are required."
             return
@@ -533,6 +535,9 @@ class ConnectorsModel(QObject):
     @Slot(str)
     def add_from_catalog(self, name: str):
         """Add a catalog connector by name."""
+        name = name.strip()
+        if not name or self._connecting.get(name):
+            return
         self._connecting[name] = True
         self.connecting_changed.emit()
         self.action_error = ""
@@ -552,6 +557,9 @@ class ConnectorsModel(QObject):
     @Slot(str)
     def connect_connector(self, name: str):
         """Initiate OAuth flow for a connector."""
+        name = name.strip()
+        if not name or self._busy.get(name) or self._connecting.get(name):
+            return
         self._connecting[name] = True
         self.connecting_changed.emit()
         self.action_error = ""
@@ -569,6 +577,8 @@ class ConnectorsModel(QObject):
     @Slot(str)
     def disconnect_connector(self, name: str):
         """Disconnect a connector."""
+        if self._busy.get(name) or self._connecting.get(name):
+            return
         self._busy[name] = True
         self.busy_changed.emit()
         self.action_error = ""
@@ -589,6 +599,8 @@ class ConnectorsModel(QObject):
     @Slot(str)
     def remove_connector(self, name: str):
         """Remove a connector (after inline confirm)."""
+        if self._busy.get(name) or self._connecting.get(name):
+            return
         self._busy[name] = True
         self.busy_changed.emit()
         self.action_error = ""
@@ -612,6 +624,8 @@ class ConnectorsModel(QObject):
     @Slot(str)
     def confirm_remove_connector_set(self, name: str):
         """Set confirm state for connector removal."""
+        if self._busy.get(name) or self._connecting.get(name):
+            return
         self._confirm_remove_connector[name] = True
         self.confirm_remove_connector_changed.emit()
 
@@ -625,6 +639,8 @@ class ConnectorsModel(QObject):
     @Slot(str, bool)
     def toggle_server(self, name: str, disabled: bool):
         """Enable/disable an MCP server."""
+        if self._busy.get(name):
+            return
         self._busy[name] = True
         self.busy_changed.emit()
         self.action_error = ""
@@ -645,6 +661,8 @@ class ConnectorsModel(QObject):
     @Slot(str)
     def remove_server(self, name: str):
         """Remove an MCP server (after inline confirm)."""
+        if self._busy.get(name):
+            return
         self._busy[name] = True
         self.busy_changed.emit()
         self.action_error = ""
@@ -668,6 +686,8 @@ class ConnectorsModel(QObject):
     @Slot(str)
     def confirm_remove_server_set(self, name: str):
         """Set confirm state for server removal."""
+        if self._busy.get(name):
+            return
         self._confirm_remove_server[name] = True
         self.confirm_remove_server_changed.emit()
 
@@ -681,6 +701,8 @@ class ConnectorsModel(QObject):
     @Slot()
     def save_local_server(self):
         """Save a local MCP server (stdio)."""
+        if self._srv_saving:
+            return
         name = (self._srv_name or "").strip()
         cmd = [c for c in (self._srv_command or "").strip().split() if c]
         if not name or not cmd:
@@ -746,6 +768,8 @@ class ConnectorsModel(QObject):
     @Slot(str)
     def choose_vault(self, path: str):
         """Choose Obsidian vault."""
+        if self._obsidian_busy:
+            return
         self.obsidian_busy = True
         self.action_error = ""
 
@@ -774,6 +798,8 @@ class ConnectorsModel(QObject):
     @Slot(str, bool)
     def revuto_pause(self, repo: str, paused: bool):
         """Pause/resume a revuto reviewer."""
+        if self._revuto_busy.get(repo):
+            return
         self._revuto_busy[repo] = True
         self.revuto_busy_changed.emit()
         self.action_error = ""
@@ -796,6 +822,8 @@ class ConnectorsModel(QObject):
     @Slot(str)
     def revuto_trigger(self, repo: str):
         """Trigger a revuto review."""
+        if self._revuto_busy.get(repo):
+            return
         self._revuto_busy[repo] = True
         self.revuto_busy_changed.emit()
         self.action_error = ""
@@ -815,6 +843,8 @@ class ConnectorsModel(QObject):
     @Slot()
     def setup_google(self):
         """Setup Google (open Cloud Console + import client JSON)."""
+        if self._google_busy:
+            return
         self.google_busy = True
         self.action_error = ""
 
@@ -835,6 +865,8 @@ class ConnectorsModel(QObject):
     @Slot()
     def connect_google(self):
         """Connect Google (OAuth flow)."""
+        if self._google_busy:
+            return
         self.google_busy = True
         self.action_error = ""
 
@@ -854,6 +886,8 @@ class ConnectorsModel(QObject):
     @Slot()
     def disconnect_google(self):
         """Disconnect Google."""
+        if self._google_busy:
+            return
         self.google_busy = True
         self.action_error = ""
 

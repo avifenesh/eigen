@@ -91,6 +91,14 @@ def _reply(call, *, result=None, error=None):
     callback({"error": error} if error is not None else {"result": result})
 
 
+def _deferred_call_count(client, method, args=None):
+    return sum(
+        1
+        for call in client.calls
+        if call["method"] == method and (args is None or call["args"] == args)
+    )
+
+
 @pytest.fixture
 def client():
     return MockRpcClient()
@@ -397,6 +405,69 @@ def test_save_local_server_error_keeps_form_for_retry(model, client):
     assert model.srv_env == "KEY1=value1"
     assert model.srv_secret == "SECRET=xyz"
     assert model.action_error == "Could not save MCP server test: save denied"
+
+
+def test_pending_connector_mutations_do_not_duplicate():
+    """Pending connector/server mutations should collapse repeated UI invocations."""
+    client = DeferredRpcClient()
+    model = ConnectorsModel(client)
+
+    model.add_url = "https://mcp.linear.app/mcp"
+    model.add_desc = "Linear issues"
+    model.add_connector("linear")
+    model.add_connector("linear")
+    assert _deferred_call_count(client, "AddConnector", ("linear", "https://mcp.linear.app/mcp", "Linear issues")) == 1
+
+    model.add_from_catalog("slack")
+    model.add_from_catalog("slack")
+    assert _deferred_call_count(client, "AddCatalogConnector", ("slack",)) == 1
+
+    model.connect_connector("github")
+    model.connect_connector("github")
+    assert _deferred_call_count(client, "ConnectConnector", ("github",)) == 1
+
+    model.disconnect_connector("notion-disconnect")
+    model.disconnect_connector("notion-disconnect")
+    assert _deferred_call_count(client, "DisconnectConnector", ("notion-disconnect",)) == 1
+
+    model.confirm_remove_connector_set("notion-remove")
+    model.remove_connector("notion-remove")
+    model.remove_connector("notion-remove")
+    assert _deferred_call_count(client, "RemoveConnector", ("notion-remove",)) == 1
+    assert not model.confirm_remove_connector.get("notion-remove")
+
+    model.toggle_server("github-local", True)
+    model.toggle_server("github-local", False)
+    assert _deferred_call_count(client, "SetMCPServerDisabled", ("github-local", True)) == 1
+    assert _deferred_call_count(client, "SetMCPServerDisabled", ("github-local", False)) == 0
+
+    model.confirm_remove_server_set("filesystem-local")
+    model.remove_server("filesystem-local")
+    model.remove_server("filesystem-local")
+    assert _deferred_call_count(client, "RemoveMCPServer", ("filesystem-local",)) == 1
+    assert not model.confirm_remove_server.get("filesystem-local")
+
+
+@pytest.mark.parametrize(
+    "method,args,rpc_method,expected_args",
+    [
+        ("setup_google", (), "ImportGoogleClient", ()),
+        ("connect_google", (), "ConnectGoogle", ()),
+        ("disconnect_google", (), "DisconnectGoogle", ()),
+        ("choose_vault", ("/home/user/vault",), "ChooseObsidianVault", ("/home/user/vault",)),
+        ("revuto_pause", ("owner/repo", True), "RevutoSetPaused", ("owner/repo", True)),
+        ("revuto_trigger", ("owner/repo",), "RevutoTrigger", ("owner/repo", "review")),
+    ],
+)
+def test_pending_builtin_connector_actions_do_not_duplicate(method, args, rpc_method, expected_args):
+    """Built-in connector buttons should not emit duplicate RPCs while pending."""
+    client = DeferredRpcClient()
+    model = ConnectorsModel(client)
+
+    getattr(model, method)(*args)
+    getattr(model, method)(*args)
+
+    assert _deferred_call_count(client, rpc_method, expected_args) == 1
 
 
 def test_cancel_local_server_clears_form(model):
