@@ -47,6 +47,7 @@ Rectangle {
     // Saving state (per key)
     property var saving: ({})
     property var ruleChainSaving: ({})
+    readonly property int qaConfigSavingCount: Object.keys(saving || {}).length
     readonly property int qaRuleChainSavingCount: Object.keys(ruleChainSaving || {}).length
 
     // Working values (optimistic update before commit)
@@ -970,6 +971,9 @@ Rectangle {
     }
 
     function commitConfig(key, value) {
+        if (root.saving[key]) {
+            return
+        }
         root.actionError = ""
         var newSaving = root.cloneMap(root.saving)
         newSaving[key] = true

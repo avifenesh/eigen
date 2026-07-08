@@ -567,6 +567,7 @@ def check_config(app, client):
         if root.property("activeTab") != "Models":
             raise AssertionError("config Models tab did not activate")
 
+        client.delays["SetConfig"] = 45
         start = len(client.calls)
         button = focus_item(app, root, "configBoolToggle_route", flick_name="configFlick")
         if not button.property("qaVisualFocus"):
@@ -578,6 +579,17 @@ def check_config(app, client):
         QTest.keyClick(view, Qt.Key_Space)
         pump(app)
         assert_call(client, start, "SetConfig", ("route", "false"))
+        if int(root.property("qaConfigSavingCount")) != 1 or button.property("visible") is not False:
+            raise AssertionError("config route toggle did not enter a saving-only state")
+        invoke_click(button)
+        pump(app, 2)
+        if client.calls[start:].count(("SetConfig", ("route", "false"))) != 1:
+            raise AssertionError("config route toggle allowed a duplicate save while pending")
+        QTest.qWait(70)
+        pump(app, 12)
+        if int(root.property("qaConfigSavingCount")) != 0:
+            raise AssertionError("config field saving state did not clear after success")
+        del client.delays["SetConfig"]
 
         start = len(client.calls)
         chip = focus_item(app, root, "configMultiChip_route_providers_local", flick_name="configFlick")
