@@ -1005,7 +1005,7 @@ Rectangle {
                             toolTipText: root.confirmRemove ? "Cancel removal" : (root.openSkill ? "Remove " + root.openSkill.name : "Remove skill")
                             variant: root.confirmRemove ? "secondary" : "danger"
                             enabled: !root.removing
-                            Layout.preferredWidth: 72
+                            Layout.preferredWidth: Math.max(84, implicitWidth)
                             Layout.preferredHeight: 32
                             onClicked: {
                                 if (root.confirmRemove) {

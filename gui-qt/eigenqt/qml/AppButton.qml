@@ -16,8 +16,11 @@ Button {
     property string segmentPosition: "none" // none | first | middle | last
     property int contentAlignment: Text.AlignHCenter
     property bool qaForceKeyboardFocus: false
+    readonly property bool qaIsAppButton: true
     readonly property bool qaTextFits: textContentFits(contentItem)
     readonly property string qaText: text
+    readonly property real qaHorizontalPadding: Math.min(leftPadding, rightPadding)
+    readonly property real qaVerticalPadding: Math.min(topPadding, bottomPadding)
     readonly property bool showingFocus: visualFocus || activeFocus
     readonly property bool qaVisualFocus: showingFocus
 
@@ -25,8 +28,10 @@ Button {
     implicitHeight: compact ? 24 : 32
     focusPolicy: Qt.StrongFocus
     hoverEnabled: true
-    leftPadding: compact ? Theme.space.md : Theme.space.lg
-    rightPadding: compact ? Theme.space.md : Theme.space.lg
+    leftPadding: compact ? Theme.space.md : Theme.space.xl
+    rightPadding: compact ? Theme.space.md : Theme.space.xl
+    topPadding: compact ? Theme.space.xs : Theme.space.sm
+    bottomPadding: compact ? Theme.space.xs : Theme.space.sm
     Accessible.name: toolTipText || text
     ToolTip.delay: 600
     ToolTip.timeout: 4000

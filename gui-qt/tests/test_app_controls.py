@@ -247,10 +247,16 @@ import QtQuick.Layouts
 
     button.setProperty("qaForceKeyboardFocus", True)
     pump(app)
+    if button.property("qaIsAppButton") is not True:
+        raise AssertionError("AppButton did not expose its QA marker")
     if not button.property("qaVisualFocus"):
         raise AssertionError("AppButton did not expose keyboard focus")
     if not button.property("qaTextFits"):
         raise AssertionError("AppButton text does not fit")
+    if float(button.property("qaHorizontalPadding") or 0) < 15.5:
+        raise AssertionError(f"AppButton horizontal padding too small: {button.property('qaHorizontalPadding')}")
+    if float(button.property("qaVerticalPadding") or 0) < 5.5:
+        raise AssertionError(f"AppButton vertical padding too small: {button.property('qaVerticalPadding')}")
     QTest.keyClick(root, Qt.Key_Return)
     QTest.keyClick(root, Qt.Key_Space)
     pump(app)
@@ -268,6 +274,8 @@ import QtQuick.Layouts
         raise AssertionError("AppButton custom content keyboard activation failed")
     if not disabled_button.property("qaTextFits"):
         raise AssertionError("Disabled primary AppButton text does not fit")
+    if float(disabled_button.property("qaHorizontalPadding") or 0) < 15.5:
+        raise AssertionError(f"Disabled AppButton horizontal padding too small: {disabled_button.property('qaHorizontalPadding')}")
     disabled_button.setProperty("qaForceKeyboardFocus", True)
     pump(app)
     QTest.keyClick(root, Qt.Key_Return)

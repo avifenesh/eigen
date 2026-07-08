@@ -758,6 +758,43 @@ def assert_task_chips_have_padding(view_name, root_item):
     assert_marked_chips_have_padding(view_name, root_item, ("qaIsTaskChip",), "task chip")
 
 
+def assert_app_buttons_have_padding(view_name, root_item):
+    failures = []
+    icon_text = {"", "×", "✕", "↑", "↓", "←", "→", "↗", "⌫"}
+
+    def visit(item):
+        if item is None:
+            return
+        if item.property("qaIsAppButton") is True:
+            width = float(item.property("width") or 0)
+            height = float(item.property("height") or 0)
+            visible = item.isVisible() if hasattr(item, "isVisible") else item.property("visible")
+            if visible and width > 0 and height > 0:
+                text = str(item.property("qaText") or "").strip()
+                compact = item.property("compact") is True
+                segmented = str(item.property("segmentPosition") or "none") != "none"
+                icon_only = text in icon_text
+                horizontal_padding = float(item.property("qaHorizontalPadding") or 0)
+                vertical_padding = float(item.property("qaVerticalPadding") or 0)
+                required_horizontal = 5.5 if icon_only else (7.5 if compact or segmented else 15.5)
+                required_vertical = 3.5 if compact or icon_only else 5.5
+                if item.property("qaTextFits") is not True or horizontal_padding < required_horizontal or vertical_padding < required_vertical:
+                    failures.append(
+                        f"{item.objectName() or '<unnamed>'} "
+                        f"text={text!r} fits={item.property('qaTextFits')} "
+                        f"padding={horizontal_padding:.1f}x{vertical_padding:.1f} "
+                        f"required={required_horizontal:.1f}x{required_vertical:.1f} "
+                        f"size={width:.1f}x{height:.1f}"
+                    )
+        if hasattr(item, "childItems"):
+            for child in item.childItems():
+                visit(child)
+
+    visit(root_item)
+    if failures:
+        raise AssertionError(f"{view_name} rendered cramped AppButton text: {failures[:8]}")
+
+
 def click_item(view, item):
     width = float(item.property("width") or 0)
     height = float(item.property("height") or 0)
@@ -802,6 +839,7 @@ def capture_view(view_name: str, qml_file: str, setup_context, after_render=None
         for _ in range(12):
             app.processEvents()
     assert_app_tags_have_padding(view_name, view.rootObject())
+    assert_app_buttons_have_padding(view_name, view.rootObject())
 
     output = SCREENSHOTS / f"qa-fix-{view_name}.png"
     image = view.grabWindow()
