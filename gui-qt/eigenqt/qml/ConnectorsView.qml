@@ -912,9 +912,12 @@ Rectangle {
                                     rightPadding: Theme.space.lg
                                     topPadding: Theme.space.sm
                                     bottomPadding: Theme.space.sm
+                                    wrapMode: TextEdit.Wrap
                                     property bool qaForceKeyboardFocus: false
                                     readonly property bool qaVisualFocus: activeFocus
-                                    readonly property bool qaTextFits: true
+                                    readonly property real qaContentWidth: contentWidth
+                                    readonly property real qaTextAvailableWidth: Math.max(0, width - leftPadding - rightPadding)
+                                    readonly property bool qaTextFits: !visible || qaContentWidth <= qaTextAvailableWidth + 1.0
                                     readonly property string qaText: text || placeholderText
                                     Keys.onPressed: function(event) {
                                         root.handleServerTextAreaKey(event)
@@ -957,9 +960,12 @@ Rectangle {
                                     rightPadding: Theme.space.lg
                                     topPadding: Theme.space.sm
                                     bottomPadding: Theme.space.sm
+                                    wrapMode: TextEdit.Wrap
                                     property bool qaForceKeyboardFocus: false
                                     readonly property bool qaVisualFocus: activeFocus
-                                    readonly property bool qaTextFits: true
+                                    readonly property real qaContentWidth: contentWidth
+                                    readonly property real qaTextAvailableWidth: Math.max(0, width - leftPadding - rightPadding)
+                                    readonly property bool qaTextFits: !visible || qaContentWidth <= qaTextAvailableWidth + 1.0
                                     readonly property string qaText: text || placeholderText
                                     Keys.onPressed: function(event) {
                                         root.handleServerTextAreaKey(event)

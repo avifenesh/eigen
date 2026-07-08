@@ -758,7 +758,9 @@ Rectangle {
                             text: root.notesController ? root.notesController.draft : ""
                             property bool qaForceKeyboardFocus: false
                             readonly property bool qaVisualFocus: activeFocus
-                            readonly property bool qaTextFits: true
+                            readonly property real qaContentWidth: contentWidth
+                            readonly property real qaTextAvailableWidth: Math.max(0, width - leftPadding - rightPadding)
+                            readonly property bool qaTextFits: !visible || qaContentWidth <= qaTextAvailableWidth + 1.0
                             readonly property string qaText: text || placeholderText
                             onTextChanged: {
                                 if (root.notesController && root.notesController.editing) {
