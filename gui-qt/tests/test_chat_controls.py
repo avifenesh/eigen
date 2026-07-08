@@ -1129,6 +1129,26 @@ assert_combo_popup_clean(chat_view, chat, model_combo, "session model combo", 0)
 assert_combo_popup_clean(chat_view, chat, perm_combo, "session permission combo", 0)
 assert_combo_popup_clean(chat_view, chat, effort_combo, "session effort combo", 0)
 assert_combo_popup_clean(chat_view, chat, search_combo, "session search combo", 0)
+model_combo.setProperty("qaForceKeyboardFocus", True)
+pump(app, 8)
+QTest.keyClick(chat_view, Qt.Key_Down)
+pump(app, 12)
+if model_combo.property("qaPopupActuallyOpen") is not True:
+    raise AssertionError("Model combo Down key did not open the popup")
+if model_combo.property("qaKeyboardIndex") != 1:
+    raise AssertionError(f"Model combo Down key did not highlight the next option: {model_combo.property('qaKeyboardIndex')}")
+QTest.keyClick(chat_view, Qt.Key_Escape)
+pump(app, 12)
+if model_combo.property("qaPopupActuallyOpen") is True:
+    raise AssertionError("Model combo Escape did not close the popup")
+QTest.keyClick(chat_view, Qt.Key_Down)
+pump(app, 8)
+QTest.keyClick(chat_view, Qt.Key_Return)
+pump(app, 18)
+if ("SetModel", "local-qwen") not in state.calls:
+    raise AssertionError(f"Model combo keyboard activation did not call setModel: {state.calls}")
+if model_combo.property("qaPopupActuallyOpen") is True:
+    raise AssertionError("Model combo keyboard activation did not close the popup")
 click_item(app, chat_view, chat, "sessionModelCombo")
 click_item(app, chat_view, chat, "sessionModelCombo_option_1")
 click_item(app, chat_view, chat, "sessionPermCombo")
