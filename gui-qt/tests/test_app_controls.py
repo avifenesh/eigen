@@ -128,6 +128,7 @@ try:
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "Theme.js" as Theme
 
     Window {
         id: root
@@ -182,6 +183,17 @@ import QtQuick.Layouts
             backgroundColor: "#1a2428"
             borderColor: "#2b3b40"
             textColor: "#dde4e3"
+        }
+
+        AppButton {
+            objectName: "samplePillChip"
+            text: "local"
+            compact: true
+            pill: true
+            leftPadding: Theme.space.xxl
+            rightPadding: Theme.space.xxl
+            topPadding: Theme.space.sm
+            bottomPadding: Theme.space.sm
         }
 
         AppTextField {
@@ -245,12 +257,13 @@ import QtQuick.Layouts
     custom_button = find_item(root_item, "customContentAction")
     disabled_button = find_item(root_item, "disabledPrimaryAction")
     sample_tag = find_item(root_item, "sampleTag")
+    sample_pill_chip = find_item(root_item, "samplePillChip")
     sample_text_field = find_item(root_item, "sampleTextField")
     combo = find_item(root_item, "modelCombo")
     object_combo = find_item(root_item, "objectCombo")
     bottom_combo = find_item(root_item, "bottomCombo")
     route_switch = find_item(root_item, "routeSwitch")
-    if button is None or custom_button is None or disabled_button is None or sample_tag is None or sample_text_field is None or combo is None or object_combo is None or bottom_combo is None or route_switch is None:
+    if button is None or custom_button is None or disabled_button is None or sample_tag is None or sample_pill_chip is None or sample_text_field is None or combo is None or object_combo is None or bottom_combo is None or route_switch is None:
         raise AssertionError("control harness did not render all controls")
 
     button.setProperty("qaForceKeyboardFocus", True)
@@ -296,10 +309,19 @@ import QtQuick.Layouts
         raise AssertionError("AppTag did not expose its QA marker")
     if sample_tag.property("qaTextFits") is not True:
         raise AssertionError("AppTag text does not fit")
-    if float(sample_tag.property("qaHorizontalPadding") or 0) < 19.5:
+    if float(sample_tag.property("qaHorizontalPadding") or 0) < 23.5:
         raise AssertionError(f"AppTag horizontal padding too small: {sample_tag.property('qaHorizontalPadding')}")
     if float(sample_tag.property("qaVerticalPadding") or 0) < 7.5:
         raise AssertionError(f"AppTag vertical padding too small: {sample_tag.property('qaVerticalPadding')}")
+
+    if sample_pill_chip.property("qaIsAppButton") is not True:
+        raise AssertionError("Pill chip did not use AppButton")
+    if sample_pill_chip.property("qaTextFits") is not True:
+        raise AssertionError("Pill chip text does not fit")
+    if float(sample_pill_chip.property("qaHorizontalPadding") or 0) < 19.5:
+        raise AssertionError(f"Pill chip horizontal padding too small: {sample_pill_chip.property('qaHorizontalPadding')}")
+    if float(sample_pill_chip.property("qaVerticalPadding") or 0) < 5.5:
+        raise AssertionError(f"Pill chip vertical padding too small: {sample_pill_chip.property('qaVerticalPadding')}")
 
     if sample_text_field.property("qaIsAppTextField") is not True:
         raise AssertionError("AppTextField did not expose its QA marker")

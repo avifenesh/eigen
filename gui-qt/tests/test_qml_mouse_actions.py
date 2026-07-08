@@ -615,10 +615,15 @@ def check_config(app, client):
         chip = focus_item(app, root, "configMultiChip_route_providers_local", flick_name="configFlick")
         if not chip.property("qaVisualFocus"):
             raise AssertionError("config route_providers chip did not expose keyboard focus")
-        if float(chip.property("leftPadding") or 0) < 15.5 or float(chip.property("rightPadding") or 0) < 15.5:
+        if float(chip.property("leftPadding") or 0) < 19.5 or float(chip.property("rightPadding") or 0) < 19.5:
             raise AssertionError(
                 "config route_providers chip side padding too small: "
                 f"{chip.property('leftPadding')}x{chip.property('rightPadding')}"
+            )
+        if float(chip.property("topPadding") or 0) < 5.5 or float(chip.property("bottomPadding") or 0) < 5.5:
+            raise AssertionError(
+                "config route_providers chip vertical padding too small: "
+                f"{chip.property('topPadding')}x{chip.property('bottomPadding')}"
             )
         if float(chip.property("height") or 0) < 27.5:
             raise AssertionError(f"config route_providers chip height too small: {chip.property('height')}")

@@ -105,7 +105,7 @@ Rectangle {
 
         width: implicitWidth
         height: implicitHeight
-        implicitWidth: Math.max(badgeLabel.implicitWidth + Theme.space.xl * 2, Theme.space.xl * 2 + 4)
+        implicitWidth: Math.max(badgeLabel.implicitWidth + Theme.space.xxl * 2, Theme.space.xxl * 2 + 4)
         implicitHeight: Math.max(24, badgeLabel.implicitHeight + Theme.space.sm * 2)
         radius: Theme.radius.full
         color: backgroundColor
@@ -116,8 +116,8 @@ Rectangle {
         Label {
             id: badgeLabel
             anchors.fill: parent
-            anchors.leftMargin: Theme.space.xl
-            anchors.rightMargin: Theme.space.xl
+            anchors.leftMargin: Theme.space.xxl
+            anchors.rightMargin: Theme.space.xxl
             anchors.topMargin: Theme.space.sm
             anchors.bottomMargin: Theme.space.sm
             text: badge.text
@@ -546,7 +546,7 @@ Rectangle {
                             readonly property real qaHorizontalPadding: Math.min(qaLeftTextInset, qaRightTextInset)
                             readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
 
-                            width: ownerLabel.implicitWidth + Theme.space.xl * 2
+                            width: ownerLabel.implicitWidth + Theme.space.xxl * 2
                             height: 30
                             radius: Theme.radius.full
                             color: modelData.value === ownerFilter ? Theme.colors.brandBright : Theme.colors.bgRaised
@@ -588,7 +588,7 @@ Rectangle {
                             readonly property real qaHorizontalPadding: Math.min(qaLeftTextInset, qaRightTextInset)
                             readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
 
-                            width: stateLabel.implicitWidth + Theme.space.xl * 2
+                            width: stateLabel.implicitWidth + Theme.space.xxl * 2
                             height: 30
                             radius: Theme.radius.full
                             color: modelData.value === stateFilter ? Theme.colors.brandBright : Theme.colors.bgRaised

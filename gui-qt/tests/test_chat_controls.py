@@ -1573,7 +1573,7 @@ if terminal_status.property("qaIsAppTag") is not True:
     raise AssertionError("Terminal status did not use shared AppTag")
 if terminal_status.property("qaTextFits") is not True:
     raise AssertionError("Terminal status text does not fit")
-if float(terminal_status.property("qaHorizontalPadding") or 0) < 19.5:
+if float(terminal_status.property("qaHorizontalPadding") or 0) < 23.5:
     raise AssertionError(f"Terminal status horizontal padding too small: {terminal_status.property('qaHorizontalPadding')}")
 if float(terminal_status.property("qaVerticalPadding") or 0) < 7.5:
     raise AssertionError(f"Terminal status vertical padding too small: {terminal_status.property('qaVerticalPadding')}")

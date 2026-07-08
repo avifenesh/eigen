@@ -705,7 +705,7 @@ def assert_app_tags_have_padding(view_name, root_item):
             if visible and width > 0 and height > 0:
                 horizontal_padding = float(item.property("qaHorizontalPadding") or 0)
                 vertical_padding = float(item.property("qaVerticalPadding") or 0)
-                if item.property("qaTextFits") is not True or horizontal_padding < 19.5 or vertical_padding < 7.5:
+                if item.property("qaTextFits") is not True or horizontal_padding < 23.5 or vertical_padding < 7.5:
                     failures.append(
                         f"{item.objectName() or '<unnamed>'} "
                         f"fits={item.property('qaTextFits')} "
@@ -734,7 +734,7 @@ def assert_marked_chips_have_padding(view_name, root_item, markers, label):
             if visible and width > 0 and height > 0:
                 horizontal_padding = float(item.property("qaHorizontalPadding") or 0)
                 vertical_padding = float(item.property("qaVerticalPadding") or 0)
-                if item.property("qaTextFits") is not True or horizontal_padding < 15.5 or vertical_padding < 5.5:
+                if item.property("qaTextFits") is not True or horizontal_padding < 19.5 or vertical_padding < 5.5:
                     failures.append(
                         f"{item.objectName() or '<unnamed>'} "
                         f"fits={item.property('qaTextFits')} "
@@ -1449,7 +1449,7 @@ def main():
             tag = find_item(root, object_name)
             if tag is None or tag.property("qaIsAppTag") is not True:
                 raise AssertionError(f"home tag {object_name} did not use AppTag")
-            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 19.5 or float(tag.property("qaVerticalPadding") or 0) < 7.5:
+            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 23.5 or float(tag.property("qaVerticalPadding") or 0) < 7.5:
                 raise AssertionError(
                     f"home tag {object_name} is cramped: "
                     f"fits={tag.property('qaTextFits')} padding={tag.property('qaHorizontalPadding')}x{tag.property('qaVerticalPadding')}"
@@ -1788,7 +1788,7 @@ def main():
             raise AssertionError("chat terminal dock did not render controls")
         if status_tag.property("qaIsAppTag") is not True:
             raise AssertionError("chat terminal status did not use AppTag")
-        if status_tag.property("qaTextFits") is not True or float(status_tag.property("qaHorizontalPadding") or 0) < 19.5 or float(status_tag.property("qaVerticalPadding") or 0) < 7.5:
+        if status_tag.property("qaTextFits") is not True or float(status_tag.property("qaHorizontalPadding") or 0) < 23.5 or float(status_tag.property("qaVerticalPadding") or 0) < 7.5:
             raise AssertionError(
                 "chat terminal status rendered cramped: "
                 f"fits={status_tag.property('qaTextFits')} "
@@ -2263,7 +2263,7 @@ def main():
             tag = find_item(root, object_name)
             if tag is None or tag.property("qaIsAppTag") is not True:
                 raise AssertionError(f"kanban tag {object_name} did not use AppTag")
-            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 19.5 or float(tag.property("qaVerticalPadding") or 0) < 7.5:
+            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 23.5 or float(tag.property("qaVerticalPadding") or 0) < 7.5:
                 raise AssertionError(
                     f"kanban tag {object_name} is cramped: "
                     f"fits={tag.property('qaTextFits')} padding={tag.property('qaHorizontalPadding')}x{tag.property('qaVerticalPadding')}"
