@@ -213,22 +213,27 @@ Rectangle {
                 spacing: Theme.space.md
 
                 ScrollView {
+                    id: composeScroll
                     Layout.fillWidth: true
                     Layout.preferredHeight: Math.min(composeTextArea.contentHeight + Theme.space.md * 2, 200)
+                    contentWidth: availableWidth
                     ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
                     TextArea {
                         id: composeTextArea
                         objectName: "memoryComposeTextArea"
+                        width: composeScroll.availableWidth
                         text: activeMemoryModel.draft
                         placeholderText: "A durable note for " + activeMemoryModel.scope_label + " memory…"
                         placeholderTextColor: Theme.colors.textGhost
                         font.family: Theme.uiFonts[0]
                         font.pixelSize: Theme.fontSize.bodySm
                         color: Theme.colors.textPrimary
-                        wrapMode: Text.Wrap
+                        wrapMode: TextEdit.Wrap
                         property bool qaForceKeyboardFocus: false
-                        readonly property bool qaTextFits: true
+                        readonly property real qaContentWidth: contentWidth
+                        readonly property real qaTextAvailableWidth: Math.max(0, width - leftPadding - rightPadding)
+                        readonly property bool qaTextFits: !visible || qaContentWidth <= qaTextAvailableWidth + 1.0
                         readonly property string qaText: ""
                         readonly property bool qaVisualFocus: activeFocus
                         onQaForceKeyboardFocusChanged: {

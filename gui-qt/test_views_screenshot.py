@@ -3024,6 +3024,8 @@ def main():
             model.srv_name = "linear-local"
             model.srv_command = "uvx linear-mcp"
             model.srv_desc = "Local Linear MCP"
+            model.srv_env = "LOG_LEVEL=" + ("info" * 18)
+            model.srv_secret = "GITHUB_TOKEN=" + ("tok" * 24)
             model.action_error = "Could not save server linear-local: daemon offline"
         for _ in range(4):
             app.processEvents()
@@ -3035,6 +3037,14 @@ def main():
         dismiss = find_item(root, "connectorsDismissServerActionError")
         if dismiss is None or dismiss.property("qaTextFits") is not True:
             raise AssertionError("connector server error dismiss button did not render cleanly")
+        for object_name in ("connectorsServerEnvInput", "connectorsServerSecretInput"):
+            field = find_item(root, object_name)
+            if field is None or field.property("qaTextFits") is not True:
+                raise AssertionError(
+                    f"connector server editor {object_name} clipped long text: "
+                    f"content={field.property('qaContentWidth') if field else None} "
+                    f"available={field.property('qaTextAvailableWidth') if field else None}"
+                )
 
     ok = capture_view("connectors-server-action-error", "ConnectorsView.qml", setup_connectors, show_connectors_server_action_error) and ok
 
@@ -3055,7 +3065,7 @@ def main():
         notes_controller.content = "# Project ideas\n\nUse the Qt follow-up for focused surface hardening."
         notes_controller.editing = editing
         if editing:
-            notes_controller.draft = notes_controller.content + "\n\nEditing action controls stay aligned."
+            notes_controller.draft = notes_controller.content + "\n\n" + ("longnotetoken" * 18)
 
         ctx.setContextProperty("notesController", notes_controller)
         ctx.setContextProperty("markdownParser", markdown_parser)
@@ -3064,7 +3074,17 @@ def main():
         return {"notesController": notes_controller}
 
     ok = capture_view("notes", "NotesView.qml", setup_notes) and ok
-    ok = capture_view("notes-edit", "NotesView.qml", lambda ctx: setup_notes(ctx, editing=True)) and ok
+
+    def show_notes_edit(_view, root):
+        editor = find_item(root, "notesEditorTextArea")
+        if editor is None or editor.property("qaTextFits") is not True:
+            raise AssertionError(
+                "notes edit screenshot clipped long editor text: "
+                f"content={editor.property('qaContentWidth') if editor else None} "
+                f"available={editor.property('qaTextAvailableWidth') if editor else None}"
+            )
+
+    ok = capture_view("notes-edit", "NotesView.qml", lambda ctx: setup_notes(ctx, editing=True), show_notes_edit) and ok
 
     def show_notes_save_pending(_view, root):
         notes_controller = root.property("notesController")
@@ -3277,8 +3297,17 @@ def main():
         model = root.property("memoryModel")
         if model is not None:
             model.composing = True
-            model.draft = "Memory pending save proof"
+            model.draft = "Memory pending save proof " + ("longmemorytoken" * 16)
             model.saving = True
+        for _ in range(6):
+            app.processEvents()
+        compose = find_item(root, "memoryComposeTextArea")
+        if compose is None or compose.property("qaTextFits") is not True:
+            raise AssertionError(
+                "memory pending save screenshot clipped long compose text: "
+                f"content={compose.property('qaContentWidth') if compose else None} "
+                f"available={compose.property('qaTextAvailableWidth') if compose else None}"
+            )
 
     ok = capture_view("memory-save-pending", "MemoryView.qml", setup_memory, show_memory_save_pending) and ok
 
@@ -3286,8 +3315,17 @@ def main():
         model = root.property("memoryModel")
         if model is not None:
             model.composing = True
-            model.draft = "Memory retry draft stays visible"
+            model.draft = "Memory retry draft stays visible " + ("longmemorytoken" * 16)
             model.action_error = "Could not save note: save denied"
+        for _ in range(6):
+            app.processEvents()
+        compose = find_item(root, "memoryComposeTextArea")
+        if compose is None or compose.property("qaTextFits") is not True:
+            raise AssertionError(
+                "memory save error screenshot clipped long compose text: "
+                f"content={compose.property('qaContentWidth') if compose else None} "
+                f"available={compose.property('qaTextAvailableWidth') if compose else None}"
+            )
 
     ok = capture_view("memory-save-error", "MemoryView.qml", setup_memory, show_memory_save_error) and ok
 

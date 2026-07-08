@@ -892,8 +892,24 @@ def check_connectors(app, client):
             raise AssertionError("local server form without command should not be submittable")
         set_text(app, root, "connectorsServerCommandInput", "uvx github-mcp-server")
         set_text(app, root, "connectorsServerDescInput", "GitHub MCP")
-        set_text(app, root, "connectorsServerEnvInput", "LOG_LEVEL=info")
-        set_text(app, root, "connectorsServerSecretInput", "GITHUB_TOKEN=secret")
+        env_value = "LOG_LEVEL=" + ("info" * 18)
+        secret_value = "GITHUB_TOKEN=" + ("tok" * 24)
+        set_text(app, root, "connectorsServerEnvInput", env_value)
+        set_text(app, root, "connectorsServerSecretInput", secret_value)
+        env_input = find_visual_item(root, "connectorsServerEnvInput")
+        secret_input = find_visual_item(root, "connectorsServerSecretInput")
+        if env_input is None or env_input.property("qaTextFits") is not True:
+            raise AssertionError(
+                "connector env input did not wrap long values cleanly: "
+                f"content={env_input.property('qaContentWidth') if env_input else None} "
+                f"available={env_input.property('qaTextAvailableWidth') if env_input else None}"
+            )
+        if secret_input is None or secret_input.property("qaTextFits") is not True:
+            raise AssertionError(
+                "connector secret input did not wrap long values cleanly: "
+                f"content={secret_input.property('qaContentWidth') if secret_input else None} "
+                f"available={secret_input.property('qaTextAvailableWidth') if secret_input else None}"
+            )
         if not save_button.property("enabled"):
             raise AssertionError("valid local server form should be submittable")
         client.failures["SaveMCPServer"] = "save denied"
@@ -906,9 +922,9 @@ def check_connectors(app, client):
         server = save_calls[-1][1][0]
         if server.get("name") != "github-local" or server.get("command") != ["uvx", "github-mcp-server"]:
             raise AssertionError(f"unexpected server payload: {server}")
-        if server.get("envPairs") != ["LOG_LEVEL=info"]:
+        if server.get("envPairs") != [env_value]:
             raise AssertionError(f"env payload lost: {server}")
-        if server.get("secretEnvPairs") != ["GITHUB_TOKEN=secret"]:
+        if server.get("secretEnvPairs") != [secret_value]:
             raise AssertionError(f"secret payload lost: {server}")
         error_box = find_visual_item(root, "connectorsServerActionError")
         if error_box is None or not error_box.property("visible"):
@@ -978,15 +994,22 @@ def check_memory(app, client):
         if compose is None:
             raise AssertionError("missing memory compose input")
         assert_placeholder_color(compose, "memory compose")
-        set_text(app, root, "memoryComposeTextArea", "Mouse action memory proof")
+        memory_text = "Mouse action memory proof " + ("longmemorytoken" * 16)
+        set_text(app, root, "memoryComposeTextArea", memory_text)
+        if compose.property("qaTextFits") is not True:
+            raise AssertionError(
+                "memory compose input did not wrap long text cleanly: "
+                f"content={compose.property('qaContentWidth')} "
+                f"available={compose.property('qaTextAvailableWidth')}"
+            )
         client.failures["AppendMemory"] = "save denied"
         client.delays["AppendMemory"] = 45
         start = len(client.calls)
         save = click_item(app, view, root, "memorySaveNoteButton")
-        if ("AppendMemory", ("global", "Mouse action memory proof")) not in client.calls[start:]:
+        if ("AppendMemory", ("global", memory_text)) not in client.calls[start:]:
             invoke_click(save)
             pump(app)
-        assert_call(client, start, "AppendMemory", ("global", "Mouse action memory proof"))
+        assert_call(client, start, "AppendMemory", ("global", memory_text))
         if not memory.saving:
             raise AssertionError("memory note save did not expose a pending state")
         discard = find_visual_item(root, "memoryDiscardNoteButton")
@@ -997,7 +1020,7 @@ def check_memory(app, client):
             raise AssertionError("memory pending save allowed the composer to close")
         click_item(app, view, root, "memorySaveNoteButton")
         pump(app, 4)
-        if client.calls[start:].count(("AppendMemory", ("global", "Mouse action memory proof"))) != 1:
+        if client.calls[start:].count(("AppendMemory", ("global", memory_text))) != 1:
             raise AssertionError("memory pending save submitted a duplicate AppendMemory")
         QTest.qWait(70)
         pump(app, 12)
@@ -1006,17 +1029,17 @@ def check_memory(app, client):
             raise AssertionError("failed memory note save did not render an action error")
         if "save denied" not in memory.action_error:
             raise AssertionError(f"unexpected memory action error: {memory.action_error}")
-        if not memory.composing or memory.draft != "Mouse action memory proof":
+        if not memory.composing or memory.draft != memory_text:
             raise AssertionError("failed memory note save did not preserve the draft")
         del client.failures["AppendMemory"]
         del client.delays["AppendMemory"]
 
         start = len(client.calls)
         save = click_item(app, view, root, "memorySaveNoteButton")
-        if ("AppendMemory", ("global", "Mouse action memory proof")) not in client.calls[start:]:
+        if ("AppendMemory", ("global", memory_text)) not in client.calls[start:]:
             invoke_click(save)
             pump(app)
-        assert_call(client, start, "AppendMemory", ("global", "Mouse action memory proof"))
+        assert_call(client, start, "AppendMemory", ("global", memory_text))
 
         start = len(client.calls)
         move_ad_hoc = click_item(app, view, root, "memoryAdHocMoveButton_0", flick_name="memoryFlick")
@@ -1675,13 +1698,21 @@ def check_notes(app, client):
         if not notes.editing:
             invoke_click(edit)
             pump(app)
-        set_text(app, root, "notesEditorTextArea", "# Existing\n\nEdited body")
+        note_text = "# Existing\n\nEdited body " + ("longnotetoken" * 18)
+        set_text(app, root, "notesEditorTextArea", note_text)
+        editor = find_visual_item(root, "notesEditorTextArea")
+        if editor is None or editor.property("qaTextFits") is not True:
+            raise AssertionError(
+                "notes editor did not wrap long text cleanly: "
+                f"content={editor.property('qaContentWidth') if editor else None} "
+                f"available={editor.property('qaTextAvailableWidth') if editor else None}"
+            )
 
         client.failures["ObsidianWrite"] = "save denied"
         client.delays["ObsidianWrite"] = 45
         start = len(client.calls)
         save = click_item(app, view, root, "notesSaveEditButton")
-        if ("ObsidianWrite", ("Inbox/Existing.md", "# Existing\n\nEdited body", False)) not in client.calls[start:]:
+        if ("ObsidianWrite", ("Inbox/Existing.md", note_text, False)) not in client.calls[start:]:
             invoke_click(save)
             pump(app)
         if not notes.saving:
@@ -1701,22 +1732,22 @@ def check_notes(app, client):
             raise AssertionError("notes cancel edit button stayed enabled while save was pending")
         QTest.qWait(70)
         pump(app, 12)
-        assert_call(client, start, "ObsidianWrite", ("Inbox/Existing.md", "# Existing\n\nEdited body", False))
+        assert_call(client, start, "ObsidianWrite", ("Inbox/Existing.md", note_text, False))
         error_box = find_visual_item(root, "notesActionError")
         if error_box is None or not error_box.property("visible"):
             raise AssertionError("failed note save did not render an action error")
-        if not notes.editing or notes.draft != "# Existing\n\nEdited body":
+        if not notes.editing or notes.draft != note_text:
             raise AssertionError("failed note save did not keep the editor draft alive")
         del client.failures["ObsidianWrite"]
         del client.delays["ObsidianWrite"]
 
         start = len(client.calls)
         save = click_item(app, view, root, "notesSaveEditButton")
-        if ("ObsidianWrite", ("Inbox/Existing.md", "# Existing\n\nEdited body", False)) not in client.calls[start:]:
+        if ("ObsidianWrite", ("Inbox/Existing.md", note_text, False)) not in client.calls[start:]:
             invoke_click(save)
             pump(app)
-        assert_call(client, start, "ObsidianWrite", ("Inbox/Existing.md", "# Existing\n\nEdited body", False))
-        if notes.editing or notes.content != "# Existing\n\nEdited body":
+        assert_call(client, start, "ObsidianWrite", ("Inbox/Existing.md", note_text, False))
+        if notes.editing or notes.content != note_text:
             raise AssertionError("successful note save did not leave read mode with updated content")
 
         button = click_item(app, view, root, "notesNewButton")
