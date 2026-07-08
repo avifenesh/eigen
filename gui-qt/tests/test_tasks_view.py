@@ -196,9 +196,9 @@ def assert_task_chip_padding(chip, name):
         raise AssertionError(f"{name} did not expose task chip QA marker")
     if chip.property("qaTextFits") is not True:
         raise AssertionError(f"{name} text did not fit")
-    if float(chip.property("qaHorizontalPadding") or 0) < 19.5:
+    if float(chip.property("qaHorizontalPadding") or 0) < 23.5:
         raise AssertionError(f"{name} horizontal padding too small: {chip.property('qaHorizontalPadding')}")
-    if float(chip.property("qaVerticalPadding") or 0) < 5.5:
+    if float(chip.property("qaVerticalPadding") or 0) < 7.5:
         raise AssertionError(f"{name} vertical padding too small: {chip.property('qaVerticalPadding')}")
 
 

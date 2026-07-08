@@ -131,6 +131,8 @@ Rectangle {
                                 readonly property bool selected: root.currentFilter === modelData
                                 readonly property bool qaVisualFocus: activeFocus
                                 readonly property bool qaIsTaskChip: true
+                                readonly property real horizontalInset: Theme.space.xxxl
+                                readonly property real verticalInset: Theme.space.md
                                 readonly property string qaAccessibleName: chipLabel.text + " task filter"
                                 readonly property bool qaTextFits: chipLabel.implicitWidth <= chipLabel.width + 1.0
                                 readonly property real qaLeftTextInset: chipLabel.x + Math.max(0, (chipLabel.width - chipLabel.paintedWidth) / 2)
@@ -141,8 +143,8 @@ Rectangle {
                                 readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
 
                                 objectName: "taskFilterChip_" + root.safeName(modelData)
-                                Layout.preferredHeight: 28
-                                Layout.preferredWidth: chipLabel.implicitWidth + Theme.space.xxl * 2
+                                Layout.preferredHeight: 32
+                                Layout.preferredWidth: chipLabel.implicitWidth + horizontalInset * 2
                                 radius: Theme.radius.sm
                                 activeFocusOnTab: true
                                 focusPolicy: Qt.StrongFocus
@@ -169,10 +171,10 @@ Rectangle {
                                 Label {
                                     id: chipLabel
                                     anchors.fill: parent
-                                    anchors.leftMargin: Theme.space.xxl
-                                    anchors.rightMargin: Theme.space.xxl
-                                    anchors.topMargin: Theme.space.sm
-                                    anchors.bottomMargin: Theme.space.sm
+                                    anchors.leftMargin: chipRect.horizontalInset
+                                    anchors.rightMargin: chipRect.horizontalInset
+                                    anchors.topMargin: chipRect.verticalInset
+                                    anchors.bottomMargin: chipRect.verticalInset
                                     text: modelData.charAt(0).toUpperCase() + modelData.slice(1)
                                     font.family: Theme.uiFonts[0]
                                     font.pixelSize: Theme.fontSize.bodySm
