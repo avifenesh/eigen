@@ -143,6 +143,7 @@ Rectangle {
                     }
 
                     AppTag {
+                        objectName: skillName ? "skillSourceTag_" + skillName : ""
                         text: skillSource
                         backgroundColor: sourceBackground(skillSource)
                         borderColor: sourceBorder(skillSource)
@@ -295,6 +296,7 @@ Rectangle {
                         }
 
                         AppTag {
+                            objectName: "skillsActiveCountTag"
                             visible: root.skillsModel
                             text: filteredSkills().length + (root.query.trim() === "" ? " active" : " shown")
                             backgroundColor: Theme.colors.brandBg
@@ -618,6 +620,7 @@ Rectangle {
                             }
 
                             AppTag {
+                                objectName: "skillsProposalCountTag"
                                 text: proposalCount()
                                 backgroundColor: Theme.colors.warnBg
                                 borderColor: Theme.colors.warnBg
@@ -737,6 +740,7 @@ Rectangle {
                                 }
 
                                 AppTag {
+                                    objectName: "skillsShelfCountTag_" + modelData.source
                                     text: modelData.total
                                     backgroundColor: Theme.colors.bgRaised
                                     borderColor: Theme.colors.borderHairline
@@ -900,6 +904,7 @@ Rectangle {
                         }
 
                         AppTag {
+                            objectName: root.openSkill ? "skillPreviewSourceTag_" + root.openSkill.name : ""
                             visible: root.openSkill !== null
                             text: root.openSkill ? root.openSkill.source : ""
                             backgroundColor: sourceBackground(root.openSkill ? root.openSkill.source : "")

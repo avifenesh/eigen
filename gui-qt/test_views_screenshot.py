@@ -2566,6 +2566,25 @@ def main():
         ctx.setContextProperty("clipboardHelper", clipboard_helper)
         return {"skillsModel": skills_model, "proposalsModel": proposals_model}
 
+    def assert_skills_tags(_view, root):
+        for object_name in (
+            "skillsActiveCountTag",
+            "skillsShelfCountTag_user",
+            "skillsShelfCountTag_project",
+            "skillSourceTag_frontend-design",
+            "skillSourceTag_project-commands",
+        ):
+            tag = find_item(root, object_name)
+            if tag is None or tag.property("qaIsAppTag") is not True:
+                raise AssertionError(f"skills tag {object_name} did not use AppTag")
+            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 43.5 or float(tag.property("qaVerticalPadding") or 0) < 11.5:
+                raise AssertionError(
+                    f"skills tag {object_name} is cramped: "
+                    f"fits={tag.property('qaTextFits')} padding={tag.property('qaHorizontalPadding')}x{tag.property('qaVerticalPadding')}"
+                )
+
+    ok = capture_view("skills", "SkillsView.qml", setup_skills, assert_skills_tags) and ok
+
     def setup_skills_with_proposal(ctx):
         props = setup_skills(ctx)
         props["proposalsModel"]._on_skills_result(
@@ -2605,6 +2624,15 @@ def main():
         root.setProperty("bodyLoading", False)
         root.setProperty("body", body)
         root.setProperty("bodyBlocks", markdown_parser.parse(body))
+        preview_tag = find_item(root, "skillPreviewSourceTag_frontend-design")
+        if preview_tag is None or preview_tag.property("qaIsAppTag") is not True:
+            raise AssertionError("skills preview source tag did not use AppTag")
+        if preview_tag.property("qaTextFits") is not True or float(preview_tag.property("qaHorizontalPadding") or 0) < 43.5 or float(preview_tag.property("qaVerticalPadding") or 0) < 11.5:
+            raise AssertionError(
+                "skills preview source tag is cramped: "
+                f"fits={preview_tag.property('qaTextFits')} "
+                f"padding={preview_tag.property('qaHorizontalPadding')}x{preview_tag.property('qaVerticalPadding')}"
+            )
 
     ok = capture_view("skills-markdown-preview", "SkillsView.qml", setup_skills, show_skills_markdown_preview) and ok
 
@@ -3024,6 +3052,31 @@ def main():
             raise AssertionError("profile screenshot did not render a clean edit button")
 
     ok = capture_view("profile", "ProfileView.qml", setup_profile, show_profile) and ok
+
+    def show_profile_edit(_view, root):
+        model = root.property("profileModel")
+        if model is not None:
+            model.start_edit()
+            model.profile_draft = "Profile editor proof " + ("longprofiletoken" * 10)
+        for _ in range(8):
+            app.processEvents()
+        editor = find_item(root, "profileTextArea")
+        save = find_item(root, "profileSaveButton")
+        cancel = find_item(root, "profileCancelButton")
+        if editor is None or save is None or cancel is None:
+            raise AssertionError("profile edit screenshot did not render editor actions")
+        if editor.property("qaIsAppTextArea") is not True:
+            raise AssertionError("profile edit screenshot did not use AppTextArea")
+        if editor.property("qaTextFits") is not True or float(editor.property("qaHorizontalPadding") or 0) < 15.5 or float(editor.property("qaVerticalPadding") or 0) < 7.5:
+            raise AssertionError(
+                "profile edit screenshot rendered cramped editor text: "
+                f"fits={editor.property('qaTextFits')} "
+                f"padding={editor.property('qaHorizontalPadding')}x{editor.property('qaVerticalPadding')}"
+            )
+        if save.property("qaTextFits") is not True or cancel.property("qaTextFits") is not True:
+            raise AssertionError("profile edit screenshot rendered clipped editor actions")
+
+    ok = capture_view("profile-edit", "ProfileView.qml", setup_profile, show_profile_edit) and ok
 
     def show_profile_summary_refresh_error(_view, root):
         for _ in range(8):

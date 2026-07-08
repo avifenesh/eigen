@@ -1093,6 +1093,14 @@ try:
     profile_save = find_item_in_window(window, "profileSaveButton")
     if profile_text is None or profile_save is None:
         raise AssertionError("Profile editor did not open")
+    if profile_text.property("qaIsAppTextArea") is not True:
+        raise AssertionError("Profile editor did not use shared AppTextArea")
+    if profile_text.property("qaTextFits") is not True:
+        raise AssertionError("Profile editor text did not fit")
+    if float(profile_text.property("qaHorizontalPadding") or 0) < 15.5:
+        raise AssertionError(f"Profile editor horizontal padding too small: {profile_text.property('qaHorizontalPadding')}")
+    if float(profile_text.property("qaVerticalPadding") or 0) < 7.5:
+        raise AssertionError(f"Profile editor vertical padding too small: {profile_text.property('qaVerticalPadding')}")
     profile_text.setProperty("text", "Updated Qt profile proof")
     pump(app, 12)
     if profile_save.property("qaTextFits") is not True:
@@ -1108,6 +1116,8 @@ try:
     profile_text = find_item_in_window(window, "profileTextArea")
     if profile_text is None:
         raise AssertionError("Profile editor did not reopen")
+    if profile_text.property("qaIsAppTextArea") is not True or profile_text.property("qaTextFits") is not True:
+        raise AssertionError("Reopened profile editor did not keep shared text-area geometry")
     profile_text.setProperty("text", "Retryable Qt profile proof")
     pump(app, 12)
     start = len(client.calls)

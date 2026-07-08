@@ -437,44 +437,35 @@ Rectangle {
                             anchors.margins: Theme.space.lg
                             spacing: Theme.space.md
 
-                            Rectangle {
+                            AppTextArea {
+                                id: profileTextArea
+                                objectName: "profileTextArea"
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 220
-                                radius: Theme.radius.sm
-                                color: Theme.colors.bgInset
-                                border.width: 1
-                                border.color: profileTextArea.activeFocus ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
+                                text: root.profileModel ? root.profileModel.profile_draft : ""
+                                placeholderText: "USER.md"
+                                backgroundColor: Theme.colors.bgInset
+                                borderColor: Theme.colors.borderSubtle
+                                focusBorderColor: Theme.colors.borderBrandFaint
+                                backgroundRadius: Theme.radius.sm
 
-                                TextArea {
-                                    id: profileTextArea
-                                    objectName: "profileTextArea"
-                                    anchors.fill: parent
-                                    anchors.margins: Theme.space.md
-                                    text: root.profileModel ? root.profileModel.profile_draft : ""
-                                    selectByMouse: true
-                                    wrapMode: TextEdit.Wrap
-                                    font.family: Theme.uiFonts[0]
-                                    font.pixelSize: Theme.fontSize.bodySm
-                                    color: Theme.colors.textPrimary
-                                    placeholderText: "USER.md"
-                                    background: Item {}
-                                    onTextChanged: {
-                                        if (root.profileModel && root.profileModel.profile_draft !== text) {
-                                            root.profileModel.profile_draft = text
-                                        }
+                                onTextChanged: {
+                                    if (root.profileModel && root.profileModel.profile_draft !== text) {
+                                        root.profileModel.profile_draft = text
                                     }
-                                    Keys.onPressed: function(event) {
-                                        if ((event.modifiers & Qt.ControlModifier) && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
-                                            if (root.profileModel && !root.profileModel.saving_profile) {
-                                                root.profileModel.save_profile()
-                                            }
-                                            event.accepted = true
-                                        } else if (event.key === Qt.Key_Escape) {
-                                            if (root.profileModel && !root.profileModel.saving_profile) {
-                                                root.profileModel.cancel_edit()
-                                            }
-                                            event.accepted = true
+                                }
+
+                                Keys.onPressed: function(event) {
+                                    if ((event.modifiers & Qt.ControlModifier) && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
+                                        if (root.profileModel && !root.profileModel.saving_profile) {
+                                            root.profileModel.save_profile()
                                         }
+                                        event.accepted = true
+                                    } else if (event.key === Qt.Key_Escape) {
+                                        if (root.profileModel && !root.profileModel.saving_profile) {
+                                            root.profileModel.cancel_edit()
+                                        }
+                                        event.accepted = true
                                     }
                                 }
                             }
