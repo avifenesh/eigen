@@ -842,6 +842,28 @@ try:
         raise AssertionError("Unread running session did not expose qaUnread")
     if approval_row.property("qaUnread") is not False:
         raise AssertionError("Read approval session was incorrectly marked unread")
+    if running_row.property("qaTextFits") is not True:
+        raise AssertionError("Running rail session title does not fit")
+    if running_row.property("qaAccessibleName") != "Qt shell routing":
+        raise AssertionError(f"Running rail accessible name was {running_row.property('qaAccessibleName')!r}")
+    running_row.forceActiveFocus(Qt.TabFocusReason)
+    pump(app, 12)
+    if running_row.property("qaVisualFocus") is not True:
+        raise AssertionError("Running rail session did not expose keyboard focus")
+    QTest.keyClick(window, Qt.Key_Return)
+    pump(app, 12)
+    if controller.opened[-1:] != ["s-work"]:
+        raise AssertionError(f"Running session Return key did not open s-work: {controller.opened}")
+    if window.property("currentRoute") != "chat" or window.property("activeRouteIndex") != 3:
+        raise AssertionError("Running session Return key did not switch to chat")
+    approval_row.forceActiveFocus(Qt.TabFocusReason)
+    pump(app, 12)
+    QTest.keyClick(window, Qt.Key_Space)
+    pump(app, 12)
+    if controller.opened[-1:] != ["s-approval"]:
+        raise AssertionError(f"Running session Space key did not open s-approval: {controller.opened}")
+    if window.property("currentRoute") != "chat" or window.property("activeRouteIndex") != 3:
+        raise AssertionError("Running session Space key did not switch to chat")
     running_unread = find_item_in_window(window, "navRunningUnread_s_work")
     approval_unread = find_item_in_window(window, "navRunningUnread_s_approval")
     if running_unread is None or running_unread.property("visible") is not True:

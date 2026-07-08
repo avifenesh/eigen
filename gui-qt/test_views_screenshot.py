@@ -1090,6 +1090,33 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
         print("✗ Main chat proof showed unread rail marker for a read session")
         window.hide()
         return False
+    running_row = find_item(window.contentItem(), "navRunningSession_s_qa_chat")
+    if running_row is None:
+        print("✗ Main chat proof did not render the running session rail row")
+        window.hide()
+        return False
+    if running_row.property("qaTextFits") is not True:
+        print("✗ Main chat proof clipped the running session rail row title")
+        window.hide()
+        return False
+    if running_row.property("qaAccessibleName") != "Qt shell chat":
+        print(f"✗ Main chat proof running session accessible name was {running_row.property('qaAccessibleName')!r}")
+        window.hide()
+        return False
+    running_row.forceActiveFocus(Qt.TabFocusReason)
+    for _ in range(8):
+        app.processEvents()
+    if running_row.property("qaVisualFocus") is not True:
+        print("✗ Main chat proof did not expose running session keyboard focus")
+        window.hide()
+        return False
+    QTest.keyClick(window, Qt.Key_Return)
+    for _ in range(8):
+        app.processEvents()
+    if controller.session_id != "s-qa-chat":
+        print(f"✗ Main chat proof running session key activation opened {controller.session_id!r}")
+        window.hide()
+        return False
     home_nav = find_item(window.contentItem(), "navItem_home")
     if home_nav is None or home_nav.property("badge") != 1:
         print("✗ Main chat proof did not show feed badge on the Home rail item")
