@@ -122,22 +122,14 @@ Rectangle {
                     color: Theme.colors.textSecondary
                 }
 
-                Rectangle {
-                    Layout.preferredHeight: 20
-                    Layout.preferredWidth: statusLabel.implicitWidth + Theme.space.md * 2
-                    radius: Theme.radius.sm
-                    color: statusToneColor()
-                    border.width: 1
-                    border.color: Theme.colors.borderHairline
-
-                    Label {
-                        id: statusLabel
-                        anchors.centerIn: parent
-                        text: root.statusText()
-                        font.family: Theme.uiFonts[0]
-                        font.pixelSize: Theme.fontSize.micro
-                        color: Theme.colors.textSecondary
-                    }
+                AppTag {
+                    objectName: "terminalStatusTag"
+                    text: root.statusText()
+                    backgroundColor: statusToneColor()
+                    borderColor: Theme.colors.borderHairline
+                    textColor: Theme.colors.textSecondary
+                    fontPixelSize: Theme.fontSize.micro
+                    pill: false
                 }
 
                 Item { Layout.fillWidth: true }
