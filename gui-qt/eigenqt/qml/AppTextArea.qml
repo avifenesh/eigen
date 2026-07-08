@@ -12,6 +12,7 @@ TextArea {
     property real focusedBorderWidth: 1
     property real backgroundRadius: Theme.radius.md
     property bool qaForceKeyboardFocus: false
+    property bool qaAllowHorizontalOverflow: false
 
     readonly property bool qaIsAppTextArea: true
     readonly property string qaText: text !== "" ? text : placeholderText
@@ -19,7 +20,7 @@ TextArea {
     readonly property real qaVerticalPadding: Math.min(topPadding, bottomPadding)
     readonly property real qaContentWidth: contentWidth
     readonly property real qaTextAvailableWidth: Math.max(0, width - leftPadding - rightPadding)
-    readonly property bool qaTextFits: !visible || qaContentWidth <= qaTextAvailableWidth + 1.0
+    readonly property bool qaTextFits: !visible || qaAllowHorizontalOverflow || qaContentWidth <= qaTextAvailableWidth + 1.0
     readonly property bool qaVisualFocus: activeFocus
 
     implicitHeight: Math.max(72, contentHeight + topPadding + bottomPadding)

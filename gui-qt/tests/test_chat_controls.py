@@ -765,6 +765,19 @@ def assert_item_inside_window(item, label):
         )
 
 
+def assert_app_text_area_clean(item, label, *, allow_overflow=False):
+    if item.property("qaIsAppTextArea") is not True:
+        raise AssertionError(f"{label} did not use shared AppTextArea")
+    if item.property("qaTextFits") is not True:
+        raise AssertionError(f"{label} text does not fit: {item.property('qaText')!r}")
+    if float(item.property("qaHorizontalPadding") or 0) < 7.5:
+        raise AssertionError(f"{label} horizontal padding too small: {item.property('qaHorizontalPadding')}")
+    if float(item.property("qaVerticalPadding") or 0) < 5.5:
+        raise AssertionError(f"{label} vertical padding too small: {item.property('qaVerticalPadding')}")
+    if allow_overflow and item.property("qaAllowHorizontalOverflow") is not True:
+        raise AssertionError(f"{label} did not mark intentional horizontal overflow")
+
+
 def assert_combo_popup_clean(window, root, combo, label, option_index=0):
     if combo.property("qaIsAppComboBox") is not True:
         raise AssertionError(f"{label} did not use shared AppComboBox")
@@ -1032,8 +1045,12 @@ files_root.setProperty("viewPath", "/repo/eigen/README.md")
 files_root.setProperty("viewText", "# Eigen")
 pump(app, 12)
 viewer_close = find_item(chat, "filesViewerCloseButton")
+viewer_text = find_item(chat, "filesViewerTextArea")
 if viewer_close is None:
     raise AssertionError("Files viewer close button did not render")
+if viewer_text is None:
+    raise AssertionError("Files viewer text area did not render")
+assert_app_text_area_clean(viewer_text, "filesViewerTextArea", allow_overflow=True)
 if not viewer_close.property("qaTextFits"):
     raise AssertionError("Files viewer close button text does not fit")
 assert_item_inside_window(viewer_close, "filesViewerCloseButton")
@@ -1587,6 +1604,7 @@ if terminal_command.property("qaIsAppTextField") is not True:
     raise AssertionError("Terminal command did not use shared AppTextField")
 if terminal_command.property("qaTextFits") is not True:
     raise AssertionError("Terminal command text does not fit")
+assert_app_text_area_clean(terminal_output, "terminalOutputArea", allow_overflow=True)
 if terminal_status.property("qaIsAppTag") is not True:
     raise AssertionError("Terminal status did not use shared AppTag")
 if terminal_status.property("qaTextFits") is not True:
@@ -2207,6 +2225,7 @@ args_box = find_item(approval, "approvalArgs_approval_1")
 args_text = find_item(approval, "approvalArgsText_approval_1")
 if args_box is None or args_text is None:
     raise AssertionError("Approval args well did not render")
+assert_app_text_area_clean(args_text, "approvalArgsText_approval_1")
 if '"command": "pytest -q gui-qt/tests/test_chat_controls.py"' not in args_text.property("text"):
     raise AssertionError(f"Approval args were not pretty-printed: {args_text.property('text')!r}")
 assert_item_inside_window(args_box, "approvalArgs_approval_1")
@@ -2227,6 +2246,25 @@ if approvals != [("approval-1", True), ("approval-1", False)]:
     raise AssertionError(f"Approval overlay emitted wrong results: {approvals}")
 if not allow.property("qaTextFits") or not deny.property("qaTextFits"):
     raise AssertionError("Approval button text does not fit")
+
+tool_view, tool_card = make_view(
+    "ToolCallCard.qml",
+    {},
+    {
+        "toolName": "shell",
+        "toolArgs": '{"command":"pytest -q gui-qt/tests/test_chat_controls.py","cwd":"/repo/eigen"}',
+        "toolResult": "1 passed\\n",
+        "toolStatus": "success",
+        "done": True,
+        "open": True,
+    },
+)
+tool_args = find_item(tool_card, "toolArgsText")
+tool_result = find_item(tool_card, "toolResultText")
+if tool_args is None or tool_result is None:
+    raise AssertionError("Tool call card did not render shared text panes")
+assert_app_text_area_clean(tool_args, "toolArgsText")
+assert_app_text_area_clean(tool_result, "toolResultText")
 
 markdown_view, markdown = make_view(
     "MarkdownBlocks.qml",

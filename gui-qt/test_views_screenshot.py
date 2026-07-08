@@ -1719,8 +1719,16 @@ def main():
         files_root.setProperty("viewText", "# ChatView.qml\n\nQt dock visual proof.\n")
         QTest.qWait(120)
         viewer_close = find_item(root, "filesViewerCloseButton")
+        viewer_text = find_item(root, "filesViewerTextArea")
         if viewer_close is None:
             raise AssertionError("chat files dock viewer did not render close button")
+        if viewer_text is None or viewer_text.property("qaIsAppTextArea") is not True:
+            raise AssertionError("chat files dock viewer did not use AppTextArea")
+        if viewer_text.property("qaTextFits") is not True or viewer_text.property("qaAllowHorizontalOverflow") is not True:
+            raise AssertionError(
+                "chat files dock viewer text area did not expose safe horizontal scrolling: "
+                f"fits={viewer_text.property('qaTextFits')} overflow={viewer_text.property('qaAllowHorizontalOverflow')}"
+            )
         if files_root.property("qaViewerOpen") is not True or files_root.property("qaViewerCloseFits") is not True:
             raise AssertionError("chat files dock viewer did not expose clean QA geometry")
 
@@ -1837,6 +1845,13 @@ def main():
             raise AssertionError("chat terminal command did not use AppTextField")
         if command_field.property("qaTextFits") is not True:
             raise AssertionError("chat terminal command text did not fit")
+        if output_area.property("qaIsAppTextArea") is not True:
+            raise AssertionError("chat terminal output did not use AppTextArea")
+        if output_area.property("qaTextFits") is not True or output_area.property("qaAllowHorizontalOverflow") is not True:
+            raise AssertionError(
+                "chat terminal output did not expose safe horizontal scrolling: "
+                f"fits={output_area.property('qaTextFits')} overflow={output_area.property('qaAllowHorizontalOverflow')}"
+            )
         if status_tag.property("qaIsAppTag") is not True:
             raise AssertionError("chat terminal status did not use AppTag")
         if status_tag.property("qaTextFits") is not True or float(status_tag.property("qaHorizontalPadding") or 0) < 43.5 or float(status_tag.property("qaVerticalPadding") or 0) < 11.5:
@@ -2087,6 +2102,34 @@ def main():
             )
 
     ok = capture_view("chat-approval", "ChatView.qml", setup_chat, show_chat_approval) and ok
+
+    def setup_tool_call_card(_ctx):
+        return {
+            "toolName": "shell",
+            "toolArgs": '{"command":"pytest -q gui-qt/tests/test_chat_controls.py","cwd":"/home/user/eigen"}',
+            "toolResult": "1 passed\n",
+            "toolStatus": "success",
+            "done": True,
+            "open": True,
+            "widthFactor": 1.0,
+        }
+
+    def assert_tool_call_text_panes(_view, root):
+        args = find_item(root, "toolArgsText")
+        result = find_item(root, "toolResultText")
+        if args is None or result is None:
+            raise AssertionError("tool call card screenshot did not render args/result panes")
+        for item, label in ((args, "args"), (result, "result")):
+            if item.property("qaIsAppTextArea") is not True:
+                raise AssertionError(f"tool call {label} pane did not use AppTextArea")
+            if item.property("qaTextFits") is not True or float(item.property("qaHorizontalPadding") or 0) < 15.5 or float(item.property("qaVerticalPadding") or 0) < 7.5:
+                raise AssertionError(
+                    f"tool call {label} pane is cramped: "
+                    f"fits={item.property('qaTextFits')} "
+                    f"padding={item.property('qaHorizontalPadding')}x{item.property('qaVerticalPadding')}"
+                )
+
+    ok = capture_view("tool-call-card", "ToolCallCard.qml", setup_tool_call_card, assert_tool_call_text_panes, width=900, height=260) and ok
 
     # 3. ConfigView
     def assert_config_load_error_state(root, banner_name, text_name, retry_name, expected_text="daemon offline"):

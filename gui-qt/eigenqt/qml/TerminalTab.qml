@@ -188,28 +188,27 @@ Rectangle {
                 anchors.margins: Theme.space.md
                 clip: true
 
-                TextArea {
+                AppTextArea {
                     id: terminalOutputArea
                     objectName: "terminalOutputArea"
                     text: root.output
                     readOnly: true
-                    selectByMouse: true
                     persistentSelection: true
                     wrapMode: TextArea.NoWrap
+                    qaAllowHorizontalOverflow: true
                     focus: true
                     font.family: Theme.monoFonts[0]
                     font.pixelSize: Theme.fontSize.codeSm
+                    backgroundColor: Theme.colors.synBg
+                    borderColor: Theme.colors.borderHairline
+                    focusBorderColor: Theme.colors.borderBrand
+                    normalBorderWidth: 0
+                    focusedBorderWidth: 1
+                    backgroundRadius: Theme.radius.sm
                     color: Theme.colors.synText
                     selectedTextColor: Theme.colors.bgWell
                     selectionColor: Theme.colors.brand
                     Accessible.name: "Terminal output"
-
-                    background: Rectangle {
-                        color: Theme.colors.synBg
-                        radius: Theme.radius.sm
-                        border.width: terminalOutputArea.activeFocus ? 1 : 0
-                        border.color: Theme.colors.borderBrand
-                    }
 
                     Keys.onPressed: function(event) {
                         root.handleTerminalKey(event)
