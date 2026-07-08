@@ -22,8 +22,15 @@ Rectangle {
     property bool subscribed: false
     property string errorText: ""
     property string output: ""
+    property string pendingOutput: ""
+    property bool outputFlushScheduled: false
+    property int outputFlushCount: 0
     property int maxOutputChars: 60000
     readonly property string qaOutputText: output
+    readonly property int qaOutputLength: output.length
+    readonly property int qaPendingOutputLength: pendingOutput.length
+    readonly property bool qaOutputFlushScheduled: outputFlushScheduled
+    readonly property int qaOutputFlushCount: outputFlushCount
     readonly property string qaStatusText: statusText()
 
     Connections {
@@ -167,7 +174,7 @@ Rectangle {
                     toolTipText: "Clear terminal output"
                     Layout.preferredWidth: 58
                     Layout.preferredHeight: 28
-                    onClicked: root.output = ""
+                    onClicked: root.clearOutput()
                 }
             }
         }
@@ -490,16 +497,40 @@ Rectangle {
     }
 
     function appendOutput(text) {
+        text = String(text || "")
         if (text === "") return
-        root.output += text
-        if (root.output.length > root.maxOutputChars) {
-            root.output = root.output.slice(root.output.length - root.maxOutputChars)
+        root.pendingOutput = root.capOutput(root.pendingOutput + text)
+        root.scheduleOutputFlush()
+    }
+
+    function scheduleOutputFlush() {
+        if (root.outputFlushScheduled) return
+        root.outputFlushScheduled = true
+        Qt.callLater(root.flushOutput)
+    }
+
+    function flushOutput() {
+        root.outputFlushScheduled = false
+        if (root.pendingOutput !== "") {
+            root.output = root.capOutput(root.output + root.pendingOutput)
+            root.pendingOutput = ""
+            root.outputFlushCount += 1
         }
-        Qt.callLater(function() {
-            if (terminalOutputArea) {
-                terminalOutputArea.cursorPosition = terminalOutputArea.text.length
-            }
-        })
+        if (terminalOutputArea) {
+            terminalOutputArea.cursorPosition = terminalOutputArea.text.length
+        }
+    }
+
+    function clearOutput() {
+        root.pendingOutput = ""
+        root.output = ""
+        root.outputFlushScheduled = false
+    }
+
+    function capOutput(text) {
+        var limit = Math.max(0, root.maxOutputChars)
+        if (limit === 0) return ""
+        return text.length > limit ? text.slice(text.length - limit) : text
     }
 
     function requestResize() {

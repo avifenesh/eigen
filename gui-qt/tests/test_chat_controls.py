@@ -1568,6 +1568,37 @@ if terminal_output is None or "ready\n" not in terminal_output.property("text"):
     raise AssertionError("Terminal output was not preserved across dock tab switches")
 if "opened Terminal dock" not in transcript.rows[-1]["text"]:
     raise AssertionError(f"/term did not append expected feedback: {transcript.rows[-1:]}")
+click_item(app, chat_view, chat, "terminalClearButton")
+if terminal_output.property("text") != "":
+    raise AssertionError("Terminal clear did not empty the visible output")
+terminal_root.setProperty("maxOutputChars", 96)
+flush_start = terminal_root.property("qaOutputFlushCount")
+for i in range(24):
+    chunk = f"{i:02d}-" + ("terminal-output-burst-" * 2) + "\n"
+    client.event.emit(
+        "eigen:terminal",
+        {"id": "term-chat", "data": base64.b64encode(chunk.encode("utf-8")).decode("ascii")},
+    )
+if terminal_root.property("qaOutputFlushScheduled") is not True:
+    raise AssertionError("Terminal output burst did not schedule a flush")
+if terminal_root.property("qaPendingOutputLength") > 96:
+    raise AssertionError(f"Terminal pending output was not capped: {terminal_root.property('qaPendingOutputLength')}")
+if terminal_output.property("text") != "":
+    raise AssertionError("Terminal output burst flushed before the event loop could batch it")
+pump(app, 18)
+bounded_terminal_text = terminal_output.property("text") or ""
+if terminal_root.property("qaOutputFlushCount") != flush_start + 1:
+    raise AssertionError(
+        f"Terminal burst was not coalesced into one visible flush: "
+        f"{flush_start} -> {terminal_root.property('qaOutputFlushCount')}"
+    )
+if terminal_root.property("qaPendingOutputLength") != 0 or terminal_root.property("qaOutputLength") > 96:
+    raise AssertionError(
+        f"Terminal output buffers exceeded cap: pending={terminal_root.property('qaPendingOutputLength')} "
+        f"visible={terminal_root.property('qaOutputLength')}"
+    )
+if "23-terminal-output-burst" not in bounded_terminal_text or "00-terminal-output-burst" in bounded_terminal_text:
+    raise AssertionError(f"Terminal output cap did not retain the newest burst tail: {bounded_terminal_text!r}")
 click_item(app, chat_view, chat, "dockCloseButton")
 pump(app, 18)
 if ("TerminalKill", ("term-chat",)) not in client.calls:
