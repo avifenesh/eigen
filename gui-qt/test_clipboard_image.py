@@ -2,17 +2,18 @@
 """Test clipboard_helper.pasteImage() with a synthetic QImage."""
 import sys
 import base64
+import os
+import subprocess
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtGui import QImage, QPainter, QColor
+from PySide6.QtGui import QImage, QColor
 from eigenqt.clipboard_helper import ClipboardHelper
 
 
-def test_paste_image():
-    """Test that pasteImage can encode a QImage to base64."""
+def _exercise_paste_image():
     app = QApplication(sys.argv)
     helper = ClipboardHelper()
 
@@ -34,16 +35,26 @@ def test_paste_image():
     assert len(result) > 0, "Expected non-empty base64 string"
 
     # Verify it's valid base64
-    try:
-        decoded = base64.b64decode(result)
-        assert len(decoded) > 0, "Decoded bytes should be non-empty"
-        print(f"✓ PASS: pasteImage returned {len(result)} chars base64, {len(decoded)} bytes PNG")
-    except Exception as e:
-        print(f"✗ FAIL: base64 decode failed: {e}")
-        sys.exit(1)
+    decoded = base64.b64decode(result)
+    assert len(decoded) > 0, "Decoded bytes should be non-empty"
 
-    print("✓ All tests passed")
+
+def test_paste_image():
+    """Test that pasteImage can encode a QImage to base64."""
+    test_path = Path(__file__).resolve()
+    env = os.environ.copy()
+    env.setdefault("QT_QPA_PLATFORM", "offscreen")
+    result = subprocess.run(
+        [sys.executable, str(test_path)],
+        cwd=test_path.parent,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 if __name__ == "__main__":
-    test_paste_image()
+    _exercise_paste_image()

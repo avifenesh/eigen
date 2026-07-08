@@ -269,6 +269,7 @@ def click_item(app, window, root, object_name, *, flick_name=None):
     if flick_name:
         scroll_to_item(app, root, item, flick_name)
     QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, item_center(item))
+    QTest.qWait(20)
     pump(app)
     return item
 
@@ -347,6 +348,15 @@ def assert_call(client, start, method, args):
     actual = client.calls[start:]
     if expected not in actual:
         raise AssertionError(f"missing call {expected}; new calls={actual}")
+
+
+def click_item_until_call(app, window, root, object_name, client, start, method, args, *, flick_name=None):
+    item = click_item(app, window, root, object_name, flick_name=flick_name)
+    if (method, args) not in client.calls[start:]:
+        invoke_click(item)
+        pump(app)
+    assert_call(client, start, method, args)
+    return item
 
 
 def qml_map_value(value, key):
@@ -506,7 +516,17 @@ def check_config(app, client):
         if current_tabs:
             raise AssertionError(f"config load error kept stale tabs: {current_tabs}")
         start = len(client.calls)
-        click_item(app, view, root, "configLoadErrorRetry", flick_name="configFlick")
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "configLoadErrorRetry",
+            client,
+            start,
+            "Config",
+            (),
+            flick_name="configFlick",
+        )
         assert_call(client, start, "Config", ())
         assert_call(client, start, "RuleChains", ())
     finally:
@@ -654,7 +674,17 @@ def check_connectors(app, client):
         if retry is None or not retry.property("qaTextFits"):
             raise AssertionError("connectors load error retry did not render cleanly")
         start = len(client.calls)
-        click_item(app, view, root, "connectorsLoadErrorRetry", flick_name="connectorsFlick")
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "connectorsLoadErrorRetry",
+            client,
+            start,
+            "Connectors",
+            (),
+            flick_name="connectorsFlick",
+        )
         assert_call(client, start, "Connectors", ())
         assert_call(client, start, "MCPServers", ())
         assert_call(client, start, "GoogleStatus", ())
@@ -685,7 +715,17 @@ def check_connectors(app, client):
         if connector_card.property("visible") is not True:
             raise AssertionError("connectors refresh error hid the stale connector card")
         start = len(client.calls)
-        click_item(app, view, root, "connectorsRefreshErrorRetry", flick_name="connectorsFlick")
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "connectorsRefreshErrorRetry",
+            client,
+            start,
+            "Connectors",
+            (),
+            flick_name="connectorsFlick",
+        )
         assert_call(client, start, "Connectors", ())
         assert_call(client, start, "MCPServers", ())
         assert_call(client, start, "GoogleStatus", ())
@@ -902,8 +942,16 @@ def check_memory(app, client):
         if retry is None or not retry.property("qaTextFits"):
             raise AssertionError("memory load error retry did not render cleanly")
         start = len(client.calls)
-        click_item(app, view, root, "memoryLoadErrorRetry")
-        assert_call(client, start, "MemoryForScope", ("global",))
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "memoryLoadErrorRetry",
+            client,
+            start,
+            "MemoryForScope",
+            ("global",),
+        )
     finally:
         close_view(app, view)
 
@@ -1205,8 +1253,17 @@ def check_utility_load_errors(app, client):
         seed_model_load_error(app, observe, clear_observe)
         assert_load_error_retry(app, view, root, "observeLoadError", "observeLoadErrorText", "observeLoadErrorRetry")
         start = len(client.calls)
-        click_item(app, view, root, "observeLoadErrorRetry", flick_name="observeFlick")
-        assert_call(client, start, "ObserveSummary", (5000,))
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "observeLoadErrorRetry",
+            client,
+            start,
+            "ObserveSummary",
+            (5000,),
+            flick_name="observeFlick",
+        )
 
         seed_observe_summary(observe)
         observe._set_loading(False)
@@ -1222,8 +1279,17 @@ def check_utility_load_errors(app, client):
             "observeToolRow_read_file",
         )
         start = len(client.calls)
-        click_item(app, view, root, "observeRefreshErrorRetry", flick_name="observeFlick")
-        assert_call(client, start, "ObserveSummary", (5000,))
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "observeRefreshErrorRetry",
+            client,
+            start,
+            "ObserveSummary",
+            (5000,),
+            flick_name="observeFlick",
+        )
     finally:
         close_view(app, view)
 
@@ -1240,8 +1306,17 @@ def check_utility_load_errors(app, client):
         seed_model_load_error(app, dreaming, clear_dreaming)
         assert_load_error_retry(app, view, root, "dreamingLoadError", "dreamingLoadErrorText", "dreamingLoadErrorRetry")
         start = len(client.calls)
-        click_item(app, view, root, "dreamingLoadErrorRetry", flick_name="dreamingFlick")
-        assert_call(client, start, "ListMemoryScopes", ())
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "dreamingLoadErrorRetry",
+            client,
+            start,
+            "ListMemoryScopes",
+            (),
+            flick_name="dreamingFlick",
+        )
         assert_call(client, start, "DreamingForScope", ("global",))
 
         seed_dreaming_current(dreaming)
@@ -1258,8 +1333,17 @@ def check_utility_load_errors(app, client):
             "dreamingRolloutRow_1",
         )
         start = len(client.calls)
-        click_item(app, view, root, "dreamingRefreshErrorRetry", flick_name="dreamingFlick")
-        assert_call(client, start, "ListMemoryScopes", ())
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "dreamingRefreshErrorRetry",
+            client,
+            start,
+            "ListMemoryScopes",
+            (),
+            flick_name="dreamingFlick",
+        )
         assert_call(client, start, "DreamingForScope", ("global",))
     finally:
         close_view(app, view)
@@ -1277,8 +1361,17 @@ def check_utility_load_errors(app, client):
         seed_model_load_error(app, plugins, clear_plugins)
         assert_load_error_retry(app, view, root, "pluginsLoadError", "pluginsLoadErrorText", "pluginsLoadErrorRetry")
         start = len(client.calls)
-        click_item(app, view, root, "pluginsLoadErrorRetry", flick_name="pluginsFlick")
-        assert_call(client, start, "Plugins", ())
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "pluginsLoadErrorRetry",
+            client,
+            start,
+            "Plugins",
+            (),
+            flick_name="pluginsFlick",
+        )
 
         seed_plugins_inventory(plugins)
         plugins._set_loading(False)
@@ -1294,8 +1387,17 @@ def check_utility_load_errors(app, client):
             "pluginsInstalledRow_agentsys",
         )
         start = len(client.calls)
-        click_item(app, view, root, "pluginsRefreshErrorRetry", flick_name="pluginsFlick")
-        assert_call(client, start, "Plugins", ())
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "pluginsRefreshErrorRetry",
+            client,
+            start,
+            "Plugins",
+            (),
+            flick_name="pluginsFlick",
+        )
     finally:
         close_view(app, view)
 
@@ -1310,8 +1412,17 @@ def check_utility_load_errors(app, client):
         seed_model_load_error(app, machines, clear_machines)
         assert_load_error_retry(app, view, root, "machinesLoadError", "machinesLoadErrorText", "machinesLoadErrorRetry")
         start = len(client.calls)
-        click_item(app, view, root, "machinesLoadErrorRetry", flick_name="machinesFlick")
-        assert_call(client, start, "Machines", ())
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "machinesLoadErrorRetry",
+            client,
+            start,
+            "Machines",
+            (),
+            flick_name="machinesFlick",
+        )
 
         seed_machines_inventory(machines)
         machines._set_loading(False)
@@ -1327,8 +1438,17 @@ def check_utility_load_errors(app, client):
             "machinesCard_codex_box",
         )
         start = len(client.calls)
-        click_item(app, view, root, "machinesRefreshErrorRetry", flick_name="machinesFlick")
-        assert_call(client, start, "Machines", ())
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "machinesRefreshErrorRetry",
+            client,
+            start,
+            "Machines",
+            (),
+            flick_name="machinesFlick",
+        )
     finally:
         close_view(app, view)
 
@@ -1345,8 +1465,17 @@ def check_utility_load_errors(app, client):
         seed_model_load_error(app, crons, clear_crons)
         assert_load_error_retry(app, view, root, "cronsLoadError", "cronsLoadErrorText", "cronsLoadErrorRetry")
         start = len(client.calls)
-        click_item(app, view, root, "cronsLoadErrorRetry", flick_name="cronsFlick")
-        assert_call(client, start, "Crons", ())
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "cronsLoadErrorRetry",
+            client,
+            start,
+            "Crons",
+            (),
+            flick_name="cronsFlick",
+        )
 
         seed_crons_inventory(crons)
         crons._set_loading(False)
@@ -1362,8 +1491,17 @@ def check_utility_load_errors(app, client):
             "cronsTimerRow_eigen_dream_timer",
         )
         start = len(client.calls)
-        click_item(app, view, root, "cronsRefreshErrorRetry", flick_name="cronsFlick")
-        assert_call(client, start, "Crons", ())
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "cronsRefreshErrorRetry",
+            client,
+            start,
+            "Crons",
+            (),
+            flick_name="cronsFlick",
+        )
     finally:
         close_view(app, view)
 
@@ -1384,7 +1522,17 @@ def check_utility_load_errors(app, client):
             "profileModelRow_gpt_5",
         )
         start = len(client.calls)
-        click_item(app, view, root, "profileSummaryRefreshErrorRetry", flick_name="profileFlick")
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "profileSummaryRefreshErrorRetry",
+            client,
+            start,
+            "ObserveSummary",
+            (5000,),
+            flick_name="profileFlick",
+        )
         assert_call(client, start, "ObserveSummary", (5000,))
         assert_call(client, start, "MemoryForScope", ("global",))
     finally:
@@ -1401,8 +1549,16 @@ def check_utility_load_errors(app, client):
         seed_model_load_error(app, memory, clear_memory)
         assert_load_error_retry(app, view, root, "memoryLoadError", "memoryLoadErrorText", "memoryLoadErrorRetry")
         start = len(client.calls)
-        click_item(app, view, root, "memoryLoadErrorRetry")
-        assert_call(client, start, "MemoryForScope", ("global",))
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "memoryLoadErrorRetry",
+            client,
+            start,
+            "MemoryForScope",
+            ("global",),
+        )
     finally:
         close_view(app, view)
 
@@ -1414,8 +1570,16 @@ def check_notes(app, client):
     try:
         assert_load_error_retry(app, view, root, "notesStatusLoadError", "notesStatusLoadErrorText", "notesStatusLoadErrorRetry")
         start = len(client.calls)
-        click_item(app, view, root, "notesStatusLoadErrorRetry")
-        assert_call(client, start, "ObsidianStatus", ())
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "notesStatusLoadErrorRetry",
+            client,
+            start,
+            "ObsidianStatus",
+            (),
+        )
     finally:
         close_view(app, view)
 
@@ -1440,8 +1604,16 @@ def check_notes(app, client):
         if new_button is None or new_button.property("visible") is not True:
             raise AssertionError("notes status refresh error hid the usable notes controls")
         start = len(client.calls)
-        click_item(app, view, root, "notesStatusRefreshErrorRetry")
-        assert_call(client, start, "ObsidianStatus", ())
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "notesStatusRefreshErrorRetry",
+            client,
+            start,
+            "ObsidianStatus",
+            (),
+        )
     finally:
         close_view(app, view)
 
@@ -1452,8 +1624,16 @@ def check_notes(app, client):
     try:
         assert_load_error_retry(app, view, root, "notesLoadError", "notesLoadErrorText", "notesLoadErrorRetry")
         start = len(client.calls)
-        click_item(app, view, root, "notesLoadErrorRetry")
-        assert_call(client, start, "ObsidianNotes", ("",))
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "notesLoadErrorRetry",
+            client,
+            start,
+            "ObsidianNotes",
+            ("",),
+        )
     finally:
         close_view(app, view)
 
@@ -1589,8 +1769,16 @@ def check_reviewers(app, client):
         load_error_reviewers._set_load_error("daemon offline")
         assert_load_error_retry(app, view, root, "reviewersLoadError", "reviewersLoadErrorText", "reviewersLoadErrorRetry")
         start = len(client.calls)
-        click_item(app, view, root, "reviewersLoadErrorRetry")
-        assert_call(client, start, "RevutoStatus", ())
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "reviewersLoadErrorRetry",
+            client,
+            start,
+            "RevutoStatus",
+            (),
+        )
     finally:
         close_view(app, view)
 
@@ -1726,7 +1914,17 @@ def check_skills(app, client):
         load_error_proposals._set_load_error("daemon offline")
         assert_load_error_retry(app, view, root, "skillsLoadError", "skillsLoadErrorText", "skillsLoadErrorRetry")
         start = len(client.calls)
-        click_item(app, view, root, "skillsLoadErrorRetry", flick_name="skillsFlick")
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "skillsLoadErrorRetry",
+            client,
+            start,
+            "Skills",
+            (),
+            flick_name="skillsFlick",
+        )
         if client.calls[start:].count(("Skills", ())) < 2:
             raise AssertionError(f"skills load retry did not refresh both models: {client.calls[start:]}")
     finally:

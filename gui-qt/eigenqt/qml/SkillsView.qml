@@ -1017,7 +1017,7 @@ Rectangle {
                 ColumnLayout {
                     readonly property bool canRemove: !!(root.openSkill && root.openSkill.source === "user")
 
-                    Layout.preferredWidth: root.confirmRemove ? (root.removing ? 192 : 164) : 84
+                    Layout.preferredWidth: root.confirmRemove ? (root.removing ? 216 : 180) : 84
                     Layout.preferredHeight: canRemove ? 72 : 32
                     Layout.maximumHeight: Layout.preferredHeight
                     spacing: Theme.space.sm
@@ -1034,7 +1034,8 @@ Rectangle {
                             toolTipText: root.openSkill ? "Remove " + root.openSkill.name : "Remove skill"
                             variant: "danger"
                             enabled: !root.removing
-                            Layout.preferredWidth: root.removing ? 112 : 84
+                            implicitWidth: Math.max(root.removing ? 128 : 84, contentItem.implicitWidth + leftPadding + rightPadding)
+                            Layout.preferredWidth: implicitWidth
                             Layout.preferredHeight: 32
                             onClicked: removeSkill()
                         }
