@@ -130,11 +130,19 @@ Rectangle {
                                 id: chipRect
                                 readonly property bool selected: root.currentFilter === modelData
                                 readonly property bool qaVisualFocus: activeFocus
+                                readonly property bool qaIsTaskChip: true
                                 readonly property string qaAccessibleName: chipLabel.text + " task filter"
+                                readonly property bool qaTextFits: chipLabel.implicitWidth <= chipLabel.width + 1.0
+                                readonly property real qaLeftTextInset: chipLabel.x + Math.max(0, (chipLabel.width - chipLabel.paintedWidth) / 2)
+                                readonly property real qaRightTextInset: width - (chipLabel.x + chipLabel.width / 2 + chipLabel.paintedWidth / 2)
+                                readonly property real qaTopTextInset: chipLabel.y + Math.max(0, (chipLabel.height - chipLabel.paintedHeight) / 2)
+                                readonly property real qaBottomTextInset: height - (chipLabel.y + chipLabel.height / 2 + chipLabel.paintedHeight / 2)
+                                readonly property real qaHorizontalPadding: Math.min(qaLeftTextInset, qaRightTextInset)
+                                readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
 
                                 objectName: "taskFilterChip_" + root.safeName(modelData)
                                 Layout.preferredHeight: 24
-                                Layout.preferredWidth: chipLabel.implicitWidth + 16
+                                Layout.preferredWidth: chipLabel.implicitWidth + Theme.space.lg * 2
                                 radius: Theme.radius.sm
                                 activeFocusOnTab: true
                                 focusPolicy: Qt.StrongFocus
@@ -160,12 +168,20 @@ Rectangle {
 
                                 Label {
                                     id: chipLabel
-                                    anchors.centerIn: parent
+                                    anchors.fill: parent
+                                    anchors.leftMargin: Theme.space.lg
+                                    anchors.rightMargin: Theme.space.lg
+                                    anchors.topMargin: Theme.space.xs
+                                    anchors.bottomMargin: Theme.space.xs
                                     text: modelData.charAt(0).toUpperCase() + modelData.slice(1)
                                     font.family: Theme.uiFonts[0]
                                     font.pixelSize: Theme.fontSize.bodySm
                                     font.weight: Theme.fontWeight.medium
                                     color: chipRect.selected ? Theme.colors.textPrimary : Theme.colors.textMuted
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    elide: Text.ElideRight
+                                    maximumLineCount: 1
                                 }
 
                                 MouseArea {

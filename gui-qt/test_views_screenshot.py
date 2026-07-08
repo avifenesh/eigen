@@ -721,13 +721,13 @@ def assert_app_tags_have_padding(view_name, root_item):
         raise AssertionError(f"{view_name} rendered cramped AppTag text: {failures[:8]}")
 
 
-def assert_board_chips_have_padding(view_name, root_item):
+def assert_marked_chips_have_padding(view_name, root_item, markers, label):
     failures = []
 
     def visit(item):
         if item is None:
             return
-        if item.property("qaIsBoardBadge") is True or item.property("qaIsBoardChip") is True:
+        if any(item.property(marker) is True for marker in markers):
             width = float(item.property("width") or 0)
             height = float(item.property("height") or 0)
             visible = item.isVisible() if hasattr(item, "isVisible") else item.property("visible")
@@ -747,7 +747,15 @@ def assert_board_chips_have_padding(view_name, root_item):
 
     visit(root_item)
     if failures:
-        raise AssertionError(f"{view_name} rendered cramped board chip text: {failures[:8]}")
+        raise AssertionError(f"{view_name} rendered cramped {label} text: {failures[:8]}")
+
+
+def assert_board_chips_have_padding(view_name, root_item):
+    assert_marked_chips_have_padding(view_name, root_item, ("qaIsBoardBadge", "qaIsBoardChip"), "board chip")
+
+
+def assert_task_chips_have_padding(view_name, root_item):
+    assert_marked_chips_have_padding(view_name, root_item, ("qaIsTaskChip",), "task chip")
 
 
 def click_item(view, item):
@@ -2221,7 +2229,10 @@ def main():
         ctx.setContextProperty("rpcClient", client)
         return {"tasksModel": tasks_model, "rpcClient": client}
 
-    ok = capture_view("tasks", "TasksView.qml", setup_tasks) and ok
+    def show_tasks(_view, root):
+        assert_task_chips_have_padding("tasks", root)
+
+    ok = capture_view("tasks", "TasksView.qml", setup_tasks, show_tasks) and ok
 
     def show_tasks_cancel_pending(_view, root):
         model = root.property("tasksModel")
