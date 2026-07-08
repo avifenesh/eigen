@@ -7,7 +7,7 @@ EIGEN := bin/eigen
 # both contexts (tagless for contract tests, wails tag for integration).
 PKGS := $(shell go list ./...)
 
-.PHONY: build core gui-run gui-smoke gui-desktop gui-legacy gui-frontend vet test race fmt gate harness perf perf-soak perf-bench stats clean
+.PHONY: build core gui-run gui-smoke gui-desktop gui-legacy gui-frontend qt-desktop-install vet test race fmt gate harness perf perf-soak perf-bench stats clean
 
 # `make` / `make build` builds EVERYTHING: the core CLI/daemon binary
 # (bin/eigen) and the desktop GUI (bin/eigen-gui, Svelte frontend embedded,
@@ -42,6 +42,9 @@ gui-legacy: gui-frontend
 
 gui-smoke:
 	scripts/gui-smoke.sh
+
+qt-desktop-install:
+	gui-qt/install-desktop.sh
 
 vet:
 	go vet $(PKGS)
