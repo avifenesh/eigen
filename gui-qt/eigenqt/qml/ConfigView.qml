@@ -106,7 +106,8 @@ Rectangle {
                         compact: true
                         toolTipText: "Show " + modelData + " settings"
                         Layout.fillWidth: false
-                        Layout.preferredWidth: tabButton.implicitWidth
+                        Layout.preferredWidth: Math.ceil(tabButton.implicitWidth + Theme.space.xs)
+                        Layout.minimumWidth: Layout.preferredWidth
                         Layout.preferredHeight: 40
                         onClicked: root.activeTab = modelData
                     }
@@ -694,30 +695,21 @@ Rectangle {
                                 }
 
                                 // TEXT INPUT (free-form)
-                                TextField {
+                                AppTextField {
                                     visible: !root.saving[fieldDelegate.fieldKey] && (!fieldDelegate.fieldOptions || fieldDelegate.fieldOptions.length === 0)
+                                    objectName: "configText_" + fieldDelegate.fieldKey
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 32
                                     text: root.values[fieldDelegate.fieldKey] || ""
                                     placeholderText: "(unset)"
-                                    placeholderTextColor: Theme.colors.textGhost
+                                    backgroundColor: Theme.colors.bgRaised2
+                                    borderColor: Theme.colors.borderSubtle
+                                    focusBorderColor: Theme.colors.borderBrandFaint
                                     onEditingFinished: {
                                         if (text !== fieldDelegate.fieldValue) {
                                             commitConfig(fieldDelegate.fieldKey, text)
                                         }
                                     }
-
-                                    background: Rectangle {
-                                        color: Theme.colors.bgRaised2
-                                        border.width: 1
-                                        border.color: parent.activeFocus ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
-                                        radius: Theme.radius.sm
-                                    }
-
-                                    font.pixelSize: Theme.fontSize.bodySm
-                                    color: Theme.colors.textPrimary
-                                    leftPadding: Theme.space.md
-                                    rightPadding: Theme.space.md
                                 }
                             }
                         }
@@ -845,10 +837,10 @@ Rectangle {
 
     function syncActiveModels(activeOverride) {
         var active = activeOverride === undefined ? root.visible : activeOverride
-        if (root.configModel) {
+        if (root.configModel && typeof root.configModel.set_active === "function") {
             root.configModel.set_active(active)
         }
-        if (root.ruleChainsModel) {
+        if (root.ruleChainsModel && typeof root.ruleChainsModel.set_active === "function") {
             root.ruleChainsModel.set_active(active)
         }
     }

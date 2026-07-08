@@ -2168,6 +2168,22 @@ def main():
 
     ok = capture_view("config", "ConfigView.qml", setup_config) and ok
 
+    def show_config_integrations(_view, root):
+        root.setProperty("activeTab", "Integrations")
+        for _ in range(6):
+            app.processEvents()
+        notify = find_item(root, "configText_notify_cmd")
+        if notify is None or notify.property("qaIsAppTextField") is not True:
+            raise AssertionError("config integrations screenshot did not use AppTextField for notify_cmd")
+        if notify.property("qaTextFits") is not True:
+            raise AssertionError(
+                "config integrations screenshot clipped notify_cmd: "
+                f"text={notify.property('qaText') if notify else None!r} "
+                f"available={notify.property('qaTextAvailableWidth') if notify else None}"
+            )
+
+    ok = capture_view("config-integrations", "ConfigView.qml", setup_config, show_config_integrations) and ok
+
     def show_config_load_error(_view, root):
         config_model = root.property("configModel")
         rule_chains_model = root.property("ruleChainsModel")
@@ -3529,6 +3545,15 @@ def main():
             sidebar.setProperty("contentY", target_y)
             for _ in range(6):
                 app.processEvents()
+        title = find_item(root, "memoryBanTitleInput")
+        if title is None or title.property("qaIsAppTextField") is not True:
+            raise AssertionError("memory ban title screenshot did not use AppTextField")
+        if title.property("qaTextFits") is not True:
+            raise AssertionError(
+                "memory ban title screenshot clipped text: "
+                f"text={title.property('qaText') if title else None!r} "
+                f"available={title.property('qaTextAvailableWidth') if title else None}"
+            )
         if editor is None or editor.property("qaTextFits") is not True:
             raise AssertionError(
                 "memory ban edit screenshot clipped long text: "

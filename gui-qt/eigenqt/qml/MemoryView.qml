@@ -1013,22 +1013,16 @@ Rectangle {
                                     Layout.fillWidth: true
                                     spacing: Theme.space.md
 
-                                    TextField {
+                                    AppTextField {
                                         id: banTitleField
                                         objectName: "memoryBanTitleInput"
                                         Layout.fillWidth: true
                                         placeholderText: "Short title"
-                                        placeholderTextColor: Theme.colors.textGhost
                                         text: activeMemoryModel.ban_title
-                                        font.family: Theme.uiFonts[0]
-                                        font.pixelSize: Theme.fontSize.bodySm
-                                        color: Theme.colors.textPrimary
-                                        background: Rectangle {
-                                            color: Theme.colors.bgRaised
-                                            border.width: 1
-                                            border.color: banTitleField.activeFocus ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
-                                            radius: Theme.radius.md
-                                        }
+                                        backgroundColor: Theme.colors.bgRaised
+                                        borderColor: Theme.colors.borderSubtle
+                                        focusBorderColor: Theme.colors.borderBrandFaint
+                                        backgroundRadius: Theme.radius.md
 
                                         onTextChanged: activeMemoryModel.ban_title = text
 
