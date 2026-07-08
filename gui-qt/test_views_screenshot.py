@@ -1254,7 +1254,22 @@ def main():
             "statsData": {"sessions": 71, "running_turns": 2, "bg_tasks": 1, "input_tokens": 12000, "cache_read_tokens": 4200},
         }
 
-    ok = capture_view("home", "HomeView.qml", setup_home) and ok
+    def assert_home_tags(_view, root):
+        for object_name in (
+            "homePanelBadge_Inbox",
+            "homeFeedDirTag_home_qt_follow_up",
+            "homeLiveApprovalTag_s_home_approval",
+        ):
+            tag = find_item(root, object_name)
+            if tag is None or tag.property("qaIsAppTag") is not True:
+                raise AssertionError(f"home tag {object_name} did not use AppTag")
+            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 7.5:
+                raise AssertionError(
+                    f"home tag {object_name} is cramped: "
+                    f"fits={tag.property('qaTextFits')} padding={tag.property('qaHorizontalPadding')}"
+                )
+
+    ok = capture_view("home", "HomeView.qml", setup_home, assert_home_tags) and ok
 
     def show_home_start_pending(_view, root):
         root.setPending("new-session", True)
