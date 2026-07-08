@@ -339,6 +339,7 @@ def test_pending_destructive_memory_actions_do_not_duplicate(model, client):
     model.remove_ban("No drift")
 
     assert model.removing_note == 0
+    assert model.destructive_action_pending is True
     assert [call["method"] for call in client.calls].count("RemoveMemoryNote") == 1
     assert not any(call["method"] == "RemoveAdHocMemoryNote" for call in client.calls)
     assert not any(call["method"] == "MoveMemoryNote" for call in client.calls)
@@ -347,6 +348,7 @@ def test_pending_destructive_memory_actions_do_not_duplicate(model, client):
 
     first_remove_note({"error": "remove denied"})
     assert model.removing_note == -1
+    assert model.destructive_action_pending is False
     assert model.action_error == "Could not remove note: remove denied"
 
     model.remove_ad_hoc(0)
@@ -355,11 +357,13 @@ def test_pending_destructive_memory_actions_do_not_duplicate(model, client):
     model.remove_note(0)
 
     assert model.removing_ad_hoc == 0
+    assert model.destructive_action_pending is True
     assert [call["method"] for call in client.calls].count("RemoveAdHocMemoryNote") == 1
     assert [call["method"] for call in client.calls].count("RemoveMemoryNote") == 1
 
     first_remove_ad_hoc({"result": True})
     assert model.removing_ad_hoc == -1
+    assert model.destructive_action_pending is False
     assert client.calls[-1]["method"] == "MemoryForScope"
 
     model.open_move("Manual note proof.", 2)
@@ -371,11 +375,13 @@ def test_pending_destructive_memory_actions_do_not_duplicate(model, client):
     model.remove_ban("No drift")
 
     assert model.moving_note == 2
+    assert model.destructive_action_pending is True
     assert [call["method"] for call in client.calls].count("MoveMemoryNote") == 1
     assert not any(call["method"] == "RemoveBan" for call in client.calls)
 
     first_move({"error": "move denied"})
     assert model.moving_note == -1
+    assert model.destructive_action_pending is False
     assert model.move_open is True
     assert model.action_error == "Could not move note: move denied"
 
@@ -387,11 +393,13 @@ def test_pending_destructive_memory_actions_do_not_duplicate(model, client):
     model.remove_note(0)
 
     assert model.removing_ban == "No drift"
+    assert model.destructive_action_pending is True
     assert [call["method"] for call in client.calls].count("RemoveBan") == 1
     assert [call["method"] for call in client.calls].count("RemoveMemoryNote") == 1
 
     first_remove_ban({"result": True})
     assert model.removing_ban == ""
+    assert model.destructive_action_pending is False
     assert client.calls[-1]["method"] == "MemoryForScope"
 
 

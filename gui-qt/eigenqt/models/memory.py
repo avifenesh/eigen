@@ -45,6 +45,7 @@ class MemoryModel(QObject):
     moving_note_changed = Signal()
     move_open_changed = Signal()
     move_pending_changed = Signal()
+    destructive_action_pending_changed = Signal()
 
     def __init__(self, client: RpcClient, parent: Optional[QObject] = None):
         super().__init__(parent)
@@ -266,9 +267,12 @@ class MemoryModel(QObject):
 
     @removing_ban.setter
     def removing_ban(self, value: str):
+        pending_before = self._destructive_action_pending()
         if self._removing_ban != value:
             self._removing_ban = value
             self.removing_ban_changed.emit()
+            if pending_before != self._destructive_action_pending():
+                self.destructive_action_pending_changed.emit()
 
     # Property: removing_note
     @Property(int, notify=removing_note_changed)
@@ -277,9 +281,12 @@ class MemoryModel(QObject):
 
     @removing_note.setter
     def removing_note(self, value: int):
+        pending_before = self._destructive_action_pending()
         if self._removing_note != value:
             self._removing_note = value
             self.removing_note_changed.emit()
+            if pending_before != self._destructive_action_pending():
+                self.destructive_action_pending_changed.emit()
 
     # Property: removing_ad_hoc
     @Property(int, notify=removing_ad_hoc_changed)
@@ -288,9 +295,12 @@ class MemoryModel(QObject):
 
     @removing_ad_hoc.setter
     def removing_ad_hoc(self, value: int):
+        pending_before = self._destructive_action_pending()
         if self._removing_ad_hoc != value:
             self._removing_ad_hoc = value
             self.removing_ad_hoc_changed.emit()
+            if pending_before != self._destructive_action_pending():
+                self.destructive_action_pending_changed.emit()
 
     # Property: confirm_remove_note
     @Property(int, notify=confirm_remove_note_changed)
@@ -354,9 +364,12 @@ class MemoryModel(QObject):
 
     @moving_note.setter
     def moving_note(self, value: int):
+        pending_before = self._destructive_action_pending()
         if self._moving_note != value:
             self._moving_note = value
             self.moving_note_changed.emit()
+            if pending_before != self._destructive_action_pending():
+                self.destructive_action_pending_changed.emit()
 
     # Property: move_open
     @Property(bool, notify=move_open_changed)
@@ -422,6 +435,10 @@ class MemoryModel(QObject):
     @Property(list, notify=scopes_changed)
     def move_targets(self) -> list[dict]:
         return [s for s in self._scopes if s.get("key") != self._scope_key]
+
+    @Property(bool, notify=destructive_action_pending_changed)
+    def destructive_action_pending(self) -> bool:
+        return self._destructive_action_pending()
 
     def _err_text(self, result: dict | None) -> str:
         if not result or "error" not in result:

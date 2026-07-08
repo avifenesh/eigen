@@ -982,9 +982,34 @@ def check_memory(app, client):
         if memory.confirm_remove_note != -1:
             raise AssertionError("distilled memory remove cancel did not reset confirmation")
         click_item(app, view, root, "memoryNoteRemoveButton_0", flick_name="memoryFlick")
+        client.delays["RemoveMemoryNote"] = 45
         start = len(client.calls)
         click_item(app, view, root, "memoryNoteRemoveConfirmButton_0", flick_name="memoryFlick")
         assert_call(client, start, "RemoveMemoryNote", ("global", 0))
+        if memory.destructive_action_pending is not True:
+            raise AssertionError("distilled memory remove did not expose a global destructive pending state")
+        pending_remove = find_visual_item(root, "memoryNoteRemoveButton_0")
+        if pending_remove is None:
+            raise AssertionError("pending distilled memory remove did not keep a row control visible")
+        if pending_remove.property("qaText") != "Removing…" or pending_remove.property("enabled") is not False:
+            raise AssertionError(
+                "pending distilled memory remove did not render as disabled Removing: "
+                f"text={pending_remove.property('qaText')!r} enabled={pending_remove.property('enabled')}"
+            )
+        sibling_move = find_visual_item(root, "memoryAdHocMoveButton_0")
+        sibling_remove = find_visual_item(root, "memoryAdHocRemoveButton_0")
+        if sibling_move is None or sibling_remove is None:
+            raise AssertionError("memory destructive sibling controls did not render")
+        if sibling_move.property("enabled") is not False or sibling_remove.property("enabled") is not False:
+            raise AssertionError("memory destructive sibling controls stayed enabled while remove was pending")
+        click_item(app, view, root, "memoryAdHocMoveButton_0", flick_name="memoryFlick")
+        if [call for call in client.calls[start:] if call[0] == "MoveMemoryNote"]:
+            raise AssertionError(f"pending memory remove still allowed a move RPC: {client.calls[start:]}")
+        QTest.qWait(70)
+        pump(app, 12)
+        if memory.destructive_action_pending is not False:
+            raise AssertionError("destructive pending state did not clear after memory remove finished")
+        del client.delays["RemoveMemoryNote"]
 
         edit_profile = click_item(app, view, root, "memoryEditProfileButton", flick_name="memoryFlick")
         if not memory.editing_profile:

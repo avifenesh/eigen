@@ -33,6 +33,7 @@ Rectangle {
         ban_rule: "",
         saving_ban: false,
         moving_note: -1,
+        destructive_action_pending: false,
         confirm_remove_ad_hoc: -1,
         removing_ad_hoc: -1,
         confirm_remove_note: -1,
@@ -649,7 +650,7 @@ Rectangle {
                                             AppButton {
                                                 objectName: "memoryAdHocMoveButton_" + modelData.index
                                                 text: activeMemoryModel.moving_note === modelData.index ? "Moving…" : "Move"
-                                                enabled: activeMemoryModel.moving_note !== modelData.index
+                                                enabled: !activeMemoryModel.destructive_action_pending
                                                 compact: true
                                                 toolTipText: "Move saved note"
                                                 onClicked: activeMemoryModel.open_move(modelData.text, modelData.index)
@@ -658,7 +659,8 @@ Rectangle {
                                             AppButton {
                                                 objectName: "memoryAdHocRemoveButton_" + modelData.index
                                                 visible: activeMemoryModel.confirm_remove_ad_hoc !== modelData.index
-                                                text: "Remove"
+                                                text: activeMemoryModel.removing_ad_hoc === modelData.index ? "Removing…" : "Remove"
+                                                enabled: !activeMemoryModel.destructive_action_pending
                                                 compact: true
                                                 variant: "danger"
                                                 toolTipText: "Remove saved note"
@@ -669,7 +671,7 @@ Rectangle {
                                                 objectName: "memoryAdHocRemoveConfirmButton_" + modelData.index
                                                 visible: activeMemoryModel.confirm_remove_ad_hoc === modelData.index
                                                 text: activeMemoryModel.removing_ad_hoc === modelData.index ? "Removing…" : "Confirm"
-                                                enabled: activeMemoryModel.removing_ad_hoc !== modelData.index
+                                                enabled: !activeMemoryModel.destructive_action_pending
                                                 compact: true
                                                 variant: "danger"
                                                 toolTipText: "Confirm saved note removal"
@@ -680,7 +682,7 @@ Rectangle {
                                                 objectName: "memoryAdHocRemoveCancelButton_" + modelData.index
                                                 visible: activeMemoryModel.confirm_remove_ad_hoc === modelData.index
                                                 text: "Cancel"
-                                                enabled: activeMemoryModel.removing_ad_hoc !== modelData.index
+                                                enabled: !activeMemoryModel.destructive_action_pending
                                                 compact: true
                                                 toolTipText: "Cancel saved note removal"
                                                 onClicked: activeMemoryModel.confirm_remove_ad_hoc = -1
@@ -751,7 +753,7 @@ Rectangle {
                                             AppButton {
                                                 objectName: "memoryNoteMoveButton_" + modelData.index
                                                 text: activeMemoryModel.moving_note === modelData.index ? "Moving…" : "Move"
-                                                enabled: activeMemoryModel.moving_note !== modelData.index
+                                                enabled: !activeMemoryModel.destructive_action_pending
                                                 compact: true
                                                 toolTipText: "Move distilled note"
                                                 onClicked: activeMemoryModel.open_move(modelData.text, modelData.index)
@@ -760,7 +762,8 @@ Rectangle {
                                             AppButton {
                                                 objectName: "memoryNoteRemoveButton_" + modelData.index
                                                 visible: activeMemoryModel.confirm_remove_note !== modelData.index
-                                                text: "Remove"
+                                                text: activeMemoryModel.removing_note === modelData.index ? "Removing…" : "Remove"
+                                                enabled: !activeMemoryModel.destructive_action_pending
                                                 compact: true
                                                 variant: "danger"
                                                 toolTipText: "Remove distilled note"
@@ -771,7 +774,7 @@ Rectangle {
                                                 objectName: "memoryNoteRemoveConfirmButton_" + modelData.index
                                                 visible: activeMemoryModel.confirm_remove_note === modelData.index
                                                 text: activeMemoryModel.removing_note === modelData.index ? "Removing…" : "Confirm"
-                                                enabled: activeMemoryModel.removing_note !== modelData.index
+                                                enabled: !activeMemoryModel.destructive_action_pending
                                                 compact: true
                                                 variant: "danger"
                                                 toolTipText: "Confirm distilled note removal"
@@ -782,7 +785,7 @@ Rectangle {
                                                 objectName: "memoryNoteRemoveCancelButton_" + modelData.index
                                                 visible: activeMemoryModel.confirm_remove_note === modelData.index
                                                 text: "Cancel"
-                                                enabled: activeMemoryModel.removing_note !== modelData.index
+                                                enabled: !activeMemoryModel.destructive_action_pending
                                                 compact: true
                                                 toolTipText: "Cancel distilled note removal"
                                                 onClicked: activeMemoryModel.confirm_remove_note = -1
@@ -1198,8 +1201,9 @@ Rectangle {
                                             }
 
                                             AppButton {
+                                                objectName: "memoryBanRemoveButton_" + root.safeObjectName(modelData.title)
                                                 text: activeMemoryModel.removing_ban === modelData.title ? "…" : "✕"
-                                                enabled: activeMemoryModel.removing_ban !== modelData.title
+                                                enabled: !activeMemoryModel.destructive_action_pending
                                                 onClicked: activeMemoryModel.remove_ban(modelData.title)
                                                 Layout.preferredWidth: 24
                                                 Layout.preferredHeight: 24
@@ -1474,6 +1478,10 @@ Rectangle {
                     Layout.fillWidth: true
                     text: modelData.name
                     toolTipText: "Move note to " + modelData.name
+                    enabled: {
+                        var model = moveDialogModel()
+                        return !!model && !model.destructive_action_pending
+                    }
                     onClicked: {
                         var model = moveDialogModel()
                         if (model) {
