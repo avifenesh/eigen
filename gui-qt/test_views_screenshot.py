@@ -1122,7 +1122,16 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
             "✗ Main compact dropdown proof clipped model dropdown: "
             f"above={compact_model_combo.property('qaPopupAvailableAbove')}, "
             f"below={compact_model_combo.property('qaPopupAvailableBelow')}, "
-            f"height={compact_model_combo.property('qaPopupEffectiveHeight')}"
+            f"height={compact_model_combo.property('qaPopupEffectiveHeight')}, "
+            f"width={compact_model_combo.property('qaPopupEffectiveWidth')}"
+        )
+        window.hide()
+        return False
+    if float(compact_model_combo.property("qaPopupEffectiveWidth") or 0) < 219.5:
+        print(
+            "✗ Main compact dropdown proof kept the model popup too narrow: "
+            f"trigger={compact_model_combo.property('width')}, "
+            f"popup={compact_model_combo.property('qaPopupEffectiveWidth')}"
         )
         window.hide()
         return False

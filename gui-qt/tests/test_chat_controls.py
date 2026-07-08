@@ -778,8 +778,15 @@ def assert_combo_popup_clean(window, root, combo, label, option_index=0):
             f"{label} popup escaped the window: "
             f"above={combo.property('qaPopupAvailableAbove')} "
             f"below={combo.property('qaPopupAvailableBelow')} "
-            f"height={combo.property('qaPopupEffectiveHeight')}"
+            f"height={combo.property('qaPopupEffectiveHeight')} "
+            f"width={combo.property('qaPopupEffectiveWidth')}"
         )
+    trigger_width = float(combo.property("width") or 0)
+    popup_width = float(combo.property("qaPopupEffectiveWidth") or 0)
+    if popup_width < trigger_width - 0.5:
+        raise AssertionError(f"{label} popup is narrower than its trigger: {popup_width:.1f} < {trigger_width:.1f}")
+    if trigger_width < 219.5 and popup_width < 219.5:
+        raise AssertionError(f"{label} compact popup stayed too narrow: trigger={trigger_width:.1f} popup={popup_width:.1f}")
     option = find_item_in(window, root, f"{combo.objectName()}_option_{option_index}")
     if option is None:
         raise AssertionError(f"{label} popup did not expose option {option_index}")
