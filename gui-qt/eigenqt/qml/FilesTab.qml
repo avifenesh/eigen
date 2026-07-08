@@ -17,6 +17,7 @@ import "Theme.js" as Theme
 
 Item {
     id: root
+    objectName: "filesTabRoot"
 
     required property string sessionDir
     required property var rpcClient
@@ -123,30 +124,16 @@ Item {
 
                 Item { Layout.fillWidth: true }
 
-                // Refresh button
-                Rectangle {
-                    Layout.preferredWidth: 60
+                AppButton {
+                    objectName: "filesRefreshButton"
+                    text: root.loading ? "…" : "Refresh"
+                    compact: true
+                    variant: "ghost"
+                    toolTipText: "Refresh files"
+                    enabled: !root.loading
+                    Layout.preferredWidth: 72
                     Layout.preferredHeight: 28
-                    color: refreshArea.containsMouse ? Theme.colors.stateHover : "transparent"
-                    radius: Theme.radius.sm
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: root.loading ? "…" : "refresh"
-                        font.family: Theme.uiFonts[0]
-                        font.pixelSize: Theme.fontSize.bodySm
-                        font.weight: Theme.fontWeight.medium
-                        color: Theme.colors.textMuted
-                    }
-
-                    MouseArea {
-                        id: refreshArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        enabled: !root.loading
-                        onClicked: load()
-                    }
+                    onClicked: root.load()
                 }
             }
         }
@@ -161,6 +148,11 @@ Item {
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
+
+            Rectangle {
+                anchors.fill: parent
+                color: Theme.colors.bgBase
+            }
 
             // Empty state: error
             Column {
@@ -197,15 +189,18 @@ Item {
             }
 
             // Split: tree + viewer
-            Row {
+            Item {
+                id: splitPane
                 anchors.fill: parent
-                spacing: 0
                 visible: !loading && error === ""
 
                 // Tree
                 Item {
-                    width: viewPath !== "" ? parent.width * 0.4 : parent.width
-                    height: parent.height
+                    id: treePane
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: viewPath !== "" ? Math.round(parent.width * 0.4) : parent.width
 
                     ListView {
                         id: treeList
@@ -284,120 +279,120 @@ Item {
 
                 // Divider
                 Rectangle {
+                    id: splitDivider
                     visible: viewPath !== ""
+                    anchors.left: treePane.right
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
                     width: 1
-                    height: parent.height
                     color: Theme.colors.borderHairline
                 }
 
                 // File viewer
                 Item {
                     visible: viewPath !== ""
-                    width: viewPath !== "" ? parent.width * 0.6 - 1 : 0
-                    height: parent.height
+                    anchors.left: splitDivider.right
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    clip: true
 
-                    ColumnLayout {
-                        anchors.fill: parent
-                        spacing: 0
+                    // Use explicit anchors here: this item is created hidden, and
+                    // layout children can keep a zero-width header after the viewer opens.
+                    Rectangle {
+                        id: viewerHeader
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        height: 40
+                        color: Theme.colors.bgRaised
 
-                        // Viewer header
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 40
-                            color: Theme.colors.bgRaised
-
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: Theme.space.md
-                                anchors.rightMargin: Theme.space.sm
-                                spacing: Theme.space.sm
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: viewPath ? viewPath.split("/").pop() : ""
-                                    font.family: Theme.monoFonts[0]
-                                    font.pixelSize: Theme.fontSize.label
-                                    font.weight: Theme.fontWeight.semibold
-                                    color: Theme.colors.textPrimary
-                                    elide: Text.ElideMiddle
-                                }
-
-                                // Close button
-                                Rectangle {
-                                    Layout.preferredWidth: 28
-                                    Layout.preferredHeight: 28
-                                    color: closeArea.containsMouse ? Theme.colors.stateHover : "transparent"
-                                    radius: Theme.radius.sm
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "✕"
-                                        font.pixelSize: Theme.fontSize.body
-                                        color: Theme.colors.textMuted
-                                    }
-
-                                    MouseArea {
-                                        id: closeArea
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: closeViewer()
-                                    }
-                                }
-                            }
+                        Text {
+                            anchors.left: parent.left
+                            anchors.right: viewerCloseButton.left
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.leftMargin: Theme.space.md
+                            anchors.rightMargin: Theme.space.sm
+                            text: viewPath ? viewPath.split("/").pop() : ""
+                            font.family: Theme.monoFonts[0]
+                            font.pixelSize: Theme.fontSize.label
+                            font.weight: Theme.fontWeight.semibold
+                            color: Theme.colors.textPrimary
+                            elide: Text.ElideMiddle
                         }
 
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 1
-                            color: Theme.colors.borderHairline
+                        AppButton {
+                            id: viewerCloseButton
+                            objectName: "filesViewerCloseButton"
+                            z: 10
+                            anchors.right: parent.right
+                            anchors.rightMargin: Theme.space.sm
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 28
+                            height: 28
+                            text: "✕"
+                            compact: true
+                            variant: "ghost"
+                            toolTipText: "Close file"
+                            onClicked: root.closeViewer()
+                        }
+                    }
+
+                    Rectangle {
+                        id: viewerDivider
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: viewerHeader.bottom
+                        height: 1
+                        color: Theme.colors.borderHairline
+                    }
+
+                    // Viewer body
+                    Item {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: viewerDivider.bottom
+                        anchors.bottom: parent.bottom
+
+                        // Loading
+                        Text {
+                            anchors.centerIn: parent
+                            visible: viewLoading
+                            text: "Loading…"
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.bodySm
+                            color: Theme.colors.textMuted
                         }
 
-                        // Viewer body
-                        Item {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
+                        // Error
+                        Text {
+                            anchors.centerIn: parent
+                            visible: !viewLoading && viewError !== ""
+                            text: viewError
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.bodySm
+                            color: Theme.colors.warn
+                            width: parent.width - Theme.space.xl * 2
+                            wrapMode: Text.WordWrap
+                            horizontalAlignment: Text.AlignHCenter
+                        }
 
-                            // Loading
-                            Text {
-                                anchors.centerIn: parent
-                                visible: viewLoading
-                                text: "Loading…"
-                                font.family: Theme.uiFonts[0]
-                                font.pixelSize: Theme.fontSize.bodySm
-                                color: Theme.colors.textMuted
-                            }
+                        // Content
+                        ScrollView {
+                            anchors.fill: parent
+                            visible: !viewLoading && viewError === ""
+                            clip: true
 
-                            // Error
-                            Text {
-                                anchors.centerIn: parent
-                                visible: !viewLoading && viewError !== ""
-                                text: viewError
-                                font.family: Theme.uiFonts[0]
-                                font.pixelSize: Theme.fontSize.bodySm
-                                color: Theme.colors.warn
-                                width: parent.width - Theme.space.xl * 2
-                                wrapMode: Text.WordWrap
-                                horizontalAlignment: Text.AlignHCenter
-                            }
-
-                            // Content
-                            ScrollView {
-                                anchors.fill: parent
-                                visible: !viewLoading && viewError === ""
-                                clip: true
-
-                                TextArea {
-                                    text: viewText
-                                    font.family: Theme.monoFonts[0]
-                                    font.pixelSize: Theme.fontSize.codeSm
-                                    color: Theme.colors.synText
-                                    readOnly: true
-                                    selectByMouse: true
-                                    wrapMode: TextArea.NoWrap
-                                    background: Rectangle {
-                                        color: Theme.colors.synBg
-                                    }
+                            TextArea {
+                                text: viewText
+                                font.family: Theme.monoFonts[0]
+                                font.pixelSize: Theme.fontSize.codeSm
+                                color: Theme.colors.synText
+                                readOnly: true
+                                selectByMouse: true
+                                wrapMode: TextArea.NoWrap
+                                background: Rectangle {
+                                    color: Theme.colors.synBg
                                 }
                             }
                         }

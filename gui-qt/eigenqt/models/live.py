@@ -118,6 +118,7 @@ class LiveSessionsModel(QAbstractListModel):
         elif channel == "eigen:daemon:stats":
             self._client.call("Sessions", callback=self._on_sessions_result)
 
+    @Slot()
     def refresh(self):
         """Manually trigger a refresh (e.g., after RemoveSession, Interrupt)."""
         self._client.call("Sessions", callback=self._on_sessions_result)

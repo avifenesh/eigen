@@ -60,9 +60,9 @@ Window {
 
         Component.onCompleted: {
             // Add some mock sessions
-            append({sessionId: "s1", title: "Test session 1", dir: "/home/user/project1", modelName: "sonnet", status: "working", turns: 5, updated: Date.now() * 1000000})
-            append({sessionId: "s2", title: "Test session 2", dir: "/home/user/project2", modelName: "opus", status: "approval", turns: 3, updated: Date.now() * 1000000})
-            append({sessionId: "s3", title: "Test session 3", dir: "/home/user/project3", modelName: "haiku", status: "idle", turns: 10, updated: Date.now() * 1000000})
+            append({sessionId: "s1", title: "Test session 1", dir: "/home/user/project1", modelName: "gpt-5", status: "working", turns: 5, updated: Date.now() * 1000000})
+            append({sessionId: "s2", title: "Test session 2", dir: "/home/user/project2", modelName: "local-qwen", status: "approval", turns: 3, updated: Date.now() * 1000000})
+            append({sessionId: "s3", title: "Test session 3", dir: "/home/user/project3", modelName: "glm-5.2", status: "idle", turns: 10, updated: Date.now() * 1000000})
         }
     }
 

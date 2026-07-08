@@ -1,37 +1,63 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 import "Theme.js" as Theme
 
 ApplicationWindow {
     id: root
+    objectName: "mainWindow"
     visible: true
+    readonly property int initialDesktopMarginX: 64
+    readonly property int initialDesktopMarginY: 96
+    readonly property int initialAvailableWidth: Screen.desktopAvailableWidth > 0 ? Screen.desktopAvailableWidth : 1280
+    readonly property int initialAvailableHeight: Screen.desktopAvailableHeight > 0 ? Screen.desktopAvailableHeight : 800
+    readonly property int initialWindowWidth: Math.min(1280, Math.max(minimumWidth, initialAvailableWidth - initialDesktopMarginX))
+    readonly property int initialWindowHeight: Math.min(800, Math.max(minimumHeight, initialAvailableHeight - initialDesktopMarginY))
+    minimumWidth: Math.min(900, Math.max(720, initialAvailableWidth - initialDesktopMarginX))
+    minimumHeight: Math.min(420, Math.max(320, initialAvailableHeight - initialDesktopMarginY))
     width: 1280
     height: 800
     title: "eigen"
+    property bool railVisible: true
+    Component.onCompleted: {
+        width = initialWindowWidth
+        height = initialWindowHeight
+    }
 
     color: Theme.colors.bgBase
 
     // Fonts: rely on system font stack (Inter if installed, else system sans-serif)
     // No qrc:/ resource compilation exists; Theme.js provides fallback stack
 
-    RowLayout {
+    ColumnLayout {
         anchors.fill: parent
+        spacing: 0
+
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.fillHeight: true
         spacing: 0
 
         // Left rail (navigation)
         Rail {
             id: rail
-            Layout.preferredWidth: 200
+            objectName: "mainRail"
+            visible: root.railVisible
+            Layout.preferredWidth: root.railVisible ? 200 : 0
+            Layout.minimumWidth: root.railVisible ? 200 : 0
+            Layout.maximumWidth: root.railVisible ? 200 : 0
             Layout.fillHeight: true
 
             currentRoute: root.currentRoute
             sessionsModel: root.ctxSessions
             liveSessionsModel: root.ctxLive
             tasksModel: root.ctxTasks
+            feedModel: root.ctxFeed
             statsData: root.ctxStats
             daemonOnline: root.ctxDaemonOnline
             guiserverSha: root.ctxSha
+            sessionController: root.ctxSessionController
 
             onRouteChanged: function(route) {
                 root.currentRoute = route
@@ -41,6 +67,7 @@ ApplicationWindow {
         // Center: view routing via StackLayout
         StackLayout {
             id: stackLayout
+            objectName: "mainStackLayout"
             Layout.fillWidth: true
             Layout.fillHeight: true
             currentIndex: routeToIndex(root.currentRoute)
@@ -55,9 +82,16 @@ ApplicationWindow {
                 if (route === "skills") return 6
                 if (route === "memory") return 7
                 if (route === "notes") return 8
-                if (route === "connectors") return 9
-                if (route === "config") return 10
-                if (route === "reviewers") return 11
+                if (route === "dreaming") return 9
+                if (route === "observe") return 10
+                if (route === "routing") return 11
+                if (route === "machines") return 12
+                if (route === "crons") return 13
+                if (route === "plugins") return 14
+                if (route === "connectors") return 15
+                if (route === "profile") return 16
+                if (route === "config") return 17
+                if (route === "reviewers") return 18
                 return 0  // default to home
             }
 
@@ -67,70 +101,93 @@ ApplicationWindow {
                 feedModel: root.ctxFeed
                 sessionsModel: root.ctxSessions
                 statsData: root.ctxStats
+                rpcClient: root.ctxRpc
 
                 onSessionClicked: function(sessionId) {
-                    root.currentRoute = "chat"
-                    sessionController.open_session(sessionId)
+                    root.openCreatedSession(sessionId)
                 }
 
-                onNewSessionClicked: {
-                    // TODO: wire NewSession RPC
-                    console.log("New session clicked")
+                onSessionStarted: function(sessionId) {
+                    root.openCreatedSession(sessionId)
                 }
             }
 
             // Index 1: Sessions view (full list)
             SessionsView {
+                sessionsModel: root.ctxSessions
                 onSessionClicked: function(sessionId) {
                     root.currentRoute = "chat"
-                    sessionController.open_session(sessionId)
+                    root.ctxSessionController.open_session(sessionId)
                 }
             }
 
             // Index 2: Live view (working/approval sessions)
             LiveView {
+                sessionsModel: root.ctxSessions
+                liveSessionsModel: root.ctxLive
+                rpcClient: root.ctxRpc
+                newSessionPending: root.pendingNewSessionToken !== 0
                 onOpenSession: function(sessionId) {
                     root.currentRoute = "chat"
                     sessionController.open_session(sessionId)
                 }
 
                 onNewSessionRequested: {
-                    // TODO: New session dialog (for now, just a placeholder)
-                    console.log("New session requested")
+                    root.requestNewSession("")
                 }
             }
 
             // Index 3: Chat view
             ChatView {
-                sessionId: sessionController.session_id
-                sessionStateModel: sessionController.session_state_model
-                commandsModel: sessionController.commands_model
+                sessionId: root.ctxSessionController ? root.ctxSessionController.session_id : ""
+                sessionStateModel: root.ctxSessionController ? root.ctxSessionController.session_state_model : null
+                commandsModel: root.ctxSessionController ? root.ctxSessionController.commands_model : null
+                transcriptModel: root.ctxTranscript
+                approvalsModel: root.ctxApprovals
+                rpcClient: root.ctxRpc
+                clipboardHelper: root.ctxClipboard
+                highlighter: root.ctxHighlighter
+                terminalHelper: root.ctxTerminalHelper
 
                 onBackClicked: {
                     root.currentRoute = "sessions"
-                    sessionController.detach()
+                    root.ctxSessionController.detach()
+                }
+                onRouteRequested: function(route) {
+                    root.currentRoute = route
+                }
+                onRailToggleRequested: {
+                    root.railVisible = !root.railVisible
                 }
             }
 
             // Index 4: Board view
             BoardView {
-                // boardModel and kanbanModel are context properties
+                boardModel: root.ctxBoard
+                kanbanModel: root.ctxKanban
+                rpcClient: root.ctxRpc
+                sessionsModel: root.ctxSessions
+                onSessionStarted: function(sessionId) {
+                    root.openCreatedSession(sessionId)
+                }
             }
 
             // Index 5: Tasks view (background agents)
             TasksView {
                 tasksModel: root.ctxTasks
+                rpcClient: root.ctxRpc
             }
 
             // Index 6: Skills view (capability gallery)
             SkillsView {
                 skillsModel: root.ctxSkills
                 proposalsModel: root.ctxProposals
+                rpcClient: root.ctxRpc
             }
 
             // Index 7: Memory view (durable notes browser)
             MemoryView {
-                // memoryModel is a context property
+                memoryModel: root.ctxMemory
             }
 
             // Index 8: Notes view (Obsidian vault browser)
@@ -138,30 +195,111 @@ ApplicationWindow {
                 notesController: root.ctxNotes
             }
 
-            // Index 9: Connectors view (MCP connectors management)
-            ConnectorsView {
-                // connectorsModel is a context property
+            // Index 9: Dreaming view (memory rollout/consolidation timeline)
+            DreamingView {
+                dreamingModel: root.ctxDreamingModel
             }
 
-            // Index 10: Config view (editable config fields + rule chains)
+            // Index 10: Observe view (telemetry summary)
+            ObserveView {
+                observeModel: root.ctxObserveModel
+            }
+
+            // Index 11: Routing view (model/provider catalog)
+            RoutingView {
+                routingModel: root.ctxRoutingModel
+            }
+
+            // Index 12: Machines view (remote host/session drill-in)
+            MachinesView {
+                machinesModel: root.ctxMachinesModel
+                onOpenSession: function(sessionId) {
+                    if (!sessionId) return
+                    root.currentRoute = "chat"
+                    root.ctxSessionController.open_session(sessionId)
+                }
+            }
+
+            // Index 13: Crons view (scheduled work snapshot)
+            CronsView {
+                cronsModel: root.ctxCronsModel
+            }
+
+            // Index 14: Plugins view (installed plugins and marketplaces)
+            PluginsView {
+                pluginsModel: root.ctxPluginsModel
+            }
+
+            // Index 15: Connectors view (MCP connectors management)
+            ConnectorsView {
+                connectorsModel: root.ctxConnectors
+            }
+
+            // Index 16: Profile view (usage and USER.md profile)
+            ProfileView {
+                profileModel: root.ctxProfileModel
+                statsData: root.ctxStats
+            }
+
+            // Index 17: Config view (editable config fields + rule chains)
             ConfigView {
                 configModel: root.ctxConfigModel
                 ruleChainsModel: root.ctxRuleChainsModel
             }
 
-            // Index 11: Reviewers view (revuto cockpit)
+            // Index 18: Reviewers view (revuto cockpit)
             ReviewersView {
                 reviewersModel: root.ctxReviewersModel
             }
         }
     }
 
+    Rectangle {
+        objectName: "mainActionError"
+        Layout.fillWidth: true
+        Layout.preferredHeight: visible ? Math.max(38, mainActionErrorRow.implicitHeight + Theme.space.md) : 0
+        Layout.minimumHeight: visible ? 38 : 0
+        visible: root.actionError !== ""
+        color: Theme.colors.errorBg
+        border.width: visible ? 1 : 0
+        border.color: Theme.colors.error
+        clip: true
+
+        RowLayout {
+            id: mainActionErrorRow
+            anchors.fill: parent
+            anchors.leftMargin: Theme.space.lg
+            anchors.rightMargin: Theme.space.lg
+            spacing: Theme.space.md
+
+            Label {
+                objectName: "mainActionErrorText"
+                text: root.actionError
+                font.family: Theme.uiFonts[0]
+                font.pixelSize: Theme.fontSize.bodySm
+                color: Theme.colors.error
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+
+            AppButton {
+                objectName: "mainDismissActionError"
+                text: "X"
+                compact: true
+                toolTipText: "Dismiss shell error"
+                Layout.preferredWidth: 28
+                Layout.preferredHeight: 28
+                onClicked: root.actionError = ""
+            }
+        }
+    }
+
     // Status strip (bottom)
     Rectangle {
-        anchors.bottom: parent.bottom
-        anchors.left: parent.left
-        anchors.right: parent.right
-        height: 28
+        objectName: "mainStatusStrip"
+        Layout.fillWidth: true
+        Layout.preferredHeight: 28
+        Layout.minimumHeight: 28
         color: Theme.colors.bgWell
         border.width: 1
         border.color: Theme.colors.borderHairline
@@ -174,6 +312,7 @@ ApplicationWindow {
 
             // Daemon status
             Row {
+                objectName: "mainDaemonStatus"
                 spacing: Theme.space.sm
                 Rectangle {
                     width: 8
@@ -193,6 +332,7 @@ ApplicationWindow {
 
             // Guiserver SHA
             Label {
+                objectName: "mainGuiserverSha"
                 text: "guiserver: " + (guiserverSha.substring(0, 8) || "unknown")
                 font.family: Theme.monoFonts[0]
                 font.pixelSize: Theme.fontSize.micro
@@ -203,12 +343,14 @@ ApplicationWindow {
 
             // Current session
             Label {
-                text: stackLayout.currentIndex === 3 ? "session: " + sessionController.session_id : ""
+                objectName: "mainSessionStatus"
+                text: stackLayout.currentIndex === 3 && root.ctxSessionController ? "session: " + root.ctxSessionController.session_id : ""
                 font.family: Theme.monoFonts[0]
                 font.pixelSize: Theme.fontSize.micro
                 color: Theme.colors.textMuted
             }
         }
+    }
     }
 
     // Unshadowed aliases for the Python context properties: inside a child
@@ -219,12 +361,30 @@ ApplicationWindow {
     readonly property var ctxTasks: tasksModel
     readonly property var ctxDashboard: dashboardModel
     readonly property var ctxFeed: feedModel
+    readonly property var ctxBoard: boardModel
+    readonly property var ctxKanban: kanbanModel
     readonly property var ctxSkills: skillsModel
     readonly property var ctxProposals: proposalsModel
+    readonly property var ctxMemory: memoryModel
+    readonly property var ctxDreamingModel: dreamingModel
     readonly property var ctxNotes: notesController
+    readonly property var ctxConnectors: connectorsModel
+    readonly property var ctxObserveModel: observeModel
+    readonly property var ctxRoutingModel: routingModel
+    readonly property var ctxMachinesModel: machinesModel
+    readonly property var ctxCronsModel: cronsModel
+    readonly property var ctxPluginsModel: pluginsModel
+    readonly property var ctxProfileModel: profileModel
     readonly property var ctxConfigModel: configModel
     readonly property var ctxRuleChainsModel: ruleChainsModel
     readonly property var ctxReviewersModel: reviewersModel
+    readonly property var ctxTranscript: transcriptModel
+    readonly property var ctxApprovals: approvalsModel
+    readonly property var ctxClipboard: clipboardHelper
+    readonly property var ctxHighlighter: highlighter
+    readonly property var ctxTerminalHelper: terminalHelper
+    readonly property var ctxRpc: rpcClient
+    readonly property var ctxSessionController: sessionController
     readonly property var ctxStats: statsData
     readonly property bool ctxDaemonOnline: daemonOnline
     readonly property string ctxSha: guiserverSha
@@ -238,4 +398,43 @@ ApplicationWindow {
 
     // Current route (navigation state)
     property string currentRoute: "home"
+    readonly property int activeRouteIndex: stackLayout.currentIndex
+    property int pendingNewSessionToken: 0
+    property string actionError: ""
+
+    Connections {
+        target: root.ctxRpc ? root.ctxRpc : null
+        function onCallDone(token, payload) {
+            if (token !== root.pendingNewSessionToken) return
+            root.pendingNewSessionToken = 0
+            if (payload && payload.error !== undefined && payload.error !== null) {
+                var error = typeof payload.error === "string" ? payload.error : JSON.stringify(payload.error)
+                root.actionError = "Could not start session: " + (error || "unknown error")
+                return
+            }
+            root.openCreatedSession(payload ? String(payload.result || "") : "")
+        }
+    }
+
+    function refreshSessionLists() {
+        if (root.ctxSessions && root.ctxSessions.refresh) root.ctxSessions.refresh()
+        if (root.ctxLive && root.ctxLive.refresh) root.ctxLive.refresh()
+    }
+
+    function requestNewSession(dir) {
+        if (root.pendingNewSessionToken !== 0) return
+        if (!root.ctxRpc || typeof root.ctxRpc.callToken !== "function") {
+            root.actionError = "Could not start session: RPC client is unavailable."
+            return
+        }
+        root.actionError = ""
+        root.pendingNewSessionToken = root.ctxRpc.callToken("NewSession", [dir || "", "", ""])
+    }
+
+    function openCreatedSession(sessionId) {
+        if (!sessionId) return
+        root.currentRoute = "chat"
+        root.ctxSessionController.open_session(sessionId)
+        root.refreshSessionLists()
+    }
 }

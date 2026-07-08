@@ -9,6 +9,76 @@ import "Theme.js" as Theme
 Rectangle {
     id: root
     color: Theme.colors.bgBase
+    property var memoryModel: null
+    readonly property var activeMemoryModel: memoryModel || fallbackMemoryModel
+    readonly property var fallbackMemoryModel: ({
+        scopes: [],
+        scope_key: "",
+        current: null,
+        composing: false,
+        draft: "",
+        scope_label: "selected",
+        saving: false,
+        loading: false,
+        load_error: "",
+        action_error: "",
+        is_empty: true,
+        has_backup_history: false,
+        is_global: false,
+        editing_profile: false,
+        profile_draft: "",
+        saving_profile: false,
+        adding_ban: false,
+        ban_title: "",
+        ban_rule: "",
+        saving_ban: false,
+        moving_note: -1,
+        destructive_action_pending: false,
+        confirm_remove_ad_hoc: -1,
+        removing_ad_hoc: -1,
+        confirm_remove_note: -1,
+        removing_note: -1,
+        removing_ban: "",
+        backups_open: false,
+        backups_loading: false,
+        backup_paths: [],
+        move_open: false,
+        move_pending: null,
+        move_targets: [],
+        short_dir: function(dir) { return dir || "" },
+        reload_current: function() {},
+        select_scope: function(_key) {},
+        save_note: function() {},
+        open_move: function(_text, _index) {},
+        move_to: function(_key, _name) {},
+        remove_ad_hoc: function(_index) {},
+        remove_note: function(_index) {},
+        start_profile: function() {},
+        save_profile: function() {},
+        add_ban: function() {},
+        remove_ban: function(_title) {},
+        toggle_backups: function() {},
+        clear_action_error: function() {},
+        backup_when: function(path) { return path || "" },
+        backup_name: function(path) { return path || "" }
+    })
+
+    function memoryNoteCount(current) {
+        if (!current) return 0
+        if (current.noteCount !== undefined && current.noteCount !== null) return Number(current.noteCount) || 0
+        if (current.notes && current.notes.length !== undefined) return current.notes.length
+        return 0
+    }
+
+    function memoryAdHocCount(current) {
+        if (!current || !current.adHoc || current.adHoc.length === undefined) return 0
+        return current.adHoc.length
+    }
+
+    function memoryBytes(current) {
+        if (!current || current.bytes === undefined || current.bytes === null) return 0
+        return Number(current.bytes) || 0
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -40,35 +110,51 @@ Rectangle {
                         color: Theme.colors.textMuted
                     }
 
-                    ComboBox {
+                    AppComboBox {
                         id: scopeCombo
+                        objectName: "memoryScopeCombo"
                         Layout.preferredWidth: 300
-                        model: memoryModel.scopes
+                        Layout.preferredHeight: 32
+                        model: activeMemoryModel.scopes
                         textRole: "name"
                         valueRole: "key"
-                        currentIndex: findScopeIndex(memoryModel.scope_key)
+                        currentIndex: findScopeIndex(activeMemoryModel.scope_key)
+                        activationUpdatesCurrentIndex: false
+                        accessibleName: "Memory scope"
+                        toolTipText: "Change memory scope"
 
-                        onActivated: {
-                            memoryModel.select_scope(currentValue)
+                        onActivated: function(index) {
+                            var scope = activeMemoryModel.scopes[index]
+                            if (scope && scope.key) {
+                                activeMemoryModel.select_scope(scope.key)
+                            }
                         }
 
                         delegate: ItemDelegate {
+                            objectName: "memoryScopeCombo_option_" + index
+                            property var scopeEntry: modelData || ({})
+
                             width: scopeCombo.width
-                            text: model.name + (model.noteCount > 0 ? " (" + model.noteCount + ")" : "")
+                            text: scopeEntry.name + (scopeEntry.noteCount > 0 ? " (" + scopeEntry.noteCount + ")" : "")
+                            highlighted: scopeCombo.highlightedIndex === index
+
+                            background: Rectangle {
+                                color: parent.highlighted ? Theme.colors.stateHover : "transparent"
+                            }
 
                             contentItem: ColumnLayout {
                                 spacing: 2
 
                                 Label {
-                                    text: model.name + (model.noteCount > 0 ? " (" + model.noteCount + ")" : "")
+                                    text: scopeEntry.name + (scopeEntry.noteCount > 0 ? " (" + scopeEntry.noteCount + ")" : "")
                                     font.family: Theme.uiFonts[0]
                                     font.pixelSize: Theme.fontSize.bodySm
                                     color: Theme.colors.textPrimary
                                 }
 
                                 Label {
-                                    visible: model.dir
-                                    text: model.dir ? memoryModel.short_dir(model.dir) : ""
+                                    visible: !!scopeEntry.dir
+                                    text: scopeEntry.dir ? activeMemoryModel.short_dir(scopeEntry.dir) : ""
                                     font.family: Theme.uiFonts[0]
                                     font.pixelSize: Theme.fontSize.micro
                                     color: Theme.colors.textFaint
@@ -80,8 +166,8 @@ Rectangle {
 
                 // Dir label (beside picker for disambiguation)
                 Label {
-                    visible: !!(memoryModel.current && memoryModel.current.dir)
-                    text: memoryModel.current ? memoryModel.short_dir(memoryModel.current.dir || "") : ""
+                    visible: !!(activeMemoryModel.current && activeMemoryModel.current.dir)
+                    text: activeMemoryModel.current ? activeMemoryModel.short_dir(activeMemoryModel.current.dir || "") : ""
                     font.family: Theme.uiFonts[0]
                     font.pixelSize: Theme.fontSize.label
                     color: Theme.colors.textFaint
@@ -91,22 +177,32 @@ Rectangle {
 
                 Item { Layout.fillWidth: true }
 
-                Button {
-                    text: memoryModel.composing ? "Cancel" : "Add note"
-                    enabled: memoryModel.current !== null
-                    onClicked: memoryModel.composing = !memoryModel.composing
+                AppButton {
+                    objectName: "memoryAddNoteButton"
+                    text: activeMemoryModel.composing ? "Cancel" : "Add note"
+                    enabled: activeMemoryModel.current !== null && !activeMemoryModel.saving
+                    onClicked: {
+                        if (!activeMemoryModel.saving) {
+                            activeMemoryModel.composing = !activeMemoryModel.composing
+                        }
+                    }
                 }
             }
         }
 
         // Compose area (expanded when composing=true)
         Rectangle {
-            visible: memoryModel.composing
+            visible: activeMemoryModel.composing
             Layout.fillWidth: true
-            implicitHeight: composeColumn.implicitHeight
+            implicitHeight: composeColumn.implicitHeight + Theme.space.lg * 2
             color: Theme.colors.bgWell
             border.width: 1
             border.color: Theme.colors.borderHairline
+            onVisibleChanged: {
+                if (visible) {
+                    composeTextArea.forceActiveFocus(Qt.TabFocusReason)
+                }
+            }
 
             ColumnLayout {
                 id: composeColumn
@@ -123,12 +219,23 @@ Rectangle {
 
                     TextArea {
                         id: composeTextArea
-                        text: memoryModel.draft
-                        placeholderText: "A durable note for " + memoryModel.scope_label + " memory…"
+                        objectName: "memoryComposeTextArea"
+                        text: activeMemoryModel.draft
+                        placeholderText: "A durable note for " + activeMemoryModel.scope_label + " memory…"
+                        placeholderTextColor: Theme.colors.textGhost
                         font.family: Theme.uiFonts[0]
                         font.pixelSize: Theme.fontSize.bodySm
                         color: Theme.colors.textPrimary
                         wrapMode: Text.Wrap
+                        property bool qaForceKeyboardFocus: false
+                        readonly property bool qaTextFits: true
+                        readonly property string qaText: ""
+                        readonly property bool qaVisualFocus: activeFocus
+                        onQaForceKeyboardFocusChanged: {
+                            if (qaForceKeyboardFocus) {
+                                forceActiveFocus(Qt.TabFocusReason)
+                            }
+                        }
                         background: Rectangle {
                             color: Theme.colors.bgRaised
                             border.width: 1
@@ -136,17 +243,17 @@ Rectangle {
                             radius: Theme.radius.md
                         }
 
-                        onTextChanged: memoryModel.draft = text
+                        onTextChanged: activeMemoryModel.draft = text
 
                         Keys.onPressed: (event) => {
                             if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && (event.modifiers & Qt.ControlModifier)) {
-                                memoryModel.save_note()
+                                root.saveMemoryNoteIfReady()
                                 event.accepted = true
                             }
                         }
 
                         Component.onCompleted: {
-                            if (memoryModel.composing) {
+                            if (activeMemoryModel.composing) {
                                 forceActiveFocus()
                             }
                         }
@@ -157,19 +264,60 @@ Rectangle {
                     spacing: Theme.space.sm
                     Layout.alignment: Qt.AlignRight
 
-                    Button {
+                    AppButton {
+                        objectName: "memoryDiscardNoteButton"
                         text: "Discard"
+                        enabled: !activeMemoryModel.saving
                         onClicked: {
-                            memoryModel.composing = false
-                            memoryModel.draft = ""
+                            root.cancelMemoryNoteCompose()
                         }
                     }
 
-                    Button {
-                        text: memoryModel.saving ? "Saving…" : "Save note"
-                        enabled: memoryModel.draft.trim().length > 0 && !memoryModel.saving
-                        onClicked: memoryModel.save_note()
+                    AppButton {
+                        objectName: "memorySaveNoteButton"
+                        text: activeMemoryModel.saving ? "Saving…" : "Save note"
+                        enabled: activeMemoryModel.draft.trim().length > 0 && !activeMemoryModel.saving
+                        onClicked: activeMemoryModel.save_note()
                     }
+                }
+            }
+        }
+
+        Rectangle {
+            objectName: "memoryActionError"
+            visible: activeMemoryModel.action_error !== ""
+            Layout.fillWidth: true
+            Layout.preferredHeight: visible ? Math.max(40, memoryActionErrorRow.implicitHeight + Theme.space.md) : 0
+            color: Theme.colors.errorBg
+            border.width: visible ? 1 : 0
+            border.color: Theme.colors.error
+            clip: true
+
+            RowLayout {
+                id: memoryActionErrorRow
+                anchors.fill: parent
+                anchors.leftMargin: Theme.space.xl
+                anchors.rightMargin: Theme.space.xl
+                spacing: Theme.space.md
+
+                Label {
+                    text: activeMemoryModel.action_error
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.label
+                    color: Theme.colors.error
+                    wrapMode: Text.WrapAnywhere
+                    Layout.fillWidth: true
+                }
+
+                AppButton {
+                    objectName: "memoryDismissActionError"
+                    text: "X"
+                    compact: true
+                    toolTipText: "Dismiss memory error"
+                    Layout.preferredWidth: 28
+                    Layout.minimumWidth: 28
+                    Layout.preferredHeight: 28
+                    onClicked: activeMemoryModel.clear_action_error()
                 }
             }
         }
@@ -179,9 +327,54 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
+            Rectangle {
+                id: memoryRefreshErrorBanner
+                objectName: "memoryRefreshErrorBanner"
+                visible: !!(activeMemoryModel.load_error && activeMemoryModel.current)
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: Theme.space.lg
+                height: visible ? Math.max(40, memoryRefreshErrorRow.implicitHeight + Theme.space.md) : 0
+                color: Theme.colors.errorBg
+                border.width: visible ? 1 : 0
+                border.color: Theme.colors.error
+                radius: Theme.radius.md
+                clip: true
+                z: 2
+
+                RowLayout {
+                    id: memoryRefreshErrorRow
+                    anchors.fill: parent
+                    anchors.leftMargin: Theme.space.lg
+                    anchors.rightMargin: Theme.space.lg
+                    spacing: Theme.space.md
+
+                    Label {
+                        objectName: "memoryRefreshErrorText"
+                        text: activeMemoryModel.load_error
+                        font.family: Theme.uiFonts[0]
+                        font.pixelSize: Theme.fontSize.label
+                        color: Theme.colors.error
+                        wrapMode: Text.WrapAnywhere
+                        Layout.fillWidth: true
+                    }
+
+                    AppButton {
+                        objectName: "memoryRefreshErrorRetry"
+                        text: "Retry"
+                        compact: true
+                        toolTipText: "Retry loading memory"
+                        Layout.preferredWidth: 64
+                        Layout.preferredHeight: 28
+                        onClicked: activeMemoryModel.reload_current()
+                    }
+                }
+            }
+
             // Loading skeleton
             ColumnLayout {
-                visible: memoryModel.loading && !memoryModel.current
+                visible: activeMemoryModel.loading && !activeMemoryModel.current
                 anchors.fill: parent
                 anchors.margins: Theme.space.xl
                 spacing: Theme.space.lg
@@ -199,7 +392,8 @@ Rectangle {
 
             // Error state
             ColumnLayout {
-                visible: memoryModel.load_error && !memoryModel.current
+                objectName: "memoryLoadError"
+                visible: activeMemoryModel.load_error && !activeMemoryModel.current
                 anchors.centerIn: parent
                 spacing: Theme.space.lg
 
@@ -211,7 +405,7 @@ Rectangle {
                 }
 
                 Label {
-                    text: "Couldn't load " + memoryModel.scope_label + " memory"
+                    text: "Couldn't load " + activeMemoryModel.scope_label + " memory"
                     font.family: Theme.uiFonts[0]
                     font.pixelSize: Theme.fontSize.h3
                     color: Theme.colors.textPrimary
@@ -219,23 +413,25 @@ Rectangle {
                 }
 
                 Label {
-                    text: memoryModel.load_error
+                    objectName: "memoryLoadErrorText"
+                    text: activeMemoryModel.load_error
                     font.family: Theme.uiFonts[0]
                     font.pixelSize: Theme.fontSize.bodySm
                     color: Theme.colors.textMuted
                     Layout.alignment: Qt.AlignHCenter
                 }
 
-                Button {
+                AppButton {
+                    objectName: "memoryLoadErrorRetry"
                     text: "Retry"
-                    onClicked: memoryModel.select_scope(memoryModel.scope_key)
+                    onClicked: activeMemoryModel.reload_current()
                     Layout.alignment: Qt.AlignHCenter
                 }
             }
 
             // Empty state (no backup history)
             ColumnLayout {
-                visible: !!(memoryModel.current && memoryModel.is_empty && !memoryModel.has_backup_history)
+                visible: !!(activeMemoryModel.current && activeMemoryModel.is_empty && !activeMemoryModel.has_backup_history)
                 anchors.centerIn: parent
                 spacing: Theme.space.lg
 
@@ -247,7 +443,7 @@ Rectangle {
                 }
 
                 Label {
-                    text: "No " + memoryModel.scope_label + " memory yet"
+                    text: "No " + activeMemoryModel.scope_label + " memory yet"
                     font.family: Theme.uiFonts[0]
                     font.pixelSize: Theme.fontSize.h3
                     color: Theme.colors.textPrimary
@@ -264,16 +460,16 @@ Rectangle {
                     Layout.preferredWidth: 400
                 }
 
-                Button {
+                AppButton {
                     text: "Add the first note"
-                    onClicked: memoryModel.composing = true
+                    onClicked: activeMemoryModel.composing = true
                     Layout.alignment: Qt.AlignHCenter
                 }
             }
 
             // Empty state (has backup history)
             ColumnLayout {
-                visible: !!(memoryModel.current && memoryModel.is_empty && memoryModel.has_backup_history)
+                visible: !!(activeMemoryModel.current && activeMemoryModel.is_empty && activeMemoryModel.has_backup_history)
                 anchors.centerIn: parent
                 spacing: Theme.space.lg
 
@@ -285,7 +481,7 @@ Rectangle {
                 }
 
                 Label {
-                    text: "Nothing injected in " + memoryModel.scope_label + " memory"
+                    text: "Nothing injected in " + activeMemoryModel.scope_label + " memory"
                     font.family: Theme.uiFonts[0]
                     font.pixelSize: Theme.fontSize.h3
                     color: Theme.colors.textPrimary
@@ -305,25 +501,32 @@ Rectangle {
 
             // Content: main + sidebar (split horizontal)
             RowLayout {
-                visible: !!(memoryModel.current && !memoryModel.is_empty)
+                visible: !!(activeMemoryModel.current && !activeMemoryModel.is_empty)
                 anchors.fill: parent
+                anchors.topMargin: memoryRefreshErrorBanner.visible ? memoryRefreshErrorBanner.height + Theme.space.sm : 0
                 spacing: 0
 
                 // Main content (left)
-                ScrollView {
+                Flickable {
+                    id: memoryFlick
+                    objectName: "memoryFlick"
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                    contentWidth: width
+                    contentHeight: memoryContent.implicitHeight + Theme.space.xl * 2
                     clip: true
+                    boundsBehavior: Flickable.StopAtBounds
 
                     ColumnLayout {
-                        width: parent.width
+                        id: memoryContent
+                        width: Math.max(0, memoryFlick.width - Theme.space.xl * 2)
+                        x: Theme.space.xl
+                        y: Theme.space.xl
                         spacing: Theme.space.xl
-                        anchors.margins: Theme.space.xl
 
                         // Summary section
                         ColumnLayout {
-                            visible: !!(memoryModel.current && memoryModel.current.summary)
+                            visible: !!(activeMemoryModel.current && activeMemoryModel.current.summary)
                             Layout.fillWidth: true
                             spacing: Theme.space.md
 
@@ -339,7 +542,7 @@ Rectangle {
                                 }
 
                                 Rectangle {
-                                    visible: !!(memoryModel.current && memoryModel.current.hasSummary)
+                                    visible: !!(activeMemoryModel.current && activeMemoryModel.current.hasSummary)
                                     implicitWidth: distilledLabel.implicitWidth + Theme.space.sm * 2
                                     implicitHeight: 18
                                     radius: Theme.radius.sm
@@ -360,7 +563,7 @@ Rectangle {
 
                             Rectangle {
                                 Layout.fillWidth: true
-                                implicitHeight: summaryBlocks.implicitHeight
+                                implicitHeight: summaryBlocks.implicitHeight + Theme.space.lg * 2
                                 color: Theme.colors.bgRaised
                                 radius: Theme.radius.md
                                 border.width: 1
@@ -372,14 +575,14 @@ Rectangle {
                                     anchors.margins: Theme.space.lg
                                     anchors.left: parent.left
                                     anchors.top: parent.top
-                                    blocks: memoryModel.current ? parseMarkdown(memoryModel.current.summary || "") : []
+                                    blocks: activeMemoryModel.current ? parseMarkdown(activeMemoryModel.current.summary || "") : []
                                 }
                             }
                         }
 
                         // Saved notes (ad-hoc) section
                         ColumnLayout {
-                            visible: !!(memoryModel.current && memoryModel.current.adHoc && memoryModel.current.adHoc.length > 0)
+                            visible: !!(activeMemoryModel.current && activeMemoryModel.current.adHoc && activeMemoryModel.current.adHoc.length > 0)
                             Layout.fillWidth: true
                             spacing: Theme.space.md
 
@@ -395,7 +598,7 @@ Rectangle {
                                 }
 
                                 Label {
-                                    text: memoryModel.current ? memoryModel.current.adHoc.length : 0
+                                    text: activeMemoryModel.current ? activeMemoryModel.current.adHoc.length : 0
                                     font.family: Theme.uiFonts[0]
                                     font.pixelSize: Theme.fontSize.label
                                     color: Theme.colors.textGhost
@@ -420,10 +623,10 @@ Rectangle {
                             }
 
                             Repeater {
-                                model: memoryModel.current ? memoryModel.current.adHoc : []
+                                model: activeMemoryModel.current ? activeMemoryModel.current.adHoc : []
                                 delegate: Rectangle {
                                     Layout.fillWidth: true
-                                    implicitHeight: adHocRow.implicitHeight
+                                    implicitHeight: adHocRow.implicitHeight + Theme.space.lg * 2
                                     color: Theme.colors.bgRaised
                                     radius: Theme.radius.md
                                     border.width: 1
@@ -444,30 +647,45 @@ Rectangle {
                                             spacing: Theme.space.xs
                                             Layout.alignment: Qt.AlignTop
 
-                                            Button {
-                                                text: memoryModel.moving_note === modelData.index ? "Moving…" : "Move"
-                                                enabled: memoryModel.moving_note !== modelData.index
-                                                onClicked: memoryModel.open_move(modelData.text, modelData.index)
+                                            AppButton {
+                                                objectName: "memoryAdHocMoveButton_" + modelData.index
+                                                text: activeMemoryModel.moving_note === modelData.index ? "Moving…" : "Move"
+                                                enabled: !activeMemoryModel.destructive_action_pending
+                                                compact: true
+                                                toolTipText: "Move saved note"
+                                                onClicked: activeMemoryModel.open_move(modelData.text, modelData.index)
                                             }
 
-                                            Button {
-                                                visible: memoryModel.confirm_remove_ad_hoc !== modelData.index
-                                                text: "Remove"
-                                                onClicked: memoryModel.confirm_remove_ad_hoc = modelData.index
+                                            AppButton {
+                                                objectName: "memoryAdHocRemoveButton_" + modelData.index
+                                                visible: activeMemoryModel.confirm_remove_ad_hoc !== modelData.index
+                                                text: activeMemoryModel.removing_ad_hoc === modelData.index ? "Removing…" : "Remove"
+                                                enabled: !activeMemoryModel.destructive_action_pending
+                                                compact: true
+                                                variant: "danger"
+                                                toolTipText: "Remove saved note"
+                                                onClicked: activeMemoryModel.confirm_remove_ad_hoc = modelData.index
                                             }
 
-                                            Button {
-                                                visible: memoryModel.confirm_remove_ad_hoc === modelData.index
-                                                text: memoryModel.removing_ad_hoc === modelData.index ? "Removing…" : "Confirm"
-                                                enabled: memoryModel.removing_ad_hoc !== modelData.index
-                                                onClicked: memoryModel.remove_ad_hoc(modelData.index)
+                                            AppButton {
+                                                objectName: "memoryAdHocRemoveConfirmButton_" + modelData.index
+                                                visible: activeMemoryModel.confirm_remove_ad_hoc === modelData.index
+                                                text: activeMemoryModel.removing_ad_hoc === modelData.index ? "Removing…" : "Confirm"
+                                                enabled: !activeMemoryModel.destructive_action_pending
+                                                compact: true
+                                                variant: "danger"
+                                                toolTipText: "Confirm saved note removal"
+                                                onClicked: activeMemoryModel.remove_ad_hoc(modelData.index)
                                             }
 
-                                            Button {
-                                                visible: memoryModel.confirm_remove_ad_hoc === modelData.index
+                                            AppButton {
+                                                objectName: "memoryAdHocRemoveCancelButton_" + modelData.index
+                                                visible: activeMemoryModel.confirm_remove_ad_hoc === modelData.index
                                                 text: "Cancel"
-                                                enabled: memoryModel.removing_ad_hoc !== modelData.index
-                                                onClicked: memoryModel.confirm_remove_ad_hoc = -1
+                                                enabled: !activeMemoryModel.destructive_action_pending
+                                                compact: true
+                                                toolTipText: "Cancel saved note removal"
+                                                onClicked: activeMemoryModel.confirm_remove_ad_hoc = -1
                                             }
                                         }
                                     }
@@ -492,7 +710,7 @@ Rectangle {
                                 }
 
                                 Label {
-                                    text: memoryModel.current ? memoryModel.current.noteCount : 0
+                                    text: String(root.memoryNoteCount(activeMemoryModel.current))
                                     font.family: Theme.uiFonts[0]
                                     font.pixelSize: Theme.fontSize.label
                                     color: Theme.colors.textGhost
@@ -500,7 +718,7 @@ Rectangle {
                             }
 
                             Label {
-                                visible: !!(memoryModel.current && memoryModel.current.noteCount === 0)
+                                visible: !!(activeMemoryModel.current && root.memoryNoteCount(activeMemoryModel.current) === 0)
                                 text: "No distilled notes in this scope yet."
                                 font.family: Theme.uiFonts[0]
                                 font.pixelSize: Theme.fontSize.bodySm
@@ -508,10 +726,10 @@ Rectangle {
                             }
 
                             Repeater {
-                                model: memoryModel.current ? memoryModel.current.notes : []
+                                model: activeMemoryModel.current ? activeMemoryModel.current.notes : []
                                 delegate: Rectangle {
                                     Layout.fillWidth: true
-                                    implicitHeight: noteRow.implicitHeight
+                                    implicitHeight: noteRow.implicitHeight + Theme.space.lg * 2
                                     color: Theme.colors.bgRaised
                                     radius: Theme.radius.md
                                     border.width: 1
@@ -532,30 +750,45 @@ Rectangle {
                                             spacing: Theme.space.xs
                                             Layout.alignment: Qt.AlignTop
 
-                                            Button {
-                                                text: memoryModel.moving_note === modelData.index ? "Moving…" : "Move"
-                                                enabled: memoryModel.moving_note !== modelData.index
-                                                onClicked: memoryModel.open_move(modelData.text, modelData.index)
+                                            AppButton {
+                                                objectName: "memoryNoteMoveButton_" + modelData.index
+                                                text: activeMemoryModel.moving_note === modelData.index ? "Moving…" : "Move"
+                                                enabled: !activeMemoryModel.destructive_action_pending
+                                                compact: true
+                                                toolTipText: "Move distilled note"
+                                                onClicked: activeMemoryModel.open_move(modelData.text, modelData.index)
                                             }
 
-                                            Button {
-                                                visible: memoryModel.confirm_remove_note !== modelData.index
-                                                text: "Remove"
-                                                onClicked: memoryModel.confirm_remove_note = modelData.index
+                                            AppButton {
+                                                objectName: "memoryNoteRemoveButton_" + modelData.index
+                                                visible: activeMemoryModel.confirm_remove_note !== modelData.index
+                                                text: activeMemoryModel.removing_note === modelData.index ? "Removing…" : "Remove"
+                                                enabled: !activeMemoryModel.destructive_action_pending
+                                                compact: true
+                                                variant: "danger"
+                                                toolTipText: "Remove distilled note"
+                                                onClicked: activeMemoryModel.confirm_remove_note = modelData.index
                                             }
 
-                                            Button {
-                                                visible: memoryModel.confirm_remove_note === modelData.index
-                                                text: memoryModel.removing_note === modelData.index ? "Removing…" : "Confirm"
-                                                enabled: memoryModel.removing_note !== modelData.index
-                                                onClicked: memoryModel.remove_note(modelData.index)
+                                            AppButton {
+                                                objectName: "memoryNoteRemoveConfirmButton_" + modelData.index
+                                                visible: activeMemoryModel.confirm_remove_note === modelData.index
+                                                text: activeMemoryModel.removing_note === modelData.index ? "Removing…" : "Confirm"
+                                                enabled: !activeMemoryModel.destructive_action_pending
+                                                compact: true
+                                                variant: "danger"
+                                                toolTipText: "Confirm distilled note removal"
+                                                onClicked: activeMemoryModel.remove_note(modelData.index)
                                             }
 
-                                            Button {
-                                                visible: memoryModel.confirm_remove_note === modelData.index
+                                            AppButton {
+                                                objectName: "memoryNoteRemoveCancelButton_" + modelData.index
+                                                visible: activeMemoryModel.confirm_remove_note === modelData.index
                                                 text: "Cancel"
-                                                enabled: memoryModel.removing_note !== modelData.index
-                                                onClicked: memoryModel.confirm_remove_note = -1
+                                                enabled: !activeMemoryModel.destructive_action_pending
+                                                compact: true
+                                                toolTipText: "Cancel distilled note removal"
+                                                onClicked: activeMemoryModel.confirm_remove_note = -1
                                             }
                                         }
                                     }
@@ -563,6 +796,8 @@ Rectangle {
                             }
                         }
                     }
+
+                    ScrollBar.vertical: ScrollBar {}
                 }
 
                 // Sidebar (right)
@@ -573,19 +808,25 @@ Rectangle {
                     border.width: 1
                     border.color: Theme.colors.borderHairline
 
-                    ScrollView {
+                    Flickable {
+                        id: memorySidebarFlick
+                        objectName: "memorySidebarFlick"
                         anchors.fill: parent
-                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                        contentWidth: width
+                        contentHeight: sidebarContent.implicitHeight + Theme.space.xl * 2
                         clip: true
+                        boundsBehavior: Flickable.StopAtBounds
 
                         ColumnLayout {
-                            width: parent.width
+                            id: sidebarContent
+                            width: Math.max(0, memorySidebarFlick.width - Theme.space.xl * 2)
+                            x: Theme.space.xl
+                            y: Theme.space.xl
                             spacing: Theme.space.xl
-                            anchors.margins: Theme.space.xl
 
                             // User profile section (global only)
                             ColumnLayout {
-                                visible: memoryModel.is_global
+                                visible: activeMemoryModel.is_global
                                 Layout.fillWidth: true
                                 spacing: Theme.space.md
 
@@ -618,10 +859,11 @@ Rectangle {
                                         }
                                     }
 
-                                    Button {
-                                        visible: !memoryModel.editing_profile
+                                    AppButton {
+                                        objectName: "memoryEditProfileButton"
+                                        visible: !activeMemoryModel.editing_profile
                                         text: "Edit"
-                                        onClicked: memoryModel.start_profile()
+                                        onClicked: activeMemoryModel.start_profile()
                                     }
                                 }
 
@@ -636,9 +878,9 @@ Rectangle {
 
                                 // Learned section
                                 Rectangle {
-                                    visible: !!(memoryModel.current && memoryModel.current.profileLearned)
+                                    visible: !!(activeMemoryModel.current && activeMemoryModel.current.profileLearned)
                                     Layout.fillWidth: true
-                                    implicitHeight: learnedCol.implicitHeight
+                                    implicitHeight: learnedCol.implicitHeight + Theme.space.lg * 2
                                     color: Theme.colors.bgRaised
                                     radius: Theme.radius.md
                                     border.width: 1
@@ -650,8 +892,9 @@ Rectangle {
                                         anchors.margins: Theme.space.lg
                                         spacing: Theme.space.sm
 
-                                        RowLayout {
-                                            spacing: Theme.space.sm
+                                        ColumnLayout {
+                                            spacing: 2
+                                            Layout.fillWidth: true
 
                                             Label {
                                                 text: "✧ learned by eigen"
@@ -662,23 +905,25 @@ Rectangle {
                                             }
 
                                             Label {
-                                                text: "auto-maintained from your sessions"
+                                                text: "Auto-maintained from your sessions"
                                                 font.family: Theme.uiFonts[0]
                                                 font.pixelSize: Theme.fontSize.micro
                                                 color: Theme.colors.textFaint
+                                                wrapMode: Text.Wrap
+                                                Layout.fillWidth: true
                                             }
                                         }
 
                                         MarkdownBlocks {
                                             Layout.fillWidth: true
-                                            blocks: memoryModel.current ? parseMarkdown(memoryModel.current.profileLearned || "") : []
+                                            blocks: activeMemoryModel.current ? parseMarkdown(activeMemoryModel.current.profileLearned || "") : []
                                         }
                                     }
                                 }
 
                                 // Profile editor
                                 ColumnLayout {
-                                    visible: memoryModel.editing_profile
+                                    visible: activeMemoryModel.editing_profile
                                     Layout.fillWidth: true
                                     spacing: Theme.space.md
 
@@ -689,8 +934,10 @@ Rectangle {
 
                                         TextArea {
                                             id: profileTextArea
-                                            text: memoryModel.profile_draft
+                                            objectName: "memoryProfileTextArea"
+                                            text: activeMemoryModel.profile_draft
                                             placeholderText: "Add your own notes — eigen keeps the rest current…"
+                                            placeholderTextColor: Theme.colors.textGhost
                                             font.family: Theme.uiFonts[0]
                                             font.pixelSize: Theme.fontSize.bodySm
                                             color: Theme.colors.textPrimary
@@ -702,31 +949,48 @@ Rectangle {
                                                 radius: Theme.radius.md
                                             }
 
-                                            onTextChanged: memoryModel.profile_draft = text
+                                            onTextChanged: activeMemoryModel.profile_draft = text
+
+                                            Keys.onPressed: (event) => {
+                                                if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && (event.modifiers & Qt.ControlModifier)) {
+                                                    if (!activeMemoryModel.saving_profile) {
+                                                        activeMemoryModel.save_profile()
+                                                    }
+                                                    event.accepted = true
+                                                } else if (event.key === Qt.Key_Escape) {
+                                                    if (!activeMemoryModel.saving_profile) {
+                                                        root.cancelProfileEdit()
+                                                    }
+                                                    event.accepted = true
+                                                }
+                                            }
                                         }
                                     }
 
                                     RowLayout {
                                         spacing: Theme.space.sm
 
-                                        Button {
+                                        AppButton {
+                                            objectName: "memoryCancelProfileButton"
                                             text: "Cancel"
-                                            onClicked: memoryModel.editing_profile = false
+                                            enabled: !activeMemoryModel.saving_profile
+                                            onClicked: root.cancelProfileEdit()
                                         }
 
-                                        Button {
-                                            text: memoryModel.saving_profile ? "Saving…" : "Save"
-                                            enabled: !memoryModel.saving_profile
-                                            onClicked: memoryModel.save_profile()
+                                        AppButton {
+                                            objectName: "memorySaveProfileButton"
+                                            text: activeMemoryModel.saving_profile ? "Saving…" : "Save"
+                                            enabled: !activeMemoryModel.saving_profile
+                                            onClicked: activeMemoryModel.save_profile()
                                         }
                                     }
                                 }
 
                                 // Profile view (not editing)
                                 Rectangle {
-                                    visible: !!(!memoryModel.editing_profile && memoryModel.current && memoryModel.current.profile)
+                                    visible: !!(!activeMemoryModel.editing_profile && activeMemoryModel.current && activeMemoryModel.current.profile)
                                     Layout.fillWidth: true
-                                    implicitHeight: profileBlocks.implicitHeight
+                                    implicitHeight: profileBlocks.implicitHeight + Theme.space.lg * 2
                                     color: Theme.colors.bgRaised
                                     radius: Theme.radius.md
                                     border.width: 1
@@ -738,12 +1002,12 @@ Rectangle {
                                         anchors.margins: Theme.space.lg
                                         anchors.left: parent.left
                                         anchors.top: parent.top
-                                        blocks: memoryModel.current ? parseMarkdown(memoryModel.current.profile || "") : []
+                                        blocks: activeMemoryModel.current ? parseMarkdown(activeMemoryModel.current.profile || "") : []
                                     }
                                 }
 
                                 Label {
-                                    visible: !memoryModel.editing_profile && (!memoryModel.current || !memoryModel.current.profile)
+                                    visible: !activeMemoryModel.editing_profile && (!activeMemoryModel.current || !activeMemoryModel.current.profile)
                                     text: "Nothing learned yet. Add your own."
                                     font.family: Theme.uiFonts[0]
                                     font.pixelSize: Theme.fontSize.bodySm
@@ -752,7 +1016,7 @@ Rectangle {
                                     MouseArea {
                                         anchors.fill: parent
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: memoryModel.start_profile()
+                                        onClicked: activeMemoryModel.start_profile()
                                     }
                                 }
                             }
@@ -774,7 +1038,7 @@ Rectangle {
                                     }
 
                                     Rectangle {
-                                        visible: !!(memoryModel.current && memoryModel.current.banList && memoryModel.current.banList.length > 0)
+                                        visible: !!(activeMemoryModel.current && activeMemoryModel.current.banList && activeMemoryModel.current.banList.length > 0)
                                         implicitWidth: enforcedLabel.implicitWidth + Theme.space.sm * 2
                                         implicitHeight: 18
                                         radius: Theme.radius.sm
@@ -792,24 +1056,27 @@ Rectangle {
                                         }
                                     }
 
-                                    Button {
-                                        visible: !memoryModel.adding_ban
+                                    AppButton {
+                                        objectName: "memoryAddBanButton"
+                                        visible: !activeMemoryModel.adding_ban
                                         text: "Add"
-                                        onClicked: memoryModel.adding_ban = true
+                                        onClicked: activeMemoryModel.adding_ban = true
                                     }
                                 }
 
                                 // Add ban form
                                 ColumnLayout {
-                                    visible: memoryModel.adding_ban
+                                    visible: activeMemoryModel.adding_ban
                                     Layout.fillWidth: true
                                     spacing: Theme.space.md
 
                                     TextField {
                                         id: banTitleField
+                                        objectName: "memoryBanTitleInput"
                                         Layout.fillWidth: true
                                         placeholderText: "Short title"
-                                        text: memoryModel.ban_title
+                                        placeholderTextColor: Theme.colors.textGhost
+                                        text: activeMemoryModel.ban_title
                                         font.family: Theme.uiFonts[0]
                                         font.pixelSize: Theme.fontSize.bodySm
                                         color: Theme.colors.textPrimary
@@ -820,7 +1087,19 @@ Rectangle {
                                             radius: Theme.radius.md
                                         }
 
-                                        onTextChanged: memoryModel.ban_title = text
+                                        onTextChanged: activeMemoryModel.ban_title = text
+
+                                        Keys.onPressed: (event) => {
+                                            if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && (event.modifiers & Qt.ControlModifier)) {
+                                                root.saveBanIfReady()
+                                                event.accepted = true
+                                            } else if (event.key === Qt.Key_Escape) {
+                                                if (!activeMemoryModel.saving_ban) {
+                                                    root.cancelBanEdit()
+                                                }
+                                                event.accepted = true
+                                            }
+                                        }
                                     }
 
                                     ScrollView {
@@ -830,8 +1109,10 @@ Rectangle {
 
                                         TextArea {
                                             id: banRuleTextArea
-                                            text: memoryModel.ban_rule
-                                            placeholderText: "What the agent must not do (" + memoryModel.scope_label + " scope)…"
+                                            objectName: "memoryBanRuleTextArea"
+                                            text: activeMemoryModel.ban_rule
+                                            placeholderText: "What the agent must not do (" + activeMemoryModel.scope_label + " scope)…"
+                                            placeholderTextColor: Theme.colors.textGhost
                                             font.family: Theme.uiFonts[0]
                                             font.pixelSize: Theme.fontSize.bodySm
                                             color: Theme.colors.textPrimary
@@ -843,36 +1124,47 @@ Rectangle {
                                                 radius: Theme.radius.md
                                             }
 
-                                            onTextChanged: memoryModel.ban_rule = text
+                                            onTextChanged: activeMemoryModel.ban_rule = text
+
+                                            Keys.onPressed: (event) => {
+                                                if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && (event.modifiers & Qt.ControlModifier)) {
+                                                    root.saveBanIfReady()
+                                                    event.accepted = true
+                                                } else if (event.key === Qt.Key_Escape) {
+                                                    if (!activeMemoryModel.saving_ban) {
+                                                        root.cancelBanEdit()
+                                                    }
+                                                    event.accepted = true
+                                                }
+                                            }
                                         }
                                     }
 
                                     RowLayout {
                                         spacing: Theme.space.sm
 
-                                        Button {
+                                        AppButton {
+                                            objectName: "memoryCancelBanButton"
                                             text: "Cancel"
-                                            onClicked: {
-                                                memoryModel.adding_ban = false
-                                                memoryModel.ban_title = ""
-                                                memoryModel.ban_rule = ""
-                                            }
+                                            enabled: !activeMemoryModel.saving_ban
+                                            onClicked: root.cancelBanEdit()
                                         }
 
-                                        Button {
-                                            text: memoryModel.saving_ban ? "Saving…" : "Save ban"
-                                            enabled: memoryModel.ban_title.trim().length > 0 && memoryModel.ban_rule.trim().length > 0 && !memoryModel.saving_ban
-                                            onClicked: memoryModel.add_ban()
+                                        AppButton {
+                                            objectName: "memorySaveBanButton"
+                                            text: activeMemoryModel.saving_ban ? "Saving…" : "Save ban"
+                                            enabled: activeMemoryModel.ban_title.trim().length > 0 && activeMemoryModel.ban_rule.trim().length > 0 && !activeMemoryModel.saving_ban
+                                            onClicked: root.saveBanIfReady()
                                         }
                                     }
                                 }
 
                                 // Bans list
                                 Repeater {
-                                    model: memoryModel.current ? memoryModel.current.banList : []
+                                    model: activeMemoryModel.current ? activeMemoryModel.current.banList : []
                                     delegate: Rectangle {
                                         Layout.fillWidth: true
-                                        implicitHeight: banRow.implicitHeight
+                                        implicitHeight: banRow.implicitHeight + Theme.space.lg * 2
                                         color: Theme.colors.bgRaised
                                         radius: Theme.radius.md
                                         border.width: 1
@@ -908,10 +1200,11 @@ Rectangle {
                                                 }
                                             }
 
-                                            Button {
-                                                text: memoryModel.removing_ban === modelData.title ? "…" : "✕"
-                                                enabled: memoryModel.removing_ban !== modelData.title
-                                                onClicked: memoryModel.remove_ban(modelData.title)
+                                            AppButton {
+                                                objectName: "memoryBanRemoveButton_" + root.safeObjectName(modelData.title)
+                                                text: activeMemoryModel.removing_ban === modelData.title ? "…" : "✕"
+                                                enabled: !activeMemoryModel.destructive_action_pending
+                                                onClicked: activeMemoryModel.remove_ban(modelData.title)
                                                 Layout.preferredWidth: 24
                                                 Layout.preferredHeight: 24
                                                 flat: true
@@ -921,7 +1214,7 @@ Rectangle {
                                 }
 
                                 Label {
-                                    visible: !memoryModel.adding_ban && (!memoryModel.current || !memoryModel.current.banList || memoryModel.current.banList.length === 0)
+                                    visible: !activeMemoryModel.adding_ban && (!activeMemoryModel.current || !activeMemoryModel.current.banList || activeMemoryModel.current.banList.length === 0)
                                     text: "No bans in this scope. Add one."
                                     font.family: Theme.uiFonts[0]
                                     font.pixelSize: Theme.fontSize.bodySm
@@ -930,7 +1223,7 @@ Rectangle {
                                     MouseArea {
                                         anchors.fill: parent
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: memoryModel.adding_ban = true
+                                        onClicked: activeMemoryModel.adding_ban = true
                                     }
                                 }
                             }
@@ -962,7 +1255,7 @@ Rectangle {
                                     }
 
                                     Label {
-                                        text: memoryModel.current ? memoryModel.current.noteCount : 0
+                                        text: String(root.memoryNoteCount(activeMemoryModel.current))
                                         font.family: Theme.uiFonts[0]
                                         font.pixelSize: Theme.fontSize.bodySm
                                         color: Theme.colors.textSecondary
@@ -978,7 +1271,7 @@ Rectangle {
                                     }
 
                                     Label {
-                                        text: memoryModel.current && memoryModel.current.adHoc ? memoryModel.current.adHoc.length : 0
+                                        text: String(root.memoryAdHocCount(activeMemoryModel.current))
                                         font.family: Theme.uiFonts[0]
                                         font.pixelSize: Theme.fontSize.bodySm
                                         color: Theme.colors.textSecondary
@@ -998,7 +1291,7 @@ Rectangle {
                                         spacing: Theme.space.xs
 
                                         Label {
-                                            visible: !memoryModel.current || memoryModel.current.backups === 0
+                                            visible: !activeMemoryModel.current || activeMemoryModel.current.backups === 0
                                             text: "0"
                                             font.family: Theme.uiFonts[0]
                                             font.pixelSize: Theme.fontSize.bodySm
@@ -1007,9 +1300,9 @@ Rectangle {
                                             Layout.fillWidth: true
                                         }
 
-                                        Button {
-                                            visible: !!(memoryModel.current && memoryModel.current.backups > 0)
-                                            text: memoryModel.current ? memoryModel.current.backups + " ▸" : "0"
+                                        AppButton {
+                                            visible: !!(activeMemoryModel.current && activeMemoryModel.current.backups > 0)
+                                            text: activeMemoryModel.current ? activeMemoryModel.current.backups + " ▸" : "0"
                                             flat: true
                                             font.family: Theme.uiFonts[0]
                                             font.pixelSize: Theme.fontSize.bodySm
@@ -1019,7 +1312,7 @@ Rectangle {
                                                 color: Theme.colors.brand
                                                 horizontalAlignment: Text.AlignRight
                                             }
-                                            onClicked: memoryModel.toggle_backups()
+                                            onClicked: activeMemoryModel.toggle_backups()
                                             Layout.fillWidth: true
                                         }
                                     }
@@ -1032,7 +1325,7 @@ Rectangle {
                                     }
 
                                     Label {
-                                        text: memoryModel.current ? (memoryModel.current.bytes / 1024).toFixed(1) + " KB" : "0 KB"
+                                        text: (root.memoryBytes(activeMemoryModel.current) / 1024).toFixed(1) + " KB"
                                         font.family: Theme.uiFonts[0]
                                         font.pixelSize: Theme.fontSize.bodySm
                                         color: Theme.colors.textSecondary
@@ -1043,12 +1336,12 @@ Rectangle {
 
                                 // Backups list
                                 ColumnLayout {
-                                    visible: memoryModel.backups_open
+                                    visible: activeMemoryModel.backups_open
                                     Layout.fillWidth: true
                                     spacing: Theme.space.sm
 
                                     Label {
-                                        visible: memoryModel.backups_loading && memoryModel.backup_paths.length === 0
+                                        visible: activeMemoryModel.backups_loading && activeMemoryModel.backup_paths.length === 0
                                         text: "Loading backups…"
                                         font.family: Theme.uiFonts[0]
                                         font.pixelSize: Theme.fontSize.bodySm
@@ -1056,7 +1349,7 @@ Rectangle {
                                     }
 
                                     Label {
-                                        visible: !memoryModel.backups_loading && memoryModel.backup_paths.length === 0
+                                        visible: !activeMemoryModel.backups_loading && activeMemoryModel.backup_paths.length === 0
                                         text: "No backup snapshots on disk."
                                         font.family: Theme.uiFonts[0]
                                         font.pixelSize: Theme.fontSize.bodySm
@@ -1064,10 +1357,10 @@ Rectangle {
                                     }
 
                                     Repeater {
-                                        model: memoryModel.backup_paths
+                                        model: activeMemoryModel.backup_paths
                                         delegate: Rectangle {
                                             Layout.fillWidth: true
-                                            implicitHeight: backupCol.implicitHeight
+                                            implicitHeight: backupCol.implicitHeight + Theme.space.sm * 2
                                             color: Theme.colors.bgRaised
                                             radius: Theme.radius.sm
                                             border.width: 1
@@ -1080,14 +1373,14 @@ Rectangle {
                                                 spacing: 2
 
                                                 Label {
-                                                    text: memoryModel.backup_when(modelData)
+                                                    text: activeMemoryModel.backup_when(modelData)
                                                     font.family: Theme.uiFonts[0]
                                                     font.pixelSize: Theme.fontSize.bodySm
                                                     color: Theme.colors.textSecondary
                                                 }
 
                                                 Label {
-                                                    text: memoryModel.backup_name(modelData)
+                                                    text: activeMemoryModel.backup_name(modelData)
                                                     font.family: Theme.uiFonts[0]
                                                     font.pixelSize: Theme.fontSize.micro
                                                     color: Theme.colors.textFaint
@@ -1100,6 +1393,8 @@ Rectangle {
                                 }
                             }
                         }
+
+                        ScrollBar.vertical: ScrollBar {}
                     }
                 }
             }
@@ -1109,21 +1404,53 @@ Rectangle {
     // Move-to-scope dialog
     Dialog {
         id: moveDialog
-        visible: memoryModel.move_open
+        visible: moveDialogModel() ? moveDialogModel().move_open : false
         modal: true
         anchors.centerIn: parent
         width: 420
-        title: "Move note to…"
+        padding: Theme.space.lg
+        standardButtons: Dialog.NoButton
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
-        onClosed: memoryModel.move_open = false
+        onClosed: {
+            var model = moveDialogModel()
+            if (model) {
+                model.move_open = false
+            }
+        }
 
-        ColumnLayout {
-            width: parent.width
+        background: Rectangle {
+            color: Theme.colors.bgWell
+            radius: Theme.radius.md
+            border.width: 1
+            border.color: Theme.colors.borderSubtle
+        }
+
+        header: Rectangle {
+            color: Theme.colors.bgWell
+            implicitHeight: 44
+            radius: Theme.radius.md
+
+            Label {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: Theme.space.lg
+                anchors.rightMargin: Theme.space.lg
+                text: "Move note to..."
+                font.family: Theme.uiFonts[0]
+                font.pixelSize: Theme.fontSize.bodySm
+                font.weight: Theme.fontWeight.semibold
+                color: Theme.colors.textPrimary
+            }
+        }
+
+        contentItem: ColumnLayout {
             spacing: Theme.space.md
 
             Label {
-                visible: !!memoryModel.move_pending
-                text: memoryModel.move_pending ? memoryModel.move_pending.text : ""
+                visible: !!moveDialogPending()
+                text: moveDialogPending() ? moveDialogPending().text : ""
                 font.family: Theme.uiFonts[0]
                 font.pixelSize: Theme.fontSize.bodySm
                 color: Theme.colors.textSecondary
@@ -1137,7 +1464,7 @@ Rectangle {
             }
 
             Label {
-                visible: memoryModel.move_targets.length === 0
+                visible: moveDialogTargets().length === 0
                 text: "No other scope to move into."
                 font.family: Theme.uiFonts[0]
                 font.pixelSize: Theme.fontSize.bodySm
@@ -1145,12 +1472,21 @@ Rectangle {
             }
 
             Repeater {
-                model: memoryModel.move_targets
-                delegate: Button {
+                model: moveDialogTargets()
+                delegate: AppButton {
+                    objectName: "memoryMoveTargetButton_" + root.safeObjectName(modelData.key)
                     Layout.fillWidth: true
                     text: modelData.name
+                    toolTipText: "Move note to " + modelData.name
+                    enabled: {
+                        var model = moveDialogModel()
+                        return !!model && !model.destructive_action_pending
+                    }
                     onClicked: {
-                        memoryModel.move_to(modelData.key, modelData.name)
+                        var model = moveDialogModel()
+                        if (model) {
+                            model.move_to(modelData.key, modelData.name)
+                        }
                         moveDialog.close()
                     }
 
@@ -1167,7 +1503,7 @@ Rectangle {
 
                         Label {
                             visible: modelData.dir
-                            text: modelData.dir ? memoryModel.short_dir(modelData.dir) : ""
+                            text: modelData.dir && moveDialogModel() ? moveDialogModel().short_dir(modelData.dir) : ""
                             font.family: Theme.uiFonts[0]
                             font.pixelSize: Theme.fontSize.micro
                             color: Theme.colors.textFaint
@@ -1175,26 +1511,93 @@ Rectangle {
                     }
                 }
             }
-        }
 
-        standardButtons: Dialog.Close
+            AppButton {
+                objectName: "memoryMoveDialogCloseButton"
+                text: "Close"
+                toolTipText: "Close move dialog"
+                Layout.alignment: Qt.AlignRight
+                Layout.preferredWidth: 84
+                onClicked: moveDialog.close()
+            }
+        }
     }
 
     // Helper: find scope index by key
     function findScopeIndex(key) {
-        for (var i = 0; i < memoryModel.scopes.length; i++) {
-            if (memoryModel.scopes[i].key === key) {
+        for (var i = 0; i < activeMemoryModel.scopes.length; i++) {
+            if (activeMemoryModel.scopes[i].key === key) {
                 return i
             }
         }
         return 0
     }
 
+    function safeObjectName(value) {
+        return String(value || "").replace(/[^A-Za-z0-9_]+/g, "_")
+    }
+
     // Helper: parse markdown (calls Python markdown parser via context property)
     function parseMarkdown(source) {
-        if (!source || !markdownParser) {
+        if (!source || typeof markdownParser === "undefined" || !markdownParser) {
             return [{type: "para", content: source || ""}]
         }
         return markdownParser.parse(source)
+    }
+
+    function moveDialogModel() {
+        if (typeof activeMemoryModel === "undefined" || activeMemoryModel === null) {
+            return null
+        }
+        return activeMemoryModel
+    }
+
+    function moveDialogPending() {
+        var model = moveDialogModel()
+        return model ? model.move_pending : null
+    }
+
+    function moveDialogTargets() {
+        var model = moveDialogModel()
+        return model && model.move_targets ? model.move_targets : []
+    }
+
+    function saveMemoryNoteIfReady() {
+        if (activeMemoryModel.draft.trim().length > 0 && !activeMemoryModel.saving) {
+            activeMemoryModel.save_note()
+        }
+    }
+
+    function cancelMemoryNoteCompose() {
+        if (activeMemoryModel.saving) {
+            return
+        }
+        activeMemoryModel.composing = false
+        activeMemoryModel.draft = ""
+    }
+
+    function cancelProfileEdit() {
+        if (activeMemoryModel.saving_profile) {
+            return
+        }
+        activeMemoryModel.profile_draft = activeMemoryModel.current ? (activeMemoryModel.current.profile || "") : ""
+        activeMemoryModel.editing_profile = false
+    }
+
+    function saveBanIfReady() {
+        if (activeMemoryModel.ban_title.trim().length > 0
+                && activeMemoryModel.ban_rule.trim().length > 0
+                && !activeMemoryModel.saving_ban) {
+            activeMemoryModel.add_ban()
+        }
+    }
+
+    function cancelBanEdit() {
+        if (activeMemoryModel.saving_ban) {
+            return
+        }
+        activeMemoryModel.adding_ban = false
+        activeMemoryModel.ban_title = ""
+        activeMemoryModel.ban_rule = ""
     }
 }

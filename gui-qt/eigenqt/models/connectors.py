@@ -15,6 +15,13 @@ from PySide6.QtCore import QObject, Property, Signal, Slot
 from eigenqt.rpc import RpcClient
 
 
+def _err_text(err) -> str:
+    """Extract a readable RPC error string."""
+    if isinstance(err, dict):
+        return err.get("message", "Unknown error")
+    return str(err) if err else "Unknown error"
+
+
 class ConnectorsModel(QObject):
     """Connectors model — integrations surface."""
 
@@ -32,6 +39,7 @@ class ConnectorsModel(QObject):
     confirm_remove_server_changed = Signal()
     google_busy_changed = Signal()
     obsidian_busy_changed = Signal()
+    action_error_changed = Signal()
     revuto_open_changed = Signal()
     reviewers_changed = Signal()
     revuto_busy_changed = Signal()
@@ -67,6 +75,7 @@ class ConnectorsModel(QObject):
         self._confirm_remove_server: dict[str, bool] = {}
         self._google_busy: bool = False
         self._obsidian_busy: bool = False
+        self._action_error: str = ""
         self._revuto_open: bool = False
         self._reviewers: list[dict] = []
         self._revuto_busy: dict[str, bool] = {}
@@ -85,9 +94,12 @@ class ConnectorsModel(QObject):
         self._srv_env: str = ""
         self._srv_secret: str = ""
         self._srv_saving: bool = False
+        self._load_seq: int = 0
+        self._connector_event_channel = "eigen:connector"
 
         # Load on connected
         self._client.connected.connect(self._on_connected)
+        self._client.event.connect(self._on_event)
 
     # Properties
     @Property("QVariant", notify=connectors_changed)
@@ -195,6 +207,16 @@ class ConnectorsModel(QObject):
         if self._obsidian_busy != value:
             self._obsidian_busy = value
             self.obsidian_busy_changed.emit()
+
+    @Property(str, notify=action_error_changed)
+    def action_error(self) -> str:
+        return self._action_error
+
+    @action_error.setter
+    def action_error(self, value: str):
+        if self._action_error != value:
+            self._action_error = value
+            self.action_error_changed.emit()
 
     @Property(bool, notify=revuto_open_changed)
     def revuto_open(self) -> bool:
@@ -355,6 +377,24 @@ class ConnectorsModel(QObject):
     # Methods
     def _on_connected(self):
         """Load data on daemon connection."""
+        self._client.subscribe([self._connector_event_channel])
+        self.load()
+
+    @Slot(str, dict)
+    def _on_event(self, channel: str, data: dict):
+        """Handle connector OAuth completion events from guiserver."""
+        if channel != self._connector_event_channel:
+            return
+        name = str((data or {}).get("name") or "").strip()
+        if name:
+            self._clear_connecting(name)
+        if not (data or {}).get("ok", False):
+            message = (data or {}).get("error") or "authorization failed"
+            self.action_error = (
+                f"Could not authorize {name}: {message}"
+                if name
+                else f"Connector authorization failed: {message}"
+            )
         self.load()
 
     @Slot()
@@ -363,56 +403,105 @@ class ConnectorsModel(QObject):
 
         RpcClient has no batch primitive — calls are id-multiplexed and
         already run concurrently on the wire; loading clears when the last
-        of the three lands (order-independent countdown).
+        of the three current-load calls lands (order-independent countdown).
         """
+        self._load_seq += 1
+        seq = self._load_seq
         self.loading = True
         self.load_error = ""
         pending = {"n": 3}
 
+        def is_current() -> bool:
+            return seq == self._load_seq
+
         def done_one():
+            if not is_current():
+                return
             pending["n"] -= 1
             if pending["n"] == 0:
                 self.loading = False
 
         def on_connectors(r):
+            if not is_current():
+                return
             if "error" in r:
-                self.load_error = str(r["error"])
+                self.load_error = _err_text(r["error"])
             else:
                 self.connectors = r.get("result") or {}
             done_one()
 
         def on_servers(r):
+            if not is_current():
+                return
             if "error" in r:
-                self.load_error = str(r["error"])
+                self.load_error = _err_text(r["error"])
             else:
                 self.servers = r.get("result") or {}
             done_one()
 
         def on_google(r):
+            if not is_current():
+                return
             if "error" in r:
-                self.load_error = str(r["error"])
+                self.load_error = _err_text(r["error"])
             else:
                 self.google_status = r.get("result") or {}
             done_one()
+
+        def on_obsidian(r):
+            if is_current():
+                self.obsidian_status = r.get("result") or {}
+
+        def on_revuto(r):
+            if is_current():
+                self.revuto_status = r.get("result") or {}
+
+        def on_secrets(r):
+            if is_current():
+                self.secrets_ok = bool(r.get("result", True))
 
         self._client.call("Connectors", callback=on_connectors)
         self._client.call("MCPServers", callback=on_servers)
         self._client.call("GoogleStatus", callback=on_google)
 
         # Best-effort loads for Obsidian/Revuto
-        self._client.call("ObsidianStatus", callback=lambda r: setattr(self, "obsidian_status", r.get("result") or {}))
-        self._client.call("RevutoStatus", callback=lambda r: setattr(self, "revuto_status", r.get("result") or {}))
-        self._client.call("MCPSecretsAvailable", callback=lambda r: setattr(self, "secrets_ok", bool(r.get("result", True))))
+        self._client.call("ObsidianStatus", callback=on_obsidian)
+        self._client.call("RevutoStatus", callback=on_revuto)
+        self._client.call("MCPSecretsAvailable", callback=on_secrets)
+
+    def _clear_busy(self, name: str):
+        self._busy.pop(name, None)
+        self.busy_changed.emit()
+
+    def _clear_connecting(self, name: str):
+        self._connecting.pop(name, None)
+        self.connecting_changed.emit()
+
+    def _clear_revuto_busy(self, repo: str):
+        self._revuto_busy.pop(repo, None)
+        self.revuto_busy_changed.emit()
+
+    def _fail_action(self, label: str, err):
+        self.action_error = f"{label}: {_err_text(err)}"
 
     @Slot(str)
     def add_connector(self, name: str):
         """Add a custom connector by name, URL, description."""
-        if not name.strip() or not self._add_url.strip():
-            print("Name and URL required")
+        if self._adding:
             return
+        if not name.strip() or not self._add_url.strip():
+            self.action_error = "Connector name and URL are required."
+            return
+        name = name.strip()
+        url = self._add_url.strip()
+        desc = self._add_desc.strip()
         self.adding = True
+        self.action_error = ""
 
-        def on_done(_):
+        def on_done(result):
+            if "error" in result:
+                on_error(result["error"])
+                return
             self._connecting[name] = True
             self.connecting_changed.emit()
             self.add_open = False
@@ -423,95 +512,120 @@ class ConnectorsModel(QObject):
             self.load()
 
         def on_error(err):
-            print(f"AddConnector error: {err}")
             self.adding = False
+            self.action_error = f"Could not add connector {name}: {_err_text(err)}"
 
         self._client.call(
             "AddConnector",
-            name.strip(),
-            self._add_url.strip(),
-            self._add_desc.strip(),
+            name,
+            url,
+            desc,
             callback=on_done,
-            error_callback=on_error,
         )
+
+    @Slot()
+    def cancel_add_connector(self):
+        """Close and clear the custom connector form."""
+        self.add_open = False
+        self.add_name = ""
+        self.add_url = ""
+        self.add_desc = ""
+        self.action_error = ""
 
     @Slot(str)
     def add_from_catalog(self, name: str):
         """Add a catalog connector by name."""
+        name = name.strip()
+        if not name or self._connecting.get(name):
+            return
         self._connecting[name] = True
         self.connecting_changed.emit()
+        self.action_error = ""
 
-        def on_done(_):
+        def on_done(result):
+            if "error" in result:
+                on_error(result["error"])
+                return
             self.load()
 
         def on_error(err):
-            del self._connecting[name]
-            self.connecting_changed.emit()
-            print(f"AddCatalogConnector error: {err}")
+            self._clear_connecting(name)
+            self._fail_action(f"Could not add {name}", err)
 
-        self._client.call(
-            "AddCatalogConnector", name, callback=on_done, error_callback=on_error
-        )
+        self._client.call("AddCatalogConnector", name, callback=on_done)
 
     @Slot(str)
     def connect_connector(self, name: str):
         """Initiate OAuth flow for a connector."""
+        name = name.strip()
+        if not name or self._busy.get(name) or self._connecting.get(name):
+            return
         self._connecting[name] = True
         self.connecting_changed.emit()
+        self.action_error = ""
 
         def on_error(err):
-            del self._connecting[name]
-            self.connecting_changed.emit()
-            print(f"ConnectConnector error: {err}")
+            self._clear_connecting(name)
+            self._fail_action(f"Could not connect {name}", err)
 
-        self._client.call("ConnectConnector", name, error_callback=on_error)
+        def on_done(result):
+            if "error" in result:
+                on_error(result["error"])
+
+        self._client.call("ConnectConnector", name, callback=on_done)
 
     @Slot(str)
     def disconnect_connector(self, name: str):
         """Disconnect a connector."""
+        if self._busy.get(name) or self._connecting.get(name):
+            return
         self._busy[name] = True
         self.busy_changed.emit()
+        self.action_error = ""
 
-        def on_done(_):
-            del self._busy[name]
-            self.busy_changed.emit()
+        def on_done(result):
+            if "error" in result:
+                on_error(result["error"])
+                return
+            self._clear_busy(name)
             self.load()
 
         def on_error(err):
-            del self._busy[name]
-            self.busy_changed.emit()
-            print(f"DisconnectConnector error: {err}")
+            self._clear_busy(name)
+            self._fail_action(f"Could not disconnect {name}", err)
 
-        self._client.call(
-            "DisconnectConnector", name, callback=on_done, error_callback=on_error
-        )
+        self._client.call("DisconnectConnector", name, callback=on_done)
 
     @Slot(str)
     def remove_connector(self, name: str):
         """Remove a connector (after inline confirm)."""
+        if self._busy.get(name) or self._connecting.get(name):
+            return
         self._busy[name] = True
         self.busy_changed.emit()
+        self.action_error = ""
         if name in self._confirm_remove_connector:
             del self._confirm_remove_connector[name]
             self.confirm_remove_connector_changed.emit()
 
-        def on_done(_):
-            del self._busy[name]
-            self.busy_changed.emit()
+        def on_done(result):
+            if "error" in result:
+                on_error(result["error"])
+                return
+            self._clear_busy(name)
             self.load()
 
         def on_error(err):
-            del self._busy[name]
-            self.busy_changed.emit()
-            print(f"RemoveConnector error: {err}")
+            self._clear_busy(name)
+            self._fail_action(f"Could not remove {name}", err)
 
-        self._client.call(
-            "RemoveConnector", name, callback=on_done, error_callback=on_error
-        )
+        self._client.call("RemoveConnector", name, callback=on_done)
 
     @Slot(str)
     def confirm_remove_connector_set(self, name: str):
         """Set confirm state for connector removal."""
+        if self._busy.get(name) or self._connecting.get(name):
+            return
         self._confirm_remove_connector[name] = True
         self.confirm_remove_connector_changed.emit()
 
@@ -525,49 +639,55 @@ class ConnectorsModel(QObject):
     @Slot(str, bool)
     def toggle_server(self, name: str, disabled: bool):
         """Enable/disable an MCP server."""
+        if self._busy.get(name):
+            return
         self._busy[name] = True
         self.busy_changed.emit()
+        self.action_error = ""
 
-        def on_done(_):
-            del self._busy[name]
-            self.busy_changed.emit()
+        def on_done(result):
+            if "error" in result:
+                on_error(result["error"])
+                return
+            self._clear_busy(name)
             self.load()
 
         def on_error(err):
-            del self._busy[name]
-            self.busy_changed.emit()
-            print(f"SetMCPServerDisabled error: {err}")
+            self._clear_busy(name)
+            self._fail_action(f"Could not update {name}", err)
 
-        self._client.call(
-            "SetMCPServerDisabled", name, disabled, callback=on_done, error_callback=on_error
-        )
+        self._client.call("SetMCPServerDisabled", name, disabled, callback=on_done)
 
     @Slot(str)
     def remove_server(self, name: str):
         """Remove an MCP server (after inline confirm)."""
+        if self._busy.get(name):
+            return
         self._busy[name] = True
         self.busy_changed.emit()
+        self.action_error = ""
         if name in self._confirm_remove_server:
             del self._confirm_remove_server[name]
             self.confirm_remove_server_changed.emit()
 
-        def on_done(_):
-            del self._busy[name]
-            self.busy_changed.emit()
+        def on_done(result):
+            if "error" in result:
+                on_error(result["error"])
+                return
+            self._clear_busy(name)
             self.load()
 
         def on_error(err):
-            del self._busy[name]
-            self.busy_changed.emit()
-            print(f"RemoveMCPServer error: {err}")
+            self._clear_busy(name)
+            self._fail_action(f"Could not remove MCP server {name}", err)
 
-        self._client.call(
-            "RemoveMCPServer", name, callback=on_done, error_callback=on_error
-        )
+        self._client.call("RemoveMCPServer", name, callback=on_done)
 
     @Slot(str)
     def confirm_remove_server_set(self, name: str):
         """Set confirm state for server removal."""
+        if self._busy.get(name):
+            return
         self._confirm_remove_server[name] = True
         self.confirm_remove_server_changed.emit()
 
@@ -581,10 +701,12 @@ class ConnectorsModel(QObject):
     @Slot()
     def save_local_server(self):
         """Save a local MCP server (stdio)."""
+        if self._srv_saving:
+            return
         name = (self._srv_name or "").strip()
         cmd = [c for c in (self._srv_command or "").strip().split() if c]
         if not name or not cmd:
-            print("Name and command required")
+            self.action_error = "MCP server name and command are required."
             return
 
         def split_lines(s: str) -> list[str]:
@@ -606,8 +728,12 @@ class ConnectorsModel(QObject):
         }
 
         self.srv_saving = True
+        self.action_error = ""
 
-        def on_done(_):
+        def on_done(result):
+            if "error" in result:
+                on_error(result["error"])
+                return
             self.srv_open = False
             self.srv_name = ""
             self.srv_command = ""
@@ -619,30 +745,48 @@ class ConnectorsModel(QObject):
 
         def on_error(err):
             self.srv_saving = False
-            print(f"SaveMCPServer error: {err}")
+            self.action_error = f"Could not save MCP server {name}: {_err_text(err)}"
 
-        self._client.call(
-            "SaveMCPServer", server_dto, callback=on_done, error_callback=on_error
-        )
+        self._client.call("SaveMCPServer", server_dto, callback=on_done)
+
+    @Slot()
+    def cancel_local_server(self):
+        """Close and clear the local MCP server form."""
+        self.srv_open = False
+        self.srv_name = ""
+        self.srv_command = ""
+        self.srv_desc = ""
+        self.srv_env = ""
+        self.srv_secret = ""
+        self.action_error = ""
+
+    @Slot()
+    def clear_action_error(self):
+        """Dismiss the current connector action error."""
+        self.action_error = ""
 
     @Slot(str)
     def choose_vault(self, path: str):
         """Choose Obsidian vault."""
+        if self._obsidian_busy:
+            return
         self.obsidian_busy = True
+        self.action_error = ""
 
         def on_done(result):
+            if "error" in result:
+                on_error(result["error"])
+                return
             self.obsidian_busy = False
-            if result:
+            if result.get("result"):
                 # Refresh Obsidian status
                 self._client.call("ObsidianStatus", callback=lambda r: setattr(self, "obsidian_status", r.get("result") or {}))
 
         def on_error(err):
             self.obsidian_busy = False
-            print(f"ChooseObsidianVault error: {err}")
+            self._fail_action("Could not choose Obsidian vault", err)
 
-        self._client.call(
-            "ChooseObsidianVault", path, callback=on_done, error_callback=on_error
-        )
+        self._client.call("ChooseObsidianVault", path, callback=on_done)
 
     @Slot()
     def toggle_revuto(self):
@@ -654,96 +798,108 @@ class ConnectorsModel(QObject):
     @Slot(str, bool)
     def revuto_pause(self, repo: str, paused: bool):
         """Pause/resume a revuto reviewer."""
+        if self._revuto_busy.get(repo):
+            return
         self._revuto_busy[repo] = True
         self.revuto_busy_changed.emit()
+        self.action_error = ""
 
-        def on_done(_):
-            if repo in self._revuto_busy:
-                del self._revuto_busy[repo]
-            self.revuto_busy_changed.emit()
+        def on_done(result):
+            if "error" in result:
+                on_error(result["error"])
+                return
+            self._clear_revuto_busy(repo)
             # Refresh reviewers + status
             self._client.call("RevutoReviewers", callback=lambda r: setattr(self, "reviewers", r.get("result") or []))
             self._client.call("RevutoStatus", callback=lambda r: setattr(self, "revuto_status", r.get("result") or {}))
 
         def on_error(err):
-            if repo in self._revuto_busy:
-                del self._revuto_busy[repo]
-            self.revuto_busy_changed.emit()
-            print(f"RevutoSetPaused error: {err}")
+            self._clear_revuto_busy(repo)
+            self._fail_action(f"Could not update {repo}", err)
 
-        self._client.call(
-            "RevutoSetPaused", repo, paused, callback=on_done, error_callback=on_error
-        )
+        self._client.call("RevutoSetPaused", repo, paused, callback=on_done)
 
     @Slot(str)
     def revuto_trigger(self, repo: str):
         """Trigger a revuto review."""
+        if self._revuto_busy.get(repo):
+            return
         self._revuto_busy[repo] = True
         self.revuto_busy_changed.emit()
+        self.action_error = ""
 
-        def on_done(_):
-            if repo in self._revuto_busy:
-                del self._revuto_busy[repo]
-            self.revuto_busy_changed.emit()
+        def on_done(result):
+            if "error" in result:
+                on_error(result["error"])
+                return
+            self._clear_revuto_busy(repo)
 
         def on_error(err):
-            if repo in self._revuto_busy:
-                del self._revuto_busy[repo]
-            self.revuto_busy_changed.emit()
-            print(f"RevutoTrigger error: {err}")
+            self._clear_revuto_busy(repo)
+            self._fail_action(f"Could not run review for {repo}", err)
 
-        self._client.call(
-            "RevutoTrigger", repo, "review", callback=on_done, error_callback=on_error
-        )
+        self._client.call("RevutoTrigger", repo, "review", callback=on_done)
 
     @Slot()
     def setup_google(self):
         """Setup Google (open Cloud Console + import client JSON)."""
+        if self._google_busy:
+            return
         self.google_busy = True
+        self.action_error = ""
 
-        def on_done(imported):
+        def on_done(result):
+            if "error" in result:
+                on_error(result["error"])
+                return
             self.google_busy = False
-            if imported:
+            if result.get("result"):
                 self.load()
 
         def on_error(err):
             self.google_busy = False
-            print(f"ImportGoogleClient error: {err}")
+            self._fail_action("Could not import Google client", err)
 
-        self._client.call(
-            "ImportGoogleClient", callback=on_done, error_callback=on_error
-        )
+        self._client.call("ImportGoogleClient", callback=on_done)
 
     @Slot()
     def connect_google(self):
         """Connect Google (OAuth flow)."""
+        if self._google_busy:
+            return
         self.google_busy = True
+        self.action_error = ""
 
-        def on_done(_):
+        def on_done(result):
+            if "error" in result:
+                on_error(result["error"])
+                return
             self.google_busy = False
             self.load()
 
         def on_error(err):
             self.google_busy = False
-            print(f"ConnectGoogle error: {err}")
+            self._fail_action("Could not connect Google", err)
 
-        self._client.call(
-            "ConnectGoogle", callback=on_done, error_callback=on_error
-        )
+        self._client.call("ConnectGoogle", callback=on_done)
 
     @Slot()
     def disconnect_google(self):
         """Disconnect Google."""
+        if self._google_busy:
+            return
         self.google_busy = True
+        self.action_error = ""
 
-        def on_done(_):
+        def on_done(result):
+            if "error" in result:
+                on_error(result["error"])
+                return
             self.google_busy = False
             self.load()
 
         def on_error(err):
             self.google_busy = False
-            print(f"DisconnectGoogle error: {err}")
+            self._fail_action("Could not disconnect Google", err)
 
-        self._client.call(
-            "DisconnectGoogle", callback=on_done, error_callback=on_error
-        )
+        self._client.call("DisconnectGoogle", callback=on_done)

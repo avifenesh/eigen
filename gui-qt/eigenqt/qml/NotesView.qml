@@ -9,11 +9,71 @@ Rectangle {
     color: Theme.colors.bgBase
 
     property var notesController: null  // NotesController from Python (context property)
+    readonly property string readContent: root.notesController ? root.notesController.content : ""
+    readonly property var readBlocks: parseMarkdown(readContent)
+
+    // Status-load failure when the vault availability check itself failed.
+    Rectangle {
+        id: statusLoadError
+        objectName: "notesStatusLoadError"
+        visible: root.notesController && root.notesController.status_error !== "" && !root.notesController.available
+        anchors.fill: parent
+        color: Theme.colors.bgBase
+
+        ColumnLayout {
+            anchors.centerIn: parent
+            spacing: Theme.space.lg
+            width: Math.max(0, Math.min(parent.width - Theme.space.xxxxl, 420))
+
+            Label {
+                text: "≣"
+                font.family: Theme.uiFonts[0]
+                font.pixelSize: 48
+                color: Theme.colors.error
+                Layout.alignment: Qt.AlignHCenter
+            }
+
+            Label {
+                text: "Could not load notes"
+                font.family: Theme.uiFonts[0]
+                font.pixelSize: Theme.fontSize.h2
+                font.weight: Theme.fontWeight.semibold
+                color: Theme.colors.textPrimary
+                Layout.alignment: Qt.AlignHCenter
+            }
+
+            Label {
+                objectName: "notesStatusLoadErrorText"
+                text: root.notesController ? root.notesController.status_error : ""
+                font.pixelSize: Theme.fontSize.bodySm
+                color: Theme.colors.error
+                wrapMode: Text.WrapAnywhere
+                maximumLineCount: 3
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+            }
+
+            AppButton {
+                objectName: "notesStatusLoadErrorRetry"
+                text: "Retry"
+                variant: "primary"
+                toolTipText: "Retry loading notes"
+                Layout.preferredWidth: 88
+                Layout.preferredHeight: 32
+                Layout.alignment: Qt.AlignHCenter
+                onClicked: {
+                    if (root.notesController) {
+                        root.notesController.refresh_status()
+                    }
+                }
+            }
+        }
+    }
 
     // Empty state when vault is not available
     Rectangle {
         id: emptyState
-        visible: root.notesController && !root.notesController.available
+        visible: root.notesController && !root.notesController.available && root.notesController.status_error === ""
         anchors.fill: parent
         color: Theme.colors.bgBase
 
@@ -80,6 +140,7 @@ Rectangle {
                         id: searchField
                         Layout.fillWidth: true
                         placeholderText: "Search notes…"
+                        placeholderTextColor: Theme.colors.textGhost
                         onTextChanged: {
                             searchTimer.restart()
                         }
@@ -111,28 +172,14 @@ Rectangle {
                         }
                     }
 
-                    Button {
+                    AppButton {
+                        objectName: "notesNewButton"
                         text: "New"
+                        toolTipText: "Create a note"
                         onClicked: {
                             if (root.notesController) {
                                 root.notesController.start_create()
                             }
-                        }
-
-                        background: Rectangle {
-                            color: parent.down ? Theme.colors.stateActive : (parent.hovered ? Theme.colors.stateHover : "transparent")
-                            radius: Theme.radius.sm
-                            border.width: 1
-                            border.color: Theme.colors.borderSubtle
-                            Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
-                        }
-
-                        contentItem: Label {
-                            text: parent.text
-                            font.pixelSize: Theme.fontSize.bodySm
-                            color: Theme.colors.textSecondary
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
                         }
 
                         Layout.preferredHeight: 32
@@ -151,17 +198,32 @@ Rectangle {
 
                     TextField {
                         id: createField
+                        objectName: "notesCreateNameInput"
                         Layout.fillWidth: true
                         placeholderText: "Inbox/Idea.md"
+                        placeholderTextColor: Theme.colors.textGhost
                         text: root.notesController ? root.notesController.new_name : ""
+                        enabled: !(root.notesController && root.notesController.creating_busy)
+                        property bool qaForceKeyboardFocus: false
+                        readonly property bool qaVisualFocus: activeFocus
+                        readonly property bool qaTextFits: !createField.contentItem || !createField.contentItem.text
+                            || (!createField.contentItem.truncated
+                                && createField.contentItem.paintedWidth <= createField.contentItem.width + 0.5)
+                        readonly property string qaText: text || placeholderText
                         onTextChanged: {
                             if (root.notesController) {
                                 root.notesController.new_name = text
                             }
                         }
 
+                        onQaForceKeyboardFocusChanged: {
+                            if (qaForceKeyboardFocus) {
+                                forceActiveFocus(Qt.TabFocusReason)
+                            }
+                        }
+
                         Keys.onReturnPressed: {
-                            if (root.notesController && root.notesController.new_name.trim() !== "") {
+                            if (root.notesController && !root.notesController.creating_busy && root.notesController.new_name.trim() !== "") {
                                 root.notesController.create_note()
                             }
                         }
@@ -199,57 +261,170 @@ Rectangle {
                         }
                     }
 
-                    Button {
-                        text: "Create"
+                    AppButton {
+                        objectName: "notesCreateButton"
+                        text: root.notesController && root.notesController.creating_busy ? "Creating" : "Create"
+                        variant: "primary"
+                        toolTipText: "Create note"
+                        enabled: root.notesController && !root.notesController.creating_busy && root.notesController.new_name.trim() !== ""
                         onClicked: {
-                            if (root.notesController && root.notesController.new_name.trim() !== "") {
+                            if (root.notesController && !root.notesController.creating_busy && root.notesController.new_name.trim() !== "") {
                                 root.notesController.create_note()
                             }
-                        }
-
-                        background: Rectangle {
-                            color: parent.down ? Theme.colors.brandStrong : (parent.hovered ? Theme.colors.brand : Theme.colors.brandDim)
-                            radius: Theme.radius.sm
-                            Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
-                        }
-
-                        contentItem: Label {
-                            text: parent.text
-                            font.pixelSize: Theme.fontSize.bodySm
-                            font.weight: Theme.fontWeight.medium
-                            color: Theme.colors.textPrimary
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
                         }
 
                         Layout.preferredHeight: 32
                     }
 
-                    Button {
+                    AppButton {
+                        objectName: "notesCancelCreateButton"
                         text: "Cancel"
+                        toolTipText: "Cancel note creation"
+                        enabled: !(root.notesController && root.notesController.creating_busy)
                         onClicked: {
                             if (root.notesController) {
                                 root.notesController.cancel_create()
                             }
                         }
 
-                        background: Rectangle {
-                            color: parent.down ? Theme.colors.stateActive : (parent.hovered ? Theme.colors.stateHover : "transparent")
-                            radius: Theme.radius.sm
-                            border.width: 1
-                            border.color: Theme.colors.borderSubtle
-                            Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
-                        }
-
-                        contentItem: Label {
-                            text: parent.text
-                            font.pixelSize: Theme.fontSize.bodySm
-                            color: Theme.colors.textSecondary
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-
                         Layout.preferredHeight: 32
+                    }
+                }
+
+                Rectangle {
+                    objectName: "notesStatusRefreshErrorBanner"
+                    visible: root.hasStatusRefreshError()
+                    Layout.fillWidth: true
+                    Layout.leftMargin: Theme.space.lg
+                    Layout.rightMargin: Theme.space.lg
+                    Layout.bottomMargin: visible ? Theme.space.sm : 0
+                    Layout.preferredHeight: visible ? Math.max(36, notesStatusRefreshErrorRow.implicitHeight + Theme.space.md) : 0
+                    color: Theme.colors.errorBg
+                    border.width: visible ? 1 : 0
+                    border.color: Theme.colors.error
+                    radius: Theme.radius.sm
+                    clip: true
+
+                    RowLayout {
+                        id: notesStatusRefreshErrorRow
+                        anchors.fill: parent
+                        anchors.leftMargin: Theme.space.md
+                        anchors.rightMargin: Theme.space.md
+                        spacing: Theme.space.md
+
+                        Label {
+                            objectName: "notesStatusRefreshErrorText"
+                            text: root.notesController ? root.notesController.status_error : ""
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.label
+                            color: Theme.colors.error
+                            wrapMode: Text.WrapAnywhere
+                            Layout.fillWidth: true
+                        }
+
+                        AppButton {
+                            objectName: "notesStatusRefreshErrorRetry"
+                            text: "Retry"
+                            compact: true
+                            toolTipText: "Retry loading notes"
+                            Layout.preferredWidth: 64
+                            Layout.preferredHeight: 28
+                            onClicked: {
+                                if (root.notesController) {
+                                    root.notesController.refresh_status()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    objectName: "notesActionError"
+                    visible: root.notesController && root.notesController.action_error !== ""
+                    Layout.fillWidth: true
+                    Layout.leftMargin: Theme.space.lg
+                    Layout.rightMargin: Theme.space.lg
+                    Layout.bottomMargin: visible ? Theme.space.sm : 0
+                    Layout.preferredHeight: visible ? Math.max(36, notesActionErrorRow.implicitHeight + Theme.space.md) : 0
+                    color: Theme.colors.errorBg
+                    border.width: visible ? 1 : 0
+                    border.color: Theme.colors.error
+                    radius: Theme.radius.sm
+                    clip: true
+
+                    RowLayout {
+                        id: notesActionErrorRow
+                        anchors.fill: parent
+                        anchors.leftMargin: Theme.space.md
+                        anchors.rightMargin: Theme.space.md
+                        spacing: Theme.space.md
+
+                        Label {
+                            text: root.notesController ? root.notesController.action_error : ""
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.label
+                            color: Theme.colors.error
+                            wrapMode: Text.Wrap
+                            Layout.fillWidth: true
+                        }
+
+                        AppButton {
+                            objectName: "notesDismissActionError"
+                            text: "X"
+                            compact: true
+                            toolTipText: "Dismiss notes error"
+                            Layout.preferredWidth: 28
+                            Layout.minimumWidth: 28
+                            Layout.preferredHeight: 28
+                            onClicked: {
+                                if (root.notesController) {
+                                    root.notesController.clear_action_error()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    objectName: "notesRefreshErrorBanner"
+                    visible: root.hasNotesLoadError() && notesList.count > 0
+                    Layout.fillWidth: true
+                    Layout.leftMargin: Theme.space.lg
+                    Layout.rightMargin: Theme.space.lg
+                    Layout.bottomMargin: visible ? Theme.space.sm : 0
+                    Layout.preferredHeight: visible ? Math.max(36, notesRefreshErrorRow.implicitHeight + Theme.space.md) : 0
+                    color: Theme.colors.errorBg
+                    border.width: visible ? 1 : 0
+                    border.color: Theme.colors.error
+                    radius: Theme.radius.sm
+                    clip: true
+
+                    RowLayout {
+                        id: notesRefreshErrorRow
+                        anchors.fill: parent
+                        anchors.leftMargin: Theme.space.md
+                        anchors.rightMargin: Theme.space.md
+                        spacing: Theme.space.md
+
+                        Label {
+                            objectName: "notesRefreshErrorText"
+                            text: root.notesController && root.notesController.notes_model ? root.notesController.notes_model.error : ""
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.label
+                            color: Theme.colors.error
+                            wrapMode: Text.WrapAnywhere
+                            Layout.fillWidth: true
+                        }
+
+                        AppButton {
+                            objectName: "notesRefreshErrorRetry"
+                            text: "Retry"
+                            compact: true
+                            toolTipText: "Retry loading notes"
+                            Layout.preferredWidth: 64
+                            Layout.preferredHeight: 28
+                            onClicked: root.retryNotesList()
+                        }
                     }
                 }
 
@@ -266,28 +441,63 @@ Rectangle {
                     }
 
                     delegate: Rectangle {
+                        id: noteRow
+                        objectName: "notesRow_" + index
                         width: notesList.width
                         implicitHeight: 48
+                        radius: Theme.radius.sm
+                        activeFocusOnTab: true
+                        focusPolicy: Qt.StrongFocus
+                        property bool qaForceKeyboardFocus: false
+                        readonly property bool qaVisualFocus: activeFocus
+                        readonly property bool isSelected: !!(root.notesController && root.notesController.selected &&
+                            root.notesController.selected.path === model.path)
                         color: {
-                            if (root.notesController && root.notesController.selected &&
-                                root.notesController.selected.path === model.path) {
+                            if (noteRow.isSelected) {
                                 return Theme.colors.stateSelected
+                            }
+                            if (noteRow.activeFocus) {
+                                return Theme.colors.stateFocusBg
                             }
                             return mouseArea.containsMouse ? Theme.colors.stateHover : "transparent"
                         }
+                        border.width: activeFocus ? 1 : 0
+                        border.color: Theme.colors.brandBright
 
                         Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
+                        Behavior on border.color { ColorAnimation { duration: Theme.duration.fast } }
+
+                        function openCurrentNote() {
+                            if (root.notesController) {
+                                notesList.currentIndex = index
+                                root.notesController.open_note(model.path, model.title)
+                            }
+                        }
+
+                        onQaForceKeyboardFocusChanged: {
+                            if (qaForceKeyboardFocus) {
+                                forceActiveFocus(Qt.TabFocusReason)
+                            }
+                        }
+
+                        Keys.onReturnPressed: {
+                            openCurrentNote()
+                        }
+
+                        Keys.onEnterPressed: {
+                            openCurrentNote()
+                        }
+
+                        Keys.onSpacePressed: {
+                            openCurrentNote()
+                        }
 
                         MouseArea {
                             id: mouseArea
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                if (root.notesController) {
-                                    root.notesController.open_note(model.path, model.title)
-                                }
-                            }
+                            onClicked: noteRow.openCurrentNote()
                         }
 
                         ColumnLayout {
@@ -321,7 +531,7 @@ Rectangle {
 
                     // Empty state (loading or no notes)
                     Label {
-                        visible: notesList.count === 0 && (!root.notesController || !root.notesController.notes_model.loading)
+                        visible: notesList.count === 0 && !root.hasNotesLoadError() && (!root.notesController || !root.notesController.notes_model.loading)
                         anchors.centerIn: parent
                         text: {
                             if (!root.notesController) return ""
@@ -332,6 +542,60 @@ Rectangle {
                         }
                         font.pixelSize: Theme.fontSize.bodySm
                         color: Theme.colors.textGhost
+                    }
+
+                    Rectangle {
+                        objectName: "notesLoadError"
+                        visible: root.hasNotesLoadError() && notesList.count === 0 && root.notesController && !root.notesController.notes_model.loading
+                        anchors.centerIn: parent
+                        width: Math.max(0, Math.min(parent.width - Theme.space.xxxl, 260))
+                        height: Math.max(104, notesLoadErrorColumn.implicitHeight + Theme.space.xl)
+                        color: Theme.colors.errorBg
+                        border.width: visible ? 1 : 0
+                        border.color: Theme.colors.error
+                        radius: Theme.radius.md
+                        clip: true
+
+                        ColumnLayout {
+                            id: notesLoadErrorColumn
+                            anchors.fill: parent
+                            anchors.margins: Theme.space.md
+                            spacing: Theme.space.sm
+
+                            Label {
+                                text: "Could not load notes"
+                                font.family: Theme.uiFonts[0]
+                                font.pixelSize: Theme.fontSize.bodySm
+                                font.weight: Theme.fontWeight.semibold
+                                color: Theme.colors.textPrimary
+                                Layout.fillWidth: true
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+
+                            Label {
+                                objectName: "notesLoadErrorText"
+                                text: root.notesController && root.notesController.notes_model ? root.notesController.notes_model.error : ""
+                                font.family: Theme.uiFonts[0]
+                                font.pixelSize: Theme.fontSize.label
+                                color: Theme.colors.error
+                                wrapMode: Text.WrapAnywhere
+                                maximumLineCount: 2
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+
+                            AppButton {
+                                objectName: "notesLoadErrorRetry"
+                                text: "Retry"
+                                compact: true
+                                toolTipText: "Retry loading notes"
+                                Layout.preferredWidth: 64
+                                Layout.preferredHeight: 28
+                                Layout.alignment: Qt.AlignHCenter
+                                onClicked: root.retryNotesList()
+                            }
+                        }
                     }
 
                     // Loading state
@@ -408,12 +672,23 @@ Rectangle {
 
                         // Action buttons
                         RowLayout {
+                            id: notesHeaderActions
+                            objectName: "notesHeaderActions"
+                            readonly property real targetWidth: root.notesController && root.notesController.editing
+                                ? (96 + 72 + Theme.space.sm)
+                                : 52
+                            Layout.preferredWidth: targetWidth
+                            Layout.minimumWidth: targetWidth
+                            Layout.preferredHeight: 32
                             spacing: Theme.space.sm
 
                             // Edit mode buttons
-                            Button {
+                            AppButton {
+                                objectName: "notesSaveEditButton"
                                 visible: root.notesController && root.notesController.editing
                                 text: root.notesController && root.notesController.saving ? "Saving…" : "Save"
+                                variant: "primary"
+                                toolTipText: "Save note"
                                 enabled: root.notesController && !root.notesController.saving
                                 onClicked: {
                                     if (root.notesController) {
@@ -421,79 +696,42 @@ Rectangle {
                                     }
                                 }
 
-                                background: Rectangle {
-                                    color: parent.down ? Theme.colors.brandStrong : (parent.hovered ? Theme.colors.brand : Theme.colors.brandDim)
-                                    radius: Theme.radius.sm
-                                    opacity: parent.enabled ? 1.0 : 0.6
-                                    Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
-                                }
-
-                                contentItem: Label {
-                                    text: parent.text
-                                    font.pixelSize: Theme.fontSize.bodySm
-                                    font.weight: Theme.fontWeight.medium
-                                    color: Theme.colors.textPrimary
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-
+                                Layout.preferredWidth: 96
+                                Layout.minimumWidth: 96
                                 Layout.preferredHeight: 32
                             }
 
-                            Button {
+                            AppButton {
+                                objectName: "notesCancelEditButton"
                                 visible: root.notesController && root.notesController.editing
                                 text: "Cancel"
+                                toolTipText: "Cancel editing"
+                                enabled: root.notesController && !root.notesController.saving
                                 onClicked: {
                                     if (root.notesController) {
                                         root.notesController.cancel_edit()
                                     }
                                 }
 
-                                background: Rectangle {
-                                    color: parent.down ? Theme.colors.stateActive : (parent.hovered ? Theme.colors.stateHover : "transparent")
-                                    radius: Theme.radius.sm
-                                    border.width: 1
-                                    border.color: Theme.colors.borderSubtle
-                                    Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
-                                }
-
-                                contentItem: Label {
-                                    text: parent.text
-                                    font.pixelSize: Theme.fontSize.bodySm
-                                    color: Theme.colors.textSecondary
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-
+                                Layout.preferredWidth: 72
+                                Layout.minimumWidth: 72
                                 Layout.preferredHeight: 32
                             }
 
                             // Read mode button
-                            Button {
+                            AppButton {
+                                objectName: "notesEditButton"
                                 visible: root.notesController && !root.notesController.editing
                                 text: "Edit"
+                                toolTipText: "Edit note"
                                 onClicked: {
                                     if (root.notesController) {
                                         root.notesController.start_edit()
                                     }
                                 }
 
-                                background: Rectangle {
-                                    color: parent.down ? Theme.colors.stateActive : (parent.hovered ? Theme.colors.stateHover : "transparent")
-                                    radius: Theme.radius.sm
-                                    border.width: 1
-                                    border.color: Theme.colors.borderSubtle
-                                    Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
-                                }
-
-                                contentItem: Label {
-                                    text: parent.text
-                                    font.pixelSize: Theme.fontSize.bodySm
-                                    color: Theme.colors.textSecondary
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-
+                                Layout.preferredWidth: 52
+                                Layout.minimumWidth: 52
                                 Layout.preferredHeight: 32
                             }
                         }
@@ -507,16 +745,45 @@ Rectangle {
 
                     // Edit mode: textarea
                     ScrollView {
+                        id: editScroll
                         visible: root.notesController && root.notesController.editing
                         anchors.fill: parent
                         clip: true
+                        contentWidth: availableWidth
 
                         TextArea {
                             id: editor
+                            objectName: "notesEditorTextArea"
+                            width: editScroll.availableWidth
                             text: root.notesController ? root.notesController.draft : ""
+                            property bool qaForceKeyboardFocus: false
+                            readonly property bool qaVisualFocus: activeFocus
+                            readonly property bool qaTextFits: true
+                            readonly property string qaText: text || placeholderText
                             onTextChanged: {
                                 if (root.notesController && root.notesController.editing) {
                                     root.notesController.draft = text
+                                }
+                            }
+
+                            onQaForceKeyboardFocusChanged: {
+                                if (qaForceKeyboardFocus) {
+                                    forceActiveFocus(Qt.TabFocusReason)
+                                }
+                            }
+
+                            Keys.onPressed: function(event) {
+                                if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                                        && (event.modifiers & Qt.ControlModifier)) {
+                                    if (root.notesController && !root.notesController.saving) {
+                                        root.notesController.save()
+                                    }
+                                    event.accepted = true
+                                } else if (event.key === Qt.Key_Escape) {
+                                    if (root.notesController && !root.notesController.saving) {
+                                        root.notesController.cancel_edit()
+                                    }
+                                    event.accepted = true
                                 }
                             }
 
@@ -538,28 +805,80 @@ Rectangle {
                         }
                     }
 
-                    // Read mode: markdown-rendered text (simplified — just plain text for now)
+                    // Read mode: markdown-rendered text
                     ScrollView {
+                        id: readScroll
                         visible: root.notesController && !root.notesController.editing
                         anchors.fill: parent
                         clip: true
+                        contentWidth: availableWidth
 
-                        Label {
-                            width: parent.width - Theme.space.xxxl * 2
-                            text: root.notesController ? root.notesController.content : ""
-                            font.family: Theme.uiFonts[0]
-                            font.pixelSize: Theme.fontSize.bodySm
-                            color: Theme.colors.textPrimary
-                            wrapMode: Text.Wrap
-                            textFormat: Text.MarkdownText
-                            leftPadding: Theme.space.xxxl
-                            rightPadding: Theme.space.xxxl
-                            topPadding: Theme.space.xxxl
-                            bottomPadding: Theme.space.xxxl
+                        Item {
+                            width: readScroll.availableWidth
+                            implicitHeight: readColumn.implicitHeight + Theme.space.xxxl * 2
+
+                            Column {
+                                id: readColumn
+                                x: Theme.space.xxxl
+                                y: Theme.space.xxxl
+                                width: Math.max(0, parent.width - Theme.space.xxxl * 2)
+                                spacing: Theme.space.md
+
+                                MarkdownBlocks {
+                                    objectName: "notesMarkdownBody"
+                                    visible: root.readBlocks.length > 0
+                                    width: parent.width
+                                    readonly property real qaContentWidth: width
+                                    blocks: root.readBlocks
+                                }
+
+                                Label {
+                                    objectName: "notesMarkdownFallback"
+                                    visible: root.readContent !== "" && root.readBlocks.length === 0
+                                    width: parent.width
+                                    text: root.readContent
+                                    font.family: Theme.uiFonts[0]
+                                    font.pixelSize: Theme.fontSize.bodySm
+                                    color: Theme.colors.textPrimary
+                                    wrapMode: Text.Wrap
+                                    textFormat: Text.PlainText
+                                }
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    function parseMarkdown(source) {
+        if (!source) return []
+        if (typeof markdownParser === "undefined" || !markdownParser) {
+            return [{type: "para", content: source}]
+        }
+        return markdownParser.parse(source)
+    }
+
+    function hasNotesLoadError() {
+        return !!(root.notesController
+            && root.notesController.notes_model
+            && root.notesController.notes_model.error !== "")
+    }
+
+    function hasStatusRefreshError() {
+        return !!(root.notesController
+            && root.notesController.available
+            && root.notesController.status_error !== "")
+    }
+
+    function retryNotesList() {
+        if (!root.notesController) {
+            return
+        }
+        if (!root.notesController.available) {
+            root.notesController.refresh_status()
+            return
+        }
+        root.notesController.search(searchField.text.trim())
     }
 }

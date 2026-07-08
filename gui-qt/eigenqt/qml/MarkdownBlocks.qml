@@ -85,29 +85,14 @@ Column {
                             Layout.fillWidth: true
                         }
 
-                        Button {
+                        AppButton {
+                            objectName: "markdownCopyCodeButton"
                             text: "Copy"
-                            font.family: Theme.uiFonts[0]
-                            font.pixelSize: Theme.fontSize.micro
-                            font.weight: Theme.fontWeight.medium
-                            flat: true
+                            compact: true
+                            variant: "ghost"
+                            toolTipText: "Copy code"
                             Layout.preferredWidth: 60
                             Layout.preferredHeight: 24
-
-                            background: Rectangle {
-                                color: parent.hovered ? Theme.colors.stateHover : "transparent"
-                                border.width: 1
-                                border.color: Theme.colors.borderSubtle
-                                radius: Theme.radius.xs
-                            }
-
-                            contentItem: Text {
-                                text: parent.text
-                                font: parent.font
-                                color: Theme.colors.textSecondary
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
 
                             onClicked: {
                                 clipboardHelper.copyText(blockData.source)
@@ -323,7 +308,9 @@ Column {
 
     // Helper: syntax highlighting (Python → Qt via context property)
     function highlightedCode(lang, source) {
-        // Call Python highlight function via context property
-        return highlighter.highlight(lang, source)
+        if (typeof highlighter !== "undefined" && highlighter && highlighter.highlight) {
+            return highlighter.highlight(lang, source || "")
+        }
+        return source || ""
     }
 }

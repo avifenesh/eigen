@@ -8,6 +8,8 @@ Rectangle {
     id: root
     color: Theme.colors.bgBase
 
+    signal sessionStarted(string sessionId)
+
     // View toggle: "projects" or "kanban"
     property string viewMode: "projects"
 
@@ -15,9 +17,15 @@ Rectangle {
     property string ownerFilter: "all"
     property string stateFilter: "all"
 
-    // Models (injected as context properties from Python)
-    // property var boardModel
-    // property var kanbanModel
+    property var boardModel: null
+    property var kanbanModel: null
+    property var rpcClient: null
+    property var sessionsModel: null
+    property var pendingActions: ({})
+    property var tokenActions: ({})
+    property string actionError: ""
+    property string boardActionError: ""
+    readonly property string visibleActionError: actionError !== "" ? actionError : boardActionError
 
     // Role constants (Qt.UserRole + N, matching BoardModel Python roles)
     readonly property int dirRole: 257
@@ -54,7 +62,8 @@ Rectangle {
         }
         return result.sort()
     }
-    property var owners: computeOwners()
+    property int boardRows: 0
+    property var owners: []
 
     // Owner filter options
     property var ownerOptions: {
@@ -75,12 +84,144 @@ Rectangle {
         { value: "dirty", label: "Uncommitted" }
     ]
 
+    Connections {
+        target: root.rpcClient ? root.rpcClient : null
+        function onCallDone(token, payload) {
+            root.handleCallDone(token, payload)
+        }
+    }
+
+    Connections {
+        target: root.boardModel ? root.boardModel : null
+        ignoreUnknownSignals: true
+        function onModelReset() { root.syncBoardRows() }
+        function onRowsInserted() { root.syncBoardRows() }
+        function onRowsRemoved() { root.syncBoardRows() }
+        function onDataChanged() { root.syncBoardRows() }
+        function onActionErrorChanged() { root.syncActionError() }
+    }
+
     Component.onCompleted: {
+        syncBoardRows()
+        syncActionError()
         if (boardModel) boardModel.load()
         if (kanbanModel) kanbanModel.load()
     }
 
     // Helpers
+    function syncBoardRows() {
+        boardRows = boardModel ? boardModel.rowCount() : 0
+        filteredBoardRows = computeFilteredBoardRows(boardRows)
+        owners = computeOwners()
+    }
+
+    function syncActionError() {
+        boardActionError = boardModel ? String(boardModel.actionError || "") : ""
+    }
+
+    function safeObjectName(value) {
+        return String(value || "").replace(/[^A-Za-z0-9_]+/g, "_")
+    }
+
+    function errorText(error) {
+        if (error === undefined || error === null) return "Something went wrong."
+        if (typeof error === "string") return error
+        if (error.message) return String(error.message)
+        return JSON.stringify(error)
+    }
+
+    function clearActionError() {
+        actionError = ""
+        if (boardModel) boardModel.clearActionError()
+    }
+
+    function isPending(key) {
+        return pendingActions[key] === true
+    }
+
+    function setPending(key, pending) {
+        var next = Object.assign({}, pendingActions)
+        if (pending) next[key] = true
+        else delete next[key]
+        pendingActions = next
+    }
+
+    function rememberToken(token, key, method) {
+        var next = Object.assign({}, tokenActions)
+        next[token] = { key: key, method: method }
+        tokenActions = next
+    }
+
+    function forgetToken(token) {
+        var next = Object.assign({}, tokenActions)
+        delete next[token]
+        tokenActions = next
+    }
+
+    function startAction(key, method, args) {
+        if (!rpcClient || isPending(key)) return
+        clearActionError()
+        setPending(key, true)
+        var token = rpcClient.callToken(method, args || [])
+        rememberToken(token, key, method)
+    }
+
+    function handleCallDone(token, payload) {
+        var action = tokenActions[token]
+        if (!action) return
+        forgetToken(token)
+        setPending(action.key, false)
+        if (payload && payload.error !== undefined && payload.error !== null) {
+            actionError = errorText(payload.error)
+            return
+        }
+        var sessionId = payload ? String(payload.result || "") : ""
+        if (sessionId !== "") {
+            sessionStarted(sessionId)
+        }
+    }
+
+    function startLaneSession(dir) {
+        if (!dir) return
+        startAction("lane:" + dir, "NewSession", [dir, "", ""])
+    }
+
+    function startBoardItem(item) {
+        if (item.kind === "github" && item.url) {
+            startAction(
+                "item:" + item.key,
+                isPrItem(item) ? "ReviewPR" : "WorkIssue",
+                [item.url]
+            )
+            return
+        }
+        if (item.task) {
+            startAction("item:" + item.key, "StartFromFeed", [item.dir || "", item.task])
+            return
+        }
+        if (item.url) Qt.openUrlExternally(item.url)
+    }
+
+    function startKanbanCard(card) {
+        if (card.kind === "pr" && card.url) {
+            startAction("card:" + card.key, "ReviewPR", [card.url])
+            return
+        }
+        if (card.kind === "issue" && card.url) {
+            startAction("card:" + card.key, "WorkIssue", [card.url])
+            return
+        }
+        if (card.kind === "git" && card.task) {
+            startAction("card:" + card.key, "StartFromFeed", [card.dir || "", card.task])
+            return
+        }
+        if (card.url) Qt.openUrlExternally(card.url)
+    }
+
+    function isPrItem(item) {
+        return (item.detail || "").indexOf("PR") === 0
+    }
+
     function laneMatches(idx) {
         var remote = boardModel.data(idx, remoteRole)
         var repo = boardModel.data(idx, repoRole)
@@ -125,6 +266,70 @@ Rectangle {
         if (kind === "pr") return "Review →"
         if (kind === "issue") return "Work →"
         return "Start →"
+    }
+
+    function itemVerb(item) {
+        if (item.kind === "github") {
+            return isPrItem(item) ? "Review →" : "Work →"
+        }
+        return "Start →"
+    }
+
+    property int filteredBoardRows: 0
+    readonly property bool boardLoading: !!(boardModel && boardModel.loading)
+    readonly property string boardLoadError: boardModel ? String(boardModel.error || "") : ""
+    readonly property bool kanbanLoading: !!(kanbanModel && kanbanModel.loading)
+    readonly property string kanbanLoadError: kanbanModel ? String(kanbanModel.error || "") : ""
+    readonly property int kanbanColumns: (kanbanModel && kanbanModel.columns) ? kanbanModel.columns.length : 0
+    readonly property string projectsState: {
+        if (viewMode !== "projects") return ""
+        if (!boardModel) return "missing"
+        if (boardLoading && boardRows === 0) return "loading"
+        if (boardLoadError !== "") return "error"
+        if (boardRows === 0) return "empty"
+        if (filteredBoardRows === 0) return "filtered"
+        return ""
+    }
+    readonly property string kanbanState: {
+        if (viewMode !== "kanban") return ""
+        if (!kanbanModel) return "missing"
+        if (kanbanLoading && kanbanColumns === 0) return "loading"
+        if (kanbanLoadError !== "") return "error"
+        if (kanbanColumns === 0) return "empty"
+        return ""
+    }
+
+    onOwnerFilterChanged: syncBoardRows()
+    onStateFilterChanged: syncBoardRows()
+
+    function computeFilteredBoardRows(rowCount) {
+        if (!boardModel) return 0
+        var rows = rowCount === undefined ? boardModel.rowCount() : rowCount
+        var visibleRows = 0
+        for (var i = 0; i < rows; i++) {
+            if (laneMatches(boardModel.index(i, 0))) {
+                visibleRows += 1
+            }
+        }
+        return visibleRows
+    }
+
+    function stateTitle(state, view) {
+        if (state === "loading") return "Loading " + view
+        if (state === "error") return "Could not load " + view
+        if (state === "filtered") return "No projects match these filters"
+        if (state === "missing") return "Board model unavailable"
+        return view === "kanban" ? "No kanban cards yet" : "No projects on the board yet"
+    }
+
+    function stateDetail(state, view) {
+        if (state === "loading") return "Fetching the latest workspace state."
+        if (state === "error") return view === "kanban" ? kanbanLoadError : boardLoadError
+        if (state === "filtered") return "Try another owner or state filter to bring lanes back into view."
+        if (state === "missing") return "Reconnect the desktop shell and refresh."
+        return view === "kanban"
+            ? "When PRs, issues, or git work appear, cards will be grouped here."
+            : "When Eigen finds local or remote work, project lanes will appear here."
     }
 
     ColumnLayout {
@@ -214,9 +419,48 @@ Rectangle {
             }
         }
 
+        Rectangle {
+            objectName: "boardActionErrorBanner"
+            visible: root.visibleActionError !== ""
+            Layout.fillWidth: true
+            Layout.preferredHeight: visible ? Math.max(44, boardActionErrorText.implicitHeight + Theme.space.md) : 0
+            Layout.leftMargin: Theme.space.xl
+            Layout.rightMargin: Theme.space.xl
+            Layout.topMargin: Theme.space.sm
+            color: Theme.colors.bgRaised
+            border.width: 1
+            border.color: Theme.colors.error
+            radius: Theme.radius.md
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: Theme.space.md
+                anchors.rightMargin: Theme.space.sm
+                spacing: Theme.space.sm
+
+                Label {
+                    objectName: "boardActionErrorText"
+                    id: boardActionErrorText
+                    text: root.visibleActionError
+                    font.pixelSize: Theme.fontSize.label
+                    color: Theme.colors.error
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+
+                AppButton {
+                    objectName: "boardActionErrorDismissButton"
+                    text: "Dismiss"
+                    variant: "ghost"
+                    compact: true
+                    onClicked: root.clearActionError()
+                }
+            }
+        }
+
         // Filters row (only for projects view)
         Rectangle {
-            visible: viewMode === "projects" && boardModel && boardModel.rowCount() > 0
+            visible: viewMode === "projects" && boardModel && boardRows > 0
             Layout.fillWidth: true
             Layout.preferredHeight: visible ? 50 : 0
             color: Theme.colors.bgBase
@@ -315,15 +559,15 @@ Rectangle {
                     height: parent.height
 
                     Repeater {
-                        model: boardModel ? boardModel.rowCount() : 0
+                        model: boardModel ? boardRows : 0
                         delegate: Rectangle {
-                            readonly property int idx: model.index
-                            visible: laneMatches(boardModel.index(model.index, 0))
-                            width: 300
-                            height: parent.height
+                            readonly property int idx: index
+                            visible: laneMatches(boardModel.index(index, 0))
+                            width: visible ? 300 : 0
+                            height: visible ? parent.height : 0
                             color: Theme.colors.bgRaised
                             border.width: 1
-                            border.color: boardModel.data(boardModel.index(model.index, 0), remoteRole) ? Theme.colors.borderSubtle : Theme.colors.borderHairline
+                            border.color: boardModel.data(boardModel.index(index, 0), remoteRole) ? Theme.colors.borderSubtle : Theme.colors.borderHairline
                             radius: Theme.radius.lg
 
                             ColumnLayout {
@@ -337,6 +581,12 @@ Rectangle {
                                     spacing: Theme.space.sm
 
                                     Label {
+                                        objectName: {
+                                            var laneKey = boardModel.data(boardModel.index(idx, 0), remoteRole)
+                                                ? boardModel.data(boardModel.index(idx, 0), repoRole)
+                                                : boardModel.data(boardModel.index(idx, 0), dirRole)
+                                            return "boardLaneName_" + root.safeObjectName(laneKey)
+                                        }
                                         text: boardModel.data(boardModel.index(idx, 0), nameRole)
                                         font.family: Theme.monoFonts[0]
                                         font.pixelSize: Theme.fontSize.bodySm
@@ -344,6 +594,7 @@ Rectangle {
                                         color: Theme.colors.textPrimary
                                         elide: Text.ElideRight
                                         Layout.fillWidth: true
+                                        opacity: root.isPending("lane:" + boardModel.data(boardModel.index(idx, 0), dirRole)) ? 0.55 : 1.0
 
                                         MouseArea {
                                             anchors.fill: parent
@@ -355,7 +606,7 @@ Rectangle {
                                                 if (remote && url) {
                                                     Qt.openUrlExternally(url)
                                                 } else {
-                                                    boardModel.open_lane_chat(dir)
+                                                    root.startLaneSession(dir)
                                                 }
                                             }
                                         }
@@ -373,6 +624,11 @@ Rectangle {
 
                                     // Pin button
                                     Label {
+                                        objectName: {
+                                            var pinRemote = boardModel.data(boardModel.index(idx, 0), remoteRole)
+                                            var pinKey = pinRemote ? boardModel.data(boardModel.index(idx, 0), repoRole) : boardModel.data(boardModel.index(idx, 0), dirRole)
+                                            return "boardPinButton_" + root.safeObjectName(pinKey)
+                                        }
                                         text: boardModel.data(boardModel.index(idx, 0), pinnedRole) ? "★" : "☆"
                                         font.pixelSize: Theme.fontSize.body
                                         color: boardModel.data(boardModel.index(idx, 0), pinnedRole) ? Theme.colors.warn : Theme.colors.textFaint
@@ -601,7 +857,7 @@ Rectangle {
                                                     }
 
                                                     Label {
-                                                        visible: modelData.detail
+                                                        visible: !!modelData.detail
                                                         text: modelData.detail || ""
                                                         font.family: Theme.uiFonts[0]
                                                         font.pixelSize: Theme.fontSize.micro
@@ -616,23 +872,24 @@ Rectangle {
 
                                                         Item { Layout.fillWidth: true }
 
-                                                        Button {
-                                                            visible: modelData.url
+                                                        AppButton {
+                                                            objectName: "boardItemOpen_" + root.safeObjectName(modelData.key)
+                                                            visible: !!modelData.url
                                                             text: "Open"
                                                             onClicked: Qt.openUrlExternally(modelData.url)
+                                                            variant: "ghost"
+                                                            compact: true
                                                         }
 
-                                                        Button {
-                                                            visible: modelData.kind === "github" || modelData.task
-                                                            text: {
-                                                                if (modelData.kind === "github") {
-                                                                    return (modelData.detail || "").startsWith("PR") ? "Review →" : "Work →"
-                                                                }
-                                                                return "Start →"
-                                                            }
+                                                        AppButton {
+                                                            objectName: "boardItemAction_" + root.safeObjectName(modelData.key)
+                                                            visible: modelData.kind === "github" || !!modelData.task
+                                                            enabled: !root.isPending("item:" + modelData.key)
+                                                            text: root.isPending("item:" + modelData.key) ? "Starting..." : root.itemVerb(modelData)
+                                                            variant: "secondary"
+                                                            compact: true
                                                             onClicked: {
-                                                                // TODO: wire actions (ReviewPR, WorkIssue, StartFromFeed)
-                                                                console.log("Card action:", modelData.key)
+                                                                root.startBoardItem(modelData)
                                                             }
                                                         }
                                                     }
@@ -761,7 +1018,7 @@ Rectangle {
 
                                                 // Left border accent for cards needing attention
                                                 Rectangle {
-                                                    visible: modelData.needsYou
+                                                    visible: !!modelData.needsYou
                                                     anchors.left: parent.left
                                                     anchors.top: parent.top
                                                     anchors.bottom: parent.bottom
@@ -806,7 +1063,7 @@ Rectangle {
                                                         }
 
                                                         Label {
-                                                            visible: modelData.number
+                                                            visible: !!modelData.number
                                                             text: "#" + (modelData.number || "")
                                                             font.family: Theme.monoFonts[0]
                                                             font.pixelSize: Theme.fontSize.micro
@@ -814,7 +1071,7 @@ Rectangle {
                                                         }
 
                                                         Label {
-                                                            visible: modelData.ageHours
+                                                            visible: !!modelData.ageHours
                                                             text: ageLabel(modelData.ageHours)
                                                             font.family: Theme.uiFonts[0]
                                                             font.pixelSize: Theme.fontSize.micro
@@ -846,7 +1103,7 @@ Rectangle {
                                                         spacing: Theme.space.xs
 
                                                         Rectangle {
-                                                            visible: modelData.session
+                                                            visible: !!modelData.session
                                                             width: sessionBadge.implicitWidth + Theme.space.sm
                                                             height: 18
                                                             radius: Theme.radius.full
@@ -866,7 +1123,7 @@ Rectangle {
                                                         }
 
                                                         Rectangle {
-                                                            visible: modelData.draft
+                                                            visible: !!modelData.draft
                                                             width: draftBadge.implicitWidth + Theme.space.sm
                                                             height: 18
                                                             radius: Theme.radius.full
@@ -932,17 +1189,23 @@ Rectangle {
 
                                                         Item { Layout.fillWidth: true }
 
-                                                        Button {
-                                                            visible: modelData.url
+                                                        AppButton {
+                                                            objectName: "kanbanCardOpen_" + root.safeObjectName(modelData.key)
+                                                            visible: !!modelData.url
                                                             text: "Open"
                                                             onClicked: Qt.openUrlExternally(modelData.url)
+                                                            variant: "ghost"
+                                                            compact: true
                                                         }
 
-                                                        Button {
-                                                            text: cardVerb(modelData.kind)
+                                                        AppButton {
+                                                            objectName: "kanbanCardAction_" + root.safeObjectName(modelData.key)
+                                                            enabled: !root.isPending("card:" + modelData.key)
+                                                            text: root.isPending("card:" + modelData.key) ? "Starting..." : cardVerb(modelData.kind)
+                                                            variant: "secondary"
+                                                            compact: true
                                                             onClicked: {
-                                                                // TODO: wire actions
-                                                                console.log("Kanban card action:", modelData.key)
+                                                                root.startKanbanCard(modelData)
                                                             }
                                                         }
                                                     }
@@ -963,6 +1226,98 @@ Rectangle {
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            Column {
+                objectName: root.projectsState === "" ? "boardProjectsStatePanel" : "boardProjectsState_" + root.projectsState
+                visible: root.projectsState !== ""
+                anchors.centerIn: parent
+                width: Math.max(240, Math.min(parent.width - Theme.space.xl * 2, 480))
+                spacing: Theme.space.md
+
+                Label {
+                    objectName: "boardProjectsStateTitle"
+                    width: parent.width
+                    text: root.stateTitle(root.projectsState, "projects")
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.h3
+                    font.weight: Theme.fontWeight.semibold
+                    color: root.projectsState === "error" ? Theme.colors.error : Theme.colors.textPrimary
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                }
+
+                Label {
+                    objectName: "boardProjectsStateDetail"
+                    width: parent.width
+                    text: root.stateDetail(root.projectsState, "projects")
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.bodySm
+                    color: Theme.colors.textMuted
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                }
+
+                AppButton {
+                    objectName: "boardProjectsStateAction"
+                    visible: !!boardModel && root.projectsState !== "loading"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: root.projectsState === "filtered" ? "Reset filters" : "Refresh"
+                    variant: "secondary"
+                    toolTipText: root.projectsState === "filtered" ? "Show all board lanes" : "Refresh board data"
+                    onClicked: {
+                        if (root.projectsState === "filtered") {
+                            root.ownerFilter = "all"
+                            root.stateFilter = "all"
+                        } else {
+                            boardModel.load()
+                            if (kanbanModel) kanbanModel.load()
+                        }
+                    }
+                }
+            }
+
+            Column {
+                objectName: root.kanbanState === "" ? "boardKanbanStatePanel" : "boardKanbanState_" + root.kanbanState
+                visible: root.kanbanState !== ""
+                anchors.centerIn: parent
+                width: Math.max(240, Math.min(parent.width - Theme.space.xl * 2, 480))
+                spacing: Theme.space.md
+
+                Label {
+                    objectName: "boardKanbanStateTitle"
+                    width: parent.width
+                    text: root.stateTitle(root.kanbanState, "kanban")
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.h3
+                    font.weight: Theme.fontWeight.semibold
+                    color: root.kanbanState === "error" ? Theme.colors.error : Theme.colors.textPrimary
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                }
+
+                Label {
+                    objectName: "boardKanbanStateDetail"
+                    width: parent.width
+                    text: root.stateDetail(root.kanbanState, "kanban")
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.bodySm
+                    color: Theme.colors.textMuted
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                }
+
+                AppButton {
+                    objectName: "boardKanbanStateAction"
+                    visible: !!kanbanModel && root.kanbanState !== "loading"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "Refresh"
+                    variant: "secondary"
+                    toolTipText: "Refresh kanban data"
+                    onClicked: {
+                        if (kanbanModel) kanbanModel.load()
                     }
                 }
             }

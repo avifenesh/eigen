@@ -3,35 +3,43 @@
 test_connectors_model.py — pytest for ConnectorsModel logic.
 """
 import pytest
-from unittest.mock import Mock, MagicMock
-from PySide6.QtCore import QObject
 
 from eigenqt.models.connectors import ConnectorsModel
 
 
-class MockRpcClient(QObject):
+class MockSignal:
+    def __init__(self):
+        self._callbacks = []
+
+    def connect(self, callback):
+        self._callbacks.append(callback)
+
+    def emit(self, *args):
+        for callback in list(self._callbacks):
+            callback(*args)
+
+
+class MockRpcClient:
     """Mock RPC client."""
 
-    connected = MagicMock()
-    event = MagicMock()
-
     def __init__(self):
-        super().__init__()
+        self.connected = MockSignal()
+        self.event = MockSignal()
         self.calls = []
-        self.parallel_calls = []
+        self.failures = {}
+        self.subscribed = []
 
-    def call(self, method, *args, callback=None, error_callback=None):
+    def subscribe(self, channels):
+        self.subscribed.extend(channels or [])
+
+    def call(self, method, *args, callback=None):
         self.calls.append((method, args))
+        if method in self.failures:
+            if callback:
+                callback({"error": self.failures[method]})
+            return
         if callback:
-            callback(self._mock_result(method, *args))
-
-    def call_parallel(self, calls, callback=None, error_callback=None):
-        self.parallel_calls.append(calls)
-        results = []
-        for method, args in calls:
-            results.append(self._mock_result(method, *args))
-        if callback:
-            callback(results)
+            callback({"result": self._mock_result(method, *args)})
 
     def _mock_result(self, method, *args):
         if method == "Connectors":
@@ -47,6 +55,48 @@ class MockRpcClient(QObject):
         elif method == "MCPSecretsAvailable":
             return True
         return {}
+
+
+class DeferredRpcClient:
+    """RPC client that lets tests resolve callbacks in arbitrary order."""
+
+    def __init__(self):
+        self.connected = MockSignal()
+        self.event = MockSignal()
+        self.calls = []
+        self.subscribed = []
+
+    def subscribe(self, channels):
+        self.subscribed.extend(channels or [])
+
+    def call(self, method, *args, callback=None):
+        self.calls.append(
+            {
+                "method": method,
+                "args": args,
+                "callback": callback,
+            }
+        )
+
+
+def _call_by_method(calls, method):
+    matches = [call for call in calls if call["method"] == method]
+    assert matches, f"missing deferred call for {method}: {calls}"
+    return matches[-1]
+
+
+def _reply(call, *, result=None, error=None):
+    callback = call["callback"]
+    assert callback is not None, f"{call['method']} did not register a callback"
+    callback({"error": error} if error is not None else {"result": result})
+
+
+def _deferred_call_count(client, method, args=None):
+    return sum(
+        1
+        for call in client.calls
+        if call["method"] == method and (args is None or call["args"] == args)
+    )
 
 
 @pytest.fixture
@@ -71,17 +121,94 @@ def test_init(model):
 
 
 def test_load(model, client):
-    """Test load() calls parallel RPC and sets properties."""
+    """Test load() fans out the current RPC envelope and sets properties."""
     model.load()
-    assert len(client.parallel_calls) == 1
-    assert client.parallel_calls[0] == [
-        ("Connectors", []),
-        ("MCPServers", []),
-        ("GoogleStatus", []),
+    assert [method for method, _ in client.calls] == [
+        "Connectors",
+        "MCPServers",
+        "GoogleStatus",
+        "ObsidianStatus",
+        "RevutoStatus",
+        "MCPSecretsAvailable",
     ]
-    assert model.connectors is not None
-    assert model.servers is not None
-    assert model.google_status is not None
+    assert model.connectors == {"connectors": [], "directory": []}
+    assert model.servers == {"servers": []}
+    assert model.google_status == {
+        "configured": False,
+        "connected": False,
+        "clientPath": "",
+        "setupUrl": "",
+        "setupHint": "",
+    }
+    assert model.obsidian_status == {"available": False, "vault": ""}
+    assert model.revuto_status == {"available": False, "count": 0, "paused": 0}
+    assert model.secrets_ok is True
+    assert model.loading is False
+
+
+def test_load_error_uses_readable_rpc_message(model, client):
+    """Dict-shaped RPC errors should surface as readable messages."""
+    client.failures["Connectors"] = {"message": "daemon offline"}
+
+    model.load()
+
+    assert model.load_error == "daemon offline"
+    assert model.loading is False
+
+
+def test_connected_subscribes_to_connector_events(model, client):
+    """ConnectorsModel listens for OAuth completion events."""
+    model._on_connected()
+
+    assert "eigen:connector" in client.subscribed
+
+
+def test_load_ignores_stale_callbacks_from_older_refresh():
+    """Late replies from a superseded refresh must not overwrite fresh state."""
+    client = DeferredRpcClient()
+    model = ConnectorsModel(client)
+
+    model.load()
+    first = list(client.calls)
+    model.load()
+    second = client.calls[len(first):]
+
+    assert [call["method"] for call in first] == [
+        "Connectors",
+        "MCPServers",
+        "GoogleStatus",
+        "ObsidianStatus",
+        "RevutoStatus",
+        "MCPSecretsAvailable",
+    ]
+    assert [call["method"] for call in second] == [call["method"] for call in first]
+
+    _reply(
+        _call_by_method(second, "Connectors"),
+        result={"connectors": [{"name": "fresh"}], "directory": []},
+    )
+    _reply(_call_by_method(second, "MCPServers"), result={"servers": [{"name": "fresh-server"}]})
+    _reply(_call_by_method(second, "GoogleStatus"), result={"configured": True, "connected": True})
+    assert model.loading is False
+
+    _reply(_call_by_method(second, "ObsidianStatus"), result={"available": True, "vault": "/fresh"})
+    _reply(_call_by_method(second, "RevutoStatus"), result={"available": True, "count": 2, "paused": 0})
+    _reply(_call_by_method(second, "MCPSecretsAvailable"), result=False)
+
+    _reply(_call_by_method(first, "Connectors"), error="stale connectors exploded")
+    _reply(_call_by_method(first, "MCPServers"), result={"servers": [{"name": "stale-server"}]})
+    _reply(_call_by_method(first, "GoogleStatus"), result={"configured": False, "connected": False})
+    _reply(_call_by_method(first, "ObsidianStatus"), result={"available": False, "vault": "/stale"})
+    _reply(_call_by_method(first, "RevutoStatus"), result={"available": False, "count": 0, "paused": 0})
+    _reply(_call_by_method(first, "MCPSecretsAvailable"), result=True)
+
+    assert model.connectors == {"connectors": [{"name": "fresh"}], "directory": []}
+    assert model.servers == {"servers": [{"name": "fresh-server"}]}
+    assert model.google_status == {"configured": True, "connected": True}
+    assert model.obsidian_status == {"available": True, "vault": "/fresh"}
+    assert model.revuto_status == {"available": True, "count": 2, "paused": 0}
+    assert model.secrets_ok is False
+    assert model.load_error == ""
     assert model.loading is False
 
 
@@ -94,16 +221,131 @@ def test_add_connector(model, client):
     assert ("AddConnector", ("notion", "https://mcp.notion.com/mcp", "Notion workspace")) in client.calls
 
 
+def test_add_connector_error_keeps_form_for_retry(model, client):
+    """Failed AddConnector should surface an error and preserve typed fields."""
+    client.failures["AddConnector"] = {"message": "add denied"}
+    model.add_open = True
+    model.add_name = "notion"
+    model.add_url = "https://mcp.notion.com/mcp"
+    model.add_desc = "Notion workspace"
+
+    model.add_connector("notion")
+
+    assert model.adding is False
+    assert model.add_open is True
+    assert model.add_name == "notion"
+    assert model.add_url == "https://mcp.notion.com/mcp"
+    assert model.add_desc == "Notion workspace"
+    assert model.action_error == "Could not add connector notion: add denied"
+
+
+def test_cancel_add_connector_clears_form(model):
+    """Canceling a custom connector add should not leave stale typed values."""
+    model.add_open = True
+    model.add_name = "linear"
+    model.add_url = "https://mcp.linear.app/mcp"
+    model.add_desc = "Linear issues"
+    model.action_error = "Could not add connector linear: denied"
+
+    model.cancel_add_connector()
+
+    assert model.add_open is False
+    assert model.add_name == ""
+    assert model.add_url == ""
+    assert model.add_desc == ""
+    assert model.action_error == ""
+
+
 def test_connect_connector(model, client):
     """Test connect_connector() calls ConnectConnector RPC."""
     model.connect_connector("slack")
     assert ("ConnectConnector", ("slack",)) in client.calls
 
 
+def test_catalog_and_connect_errors_clear_connecting_state(model, client):
+    """Failed catalog/OAuth starts should not leave an infinite authorizing chip."""
+    client.failures["AddCatalogConnector"] = {"message": "catalog denied"}
+    model.add_from_catalog("slack")
+
+    assert model.connecting == {}
+    assert model.action_error == "Could not add slack: catalog denied"
+
+    del client.failures["AddCatalogConnector"]
+    client.failures["ConnectConnector"] = "oauth denied"
+    model.connect_connector("slack")
+
+    assert model.connecting == {}
+    assert model.action_error == "Could not connect slack: oauth denied"
+
+
+def test_connector_event_clears_authorizing_state_and_refreshes(model, client):
+    """OAuth completion events clear the chip and refresh connector status."""
+    model.connect_connector("slack")
+    assert model.connecting == {"slack": True}
+
+    client.calls.clear()
+    client.event.emit("eigen:connector", {"name": "slack", "ok": True})
+
+    assert model.connecting == {}
+    assert model.action_error == ""
+    assert [method for method, _ in client.calls] == [
+        "Connectors",
+        "MCPServers",
+        "GoogleStatus",
+        "ObsidianStatus",
+        "RevutoStatus",
+        "MCPSecretsAvailable",
+    ]
+
+
+def test_connector_event_failure_clears_authorizing_state_and_surfaces_error(model, client):
+    """Failed OAuth completion events leave the row retryable with a visible error."""
+    model.connect_connector("slack")
+
+    client.calls.clear()
+    client.event.emit("eigen:connector", {"name": "slack", "ok": False, "error": "denied"})
+
+    assert model.connecting == {}
+    assert model.action_error == "Could not authorize slack: denied"
+    assert [method for method, _ in client.calls] == [
+        "Connectors",
+        "MCPServers",
+        "GoogleStatus",
+        "ObsidianStatus",
+        "RevutoStatus",
+        "MCPSecretsAvailable",
+    ]
+
+
 def test_disconnect_connector(model, client):
     """Test disconnect_connector() calls DisconnectConnector RPC."""
     model.disconnect_connector("notion")
     assert ("DisconnectConnector", ("notion",)) in client.calls
+
+
+@pytest.mark.parametrize(
+    "method,args,expected_error",
+    [
+        ("disconnect_connector", ("notion",), "Could not disconnect notion: disconnect denied"),
+        ("remove_connector", ("notion",), "Could not remove notion: remove denied"),
+        ("toggle_server", ("github", True), "Could not update github: toggle denied"),
+        ("remove_server", ("github",), "Could not remove MCP server github: remove denied"),
+    ],
+)
+def test_busy_connector_actions_clear_busy_on_error(model, client, method, args, expected_error):
+    """Failed connector/server actions clear busy state and remain retryable."""
+    rpc_method = {
+        "disconnect_connector": "DisconnectConnector",
+        "remove_connector": "RemoveConnector",
+        "toggle_server": "SetMCPServerDisabled",
+        "remove_server": "RemoveMCPServer",
+    }[method]
+    client.failures[rpc_method] = expected_error.rsplit(": ", 1)[1]
+
+    getattr(model, method)(*args)
+
+    assert model.busy == {}
+    assert model.action_error == expected_error
 
 
 def test_remove_connector(model, client):
@@ -143,10 +385,125 @@ def test_save_local_server(model, client):
     assert server_dto["secretEnvPairs"] == ["SECRET=xyz"]
 
 
+def test_save_local_server_error_keeps_form_for_retry(model, client):
+    """Failed local server save should keep all typed server fields."""
+    client.failures["SaveMCPServer"] = "save denied"
+    model.srv_open = True
+    model.srv_name = "test"
+    model.srv_command = "npx test-server"
+    model.srv_desc = "Test server"
+    model.srv_env = "KEY1=value1"
+    model.srv_secret = "SECRET=xyz"
+
+    model.save_local_server()
+
+    assert model.srv_saving is False
+    assert model.srv_open is True
+    assert model.srv_name == "test"
+    assert model.srv_command == "npx test-server"
+    assert model.srv_desc == "Test server"
+    assert model.srv_env == "KEY1=value1"
+    assert model.srv_secret == "SECRET=xyz"
+    assert model.action_error == "Could not save MCP server test: save denied"
+
+
+def test_pending_connector_mutations_do_not_duplicate():
+    """Pending connector/server mutations should collapse repeated UI invocations."""
+    client = DeferredRpcClient()
+    model = ConnectorsModel(client)
+
+    model.add_url = "https://mcp.linear.app/mcp"
+    model.add_desc = "Linear issues"
+    model.add_connector("linear")
+    model.add_connector("linear")
+    assert _deferred_call_count(client, "AddConnector", ("linear", "https://mcp.linear.app/mcp", "Linear issues")) == 1
+
+    model.add_from_catalog("slack")
+    model.add_from_catalog("slack")
+    assert _deferred_call_count(client, "AddCatalogConnector", ("slack",)) == 1
+
+    model.connect_connector("github")
+    model.connect_connector("github")
+    assert _deferred_call_count(client, "ConnectConnector", ("github",)) == 1
+
+    model.disconnect_connector("notion-disconnect")
+    model.disconnect_connector("notion-disconnect")
+    assert _deferred_call_count(client, "DisconnectConnector", ("notion-disconnect",)) == 1
+
+    model.confirm_remove_connector_set("notion-remove")
+    model.remove_connector("notion-remove")
+    model.remove_connector("notion-remove")
+    assert _deferred_call_count(client, "RemoveConnector", ("notion-remove",)) == 1
+    assert not model.confirm_remove_connector.get("notion-remove")
+
+    model.toggle_server("github-local", True)
+    model.toggle_server("github-local", False)
+    assert _deferred_call_count(client, "SetMCPServerDisabled", ("github-local", True)) == 1
+    assert _deferred_call_count(client, "SetMCPServerDisabled", ("github-local", False)) == 0
+
+    model.confirm_remove_server_set("filesystem-local")
+    model.remove_server("filesystem-local")
+    model.remove_server("filesystem-local")
+    assert _deferred_call_count(client, "RemoveMCPServer", ("filesystem-local",)) == 1
+    assert not model.confirm_remove_server.get("filesystem-local")
+
+
+@pytest.mark.parametrize(
+    "method,args,rpc_method,expected_args",
+    [
+        ("setup_google", (), "ImportGoogleClient", ()),
+        ("connect_google", (), "ConnectGoogle", ()),
+        ("disconnect_google", (), "DisconnectGoogle", ()),
+        ("choose_vault", ("/home/user/vault",), "ChooseObsidianVault", ("/home/user/vault",)),
+        ("revuto_pause", ("owner/repo", True), "RevutoSetPaused", ("owner/repo", True)),
+        ("revuto_trigger", ("owner/repo",), "RevutoTrigger", ("owner/repo", "review")),
+    ],
+)
+def test_pending_builtin_connector_actions_do_not_duplicate(method, args, rpc_method, expected_args):
+    """Built-in connector buttons should not emit duplicate RPCs while pending."""
+    client = DeferredRpcClient()
+    model = ConnectorsModel(client)
+
+    getattr(model, method)(*args)
+    getattr(model, method)(*args)
+
+    assert _deferred_call_count(client, rpc_method, expected_args) == 1
+
+
+def test_cancel_local_server_clears_form(model):
+    """Canceling a local MCP server add should clear all pending fields."""
+    model.srv_open = True
+    model.srv_name = "github-local"
+    model.srv_command = "uvx github-mcp-server"
+    model.srv_desc = "GitHub MCP"
+    model.srv_env = "LOG_LEVEL=info"
+    model.srv_secret = "GITHUB_TOKEN=secret"
+    model.action_error = "Could not save MCP server github-local: denied"
+
+    model.cancel_local_server()
+
+    assert model.srv_open is False
+    assert model.srv_name == ""
+    assert model.srv_command == ""
+    assert model.srv_desc == ""
+    assert model.srv_env == ""
+    assert model.srv_secret == ""
+    assert model.action_error == ""
+
+
 def test_choose_vault(model, client):
     """Test choose_vault() calls ChooseObsidianVault RPC."""
     model.choose_vault("/home/user/vault")
     assert ("ChooseObsidianVault", ("/home/user/vault",)) in client.calls
+
+
+def test_choose_vault_error_clears_busy_and_surfaces_error(model, client):
+    client.failures["ChooseObsidianVault"] = {"message": "vault denied"}
+
+    model.choose_vault("/home/user/vault")
+
+    assert model.obsidian_busy is False
+    assert model.action_error == "Could not choose Obsidian vault: vault denied"
 
 
 def test_toggle_revuto(model, client):
@@ -162,6 +519,21 @@ def test_revuto_pause(model, client):
     """Test revuto_pause() calls RevutoSetPaused RPC."""
     model.revuto_pause("owner/repo", True)
     assert ("RevutoSetPaused", ("owner/repo", True)) in client.calls
+
+
+def test_revuto_errors_clear_busy_and_surface_error(model, client):
+    client.failures["RevutoSetPaused"] = "pause denied"
+    model.revuto_pause("owner/repo", True)
+
+    assert model.revuto_busy == {}
+    assert model.action_error == "Could not update owner/repo: pause denied"
+
+    del client.failures["RevutoSetPaused"]
+    client.failures["RevutoTrigger"] = {"message": "trigger denied"}
+    model.revuto_trigger("owner/repo")
+
+    assert model.revuto_busy == {}
+    assert model.action_error == "Could not run review for owner/repo: trigger denied"
 
 
 def test_revuto_trigger(model, client):
@@ -186,6 +558,23 @@ def test_disconnect_google(model, client):
     """Test disconnect_google() calls DisconnectGoogle RPC."""
     model.disconnect_google()
     assert ("DisconnectGoogle", ()) in client.calls
+
+
+@pytest.mark.parametrize(
+    "method,rpc_method,expected_error",
+    [
+        ("setup_google", "ImportGoogleClient", "Could not import Google client: import denied"),
+        ("connect_google", "ConnectGoogle", "Could not connect Google: connect denied"),
+        ("disconnect_google", "DisconnectGoogle", "Could not disconnect Google: disconnect denied"),
+    ],
+)
+def test_google_action_errors_clear_busy(model, client, method, rpc_method, expected_error):
+    client.failures[rpc_method] = expected_error.rsplit(": ", 1)[1]
+
+    getattr(model, method)()
+
+    assert model.google_busy is False
+    assert model.action_error == expected_error
 
 
 if __name__ == "__main__":

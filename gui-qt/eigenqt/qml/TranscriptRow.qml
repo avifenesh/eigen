@@ -33,12 +33,19 @@ Item {
                 layoutDirection: Qt.RightToLeft
 
                 Rectangle {
-                    width: Math.min(messageLabel.contentWidth + Theme.space.lg * 2, parent.width * 0.75)
+                    width: Math.min(messageMetrics.width + Theme.space.lg * 2, parent.width * 0.75)
                     height: messageLabel.contentHeight + Theme.space.lg * 2
                     color: Theme.colors.brandDim
                     radius: Theme.radius.md
                     border.width: 1
                     border.color: Theme.colors.borderBrand
+
+                    TextMetrics {
+                        id: messageMetrics
+                        text: root.text
+                        font.family: Theme.uiFonts[0]
+                        font.pixelSize: Theme.fontSize.body
+                    }
 
                     Label {
                         id: messageLabel
@@ -161,6 +168,7 @@ Item {
                     anchors.fill: parent
                     anchors.margins: Theme.space.md
                     text: root.text
+                    textFormat: Text.PlainText
                     font.family: Theme.uiFonts[0]
                     font.pixelSize: Theme.fontSize.bodySm
                     color: Theme.colors.textSecondary

@@ -9,12 +9,23 @@ Rectangle {
     color: Theme.colors.bgBase
 
     property var tasksModel: null
+    property var rpcClient: null
     property string currentFilter: "all"  // all, running, done, error
 
     // Transcript viewer state
     property var openTask: null
     property string transcriptText: ""
+    property string transcriptError: ""
     property bool transcriptLoading: false
+    property bool transcriptLoaded: false
+    property int transcriptRequestSeq: 0
+    property int transcriptElidedCount: 0
+    readonly property int qaTranscriptEntryCount: transcriptEntries.count
+    readonly property int qaTranscriptPendingCount: Object.keys(transcriptCallTokens).length
+
+    function safeName(value) {
+        return String(value || "item").replace(/[^A-Za-z0-9_]/g, "_")
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -117,14 +128,35 @@ Rectangle {
                             model: ["all", "running", "done", "error"]
                             delegate: Rectangle {
                                 id: chipRect
+                                readonly property bool selected: root.currentFilter === modelData
+                                readonly property bool qaVisualFocus: activeFocus
+                                readonly property string qaAccessibleName: chipLabel.text + " task filter"
+
+                                objectName: "taskFilterChip_" + root.safeName(modelData)
                                 Layout.preferredHeight: 24
                                 Layout.preferredWidth: chipLabel.implicitWidth + 16
                                 radius: Theme.radius.sm
-                                color: root.currentFilter === modelData
-                                    ? Theme.colors.surfaceRaised2
-                                    : "transparent"
+                                activeFocusOnTab: true
+                                focusPolicy: Qt.StrongFocus
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qaAccessibleName
+                                Accessible.description: selected ? "Selected task filter" : "Filter tasks to " + chipLabel.text
+                                Accessible.onPressAction: activate()
+
+                                color: selected ? Theme.colors.surfaceRaised2 : (activeFocus ? Theme.colors.stateFocusBg : "transparent")
+                                border.width: activeFocus ? 1 : 0
+                                border.color: activeFocus ? Theme.colors.brandBright : "transparent"
 
                                 Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
+                                Behavior on border.color { ColorAnimation { duration: Theme.duration.fast } }
+
+                                function activate() {
+                                    root.currentFilter = modelData
+                                }
+
+                                Keys.onReturnPressed: activate()
+                                Keys.onEnterPressed: activate()
+                                Keys.onSpacePressed: activate()
 
                                 Label {
                                     id: chipLabel
@@ -133,19 +165,58 @@ Rectangle {
                                     font.family: Theme.uiFonts[0]
                                     font.pixelSize: Theme.fontSize.bodySm
                                     font.weight: Theme.fontWeight.medium
-                                    color: root.currentFilter === modelData
-                                        ? Theme.colors.textPrimary
-                                        : Theme.colors.textMuted
+                                    color: chipRect.selected ? Theme.colors.textPrimary : Theme.colors.textMuted
                                 }
 
                                 MouseArea {
                                     anchors.fill: parent
+                                    hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: root.currentFilter = modelData
+                                    onClicked: chipRect.activate()
                                 }
                             }
                         }
                     }
+                }
+            }
+        }
+
+        Rectangle {
+            objectName: "taskActionErrorBanner"
+            visible: root.tasksModel && root.tasksModel.actionError !== ""
+            Layout.fillWidth: true
+            Layout.preferredHeight: visible ? taskActionErrorText.implicitHeight + Theme.space.lg * 2 : 0
+            color: Theme.colors.errorBg
+            border.width: 1
+            border.color: Theme.colors.error
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: Theme.space.xxxl
+                anchors.rightMargin: Theme.space.xxxl
+                anchors.topMargin: Theme.space.lg
+                anchors.bottomMargin: Theme.space.lg
+                spacing: Theme.space.lg
+
+                Label {
+                    id: taskActionErrorText
+                    objectName: "taskActionErrorText"
+                    text: root.tasksModel ? root.tasksModel.actionError : ""
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.bodySm
+                    color: Theme.colors.error
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+
+                AppButton {
+                    objectName: "taskActionErrorDismissButton"
+                    text: "✕"
+                    compact: true
+                    toolTipText: "Dismiss task error"
+                    Layout.preferredWidth: 32
+                    Layout.preferredHeight: 32
+                    onClicked: if (root.tasksModel) root.tasksModel.clear_action_error()
                 }
             }
         }
@@ -399,56 +470,28 @@ Rectangle {
                     // Actions
                     ColumnLayout {
                         Layout.alignment: Qt.AlignTop
+                        Layout.preferredWidth: 116
                         spacing: Theme.space.sm
 
-                        Button {
+                        AppButton {
+                            objectName: "taskTranscriptButton_" + root.safeName(model.taskId)
                             text: "Transcript"
-                            Layout.preferredWidth: 100
+                            compact: true
+                            toolTipText: "Open task transcript"
+                            Layout.fillWidth: true
                             onClicked: openTranscript(model)
-
-                            background: Rectangle {
-                                implicitWidth: 100
-                                implicitHeight: 28
-                                radius: Theme.radius.sm
-                                color: parent.pressed ? Theme.colors.stateActive : (parent.hovered ? Theme.colors.stateHover : "transparent")
-                                border.width: 1
-                                border.color: Theme.colors.borderSubtle
-                            }
-
-                            contentItem: Text {
-                                text: parent.text
-                                font.family: Theme.uiFonts[0]
-                                font.pixelSize: Theme.fontSize.bodySm
-                                color: Theme.colors.textPrimary
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
                         }
 
-                        Button {
+                        AppButton {
                             visible: model.status === "running"
                             enabled: !model.canceling
+                            objectName: "taskCancelButton_" + root.safeName(model.taskId)
+                            variant: "danger"
+                            compact: true
+                            toolTipText: model.canceling ? "Task cancel request is pending" : "Cancel running task"
                             text: model.canceling ? "Stopping…" : "Cancel"
-                            Layout.preferredWidth: 100
+                            Layout.fillWidth: true
                             onClicked: root.tasksModel.cancel(model.taskId)
-
-                            background: Rectangle {
-                                implicitWidth: 100
-                                implicitHeight: 28
-                                radius: Theme.radius.sm
-                                color: parent.enabled ? (parent.pressed ? Theme.colors.errorBg : (parent.hovered ? Theme.colors.errorBg : "transparent")) : Theme.colors.bgWell
-                                border.width: 1
-                                border.color: parent.enabled ? Theme.colors.error : Theme.colors.borderHairline
-                            }
-
-                            contentItem: Text {
-                                text: parent.text
-                                font.family: Theme.uiFonts[0]
-                                font.pixelSize: Theme.fontSize.bodySm
-                                color: parent.enabled ? Theme.colors.error : Theme.colors.textMuted
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
                         }
                     }
                 }
@@ -550,24 +593,14 @@ Rectangle {
 
                 Item { Layout.fillWidth: true }
 
-                Button {
+                AppButton {
+                    objectName: "taskTranscriptCloseButton"
                     text: "✕"
+                    toolTipText: "Close transcript"
+                    compact: true
+                    Layout.preferredWidth: 32
+                    Layout.preferredHeight: 32
                     onClicked: closeTranscript()
-
-                    background: Rectangle {
-                        implicitWidth: 32
-                        implicitHeight: 32
-                        radius: Theme.radius.sm
-                        color: parent.pressed ? Theme.colors.stateActive : (parent.hovered ? Theme.colors.stateHover : "transparent")
-                    }
-
-                    contentItem: Text {
-                        text: parent.text
-                        font.pixelSize: 18
-                        color: Theme.colors.textPrimary
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
                 }
             }
 
@@ -649,9 +682,74 @@ Rectangle {
                         color: Theme.colors.textMuted
                     }
 
+                    Rectangle {
+                        objectName: "taskTranscriptError"
+                        visible: !root.transcriptLoading && root.transcriptError !== ""
+                        Layout.fillWidth: true
+                        implicitHeight: transcriptErrorContent.implicitHeight + Theme.space.lg * 2
+                        color: Theme.colors.errorBg
+                        border.width: 1
+                        border.color: Theme.colors.error
+                        radius: Theme.radius.sm
+
+                        RowLayout {
+                            id: transcriptErrorContent
+                            anchors.fill: parent
+                            anchors.margins: Theme.space.lg
+                            spacing: Theme.space.md
+
+                            Label {
+                                id: transcriptErrorText
+                                objectName: "taskTranscriptErrorText"
+                                text: root.transcriptError
+                                font.family: Theme.uiFonts[0]
+                                font.pixelSize: Theme.fontSize.bodySm
+                                color: Theme.colors.error
+                                wrapMode: Text.Wrap
+                                Layout.fillWidth: true
+                            }
+
+                            AppButton {
+                                objectName: "taskTranscriptErrorRetryButton"
+                                text: "Retry"
+                                variant: "ghost"
+                                compact: true
+                                toolTipText: "Retry transcript load"
+                                onClicked: root.retryTranscript()
+                            }
+                        }
+                    }
+
                     // Transcript entries
+                    Rectangle {
+                        objectName: "taskTranscriptElidedNotice"
+                        visible: root.openTask !== null && !root.transcriptLoading && root.transcriptError === "" && root.transcriptElidedCount > 0
+                        Layout.fillWidth: true
+                        implicitHeight: elidedNoticeText.implicitHeight + Theme.space.md * 2
+                        color: Theme.colors.bgWell
+                        border.width: 1
+                        border.color: Theme.colors.borderHairline
+                        radius: Theme.radius.sm
+
+                        Label {
+                            id: elidedNoticeText
+                            anchors.fill: parent
+                            anchors.margins: Theme.space.md
+                            text: root.transcriptElidedCount.toLocaleString()
+                                + " earlier "
+                                + (root.transcriptElidedCount === 1 ? "message" : "messages")
+                                + " hidden; showing the most recent "
+                                + transcriptEntries.count.toLocaleString()
+                                + "."
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.bodySm
+                            color: Theme.colors.textMuted
+                            wrapMode: Text.Wrap
+                        }
+                    }
+
                     Repeater {
-                        model: root.transcriptLoading ? 0 : transcriptEntries.count
+                        model: root.openTask === null || root.transcriptLoading || root.transcriptError !== "" ? 0 : transcriptEntries.count
                         delegate: Rectangle {
                             Layout.fillWidth: true
                             implicitHeight: entryLayout.implicitHeight + Theme.space.lg * 2
@@ -758,11 +856,15 @@ Rectangle {
                                 Repeater {
                                     model: transcriptEntries.get(index).toolCalls
                                     delegate: ColumnLayout {
+                                        id: toolCallDelegate
+                                        required property string name
+                                        required property string args
+
                                         spacing: Theme.space.xs
                                         Layout.fillWidth: true
 
                                         Label {
-                                            text: modelData.name || "tool"
+                                            text: toolCallDelegate.name || "tool"
                                             font.family: Theme.monoFonts[0]
                                             font.pixelSize: Theme.fontSize.codeSm
                                             font.weight: Theme.fontWeight.medium
@@ -770,7 +872,7 @@ Rectangle {
                                         }
 
                                         Rectangle {
-                                            visible: modelData.args
+                                            visible: toolCallDelegate.args !== ""
                                             Layout.fillWidth: true
                                             implicitHeight: Math.min(280, argsText.implicitHeight + 16)
                                             color: Theme.colors.synBg
@@ -784,7 +886,7 @@ Rectangle {
 
                                                 Label {
                                                     id: argsText
-                                                    text: modelData.args
+                                                    text: toolCallDelegate.args
                                                     font.family: Theme.monoFonts[0]
                                                     font.pixelSize: Theme.fontSize.codeSm
                                                     color: Theme.colors.synText
@@ -827,7 +929,8 @@ Rectangle {
 
                     // Empty transcript message
                     Label {
-                        visible: !root.transcriptLoading && transcriptEntries.count === 0 && root.transcriptText
+                        objectName: "taskTranscriptEmpty"
+                        visible: root.openTask !== null && !root.transcriptLoading && root.transcriptLoaded && root.transcriptError === "" && transcriptEntries.count === 0
                         text: "No transcript snapshot on disk for this task."
                         font.family: Theme.uiFonts[0]
                         font.pixelSize: Theme.fontSize.bodySm
@@ -881,35 +984,65 @@ Rectangle {
     }
 
     function openTranscript(taskData) {
+        root.transcriptRequestSeq += 1
+        var seq = root.transcriptRequestSeq
         root.openTask = taskData
         root.transcriptText = ""
+        root.transcriptError = ""
         root.transcriptLoading = true
+        root.transcriptLoaded = false
+        root.transcriptElidedCount = 0
         transcriptEntries.clear()
 
+        if (!root.rpcClient) {
+            root.transcriptLoading = false
+            root.transcriptLoaded = true
+            root.transcriptError = "Could not load transcript: RPC client is unavailable."
+            return
+        }
+
         // Call AgentTranscript RPC
-        var token = rpcClient.callToken("AgentTranscript", [taskData.taskId])
-        transcriptCallTokens[token] = true
+        var token = root.rpcClient.callToken("AgentTranscript", [taskData.taskId])
+        var tokens = root.transcriptCallTokens
+        tokens[token] = seq
+        root.transcriptCallTokens = tokens
     }
 
     function closeTranscript() {
+        root.transcriptRequestSeq += 1
+        root.transcriptCallTokens = ({})
         root.openTask = null
         root.transcriptText = ""
+        root.transcriptError = ""
+        root.transcriptLoading = false
+        root.transcriptLoaded = false
+        root.transcriptElidedCount = 0
         transcriptEntries.clear()
+    }
+
+    function retryTranscript() {
+        if (root.openTask === null || root.transcriptLoading) return
+        root.openTranscript(root.openTask)
     }
 
     // Track transcript RPC tokens
     property var transcriptCallTokens: ({})
 
     Connections {
-        target: rpcClient
+        target: root.rpcClient ? root.rpcClient : null
         function onCallDone(token, payload) {
-            if (!root.transcriptCallTokens[token]) return
-            delete root.transcriptCallTokens[token]
+            var seq = root.transcriptCallTokens[token]
+            if (seq === undefined) return
+            var tokens = root.transcriptCallTokens
+            delete tokens[token]
+            root.transcriptCallTokens = tokens
+            if (seq !== root.transcriptRequestSeq) return
 
             root.transcriptLoading = false
+            root.transcriptLoaded = true
 
             if (payload.error) {
-                console.warn("AgentTranscript error:", payload.error)
+                root.transcriptError = "Could not load transcript: " + errorText(payload.error)
                 return
             }
 
@@ -922,7 +1055,15 @@ Rectangle {
         }
     }
 
+    function errorText(error) {
+        if (error === undefined || error === null) return "unknown error"
+        if (typeof error === "string") return error
+        if (error.message) return String(error.message)
+        return JSON.stringify(error)
+    }
+
     function parseTranscript(text) {
+        root.transcriptElidedCount = 0
         if (!text.trim()) return
 
         var lines = text.split("\n")
@@ -988,6 +1129,7 @@ Rectangle {
         // Cap at 200 tail (like Svelte TX_MAX)
         var TX_MAX = 200
         var shown = allEntries.length > TX_MAX ? allEntries.slice(allEntries.length - TX_MAX) : allEntries
+        root.transcriptElidedCount = Math.max(0, allEntries.length - shown.length)
 
         for (var k = 0; k < shown.length; k++) {
             transcriptEntries.append(shown[k])

@@ -18,13 +18,20 @@ from eigenqt.models import (
     ApprovalsModel,
     BoardModel,
     CommandsModel,
+    CronsModel,
     DashboardModel,
+    DreamingModel,
     FeedModel,
     KanbanModel,
     LiveSessionsModel,
     MemoryModel,
+    MachinesModel,
+    ObserveModel,
+    PluginsModel,
+    ProfileModel,
     ProposalsModel,
     ReplyWatcher,
+    RoutingModel,
     SessionsModel,
     SessionStateModel,
     SkillsModel,
@@ -39,6 +46,8 @@ from eigenqt.rpc import GuiserverSupervisor, RpcClient
 from eigenqt.clipboard_helper import ClipboardHelper
 from eigenqt.highlighter_helper import HighlighterHelper
 from eigenqt.markdown_helper import MarkdownHelper
+from eigenqt.terminal_helper import TerminalHelper
+from eigenqt.webengine import initialize_webengine
 
 ROOT = Path(__file__).resolve().parent
 
@@ -53,8 +62,11 @@ class AppContext(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._daemon_online = False
-        self._guiserver_sha = ""
+        self._guiserver_sha = "starting"
         self._stats = {}
+
+        self.guiserver = GuiserverSupervisor(parent=self)
+        self._ensure_guiserver()
 
         # RPC client (auto-connects on init)
         self.rpc_client = RpcClient(parent=self)
@@ -70,8 +82,15 @@ class AppContext(QObject):
         self.skills_model = SkillsModel(self.rpc_client, self)
         self.proposals_model = ProposalsModel(self.rpc_client, self)
         self.memory_model = MemoryModel(self.rpc_client, self)
+        self.dreaming_model = DreamingModel(self.rpc_client, self)
         self.notes_controller = NotesController(self.rpc_client, self)
         self.connectors_model = ConnectorsModel(self.rpc_client, self)
+        self.observe_model = ObserveModel(self.rpc_client, self)
+        self.routing_model = RoutingModel(self.rpc_client, self)
+        self.machines_model = MachinesModel(self.rpc_client, self)
+        self.crons_model = CronsModel(self.rpc_client, self)
+        self.plugins_model = PluginsModel(self.rpc_client, self)
+        self.profile_model = ProfileModel(self.rpc_client, self)
         self.config_model = ConfigModel(self.rpc_client, self)
         self.rule_chains_model = RuleChainsModel(self.rpc_client, self)
         self.reviewers_model = ReviewersModel(self.rpc_client, self)
@@ -101,17 +120,32 @@ class AppContext(QObject):
     def _on_connected(self):
         """Handle RPC connected signal."""
         print("RPC connected")
-        # Subscribe to daemon stats for online/offline tracking
-        self.rpc_client.subscribe(["eigen:daemon:stats"])
+        self.rpc_client.subscribe(
+            ["eigen:daemon:stats", "eigen:daemon:health"]
+        )
+        self._fetch_hello()
+        self._fetch_stats()
 
     def _on_event(self, channel: str, data: dict):
         """Handle RPC event signal."""
         if channel == "eigen:daemon:stats":
-            # Update daemon online status
-            was_online = self._daemon_online
-            self._daemon_online = data.get("online", False)
-            if was_online != self._daemon_online:
-                self.daemonOnlineChanged.emit()
+            if isinstance(data, dict):
+                self._stats = data
+                self.statsChanged.emit()
+            self._set_daemon_online(True)
+        elif channel == "eigen:daemon:health":
+            self._set_daemon_online(bool(data.get("ok", False)))
+
+    def _ensure_guiserver(self):
+        """Start or attach to the guiserver before the RPC workers connect."""
+        try:
+            hello = self.guiserver.ensure_running(timeout=10.0)
+        except Exception as exc:
+            print(f"guiserver supervisor failed: {exc}", file=sys.stderr)
+            self._set_guiserver_sha("error")
+            return
+
+        self._set_guiserver_sha(hello.get("sha") or "unknown")
 
     def _fetch_hello(self):
         """Fetch hello from guiserver."""
@@ -119,13 +153,17 @@ class AppContext(QObject):
 
     def _on_hello(self, result):
         """Handle hello response."""
-        if "result" in result:
-            self._guiserver_sha = result["result"].get("sha", "unknown")
-            self.guiserverShaChanged.emit()
+        if result.get("error") == "not connected":
+            QTimer.singleShot(500, self._fetch_hello)
+            return
+
+        payload = result.get("result")
+        if isinstance(payload, dict):
+            self._set_guiserver_sha(payload.get("sha") or "unknown")
             print(f"guiserver ready: sha={self._guiserver_sha[:8]}")
-        else:
-            self._guiserver_sha = "error"
-            self.guiserverShaChanged.emit()
+            return
+
+        self._set_guiserver_sha("error")
 
     def _fetch_stats(self):
         """Fetch daemon Stats."""
@@ -139,6 +177,19 @@ class AppContext(QObject):
         if isinstance(payload, dict):
             self._stats = payload
             self.statsChanged.emit()
+            self._set_daemon_online(True)
+
+    def _set_daemon_online(self, online: bool):
+        if self._daemon_online == online:
+            return
+        self._daemon_online = online
+        self.daemonOnlineChanged.emit()
+
+    def _set_guiserver_sha(self, sha: str):
+        if self._guiserver_sha == sha:
+            return
+        self._guiserver_sha = sha
+        self.guiserverShaChanged.emit()
 
     @Property(bool, notify=daemonOnlineChanged)
     def daemonOnline(self):
@@ -174,6 +225,7 @@ class SessionController(QObject):
         self.approvals_model = ApprovalsModel(client, "", parent)
         self._session_state_model = SessionStateModel(client, "", parent)
         self._commands_model = CommandsModel(client, parent)
+        self._state_seq = 0
 
     @Property(str, notify=sessionIdChanged)
     def session_id(self):
@@ -214,19 +266,33 @@ class SessionController(QObject):
         self._client.subscribe([channel])
 
         # Fetch initial state
-        self._client.call("State", session_id, callback=self._on_state)
+        self._state_seq += 1
+        controller_seq = self._state_seq
+        state_seq = self._session_state_model.beginStateRequest()
+        self._client.call(
+            "State",
+            session_id,
+            callback=lambda result, seq=controller_seq, state_seq=state_seq: self._on_state(
+                result,
+                seq,
+                state_seq,
+            ),
+        )
 
-    def _on_state(self, result):
+    def _on_state(self, result, controller_seq=None, state_seq=None):
         """Handle State RPC result."""
+        if controller_seq is not None and controller_seq != self._state_seq:
+            return
         if "result" in result:
             self.transcript_model.seed(result["result"])
             self.approvals_model.seed(result["result"])
-            self._session_state_model.seed(result["result"])
+            self._session_state_model.applyState(result["result"], state_seq)
 
     @Slot()
     def detach(self):
         """Detach from current session."""
         if self._session_id:
+            self._state_seq += 1
             channel = f"session:{self._session_id}"
             self._client.unsubscribe([channel])
 
@@ -244,6 +310,7 @@ class SessionController(QObject):
 
 
 def main():
+    initialize_webengine()
     QQuickStyle.setStyle("Basic")  # Unstyled base for custom theme
 
     app = QGuiApplication(sys.argv)
@@ -270,6 +337,7 @@ def main():
     clipboard_helper = ClipboardHelper(app)
     highlighter_helper = HighlighterHelper(app)
     markdown_helper = MarkdownHelper(app)
+    terminal_helper = TerminalHelper(app)
 
     # Expose to QML
     ctx.setContextProperty("rpcClient", app_context.rpc_client)
@@ -284,8 +352,15 @@ def main():
     ctx.setContextProperty("skillsModel", app_context.skills_model)
     ctx.setContextProperty("proposalsModel", app_context.proposals_model)
     ctx.setContextProperty("memoryModel", app_context.memory_model)
+    ctx.setContextProperty("dreamingModel", app_context.dreaming_model)
     ctx.setContextProperty("notesController", app_context.notes_controller)
     ctx.setContextProperty("connectorsModel", app_context.connectors_model)
+    ctx.setContextProperty("observeModel", app_context.observe_model)
+    ctx.setContextProperty("routingModel", app_context.routing_model)
+    ctx.setContextProperty("machinesModel", app_context.machines_model)
+    ctx.setContextProperty("cronsModel", app_context.crons_model)
+    ctx.setContextProperty("pluginsModel", app_context.plugins_model)
+    ctx.setContextProperty("profileModel", app_context.profile_model)
     ctx.setContextProperty("configModel", app_context.config_model)
     ctx.setContextProperty("ruleChainsModel", app_context.rule_chains_model)
     ctx.setContextProperty("reviewersModel", app_context.reviewers_model)
@@ -298,6 +373,7 @@ def main():
     ctx.setContextProperty("clipboardHelper", clipboard_helper)
     ctx.setContextProperty("highlighter", highlighter_helper)
     ctx.setContextProperty("markdownParser", markdown_helper)
+    ctx.setContextProperty("terminalHelper", terminal_helper)
 
     # Bind property changes
     app_context.daemonOnlineChanged.connect(lambda: ctx.setContextProperty("daemonOnline", app_context.daemonOnline))

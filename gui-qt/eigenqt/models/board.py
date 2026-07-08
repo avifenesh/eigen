@@ -7,12 +7,21 @@ Kanban: derived cross-repo columns with actionable cards.
 Loaded via Board() and Kanban() bridge calls. No subscriptions — user-triggered refresh.
 """
 
-import sys
-from typing import Optional
+from typing import Any, Optional
 
 from PySide6.QtCore import QAbstractListModel, QModelIndex, QObject, Property, Qt, Signal, Slot
 
 from eigenqt.rpc import RpcClient
+
+
+def _err_text(value: Any) -> str:
+    """Extract a readable RPC error string."""
+    if isinstance(value, dict):
+        nested = value.get("message") or value.get("error")
+        if nested is not None and nested is not value:
+            return _err_text(nested)
+        return "Unknown error"
+    return str(value) if value else "Unknown error"
 
 
 class BoardModel(QAbstractListModel):
@@ -36,6 +45,9 @@ class BoardModel(QAbstractListModel):
 
     loadingChanged = Signal()
     errorChanged = Signal()
+    actionErrorChanged = Signal()
+    pinningChanged = Signal()
+    sessionStarted = Signal(str)
 
     def __init__(self, client: RpcClient, parent: Optional[QObject] = None):
         super().__init__(parent)
@@ -43,6 +55,8 @@ class BoardModel(QAbstractListModel):
         self._lanes: list[dict] = []
         self._loading = False
         self._error = ""
+        self._action_error = ""
+        self._pinning: set[str] = set()
 
     def roleNames(self) -> dict[int, bytes]:
         """Expose roles to QML."""
@@ -116,6 +130,16 @@ class BoardModel(QAbstractListModel):
         """Error message (empty if none)."""
         return self._error
 
+    @Property(str, notify=actionErrorChanged)
+    def actionError(self) -> str:
+        """Last pin/session action error for the board view."""
+        return self._action_error
+
+    @Property(list, notify=pinningChanged)
+    def pinning(self) -> list[str]:
+        """Lane keys currently being pinned or unpinned."""
+        return sorted(self._pinning)
+
     @Slot()
     def load(self):
         """Fetch board data from daemon."""
@@ -155,32 +179,64 @@ class BoardModel(QAbstractListModel):
     @Slot(str)
     def toggle_pin(self, key: str):
         """Toggle lane pin state. Key is repo (remote) or dir (local)."""
+        key = (key or "").strip()
+        if not key or key in self._pinning:
+            return
+
         # Find the lane to determine current pinned state
         lane = next((l for l in self._lanes if (l.get("remote") and l.get("repo") == key) or (not l.get("remote") and l.get("dir") == key)), None)
         if not lane:
+            self._set_action_error("Could not find board lane.")
             return
 
         method = "UnpinLane" if lane.get("pinned") else "PinLane"
-        self._client.call(method, key, callback=lambda r: self._on_toggle_pin_result(r, key))
+        self._set_action_error("")
+        self._pinning.add(key)
+        self.pinningChanged.emit()
+        self._client.call(method, key, callback=lambda r: self._on_toggle_pin_result(r, key, method))
 
-    def _on_toggle_pin_result(self, result: dict, key: str):
+    @Slot(str, result=bool)
+    def isPinning(self, key: str) -> bool:
+        """Return whether a lane pin/unpin call is currently in flight."""
+        return (key or "").strip() in self._pinning
+
+    def _on_toggle_pin_result(self, result: dict, key: str, method: str):
         """Handle pin/unpin result — reload board."""
+        self._pinning.discard(key)
+        self.pinningChanged.emit()
         if "error" in result:
-            print(f"Toggle pin error: {result['error']}", file=sys.stderr)
+            action = "unpin" if method == "UnpinLane" else "pin"
+            self._set_action_error(f"Could not {action} lane: {_err_text(result.get('error'))}")
             return
+        self._set_action_error("")
         self.load()
 
     @Slot(str)
     def open_lane_chat(self, lane_dir: str):
         """Open a new session for the given lane. Emits signal for routing."""
+        self._set_action_error("")
         self._client.call("NewSession", lane_dir, "", "", callback=lambda r: self._on_new_session_result(r))
 
     def _on_new_session_result(self, result: dict):
         """Handle NewSession result. Emit a signal that Main can catch."""
         if "error" in result:
-            print(f"NewSession error: {result['error']}", file=sys.stderr)
+            self._set_action_error(f"Could not start session: {_err_text(result.get('error'))}")
             return
-        # TODO: emit signal with session ID for routing
+        session_id = result.get("result") or ""
+        if session_id:
+            self._set_action_error("")
+            self.sessionStarted.emit(session_id)
+
+    @Slot()
+    def clearActionError(self):
+        """Clear the board action error banner."""
+        self._set_action_error("")
+
+    def _set_action_error(self, value: str):
+        if self._action_error == value:
+            return
+        self._action_error = value
+        self.actionErrorChanged.emit()
 
 
 class KanbanModel(QObject):

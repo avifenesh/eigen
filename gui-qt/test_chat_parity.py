@@ -61,7 +61,7 @@ def main():
         print(f"✓ Session created: {session_id}")
 
     # NewSession(dir, model, perm) - perm is empty string for default
-    client.call("NewSession", "/tmp/qt-test", "sonnet-3-5", "", callback=on_new_session)
+    client.call("NewSession", "/tmp/qt-test", "gpt-5", "", callback=on_new_session)
 
     # Wait for session creation
     timeout = time.time() + 5

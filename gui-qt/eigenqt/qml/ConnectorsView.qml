@@ -9,11 +9,23 @@ import "Theme.js" as Theme
 // Google/Obsidian/Revuto native built-ins.
 Rectangle {
     id: root
+    objectName: "connectorsView"
     color: Theme.colors.bgBase
 
     property var connectorsModel: null  // ConnectorsModel from Python
 
+    component FormFieldBackground: Rectangle {
+        property bool focused: false
+
+        color: Theme.colors.bgRaised2
+        border.width: 1
+        border.color: focused ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
+        radius: Theme.radius.sm
+    }
+
     Flickable {
+        id: connectorsFlick
+        objectName: "connectorsFlick"
         anchors.fill: parent
         contentWidth: width
         contentHeight: contentColumn.implicitHeight
@@ -52,7 +64,7 @@ Rectangle {
 
             // Loading skeleton
             ColumnLayout {
-                visible: connectorsModel && connectorsModel.loading && !connectorsModel.connectors
+                visible: !!(connectorsModel && connectorsModel.loading && !connectorsLoaded() && !root.hasInitialLoadError())
                 Layout.fillWidth: true
                 spacing: Theme.space.md
 
@@ -69,7 +81,8 @@ Rectangle {
 
             // Error state
             Rectangle {
-                visible: connectorsModel && connectorsModel.load_error && !connectorsModel.connectors
+                objectName: "connectorsLoadError"
+                visible: root.hasInitialLoadError()
                 Layout.fillWidth: true
                 Layout.preferredHeight: 120
                 color: Theme.colors.bgRaised
@@ -81,11 +94,22 @@ Rectangle {
                     anchors.centerIn: parent
                     spacing: Theme.space.md
 
-                    Label {
-                        text: "⟐"
-                        font.pixelSize: 32
-                        color: Theme.colors.textFaint
+                    Rectangle {
+                        implicitWidth: 48
+                        implicitHeight: 30
+                        radius: Theme.radius.sm
+                        color: Theme.colors.bgInset
+                        border.width: 1
+                        border.color: Theme.colors.borderHairline
                         Layout.alignment: Qt.AlignHCenter
+
+                        Label {
+                            anchors.centerIn: parent
+                            text: "MCP"
+                            font.pixelSize: Theme.fontSize.label
+                            font.weight: Theme.fontWeight.bold
+                            color: Theme.colors.textMuted
+                        }
                     }
 
                     Label {
@@ -97,13 +121,15 @@ Rectangle {
                     }
 
                     Label {
+                        objectName: "connectorsLoadErrorText"
                         text: connectorsModel ? connectorsModel.load_error : ""
                         font.pixelSize: Theme.fontSize.label
                         color: Theme.colors.textMuted
                         Layout.alignment: Qt.AlignHCenter
                     }
 
-                    Button {
+                    AppButton {
+                        objectName: "connectorsLoadErrorRetry"
                         text: "Retry"
                         onClicked: connectorsModel.load()
                         Layout.alignment: Qt.AlignHCenter
@@ -111,16 +137,58 @@ Rectangle {
                 }
             }
 
+            Rectangle {
+                objectName: "connectorsRefreshErrorBanner"
+                visible: root.hasRefreshLoadError()
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? Math.max(40, connectorsRefreshErrorRow.implicitHeight + Theme.space.md) : 0
+                color: Theme.colors.errorBg
+                border.width: visible ? 1 : 0
+                border.color: Theme.colors.error
+                radius: Theme.radius.sm
+                clip: true
+
+                RowLayout {
+                    id: connectorsRefreshErrorRow
+                    anchors.fill: parent
+                    anchors.leftMargin: Theme.space.md
+                    anchors.rightMargin: Theme.space.md
+                    spacing: Theme.space.md
+
+                    Label {
+                        objectName: "connectorsRefreshErrorText"
+                        text: connectorsModel ? connectorsModel.load_error : ""
+                        font.family: Theme.uiFonts[0]
+                        font.pixelSize: Theme.fontSize.label
+                        color: Theme.colors.error
+                        wrapMode: Text.Wrap
+                        Layout.fillWidth: true
+                    }
+
+                    AppButton {
+                        objectName: "connectorsRefreshErrorRetry"
+                        text: "Retry"
+                        compact: true
+                        toolTipText: "Retry loading connectors"
+                        Layout.preferredWidth: 72
+                        onClicked: {
+                            if (connectorsModel) connectorsModel.load()
+                        }
+                    }
+                }
+            }
+
             // Content (when loaded)
             ColumnLayout {
-                visible: connectorsModel && connectorsModel.connectors
+                visible: connectorsLoaded()
                 Layout.fillWidth: true
                 spacing: Theme.space.lg
 
                 // Google built-in
                 ConnectorCard {
-                    visible: connectorsModel && connectorsModel.google_status
+                    visible: !!(connectorsModel && connectorsModel.google_status)
                     Layout.fillWidth: true
+                    actionKey: "google"
                     glyph: "◷"
                     connectorName: "Google"
                     description: "Calendar + Gmail — read events & email, create events."
@@ -141,8 +209,9 @@ Rectangle {
 
                 // Obsidian built-in
                 ConnectorCard {
-                    visible: connectorsModel && connectorsModel.obsidian_status
+                    visible: !!(connectorsModel && connectorsModel.obsidian_status)
                     Layout.fillWidth: true
+                    actionKey: "obsidian"
                     glyph: "≣"
                     connectorName: "Obsidian"
                     description: "Read, search & write notes in your Obsidian vault."
@@ -157,8 +226,9 @@ Rectangle {
 
                 // Revuto built-in
                 ConnectorCard {
-                    visible: connectorsModel && connectorsModel.revuto_status
+                    visible: !!(connectorsModel && connectorsModel.revuto_status)
                     Layout.fillWidth: true
+                    actionKey: "revuto"
                     glyph: "⌕"
                     connectorName: "Revuto"
                     description: "Your AI PR-reviewer — list reviewers, trigger review/learn/decay, pause/resume."
@@ -225,13 +295,15 @@ Rectangle {
 
                                     Item { Layout.fillWidth: true }
 
-                                    Button {
+                                    AppButton {
+                                        objectName: reviewer.repo ? "connectorRevutoReviewButton_" + reviewer.repo : ""
                                         text: "Review now"
                                         enabled: !isRevBusy(reviewer.repo)
                                         onClicked: connectorsModel.revuto_trigger(reviewer.repo)
                                     }
 
-                                    Button {
+                                    AppButton {
+                                        objectName: reviewer.repo ? "connectorRevutoPauseButton_" + reviewer.repo : ""
                                         text: reviewer.paused ? "Resume" : "Pause"
                                         enabled: !isRevBusy(reviewer.repo)
                                         onClicked: connectorsModel.revuto_pause(reviewer.repo, !reviewer.paused)
@@ -247,10 +319,55 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignRight
 
-                    Button {
+                    AppButton {
+                        objectName: "connectorsAddButton"
                         visible: connectorsModel && !connectorsModel.add_open
                         text: "+ Add connector"
+                        toolTipText: "Add remote connector"
                         onClicked: connectorsModel.add_open = true
+                        Layout.preferredWidth: 136
+                    }
+                }
+
+                Rectangle {
+                    objectName: "connectorsActionError"
+                    visible: connectorsModel && connectorsModel.action_error !== "" && !connectorsModel.srv_open
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: visible ? Math.max(36, connectorsActionErrorRow.implicitHeight + Theme.space.md) : 0
+                    color: Theme.colors.errorBg
+                    border.width: visible ? 1 : 0
+                    border.color: Theme.colors.error
+                    radius: Theme.radius.sm
+                    clip: true
+
+                    RowLayout {
+                        id: connectorsActionErrorRow
+                        anchors.fill: parent
+                        anchors.leftMargin: Theme.space.md
+                        anchors.rightMargin: Theme.space.md
+                        spacing: Theme.space.md
+
+                        Label {
+                            text: connectorsModel ? connectorsModel.action_error : ""
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.label
+                            color: Theme.colors.error
+                            wrapMode: Text.Wrap
+                            Layout.fillWidth: true
+                        }
+
+                        AppButton {
+                            objectName: "connectorsDismissActionError"
+                            text: "X"
+                            compact: true
+                            toolTipText: "Dismiss connector error"
+                            Layout.preferredWidth: 28
+                            Layout.minimumWidth: 28
+                            Layout.preferredHeight: 28
+                            onClicked: {
+                                if (connectorsModel) connectorsModel.clear_action_error()
+                            }
+                        }
                     }
                 }
 
@@ -263,6 +380,15 @@ Rectangle {
                     border.color: Theme.colors.borderSubtle
                     radius: Theme.radius.md
                     implicitHeight: addFormColumn.implicitHeight + Theme.space.xl * 2
+                    onVisibleChanged: {
+                        if (visible) {
+                            Qt.callLater(function() {
+                                if (connectorsModel && connectorsModel.add_open && addNameField.visible && addNameField.enabled) {
+                                    addNameField.forceActiveFocus(Qt.TabFocusReason)
+                                }
+                            })
+                        }
+                    }
 
                     ColumnLayout {
                         id: addFormColumn
@@ -283,12 +409,34 @@ Rectangle {
                             }
 
                             TextField {
+                                id: addNameField
+                                objectName: "connectorsAddNameInput"
                                 Layout.fillWidth: true
                                 placeholderText: "notion"
                                 text: connectorsModel ? connectorsModel.add_name : ""
+                                enabled: connectorsModel && !connectorsModel.adding
                                 onTextChanged: if (connectorsModel) connectorsModel.add_name = text
                                 font.family: Theme.monoFonts[0]
                                 font.pixelSize: Theme.fontSize.bodySm
+                                color: Theme.colors.textPrimary
+                                placeholderTextColor: Theme.colors.textGhost
+                                leftPadding: Theme.space.lg
+                                rightPadding: Theme.space.lg
+                                property bool qaForceKeyboardFocus: false
+                                readonly property bool qaVisualFocus: activeFocus
+                                readonly property bool qaTextFits: !addNameField.contentItem || !addNameField.contentItem.text
+                                    || (!addNameField.contentItem.truncated
+                                        && addNameField.contentItem.paintedWidth <= addNameField.contentItem.width + 0.5)
+                                readonly property string qaText: text || placeholderText
+                                Keys.onPressed: function(event) {
+                                    root.handleAddConnectorKey(event)
+                                }
+                                onQaForceKeyboardFocusChanged: {
+                                    if (qaForceKeyboardFocus) {
+                                        forceActiveFocus(Qt.TabFocusReason)
+                                    }
+                                }
+                                background: FormFieldBackground { focused: addNameField.activeFocus }
                             }
                         }
 
@@ -305,12 +453,34 @@ Rectangle {
                             }
 
                             TextField {
+                                id: addUrlField
+                                objectName: "connectorsAddUrlInput"
                                 Layout.fillWidth: true
                                 placeholderText: "https://mcp.notion.com/mcp"
                                 text: connectorsModel ? connectorsModel.add_url : ""
+                                enabled: connectorsModel && !connectorsModel.adding
                                 onTextChanged: if (connectorsModel) connectorsModel.add_url = text
                                 font.family: Theme.monoFonts[0]
                                 font.pixelSize: Theme.fontSize.bodySm
+                                color: Theme.colors.textPrimary
+                                placeholderTextColor: Theme.colors.textGhost
+                                leftPadding: Theme.space.lg
+                                rightPadding: Theme.space.lg
+                                property bool qaForceKeyboardFocus: false
+                                readonly property bool qaVisualFocus: activeFocus
+                                readonly property bool qaTextFits: !addUrlField.contentItem || !addUrlField.contentItem.text
+                                    || (!addUrlField.contentItem.truncated
+                                        && addUrlField.contentItem.paintedWidth <= addUrlField.contentItem.width + 0.5)
+                                readonly property string qaText: text || placeholderText
+                                Keys.onPressed: function(event) {
+                                    root.handleAddConnectorKey(event)
+                                }
+                                onQaForceKeyboardFocusChanged: {
+                                    if (qaForceKeyboardFocus) {
+                                        forceActiveFocus(Qt.TabFocusReason)
+                                    }
+                                }
+                                background: FormFieldBackground { focused: addUrlField.activeFocus }
                             }
                         }
 
@@ -327,11 +497,33 @@ Rectangle {
                             }
 
                             TextField {
+                                id: addDescField
+                                objectName: "connectorsAddDescInput"
                                 Layout.fillWidth: true
                                 placeholderText: "Notion workspace (optional)"
                                 text: connectorsModel ? connectorsModel.add_desc : ""
+                                enabled: connectorsModel && !connectorsModel.adding
                                 onTextChanged: if (connectorsModel) connectorsModel.add_desc = text
                                 font.pixelSize: Theme.fontSize.bodySm
+                                color: Theme.colors.textPrimary
+                                placeholderTextColor: Theme.colors.textGhost
+                                leftPadding: Theme.space.lg
+                                rightPadding: Theme.space.lg
+                                property bool qaForceKeyboardFocus: false
+                                readonly property bool qaVisualFocus: activeFocus
+                                readonly property bool qaTextFits: !addDescField.contentItem || !addDescField.contentItem.text
+                                    || (!addDescField.contentItem.truncated
+                                        && addDescField.contentItem.paintedWidth <= addDescField.contentItem.width + 0.5)
+                                readonly property string qaText: text || placeholderText
+                                Keys.onPressed: function(event) {
+                                    root.handleAddConnectorKey(event)
+                                }
+                                onQaForceKeyboardFocusChanged: {
+                                    if (qaForceKeyboardFocus) {
+                                        forceActiveFocus(Qt.TabFocusReason)
+                                    }
+                                }
+                                background: FormFieldBackground { focused: addDescField.activeFocus }
                             }
                         }
 
@@ -340,20 +532,20 @@ Rectangle {
                             Layout.topMargin: Theme.space.sm
                             spacing: Theme.space.sm
 
-                            Button {
+                            AppButton {
+                                objectName: "connectorsAddAuthorizeButton"
                                 text: connectorsModel && connectorsModel.adding ? "Saving…" : "Add & authorize"
-                                enabled: connectorsModel && !connectorsModel.adding
-                                onClicked: {
-                                    if (connectorsModel && connectorsModel.add_name.trim()) {
-                                        connectorsModel.add_connector(connectorsModel.add_name.trim())
-                                    }
-                                }
+                                toolTipText: "Add and authorize connector"
+                                enabled: connectorsModel && !connectorsModel.adding && root.canSubmitAddConnector()
+                                onClicked: root.submitAddConnector()
                             }
 
-                            Button {
+                            AppButton {
+                                objectName: "connectorsAddCancelButton"
                                 text: "Cancel"
+                                toolTipText: "Cancel connector add"
                                 enabled: connectorsModel && !connectorsModel.adding
-                                onClicked: connectorsModel.add_open = false
+                                onClicked: root.cancelAddConnector()
                             }
                         }
                     }
@@ -361,17 +553,18 @@ Rectangle {
 
                 // Connector list
                 Repeater {
-                    model: connectorsModel && connectorsModel.connectors ? connectorsModel.connectors.connectors : []
+                    model: remoteConnectors()
                     delegate: ConnectorCard {
                         Layout.fillWidth: true
                         property var connector: modelData
+                        actionKey: "connector_" + connector.name
                         glyph: (connector.glyph || "")
                         connectorName: (connector.display || connector.name)
                         description: (connector.description || "")
                         statusBadge: connStatusBadge(connector)
                         statusColor: connStatusColor(connector)
                         metaLine: connector.url
-                        busy: isBusy(connector.name)
+                        busy: isBusy(connector.name) || connectorIsConnecting(connector.name)
                         primaryAction: connector.connected ? "secondary" : "primary"
                         primaryLabel: connPrimaryLabel(connector)
                         secondaryActions: true
@@ -393,7 +586,7 @@ Rectangle {
 
                 // Empty state
                 Rectangle {
-                    visible: connectorsModel && connectorsModel.connectors && connectorsModel.connectors.connectors.length === 0
+                    visible: connectorsLoaded() && remoteConnectors().length === 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: 120
                     color: Theme.colors.bgRaised
@@ -405,11 +598,22 @@ Rectangle {
                         anchors.centerIn: parent
                         spacing: Theme.space.sm
 
-                        Label {
-                            text: "⟐"
-                            font.pixelSize: 32
-                            color: Theme.colors.textFaint
+                        Rectangle {
+                            implicitWidth: 48
+                            implicitHeight: 30
+                            radius: Theme.radius.sm
+                            color: Theme.colors.bgInset
+                            border.width: 1
+                            border.color: Theme.colors.borderHairline
                             Layout.alignment: Qt.AlignHCenter
+
+                            Label {
+                                anchors.centerIn: parent
+                                text: "MCP"
+                                font.pixelSize: Theme.fontSize.label
+                                font.weight: Theme.fontWeight.bold
+                                color: Theme.colors.textMuted
+                            }
                         }
 
                         Label {
@@ -431,7 +635,7 @@ Rectangle {
 
                 // Directory section
                 ColumnLayout {
-                    visible: connectorsModel && connectorsModel.connectors && connectorsModel.connectors.directory.length > 0
+                    visible: connectorDirectory().length > 0
                     Layout.fillWidth: true
                     Layout.topMargin: Theme.space.lg
                     spacing: Theme.space.md
@@ -457,17 +661,18 @@ Rectangle {
                         rowSpacing: Theme.space.md
 
                         Repeater {
-                            model: connectorsModel && connectorsModel.connectors ? connectorsModel.connectors.directory : []
+                            model: connectorDirectory()
                             delegate: CatalogTile {
                                 property var entry: modelData
                                 width: 160
+                                entryName: (entry.name || "")
                                 glyph: (entry.glyph || "")
                                 displayName: (entry.display || "")
                                 category: (entry.category || "")
                                 isAdded: entry.added || false
-                                isConnecting: isConnecting(entry.name)
+                                isConnecting: connectorIsConnecting(entry.name)
                                 onClicked: {
-                                    if (!entry.added && !isConnecting(entry.name)) {
+                                    if (!entry.added && !connectorIsConnecting(entry.name)) {
                                         connectorsModel.add_from_catalog(entry.name)
                                     }
                                 }
@@ -513,9 +718,11 @@ Rectangle {
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignRight
 
-                        Button {
+                        AppButton {
+                            objectName: "connectorsAddServerButton"
                             visible: connectorsModel && !connectorsModel.srv_open
                             text: "+ Add MCP server"
+                            toolTipText: "Add local MCP server"
                             onClicked: connectorsModel.srv_open = true
                         }
                     }
@@ -529,6 +736,15 @@ Rectangle {
                         border.color: Theme.colors.borderSubtle
                         radius: Theme.radius.md
                         implicitHeight: srvFormColumn.implicitHeight + Theme.space.xl * 2
+                        onVisibleChanged: {
+                            if (visible) {
+                                Qt.callLater(function() {
+                                    if (connectorsModel && connectorsModel.srv_open && serverNameField.visible && serverNameField.enabled) {
+                                        serverNameField.forceActiveFocus(Qt.TabFocusReason)
+                                    }
+                                })
+                            }
+                        }
 
                         ColumnLayout {
                             id: srvFormColumn
@@ -549,12 +765,34 @@ Rectangle {
                                 }
 
                                 TextField {
+                                    id: serverNameField
+                                    objectName: "connectorsServerNameInput"
                                     Layout.fillWidth: true
                                     placeholderText: "github"
                                     text: connectorsModel ? connectorsModel.srv_name : ""
+                                    enabled: connectorsModel && !connectorsModel.srv_saving
                                     onTextChanged: if (connectorsModel) connectorsModel.srv_name = text
                                     font.family: Theme.monoFonts[0]
                                     font.pixelSize: Theme.fontSize.bodySm
+                                    color: Theme.colors.textPrimary
+                                    placeholderTextColor: Theme.colors.textGhost
+                                    leftPadding: Theme.space.lg
+                                    rightPadding: Theme.space.lg
+                                    property bool qaForceKeyboardFocus: false
+                                    readonly property bool qaVisualFocus: activeFocus
+                                    readonly property bool qaTextFits: !serverNameField.contentItem || !serverNameField.contentItem.text
+                                        || (!serverNameField.contentItem.truncated
+                                            && serverNameField.contentItem.paintedWidth <= serverNameField.contentItem.width + 0.5)
+                                    readonly property string qaText: text || placeholderText
+                                    Keys.onPressed: function(event) {
+                                        root.handleServerLineKey(event)
+                                    }
+                                    onQaForceKeyboardFocusChanged: {
+                                        if (qaForceKeyboardFocus) {
+                                            forceActiveFocus(Qt.TabFocusReason)
+                                        }
+                                    }
+                                    background: FormFieldBackground { focused: serverNameField.activeFocus }
                                 }
                             }
 
@@ -571,12 +809,34 @@ Rectangle {
                                 }
 
                                 TextField {
+                                    id: serverCommandField
+                                    objectName: "connectorsServerCommandInput"
                                     Layout.fillWidth: true
                                     placeholderText: "docker run ghcr.io/github/github-mcp-server"
                                     text: connectorsModel ? connectorsModel.srv_command : ""
+                                    enabled: connectorsModel && !connectorsModel.srv_saving
                                     onTextChanged: if (connectorsModel) connectorsModel.srv_command = text
                                     font.family: Theme.monoFonts[0]
                                     font.pixelSize: Theme.fontSize.bodySm
+                                    color: Theme.colors.textPrimary
+                                    placeholderTextColor: Theme.colors.textGhost
+                                    leftPadding: Theme.space.lg
+                                    rightPadding: Theme.space.lg
+                                    property bool qaForceKeyboardFocus: false
+                                    readonly property bool qaVisualFocus: activeFocus
+                                    readonly property bool qaTextFits: !serverCommandField.contentItem || !serverCommandField.contentItem.text
+                                        || (!serverCommandField.contentItem.truncated
+                                            && serverCommandField.contentItem.paintedWidth <= serverCommandField.contentItem.width + 0.5)
+                                    readonly property string qaText: text || placeholderText
+                                    Keys.onPressed: function(event) {
+                                        root.handleServerLineKey(event)
+                                    }
+                                    onQaForceKeyboardFocusChanged: {
+                                        if (qaForceKeyboardFocus) {
+                                            forceActiveFocus(Qt.TabFocusReason)
+                                        }
+                                    }
+                                    background: FormFieldBackground { focused: serverCommandField.activeFocus }
                                 }
                             }
 
@@ -593,11 +853,33 @@ Rectangle {
                                 }
 
                                 TextField {
+                                    id: serverDescField
+                                    objectName: "connectorsServerDescInput"
                                     Layout.fillWidth: true
                                     placeholderText: "GitHub MCP (optional)"
                                     text: connectorsModel ? connectorsModel.srv_desc : ""
+                                    enabled: connectorsModel && !connectorsModel.srv_saving
                                     onTextChanged: if (connectorsModel) connectorsModel.srv_desc = text
                                     font.pixelSize: Theme.fontSize.bodySm
+                                    color: Theme.colors.textPrimary
+                                    placeholderTextColor: Theme.colors.textGhost
+                                    leftPadding: Theme.space.lg
+                                    rightPadding: Theme.space.lg
+                                    property bool qaForceKeyboardFocus: false
+                                    readonly property bool qaVisualFocus: activeFocus
+                                    readonly property bool qaTextFits: !serverDescField.contentItem || !serverDescField.contentItem.text
+                                        || (!serverDescField.contentItem.truncated
+                                            && serverDescField.contentItem.paintedWidth <= serverDescField.contentItem.width + 0.5)
+                                    readonly property string qaText: text || placeholderText
+                                    Keys.onPressed: function(event) {
+                                        root.handleServerLineKey(event)
+                                    }
+                                    onQaForceKeyboardFocusChanged: {
+                                        if (qaForceKeyboardFocus) {
+                                            forceActiveFocus(Qt.TabFocusReason)
+                                        }
+                                    }
+                                    background: FormFieldBackground { focused: serverDescField.activeFocus }
                                 }
                             }
 
@@ -614,13 +896,35 @@ Rectangle {
                                 }
 
                                 TextArea {
+                                    id: serverEnvArea
+                                    objectName: "connectorsServerEnvInput"
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 60
                                     placeholderText: "LOG_LEVEL=info"
                                     text: connectorsModel ? connectorsModel.srv_env : ""
+                                    enabled: connectorsModel && !connectorsModel.srv_saving
                                     onTextChanged: if (connectorsModel) connectorsModel.srv_env = text
                                     font.family: Theme.monoFonts[0]
                                     font.pixelSize: Theme.fontSize.bodySm
+                                    color: Theme.colors.textPrimary
+                                    placeholderTextColor: Theme.colors.textGhost
+                                    leftPadding: Theme.space.lg
+                                    rightPadding: Theme.space.lg
+                                    topPadding: Theme.space.sm
+                                    bottomPadding: Theme.space.sm
+                                    property bool qaForceKeyboardFocus: false
+                                    readonly property bool qaVisualFocus: activeFocus
+                                    readonly property bool qaTextFits: true
+                                    readonly property string qaText: text || placeholderText
+                                    Keys.onPressed: function(event) {
+                                        root.handleServerTextAreaKey(event)
+                                    }
+                                    onQaForceKeyboardFocusChanged: {
+                                        if (qaForceKeyboardFocus) {
+                                            forceActiveFocus(Qt.TabFocusReason)
+                                        }
+                                    }
+                                    background: FormFieldBackground { focused: serverEnvArea.activeFocus }
                                 }
                             }
 
@@ -637,13 +941,77 @@ Rectangle {
                                 }
 
                                 TextArea {
+                                    id: serverSecretArea
+                                    objectName: "connectorsServerSecretInput"
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 60
                                     placeholderText: "GITHUB_PERSONAL_ACCESS_TOKEN=ghp_…"
                                     text: connectorsModel ? connectorsModel.srv_secret : ""
+                                    enabled: connectorsModel && !connectorsModel.srv_saving
                                     onTextChanged: if (connectorsModel) connectorsModel.srv_secret = text
                                     font.family: Theme.monoFonts[0]
                                     font.pixelSize: Theme.fontSize.bodySm
+                                    color: Theme.colors.textPrimary
+                                    placeholderTextColor: Theme.colors.textGhost
+                                    leftPadding: Theme.space.lg
+                                    rightPadding: Theme.space.lg
+                                    topPadding: Theme.space.sm
+                                    bottomPadding: Theme.space.sm
+                                    property bool qaForceKeyboardFocus: false
+                                    readonly property bool qaVisualFocus: activeFocus
+                                    readonly property bool qaTextFits: true
+                                    readonly property string qaText: text || placeholderText
+                                    Keys.onPressed: function(event) {
+                                        root.handleServerTextAreaKey(event)
+                                    }
+                                    onQaForceKeyboardFocusChanged: {
+                                        if (qaForceKeyboardFocus) {
+                                            forceActiveFocus(Qt.TabFocusReason)
+                                        }
+                                    }
+                                    background: FormFieldBackground { focused: serverSecretArea.activeFocus }
+                                }
+                            }
+
+                            Rectangle {
+                                objectName: "connectorsServerActionError"
+                                visible: connectorsModel && connectorsModel.action_error !== ""
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: visible ? Math.max(36, serverActionErrorRow.implicitHeight + Theme.space.md) : 0
+                                color: Theme.colors.errorBg
+                                border.width: visible ? 1 : 0
+                                border.color: Theme.colors.error
+                                radius: Theme.radius.sm
+                                clip: true
+
+                                RowLayout {
+                                    id: serverActionErrorRow
+                                    anchors.fill: parent
+                                    anchors.leftMargin: Theme.space.md
+                                    anchors.rightMargin: Theme.space.md
+                                    spacing: Theme.space.md
+
+                                    Label {
+                                        text: connectorsModel ? connectorsModel.action_error : ""
+                                        font.family: Theme.uiFonts[0]
+                                        font.pixelSize: Theme.fontSize.label
+                                        color: Theme.colors.error
+                                        wrapMode: Text.Wrap
+                                        Layout.fillWidth: true
+                                    }
+
+                                    AppButton {
+                                        objectName: "connectorsDismissServerActionError"
+                                        text: "X"
+                                        compact: true
+                                        toolTipText: "Dismiss connector error"
+                                        Layout.preferredWidth: 28
+                                        Layout.minimumWidth: 28
+                                        Layout.preferredHeight: 28
+                                        onClicked: {
+                                            if (connectorsModel) connectorsModel.clear_action_error()
+                                        }
+                                    }
                                 }
                             }
 
@@ -652,16 +1020,20 @@ Rectangle {
                                 Layout.topMargin: Theme.space.sm
                                 spacing: Theme.space.sm
 
-                                Button {
+                                AppButton {
+                                    objectName: "connectorsSaveServerButton"
                                     text: connectorsModel && connectorsModel.srv_saving ? "Saving…" : "Save server"
-                                    enabled: connectorsModel && !connectorsModel.srv_saving
-                                    onClicked: connectorsModel.save_local_server()
+                                    toolTipText: "Save local MCP server"
+                                    enabled: connectorsModel && !connectorsModel.srv_saving && root.canSubmitLocalServer()
+                                    onClicked: root.submitLocalServer()
                                 }
 
-                                Button {
+                                AppButton {
+                                    objectName: "connectorsCancelServerButton"
                                     text: "Cancel"
+                                    toolTipText: "Cancel MCP server add"
                                     enabled: connectorsModel && !connectorsModel.srv_saving
-                                    onClicked: connectorsModel.srv_open = false
+                                    onClicked: root.cancelLocalServer()
                                 }
                             }
                         }
@@ -673,6 +1045,7 @@ Rectangle {
                         delegate: ConnectorCard {
                             Layout.fillWidth: true
                             property var server: modelData
+                            actionKey: "server_" + server.name
                             glyph: ""
                             connectorName: server.name
                             description: (server.description || "")
@@ -718,14 +1091,16 @@ Rectangle {
     // Inline component: ConnectorCard
     component ConnectorCard: Rectangle {
         id: card
+        objectName: actionKey ? ("connectorCard_" + actionKey) : ""
         color: Theme.colors.bgRaised
         border.width: 1
         border.color: Theme.colors.borderSubtle
         radius: Theme.radius.md
-        implicitHeight: cardContent.implicitHeight + Theme.space.xl * 2
+        implicitHeight: cardColumn.implicitHeight + Theme.space.xl * 2
 
         property string glyph: ""
         property string connectorName: ""
+        property string actionKey: ""
         property string description: ""
         property string statusBadge: ""
         property color statusColor: Theme.colors.textFaint
@@ -736,131 +1111,176 @@ Rectangle {
         property string primaryLabel: ""
         property bool secondaryActions: false
         property bool showRemoveConfirm: false
+        readonly property string qaIconText: iconText()
+        default property alias extraContent: cardExtra.data
 
         signal primaryClicked()
         signal removeClicked()
         signal removeCancelled()
 
-        RowLayout {
-            id: cardContent
+        function iconText() {
+            var source = (connectorName || glyph || "").trim()
+            if (!source) return ""
+            var parts = source.split(/[\s._-]+/).filter(function(part) { return part.length > 0 })
+            if (parts.length === 0) return source.charAt(0).toUpperCase()
+            var initials = parts[0].charAt(0)
+            if (parts.length > 1) initials += parts[1].charAt(0)
+            return initials.toUpperCase()
+        }
+
+        ColumnLayout {
+            id: cardColumn
             anchors.fill: parent
             anchors.margins: Theme.space.xl
-            spacing: Theme.space.xl
+            spacing: Theme.space.lg
 
-            // Info column
-            ColumnLayout {
+            RowLayout {
+                id: cardContent
                 Layout.fillWidth: true
-                spacing: Theme.space.sm
+                spacing: Theme.space.xl
 
-                // Name + badges row
-                RowLayout {
-                    spacing: Theme.space.md
+                // Info column
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.space.sm
 
-                    Label {
-                        visible: glyph
-                        text: glyph
-                        font.pixelSize: Theme.fontSize.body
+                    // Name + badges row
+                    RowLayout {
+                        spacing: Theme.space.md
+
+                        Rectangle {
+                            visible: card.qaIconText !== ""
+                            Layout.preferredWidth: 24
+                            Layout.preferredHeight: 24
+                            radius: 7
+                            color: Theme.colors.bgInset
+                            border.width: 1
+                            border.color: Theme.colors.borderSubtle
+
+                            Label {
+                                anchors.centerIn: parent
+                                text: card.qaIconText
+                                font.family: Theme.monoFonts[0]
+                                font.pixelSize: Theme.fontSize.micro
+                                font.weight: Theme.fontWeight.semibold
+                                color: Theme.colors.brandBright
+                            }
+                        }
+
+                        Label {
+                            text: connectorName
+                            font.family: Theme.monoFonts[0]
+                            font.pixelSize: Theme.fontSize.bodySm
+                            font.weight: Theme.fontWeight.semibold
+                            color: Theme.colors.textPrimary
+                        }
+
+                        Rectangle {
+                            visible: statusBadge
+                            implicitWidth: statusLabel.implicitWidth + Theme.space.md
+                            implicitHeight: 18
+                            radius: Theme.radius.full
+                            color: Qt.rgba(statusColor.r, statusColor.g, statusColor.b, 0.1)
+                            border.width: 1
+                            border.color: Qt.rgba(statusColor.r, statusColor.g, statusColor.b, 0.2)
+
+                            Label {
+                                id: statusLabel
+                                anchors.centerIn: parent
+                                text: statusBadge
+                                font.pixelSize: Theme.fontSize.micro
+                                font.weight: Theme.fontWeight.semibold
+                                font.capitalization: Font.AllUppercase
+                                color: statusColor
+                            }
+                        }
+
+                        Rectangle {
+                            visible: secretBadge
+                            implicitWidth: secretLabel.implicitWidth + Theme.space.md
+                            implicitHeight: 18
+                            radius: Theme.radius.full
+                            color: Theme.colors.bgRaised2
+                            border.width: 1
+                            border.color: Theme.colors.borderBrandFaint
+
+                            Label {
+                                id: secretLabel
+                                anchors.centerIn: parent
+                                text: secretBadge
+                                font.pixelSize: Theme.fontSize.micro
+                                font.weight: Theme.fontWeight.semibold
+                                color: Theme.colors.textMuted
+                            }
+                        }
                     }
 
                     Label {
-                        text: connectorName
+                        visible: description
+                        text: description
+                        font.pixelSize: Theme.fontSize.label
+                        color: Theme.colors.textMuted
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+
+                    Label {
+                        visible: metaLine
+                        text: metaLine
                         font.family: Theme.monoFonts[0]
-                        font.pixelSize: Theme.fontSize.bodySm
-                        font.weight: Theme.fontWeight.semibold
-                        color: Theme.colors.textPrimary
-                    }
-
-                    Rectangle {
-                        visible: statusBadge
-                        implicitWidth: statusLabel.implicitWidth + Theme.space.md
-                        implicitHeight: 18
-                        radius: Theme.radius.full
-                        color: Qt.rgba(statusColor.r, statusColor.g, statusColor.b, 0.1)
-                        border.width: 1
-                        border.color: Qt.rgba(statusColor.r, statusColor.g, statusColor.b, 0.2)
-
-                        Label {
-                            id: statusLabel
-                            anchors.centerIn: parent
-                            text: statusBadge
-                            font.pixelSize: Theme.fontSize.micro
-                            font.weight: Theme.fontWeight.semibold
-                            font.capitalization: Font.AllUppercase
-                            color: statusColor
-                        }
-                    }
-
-                    Rectangle {
-                        visible: secretBadge
-                        implicitWidth: secretLabel.implicitWidth + Theme.space.md
-                        implicitHeight: 18
-                        radius: Theme.radius.full
-                        color: Theme.colors.bgRaised2
-                        border.width: 1
-                        border.color: Theme.colors.borderBrandFaint
-
-                        Label {
-                            id: secretLabel
-                            anchors.centerIn: parent
-                            text: secretBadge
-                            font.pixelSize: Theme.fontSize.micro
-                            font.weight: Theme.fontWeight.semibold
-                            color: Theme.colors.textMuted
-                        }
+                        font.pixelSize: Theme.fontSize.micro
+                        color: Theme.colors.textFaint
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
                     }
                 }
 
-                Label {
-                    visible: description
-                    text: description
-                    font.pixelSize: Theme.fontSize.label
-                    color: Theme.colors.textMuted
-                    wrapMode: Text.WordWrap
-                    Layout.fillWidth: true
-                }
+                // Actions column
+                RowLayout {
+                    spacing: Theme.space.sm
 
-                Label {
-                    visible: metaLine
-                    text: metaLine
-                    font.family: Theme.monoFonts[0]
-                    font.pixelSize: Theme.fontSize.micro
-                    color: Theme.colors.textFaint
-                    elide: Text.ElideRight
-                    Layout.fillWidth: true
+                    AppButton {
+                        objectName: actionKey ? ("connectorPrimaryButton_" + actionKey) : ""
+                        visible: primaryAction && primaryLabel
+                        text: primaryLabel
+                        toolTipText: primaryLabel && connectorName ? (primaryLabel + " " + connectorName) : primaryLabel
+                        enabled: !busy
+                        onClicked: card.primaryClicked()
+                    }
+
+                    AppButton {
+                        objectName: actionKey ? ("connectorRemoveButton_" + actionKey) : ""
+                        visible: secondaryActions && !showRemoveConfirm
+                        text: "Remove"
+                        toolTipText: connectorName ? ("Remove " + connectorName) : "Remove connector"
+                        enabled: !busy
+                        onClicked: card.removeClicked()
+                    }
+
+                    AppButton {
+                        objectName: actionKey ? ("connectorConfirmRemoveButton_" + actionKey) : ""
+                        visible: secondaryActions && showRemoveConfirm
+                        text: "Confirm"
+                        toolTipText: connectorName ? ("Confirm removing " + connectorName) : "Confirm remove"
+                        enabled: !busy
+                        onClicked: card.removeClicked()
+                    }
+
+                    AppButton {
+                        objectName: actionKey ? ("connectorCancelRemoveButton_" + actionKey) : ""
+                        visible: secondaryActions && showRemoveConfirm
+                        text: "Cancel"
+                        toolTipText: "Cancel removal"
+                        enabled: !busy
+                        onClicked: card.removeCancelled()
+                    }
                 }
             }
 
-            // Actions column
-            RowLayout {
+            ColumnLayout {
+                id: cardExtra
+                Layout.fillWidth: true
                 spacing: Theme.space.sm
-
-                Button {
-                    visible: primaryAction && primaryLabel
-                    text: primaryLabel
-                    enabled: !busy
-                    onClicked: card.primaryClicked()
-                }
-
-                Button {
-                    visible: secondaryActions && !showRemoveConfirm
-                    text: "Remove"
-                    enabled: !busy
-                    onClicked: card.removeClicked()
-                }
-
-                Button {
-                    visible: secondaryActions && showRemoveConfirm
-                    text: "Confirm"
-                    enabled: !busy
-                    onClicked: card.removeClicked()
-                }
-
-                Button {
-                    visible: secondaryActions && showRemoveConfirm
-                    text: "Cancel"
-                    enabled: !busy
-                    onClicked: card.removeCancelled()
-                }
             }
         }
     }
@@ -868,30 +1288,85 @@ Rectangle {
     // Inline component: CatalogTile
     component CatalogTile: Rectangle {
         id: tile
+        objectName: entryName ? ("catalogTile_" + entryName) : ""
         implicitHeight: tileContent.implicitHeight + Theme.space.lg * 2
-        color: tileMouseArea.containsMouse ? Theme.colors.stateHover : Theme.colors.bgRaised2
-        border.width: 1
-        border.color: Theme.colors.borderSubtle
+        color: {
+            if (tile.isInteractive && tile.activeFocus) {
+                return Theme.colors.stateFocusBg
+            }
+            return tileMouseArea.containsMouse ? Theme.colors.stateHover : Theme.colors.bgRaised2
+        }
+        border.width: tile.activeFocus ? 2 : 1
+        border.color: tile.activeFocus ? Theme.colors.brandBright : Theme.colors.borderSubtle
         radius: Theme.radius.md
         opacity: isAdded ? 0.55 : 1.0
+        activeFocusOnTab: true
+        focusPolicy: Qt.StrongFocus
 
+        property string entryName: ""
         property string glyph: ""
         property string displayName: ""
         property string category: ""
         property bool isAdded: false
         property bool isConnecting: false
+        property bool qaForceKeyboardFocus: false
+        readonly property bool qaVisualFocus: activeFocus
+        readonly property string qaAccessibleName: accessibleName()
+        readonly property string qaIconText: iconText()
+        readonly property bool isInteractive: !isAdded && !isConnecting
 
         signal clicked()
 
+        Accessible.role: Accessible.Button
+        Accessible.name: tile.accessibleName()
+        Accessible.description: isAdded
+            ? (displayName + " is already added")
+            : (isConnecting ? ("Authorizing " + displayName) : ("Connect " + displayName + " connector"))
+        Accessible.onPressAction: tile.activateTile()
+
         Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
+        Behavior on border.color { ColorAnimation { duration: Theme.duration.fast } }
+
+        function activateTile() {
+            if (tile.isInteractive) {
+                tile.clicked()
+            }
+        }
+
+        onQaForceKeyboardFocusChanged: {
+            if (qaForceKeyboardFocus && isInteractive) {
+                forceActiveFocus(Qt.TabFocusReason)
+            }
+        }
+
+        Keys.onReturnPressed: activateTile()
+        Keys.onEnterPressed: activateTile()
+        Keys.onSpacePressed: activateTile()
+
+        function accessibleName() {
+            if (!displayName) return ""
+            if (isAdded) return displayName + " connector added"
+            if (isConnecting) return displayName + " connector authorizing"
+            return "Connect " + displayName
+        }
+
+        function iconText() {
+            var source = (displayName || entryName || "").trim()
+            if (!source) return ""
+            var parts = source.split(/[\s._-]+/).filter(function(part) { return part.length > 0 })
+            if (parts.length === 0) return source.charAt(0).toUpperCase()
+            var initials = parts[0].charAt(0)
+            if (parts.length > 1) initials += parts[1].charAt(0)
+            return initials.toUpperCase()
+        }
 
         MouseArea {
             id: tileMouseArea
             anchors.fill: parent
             hoverEnabled: true
-            cursorShape: isAdded || isConnecting ? Qt.ArrowCursor : Qt.PointingHandCursor
-            enabled: !isAdded && !isConnecting
-            onClicked: tile.clicked()
+            cursorShape: tile.isInteractive ? Qt.PointingHandCursor : Qt.ArrowCursor
+            enabled: tile.isInteractive
+            onClicked: tile.activateTile()
         }
 
         ColumnLayout {
@@ -900,10 +1375,23 @@ Rectangle {
             anchors.margins: Theme.space.lg
             spacing: Theme.space.xs
 
-            Label {
-                text: glyph
-                font.pixelSize: 22
+            Rectangle {
+                Layout.preferredWidth: 28
+                Layout.preferredHeight: 28
                 Layout.alignment: Qt.AlignLeft
+                radius: 8
+                color: tile.isAdded ? Theme.colors.bgInset : Theme.colors.stateSelected
+                border.width: 1
+                border.color: tile.isAdded ? Theme.colors.borderSubtle : Theme.colors.borderBrandFaint
+
+                Label {
+                    anchors.centerIn: parent
+                    text: tile.qaIconText
+                    font.family: Theme.monoFonts[0]
+                    font.pixelSize: Theme.fontSize.label
+                    font.weight: Theme.fontWeight.semibold
+                    color: tile.isAdded ? Theme.colors.textFaint : Theme.colors.brandBright
+                }
             }
 
             Label {
@@ -1013,7 +1501,7 @@ Rectangle {
 
     function connStatusBadge(connector) {
         if (!connector) return ""
-        if (isConnecting(connector.name)) return "authorizing…"
+        if (connectorIsConnecting(connector.name)) return "authorizing…"
         if (connector.connected) return "connected"
         return "not connected"
     }
@@ -1027,25 +1515,121 @@ Rectangle {
     function connPrimaryLabel(connector) {
         if (!connector) return ""
         if (isBusy(connector.name)) return connector.connected ? "Disconnecting…" : "Connecting…"
-        if (isConnecting(connector.name)) return "Authorizing…"
+        if (connectorIsConnecting(connector.name)) return "Authorizing…"
         if (connector.connected) return "Disconnect"
         return "Connect"
     }
 
     function isBusy(name) {
-        return connectorsModel && connectorsModel.busy && connectorsModel.busy[name]
+        return !!(connectorsModel && connectorsModel.busy && connectorsModel.busy[name])
     }
 
-    function isConnecting(name) {
-        return connectorsModel && connectorsModel.connecting && connectorsModel.connecting[name]
+    function connectorIsConnecting(name) {
+        return !!(connectorsModel && connectorsModel.connecting && connectorsModel.connecting[name])
     }
 
     function isConfirmRemoveConnector(name) {
-        return connectorsModel && connectorsModel.confirm_remove_connector && connectorsModel.confirm_remove_connector[name]
+        return !!(connectorsModel && connectorsModel.confirm_remove_connector && connectorsModel.confirm_remove_connector[name])
     }
 
     function isConfirmRemoveServer(name) {
-        return connectorsModel && connectorsModel.confirm_remove_server && connectorsModel.confirm_remove_server[name]
+        return !!(connectorsModel && connectorsModel.confirm_remove_server && connectorsModel.confirm_remove_server[name])
+    }
+
+    function connectorsLoaded() {
+        return !!(connectorsModel && connectorsModel.connectors)
+    }
+
+    function hasInitialLoadError() {
+        return !!(connectorsModel && connectorsModel.load_error && !connectorsLoaded())
+    }
+
+    function hasRefreshLoadError() {
+        return !!(connectorsModel && connectorsModel.load_error && connectorsLoaded())
+    }
+
+    function remoteConnectors() {
+        if (!connectorsLoaded() || !connectorsModel.connectors.connectors) return []
+        return connectorsModel.connectors.connectors
+    }
+
+    function connectorDirectory() {
+        if (!connectorsLoaded() || !connectorsModel.connectors.directory) return []
+        return connectorsModel.connectors.directory
+    }
+
+    function submitAddConnector() {
+        if (!connectorsModel || connectorsModel.adding) return
+        if (canSubmitAddConnector()) {
+            connectorsModel.add_connector(connectorsModel.add_name.trim())
+        }
+    }
+
+    function canSubmitAddConnector() {
+        if (!connectorsModel) return false
+        return connectorsModel.add_name.trim().length > 0
+            && connectorsModel.add_url.trim().length > 0
+    }
+
+    function cancelAddConnector() {
+        if (connectorsModel && !connectorsModel.adding) {
+            connectorsModel.cancel_add_connector()
+        }
+    }
+
+    function submitLocalServer() {
+        if (connectorsModel && !connectorsModel.srv_saving && canSubmitLocalServer()) {
+            connectorsModel.save_local_server()
+        }
+    }
+
+    function canSubmitLocalServer() {
+        if (!connectorsModel) return false
+        return connectorsModel.srv_name.trim().length > 0
+            && connectorsModel.srv_command.trim().length > 0
+    }
+
+    function cancelLocalServer() {
+        if (connectorsModel && !connectorsModel.srv_saving) {
+            connectorsModel.cancel_local_server()
+        }
+    }
+
+    function handleAddConnectorKey(event) {
+        if (event.key === Qt.Key_Escape) {
+            root.cancelAddConnector()
+            event.accepted = true
+            return
+        }
+        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+            root.submitAddConnector()
+            event.accepted = true
+        }
+    }
+
+    function handleServerLineKey(event) {
+        if (event.key === Qt.Key_Escape) {
+            root.cancelLocalServer()
+            event.accepted = true
+            return
+        }
+        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+            root.submitLocalServer()
+            event.accepted = true
+        }
+    }
+
+    function handleServerTextAreaKey(event) {
+        if (event.key === Qt.Key_Escape) {
+            root.cancelLocalServer()
+            event.accepted = true
+            return
+        }
+        if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                && (event.modifiers & Qt.ControlModifier)) {
+            root.submitLocalServer()
+            event.accepted = true
+        }
     }
 
     function stdioServers() {

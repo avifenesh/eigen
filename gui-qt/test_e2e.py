@@ -162,7 +162,7 @@ class E2ETest:
         self.log("Step 7: Testing model switch")
         try:
             current_model = self.session_state_model.model()
-            new_model = "haiku" if "haiku" not in current_model.lower() else "sonnet"
+            new_model = "gpt-5" if "gpt-5" not in current_model.lower() else "local-qwen"
             self.client.call_sync("SetModel", self.scratch_session_id, new_model)
             QTest.qWait(500)
             updated_model = self.session_state_model.model()

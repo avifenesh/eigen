@@ -1,8 +1,10 @@
 /*
- * Right-side dock panel with Diff | Files tabs.
+ * Right-side dock panel with Diff | Files | Info | Browser | Terminal tabs.
  *
  * Toggleable from SessionSettingsStrip; state is per-session.
- * Tabs switch between DiffTab (git working-tree diff) and FilesTab (file explorer).
+ * Tabs switch between DiffTab (git working-tree diff), FilesTab (file
+ * explorer), DockInfoTab (session metadata), BrowserTab (embedded web), and
+ * TerminalTab (interactive PTY).
  */
 
 import QtQuick
@@ -13,10 +15,13 @@ import "Theme.js" as Theme
 
 Rectangle {
     id: root
+    objectName: "dockPanel"
 
     // Props
     required property string sessionDir  // Session's working directory
     required property var rpcClient      // RPC client for bridge calls
+    property var terminalHelper: null
+    property var sessionStateModel: null
 
     color: Theme.colors.bgRaised
     border.width: 1
@@ -25,7 +30,21 @@ Rectangle {
     // Signals
     signal closed()
 
-    property int currentTab: 0  // 0=Diff, 1=Files
+    property int currentTab: 0  // 0=Diff, 1=Files, 2=Info, 3=Browser, 4=Terminal
+    property int preferredTab: 0
+    property bool browserOpened: false
+    property bool terminalOpened: false
+    readonly property var tabLabels: ["Diff", "Files", "Info", "Browser", "Terminal"]
+
+    Component.onCompleted: {
+        currentTab = clampTab(preferredTab)
+        markOpened(currentTab)
+    }
+    onPreferredTabChanged: {
+        currentTab = clampTab(preferredTab)
+        markOpened(currentTab)
+    }
+    onCurrentTabChanged: markOpened(currentTab)
 
     ColumnLayout {
         anchors.fill: parent
@@ -45,57 +64,32 @@ Rectangle {
 
                 // Tab buttons
                 Repeater {
-                    model: ["Diff", "Files"]
+                    model: root.tabLabels
 
-                    Rectangle {
+                    AppButton {
+                        objectName: "dockTab_" + modelData
+                        text: modelData
+                        compact: true
+                        variant: "ghost"
+                        selected: root.currentTab === index
+                        segmentPosition: index === 0 ? "first" : (index === root.tabLabels.length - 1 ? "last" : "middle")
+                        toolTipText: root.tabToolTip(modelData)
                         Layout.preferredHeight: 32
-                        Layout.preferredWidth: tabLabel.implicitWidth + Theme.space.lg * 2
-                        color: currentTab === index ? Theme.colors.stateFocusBg : "transparent"
-                        radius: Theme.radius.sm
-                        border.width: currentTab === index ? 1 : 0
-                        border.color: Theme.colors.borderBrandFaint
-
-                        Text {
-                            id: tabLabel
-                            anchors.centerIn: parent
-                            text: modelData
-                            font.family: Theme.uiFonts[0]
-                            font.pixelSize: Theme.fontSize.bodySm
-                            font.weight: currentTab === index ? Theme.fontWeight.semibold : Theme.fontWeight.regular
-                            color: currentTab === index ? Theme.colors.brandBright : Theme.colors.textSecondary
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: currentTab = index
-                        }
+                        onClicked: root.currentTab = index
                     }
                 }
 
                 Item { Layout.fillWidth: true }
 
-                // Close button
-                Rectangle {
+                AppButton {
+                    objectName: "dockCloseButton"
+                    text: "✕"
+                    compact: true
+                    variant: "ghost"
+                    toolTipText: "Close dock"
                     Layout.preferredWidth: 32
                     Layout.preferredHeight: 32
-                    color: closeArea.containsMouse ? Theme.colors.stateHover : "transparent"
-                    radius: Theme.radius.sm
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "✕"
-                        font.pixelSize: Theme.fontSize.body
-                        color: Theme.colors.textMuted
-                    }
-
-                    MouseArea {
-                        id: closeArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.closed()
-                    }
+                    onClicked: root.closed()
                 }
             }
         }
@@ -124,6 +118,50 @@ Rectangle {
                 sessionDir: root.sessionDir
                 rpcClient: root.rpcClient
             }
+
+            // Info tab
+            DockInfoTab {
+                sessionStateModel: root.sessionStateModel
+            }
+
+            // Browser tab: lazy-load once, then keep mounted across tab switches.
+            Loader {
+                active: root.browserOpened
+                sourceComponent: BrowserTab {}
+            }
+
+            // Terminal tab: lazy-load once, then keep the PTY alive across tab switches.
+            Loader {
+                active: root.terminalOpened
+                sourceComponent: TerminalTab {
+                    sessionDir: root.sessionDir
+                    rpcClient: root.rpcClient
+                    terminalHelper: root.terminalHelper
+                    active: root.currentTab === 4
+                }
+            }
+        }
+    }
+
+    function clampTab(tabIndex) {
+        var value = Number(tabIndex)
+        if (isNaN(value)) value = 0
+        return Math.max(0, Math.min(root.tabLabels.length - 1, value))
+    }
+
+    function tabToolTip(label) {
+        if (label === "Diff") return "Show working diff"
+        if (label === "Files") return "Show files"
+        if (label === "Info") return "Show session info"
+        if (label === "Browser") return "Open embedded browser"
+        return "Open terminal"
+    }
+
+    function markOpened(tabIndex) {
+        if (tabIndex === 3) {
+            browserOpened = true
+        } else if (tabIndex === 4) {
+            terminalOpened = true
         }
     }
 }

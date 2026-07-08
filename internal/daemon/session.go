@@ -52,7 +52,7 @@ type Session struct {
 
 	mu        sync.Mutex
 	loadMu    sync.Mutex // serializes unload/rehydrate with operations that need a live agent
-	persistMu sync.Mutex // serializes one session's transcript Save + .bak rotation so a shutdown flush and an agent-loop Persist can't interleave
+	persistMu sync.Mutex // serializes one session's transcript/meta writes so older persistence snapshots cannot clobber newer state
 	agent     *agent.Agent
 	sess      *agent.Session
 	status    Status

@@ -132,7 +132,7 @@ def generate_8mb_payload() -> str:
         "title": "8MB Decode Spike Test",
         "transcript": turns,
         "settings": {
-            "model": "claude-sonnet-4",
+            "model": "gpt-5",
             "effort": "medium",
             "fast": False,
             "goal": "Test 8MB decode performance",

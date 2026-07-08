@@ -2,6 +2,9 @@ package gui
 
 import (
 	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/avifenesh/eigen/internal/memory"
@@ -45,6 +48,66 @@ func TestNewDreamPipelineWiring(t *testing.T) {
 	}
 	if pipe.Summarize == nil {
 		t.Error("Summarize callback is nil — RegenSummary would no-op")
+	}
+}
+
+func TestConsolidationContentRestrictsBackupPathsToMemoryWorkspace(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	backupDir := filepath.Join(home, ".eigen", "memory", "eigen-test")
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		t.Fatalf("mkdir backup dir: %v", err)
+	}
+	backup := filepath.Join(backupDir, "MEMORY.md.20260707-120000.bak")
+	if err := os.WriteFile(backup, []byte("safe backup"), 0o600); err != nil {
+		t.Fatalf("write backup: %v", err)
+	}
+
+	body, err := (&Bridge{}).ConsolidationContent(backup)
+	if err != nil {
+		t.Fatalf("ConsolidationContent allowed backup: %v", err)
+	}
+	if body != "safe backup" {
+		t.Fatalf("ConsolidationContent body = %q", body)
+	}
+
+	outside := filepath.Join(home, "MEMORY.md.20260707-120000.bak")
+	if err := os.WriteFile(outside, []byte("outside"), 0o600); err != nil {
+		t.Fatalf("write outside backup: %v", err)
+	}
+	if _, err := (&Bridge{}).ConsolidationContent(outside); !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("outside backup-looking path err = %v, want permission", err)
+	}
+
+	lookalike := filepath.Join(backupDir, "not-MEMORY.md.20260707-120000.bak")
+	if err := os.WriteFile(lookalike, []byte("lookalike"), 0o600); err != nil {
+		t.Fatalf("write lookalike backup: %v", err)
+	}
+	if _, err := (&Bridge{}).ConsolidationContent(lookalike); !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("lookalike backup err = %v, want permission", err)
+	}
+}
+
+func TestConsolidationContentRejectsSymlinkEscape(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	backupDir := filepath.Join(home, ".eigen", "memory", "eigen-test")
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		t.Fatalf("mkdir backup dir: %v", err)
+	}
+	outside := filepath.Join(home, "MEMORY.md.20260707-120000.bak")
+	if err := os.WriteFile(outside, []byte("outside"), 0o600); err != nil {
+		t.Fatalf("write outside backup: %v", err)
+	}
+	link := filepath.Join(backupDir, "MEMORY.md.20260707-120000.bak")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatalf("symlink backup: %v", err)
+	}
+
+	if _, err := (&Bridge{}).ConsolidationContent(link); !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("symlink escape err = %v, want permission", err)
 	}
 }
 

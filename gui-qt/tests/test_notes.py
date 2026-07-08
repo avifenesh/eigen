@@ -81,6 +81,31 @@ def test_notes_model_load_error(qt_app, mock_client):
     assert model.error == "vault not configured"
 
 
+def test_notes_model_ignores_stale_load_results(qt_app, mock_client):
+    """A slow first note search must not overwrite a newer note list."""
+    model = NotesModel(mock_client)
+
+    model.load("first")
+    first_callback = mock_client.call.call_args_list[-1][1]["callback"]
+
+    model.load("second")
+    second_callback = mock_client.call.call_args_list[-1][1]["callback"]
+
+    second_callback({"result": [{"path": "Inbox/Second.md", "title": "Second"}]})
+    assert not model.loading
+    assert model.error == ""
+    assert model.rowCount() == 1
+    idx = model.index(0, 0)
+    assert model.data(idx, model.PathRole) == "Inbox/Second.md"
+
+    first_callback({"result": [{"path": "Inbox/First.md", "title": "First"}]})
+    assert not model.loading
+    assert model.error == ""
+    assert model.rowCount() == 1
+    idx = model.index(0, 0)
+    assert model.data(idx, model.PathRole) == "Inbox/Second.md"
+
+
 def test_notes_controller_status(qt_app, mock_client):
     """NotesController fetches status on connect."""
     controller = NotesController(mock_client)
@@ -100,6 +125,45 @@ def test_notes_controller_status(qt_app, mock_client):
 
     assert controller.available
     assert controller.vault == "/home/user/vault"
+    assert controller.status_error == ""
+
+
+def test_notes_controller_status_error_surfaces_load_error(qt_app, mock_client):
+    """ObsidianStatus failures stay visible for the Notes view."""
+    controller = NotesController(mock_client)
+
+    controller._on_connected()
+    callback = mock_client.call.call_args[1]["callback"]
+    callback({"error": {"message": "daemon offline"}})
+
+    assert not controller.available
+    assert controller.status_error == "daemon offline"
+
+
+def test_notes_controller_status_error_preserves_stale_available_vault(qt_app, mock_client):
+    """Refresh failures should not drop a previously available vault."""
+    controller = NotesController(mock_client)
+    controller.status = {"available": True, "vault": "/home/user/vault"}
+
+    controller.refresh_status()
+    callback = mock_client.call.call_args[1]["callback"]
+    callback({"error": {"message": "daemon offline"}})
+
+    assert controller.available
+    assert controller.vault == "/home/user/vault"
+    assert controller.status_error == "daemon offline"
+
+
+def test_notes_controller_refresh_status_clears_error_and_retries(qt_app, mock_client):
+    """Retrying status reload clears the old error and calls ObsidianStatus again."""
+    controller = NotesController(mock_client)
+    controller.status_error = "daemon offline"
+
+    controller.refresh_status()
+
+    assert controller.status_error == ""
+    args = mock_client.call.call_args[0]
+    assert args[0] == "ObsidianStatus"
 
 
 def test_notes_controller_open_note(qt_app, mock_client):
@@ -123,6 +187,50 @@ def test_notes_controller_open_note(qt_app, mock_client):
     callback({"result": "# Note\n\nContent here."})
 
     assert controller.content == "# Note\n\nContent here."
+    assert controller.action_error == ""
+
+
+def test_notes_controller_open_note_error_surfaces_action_error(qt_app, mock_client):
+    """Open-note errors stay visible to the UI."""
+    controller = NotesController(mock_client)
+    controller.status = {"available": True, "vault": "/home/user/vault"}
+
+    controller.open_note("Inbox/Missing.md", "Missing")
+
+    callback = mock_client.call.call_args[1]["callback"]
+    callback({"error": {"message": "read denied"}})
+
+    assert controller.selected == {"path": "Inbox/Missing.md", "title": "Missing"}
+    assert controller.content == ""
+    assert controller.action_error == "Could not open Inbox/Missing.md: read denied"
+
+
+def test_notes_controller_ignores_stale_read_results(qt_app, mock_client):
+    """A slow first note read must not overwrite a later selected note."""
+    controller = NotesController(mock_client)
+    controller.status = {"available": True, "vault": "/home/user/vault"}
+
+    controller.open_note("Inbox/First.md", "First")
+    first_callback = mock_client.call.call_args_list[-1][1]["callback"]
+
+    controller.open_note("Inbox/Second.md", "Second")
+    second_callback = mock_client.call.call_args_list[-1][1]["callback"]
+
+    first_callback({"result": "# First\n\nLate result."})
+
+    assert controller.selected == {"path": "Inbox/Second.md", "title": "Second"}
+    assert controller.content == ""
+    assert controller.action_error == ""
+
+    first_callback({"error": "late denied"})
+    assert controller.content == ""
+    assert controller.action_error == ""
+
+    second_callback({"result": "# Second\n\nCurrent result."})
+
+    assert controller.selected == {"path": "Inbox/Second.md", "title": "Second"}
+    assert controller.content == "# Second\n\nCurrent result."
+    assert controller.action_error == ""
 
 
 def test_notes_controller_edit_save(qt_app, mock_client):
@@ -157,6 +265,53 @@ def test_notes_controller_edit_save(qt_app, mock_client):
     assert not controller.saving
     assert not controller.editing
     assert controller.content == "# Note\n\nEdited."
+    assert controller.action_error == ""
+
+
+def test_notes_controller_save_error_keeps_draft_editing(qt_app, mock_client):
+    """Failed saves keep the editor and draft intact for retry."""
+    controller = NotesController(mock_client)
+    controller.selected = {"path": "Inbox/Note.md", "title": "Note"}
+    controller.content = "# Note\n\nOriginal."
+    controller.start_edit()
+    controller.draft = "# Note\n\nEdited."
+
+    controller.save()
+
+    callback = mock_client.call.call_args[1]["callback"]
+    callback({"error": "write denied"})
+
+    assert not controller.saving
+    assert controller.editing
+    assert controller.draft == "# Note\n\nEdited."
+    assert controller.content == "# Note\n\nOriginal."
+    assert controller.action_error == "Could not save Inbox/Note.md: write denied"
+
+
+def test_notes_controller_pending_save_owns_edit_mode(qt_app, mock_client):
+    """Cancel and a later failure cannot strand a pending draft in read mode."""
+    controller = NotesController(mock_client)
+    controller.selected = {"path": "Inbox/Note.md", "title": "Note"}
+    controller.content = "# Note\n\nOriginal."
+    controller.start_edit()
+    controller.draft = "# Note\n\nEdited."
+
+    controller.save()
+    controller.cancel_edit()
+
+    assert controller.saving
+    assert controller.editing
+    assert controller.draft == "# Note\n\nEdited."
+
+    controller.editing = False
+    callback = mock_client.call.call_args[1]["callback"]
+    callback({"error": "write denied"})
+
+    assert not controller.saving
+    assert controller.editing
+    assert controller.draft == "# Note\n\nEdited."
+    assert controller.content == "# Note\n\nOriginal."
+    assert controller.action_error == "Could not save Inbox/Note.md: write denied"
 
 
 def test_notes_controller_create_note(qt_app, mock_client):
@@ -183,3 +338,25 @@ def test_notes_controller_create_note(qt_app, mock_client):
 
     assert not controller.creating
     assert controller.new_name == ""
+    assert not controller.creating_busy
+    assert controller.action_error == ""
+
+
+def test_notes_controller_create_error_keeps_composer(qt_app, mock_client):
+    """Failed note creation keeps the pending path visible for retry."""
+    controller = NotesController(mock_client)
+    controller.status = {"available": True, "vault": "/home/user/vault"}
+
+    controller.start_create()
+    controller.new_name = "Ideas/NewIdea.md"
+    controller.create_note()
+
+    assert controller.creating_busy
+
+    callback = mock_client.call.call_args[1]["callback"]
+    callback({"error": {"message": "write denied"}})
+
+    assert controller.creating
+    assert not controller.creating_busy
+    assert controller.new_name == "Ideas/NewIdea.md"
+    assert controller.action_error == "Could not create Ideas/NewIdea.md: write denied"
