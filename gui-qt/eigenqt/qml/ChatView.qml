@@ -35,6 +35,9 @@ Rectangle {
     property var queuedInputs: []
     readonly property int qaTranscriptRows: transcriptListView.count
     readonly property real qaTranscriptContentHeight: transcriptListView.contentHeight
+    readonly property real qaTranscriptContentY: transcriptListView.contentY
+    readonly property bool qaTranscriptAtBottom: transcriptListView.atVisualEnd()
+    readonly property bool qaTranscriptStickToBottom: transcriptListView.stickToBottom
     readonly property bool qaSlashPopupOpen: slashPopup.opened
     readonly property bool qaSlashPopupInsideWindow: slashPopup.qaPopupInsideWindow
     readonly property int qaSlashCommandCount: slashPopup.qaCommandCount
@@ -190,12 +193,35 @@ Rectangle {
                 blocks: model.blocks || []
             }
 
-            // Auto-scroll to bottom while at bottom
-            property bool atBottom: atYEnd
-            onCountChanged: {
-                if (atBottom) {
-                    Qt.callLater(positionViewAtEnd)
+            // Auto-scroll only while pinned. Track the user's intent before
+            // new content grows; checking atYEnd after an insert is too late.
+            property bool stickToBottom: true
+
+            Component.onCompleted: schedulePositionAtEnd()
+            onCountChanged: schedulePositionAtEnd()
+            onContentHeightChanged: schedulePositionAtEnd()
+            onHeightChanged: schedulePositionAtEnd()
+            onMovementEnded: stickToBottom = atVisualEnd()
+
+            Timer {
+                id: transcriptAutoScrollTimer
+                interval: 16
+                repeat: false
+                onTriggered: {
+                    if (transcriptListView.stickToBottom) {
+                        transcriptListView.positionViewAtEnd()
+                    }
                 }
+            }
+
+            function schedulePositionAtEnd() {
+                if (!stickToBottom) return
+                transcriptAutoScrollTimer.restart()
+            }
+
+            function atVisualEnd() {
+                const maxY = Math.max(originY, originY + contentHeight - height)
+                return contentY >= maxY - 1
             }
 
             // QML ListView's default wheel step is a few px per notch — felt
@@ -211,6 +237,7 @@ Rectangle {
                         + transcriptListView.contentHeight
                         - transcriptListView.height
                     transcriptListView.contentY = Math.max(minY, Math.min(y, Math.max(minY, maxY)))
+                    transcriptListView.stickToBottom = transcriptListView.atVisualEnd()
                 }
             }
 

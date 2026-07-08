@@ -1309,6 +1309,20 @@ def main():
 
     ok = capture_view("chat", "ChatView.qml", setup_chat) and ok
 
+    def show_chat_stream_tail(_view, root):
+        model = root.property("transcriptModel")
+        if model is not None:
+            for i in range(28):
+                model.appendNote(f"rapid stream tail row {i + 1}")
+        QTest.qWait(80)
+        app.processEvents()
+        if root.property("qaTranscriptAtBottom") is not True:
+            raise AssertionError(
+                "Chat transcript did not stay pinned at the tail during rapid inserts"
+            )
+
+    ok = capture_view("chat-stream-tail", "ChatView.qml", setup_chat, show_chat_stream_tail) and ok
+
     def open_chat_info_dock(_view, root):
         root.setProperty("dockTabIndex", 2)
         root.setProperty("dockOpen", True)
