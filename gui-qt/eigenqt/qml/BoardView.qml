@@ -1105,84 +1105,52 @@ Rectangle {
                                                         Layout.fillWidth: true
                                                         spacing: Theme.space.xs
 
-                                                        Rectangle {
+                                                        AppTag {
+                                                            objectName: "kanbanSessionTag_" + root.safeObjectName(modelData.key)
                                                             visible: !!modelData.session
-                                                            width: sessionBadge.implicitWidth + Theme.space.sm
-                                                            height: 18
-                                                            radius: Theme.radius.full
-                                                            color: Theme.colors.bgRaised2
-                                                            border.width: 1
-                                                            border.color: Theme.colors.borderBrandFaint
-
-                                                            Label {
-                                                                id: sessionBadge
-                                                                anchors.centerIn: parent
-                                                                text: "◆ session"
-                                                                font.family: Theme.uiFonts[0]
-                                                                font.pixelSize: Theme.fontSize.micro
-                                                                font.weight: Theme.fontWeight.medium
-                                                                color: Theme.colors.brandBright
-                                                            }
+                                                            text: "◆ session"
+                                                            backgroundColor: Theme.colors.bgRaised2
+                                                            borderColor: Theme.colors.borderBrandFaint
+                                                            textColor: Theme.colors.brandBright
+                                                            fontPixelSize: Theme.fontSize.micro
+                                                            fontWeight: Theme.fontWeight.medium
+                                                            minimumHeight: 18
                                                         }
 
-                                                        Rectangle {
+                                                        AppTag {
+                                                            objectName: "kanbanDraftTag_" + root.safeObjectName(modelData.key)
                                                             visible: !!modelData.draft
-                                                            width: draftBadge.implicitWidth + Theme.space.sm
-                                                            height: 18
-                                                            radius: Theme.radius.full
-                                                            color: Theme.colors.bgRaised2
-                                                            border.width: 1
-                                                            border.color: Theme.colors.borderSubtle
-
-                                                            Label {
-                                                                id: draftBadge
-                                                                anchors.centerIn: parent
-                                                                text: "draft"
-                                                                font.family: Theme.uiFonts[0]
-                                                                font.pixelSize: Theme.fontSize.micro
-                                                                font.weight: Theme.fontWeight.medium
-                                                                color: Theme.colors.textMuted
-                                                            }
+                                                            text: "draft"
+                                                            backgroundColor: Theme.colors.bgRaised2
+                                                            borderColor: Theme.colors.borderSubtle
+                                                            textColor: Theme.colors.textMuted
+                                                            fontPixelSize: Theme.fontSize.micro
+                                                            fontWeight: Theme.fontWeight.medium
+                                                            minimumHeight: 18
                                                         }
 
-                                                        Rectangle {
+                                                        AppTag {
+                                                            objectName: "kanbanChangesTag_" + root.safeObjectName(modelData.key)
                                                             visible: modelData.review === "changes"
-                                                            width: changesBadge.implicitWidth + Theme.space.sm
-                                                            height: 18
-                                                            radius: Theme.radius.full
-                                                            color: Theme.colors.bgRaised2
-                                                            border.width: 1
-                                                            border.color: Theme.colors.warn
-
-                                                            Label {
-                                                                id: changesBadge
-                                                                anchors.centerIn: parent
-                                                                text: "changes requested"
-                                                                font.family: Theme.uiFonts[0]
-                                                                font.pixelSize: Theme.fontSize.micro
-                                                                font.weight: Theme.fontWeight.medium
-                                                                color: Theme.colors.warn
-                                                            }
+                                                            text: "changes requested"
+                                                            backgroundColor: Theme.colors.bgRaised2
+                                                            borderColor: Theme.colors.warn
+                                                            textColor: Theme.colors.warn
+                                                            fontPixelSize: Theme.fontSize.micro
+                                                            fontWeight: Theme.fontWeight.medium
+                                                            minimumHeight: 18
                                                         }
 
-                                                        Rectangle {
+                                                        AppTag {
+                                                            objectName: "kanbanApprovedTag_" + root.safeObjectName(modelData.key)
                                                             visible: modelData.review === "approved"
-                                                            width: approvedBadge.implicitWidth + Theme.space.sm
-                                                            height: 18
-                                                            radius: Theme.radius.full
-                                                            color: Theme.colors.bgRaised2
-                                                            border.width: 1
-                                                            border.color: Theme.colors.success
-
-                                                            Label {
-                                                                id: approvedBadge
-                                                                anchors.centerIn: parent
-                                                                text: "approved"
-                                                                font.family: Theme.uiFonts[0]
-                                                                font.pixelSize: Theme.fontSize.micro
-                                                                font.weight: Theme.fontWeight.medium
-                                                                color: Theme.colors.success
-                                                            }
+                                                            text: "approved"
+                                                            backgroundColor: Theme.colors.bgRaised2
+                                                            borderColor: Theme.colors.success
+                                                            textColor: Theme.colors.success
+                                                            fontPixelSize: Theme.fontSize.micro
+                                                            fontWeight: Theme.fontWeight.medium
+                                                            minimumHeight: 18
                                                         }
                                                     }
 
