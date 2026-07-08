@@ -3215,6 +3215,34 @@ def main():
         if model is not None:
             model.setProperty("confirm_remove_ad_hoc", 0)
             model.setProperty("confirm_remove_note", 0)
+        for _ in range(8):
+            app.processEvents()
+        for group_name, object_names in (
+            (
+                "manual memory actions",
+                (
+                    "memoryAdHocMoveButton_0",
+                    "memoryAdHocRemoveConfirmButton_0",
+                    "memoryAdHocRemoveCancelButton_0",
+                ),
+            ),
+            (
+                "distilled memory actions",
+                (
+                    "memoryNoteMoveButton_0",
+                    "memoryNoteRemoveConfirmButton_0",
+                    "memoryNoteRemoveCancelButton_0",
+                ),
+            ),
+        ):
+            buttons = [find_item(root, name) for name in object_names]
+            if any(button is None for button in buttons):
+                raise AssertionError(f"{group_name} did not render all confirm buttons")
+            if any(button.property("qaTextFits") is not True for button in buttons):
+                raise AssertionError(f"{group_name} rendered clipped action text")
+            tops = [scene_top(button) for button in buttons]
+            if max(tops) - min(tops) > 3:
+                raise AssertionError(f"{group_name} stacked vertically instead of staying inline: {tops}")
 
     ok = capture_view("memory-remove-confirm", "MemoryView.qml", setup_memory, show_memory_remove_confirm) and ok
 
