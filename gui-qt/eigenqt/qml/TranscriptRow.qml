@@ -124,7 +124,7 @@ Item {
                             color: Theme.colors.brand
 
                             SequentialAnimation on opacity {
-                                running: true
+                                running: Theme.continuousMotion
                                 loops: Animation.Infinite
                                 NumberAnimation { from: 0.3; to: 1.0; duration: 800; easing.type: Easing.InOutQuad }
                                 NumberAnimation { from: 1.0; to: 0.3; duration: 800; easing.type: Easing.InOutQuad }

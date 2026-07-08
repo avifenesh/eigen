@@ -151,6 +151,11 @@ var duration = {
     breath: 2600
 }
 
+// Continuous opacity/rotation animations keep Qt's render loop hot under
+// software compositors. Keep state static by default; transient Behaviors above
+// still provide lightweight interaction feedback.
+var continuousMotion = false
+
 function statusColor(status) {
     if (status === "working") return colors.dotWorking
     if (status === "error") return colors.dotError

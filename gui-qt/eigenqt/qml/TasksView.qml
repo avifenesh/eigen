@@ -269,7 +269,7 @@ Rectangle {
 
                                 // Pulse animation for running
                                 SequentialAnimation on opacity {
-                                    running: model.status === "running"
+                                    running: Theme.continuousMotion && model.status === "running"
                                     loops: Animation.Infinite
                                     NumberAnimation { from: 1.0; to: 0.3; duration: Theme.duration.breath / 2 }
                                     NumberAnimation { from: 0.3; to: 1.0; duration: Theme.duration.breath / 2 }
@@ -560,7 +560,7 @@ Rectangle {
                     color: root.openTask ? statusDotColor(root.openTask.status) : Theme.colors.dotIdle
 
                     SequentialAnimation on opacity {
-                        running: root.openTask && root.openTask.status === "running"
+                        running: Theme.continuousMotion && root.openTask && root.openTask.status === "running"
                         loops: Animation.Infinite
                         NumberAnimation { from: 1.0; to: 0.3; duration: Theme.duration.breath / 2 }
                         NumberAnimation { from: 0.3; to: 1.0; duration: Theme.duration.breath / 2 }

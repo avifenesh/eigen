@@ -382,7 +382,7 @@ ApplicationWindow {
     readonly property var ctxApprovals: approvalsModel
     readonly property var ctxClipboard: clipboardHelper
     readonly property var ctxHighlighter: highlighter
-    readonly property var ctxTerminalHelper: terminalHelper
+    readonly property var ctxTerminalHelper: typeof terminalHelper === "undefined" ? null : terminalHelper
     readonly property var ctxRpc: rpcClient
     readonly property var ctxSessionController: sessionController
     readonly property var ctxStats: statsData

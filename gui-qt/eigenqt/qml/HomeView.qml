@@ -494,7 +494,7 @@ Rectangle {
                 radius: 4
                 color: Theme.statusColor(sessionData ? sessionData.status : "idle")
                 SequentialAnimation on opacity {
-                    running: sessionData && (sessionData.status === "working" || sessionData.status === "approval")
+                    running: Theme.continuousMotion && sessionData && (sessionData.status === "working" || sessionData.status === "approval")
                     loops: Animation.Infinite
                     NumberAnimation { from: 1.0; to: 0.3; duration: Theme.duration.breath / 2; easing.type: Easing.InOutQuad }
                     NumberAnimation { from: 0.3; to: 1.0; duration: Theme.duration.breath / 2; easing.type: Easing.InOutQuad }
