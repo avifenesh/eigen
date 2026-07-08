@@ -766,8 +766,14 @@ def assert_item_inside_window(item, label):
 
 
 def assert_combo_popup_clean(window, root, combo, label, option_index=0):
+    if combo.property("qaIsAppComboBox") is not True:
+        raise AssertionError(f"{label} did not use shared AppComboBox")
     if combo.property("qaTextFits") is not True:
         raise AssertionError(f"{label} text does not fit: {combo.property('qaText')!r}")
+    if float(combo.property("qaHorizontalPadding") or 0) < 11.5:
+        raise AssertionError(f"{label} horizontal padding too small: {combo.property('qaHorizontalPadding')}")
+    if float(combo.property("qaVerticalPadding") or 0) < 5.5:
+        raise AssertionError(f"{label} vertical padding too small: {combo.property('qaVerticalPadding')}")
     assert_item_inside_window(combo, label)
     combo.setProperty("qaPopupOpen", True)
     pump(app, 12)
@@ -790,8 +796,14 @@ def assert_combo_popup_clean(window, root, combo, label, option_index=0):
     option = find_item_in(window, root, f"{combo.objectName()}_option_{option_index}")
     if option is None:
         raise AssertionError(f"{label} popup did not expose option {option_index}")
+    if option.property("qaIsAppComboBoxOption") is not True:
+        raise AssertionError(f"{label} popup option did not use shared AppComboBox option")
     if option.property("qaTextFits") is not True:
         raise AssertionError(f"{label} popup option text does not fit: {option.property('qaText')!r}")
+    if float(option.property("qaHorizontalPadding") or 0) < 11.5:
+        raise AssertionError(f"{label} popup option horizontal padding too small: {option.property('qaHorizontalPadding')}")
+    if float(option.property("qaVerticalPadding") or 0) < 5.5:
+        raise AssertionError(f"{label} popup option vertical padding too small: {option.property('qaVerticalPadding')}")
     combo.setProperty("qaPopupOpen", False)
     pump(app, 8)
     if combo.property("qaPopupActuallyOpen") is True:
@@ -1561,9 +1573,9 @@ if terminal_status.property("qaIsAppTag") is not True:
     raise AssertionError("Terminal status did not use shared AppTag")
 if terminal_status.property("qaTextFits") is not True:
     raise AssertionError("Terminal status text does not fit")
-if float(terminal_status.property("qaHorizontalPadding") or 0) < 15.5:
+if float(terminal_status.property("qaHorizontalPadding") or 0) < 19.5:
     raise AssertionError(f"Terminal status horizontal padding too small: {terminal_status.property('qaHorizontalPadding')}")
-if float(terminal_status.property("qaVerticalPadding") or 0) < 5.5:
+if float(terminal_status.property("qaVerticalPadding") or 0) < 7.5:
     raise AssertionError(f"Terminal status vertical padding too small: {terminal_status.property('qaVerticalPadding')}")
 if call_count(client, "TerminalStart") <= term_start_count:
     raise AssertionError(f"/term did not start a terminal: {client.calls}")

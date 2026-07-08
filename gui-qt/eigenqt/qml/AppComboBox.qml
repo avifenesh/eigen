@@ -41,6 +41,11 @@ ComboBox {
     readonly property bool qaTextFits: !contentItem || !contentItem.text
         || (!contentItem.truncated && contentItem.paintedWidth <= Math.max(0, width - leftPadding - rightPadding) + 0.5)
     readonly property string qaText: effectiveDisplayText
+    readonly property bool qaIsAppComboBox: true
+    readonly property real qaLeftTextInset: displayLabel.leftPadding
+    readonly property real qaRightTextInset: control.width - (displayLabel.leftPadding + displayLabel.paintedWidth)
+    readonly property real qaHorizontalPadding: Math.min(qaLeftTextInset, qaRightTextInset)
+    readonly property real qaVerticalPadding: Math.max(0, (control.height - displayLabel.paintedHeight) / 2)
     readonly property bool qaVisualFocus: visualFocus
 
     onQaPopupOpenChanged: syncQaPopup()
@@ -60,7 +65,7 @@ ComboBox {
 
     implicitHeight: 32
     focusPolicy: Qt.StrongFocus
-    leftPadding: Theme.space.md
+    leftPadding: Theme.space.lg
     rightPadding: Theme.space.xxxl
     Accessible.name: accessibleName || effectiveDisplayText || objectName
     ToolTip.delay: 600
@@ -82,6 +87,7 @@ ComboBox {
     }
 
     contentItem: Label {
+        id: displayLabel
         text: control.effectiveDisplayText
         font.family: Theme.uiFonts[0]
         font.pixelSize: Theme.fontSize.bodySm
@@ -125,9 +131,14 @@ ComboBox {
         onClicked: control.activateIndex(index)
         readonly property bool qaSelected: currentOption
         readonly property bool qaKeyboardHighlighted: keyboardOption
+        readonly property bool qaIsAppComboBoxOption: true
         readonly property bool qaTextFits: !contentItem || !contentItem.text
-            || (!contentItem.truncated && contentItem.paintedWidth <= Math.max(0, width - Theme.space.md * 2) + 0.5)
+            || (!contentItem.truncated && contentItem.paintedWidth <= Math.max(0, width - Theme.space.lg * 2) + 0.5)
         readonly property string qaText: text
+        readonly property real qaLeftTextInset: optionLabel.leftPadding
+        readonly property real qaRightTextInset: width - (optionLabel.leftPadding + optionLabel.paintedWidth)
+        readonly property real qaHorizontalPadding: Math.min(qaLeftTextInset, qaRightTextInset)
+        readonly property real qaVerticalPadding: Math.max(0, (height - optionLabel.paintedHeight) / 2)
 
         background: Rectangle {
             color: parent.highlighted
@@ -145,13 +156,14 @@ ComboBox {
         }
 
         contentItem: Label {
+            id: optionLabel
             text: (parent.currentOption ? "✓  " : "   ") + parent.text
             font.family: Theme.uiFonts[0]
             font.pixelSize: Theme.fontSize.bodySm
             color: Theme.colors.textPrimary
             verticalAlignment: Text.AlignVCenter
-            leftPadding: Theme.space.md
-            rightPadding: Theme.space.md
+            leftPadding: Theme.space.lg
+            rightPadding: Theme.space.lg
             elide: Text.ElideRight
         }
     }

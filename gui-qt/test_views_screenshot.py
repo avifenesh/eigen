@@ -705,7 +705,7 @@ def assert_app_tags_have_padding(view_name, root_item):
             if visible and width > 0 and height > 0:
                 horizontal_padding = float(item.property("qaHorizontalPadding") or 0)
                 vertical_padding = float(item.property("qaVerticalPadding") or 0)
-                if item.property("qaTextFits") is not True or horizontal_padding < 15.5 or vertical_padding < 5.5:
+                if item.property("qaTextFits") is not True or horizontal_padding < 19.5 or vertical_padding < 7.5:
                     failures.append(
                         f"{item.objectName() or '<unnamed>'} "
                         f"fits={item.property('qaTextFits')} "
@@ -756,6 +756,35 @@ def assert_board_chips_have_padding(view_name, root_item):
 
 def assert_task_chips_have_padding(view_name, root_item):
     assert_marked_chips_have_padding(view_name, root_item, ("qaIsTaskChip",), "task chip")
+
+
+def assert_app_combos_have_padding(view_name, root_item):
+    failures = []
+
+    def visit(item):
+        if item is None:
+            return
+        if item.property("qaIsAppComboBox") is True or item.property("qaIsAppComboBoxOption") is True:
+            width = float(item.property("width") or 0)
+            height = float(item.property("height") or 0)
+            visible = item.isVisible() if hasattr(item, "isVisible") else item.property("visible")
+            if visible and width > 0 and height > 0:
+                horizontal_padding = float(item.property("qaHorizontalPadding") or 0)
+                vertical_padding = float(item.property("qaVerticalPadding") or 0)
+                if item.property("qaTextFits") is not True or horizontal_padding < 11.5 or vertical_padding < 5.5:
+                    failures.append(
+                        f"{item.objectName() or '<unnamed>'} "
+                        f"fits={item.property('qaTextFits')} "
+                        f"padding={horizontal_padding:.1f}x{vertical_padding:.1f} "
+                        f"size={width:.1f}x{height:.1f}"
+                    )
+        if hasattr(item, "childItems"):
+            for child in item.childItems():
+                visit(child)
+
+    visit(root_item)
+    if failures:
+        raise AssertionError(f"{view_name} rendered cramped AppComboBox text: {failures[:8]}")
 
 
 def assert_app_buttons_have_padding(view_name, root_item):
@@ -839,6 +868,7 @@ def capture_view(view_name: str, qml_file: str, setup_context, after_render=None
         for _ in range(12):
             app.processEvents()
     assert_app_tags_have_padding(view_name, view.rootObject())
+    assert_app_combos_have_padding(view_name, view.rootObject())
     assert_app_buttons_have_padding(view_name, view.rootObject())
 
     output = SCREENSHOTS / f"qa-fix-{view_name}.png"
@@ -1173,6 +1203,27 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
         )
         window.hide()
         return False
+    if compact_model_combo.property("qaTextFits") is not True or float(compact_model_combo.property("qaHorizontalPadding") or 0) < 11.5 or float(compact_model_combo.property("qaVerticalPadding") or 0) < 5.5:
+        print(
+            "✗ Main compact dropdown proof rendered cramped model trigger: "
+            f"fits={compact_model_combo.property('qaTextFits')} "
+            f"padding={compact_model_combo.property('qaHorizontalPadding')}x{compact_model_combo.property('qaVerticalPadding')}"
+        )
+        window.hide()
+        return False
+    compact_model_option = find_item(window.contentItem(), "sessionModelCombo_option_0")
+    if compact_model_option is None:
+        print("✗ Main compact dropdown proof could not find the model option")
+        window.hide()
+        return False
+    if compact_model_option.property("qaTextFits") is not True or float(compact_model_option.property("qaHorizontalPadding") or 0) < 11.5 or float(compact_model_option.property("qaVerticalPadding") or 0) < 5.5:
+        print(
+            "✗ Main compact dropdown proof rendered cramped model option: "
+            f"fits={compact_model_option.property('qaTextFits')} "
+            f"padding={compact_model_option.property('qaHorizontalPadding')}x{compact_model_option.property('qaVerticalPadding')}"
+        )
+        window.hide()
+        return False
 
     output_compact_dropdown = SCREENSHOTS / "qa-fix-main-chat-compact-dropdown.png"
     image_compact_dropdown = window.grabWindow()
@@ -1367,7 +1418,7 @@ def main():
             tag = find_item(root, object_name)
             if tag is None or tag.property("qaIsAppTag") is not True:
                 raise AssertionError(f"home tag {object_name} did not use AppTag")
-            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 15.5 or float(tag.property("qaVerticalPadding") or 0) < 5.5:
+            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 19.5 or float(tag.property("qaVerticalPadding") or 0) < 7.5:
                 raise AssertionError(
                     f"home tag {object_name} is cramped: "
                     f"fits={tag.property('qaTextFits')} padding={tag.property('qaHorizontalPadding')}x{tag.property('qaVerticalPadding')}"
@@ -1706,7 +1757,7 @@ def main():
             raise AssertionError("chat terminal dock did not render controls")
         if status_tag.property("qaIsAppTag") is not True:
             raise AssertionError("chat terminal status did not use AppTag")
-        if status_tag.property("qaTextFits") is not True or float(status_tag.property("qaHorizontalPadding") or 0) < 15.5 or float(status_tag.property("qaVerticalPadding") or 0) < 5.5:
+        if status_tag.property("qaTextFits") is not True or float(status_tag.property("qaHorizontalPadding") or 0) < 19.5 or float(status_tag.property("qaVerticalPadding") or 0) < 7.5:
             raise AssertionError(
                 "chat terminal status rendered cramped: "
                 f"fits={status_tag.property('qaTextFits')} "
@@ -2181,7 +2232,7 @@ def main():
             tag = find_item(root, object_name)
             if tag is None or tag.property("qaIsAppTag") is not True:
                 raise AssertionError(f"kanban tag {object_name} did not use AppTag")
-            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 15.5 or float(tag.property("qaVerticalPadding") or 0) < 5.5:
+            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 19.5 or float(tag.property("qaVerticalPadding") or 0) < 7.5:
                 raise AssertionError(
                     f"kanban tag {object_name} is cramped: "
                     f"fits={tag.property('qaTextFits')} padding={tag.property('qaHorizontalPadding')}x{tag.property('qaVerticalPadding')}"
