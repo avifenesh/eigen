@@ -32,6 +32,9 @@ Item {
     property string viewText: ""
     property bool viewLoading: false
     property string viewError: ""
+    readonly property int qaTreeRowCount: treeList.count
+    readonly property bool qaViewerOpen: viewPath !== ""
+    readonly property bool qaViewerCloseFits: !qaViewerOpen || viewerCloseButton.qaTextFits
 
     FileTreeModel {
         id: fileTreeModel
