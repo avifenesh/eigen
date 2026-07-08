@@ -436,6 +436,14 @@ class MemoryModel(QObject):
     def _fail_action(self, label: str, result: dict | None):
         self.action_error = f"{label}: {self._err_text(result)}"
 
+    def _destructive_action_pending(self) -> bool:
+        return (
+            self._removing_note != -1
+            or self._removing_ad_hoc != -1
+            or self._moving_note != -1
+            or self._removing_ban != ""
+        )
+
     @Slot()
     def _on_connected(self):
         """Load scopes + initial scope on connect."""
@@ -542,6 +550,8 @@ class MemoryModel(QObject):
     @Slot(int)
     def remove_note(self, index: int):
         """Remove a distilled note by index."""
+        if self._destructive_action_pending():
+            return
         self.action_error = ""
         self.removing_note = index
         self.confirm_remove_note = -1
@@ -566,6 +576,8 @@ class MemoryModel(QObject):
     @Slot(int)
     def remove_ad_hoc(self, index: int):
         """Remove an ad-hoc saved note by index."""
+        if self._destructive_action_pending():
+            return
         self.action_error = ""
         self.removing_ad_hoc = index
         self.confirm_remove_ad_hoc = -1
@@ -590,13 +602,15 @@ class MemoryModel(QObject):
     @Slot(str, int)
     def open_move(self, note_text: str, idx: int):
         """Open the move-note picker."""
+        if self._destructive_action_pending():
+            return
         self.move_pending = {"text": note_text, "idx": idx}
         self.move_open = True
 
     @Slot(str, str)
     def move_to(self, dst_key: str, dst_name: str):
         """Move the pending note to another scope."""
-        if not self._move_pending:
+        if not self._move_pending or self._destructive_action_pending():
             return
 
         text = self._move_pending.get("text", "")
@@ -664,6 +678,8 @@ class MemoryModel(QObject):
     @Slot(str)
     def remove_ban(self, title: str):
         """Remove a ban by title."""
+        if self._destructive_action_pending():
+            return
         self.action_error = ""
         self.removing_ban = title
         self._client.call(

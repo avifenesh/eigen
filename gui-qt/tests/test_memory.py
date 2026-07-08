@@ -326,6 +326,75 @@ def test_pending_memory_writes_own_retry_forms(model, client):
     assert model.action_error == "Could not save ban: ban denied"
 
 
+def test_pending_destructive_memory_actions_do_not_duplicate(model, client):
+    model.scope_key = "global"
+    client.calls.clear()
+
+    model.remove_note(0)
+    first_remove_note = client.calls[-1]["callback"]
+    model.remove_note(0)
+    model.remove_note(1)
+    model.remove_ad_hoc(0)
+    model.open_move("Manual note proof.", 0)
+    model.remove_ban("No drift")
+
+    assert model.removing_note == 0
+    assert [call["method"] for call in client.calls].count("RemoveMemoryNote") == 1
+    assert not any(call["method"] == "RemoveAdHocMemoryNote" for call in client.calls)
+    assert not any(call["method"] == "MoveMemoryNote" for call in client.calls)
+    assert not any(call["method"] == "RemoveBan" for call in client.calls)
+    assert model.move_open is False
+
+    first_remove_note({"error": "remove denied"})
+    assert model.removing_note == -1
+    assert model.action_error == "Could not remove note: remove denied"
+
+    model.remove_ad_hoc(0)
+    first_remove_ad_hoc = client.calls[-1]["callback"]
+    model.remove_ad_hoc(0)
+    model.remove_note(0)
+
+    assert model.removing_ad_hoc == 0
+    assert [call["method"] for call in client.calls].count("RemoveAdHocMemoryNote") == 1
+    assert [call["method"] for call in client.calls].count("RemoveMemoryNote") == 1
+
+    first_remove_ad_hoc({"result": True})
+    assert model.removing_ad_hoc == -1
+    assert client.calls[-1]["method"] == "MemoryForScope"
+
+    model.open_move("Manual note proof.", 2)
+    assert model.move_open is True
+    model.move_to("project:/repo/eigen", "eigen")
+    first_move = client.calls[-1]["callback"]
+    model.open_move("Another note.", 3)
+    model.move_to("global", "Global")
+    model.remove_ban("No drift")
+
+    assert model.moving_note == 2
+    assert [call["method"] for call in client.calls].count("MoveMemoryNote") == 1
+    assert not any(call["method"] == "RemoveBan" for call in client.calls)
+
+    first_move({"error": "move denied"})
+    assert model.moving_note == -1
+    assert model.move_open is True
+    assert model.action_error == "Could not move note: move denied"
+
+    model.move_pending = None
+    model.move_open = False
+    model.remove_ban("No drift")
+    first_remove_ban = client.calls[-1]["callback"]
+    model.remove_ban("No drift")
+    model.remove_note(0)
+
+    assert model.removing_ban == "No drift"
+    assert [call["method"] for call in client.calls].count("RemoveBan") == 1
+    assert [call["method"] for call in client.calls].count("RemoveMemoryNote") == 1
+
+    first_remove_ban({"result": True})
+    assert model.removing_ban == ""
+    assert client.calls[-1]["method"] == "MemoryForScope"
+
+
 def test_backup_helpers_use_the_model_implementation(model, client):
     model.scope_key = "global"
     client.calls.clear()
