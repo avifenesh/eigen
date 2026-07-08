@@ -239,25 +239,15 @@ Rectangle {
                         anchors.rightMargin: Theme.space.xl
                         spacing: Theme.space.lg
 
-                        TextField {
+                        AppTextField {
                             id: searchField
                             objectName: "routingSearchField"
                             text: root.query
                             placeholderText: "Filter models"
-                            selectByMouse: true
-                            font.family: Theme.uiFonts[0]
-                            font.pixelSize: Theme.fontSize.bodySm
-                            color: Theme.colors.textPrimary
-                            placeholderTextColor: Theme.colors.textGhost
                             Layout.fillWidth: true
                             Layout.preferredHeight: 32
+                            backgroundColor: Theme.colors.surfaceRaised2
                             onTextChanged: root.query = text
-                            background: Rectangle {
-                                radius: Theme.radius.sm
-                                color: Theme.colors.surfaceRaised2
-                                border.width: 1
-                                border.color: searchField.activeFocus ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
-                            }
                         }
 
                         RowLayout {

@@ -306,30 +306,14 @@ Rectangle {
                         }
                     }
 
-                    TextField {
+                    AppTextField {
                         id: filterInput
                         Layout.fillWidth: true
                         Layout.preferredHeight: 32
                         placeholderText: "Filter skills…"
-                        placeholderTextColor: Theme.colors.textGhost
                         text: root.query
+                        backgroundRadius: Theme.radius.md
                         onTextChanged: root.query = text
-
-                        background: Rectangle {
-                            color: Theme.colors.bgRaised
-                            border.width: 1
-                            border.color: filterInput.activeFocus ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
-                            radius: Theme.radius.md
-
-                            Behavior on border.color { ColorAnimation { duration: Theme.duration.fast } }
-                        }
-
-                        font.family: Theme.uiFonts[0]
-                        font.pixelSize: Theme.fontSize.bodySm
-                        color: Theme.colors.textPrimary
-
-                        leftPadding: Theme.space.lg
-                        rightPadding: Theme.space.lg
                     }
                 }
 
@@ -377,7 +361,7 @@ Rectangle {
                             }
                         }
 
-                    TextField {
+                    AppTextField {
                         id: addInputField
                         objectName: "skillsAddInput"
                         Layout.fillWidth: true
@@ -385,38 +369,10 @@ Rectangle {
                         Layout.preferredWidth: 240
                         Layout.preferredHeight: 32
                         placeholderText: root.addMode === "path" ? "Skill path or SKILL.md" : "owner/repo"
-                        placeholderTextColor: Theme.colors.textGhost
                         text: root.addInput
                         onTextChanged: root.addInput = text
                         enabled: !root.installing
-                        property bool qaForceKeyboardFocus: false
-                        readonly property bool qaVisualFocus: activeFocus
-                        readonly property bool qaTextFits: !addInputField.contentItem || !addInputField.contentItem.text
-                            || (!addInputField.contentItem.truncated
-                                && addInputField.contentItem.paintedWidth <= addInputField.contentItem.width + 0.5)
-                        readonly property string qaText: text || placeholderText
-                        onQaForceKeyboardFocusChanged: {
-                            if (qaForceKeyboardFocus) {
-                                forceActiveFocus(Qt.TabFocusReason)
-                            }
-                        }
-
-                        background: Rectangle {
-                            color: Theme.colors.bgRaised
-                            border.width: 1
-                            border.color: addInputField.activeFocus ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
-                            radius: Theme.radius.md
-                            opacity: addInputField.enabled ? 1.0 : 0.6
-
-                            Behavior on border.color { ColorAnimation { duration: Theme.duration.fast } }
-                        }
-
-                        font.family: Theme.uiFonts[0]
-                        font.pixelSize: Theme.fontSize.bodySm
-                        color: Theme.colors.textPrimary
-
-                        leftPadding: Theme.space.lg
-                        rightPadding: Theme.space.lg
+                        backgroundRadius: Theme.radius.md
 
                         Keys.onReturnPressed: {
                             if (addInputField.text.trim() !== "" && !root.installing) {
