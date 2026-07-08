@@ -340,10 +340,38 @@ for object_name in (
         raise AssertionError(f"board chip {object_name} did not render")
     if chip.property("qaTextFits") is not True:
         raise AssertionError(f"board chip {object_name} text did not fit")
-    if float(chip.property("qaHorizontalPadding") or 0) < 43.5:
+    if float(chip.property("qaHorizontalPadding") or 0) < 47.5:
         raise AssertionError(f"board chip {object_name} horizontal padding too small: {chip.property('qaHorizontalPadding')}")
-    if float(chip.property("qaVerticalPadding") or 0) < 11.5:
+    if float(chip.property("qaVerticalPadding") or 0) < 13.5:
         raise AssertionError(f"board chip {object_name} vertical padding too small: {chip.property('qaVerticalPadding')}")
+
+owner_chip = find_item(board_root, "boardOwnerFilterChip_local")
+state_chip = find_item(board_root, "boardStateFilterChip_dirty")
+if owner_chip is None or state_chip is None:
+    raise AssertionError("board keyboard filter chips did not render")
+owner_chip.forceActiveFocus(Qt.TabFocusReason)
+pump(app, 12)
+if owner_chip.property("qaVisualFocus") is not True:
+    raise AssertionError("board owner filter chip did not expose keyboard focus")
+if owner_chip.property("qaAccessibleName") != "Local board owner filter":
+    raise AssertionError(f"board owner filter accessible name was {owner_chip.property('qaAccessibleName')!r}")
+QTest.keyClick(board_view, Qt.Key_Return)
+pump(app, 12)
+if board_root.property("ownerFilter") != "local":
+    raise AssertionError(f"board owner filter did not activate from keyboard: {board_root.property('ownerFilter')!r}")
+state_chip.forceActiveFocus(Qt.TabFocusReason)
+pump(app, 12)
+if state_chip.property("qaVisualFocus") is not True:
+    raise AssertionError("board state filter chip did not expose keyboard focus")
+if state_chip.property("qaAccessibleName") != "Uncommitted board state filter":
+    raise AssertionError(f"board state filter accessible name was {state_chip.property('qaAccessibleName')!r}")
+QTest.keyClick(board_view, Qt.Key_Space)
+pump(app, 12)
+if board_root.property("stateFilter") != "dirty":
+    raise AssertionError(f"board state filter did not activate from keyboard: {board_root.property('stateFilter')!r}")
+board_root.setProperty("ownerFilter", "all")
+board_root.setProperty("stateFilter", "all")
+pump(app, 12)
 
 board_root.setProperty("stateFilter", "issues")
 pump(app, 20)
