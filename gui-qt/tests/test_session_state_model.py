@@ -22,6 +22,12 @@ class FakeRpcClient(QObject):
             ],
             "running": False,
             "roots": ["/repo/eigen", "/tmp/proof"],
+            "shells": [
+                {"id": "sh-1", "command": "pytest -q gui-qt", "status": "running", "exit_code": 0, "last_line": "collecting"},
+            ],
+            "pending": [
+                {"id": "approval-1", "tool": "shell", "args": "{\"cmd\":\"make test\"}"},
+            ],
             "catalog": {"models": [{"id": "local-qwen", "effortLevels": ["low", "high"]}]},
         }
 
@@ -105,6 +111,12 @@ def test_session_state_exposes_provider_modes_and_roots():
             ],
             "running": False,
             "roots": ["/repo/eigen", "/tmp/proof"],
+            "shells": [
+                {"id": "sh-1", "command": "pytest -q gui-qt", "status": "running", "exit_code": 0, "last_line": "collecting"},
+            ],
+            "pending": [
+                {"id": "approval-1", "tool": "shell", "args": "{\"cmd\":\"make test\"}"},
+            ],
             "catalog": {"models": [{"id": "local-qwen", "effortLevels": ["low", "high"]}]},
         }
     )
@@ -117,6 +129,18 @@ def test_session_state_exposes_provider_modes_and_roots():
         {"name": "run_shell", "read_only": False},
     ]
     assert model.roots == ["/repo/eigen", "/tmp/proof"]
+    assert model.shells == [
+        {
+            "id": "sh-1",
+            "command": "pytest -q gui-qt",
+            "status": "running",
+            "exit_code": 0,
+            "last_line": "collecting",
+        }
+    ]
+    assert model.pending == [
+        {"id": "approval-1", "tool": "shell", "args": "{\"cmd\":\"make test\"}"}
+    ]
     assert model.dir == "/repo/eigen"
     assert model.effortLevels == ["low", "high"]
 

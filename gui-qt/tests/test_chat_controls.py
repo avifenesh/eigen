@@ -246,6 +246,12 @@ class FakeSessionState(QObject):
             {"name": "run_shell", "read_only": False},
         ]
         self._roots = ["/repo/eigen"]
+        self._shells = [
+            {"id": "sh-1", "command": "pytest -q gui-qt", "status": "running", "exit_code": 0, "last_line": "collecting"}
+        ]
+        self._pending = [
+            {"id": "approval-1", "tool": "shell", "args": "{\"cmd\":\"make test\"}"}
+        ]
         self._catalog = ["gpt-5", "local-qwen", "grok-4"]
         self._effort_levels = ["low", "medium", "high"]
         self._dir = "/repo/eigen"
@@ -290,6 +296,14 @@ class FakeSessionState(QObject):
     @Property(list, notify=goalChanged)
     def tools(self):
         return self._tools
+
+    @Property(list, notify=goalChanged)
+    def shells(self):
+        return self._shells
+
+    @Property(list, notify=goalChanged)
+    def pending(self):
+        return self._pending
 
     @Property(list, notify=catalogChanged)
     def catalog(self):
@@ -370,6 +384,8 @@ class FakeSessionState(QObject):
         self._fast_ok = bool(state.get("fastOk", self._fast_ok))
         self._tools = state.get("tools", self._tools)
         self._roots = state.get("roots", self._roots)
+        self._shells = state.get("shells", self._shells)
+        self._pending = state.get("pending", self._pending)
         self.goalChanged.emit()
 
     @Slot()
@@ -931,8 +947,22 @@ info_title = find_item(chat, "dockInfoTitle")
 info_model = find_item(chat, "dockInfoModel")
 info_goal = find_item(chat, "dockInfoGoal")
 info_root = find_item(chat, "dockInfoRoot_0")
+info_shell = find_item(chat, "dockInfoShell_0")
+info_pending = find_item(chat, "dockInfoPending_0")
+info_shells = find_item(chat, "dockInfoShellsSummary")
+info_pending_summary = find_item(chat, "dockInfoPendingSummary")
 info_tools = find_item(chat, "dockInfoToolsSummary")
-if None in (info_title, info_model, info_goal, info_root, info_tools):
+if None in (
+    info_title,
+    info_model,
+    info_goal,
+    info_root,
+    info_shell,
+    info_pending,
+    info_shells,
+    info_pending_summary,
+    info_tools,
+):
     raise AssertionError("Info dock tab did not render its session metadata")
 if info_title.property("text") != "Qt chat controls":
     raise AssertionError(f"Info dock title was wrong: {info_title.property('text')}")
@@ -940,6 +970,10 @@ if "gpt-5 / medium / gated" not in info_model.property("text"):
     raise AssertionError(f"Info dock model summary was wrong: {info_model.property('text')}")
 if info_goal.property("text") != "Tighten the GUI":
     raise AssertionError(f"Info dock goal was wrong: {info_goal.property('text')}")
+if info_shells.property("text") != "1 shell":
+    raise AssertionError(f"Info dock shell summary was wrong: {info_shells.property('text')}")
+if info_pending_summary.property("text") != "1 approval":
+    raise AssertionError(f"Info dock approval summary was wrong: {info_pending_summary.property('text')}")
 if info_tools.property("text") != "2 tools (1 read, 1 write)":
     raise AssertionError(f"Info dock tool summary was wrong: {info_tools.property('text')}")
 

@@ -540,6 +540,18 @@ class ScreenshotSessionController(QObject):
                 ],
                 "running": False,
                 "roots": ["/home/user/eigen"],
+                "shells": [
+                    {
+                        "id": "sh-1",
+                        "command": "pytest -q gui-qt/tests/test_chat_controls.py",
+                        "status": "running",
+                        "exit_code": 0,
+                        "last_line": "collecting tests",
+                    }
+                ],
+                "pending": [
+                    {"id": "approval-1", "tool": "shell", "args": "{\"cmd\":\"make test\"}"}
+                ],
                 "catalog": {
                     "models": [
                         {"id": "gpt-5", "effortLevels": ["low", "medium", "high"]},
@@ -1168,6 +1180,18 @@ def main():
                 ],
                 "running": False,
                 "roots": ["/home/user/eigen"],
+                "shells": [
+                    {
+                        "id": "sh-1",
+                        "command": "pytest -q gui-qt/tests/test_chat_controls.py",
+                        "status": "running",
+                        "exit_code": 0,
+                        "last_line": "collecting tests",
+                    }
+                ],
+                "pending": [
+                    {"id": "approval-1", "tool": "shell", "args": "{\"cmd\":\"make test\"}"}
+                ],
                 "catalog": {
                     "models": [
                         {"id": "gpt-5", "effortLevels": ["low", "medium", "high"]},
@@ -1204,13 +1228,19 @@ def main():
         QTest.qWait(120)
         info_title = find_item(root, "dockInfoTitle")
         info_model = find_item(root, "dockInfoModel")
+        info_shells = find_item(root, "dockInfoShellsSummary")
+        info_pending = find_item(root, "dockInfoPendingSummary")
         info_tools = find_item(root, "dockInfoToolsSummary")
-        if info_title is None or info_model is None or info_tools is None:
+        if info_title is None or info_model is None or info_shells is None or info_pending is None or info_tools is None:
             raise AssertionError("chat info dock did not render session metadata")
         if info_title.property("text") != "Qt chat controls":
             raise AssertionError(f"chat info dock title was wrong: {info_title.property('text')}")
         if "gpt-5 / medium / gated" not in info_model.property("text"):
             raise AssertionError(f"chat info dock model summary was wrong: {info_model.property('text')}")
+        if info_shells.property("text") != "1 shell":
+            raise AssertionError(f"chat info dock shell summary was wrong: {info_shells.property('text')}")
+        if info_pending.property("text") != "1 approval":
+            raise AssertionError(f"chat info dock approval summary was wrong: {info_pending.property('text')}")
         if info_tools.property("text") != "2 tools (1 read, 1 write)":
             raise AssertionError(f"chat info dock tool summary was wrong: {info_tools.property('text')}")
 

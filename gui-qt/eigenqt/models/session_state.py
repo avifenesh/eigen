@@ -2,7 +2,7 @@
 session_state.py — SessionStateModel wrapping State RPC for session control strip.
 
 Exposes: model name, effort, perm, title, goal, search/fast modes, tools, roots,
-catalog (available models + effort levels).
+shells, pending approvals, catalog (available models + effort levels).
 Methods: setModel, setEffort, setPerm, setTitle, setGoal, setSearch, setFast
 (invoke RPC, update on success).
 """
@@ -24,6 +24,13 @@ def _err_text(value: Any) -> str:
     return str(value) if value else "Unknown error"
 
 
+def _int_value(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 class SessionStateModel(QObject):
     """Session state for control strip (model, effort, perm, title, goal, catalog)."""
 
@@ -37,6 +44,8 @@ class SessionStateModel(QObject):
     fastOkChanged = Signal()
     toolsChanged = Signal()
     rootsChanged = Signal()
+    shellsChanged = Signal()
+    pendingChanged = Signal()
     catalogChanged = Signal()
     effortLevelsChanged = Signal()
     statusChanged = Signal()
@@ -57,6 +66,8 @@ class SessionStateModel(QObject):
         self._fast_ok = False
         self._tools: list[dict] = []
         self._roots: list[str] = []
+        self._shells: list[dict] = []
+        self._pending: list[dict] = []
         self._catalog = []  # list of model names
         self._effort_levels = []  # list of effort levels for current model
         self._status = "idle"  # Computed from State RPC "running" field
@@ -106,6 +117,14 @@ class SessionStateModel(QObject):
     @Property(list, notify=rootsChanged)
     def roots(self) -> list[str]:
         return self._roots
+
+    @Property(list, notify=shellsChanged)
+    def shells(self) -> list[dict]:
+        return self._shells
+
+    @Property(list, notify=pendingChanged)
+    def pending(self) -> list[dict]:
+        return self._pending
 
     @Property(list, notify=catalogChanged)
     def catalog(self) -> list:
@@ -169,6 +188,27 @@ class SessionStateModel(QObject):
         self._roots = [str(root) for root in roots if root]
         self._dir = self._roots[0] if self._roots else ""
 
+        self._shells = [
+            {
+                "id": str(shell.get("id", "")),
+                "command": str(shell.get("command", "")),
+                "status": str(shell.get("status", "")),
+                "exit_code": _int_value(shell.get("exit_code", shell.get("exitCode", 0))),
+                "last_line": str(shell.get("last_line", shell.get("lastLine", "")) or ""),
+            }
+            for shell in (state.get("shells") or [])
+            if isinstance(shell, dict) and shell.get("id")
+        ]
+        self._pending = [
+            {
+                "id": str(item.get("id", "")),
+                "tool": str(item.get("tool", "")),
+                "args": str(item.get("args", "")),
+            }
+            for item in (state.get("pending") or [])
+            if isinstance(item, dict) and item.get("id")
+        ]
+
         # Extract catalog (from routing.catalog)
         catalog_data = state.get("catalog") or {}
         if isinstance(catalog_data, dict):
@@ -198,6 +238,8 @@ class SessionStateModel(QObject):
         self.fastOkChanged.emit()
         self.toolsChanged.emit()
         self.rootsChanged.emit()
+        self.shellsChanged.emit()
+        self.pendingChanged.emit()
         self.catalogChanged.emit()
         self.effortLevelsChanged.emit()
         self.statusChanged.emit()

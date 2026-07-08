@@ -197,6 +197,179 @@ ScrollView {
             spacing: Theme.space.md
 
             Label {
+                text: "Activity"
+                font.family: Theme.uiFonts[0]
+                font.pixelSize: Theme.fontSize.label
+                font.weight: Theme.fontWeight.semibold
+                color: Theme.colors.textPrimary
+            }
+
+            Item { Layout.fillWidth: true }
+
+            Label {
+                objectName: "dockInfoShellsSummary"
+                text: root.shellsSummary()
+                font.family: Theme.uiFonts[0]
+                font.pixelSize: Theme.fontSize.micro
+                color: Theme.colors.textMuted
+                elide: Text.ElideRight
+            }
+
+            Label {
+                objectName: "dockInfoPendingSummary"
+                text: root.pendingSummary()
+                font.family: Theme.uiFonts[0]
+                font.pixelSize: Theme.fontSize.micro
+                color: root.pending().length > 0 ? Theme.colors.warn : Theme.colors.textMuted
+                elide: Text.ElideRight
+            }
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            Layout.leftMargin: Theme.space.xl
+            Layout.rightMargin: Theme.space.xl
+            Layout.topMargin: Theme.space.sm
+            spacing: Theme.space.xs
+
+            Label {
+                objectName: "dockInfoNoActivity"
+                Layout.fillWidth: true
+                visible: root.shells().length === 0 && root.pending().length === 0
+                text: "No background shells or approvals"
+                font.family: Theme.uiFonts[0]
+                font.pixelSize: Theme.fontSize.bodySm
+                color: Theme.colors.textGhost
+            }
+
+            Repeater {
+                model: root.shells()
+
+                delegate: Rectangle {
+                    objectName: "dockInfoShell_" + index
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: shellContent.implicitHeight + Theme.space.md
+                    color: Theme.colors.bgInset
+                    radius: Theme.radius.sm
+                    border.width: 1
+                    border.color: Theme.colors.borderHairline
+
+                    ColumnLayout {
+                        id: shellContent
+                        anchors.fill: parent
+                        anchors.margins: Theme.space.sm
+                        spacing: Theme.space.xs
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.space.md
+
+                            Label {
+                                Layout.preferredWidth: 54
+                                text: root.shellStatus(modelData)
+                                font.family: Theme.monoFonts[0]
+                                font.pixelSize: Theme.fontSize.micro
+                                color: root.shellStatus(modelData) === "running" ? Theme.colors.brandBright : Theme.colors.textMuted
+                                horizontalAlignment: Text.AlignHCenter
+                                elide: Text.ElideRight
+                            }
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: root.shellCommand(modelData)
+                                font.family: Theme.monoFonts[0]
+                                font.pixelSize: Theme.fontSize.codeSm
+                                color: Theme.colors.textSecondary
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            visible: root.shellLastLine(modelData) !== ""
+                            text: root.shellLastLine(modelData)
+                            font.family: Theme.monoFonts[0]
+                            font.pixelSize: Theme.fontSize.micro
+                            color: Theme.colors.textGhost
+                            elide: Text.ElideRight
+                        }
+                    }
+                }
+            }
+
+            Repeater {
+                model: root.pending()
+
+                delegate: Rectangle {
+                    objectName: "dockInfoPending_" + index
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: pendingContent.implicitHeight + Theme.space.md
+                    color: Theme.colors.warnBg
+                    radius: Theme.radius.sm
+                    border.width: 1
+                    border.color: Theme.colors.borderSubtle
+
+                    ColumnLayout {
+                        id: pendingContent
+                        anchors.fill: parent
+                        anchors.margins: Theme.space.sm
+                        spacing: Theme.space.xs
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.space.md
+
+                            Label {
+                                Layout.preferredWidth: 54
+                                text: "approval"
+                                font.family: Theme.monoFonts[0]
+                                font.pixelSize: Theme.fontSize.micro
+                                color: Theme.colors.warn
+                                horizontalAlignment: Text.AlignHCenter
+                                elide: Text.ElideRight
+                            }
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: root.pendingTool(modelData)
+                                font.family: Theme.monoFonts[0]
+                                font.pixelSize: Theme.fontSize.codeSm
+                                color: Theme.colors.textSecondary
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            visible: root.pendingArgs(modelData) !== ""
+                            text: root.pendingArgs(modelData)
+                            font.family: Theme.monoFonts[0]
+                            font.pixelSize: Theme.fontSize.micro
+                            color: Theme.colors.textMuted
+                            elide: Text.ElideRight
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.leftMargin: Theme.space.xl
+            Layout.rightMargin: Theme.space.xl
+            Layout.topMargin: Theme.space.xl
+            Layout.preferredHeight: 1
+            color: Theme.colors.borderHairline
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.leftMargin: Theme.space.xl
+            Layout.rightMargin: Theme.space.xl
+            Layout.topMargin: Theme.space.xl
+            spacing: Theme.space.md
+
+            Label {
                 text: "Tools"
                 font.family: Theme.uiFonts[0]
                 font.pixelSize: Theme.fontSize.label
@@ -300,6 +473,16 @@ ScrollView {
         return value || []
     }
 
+    function shells() {
+        var value = raw("shells", [])
+        return value || []
+    }
+
+    function pending() {
+        var value = raw("pending", [])
+        return value || []
+    }
+
     function modeLine() {
         var search = field("search", "")
         var fastOk = raw("fastOk", false)
@@ -336,5 +519,44 @@ ScrollView {
         }
         return all.length + " tool" + (all.length === 1 ? "" : "s")
             + " (" + readOnly + " read, " + write + " write)"
+    }
+
+    function shellsSummary() {
+        var all = shells()
+        return all.length + " shell" + (all.length === 1 ? "" : "s")
+    }
+
+    function pendingSummary() {
+        var all = pending()
+        return all.length + " approval" + (all.length === 1 ? "" : "s")
+    }
+
+    function shellCommand(shell) {
+        return String(mapValue(shell, "command", "shell"))
+    }
+
+    function shellStatus(shell) {
+        var status = String(mapValue(shell, "status", "running"))
+        var exitCode = Number(mapValue(shell, "exit_code", mapValue(shell, "exitCode", 0)))
+        if (status !== "running" && !isNaN(exitCode)) return status + " " + exitCode
+        return status
+    }
+
+    function shellLastLine(shell) {
+        return previewText(mapValue(shell, "last_line", mapValue(shell, "lastLine", "")), 120)
+    }
+
+    function pendingTool(item) {
+        return String(mapValue(item, "tool", "tool"))
+    }
+
+    function pendingArgs(item) {
+        return previewText(mapValue(item, "args", ""), 120)
+    }
+
+    function previewText(value, limit) {
+        var text = String(value || "").replace(/\s+/g, " ").trim()
+        if (text.length > limit) return text.slice(0, limit - 3) + "..."
+        return text
     }
 }
