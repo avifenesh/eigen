@@ -711,6 +711,7 @@ Rectangle {
                                     id: serverNameField
                                     objectName: "connectorsServerNameInput"
                                     Layout.fillWidth: true
+                                    Layout.minimumWidth: 220
                                     backgroundColor: Theme.colors.bgRaised2
                                     placeholderText: "github"
                                     text: connectorsModel ? connectorsModel.srv_name : ""
@@ -739,6 +740,7 @@ Rectangle {
                                     id: serverCommandField
                                     objectName: "connectorsServerCommandInput"
                                     Layout.fillWidth: true
+                                    Layout.minimumWidth: 220
                                     backgroundColor: Theme.colors.bgRaised2
                                     placeholderText: "docker run ghcr.io/github/github-mcp-server"
                                     text: connectorsModel ? connectorsModel.srv_command : ""
@@ -767,6 +769,7 @@ Rectangle {
                                     id: serverDescField
                                     objectName: "connectorsServerDescInput"
                                     Layout.fillWidth: true
+                                    Layout.minimumWidth: 220
                                     backgroundColor: Theme.colors.bgRaised2
                                     placeholderText: "GitHub MCP (optional)"
                                     text: connectorsModel ? connectorsModel.srv_desc : ""

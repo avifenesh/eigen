@@ -399,6 +399,7 @@ def seeded_config_payload():
             {"key": "model", "desc": "Default model", "value": "gpt-5", "options": ["gpt-5", "local-qwen"], "multi": False, "allowEmpty": False},
             {"key": "route", "desc": "Enable router", "value": "true", "options": ["true", "false"], "multi": False, "allowEmpty": False},
             {"key": "route_providers", "desc": "Providers", "value": "openai,xai", "options": ["openai", "xai", "local"], "multi": True, "allowEmpty": True},
+            {"key": "notify_cmd", "desc": "Attention command", "value": "", "options": [], "multi": False, "allowEmpty": True},
         ],
     }
 
@@ -575,6 +576,9 @@ def check_config(app, client):
         integrations_tab = find_visual_item(root, "configTab_Integrations")
         if general_tab is None or models_tab is None:
             raise AssertionError("config tabs did not render all expected tabs")
+        for tab, name in ((general_tab, "General"), (models_tab, "Models"), (integrations_tab, "Integrations")):
+            if tab is not None and tab.property("qaTextFits") is not True:
+                raise AssertionError(f"config {name} tab text did not fit")
         general_right = general_tab.mapToScene(QPointF(float(general_tab.property("width") or 0), 0)).x()
         models_left = models_tab.mapToScene(QPointF(0, 0)).x()
         models_right = models_tab.mapToScene(QPointF(float(models_tab.property("width") or 0), 0)).x()
@@ -644,6 +648,24 @@ def check_config(app, client):
         pump(app)
         assert_call(client, start, "SetConfig", ("route_providers", "openai xai local"))
 
+        click_item(app, view, root, "configTab_Integrations")
+        if root.property("activeTab") != "Integrations":
+            raise AssertionError("config Integrations tab did not activate")
+        start = len(client.calls)
+        notify_input = focus_item(app, root, "configText_notify_cmd", flick_name="configFlick")
+        if notify_input.property("qaIsAppTextField") is not True:
+            raise AssertionError("config notify_cmd did not use shared AppTextField")
+        if notify_input.property("qaTextFits") is not True:
+            raise AssertionError(f"config notify_cmd text does not fit: {notify_input.property('qaText')!r}")
+        notify_input.setProperty("text", "notify-send Eigen")
+        pump(app)
+        QTest.keyClick(view, Qt.Key_Return)
+        pump(app)
+        assert_call(client, start, "SetConfig", ("notify_cmd", "notify-send Eigen"))
+
+        click_item(app, view, root, "configTab_Models")
+        if root.property("activeTab") != "Models":
+            raise AssertionError("config Models tab did not reactivate after Integrations")
         client.delays["SetRuleChain"] = 45
         start = len(client.calls)
         down = click_item(app, view, root, "configChainMoveDown_primary_0", flick_name="configFlick")
@@ -960,6 +982,12 @@ def check_connectors(app, client):
         error_box = find_visual_item(root, "connectorsServerActionError")
         if error_box is None or not error_box.property("visible"):
             raise AssertionError("failed local server save did not render an action error")
+        for field, name in (
+            (find_visual_item(root, "connectorsServerNameInput"), "local server name after error"),
+            (find_visual_item(root, "connectorsServerCommandInput"), "local server command after error"),
+            (find_visual_item(root, "connectorsServerDescInput"), "local server description after error"),
+        ):
+            assert_app_text_field(field, name)
         if not connectors.srv_open or connectors.srv_name != "github-local" or connectors.srv_command != "uvx github-mcp-server":
             raise AssertionError("failed local server save did not preserve the form")
         del client.failures["SaveMCPServer"]
@@ -1183,7 +1211,11 @@ def check_memory(app, client):
         if not memory.adding_ban:
             invoke_click(add_ban)
             pump(app)
-        set_text(app, root, "memoryBanTitleInput", "No broad rewrites")
+        ban_title_input = set_text(app, root, "memoryBanTitleInput", "No broad rewrites")
+        if ban_title_input.property("qaIsAppTextField") is not True:
+            raise AssertionError("memory ban title did not use shared AppTextField")
+        if ban_title_input.property("qaTextFits") is not True:
+            raise AssertionError(f"memory ban title text does not fit: {ban_title_input.property('qaText')!r}")
         ban_rule = "Do not expand a Qt follow-up without evidence " + ("longbanrule" * 18)
         set_text(app, root, "memoryBanRuleTextArea", ban_rule)
         ban_editor = find_visual_item(root, "memoryBanRuleTextArea")
