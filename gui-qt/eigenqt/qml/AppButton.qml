@@ -25,7 +25,7 @@ Button {
     readonly property bool qaVisualFocus: showingFocus
 
     implicitWidth: Math.max(32, contentItem.implicitWidth + leftPadding + rightPadding)
-    implicitHeight: compact ? 24 : 32
+    implicitHeight: Math.max(compact ? 24 : 32, contentItem.implicitHeight + topPadding + bottomPadding)
     focusPolicy: Qt.StrongFocus
     hoverEnabled: true
     leftPadding: compact ? Theme.space.md : Theme.space.xl
