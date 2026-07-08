@@ -1198,6 +1198,24 @@ def main():
 
     ok = capture_view("chat", "ChatView.qml", setup_chat) and ok
 
+    def open_chat_info_dock(_view, root):
+        root.setProperty("dockTabIndex", 2)
+        root.setProperty("dockOpen", True)
+        QTest.qWait(120)
+        info_title = find_item(root, "dockInfoTitle")
+        info_model = find_item(root, "dockInfoModel")
+        info_tools = find_item(root, "dockInfoToolsSummary")
+        if info_title is None or info_model is None or info_tools is None:
+            raise AssertionError("chat info dock did not render session metadata")
+        if info_title.property("text") != "Qt chat controls":
+            raise AssertionError(f"chat info dock title was wrong: {info_title.property('text')}")
+        if "gpt-5 / medium / gated" not in info_model.property("text"):
+            raise AssertionError(f"chat info dock model summary was wrong: {info_model.property('text')}")
+        if info_tools.property("text") != "2 tools (1 read, 1 write)":
+            raise AssertionError(f"chat info dock tool summary was wrong: {info_tools.property('text')}")
+
+    ok = capture_view("chat-dock-info", "ChatView.qml", setup_chat, open_chat_info_dock) and ok
+
     def show_chat_attachment(_view, root):
         root.setProperty("attachedImage", VALID_PNG_BASE64)
         QTest.qWait(80)

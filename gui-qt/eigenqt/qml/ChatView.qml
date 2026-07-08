@@ -131,7 +131,7 @@ Rectangle {
 
                 Item { Layout.fillWidth: true }
 
-                // Diff/files dock toggle — the worktree panel on the right.
+                // Worktree/session dock toggle — the panel on the right.
                 AppButton {
                     objectName: "chatDockToggleButton"
                     text: root.dockOpen ? "Dock ▸" : "◂ Dock"
@@ -154,7 +154,7 @@ Rectangle {
             sessionState: root.sessionStateModel
         }
 
-        // Transcript row: transcript fills; the diff/files dock docks right.
+        // Transcript row: transcript fills; the worktree/session dock docks right.
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -235,7 +235,7 @@ Rectangle {
             }
         }
 
-        // Diff/files dock — lazy so closed docks cost nothing.
+        // Worktree/session dock — lazy so closed docks cost nothing.
         Loader {
             active: root.dockOpen
             visible: active
@@ -244,6 +244,7 @@ Rectangle {
             sourceComponent: DockPanel {
                 sessionDir: root.sessionStateModel ? root.sessionStateModel.dir : ""
                 rpcClient: root.rpcRef
+                sessionStateModel: root.sessionStateModel
                 preferredTab: root.dockTabIndex
                 onClosed: root.dockOpen = false
             }
@@ -617,7 +618,7 @@ Rectangle {
         }
         var nextTab = Number(tabIndex)
         if (isNaN(nextTab)) nextTab = 0
-        root.dockTabIndex = Math.max(0, Math.min(1, nextTab))
+        root.dockTabIndex = Math.max(0, Math.min(2, nextTab))
         root.actionError = ""
         root.dockOpen = true
         return true

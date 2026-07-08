@@ -924,6 +924,25 @@ click_item(app, chat_view, chat, "filesViewerCloseButton")
 if files_root.property("viewPath") != "":
     raise AssertionError("Files viewer close button did not clear the viewer")
 
+info_tab = click_item(app, chat_view, chat, "dockTab_Info")
+if info_tab.property("selected") is not True:
+    raise AssertionError("Info dock tab did not become selected")
+info_title = find_item(chat, "dockInfoTitle")
+info_model = find_item(chat, "dockInfoModel")
+info_goal = find_item(chat, "dockInfoGoal")
+info_root = find_item(chat, "dockInfoRoot_0")
+info_tools = find_item(chat, "dockInfoToolsSummary")
+if None in (info_title, info_model, info_goal, info_root, info_tools):
+    raise AssertionError("Info dock tab did not render its session metadata")
+if info_title.property("text") != "Qt chat controls":
+    raise AssertionError(f"Info dock title was wrong: {info_title.property('text')}")
+if "gpt-5 / medium / gated" not in info_model.property("text"):
+    raise AssertionError(f"Info dock model summary was wrong: {info_model.property('text')}")
+if info_goal.property("text") != "Tighten the GUI":
+    raise AssertionError(f"Info dock goal was wrong: {info_goal.property('text')}")
+if info_tools.property("text") != "2 tools (1 read, 1 write)":
+    raise AssertionError(f"Info dock tool summary was wrong: {info_tools.property('text')}")
+
 diff_tab = click_item(app, chat_view, chat, "dockTab_Diff")
 if diff_tab.property("selected") is not True:
     raise AssertionError("Diff dock tab did not become selected")

@@ -1,8 +1,9 @@
 /*
- * Right-side dock panel with Diff | Files tabs.
+ * Right-side dock panel with Diff | Files | Info tabs.
  *
  * Toggleable from SessionSettingsStrip; state is per-session.
- * Tabs switch between DiffTab (git working-tree diff) and FilesTab (file explorer).
+ * Tabs switch between DiffTab (git working-tree diff), FilesTab (file
+ * explorer), and DockInfoTab (session metadata).
  */
 
 import QtQuick
@@ -18,6 +19,7 @@ Rectangle {
     // Props
     required property string sessionDir  // Session's working directory
     required property var rpcClient      // RPC client for bridge calls
+    property var sessionStateModel: null
 
     color: Theme.colors.bgRaised
     border.width: 1
@@ -26,11 +28,12 @@ Rectangle {
     // Signals
     signal closed()
 
-    property int currentTab: 0  // 0=Diff, 1=Files
+    property int currentTab: 0  // 0=Diff, 1=Files, 2=Info
     property int preferredTab: 0
+    readonly property var tabLabels: ["Diff", "Files", "Info"]
 
-    Component.onCompleted: currentTab = preferredTab
-    onPreferredTabChanged: currentTab = preferredTab
+    Component.onCompleted: currentTab = clampTab(preferredTab)
+    onPreferredTabChanged: currentTab = clampTab(preferredTab)
 
     ColumnLayout {
         anchors.fill: parent
@@ -50,7 +53,7 @@ Rectangle {
 
                 // Tab buttons
                 Repeater {
-                    model: ["Diff", "Files"]
+                    model: root.tabLabels
 
                     AppButton {
                         objectName: "dockTab_" + modelData
@@ -58,8 +61,8 @@ Rectangle {
                         compact: true
                         variant: "ghost"
                         selected: root.currentTab === index
-                        segmentPosition: index === 0 ? "first" : "last"
-                        toolTipText: modelData === "Diff" ? "Show working diff" : "Show files"
+                        segmentPosition: index === 0 ? "first" : (index === root.tabLabels.length - 1 ? "last" : "middle")
+                        toolTipText: root.tabToolTip(modelData)
                         Layout.preferredHeight: 32
                         onClicked: root.currentTab = index
                     }
@@ -104,6 +107,23 @@ Rectangle {
                 sessionDir: root.sessionDir
                 rpcClient: root.rpcClient
             }
+
+            // Info tab
+            DockInfoTab {
+                sessionStateModel: root.sessionStateModel
+            }
         }
+    }
+
+    function clampTab(tabIndex) {
+        var value = Number(tabIndex)
+        if (isNaN(value)) value = 0
+        return Math.max(0, Math.min(root.tabLabels.length - 1, value))
+    }
+
+    function tabToolTip(label) {
+        if (label === "Diff") return "Show working diff"
+        if (label === "Files") return "Show files"
+        return "Show session info"
     }
 }
