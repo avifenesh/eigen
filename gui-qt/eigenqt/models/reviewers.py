@@ -63,6 +63,7 @@ class ReviewersModel(QAbstractListModel):
         self._load_error = ""
         self._active = False
         self._load_seq = 0
+        self._pending_repo_actions: dict[str, str] = {}
 
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(60_000)  # 60s
@@ -208,6 +209,8 @@ class ReviewersModel(QAbstractListModel):
         Trigger a revuto job (review/learn) via RevutoTrigger RPC.
         Emits trigger_done(repo, job, success, error_msg) on completion.
         """
+        if not self._mark_repo_pending(repo, job):
+            return
         self._client.call(
             "RevutoTrigger",
             repo, job,
@@ -216,6 +219,7 @@ class ReviewersModel(QAbstractListModel):
 
     def _on_trigger_result(self, repo: str, job: str, result: dict):
         """Handle RevutoTrigger RPC result."""
+        self._clear_repo_pending(repo, job)
         if "error" in result:
             error_msg = _err_text(result)
             self.trigger_done.emit(repo, job, False, error_msg)
@@ -229,6 +233,9 @@ class ReviewersModel(QAbstractListModel):
         Toggle pause state via RevutoSetPaused RPC.
         Emits set_paused_done(repo, success, error_msg) on completion.
         """
+        action = "pause" if paused else "resume"
+        if not self._mark_repo_pending(repo, action):
+            return
         self._client.call(
             "RevutoSetPaused",
             repo, paused,
@@ -237,6 +244,7 @@ class ReviewersModel(QAbstractListModel):
 
     def _on_set_paused_result(self, repo: str, paused: bool, result: dict):
         """Handle RevutoSetPaused RPC result."""
+        self._clear_repo_pending(repo, "pause" if paused else "resume")
         if "error" in result:
             error_msg = _err_text(result)
             self.set_paused_done.emit(repo, False, error_msg)
@@ -259,6 +267,17 @@ class ReviewersModel(QAbstractListModel):
             self._paused = sum(1 for item in self._reviewers if item.get("paused", False))
             self.status_changed.emit()
             return
+
+    def _mark_repo_pending(self, repo: str, action: str) -> bool:
+        """Reserve a repo while a reviewer mutation is in flight."""
+        if not repo or repo in self._pending_repo_actions:
+            return False
+        self._pending_repo_actions[repo] = action
+        return True
+
+    def _clear_repo_pending(self, repo: str, action: str) -> None:
+        if self._pending_repo_actions.get(repo) == action:
+            del self._pending_repo_actions[repo]
 
     @Slot()
     def refresh(self):

@@ -41,6 +41,10 @@ def _call_by_method(calls, method):
     return matches[-1]
 
 
+def _calls_by_method(calls, method):
+    return [call for call in calls if call["method"] == method]
+
+
 def _reply(call, *, result=None, error=None):
     callback = call["callback"]
     assert callback is not None, f"{call['method']} did not register a callback"
@@ -381,6 +385,40 @@ def test_reviewers_model_ignores_stale_reviewers_callbacks(app):
     assert model.count == 1
     assert model.paused_count == 0
     assert _first_reviewer_repo(model) == "avifenesh/eigen"
+
+
+def test_reviewers_model_pending_repo_actions_do_not_duplicate(app):
+    """A pending reviewer action blocks duplicate and cross-action RPCs for that repo."""
+    client = DeferredRpcClient()
+    model = ReviewersModel(client)
+
+    model.trigger("avifenesh/eigen", "review")
+    model.trigger("avifenesh/eigen", "review")
+    model.trigger("avifenesh/eigen", "learn")
+    model.set_paused("avifenesh/eigen", True)
+    model.trigger("avifenesh/revuto", "learn")
+
+    trigger_calls = _calls_by_method(client.calls, "RevutoTrigger")
+    assert [(call["args"]) for call in trigger_calls] == [
+        ("avifenesh/eigen", "review"),
+        ("avifenesh/revuto", "learn"),
+    ]
+    assert _calls_by_method(client.calls, "RevutoSetPaused") == []
+
+    _reply(trigger_calls[0], result={})
+    model.set_paused("avifenesh/eigen", True)
+    model.set_paused("avifenesh/eigen", True)
+    model.trigger("avifenesh/eigen", "review")
+
+    pause_calls = _calls_by_method(client.calls, "RevutoSetPaused")
+    assert [call["args"] for call in pause_calls] == [("avifenesh/eigen", True)]
+    assert len(_calls_by_method(client.calls, "RevutoTrigger")) == 2
+
+    _reply(pause_calls[0], error="pause denied")
+    model.trigger("avifenesh/eigen", "learn")
+
+    trigger_calls = _calls_by_method(client.calls, "RevutoTrigger")
+    assert trigger_calls[-1]["args"] == ("avifenesh/eigen", "learn")
 
 
 if __name__ == "__main__":

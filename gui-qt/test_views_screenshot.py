@@ -2121,6 +2121,22 @@ def main():
 
     ok = capture_view("reviewers-action-error", "ReviewersView.qml", setup_reviewers, show_reviewers_action_error) and ok
 
+    def show_reviewers_review_pending(_view, root):
+        seed_reviewers_state(root.property("reviewersModel"), reviewer_rows)
+        root.setProperty("busy", {"avifenesh/eigen": True})
+        root.setProperty("busyAction", {"avifenesh/eigen": "review"})
+        review = find_item(root, "reviewerReviewButton_avifenesh_eigen")
+        learn = find_item(root, "reviewerLearnButton_avifenesh_eigen")
+        pause = find_item(root, "reviewerPauseButton_avifenesh_eigen")
+        if review is None or review.property("qaText") != "Reviewing…" or review.property("enabled") is not False:
+            raise AssertionError("reviewers pending review screenshot did not render a disabled Reviewing button")
+        if review.property("qaTextFits") is not True:
+            raise AssertionError("reviewers pending review button text does not fit")
+        if learn is None or learn.property("enabled") is not False or pause is None or pause.property("enabled") is not False:
+            raise AssertionError("reviewers pending review screenshot did not disable sibling actions")
+
+    ok = capture_view("reviewers-review-pending", "ReviewersView.qml", setup_reviewers, show_reviewers_review_pending) and ok
+
     def show_reviewers_load_error(_view, root):
         model = root.property("reviewersModel")
         seed_reviewers_state(model, [], available=False, loading=False)
