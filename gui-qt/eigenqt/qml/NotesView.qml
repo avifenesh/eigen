@@ -136,29 +136,14 @@ Rectangle {
                     Layout.bottomMargin: Theme.space.sm
                     spacing: Theme.space.sm
 
-                    TextField {
+                    AppTextField {
                         id: searchField
                         Layout.fillWidth: true
                         placeholderText: "Search notes…"
-                        placeholderTextColor: Theme.colors.textGhost
+                        backgroundColor: Theme.colors.bgRaised2
                         onTextChanged: {
                             searchTimer.restart()
                         }
-
-                        background: Rectangle {
-                            color: Theme.colors.bgRaised2
-                            border.width: 1
-                            border.color: (searchField && searchField.activeFocus) ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
-                            radius: Theme.radius.sm
-
-                            Behavior on border.color { ColorAnimation { duration: Theme.duration.fast } }
-                        }
-
-                        font.family: Theme.uiFonts[0]
-                        font.pixelSize: Theme.fontSize.bodySm
-                        color: Theme.colors.textPrimary
-                        leftPadding: Theme.space.lg
-                        rightPadding: Theme.space.lg
 
                         // Debounce search
                         Timer {
@@ -196,29 +181,17 @@ Rectangle {
                     Layout.bottomMargin: Theme.space.sm
                     spacing: Theme.space.sm
 
-                    TextField {
+                    AppTextField {
                         id: createField
                         objectName: "notesCreateNameInput"
                         Layout.fillWidth: true
                         placeholderText: "Inbox/Idea.md"
-                        placeholderTextColor: Theme.colors.textGhost
                         text: root.notesController ? root.notesController.new_name : ""
                         enabled: !(root.notesController && root.notesController.creating_busy)
-                        property bool qaForceKeyboardFocus: false
-                        readonly property bool qaVisualFocus: activeFocus
-                        readonly property bool qaTextFits: !createField.contentItem || !createField.contentItem.text
-                            || (!createField.contentItem.truncated
-                                && createField.contentItem.paintedWidth <= createField.contentItem.width + 0.5)
-                        readonly property string qaText: text || placeholderText
+                        backgroundColor: Theme.colors.bgRaised2
                         onTextChanged: {
                             if (root.notesController) {
                                 root.notesController.new_name = text
-                            }
-                        }
-
-                        onQaForceKeyboardFocusChanged: {
-                            if (qaForceKeyboardFocus) {
-                                forceActiveFocus(Qt.TabFocusReason)
                             }
                         }
 
@@ -233,20 +206,6 @@ Rectangle {
                                 root.notesController.cancel_create()
                             }
                         }
-
-                        background: Rectangle {
-                            color: Theme.colors.bgRaised2
-                            border.width: 1
-                            border.color: (createField && createField.activeFocus) ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
-                            radius: Theme.radius.sm
-                            Behavior on border.color { ColorAnimation { duration: Theme.duration.fast } }
-                        }
-
-                        font.family: Theme.uiFonts[0]
-                        font.pixelSize: Theme.fontSize.bodySm
-                        color: Theme.colors.textPrimary
-                        leftPadding: Theme.space.lg
-                        rightPadding: Theme.space.lg
 
                         Component.onCompleted: {
                             if (visible) {

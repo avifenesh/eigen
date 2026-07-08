@@ -132,7 +132,7 @@ import QtQuick.Layouts
     Window {
         id: root
         width: 420
-        height: 260
+        height: 310
         visible: true
         property int buttonClicks: 0
         property int customButtonClicks: 0
@@ -182,6 +182,13 @@ import QtQuick.Layouts
             backgroundColor: "#1a2428"
             borderColor: "#2b3b40"
             textColor: "#dde4e3"
+        }
+
+        AppTextField {
+            objectName: "sampleTextField"
+            Layout.preferredWidth: 220
+            placeholderText: "Search sessions"
+            text: "model route"
         }
 
         AppComboBox {
@@ -238,11 +245,12 @@ import QtQuick.Layouts
     custom_button = find_item(root_item, "customContentAction")
     disabled_button = find_item(root_item, "disabledPrimaryAction")
     sample_tag = find_item(root_item, "sampleTag")
+    sample_text_field = find_item(root_item, "sampleTextField")
     combo = find_item(root_item, "modelCombo")
     object_combo = find_item(root_item, "objectCombo")
     bottom_combo = find_item(root_item, "bottomCombo")
     route_switch = find_item(root_item, "routeSwitch")
-    if button is None or custom_button is None or disabled_button is None or sample_tag is None or combo is None or object_combo is None or bottom_combo is None or route_switch is None:
+    if button is None or custom_button is None or disabled_button is None or sample_tag is None or sample_text_field is None or combo is None or object_combo is None or bottom_combo is None or route_switch is None:
         raise AssertionError("control harness did not render all controls")
 
     button.setProperty("qaForceKeyboardFocus", True)
@@ -292,6 +300,19 @@ import QtQuick.Layouts
         raise AssertionError(f"AppTag horizontal padding too small: {sample_tag.property('qaHorizontalPadding')}")
     if float(sample_tag.property("qaVerticalPadding") or 0) < 7.5:
         raise AssertionError(f"AppTag vertical padding too small: {sample_tag.property('qaVerticalPadding')}")
+
+    if sample_text_field.property("qaIsAppTextField") is not True:
+        raise AssertionError("AppTextField did not expose its QA marker")
+    if sample_text_field.property("qaTextFits") is not True:
+        raise AssertionError(f"AppTextField text does not fit: {sample_text_field.property('qaText')!r}")
+    if float(sample_text_field.property("qaHorizontalPadding") or 0) < 11.5:
+        raise AssertionError(f"AppTextField horizontal padding too small: {sample_text_field.property('qaHorizontalPadding')}")
+    if float(sample_text_field.property("qaVerticalPadding") or 0) < 5.5:
+        raise AssertionError(f"AppTextField vertical padding too small: {sample_text_field.property('qaVerticalPadding')}")
+    sample_text_field.setProperty("qaForceKeyboardFocus", True)
+    pump(app)
+    if sample_text_field.property("qaVisualFocus") is not True:
+        raise AssertionError("AppTextField did not expose keyboard focus")
 
     combo.setProperty("qaForceKeyboardFocus", True)
     pump(app)
