@@ -158,27 +158,58 @@ Rectangle {
                                 id: runningSessionsRepeater
                                 model: chatNavItem.qaRunningSessionCount
                                 delegate: Rectangle {
+                                    id: runningSessionRow
                                     readonly property var session: chatNavItem.runningSessions[index] || ({})
                                     readonly property bool qaUnread: !!session.unread
+                                    readonly property bool qaVisualFocus: activeFocus
+                                    readonly property bool qaTextFits: !runningSessionTitle.truncated
+                                    readonly property string qaAccessibleName: shortTitle(session)
 
                                     objectName: "navRunningSession_" + root.safeObjectName(root.sessionValue(session, "id"))
                                     Layout.fillWidth: true
                                     implicitHeight: 26
-                                    color: subMouseArea.containsMouse ? Theme.colors.stateHover : "transparent"
+                                    activeFocusOnTab: true
+                                    focusPolicy: Qt.StrongFocus
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: qaAccessibleName
+                                    Accessible.description: qaUnread ? "Open unread running session" : "Open running session"
+                                    Accessible.onPressAction: activate()
+                                    color: activeFocus ? Theme.colors.stateFocusBg : (subMouseArea.containsMouse ? Theme.colors.stateHover : "transparent")
                                     radius: Theme.radius.sm
+                                    border.width: activeFocus ? 1 : 0
+                                    border.color: activeFocus ? Theme.colors.brandBright : "transparent"
+
+                                    Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
+                                    Behavior on border.color { ColorAnimation { duration: Theme.duration.fast } }
+
+                                    function activate() {
+                                        if (root.sessionController) {
+                                            root.sessionController.open_session(root.sessionValue(session, "id"))
+                                        }
+                                        root.routeChanged("chat")
+                                    }
+
+                                    Keys.onReturnPressed: function(event) {
+                                        activate()
+                                        event.accepted = true
+                                    }
+
+                                    Keys.onEnterPressed: function(event) {
+                                        activate()
+                                        event.accepted = true
+                                    }
+
+                                    Keys.onSpacePressed: function(event) {
+                                        activate()
+                                        event.accepted = true
+                                    }
 
                                     MouseArea {
                                         id: subMouseArea
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            // Open the session FIRST (sets active session), then switch route
-                                            if (root.sessionController) {
-                                                root.sessionController.open_session(root.sessionValue(session, "id"))
-                                            }
-                                            root.routeChanged("chat")
-                                        }
+                                        onClicked: parent.activate()
                                     }
 
                                     RowLayout {
@@ -204,10 +235,11 @@ Rectangle {
                                         }
 
                                         Label {
+                                            id: runningSessionTitle
                                             text: shortTitle(session)
                                             font.family: Theme.uiFonts[0]
                                             font.pixelSize: Theme.fontSize.label
-                                            color: Theme.colors.textSecondary
+                                            color: runningSessionRow.activeFocus ? Theme.colors.brandBright : Theme.colors.textSecondary
                                             elide: Text.ElideRight
                                             Layout.fillWidth: true
                                         }
