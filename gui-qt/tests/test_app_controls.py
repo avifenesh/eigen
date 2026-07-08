@@ -250,6 +250,26 @@ import "Theme.js" as Theme
             popupMaxHeight: 180
             model: ["first", "second", "third", "fourth", "fifth", "sixth"]
         }
+
+        AppButton {
+            objectName: "sampleCompactAction"
+            x: 316
+            y: 16
+            text: "Tab"
+            compact: true
+            toolTipText: "Compact tab"
+        }
+
+        AppButton {
+            objectName: "sampleCompactIconAction"
+            x: 280
+            y: 16
+            width: 28
+            height: 28
+            text: "X"
+            compact: true
+            toolTipText: "Dismiss"
+        }
     }
 ''',
         QUrl.fromLocalFile(str(ROOT / "eigenqt" / "qml" / "AppControlsHarness.qml")),
@@ -271,8 +291,10 @@ import "Theme.js" as Theme
     combo = find_item(root_item, "modelCombo")
     object_combo = find_item(root_item, "objectCombo")
     bottom_combo = find_item(root_item, "bottomCombo")
+    compact_action = find_item(root_item, "sampleCompactAction")
+    compact_icon_action = find_item(root_item, "sampleCompactIconAction")
     route_switch = find_item(root_item, "routeSwitch")
-    if button is None or custom_button is None or disabled_button is None or sample_tag is None or sample_pill_chip is None or sample_text_field is None or sample_text_area is None or combo is None or object_combo is None or bottom_combo is None or route_switch is None:
+    if button is None or custom_button is None or disabled_button is None or sample_tag is None or sample_pill_chip is None or sample_text_field is None or sample_text_area is None or combo is None or object_combo is None or bottom_combo is None or compact_action is None or compact_icon_action is None or route_switch is None:
         raise AssertionError("control harness did not render all controls")
 
     button.setProperty("qaForceKeyboardFocus", True)
@@ -287,6 +309,18 @@ import "Theme.js" as Theme
         raise AssertionError(f"AppButton horizontal padding too small: {button.property('qaHorizontalPadding')}")
     if float(button.property("qaVerticalPadding") or 0) < 5.5:
         raise AssertionError(f"AppButton vertical padding too small: {button.property('qaVerticalPadding')}")
+    if compact_action.property("qaTextFits") is not True:
+        raise AssertionError("Compact AppButton text does not fit")
+    if float(compact_action.property("qaHorizontalPadding") or 0) < 11.5:
+        raise AssertionError(f"Compact AppButton horizontal padding too small: {compact_action.property('qaHorizontalPadding')}")
+    if float(compact_action.property("qaVerticalPadding") or 0) < 3.5:
+        raise AssertionError(f"Compact AppButton vertical padding too small: {compact_action.property('qaVerticalPadding')}")
+    if compact_icon_action.property("qaTextFits") is not True:
+        raise AssertionError("Compact icon AppButton text does not fit")
+    if float(compact_icon_action.property("qaHorizontalPadding") or 0) < 7.5:
+        raise AssertionError(f"Compact icon AppButton horizontal padding too small: {compact_icon_action.property('qaHorizontalPadding')}")
+    if float(compact_icon_action.property("qaVerticalPadding") or 0) < 3.5:
+        raise AssertionError(f"Compact icon AppButton vertical padding too small: {compact_icon_action.property('qaVerticalPadding')}")
     QTest.keyClick(root, Qt.Key_Return)
     QTest.keyClick(root, Qt.Key_Space)
     pump(app)
