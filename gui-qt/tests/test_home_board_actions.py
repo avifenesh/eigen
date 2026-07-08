@@ -328,6 +328,23 @@ board_view, board_root = make_view(
 board_started = []
 board_root.sessionStarted.connect(lambda session_id: board_started.append(session_id))
 
+for object_name in (
+    "boardOwnerFilterChip_all",
+    "boardStateFilterChip_all",
+    "boardDirtyBadge__repo_eigen",
+    "boardTodosBadge__repo_eigen",
+    "boardPrsBadge__repo_eigen",
+):
+    chip = find_item(board_root, object_name)
+    if chip is None:
+        raise AssertionError(f"board chip {object_name} did not render")
+    if chip.property("qaTextFits") is not True:
+        raise AssertionError(f"board chip {object_name} text did not fit")
+    if float(chip.property("qaHorizontalPadding") or 0) < 11.5:
+        raise AssertionError(f"board chip {object_name} horizontal padding too small: {chip.property('qaHorizontalPadding')}")
+    if float(chip.property("qaVerticalPadding") or 0) < 3.5:
+        raise AssertionError(f"board chip {object_name} vertical padding too small: {chip.property('qaVerticalPadding')}")
+
 board_root.setProperty("stateFilter", "issues")
 pump(app, 20)
 filtered_state = find_item(board_root, "boardProjectsState_filtered")

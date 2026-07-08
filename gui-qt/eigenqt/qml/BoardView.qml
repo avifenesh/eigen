@@ -84,6 +84,54 @@ Rectangle {
         { value: "dirty", label: "Uncommitted" }
     ]
 
+    component BoardBadge: Rectangle {
+        id: badge
+        property string text: ""
+        property color backgroundColor: Theme.colors.bgRaised2
+        property color borderColor: Theme.colors.borderSubtle
+        property color textColor: Theme.colors.textSecondary
+        property string fontFamily: Theme.monoFonts[0]
+        property int fontPixelSize: Theme.fontSize.micro
+        property int fontWeight: Theme.fontWeight.medium
+
+        readonly property bool qaIsBoardBadge: true
+        readonly property bool qaTextFits: badgeLabel.implicitWidth <= badgeLabel.width + 1.0
+        readonly property real qaLeftTextInset: badgeLabel.x + Math.max(0, (badgeLabel.width - badgeLabel.paintedWidth) / 2)
+        readonly property real qaRightTextInset: badge.width - (badgeLabel.x + badgeLabel.width / 2 + badgeLabel.paintedWidth / 2)
+        readonly property real qaTopTextInset: badgeLabel.y + Math.max(0, (badgeLabel.height - badgeLabel.paintedHeight) / 2)
+        readonly property real qaBottomTextInset: badge.height - (badgeLabel.y + badgeLabel.height / 2 + badgeLabel.paintedHeight / 2)
+        readonly property real qaHorizontalPadding: Math.min(qaLeftTextInset, qaRightTextInset)
+        readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
+
+        width: implicitWidth
+        height: implicitHeight
+        implicitWidth: Math.max(badgeLabel.implicitWidth + Theme.space.lg * 2, Theme.space.lg * 2 + 4)
+        implicitHeight: Math.max(22, badgeLabel.implicitHeight + Theme.space.xs * 2)
+        radius: Theme.radius.full
+        color: backgroundColor
+        border.width: 1
+        border.color: borderColor
+        clip: true
+
+        Label {
+            id: badgeLabel
+            anchors.fill: parent
+            anchors.leftMargin: Theme.space.lg
+            anchors.rightMargin: Theme.space.lg
+            anchors.topMargin: Theme.space.xs
+            anchors.bottomMargin: Theme.space.xs
+            text: badge.text
+            font.family: badge.fontFamily
+            font.pixelSize: badge.fontPixelSize
+            font.weight: badge.fontWeight
+            color: badge.textColor
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+            maximumLineCount: 1
+        }
+    }
+
     Connections {
         target: root.rpcClient ? root.rpcClient : null
         function onCallDone(token, payload) {
@@ -121,6 +169,14 @@ Rectangle {
 
     function safeObjectName(value) {
         return String(value || "").replace(/[^A-Za-z0-9_]+/g, "_")
+    }
+
+    function laneKeyAt(row) {
+        if (!boardModel) return ""
+        var idx = boardModel.index(row, 0)
+        return boardModel.data(idx, remoteRole)
+            ? boardModel.data(idx, repoRole)
+            : boardModel.data(idx, dirRole)
     }
 
     function errorText(error) {
@@ -480,7 +536,17 @@ Rectangle {
                     Repeater {
                         model: ownerOptions
                         delegate: Rectangle {
-                            width: ownerLabel.implicitWidth + Theme.space.md * 2
+                            objectName: "boardOwnerFilterChip_" + root.safeObjectName(modelData.value)
+                            readonly property bool qaIsBoardChip: true
+                            readonly property bool qaTextFits: ownerLabel.implicitWidth <= ownerLabel.width + 1.0
+                            readonly property real qaLeftTextInset: ownerLabel.x + Math.max(0, (ownerLabel.width - ownerLabel.paintedWidth) / 2)
+                            readonly property real qaRightTextInset: width - (ownerLabel.x + ownerLabel.width / 2 + ownerLabel.paintedWidth / 2)
+                            readonly property real qaTopTextInset: ownerLabel.y + Math.max(0, (ownerLabel.height - ownerLabel.paintedHeight) / 2)
+                            readonly property real qaBottomTextInset: height - (ownerLabel.y + ownerLabel.height / 2 + ownerLabel.paintedHeight / 2)
+                            readonly property real qaHorizontalPadding: Math.min(qaLeftTextInset, qaRightTextInset)
+                            readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
+
+                            width: ownerLabel.implicitWidth + Theme.space.lg * 2
                             height: 28
                             radius: Theme.radius.full
                             color: modelData.value === ownerFilter ? Theme.colors.brandBright : Theme.colors.bgRaised
@@ -512,7 +578,17 @@ Rectangle {
                     Repeater {
                         model: stateOptions
                         delegate: Rectangle {
-                            width: stateLabel.implicitWidth + Theme.space.md * 2
+                            objectName: "boardStateFilterChip_" + root.safeObjectName(modelData.value)
+                            readonly property bool qaIsBoardChip: true
+                            readonly property bool qaTextFits: stateLabel.implicitWidth <= stateLabel.width + 1.0
+                            readonly property real qaLeftTextInset: stateLabel.x + Math.max(0, (stateLabel.width - stateLabel.paintedWidth) / 2)
+                            readonly property real qaRightTextInset: width - (stateLabel.x + stateLabel.width / 2 + stateLabel.paintedWidth / 2)
+                            readonly property real qaTopTextInset: stateLabel.y + Math.max(0, (stateLabel.height - stateLabel.paintedHeight) / 2)
+                            readonly property real qaBottomTextInset: height - (stateLabel.y + stateLabel.height / 2 + stateLabel.paintedHeight / 2)
+                            readonly property real qaHorizontalPadding: Math.min(qaLeftTextInset, qaRightTextInset)
+                            readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
+
+                            width: stateLabel.implicitWidth + Theme.space.lg * 2
                             height: 28
                             radius: Theme.radius.full
                             color: modelData.value === stateFilter ? Theme.colors.brandBright : Theme.colors.bgRaised
@@ -654,129 +730,52 @@ Rectangle {
                                     spacing: Theme.space.xs
 
                                     // Uncommitted
-                                    Rectangle {
+                                    BoardBadge {
+                                        objectName: "boardDirtyBadge_" + root.safeObjectName(root.laneKeyAt(idx))
                                         visible: boardModel.data(boardModel.index(idx, 0), dirtyRole) > 0
-                                        width: dirtyLabel.implicitWidth + Theme.space.md * 2
-                                        height: 20
-                                        radius: Theme.radius.full
-                                        color: Theme.colors.bgRaised2
-                                        border.width: 1
-                                        border.color: Theme.colors.warn
-
-                                        Label {
-                                            id: dirtyLabel
-                                            anchors.centerIn: parent
-                                            text: "±" + boardModel.data(boardModel.index(idx, 0), dirtyRole)
-                                            font.family: Theme.monoFonts[0]
-                                            font.pixelSize: Theme.fontSize.micro
-                                            font.weight: Theme.fontWeight.medium
-                                            color: Theme.colors.warn
-                                        }
+                                        text: "±" + boardModel.data(boardModel.index(idx, 0), dirtyRole)
+                                        borderColor: Theme.colors.warn
+                                        textColor: Theme.colors.warn
                                     }
 
                                     // Unpushed
-                                    Rectangle {
+                                    BoardBadge {
+                                        objectName: "boardUnpushedBadge_" + root.safeObjectName(root.laneKeyAt(idx))
                                         visible: boardModel.data(boardModel.index(idx, 0), unpushedRole) > 0
-                                        width: unpushedLabel.implicitWidth + Theme.space.md * 2
-                                        height: 20
-                                        radius: Theme.radius.full
-                                        color: Theme.colors.bgRaised2
-                                        border.width: 1
-                                        border.color: Theme.colors.borderSubtle
-
-                                        Label {
-                                            id: unpushedLabel
-                                            anchors.centerIn: parent
-                                            text: "↑" + boardModel.data(boardModel.index(idx, 0), unpushedRole)
-                                            font.family: Theme.monoFonts[0]
-                                            font.pixelSize: Theme.fontSize.micro
-                                            font.weight: Theme.fontWeight.medium
-                                            color: Theme.colors.textSecondary
-                                        }
+                                        text: "↑" + boardModel.data(boardModel.index(idx, 0), unpushedRole)
                                     }
 
                                     // Behind
-                                    Rectangle {
+                                    BoardBadge {
+                                        objectName: "boardBehindBadge_" + root.safeObjectName(root.laneKeyAt(idx))
                                         visible: boardModel.data(boardModel.index(idx, 0), behindRole) > 0
-                                        width: behindLabel.implicitWidth + Theme.space.md * 2
-                                        height: 20
-                                        radius: Theme.radius.full
-                                        color: Theme.colors.bgRaised2
-                                        border.width: 1
-                                        border.color: Theme.colors.borderSubtle
-
-                                        Label {
-                                            id: behindLabel
-                                            anchors.centerIn: parent
-                                            text: "↓" + boardModel.data(boardModel.index(idx, 0), behindRole)
-                                            font.family: Theme.monoFonts[0]
-                                            font.pixelSize: Theme.fontSize.micro
-                                            font.weight: Theme.fontWeight.medium
-                                            color: Theme.colors.textSecondary
-                                        }
+                                        text: "↓" + boardModel.data(boardModel.index(idx, 0), behindRole)
                                     }
 
                                     // TODOs
-                                    Rectangle {
+                                    BoardBadge {
+                                        objectName: "boardTodosBadge_" + root.safeObjectName(root.laneKeyAt(idx))
                                         visible: boardModel.data(boardModel.index(idx, 0), todosRole) > 0
-                                        width: todosLabel.implicitWidth + Theme.space.md * 2
-                                        height: 20
-                                        radius: Theme.radius.full
-                                        color: Theme.colors.bgRaised2
-                                        border.width: 1
-                                        border.color: Theme.colors.borderSubtle
-
-                                        Label {
-                                            id: todosLabel
-                                            anchors.centerIn: parent
-                                            text: "⊙" + boardModel.data(boardModel.index(idx, 0), todosRole)
-                                            font.family: Theme.monoFonts[0]
-                                            font.pixelSize: Theme.fontSize.micro
-                                            font.weight: Theme.fontWeight.medium
-                                            color: Theme.colors.textFaint
-                                        }
+                                        text: "⊙" + boardModel.data(boardModel.index(idx, 0), todosRole)
+                                        textColor: Theme.colors.textFaint
                                     }
 
                                     // Open PRs
-                                    Rectangle {
+                                    BoardBadge {
+                                        objectName: "boardPrsBadge_" + root.safeObjectName(root.laneKeyAt(idx))
                                         visible: boardModel.data(boardModel.index(idx, 0), openPrsRole) > 0
-                                        width: prsLabel.implicitWidth + Theme.space.md * 2
-                                        height: 20
-                                        radius: Theme.radius.full
-                                        color: Theme.colors.bgRaised2
-                                        border.width: 1
-                                        border.color: Theme.colors.borderBrandFaint
-
-                                        Label {
-                                            id: prsLabel
-                                            anchors.centerIn: parent
-                                            text: "PR " + boardModel.data(boardModel.index(idx, 0), openPrsRole)
-                                            font.family: Theme.monoFonts[0]
-                                            font.pixelSize: Theme.fontSize.micro
-                                            font.weight: Theme.fontWeight.medium
-                                            color: Theme.colors.info
-                                        }
+                                        text: "PR " + boardModel.data(boardModel.index(idx, 0), openPrsRole)
+                                        borderColor: Theme.colors.borderBrandFaint
+                                        textColor: Theme.colors.info
                                     }
 
                                     // Open issues
-                                    Rectangle {
+                                    BoardBadge {
+                                        objectName: "boardIssuesBadge_" + root.safeObjectName(root.laneKeyAt(idx))
                                         visible: boardModel.data(boardModel.index(idx, 0), openIssRole) > 0
-                                        width: issLabel.implicitWidth + Theme.space.md * 2
-                                        height: 20
-                                        radius: Theme.radius.full
-                                        color: Theme.colors.bgRaised2
-                                        border.width: 1
-                                        border.color: Theme.colors.borderBrandFaint
-
-                                        Label {
-                                            id: issLabel
-                                            anchors.centerIn: parent
-                                            text: "⊘" + boardModel.data(boardModel.index(idx, 0), openIssRole)
-                                            font.family: Theme.monoFonts[0]
-                                            font.pixelSize: Theme.fontSize.micro
-                                            font.weight: Theme.fontWeight.medium
-                                            color: Theme.colors.info
-                                        }
+                                        text: "⊘" + boardModel.data(boardModel.index(idx, 0), openIssRole)
+                                        borderColor: Theme.colors.borderBrandFaint
+                                        textColor: Theme.colors.info
                                     }
 
                                     // Clean state (when nothing to show)
