@@ -215,38 +215,16 @@ Rectangle {
                 ScrollView {
                     id: composeScroll
                     Layout.fillWidth: true
-                    Layout.preferredHeight: Math.min(composeTextArea.contentHeight + Theme.space.md * 2, 200)
+                    Layout.preferredHeight: Math.min(composeTextArea.contentHeight + composeTextArea.topPadding + composeTextArea.bottomPadding, 200)
                     contentWidth: availableWidth
                     ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
-                    TextArea {
+                    AppTextArea {
                         id: composeTextArea
                         objectName: "memoryComposeTextArea"
                         width: composeScroll.availableWidth
                         text: activeMemoryModel.draft
                         placeholderText: "A durable note for " + activeMemoryModel.scope_label + " memory…"
-                        placeholderTextColor: Theme.colors.textGhost
-                        font.family: Theme.uiFonts[0]
-                        font.pixelSize: Theme.fontSize.bodySm
-                        color: Theme.colors.textPrimary
-                        wrapMode: TextEdit.Wrap
-                        property bool qaForceKeyboardFocus: false
-                        readonly property real qaContentWidth: contentWidth
-                        readonly property real qaTextAvailableWidth: Math.max(0, width - leftPadding - rightPadding)
-                        readonly property bool qaTextFits: !visible || qaContentWidth <= qaTextAvailableWidth + 1.0
-                        readonly property string qaText: ""
-                        readonly property bool qaVisualFocus: activeFocus
-                        onQaForceKeyboardFocusChanged: {
-                            if (qaForceKeyboardFocus) {
-                                forceActiveFocus(Qt.TabFocusReason)
-                            }
-                        }
-                        background: Rectangle {
-                            color: Theme.colors.bgRaised
-                            border.width: 1
-                            border.color: composeTextArea.activeFocus ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
-                            radius: Theme.radius.md
-                        }
 
                         onTextChanged: activeMemoryModel.draft = text
 
@@ -911,31 +889,16 @@ Rectangle {
                                     ScrollView {
                                         id: profileScroll
                                         Layout.fillWidth: true
-                                        Layout.preferredHeight: Math.min(profileTextArea.contentHeight + Theme.space.md * 2, 300)
+                                        Layout.preferredHeight: Math.min(profileTextArea.contentHeight + profileTextArea.topPadding + profileTextArea.bottomPadding, 300)
                                         contentWidth: availableWidth
                                         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
-                                        TextArea {
+                                        AppTextArea {
                                             id: profileTextArea
                                             objectName: "memoryProfileTextArea"
                                             width: profileScroll.availableWidth
                                             text: activeMemoryModel.profile_draft
                                             placeholderText: "Add your own notes — eigen keeps the rest current…"
-                                            placeholderTextColor: Theme.colors.textGhost
-                                            font.family: Theme.uiFonts[0]
-                                            font.pixelSize: Theme.fontSize.bodySm
-                                            color: Theme.colors.textPrimary
-                                            wrapMode: TextEdit.Wrap
-                                            readonly property real qaContentWidth: contentWidth
-                                            readonly property real qaTextAvailableWidth: Math.max(0, width - leftPadding - rightPadding)
-                                            readonly property bool qaTextFits: !visible || qaContentWidth <= qaTextAvailableWidth + 1.0
-                                            readonly property string qaText: text || placeholderText
-                                            background: Rectangle {
-                                                color: Theme.colors.bgRaised
-                                                border.width: 1
-                                                border.color: profileTextArea.activeFocus ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
-                                                radius: Theme.radius.md
-                                            }
 
                                             onTextChanged: activeMemoryModel.profile_draft = text
 
@@ -1085,31 +1048,16 @@ Rectangle {
                                     ScrollView {
                                         id: banRuleScroll
                                         Layout.fillWidth: true
-                                        Layout.preferredHeight: Math.min(banRuleTextArea.contentHeight + Theme.space.md * 2, 150)
+                                        Layout.preferredHeight: Math.min(banRuleTextArea.contentHeight + banRuleTextArea.topPadding + banRuleTextArea.bottomPadding, 150)
                                         contentWidth: availableWidth
                                         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
-                                        TextArea {
+                                        AppTextArea {
                                             id: banRuleTextArea
                                             objectName: "memoryBanRuleTextArea"
                                             width: banRuleScroll.availableWidth
                                             text: activeMemoryModel.ban_rule
                                             placeholderText: "What the agent must not do (" + activeMemoryModel.scope_label + " scope)…"
-                                            placeholderTextColor: Theme.colors.textGhost
-                                            font.family: Theme.uiFonts[0]
-                                            font.pixelSize: Theme.fontSize.bodySm
-                                            color: Theme.colors.textPrimary
-                                            wrapMode: TextEdit.Wrap
-                                            readonly property real qaContentWidth: contentWidth
-                                            readonly property real qaTextAvailableWidth: Math.max(0, width - leftPadding - rightPadding)
-                                            readonly property bool qaTextFits: !visible || qaContentWidth <= qaTextAvailableWidth + 1.0
-                                            readonly property string qaText: text || placeholderText
-                                            background: Rectangle {
-                                                color: Theme.colors.bgRaised
-                                                border.width: 1
-                                                border.color: banRuleTextArea.activeFocus ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
-                                                radius: Theme.radius.md
-                                            }
 
                                             onTextChanged: activeMemoryModel.ban_rule = text
 

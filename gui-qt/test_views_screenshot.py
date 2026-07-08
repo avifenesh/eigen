@@ -817,6 +817,36 @@ def assert_app_text_fields_have_padding(view_name, root_item):
         raise AssertionError(f"{view_name} rendered cramped AppTextField text: {failures[:8]}")
 
 
+def assert_app_text_areas_have_padding(view_name, root_item):
+    failures = []
+
+    def visit(item):
+        if item is None:
+            return
+        if item.property("qaIsAppTextArea") is True:
+            width = float(item.property("width") or 0)
+            height = float(item.property("height") or 0)
+            visible = item.isVisible() if hasattr(item, "isVisible") else item.property("visible")
+            if visible and width > 0 and height > 0:
+                horizontal_padding = float(item.property("qaHorizontalPadding") or 0)
+                vertical_padding = float(item.property("qaVerticalPadding") or 0)
+                if item.property("qaTextFits") is not True or horizontal_padding < 15.5 or vertical_padding < 7.5:
+                    failures.append(
+                        f"{item.objectName() or '<unnamed>'} "
+                        f"text={item.property('qaText')!r} "
+                        f"fits={item.property('qaTextFits')} "
+                        f"padding={horizontal_padding:.1f}x{vertical_padding:.1f} "
+                        f"size={width:.1f}x{height:.1f}"
+                    )
+        if hasattr(item, "childItems"):
+            for child in item.childItems():
+                visit(child)
+
+    visit(root_item)
+    if failures:
+        raise AssertionError(f"{view_name} rendered cramped AppTextArea text: {failures[:8]}")
+
+
 def assert_app_buttons_have_padding(view_name, root_item):
     failures = []
     icon_text = {"", "×", "✕", "↑", "↓", "←", "→", "↗", "⌫"}
@@ -900,6 +930,7 @@ def capture_view(view_name: str, qml_file: str, setup_context, after_render=None
     assert_app_tags_have_padding(view_name, view.rootObject())
     assert_app_combos_have_padding(view_name, view.rootObject())
     assert_app_text_fields_have_padding(view_name, view.rootObject())
+    assert_app_text_areas_have_padding(view_name, view.rootObject())
     assert_app_buttons_have_padding(view_name, view.rootObject())
 
     output = SCREENSHOTS / f"qa-fix-{view_name}.png"

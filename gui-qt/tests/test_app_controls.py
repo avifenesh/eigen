@@ -133,7 +133,7 @@ import "Theme.js" as Theme
     Window {
         id: root
         width: 420
-        height: 310
+        height: 410
         visible: true
         property int buttonClicks: 0
         property int customButtonClicks: 0
@@ -203,6 +203,14 @@ import "Theme.js" as Theme
             text: "model route"
         }
 
+        AppTextArea {
+            objectName: "sampleTextArea"
+            Layout.preferredWidth: 220
+            Layout.preferredHeight: 76
+            placeholderText: "Write note"
+            text: "first line\\nsecond line wraps cleanly"
+        }
+
         AppComboBox {
             objectName: "modelCombo"
             Layout.preferredWidth: 220
@@ -259,11 +267,12 @@ import "Theme.js" as Theme
     sample_tag = find_item(root_item, "sampleTag")
     sample_pill_chip = find_item(root_item, "samplePillChip")
     sample_text_field = find_item(root_item, "sampleTextField")
+    sample_text_area = find_item(root_item, "sampleTextArea")
     combo = find_item(root_item, "modelCombo")
     object_combo = find_item(root_item, "objectCombo")
     bottom_combo = find_item(root_item, "bottomCombo")
     route_switch = find_item(root_item, "routeSwitch")
-    if button is None or custom_button is None or disabled_button is None or sample_tag is None or sample_pill_chip is None or sample_text_field is None or combo is None or object_combo is None or bottom_combo is None or route_switch is None:
+    if button is None or custom_button is None or disabled_button is None or sample_tag is None or sample_pill_chip is None or sample_text_field is None or sample_text_area is None or combo is None or object_combo is None or bottom_combo is None or route_switch is None:
         raise AssertionError("control harness did not render all controls")
 
     button.setProperty("qaForceKeyboardFocus", True)
@@ -335,6 +344,19 @@ import "Theme.js" as Theme
     pump(app)
     if sample_text_field.property("qaVisualFocus") is not True:
         raise AssertionError("AppTextField did not expose keyboard focus")
+
+    if sample_text_area.property("qaIsAppTextArea") is not True:
+        raise AssertionError("AppTextArea did not expose its QA marker")
+    if sample_text_area.property("qaTextFits") is not True:
+        raise AssertionError(f"AppTextArea text does not fit: {sample_text_area.property('qaText')!r}")
+    if float(sample_text_area.property("qaHorizontalPadding") or 0) < 15.5:
+        raise AssertionError(f"AppTextArea horizontal padding too small: {sample_text_area.property('qaHorizontalPadding')}")
+    if float(sample_text_area.property("qaVerticalPadding") or 0) < 7.5:
+        raise AssertionError(f"AppTextArea vertical padding too small: {sample_text_area.property('qaVerticalPadding')}")
+    sample_text_area.setProperty("qaForceKeyboardFocus", True)
+    pump(app)
+    if sample_text_area.property("qaVisualFocus") is not True:
+        raise AssertionError("AppTextArea did not expose keyboard focus")
 
     combo.setProperty("qaForceKeyboardFocus", True)
     pump(app)

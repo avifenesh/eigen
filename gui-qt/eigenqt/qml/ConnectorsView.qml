@@ -895,7 +895,7 @@ Rectangle {
                                     color: Theme.colors.textMuted
                                 }
 
-                                TextArea {
+                                AppTextArea {
                                     id: serverEnvArea
                                     objectName: "connectorsServerEnvInput"
                                     Layout.fillWidth: true
@@ -905,29 +905,11 @@ Rectangle {
                                     enabled: connectorsModel && !connectorsModel.srv_saving
                                     onTextChanged: if (connectorsModel) connectorsModel.srv_env = text
                                     font.family: Theme.monoFonts[0]
-                                    font.pixelSize: Theme.fontSize.bodySm
-                                    color: Theme.colors.textPrimary
-                                    placeholderTextColor: Theme.colors.textGhost
-                                    leftPadding: Theme.space.lg
-                                    rightPadding: Theme.space.lg
-                                    topPadding: Theme.space.sm
-                                    bottomPadding: Theme.space.sm
-                                    wrapMode: TextEdit.Wrap
-                                    property bool qaForceKeyboardFocus: false
-                                    readonly property bool qaVisualFocus: activeFocus
-                                    readonly property real qaContentWidth: contentWidth
-                                    readonly property real qaTextAvailableWidth: Math.max(0, width - leftPadding - rightPadding)
-                                    readonly property bool qaTextFits: !visible || qaContentWidth <= qaTextAvailableWidth + 1.0
-                                    readonly property string qaText: text || placeholderText
+                                    backgroundColor: Theme.colors.bgRaised2
+                                    backgroundRadius: Theme.radius.sm
                                     Keys.onPressed: function(event) {
                                         root.handleServerTextAreaKey(event)
                                     }
-                                    onQaForceKeyboardFocusChanged: {
-                                        if (qaForceKeyboardFocus) {
-                                            forceActiveFocus(Qt.TabFocusReason)
-                                        }
-                                    }
-                                    background: FormFieldBackground { focused: serverEnvArea.activeFocus }
                                 }
                             }
 
@@ -943,7 +925,7 @@ Rectangle {
                                     color: Theme.colors.textMuted
                                 }
 
-                                TextArea {
+                                AppTextArea {
                                     id: serverSecretArea
                                     objectName: "connectorsServerSecretInput"
                                     Layout.fillWidth: true
@@ -953,29 +935,11 @@ Rectangle {
                                     enabled: connectorsModel && !connectorsModel.srv_saving
                                     onTextChanged: if (connectorsModel) connectorsModel.srv_secret = text
                                     font.family: Theme.monoFonts[0]
-                                    font.pixelSize: Theme.fontSize.bodySm
-                                    color: Theme.colors.textPrimary
-                                    placeholderTextColor: Theme.colors.textGhost
-                                    leftPadding: Theme.space.lg
-                                    rightPadding: Theme.space.lg
-                                    topPadding: Theme.space.sm
-                                    bottomPadding: Theme.space.sm
-                                    wrapMode: TextEdit.Wrap
-                                    property bool qaForceKeyboardFocus: false
-                                    readonly property bool qaVisualFocus: activeFocus
-                                    readonly property real qaContentWidth: contentWidth
-                                    readonly property real qaTextAvailableWidth: Math.max(0, width - leftPadding - rightPadding)
-                                    readonly property bool qaTextFits: !visible || qaContentWidth <= qaTextAvailableWidth + 1.0
-                                    readonly property string qaText: text || placeholderText
+                                    backgroundColor: Theme.colors.bgRaised2
+                                    backgroundRadius: Theme.radius.sm
                                     Keys.onPressed: function(event) {
                                         root.handleServerTextAreaKey(event)
                                     }
-                                    onQaForceKeyboardFocusChanged: {
-                                        if (qaForceKeyboardFocus) {
-                                            forceActiveFocus(Qt.TabFocusReason)
-                                        }
-                                    }
-                                    background: FormFieldBackground { focused: serverSecretArea.activeFocus }
                                 }
                             }
 
