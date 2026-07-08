@@ -280,9 +280,9 @@ import QtQuick.Layouts
         raise AssertionError("AppTag did not expose its QA marker")
     if sample_tag.property("qaTextFits") is not True:
         raise AssertionError("AppTag text does not fit")
-    if float(sample_tag.property("qaHorizontalPadding") or 0) < 11.5:
+    if float(sample_tag.property("qaHorizontalPadding") or 0) < 15.5:
         raise AssertionError(f"AppTag horizontal padding too small: {sample_tag.property('qaHorizontalPadding')}")
-    if float(sample_tag.property("qaVerticalPadding") or 0) < 3.5:
+    if float(sample_tag.property("qaVerticalPadding") or 0) < 5.5:
         raise AssertionError(f"AppTag vertical padding too small: {sample_tag.property('qaVerticalPadding')}")
 
     combo.setProperty("qaForceKeyboardFocus", True)

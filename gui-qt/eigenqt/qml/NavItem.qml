@@ -118,8 +118,8 @@ Rectangle {
             readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
 
             visible: navItem.badge > 0
-            implicitWidth: Math.max(22, badgeLabel.implicitWidth + Theme.space.md * 2)
-            implicitHeight: Math.max(20, badgeLabel.implicitHeight + Theme.space.xs * 2)
+            implicitWidth: Math.max(26, badgeLabel.implicitWidth + Theme.space.lg * 2)
+            implicitHeight: Math.max(24, badgeLabel.implicitHeight + Theme.space.sm * 2)
             radius: implicitHeight / 2
             color: navItem.badgeLive ? Theme.colors.stateSelected : Theme.colors.bgOverlay
             border.width: navItem.badgeLive ? 1 : 0
@@ -136,8 +136,10 @@ Rectangle {
             Label {
                 id: badgeLabel
                 anchors.fill: parent
-                anchors.leftMargin: Theme.space.md
-                anchors.rightMargin: Theme.space.md
+                anchors.leftMargin: Theme.space.lg
+                anchors.rightMargin: Theme.space.lg
+                anchors.topMargin: Theme.space.sm
+                anchors.bottomMargin: Theme.space.sm
                 text: navItem.badge
                 font.family: Theme.uiFonts[0]
                 font.pixelSize: Theme.fontSize.micro

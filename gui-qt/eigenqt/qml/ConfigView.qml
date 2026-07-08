@@ -661,6 +661,10 @@ Rectangle {
                                             selected: multiHas(fieldDelegate.fieldKey, optionValue)
                                             compact: true
                                             pill: true
+                                            leftPadding: Theme.space.xl
+                                            rightPadding: Theme.space.xl
+                                            height: 28
+                                            implicitHeight: 28
                                             toolTipText: (multiHas(fieldDelegate.fieldKey, optionValue) ? "Remove " : "Add ") + optionValue
                                             onClicked: toggleMulti(fieldDelegate.fieldKey, optionValue)
                                         }

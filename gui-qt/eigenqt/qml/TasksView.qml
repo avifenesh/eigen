@@ -111,7 +111,7 @@ Rectangle {
 
                 // Filter chips
                 Rectangle {
-                    Layout.preferredHeight: 32
+                    Layout.preferredHeight: 36
                     color: Theme.colors.bgWell
                     border.width: 1
                     border.color: Theme.colors.borderHairline
@@ -141,8 +141,8 @@ Rectangle {
                                 readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
 
                                 objectName: "taskFilterChip_" + root.safeName(modelData)
-                                Layout.preferredHeight: 24
-                                Layout.preferredWidth: chipLabel.implicitWidth + Theme.space.lg * 2
+                                Layout.preferredHeight: 28
+                                Layout.preferredWidth: chipLabel.implicitWidth + Theme.space.xl * 2
                                 radius: Theme.radius.sm
                                 activeFocusOnTab: true
                                 focusPolicy: Qt.StrongFocus
@@ -169,10 +169,10 @@ Rectangle {
                                 Label {
                                     id: chipLabel
                                     anchors.fill: parent
-                                    anchors.leftMargin: Theme.space.lg
-                                    anchors.rightMargin: Theme.space.lg
-                                    anchors.topMargin: Theme.space.xs
-                                    anchors.bottomMargin: Theme.space.xs
+                                    anchors.leftMargin: Theme.space.xl
+                                    anchors.rightMargin: Theme.space.xl
+                                    anchors.topMargin: Theme.space.sm
+                                    anchors.bottomMargin: Theme.space.sm
                                     text: modelData.charAt(0).toUpperCase() + modelData.slice(1)
                                     font.family: Theme.uiFonts[0]
                                     font.pixelSize: Theme.fontSize.bodySm
