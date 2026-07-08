@@ -1476,8 +1476,11 @@ Rectangle {
             }
             return true
         case "shells":
-            if (root.openWorktreeDock(1)) {
-                root.appendSlashNote("opened worktree dock; no background shells reported")
+            if (root.openWorktreeDock(2)) {
+                var shells = root.sessionStateModel ? root.sessionStateModel.shells : []
+                root.appendSlashNote(shells && shells.length > 0
+                    ? "background shells are shown in the Info dock"
+                    : "opened Info dock; no background shells reported")
             }
             return true
         case "loop":

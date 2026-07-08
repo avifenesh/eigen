@@ -1385,8 +1385,18 @@ if call_count(client, "FileTree") <= term_file_tree_count:
 if "opened worktree dock; terminal sessions remain in the TUI/web console" not in transcript.rows[-1]["text"]:
     raise AssertionError(f"/term did not append expected feedback: {transcript.rows[-1:]}")
 
+composer.setProperty("text", "/shells")
+pump(app, 8)
+click_item(app, chat_view, chat, "chatSendButton")
+if chat.property("dockOpen") is not True:
+    raise AssertionError("/shells did not open the worktree dock")
+info_tab = find_item(chat, "dockTab_Info")
+if info_tab is None or info_tab.property("selected") is not True:
+    raise AssertionError("/shells did not select the Info dock tab")
+if "background shells are shown in the Info dock" not in transcript.rows[-1]["text"]:
+    raise AssertionError(f"/shells did not append expected feedback: {transcript.rows[-1:]}")
+
 legacy_notes = [
-    ("/shells", "opened worktree dock; no background shells reported"),
     ("/loop", "TUI-local"),
     ("/read", "read-aloud"),
     ("/mouse", "terminal-only"),

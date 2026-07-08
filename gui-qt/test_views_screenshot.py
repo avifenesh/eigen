@@ -1360,7 +1360,7 @@ def main():
             model.appendNote("nothing running to background")
             model.appendNote("toggled navigation rail")
             model.appendNote("opened worktree dock; terminal sessions remain in the TUI/web console")
-            model.appendNote("opened worktree dock; no background shells reported")
+            model.appendNote("background shells are shown in the Info dock")
             model.appendNote("/loop is TUI-local; in the GUI, set a Goal for persistent autonomous follow-up")
             model.appendNote("/mouse is terminal-only; the Qt GUI always allows normal text selection")
 
