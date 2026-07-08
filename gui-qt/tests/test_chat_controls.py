@@ -56,11 +56,17 @@ class FakeRpcClient(QObject):
         super().__init__()
         self.calls = []
         self.failures = {}
+        self.defer_methods = set()
+        self.deferred = []
         self._token = 0
 
     def call(self, method, *args, callback=None, error_callback=None):
         self.calls.append((method, args))
         payload = {"result": self._result(method, args)}
+        if method in self.defer_methods:
+            if callback:
+                self.deferred.append((callback, payload))
+            return
         if callback:
             QTimer.singleShot(0, lambda: callback(payload))
 
@@ -92,6 +98,12 @@ class FakeRpcClient(QObject):
 
     def shutdown(self):
         pass
+
+    def flush_deferred(self):
+        pending = list(self.deferred)
+        self.deferred.clear()
+        for callback, payload in pending:
+            QTimer.singleShot(0, lambda cb=callback, p=payload: cb(p))
 
     def _result(self, method, args):
         if method == "WorkingDiff":
@@ -1504,6 +1516,51 @@ click_item(app, chat_view, chat, "dockCloseButton")
 pump(app, 18)
 if ("TerminalKill", ("term-chat",)) not in client.calls:
     raise AssertionError(f"Closing the dock did not kill the terminal: {client.calls}")
+
+pending_client = FakeRpcClient()
+pending_client.defer_methods.add("TerminalStart")
+pending_state = FakeSessionState()
+pending_commands = CommandModel()
+pending_transcript = StaticTranscript([])
+pending_approvals = ApprovalModel()
+pending_view, pending_chat = make_view(
+    "ChatView.qml",
+    {},
+    {
+        "sessionId": "s-pending-terminal",
+        "sessionStateModel": pending_state,
+        "commandsModel": pending_commands,
+        "transcriptModel": pending_transcript,
+        "approvalsModel": pending_approvals,
+        "rpcClient": pending_client,
+        "clipboardHelper": clipboard,
+        "highlighter": highlighter,
+        "terminalHelper": terminal_helper,
+    },
+)
+pending_composer = find_item(pending_chat, "chatComposerTextArea")
+if pending_composer is None:
+    raise AssertionError("Pending terminal composer did not render")
+pending_composer.setProperty("text", "/term")
+pump(app, 8)
+click_item(app, pending_view, pending_chat, "chatSendButton")
+pump(app, 18)
+if call_count(pending_client, "TerminalStart") != 1:
+    raise AssertionError(f"Pending terminal did not request TerminalStart: {pending_client.calls}")
+if pending_client.deferred == []:
+    raise AssertionError("Pending terminal fake did not defer TerminalStart")
+click_item(app, pending_view, pending_chat, "dockCloseButton")
+pump(app, 18)
+pending_client.flush_deferred()
+pump(app, 18)
+if ("TerminalKill", ("term-chat",)) not in pending_client.calls:
+    raise AssertionError(f"Late TerminalStart result was not killed after dock close: {pending_client.calls}")
+pending_view.hide()
+pending_view.setSource(QUrl())
+chat_view.show()
+chat_view.requestActivate()
+composer.forceActiveFocus()
+pump(app, 8)
 
 composer.setProperty("text", "/shells")
 pump(app, 8)

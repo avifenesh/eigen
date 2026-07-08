@@ -15,6 +15,7 @@ Rectangle {
     property bool active: true
     property string terminalId: ""
     property int startToken: -1
+    property bool usingHelperStart: false
     property bool starting: false
     property bool started: false
     property bool exited: false
@@ -29,35 +30,8 @@ Rectangle {
         target: root.rpcClient ? root.rpcClient : null
 
         function onCallDone(token, payload) {
-            if (token !== root.startToken) return
-            root.startToken = -1
-            root.starting = false
-            payload = payload || {}
-            if (payload.error) {
-                root.errorText = String(payload.error)
-                root.started = false
-                root.terminalId = ""
-                root.unsubscribeTerminal()
-                return
-            }
-
-            root.terminalId = String(payload.result || "")
-            if (root.terminalId === "") {
-                root.errorText = "Terminal did not return an id."
-                root.started = false
-                root.unsubscribeTerminal()
-                return
-            }
-
-            root.started = true
-            root.exited = false
-            root.errorText = ""
-            root.resizeTerminal()
-            Qt.callLater(function() {
-                if (terminalOutputArea) {
-                    terminalOutputArea.forceActiveFocus()
-                }
-            })
+            if (root.usingHelperStart || token !== root.startToken) return
+            root.finishTerminalStart(payload || {})
         }
 
         function onEvent(channel, data) {
@@ -80,6 +54,18 @@ Rectangle {
             if (decoded !== "") {
                 root.appendOutput(decoded)
             }
+        }
+    }
+
+    Connections {
+        target: root.terminalHelper ? root.terminalHelper : null
+
+        function onTerminalStarted(token, terminalId, error) {
+            if (!root.usingHelperStart || token !== root.startToken) return
+            root.finishTerminalStart({
+                "result": terminalId || "",
+                "error": error || ""
+            })
         }
     }
 
@@ -336,23 +322,72 @@ Rectangle {
         root.exited = false
         root.starting = true
         root.subscribeTerminal()
-        root.startToken = root.rpcClient.callToken("TerminalStart", [
-            root.columns(),
-            root.rows(),
-            root.sessionDir || ""
-        ])
+        if (root.terminalHelper && typeof root.terminalHelper.startTerminal === "function") {
+            root.usingHelperStart = true
+            root.startToken = root.terminalHelper.startTerminal(
+                root.rpcClient,
+                root.columns(),
+                root.rows(),
+                root.sessionDir || ""
+            )
+        } else {
+            root.usingHelperStart = false
+            root.startToken = root.rpcClient.callToken("TerminalStart", [
+                root.columns(),
+                root.rows(),
+                root.sessionDir || ""
+            ])
+        }
     }
 
     function stopTerminal() {
         var id = root.terminalId
+        var token = root.startToken
+        var helperStart = root.usingHelperStart
         root.startToken = -1
+        root.usingHelperStart = false
         root.starting = false
         root.started = false
         root.terminalId = ""
+        if (helperStart && token > 0 && root.terminalHelper && typeof root.terminalHelper.cancelTerminalStart === "function") {
+            root.terminalHelper.cancelTerminalStart(token)
+        }
         if (root.rpcClient && id !== "" && typeof root.rpcClient.callFire === "function") {
             root.rpcClient.callFire("TerminalKill", [id])
         }
         root.unsubscribeTerminal()
+    }
+
+    function finishTerminalStart(payload) {
+        root.startToken = -1
+        root.usingHelperStart = false
+        root.starting = false
+        payload = payload || {}
+        if (payload.error) {
+            root.errorText = String(payload.error)
+            root.started = false
+            root.terminalId = ""
+            root.unsubscribeTerminal()
+            return
+        }
+
+        root.terminalId = String(payload.result || "")
+        if (root.terminalId === "") {
+            root.errorText = "Terminal did not return an id."
+            root.started = false
+            root.unsubscribeTerminal()
+            return
+        }
+
+        root.started = true
+        root.exited = false
+        root.errorText = ""
+        root.resizeTerminal()
+        Qt.callLater(function() {
+            if (terminalOutputArea) {
+                terminalOutputArea.forceActiveFocus()
+            }
+        })
     }
 
     function subscribeTerminal() {
