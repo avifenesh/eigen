@@ -9,6 +9,9 @@ class FakeRpcClient(QObject):
         self.calls = []
         self.state = {
             "model": "local-qwen",
+            "provider": "local",
+            "tokens": 4096,
+            "maxTokens": 8192,
             "effort": "high",
             "perm": "auto",
             "title": "Qt shell",
@@ -65,6 +68,9 @@ def state_payload(
         levels = ["low", "high"]
     return {
         "model": model,
+        "provider": "codex",
+        "tokens": 1200,
+        "maxTokens": 4800,
         "effort": effort,
         "perm": perm,
         "title": "Qt shell",
@@ -98,6 +104,9 @@ def test_session_state_exposes_provider_modes_and_roots():
     model.seed(
         {
             "model": "local-qwen",
+            "provider": "local",
+            "tokens": 4096,
+            "maxTokens": 8192,
             "effort": "high",
             "perm": "auto",
             "title": "Qt shell",
@@ -122,6 +131,9 @@ def test_session_state_exposes_provider_modes_and_roots():
     )
 
     assert model.search == "on"
+    assert model.provider == "local"
+    assert model.tokens == 4096
+    assert model.maxTokens == 8192
     assert model.fast is True
     assert model.fastOk is True
     assert model.tools == [

@@ -1,8 +1,9 @@
 """
 session_state.py — SessionStateModel wrapping State RPC for session control strip.
 
-Exposes: model name, effort, perm, title, goal, search/fast modes, tools, roots,
-shells, pending approvals, catalog (available models + effort levels).
+Exposes: model name, provider, token usage, effort, perm, title, goal,
+search/fast modes, tools, roots, shells, pending approvals, catalog (available
+models + effort levels).
 Methods: setModel, setEffort, setPerm, setTitle, setGoal, setSearch, setFast
 (invoke RPC, update on success).
 """
@@ -35,6 +36,9 @@ class SessionStateModel(QObject):
     """Session state for control strip (model, effort, perm, title, goal, catalog)."""
 
     modelChanged = Signal()
+    providerChanged = Signal()
+    tokensChanged = Signal()
+    maxTokensChanged = Signal()
     effortChanged = Signal()
     permChanged = Signal()
     titleChanged = Signal()
@@ -57,6 +61,9 @@ class SessionStateModel(QObject):
         self._client = client
         self._session_id = session_id
         self._model = ""
+        self._provider = ""
+        self._tokens = 0
+        self._max_tokens = 0
         self._effort = ""
         self._perm = ""
         self._title = ""
@@ -81,6 +88,18 @@ class SessionStateModel(QObject):
     @Property(str, notify=modelChanged)
     def model(self) -> str:
         return self._model
+
+    @Property(str, notify=providerChanged)
+    def provider(self) -> str:
+        return self._provider
+
+    @Property(int, notify=tokensChanged)
+    def tokens(self) -> int:
+        return self._tokens
+
+    @Property(int, notify=maxTokensChanged)
+    def maxTokens(self) -> int:
+        return self._max_tokens
 
     @Property(str, notify=effortChanged)
     def effort(self) -> str:
@@ -163,6 +182,9 @@ class SessionStateModel(QObject):
 
     def _apply_state(self, state: dict) -> None:
         self._model = state.get("model", "")
+        self._provider = str(state.get("provider", "") or "")
+        self._tokens = max(0, _int_value(state.get("tokens", 0)))
+        self._max_tokens = max(0, _int_value(state.get("maxTokens", state.get("max_tokens", 0))))
         self._effort = state.get("effort", "")
         self._perm = state.get("perm", "")
         self._title = state.get("title", "")
@@ -229,6 +251,9 @@ class SessionStateModel(QObject):
                     break
 
         self.modelChanged.emit()
+        self.providerChanged.emit()
+        self.tokensChanged.emit()
+        self.maxTokensChanged.emit()
         self.effortChanged.emit()
         self.permChanged.emit()
         self.titleChanged.emit()

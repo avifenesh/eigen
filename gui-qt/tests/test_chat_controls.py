@@ -221,6 +221,9 @@ class FakeRpcClient(QObject):
 
 class FakeSessionState(QObject):
     modelChanged = Signal()
+    providerChanged = Signal()
+    tokensChanged = Signal()
+    maxTokensChanged = Signal()
     effortChanged = Signal()
     permChanged = Signal()
     titleChanged = Signal()
@@ -234,6 +237,9 @@ class FakeSessionState(QObject):
         super().__init__()
         self.calls = []
         self._model = "gpt-5"
+        self._provider = "codex"
+        self._tokens = 32000
+        self._max_tokens = 128000
         self._effort = "medium"
         self._perm = "gated"
         self._title = "Qt chat controls"
@@ -260,6 +266,18 @@ class FakeSessionState(QObject):
     @Property(str, notify=modelChanged)
     def model(self):
         return self._model
+
+    @Property(str, notify=providerChanged)
+    def provider(self):
+        return self._provider
+
+    @Property(int, notify=tokensChanged)
+    def tokens(self):
+        return self._tokens
+
+    @Property(int, notify=maxTokensChanged)
+    def maxTokens(self):
+        return self._max_tokens
 
     @Property(str, notify=effortChanged)
     def effort(self):
@@ -378,6 +396,9 @@ class FakeSessionState(QObject):
         if title != self._title:
             self._title = title
             self.titleChanged.emit()
+        self._provider = state.get("provider", self._provider)
+        self._tokens = state.get("tokens", self._tokens)
+        self._max_tokens = state.get("maxTokens", self._max_tokens)
         self._goal = state.get("goal", self._goal)
         self._search = state.get("search", self._search)
         self._fast = bool(state.get("fast", self._fast))
@@ -386,6 +407,9 @@ class FakeSessionState(QObject):
         self._roots = state.get("roots", self._roots)
         self._shells = state.get("shells", self._shells)
         self._pending = state.get("pending", self._pending)
+        self.providerChanged.emit()
+        self.tokensChanged.emit()
+        self.maxTokensChanged.emit()
         self.goalChanged.emit()
 
     @Slot()
@@ -945,6 +969,8 @@ if info_tab.property("selected") is not True:
     raise AssertionError("Info dock tab did not become selected")
 info_title = find_item(chat, "dockInfoTitle")
 info_model = find_item(chat, "dockInfoModel")
+info_provider = find_item(chat, "dockInfoProvider")
+info_context = find_item(chat, "dockInfoContextSummary")
 info_goal = find_item(chat, "dockInfoGoal")
 info_root = find_item(chat, "dockInfoRoot_0")
 info_shell = find_item(chat, "dockInfoShell_0")
@@ -955,6 +981,8 @@ info_tools = find_item(chat, "dockInfoToolsSummary")
 if None in (
     info_title,
     info_model,
+    info_provider,
+    info_context,
     info_goal,
     info_root,
     info_shell,
@@ -968,6 +996,10 @@ if info_title.property("text") != "Qt chat controls":
     raise AssertionError(f"Info dock title was wrong: {info_title.property('text')}")
 if "gpt-5 / medium / gated" not in info_model.property("text"):
     raise AssertionError(f"Info dock model summary was wrong: {info_model.property('text')}")
+if info_provider.property("text") != "codex":
+    raise AssertionError(f"Info dock provider was wrong: {info_provider.property('text')}")
+if info_context.property("text") != "32,000 / 128,000 (25%)":
+    raise AssertionError(f"Info dock context summary was wrong: {info_context.property('text')}")
 if info_goal.property("text") != "Tighten the GUI":
     raise AssertionError(f"Info dock goal was wrong: {info_goal.property('text')}")
 if info_shells.property("text") != "1 shell":

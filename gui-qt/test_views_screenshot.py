@@ -120,6 +120,9 @@ class ScreenshotRpcClient(QObject):
             return {
                 "id": args[0] if args else "s-qa-chat",
                 "model": "gpt-5",
+                "provider": "codex",
+                "tokens": 32000,
+                "maxTokens": 128000,
                 "effort": "medium",
                 "perm": "gated",
                 "title": "Qt shell chat",
@@ -527,6 +530,9 @@ class ScreenshotSessionController(QObject):
         self._session_state_model.seed(
             {
                 "model": "gpt-5",
+                "provider": "codex",
+                "tokens": 32000,
+                "maxTokens": 128000,
                 "effort": "medium",
                 "perm": "gated",
                 "title": "Qt shell chat",
@@ -1167,6 +1173,9 @@ def main():
         session_state.seed(
             {
                 "model": "gpt-5",
+                "provider": "codex",
+                "tokens": 32000,
+                "maxTokens": 128000,
                 "effort": "medium",
                 "perm": "gated",
                 "title": "Qt chat controls",
@@ -1228,15 +1237,29 @@ def main():
         QTest.qWait(120)
         info_title = find_item(root, "dockInfoTitle")
         info_model = find_item(root, "dockInfoModel")
+        info_provider = find_item(root, "dockInfoProvider")
+        info_context = find_item(root, "dockInfoContextSummary")
         info_shells = find_item(root, "dockInfoShellsSummary")
         info_pending = find_item(root, "dockInfoPendingSummary")
         info_tools = find_item(root, "dockInfoToolsSummary")
-        if info_title is None or info_model is None or info_shells is None or info_pending is None or info_tools is None:
+        if (
+            info_title is None
+            or info_model is None
+            or info_provider is None
+            or info_context is None
+            or info_shells is None
+            or info_pending is None
+            or info_tools is None
+        ):
             raise AssertionError("chat info dock did not render session metadata")
         if info_title.property("text") != "Qt chat controls":
             raise AssertionError(f"chat info dock title was wrong: {info_title.property('text')}")
         if "gpt-5 / medium / gated" not in info_model.property("text"):
             raise AssertionError(f"chat info dock model summary was wrong: {info_model.property('text')}")
+        if info_provider.property("text") != "codex":
+            raise AssertionError(f"chat info dock provider was wrong: {info_provider.property('text')}")
+        if info_context.property("text") != "32,000 / 128,000 (25%)":
+            raise AssertionError(f"chat info dock context summary was wrong: {info_context.property('text')}")
         if info_shells.property("text") != "1 shell":
             raise AssertionError(f"chat info dock shell summary was wrong: {info_shells.property('text')}")
         if info_pending.property("text") != "1 approval":

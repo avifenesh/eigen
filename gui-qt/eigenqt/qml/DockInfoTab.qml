@@ -49,7 +49,7 @@ ScrollView {
             Layout.fillWidth: true
             Layout.leftMargin: Theme.space.xl
             Layout.rightMargin: Theme.space.xl
-            Layout.topMargin: Theme.space.xl
+            Layout.topMargin: Theme.space.lg
             columns: 2
             columnSpacing: Theme.space.lg
             rowSpacing: Theme.space.md
@@ -96,6 +96,27 @@ ScrollView {
             }
 
             Label {
+                visible: root.field("provider", "") !== ""
+                text: "Provider"
+                font.family: Theme.uiFonts[0]
+                font.pixelSize: Theme.fontSize.micro
+                font.weight: Theme.fontWeight.semibold
+                color: Theme.colors.textMuted
+                Layout.preferredWidth: 58
+            }
+
+            Label {
+                objectName: "dockInfoProvider"
+                visible: root.field("provider", "") !== ""
+                Layout.fillWidth: true
+                text: root.field("provider", "")
+                font.family: Theme.monoFonts[0]
+                font.pixelSize: Theme.fontSize.codeSm
+                color: Theme.colors.textMuted
+                elide: Text.ElideRight
+            }
+
+            Label {
                 text: "Goal"
                 font.family: Theme.uiFonts[0]
                 font.pixelSize: Theme.fontSize.micro
@@ -115,11 +136,66 @@ ScrollView {
             }
         }
 
+        ColumnLayout {
+            objectName: "dockInfoContext"
+            visible: root.maxTokens() > 0
+            Layout.fillWidth: true
+            Layout.leftMargin: Theme.space.xl
+            Layout.rightMargin: Theme.space.xl
+            Layout.topMargin: visible ? Theme.space.xl : 0
+            spacing: Theme.space.sm
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.space.md
+
+                Label {
+                    text: "Context"
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.label
+                    font.weight: Theme.fontWeight.semibold
+                    color: Theme.colors.textPrimary
+                }
+
+                Label {
+                    objectName: "dockInfoContextSummary"
+                    Layout.fillWidth: true
+                    text: root.contextSummary()
+                    font.family: Theme.monoFonts[0]
+                    font.pixelSize: Theme.fontSize.micro
+                    color: root.contextPercent() >= 85 ? Theme.colors.warn : Theme.colors.textMuted
+                    horizontalAlignment: Text.AlignRight
+                    elide: Text.ElideRight
+                }
+            }
+
+            Rectangle {
+                objectName: "dockInfoContextBar"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 7
+                color: Theme.colors.bgInset
+                radius: 4
+                border.width: 1
+                border.color: Theme.colors.borderHairline
+                clip: true
+
+                Rectangle {
+                    objectName: "dockInfoContextBarFill"
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: Math.max(0, parent.width * root.contextPercent() / 100)
+                    radius: 4
+                    color: root.contextPercent() >= 85 ? Theme.colors.warn : Theme.colors.brand
+                }
+            }
+        }
+
         Rectangle {
             Layout.fillWidth: true
             Layout.leftMargin: Theme.space.xl
             Layout.rightMargin: Theme.space.xl
-            Layout.topMargin: Theme.space.xl
+            Layout.topMargin: Theme.space.lg
             Layout.preferredHeight: 1
             color: Theme.colors.borderHairline
         }
@@ -128,7 +204,7 @@ ScrollView {
             Layout.fillWidth: true
             Layout.leftMargin: Theme.space.xl
             Layout.rightMargin: Theme.space.xl
-            Layout.topMargin: Theme.space.xl
+            Layout.topMargin: Theme.space.lg
             text: "Working directories"
             font.family: Theme.uiFonts[0]
             font.pixelSize: Theme.fontSize.label
@@ -184,7 +260,7 @@ ScrollView {
             Layout.fillWidth: true
             Layout.leftMargin: Theme.space.xl
             Layout.rightMargin: Theme.space.xl
-            Layout.topMargin: Theme.space.xl
+            Layout.topMargin: Theme.space.lg
             Layout.preferredHeight: 1
             color: Theme.colors.borderHairline
         }
@@ -193,7 +269,7 @@ ScrollView {
             Layout.fillWidth: true
             Layout.leftMargin: Theme.space.xl
             Layout.rightMargin: Theme.space.xl
-            Layout.topMargin: Theme.space.xl
+            Layout.topMargin: Theme.space.lg
             spacing: Theme.space.md
 
             Label {
@@ -357,7 +433,7 @@ ScrollView {
             Layout.fillWidth: true
             Layout.leftMargin: Theme.space.xl
             Layout.rightMargin: Theme.space.xl
-            Layout.topMargin: Theme.space.xl
+            Layout.topMargin: Theme.space.lg
             Layout.preferredHeight: 1
             color: Theme.colors.borderHairline
         }
@@ -366,7 +442,7 @@ ScrollView {
             Layout.fillWidth: true
             Layout.leftMargin: Theme.space.xl
             Layout.rightMargin: Theme.space.xl
-            Layout.topMargin: Theme.space.xl
+            Layout.topMargin: Theme.space.lg
             spacing: Theme.space.md
 
             Label {
@@ -394,7 +470,7 @@ ScrollView {
             Layout.leftMargin: Theme.space.xl
             Layout.rightMargin: Theme.space.xl
             Layout.topMargin: Theme.space.sm
-            Layout.bottomMargin: Theme.space.xl
+            Layout.bottomMargin: Theme.space.lg
             spacing: Theme.space.xs
 
             Label {
@@ -481,6 +557,34 @@ ScrollView {
     function pending() {
         var value = raw("pending", [])
         return value || []
+    }
+
+    function tokens() {
+        return Math.max(0, Number(raw("tokens", 0)) || 0)
+    }
+
+    function maxTokens() {
+        return Math.max(0, Number(raw("maxTokens", 0)) || 0)
+    }
+
+    function contextPercent() {
+        var max = maxTokens()
+        if (max <= 0) return 0
+        return Math.max(0, Math.min(100, Math.round(tokens() * 100 / max)))
+    }
+
+    function contextSummary() {
+        return formatNumber(tokens()) + " / " + formatNumber(maxTokens()) + " (" + contextPercent() + "%)"
+    }
+
+    function formatNumber(value) {
+        var text = String(Math.max(0, Math.floor(Number(value) || 0)))
+        var out = ""
+        while (text.length > 3) {
+            out = "," + text.slice(text.length - 3) + out
+            text = text.slice(0, text.length - 3)
+        }
+        return text + out
     }
 
     function modeLine() {
