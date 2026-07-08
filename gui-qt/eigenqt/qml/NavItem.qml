@@ -106,10 +106,21 @@ Rectangle {
 
         // Badge
         Rectangle {
+            id: navBadge
+            objectName: navItem.route ? "navBadge_" + navItem.route : ""
+            readonly property bool qaIsNavBadge: true
+            readonly property bool qaTextFits: badgeLabel.implicitWidth <= badgeLabel.width + 1.0
+            readonly property real qaLeftTextInset: badgeLabel.x + Math.max(0, (badgeLabel.width - badgeLabel.paintedWidth) / 2)
+            readonly property real qaRightTextInset: navBadge.width - (badgeLabel.x + badgeLabel.width / 2 + badgeLabel.paintedWidth / 2)
+            readonly property real qaTopTextInset: badgeLabel.y + Math.max(0, (badgeLabel.height - badgeLabel.paintedHeight) / 2)
+            readonly property real qaBottomTextInset: navBadge.height - (badgeLabel.y + badgeLabel.height / 2 + badgeLabel.paintedHeight / 2)
+            readonly property real qaHorizontalPadding: Math.min(qaLeftTextInset, qaRightTextInset)
+            readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
+
             visible: navItem.badge > 0
-            implicitWidth: Math.max(18, badgeLabel.implicitWidth + 10)
-            implicitHeight: 18
-            radius: 9
+            implicitWidth: Math.max(22, badgeLabel.implicitWidth + Theme.space.md * 2)
+            implicitHeight: Math.max(20, badgeLabel.implicitHeight + Theme.space.xs * 2)
+            radius: implicitHeight / 2
             color: navItem.badgeLive ? Theme.colors.stateSelected : Theme.colors.bgOverlay
             border.width: navItem.badgeLive ? 1 : 0
             border.color: Theme.colors.borderBrandFaint
@@ -124,12 +135,16 @@ Rectangle {
 
             Label {
                 id: badgeLabel
-                anchors.centerIn: parent
+                anchors.fill: parent
+                anchors.leftMargin: Theme.space.md
+                anchors.rightMargin: Theme.space.md
                 text: navItem.badge
                 font.family: Theme.uiFonts[0]
                 font.pixelSize: Theme.fontSize.micro
                 font.weight: Theme.fontWeight.semibold
                 color: navItem.badgeLive ? Theme.colors.brandBright : Theme.colors.textSecondary
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
             }
         }
     }

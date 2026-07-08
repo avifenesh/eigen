@@ -953,6 +953,23 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
         print("✗ Main chat proof did not show feed badge on the Home rail item")
         window.hide()
         return False
+    home_badge = find_item(window.contentItem(), "navBadge_home")
+    if home_badge is None or home_badge.property("visible") is not True:
+        print("✗ Main chat proof did not render the Home rail badge")
+        window.hide()
+        return False
+    if home_badge.property("qaIsNavBadge") is not True:
+        print("✗ Main chat Home rail badge did not expose nav badge QA")
+        window.hide()
+        return False
+    if home_badge.property("qaTextFits") is not True or float(home_badge.property("qaHorizontalPadding") or 0) < 7.5 or float(home_badge.property("qaVerticalPadding") or 0) < 3.0:
+        print(
+            "✗ Main chat Home rail badge rendered cramped: "
+            f"fits={home_badge.property('qaTextFits')} "
+            f"padding={home_badge.property('qaHorizontalPadding')}x{home_badge.property('qaVerticalPadding')}"
+        )
+        window.hide()
+        return False
 
     output = SCREENSHOTS / "qa-fix-main-chat.png"
     image = window.grabWindow()

@@ -818,6 +818,18 @@ try:
     pump(app, 12)
     if home_nav.property("badge") != 1:
         raise AssertionError(f"Home nav did not react to feed dismiss: {home_nav.property('badge')}")
+    for badge_name in ("navBadge_home", "navBadge_chat"):
+        badge = find_item_in_window(window, badge_name)
+        if badge is None or badge.property("visible") is not True:
+            raise AssertionError(f"Rail badge {badge_name} did not render")
+        if badge.property("qaIsNavBadge") is not True:
+            raise AssertionError(f"Rail badge {badge_name} did not expose nav badge QA")
+        if badge.property("qaTextFits") is not True:
+            raise AssertionError(f"Rail badge {badge_name} text does not fit")
+        if float(badge.property("qaHorizontalPadding") or 0) < 7.5:
+            raise AssertionError(f"Rail badge {badge_name} horizontal padding too small: {badge.property('qaHorizontalPadding')}")
+        if float(badge.property("qaVerticalPadding") or 0) < 3.0:
+            raise AssertionError(f"Rail badge {badge_name} vertical padding too small: {badge.property('qaVerticalPadding')}")
     if float(chat_nav.property("height") or 0) <= 30:
         raise AssertionError("Chat nav item did not expand for running-session rows")
     if scene_top(running_row) < scene_top(chat_nav) + 30 - 0.5:
