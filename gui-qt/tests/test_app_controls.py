@@ -23,6 +23,26 @@ def test_qml_theme_tokens_are_not_read_as_color_components():
     )
 
 
+def test_infinite_qml_animations_are_motion_gated():
+    theme = (ROOT / "eigenqt" / "qml" / "Theme.js").read_text()
+    assert re.search(r"\bvar\s+continuousMotion\s*=\s*false\b", theme)
+
+    offenders = []
+    for path in (ROOT / "eigenqt" / "qml").glob("*.qml"):
+        lines = path.read_text().splitlines()
+        for index, line in enumerate(lines):
+            if "loops: Animation.Infinite" not in line:
+                continue
+            context = lines[max(0, index - 8) : min(len(lines), index + 9)]
+            if not any("running:" in candidate and "Theme.continuousMotion" in candidate for candidate in context):
+                offenders.append(f"{path.relative_to(ROOT)}:{index + 1}: {line.strip()}")
+
+    assert not offenders, (
+        "Infinite QML animations must be gated by Theme.continuousMotion:\n"
+        + "\n".join(offenders)
+    )
+
+
 def test_app_button_and_combo_keyboard_contracts():
     script = r"""
 from pathlib import Path

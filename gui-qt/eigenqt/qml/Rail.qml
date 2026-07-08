@@ -196,7 +196,7 @@ Rectangle {
 
                                             // Pulse animation for live sessions
                                             SequentialAnimation on opacity {
-                                                running: true
+                                                running: Theme.continuousMotion
                                                 loops: Animation.Infinite
                                                 NumberAnimation { from: 1.0; to: 0.3; duration: Theme.duration.breath / 2 }
                                                 NumberAnimation { from: 0.3; to: 1.0; duration: Theme.duration.breath / 2 }
@@ -521,7 +521,7 @@ Rectangle {
 
                     // Breathing animation when online
                     SequentialAnimation on opacity {
-                        running: root.daemonOnline
+                        running: Theme.continuousMotion && root.daemonOnline
                         loops: Animation.Infinite
                         NumberAnimation { from: 1.0; to: 0.62; duration: Theme.duration.breath / 2 }
                         NumberAnimation { from: 0.62; to: 1.0; duration: Theme.duration.breath / 2 }

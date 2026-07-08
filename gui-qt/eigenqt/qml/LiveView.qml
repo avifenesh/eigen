@@ -297,7 +297,7 @@ Rectangle {
 
                                 // Breathing animation for live sessions
                                 SequentialAnimation on opacity {
-                                    running: delegateRoot.status === "working" || delegateRoot.status === "approval"
+                                    running: Theme.continuousMotion && (delegateRoot.status === "working" || delegateRoot.status === "approval")
                                     loops: Animation.Infinite
                                     NumberAnimation { from: 1.0; to: 0.3; duration: Theme.duration.breath / 2; easing.type: Easing.InOutQuad }
                                     NumberAnimation { from: 0.3; to: 1.0; duration: Theme.duration.breath / 2; easing.type: Easing.InOutQuad }

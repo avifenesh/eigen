@@ -622,7 +622,7 @@ Rectangle {
                                             color: Theme.colors.working
 
                                             SequentialAnimation on opacity {
-                                                running: true
+                                                running: Theme.continuousMotion
                                                 loops: Animation.Infinite
                                                 NumberAnimation { from: 1.0; to: 0.3; duration: 600 }
                                                 NumberAnimation { from: 0.3; to: 1.0; duration: 600 }

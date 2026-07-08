@@ -44,7 +44,7 @@ Rectangle {
 
             // Breathing animation for working status
             SequentialAnimation on opacity {
-                running: root.status === "working"
+                running: Theme.continuousMotion && root.status === "working"
                 loops: Animation.Infinite
                 NumberAnimation { from: 1.0; to: 0.3; duration: Theme.duration.breath / 2; easing.type: Easing.InOutQuad }
                 NumberAnimation { from: 0.3; to: 1.0; duration: Theme.duration.breath / 2; easing.type: Easing.InOutQuad }

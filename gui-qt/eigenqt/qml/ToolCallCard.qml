@@ -117,7 +117,7 @@ Rectangle {
 
                     // Pulse animation for running
                     SequentialAnimation on opacity {
-                        running: root.isRunning
+                        running: Theme.continuousMotion && root.isRunning
                         loops: Animation.Infinite
                         NumberAnimation { from: 0.4; to: 1.0; duration: 800; easing.type: Easing.InOutQuad }
                         NumberAnimation { from: 1.0; to: 0.4; duration: 800; easing.type: Easing.InOutQuad }
@@ -253,7 +253,7 @@ Rectangle {
                             color: Theme.colors.working
 
                             SequentialAnimation on opacity {
-                                running: true
+                                running: Theme.continuousMotion
                                 loops: Animation.Infinite
                                 NumberAnimation { from: 0.4; to: 1.0; duration: 800; easing.type: Easing.InOutQuad }
                                 NumberAnimation { from: 1.0; to: 0.4; duration: 800; easing.type: Easing.InOutQuad }

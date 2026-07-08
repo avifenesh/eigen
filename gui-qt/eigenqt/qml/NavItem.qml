@@ -116,7 +116,7 @@ Rectangle {
 
             // Breathing animation for live badges
             SequentialAnimation on opacity {
-                running: navItem.badgeLive
+                running: Theme.continuousMotion && navItem.badgeLive
                 loops: Animation.Infinite
                 NumberAnimation { from: 1.0; to: 0.62; duration: Theme.duration.breath / 2 }
                 NumberAnimation { from: 0.62; to: 1.0; duration: Theme.duration.breath / 2 }

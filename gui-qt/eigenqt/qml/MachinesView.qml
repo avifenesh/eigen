@@ -477,7 +477,7 @@ Rectangle {
                                     Layout.alignment: Qt.AlignVCenter
 
                                     SequentialAnimation on rotation {
-                                        running: root.hasSelection && root.machinesModel && root.machinesModel.remote_loading
+                                        running: Theme.continuousMotion && root.hasSelection && root.machinesModel && root.machinesModel.remote_loading
                                         loops: Animation.Infinite
                                         NumberAnimation { from: 0; to: 360; duration: 700 }
                                     }
