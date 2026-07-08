@@ -164,21 +164,16 @@ Rectangle {
 
                 Item { Layout.fillWidth: true }
 
-                Label {
+                AppTag {
+                    objectName: "homePanelBadge_" + root.safeObjectName(title)
                     visible: badge !== ""
                     text: badge
-                    font.pixelSize: Theme.fontSize.micro
-                    font.weight: Theme.fontWeight.bold
-                    color: Theme.colors.brandBright
-                    background: Rectangle {
-                        color: Theme.colors.stateSelected
-                        border.width: 1
-                        border.color: Theme.colors.borderBrandFaint
-                        radius: 12
-                    }
-                    padding: 2
-                    leftPadding: Theme.space.sm
-                    rightPadding: Theme.space.sm
+                    backgroundColor: Theme.colors.stateSelected
+                    borderColor: Theme.colors.borderBrandFaint
+                    textColor: Theme.colors.brandBright
+                    fontPixelSize: Theme.fontSize.micro
+                    fontWeight: Theme.fontWeight.bold
+                    minimumHeight: 20
                 }
 
                 Label {
@@ -395,18 +390,15 @@ Rectangle {
                 spacing: Theme.space.sm
                 Layout.topMargin: Theme.space.xs
 
-                Label {
+                AppTag {
+                    objectName: "homeFeedDirTag_" + root.safeObjectName(feedKey)
                     visible: dirName !== ""
                     text: dirName
-                    font.pixelSize: Theme.fontSize.label
-                    color: Theme.colors.textMuted
-                    background: Rectangle {
-                        color: Theme.colors.bgInset
-                        radius: Theme.radius.sm
-                    }
-                    padding: 2
-                    leftPadding: Theme.space.xs
-                    rightPadding: Theme.space.xs
+                    backgroundColor: Theme.colors.bgInset
+                    borderColor: Theme.colors.borderHairline
+                    textColor: Theme.colors.textMuted
+                    fontPixelSize: Theme.fontSize.label
+                    pill: false
                 }
 
                 Item { Layout.fillWidth: true }
@@ -510,18 +502,15 @@ Rectangle {
                 Layout.fillWidth: true
             }
 
-            Label {
+            AppTag {
+                objectName: "homeLiveApprovalTag_" + root.safeObjectName(sessionData ? sessionData.id : "")
                 visible: sessionData && sessionData.status === "approval"
                 text: "needs approval"
-                font.pixelSize: Theme.fontSize.label
-                color: Theme.colors.warn
-                background: Rectangle {
-                    color: Theme.colors.warnBg
-                    radius: Theme.radius.sm
-                }
-                padding: 2
-                leftPadding: Theme.space.xs
-                rightPadding: Theme.space.xs
+                backgroundColor: Theme.colors.warnBg
+                borderColor: Theme.colors.warn
+                textColor: Theme.colors.warn
+                fontPixelSize: Theme.fontSize.label
+                pill: false
             }
 
             Label {
