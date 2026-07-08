@@ -826,9 +826,9 @@ try:
             raise AssertionError(f"Rail badge {badge_name} did not expose nav badge QA")
         if badge.property("qaTextFits") is not True:
             raise AssertionError(f"Rail badge {badge_name} text does not fit")
-        if float(badge.property("qaHorizontalPadding") or 0) < 11.5:
+        if float(badge.property("qaHorizontalPadding") or 0) < 15.5:
             raise AssertionError(f"Rail badge {badge_name} horizontal padding too small: {badge.property('qaHorizontalPadding')}")
-        if float(badge.property("qaVerticalPadding") or 0) < 5.5:
+        if float(badge.property("qaVerticalPadding") or 0) < 7.5:
             raise AssertionError(f"Rail badge {badge_name} vertical padding too small: {badge.property('qaVerticalPadding')}")
     if float(chat_nav.property("height") or 0) <= 30:
         raise AssertionError("Chat nav item did not expand for running-session rows")

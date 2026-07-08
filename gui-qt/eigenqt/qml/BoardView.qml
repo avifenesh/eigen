@@ -93,8 +93,8 @@ Rectangle {
         property string fontFamily: Theme.monoFonts[0]
         property int fontPixelSize: Theme.fontSize.micro
         property int fontWeight: Theme.fontWeight.medium
-        property real horizontalPadding: Theme.space.xxxl + Theme.space.xs
-        property real verticalPadding: Theme.space.md
+        property real horizontalPadding: Theme.space.xxxxl + Theme.space.lg
+        property real verticalPadding: Theme.space.lg
 
         readonly property bool qaIsBoardBadge: true
         readonly property bool qaTextFits: badgeLabel.implicitWidth <= badgeLabel.width + 1.0
@@ -539,8 +539,8 @@ Rectangle {
                         model: ownerOptions
                         delegate: Rectangle {
                             objectName: "boardOwnerFilterChip_" + root.safeObjectName(modelData.value)
-                            readonly property real horizontalInset: Theme.space.xxxl + Theme.space.xs
-                            readonly property real verticalInset: Theme.space.md
+                            readonly property real horizontalInset: Theme.space.xxxxl + Theme.space.lg
+                            readonly property real verticalInset: Theme.space.lg
                             readonly property bool qaIsBoardChip: true
                             readonly property bool qaTextFits: ownerLabel.implicitWidth <= ownerLabel.width + 1.0
                             readonly property real qaLeftTextInset: ownerLabel.x + Math.max(0, (ownerLabel.width - ownerLabel.paintedWidth) / 2)
@@ -551,7 +551,7 @@ Rectangle {
                             readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
 
                             width: ownerLabel.implicitWidth + horizontalInset * 2
-                            height: 32
+                            height: Math.max(38, ownerLabel.implicitHeight + verticalInset * 2)
                             radius: Theme.radius.full
                             color: modelData.value === ownerFilter ? Theme.colors.brandBright : Theme.colors.bgRaised
                             border.width: 1
@@ -587,8 +587,8 @@ Rectangle {
                         model: stateOptions
                         delegate: Rectangle {
                             objectName: "boardStateFilterChip_" + root.safeObjectName(modelData.value)
-                            readonly property real horizontalInset: Theme.space.xxxl + Theme.space.xs
-                            readonly property real verticalInset: Theme.space.md
+                            readonly property real horizontalInset: Theme.space.xxxxl + Theme.space.lg
+                            readonly property real verticalInset: Theme.space.lg
                             readonly property bool qaIsBoardChip: true
                             readonly property bool qaTextFits: stateLabel.implicitWidth <= stateLabel.width + 1.0
                             readonly property real qaLeftTextInset: stateLabel.x + Math.max(0, (stateLabel.width - stateLabel.paintedWidth) / 2)
@@ -599,7 +599,7 @@ Rectangle {
                             readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
 
                             width: stateLabel.implicitWidth + horizontalInset * 2
-                            height: 32
+                            height: Math.max(38, stateLabel.implicitHeight + verticalInset * 2)
                             radius: Theme.radius.full
                             color: modelData.value === stateFilter ? Theme.colors.brandBright : Theme.colors.bgRaised
                             border.width: 1
