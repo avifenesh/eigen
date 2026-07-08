@@ -131,7 +131,7 @@ Rectangle {
                                 readonly property bool selected: root.currentFilter === modelData
                                 readonly property bool qaVisualFocus: activeFocus
                                 readonly property bool qaIsTaskChip: true
-                                readonly property real horizontalInset: Theme.space.xxxl
+                                readonly property real horizontalInset: Theme.space.xxxl + Theme.space.xs
                                 readonly property real verticalInset: Theme.space.md
                                 readonly property string qaAccessibleName: chipLabel.text + " task filter"
                                 readonly property bool qaTextFits: chipLabel.implicitWidth <= chipLabel.width + 1.0
