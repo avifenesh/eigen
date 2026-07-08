@@ -80,6 +80,75 @@ class ScreenshotRpcClient(QObject):
         self.rule_chains_payload = {"models": [], "roles": []}
         self.board_payload = {"lanes": []}
         self.kanban_payload = {"columns": []}
+        self.diff_payload = {
+            "isRepo": True,
+            "clean": False,
+            "branch": "feat/qt-dock-proof",
+            "truncated": False,
+            "files": [
+                {"path": "gui-qt/eigenqt/qml/ChatView.qml", "adds": 12, "dels": 3},
+                {"path": "gui-qt/eigenqt/qml/DiffTab.qml", "adds": 8, "dels": 1},
+            ],
+            "patch": (
+                "diff --git a/gui-qt/eigenqt/qml/ChatView.qml b/gui-qt/eigenqt/qml/ChatView.qml\n"
+                "index 1111111..2222222 100644\n"
+                "--- a/gui-qt/eigenqt/qml/ChatView.qml\n"
+                "+++ b/gui-qt/eigenqt/qml/ChatView.qml\n"
+                "@@ -42,6 +42,9 @@ Rectangle {\n"
+                "     property bool dockOpen: false\n"
+                "+    readonly property bool qaDockProof: true\n"
+                "+    readonly property string qaDockMode: \"visual\"\n"
+                "     property int dockTabIndex: 0\n"
+                "-    color: Theme.colors.bgBase\n"
+                "+    color: Theme.colors.bgWell\n"
+                " }\n"
+                "diff --git a/gui-qt/eigenqt/qml/DiffTab.qml b/gui-qt/eigenqt/qml/DiffTab.qml\n"
+                "index 3333333..4444444 100644\n"
+                "--- a/gui-qt/eigenqt/qml/DiffTab.qml\n"
+                "+++ b/gui-qt/eigenqt/qml/DiffTab.qml\n"
+                "@@ -100,6 +100,7 @@ Item {\n"
+                "     Text { text: branch }\n"
+                "+    AppTag { text: branch }\n"
+                " }\n"
+            ),
+        }
+        self.file_tree_payload = {
+            "truncated": False,
+            "entries": [
+                {
+                    "name": "gui-qt",
+                    "path": "/home/user/eigen/gui-qt",
+                    "isDir": True,
+                    "children": [
+                        {
+                            "name": "eigenqt",
+                            "path": "/home/user/eigen/gui-qt/eigenqt",
+                            "isDir": True,
+                            "children": [
+                                {
+                                    "name": "qml",
+                                    "path": "/home/user/eigen/gui-qt/eigenqt/qml",
+                                    "isDir": True,
+                                    "children": [
+                                        {
+                                            "name": "ChatView.qml",
+                                            "path": "/home/user/eigen/gui-qt/eigenqt/qml/ChatView.qml",
+                                            "isDir": False,
+                                        },
+                                        {
+                                            "name": "DiffTab.qml",
+                                            "path": "/home/user/eigen/gui-qt/eigenqt/qml/DiffTab.qml",
+                                            "isDir": False,
+                                        },
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                },
+                {"name": "README.md", "path": "/home/user/eigen/README.md", "isDir": False},
+            ],
+        }
 
     def call(self, method, *args, callback=None, error_callback=None):
         self.calls.append((method, args))
@@ -112,11 +181,11 @@ class ScreenshotRpcClient(QObject):
 
     def _result(self, method, args):
         if method == "WorkingDiff":
-            return {"isRepo": True, "clean": True, "branch": "fix/qt", "truncated": False, "patch": "", "files": []}
+            return self.diff_payload
         if method == "FileTree":
-            return {"truncated": False, "entries": [{"name": "README.md", "path": "/home/user/eigen/README.md", "isDir": False}]}
+            return self.file_tree_payload
         if method == "ReadFileForView":
-            return "# Eigen\n"
+            return "# Eigen\n\nQt dock visual proof.\n\n- Diff\n- Files\n"
         if method == "TerminalStart":
             return "term-shot"
         if method == "Commands":
@@ -1371,6 +1440,47 @@ def main():
             )
 
     ok = capture_view("chat-stream-tail", "ChatView.qml", setup_chat, show_chat_stream_tail) and ok
+
+    def open_chat_diff_dock(_view, root):
+        root.setProperty("dockTabIndex", 0)
+        root.setProperty("dockOpen", True)
+        QTest.qWait(180)
+        diff_root = find_item(root, "diffTabRoot")
+        branch_tag = find_item(root, "diffBranchTag")
+        refresh = find_item(root, "diffRefreshButton")
+        if diff_root is None or branch_tag is None or refresh is None:
+            raise AssertionError("chat diff dock did not render diff controls")
+        if diff_root.property("qaDiffRowCount") < 8:
+            raise AssertionError(f"chat diff dock did not render the seeded patch rows: {diff_root.property('qaDiffRowCount')}")
+        if branch_tag.property("qaTextFits") is not True:
+            raise AssertionError("chat diff dock branch tag text does not fit")
+        if refresh.property("qaTextFits") is not True:
+            raise AssertionError("chat diff dock refresh button text does not fit")
+
+    ok = capture_view("chat-dock-diff", "ChatView.qml", setup_chat, open_chat_diff_dock) and ok
+
+    def open_chat_files_dock(_view, root):
+        root.setProperty("dockTabIndex", 1)
+        root.setProperty("dockOpen", True)
+        QTest.qWait(180)
+        files_root = find_item(root, "filesTabRoot")
+        refresh = find_item(root, "filesRefreshButton")
+        if files_root is None or refresh is None:
+            raise AssertionError("chat files dock did not render files controls")
+        if files_root.property("qaTreeRowCount") < 3:
+            raise AssertionError(f"chat files dock did not render the seeded tree rows: {files_root.property('qaTreeRowCount')}")
+        if refresh.property("qaTextFits") is not True:
+            raise AssertionError("chat files dock refresh button text does not fit")
+        files_root.setProperty("viewPath", "/home/user/eigen/gui-qt/eigenqt/qml/ChatView.qml")
+        files_root.setProperty("viewText", "# ChatView.qml\n\nQt dock visual proof.\n")
+        QTest.qWait(120)
+        viewer_close = find_item(root, "filesViewerCloseButton")
+        if viewer_close is None:
+            raise AssertionError("chat files dock viewer did not render close button")
+        if files_root.property("qaViewerOpen") is not True or files_root.property("qaViewerCloseFits") is not True:
+            raise AssertionError("chat files dock viewer did not expose clean QA geometry")
+
+    ok = capture_view("chat-dock-files", "ChatView.qml", setup_chat, open_chat_files_dock) and ok
 
     def open_chat_info_dock(_view, root):
         root.setProperty("dockTabIndex", 2)

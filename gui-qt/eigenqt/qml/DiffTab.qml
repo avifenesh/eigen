@@ -29,6 +29,8 @@ Item {
     property bool clean: false
     property string branch: ""
     property bool truncated: false
+    readonly property int qaDiffRowCount: diffList.count
+    readonly property bool qaBranchTagFits: branch === "" || diffBranchTag.qaTextFits
 
     DiffModel {
         id: diffModel
@@ -98,23 +100,17 @@ Item {
                 }
 
                 // Branch badge
-                Rectangle {
+                AppTag {
+                    id: diffBranchTag
+                    objectName: "diffBranchTag"
                     visible: branch !== ""
-                    Layout.preferredHeight: 20
-                    Layout.preferredWidth: branchLabel.implicitWidth + Theme.space.xs * 2
-                    color: "transparent"
-                    radius: Theme.radius.sm
-                    border.width: 1
-                    border.color: Theme.colors.borderHairline
-
-                    Text {
-                        id: branchLabel
-                        anchors.centerIn: parent
-                        text: branch
-                        font.family: Theme.uiFonts[0]
-                        font.pixelSize: Theme.fontSize.label
-                        color: Theme.colors.textMuted
-                    }
+                    text: branch
+                    backgroundColor: "transparent"
+                    borderColor: Theme.colors.borderHairline
+                    textColor: Theme.colors.textMuted
+                    fontPixelSize: Theme.fontSize.label
+                    minimumHeight: 20
+                    pill: false
                 }
 
                 Item { Layout.fillWidth: true }
