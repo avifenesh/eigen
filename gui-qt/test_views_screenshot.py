@@ -618,6 +618,10 @@ def scene_bottom(item):
     return item.mapToScene(QPointF(0, float(item.property("height") or 0))).y()
 
 
+def scene_right(item):
+    return item.mapToScene(QPointF(float(item.property("width") or 0), 0)).x()
+
+
 def click_item(view, item):
     width = float(item.property("width") or 0)
     height = float(item.property("height") or 0)
@@ -629,14 +633,14 @@ def click_item(view, item):
     QTest.qWait(80)
 
 
-def capture_view(view_name: str, qml_file: str, setup_context, after_render=None):
+def capture_view(view_name: str, qml_file: str, setup_context, after_render=None, width=1200, height=800):
     """Capture a single view screenshot."""
     print(f"Capturing {view_name}...")
 
     view = QQuickView()
     view.setResizeMode(QQuickView.SizeRootObjectToView)
-    view.setWidth(1200)
-    view.setHeight(800)
+    view.setWidth(width)
+    view.setHeight(height)
 
     ctx = view.rootContext()
     initial_properties = setup_context(ctx) or {}
@@ -2673,8 +2677,37 @@ def main():
         if model is not None:
             model.confirm_remove_connector_set("notion")
             model.confirm_remove_server_set("github-local")
+        for _ in range(4):
+            app.processEvents()
+
+        for button_name in (
+            "connectorPrimaryButton_connector_notion",
+            "connectorConfirmRemoveButton_connector_notion",
+            "connectorCancelRemoveButton_connector_notion",
+            "connectorPrimaryButton_server_github-local",
+            "connectorConfirmRemoveButton_server_github-local",
+            "connectorCancelRemoveButton_server_github-local",
+        ):
+            button = find_item(root, button_name)
+            if button is None or button.property("visible") is not True:
+                raise AssertionError(f"connectors remove confirm missing {button_name}")
+            if button.property("qaTextFits") is not True:
+                raise AssertionError(f"connectors remove confirm text clipped in {button_name}")
+            if scene_right(button) > float(root.property("width") or 0) + 0.5:
+                raise AssertionError(
+                    f"connectors remove confirm overflowed {button_name}: "
+                    f"right={scene_right(button):.1f}, root={float(root.property('width') or 0):.1f}"
+                )
 
     ok = capture_view("connectors-remove-confirm", "ConnectorsView.qml", setup_connectors, show_connectors_remove_confirm) and ok
+    ok = capture_view(
+        "connectors-narrow-remove-confirm",
+        "ConnectorsView.qml",
+        setup_connectors,
+        show_connectors_remove_confirm,
+        width=380,
+        height=760,
+    ) and ok
 
     def show_connectors_action_error(_view, root):
         model = root.property("connectorsModel")

@@ -1111,6 +1111,7 @@ Rectangle {
         property string primaryLabel: ""
         property bool secondaryActions: false
         property bool showRemoveConfirm: false
+        readonly property bool actionsInline: width >= 500
         readonly property string qaIconText: iconText()
         default property alias extraContent: cardExtra.data
 
@@ -1235,12 +1236,14 @@ Rectangle {
                     }
                 }
 
-                // Actions column
+                // Inline actions for roomy cards.
                 RowLayout {
+                    id: inlineActions
+                    visible: card.actionsInline
                     spacing: Theme.space.sm
 
                     AppButton {
-                        objectName: actionKey ? ("connectorPrimaryButton_" + actionKey) : ""
+                        objectName: visible && actionKey ? ("connectorPrimaryButton_" + actionKey) : ""
                         visible: primaryAction && primaryLabel
                         text: primaryLabel
                         toolTipText: primaryLabel && connectorName ? (primaryLabel + " " + connectorName) : primaryLabel
@@ -1249,7 +1252,7 @@ Rectangle {
                     }
 
                     AppButton {
-                        objectName: actionKey ? ("connectorRemoveButton_" + actionKey) : ""
+                        objectName: visible && actionKey ? ("connectorRemoveButton_" + actionKey) : ""
                         visible: secondaryActions && !showRemoveConfirm
                         text: "Remove"
                         toolTipText: connectorName ? ("Remove " + connectorName) : "Remove connector"
@@ -1258,7 +1261,7 @@ Rectangle {
                     }
 
                     AppButton {
-                        objectName: actionKey ? ("connectorConfirmRemoveButton_" + actionKey) : ""
+                        objectName: visible && actionKey ? ("connectorConfirmRemoveButton_" + actionKey) : ""
                         visible: secondaryActions && showRemoveConfirm
                         text: "Confirm"
                         toolTipText: connectorName ? ("Confirm removing " + connectorName) : "Confirm remove"
@@ -1267,13 +1270,59 @@ Rectangle {
                     }
 
                     AppButton {
-                        objectName: actionKey ? ("connectorCancelRemoveButton_" + actionKey) : ""
+                        objectName: visible && actionKey ? ("connectorCancelRemoveButton_" + actionKey) : ""
                         visible: secondaryActions && showRemoveConfirm
                         text: "Cancel"
                         toolTipText: "Cancel removal"
                         enabled: !busy
                         onClicked: card.removeCancelled()
                     }
+                }
+            }
+
+            RowLayout {
+                id: stackedActions
+                visible: !card.actionsInline && (primaryAction || secondaryActions)
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignRight
+                spacing: Theme.space.sm
+
+                Item { Layout.fillWidth: true }
+
+                AppButton {
+                    objectName: visible && actionKey ? ("connectorPrimaryButton_" + actionKey) : ""
+                    visible: primaryAction && primaryLabel
+                    text: primaryLabel
+                    toolTipText: primaryLabel && connectorName ? (primaryLabel + " " + connectorName) : primaryLabel
+                    enabled: !busy
+                    onClicked: card.primaryClicked()
+                }
+
+                AppButton {
+                    objectName: visible && actionKey ? ("connectorRemoveButton_" + actionKey) : ""
+                    visible: secondaryActions && !showRemoveConfirm
+                    text: "Remove"
+                    toolTipText: connectorName ? ("Remove " + connectorName) : "Remove connector"
+                    enabled: !busy
+                    onClicked: card.removeClicked()
+                }
+
+                AppButton {
+                    objectName: visible && actionKey ? ("connectorConfirmRemoveButton_" + actionKey) : ""
+                    visible: secondaryActions && showRemoveConfirm
+                    text: "Confirm"
+                    toolTipText: connectorName ? ("Confirm removing " + connectorName) : "Confirm remove"
+                    enabled: !busy
+                    onClicked: card.removeClicked()
+                }
+
+                AppButton {
+                    objectName: visible && actionKey ? ("connectorCancelRemoveButton_" + actionKey) : ""
+                    visible: secondaryActions && showRemoveConfirm
+                    text: "Cancel"
+                    toolTipText: "Cancel removal"
+                    enabled: !busy
+                    onClicked: card.removeCancelled()
                 }
             }
 
