@@ -408,8 +408,11 @@ Rectangle {
                         }
                     }
 
-                    Button {
+                    AppButton {
+                        objectName: "boardRefreshButton"
                         text: "Refresh"
+                        compact: true
+                        toolTipText: "Refresh board data"
                         onClicked: {
                             if (boardModel) boardModel.load()
                             if (kanbanModel) kanbanModel.load()
