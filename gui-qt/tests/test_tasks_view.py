@@ -191,6 +191,17 @@ def key_item(app, window, root, object_name, key):
     return item
 
 
+def assert_task_chip_padding(chip, name):
+    if chip.property("qaIsTaskChip") is not True:
+        raise AssertionError(f"{name} did not expose task chip QA marker")
+    if chip.property("qaTextFits") is not True:
+        raise AssertionError(f"{name} text did not fit")
+    if float(chip.property("qaHorizontalPadding") or 0) < 11.5:
+        raise AssertionError(f"{name} horizontal padding too small: {chip.property('qaHorizontalPadding')}")
+    if float(chip.property("qaVerticalPadding") or 0) < 3.5:
+        raise AssertionError(f"{name} vertical padding too small: {chip.property('qaVerticalPadding')}")
+
+
 QQuickStyle.setStyle("Basic")
 app = QGuiApplication([])
 client = FakeRpcClient()
@@ -214,6 +225,12 @@ pump(app, 30)
 if tasks.rowCount() != 3:
     raise AssertionError(f"tasks did not load: {tasks.rowCount()}")
 
+for chip_name in ("all", "running", "done", "error"):
+    chip = find_item(root, f"taskFilterChip_{chip_name}")
+    if chip is None:
+        raise AssertionError(f"missing task filter chip {chip_name}")
+    assert_task_chip_padding(chip, chip_name)
+
 running_chip = key_item(app, view, root, "taskFilterChip_running", Qt.Key_Space)
 if root.property("currentFilter") != "running" or tasks.property("filter") != "running":
     raise AssertionError(
@@ -225,12 +242,14 @@ if not running_chip.property("qaVisualFocus"):
     raise AssertionError("running chip did not expose keyboard focus")
 if running_chip.property("qaAccessibleName") != "Running task filter":
     raise AssertionError(f"running chip accessible name was {running_chip.property('qaAccessibleName')}")
+assert_task_chip_padding(running_chip, "running")
 
 error_chip = key_item(app, view, root, "taskFilterChip_error", Qt.Key_Return)
 if root.property("currentFilter") != "error" or tasks.rowCount() != 1:
     raise AssertionError(f"error filter did not isolate lost task: {root.property('currentFilter')} rows={tasks.rowCount()}")
 if not error_chip.property("qaVisualFocus"):
     raise AssertionError("error chip did not expose keyboard focus")
+assert_task_chip_padding(error_chip, "error")
 
 key_item(app, view, root, "taskFilterChip_all", Qt.Key_Return)
 if root.property("currentFilter") != "all" or tasks.rowCount() != 3:
