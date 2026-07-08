@@ -710,26 +710,14 @@ Rectangle {
                         clip: true
                         contentWidth: availableWidth
 
-                        TextArea {
+                        AppTextArea {
                             id: editor
                             objectName: "notesEditorTextArea"
                             width: editScroll.availableWidth
                             text: root.notesController ? root.notesController.draft : ""
-                            property bool qaForceKeyboardFocus: false
-                            readonly property bool qaVisualFocus: activeFocus
-                            readonly property real qaContentWidth: contentWidth
-                            readonly property real qaTextAvailableWidth: Math.max(0, width - leftPadding - rightPadding)
-                            readonly property bool qaTextFits: !visible || qaContentWidth <= qaTextAvailableWidth + 1.0
-                            readonly property string qaText: text || placeholderText
                             onTextChanged: {
                                 if (root.notesController && root.notesController.editing) {
                                     root.notesController.draft = text
-                                }
-                            }
-
-                            onQaForceKeyboardFocusChanged: {
-                                if (qaForceKeyboardFocus) {
-                                    forceActiveFocus(Qt.TabFocusReason)
                                 }
                             }
 
@@ -748,16 +736,11 @@ Rectangle {
                                 }
                             }
 
-                            background: Rectangle {
-                                color: Theme.colors.bgBase
-                            }
-
+                            backgroundColor: Theme.colors.bgBase
+                            normalBorderWidth: 0
+                            focusedBorderWidth: 0
+                            backgroundRadius: 0
                             font.family: Theme.monoFonts[0]
-                            font.pixelSize: Theme.fontSize.bodySm
-                            color: Theme.colors.textPrimary
-                            wrapMode: TextEdit.Wrap
-                            selectByMouse: true
-                            selectByKeyboard: true
 
                             leftPadding: Theme.space.xxxl
                             rightPadding: Theme.space.xxxl
