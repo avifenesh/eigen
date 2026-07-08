@@ -111,7 +111,7 @@ Rectangle {
 
                 // Filter chips
                 Rectangle {
-                    Layout.preferredHeight: 36
+                    Layout.preferredHeight: 52
                     color: Theme.colors.bgWell
                     border.width: 1
                     border.color: Theme.colors.borderHairline
@@ -131,8 +131,8 @@ Rectangle {
                                 readonly property bool selected: root.currentFilter === modelData
                                 readonly property bool qaVisualFocus: activeFocus
                                 readonly property bool qaIsTaskChip: true
-                                readonly property real horizontalInset: Theme.space.xxxxl + Theme.space.lg
-                                readonly property real verticalInset: Theme.space.lg
+                                readonly property real horizontalInset: Theme.space.xxxxl + Theme.space.xl
+                                readonly property real verticalInset: Theme.space.lg + Theme.space.xxs
                                 readonly property string qaAccessibleName: chipLabel.text + " task filter"
                                 readonly property bool qaTextFits: chipLabel.implicitWidth <= chipLabel.width + 1.0
                                 readonly property real qaLeftTextInset: chipLabel.x + Math.max(0, (chipLabel.width - chipLabel.paintedWidth) / 2)

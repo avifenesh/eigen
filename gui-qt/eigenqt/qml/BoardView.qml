@@ -93,8 +93,8 @@ Rectangle {
         property string fontFamily: Theme.monoFonts[0]
         property int fontPixelSize: Theme.fontSize.micro
         property int fontWeight: Theme.fontWeight.medium
-        property real horizontalPadding: Theme.space.xxxxl + Theme.space.lg
-        property real verticalPadding: Theme.space.lg
+        property real horizontalPadding: Theme.space.xxxxl + Theme.space.xl
+        property real verticalPadding: Theme.space.lg + Theme.space.xxs
 
         readonly property bool qaIsBoardBadge: true
         readonly property bool qaTextFits: badgeLabel.implicitWidth <= badgeLabel.width + 1.0
@@ -539,9 +539,11 @@ Rectangle {
                         model: ownerOptions
                         delegate: Rectangle {
                             objectName: "boardOwnerFilterChip_" + root.safeObjectName(modelData.value)
-                            readonly property real horizontalInset: Theme.space.xxxxl + Theme.space.lg
-                            readonly property real verticalInset: Theme.space.lg
+                            readonly property real horizontalInset: Theme.space.xxxxl + Theme.space.xl
+                            readonly property real verticalInset: Theme.space.lg + Theme.space.xxs
                             readonly property bool qaIsBoardChip: true
+                            readonly property bool qaVisualFocus: activeFocus
+                            readonly property string qaAccessibleName: modelData.label + " board owner filter"
                             readonly property bool qaTextFits: ownerLabel.implicitWidth <= ownerLabel.width + 1.0
                             readonly property real qaLeftTextInset: ownerLabel.x + Math.max(0, (ownerLabel.width - ownerLabel.paintedWidth) / 2)
                             readonly property real qaRightTextInset: width - (ownerLabel.x + ownerLabel.width / 2 + ownerLabel.paintedWidth / 2)
@@ -553,9 +555,23 @@ Rectangle {
                             width: ownerLabel.implicitWidth + horizontalInset * 2
                             height: Math.max(38, ownerLabel.implicitHeight + verticalInset * 2)
                             radius: Theme.radius.full
-                            color: modelData.value === ownerFilter ? Theme.colors.brandBright : Theme.colors.bgRaised
+                            activeFocusOnTab: true
+                            focusPolicy: Qt.StrongFocus
+                            Accessible.role: Accessible.Button
+                            Accessible.name: qaAccessibleName
+                            Accessible.description: modelData.value === ownerFilter ? "Selected board owner filter" : "Filter board by " + modelData.label
+                            Accessible.onPressAction: activate()
+                            color: modelData.value === ownerFilter ? Theme.colors.brandBright : (activeFocus ? Theme.colors.stateFocusBg : (ownerMouse.containsMouse ? Theme.colors.stateHover : Theme.colors.bgRaised))
                             border.width: 1
-                            border.color: modelData.value === ownerFilter ? Theme.colors.brandBright : Theme.colors.borderSubtle
+                            border.color: activeFocus ? Theme.colors.brandBright : (modelData.value === ownerFilter ? Theme.colors.brandBright : Theme.colors.borderSubtle)
+
+                            function activate() {
+                                ownerFilter = modelData.value
+                            }
+
+                            Keys.onReturnPressed: activate()
+                            Keys.onEnterPressed: activate()
+                            Keys.onSpacePressed: activate()
 
                             Label {
                                 id: ownerLabel
@@ -572,9 +588,11 @@ Rectangle {
                             }
 
                             MouseArea {
+                                id: ownerMouse
                                 anchors.fill: parent
+                                hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: ownerFilter = modelData.value
+                                onClicked: parent.activate()
                             }
                         }
                     }
@@ -587,9 +605,11 @@ Rectangle {
                         model: stateOptions
                         delegate: Rectangle {
                             objectName: "boardStateFilterChip_" + root.safeObjectName(modelData.value)
-                            readonly property real horizontalInset: Theme.space.xxxxl + Theme.space.lg
-                            readonly property real verticalInset: Theme.space.lg
+                            readonly property real horizontalInset: Theme.space.xxxxl + Theme.space.xl
+                            readonly property real verticalInset: Theme.space.lg + Theme.space.xxs
                             readonly property bool qaIsBoardChip: true
+                            readonly property bool qaVisualFocus: activeFocus
+                            readonly property string qaAccessibleName: modelData.label + " board state filter"
                             readonly property bool qaTextFits: stateLabel.implicitWidth <= stateLabel.width + 1.0
                             readonly property real qaLeftTextInset: stateLabel.x + Math.max(0, (stateLabel.width - stateLabel.paintedWidth) / 2)
                             readonly property real qaRightTextInset: width - (stateLabel.x + stateLabel.width / 2 + stateLabel.paintedWidth / 2)
@@ -601,9 +621,23 @@ Rectangle {
                             width: stateLabel.implicitWidth + horizontalInset * 2
                             height: Math.max(38, stateLabel.implicitHeight + verticalInset * 2)
                             radius: Theme.radius.full
-                            color: modelData.value === stateFilter ? Theme.colors.brandBright : Theme.colors.bgRaised
+                            activeFocusOnTab: true
+                            focusPolicy: Qt.StrongFocus
+                            Accessible.role: Accessible.Button
+                            Accessible.name: qaAccessibleName
+                            Accessible.description: modelData.value === stateFilter ? "Selected board state filter" : "Filter board to " + modelData.label
+                            Accessible.onPressAction: activate()
+                            color: modelData.value === stateFilter ? Theme.colors.brandBright : (activeFocus ? Theme.colors.stateFocusBg : (stateMouse.containsMouse ? Theme.colors.stateHover : Theme.colors.bgRaised))
                             border.width: 1
-                            border.color: modelData.value === stateFilter ? Theme.colors.brandBright : Theme.colors.borderSubtle
+                            border.color: activeFocus ? Theme.colors.brandBright : (modelData.value === stateFilter ? Theme.colors.brandBright : Theme.colors.borderSubtle)
+
+                            function activate() {
+                                stateFilter = modelData.value
+                            }
+
+                            Keys.onReturnPressed: activate()
+                            Keys.onEnterPressed: activate()
+                            Keys.onSpacePressed: activate()
 
                             Label {
                                 id: stateLabel
@@ -620,9 +654,11 @@ Rectangle {
                             }
 
                             MouseArea {
+                                id: stateMouse
                                 anchors.fill: parent
+                                hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: stateFilter = modelData.value
+                                onClicked: parent.activate()
                             }
                         }
                     }

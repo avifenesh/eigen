@@ -705,7 +705,7 @@ def assert_app_tags_have_padding(view_name, root_item):
             if visible and width > 0 and height > 0:
                 horizontal_padding = float(item.property("qaHorizontalPadding") or 0)
                 vertical_padding = float(item.property("qaVerticalPadding") or 0)
-                if item.property("qaTextFits") is not True or horizontal_padding < 43.5 or vertical_padding < 11.5:
+                if item.property("qaTextFits") is not True or horizontal_padding < 47.5 or vertical_padding < 13.5:
                     failures.append(
                         f"{item.objectName() or '<unnamed>'} "
                         f"fits={item.property('qaTextFits')} "
@@ -734,7 +734,7 @@ def assert_marked_chips_have_padding(view_name, root_item, markers, label):
             if visible and width > 0 and height > 0:
                 horizontal_padding = float(item.property("qaHorizontalPadding") or 0)
                 vertical_padding = float(item.property("qaVerticalPadding") or 0)
-                if item.property("qaTextFits") is not True or horizontal_padding < 43.5 or vertical_padding < 11.5:
+                if item.property("qaTextFits") is not True or horizontal_padding < 47.5 or vertical_padding < 13.5:
                     failures.append(
                         f"{item.objectName() or '<unnamed>'} "
                         f"fits={item.property('qaTextFits')} "
@@ -1492,7 +1492,7 @@ def main():
             tag = find_item(root, object_name)
             if tag is None or tag.property("qaIsAppTag") is not True:
                 raise AssertionError(f"home tag {object_name} did not use AppTag")
-            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 43.5 or float(tag.property("qaVerticalPadding") or 0) < 11.5:
+            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 47.5 or float(tag.property("qaVerticalPadding") or 0) < 13.5:
                 raise AssertionError(
                     f"home tag {object_name} is cramped: "
                     f"fits={tag.property('qaTextFits')} padding={tag.property('qaHorizontalPadding')}x{tag.property('qaVerticalPadding')}"
@@ -1854,7 +1854,7 @@ def main():
             )
         if status_tag.property("qaIsAppTag") is not True:
             raise AssertionError("chat terminal status did not use AppTag")
-        if status_tag.property("qaTextFits") is not True or float(status_tag.property("qaHorizontalPadding") or 0) < 43.5 or float(status_tag.property("qaVerticalPadding") or 0) < 11.5:
+        if status_tag.property("qaTextFits") is not True or float(status_tag.property("qaHorizontalPadding") or 0) < 47.5 or float(status_tag.property("qaVerticalPadding") or 0) < 13.5:
             raise AssertionError(
                 "chat terminal status rendered cramped: "
                 f"fits={status_tag.property('qaTextFits')} "
@@ -2360,6 +2360,37 @@ def main():
 
     ok = capture_view("board", "BoardView.qml", setup_board, show_board_projects) and ok
 
+    def show_board_filter_focus(view, root):
+        for _ in range(8):
+            app.processEvents()
+        chip = find_item(root, "boardStateFilterChip_dirty")
+        if chip is None or chip.property("qaIsBoardChip") is not True:
+            raise AssertionError("board filter focus screenshot did not render the dirty filter chip")
+        if (
+            chip.property("qaTextFits") is not True
+            or float(chip.property("qaHorizontalPadding") or 0) < 47.5
+            or float(chip.property("qaVerticalPadding") or 0) < 13.5
+        ):
+            raise AssertionError("board filter focus screenshot rendered a cramped dirty filter chip")
+        chip.forceActiveFocus(Qt.TabFocusReason)
+        for _ in range(8):
+            app.processEvents()
+        if chip.property("qaVisualFocus") is not True:
+            raise AssertionError("board filter focus screenshot did not expose focus")
+        if chip.property("qaAccessibleName") != "Uncommitted board state filter":
+            raise AssertionError(f"board filter accessible name was {chip.property('qaAccessibleName')!r}")
+        QTest.keyClick(view, Qt.Key_Space)
+        for _ in range(8):
+            app.processEvents()
+        if root.property("stateFilter") != "dirty":
+            raise AssertionError("board filter keyboard activation did not update the state filter")
+        filtered_state = find_item(root, "boardProjectsState_filtered")
+        if filtered_state is not None and filtered_state.property("visible") is True:
+            raise AssertionError("board filter focus screenshot unexpectedly showed the filtered empty state")
+        assert_board_chips_have_padding("board-filter-focus", root)
+
+    ok = capture_view("board-filter-focus", "BoardView.qml", setup_board, show_board_filter_focus) and ok
+
     def show_board_kanban(_view, root):
         root.setProperty("viewMode", "kanban")
         for _ in range(8):
@@ -2373,7 +2404,7 @@ def main():
             tag = find_item(root, object_name)
             if tag is None or tag.property("qaIsAppTag") is not True:
                 raise AssertionError(f"kanban tag {object_name} did not use AppTag")
-            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 43.5 or float(tag.property("qaVerticalPadding") or 0) < 11.5:
+            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 47.5 or float(tag.property("qaVerticalPadding") or 0) < 13.5:
                 raise AssertionError(
                     f"kanban tag {object_name} is cramped: "
                     f"fits={tag.property('qaTextFits')} padding={tag.property('qaHorizontalPadding')}x{tag.property('qaVerticalPadding')}"
@@ -2620,7 +2651,7 @@ def main():
             tag = find_item(root, object_name)
             if tag is None or tag.property("qaIsAppTag") is not True:
                 raise AssertionError(f"skills tag {object_name} did not use AppTag")
-            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 43.5 or float(tag.property("qaVerticalPadding") or 0) < 11.5:
+            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 47.5 or float(tag.property("qaVerticalPadding") or 0) < 13.5:
                 raise AssertionError(
                     f"skills tag {object_name} is cramped: "
                     f"fits={tag.property('qaTextFits')} padding={tag.property('qaHorizontalPadding')}x{tag.property('qaVerticalPadding')}"
@@ -2670,7 +2701,7 @@ def main():
         preview_tag = find_item(root, "skillPreviewSourceTag_frontend-design")
         if preview_tag is None or preview_tag.property("qaIsAppTag") is not True:
             raise AssertionError("skills preview source tag did not use AppTag")
-        if preview_tag.property("qaTextFits") is not True or float(preview_tag.property("qaHorizontalPadding") or 0) < 43.5 or float(preview_tag.property("qaVerticalPadding") or 0) < 11.5:
+        if preview_tag.property("qaTextFits") is not True or float(preview_tag.property("qaHorizontalPadding") or 0) < 47.5 or float(preview_tag.property("qaVerticalPadding") or 0) < 13.5:
             raise AssertionError(
                 "skills preview source tag is cramped: "
                 f"fits={preview_tag.property('qaTextFits')} "
