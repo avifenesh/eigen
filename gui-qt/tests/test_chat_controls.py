@@ -936,6 +936,40 @@ if chat.property("qaTranscriptRows") != 1:
     raise AssertionError(f"Seeded transcript did not reach ChatView: {chat.property('qaTranscriptRows')}")
 if float(chat.property("qaTranscriptContentHeight") or 0) <= 0:
     raise AssertionError("Seeded transcript rendered with zero height")
+transcript_list = find_item(chat, "chatTranscriptList")
+if transcript_list is None:
+    raise AssertionError("Transcript list did not expose an objectName")
+for i in range(32):
+    transcript.appendNote(f"rapid stream row {i}")
+QTest.qWait(50)
+pump(app, 40)
+if chat.property("qaTranscriptAtBottom") is not True or chat.property("qaTranscriptStickToBottom") is not True:
+    raise AssertionError(
+        "Transcript list did not stay pinned after rapid inserts: "
+        f"atBottom={chat.property('qaTranscriptAtBottom')} "
+        f"stick={chat.property('qaTranscriptStickToBottom')} "
+        f"contentY={chat.property('qaTranscriptContentY')} "
+        f"originY={transcript_list.property('originY')} "
+        f"contentHeight={transcript_list.property('contentHeight')} "
+        f"height={transcript_list.property('height')}"
+    )
+bottom_y = float(chat.property("qaTranscriptContentY") or 0)
+transcript_list.setProperty("contentY", max(0, bottom_y - 160))
+transcript_list.setProperty("stickToBottom", False)
+pump(app, 16)
+if chat.property("qaTranscriptStickToBottom") is not False:
+    raise AssertionError("Transcript list did not release bottom pin after user scroll-up")
+held_y = float(chat.property("qaTranscriptContentY") or 0)
+transcript.appendNote("new row while reading older context")
+QTest.qWait(50)
+pump(app, 32)
+if abs(float(chat.property("qaTranscriptContentY") or 0) - held_y) > 2:
+    raise AssertionError("Transcript list jumped to bottom after the user had scrolled up")
+transcript_list.setProperty("stickToBottom", True)
+origin_y = float(transcript_list.property("originY") or 0)
+max_y = max(origin_y, origin_y + float(transcript_list.property("contentHeight") or 0) - float(transcript_list.property("height") or 0))
+transcript_list.setProperty("contentY", max_y)
+pump(app, 16)
 
 click_item(app, chat_view, chat, "chatBackButton")
 if len(back_count) != 1:

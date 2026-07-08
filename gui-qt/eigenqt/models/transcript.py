@@ -48,6 +48,7 @@ class TranscriptModel(QAbstractListModel):
         self._client = client
         self._session_id = session_id
         self._rows: list[TranscriptRow] = []
+        self._staged_rows: list[TranscriptRow] | None = None
         self._pending_ops: list[RowOp] = []
         self._has_streaming = False
         # data() is a scroll-time hot path: ListView refetches roles for every
@@ -180,14 +181,19 @@ class TranscriptModel(QAbstractListModel):
         event = data.get("event", {})
         replay = data.get("replay", False)
 
-        # Fold event → row ops
-        ops = fold_event(self._rows, event, replay)
+        # Fold events against staged rows. Qt requires beginInsertRows before
+        # rowCount changes, so the visible model is only mutated at flush time.
+        if self._staged_rows is None:
+            self._staged_rows = self._clone_rows(self._rows)
+        ops = fold_event(self._staged_rows, event, replay)
         self._pending_ops.extend(ops)
-        self._sync_streaming_state()
+        self._sync_streaming_state(self._staged_rows)
 
         # Restart 16ms timer (coalesce deltas)
         if self._pending_ops and not self._flush_timer.isActive():
             self._flush_timer.start()
+        elif not self._pending_ops:
+            self._staged_rows = None
 
     @Slot(str)
     def _on_dropped(self, channel: str):
@@ -212,6 +218,7 @@ class TranscriptModel(QAbstractListModel):
         rows = rebuild_from_state(state)
         self.beginResetModel()
         self._rows = rows
+        self._staged_rows = None
         self._pending_ops.clear()
         self._blocks_cache.clear()
         self.endResetModel()
@@ -250,6 +257,7 @@ class TranscriptModel(QAbstractListModel):
         """Clear visible transcript rows after a successful Clear RPC."""
         self.beginResetModel()
         self._rows.clear()
+        self._staged_rows = None
         self._pending_ops.clear()
         self._blocks_cache.clear()
         self.endResetModel()
@@ -281,22 +289,29 @@ class TranscriptModel(QAbstractListModel):
 
         self._pending_ops.clear()
 
-        # Apply inserts (batch if contiguous)
-        if inserts:
-            # Sort by row (should already be in order from fold_event)
-            inserts.sort(key=lambda x: x[0])
-            # For now: single beginInsertRows call for all (they're appends)
-            # (Real batching would find contiguous ranges; unnecessary for append-only)
-            # Just notify the range
-            first = inserts[0][0]
-            last = inserts[-1][0]
+        staged_rows = self._staged_rows
+        if staged_rows is None:
+            return
+
+        old_count = len(self._rows)
+
+        # Apply inserts (batched appends). The event fold only appends rows.
+        if inserts and len(staged_rows) > old_count:
+            first = old_count
+            last = len(staged_rows) - 1
             self.beginInsertRows(QModelIndex(), first, last)
-            # Rows already added by fold_event
+            self._rows.extend(self._clone_rows(staged_rows[first : last + 1]))
             self.endInsertRows()
+            self._blocks_cache.clear()
 
         # Apply updates (single dataChanged for all changed rows)
+        rows_list: list[int] = []
         if updates:
-            rows_list = sorted(updates)
+            rows_list = sorted(row for row in updates if 0 <= row < len(self._rows))
+            for row in rows_list:
+                self._rows[row] = self._clone_row(staged_rows[row])
+                self._blocks_cache.pop(row, None)
+        if rows_list:
             # Find contiguous ranges
             ranges: list[tuple[int, int]] = []
             start = rows_list[0]
@@ -316,21 +331,45 @@ class TranscriptModel(QAbstractListModel):
                 bottom_right = self.index(end, 0)
                 self.dataChanged.emit(top_left, bottom_right, [])
 
-        # Apply removes (not currently used; tool of future cleanup)
+        # Apply removes (not currently used; tool of future cleanup).
         for row in sorted(removes, reverse=True):
-            self.beginRemoveRows(QModelIndex(), row, row)
-            del self._rows[row]
-            self.endRemoveRows()
+            if 0 <= row < len(self._rows):
+                self.beginRemoveRows(QModelIndex(), row, row)
+                del self._rows[row]
+                self.endRemoveRows()
         if removes:
-            self._sync_streaming_state()
+            self._blocks_cache.clear()
 
-    def _sync_streaming_state(self) -> None:
+        self._staged_rows = None
+        self._sync_streaming_state()
+
+    def _sync_streaming_state(self, rows: list[TranscriptRow] | None = None) -> None:
         """Emit hasStreaming only when the aggregate streaming state changes."""
-        has_streaming = any(row.streaming for row in self._rows)
+        rows = self._rows if rows is None else rows
+        has_streaming = any(row.streaming for row in rows)
         if self._has_streaming == has_streaming:
             return
         self._has_streaming = has_streaming
         self.streamingChanged.emit()
+
+    @staticmethod
+    def _clone_row(row: TranscriptRow) -> TranscriptRow:
+        """Clone a mutable transcript row for staged event folding."""
+        return TranscriptRow(
+            kind=row.kind,
+            text=row.text,
+            tool_name=row.tool_name,
+            tool_id=row.tool_id,
+            tool_args=row.tool_args,
+            tool_status=row.tool_status,
+            streaming=row.streaming,
+            reasoning=row.reasoning,
+            step=row.step,
+        )
+
+    @classmethod
+    def _clone_rows(cls, rows: list[TranscriptRow]) -> list[TranscriptRow]:
+        return [cls._clone_row(row) for row in rows]
 
     def detach(self):
         """Detach from session (unsubscribe, stop timer)."""
