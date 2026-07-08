@@ -30,7 +30,7 @@ cd "\$REPO"
 needs_build=0
 if [[ ! -x "\$BIN" ]]; then
   needs_build=1
-elif [[ -n "\$(find . -path ./bin -prune -o -name '*.go' -newer "\$BIN" -print 2>/dev/null | head -1)" ]]; then
+elif [[ -n "\$(find . \( -name '.git' -o -name '.venv' -o -name 'node_modules' -o -name 'bin' \) -prune -o -name '*.go' -newer "\$BIN" -print 2>/dev/null | head -1)" ]]; then
   needs_build=1
 fi
 
@@ -54,7 +54,7 @@ Type=Application
 Name=$name
 GenericName=$generic_name
 Comment=Eigen Qt desktop GUI - local-first AI coding agent
-Exec=$LAUNCHER
+Exec="$LAUNCHER"
 Icon=eigen
 Terminal=false
 Categories=Development;

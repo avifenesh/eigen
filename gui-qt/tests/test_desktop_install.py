@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_install_desktop_writes_qt_launcher_and_primary_entry(tmp_path):
-    fake_repo = tmp_path / "repo"
+    fake_repo = tmp_path / "repo with spaces"
     fake_repo.mkdir()
     (fake_repo / "gui-qt").mkdir()
     (fake_repo / "gui-qt" / "run.sh").write_text(
@@ -24,8 +24,8 @@ def test_install_desktop_writes_qt_launcher_and_primary_entry(tmp_path):
         encoding="utf-8",
     )
 
-    bin_dir = tmp_path / "bin"
-    applications_dir = tmp_path / "applications"
+    bin_dir = tmp_path / "bin with spaces"
+    applications_dir = tmp_path / "applications with spaces"
     env = os.environ.copy()
     env.update(
         {
@@ -57,11 +57,11 @@ def test_install_desktop_writes_qt_launcher_and_primary_entry(tmp_path):
 
     primary_text = primary_entry.read_text(encoding="utf-8")
     assert "Name=Eigen\n" in primary_text
-    assert f"Exec={launcher}\n" in primary_text
+    assert f'Exec="{launcher}"\n' in primary_text
 
     qt_text = qt_entry.read_text(encoding="utf-8")
     assert "Name=Eigen (Qt)\n" in qt_text
-    assert f"Exec={launcher}\n" in qt_text
+    assert f'Exec="{launcher}"\n' in qt_text
 
     launch = subprocess.run(
         [str(launcher), "--probe"],
@@ -71,3 +71,9 @@ def test_install_desktop_writes_qt_launcher_and_primary_entry(tmp_path):
     )
     assert "eigen-qt: building core binary via 'make core'..." in launch.stderr
     assert launch.stdout == "qt-run:--probe\n"
+
+    launcher_text = launcher.read_text(encoding="utf-8")
+    assert "-name '.git'" in launcher_text
+    assert "-name '.venv'" in launcher_text
+    assert "-name 'node_modules'" in launcher_text
+    assert "-name 'bin'" in launcher_text
