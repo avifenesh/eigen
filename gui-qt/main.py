@@ -226,6 +226,9 @@ class SessionController(QObject):
         self._session_state_model = SessionStateModel(client, "", parent)
         self._commands_model = CommandsModel(client, parent)
         self._state_seq = 0
+        connected = getattr(self._client, "connected", None)
+        if connected is not None:
+            connected.connect(self._on_connected)
 
     @Property(str, notify=sessionIdChanged)
     def session_id(self):
@@ -266,12 +269,25 @@ class SessionController(QObject):
         self._client.subscribe([channel])
 
         # Fetch initial state
+        self._fetch_state()
+
+    @Slot()
+    def _on_connected(self):
+        """Refetch the open chat after a startup/reconnect socket race."""
+        if not self._session_id:
+            return
+        self._fetch_state()
+
+    def _fetch_state(self):
+        """Fetch the current session snapshot if a chat is open."""
+        if not self._session_id:
+            return
         self._state_seq += 1
         controller_seq = self._state_seq
         state_seq = self._session_state_model.beginStateRequest()
         self._client.call(
             "State",
-            session_id,
+            self._session_id,
             callback=lambda result, seq=controller_seq, state_seq=state_seq: self._on_state(
                 result,
                 seq,

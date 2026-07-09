@@ -148,7 +148,12 @@ class CommandsModel(QAbstractListModel):
         self._filter = ""
         self._load_error = ""
 
-        # Fetch commands on init
+        connected = getattr(self._client, "connected", None)
+        if connected is not None:
+            connected.connect(self._on_connected)
+
+        # Fetch commands on init for tests/already-connected clients; a startup
+        # "not connected" result is retried from _on_connected.
         self._fetch_commands()
 
     def roleNames(self) -> dict[int, bytes]:
@@ -213,6 +218,14 @@ class CommandsModel(QAbstractListModel):
     def clearLoadError(self) -> None:
         self._set_load_error("")
 
+    @Slot()
+    def refresh(self) -> None:
+        self._fetch_commands()
+
+    @Slot()
+    def _on_connected(self) -> None:
+        self._fetch_commands()
+
     def _filtered_commands(self) -> list[dict]:
         """Return commands matching the current filter."""
         return filter_command_rows(self._commands, self._filter)
@@ -234,7 +247,11 @@ class CommandsModel(QAbstractListModel):
 
         def on_result(result: dict) -> None:
             if "error" in result:
-                self._set_load_error(f"Could not load custom slash commands: {_err_text(result.get('error'))}")
+                error_text = _err_text(result.get("error"))
+                if error_text.lower() == "not connected":
+                    self._set_load_error("")
+                    return
+                self._set_load_error(f"Could not load custom slash commands: {error_text}")
                 return
             commands = result.get("result") or []
             if not isinstance(commands, list):

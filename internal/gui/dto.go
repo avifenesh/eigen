@@ -113,6 +113,7 @@ type SessionStateDTO struct {
 	Roots     []string              `json:"roots,omitempty"`
 	Shells    []daemon.ShellInfo    `json:"shells,omitempty"`
 	Pending   []daemon.ApprovalInfo `json:"pending,omitempty"`
+	Catalog   *RoutingDTO           `json:"catalog,omitempty"`
 }
 
 // CompactResultDTO reports a compaction's message-count delta.

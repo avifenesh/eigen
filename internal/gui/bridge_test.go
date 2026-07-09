@@ -115,6 +115,31 @@ func TestWireEventDTO(t *testing.T) {
 	}
 }
 
+func TestSessionStateDTOCarriesRoutingCatalog(t *testing.T) {
+	models := llm.Models()
+	if len(models) == 0 {
+		t.Fatal("model catalog is empty")
+	}
+
+	dto := withCatalog(toSessionStateDTO(&daemon.SessionState{Model: models[0].ID}))
+	if dto.Catalog == nil {
+		t.Fatal("session state catalog was nil")
+	}
+	if len(dto.Catalog.Models) == 0 {
+		t.Fatal("session state catalog has no models")
+	}
+	found := false
+	for _, model := range dto.Catalog.Models {
+		if model.ID == models[0].ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("session state catalog missing current catalog model %q", models[0].ID)
+	}
+}
+
 // TestStopPumpCloseOnce proves the teardown guards are panic-free under the
 // concurrent paths that exist in production: Shutdown's loop, Unsubscribe, and
 // the watchdog can all race to close the same pump's stop channel + client.

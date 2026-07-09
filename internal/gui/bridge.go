@@ -417,7 +417,7 @@ func (b *Bridge) State(id string) (*SessionStateDTO, error) {
 	if err != nil {
 		return nil, err
 	}
-	return toSessionStateDTO(st), nil
+	return withCatalog(toSessionStateDTO(st)), nil
 }
 
 // ---- turn I/O ----
@@ -515,7 +515,14 @@ func (b *Bridge) setThen(id string, fn func(c *daemon.Client, realID string) err
 	if err != nil {
 		return nil, err
 	}
-	return toSessionStateDTO(st), nil
+	return withCatalog(toSessionStateDTO(st)), nil
+}
+
+func withCatalog(dto *SessionStateDTO) *SessionStateDTO {
+	if dto != nil {
+		dto.Catalog = routingSnapshot()
+	}
+	return dto
 }
 
 // SetModel switches the session's model.

@@ -264,6 +264,95 @@ def test_session_controller_ignores_stale_initial_state_reply():
     )
 
 
+def test_session_controller_refetches_open_chat_after_startup_connect():
+    app = QCoreApplication.instance() or QCoreApplication([])
+
+    import main
+
+    class StartupClient(QObject):
+        connected = Signal()
+        event = Signal(str, dict)
+        dropped = Signal(str)
+
+        def __init__(self):
+            super().__init__()
+            self.ready = False
+            self.calls = []
+            self.subscriptions = []
+
+        def call(self, method, *args, callback=None):
+            self.calls.append({"method": method, "args": args})
+            if callback is None:
+                return
+            if not self.ready:
+                callback({"error": "not connected"})
+                return
+            if method == "Commands":
+                callback({"result": []})
+                return
+            if method == "State":
+                callback({"result": state()})
+                return
+            callback({"result": {}})
+
+        def subscribe(self, channels):
+            self.subscriptions.append(list(channels))
+
+        def unsubscribe(self, channels):
+            self.subscriptions.append([f"unsub:{channel}" for channel in channels])
+
+    class Watcher:
+        def __init__(self):
+            self.current = []
+
+        def set_current_session(self, session_id):
+            self.current.append(session_id)
+
+    def state():
+        return {
+            "model": "local-qwen",
+            "effort": "high",
+            "perm": "gated",
+            "title": "Qt chat",
+            "goal": "",
+            "search": "auto",
+            "fast": False,
+            "fastOk": True,
+            "tools": [],
+            "running": False,
+            "roots": ["/repo/eigen"],
+            "catalog": {
+                "models": [
+                    {"id": "gpt-5", "effortLevels": ["low", "high"]},
+                    {"id": "local-qwen", "effortLevels": ["low", "medium", "high"]},
+                ],
+                "providers": [],
+            },
+            "messages": [{"role": "user", "text": "state after connect"}],
+            "pending": [],
+        }
+
+    client = StartupClient()
+    controller = main.SessionController(client, Watcher())
+
+    controller.open_session("s-chat")
+    app.processEvents()
+
+    assert controller.session_state_model.model == ""
+    assert controller.session_state_model.catalog == []
+    assert [call["method"] for call in client.calls].count("State") == 1
+
+    client.ready = True
+    client.connected.emit()
+    app.processEvents()
+
+    assert [call["method"] for call in client.calls].count("State") == 2
+    assert controller.session_state_model.model == "local-qwen"
+    assert controller.session_state_model.catalog == ["gpt-5", "local-qwen"]
+    assert controller.session_state_model.effortLevels == ["low", "medium", "high"]
+    assert controller.transcript_model.rowCount() == 1
+
+
 def test_rpc_call_send_failure_reports_error_without_raising(monkeypatch):
     from eigenqt.rpc.client import RpcClient
 
