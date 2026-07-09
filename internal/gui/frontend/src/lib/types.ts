@@ -75,6 +75,7 @@ export type SessionStateDTO = {
   roots?: string[];
   shells?: ShellInfo[];
   pending?: ApprovalInfo[];
+  catalog?: RoutingDTO;
 };
 
 export type CompactResultDTO = { before: number; after: number };

@@ -2570,6 +2570,14 @@
       "kind": "struct",
       "fields": [
         {
+          "name": "Catalog",
+          "type": "*gui.RoutingDTO",
+          "jsonTag": "catalog,omitempty",
+          "tags": {
+            "json": "catalog,omitempty"
+          }
+        },
+        {
           "name": "Effort",
           "type": "string",
           "jsonTag": "effort,omitempty",
@@ -2706,7 +2714,7 @@
           }
         }
       ],
-      "hash": "cb98f3303322a006"
+      "hash": "637f3bb495aaaea1"
     },
     "*gui.SkillInstallDTO": {
       "kind": "struct",

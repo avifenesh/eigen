@@ -46,6 +46,10 @@ var providerUniverse = []string{"mantle", "converse", "anthropic", "codex", "gro
 // Routing returns the model catalog (each flagged with provider availability)
 // and the provider credential status.
 func (b *Bridge) Routing() (*RoutingDTO, error) {
+	return routingSnapshot(), nil
+}
+
+func routingSnapshot() *RoutingDTO {
 	avail := map[string]bool{}
 	for _, p := range providerUniverse {
 		avail[p] = llm.ProviderAvailable(p)
@@ -110,5 +114,5 @@ func (b *Bridge) Routing() (*RoutingDTO, error) {
 		provs = append(provs, ProviderDTO{Name: p, Credentialed: availFor(p), ModelCount: counts[p]})
 	}
 
-	return &RoutingDTO{Models: out, Providers: provs}, nil
+	return &RoutingDTO{Models: out, Providers: provs}
 }

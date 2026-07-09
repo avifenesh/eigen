@@ -1,4 +1,4 @@
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, Signal
 
 from eigenqt.models.commands import CommandsModel, filter_command_rows
 
@@ -32,6 +32,34 @@ class FakeRpcClient(QObject):
                     ]
                 }
             )
+
+
+class StartupRpcClient(QObject):
+    connected = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.calls = []
+        self.ready = False
+
+    def call(self, method, *args, callback=None):
+        self.calls.append((method, args))
+        if callback is None:
+            return
+        if not self.ready:
+            callback({"error": "not connected"})
+            return
+        callback(
+            {
+                "result": [
+                    {
+                        "name": "ship-it",
+                        "description": "Turn the current diff into a PR",
+                        "scope": "user",
+                    },
+                ]
+            }
+        )
 
 
 def model_rows(model):
@@ -121,4 +149,22 @@ def test_commands_model_surfaces_custom_command_load_error_and_keeps_builtins():
     assert model.loadError == "Could not load custom slash commands: daemon offline"
 
     model.clearLoadError()
+    assert model.loadError == ""
+
+
+def test_commands_model_retries_transient_startup_disconnect_without_banner():
+    client = StartupRpcClient()
+    model = CommandsModel(client)
+
+    assert ("Commands", ()) in client.calls
+    assert model.loadError == ""
+    assert "ship-it" not in [row["name"] for row in model_rows(model)]
+
+    client.ready = True
+    client.connected.emit()
+
+    names = [row["name"] for row in model_rows(model)]
+    assert client.calls.count(("Commands", ())) == 2
+    assert "help" in names
+    assert "ship-it" in names
     assert model.loadError == ""
