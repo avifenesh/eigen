@@ -127,6 +127,50 @@ def test_machines_model_clear_selection_ignores_late_remote_result():
     assert model.remote_loading is False
 
 
+def test_machines_model_installs_host_and_refreshes_selected_sessions():
+    client = fake_client()
+    model = MachinesModel(client)
+    model._on_machines_result({"result": machines_payload()})
+    model.select_machine("codex-box")
+    client.call.reset_mock()
+
+    model.install_machine(" codex-box ", False)
+
+    assert client.call.call_args.args[:3] == ("InstallRemote", "codex-box", False)
+    assert model.installing is True
+    assert model.install_message == ""
+    assert model.install_error == ""
+
+    callback = client.call.call_args.kwargs["callback"]
+    callback({"result": "Eigen installed on codex-box"})
+
+    assert model.installing is False
+    assert model.install_error == ""
+    assert model.install_message == "Eigen installed on codex-box"
+    assert client.call.call_args.args[:2] == ("RemoteSessions", "codex-box")
+
+
+def test_machines_model_rejects_empty_or_concurrent_install_and_surfaces_errors():
+    client = fake_client()
+    model = MachinesModel(client)
+
+    model.install_machine("", True)
+    assert client.call.call_count == 0
+
+    model.install_machine("lab-node", True)
+    callback = client.call.call_args.kwargs["callback"]
+    model.install_machine("codex-box", False)
+
+    assert client.call.call_count == 1
+    assert model.installing is True
+
+    callback({"error": {"message": "ssh denied"}})
+
+    assert model.installing is False
+    assert model.install_message == ""
+    assert model.install_error == "ssh denied"
+
+
 def test_machines_model_refresh_updates_selected_machine_details():
     model = MachinesModel(fake_client())
     model._on_machines_result({"result": machines_payload()})

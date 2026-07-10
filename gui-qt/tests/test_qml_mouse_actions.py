@@ -1551,6 +1551,22 @@ def check_utility_load_errors(app, client):
             (),
             flick_name="machinesFlick",
         )
+
+        machines._set_load_error("")
+        machines.select_machine("codex-box")
+        install_button = find_visual_item(root, "machinesInstallButton")
+        credentials = find_visual_item(root, "machinesCredentialsSwitch")
+        if install_button is None or credentials is None:
+            raise AssertionError("machines view did not render install controls for the selected host")
+        if install_button.property("qaTextFits") is not True:
+            raise AssertionError("machines install button text was clipped")
+        if credentials.property("qaTextFits") is not True or credentials.property("qaAccessibleName") != "Copy local daemon credentials":
+            raise AssertionError("machines credential switch did not expose a usable accessible control")
+
+        machines._set_remote_error("no eigen on codex-box")
+        remote_install = find_visual_item(root, "machinesRemoteInstallButton")
+        if remote_install is None or remote_install.property("qaTextFits") is not True:
+            raise AssertionError("machines remote error did not expose a clean install action")
     finally:
         close_view(app, view)
 

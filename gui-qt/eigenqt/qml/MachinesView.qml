@@ -14,6 +14,7 @@ Rectangle {
     readonly property var selectedMachine: machinesModel ? machinesModel.selected_machine || ({}) : ({})
     readonly property var remoteSessions: machinesModel ? machinesModel.remote_sessions || [] : []
     readonly property bool hasSelection: String(selectedMachine.ssh || "") !== ""
+    property bool copyCredentials: true
     readonly property int qaMachineCount: machinesModel ? machinesModel.machine_count : 0
     readonly property int qaRemoteCount: machinesModel ? machinesModel.remote_count : 0
     signal openSession(string sessionId)
@@ -195,15 +196,25 @@ Rectangle {
                     }
                 }
 
-                RowLayout {
+                Item {
+                    id: machinesContent
                     visible: root.qaMachineCount > 0
+                    width: parent.width
+                    height: stacked
+                        ? machineGrid.height + Theme.space.lg + remotePanel.height
+                        : Math.max(machineGrid.height, remotePanel.height)
                     Layout.fillWidth: true
-                    spacing: Theme.space.lg
+                    Layout.preferredHeight: height
+                    property bool stacked: width < 760
 
                     Flow {
                         id: machineGrid
-                        Layout.fillWidth: true
-                        Layout.alignment: Qt.AlignTop
+                        x: 0
+                        y: 0
+                        width: machinesContent.stacked
+                            ? parent.width
+                            : Math.max(0, parent.width - remotePanel.width - Theme.space.lg)
+                        height: childrenRect.height
                         spacing: Theme.space.md
                         property int columnCount: Math.max(1, Math.floor(width / 304))
                         property real cardWidth: Math.floor((width - (columnCount - 1) * spacing) / columnCount)
@@ -255,7 +266,11 @@ Rectangle {
 
                                         Flow {
                                             spacing: Theme.space.xs
-                                            Layout.maximumWidth: 104
+                                            width: Math.min(144, implicitWidth)
+                                            clip: true
+                                            Layout.preferredWidth: width
+                                            Layout.minimumWidth: 0
+                                            Layout.maximumWidth: 144
 
                                             Repeater {
                                                 model: root.machineTags(machine)
@@ -364,11 +379,10 @@ Rectangle {
                     Rectangle {
                         id: remotePanel
                         objectName: "machinesRemotePanel"
-                        Layout.preferredWidth: 340
-                        Layout.minimumWidth: 300
-                        Layout.maximumWidth: 360
-                        Layout.alignment: Qt.AlignTop
-                        Layout.preferredHeight: Math.max(284, remoteColumn.implicitHeight + Theme.space.xl)
+                        width: Math.min(340, parent.width)
+                        height: Math.max(284, remoteColumn.implicitHeight + Theme.space.xl)
+                        x: machinesContent.stacked ? 0 : parent.width - width
+                        y: machinesContent.stacked ? machineGrid.height + Theme.space.lg : 0
                         radius: Theme.radius.md
                         color: Theme.colors.surfaceRaised
                         border.width: 1
@@ -419,6 +433,186 @@ Rectangle {
                                     Layout.preferredWidth: 28
                                     Layout.preferredHeight: 28
                                     onClicked: if (root.machinesModel) root.machinesModel.clear_selection()
+                                }
+                            }
+
+                            Rectangle {
+                                id: installPanel
+                                objectName: "machinesInstallPanel"
+                                visible: root.hasSelection && root.machinesModel
+                                implicitHeight: visible ? 120 : 0
+                                width: parent ? parent.width : 0
+                                Layout.fillWidth: true
+                                Layout.minimumHeight: visible ? 120 : 0
+                                Layout.preferredHeight: visible ? 120 : 0
+                                radius: Theme.radius.sm
+                                color: Theme.colors.bgWell
+                                border.width: 1
+                                border.color: Theme.colors.borderHairline
+
+                                Column {
+                                    id: installColumn
+                                    anchors.fill: parent
+                                    anchors.margins: Theme.space.lg
+                                    spacing: Theme.space.sm
+
+                                    RowLayout {
+                                        width: parent.width
+                                        height: 28
+                                        spacing: Theme.space.sm
+
+                                        Label {
+                                            text: "Eigen on this host"
+                                            font.family: Theme.uiFonts[0]
+                                            font.pixelSize: Theme.fontSize.bodySm
+                                            font.weight: Theme.fontWeight.semibold
+                                            color: Theme.colors.textPrimary
+                                            Layout.fillWidth: true
+                                            elide: Text.ElideRight
+                                        }
+
+                                        AppButton {
+                                            id: installButton
+                                            objectName: "machinesInstallButton"
+                                            text: root.machinesModel && root.machinesModel.installing ? "Installing..." : "Install / update"
+                                            compact: true
+                                            variant: "primary"
+                                            toolTipText: "Install or update Eigen on this SSH host"
+                                            enabled: root.machinesModel && !root.machinesModel.installing
+                                            Layout.preferredWidth: Math.max(116, implicitWidth)
+                                            Layout.preferredHeight: 28
+                                            onClicked: if (root.machinesModel) root.machinesModel.install_machine(root.selectedMachine.ssh || "", credentialsSwitch.checked)
+                                        }
+                                    }
+
+                                    Label {
+                                        text: "Uses this SSH profile and installs to ~/.local/bin/eigen."
+                                        width: parent.width
+                                        font.family: Theme.uiFonts[0]
+                                        font.pixelSize: Theme.fontSize.micro
+                                        color: Theme.colors.textMuted
+                                        wrapMode: Text.Wrap
+                                    }
+
+                                    RowLayout {
+                                        width: parent.width
+                                        height: 24
+                                        spacing: Theme.space.sm
+
+                                        Label {
+                                            text: "Copy local daemon credentials"
+                                            font.family: Theme.uiFonts[0]
+                                            font.pixelSize: Theme.fontSize.micro
+                                            color: Theme.colors.textSecondary
+                                            Layout.fillWidth: true
+                                            elide: Text.ElideRight
+                                        }
+
+                                        AppSwitch {
+                                            id: credentialsSwitch
+                                            objectName: "machinesCredentialsSwitch"
+                                            checked: root.copyCredentials
+                                            enabled: root.machinesModel && !root.machinesModel.installing
+                                            accessibleName: "Copy local daemon credentials"
+                                            toolTipText: "Copy available local daemon credentials to run remote sessions"
+                                            onToggled: root.copyCredentials = checked
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                objectName: "machinesInstallProgress"
+                                visible: root.hasSelection && root.machinesModel && root.machinesModel.installing
+                                width: parent ? parent.width : 0
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: visible ? 40 : 0
+                                radius: Theme.radius.sm
+                                color: Theme.colors.workingBg
+                                border.width: 1
+                                border.color: Theme.colors.warn
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: Theme.space.lg
+                                    anchors.rightMargin: Theme.space.lg
+                                    spacing: Theme.space.sm
+
+                                    Rectangle {
+                                        width: 7
+                                        height: 7
+                                        radius: 4
+                                        color: Theme.colors.working
+                                    }
+
+                                    Label {
+                                        text: "Installing Eigen over ssh..."
+                                        font.family: Theme.uiFonts[0]
+                                        font.pixelSize: Theme.fontSize.label
+                                        color: Theme.colors.textSecondary
+                                        Layout.fillWidth: true
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                objectName: "machinesInstallMessage"
+                                visible: root.hasSelection && root.machinesModel && root.machinesModel.install_message !== ""
+                                width: parent ? parent.width : 0
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: visible ? Math.max(40, installMessageText.implicitHeight + Theme.space.lg * 2) : 0
+                                radius: Theme.radius.sm
+                                color: Theme.colors.successBg
+                                border.width: 1
+                                border.color: Theme.colors.success
+
+                                Label {
+                                    id: installMessageText
+                                    anchors.fill: parent
+                                    anchors.margins: Theme.space.lg
+                                    text: root.machinesModel ? root.machinesModel.install_message : ""
+                                    font.family: Theme.uiFonts[0]
+                                    font.pixelSize: Theme.fontSize.label
+                                    color: Theme.colors.textSecondary
+                                    wrapMode: Text.Wrap
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
+
+                            Rectangle {
+                                objectName: "machinesInstallError"
+                                visible: root.hasSelection && root.machinesModel && root.machinesModel.install_error !== ""
+                                width: parent ? parent.width : 0
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: visible ? Math.max(64, installErrorText.implicitHeight + Theme.space.xxxl) : 0
+                                radius: Theme.radius.sm
+                                color: Theme.colors.errorBg
+                                border.width: 1
+                                border.color: Theme.colors.error
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: Theme.space.lg
+                                    spacing: Theme.space.xs
+
+                                    Label {
+                                        text: "Could not install Eigen"
+                                        font.family: Theme.uiFonts[0]
+                                        font.pixelSize: Theme.fontSize.label
+                                        font.weight: Theme.fontWeight.semibold
+                                        color: Theme.colors.error
+                                        Layout.fillWidth: true
+                                    }
+
+                                    Label {
+                                        id: installErrorText
+                                        text: root.machinesModel ? root.machinesModel.install_error : ""
+                                        font.family: Theme.uiFonts[0]
+                                        font.pixelSize: Theme.fontSize.micro
+                                        color: Theme.colors.textSecondary
+                                        wrapMode: Text.Wrap
+                                        Layout.fillWidth: true
+                                    }
                                 }
                             }
 
@@ -488,7 +682,9 @@ Rectangle {
                                     spacing: Theme.space.sm
 
                                     Label {
-                                        text: "Could not reach host"
+                                        text: root.remoteNeedsInstall(root.machinesModel ? root.machinesModel.remote_error : "")
+                                            ? "Eigen is not installed yet"
+                                            : "Could not reach host"
                                         font.family: Theme.uiFonts[0]
                                         font.pixelSize: Theme.fontSize.bodySm
                                         font.weight: Theme.fontWeight.semibold
@@ -507,12 +703,27 @@ Rectangle {
                                         Layout.fillWidth: true
                                     }
 
-                                    AppButton {
-                                        objectName: "machinesRemoteErrorRetry"
-                                        text: "Retry"
-                                        compact: true
-                                        variant: "secondary"
-                                        onClicked: if (root.machinesModel) root.machinesModel.select_machine(root.selectedMachine.ssh || "")
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: Theme.space.sm
+
+                                        AppButton {
+                                            objectName: "machinesRemoteInstallButton"
+                                            text: "Install Eigen"
+                                            compact: true
+                                            variant: "primary"
+                                            enabled: root.machinesModel && !root.machinesModel.installing
+                                            onClicked: if (root.machinesModel) root.machinesModel.install_machine(root.selectedMachine.ssh || "", credentialsSwitch.checked)
+                                        }
+
+                                        AppButton {
+                                            objectName: "machinesRemoteErrorRetry"
+                                            text: "Retry"
+                                            compact: true
+                                            variant: "secondary"
+                                            enabled: root.machinesModel && !root.machinesModel.installing
+                                            onClicked: if (root.machinesModel) root.machinesModel.select_machine(root.selectedMachine.ssh || "")
+                                        }
                                     }
                                 }
                             }
@@ -679,6 +890,12 @@ Rectangle {
         if (status === "approval") return Theme.colors.dotWarn
         if (status === "error") return Theme.colors.dotError
         return Theme.colors.dotIdle
+    }
+
+    function remoteNeedsInstall(errorText) {
+        var text = String(errorText || "").toLowerCase()
+        return text.indexOf("no eigen") >= 0 || text.indexOf("eigen: not found") >= 0
+            || text.indexOf("eigen: command not found") >= 0
     }
 
     function safeObjectName(value) {

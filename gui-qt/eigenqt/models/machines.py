@@ -33,6 +33,9 @@ class MachinesModel(QObject):
     remote_sessions_changed = Signal()
     remote_loading_changed = Signal()
     remote_error_changed = Signal()
+    installing_changed = Signal()
+    install_message_changed = Signal()
+    install_error_changed = Signal()
     summary_changed = Signal()
 
     def __init__(self, client: RpcClient, parent: Optional[QObject] = None):
@@ -45,9 +48,13 @@ class MachinesModel(QObject):
         self._remote_sessions: list[dict] = []
         self._remote_loading = False
         self._remote_error = ""
+        self._installing = False
+        self._install_message = ""
+        self._install_error = ""
         self._active = False
         self._load_seq = 0
         self._remote_seq = 0
+        self._install_seq = 0
 
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(60_000)
@@ -82,6 +89,18 @@ class MachinesModel(QObject):
     @Property(str, notify=remote_error_changed)
     def remote_error(self) -> str:
         return self._remote_error
+
+    @Property(bool, notify=installing_changed)
+    def installing(self) -> bool:
+        return self._installing
+
+    @Property(str, notify=install_message_changed)
+    def install_message(self) -> str:
+        return self._install_message
+
+    @Property(str, notify=install_error_changed)
+    def install_error(self) -> str:
+        return self._install_error
 
     @Property(int, notify=summary_changed)
     def machine_count(self) -> int:
@@ -147,6 +166,25 @@ class MachinesModel(QObject):
         self._set_remote_error("")
         self._set_remote_loading(False)
 
+    @Slot(str, bool)
+    def install_machine(self, ssh: str, push_creds: bool = True):
+        """Bootstrap selected host through the established remote CLI flow."""
+        ssh = str(ssh or "").strip()
+        if not ssh or self._installing:
+            return
+
+        self._install_seq += 1
+        seq = self._install_seq
+        self._set_installing(True)
+        self._set_install_message("")
+        self._set_install_error("")
+        self._client.call(
+            "InstallRemote",
+            ssh,
+            bool(push_creds),
+            callback=lambda result: self._on_install_result(result, ssh, seq),
+        )
+
     def start_polling(self):
         if not self._poll_timer.isActive():
             self._fetch()
@@ -192,6 +230,24 @@ class MachinesModel(QObject):
             return
         self._remote_error = value
         self.remote_error_changed.emit()
+
+    def _set_installing(self, value: bool):
+        if self._installing == value:
+            return
+        self._installing = value
+        self.installing_changed.emit()
+
+    def _set_install_message(self, value: str):
+        if self._install_message == value:
+            return
+        self._install_message = value
+        self.install_message_changed.emit()
+
+    def _set_install_error(self, value: str):
+        if self._install_error == value:
+            return
+        self._install_error = value
+        self.install_error_changed.emit()
 
     def _fetch(self):
         self._load_seq += 1
@@ -241,3 +297,16 @@ class MachinesModel(QObject):
         )
         self._set_remote_error("")
         self._set_remote_loading(False)
+
+    def _on_install_result(self, result: dict, ssh: str, seq: int):
+        if seq != self._install_seq:
+            return
+        self._set_installing(False)
+        if "error" in result:
+            self._set_install_error(_err_text(result))
+            return
+
+        self._set_install_error("")
+        self._set_install_message(str(result.get("result") or f"Eigen installed on {ssh}"))
+        if str(self._selected_machine.get("ssh") or "") == ssh:
+            self.select_machine(ssh)

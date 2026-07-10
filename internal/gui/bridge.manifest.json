@@ -408,6 +408,20 @@
       ]
     },
     {
+      "name": "InstallRemote",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "bool"
+        }
+      ],
+      "results": [
+        "string"
+      ]
+    },
+    {
       "name": "InstallSkillFromGitHub",
       "params": [
         {
