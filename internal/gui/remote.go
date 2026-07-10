@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -15,8 +17,8 @@ import (
 // hosts (~/.eigen/remote hosts.json) + detected ~/.ssh/config aliases — and
 // (on demand) the sessions running on a remote daemon. Listing machines is
 // instant + local; RemoteSessions dials over ssh, so the GUI calls it only on
-// drill-in. Install is intentionally NOT exposed (it needs interactive ssh /
-// credential push — done via `eigen remote install`).
+// drill-in. InstallRemote delegates to `eigen remote install`, preserving its
+// cross-compile fallback and optional credential transfer.
 
 // MachineDTO mirrors remote.Machine for the machines board.
 type MachineDTO struct {
@@ -57,6 +59,53 @@ func (b *Bridge) Machines() (*MachinesDTO, error) {
 // freezing the Machines view. Mirrors a 10s ssh ConnectTimeout, applied here
 // because the read-only peek is the only caller that must stay snappy.
 const remoteDialTimeout = 10 * time.Second
+
+// remoteInstallTimeout bounds an explicit user-requested bootstrap. The CLI
+// installer may cross-compile before copying the binary, so it needs a larger
+// budget than the read-only session peek, but must still stop if its caller
+// disappears or a remote host stalls.
+const remoteInstallTimeout = 5 * time.Minute
+
+// InstallRemote bootstraps Eigen on target through the existing CLI installer.
+// Running the CLI rather than copying the current binary directly preserves the
+// established cross-architecture fallback. The supplied context is the GUI RPC
+// connection context, so closing the app cancels the child process.
+func (b *Bridge) InstallRemote(ctx context.Context, target string, pushCreds bool) (string, error) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return "", fmt.Errorf("remote host is required")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("locate Eigen executable: %w", err)
+	}
+	return runRemoteInstall(ctx, exe, target, pushCreds)
+}
+
+// runRemoteInstall is the testable command seam for InstallRemote. Its child
+// process owns ssh/scp and cross-compilation exactly as the terminal command
+// does; the bridge only adds a cancellation-aware timeout and concise errors.
+func runRemoteInstall(parent context.Context, exe, target string, pushCreds bool) (string, error) {
+	ctx, cancel := context.WithTimeout(parent, remoteInstallTimeout)
+	defer cancel()
+
+	args := []string{"remote", "install", target}
+	if !pushCreds {
+		args = append(args, "--no-creds")
+	}
+	cmd := exec.CommandContext(ctx, exe, args...)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		return "Eigen installed on " + target, nil
+	}
+	if ctx.Err() != nil {
+		return "", fmt.Errorf("install Eigen on %s: %w", target, ctx.Err())
+	}
+	if detail := firstRemoteLine(string(output)); detail != "" {
+		return "", fmt.Errorf("install Eigen on %s: %s", target, detail)
+	}
+	return "", fmt.Errorf("install Eigen on %s: %w", target, err)
+}
 
 // RemoteSessions lists the sessions on a remote eigen daemon (dials over ssh —
 // slow; called on drill-in only). Errors when the host is unreachable or has no

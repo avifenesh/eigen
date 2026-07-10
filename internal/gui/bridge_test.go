@@ -2,10 +2,13 @@ package gui
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 
@@ -137,6 +140,44 @@ func TestSessionStateDTOCarriesRoutingCatalog(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("session state catalog missing current catalog model %q", models[0].ID)
+	}
+}
+
+func TestRunRemoteInstallDelegatesToCLIWithCredentialChoice(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	dir := t.TempDir()
+	cli := filepath.Join(dir, "eigen")
+	script := "#!/bin/sh\n" +
+		"[ \"$1\" = remote ] && [ \"$2\" = install ] && [ \"$3\" = codex-box ] && [ \"$4\" = --no-creds ] || exit 9\n" +
+		"printf 'installed fixture\\n'\n"
+	if err := os.WriteFile(cli, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	message, err := runRemoteInstall(context.Background(), cli, "codex-box", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message != "Eigen installed on codex-box" {
+		t.Fatalf("message = %q", message)
+	}
+}
+
+func TestRunRemoteInstallSurfacesCLIOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-only")
+	}
+	dir := t.TempDir()
+	cli := filepath.Join(dir, "eigen")
+	if err := os.WriteFile(cli, []byte("#!/bin/sh\nprintf 'ssh denied\\nmore detail\\n' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := runRemoteInstall(context.Background(), cli, "codex-box", true)
+	if err == nil || !strings.Contains(err.Error(), "ssh denied") || strings.Contains(err.Error(), "more detail") {
+		t.Fatalf("error = %v, want first actionable line", err)
 	}
 }
 
