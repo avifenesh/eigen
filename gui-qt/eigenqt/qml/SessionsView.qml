@@ -357,6 +357,7 @@ Rectangle {
                             text: "Resume"
                             variant: "ghost"
                             toolTipText: "Resume session"
+                            visible: !row.removeConfirming
                             onClicked: root.sessionClicked(row.sessionId)
                         }
 
@@ -366,6 +367,7 @@ Rectangle {
                             variant: "ghost"
                             toolTipText: "Export transcript"
                             enabled: !row.exportBusy
+                            visible: !row.removeConfirming
                             Layout.preferredWidth: row.exportBusy ? 112 : 78
                             onClicked: root.sessionsModel.exportSession(row.sessionId)
                         }
