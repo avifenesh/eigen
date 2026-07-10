@@ -205,6 +205,11 @@ Rectangle {
                     streaming: model.streaming
                     reasoning: model.reasoning
                     blocks: model.blocks || []
+                    voiceTtsAvailable: voiceControls.ttsAvailable && !voiceControls.modeOn
+                    voiceSpeaking: voiceControls.speaking && voiceControls.speakingText === model.text
+                    onSpeakRequested: function(message) {
+                        voiceControls.toggleSpeak(message)
+                    }
                 }
 
                 // Auto-scroll only while pinned. Track the user's intent before
@@ -336,6 +341,64 @@ Rectangle {
                 onClosed: root.dockOpen = false
             }
         }
+        }
+
+        Rectangle {
+            id: voiceStatusBar
+            objectName: "chatVoiceStatusBar"
+            visible: voiceControls.modeOn
+            Layout.fillWidth: true
+            Layout.preferredHeight: visible ? Math.max(34, voiceStatusRow.implicitHeight + Theme.space.sm * 2) : 0
+            color: Theme.colors.workingBg
+            border.width: visible ? 1 : 0
+            border.color: Theme.colors.borderBrandFaint
+
+            RowLayout {
+                id: voiceStatusRow
+                anchors.fill: parent
+                anchors.leftMargin: Theme.space.xl
+                anchors.rightMargin: Theme.space.lg
+                spacing: Theme.space.md
+
+                Rectangle {
+                    width: 8
+                    height: 8
+                    radius: 4
+                    color: voiceControls.phase === "error" ? Theme.colors.error
+                        : (voiceControls.phase === "thinking" ? Theme.colors.working : Theme.colors.brandBright)
+                }
+
+                Label {
+                    objectName: "chatVoiceStatusLabel"
+                    text: root.voicePhaseLabel(voiceControls.phase)
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.bodySm
+                    font.weight: Theme.fontWeight.semibold
+                    color: Theme.colors.textPrimary
+                }
+
+                Label {
+                    objectName: "chatVoiceHeardLabel"
+                    visible: voiceControls.lastText !== "" && voiceControls.phase !== "speaking"
+                    text: "\"" + voiceControls.lastText + "\""
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.bodySm
+                    color: Theme.colors.textSecondary
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+
+                Item { Layout.fillWidth: !voiceControls.lastText || voiceControls.phase === "speaking" }
+
+                AppButton {
+                    objectName: "chatStopVoiceModeButton"
+                    text: "End"
+                    compact: true
+                    variant: "ghost"
+                    toolTipText: "End voice conversation"
+                    onClicked: voiceControls.stopMode(false)
+                }
+            }
         }
 
         // Composer
@@ -550,6 +613,24 @@ Rectangle {
                     Layout.fillWidth: true
                     spacing: Theme.space.md
 
+                    VoiceControls {
+                        id: voiceControls
+                        objectName: "chatVoiceControls"
+                        rpcClient: root.rpcClient
+                        sessionId: root.sessionId
+                        Layout.preferredWidth: implicitWidth
+                        Layout.preferredHeight: implicitHeight
+
+                        onDictated: function(heard) {
+                            var draft = composerTextArea.text.replace(/\s+$/, "")
+                            composerTextArea.text = draft ? draft + " " + heard : heard
+                            composerTextArea.forceActiveFocus()
+                        }
+                        onActionFailed: function(message) {
+                            root.actionError = message
+                        }
+                    }
+
                     Item { Layout.fillWidth: true }
 
                     AppButton {
@@ -610,6 +691,17 @@ Rectangle {
     function slashPopupY() {
         var point = composerTextArea.mapToItem(root, 0, 0)
         return Math.max(Theme.space.lg, point.y - slashPopup.height - Theme.space.md)
+    }
+
+    function voicePhaseLabel(phase) {
+        switch (phase) {
+        case "listening": return "Listening"
+        case "transcribing": return "Transcribing"
+        case "thinking": return "Thinking"
+        case "speaking": return "Speaking"
+        case "error": return "Voice needs attention"
+        default: return "Voice ready"
+        }
     }
 
     function syncSlashPopup() {

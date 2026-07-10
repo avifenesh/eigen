@@ -17,6 +17,10 @@ Item {
     property bool streaming
     property string reasoning
     property var blocks: []  // markdown blocks for assistant rows
+    property bool voiceTtsAvailable: false
+    property bool voiceSpeaking: false
+
+    signal speakRequested(string text)
 
     ColumnLayout {
         id: column
@@ -111,6 +115,18 @@ Item {
                     MarkdownBlocks {
                         Layout.fillWidth: true
                         blocks: root.blocks
+                    }
+
+                    AppButton {
+                        objectName: "chatSpeakAssistantButton"
+                        visible: root.voiceTtsAvailable && !root.streaming && root.text.trim().length > 0
+                        text: root.voiceSpeaking ? "■" : "♪"
+                        compact: true
+                        variant: root.voiceSpeaking ? "secondary" : "ghost"
+                        selected: root.voiceSpeaking
+                        toolTipText: root.voiceSpeaking ? "Stop reading aloud" : "Read this message aloud"
+                        Layout.alignment: Qt.AlignRight
+                        onClicked: root.speakRequested(root.text)
                     }
 
                     // Streaming pulse

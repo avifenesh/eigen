@@ -565,6 +565,10 @@ class ScreenshotRpcClient(QObject):
             return {"before": 42, "after": 7}
         if method == "ExportSession":
             return "/home/user/eigen-exports/s-qa-chat.jsonl"
+        if method == "VoiceStatus":
+            return {"stt": True, "tts": True}
+        if method in {"VoiceListen", "VoiceCancelListen", "VoiceSpeak", "VoiceStopSpeak", "VoiceModeStart", "VoiceModeStop"}:
+            return None
         if method == "RevutoStatus":
             return {"available": False, "count": 0, "paused": 0}
         if method == "RevutoReviewers":
@@ -1762,7 +1766,40 @@ def main():
             "terminalHelper": terminal_helper,
         }
 
-    ok = capture_view("chat", "ChatView.qml", setup_chat) and ok
+    def assert_chat_voice_controls(view, root):
+        controls = find_visible_item(root, "chatVoiceControls")
+        dictate = find_visible_item(root, "chatDictateButton")
+        mode = find_visible_item(root, "chatVoiceModeButton")
+        speak = find_visible_item(root, "chatSpeakAssistantButton")
+        if controls is None or dictate is None or mode is None or speak is None:
+            raise AssertionError("chat screenshot did not render capability-gated voice controls")
+        for item, label in [(dictate, "dictate"), (mode, "voice mode"), (speak, "read aloud")]:
+            if item.property("qaTextFits") is not True or float(item.property("width") or 0) < 24 or float(item.property("height") or 0) < 24:
+                raise AssertionError(f"chat {label} control text did not fit")
+            if scene_top(item) < 0 or scene_bottom(item) > view.height() or scene_right(item) > view.width():
+                raise AssertionError(f"chat {label} control escaped the view")
+
+    ok = capture_view("chat", "ChatView.qml", setup_chat, assert_chat_voice_controls) and ok
+
+    def show_chat_voice_mode(view, root):
+        client.event.emit(
+            "eigen:voice",
+            {"phase": "thinking", "text": "Check the active worktree", "mode": True},
+        )
+        for _ in range(12):
+            app.processEvents()
+        bar = find_visible_item(root, "chatVoiceStatusBar")
+        label = find_visible_item(root, "chatVoiceStatusLabel")
+        heard = find_visible_item(root, "chatVoiceHeardLabel")
+        stop = find_visible_item(root, "chatStopVoiceModeButton")
+        if bar is None or label is None or heard is None or stop is None:
+            raise AssertionError("chat voice-mode screenshot did not render the live status strip")
+        if label.property("text") != "Thinking" or "active worktree" not in heard.property("text"):
+            raise AssertionError("chat voice-mode screenshot did not reflect the event payload")
+        if scene_top(bar) < 0 or scene_bottom(bar) > view.height() or scene_right(stop) > view.width():
+            raise AssertionError("chat voice-mode status strip escaped the view")
+
+    ok = capture_view("chat-voice-mode", "ChatView.qml", setup_chat, show_chat_voice_mode) and ok
 
     def setup_chat_empty_starter(ctx):
         properties = setup_chat(ctx)
