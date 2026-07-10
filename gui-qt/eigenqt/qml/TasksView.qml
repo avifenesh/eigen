@@ -111,7 +111,7 @@ Rectangle {
 
                 // Filter chips
                 Rectangle {
-                    Layout.preferredHeight: 52
+                    Layout.preferredHeight: 40
                     color: Theme.colors.bgWell
                     border.width: 1
                     border.color: Theme.colors.borderHairline
@@ -131,8 +131,8 @@ Rectangle {
                                 readonly property bool selected: root.currentFilter === modelData
                                 readonly property bool qaVisualFocus: activeFocus
                                 readonly property bool qaIsTaskChip: true
-                                readonly property real horizontalInset: Theme.space.xxxxl + Theme.space.xl
-                                readonly property real verticalInset: Theme.space.lg + Theme.space.xxs
+                                readonly property real horizontalInset: Theme.space.lg
+                                readonly property real verticalInset: Theme.space.xs
                                 readonly property string qaAccessibleName: chipLabel.text + " task filter"
                                 readonly property bool qaTextFits: chipLabel.implicitWidth <= chipLabel.width + 1.0
                                 readonly property real qaLeftTextInset: chipLabel.x + Math.max(0, (chipLabel.width - chipLabel.paintedWidth) / 2)
@@ -143,7 +143,7 @@ Rectangle {
                                 readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
 
                                 objectName: "taskFilterChip_" + root.safeName(modelData)
-                                Layout.preferredHeight: Math.max(38, chipLabel.implicitHeight + verticalInset * 2)
+                                Layout.preferredHeight: Math.max(32, chipLabel.implicitHeight + verticalInset * 2)
                                 Layout.preferredWidth: chipLabel.implicitWidth + horizontalInset * 2
                                 radius: Theme.radius.sm
                                 activeFocusOnTab: true

@@ -15,9 +15,11 @@ Rectangle {
     property int fontWeight: Theme.fontWeight.regular
     property int capitalization: Font.MixedCase
     property int elideMode: Text.ElideRight
-    property real horizontalPadding: Theme.space.xxxxl + Theme.space.xl
-    property real verticalPadding: Theme.space.lg + Theme.space.xxs
-    property real minimumHeight: 30
+    // A tag is a compact status label, not a button. Keep the text clear of
+    // the edge without allowing a short label to dominate a card.
+    property real horizontalPadding: Theme.space.lg
+    property real verticalPadding: Theme.space.xs
+    property real minimumHeight: 22
     property bool pill: true
     property int borderWidth: 1
 

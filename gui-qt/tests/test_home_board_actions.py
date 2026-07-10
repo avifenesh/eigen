@@ -340,9 +340,9 @@ for object_name in (
         raise AssertionError(f"board chip {object_name} did not render")
     if chip.property("qaTextFits") is not True:
         raise AssertionError(f"board chip {object_name} text did not fit")
-    if float(chip.property("qaHorizontalPadding") or 0) < 47.5:
+    if float(chip.property("qaHorizontalPadding") or 0) < 11.5:
         raise AssertionError(f"board chip {object_name} horizontal padding too small: {chip.property('qaHorizontalPadding')}")
-    if float(chip.property("qaVerticalPadding") or 0) < 13.5:
+    if float(chip.property("qaVerticalPadding") or 0) < 3.5:
         raise AssertionError(f"board chip {object_name} vertical padding too small: {chip.property('qaVerticalPadding')}")
 
 owner_chip = find_item(board_root, "boardOwnerFilterChip_local")

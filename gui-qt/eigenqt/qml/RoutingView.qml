@@ -311,8 +311,6 @@ Rectangle {
                             textColor: Theme.colors.textSecondary
                             fontFamily: Theme.monoFonts[0]
                             minimumHeight: 24
-                            horizontalPadding: root.width < 680 ? Theme.space.md : Theme.space.xxxxl + Theme.space.xl
-                            verticalPadding: root.width < 680 ? Theme.space.xs : Theme.space.lg + Theme.space.xxs
                         }
                     }
                 }
