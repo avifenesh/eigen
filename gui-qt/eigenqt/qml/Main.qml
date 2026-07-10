@@ -27,6 +27,18 @@ ApplicationWindow {
 
     color: Theme.colors.bgBase
 
+    Shortcut {
+        sequence: "Ctrl+K"
+        context: Qt.ApplicationShortcut
+        onActivated: commandPalette.showPalette()
+    }
+
+    Shortcut {
+        sequence: "Meta+K"
+        context: Qt.ApplicationShortcut
+        onActivated: commandPalette.showPalette()
+    }
+
     // Fonts: rely on system font stack (Inter if installed, else system sans-serif)
     // No qrc:/ resource compilation exists; Theme.js provides fallback stack
 
@@ -62,6 +74,7 @@ ApplicationWindow {
             onRouteChanged: function(route) {
                 root.currentRoute = route
             }
+            onCommandPaletteRequested: commandPalette.showPalette()
         }
 
         // Center: view routing via StackLayout
@@ -353,6 +366,29 @@ ApplicationWindow {
     }
     }
 
+    CommandPalette {
+        id: commandPalette
+        sessionsModel: root.ctxSessions
+
+        onRouteRequested: function(route) {
+            root.currentRoute = route
+        }
+        onSessionRequested: function(sessionId) {
+            if (!sessionId || !root.ctxSessionController) return
+            root.ctxSessionController.open_session(sessionId)
+            root.currentRoute = "chat"
+        }
+        onNewSessionRequested: root.requestNewSession("")
+        onPruneRequested: {
+            root.currentRoute = "sessions"
+            if (root.ctxSessions && root.ctxSessions.pruneSessions) root.ctxSessions.pruneSessions()
+        }
+        onRefreshFeedRequested: {
+            root.currentRoute = "home"
+            if (root.ctxFeed && root.ctxFeed.refresh) root.ctxFeed.refresh()
+        }
+    }
+
     // Unshadowed aliases for the Python context properties: inside a child
     // instantiation `Foo { sessionsModel: root.ctxSessions }` the RHS resolves
     // to Foo's OWN property (self-shadow). Bind through these instead.
@@ -399,6 +435,11 @@ ApplicationWindow {
     // Current route (navigation state)
     property string currentRoute: "home"
     readonly property int activeRouteIndex: stackLayout.currentIndex
+    readonly property bool qaCommandPaletteOpen: commandPalette.opened
+    readonly property int qaCommandPaletteEntryCount: commandPalette.qaEntryCount
+    readonly property string qaCommandPaletteSelectedLabel: commandPalette.qaSelectedLabel
+    readonly property bool qaCommandPaletteInputFocused: commandPalette.qaInputFocused
+    readonly property bool qaCommandPaletteInsideWindow: commandPalette.qaInsideWindow
     property int pendingNewSessionToken: 0
     property string actionError: ""
 

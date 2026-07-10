@@ -33,6 +33,7 @@ class SessionsModel(QAbstractListModel):
     queryChanged = Signal()
     totalCountChanged = Signal()
     filteredCountChanged = Signal()
+    sessionEntriesChanged = Signal()
 
     # Qt roles
     IdRole = Qt.UserRole + 1
@@ -155,6 +156,17 @@ class SessionsModel(QAbstractListModel):
         """Sessions matching the active filter."""
         return len(self._sessions)
 
+    @Property("QVariantList", notify=sessionEntriesChanged)
+    def session_entries(self) -> list[dict]:
+        """All session rows for global navigation, independent of the screen filter."""
+        return [
+            {
+                **session,
+                "unread": str(session.get("id") or "") in self._unread,
+            }
+            for session in self._all_sessions
+        ]
+
     @Slot()
     def _on_connected(self):
         """Fetch sessions on connect (async)."""
@@ -186,6 +198,7 @@ class SessionsModel(QAbstractListModel):
 
         existing_ids = {session.get("id", "") for session in sessions}
         self._unread.intersection_update(existing_ids)
+        self.sessionEntriesChanged.emit()
 
     @Slot(str, dict)
     def _on_event(self, channel: str, data: dict):
@@ -316,6 +329,7 @@ class SessionsModel(QAbstractListModel):
             self._unread.add(session_id)
             # Notify QML of change
             self._notify_unread_changed(session_id)
+            self.sessionEntriesChanged.emit()
 
     def mark_read(self, session_id: str):
         """Mark a session as read (clear unread)."""
@@ -323,6 +337,7 @@ class SessionsModel(QAbstractListModel):
             self._unread.discard(session_id)
             # Notify QML of change
             self._notify_unread_changed(session_id)
+            self.sessionEntriesChanged.emit()
 
     def _notify_unread_changed(self, session_id: str):
         """Emit dataChanged for a session's unread role."""
@@ -345,7 +360,9 @@ class SessionsModel(QAbstractListModel):
                 self.endRemoveRows()
                 self._unread.discard(session_id)
                 self.filteredCountChanged.emit()
+                self.sessionEntriesChanged.emit()
                 return
+        self.sessionEntriesChanged.emit()
 
     def _filtered_sessions(self) -> list[dict]:
         if not self._query:

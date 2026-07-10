@@ -13,6 +13,7 @@ Rectangle {
     // Current route (controlled by parent)
     property string currentRoute: "home"
     signal routeChanged(string route)
+    signal commandPaletteRequested()
 
     // Models for badge counts
     property var sessionsModel: null
@@ -74,6 +75,19 @@ Rectangle {
                     font.weight: Theme.fontWeight.bold
                     color: Theme.colors.textPrimary
                     // letterSpacing: -0.5
+                }
+
+                Item { Layout.fillWidth: true }
+
+                AppButton {
+                    objectName: "railCommandPaletteButton"
+                    text: "⌘"
+                    compact: true
+                    variant: "ghost"
+                    toolTipText: "Open command palette (Ctrl+K)"
+                    Layout.preferredWidth: 28
+                    Layout.preferredHeight: 28
+                    onClicked: root.commandPaletteRequested()
                 }
             }
         }

@@ -666,6 +666,12 @@ def click_item(app, window, object_name):
     return item
 
 
+def type_text(window, text):
+    for char in text:
+        key = Qt.Key_Space if char == " " else getattr(Qt, "Key_" + char.upper())
+        QTest.keyClick(window, key)
+
+
 def scene_top(item):
     return item.mapToScene(QPointF(0, 0)).y()
 
@@ -797,6 +803,61 @@ try:
 
     if window.property("currentRoute") != "home" or window.property("activeRouteIndex") != 0:
         raise AssertionError("Main did not start on the home route")
+
+    launcher = click_item(app, window, "railCommandPaletteButton")
+    pump(app, 18)
+    if window.property("qaCommandPaletteOpen") is not True:
+        raise AssertionError("Rail launcher did not open the command palette")
+    if launcher.property("qaTextFits") is not True:
+        raise AssertionError("Command palette launcher did not fit in the rail")
+    if window.property("qaCommandPaletteInputFocused") is not True:
+        raise AssertionError("Command palette did not focus its search field")
+    if window.property("qaCommandPaletteInsideWindow") is not True or window.property("qaCommandPaletteEntryCount") < 24:
+        raise AssertionError(
+            "Command palette did not render its complete bounded action list: "
+            f"inside={window.property('qaCommandPaletteInsideWindow')} "
+            f"count={window.property('qaCommandPaletteEntryCount')}"
+        )
+    QTest.keyClick(window, Qt.Key_Down)
+    pump(app, 8)
+    if window.property("qaCommandPaletteSelectedLabel") != "Prune empty sessions":
+        raise AssertionError("Command palette Down did not select the next action")
+    QTest.keyClick(window, Qt.Key_Up)
+    pump(app, 8)
+    if window.property("qaCommandPaletteSelectedLabel") != "Start a session":
+        raise AssertionError("Command palette Up did not return to the first action")
+    type_text(window, "routing")
+    pump(app, 12)
+    if window.property("qaCommandPaletteEntryCount") < 1 or window.property("qaCommandPaletteSelectedLabel") != "Routing":
+        raise AssertionError(
+            "Command palette did not fuzzy-filter the routing view: "
+            f"count={window.property('qaCommandPaletteEntryCount')} "
+            f"selected={window.property('qaCommandPaletteSelectedLabel')!r}"
+        )
+    QTest.keyClick(window, Qt.Key_Return)
+    pump(app, 18)
+    if window.property("qaCommandPaletteOpen") is not False or window.property("currentRoute") != "routing":
+        raise AssertionError("Command palette Return did not open the selected view")
+
+    click_item(app, window, "railCommandPaletteButton")
+    pump(app, 12)
+    type_text(window, "shell routing")
+    pump(app, 12)
+    if window.property("qaCommandPaletteEntryCount") != 1 or window.property("qaCommandPaletteSelectedLabel") != "Qt shell routing":
+        raise AssertionError("Command palette did not include sessions independently of the Sessions filter")
+    QTest.keyClick(window, Qt.Key_Return)
+    pump(app, 18)
+    if controller.opened[-1:] != ["s-work"] or window.property("currentRoute") != "chat":
+        raise AssertionError(f"Command palette did not open selected session: {controller.opened}")
+
+    click_item(app, window, "railCommandPaletteButton")
+    pump(app, 12)
+    type_text(window, "prune")
+    pump(app, 12)
+    QTest.keyClick(window, Qt.Key_Return)
+    pump(app, 18)
+    if ("PruneSessions", ()) not in client.calls or window.property("currentRoute") != "sessions":
+        raise AssertionError(f"Command palette prune action did not surface Sessions cleanup: {client.calls}")
 
     chat_nav = find_item_in_window(window, "navItem_chat")
     home_nav = find_item_in_window(window, "navItem_home")

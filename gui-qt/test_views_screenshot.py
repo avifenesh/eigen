@@ -1177,6 +1177,43 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
     else:
         print(f"✗ Failed to save {output}")
 
+    palette_launcher = find_item(window.contentItem(), "railCommandPaletteButton")
+    if palette_launcher is None or palette_launcher.property("qaTextFits") is not True:
+        print("✗ Main command palette proof did not render a clean rail launcher")
+        window.hide()
+        return False
+    click_item(window, palette_launcher)
+    QTest.qWait(80)
+    for _ in range(12):
+        app.processEvents()
+    if window.property("qaCommandPaletteOpen") is not True:
+        print("✗ Main command palette proof did not open")
+        window.hide()
+        return False
+    if window.property("qaCommandPaletteInsideWindow") is not True or window.property("qaCommandPaletteEntryCount") < 23:
+        print(
+            "✗ Main command palette proof overflowed or omitted entries: "
+            f"inside={window.property('qaCommandPaletteInsideWindow')} "
+            f"count={window.property('qaCommandPaletteEntryCount')}"
+        )
+        window.hide()
+        return False
+
+    output_palette = SCREENSHOTS / "qa-fix-command-palette.png"
+    image_palette = window.grabWindow()
+    success_palette = image_palette.save(str(output_palette))
+    if success_palette:
+        print(f"✓ Saved {output_palette}")
+    else:
+        print(f"✗ Failed to save {output_palette}")
+    QTest.keyClick(window, Qt.Key_Escape)
+    for _ in range(8):
+        app.processEvents()
+    if window.property("qaCommandPaletteOpen") is not False:
+        print("✗ Main command palette proof did not close on Escape")
+        window.hide()
+        return False
+
     window.setProperty("actionError", "Could not start session: daemon offline")
     for _ in range(10):
         app.processEvents()
@@ -1405,7 +1442,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
         print(f"✗ Failed to save {output_safe}")
 
     window.hide()
-    return success and success_error and success_min and success_compact and success_compact_dropdown and success_safe
+    return success and success_palette and success_error and success_min and success_compact and success_compact_dropdown and success_safe
 
 
 def main():
