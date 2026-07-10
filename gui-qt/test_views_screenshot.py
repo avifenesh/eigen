@@ -1727,6 +1727,33 @@ def main():
 
     ok = capture_view("chat", "ChatView.qml", setup_chat) and ok
 
+    def setup_chat_empty_starter(ctx):
+        properties = setup_chat(ctx)
+        properties["transcriptModel"].clearRows()
+        return properties
+
+    def assert_chat_empty_starter(_view, root):
+        if root.property("qaEmptyStarterVisible") is not True:
+            raise AssertionError("empty Chat screenshot did not render the starter")
+        if int(root.property("qaStarterPromptCount") or 0) != 3:
+            raise AssertionError("empty Chat screenshot did not render every starter prompt")
+        for index in range(3):
+            prompt = find_item(root, "chatStarterPrompt_" + str(index))
+            if prompt is None or prompt.property("visible") is not True:
+                raise AssertionError(f"empty Chat screenshot did not render starter prompt {index}")
+            if prompt.property("qaTextFits") is not True:
+                raise AssertionError(f"empty Chat screenshot clipped starter prompt {index}")
+
+    ok = capture_view("chat-empty-starter", "ChatView.qml", setup_chat_empty_starter, assert_chat_empty_starter) and ok
+    ok = capture_view(
+        "chat-empty-starter-narrow",
+        "ChatView.qml",
+        setup_chat_empty_starter,
+        assert_chat_empty_starter,
+        width=420,
+        height=620,
+    ) and ok
+
     def show_chat_stream_tail(_view, root):
         model = root.property("transcriptModel")
         if model is not None:
