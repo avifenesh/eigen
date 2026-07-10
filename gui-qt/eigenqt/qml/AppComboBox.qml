@@ -39,11 +39,15 @@ ComboBox {
     readonly property bool qaPopupOpensUp: popupOpensUp
     readonly property bool qaPopupInsideWindow: popupInsideWindow()
     readonly property bool qaTextFits: !contentItem || !contentItem.text
-        || (!contentItem.truncated && contentItem.paintedWidth <= Math.max(0, width - leftPadding - rightPadding) + 0.5)
+        || (!contentItem.truncated && contentItem.paintedWidth <= Math.max(
+            0,
+            displayLabel.width - displayLabel.leftPadding - displayLabel.rightPadding
+        ) + 0.5)
     readonly property string qaText: effectiveDisplayText
     readonly property bool qaIsAppComboBox: true
-    readonly property real qaLeftTextInset: displayLabel.leftPadding
-    readonly property real qaRightTextInset: control.width - (displayLabel.leftPadding + displayLabel.paintedWidth)
+    readonly property real qaLeftTextInset: displayLabel.x + displayLabel.leftPadding
+    readonly property real qaRightTextInset: control.width
+        - (displayLabel.x + displayLabel.leftPadding + displayLabel.paintedWidth)
     readonly property real qaHorizontalPadding: Math.min(qaLeftTextInset, qaRightTextInset)
     readonly property real qaVerticalPadding: Math.max(0, (control.height - displayLabel.paintedHeight) / 2)
     readonly property bool qaVisualFocus: visualFocus
@@ -94,8 +98,6 @@ ComboBox {
         color: control.enabled ? Theme.colors.textPrimary : Theme.colors.textFaint
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
-        leftPadding: control.leftPadding
-        rightPadding: control.rightPadding
     }
 
     indicator: Canvas {

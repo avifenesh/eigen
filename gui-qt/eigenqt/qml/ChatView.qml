@@ -45,6 +45,17 @@ Rectangle {
     readonly property string qaInputMode: inputMode
     readonly property int queuedInputCount: queuedInputs ? queuedInputs.length : 0
     readonly property int qaQueuedInputCount: queuedInputCount
+    readonly property bool showEmptyStarter: transcriptListView.count === 0
+        && !root.isStreaming
+        && root.sessionStateModel
+        && String(root.sessionStateModel.model || "") !== ""
+    readonly property bool qaEmptyStarterVisible: showEmptyStarter
+    readonly property int qaStarterPromptCount: starterPrompts.length
+    readonly property var starterPrompts: [
+        "Give me a tour of this codebase.",
+        "What changed in the last few commits?",
+        "Find and explain the riskiest function here."
+    ]
     // Context property captured under an unshadowed name: inside
     // `DockPanel { rpcClient: ... }` a bare `rpcClient` RHS resolves to
     // DockPanel's OWN property (self-binding → undefined) — the QML
@@ -166,100 +177,145 @@ Rectangle {
             Layout.fillHeight: true
             spacing: 0
 
-        ListView {
-            id: transcriptListView
-            objectName: "chatTranscriptList"
+        Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            clip: true
-            spacing: Theme.space.lg
-            topMargin: Theme.space.xl
-            bottomMargin: Theme.space.xl
-            leftMargin: Theme.space.xxxl
-            rightMargin: Theme.space.xxxl
 
-            model: transcriptModel
+            ListView {
+                id: transcriptListView
+                objectName: "chatTranscriptList"
+                anchors.fill: parent
+                clip: true
+                spacing: Theme.space.lg
+                topMargin: Theme.space.xl
+                bottomMargin: Theme.space.xl
+                leftMargin: Theme.space.xxxl
+                rightMargin: Theme.space.xxxl
 
-            delegate: TranscriptRow {
-                width: transcriptListView.width - transcriptListView.leftMargin - transcriptListView.rightMargin
-                kind: model.kind
-                text: model.text
-                toolName: model.toolName
-                toolId: model.toolId || ""
-                toolArgs: model.toolArgs || ""
-                toolStatus: model.toolStatus
-                streaming: model.streaming
-                reasoning: model.reasoning
-                blocks: model.blocks || []
-            }
+                model: transcriptModel
 
-            // Auto-scroll only while pinned. Track the user's intent before
-            // new content grows; checking atYEnd after an insert is too late.
-            property bool stickToBottom: true
+                delegate: TranscriptRow {
+                    width: transcriptListView.width - transcriptListView.leftMargin - transcriptListView.rightMargin
+                    kind: model.kind
+                    text: model.text
+                    toolName: model.toolName
+                    toolId: model.toolId || ""
+                    toolArgs: model.toolArgs || ""
+                    toolStatus: model.toolStatus
+                    streaming: model.streaming
+                    reasoning: model.reasoning
+                    blocks: model.blocks || []
+                }
 
-            Component.onCompleted: schedulePositionAtEnd()
-            onCountChanged: schedulePositionAtEnd()
-            onContentHeightChanged: schedulePositionAtEnd()
-            onHeightChanged: schedulePositionAtEnd()
-            onMovementEnded: stickToBottom = atVisualEnd()
+                // Auto-scroll only while pinned. Track the user's intent before
+                // new content grows; checking atYEnd after an insert is too late.
+                property bool stickToBottom: true
 
-            Timer {
-                id: transcriptAutoScrollTimer
-                interval: 16
-                repeat: false
-                onTriggered: {
-                    if (transcriptListView.stickToBottom) {
-                        transcriptListView.positionViewAtEnd()
+                Component.onCompleted: schedulePositionAtEnd()
+                onCountChanged: schedulePositionAtEnd()
+                onContentHeightChanged: schedulePositionAtEnd()
+                onHeightChanged: schedulePositionAtEnd()
+                onMovementEnded: stickToBottom = atVisualEnd()
+
+                Timer {
+                    id: transcriptAutoScrollTimer
+                    interval: 16
+                    repeat: false
+                    onTriggered: {
+                        if (transcriptListView.stickToBottom) {
+                            transcriptListView.positionViewAtEnd()
+                        }
+                    }
+                }
+
+                function schedulePositionAtEnd() {
+                    if (!stickToBottom) return
+                    transcriptAutoScrollTimer.restart()
+                }
+
+                function atVisualEnd() {
+                    const maxY = Math.max(originY, originY + contentHeight - height)
+                    return contentY >= maxY - 1
+                }
+
+                // QML ListView's default wheel step is a few px per notch — felt
+                // "stuck" on long transcripts. Take over wheel input: ~110px per
+                // notch (VS Code-ish), clamped to content bounds.
+                WheelHandler {
+                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                    onWheel: (wheel) => {
+                        const step = wheel.angleDelta.y / 120
+                        let y = transcriptListView.contentY - step * 110
+                        const minY = transcriptListView.originY
+                        const maxY = transcriptListView.originY
+                            + transcriptListView.contentHeight
+                            - transcriptListView.height
+                        transcriptListView.contentY = Math.max(minY, Math.min(y, Math.max(minY, maxY)))
+                        transcriptListView.stickToBottom = transcriptListView.atVisualEnd()
+                    }
+                }
+
+                // Larger offscreen delegate cache: markdown delegates are tall and
+                // expensive to instantiate — pre-render a screenful each side.
+                cacheBuffer: 1600
+
+                // Approval overlay (if pending approvals)
+                Loader {
+                    id: approvalLoader
+                    z: 50
+                    active: root.approvalRows > 0
+                    anchors.fill: parent
+                    sourceComponent: Item {
+                        anchors.fill: parent
+
+                        ApprovalOverlay {
+                            anchors.centerIn: parent
+                            model: root.approvalsModel
+                            onApprove: function(approvalId, allow) {
+                                root.approvalsModel.approve(approvalId, allow)
+                            }
+                        }
                     }
                 }
             }
 
-            function schedulePositionAtEnd() {
-                if (!stickToBottom) return
-                transcriptAutoScrollTimer.restart()
-            }
+            Column {
+                id: chatEmptyStarter
+                objectName: "chatEmptyStarter"
+                visible: root.showEmptyStarter
+                anchors.centerIn: parent
+                width: Math.min(520, Math.max(0, parent.width - Theme.space.xxxxl * 2))
+                spacing: Theme.space.md
+                z: 20
 
-            function atVisualEnd() {
-                const maxY = Math.max(originY, originY + contentHeight - height)
-                return contentY >= maxY - 1
-            }
-
-            // QML ListView's default wheel step is a few px per notch — felt
-            // "stuck" on long transcripts. Take over wheel input: ~110px per
-            // notch (VS Code-ish), clamped to content bounds.
-            WheelHandler {
-                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                onWheel: (wheel) => {
-                    const step = wheel.angleDelta.y / 120
-                    let y = transcriptListView.contentY - step * 110
-                    const minY = transcriptListView.originY
-                    const maxY = transcriptListView.originY
-                        + transcriptListView.contentHeight
-                        - transcriptListView.height
-                    transcriptListView.contentY = Math.max(minY, Math.min(y, Math.max(minY, maxY)))
-                    transcriptListView.stickToBottom = transcriptListView.atVisualEnd()
+                Label {
+                    text: "Ready when you are."
+                    width: parent.width
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.h2
+                    font.weight: Theme.fontWeight.semibold
+                    color: Theme.colors.textPrimary
                 }
-            }
 
-            // Larger offscreen delegate cache: markdown delegates are tall and
-            // expensive to instantiate — pre-render a screenful each side.
-            cacheBuffer: 1600
+                Label {
+                    text: "Start with a focused prompt."
+                    width: parent.width
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.bodySm
+                    color: Theme.colors.textMuted
+                }
 
-            // Approval overlay (if pending approvals)
-            Loader {
-                id: approvalLoader
-                z: 50
-                active: root.approvalRows > 0
-                anchors.fill: parent
-                sourceComponent: Item {
-                    anchors.fill: parent
-
-                    ApprovalOverlay {
-                        anchors.centerIn: parent
-                        model: root.approvalsModel
-                        onApprove: function(approvalId, allow) {
-                            root.approvalsModel.approve(approvalId, allow)
-                        }
+                Repeater {
+                    model: root.starterPrompts
+                    delegate: AppButton {
+                        objectName: "chatStarterPrompt_" + index
+                        width: chatEmptyStarter.width
+                        height: implicitHeight
+                        text: String(modelData || "")
+                        variant: "secondary"
+                        contentAlignment: Text.AlignLeft
+                        toolTipText: "Use this prompt"
+                        onClicked: root.useStarterPrompt(text)
                     }
                 }
             }
@@ -1591,6 +1647,14 @@ Rectangle {
 
         composerTextArea.text = ""
         attachedImage = ""
+    }
+
+    function useStarterPrompt(prompt) {
+        if (root.isStreaming) return false
+        composerTextArea.text = String(prompt || "")
+        composerTextArea.cursorPosition = composerTextArea.text.length
+        composerTextArea.forceActiveFocus()
+        return true
     }
 
     property bool isStreaming: {
