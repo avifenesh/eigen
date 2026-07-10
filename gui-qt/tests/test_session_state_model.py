@@ -168,6 +168,49 @@ def test_session_state_exposes_provider_modes_and_roots():
     assert model.fast is False
 
 
+def test_session_state_focuses_picker_on_gpt_55_and_gpt_56_models():
+    model = SessionStateModel(DeferredRpcClient(), "s-chat")
+    model.seed(
+        {
+            **state_payload(model="gpt-5.6-terra"),
+            "catalog": {
+                "models": [
+                    {"id": "local-qwen"},
+                    {"id": "openai.gpt-5.5"},
+                    {"id": "gpt-5.6-sol"},
+                    {"id": "gpt-5.6-terra"},
+                    {"id": "gpt-5.6-luna"},
+                    {"id": "gpt-5.5"},
+                    {"id": "grok-4.5"},
+                    {"id": "gpt-5.6-sol"},
+                ]
+            },
+        }
+    )
+
+    assert model.catalog == [
+        "openai.gpt-5.5",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+        "gpt-5.5",
+    ]
+
+    model.seed(
+        {
+            **state_payload(model="local-qwen"),
+            "catalog": {
+                "models": [
+                    {"id": "local-qwen"},
+                    {"id": "openai.gpt-5.5"},
+                    {"id": "gpt-5.6-sol"},
+                ]
+            },
+        }
+    )
+    assert model.catalog == ["local-qwen", "openai.gpt-5.5", "gpt-5.6-sol"]
+
+
 def test_session_state_ignores_stale_refresh_after_newer_model_change():
     client = DeferredRpcClient()
     model = SessionStateModel(client, "s-chat")

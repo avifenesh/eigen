@@ -15,6 +15,34 @@ from PySide6.QtCore import QObject, Property, Signal, Slot
 from eigenqt.rpc import RpcClient
 
 
+def _is_preferred_model(model_id: str) -> bool:
+    """Return whether an id belongs in the focused GPT-5.5/5.6 picker."""
+    normalized = str(model_id or "").lower()
+    return normalized.startswith("gpt-5.5") or normalized.startswith("gpt-5.6") or normalized.startswith(
+        "openai.gpt-5.5"
+    ) or normalized.startswith("openai.gpt-5.6")
+
+
+def _selectable_model_ids(models: list[dict], active_model: str) -> list[str]:
+    """Keep the picker focused without hiding an older session's active model."""
+    all_ids: list[str] = []
+    for model in models:
+        if not isinstance(model, dict):
+            continue
+        model_id = str(model.get("id", "") or "")
+        if model_id and model_id not in all_ids:
+            all_ids.append(model_id)
+
+    preferred = [model_id for model_id in all_ids if _is_preferred_model(model_id)]
+    if not preferred:
+        return all_ids
+
+    active_model = str(active_model or "")
+    if active_model in all_ids and active_model not in preferred:
+        return [active_model] + preferred
+    return preferred
+
+
 def _err_text(value: Any) -> str:
     """Extract a readable RPC error string."""
     if isinstance(value, dict):
@@ -235,7 +263,7 @@ class SessionStateModel(QObject):
         catalog_data = state.get("catalog") or {}
         if isinstance(catalog_data, dict):
             models = catalog_data.get("models") or []
-            self._catalog = [m.get("id", "") for m in models if isinstance(m, dict)]
+            self._catalog = _selectable_model_ids(models, self._model)
         else:
             self._catalog = []
 
