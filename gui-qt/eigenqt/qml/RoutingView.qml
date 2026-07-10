@@ -81,9 +81,9 @@ Rectangle {
             spacing: 0
 
             Rectangle {
-                Layout.preferredWidth: 220
-                Layout.minimumWidth: 220
-                Layout.maximumWidth: 220
+                Layout.preferredWidth: root.width < 760 ? 148 : 220
+                Layout.minimumWidth: root.width < 760 ? 148 : 220
+                Layout.maximumWidth: root.width < 760 ? 148 : 220
                 Layout.fillHeight: true
                 color: Theme.colors.bgWell
                 border.width: 1
@@ -277,6 +277,7 @@ Rectangle {
                             text: root.query
                             placeholderText: "Filter models"
                             Layout.fillWidth: true
+                            Layout.minimumWidth: root.width < 680 ? 88 : 160
                             Layout.preferredHeight: 32
                             backgroundColor: Theme.colors.surfaceRaised2
                             onTextChanged: root.query = text
@@ -288,6 +289,7 @@ Rectangle {
 
                             Label {
                                 text: "Credentialed"
+                                visible: root.width >= 680
                                 font.family: Theme.uiFonts[0]
                                 font.pixelSize: Theme.fontSize.label
                                 color: Theme.colors.textSecondary
@@ -309,6 +311,8 @@ Rectangle {
                             textColor: Theme.colors.textSecondary
                             fontFamily: Theme.monoFonts[0]
                             minimumHeight: 24
+                            horizontalPadding: root.width < 680 ? Theme.space.md : Theme.space.xxxxl + Theme.space.xl
+                            verticalPadding: root.width < 680 ? Theme.space.xs : Theme.space.lg + Theme.space.xxs
                         }
                     }
                 }
@@ -535,7 +539,10 @@ Rectangle {
 
                         Flow {
                             id: modelGrid
+                            width: parent.width
+                            height: childrenRect.height
                             Layout.fillWidth: true
+                            Layout.preferredHeight: height
                             spacing: Theme.space.md
                             visible: root.qaFilteredModelCount > 0
                             property int columnCount: Math.max(1, Math.floor(width / 278))
@@ -548,13 +555,14 @@ Rectangle {
                                     readonly property bool qaTextFits: !modelIdLabel.truncated
                                     objectName: "routingModelCard_" + root.safeObjectName(String(modelInfo.id || index))
                                     width: modelGrid.cardWidth
-                                    height: 126
+                                    height: Math.max(126, cardContent.implicitHeight + Theme.space.lg * 2)
                                     radius: Theme.radius.md
                                     color: modelInfo.available ? Theme.colors.surfaceRaised : Theme.colors.bgWell
                                     border.width: 1
                                     border.color: modelInfo.available ? Theme.colors.borderSubtle : Theme.colors.borderHairline
 
                                     ColumnLayout {
+                                        id: cardContent
                                         anchors.fill: parent
                                         anchors.margins: Theme.space.lg
                                         spacing: Theme.space.md
@@ -605,7 +613,11 @@ Rectangle {
                                         }
 
                                         Flow {
+                                            id: capFlow
+                                            width: parent.width
+                                            height: childrenRect.height
                                             Layout.fillWidth: true
+                                            Layout.preferredHeight: height
                                             spacing: Theme.space.xs
 
                                             Repeater {
