@@ -34,7 +34,7 @@ from PySide6.QtTest import QTest
 
 
 ROOT = Path.cwd()
-SIZE = QSize(940, 620)
+SIZE = QSize(420, 800)
 ISSUE_MARKERS = (
     "ReferenceError",
     "TypeError",
@@ -567,6 +567,8 @@ try:
     pending_confirm = find_item(root, "sessionsRemoveConfirmButton_s_run")
     pending_cancel = find_item(root, "sessionsRemoveCancelButton_s_run")
     pending_remove = find_item(root, "sessionsRemoveButton_s_run")
+    pending_resume = find_item(root, "sessionsResumeButton_s_run")
+    pending_export = find_item(root, "sessionsExportButton_s_run")
     if pending_confirm is None:
         raise AssertionError("Pending remove confirm button disappeared")
     if pending_confirm.property("qaText") != "Removing..." or pending_confirm.property("enabled") is not False:
@@ -580,6 +582,10 @@ try:
         raise AssertionError("Pending remove did not keep cancel disabled in the confirm group")
     if pending_remove is not None and pending_remove.property("visible") is True:
         raise AssertionError("Pending remove fell back to the non-confirm Remove button")
+    if pending_resume is not None and pending_resume.property("visible") is True:
+        raise AssertionError("Pending remove kept the Resume action alongside the confirmation")
+    if pending_export is not None and pending_export.property("visible") is True:
+        raise AssertionError("Pending remove kept the Export action alongside the confirmation")
     click_item(app, view, root, "sessionsRemoveConfirmButton_s_run")
     if sessions.calls.count(("RemoveSession", "s-run")) != 1:
         raise AssertionError(f"Pending remove allowed duplicate calls: {sessions.calls}")

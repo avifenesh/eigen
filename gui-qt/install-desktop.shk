@@ -1,0 +1,68 @@
+#!/usr/bin/env shuck
+// Install the user-local Eigen Qt launcher and both desktop entries.
+
+let gui_qt = env("EIGEN_GUI_QT") or (env("HOME") + "/projects/eigen/gui-qt")
+let repo = env("EIGEN_QT_REPO") or parent(gui_qt)
+let bin_dir = env("EIGEN_QT_BIN_DIR") or (env("HOME") + "/.local/bin")
+let applications_dir = env("EIGEN_QT_APPLICATIONS_DIR") or (env("HOME") + "/.local/share/applications")
+let launcher = bin_dir + "/eigen-qt"
+
+mkdir_p(bin_dir)
+mkdir_p(applications_dir)
+
+let launcher_script =
+  "#!/usr/bin/env bash\n" +
+  "# Launch the Eigen Qt GUI from this checkout.\n" +
+  "set -euo pipefail\n" +
+  "\n" +
+  "REPO=\"" + repo + "\"\n" +
+  "BIN=\"$REPO/bin/eigen\"\n" +
+  "GUI_QT=\"$REPO/gui-qt\"\n" +
+  "\n" +
+  "cd \"$REPO\"\n" +
+  "\n" +
+  "needs_build=0\n" +
+  "if [[ ! -x \"$BIN\" ]]; then\n" +
+  "  needs_build=1\n" +
+  "elif [[ -n \"$(find . \\( -name '.git' -o -name '.venv' -o -name 'node_modules' -o -name 'bin' \\) -prune -o -name '*.go' -newer \"$BIN\" -print 2>/dev/null | head -1)\" ]]; then\n" +
+  "  needs_build=1\n" +
+  "fi\n" +
+  "\n" +
+  "if [[ \"$needs_build\" -eq 1 ]]; then\n" +
+  "  echo \"eigen-qt: building core binary via 'make core'...\" >&2\n" +
+  "  make core >&2 || { echo \"eigen-qt: build failed\" >&2; exit 1; }\n" +
+  "  [[ -x \"$BIN\" ]] || { echo \"eigen-qt: build failed\" >&2; exit 1; }\n" +
+  "fi\n" +
+  "\n" +
+  "exec \"$GUI_QT/run.sh\" \"$@\"\n"
+
+write(launcher, launcher_script)
+run("chmod", "0755", launcher).or_die("could not make Eigen Qt launcher executable")
+
+let common_desktop =
+  "Type=Application\n" +
+  "GenericName=AI Coding Agent (Qt)\n" +
+  "Comment=Eigen Qt desktop GUI - local-first AI coding agent\n" +
+  "Exec=\"" + launcher + "\"\n" +
+  "Icon=eigen\n" +
+  "Terminal=false\n" +
+  "Categories=Development;\n" +
+  "Keywords=eigen;ai;agent;coding;llm;qt;\n" +
+  "StartupNotify=true\n" +
+  "StartupWMClass=main\n"
+
+write(
+  applications_dir + "/eigen-qt.desktop",
+  "[Desktop Entry]\n" + "Name=Eigen (Qt)\n" + common_desktop
+)
+write(
+  applications_dir + "/eigen-gui.desktop",
+  "[Desktop Entry]\n" + "Name=Eigen\n" + common_desktop
+)
+
+if which("update-desktop-database") != null {
+  run("update-desktop-database", applications_dir)
+}
+
+echo("Installed Eigen Qt launcher: #{launcher}")
+echo("Installed desktop entries: #{applications_dir}/eigen-qt.desktop, #{applications_dir}/eigen-gui.desktop")
