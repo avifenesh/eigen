@@ -1540,6 +1540,22 @@ def check_utility_load_errors(app, client):
             "machinesCard_codex_box",
         )
         start = len(client.calls)
+        quick_install = click_item_until_call(
+            app,
+            view,
+            root,
+            "machinesQuickInstallButton_codex_box",
+            client,
+            start,
+            "InstallRemote",
+            ("codex-box", True),
+            flick_name="machinesFlick",
+        )
+        if quick_install.property("qaTextFits") is not True:
+            raise AssertionError("machines quick install button text was clipped")
+        if machines.selected_machine.get("ssh") != "codex-box":
+            raise AssertionError("machines quick install did not select its host")
+        start = len(client.calls)
         click_item_until_call(
             app,
             view,
@@ -1552,6 +1568,8 @@ def check_utility_load_errors(app, client):
             flick_name="machinesFlick",
         )
 
+        seed_machines_inventory(machines)
+        machines._set_loading(False)
         machines._set_load_error("")
         machines.select_machine("codex-box")
         install_button = find_visual_item(root, "machinesInstallButton")

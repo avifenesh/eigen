@@ -226,7 +226,7 @@ Rectangle {
                                 readonly property var machine: modelData || ({})
                                 readonly property string ssh: String(machine.ssh || "")
                                 readonly property bool selected: root.hasSelection && String(root.selectedMachine.ssh || "") === ssh
-                                readonly property bool qaTextFits: !machineNameLabel.truncated && !machineSshLabel.truncated && !machineDirBaseLabel.truncated
+                                readonly property bool qaTextFits: !machineNameLabel.truncated && !machineSshLabel.truncated && !machineDirBaseLabel.truncated && quickInstallButton.qaTextFits
                                 objectName: "machinesCard_" + root.safeObjectName(ssh || machine.name || index)
                                 width: machineGrid.cardWidth
                                 height: Math.max(152, machineColumn.implicitHeight + Theme.space.xl)
@@ -368,6 +368,24 @@ Rectangle {
                                                 borderColor: Theme.colors.borderHairline
                                                 textColor: Theme.colors.textSecondary
                                                 minimumHeight: 21
+                                            }
+                                        }
+                                    }
+
+                                    AppButton {
+                                        id: quickInstallButton
+                                        objectName: "machinesQuickInstallButton_" + String(machineCard.objectName).replace("machinesCard_", "")
+                                        text: root.machinesModel && root.machinesModel.installing ? "Installing..." : "Install / update"
+                                        compact: true
+                                        variant: machineCard.selected ? "secondary" : "ghost"
+                                        toolTipText: "Install or update Eigen over SSH; select the host for credential options"
+                                        enabled: root.machinesModel && !root.machinesModel.installing
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 28
+                                        onClicked: {
+                                            if (root.machinesModel) {
+                                                root.machinesModel.select_machine(machineCard.ssh)
+                                                root.machinesModel.install_machine(machineCard.ssh, root.copyCredentials)
                                             }
                                         }
                                     }
