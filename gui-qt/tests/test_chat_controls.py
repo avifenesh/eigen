@@ -60,6 +60,7 @@ class FakeRpcClient(QObject):
         self.defer_methods = set()
         self.deferred = []
         self._token = 0
+        self.voice_status = {"stt": True, "tts": True}
 
     def call(self, method, *args, callback=None, error_callback=None):
         self.calls.append((method, args))
@@ -187,7 +188,7 @@ class FakeRpcClient(QObject):
         if method == "RemoveBan":
             return args[1] == "No broad rewrites" if len(args) > 1 else False
         if method == "VoiceStatus":
-            return {"stt": True, "tts": False}
+            return dict(self.voice_status)
         if method == "VoiceModeStart":
             return None
         if method == "VoiceModeStop":
@@ -195,6 +196,10 @@ class FakeRpcClient(QObject):
         if method == "VoiceListen":
             return "Dictated follow up"
         if method == "VoiceSpeak":
+            return None
+        if method == "VoiceCancelListen":
+            return None
+        if method == "VoiceStopSpeak":
             return None
         if method == "Plugins":
             return {
@@ -919,6 +924,9 @@ if color_name(offline_composer.property("placeholderTextColor")) != EXPECTED_PLA
     raise AssertionError(
         f"Chat composer placeholder color regressed: {color_name(offline_composer.property('placeholderTextColor'))}"
     )
+offline_voice_controls = find_item(offline_chat, "chatVoiceControls")
+if offline_voice_controls is None or offline_voice_controls.property("visible") is not False:
+    raise AssertionError("Offline chat exposed voice controls without a capability probe")
 click_item(app, offline_view, offline_chat, "chatDockToggleButton")
 if offline_chat.property("dockOpen") is not False:
     raise AssertionError("Offline dock toggle opened the dock without RPC")
@@ -976,6 +984,77 @@ if chat.property("qaTranscriptRows") != 1:
     raise AssertionError(f"Seeded transcript did not reach ChatView: {chat.property('qaTranscriptRows')}")
 if float(chat.property("qaTranscriptContentHeight") or 0) <= 0:
     raise AssertionError("Seeded transcript rendered with zero height")
+voice_controls = find_item(chat, "chatVoiceControls")
+dictate_button = find_item(chat, "chatDictateButton")
+voice_mode_button = find_item(chat, "chatVoiceModeButton")
+assistant_speak_button = find_item(chat, "chatSpeakAssistantButton")
+voice_composer = find_item(chat, "chatComposerTextArea")
+if voice_controls is None or dictate_button is None or voice_mode_button is None or assistant_speak_button is None:
+    raise AssertionError("Chat did not render every capability-gated voice control")
+if voice_composer is None:
+    raise AssertionError("Chat did not render a composer for dictation")
+pump(app, 18)
+if voice_controls.property("qaProbed") is not True or voice_controls.property("qaAvailable") is not True:
+    raise AssertionError(
+        f"Chat did not probe voice capabilities: probed={voice_controls.property('qaProbed')} "
+        f"available={voice_controls.property('qaAvailable')} calls={client.calls}"
+    )
+if ("VoiceStatus", ()) not in client.calls or ("subscribe", ("eigen:voice",)) not in client.calls:
+    raise AssertionError(f"Chat did not establish the voice capability/event contract: {client.calls}")
+for item, label in [
+    (dictate_button, "dictation control"),
+    (voice_mode_button, "voice-mode control"),
+    (assistant_speak_button, "assistant read-aloud control"),
+]:
+    if item.property("visible") is not True or item.property("qaTextFits") is not True:
+        raise AssertionError(f"{label} did not render visibly and cleanly")
+    assert_item_inside_window(item, label)
+
+client.event.emit("eigen:voice", {"phase": "listening"})
+pump(app, 12)
+if voice_controls.property("qaPhase") != "listening" or dictate_button.property("selected") is not True:
+    raise AssertionError("Voice listening event did not light the dictation control")
+client.event.emit("eigen:voice", {"phase": "idle"})
+pump(app, 12)
+
+voice_composer.setProperty("text", "Keep this ")
+voice_send_start = call_count(client, "SendInput") + call_count(client, "SteerInput")
+click_item(app, chat_view, chat, "chatDictateButton")
+pump(app, 18)
+if ("VoiceListen", ()) not in client.calls:
+    raise AssertionError(f"Dictation control did not call VoiceListen: {client.calls}")
+if voice_composer.property("text") != "Keep this Dictated follow up":
+    raise AssertionError(f"Dictation did not append to the draft: {voice_composer.property('text')!r}")
+if call_count(client, "SendInput") + call_count(client, "SteerInput") != voice_send_start:
+    raise AssertionError(f"Visible dictation auto-sent without review: {client.calls}")
+
+click_item(app, chat_view, chat, "chatVoiceModeButton")
+pump(app, 12)
+if ("VoiceModeStart", ("s-chat",)) not in client.calls or voice_controls.property("qaModeOn") is not True:
+    raise AssertionError(f"Voice-mode control did not start the selected session: {client.calls}")
+voice_bar = find_item(chat, "chatVoiceStatusBar")
+voice_label = find_item(chat, "chatVoiceStatusLabel")
+if voice_bar is None or voice_label is None or voice_bar.property("visible") is not True:
+    raise AssertionError("Voice conversation did not expose its live status strip")
+client.event.emit("eigen:voice", {"phase": "thinking", "text": "Plan the next change", "mode": True})
+pump(app, 12)
+if voice_label.property("text") != "Thinking":
+    raise AssertionError(f"Voice status strip did not reflect live phase: {voice_label.property('text')!r}")
+voice_heard = find_item(chat, "chatVoiceHeardLabel")
+if voice_heard is None or "Plan the next change" not in voice_heard.property("text"):
+    raise AssertionError("Voice status strip did not expose the heard transcript")
+click_item(app, chat_view, chat, "chatStopVoiceModeButton")
+pump(app, 18)
+if ("VoiceModeStop", ()) not in client.calls or voice_controls.property("qaModeOn") is not False:
+    raise AssertionError(f"Voice status strip did not end the conversation: {client.calls}")
+if voice_bar.property("visible") is not False:
+    raise AssertionError("Voice status strip stayed visible after ending the conversation")
+
+click_item(app, chat_view, chat, "chatSpeakAssistantButton")
+pump(app, 18)
+if not any(call[0] == "VoiceSpeak" and call[1] == ("Ready for the next instruction.",) for call in client.calls):
+    raise AssertionError(f"Assistant read-aloud control did not call VoiceSpeak: {client.calls}")
+voice_composer.setProperty("text", "")
 transcript_list = find_item(chat, "chatTranscriptList")
 if transcript_list is None:
     raise AssertionError("Transcript list did not expose an objectName")
@@ -1821,7 +1900,7 @@ click_item(app, chat_view, chat, "chatSendButton")
 pump(app, 18)
 if ("VoiceStatus", ()) not in client.calls:
     raise AssertionError(f"/voice doctor did not call VoiceStatus: {client.calls}")
-if "voice: STT available, TTS missing" not in transcript.rows[-1]["text"]:
+if "voice: STT available, TTS available" not in transcript.rows[-1]["text"]:
     raise AssertionError(f"/voice doctor did not append voice status: {transcript.rows[-1:]}")
 
 composer.setProperty("text", "/voice")
