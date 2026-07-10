@@ -7,127 +7,157 @@ import "Theme.js" as Theme
 Rectangle {
     id: root
     Layout.fillWidth: true
-    Layout.preferredHeight: 52
+    Layout.preferredHeight: compactControls
+        ? Math.max(100, compactControlsFlow.height + Theme.space.lg * 2)
+        : 52
+    Layout.minimumHeight: Layout.preferredHeight
     color: Theme.colors.bgWell
     border.width: 1
     border.color: Theme.colors.borderHairline
 
     property var sessionState  // SessionStateModel instance
     readonly property bool compactControls: width > 0 && width < 760
+    readonly property real compactModelWidth: Math.max(
+        120,
+        Math.min(200, width - Theme.space.lg * 2 - 104 - Theme.space.md)
+    )
 
-    RowLayout {
-        anchors.fill: parent
-        anchors.margins: Theme.space.lg
-        spacing: root.compactControls ? Theme.space.md : Theme.space.lg
+    Component {
+        id: modelComboComponent
 
-        // Model badge (clickable → dropdown)
         AppComboBox {
-            id: modelCombo
             objectName: "sessionModelCombo"
-            model: sessionState ? sessionState.catalog : []
-            fallbackText: sessionState ? sessionState.model : ""
+            model: root.sessionState ? root.sessionState.catalog : []
+            fallbackText: root.sessionState ? root.sessionState.model : ""
             accessibleName: "Model"
             toolTipText: "Model"
-            Layout.preferredWidth: root.compactControls ? 200 : 220
             activationUpdatesCurrentIndex: false
             currentIndex: {
-                if (!sessionState || !sessionState.catalog) return -1
-                return sessionState.catalog.indexOf(sessionState.model)
+                if (!root.sessionState || !root.sessionState.catalog) return -1
+                return root.sessionState.catalog.indexOf(root.sessionState.model)
             }
 
             onActivated: function(index) {
-                if (sessionState && sessionState.catalog && index >= 0) {
-                    sessionState.setModel(sessionState.catalog[index])
+                if (root.sessionState && root.sessionState.catalog && index >= 0) {
+                    root.sessionState.setModel(root.sessionState.catalog[index])
                 }
             }
         }
+    }
 
-        // Perm toggle (gated ↔ auto)
+    Component {
+        id: permComboComponent
+
         AppComboBox {
-            id: permCombo
             objectName: "sessionPermCombo"
             model: ["gated", "auto"]
             accessibleName: "Permission mode"
             toolTipText: "Permission mode"
-            Layout.preferredWidth: root.compactControls ? 104 : 112
             activationUpdatesCurrentIndex: false
             currentIndex: {
-                if (!sessionState) return 0
-                return sessionState.perm === "auto" ? 1 : 0
+                if (!root.sessionState) return 0
+                return root.sessionState.perm === "auto" ? 1 : 0
             }
 
             onActivated: function(index) {
-                if (sessionState) {
-                    sessionState.setPerm(index === 1 ? "auto" : "gated")
+                if (root.sessionState) {
+                    root.sessionState.setPerm(index === 1 ? "auto" : "gated")
                 }
             }
         }
+    }
 
-        // Effort selector (if model supports it)
+    Component {
+        id: effortComboComponent
+
+        AppComboBox {
+            objectName: "sessionEffortCombo"
+            model: root.sessionState ? root.sessionState.effortLevels : []
+            fallbackText: root.sessionState ? root.sessionState.effort : ""
+            accessibleName: "Reasoning effort"
+            toolTipText: "Reasoning effort"
+            activationUpdatesCurrentIndex: false
+            currentIndex: {
+                if (!root.sessionState || !root.sessionState.effortLevels) return -1
+                return root.sessionState.effortLevels.indexOf(root.sessionState.effort)
+            }
+
+            onActivated: function(index) {
+                if (root.sessionState && root.sessionState.effortLevels && index >= 0) {
+                    root.sessionState.setEffort(root.sessionState.effortLevels[index])
+                }
+            }
+        }
+    }
+
+    Component {
+        id: searchComboComponent
+
+        AppComboBox {
+            objectName: "sessionSearchCombo"
+            model: ["off", "auto", "on"]
+            fallbackText: root.sessionState ? root.sessionState.search : ""
+            accessibleName: "Live search"
+            toolTipText: "Live search"
+            activationUpdatesCurrentIndex: false
+            currentIndex: {
+                if (!root.sessionState) return -1
+                return ["off", "auto", "on"].indexOf(root.sessionState.search)
+            }
+
+            onActivated: function(index) {
+                if (root.sessionState && index >= 0) {
+                    root.sessionState.setSearch(["off", "auto", "on"][index])
+                }
+            }
+        }
+    }
+
+    RowLayout {
+        visible: !root.compactControls
+        anchors.fill: parent
+        anchors.margins: Theme.space.lg
+        spacing: Theme.space.lg
+
         Loader {
-            active: sessionState && sessionState.effortLevels && sessionState.effortLevels.length > 0
+            Layout.preferredWidth: 220
+            Layout.preferredHeight: 32
+            sourceComponent: modelComboComponent
+        }
+
+        Loader {
+            Layout.preferredWidth: 112
+            Layout.preferredHeight: 32
+            sourceComponent: permComboComponent
+        }
+
+        Loader {
+            active: root.sessionState && root.sessionState.effortLevels && root.sessionState.effortLevels.length > 0
             Layout.preferredWidth: active ? 120 : 0
             Layout.preferredHeight: active ? 32 : 0
-            sourceComponent: AppComboBox {
-                objectName: "sessionEffortCombo"
-                model: sessionState ? sessionState.effortLevels : []
-                fallbackText: sessionState ? sessionState.effort : ""
-                accessibleName: "Reasoning effort"
-                toolTipText: "Reasoning effort"
-                activationUpdatesCurrentIndex: false
-                currentIndex: {
-                    if (!sessionState || !sessionState.effortLevels) return -1
-                    return sessionState.effortLevels.indexOf(sessionState.effort)
-                }
-
-                onActivated: function(index) {
-                    if (sessionState && sessionState.effortLevels && index >= 0) {
-                        sessionState.setEffort(sessionState.effortLevels[index])
-                    }
-                }
-            }
+            sourceComponent: effortComboComponent
         }
 
-        // Live search selector (only for providers that expose the mode).
         Loader {
-            active: sessionState && sessionState.search !== ""
-            Layout.preferredWidth: active ? (root.compactControls ? 104 : 112) : 0
+            active: root.sessionState && root.sessionState.search !== ""
+            Layout.preferredWidth: active ? 112 : 0
             Layout.preferredHeight: active ? 32 : 0
-            sourceComponent: AppComboBox {
-                objectName: "sessionSearchCombo"
-                model: ["off", "auto", "on"]
-                fallbackText: sessionState ? sessionState.search : ""
-                accessibleName: "Live search"
-                toolTipText: "Live search"
-                activationUpdatesCurrentIndex: false
-                currentIndex: {
-                    if (!sessionState) return -1
-                    return ["off", "auto", "on"].indexOf(sessionState.search)
-                }
-
-                onActivated: function(index) {
-                    if (sessionState && index >= 0) {
-                        sessionState.setSearch(["off", "auto", "on"][index])
-                    }
-                }
-            }
+            sourceComponent: searchComboComponent
         }
 
-        // Fast/priority service tier. Kept compact so the title still breathes.
         Loader {
-            active: sessionState && sessionState.fastOk
-            Layout.preferredWidth: active ? (root.compactControls ? 44 : 80) : 0
+            active: root.sessionState && root.sessionState.fastOk
+            Layout.preferredWidth: active ? 80 : 0
             Layout.preferredHeight: active ? 32 : 0
             sourceComponent: RowLayout {
-                spacing: root.compactControls ? 0 : Theme.space.sm
+                spacing: Theme.space.sm
 
                 Label {
                     text: "fast"
-                    visible: !root.compactControls
                     font.family: Theme.uiFonts[0]
                     font.pixelSize: Theme.fontSize.micro
                     font.weight: Theme.fontWeight.semibold
-                    color: sessionState && sessionState.fast ? Theme.colors.brandBright : Theme.colors.textMuted
+                    color: root.sessionState && root.sessionState.fast ? Theme.colors.brandBright : Theme.colors.textMuted
                     verticalAlignment: Text.AlignVCenter
                     Layout.preferredWidth: 26
                     elide: Text.ElideRight
@@ -135,12 +165,12 @@ Rectangle {
 
                 AppSwitch {
                     objectName: "sessionFastSwitch"
-                    checked: !!(sessionState && sessionState.fast)
+                    checked: !!(root.sessionState && root.sessionState.fast)
                     accessibleName: "Fast tier"
                     toolTipText: "Fast tier"
                     onClicked: {
-                        if (sessionState) {
-                            sessionState.setFast(!sessionState.fast)
+                        if (root.sessionState) {
+                            root.sessionState.setFast(!root.sessionState.fast)
                         }
                     }
                 }
@@ -210,6 +240,63 @@ Rectangle {
             Layout.maximumWidth: 200
             visible: text.length > 0
                 && !root.compactControls
+        }
+    }
+
+    Flow {
+        id: compactControlsFlow
+        visible: root.compactControls
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: Theme.space.lg
+        height: childrenRect.height
+        spacing: Theme.space.md
+
+        Loader {
+            width: root.compactModelWidth
+            height: 32
+            sourceComponent: modelComboComponent
+        }
+
+        Loader {
+            width: 104
+            height: 32
+            sourceComponent: permComboComponent
+        }
+
+        Loader {
+            active: root.sessionState && root.sessionState.effortLevels && root.sessionState.effortLevels.length > 0
+            visible: active
+            width: active ? 120 : 0
+            height: active ? 32 : 0
+            sourceComponent: effortComboComponent
+        }
+
+        Loader {
+            active: root.sessionState && root.sessionState.search !== ""
+            visible: active
+            width: active ? 104 : 0
+            height: active ? 32 : 0
+            sourceComponent: searchComboComponent
+        }
+
+        Loader {
+            active: root.sessionState && root.sessionState.fastOk
+            visible: active
+            width: active ? 44 : 0
+            height: active ? 32 : 0
+            sourceComponent: AppSwitch {
+                objectName: "sessionFastSwitch"
+                checked: !!(root.sessionState && root.sessionState.fast)
+                accessibleName: "Fast tier"
+                toolTipText: "Fast tier"
+                onClicked: {
+                    if (root.sessionState) {
+                        root.sessionState.setFast(!root.sessionState.fast)
+                    }
+                }
+            }
         }
     }
 }
