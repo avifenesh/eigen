@@ -91,7 +91,8 @@ state.seed(
         "catalog": {
             "models": [
                 {"id": "openai.gpt-5.5", "effortLevels": ["low", "medium", "high"]},
-                {"id": "openai.gpt-5.6", "effortLevels": ["low", "high"]},
+                {"id": "gpt-5.6-sol", "effortLevels": ["low", "high"]},
+                {"id": "local-qwen", "effortLevels": ["low", "high"]},
             ]
         },
     }
@@ -129,15 +130,25 @@ for window_width in (1180, 420):
         if control.property("qaTextFits") is not True:
             raise AssertionError(f"{name} text is clipped at {window_width}px")
         controls.append(control)
+    model_combo = find_visible_item(root, "sessionModelCombo")
+    if model_combo.property("count") != 2:
+        raise AssertionError(f"model picker exposed non-GPT options at {window_width}px: {model_combo.property('count')}")
     if window_width == 420:
         rows = {round(control.mapToScene(QPointF(0, 0)).y()) for control in controls}
         if len(rows) < 2:
             raise AssertionError("compact session controls did not wrap into multiple rows")
+        model_combo.setProperty("qaPopupOpen", True)
+        pump(app, 20)
+        if model_combo.property("qaPopupActuallyOpen") is not True:
+            raise AssertionError("focused model picker did not open")
+        if model_combo.property("qaPopupInsideWindow") is not True:
+            raise AssertionError("focused model picker escaped the narrow window")
         screenshots = os.environ.get("EIGEN_QT_SCREENSHOT_DIR", "")
         if screenshots:
             output = Path(screenshots)
             output.mkdir(parents=True, exist_ok=True)
-            view.grabWindow().save(str(output / "session-settings-narrow.png"))
+            view.grabWindow().save(str(output / "session-model-picker-narrow.png"))
+        model_combo.setProperty("qaPopupOpen", False)
 
 view.close()
 """
