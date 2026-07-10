@@ -190,10 +190,6 @@ import "Theme.js" as Theme
             text: "local"
             compact: true
             pill: true
-            leftPadding: Theme.space.xxxxl + Theme.space.xl
-            rightPadding: Theme.space.xxxxl + Theme.space.xl
-            topPadding: Theme.space.lg + Theme.space.xxs
-            bottomPadding: Theme.space.lg + Theme.space.xxs
         }
 
         AppTextField {
@@ -352,18 +348,18 @@ import "Theme.js" as Theme
         raise AssertionError("AppTag did not expose its QA marker")
     if sample_tag.property("qaTextFits") is not True:
         raise AssertionError("AppTag text does not fit")
-    if float(sample_tag.property("qaHorizontalPadding") or 0) < 47.5:
+    if float(sample_tag.property("qaHorizontalPadding") or 0) < 11.5:
         raise AssertionError(f"AppTag horizontal padding too small: {sample_tag.property('qaHorizontalPadding')}")
-    if float(sample_tag.property("qaVerticalPadding") or 0) < 13.5:
+    if float(sample_tag.property("qaVerticalPadding") or 0) < 3.5:
         raise AssertionError(f"AppTag vertical padding too small: {sample_tag.property('qaVerticalPadding')}")
 
     if sample_pill_chip.property("qaIsAppButton") is not True:
         raise AssertionError("Pill chip did not use AppButton")
     if sample_pill_chip.property("qaTextFits") is not True:
         raise AssertionError("Pill chip text does not fit")
-    if float(sample_pill_chip.property("qaHorizontalPadding") or 0) < 47.5:
+    if float(sample_pill_chip.property("qaHorizontalPadding") or 0) < 11.5:
         raise AssertionError(f"Pill chip horizontal padding too small: {sample_pill_chip.property('qaHorizontalPadding')}")
-    if float(sample_pill_chip.property("qaVerticalPadding") or 0) < 13.5:
+    if float(sample_pill_chip.property("qaVerticalPadding") or 0) < 3.5:
         raise AssertionError(f"Pill chip vertical padding too small: {sample_pill_chip.property('qaVerticalPadding')}")
 
     if sample_text_field.property("qaIsAppTextField") is not True:

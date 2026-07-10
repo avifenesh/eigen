@@ -93,8 +93,8 @@ Rectangle {
         property string fontFamily: Theme.monoFonts[0]
         property int fontPixelSize: Theme.fontSize.micro
         property int fontWeight: Theme.fontWeight.medium
-        property real horizontalPadding: Theme.space.xxxxl + Theme.space.xl
-        property real verticalPadding: Theme.space.lg + Theme.space.xxs
+        property real horizontalPadding: Theme.space.lg
+        property real verticalPadding: Theme.space.xs
 
         readonly property bool qaIsBoardBadge: true
         readonly property bool qaTextFits: badgeLabel.implicitWidth <= badgeLabel.width + 1.0
@@ -108,7 +108,7 @@ Rectangle {
         width: implicitWidth
         height: implicitHeight
         implicitWidth: Math.max(badgeLabel.implicitWidth + horizontalPadding * 2, horizontalPadding * 2 + 4)
-        implicitHeight: Math.max(32, badgeLabel.implicitHeight + verticalPadding * 2)
+        implicitHeight: Math.max(24, badgeLabel.implicitHeight + verticalPadding * 2)
         radius: Theme.radius.full
         color: backgroundColor
         border.width: 1
@@ -523,7 +523,7 @@ Rectangle {
         Rectangle {
             visible: viewMode === "projects" && boardModel && boardRows > 0
             Layout.fillWidth: true
-            Layout.preferredHeight: visible ? 50 : 0
+            Layout.preferredHeight: visible ? 40 : 0
             color: Theme.colors.bgBase
 
             RowLayout {
@@ -539,8 +539,8 @@ Rectangle {
                         model: ownerOptions
                         delegate: Rectangle {
                             objectName: "boardOwnerFilterChip_" + root.safeObjectName(modelData.value)
-                            readonly property real horizontalInset: Theme.space.xxxxl + Theme.space.xl
-                            readonly property real verticalInset: Theme.space.lg + Theme.space.xxs
+                            readonly property real horizontalInset: Theme.space.lg
+                            readonly property real verticalInset: Theme.space.xs
                             readonly property bool qaIsBoardChip: true
                             readonly property bool qaVisualFocus: activeFocus
                             readonly property string qaAccessibleName: modelData.label + " board owner filter"
@@ -553,7 +553,7 @@ Rectangle {
                             readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
 
                             width: ownerLabel.implicitWidth + horizontalInset * 2
-                            height: Math.max(38, ownerLabel.implicitHeight + verticalInset * 2)
+                            height: Math.max(32, ownerLabel.implicitHeight + verticalInset * 2)
                             radius: Theme.radius.full
                             activeFocusOnTab: true
                             focusPolicy: Qt.StrongFocus
@@ -605,8 +605,8 @@ Rectangle {
                         model: stateOptions
                         delegate: Rectangle {
                             objectName: "boardStateFilterChip_" + root.safeObjectName(modelData.value)
-                            readonly property real horizontalInset: Theme.space.xxxxl + Theme.space.xl
-                            readonly property real verticalInset: Theme.space.lg + Theme.space.xxs
+                            readonly property real horizontalInset: Theme.space.lg
+                            readonly property real verticalInset: Theme.space.xs
                             readonly property bool qaIsBoardChip: true
                             readonly property bool qaVisualFocus: activeFocus
                             readonly property string qaAccessibleName: modelData.label + " board state filter"
@@ -619,7 +619,7 @@ Rectangle {
                             readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
 
                             width: stateLabel.implicitWidth + horizontalInset * 2
-                            height: Math.max(38, stateLabel.implicitHeight + verticalInset * 2)
+                            height: Math.max(32, stateLabel.implicitHeight + verticalInset * 2)
                             radius: Theme.radius.full
                             activeFocusOnTab: true
                             focusPolicy: Qt.StrongFocus

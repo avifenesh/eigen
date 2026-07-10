@@ -680,6 +680,35 @@ def find_item(item, object_name):
     return None
 
 
+def effectively_visible(item):
+    current = item
+    while current is not None:
+        if current.property("visible") is False:
+            return False
+        opacity = current.property("opacity")
+        if opacity is not None and float(opacity) <= 0.01:
+            return False
+        current = current.parentItem()
+    return True
+
+
+def find_visible_item(root, object_name):
+    matches = []
+
+    def collect(item):
+        if item.objectName() == object_name and effectively_visible(item):
+            matches.append(item)
+        for child in item.childItems():
+            collect(child)
+
+    collect(root)
+    return max(
+        matches,
+        key=lambda item: float(item.property("width") or 0) * float(item.property("height") or 0),
+        default=None,
+    )
+
+
 def scene_top(item):
     return item.mapToScene(QPointF(0, 0)).y()
 
@@ -705,7 +734,7 @@ def assert_app_tags_have_padding(view_name, root_item):
             if visible and width > 0 and height > 0:
                 horizontal_padding = float(item.property("qaHorizontalPadding") or 0)
                 vertical_padding = float(item.property("qaVerticalPadding") or 0)
-                if item.property("qaTextFits") is not True or horizontal_padding < 47.5 or vertical_padding < 13.5:
+                if item.property("qaTextFits") is not True or horizontal_padding < 11.5 or vertical_padding < 3.5:
                     failures.append(
                         f"{item.objectName() or '<unnamed>'} "
                         f"fits={item.property('qaTextFits')} "
@@ -734,7 +763,7 @@ def assert_marked_chips_have_padding(view_name, root_item, markers, label):
             if visible and width > 0 and height > 0:
                 horizontal_padding = float(item.property("qaHorizontalPadding") or 0)
                 vertical_padding = float(item.property("qaVerticalPadding") or 0)
-                if item.property("qaTextFits") is not True or horizontal_padding < 47.5 or vertical_padding < 13.5:
+                if item.property("qaTextFits") is not True or horizontal_padding < 11.5 or vertical_padding < 3.5:
                     failures.append(
                         f"{item.objectName() or '<unnamed>'} "
                         f"fits={item.property('qaTextFits')} "
@@ -1195,16 +1224,16 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
 
     send_button = find_item(window.contentItem(), "chatSendButton")
     status_strip = find_item(window.contentItem(), "mainStatusStrip")
-    fast_switch = find_item(window.contentItem(), "sessionFastSwitch")
+    fast_switch = find_visible_item(window.contentItem(), "sessionFastSwitch")
     if send_button is None or status_strip is None or fast_switch is None:
         print("✗ Main minimum chat proof could not find send button/status strip/fast switch")
         window.hide()
         return False
-    if scene_right(fast_switch) > float(window.width()) + 0.5:
+    if scene_right(fast_switch) > scene_right(window.contentItem()) + 0.5:
         print(
             "✗ Main minimum chat proof clipped fast switch: "
             f"switch right={scene_right(fast_switch):.1f}, "
-            f"window width={float(window.width()):.1f}"
+            f"content right={scene_right(window.contentItem()):.1f}"
         )
         window.hide()
         return False
@@ -1256,11 +1285,11 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
         )
         window.hide()
         return False
-    if scene_right(fast_switch) > float(window.width()) + 0.5:
+    if scene_right(fast_switch) > scene_right(window.contentItem()) + 0.5:
         print(
             "✗ Main compact chat proof clipped fast switch: "
             f"switch right={scene_right(fast_switch):.1f}, "
-            f"window width={float(window.width()):.1f}"
+            f"content right={scene_right(window.contentItem()):.1f}"
         )
         window.hide()
         return False
@@ -1273,7 +1302,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
     else:
         print(f"✗ Failed to save {output_compact}")
 
-    compact_model_combo = find_item(window.contentItem(), "sessionModelCombo")
+    compact_model_combo = find_visible_item(window.contentItem(), "sessionModelCombo")
     if compact_model_combo is None:
         print("✗ Main compact dropdown proof could not find the model combo")
         window.hide()
@@ -1312,7 +1341,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
         )
         window.hide()
         return False
-    compact_model_option = find_item(window.contentItem(), "sessionModelCombo_option_0")
+    compact_model_option = find_visible_item(window.contentItem(), "sessionModelCombo_option_0")
     if compact_model_option is None:
         print("✗ Main compact dropdown proof could not find the model option")
         window.hide()
@@ -1519,7 +1548,7 @@ def main():
             tag = find_item(root, object_name)
             if tag is None or tag.property("qaIsAppTag") is not True:
                 raise AssertionError(f"home tag {object_name} did not use AppTag")
-            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 47.5 or float(tag.property("qaVerticalPadding") or 0) < 13.5:
+            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 11.5 or float(tag.property("qaVerticalPadding") or 0) < 3.5:
                 raise AssertionError(
                     f"home tag {object_name} is cramped: "
                     f"fits={tag.property('qaTextFits')} padding={tag.property('qaHorizontalPadding')}x{tag.property('qaVerticalPadding')}"
@@ -1881,7 +1910,7 @@ def main():
             )
         if status_tag.property("qaIsAppTag") is not True:
             raise AssertionError("chat terminal status did not use AppTag")
-        if status_tag.property("qaTextFits") is not True or float(status_tag.property("qaHorizontalPadding") or 0) < 47.5 or float(status_tag.property("qaVerticalPadding") or 0) < 13.5:
+        if status_tag.property("qaTextFits") is not True or float(status_tag.property("qaHorizontalPadding") or 0) < 11.5 or float(status_tag.property("qaVerticalPadding") or 0) < 3.5:
             raise AssertionError(
                 "chat terminal status rendered cramped: "
                 f"fits={status_tag.property('qaTextFits')} "
@@ -2395,8 +2424,8 @@ def main():
             raise AssertionError("board filter focus screenshot did not render the dirty filter chip")
         if (
             chip.property("qaTextFits") is not True
-            or float(chip.property("qaHorizontalPadding") or 0) < 47.5
-            or float(chip.property("qaVerticalPadding") or 0) < 13.5
+            or float(chip.property("qaHorizontalPadding") or 0) < 11.5
+            or float(chip.property("qaVerticalPadding") or 0) < 3.5
         ):
             raise AssertionError("board filter focus screenshot rendered a cramped dirty filter chip")
         chip.forceActiveFocus(Qt.TabFocusReason)
@@ -2431,7 +2460,7 @@ def main():
             tag = find_item(root, object_name)
             if tag is None or tag.property("qaIsAppTag") is not True:
                 raise AssertionError(f"kanban tag {object_name} did not use AppTag")
-            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 47.5 or float(tag.property("qaVerticalPadding") or 0) < 13.5:
+            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 11.5 or float(tag.property("qaVerticalPadding") or 0) < 3.5:
                 raise AssertionError(
                     f"kanban tag {object_name} is cramped: "
                     f"fits={tag.property('qaTextFits')} padding={tag.property('qaHorizontalPadding')}x{tag.property('qaVerticalPadding')}"
@@ -2678,7 +2707,7 @@ def main():
             tag = find_item(root, object_name)
             if tag is None or tag.property("qaIsAppTag") is not True:
                 raise AssertionError(f"skills tag {object_name} did not use AppTag")
-            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 47.5 or float(tag.property("qaVerticalPadding") or 0) < 13.5:
+            if tag.property("qaTextFits") is not True or float(tag.property("qaHorizontalPadding") or 0) < 11.5 or float(tag.property("qaVerticalPadding") or 0) < 3.5:
                 raise AssertionError(
                     f"skills tag {object_name} is cramped: "
                     f"fits={tag.property('qaTextFits')} padding={tag.property('qaHorizontalPadding')}x{tag.property('qaVerticalPadding')}"
@@ -2728,7 +2757,7 @@ def main():
         preview_tag = find_item(root, "skillPreviewSourceTag_frontend-design")
         if preview_tag is None or preview_tag.property("qaIsAppTag") is not True:
             raise AssertionError("skills preview source tag did not use AppTag")
-        if preview_tag.property("qaTextFits") is not True or float(preview_tag.property("qaHorizontalPadding") or 0) < 47.5 or float(preview_tag.property("qaVerticalPadding") or 0) < 13.5:
+        if preview_tag.property("qaTextFits") is not True or float(preview_tag.property("qaHorizontalPadding") or 0) < 11.5 or float(preview_tag.property("qaVerticalPadding") or 0) < 3.5:
             raise AssertionError(
                 "skills preview source tag is cramped: "
                 f"fits={preview_tag.property('qaTextFits')} "
