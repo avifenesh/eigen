@@ -67,11 +67,14 @@ Rectangle {
     property var actionTokens: ({})
     property var recentProjectDirs: []
     property string newSessionDir: ""
+    property string newSessionError: ""
     property bool newSessionSelectionTouched: false
     property int newSessionToken: 0
     property int recentDirsToken: 0
     readonly property int qaRecentProjectCount: recentProjectDirs ? recentProjectDirs.length : 0
     readonly property string qaNewSessionDir: newSessionDir
+    readonly property string qaNewSessionError: newSessionError
+    readonly property bool qaNewSessionErrorVisible: newSessionErrorBanner.visible
     readonly property bool qaNewSessionPopupOpen: newSessionPopup.opened
     readonly property bool qaNewSessionPopupInBounds: newSessionPopup.x >= 0
         && newSessionPopup.y >= 0
@@ -802,6 +805,29 @@ Rectangle {
                 Layout.fillWidth: true
             }
 
+            Rectangle {
+                id: newSessionErrorBanner
+                objectName: "chatNewSessionError"
+                visible: root.newSessionError !== ""
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? Math.max(44, newSessionErrorText.implicitHeight + Theme.space.md * 2) : 0
+                color: Theme.colors.errorBg
+                radius: Theme.radius.sm
+                border.width: 1
+                border.color: Theme.colors.error
+
+                Label {
+                    id: newSessionErrorText
+                    anchors.fill: parent
+                    anchors.margins: Theme.space.md
+                    text: root.newSessionError
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.bodySm
+                    color: Theme.colors.error
+                    wrapMode: Text.Wrap
+                }
+            }
+
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: Theme.space.sm
@@ -1032,6 +1058,7 @@ Rectangle {
 
     function openNewSessionPicker() {
         root.actionError = ""
+        root.newSessionError = ""
         root.newSessionSelectionTouched = false
         root.chooseDefaultNewSessionDir()
         if ((!root.recentProjectDirs || root.recentProjectDirs.length === 0) && root.recentDirsToken === 0) {
@@ -1041,16 +1068,24 @@ Rectangle {
     }
 
     function refreshRecentProjectDirs() {
-        if (!root.rpcClient || typeof root.rpcClient.callToken !== "function" || root.recentDirsToken !== 0) return
+        if (root.recentDirsToken !== 0) return
+        if (!root.rpcClient || typeof root.rpcClient.callToken !== "function") {
+            root.newSessionError = "Could not load recent projects: RPC client is unavailable."
+            root.actionError = root.newSessionError
+            return
+        }
+        root.newSessionError = ""
         root.recentDirsToken = root.rpcClient.callToken("RecentDirs", [])
     }
 
     function handleRecentProjectDirs(payload) {
         var error = root.payloadError(payload)
         if (error !== "") {
-            root.actionError = "Could not load recent projects: " + error
+            root.newSessionError = "Could not load recent projects: " + error
+            root.actionError = root.newSessionError
             return
         }
+        root.newSessionError = ""
         var dirs = payload && payload.result ? payload.result : []
         var normalized = []
         var seen = ({})
@@ -1088,15 +1123,18 @@ Rectangle {
     function startNewSessionInProject(dir) {
         dir = String(dir || "")
         if (dir === "") {
-            root.actionError = "Choose a project directory before starting a new chat."
+            root.newSessionError = "Choose a project directory before starting a new chat."
+            root.actionError = root.newSessionError
             return false
         }
         if (!root.rpcClient || typeof root.rpcClient.callToken !== "function") {
-            root.actionError = "Could not start session: RPC client is unavailable."
+            root.newSessionError = "Could not start session: RPC client is unavailable."
+            root.actionError = root.newSessionError
             return false
         }
         if (root.newSessionToken !== 0) return false
         root.actionError = ""
+        root.newSessionError = ""
         root.newSessionToken = root.rpcClient.callToken("NewSession", [dir, "", ""])
         return true
     }
@@ -1104,14 +1142,17 @@ Rectangle {
     function handleNewSessionResult(payload) {
         var error = root.payloadError(payload)
         if (error !== "") {
-            root.actionError = "Could not start session: " + error
+            root.newSessionError = "Could not start session: " + error
+            root.actionError = root.newSessionError
             return
         }
         var sessionId = payload ? String(payload.result || "") : ""
         if (sessionId === "") {
-            root.actionError = "Could not start session: the daemon returned no session id."
+            root.newSessionError = "Could not start session: the daemon returned no session id."
+            root.actionError = root.newSessionError
             return
         }
+        root.newSessionError = ""
         newSessionPopup.close()
         root.sessionStarted(sessionId)
     }
