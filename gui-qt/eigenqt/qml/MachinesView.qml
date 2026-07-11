@@ -15,13 +15,28 @@ Rectangle {
     readonly property var remoteSessions: machinesModel ? machinesModel.remote_sessions || [] : []
     readonly property bool hasSelection: String(selectedMachine.ssh || "") !== ""
     property bool copyCredentials: true
+    property bool addMachineOpen: false
+    property string addMachineName: ""
+    property string addMachineSSH: ""
+    property string addMachineDir: ""
     readonly property int qaMachineCount: machinesModel ? machinesModel.machine_count : 0
     readonly property int qaRemoteCount: machinesModel ? machinesModel.remote_count : 0
+    readonly property bool qaAddMachineOpen: addMachineOpen
     signal openSession(string sessionId)
 
     onMachinesModelChanged: syncActiveModel()
     onVisibleChanged: syncActiveModel()
     Component.onCompleted: syncActiveModel()
+
+    Connections {
+        target: root.machinesModel ? root.machinesModel : null
+        function onMachineSaved() {
+            root.addMachineOpen = false
+            root.addMachineName = ""
+            root.addMachineSSH = ""
+            root.addMachineDir = ""
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -55,13 +70,24 @@ Rectangle {
 
                     Label {
                         objectName: "machinesSummary"
-                        text: summaryText()
+                        text: root.width < 560 ? compactSummaryText() : summaryText()
                         font.family: Theme.monoFonts[0]
                         font.pixelSize: Theme.fontSize.micro
                         color: Theme.colors.textMuted
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                     }
+                }
+
+                AppButton {
+                    objectName: "machinesAddButton"
+                    text: "Add SSH machine"
+                    compact: true
+                    variant: "secondary"
+                    toolTipText: "Save a new SSH machine"
+                    Layout.preferredWidth: Math.max(136, implicitWidth)
+                    Layout.preferredHeight: 32
+                    onClicked: root.openAddMachine()
                 }
 
                 AppButton {
@@ -165,6 +191,137 @@ Rectangle {
                 }
 
                 Rectangle {
+                    id: addMachineForm
+                    objectName: "machinesAddForm"
+                    visible: root.addMachineOpen
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: visible ? addMachineColumn.implicitHeight + Theme.space.xl * 2 : 0
+                    radius: Theme.radius.md
+                    color: Theme.colors.surfaceRaised
+                    border.width: 1
+                    border.color: Theme.colors.borderSubtle
+                    clip: true
+
+                    ColumnLayout {
+                        id: addMachineColumn
+                        anchors.fill: parent
+                        anchors.margins: Theme.space.xl
+                        spacing: Theme.space.md
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.space.sm
+
+                            Label {
+                                text: "Add SSH machine"
+                                font.family: Theme.uiFonts[0]
+                                font.pixelSize: Theme.fontSize.body
+                                font.weight: Theme.fontWeight.semibold
+                                color: Theme.colors.textPrimary
+                                Layout.fillWidth: true
+                            }
+
+                            AppButton {
+                                objectName: "machinesAddCloseButton"
+                                text: "X"
+                                compact: true
+                                toolTipText: "Close add machine"
+                                Layout.preferredWidth: 28
+                                Layout.preferredHeight: 28
+                                onClicked: root.closeAddMachine()
+                            }
+                        }
+
+                        AppTextField {
+                            id: addMachineSSHField
+                            objectName: "machinesAddSSHInput"
+                            Layout.fillWidth: true
+                            placeholderText: "SSH target, for example gpu-box or avi@gpu-box"
+                            text: root.addMachineSSH
+                            onTextChanged: root.addMachineSSH = text
+                        }
+
+                        AppTextField {
+                            objectName: "machinesAddNameInput"
+                            Layout.fillWidth: true
+                            placeholderText: "Machine name (optional)"
+                            text: root.addMachineName
+                            onTextChanged: root.addMachineName = text
+                        }
+
+                        AppTextField {
+                            objectName: "machinesAddDirInput"
+                            Layout.fillWidth: true
+                            placeholderText: "Remote project directory (optional)"
+                            text: root.addMachineDir
+                            onTextChanged: root.addMachineDir = text
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.space.sm
+
+                            Label {
+                                text: "Copy local daemon credentials"
+                                font.family: Theme.uiFonts[0]
+                                font.pixelSize: Theme.fontSize.micro
+                                color: Theme.colors.textSecondary
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                            }
+
+                            AppSwitch {
+                                id: addMachineCredentialsSwitch
+                                objectName: "machinesAddCredentialsSwitch"
+                                checked: root.copyCredentials
+                                enabled: root.machinesModel && !root.machinesModel.saving_machine
+                                accessibleName: "Copy local daemon credentials"
+                                toolTipText: "Copy available local daemon credentials during install"
+                                onToggled: root.copyCredentials = checked
+                            }
+                        }
+
+                        Label {
+                            objectName: "machinesAddError"
+                            visible: root.machinesModel && root.machinesModel.save_error !== ""
+                            text: root.machinesModel ? root.machinesModel.save_error : ""
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.label
+                            color: Theme.colors.error
+                            wrapMode: Text.Wrap
+                            Layout.fillWidth: true
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.space.sm
+
+                            Item { Layout.fillWidth: true }
+
+                            AppButton {
+                                objectName: "machinesSaveButton"
+                                text: root.machinesModel && root.machinesModel.saving_machine ? "Saving..." : "Save"
+                                compact: true
+                                variant: "secondary"
+                                enabled: root.canSaveMachine()
+                                toolTipText: "Save this SSH machine"
+                                onClicked: root.saveMachine(false)
+                            }
+
+                            AppButton {
+                                objectName: "machinesSaveInstallButton"
+                                text: root.machinesModel && root.machinesModel.saving_machine ? "Saving..." : "Add and install"
+                                compact: true
+                                variant: "primary"
+                                enabled: root.canSaveMachine()
+                                toolTipText: "Save this SSH machine and install Eigen"
+                                onClicked: root.saveMachine(true)
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
                     visible: root.machinesModel && !root.machinesModel.loading && root.machinesModel.load_error === "" && root.qaMachineCount === 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: visible ? 132 : 0
@@ -187,11 +344,20 @@ Rectangle {
                         }
 
                         Label {
-                            text: "eigen remote add"
-                            font.family: Theme.monoFonts[0]
-                            font.pixelSize: Theme.fontSize.codeSm
+                            text: "Add an SSH alias or user@host, then install Eigen remotely."
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.label
                             color: Theme.colors.textMuted
                             Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        AppButton {
+                            objectName: "machinesEmptyAddButton"
+                            text: "Add SSH machine"
+                            compact: true
+                            variant: "primary"
+                            Layout.alignment: Qt.AlignHCenter
+                            onClicked: root.openAddMachine()
                         }
                     }
                 }
@@ -871,11 +1037,45 @@ Rectangle {
         }
     }
 
+    function openAddMachine() {
+        root.addMachineOpen = true
+        Qt.callLater(function() {
+            if (addMachineSSHField.visible && addMachineSSHField.enabled) {
+                addMachineSSHField.forceActiveFocus(Qt.TabFocusReason)
+            }
+        })
+    }
+
+    function closeAddMachine() {
+        root.addMachineOpen = false
+    }
+
+    function canSaveMachine() {
+        return !!(root.machinesModel && !root.machinesModel.saving_machine && root.addMachineSSH.trim() !== "")
+    }
+
+    function saveMachine(install) {
+        if (!root.canSaveMachine()) return
+        root.machinesModel.save_machine(
+            root.addMachineName,
+            root.addMachineSSH,
+            root.addMachineDir,
+            !!install,
+            root.copyCredentials
+        )
+    }
+
     function summaryText() {
         if (!root.machinesModel) return "no machines"
         if (root.qaMachineCount === 0 && root.machinesModel.loading) return "loading machines"
         return String(root.qaMachineCount) + " hosts / " + String(root.machinesModel.saved_count || 0)
             + " saved / " + String(root.machinesModel.detected_count || 0) + " detected"
+    }
+
+    function compactSummaryText() {
+        if (!root.machinesModel) return "no machines"
+        if (root.qaMachineCount === 0 && root.machinesModel.loading) return "loading"
+        return String(root.qaMachineCount) + (root.qaMachineCount === 1 ? " host" : " hosts")
     }
 
     function machineTags(machine) {

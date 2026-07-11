@@ -3138,6 +3138,33 @@ def main():
 
     ok = capture_view("machines", "MachinesView.qml", setup_machines, show_machines) and ok
 
+    def show_machines_add(_view, root):
+        root.setProperty("addMachineOpen", True)
+        for _ in range(8):
+            app.processEvents()
+        for object_name in (
+            "machinesAddSSHInput",
+            "machinesAddNameInput",
+            "machinesAddDirInput",
+            "machinesSaveButton",
+            "machinesSaveInstallButton",
+        ):
+            item = find_item(root, object_name)
+            if item is None or item.property("visible") is not True:
+                raise AssertionError(f"machines add screenshot did not render {object_name}")
+            if item.property("qaTextFits") is not True:
+                raise AssertionError(f"machines add screenshot clipped {object_name}")
+
+    ok = capture_view("machines-add", "MachinesView.qml", setup_machines, show_machines_add) and ok
+    ok = capture_view(
+        "machines-add-narrow",
+        "MachinesView.qml",
+        setup_machines,
+        show_machines_add,
+        width=380,
+        height=800,
+    ) and ok
+
     def show_machines_load_error(_view, root):
         model = root.property("machinesModel")
         model._machines = []

@@ -36,6 +36,9 @@ class MachinesModel(QObject):
     installing_changed = Signal()
     install_message_changed = Signal()
     install_error_changed = Signal()
+    saving_machine_changed = Signal()
+    save_error_changed = Signal()
+    machineSaved = Signal()
     summary_changed = Signal()
 
     def __init__(self, client: RpcClient, parent: Optional[QObject] = None):
@@ -51,10 +54,13 @@ class MachinesModel(QObject):
         self._installing = False
         self._install_message = ""
         self._install_error = ""
+        self._saving_machine = False
+        self._save_error = ""
         self._active = False
         self._load_seq = 0
         self._remote_seq = 0
         self._install_seq = 0
+        self._save_seq = 0
 
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(60_000)
@@ -101,6 +107,14 @@ class MachinesModel(QObject):
     @Property(str, notify=install_error_changed)
     def install_error(self) -> str:
         return self._install_error
+
+    @Property(bool, notify=saving_machine_changed)
+    def saving_machine(self) -> bool:
+        return self._saving_machine
+
+    @Property(str, notify=save_error_changed)
+    def save_error(self) -> str:
+        return self._save_error
 
     @Property(int, notify=summary_changed)
     def machine_count(self) -> int:
@@ -185,6 +199,23 @@ class MachinesModel(QObject):
             callback=lambda result: self._on_install_result(result, ssh, seq),
         )
 
+    @Slot(str, str, str, bool, bool)
+    def save_machine(self, name: str, ssh: str, remote_dir: str, install: bool, push_creds: bool):
+        """Save an SSH target, optionally launching the established installer."""
+        if self._saving_machine:
+            return
+        self._save_seq += 1
+        seq = self._save_seq
+        self._set_saving_machine(True)
+        self._set_save_error("")
+        self._client.call(
+            "SaveRemoteMachine",
+            str(name or "").strip(),
+            str(ssh or "").strip(),
+            str(remote_dir or "").strip(),
+            callback=lambda result: self._on_save_machine_result(result, bool(install), bool(push_creds), seq),
+        )
+
     def start_polling(self):
         if not self._poll_timer.isActive():
             self._fetch()
@@ -249,6 +280,18 @@ class MachinesModel(QObject):
         self._install_error = value
         self.install_error_changed.emit()
 
+    def _set_saving_machine(self, value: bool):
+        if self._saving_machine == value:
+            return
+        self._saving_machine = value
+        self.saving_machine_changed.emit()
+
+    def _set_save_error(self, value: str):
+        if self._save_error == value:
+            return
+        self._save_error = value
+        self.save_error_changed.emit()
+
     def _fetch(self):
         self._load_seq += 1
         seq = self._load_seq
@@ -309,4 +352,50 @@ class MachinesModel(QObject):
         self._set_install_error("")
         self._set_install_message(str(result.get("result") or f"Eigen installed on {ssh}"))
         if str(self._selected_machine.get("ssh") or "") == ssh:
+            self.select_machine(ssh)
+
+    def _on_save_machine_result(self, result: dict, install: bool, push_creds: bool, seq: int):
+        if seq != self._save_seq:
+            return
+        self._set_saving_machine(False)
+        if "error" in result:
+            self._set_save_error(_err_text(result))
+            return
+
+        machine = result.get("result") or {}
+        if not isinstance(machine, dict) or not str(machine.get("ssh") or ""):
+            self._set_save_error("Saved machine response was incomplete")
+            return
+
+        saved = dict(machine)
+        name = str(saved.get("name") or "")
+        ssh = str(saved.get("ssh") or "")
+        existing = next(
+            (
+                item for item in self._machines
+                if str(item.get("name") or "") == name or str(item.get("ssh") or "") == ssh
+            ),
+            None,
+        )
+        if existing is not None:
+            merged = dict(existing)
+            merged.update(saved)
+            saved = merged
+        self._machines = [
+            item for item in self._machines
+            if str(item.get("name") or "") != name and str(item.get("ssh") or "") != ssh
+        ]
+        self._machines.append(saved)
+        self._machines.sort(key=lambda item: str(item.get("name") or item.get("ssh") or "").lower())
+        self.machines_changed.emit()
+        self.summary_changed.emit()
+        self._set_save_error("")
+        self._set_selected_machine(saved)
+        self._set_remote_sessions([])
+        self._set_remote_error("")
+        self.machineSaved.emit()
+
+        if install:
+            self.install_machine(ssh, push_creds)
+        else:
             self.select_machine(ssh)

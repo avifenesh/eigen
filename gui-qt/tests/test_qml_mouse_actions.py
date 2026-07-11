@@ -159,6 +159,13 @@ class FakeRpcClient(QObject):
             return {"plugins": [], "marketplaces": []}
         if method == "Machines":
             return {"machines": []}
+        if method == "SaveRemoteMachine":
+            return {
+                "name": args[0] or "gpu-box",
+                "ssh": args[1],
+                "dir": args[2],
+                "saved": True,
+            }
         if method == "Crons":
             return {"crons": [], "timers": 0, "crontab": 0, "systemdAvail": False}
         if method in ("AppendMemory", "WriteUserProfile", "AddBan", "RemoveMemoryNote", "RemoveAdHocMemoryNote", "MoveMemoryNote"):
@@ -1591,6 +1598,27 @@ def check_utility_load_errors(app, client):
         seed_machines_inventory(machines)
         machines._set_loading(False)
         machines._set_load_error("")
+        add_machine = click_item(app, view, root, "machinesAddButton")
+        if root.property("qaAddMachineOpen") is not True:
+            invoke_click(add_machine)
+            pump(app)
+        if root.property("qaAddMachineOpen") is not True:
+            raise AssertionError("machines add button did not open the SSH machine form")
+        set_text(app, root, "machinesAddSSHInput", "avi@gpu-box")
+        set_text(app, root, "machinesAddNameInput", "gpu-box")
+        set_text(app, root, "machinesAddDirInput", "/srv/eigen")
+        start = len(client.calls)
+        save_install = click_item(app, view, root, "machinesSaveInstallButton")
+        if ("SaveRemoteMachine", ("gpu-box", "avi@gpu-box", "/srv/eigen")) not in client.calls[start:]:
+            invoke_click(save_install)
+            pump(app)
+        assert_call(client, start, "SaveRemoteMachine", ("gpu-box", "avi@gpu-box", "/srv/eigen"))
+        assert_call(client, start, "InstallRemote", ("avi@gpu-box", True))
+        if root.property("qaAddMachineOpen") is not False:
+            raise AssertionError("successful SSH machine save did not close the add form")
+        if machines.selected_machine.get("ssh") != "avi@gpu-box":
+            raise AssertionError("saved SSH machine was not selected for installation")
+
         machines.select_machine("codex-box")
         install_button = find_visual_item(root, "machinesInstallButton")
         credentials = find_visual_item(root, "machinesCredentialsSwitch")

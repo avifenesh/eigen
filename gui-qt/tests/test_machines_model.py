@@ -171,6 +171,58 @@ def test_machines_model_rejects_empty_or_concurrent_install_and_surfaces_errors(
     assert model.install_error == "ssh denied"
 
 
+def test_machines_model_saves_host_then_installs_when_requested():
+    client = fake_client()
+    model = MachinesModel(client)
+    saved = []
+    model.machineSaved.connect(lambda: saved.append(True))
+
+    model.save_machine("gpu-box", "avi@gpu-box", "/srv/eigen", True, False)
+
+    assert client.call.call_args.args[:4] == (
+        "SaveRemoteMachine",
+        "gpu-box",
+        "avi@gpu-box",
+        "/srv/eigen",
+    )
+    assert model.saving_machine is True
+
+    callback = client.call.call_args.kwargs["callback"]
+    callback({"result": {"name": "gpu-box", "ssh": "avi@gpu-box", "dir": "/srv/eigen", "saved": True}})
+
+    assert model.saving_machine is False
+    assert model.save_error == ""
+    assert saved == [True]
+    assert model.selected_machine["ssh"] == "avi@gpu-box"
+    assert model.machines == [{"name": "gpu-box", "ssh": "avi@gpu-box", "dir": "/srv/eigen", "saved": True}]
+    assert client.call.call_args.args[:3] == ("InstallRemote", "avi@gpu-box", False)
+
+
+def test_machines_model_keeps_add_form_open_on_save_error():
+    client = fake_client()
+    model = MachinesModel(client)
+
+    model.save_machine("gpu-box", "avi@gpu-box", "", False, True)
+    callback = client.call.call_args.kwargs["callback"]
+    callback({"error": {"message": "invalid SSH target"}})
+
+    assert model.saving_machine is False
+    assert model.save_error == "invalid SSH target"
+    assert model.machines == []
+
+
+def test_machines_model_probes_saved_host_without_installing():
+    client = fake_client()
+    model = MachinesModel(client)
+
+    model.save_machine("gpu-box", "avi@gpu-box", "", False, True)
+    callback = client.call.call_args.kwargs["callback"]
+    callback({"result": {"name": "gpu-box", "ssh": "avi@gpu-box", "saved": True}})
+
+    assert model.installing is False
+    assert client.call.call_args.args[:2] == ("RemoteSessions", "avi@gpu-box")
+
+
 def test_machines_model_refresh_updates_selected_machine_details():
     model = MachinesModel(fake_client())
     model._on_machines_result({"result": machines_payload()})
