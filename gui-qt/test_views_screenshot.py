@@ -196,7 +196,7 @@ class ScreenshotRpcClient(QObject):
         if method == "State":
             return {
                 "id": args[0] if args else "s-qa-chat",
-                "model": "gpt-5",
+                "model": "openai.gpt-5.5",
                 "provider": "codex",
                 "tokens": 32000,
                 "maxTokens": 128000,
@@ -213,7 +213,11 @@ class ScreenshotRpcClient(QObject):
                 ],
                 "running": False,
                 "roots": ["/home/user/eigen"],
-                "catalog": {"models": [{"id": "gpt-5", "effortLevels": ["low", "medium", "high"]}]},
+                "catalog": {"models": [
+                    {"id": "openai.gpt-5.5", "effortLevels": ["low", "medium", "high"]},
+                    {"id": "gpt-5.6-terra", "effortLevels": ["low", "medium", "high", "ultra"]},
+                    {"id": "gpt-5.6-luna", "effortLevels": ["low", "medium", "high", "max"]},
+                ]},
                 "messages": [],
                 "pending": [],
             }
@@ -533,7 +537,7 @@ class ScreenshotRpcClient(QObject):
             }
         if method == "SetTitle":
             return {
-                "model": "gpt-5",
+                "model": "openai.gpt-5.5",
                 "effort": "medium",
                 "perm": "gated",
                 "title": args[1] if len(args) > 1 else "Qt shell chat",
@@ -547,7 +551,11 @@ class ScreenshotRpcClient(QObject):
                 ],
                 "running": False,
                 "roots": ["/home/user/eigen"],
-                "catalog": {"models": [{"id": "gpt-5", "effortLevels": ["low", "medium", "high"]}]},
+                "catalog": {"models": [
+                    {"id": "openai.gpt-5.5", "effortLevels": ["low", "medium", "high"]},
+                    {"id": "gpt-5.6-terra", "effortLevels": ["low", "medium", "high", "ultra"]},
+                    {"id": "gpt-5.6-luna", "effortLevels": ["low", "medium", "high", "max"]},
+                ]},
                 "messages": [],
                 "pending": [],
             }
@@ -584,7 +592,7 @@ class ScreenshotRpcClient(QObject):
 
     def _state(self, **overrides):
         state = {
-            "model": "gpt-5",
+            "model": "openai.gpt-5.5",
             "effort": "medium",
             "perm": "gated",
             "title": "Qt shell chat",
@@ -598,7 +606,11 @@ class ScreenshotRpcClient(QObject):
             ],
             "running": False,
             "roots": ["/home/user/eigen"],
-            "catalog": {"models": [{"id": "gpt-5", "effortLevels": ["low", "medium", "high"]}]},
+            "catalog": {"models": [
+                {"id": "openai.gpt-5.5", "effortLevels": ["low", "medium", "high"]},
+                {"id": "gpt-5.6-terra", "effortLevels": ["low", "medium", "high", "ultra"]},
+                {"id": "gpt-5.6-luna", "effortLevels": ["low", "medium", "high", "max"]},
+            ]},
             "messages": [],
             "pending": [],
         }
@@ -617,7 +629,7 @@ class ScreenshotSessionController(QObject):
         self._session_state_model = SessionStateModel(client, "")
         self._session_state_model.seed(
             {
-                "model": "gpt-5",
+                "model": "openai.gpt-5.5",
                 "provider": "codex",
                 "tokens": 32000,
                 "maxTokens": 128000,
@@ -648,8 +660,9 @@ class ScreenshotSessionController(QObject):
                 ],
                 "catalog": {
                     "models": [
-                        {"id": "gpt-5", "effortLevels": ["low", "medium", "high"]},
-                        {"id": "local-qwen", "effortLevels": ["low", "medium"]},
+                        {"id": "openai.gpt-5.5", "effortLevels": ["low", "medium", "high"]},
+                        {"id": "gpt-5.6-terra", "effortLevels": ["low", "medium", "high", "ultra"]},
+                        {"id": "gpt-5.6-luna", "effortLevels": ["low", "medium", "high", "max"]},
                     ]
                 },
             }
@@ -1622,7 +1635,7 @@ def main():
                 "id": "s-qa-empty",
                 "title": "Empty scratch",
                 "dir": "/home/user/eigen",
-                "model": "gpt-5",
+                "model": "openai.gpt-5.5",
                 "status": "idle",
                 "turns": 0,
                 "updated": 1783144800000,
@@ -1714,7 +1727,7 @@ def main():
         session_state = SessionStateModel(client, "")
         session_state.seed(
             {
-                "model": "gpt-5",
+                "model": "openai.gpt-5.5",
                 "provider": "codex",
                 "tokens": 32000,
                 "maxTokens": 128000,
@@ -1745,8 +1758,9 @@ def main():
                 ],
                 "catalog": {
                     "models": [
-                        {"id": "gpt-5", "effortLevels": ["low", "medium", "high"]},
-                        {"id": "local-qwen", "effortLevels": ["low", "medium"]},
+                        {"id": "openai.gpt-5.5", "effortLevels": ["low", "medium", "high"]},
+                        {"id": "gpt-5.6-terra", "effortLevels": ["low", "medium", "high", "ultra"]},
+                        {"id": "gpt-5.6-luna", "effortLevels": ["low", "medium", "high", "max"]},
                     ]
                 },
             }
@@ -1971,7 +1985,7 @@ def main():
             raise AssertionError("chat info dock did not render session metadata")
         if info_title.property("text") != "Qt chat controls":
             raise AssertionError(f"chat info dock title was wrong: {info_title.property('text')}")
-        if "gpt-5 / medium / gated" not in info_model.property("text"):
+        if "openai.gpt-5.5 / medium / gated" not in info_model.property("text"):
             raise AssertionError(f"chat info dock model summary was wrong: {info_model.property('text')}")
         if info_provider.property("text") != "codex":
             raise AssertionError(f"chat info dock provider was wrong: {info_provider.property('text')}")
@@ -2103,8 +2117,11 @@ def main():
 
     def open_chat_model_dropdown(_view, root):
         combo = find_item(root, "sessionModelCombo")
-        if combo is not None:
-            combo.setProperty("qaPopupOpen", True)
+        if combo is None:
+            raise AssertionError("chat screenshot did not render the model picker")
+        if int(combo.property("count") or 0) != 3:
+            raise AssertionError(f"chat model picker expected three GPT choices, saw {combo.property('count')}")
+        combo.setProperty("qaPopupOpen", True)
 
     ok = capture_view("chat-model-dropdown", "ChatView.qml", setup_chat, open_chat_model_dropdown) and ok
 
