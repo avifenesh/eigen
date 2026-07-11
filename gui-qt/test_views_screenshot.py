@@ -3406,12 +3406,36 @@ def main():
                 }
             ]
         }
+        connectors_model.google_status = {
+            "configured": False,
+            "connected": False,
+            "clientPath": "",
+            "setupUrl": "https://console.cloud.google.com/",
+            "setupHint": "",
+        }
+        connectors_model.obsidian_status = {
+            "available": True,
+            "vault": "/home/user/notes",
+        }
         connectors_model.connectors_changed.emit()
         connectors_model.servers_changed.emit()
         ctx.setContextProperty("connectorsModel", connectors_model)
         return {"connectorsModel": connectors_model}
 
-    ok = capture_view("connectors", "ConnectorsView.qml", setup_connectors) and ok
+    def show_connectors_builtins(_view, root):
+        flick = find_item(root, "connectorsFlick")
+        if flick is not None:
+            flick.setProperty("contentY", 0)
+            for _ in range(4):
+                app.processEvents()
+        for object_name in ("connectorPrimaryButton_google", "connectorPrimaryButton_obsidian"):
+            button = find_item(root, object_name)
+            if button is None or button.property("visible") is not True:
+                raise AssertionError(f"built-in connector card did not render {object_name}")
+            if button.property("qaTextFits") is not True:
+                raise AssertionError(f"built-in connector action text clipped in {object_name}")
+
+    ok = capture_view("connectors", "ConnectorsView.qml", setup_connectors, show_connectors_builtins) and ok
 
     def show_connectors_load_error(_view, root):
         model = root.property("connectorsModel")

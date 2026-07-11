@@ -394,6 +394,17 @@
       ]
     },
     {
+      "name": "ImportGoogleClientFromPath",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "bool"
+      ]
+    },
+    {
       "name": "InstallPlugin",
       "params": [
         {
@@ -1100,6 +1111,17 @@
       ],
       "results": [
         "*gui.SessionStateDTO"
+      ]
+    },
+    {
+      "name": "SetObsidianVault",
+      "params": [
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "string"
       ]
     },
     {

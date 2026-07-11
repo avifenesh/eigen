@@ -5,7 +5,7 @@ Loads Connectors, MCPServers, GoogleStatus, ObsidianStatus, RevutoStatus.
 Handles mutations: AddConnector, AddCatalogConnector, ConnectConnector,
 DisconnectConnector, RemoveConnector (inline confirm), SetMCPServerDisabled,
 RemoveMCPServer (inline confirm), SaveMCPServer, Google connect/disconnect/import,
-ChooseObsidianVault, Revuto pause/trigger actions.
+SetObsidianVault, Revuto pause/trigger actions.
 """
 
 from typing import Optional
@@ -786,7 +786,7 @@ class ConnectorsModel(QObject):
             self.obsidian_busy = False
             self._fail_action("Could not choose Obsidian vault", err)
 
-        self._client.call("ChooseObsidianVault", path, callback=on_done)
+        self._client.call("SetObsidianVault", path, callback=on_done)
 
     @Slot()
     def toggle_revuto(self):
@@ -840,10 +840,12 @@ class ConnectorsModel(QObject):
 
         self._client.call("RevutoTrigger", repo, "review", callback=on_done)
 
-    @Slot()
-    def setup_google(self):
-        """Setup Google (open Cloud Console + import client JSON)."""
+    @Slot(str)
+    def setup_google(self, path: str):
+        """Import a Google OAuth client JSON chosen by the Qt file dialog."""
         if self._google_busy:
+            return
+        if not (path or "").strip():
             return
         self.google_busy = True
         self.action_error = ""
@@ -860,7 +862,7 @@ class ConnectorsModel(QObject):
             self.google_busy = False
             self._fail_action("Could not import Google client", err)
 
-        self._client.call("ImportGoogleClient", callback=on_done)
+        self._client.call("ImportGoogleClientFromPath", path, callback=on_done)
 
     @Slot()
     def connect_google(self):

@@ -62,8 +62,8 @@ func (b *Bridge) ObsidianWrite(path, content string, append bool) (string, error
 // ChooseObsidianVault opens a native folder picker and pins the chosen dir as
 // the Obsidian vault (must contain a .obsidian folder). Returns the new vault
 // path, or "" when the user cancelled. Lets the user point eigen at ANY vault.
-// The picker is host-UI work behind promptForPath (wails.go); the tagless
-// build fails closed and the Qt client passes the dir as a plain arg instead.
+// The picker is host-UI work behind promptForPath (wails.go). Qt owns its own
+// folder dialog and calls SetObsidianVault with the selected path instead.
 func (b *Bridge) ChooseObsidianVault() (string, error) {
 	dir, err := b.promptForPath("Choose your Obsidian vault", "", true)
 	if err != nil {
@@ -72,6 +72,15 @@ func (b *Bridge) ChooseObsidianVault() (string, error) {
 	if dir == "" {
 		return "", nil // cancelled
 	}
+	if err := obsidian.SetVault(dir); err != nil {
+		return "", err
+	}
+	return obsidian.VaultPath(), nil
+}
+
+// SetObsidianVault persists a vault path selected by a non-Wails frontend.
+// Qt uses QFileDialog locally, then sends the chosen directory over guiserver.
+func (b *Bridge) SetObsidianVault(dir string) (string, error) {
 	if err := obsidian.SetVault(dir); err != nil {
 		return "", err
 	}
