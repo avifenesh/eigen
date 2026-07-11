@@ -1862,6 +1862,29 @@ def main():
         height=620,
     ) and ok
 
+    def show_chat_new_session_error(view, root):
+        button = find_item(root, "chatNewSessionButton")
+        if button is None:
+            raise AssertionError("chat screenshot did not render the new-chat control")
+        click_item(view, button)
+        QTest.qWait(80)
+        root.setProperty("newSessionError", "Could not load recent projects: daemon is reconnecting. Try Refresh when it is online.")
+        for _ in range(12):
+            app.processEvents()
+        if root.property("qaNewSessionErrorVisible") is not True:
+            raise AssertionError("project picker did not render its recovery error")
+        if root.property("qaNewSessionPopupInBounds") is not True:
+            raise AssertionError("project picker error escaped the narrow chat viewport")
+
+    ok = capture_view(
+        "chat-new-session-error-narrow",
+        "ChatView.qml",
+        setup_chat,
+        show_chat_new_session_error,
+        width=420,
+        height=620,
+    ) and ok
+
     def show_chat_stream_tail(_view, root):
         model = root.property("transcriptModel")
         if model is not None:

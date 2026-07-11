@@ -1123,6 +1123,24 @@ state.dirChanged.emit()
 pump(app, 12)
 if chat.property("qaNewSessionDir") != "/repo/other":
     raise AssertionError("Late hydration overwrote the user's explicit project selection")
+client.failures["RecentDirs"] = "not connected"
+click_item(app, chat_view, chat, "chatRefreshProjectsButton")
+pump(app, 18)
+if "Could not load recent projects: not connected" != chat.property("qaNewSessionError"):
+    raise AssertionError(f"Project picker hid a refresh error: {chat.property('qaNewSessionError')!r}")
+del client.failures["RecentDirs"]
+click_item(app, chat_view, chat, "chatRefreshProjectsButton")
+pump(app, 18)
+if chat.property("qaNewSessionError") != "":
+    raise AssertionError("Project picker did not clear its error after Refresh recovered")
+client.failures["NewSession"] = "daemon offline"
+click_item(app, chat_view, chat, "chatStartProjectSessionButton")
+pump(app, 24)
+if "Could not start session: daemon offline" != chat.property("qaNewSessionError"):
+    raise AssertionError(f"Project picker hid a start error: {chat.property('qaNewSessionError')!r}")
+if started_sessions:
+    raise AssertionError(f"Project picker emitted a session after a failed start: {started_sessions}")
+del client.failures["NewSession"]
 click_item(app, chat_view, chat, "chatStartProjectSessionButton")
 pump(app, 24)
 if ("NewSession", ("/repo/other", "", "")) not in client.calls:
