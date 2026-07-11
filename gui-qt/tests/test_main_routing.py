@@ -114,6 +114,8 @@ class FakeRpcClient(QObject):
     def _result(self, method, args):
         if method == "NewSession":
             return "s-new"
+        if method == "RecentDirs":
+            return [{"dir": "/repo/eigen", "name": "eigen"}]
         if method == "State":
             return {
                 "id": args[0] if args else "s-work",
@@ -1316,6 +1318,23 @@ try:
     click_item(app, window, "chatSendButton")
     if ("SendInput", ("s-work", "prove main chat send", [], [])) not in client.calls:
         raise AssertionError(f"Main chat send button did not call SendInput: {client.calls}")
+
+    click_item(app, window, "chatNewSessionButton")
+    pump(app, 18)
+    selected_dir = find_item_in_window(window, "chatNewSessionDirLabel")
+    if selected_dir is None or selected_dir.property("text") != "/repo/eigen":
+        raise AssertionError(
+            f"Main chat picker did not select the recent project: "
+            f"{selected_dir.property('text') if selected_dir else None}"
+        )
+    click_item(app, window, "chatStartProjectSessionButton")
+    pump(app, 18)
+    if ("NewSession", ("/repo/eigen", "", "")) not in client.calls:
+        raise AssertionError(f"Main chat picker did not call NewSession: {client.calls}")
+    if controller.opened[-1:] != ["s-new"]:
+        raise AssertionError(f"Main did not attach the newly created session: {controller.opened}")
+    if window.property("currentRoute") != "chat" or window.property("activeRouteIndex") != 3:
+        raise AssertionError("New-session handoff did not stay on the attached chat route")
 
     send_count = sum(1 for call in client.calls if call[0] == "SendInput")
     composer.setProperty("text", "/rail")

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import "Theme.js" as Theme
 
 // Chat view for a single session (with tool cards, session settings, slash commands, image paste, steer)
@@ -64,10 +65,28 @@ Rectangle {
     property int approvalRows: 0
     property var slashTokens: ({})
     property var actionTokens: ({})
+    property var recentProjectDirs: []
+    property string newSessionDir: ""
+    property bool newSessionSelectionTouched: false
+    property int newSessionToken: 0
+    property int recentDirsToken: 0
+    readonly property int qaRecentProjectCount: recentProjectDirs ? recentProjectDirs.length : 0
+    readonly property string qaNewSessionDir: newSessionDir
+    readonly property bool qaNewSessionPopupOpen: newSessionPopup.opened
+    readonly property bool qaNewSessionPopupInBounds: newSessionPopup.x >= 0
+        && newSessionPopup.y >= 0
+        && newSessionPopup.x + newSessionPopup.width <= root.width
+        && newSessionPopup.y + newSessionPopup.height <= root.height
+    readonly property bool qaNewSessionControlsFit: !newSessionDirLabel.truncated
+        && newSessionBrowseButton.qaTextFits
+        && newSessionRefreshButton.qaTextFits
+        && newSessionCancelButton.qaTextFits
+        && newSessionStartButton.qaTextFits
 
     signal backClicked()
     signal routeRequested(string route)
     signal railToggleRequested()
+    signal sessionStarted(string sessionId)
 
     onApprovalsModelChanged: Qt.callLater(refreshApprovalRows)
     Component.onCompleted: refreshApprovalRows()
@@ -94,7 +113,22 @@ Rectangle {
 
     Connections {
         target: root.rpcClient ? root.rpcClient : null
+        function onConnected() {
+            if (newSessionPopup.visible && root.recentProjectDirs.length === 0 && root.recentDirsToken === 0) {
+                root.refreshRecentProjectDirs()
+            }
+        }
         function onCallDone(token, payload) {
+            if (token === root.recentDirsToken) {
+                root.recentDirsToken = 0
+                root.handleRecentProjectDirs(payload || {})
+                return
+            }
+            if (token === root.newSessionToken) {
+                root.newSessionToken = 0
+                root.handleNewSessionResult(payload || {})
+                return
+            }
             var pending = root.slashTokens[token]
             if (pending) {
                 var nextSlash = Object.assign({}, root.slashTokens)
@@ -109,6 +143,15 @@ Rectangle {
             delete nextAction[token]
             root.actionTokens = nextAction
             root.handleActionRpcResult(pending, payload || {})
+        }
+    }
+
+    Connections {
+        target: root.sessionStateModel ? root.sessionStateModel : null
+        function onDirChanged() {
+            if (newSessionPopup.visible && !root.newSessionSelectionTouched) {
+                root.chooseDefaultNewSessionDir()
+            }
         }
     }
 
@@ -138,12 +181,62 @@ Rectangle {
                 }
 
                 AppButton {
+                    objectName: "chatNewSessionButton"
+                    text: root.newSessionToken !== 0 ? "Starting…" : "New chat"
+                    variant: "secondary"
+                    enabled: root.newSessionToken === 0
+                    toolTipText: "Start a new chat in a chosen project directory"
+                    onClicked: root.openNewSessionPicker()
+                }
+
+                AppButton {
                     objectName: "chatInterruptButton"
                     text: "Interrupt"
                     variant: "danger"
                     toolTipText: "Interrupt current turn"
                     visible: isStreaming
                     onClicked: root.fireRpcAction("Interrupt", [root.sessionId], "Could not interrupt")
+                }
+
+                Rectangle {
+                    objectName: "chatActivityIndicator"
+                    Layout.preferredHeight: 28
+                    Layout.minimumWidth: 108
+                    implicitWidth: activityRow.implicitWidth + Theme.space.lg * 2
+                    radius: Theme.radius.full
+                    color: root.isStreaming ? Theme.colors.stateSelected : Theme.colors.bgInset
+                    border.width: 1
+                    border.color: root.isStreaming ? Theme.colors.borderBrandFaint : Theme.colors.borderHairline
+
+                    RowLayout {
+                        id: activityRow
+                        anchors.centerIn: parent
+                        spacing: Theme.space.sm
+
+                        Rectangle {
+                            width: 8
+                            height: 8
+                            radius: 4
+                            color: root.isStreaming ? Theme.colors.working : Theme.colors.dotIdle
+                            SequentialAnimation on opacity {
+                                running: Theme.continuousMotion && root.isStreaming
+                                loops: Animation.Infinite
+                                NumberAnimation { from: 0.45; to: 1.0; duration: 750; easing.type: Easing.InOutQuad }
+                                NumberAnimation { from: 1.0; to: 0.45; duration: 750; easing.type: Easing.InOutQuad }
+                            }
+                        }
+
+                        Label {
+                            objectName: "chatActivityLabel"
+                            text: root.activityLabel
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.micro
+                            font.weight: Theme.fontWeight.semibold
+                            color: root.isStreaming ? Theme.colors.brandBright : Theme.colors.textMuted
+                            elide: Text.ElideRight
+                            Layout.maximumWidth: 150
+                        }
+                    }
                 }
 
                 Item { Layout.fillWidth: true }
@@ -646,7 +739,7 @@ Rectangle {
                         Layout.preferredWidth: 92
 
                         onClicked: {
-                            root.switchInputMode(root.inputMode === "queue" ? "steer" : "queue", false)
+                            root.switchInputMode(root.inputMode === "queue" ? "steer" : "queue", true)
                         }
                     }
 
@@ -667,6 +760,165 @@ Rectangle {
                     }
                 }
             }
+        }
+    }
+
+    Popup {
+        id: newSessionPopup
+        objectName: "chatNewSessionPopup"
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        width: Math.min(520, root.width - Theme.space.xl * 2)
+        x: Math.max(Theme.space.lg, (root.width - width) / 2)
+        y: Math.max(Theme.space.lg, 72)
+        padding: Theme.space.xl
+        background: Rectangle {
+            color: Theme.colors.surfaceRaised
+            radius: Theme.radius.lg
+            border.width: 1
+            border.color: Theme.colors.borderSubtle
+        }
+
+        ColumnLayout {
+            width: parent.width
+            spacing: Theme.space.lg
+
+            Label {
+                text: "Start new chat"
+                font.family: Theme.uiFonts[0]
+                font.pixelSize: Theme.fontSize.h3
+                font.weight: Theme.fontWeight.semibold
+                color: Theme.colors.textPrimary
+                Layout.fillWidth: true
+            }
+
+            Label {
+                text: "Choose the project directory for the new session."
+                font.family: Theme.uiFonts[0]
+                font.pixelSize: Theme.fontSize.bodySm
+                color: Theme.colors.textMuted
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: Theme.space.sm
+
+                Label {
+                    text: "Project"
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.micro
+                    font.weight: Theme.fontWeight.semibold
+                    color: Theme.colors.textFaint
+                }
+
+                ScrollView {
+                    id: recentProjectsScroll
+                    visible: root.recentProjectDirs && root.recentProjectDirs.length > 0
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: visible
+                        ? Math.min(recentProjectsColumn.implicitHeight, Math.max(64, root.height - 285))
+                        : 0
+                    clip: true
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                    ColumnLayout {
+                        id: recentProjectsColumn
+                        width: recentProjectsScroll.availableWidth
+                        spacing: Theme.space.sm
+
+                        Repeater {
+                            model: root.recentProjectDirs || []
+                            delegate: AppButton {
+                                objectName: "chatRecentProject_" + index
+                                Layout.fillWidth: true
+                                contentAlignment: Text.AlignLeft
+                                variant: root.newSessionDir === String(modelData.dir || "") ? "secondary" : "ghost"
+                                selected: root.newSessionDir === String(modelData.dir || "")
+                                text: (modelData.name || modelData.dir || "project") + "  ·  " + (modelData.dir || "")
+                                toolTipText: modelData.dir || ""
+                                onClicked: root.selectNewSessionDir(modelData.dir || "")
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 38
+                    color: Theme.colors.bgInset
+                    radius: Theme.radius.sm
+                    border.width: 1
+                    border.color: root.newSessionDir !== "" ? Theme.colors.borderBrandFaint : Theme.colors.borderHairline
+
+                    Label {
+                        id: newSessionDirLabel
+                        objectName: "chatNewSessionDirLabel"
+                        anchors.fill: parent
+                        anchors.leftMargin: Theme.space.lg
+                        anchors.rightMargin: Theme.space.lg
+                        text: root.newSessionDir !== "" ? root.newSessionDir : "No project selected"
+                        font.family: root.newSessionDir !== "" ? Theme.monoFonts[0] : Theme.uiFonts[0]
+                        font.pixelSize: Theme.fontSize.bodySm
+                        color: root.newSessionDir !== "" ? Theme.colors.textPrimary : Theme.colors.textMuted
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideMiddle
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.space.md
+
+                AppButton {
+                    id: newSessionBrowseButton
+                    objectName: "chatBrowseProjectButton"
+                    text: "Browse…"
+                    variant: "secondary"
+                    onClicked: projectFolderDialog.open()
+                }
+
+                AppButton {
+                    id: newSessionRefreshButton
+                    objectName: "chatRefreshProjectsButton"
+                    text: root.recentDirsToken !== 0 ? "Loading…" : "Refresh"
+                    variant: "ghost"
+                    enabled: root.recentDirsToken === 0
+                    onClicked: root.refreshRecentProjectDirs()
+                }
+
+                Item { Layout.fillWidth: true }
+
+                AppButton {
+                    id: newSessionCancelButton
+                    objectName: "chatCancelNewSessionButton"
+                    text: "Cancel"
+                    variant: "ghost"
+                    onClicked: newSessionPopup.close()
+                }
+
+                AppButton {
+                    id: newSessionStartButton
+                    objectName: "chatStartProjectSessionButton"
+                    text: root.newSessionToken !== 0 ? "Starting…" : "Start"
+                    variant: "primary"
+                    enabled: root.newSessionToken === 0 && root.newSessionDir !== ""
+                    onClicked: root.startNewSessionInProject(root.newSessionDir)
+                }
+            }
+        }
+    }
+
+    FolderDialog {
+        id: projectFolderDialog
+        title: "Choose project directory"
+        currentFolder: root.newSessionDir !== "" ? "file://" + root.newSessionDir : "file:///home"
+        onAccepted: {
+            var raw = selectedFolder.toString().replace(/^file:\/\//, "")
+            root.selectNewSessionDir(decodeURIComponent(raw))
         }
     }
 
@@ -776,6 +1028,92 @@ Rectangle {
             restored.unshift(pending.restoreQueue)
             root.queuedInputs = restored
         }
+    }
+
+    function openNewSessionPicker() {
+        root.actionError = ""
+        root.newSessionSelectionTouched = false
+        root.chooseDefaultNewSessionDir()
+        if ((!root.recentProjectDirs || root.recentProjectDirs.length === 0) && root.recentDirsToken === 0) {
+            root.refreshRecentProjectDirs()
+        }
+        newSessionPopup.open()
+    }
+
+    function refreshRecentProjectDirs() {
+        if (!root.rpcClient || typeof root.rpcClient.callToken !== "function" || root.recentDirsToken !== 0) return
+        root.recentDirsToken = root.rpcClient.callToken("RecentDirs", [])
+    }
+
+    function handleRecentProjectDirs(payload) {
+        var error = root.payloadError(payload)
+        if (error !== "") {
+            root.actionError = "Could not load recent projects: " + error
+            return
+        }
+        var dirs = payload && payload.result ? payload.result : []
+        var normalized = []
+        var seen = ({})
+        if (dirs && dirs.length !== undefined) {
+            for (var i = 0; i < dirs.length; i++) {
+                var item = dirs[i] || {}
+                var dir = String(item.dir || "")
+                if (dir.trim() === "" || seen[dir]) continue
+                seen[dir] = true
+                normalized.push({"dir": dir, "name": String(item.name || dir)})
+            }
+        }
+        root.recentProjectDirs = normalized
+        if (!root.newSessionSelectionTouched) {
+            root.chooseDefaultNewSessionDir()
+        }
+    }
+
+    function chooseDefaultNewSessionDir() {
+        var hydratedDir = root.sessionStateModel ? String(root.sessionStateModel.dir || "") : ""
+        if (hydratedDir !== "") {
+            root.newSessionDir = hydratedDir
+            return
+        }
+        root.newSessionDir = root.recentProjectDirs && root.recentProjectDirs.length > 0
+            ? String(root.recentProjectDirs[0].dir || "")
+            : ""
+    }
+
+    function selectNewSessionDir(dir) {
+        root.newSessionSelectionTouched = true
+        root.newSessionDir = String(dir || "")
+    }
+
+    function startNewSessionInProject(dir) {
+        dir = String(dir || "")
+        if (dir === "") {
+            root.actionError = "Choose a project directory before starting a new chat."
+            return false
+        }
+        if (!root.rpcClient || typeof root.rpcClient.callToken !== "function") {
+            root.actionError = "Could not start session: RPC client is unavailable."
+            return false
+        }
+        if (root.newSessionToken !== 0) return false
+        root.actionError = ""
+        root.newSessionToken = root.rpcClient.callToken("NewSession", [dir, "", ""])
+        return true
+    }
+
+    function handleNewSessionResult(payload) {
+        var error = root.payloadError(payload)
+        if (error !== "") {
+            root.actionError = "Could not start session: " + error
+            return
+        }
+        var sessionId = payload ? String(payload.result || "") : ""
+        if (sessionId === "") {
+            root.actionError = "Could not start session: the daemon returned no session id."
+            return
+        }
+        newSessionPopup.close()
+        root.sessionStarted(sessionId)
     }
 
     function appendSlashNote(text) {
@@ -1751,11 +2089,22 @@ Rectangle {
 
     property bool isStreaming: {
         if (!transcriptModel) return false
+        if (transcriptModel.hasActivity !== undefined && transcriptModel.hasActivity !== null) {
+            return !!transcriptModel.hasActivity
+        }
         if (transcriptModel.hasStreaming !== undefined && transcriptModel.hasStreaming !== null) {
             return !!transcriptModel.hasStreaming
         }
         return scanTranscriptStreaming()
     }
+
+    readonly property string activityLabel: {
+        if (transcriptModel && transcriptModel.activityLabel !== undefined && transcriptModel.activityLabel !== null) {
+            return String(transcriptModel.activityLabel || (root.isStreaming ? "Working" : "Idle"))
+        }
+        return root.isStreaming ? "Working" : "Idle"
+    }
+    readonly property string qaActivityLabel: activityLabel
 
     function scanTranscriptStreaming() {
         if (!transcriptModel) return false

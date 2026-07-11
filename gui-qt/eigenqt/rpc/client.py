@@ -52,6 +52,11 @@ class RpcClient(QObject):
         # Connection tracking
         self._rpc_ready = False
         self._events_ready = False
+        # Desired event subscriptions.  Models often subscribe before the
+        # events socket is ready, and the socket can reconnect underneath them;
+        # replay this set whenever a worker reaches ready so live transcript
+        # deltas do not require a manual chat refresh.
+        self._subscriptions: set[str] = set()
         self._reconnect_timer: Optional[threading.Timer] = None
         self._backoff_sec = 1.0
 
@@ -92,7 +97,18 @@ class RpcClient(QObject):
     @Slot()
     def _on_events_ready(self) -> None:
         self._events_ready = True
+        self._replay_subscriptions()
         self._check_both_ready()
+
+    def _replay_subscriptions(self) -> None:
+        """Send all desired event subscriptions to a ready events worker."""
+        if not self._events_worker or not self._events_ready or not self._subscriptions:
+            return
+        try:
+            self._events_worker.subscribe(sorted(self._subscriptions))
+        except Exception as exc:
+            self._events_ready = False
+            self._handle_disconnect(f"events: resubscribe failed: {exc}")
 
     def _check_both_ready(self) -> None:
         """Emit connected signal once both workers are ready."""
@@ -138,6 +154,11 @@ class RpcClient(QObject):
 
     def _stop_workers(self) -> None:
         """Stop both worker threads gracefully."""
+        # A reconnect replaces both sockets. Clear readiness up front so the
+        # first replacement worker cannot emit connected while its peer is
+        # still starting.
+        self._rpc_ready = False
+        self._events_ready = False
         if self._rpc_worker:
             self._rpc_worker.stop()
         if self._events_worker:
@@ -245,10 +266,12 @@ class RpcClient(QObject):
     @Slot("QVariantList")
     def subscribe(self, channels: list[str]) -> None:
         """Subscribe to event channels."""
-        if not self._events_worker or not self._events_ready:
+        wanted = [str(channel) for channel in (channels or []) if channel]
+        self._subscriptions.update(wanted)
+        if not self._events_worker or not self._events_ready or not wanted:
             return
         try:
-            self._events_worker.subscribe(channels)
+            self._events_worker.subscribe(wanted)
         except Exception as exc:
             self._events_ready = False
             self._handle_disconnect(f"events: send failed: {exc}")
@@ -256,10 +279,13 @@ class RpcClient(QObject):
     @Slot("QVariantList")
     def unsubscribe(self, channels: list[str]) -> None:
         """Unsubscribe from event channels."""
-        if not self._events_worker or not self._events_ready:
+        unwanted = [str(channel) for channel in (channels or []) if channel]
+        for channel in unwanted:
+            self._subscriptions.discard(channel)
+        if not self._events_worker or not self._events_ready or not unwanted:
             return
         try:
-            self._events_worker.unsubscribe(channels)
+            self._events_worker.unsubscribe(unwanted)
         except Exception as exc:
             self._events_ready = False
             self._handle_disconnect(f"events: send failed: {exc}")

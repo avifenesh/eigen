@@ -224,8 +224,33 @@ def test_session_controller_ignores_stale_initial_state_reply():
 
     controller.open_session("s-old")
     old_state = client.calls[-1]
+
+    hydrated_old = state("gpt-5", "old transcript", "p-old")
+    hydrated_old["running"] = True
+    hydrated_old["messages"] = [
+        {
+            "role": "assistant",
+            "toolCalls": [
+                {"id": "tool-old", "name": "bash", "args": '{"command":"pytest"}'}
+            ],
+        }
+    ]
+    old_state["callback"]({"result": hydrated_old})
+    app.processEvents()
+
+    assert controller.session_state_model.model == "gpt-5"
+    assert controller.transcript_model.hasActivity is True
+    assert controller.transcript_model.rowCount() == 1
+    assert controller.approvals_model.rowCount() == 1
+
     controller.open_session("s-new")
     new_state = client.calls[-1]
+
+    assert controller.session_id == "s-new"
+    assert controller.session_state_model.model == ""
+    assert controller.transcript_model.hasActivity is False
+    assert controller.transcript_model.rowCount() == 0
+    assert controller.approvals_model.rowCount() == 0
 
     new_state["callback"]({"result": state("local-qwen", "new transcript", "p-new")})
     app.processEvents()
@@ -242,7 +267,7 @@ def test_session_controller_ignores_stale_initial_state_reply():
     )
     assert controller.approvals_model.rowCount() == 1
 
-    old_state["callback"]({"result": state("gpt-5", "old transcript", "p-old")})
+    old_state["callback"]({"result": hydrated_old})
     app.processEvents()
 
     assert controller.session_state_model.model == "local-qwen"
@@ -381,6 +406,53 @@ def test_rpc_call_send_failure_reports_error_without_raising(monkeypatch):
     assert disconnected == ["rpc: send failed: dead guiserver socket"]
     assert reconnects == [True]
     assert client._rpc_ready is False
+    client.shutdown()
+
+
+def test_rpc_client_replays_event_subscriptions_after_worker_ready(monkeypatch):
+    from eigenqt.rpc.client import RpcClient
+
+    monkeypatch.setattr(RpcClient, "_start_workers", lambda self: None)
+    client = RpcClient(sock_path=Path("/tmp/eigen-missing-guiserver.sock"))
+
+    class EventsWorker:
+        def __init__(self):
+            self.subscribed = []
+            self.unsubscribed = []
+
+        def subscribe(self, channels):
+            self.subscribed.append(tuple(channels or []))
+
+        def unsubscribe(self, channels):
+            self.unsubscribed.append(tuple(channels or []))
+
+        def stop(self):
+            pass
+
+    worker = EventsWorker()
+    client._events_worker = worker
+
+    client.subscribe(["session:s1"])
+    assert worker.subscribed == []
+
+    client._on_events_ready()
+    assert worker.subscribed == [("session:s1",)]
+
+    client.unsubscribe(["session:s1"])
+    assert worker.unsubscribed == [("session:s1",)]
+
+    worker2 = EventsWorker()
+    client._events_worker = worker2
+    client._events_ready = False
+    client.subscribe(["session:s2"])
+    client._on_events_ready()
+    assert worker2.subscribed == [("session:s2",)]
+
+    client._rpc_ready = True
+    client._events_ready = True
+    client._stop_workers()
+    assert client._rpc_ready is False
+    assert client._events_ready is False
     client.shutdown()
 
 

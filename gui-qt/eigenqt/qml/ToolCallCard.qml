@@ -7,7 +7,7 @@ import "Theme.js" as Theme
 Rectangle {
     id: root
     width: parent ? parent.width * widthFactor : 900
-    implicitHeight: column.height
+    implicitHeight: 40 + (root.open && bodyLoader.item ? bodyLoader.item.implicitHeight : 0)
     color: open ? Theme.colors.surfaceRaised2 : Theme.colors.surfaceRaised
     radius: Theme.radius.md
     border.width: 1
@@ -24,6 +24,7 @@ Rectangle {
 
     readonly property bool isError: toolStatus === "error"
     readonly property bool isRunning: toolStatus === "running"
+    readonly property string qaSummary: summary
     readonly property string glyph: {
         var k = toolName.toLowerCase().trim()
         if (k === "edit" || k === "multi_edit" || k === "multiedit") return "✎"
@@ -48,9 +49,26 @@ Rectangle {
             if (k === "write") {
                 return argsObj.path || argsObj.file_path || ""
             }
-            // Generic: first field
+            if (k === "todo") {
+                var todos = argsObj.todos || []
+                if (Array.isArray(todos)) {
+                    var parts = []
+                    for (var i = 0; i < Math.min(todos.length, 3); i++) {
+                        var todo = todos[i] || {}
+                        var content = todo.content || todo.title || ""
+                        if (content) parts.push(String(content))
+                    }
+                    if (parts.length > 0) return parts.join(" · ").substring(0, 120)
+                }
+            }
+            // Generic: first scalar field. Arrays/objects stringify as
+            // [object Object], which made todo calls unreadable.
             for (var key in argsObj) {
-                if (argsObj[key]) return String(argsObj[key]).split("\n")[0].substring(0, 80)
+                var value = argsObj[key]
+                if (value === undefined || value === null || value === "") continue
+                if (Array.isArray(value)) return value.length + " items"
+                if (typeof value === "object") continue
+                return String(value).split("\n")[0].substring(0, 80)
             }
             return ""
         } catch (e) {
@@ -143,8 +161,14 @@ Rectangle {
 
         // Body (args + result, shown when open)
         Loader {
+            id: bodyLoader
             active: root.open
+            visible: root.open
+            height: root.open && item ? item.implicitHeight : 0
             Layout.fillWidth: true
+            Layout.preferredHeight: height
+            Layout.minimumHeight: height
+            Layout.maximumHeight: height
             sourceComponent: ColumnLayout {
                 width: parent.width
                 spacing: Theme.space.md

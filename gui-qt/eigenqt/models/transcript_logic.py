@@ -97,7 +97,10 @@ def seed_from_state(state: dict) -> list[TranscriptRow]:
                 rows.append(
                     TranscriptRow(kind="assistant", text=text, reasoning=reasoning, streaming=False)
                 )
-            # Tool calls → tool rows (status: success, seed doesn't include streaming)
+            # A stored snapshot can land while a tool is still in flight. Keep
+            # unmatched calls running in that case so the hydrated ToolCallCard
+            # stays open; a following tool message resolves it below.
+            initial_tool_status = "running" if state.get("running", False) else "success"
             for tc in tool_calls:
                 rows.append(
                     TranscriptRow(
@@ -105,7 +108,7 @@ def seed_from_state(state: dict) -> list[TranscriptRow]:
                         tool_name=tc.get("name", ""),
                         tool_id=tc.get("id", ""),
                         tool_args=tc.get("args", ""),
-                        tool_status="success",  # seed = completed
+                        tool_status=initial_tool_status,
                         text="",  # result filled by later tool role
                     )
                 )
@@ -159,10 +162,17 @@ def fold_event(rows: list[TranscriptRow], event: dict, replay: bool) -> list[Row
             ops.append(RowOp("insert", len(rows) - 1, row))
 
     elif kind == "reasoning":
-        # Reasoning delta: append to reasoning field of current assistant row
+        # Reasoning delta: append to the current assistant row, or create a
+        # streaming assistant row when providers emit thinking before visible
+        # answer text.  Dropping leading reasoning made the Qt chat look idle
+        # until a later refresh rebuilt the transcript from State.
         if rows and rows[-1].kind == "assistant" and rows[-1].streaming:
             rows[-1].reasoning += text
             ops.append(RowOp("update", len(rows) - 1, rows[-1]))
+        else:
+            row = TranscriptRow(kind="assistant", reasoning=text, streaming=True, step=step)
+            rows.append(row)
+            ops.append(RowOp("insert", len(rows) - 1, row))
 
     elif kind == "tool_start":
         # Tool invocation: insert tool row (status: running)
