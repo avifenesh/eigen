@@ -559,6 +559,13 @@ class ScreenshotRpcClient(QObject):
             return self._state(fast=bool(args[1]) if len(args) > 1 else False)
         if method == "AddDir":
             return args[1] if len(args) > 1 else ""
+        if method == "RecentDirs":
+            return [
+                {"dir": "/home/user/eigen", "name": "eigen"},
+                {"dir": "/home/user/project", "name": "project"},
+            ]
+        if method == "NewSession":
+            return "s-new-project"
         if method == "Clear":
             return None
         if method == "Compact":
@@ -1824,6 +1831,33 @@ def main():
         "ChatView.qml",
         setup_chat_empty_starter,
         assert_chat_empty_starter,
+        width=420,
+        height=620,
+    ) and ok
+
+    def show_chat_new_session_picker(view, root):
+        button = find_item(root, "chatNewSessionButton")
+        if button is None:
+            raise AssertionError("chat screenshot did not render the new-chat control")
+        click_item(view, button)
+        QTest.qWait(80)
+        for _ in range(12):
+            app.processEvents()
+
+        if root.property("qaNewSessionPopupOpen") is not True:
+            raise AssertionError("chat screenshot did not open the project picker")
+        if root.property("qaNewSessionDir") != "/home/user/eigen":
+            raise AssertionError(f"project picker selected {root.property('qaNewSessionDir')!r}, not the newest project")
+        if root.property("qaNewSessionPopupInBounds") is not True:
+            raise AssertionError("project picker escaped the narrow chat viewport")
+        if root.property("qaNewSessionControlsFit") is not True:
+            raise AssertionError("project picker rendered cramped controls")
+
+    ok = capture_view(
+        "chat-new-session-picker-narrow",
+        "ChatView.qml",
+        setup_chat,
+        show_chat_new_session_picker,
         width=420,
         height=620,
     ) and ok

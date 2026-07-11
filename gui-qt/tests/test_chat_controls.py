@@ -108,6 +108,15 @@ class FakeRpcClient(QObject):
             QTimer.singleShot(0, lambda cb=callback, p=payload: cb(p))
 
     def _result(self, method, args):
+        if method == "RecentDirs":
+            return [
+                {"dir": "/repo/other", "name": "other"},
+                {"dir": "/repo/eigen", "name": "eigen"},
+                {"dir": "/repo/other", "name": "duplicate"},
+                {"dir": "", "name": "empty"},
+            ]
+        if method == "NewSession":
+            return "s-new-project"
         if method == "WorkingDiff":
             return {"isRepo": True, "clean": True, "branch": "fix/qt", "truncated": False, "patch": "", "files": []}
         if method == "FileTree":
@@ -877,6 +886,7 @@ initialize_webengine()
 app = QGuiApplication([])
 client = FakeRpcClient()
 state = FakeSessionState()
+state._dir = ""  # The authoritative root arrives after the picker opens.
 commands = CommandModel()
 clipboard = FakeClipboard()
 highlighter = FakeHighlighter()
@@ -977,9 +987,11 @@ chat_view, chat = make_view(
 back_count = []
 route_events = []
 rail_events = []
+started_sessions = []
 chat.backClicked.connect(lambda: back_count.append(1))
 chat.routeRequested.connect(lambda route: route_events.append(route))
 chat.railToggleRequested.connect(lambda: rail_events.append(1))
+chat.sessionStarted.connect(lambda session_id: started_sessions.append(session_id))
 if chat.property("qaTranscriptRows") != 1:
     raise AssertionError(f"Seeded transcript did not reach ChatView: {chat.property('qaTranscriptRows')}")
 if float(chat.property("qaTranscriptContentHeight") or 0) <= 0:
@@ -1089,6 +1101,36 @@ origin_y = float(transcript_list.property("originY") or 0)
 max_y = max(origin_y, origin_y + float(transcript_list.property("contentHeight") or 0) - float(transcript_list.property("height") or 0))
 transcript_list.setProperty("contentY", max_y)
 pump(app, 16)
+
+if call_count(client, "RecentDirs") != 0:
+    raise AssertionError("Chat loaded recent projects before the picker was opened")
+click_item(app, chat_view, chat, "chatNewSessionButton")
+pump(app, 24)
+if chat.property("qaRecentProjectCount") != 2:
+    raise AssertionError(f"Project picker did not load recent dirs: {chat.property('qaRecentProjectCount')} calls={client.calls}")
+if chat.property("qaNewSessionDir") != "/repo/other":
+    raise AssertionError(f"Project picker did not initially use the newest dir: {chat.property('qaNewSessionDir')!r}")
+state._dir = "/repo/eigen"
+state.dirChanged.emit()
+pump(app, 12)
+if chat.property("qaNewSessionDir") != "/repo/eigen":
+    raise AssertionError(f"Hydrated session root did not become the picker default: {chat.property('qaNewSessionDir')!r}")
+click_item(app, chat_view, chat, "chatRecentProject_0")
+if chat.property("qaNewSessionDir") != "/repo/other":
+    raise AssertionError(f"Project picker did not select the clicked dir: {chat.property('qaNewSessionDir')!r}")
+state._dir = "/repo/hydrated-late"
+state.dirChanged.emit()
+pump(app, 12)
+if chat.property("qaNewSessionDir") != "/repo/other":
+    raise AssertionError("Late hydration overwrote the user's explicit project selection")
+click_item(app, chat_view, chat, "chatStartProjectSessionButton")
+pump(app, 24)
+if ("NewSession", ("/repo/other", "", "")) not in client.calls:
+    raise AssertionError(f"Project picker did not start NewSession in selected dir: {client.calls}")
+if started_sessions[-1:] != ["s-new-project"]:
+    raise AssertionError(f"Project picker did not emit the started session: {started_sessions}")
+state._dir = "/repo/eigen"
+state.dirChanged.emit()
 
 click_item(app, chat_view, chat, "chatBackButton")
 if len(back_count) != 1:
@@ -2344,6 +2386,23 @@ if tool_args is None or tool_result is None:
     raise AssertionError("Tool call card did not render shared text panes")
 assert_app_text_area_clean(tool_args, "toolArgsText")
 assert_app_text_area_clean(tool_result, "toolResultText")
+expanded_tool_height = float(tool_card.property("implicitHeight") or 0)
+tool_card.setProperty("open", False)
+pump(app, 18)
+collapsed_tool_height = float(tool_card.property("implicitHeight") or 0)
+if not (0 < collapsed_tool_height < expanded_tool_height - 20):
+    raise AssertionError(
+        f"Tool call card did not shrink after collapse: expanded={expanded_tool_height} collapsed={collapsed_tool_height}"
+    )
+tool_card.setProperty("toolName", "todo")
+tool_card.setProperty(
+    "toolArgs",
+    '{"todos":[{"content":"Inspect streaming path","status":"completed"},{"content":"Fix todo display","status":"in_progress"}]}',
+)
+pump(app, 12)
+todo_summary = tool_card.property("qaSummary") or ""
+if "[object Object]" in todo_summary or "Inspect streaming path" not in todo_summary or "Fix todo display" not in todo_summary:
+    raise AssertionError(f"Todo tool summary regressed: {todo_summary!r}")
 
 markdown_view, markdown = make_view(
     "MarkdownBlocks.qml",

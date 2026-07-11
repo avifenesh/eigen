@@ -69,6 +69,27 @@ def test_seed_tool_calls():
     assert rows[0].tool_status == "success"
 
 
+def test_seed_in_flight_tool_call_stays_running():
+    """A running State snapshot keeps its unresolved tool card live."""
+    rows = seed_from_state(
+        {
+            "running": True,
+            "messages": [
+                {
+                    "role": "assistant",
+                    "toolCalls": [
+                        {"id": "call_live", "name": "Bash", "args": '{"command":"pytest"}'}
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert len(rows) == 1
+    assert rows[0].kind == "tool"
+    assert rows[0].tool_status == "running"
+
+
 def test_fold_text_delta_new_turn():
     """Text delta on empty rows → new assistant row."""
     rows: list[TranscriptRow] = []
@@ -92,6 +113,20 @@ def test_fold_text_delta_append():
     assert len(ops) == 1
     assert ops[0].op == "update"
     assert rows[0].text == "Hello world"
+
+
+def test_fold_reasoning_delta_new_turn():
+    """Leading reasoning creates a streaming assistant row."""
+    rows: list[TranscriptRow] = []
+    event = {"kind": "reasoning", "text": "Thinking", "step": 1}
+    ops = fold_event(rows, event, replay=False)
+
+    assert len(ops) == 1
+    assert ops[0].op == "insert"
+    assert len(rows) == 1
+    assert rows[0].kind == "assistant"
+    assert rows[0].reasoning == "Thinking"
+    assert rows[0].streaming is True
 
 
 def test_fold_tool_start():

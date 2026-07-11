@@ -172,6 +172,9 @@ ApplicationWindow {
                 onRailToggleRequested: {
                     root.railVisible = !root.railVisible
                 }
+                onSessionStarted: function(sessionId) {
+                    root.openCreatedSession(sessionId)
+                }
             }
 
             // Index 4: Board view
@@ -473,9 +476,12 @@ ApplicationWindow {
     }
 
     function openCreatedSession(sessionId) {
-        if (!sessionId) return
-        root.currentRoute = "chat"
+        if (!sessionId) {
+            root.actionError = "Could not start session: the daemon returned no session id."
+            return
+        }
         root.ctxSessionController.open_session(sessionId)
+        root.currentRoute = "chat"
         root.refreshSessionLists()
     }
 }

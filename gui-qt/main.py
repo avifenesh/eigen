@@ -312,14 +312,18 @@ class SessionController(QObject):
             channel = f"session:{self._session_id}"
             self._client.unsubscribe([channel])
 
-            # Clear models
-            self.transcript_model._rows.clear()
-            self.transcript_model.beginResetModel()
-            self.transcript_model.endResetModel()
+            # Clear the old snapshot before attaching the next session.  Using
+            # the model APIs also resets transient activity/approval state, so
+            # a newly-created chat never inherits a stale running tool card.
+            self.transcript_model.clearRows()
+            self.approvals_model.clearRows()
+            self._session_state_model.seed({})
 
-            self.approvals_model._approvals.clear()
-            self.approvals_model.beginResetModel()
-            self.approvals_model.endResetModel()
+            self.transcript_model._session_id = ""
+            self.transcript_model._event_channel = ""
+            self.approvals_model._session_id = ""
+            self.approvals_model._event_channel = ""
+            self._session_state_model._session_id = ""
 
             self._session_id = ""
             self.sessionIdChanged.emit()

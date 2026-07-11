@@ -30,6 +30,7 @@ class TranscriptModel(QAbstractListModel):
     """Transcript model for a single session (event-driven, 16ms delta coalescing)."""
 
     streamingChanged = Signal()
+    activityChanged = Signal()
 
     # Qt roles
     KindRole = Qt.UserRole + 1
@@ -51,6 +52,8 @@ class TranscriptModel(QAbstractListModel):
         self._staged_rows: list[TranscriptRow] | None = None
         self._pending_ops: list[RowOp] = []
         self._has_streaming = False
+        self._has_activity = False
+        self._activity_label = "Idle"
         # data() is a scroll-time hot path: ListView refetches roles for every
         # visible row on relayout. Parsing markdown there uncached froze
         # scrolling on long transcripts. Cache blocks per row index, keyed by
@@ -79,6 +82,16 @@ class TranscriptModel(QAbstractListModel):
     def hasStreaming(self) -> bool:
         """Whether any visible assistant row is actively streaming."""
         return self._has_streaming
+
+    @Property(bool, notify=activityChanged)
+    def hasActivity(self) -> bool:
+        """Whether the session appears to have a turn in flight."""
+        return self._has_activity
+
+    @Property(str, notify=activityChanged)
+    def activityLabel(self) -> str:
+        """Short user-facing activity label (Idle, Thinking, Running bash, ...)."""
+        return self._activity_label
 
     def roleNames(self) -> dict[int, bytes]:
         """Expose roles to QML."""
@@ -166,6 +179,10 @@ class TranscriptModel(QAbstractListModel):
         self._blocks_cache.clear()  # indices shifted — stale parses invalid
         self.endResetModel()
         self._sync_streaming_state()
+        self._set_activity(
+            bool(state.get("running", False)) or self._has_streaming,
+            "Working" if state.get("running", False) else ("Streaming" if self._has_streaming else "Idle"),
+        )
 
     @Slot(str, dict)
     def _on_event(self, channel: str, data: dict):
@@ -188,6 +205,7 @@ class TranscriptModel(QAbstractListModel):
         ops = fold_event(self._staged_rows, event, replay)
         self._pending_ops.extend(ops)
         self._sync_streaming_state(self._staged_rows)
+        self._apply_event_activity(event)
 
         # Restart 16ms timer (coalesce deltas)
         if self._pending_ops and not self._flush_timer.isActive():
@@ -223,6 +241,10 @@ class TranscriptModel(QAbstractListModel):
         self._blocks_cache.clear()
         self.endResetModel()
         self._sync_streaming_state()
+        self._set_activity(
+            bool(state.get("running", False)) or self._has_streaming,
+            "Working" if state.get("running", False) else ("Streaming" if self._has_streaming else "Idle"),
+        )
 
     @Slot(str)
     def appendNote(self, text: str) -> None:
@@ -262,6 +284,7 @@ class TranscriptModel(QAbstractListModel):
         self._blocks_cache.clear()
         self.endResetModel()
         self._sync_streaming_state()
+        self._set_activity(False, "Idle")
 
     @Slot()
     def _flush_pending_ops(self):
@@ -351,6 +374,32 @@ class TranscriptModel(QAbstractListModel):
             return
         self._has_streaming = has_streaming
         self.streamingChanged.emit()
+
+    def _apply_event_activity(self, event: dict) -> None:
+        """Update the coarse activity indicator from live session events."""
+        kind = str(event.get("kind", ""))
+        if kind == "done":
+            self._set_activity(False, "Idle")
+        elif kind == "reasoning":
+            self._set_activity(True, "Thinking")
+        elif kind == "text":
+            self._set_activity(True, "Streaming")
+        elif kind == "tool_start":
+            tool = str(event.get("tool", "") or "tool")
+            self._set_activity(True, f"Running {tool}")
+        elif kind == "tool_result":
+            self._set_activity(True, "Thinking")
+        elif kind == "approval":
+            self._set_activity(True, "Waiting for approval")
+
+    def _set_activity(self, active: bool, label: str) -> None:
+        active = bool(active)
+        label = label or ("Working" if active else "Idle")
+        if self._has_activity == active and self._activity_label == label:
+            return
+        self._has_activity = active
+        self._activity_label = label
+        self.activityChanged.emit()
 
     @staticmethod
     def _clone_row(row: TranscriptRow) -> TranscriptRow:

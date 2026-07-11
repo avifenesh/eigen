@@ -28,9 +28,13 @@ def test_transcript_model_has_streaming_tracks_turn_lifecycle():
     client = FakeRpcClient()
     model = TranscriptModel(client, "s-stream")
     changes = []
+    activity_changes = []
     model.streamingChanged.connect(lambda: changes.append(model.hasStreaming))
+    model.activityChanged.connect(lambda: activity_changes.append((model.hasActivity, model.activityLabel)))
 
     assert model.hasStreaming is False
+    assert model.hasActivity is False
+    assert model.activityLabel == "Idle"
     assert client.subscribed == ["session:s-stream"]
 
     client.event.emit(
@@ -40,6 +44,8 @@ def test_transcript_model_has_streaming_tracks_turn_lifecycle():
     app.processEvents()
 
     assert model.hasStreaming is True
+    assert model.hasActivity is True
+    assert model.activityLabel == "Streaming"
     assert changes == [True]
 
     client.event.emit(
@@ -49,7 +55,42 @@ def test_transcript_model_has_streaming_tracks_turn_lifecycle():
     app.processEvents()
 
     assert model.hasStreaming is False
+    assert model.hasActivity is False
+    assert model.activityLabel == "Idle"
     assert changes == [True, False]
+    assert activity_changes[0] == (True, "Streaming")
+    assert activity_changes[-1] == (False, "Idle")
+
+
+def test_transcript_model_activity_tracks_reasoning_and_tools():
+    app = QCoreApplication.instance() or QCoreApplication([])
+    client = FakeRpcClient()
+    model = TranscriptModel(client, "s-active")
+
+    client.event.emit(
+        "session:s-active",
+        {"event": {"kind": "reasoning", "text": "thinking", "step": 1}, "replay": False},
+    )
+    app.processEvents()
+    assert model.hasActivity is True
+    assert model.activityLabel == "Thinking"
+    assert model.hasStreaming is True
+
+    client.event.emit(
+        "session:s-active",
+        {"event": {"kind": "tool_start", "tool": "bash", "toolId": "t1", "step": 2}, "replay": False},
+    )
+    app.processEvents()
+    assert model.hasActivity is True
+    assert model.activityLabel == "Running bash"
+
+    client.event.emit(
+        "session:s-active",
+        {"event": {"kind": "done", "step": 2}, "replay": False},
+    )
+    app.processEvents()
+    assert model.hasActivity is False
+    assert model.activityLabel == "Idle"
 
 
 def test_transcript_model_stages_stream_rows_until_coalesced_flush():
