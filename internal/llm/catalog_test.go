@@ -6,6 +6,9 @@ import (
 )
 
 func TestContextWindowExact(t *testing.T) {
+	if got := lookupWindow("gpt-5.6-sol"); got != 372000 {
+		t.Fatalf("direct gpt-5.6-sol window = %d", got)
+	}
 	if got := lookupWindow("openai.gpt-5.5"); got != 272000 {
 		t.Fatalf("gpt-5.5 window = %d", got)
 	}
@@ -84,6 +87,22 @@ func TestLookupCapabilities(t *testing.T) {
 	g, ok := Lookup("openai.gpt-5.5")
 	if !ok || !g.Reasoning || g.Effort != "medium" || g.Cache || g.Context1M || len(g.EffortLevels) != 5 || g.EffortLevels[4] != "xhigh" {
 		t.Fatalf("gpt-5.5 capabilities wrong: %+v (ok=%v)", g, ok)
+	}
+	for _, tc := range []struct {
+		id            string
+		defaultEffort string
+		lastEffort    string
+	}{
+		{"gpt-5.6-sol", "low", "ultra"},
+		{"gpt-5.6-terra", "medium", "ultra"},
+		{"gpt-5.6-luna", "medium", "max"},
+	} {
+		m, ok := Lookup(tc.id)
+		if !ok || m.Provider != "codex" || m.ContextWindow != 372000 || !m.Reasoning || !m.Vision ||
+			m.Effort != tc.defaultEffort || m.ServiceTier != "priority" ||
+			len(m.EffortLevels) == 0 || m.EffortLevels[len(m.EffortLevels)-1] != tc.lastEffort {
+			t.Errorf("%s capabilities wrong: %+v (ok=%v)", tc.id, m, ok)
+		}
 	}
 	// llama local present.
 	if l, ok := Lookup("local"); !ok || l.Provider != "llama" {
@@ -208,6 +227,10 @@ func TestResolveProviderReconcilesMismatch(t *testing.T) {
 	// A mantle model requested on converse corrects to mantle.
 	if got := ResolveProvider("converse", "openai.gpt-5.5"); got != "mantle" {
 		t.Fatalf("converse+gpt should reconcile to mantle, got %q", got)
+	}
+	// GPT-5.6 is a direct Codex model, never a Bedrock/Mantle model.
+	if got := ResolveProvider("mantle", "gpt-5.6-terra"); got != "codex" {
+		t.Fatalf("mantle+gpt-5.6-terra should reconcile to codex, got %q", got)
 	}
 	// Matching pairs are untouched.
 	if got := ResolveProvider("converse", "us.anthropic.claude-opus-4-8"); got != "converse" {

@@ -76,10 +76,14 @@ var Catalog = []ModelInfo{
 
 	// Codex models — the OpenAI Responses API over the ChatGPT-account backend
 	// (chatgpt.com/backend-api/codex), auth from ~/.codex/auth.json. Same wire
-	// API as mantle, different auth + the service_tier "fast mode" knob. Effort
-	// levels include xhigh (the codex CLI default is xhigh); the default Effort
-	// "xhigh" matches the codex CLI; the default ServiceTier "priority" matches a
-	// fast-mode-on Codex setup (toggle with /fast or EIGEN_CODEX_SERVICE_TIER).
+	// API as mantle, different auth + the service_tier "fast mode" knob. GPT-5.6
+	// Sol, Terra, and Luna are direct Codex/API preview models, not Bedrock or
+	// Mantle model IDs. The installed Codex CLI 0.144.0 provides their metadata.
+	// The default ServiceTier "priority" matches a fast-mode-on Codex setup
+	// (toggle with /fast or EIGEN_CODEX_SERVICE_TIER).
+	{ID: "gpt-5.6-sol", Provider: "codex", ContextWindow: 372000, Reasoning: true, Effort: "low", EffortLevels: []string{"low", "medium", "high", "xhigh", "max", "ultra"}, ServiceTier: "priority", Vision: true},
+	{ID: "gpt-5.6-terra", Provider: "codex", ContextWindow: 372000, Reasoning: true, Effort: "medium", EffortLevels: []string{"low", "medium", "high", "xhigh", "max", "ultra"}, ServiceTier: "priority", Vision: true},
+	{ID: "gpt-5.6-luna", Provider: "codex", ContextWindow: 372000, Reasoning: true, Effort: "medium", EffortLevels: []string{"low", "medium", "high", "xhigh", "max"}, ServiceTier: "priority", Vision: true},
 	{ID: "gpt-5.5", Provider: "codex", ContextWindow: 272000, Reasoning: true, Effort: "xhigh", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, ServiceTier: "priority", Vision: true},
 	{ID: "gpt-5.4", Provider: "codex", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, ServiceTier: "priority", Vision: true},
 
