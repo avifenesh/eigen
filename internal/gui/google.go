@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/avifenesh/eigen/internal/google"
@@ -38,15 +39,21 @@ func (b *Bridge) GoogleStatus() (*GoogleStatusDTO, error) {
 // Google Cloud OAuth-client JSON and imports it (validates + copies to
 // ClientPath). Returns true when a file was imported, false when the user
 // cancelled. This is the in-app "set up Google" step. The picker is host-UI
-// work behind promptForPath (wails.go); the tagless build fails closed and the
-// Qt client passes a path to a plain-arg import instead.
+// work behind promptForPath (wails.go). Qt owns its own file dialog and calls
+// ImportGoogleClientFromPath with the selected file instead.
 func (b *Bridge) ImportGoogleClient() (bool, error) {
 	path, err := b.promptForPath("Choose your Google OAuth client JSON", "", false)
 	if err != nil {
 		return false, err
 	}
-	if path == "" {
-		return false, nil // cancelled
+	return b.ImportGoogleClientFromPath(path)
+}
+
+// ImportGoogleClientFromPath imports a client JSON selected by a non-Wails
+// frontend. An empty path is a cancelled local dialog, not an error.
+func (b *Bridge) ImportGoogleClientFromPath(path string) (bool, error) {
+	if strings.TrimSpace(path) == "" {
+		return false, nil
 	}
 	if err := google.Default().ImportClient(path); err != nil {
 		return false, err

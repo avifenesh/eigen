@@ -745,6 +745,26 @@ def check_connectors(app, client):
         if connector_card is None or connector_card.property("qaIconText") != "N":
             raise AssertionError(f"connector card did not derive a useful icon initial: {connector_card.property('qaIconText') if connector_card is not None else None!r}")
 
+        google_setup = click_item(app, view, root, "connectorPrimaryButton_google", flick_name="connectorsFlick")
+        if root.property("qaGoogleClientDialogOpen") is not True:
+            invoke_click(google_setup)
+            pump(app)
+        if root.property("qaGoogleClientDialogOpen") is not True:
+            raise AssertionError("Google setup did not open the native client JSON picker")
+        google_dialog = root.findChild(QObject, "connectorsGoogleClientDialog")
+        if google_dialog is None or not QMetaObject.invokeMethod(google_dialog, "close"):
+            raise AssertionError("could not close the native Google client JSON picker")
+        pump(app)
+        if root.property("qaGoogleClientDialogOpen") is not False:
+            raise AssertionError("Google client JSON picker stayed open after close")
+        close_view(app, view)
+
+        connectors = seeded_connectors_model(client)
+        view, root = load_view(app, client, "ConnectorsView.qml", context={"connectorsModel": connectors}, root_props={"connectorsModel": connectors})
+        connector_card = find_visual_item(root, "connectorCard_connector_notion")
+        if connector_card is None:
+            raise AssertionError("connector card did not re-render after the Google picker closed")
+
         connectors.load_error = "daemon offline"
         pump(app, 12)
         initial_error = find_visual_item(root, "connectorsLoadError")

@@ -13,6 +13,9 @@ Rectangle {
     color: Theme.colors.bgBase
 
     property var connectorsModel: null  // ConnectorsModel from Python
+    property var googleDialogFocusTarget: null
+    readonly property bool qaGoogleClientDialogOpen: googleClientDialog.visible
+    readonly property bool qaVaultDialogOpen: vaultDialog.visible
 
     Flickable {
         id: connectorsFlick
@@ -189,12 +192,16 @@ Rectangle {
                     busy: connectorsModel ? connectorsModel.google_busy : false
                     primaryAction: gPrimaryAction()
                     primaryLabel: gPrimaryLabel()
-                    onPrimaryClicked: {
+                    onPrimaryClicked: function(source) {
                         if (!connectorsModel || !connectorsModel.google_status) return
                         var gs = connectorsModel.google_status
                         if (gs.connected) connectorsModel.disconnect_google()
                         else if (gs.configured) connectorsModel.connect_google()
-                        else connectorsModel.setup_google()
+                        else {
+                            root.googleDialogFocusTarget = source
+                            if (gs.setupUrl) Qt.openUrlExternally(gs.setupUrl)
+                            googleClientDialog.open()
+                        }
                     }
                 }
 
@@ -942,16 +949,36 @@ Rectangle {
         }
     }
 
-    // File dialog for choosing Obsidian vault
+    // Qt owns file/directory selection; guiserver receives plain paths.
     FolderDialog {
         id: vaultDialog
+        objectName: "connectorsVaultDialog"
         title: "Choose Obsidian Vault"
         currentFolder: "file:///home"
         onAccepted: {
             if (connectorsModel) {
-                // Extract path from file:// URL
-                var path = selectedFolder.toString().replace(/^file:\/\//, "")
+                var path = decodeURIComponent(selectedFolder.toString().replace(/^file:\/\//, ""))
                 connectorsModel.choose_vault(path)
+            }
+        }
+    }
+
+    FileDialog {
+        id: googleClientDialog
+        objectName: "connectorsGoogleClientDialog"
+        title: "Choose Google OAuth client JSON"
+        nameFilters: ["JSON files (*.json)"]
+        fileMode: FileDialog.OpenFile
+        onAccepted: {
+            if (connectorsModel) {
+                var path = decodeURIComponent(selectedFile.toString().replace(/^file:\/\//, ""))
+                connectorsModel.setup_google(path)
+            }
+        }
+        onVisibleChanged: {
+            if (!visible && root.googleDialogFocusTarget) {
+                root.googleDialogFocusTarget.forceActiveFocus(Qt.PopupFocusReason)
+                root.googleDialogFocusTarget = null
             }
         }
     }
@@ -983,7 +1010,7 @@ Rectangle {
         readonly property string qaIconText: iconText()
         default property alias extraContent: cardExtra.data
 
-        signal primaryClicked()
+        signal primaryClicked(var source)
         signal removeClicked()
         signal removeCancelled()
 
@@ -1100,7 +1127,7 @@ Rectangle {
                         text: primaryLabel
                         toolTipText: primaryLabel && connectorName ? (primaryLabel + " " + connectorName) : primaryLabel
                         enabled: !busy
-                        onClicked: card.primaryClicked()
+                        onClicked: card.primaryClicked(this)
                     }
 
                     AppButton {
@@ -1147,7 +1174,7 @@ Rectangle {
                     text: primaryLabel
                     toolTipText: primaryLabel && connectorName ? (primaryLabel + " " + connectorName) : primaryLabel
                     enabled: !busy
-                    onClicked: card.primaryClicked()
+                    onClicked: card.primaryClicked(this)
                 }
 
                 AppButton {

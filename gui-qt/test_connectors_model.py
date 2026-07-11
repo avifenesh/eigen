@@ -451,10 +451,10 @@ def test_pending_connector_mutations_do_not_duplicate():
 @pytest.mark.parametrize(
     "method,args,rpc_method,expected_args",
     [
-        ("setup_google", (), "ImportGoogleClient", ()),
+        ("setup_google", ("/home/user/google-client.json",), "ImportGoogleClientFromPath", ("/home/user/google-client.json",)),
         ("connect_google", (), "ConnectGoogle", ()),
         ("disconnect_google", (), "DisconnectGoogle", ()),
-        ("choose_vault", ("/home/user/vault",), "ChooseObsidianVault", ("/home/user/vault",)),
+        ("choose_vault", ("/home/user/vault",), "SetObsidianVault", ("/home/user/vault",)),
         ("revuto_pause", ("owner/repo", True), "RevutoSetPaused", ("owner/repo", True)),
         ("revuto_trigger", ("owner/repo",), "RevutoTrigger", ("owner/repo", "review")),
     ],
@@ -492,13 +492,13 @@ def test_cancel_local_server_clears_form(model):
 
 
 def test_choose_vault(model, client):
-    """Test choose_vault() calls ChooseObsidianVault RPC."""
+    """Test choose_vault() calls the Qt-compatible vault setter."""
     model.choose_vault("/home/user/vault")
-    assert ("ChooseObsidianVault", ("/home/user/vault",)) in client.calls
+    assert ("SetObsidianVault", ("/home/user/vault",)) in client.calls
 
 
 def test_choose_vault_error_clears_busy_and_surfaces_error(model, client):
-    client.failures["ChooseObsidianVault"] = {"message": "vault denied"}
+    client.failures["SetObsidianVault"] = {"message": "vault denied"}
 
     model.choose_vault("/home/user/vault")
 
@@ -543,9 +543,14 @@ def test_revuto_trigger(model, client):
 
 
 def test_setup_google(model, client):
-    """Test setup_google() calls ImportGoogleClient RPC."""
-    model.setup_google()
-    assert ("ImportGoogleClient", ()) in client.calls
+    """Test setup_google() passes the Qt-selected OAuth client JSON path."""
+    model.setup_google("/home/user/google-client.json")
+    assert ("ImportGoogleClientFromPath", ("/home/user/google-client.json",)) in client.calls
+
+
+def test_setup_google_ignores_a_cancelled_file_dialog(model, client):
+    model.setup_google("")
+    assert not any(method == "ImportGoogleClientFromPath" for method, _ in client.calls)
 
 
 def test_connect_google(model, client):
@@ -563,7 +568,7 @@ def test_disconnect_google(model, client):
 @pytest.mark.parametrize(
     "method,rpc_method,expected_error",
     [
-        ("setup_google", "ImportGoogleClient", "Could not import Google client: import denied"),
+        ("setup_google", "ImportGoogleClientFromPath", "Could not import Google client: import denied"),
         ("connect_google", "ConnectGoogle", "Could not connect Google: connect denied"),
         ("disconnect_google", "DisconnectGoogle", "Could not disconnect Google: disconnect denied"),
     ],
@@ -571,7 +576,8 @@ def test_disconnect_google(model, client):
 def test_google_action_errors_clear_busy(model, client, method, rpc_method, expected_error):
     client.failures[rpc_method] = expected_error.rsplit(": ", 1)[1]
 
-    getattr(model, method)()
+    args = ("/home/user/google-client.json",) if method == "setup_google" else ()
+    getattr(model, method)(*args)
 
     assert model.google_busy is False
     assert model.action_error == expected_error
