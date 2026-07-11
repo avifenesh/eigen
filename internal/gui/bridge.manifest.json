@@ -977,6 +977,23 @@
       "results": null
     },
     {
+      "name": "SaveRemoteMachine",
+      "params": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "results": [
+        "*gui.MachineDTO"
+      ]
+    },
+    {
       "name": "SendInput",
       "params": [
         {
@@ -2181,6 +2198,76 @@
         }
       ],
       "hash": "78a0b96009338782"
+    },
+    "*gui.MachineDTO": {
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "Addr",
+          "type": "string",
+          "jsonTag": "addr,omitempty",
+          "tags": {
+            "json": "addr,omitempty"
+          }
+        },
+        {
+          "name": "Detected",
+          "type": "bool",
+          "jsonTag": "detected",
+          "tags": {
+            "json": "detected"
+          }
+        },
+        {
+          "name": "Dir",
+          "type": "string",
+          "jsonTag": "dir,omitempty",
+          "tags": {
+            "json": "dir,omitempty"
+          }
+        },
+        {
+          "name": "Model",
+          "type": "string",
+          "jsonTag": "model,omitempty",
+          "tags": {
+            "json": "model,omitempty"
+          }
+        },
+        {
+          "name": "Name",
+          "type": "string",
+          "jsonTag": "name",
+          "tags": {
+            "json": "name"
+          }
+        },
+        {
+          "name": "Perm",
+          "type": "string",
+          "jsonTag": "perm,omitempty",
+          "tags": {
+            "json": "perm,omitempty"
+          }
+        },
+        {
+          "name": "SSH",
+          "type": "string",
+          "jsonTag": "ssh",
+          "tags": {
+            "json": "ssh"
+          }
+        },
+        {
+          "name": "Saved",
+          "type": "bool",
+          "jsonTag": "saved",
+          "tags": {
+            "json": "saved"
+          }
+        }
+      ],
+      "hash": "7d899fba193e827e"
     },
     "*gui.MachinesDTO": {
       "kind": "struct",

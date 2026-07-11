@@ -37,17 +37,53 @@ type MachinesDTO struct {
 	Machines []MachineDTO `json:"machines"`
 }
 
+func toMachineDTO(m remote.Machine) MachineDTO {
+	return MachineDTO{
+		Name: m.Name, SSH: m.SSH, Addr: m.Addr, Dir: m.Dir,
+		Model: m.Model, Perm: m.Perm, Saved: m.Saved, Detected: m.Detected,
+	}
+}
+
 // Machines returns saved + ssh-config-detected remote targets (instant, local).
 func (b *Bridge) Machines() (*MachinesDTO, error) {
 	ms := remote.Machines()
 	out := make([]MachineDTO, 0, len(ms))
 	for _, m := range ms {
-		out = append(out, MachineDTO{
-			Name: m.Name, SSH: m.SSH, Addr: m.Addr, Dir: m.Dir,
-			Model: m.Model, Perm: m.Perm, Saved: m.Saved, Detected: m.Detected,
-		})
+		out = append(out, toMachineDTO(m))
 	}
 	return &MachinesDTO{Machines: out}, nil
+}
+
+// SaveRemoteMachine records an SSH target so the Machines view can connect to
+// and bootstrap it without asking the user to edit hosts.json or use the CLI.
+// target accepts the same [user@]host[:dir] syntax as `eigen remote add`.
+// An empty name defaults to the parsed host or SSH alias.
+func (b *Bridge) SaveRemoteMachine(name, target, dir string) (*MachineDTO, error) {
+	spec, err := remote.ParseHostSpec(target)
+	if err != nil {
+		return nil, err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = spec.Host
+	}
+	if strings.ContainsAny(name, "\t\r\n") {
+		return nil, fmt.Errorf("machine name must be one line")
+	}
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		dir = spec.Dir
+	}
+
+	hosts, err := remote.LoadHosts()
+	if err != nil {
+		return nil, err
+	}
+	hosts[name] = remote.Host{SSH: spec.SSHTarget(), Dir: dir}
+	if err := remote.SaveHosts(hosts); err != nil {
+		return nil, err
+	}
+	return &MachineDTO{Name: name, SSH: spec.SSHTarget(), Dir: dir, Saved: true}, nil
 }
 
 // remoteDialTimeout bounds the read-only ssh peek (dial + List). remote.Dial

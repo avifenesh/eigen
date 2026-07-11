@@ -14,6 +14,7 @@ import (
 
 	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/llm"
+	"github.com/avifenesh/eigen/internal/remote"
 )
 
 // TestToMessageDTO verifies the read-only history seam (Go->TS) preserves the
@@ -178,6 +179,32 @@ func TestRunRemoteInstallSurfacesCLIOutput(t *testing.T) {
 	_, err := runRemoteInstall(context.Background(), cli, "codex-box", true)
 	if err == nil || !strings.Contains(err.Error(), "ssh denied") || strings.Contains(err.Error(), "more detail") {
 		t.Fatalf("error = %v, want first actionable line", err)
+	}
+}
+
+func TestSaveRemoteMachineAcceptsQtSSHForm(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	machine, err := (&Bridge{}).SaveRemoteMachine("", "avi@gpu-box:/srv/eigen", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if machine.Name != "gpu-box" || machine.SSH != "avi@gpu-box" || machine.Dir != "/srv/eigen" || !machine.Saved {
+		t.Fatalf("saved machine = %+v", machine)
+	}
+	hosts, err := remote.LoadHosts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := hosts["gpu-box"]; got.SSH != "avi@gpu-box" || got.Dir != "/srv/eigen" {
+		t.Fatalf("saved host = %+v", got)
+	}
+}
+
+func TestSaveRemoteMachineRejectsInvalidTarget(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if _, err := (&Bridge{}).SaveRemoteMachine("gpu-box", "", ""); err == nil {
+		t.Fatal("SaveRemoteMachine accepted an empty SSH target")
 	}
 }
 
