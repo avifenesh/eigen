@@ -81,7 +81,7 @@ app = QGuiApplication([])
 state = SessionStateModel(QObject(), "s-layout")
 state.seed(
     {
-        "model": "openai.gpt-5.5",
+        "model": "local-qwen",
         "perm": "auto",
         "effort": "medium",
         "search": "off",
@@ -133,6 +133,8 @@ for window_width in (1180, 420):
     model_combo = find_visible_item(root, "sessionModelCombo")
     if model_combo.property("count") != 2:
         raise AssertionError(f"model picker exposed non-GPT options at {window_width}px: {model_combo.property('count')}")
+    if model_combo.property("qaText") != "local-qwen":
+        raise AssertionError(f"model picker hid the active legacy model label at {window_width}px: {model_combo.property('qaText')}")
     if window_width == 420:
         rows = {round(control.mapToScene(QPointF(0, 0)).y()) for control in controls}
         if len(rows) < 2:

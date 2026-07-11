@@ -23,8 +23,8 @@ def _is_preferred_model(model_id: str) -> bool:
     ) or normalized.startswith("openai.gpt-5.6")
 
 
-def _selectable_model_ids(models: list[dict], active_model: str) -> list[str]:
-    """Keep the picker focused without hiding an older session's active model."""
+def _selectable_model_ids(models: list[dict]) -> list[str]:
+    """Return only the GPT-5.5/5.6 options requested for the picker."""
     all_ids: list[str] = []
     for model in models:
         if not isinstance(model, dict):
@@ -36,10 +36,6 @@ def _selectable_model_ids(models: list[dict], active_model: str) -> list[str]:
     preferred = [model_id for model_id in all_ids if _is_preferred_model(model_id)]
     if not preferred:
         return all_ids
-
-    active_model = str(active_model or "")
-    if active_model in all_ids and active_model not in preferred:
-        return [active_model] + preferred
     return preferred
 
 
@@ -263,7 +259,7 @@ class SessionStateModel(QObject):
         catalog_data = state.get("catalog") or {}
         if isinstance(catalog_data, dict):
             models = catalog_data.get("models") or []
-            self._catalog = _selectable_model_ids(models, self._model)
+            self._catalog = _selectable_model_ids(models)
         else:
             self._catalog = []
 
