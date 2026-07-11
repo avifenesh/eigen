@@ -208,7 +208,7 @@ def test_session_state_focuses_picker_on_gpt_55_and_gpt_56_models():
             },
         }
     )
-    assert model.catalog == ["local-qwen", "openai.gpt-5.5", "gpt-5.6-sol"]
+    assert model.catalog == ["openai.gpt-5.5", "gpt-5.6-sol"]
 
 
 def test_session_state_ignores_stale_refresh_after_newer_model_change():
