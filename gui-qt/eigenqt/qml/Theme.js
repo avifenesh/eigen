@@ -1,84 +1,84 @@
 .pragma library
 
-// Eigen design tokens — calm instrument panel palette (QML port).
-// Exact match of internal/gui/frontend/src/styles/tokens.css deepteal theme.
+// Eigen design tokens — graphite control surface with high-signal accents.
+// Keep structure neutral; use color to distinguish intent, not to decorate.
 
 var colors = {
-    bgWell: "#07090a",
-    bgBase: "#0b0e0f",
-    surfaceRaised: "#11171a",
-    surfaceRaised2: "#141b1e",
-    surfaceOverlay: "#1a2428",
-    bgInset: "rgba(0,0,0,0.22)",
+    bgWell: "#0d1014",
+    bgBase: "#15191e",
+    surfaceRaised: "#1d232a",
+    surfaceRaised2: "#252d35",
+    surfaceOverlay: "#303a44",
+    bgInset: "#11161b",
 
-    stateHover: "rgba(255,255,255,0.04)",
-    stateActive: "rgba(255,255,255,0.07)",
-    stateSelected: "rgba(105,194,184,0.1)",
+    stateHover: "rgba(255,255,255,0.075)",
+    stateActive: "rgba(91,214,194,0.18)",
+    stateSelected: "rgba(91,214,194,0.16)",
 
-    borderHairline: "rgba(221,228,227,0.07)",
-    borderSubtle: "rgba(221,228,227,0.11)",
-    borderStrong: "rgba(221,228,227,0.18)",
-    borderBrand: "rgba(105,194,184,0.55)",
-    divider: "rgba(221,228,227,0.06)",
+    borderHairline: "rgba(233,240,238,0.11)",
+    borderSubtle: "rgba(233,240,238,0.18)",
+    borderStrong: "rgba(233,240,238,0.3)",
+    borderBrand: "rgba(91,214,194,0.68)",
+    divider: "rgba(233,240,238,0.12)",
 
-    textPrimary: "#dde4e3",
-    textSecondary: "#9aaaa7",
-    textMuted: "#7e8e8b",
-    textGhost: "#52605e",
+    textPrimary: "#f1f5f4",
+    textSecondary: "#c0cac7",
+    textMuted: "#8d9996",
+    textGhost: "#65716f",
 
-    brand: "#69c2b8",
-    brandStrong: "#3e9e96",
-    brandBright: "#8ad6cc",
-    brandDim: "#2e7670",
+    brand: "#5bd6c2",
+    brandStrong: "#2aa892",
+    brandBright: "#a7f2e6",
+    brandDim: "#236f63",
 
-    accent: "#5fb0c4",
-    accentBg: "rgba(95,176,196,0.1)",
-    borderAccentFaint: "rgba(95,176,196,0.22)",
+    accent: "#8bb9ff",
+    accentBg: "rgba(139,185,255,0.14)",
+    borderAccentFaint: "rgba(139,185,255,0.32)",
 
-    success: "#8fc98a",
-    successBg: "rgba(143,201,138,0.12)",
-    warn: "#e0b36a",
-    info: "#5fb0c4",
-    warnBg: "rgba(224,179,106,0.12)",
-    error: "#d67e72",
-    errorBg: "rgba(214,126,114,0.13)",
-    working: "#d08c5e",
-    workingBg: "rgba(208,140,94,0.12)",
+    success: "#a6da7a",
+    successBg: "rgba(166,218,122,0.14)",
+    warn: "#f2b867",
+    info: "#8bb9ff",
+    warnBg: "rgba(242,184,103,0.14)",
+    error: "#ff9382",
+    errorBg: "rgba(255,147,130,0.14)",
+    working: "#e9a978",
+    workingBg: "rgba(233,169,120,0.14)",
 
     // Status dots
-    dotWorking: "#69c2b8",  // brand teal, breathes
-    dotLive: "#69c2b8",     // static teal
-    dotIdle: "#7e8e8b",     // textMuted
-    dotOk: "#8fc98a",       // success
-    dotWarn: "#e0b36a",     // warn
-    dotError: "#d67e72",    // error
+    dotWorking: "#5bd6c2",  // brand mint, breathes
+    dotLive: "#5bd6c2",     // static mint
+    dotIdle: "#8d9996",     // textMuted
+    dotOk: "#a6da7a",       // success
+    dotWarn: "#f2b867",     // warn
+    dotError: "#ff9382",    // error
 
     // Diff colors (from tokens.css --diff-*)
-    diffAddBg: "rgba(16,38,28,0.85)",
-    diffAddGutter: "#3a6b4c",
-    diffDelBg: "rgba(42,21,23,0.85)",
-    diffDelGutter: "#7a4640",
+    diffAddBg: "rgba(33,61,43,0.88)",
+    diffAddGutter: "#75be79",
+    diffDelBg: "rgba(82,37,40,0.88)",
+    diffDelGutter: "#e58074",
 
     // Syntax highlighting (code surfaces)
-    synBg: "#0a1012",
-    synText: "#c7d2d0",
-    synKeyword: "#c58fd8",
-    synType: "#e0b36a",
-    synFunc: "#6fb7e8",
-    synString: "#8fc98a",
-    synNumber: "#e8a878",
-    synComment: "#5e6e6a",
-    synPunct: "#9ab0ac",
-    synBuiltin: "#69c2b8",
+    synBg: "#11161b",
+    synText: "#d5dfdc",
+    synKeyword: "#d6a2ed",
+    synType: "#f2b867",
+    synFunc: "#8bb9ff",
+    synString: "#a6da7a",
+    synNumber: "#efa979",
+    synComment: "#71807c",
+    synPunct: "#acbbb7",
+    synBuiltin: "#5bd6c2",
 
     // Additional tokens
-    bgRaised: "#11171a",
-    bgRaised2: "#141b1e",
-    bgOverlay: "#1a2428",
-    borderBrandFaint: "rgba(105,194,184,0.22)",
-    stateFocusBg: "rgba(105,194,184,0.06)",
-    textFaint: "#37423f",
-    brandBg: "rgba(105,194,184,0.1)"
+    bgRaised: "#1d232a",
+    bgRaised2: "#252d35",
+    bgOverlay: "#303a44",
+    borderBrandFaint: "rgba(91,214,194,0.34)",
+    stateFocusBg: "rgba(91,214,194,0.12)",
+    textFaint: "#56615f",
+    brandBg: "rgba(91,214,194,0.16)"
 }
 
 var uiFonts = ["Inter", "Noto Sans", "sans-serif"]

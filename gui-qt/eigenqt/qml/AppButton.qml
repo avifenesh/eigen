@@ -49,17 +49,18 @@ Button {
         radius: control.pill ? Theme.radius.full : (control.segmentPosition === "middle" ? 0 : Theme.radius.sm)
         color: {
             if (!control.enabled) return control.variant === "primary" ? Theme.colors.surfaceRaised2 : Theme.colors.bgInset
-            if (control.down) return Theme.colors.stateActive
+            if (control.down) return control.variant === "primary" ? Theme.colors.brandStrong : Theme.colors.stateActive
             if (control.selected) return Theme.colors.stateSelected
-            if (control.hovered) return control.variant === "primary" ? Theme.colors.brand : Theme.colors.stateHover
-            if (control.variant === "primary") return Theme.colors.brandBright
+            if (control.hovered) return control.variant === "primary" ? Theme.colors.brandBright : Theme.colors.surfaceRaised2
+            if (control.variant === "primary") return Theme.colors.brand
             if (control.variant === "danger") return Theme.colors.errorBg
             return control.variant === "ghost" ? "transparent" : Theme.colors.bgRaised
         }
-        border.width: control.showingFocus ? 2 : (control.variant === "primary" ? 0 : 1)
+        border.width: control.showingFocus ? 2 : 1
         border.color: {
             if (control.showingFocus) return control.variant === "primary" ? Theme.colors.textPrimary : Theme.colors.brandBright
             if (!control.enabled) return control.variant === "primary" ? Theme.colors.borderBrandFaint : Theme.colors.borderHairline
+            if (control.variant === "primary") return control.hovered ? Theme.colors.brandBright : Theme.colors.brandStrong
             if (control.variant === "danger") return Theme.colors.error
             if (control.selected) return Theme.colors.borderBrandFaint
             return control.hovered ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
