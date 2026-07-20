@@ -65,6 +65,11 @@ Rectangle {
     property int approvalRows: 0
     property var slashTokens: ({})
     property var actionTokens: ({})
+    property bool compactingSession: false
+    property bool resendingSession: false
+    property bool clearingSession: false
+    property bool detachingShell: false
+    property bool confirmClearSession: false
     property var recentProjectDirs: []
     property string newSessionDir: ""
     property string newSessionError: ""
@@ -85,6 +90,18 @@ Rectangle {
         && newSessionRefreshButton.qaTextFits
         && newSessionCancelButton.qaTextFits
         && newSessionStartButton.qaTextFits
+    readonly property bool qaSessionActionsOpen: sessionActionsPopup.opened
+    readonly property bool qaSessionActionsInBounds: sessionActionsPopup.x >= 0
+        && sessionActionsPopup.y >= 0
+        && sessionActionsPopup.x + sessionActionsPopup.width <= root.width
+        && sessionActionsPopup.y + sessionActionsPopup.height <= root.height
+    readonly property bool qaSessionActionsFit: sessionCompactButton.qaTextFits
+        && sessionResendButton.qaTextFits
+        && sessionClearButton.qaTextFits
+        && (!sessionDetachButton.visible || sessionDetachButton.qaTextFits)
+    readonly property bool qaConfirmClearSession: confirmClearSession
+    readonly property bool sessionMaintenanceBusy: compactingSession || resendingSession || clearingSession
+    readonly property bool sessionActionsAvailable: !!rpcClient && typeof rpcClient.callToken === "function"
 
     signal backClicked()
     signal routeRequested(string route)
@@ -243,6 +260,18 @@ Rectangle {
                 }
 
                 Item { Layout.fillWidth: true }
+
+                AppButton {
+                    id: sessionActionsButton
+                    objectName: "chatSessionActionsButton"
+                    text: "⋯"
+                    compact: true
+                    variant: sessionActionsPopup.opened ? "secondary" : "ghost"
+                    selected: sessionActionsPopup.opened
+                    toolTipText: "Session actions"
+                    Accessible.name: "Session actions"
+                    onClicked: sessionActionsPopup.opened ? sessionActionsPopup.close() : sessionActionsPopup.open()
+                }
 
                 // Worktree/session dock toggle — the panel on the right.
                 AppButton {
@@ -767,6 +796,162 @@ Rectangle {
     }
 
     Popup {
+        id: sessionActionsPopup
+        objectName: "chatSessionActionsPopup"
+        modal: false
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        width: Math.min(292, root.width - Theme.space.xl * 2)
+        height: sessionActionsColumn.implicitHeight + topPadding + bottomPadding
+        x: root.sessionActionsPopupX()
+        y: root.sessionActionsPopupY()
+        padding: Theme.space.md
+
+        onOpened: root.confirmClearSession = false
+        onClosed: root.confirmClearSession = false
+
+        background: Rectangle {
+            color: Theme.colors.surfaceRaised
+            radius: Theme.radius.md
+            border.width: 1
+            border.color: Theme.colors.borderSubtle
+        }
+
+        contentItem: ColumnLayout {
+            id: sessionActionsColumn
+            spacing: Theme.space.sm
+
+            Label {
+                text: "Session actions"
+                font.family: Theme.uiFonts[0]
+                font.pixelSize: Theme.fontSize.micro
+                font.weight: Theme.fontWeight.semibold
+                color: Theme.colors.textFaint
+                Layout.fillWidth: true
+                leftPadding: Theme.space.sm
+                rightPadding: Theme.space.sm
+            }
+
+            AppButton {
+                id: sessionDetachButton
+                objectName: "chatDetachShellButton"
+                visible: root.isStreaming
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? 38 : 0
+                text: root.detachingShell ? "Detaching shell..." : "Detach running shell"
+                contentAlignment: Text.AlignLeft
+                compact: true
+                variant: "secondary"
+                enabled: root.sessionActionsAvailable && !root.detachingShell
+                toolTipText: "Background the foreground shell without interrupting the turn"
+                onClicked: root.runSessionAction(
+                    "detachShell", "DetachBash", [root.sessionId], "Could not detach shell", true)
+            }
+
+            Rectangle {
+                visible: root.isStreaming
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? 1 : 0
+                color: Theme.colors.borderHairline
+            }
+
+            AppButton {
+                id: sessionCompactButton
+                objectName: "chatCompactSessionButton"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 38
+                text: root.compactingSession ? "Compacting context..." : "Compact context"
+                contentAlignment: Text.AlignLeft
+                compact: true
+                variant: "ghost"
+                enabled: root.sessionActionsAvailable && root.hasConversationRows() && !root.isStreaming && !root.sessionMaintenanceBusy
+                toolTipText: root.isStreaming ? "Finish or interrupt the current turn first" : "Summarize older context to free tokens"
+                onClicked: root.runSessionAction(
+                    "compactSession", "Compact", [root.sessionId, 0], "Could not compact context", true)
+            }
+
+            AppButton {
+                id: sessionResendButton
+                objectName: "chatResendSessionButton"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 38
+                text: root.resendingSession ? "Resending last turn..." : "Resend last turn"
+                contentAlignment: Text.AlignLeft
+                compact: true
+                variant: "ghost"
+                enabled: root.sessionActionsAvailable && root.hasConversationRows() && !root.isStreaming && !root.sessionMaintenanceBusy
+                toolTipText: root.isStreaming ? "Finish or interrupt the current turn first" : "Retry the last turn"
+                onClicked: root.runSessionAction(
+                    "resendSession", "Resend", [root.sessionId], "Could not resend last turn", true)
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 1
+                color: Theme.colors.borderHairline
+            }
+
+            AppButton {
+                id: sessionClearButton
+                objectName: "chatClearSessionButton"
+                visible: !root.confirmClearSession
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? 38 : 0
+                text: root.clearingSession ? "Clearing conversation..." : "Clear conversation"
+                contentAlignment: Text.AlignLeft
+                compact: true
+                variant: "danger"
+                enabled: root.sessionActionsAvailable && root.hasConversationRows() && !root.isStreaming && !root.sessionMaintenanceBusy
+                toolTipText: root.isStreaming ? "Finish or interrupt the current turn first" : "Remove every message in this session"
+                onClicked: root.confirmClearSession = true
+            }
+
+            ColumnLayout {
+                visible: root.confirmClearSession
+                Layout.fillWidth: true
+                spacing: Theme.space.md
+
+                Label {
+                    text: "Clear every message in this session?"
+                    font.family: Theme.uiFonts[0]
+                    font.pixelSize: Theme.fontSize.bodySm
+                    color: Theme.colors.textPrimary
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                    leftPadding: Theme.space.sm
+                    rightPadding: Theme.space.sm
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.space.sm
+
+                    Item { Layout.fillWidth: true }
+
+                    AppButton {
+                        objectName: "chatCancelClearSessionButton"
+                        text: "Cancel"
+                        compact: true
+                        variant: "ghost"
+                        enabled: !root.clearingSession
+                        onClicked: root.confirmClearSession = false
+                    }
+
+                    AppButton {
+                        objectName: "chatConfirmClearSessionButton"
+                        text: root.clearingSession ? "Clearing..." : "Clear"
+                        compact: true
+                        variant: "danger"
+                        enabled: !root.clearingSession
+                        onClicked: root.runSessionAction(
+                            "clearSession", "Clear", [root.sessionId], "Could not clear conversation", true)
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
         id: newSessionPopup
         objectName: "chatNewSessionPopup"
         modal: true
@@ -1017,6 +1202,59 @@ Rectangle {
         })
     }
 
+    function sessionActionsPopupX() {
+        var point = sessionActionsButton.mapToItem(root, 0, 0)
+        return Math.max(Theme.space.lg,
+            Math.min(point.x + sessionActionsButton.width - sessionActionsPopup.width,
+                root.width - sessionActionsPopup.width - Theme.space.lg))
+    }
+
+    function sessionActionsPopupY() {
+        var point = sessionActionsButton.mapToItem(root, 0, 0)
+        var below = point.y + sessionActionsButton.height + Theme.space.sm
+        if (below + sessionActionsPopup.height <= root.height - Theme.space.lg) return below
+        return Math.max(Theme.space.lg, point.y - sessionActionsPopup.height - Theme.space.sm)
+    }
+
+    function hasConversationRows() {
+        return !!root.transcriptModel
+            && typeof root.transcriptModel.rowCount === "function"
+            && root.transcriptModel.rowCount() > 0
+    }
+
+    function setSessionActionPending(kind, pending) {
+        switch (kind) {
+        case "compactSession": root.compactingSession = pending; break
+        case "resendSession": root.resendingSession = pending; break
+        case "clearSession": root.clearingSession = pending; break
+        case "detachShell": root.detachingShell = pending; break
+        }
+    }
+
+    function runSessionAction(kind, method, args, errorPrefix, closePopup) {
+        if (!root.sessionId) {
+            root.actionError = errorPrefix + ": no active session."
+            return false
+        }
+        if (!root.sessionActionsAvailable) {
+            root.actionError = errorPrefix + ": RPC client is unavailable."
+            return false
+        }
+        if (kind === "detachShell" ? root.detachingShell : root.sessionMaintenanceBusy) return false
+
+        root.setSessionActionPending(kind, true)
+        if (closePopup) sessionActionsPopup.close()
+        var sent = root.fireRpcAction(method, args, errorPrefix, {"sessionAction": kind})
+        if (!sent) root.setSessionActionPending(kind, false)
+        return sent
+    }
+
+    function refreshSessionState() {
+        if (root.sessionStateModel && typeof root.sessionStateModel.refresh === "function") {
+            root.sessionStateModel.refresh()
+        }
+    }
+
     function fireRpcAction(method, args, errorPrefix, meta) {
         if (!root.rpcClient) {
             root.actionError = errorPrefix + ": RPC client is unavailable."
@@ -1040,6 +1278,37 @@ Rectangle {
 
     function handleActionRpcResult(pending, payload) {
         var error = root.payloadError(payload)
+        var sessionAction = String(pending.sessionAction || "")
+        if (sessionAction !== "") {
+            root.setSessionActionPending(sessionAction, false)
+            if (error !== "") {
+                root.actionError = (pending.errorPrefix || "Action failed") + ": " + error
+                return
+            }
+
+            var result = payload ? payload.result : null
+            if (sessionAction === "clearSession") {
+                if (root.transcriptModel && typeof root.transcriptModel.clearRows === "function") {
+                    root.transcriptModel.clearRows()
+                }
+                if (root.approvalsModel && typeof root.approvalsModel.clearRows === "function") {
+                    root.approvalsModel.clearRows()
+                }
+                root.appendSlashNote("-- cleared --")
+            } else if (sessionAction === "compactSession") {
+                var before = result && result.before !== undefined ? Number(result.before) : 0
+                var after = result && result.after !== undefined ? Number(result.after) : 0
+                root.appendSlashNote(before > 0 || after > 0
+                    ? "compacted " + before + " -> " + after
+                    : "compacted older context")
+            } else if (sessionAction === "detachShell") {
+                root.appendSlashNote(result
+                    ? "backgrounded the shell; the turn is free"
+                    : "no foreground shell to background")
+            }
+            root.refreshSessionState()
+            return
+        }
         if (error === "") return
         root.actionError = (pending.errorPrefix || "Action failed") + ": " + error
         if (pending.restoreText && composerTextArea.text.trim().length === 0) {

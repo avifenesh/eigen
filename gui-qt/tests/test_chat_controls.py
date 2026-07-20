@@ -59,6 +59,8 @@ class FakeRpcClient(QObject):
         self.failures = {}
         self.defer_methods = set()
         self.deferred = []
+        self.defer_token_methods = set()
+        self.deferred_tokens = []
         self._token = 0
         self.voice_status = {"stt": True, "tts": True}
 
@@ -83,7 +85,10 @@ class FakeRpcClient(QObject):
             if method in self.failures
             else {"result": self._result(method, call_args)}
         )
-        QTimer.singleShot(0, lambda: self.callDone.emit(token, payload))
+        if method in self.defer_token_methods:
+            self.deferred_tokens.append((method, token, payload))
+        else:
+            QTimer.singleShot(0, lambda: self.callDone.emit(token, payload))
         return token
 
     @Slot(str, "QVariantList")
@@ -106,6 +111,15 @@ class FakeRpcClient(QObject):
         self.deferred.clear()
         for callback, payload in pending:
             QTimer.singleShot(0, lambda cb=callback, p=payload: cb(p))
+
+    def flush_deferred_tokens(self, method=None):
+        remaining = []
+        for pending_method, token, payload in self.deferred_tokens:
+            if method is not None and pending_method != method:
+                remaining.append((pending_method, token, payload))
+                continue
+            QTimer.singleShot(0, lambda t=token, p=payload: self.callDone.emit(t, p))
+        self.deferred_tokens = remaining
 
     def _result(self, method, args):
         if method == "RecentDirs":
@@ -172,6 +186,8 @@ class FakeRpcClient(QObject):
             return None
         if method == "Compact":
             return {"before": 42, "after": 7}
+        if method == "DetachBash":
+            return True
         if method == "ExportSession":
             return "/home/user/eigen-exports/s-chat.jsonl"
         if method == "SkillBody":
@@ -968,6 +984,120 @@ if offline_chat.property("actionError") != "":
     raise AssertionError("Offline chat action error did not dismiss")
 offline_view.hide()
 offline_view.setSource(QUrl())
+
+# Session recovery controls use their own transcript so destructive proof never
+# disturbs the broader chat workflow below.
+maintenance_client = FakeRpcClient()
+maintenance_state = FakeSessionState()
+maintenance_transcript = StaticTranscript(
+    [{"kind": "assistant", "text": "A completed turn", "streaming": False, "blocks": []}]
+)
+maintenance_approvals = ApprovalModel(
+    [{"id": "approval-maintenance", "tool": "shell", "args": "{}"}]
+)
+maintenance_view, maintenance_chat = make_view(
+    "ChatView.qml",
+    {},
+    {
+        "sessionId": "s-maintenance",
+        "sessionStateModel": maintenance_state,
+        "commandsModel": CommandModel(),
+        "transcriptModel": maintenance_transcript,
+        "approvalsModel": maintenance_approvals,
+        "rpcClient": maintenance_client,
+        "clipboardHelper": clipboard,
+        "highlighter": highlighter,
+        "terminalHelper": terminal_helper,
+    },
+)
+maintenance_view.resize(900, 480)
+pump(app, 20)
+actions = click_item(app, maintenance_view, maintenance_chat, "chatSessionActionsButton")
+if maintenance_chat.property("qaSessionActionsOpen") is not True:
+    raise AssertionError("Session actions trigger did not open its popup")
+if maintenance_chat.property("qaSessionActionsInBounds") is not True:
+    raise AssertionError("Session actions popup escaped the 900x480 chat viewport")
+if maintenance_chat.property("qaSessionActionsFit") is not True:
+    raise AssertionError("Session action labels do not fit their controls")
+if actions.property("qaTextFits") is not True:
+    raise AssertionError("Session actions trigger glyph does not fit")
+for object_name in ["chatCompactSessionButton", "chatResendSessionButton", "chatClearSessionButton"]:
+    action = find_item_in(maintenance_view, maintenance_chat, object_name)
+    if action is None or action.property("visible") is not True:
+        raise AssertionError(f"Session actions popup is missing {object_name}")
+    if float(action.property("qaHorizontalPadding") or 0) < 11.5:
+        raise AssertionError(f"{object_name} has cramped horizontal padding")
+
+maintenance_client.defer_token_methods.add("Compact")
+click_item(app, maintenance_view, maintenance_chat, "chatCompactSessionButton")
+if call_count(maintenance_client, "Compact") != 1:
+    raise AssertionError(f"Compact action called the wrong RPC: {maintenance_client.calls}")
+if maintenance_chat.property("compactingSession") is not True:
+    raise AssertionError("Compact action did not expose its pending state")
+click_item(app, maintenance_view, maintenance_chat, "chatSessionActionsButton")
+compact_button = find_item_in(maintenance_view, maintenance_chat, "chatCompactSessionButton")
+if compact_button.property("enabled") is not False:
+    raise AssertionError("Compact action stayed enabled while its RPC was pending")
+click_item(app, maintenance_view, maintenance_chat, "chatCompactSessionButton")
+if call_count(maintenance_client, "Compact") != 1:
+    raise AssertionError("Pending Compact action allowed a duplicate RPC")
+maintenance_client.flush_deferred_tokens("Compact")
+pump(app, 20)
+if maintenance_chat.property("compactingSession") is not False:
+    raise AssertionError("Compact pending state did not clear after completion")
+if "compacted 42 -> 7" not in maintenance_transcript.rows[-1]["text"]:
+    raise AssertionError(f"Compact action did not append useful feedback: {maintenance_transcript.rows[-1:]}")
+
+maintenance_client.failures["Resend"] = "daemon offline"
+click_item(app, maintenance_view, maintenance_chat, "chatResendSessionButton")
+if call_count(maintenance_client, "Resend") != 1:
+    raise AssertionError(f"Resend action called the wrong RPC: {maintenance_client.calls}")
+if "Could not resend last turn: daemon offline" not in maintenance_chat.property("actionError"):
+    raise AssertionError(f"Resend failure was not surfaced: {maintenance_chat.property('actionError')!r}")
+del maintenance_client.failures["Resend"]
+click_item(app, maintenance_view, maintenance_chat, "chatDismissActionError")
+click_item(app, maintenance_view, maintenance_chat, "chatSessionActionsButton")
+click_item(app, maintenance_view, maintenance_chat, "chatResendSessionButton")
+if call_count(maintenance_client, "Resend") != 2:
+    raise AssertionError("Resend did not recover after a failed attempt")
+
+click_item(app, maintenance_view, maintenance_chat, "chatSessionActionsButton")
+click_item(app, maintenance_view, maintenance_chat, "chatClearSessionButton")
+if maintenance_chat.property("qaConfirmClearSession") is not True:
+    raise AssertionError("Clear conversation did not require confirmation")
+if maintenance_chat.property("qaSessionActionsInBounds") is not True:
+    raise AssertionError("Clear confirmation pushed the popup outside the viewport")
+click_item(app, maintenance_view, maintenance_chat, "chatCancelClearSessionButton")
+if call_count(maintenance_client, "Clear") != 0:
+    raise AssertionError("Canceling Clear still called the daemon")
+click_item(app, maintenance_view, maintenance_chat, "chatClearSessionButton")
+click_item(app, maintenance_view, maintenance_chat, "chatConfirmClearSessionButton")
+if call_count(maintenance_client, "Clear") != 1:
+    raise AssertionError(f"Confirmed Clear called the wrong RPC: {maintenance_client.calls}")
+if len(maintenance_transcript.rows) != 1 or "-- cleared --" not in maintenance_transcript.rows[-1]["text"]:
+    raise AssertionError(f"Confirmed Clear did not reset visible history: {maintenance_transcript.rows}")
+if maintenance_approvals.rows:
+    raise AssertionError("Confirmed Clear left stale approvals visible")
+
+maintenance_transcript.setStreaming(True)
+pump(app, 16)
+click_item(app, maintenance_view, maintenance_chat, "chatSessionActionsButton")
+detach_button = find_item_in(maintenance_view, maintenance_chat, "chatDetachShellButton")
+compact_button = find_item_in(maintenance_view, maintenance_chat, "chatCompactSessionButton")
+resend_button = find_item_in(maintenance_view, maintenance_chat, "chatResendSessionButton")
+if detach_button is None or detach_button.property("visible") is not True or detach_button.property("enabled") is not True:
+    raise AssertionError("Active turn did not expose the safe shell-detach action")
+if compact_button.property("enabled") is not False or resend_button.property("enabled") is not False:
+    raise AssertionError("Active turn left maintenance actions enabled")
+click_item(app, maintenance_view, maintenance_chat, "chatDetachShellButton")
+if call_count(maintenance_client, "DetachBash") != 1:
+    raise AssertionError(f"Detach shell called the wrong RPC: {maintenance_client.calls}")
+if "backgrounded the shell; the turn is free" not in maintenance_transcript.rows[-1]["text"]:
+    raise AssertionError(f"Detach shell did not append useful feedback: {maintenance_transcript.rows[-1:]}")
+if call_count(maintenance_state, "Refresh") < 4:
+    raise AssertionError(f"Session actions did not refresh state after completion: {maintenance_state.calls}")
+maintenance_view.hide()
+maintenance_view.setSource(QUrl())
 
 chat_view, chat = make_view(
     "ChatView.qml",
