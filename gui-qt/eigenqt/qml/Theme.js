@@ -1,7 +1,8 @@
 .pragma library
 
-// Eigen design tokens — graphite control surface with high-signal accents.
-// Keep structure neutral; use color to distinguish intent, not to decorate.
+// Eigen design tokens — restrained graphite structure with high-signal accents.
+// The saved theme is passed by main.py before QML loads, so it applies at app
+// startup just like the TUI and legacy GUI. Geometry stays shared across themes.
 
 var colors = {
     bgWell: "#0d1014",
@@ -79,6 +80,149 @@ var colors = {
     stateFocusBg: "rgba(91,214,194,0.12)",
     textFaint: "#56615f",
     brandBg: "rgba(91,214,194,0.16)"
+}
+
+var paletteName = startupPaletteName()
+if (paletteName === "nord") applyNordPalette()
+else if (paletteName === "gruvbox") applyGruvboxPalette()
+
+function startupPaletteName() {
+    if (typeof Qt === "undefined" || !Qt.application || !Qt.application.arguments)
+        return "deepteal"
+    var args = Qt.application.arguments
+    for (var i = 0; i < args.length; ++i) {
+        var match = /^--eigen-qt-theme=(deepteal|nord|gruvbox)$/.exec(args[i])
+        if (match) return match[1]
+    }
+    return "deepteal"
+}
+
+function applyNordPalette() {
+    colors.bgWell = "#15191f"
+    colors.bgBase = "#1b1f27"
+    colors.surfaceRaised = "#222734"
+    colors.surfaceRaised2 = "#2b3140"
+    colors.surfaceOverlay = "#353c4d"
+    colors.bgInset = "#171b22"
+    colors.stateHover = "rgba(255,255,255,0.04)"
+    colors.stateActive = "rgba(255,255,255,0.07)"
+    colors.stateSelected = "rgba(129,161,193,0.12)"
+    colors.stateFocusBg = "rgba(129,161,193,0.08)"
+    colors.borderHairline = "rgba(216,222,233,0.08)"
+    colors.borderSubtle = "rgba(216,222,233,0.12)"
+    colors.borderStrong = "rgba(216,222,233,0.2)"
+    colors.borderBrand = "rgba(129,161,193,0.55)"
+    colors.borderBrandFaint = "rgba(129,161,193,0.24)"
+    colors.divider = "rgba(216,222,233,0.07)"
+    colors.textPrimary = "#d8dee9"
+    colors.textSecondary = "#9aa5b8"
+    colors.textMuted = "#79839a"
+    colors.textGhost = "#5b657a"
+    colors.textFaint = "#4a5365"
+    colors.brand = "#81a1c1"
+    colors.brandStrong = "#5e81ac"
+    colors.brandBright = "#b3c4d8"
+    colors.brandDim = "#4c6a8a"
+    colors.brandBg = "rgba(129,161,193,0.12)"
+    colors.accent = "#88c0d0"
+    colors.accentBg = "rgba(136,192,208,0.12)"
+    colors.borderAccentFaint = "rgba(136,192,208,0.28)"
+    colors.success = "#a3be8c"
+    colors.successBg = "rgba(163,190,140,0.12)"
+    colors.warn = "#ebcb8b"
+    colors.warnBg = "rgba(235,203,139,0.12)"
+    colors.info = "#88c0d0"
+    colors.error = "#bf616a"
+    colors.errorBg = "rgba(191,97,106,0.13)"
+    colors.working = "#d08770"
+    colors.workingBg = "rgba(208,135,112,0.12)"
+    colors.dotWorking = colors.brand
+    colors.dotLive = colors.brand
+    colors.dotIdle = colors.textMuted
+    colors.dotOk = colors.success
+    colors.dotWarn = colors.warn
+    colors.dotError = colors.error
+    colors.diffAddBg = "rgba(30,42,34,0.85)"
+    colors.diffAddGutter = "#3a6b4c"
+    colors.diffDelBg = "rgba(46,32,38,0.85)"
+    colors.diffDelGutter = "#7a4640"
+    colors.synBg = "#171b22"
+    colors.synText = "#d8dee9"
+    colors.synKeyword = "#b48ead"
+    colors.synType = "#ebcb8b"
+    colors.synFunc = "#88c0d0"
+    colors.synString = "#a3be8c"
+    colors.synNumber = "#d08770"
+    colors.synComment = "#616e88"
+    colors.synPunct = "#9aa5b8"
+    colors.synBuiltin = "#8fbcbb"
+    colors.bgRaised = colors.surfaceRaised
+    colors.bgRaised2 = colors.surfaceRaised2
+    colors.bgOverlay = colors.surfaceOverlay
+}
+
+function applyGruvboxPalette() {
+    colors.bgWell = "#1d2021"
+    colors.bgBase = "#282828"
+    colors.surfaceRaised = "#32302f"
+    colors.surfaceRaised2 = "#3c3836"
+    colors.surfaceOverlay = "#504945"
+    colors.bgInset = "#1d2021"
+    colors.stateHover = "rgba(255,255,255,0.04)"
+    colors.stateActive = "rgba(255,255,255,0.07)"
+    colors.stateSelected = "rgba(131,165,152,0.13)"
+    colors.stateFocusBg = "rgba(131,165,152,0.08)"
+    colors.borderHairline = "rgba(235,219,178,0.08)"
+    colors.borderSubtle = "rgba(235,219,178,0.12)"
+    colors.borderStrong = "rgba(235,219,178,0.2)"
+    colors.borderBrand = "rgba(131,165,152,0.55)"
+    colors.borderBrandFaint = "rgba(131,165,152,0.24)"
+    colors.divider = "rgba(235,219,178,0.07)"
+    colors.textPrimary = "#ebdbb2"
+    colors.textSecondary = "#a89984"
+    colors.textMuted = "#928374"
+    colors.textGhost = "#7c6f64"
+    colors.textFaint = "#504945"
+    colors.brand = "#83a598"
+    colors.brandStrong = "#689d6a"
+    colors.brandBright = "#bdddd0"
+    colors.brandDim = "#427b58"
+    colors.brandBg = "rgba(131,165,152,0.13)"
+    colors.accent = "#8ec07c"
+    colors.accentBg = "rgba(142,192,124,0.12)"
+    colors.borderAccentFaint = "rgba(142,192,124,0.28)"
+    colors.success = "#b8bb26"
+    colors.successBg = "rgba(184,187,38,0.12)"
+    colors.warn = "#fabd2f"
+    colors.warnBg = "rgba(250,189,47,0.12)"
+    colors.info = "#83a598"
+    colors.error = "#fb4934"
+    colors.errorBg = "rgba(251,73,52,0.13)"
+    colors.working = "#fe8019"
+    colors.workingBg = "rgba(254,128,25,0.12)"
+    colors.dotWorking = colors.brand
+    colors.dotLive = colors.brand
+    colors.dotIdle = colors.textMuted
+    colors.dotOk = colors.success
+    colors.dotWarn = colors.warn
+    colors.dotError = colors.error
+    colors.diffAddBg = "rgba(40,40,15,0.85)"
+    colors.diffAddGutter = "#4a6b1f"
+    colors.diffDelBg = "rgba(50,26,22,0.85)"
+    colors.diffDelGutter = "#8a3a30"
+    colors.synBg = "#1d2021"
+    colors.synText = "#ebdbb2"
+    colors.synKeyword = "#fb4934"
+    colors.synType = "#fabd2f"
+    colors.synFunc = "#8ec07c"
+    colors.synString = "#b8bb26"
+    colors.synNumber = "#d3869b"
+    colors.synComment = "#928374"
+    colors.synPunct = "#a89984"
+    colors.synBuiltin = "#8ec07c"
+    colors.bgRaised = colors.surfaceRaised
+    colors.bgRaised2 = colors.surfaceRaised2
+    colors.bgOverlay = colors.surfaceOverlay
 }
 
 var uiFonts = ["Inter", "Noto Sans", "sans-serif"]

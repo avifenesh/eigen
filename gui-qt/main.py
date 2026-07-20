@@ -5,6 +5,7 @@ main.py — Eigen Qt/QML GUI entry point.
 Launches guiserver supervisor, exposes RpcClient + models to QML, loads Main.qml.
 Accepts --session <id> flag to open a session directly.
 """
+import json
 import sys
 from pathlib import Path
 
@@ -50,6 +51,30 @@ from eigenqt.terminal_helper import TerminalHelper
 from eigenqt.webengine import initialize_webengine
 
 ROOT = Path(__file__).resolve().parent
+QT_THEME_NAMES = {"deepteal", "nord", "gruvbox"}
+
+
+def resolve_qt_theme(config_path: Path | None = None) -> str:
+    """Read the startup-only Qt palette without requiring the daemon first."""
+    path = config_path or (Path.home() / ".eigen" / "config.json")
+    try:
+        config = json.loads(path.read_text())
+        value = config.get("theme", "") if isinstance(config, dict) else ""
+    except (OSError, ValueError, TypeError):
+        return "deepteal"
+    value = str(value).strip().lower()
+    return value if value in QT_THEME_NAMES else "deepteal"
+
+
+def qt_theme_argument(theme: str) -> str:
+    return f"--eigen-qt-theme={theme if theme in QT_THEME_NAMES else 'deepteal'}"
+
+
+def with_qt_theme_argument(argv: list[str], config_path: Path | None = None) -> list[str]:
+    """Add the resolved palette argument unless a caller already supplied one."""
+    if any(arg.startswith("--eigen-qt-theme=") for arg in argv):
+        return list(argv)
+    return [*argv, qt_theme_argument(resolve_qt_theme(config_path))]
 
 
 class AppContext(QObject):
@@ -332,6 +357,10 @@ class SessionController(QObject):
 def main():
     initialize_webengine()
     QQuickStyle.setStyle("Basic")  # Unstyled base for custom theme
+
+    # Theme.js reads this before QML is constructed. The config contract is
+    # startup-only, matching the TUI and legacy GUI behavior.
+    sys.argv = with_qt_theme_argument(sys.argv)
 
     app = QGuiApplication(sys.argv)
     app.setOrganizationName("eigen")
