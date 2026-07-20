@@ -3025,6 +3025,50 @@ def main():
 
     ok = capture_view("reviewers", "ReviewersView.qml", setup_reviewers, show_reviewers) and ok
 
+    def show_reviewers_narrow(_view, root):
+        seed_reviewers_state(root.property("reviewersModel"), reviewer_rows)
+        row = find_item(root, "reviewerRow_avifenesh_eigen")
+        if row is None or row.property("compactLayout") is not True:
+            raise AssertionError("reviewers narrow screenshot did not switch to the compact layout")
+        for object_name in (
+            "reviewerReviewButton_avifenesh_eigen",
+            "reviewerLearnButton_avifenesh_eigen",
+            "reviewerPauseButton_avifenesh_eigen",
+        ):
+            button = find_item(root, object_name)
+            if button is None or button.property("qaTextFits") is not True:
+                raise AssertionError(f"reviewers narrow screenshot did not fit {object_name}")
+            center = button.mapToScene(QPointF(
+                float(button.property("width") or 0) / 2,
+                float(button.property("height") or 0) / 2,
+            ))
+            if center.x() < 0 or center.x() > 420 or center.y() < 0 or center.y() > 700:
+                raise AssertionError(f"reviewers narrow screenshot clipped {object_name}: {center}")
+
+    ok = capture_view("reviewers-narrow", "ReviewersView.qml", setup_reviewers, show_reviewers_narrow, width=420, height=700) and ok
+
+    def show_reviewers_tight(_view, root):
+        seed_reviewers_state(root.property("reviewersModel"), reviewer_rows)
+        row = find_item(root, "reviewerRow_avifenesh_eigen")
+        if row is None or row.property("ultraCompactLayout") is not True:
+            raise AssertionError("reviewers tight screenshot did not switch to the ultra-compact layout")
+        for object_name in (
+            "reviewerReviewButton_avifenesh_eigen",
+            "reviewerLearnButton_avifenesh_eigen",
+            "reviewerPauseButton_avifenesh_eigen",
+        ):
+            button = find_item(root, object_name)
+            if button is None or button.property("qaTextFits") is not True:
+                raise AssertionError(f"reviewers tight screenshot did not fit {object_name}")
+            center = button.mapToScene(QPointF(
+                float(button.property("width") or 0) / 2,
+                float(button.property("height") or 0) / 2,
+            ))
+            if center.x() < 0 or center.x() > 320 or center.y() < 0 or center.y() > 700:
+                raise AssertionError(f"reviewers tight screenshot clipped {object_name}: {center}")
+
+    ok = capture_view("reviewers-tight", "ReviewersView.qml", setup_reviewers, show_reviewers_tight, width=320, height=700) and ok
+
     def show_reviewers_loading(_view, root):
         seed_reviewers_state(root.property("reviewersModel"), [], available=False, loading=True)
 

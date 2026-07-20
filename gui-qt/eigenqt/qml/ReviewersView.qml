@@ -179,7 +179,7 @@ Rectangle {
                             id: reviewerRow
                             objectName: "reviewerRow_" + reviewerKey
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 56
+                            Layout.preferredHeight: ultraCompactLayout ? 144 : (compactLayout ? 104 : 56)
                             color: Theme.colors.bgRaised
                             border.width: 1
                             border.color: repoBusy ? Theme.colors.borderBrandFaint : Theme.colors.borderHairline
@@ -189,11 +189,16 @@ Rectangle {
                             property bool repoPaused: model.paused || false
                             property bool repoBusy: !!root.busy[repoName]
                             property string repoBusyAction: root.busyAction[repoName] || ""
+                            readonly property bool compactLayout: width < 640
+                            readonly property bool ultraCompactLayout: width < 400
 
-                            RowLayout {
+                            GridLayout {
+                                id: reviewerGrid
                                 anchors.fill: parent
                                 anchors.margins: Theme.space.lg
-                                spacing: Theme.space.lg
+                                columns: reviewerRow.ultraCompactLayout ? 2 : (reviewerRow.compactLayout ? 3 : 5)
+                                columnSpacing: Theme.space.lg
+                                rowSpacing: Theme.space.sm
 
                                 // Repo name
                                 Label {
@@ -204,6 +209,9 @@ Rectangle {
                                     color: Theme.colors.textPrimary
                                     elide: Text.ElideMiddle
                                     Layout.fillWidth: true
+                                    Layout.row: 0
+                                    Layout.column: 0
+                                    Layout.columnSpan: reviewerRow.ultraCompactLayout ? 1 : (reviewerRow.compactLayout ? 2 : 1)
                                 }
 
                                 // Status badge
@@ -217,6 +225,8 @@ Rectangle {
                                     fontWeight: Theme.fontWeight.medium
                                     minimumHeight: 22
                                     pill: false
+                                    Layout.row: 0
+                                    Layout.column: reviewerRow.ultraCompactLayout ? 1 : (reviewerRow.compactLayout ? 2 : 1)
                                 }
 
                                 AppTag {
@@ -229,6 +239,8 @@ Rectangle {
                                     fontWeight: Theme.fontWeight.medium
                                     minimumHeight: 22
                                     pill: false
+                                    Layout.row: 0
+                                    Layout.column: reviewerRow.ultraCompactLayout ? 1 : (reviewerRow.compactLayout ? 2 : 1)
                                 }
 
                                 // Actions
@@ -239,7 +251,15 @@ Rectangle {
                                     toolTipText: "Run review for " + reviewerRow.repoName
                                     enabled: !reviewerRow.repoBusy
                                     Layout.preferredHeight: 32
-                                    Layout.preferredWidth: 112
+                                    Layout.preferredWidth: reviewerRow.ultraCompactLayout
+                                        ? reviewerGrid.width
+                                        : (reviewerRow.compactLayout
+                                        ? Math.max(0, (reviewerGrid.width - reviewerGrid.columnSpacing * 2) / 3)
+                                        : 112)
+                                    Layout.fillWidth: reviewerRow.compactLayout
+                                    Layout.row: reviewerRow.compactLayout ? 1 : 0
+                                    Layout.column: reviewerRow.compactLayout ? 0 : 2
+                                    Layout.columnSpan: reviewerRow.ultraCompactLayout ? 2 : 1
                                     onClicked: triggerJob(reviewerRow.repoName, "review")
                                 }
 
@@ -249,7 +269,14 @@ Rectangle {
                                     toolTipText: "Run learn for " + reviewerRow.repoName
                                     enabled: !reviewerRow.repoBusy
                                     Layout.preferredHeight: 32
-                                    Layout.preferredWidth: 96
+                                    Layout.preferredWidth: reviewerRow.ultraCompactLayout
+                                        ? Math.max(0, (reviewerGrid.width - reviewerGrid.columnSpacing) / 2)
+                                        : (reviewerRow.compactLayout
+                                        ? Math.max(0, (reviewerGrid.width - reviewerGrid.columnSpacing * 2) / 3)
+                                        : 96)
+                                    Layout.fillWidth: reviewerRow.compactLayout
+                                    Layout.row: reviewerRow.ultraCompactLayout ? 2 : (reviewerRow.compactLayout ? 1 : 0)
+                                    Layout.column: reviewerRow.ultraCompactLayout ? 0 : (reviewerRow.compactLayout ? 1 : 3)
                                     onClicked: triggerJob(reviewerRow.repoName, "learn")
                                 }
 
@@ -260,7 +287,14 @@ Rectangle {
                                     toolTipText: (reviewerRow.repoPaused ? "Resume " : "Pause ") + reviewerRow.repoName
                                     enabled: !reviewerRow.repoBusy
                                     Layout.preferredHeight: 32
-                                    Layout.preferredWidth: 104
+                                    Layout.preferredWidth: reviewerRow.ultraCompactLayout
+                                        ? Math.max(0, (reviewerGrid.width - reviewerGrid.columnSpacing) / 2)
+                                        : (reviewerRow.compactLayout
+                                        ? Math.max(0, (reviewerGrid.width - reviewerGrid.columnSpacing * 2) / 3)
+                                        : 104)
+                                    Layout.fillWidth: reviewerRow.compactLayout
+                                    Layout.row: reviewerRow.ultraCompactLayout ? 2 : (reviewerRow.compactLayout ? 1 : 0)
+                                    Layout.column: reviewerRow.ultraCompactLayout ? 1 : (reviewerRow.compactLayout ? 2 : 4)
                                     onClicked: togglePause(reviewerRow.repoName, reviewerRow.repoPaused)
                                 }
                             }
