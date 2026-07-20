@@ -142,6 +142,26 @@ def test_sessions_model_filter_and_export_session():
     assert model.actionMessage == "Exported s-run to /home/user/eigen-exports/s-run.jsonl"
 
 
+def test_sessions_model_prefers_gpt_55_or_56_for_chat_resume():
+    ensure_qt_app()
+    client = FakeRpcClient()
+    model = SessionsModel(client)
+    model._on_sessions_result(
+        {
+            "result": [
+                {**_session("s-newest", updated=30), "model": "local-qwen"},
+                {**_session("s-gpt", updated=20), "model": "openai.gpt-5.5"},
+                {**_session("s-other", updated=10), "model": "gpt-5"},
+            ]
+        }
+    )
+
+    assert model.preferredChatSessionId() == "s-gpt"
+
+    model._on_sessions_result({"result": [{**_session("s-newest", updated=30), "model": "local-qwen"}]})
+    assert model.preferredChatSessionId() == "s-newest"
+
+
 def test_sessions_model_actions_surface_rpc_errors_without_dropping_rows():
     ensure_qt_app()
     client = FakeRpcClient()

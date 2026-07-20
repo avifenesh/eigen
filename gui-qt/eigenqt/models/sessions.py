@@ -167,6 +167,21 @@ class SessionsModel(QAbstractListModel):
             for session in self._all_sessions
         ]
 
+    @Slot(result=str)
+    def preferredChatSessionId(self) -> str:
+        """Return the GPT-5.5/5.6 session to resume, or the newest session."""
+        fallback_id = ""
+        for session in self._all_sessions:
+            session_id = str(session.get("id") or "")
+            if not session_id:
+                continue
+            if not fallback_id:
+                fallback_id = session_id
+            model_id = str(session.get("model") or "").lower()
+            if model_id.startswith(("gpt-5.5", "gpt-5.6", "openai.gpt-5.5", "openai.gpt-5.6")):
+                return session_id
+        return fallback_id
+
     @Slot()
     def _on_connected(self):
         """Fetch sessions on connect (async)."""
