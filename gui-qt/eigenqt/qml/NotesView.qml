@@ -740,6 +740,10 @@ Rectangle {
                             normalBorderWidth: 0
                             focusedBorderWidth: 0
                             backgroundRadius: 0
+                            // Notes frequently contain long URLs, paths, and generated IDs.
+                            // Keep those editable without pushing text beyond the pane.
+                            wrapMode: TextEdit.WrapAnywhere
+                            readonly property bool qaWrapsLongTokens: wrapMode === TextEdit.WrapAnywhere
                             font.family: Theme.monoFonts[0]
 
                             leftPadding: Theme.space.xxxl

@@ -1862,11 +1862,13 @@ def check_notes(app, client):
         note_text = "# Existing\n\nEdited body " + ("longnotetoken" * 18)
         set_text(app, root, "notesEditorTextArea", note_text)
         editor = find_visual_item(root, "notesEditorTextArea")
-        if editor is None or editor.property("qaTextFits") is not True:
+        if (editor is None or editor.property("qaTextFits") is not True
+                or editor.property("qaWrapsLongTokens") is not True):
             raise AssertionError(
                 "notes editor did not wrap long text cleanly: "
                 f"content={editor.property('qaContentWidth') if editor else None} "
-                f"available={editor.property('qaTextAvailableWidth') if editor else None}"
+                f"available={editor.property('qaTextAvailableWidth') if editor else None} "
+                f"wrapsAnywhere={editor.property('qaWrapsLongTokens') if editor else None}"
             )
 
         client.failures["ObsidianWrite"] = "save denied"
