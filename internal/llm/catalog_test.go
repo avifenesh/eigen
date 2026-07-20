@@ -9,6 +9,11 @@ func TestContextWindowExact(t *testing.T) {
 	if got := lookupWindow("gpt-5.6-sol"); got != 372000 {
 		t.Fatalf("direct gpt-5.6-sol window = %d", got)
 	}
+	for _, id := range []string{"openai.gpt-5.6-sol", "openai.gpt-5.6-terra", "openai.gpt-5.6-luna"} {
+		if got := lookupWindow(id); got != 272000 {
+			t.Fatalf("Bedrock %s window = %d, want 272000", id, got)
+		}
+	}
 	if got := lookupWindow("openai.gpt-5.5"); got != 272000 {
 		t.Fatalf("gpt-5.5 window = %d", got)
 	}
@@ -87,6 +92,14 @@ func TestLookupCapabilities(t *testing.T) {
 	g, ok := Lookup("openai.gpt-5.5")
 	if !ok || !g.Reasoning || g.Effort != "medium" || g.Cache || g.Context1M || len(g.EffortLevels) != 5 || g.EffortLevels[4] != "xhigh" {
 		t.Fatalf("gpt-5.5 capabilities wrong: %+v (ok=%v)", g, ok)
+	}
+	for _, id := range []string{"openai.gpt-5.6-sol", "openai.gpt-5.6-terra", "openai.gpt-5.6-luna"} {
+		m, ok := Lookup(id)
+		if !ok || m.Provider != "mantle" || m.ContextWindow != 272000 || !m.Cache ||
+			!m.Reasoning || !m.Vision || m.Effort != "medium" ||
+			len(m.EffortLevels) != 6 || m.EffortLevels[5] != "max" {
+			t.Errorf("%s capabilities wrong: %+v (ok=%v)", id, m, ok)
+		}
 	}
 	for _, tc := range []struct {
 		id            string
@@ -227,6 +240,11 @@ func TestResolveProviderReconcilesMismatch(t *testing.T) {
 	// A mantle model requested on converse corrects to mantle.
 	if got := ResolveProvider("converse", "openai.gpt-5.5"); got != "mantle" {
 		t.Fatalf("converse+gpt should reconcile to mantle, got %q", got)
+	}
+	for _, id := range []string{"openai.gpt-5.6-sol", "openai.gpt-5.6-terra", "openai.gpt-5.6-luna"} {
+		if got := ResolveProvider("converse", id); got != "mantle" {
+			t.Fatalf("converse+%s should reconcile to mantle, got %q", id, got)
+		}
 	}
 	// GPT-5.6 is a direct Codex model, never a Bedrock/Mantle model.
 	if got := ResolveProvider("mantle", "gpt-5.6-terra"); got != "codex" {

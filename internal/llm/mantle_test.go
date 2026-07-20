@@ -102,6 +102,23 @@ func TestMantleIgnoresUnsupportedEnvEffort(t *testing.T) {
 	}
 }
 
+func TestNewMantleGPT56UsesModelSpecificResponsesRoute(t *testing.T) {
+	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "test-token")
+	t.Setenv("EIGEN_MANTLE_REGION", "us-east-2")
+	for _, id := range []string{"openai.gpt-5.6-sol", "openai.gpt-5.6-terra", "openai.gpt-5.6-luna"} {
+		m, err := NewMantle(id)
+		if err != nil {
+			t.Fatalf("NewMantle(%q): %v", id, err)
+		}
+		if m.BaseURL != "https://bedrock-mantle.us-east-2.api.aws/openai/v1" {
+			t.Errorf("%s BaseURL = %q", id, m.BaseURL)
+		}
+		if m.Effort() != "medium" {
+			t.Errorf("%s default effort = %q, want medium", id, m.Effort())
+		}
+	}
+}
+
 // sseCompleted writes a minimal successful Responses SSE stream with one text
 // message, then a response.completed event.
 func sseCompleted(w http.ResponseWriter, text string) {
