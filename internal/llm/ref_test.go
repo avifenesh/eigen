@@ -101,6 +101,10 @@ func TestModelEffortLevelsPerCatalog(t *testing.T) {
 	}{
 		// mantle GPT: none|low|medium|high|xhigh (max remains Anthropic-only)
 		{"openai.gpt-5.5", []string{"none", "low", "medium", "high", "xhigh"}},
+		// GPT-5.6 on Bedrock Mantle adds max reasoning effort.
+		{"openai.gpt-5.6-sol", []string{"none", "low", "medium", "high", "xhigh", "max"}},
+		{"openai.gpt-5.6-terra", []string{"none", "low", "medium", "high", "xhigh", "max"}},
+		{"openai.gpt-5.6-luna", []string{"none", "low", "medium", "high", "xhigh", "max"}},
 		// Anthropic adaptive opus on Bedrock (verified live):
 		// low..xhigh|max — auto and minimal rejected
 		{"us.anthropic.claude-opus-4-8", []string{"low", "medium", "high", "xhigh", "max"}},

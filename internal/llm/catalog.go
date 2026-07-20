@@ -64,21 +64,28 @@ type ModelInfo struct {
 // Catalog is the set of models eigen knows about. It is additive: an unknown
 // model simply falls back to provider defaults.
 var Catalog = []ModelInfo{
-	// Bedrock "mantle" (OpenAI-family). Effort-style reasoning; GPT accepts
-	// none|low|medium|high|xhigh (max remains Anthropic-only). Vision PROBED
+	// Bedrock "mantle" (OpenAI-family). Effort-style reasoning; GPT-5.5 accepts
+	// none|low|medium|high|xhigh. GPT-5.6 adds max and supports prompt caching.
+	// Vision PROBED
 	// 2026-06-13: 256x256 red PNG as Responses input_image → gpt-5.5 and gpt-5.4
 	// both answered "red" through the mantle gateway (gpt-5.5 needed a retry past
 	// a transient 500; tiny 8x8 images can confuse the model — send real sizes).
 	// "openai.gpt-5" itself 404s on mantle now (kept for non-mantle aliasing).
+	// GPT-5.6 uses Mantle's model-specific /openai/v1/responses endpoint, which
+	// is the BaseURL constructed in NewMantle.
+	{ID: "openai.gpt-5.6-sol", Provider: "mantle", ContextWindow: 272000, Cache: true, Reasoning: true, Effort: "medium", EffortLevels: []string{"none", "low", "medium", "high", "xhigh", "max"}, Vision: true},
+	{ID: "openai.gpt-5.6-terra", Provider: "mantle", ContextWindow: 272000, Cache: true, Reasoning: true, Effort: "medium", EffortLevels: []string{"none", "low", "medium", "high", "xhigh", "max"}, Vision: true},
+	{ID: "openai.gpt-5.6-luna", Provider: "mantle", ContextWindow: 272000, Cache: true, Reasoning: true, Effort: "medium", EffortLevels: []string{"none", "low", "medium", "high", "xhigh", "max"}, Vision: true},
 	{ID: "openai.gpt-5.5", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "medium", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, Vision: true},
 	{ID: "openai.gpt-5.4", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, Vision: true},
 	{ID: "openai.gpt-5", Provider: "mantle", ContextWindow: 272000, Reasoning: true, Effort: "high", EffortLevels: []string{"none", "low", "medium", "high", "xhigh"}, Vision: true},
 
 	// Codex models — the OpenAI Responses API over the ChatGPT-account backend
 	// (chatgpt.com/backend-api/codex), auth from ~/.codex/auth.json. Same wire
-	// API as mantle, different auth + the service_tier "fast mode" knob. GPT-5.6
-	// Sol, Terra, and Luna are direct Codex/API preview models, not Bedrock or
-	// Mantle model IDs. The installed Codex CLI 0.144.0 provides their metadata.
+	// API as mantle, different auth + the service_tier "fast mode" knob. The
+	// GPT-5.6 family is also available through Bedrock Mantle above under
+	// openai.gpt-5.6-*; these direct Codex IDs remain separate model choices.
+	// The installed Codex CLI 0.144.0 provides their metadata.
 	// The default ServiceTier "priority" matches a fast-mode-on Codex setup
 	// (toggle with /fast or EIGEN_CODEX_SERVICE_TIER).
 	{ID: "gpt-5.6-sol", Provider: "codex", ContextWindow: 372000, Reasoning: true, Effort: "low", EffortLevels: []string{"low", "medium", "high", "xhigh", "max", "ultra"}, ServiceTier: "priority", Vision: true},
