@@ -72,6 +72,7 @@ ApplicationWindow {
             sessionController: root.ctxSessionController
 
             onRouteChanged: function(route) {
+                if (route === "chat") root.resumePreferredChatSession()
                 root.currentRoute = route
             }
             onCommandPaletteRequested: commandPalette.showPalette()
@@ -473,6 +474,13 @@ ApplicationWindow {
         }
         root.actionError = ""
         root.pendingNewSessionToken = root.ctxRpc.callToken("NewSession", [dir || "", "", ""])
+    }
+
+    function resumePreferredChatSession() {
+        if (!root.ctxSessionController || root.ctxSessionController.session_id) return
+        if (!root.ctxSessions || !root.ctxSessions.preferredChatSessionId) return
+        var sessionId = root.ctxSessions.preferredChatSessionId()
+        if (sessionId) root.ctxSessionController.open_session(sessionId)
     }
 
     function openCreatedSession(sessionId) {

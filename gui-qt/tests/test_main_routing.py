@@ -493,7 +493,7 @@ def seeded_sessions():
             "id": "s-idle",
             "title": "Idle archive",
             "dir": "/repo/eigen",
-            "model": "gpt-5",
+            "model": "openai.gpt-5.5",
             "status": "idle",
             "turns": 1,
             "updated": 10,
@@ -909,6 +909,16 @@ try:
         raise AssertionError("Running rail session title does not fit")
     if running_row.property("qaAccessibleName") != "Qt shell routing":
         raise AssertionError(f"Running rail accessible name was {running_row.property('qaAccessibleName')!r}")
+
+    controller.detach()
+    chat_header = chat_nav.mapToScene(QPointF(float(chat_nav.property("width") or 0) / 2, 15))
+    QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, QPoint(int(chat_header.x()), int(chat_header.y())))
+    pump(app, 12)
+    if controller.opened[-1:] != ["s-idle"]:
+        raise AssertionError(f"Chat nav did not resume the preferred GPT session: {controller.opened}")
+    if window.property("currentRoute") != "chat" or window.property("activeRouteIndex") != 3:
+        raise AssertionError("Chat nav did not open the resumed session")
+
     running_row.forceActiveFocus(Qt.TabFocusReason)
     pump(app, 12)
     if running_row.property("qaVisualFocus") is not True:
