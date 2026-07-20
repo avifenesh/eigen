@@ -3697,11 +3697,13 @@ def main():
 
     def show_notes_edit(_view, root):
         editor = find_item(root, "notesEditorTextArea")
-        if editor is None or editor.property("qaTextFits") is not True:
+        if (editor is None or editor.property("qaTextFits") is not True
+                or editor.property("qaWrapsLongTokens") is not True):
             raise AssertionError(
                 "notes edit screenshot clipped long editor text: "
                 f"content={editor.property('qaContentWidth') if editor else None} "
-                f"available={editor.property('qaTextAvailableWidth') if editor else None}"
+                f"available={editor.property('qaTextAvailableWidth') if editor else None} "
+                f"wrapsAnywhere={editor.property('qaWrapsLongTokens') if editor else None}"
             )
 
     ok = capture_view("notes-edit", "NotesView.qml", lambda ctx: setup_notes(ctx, editing=True), show_notes_edit) and ok
