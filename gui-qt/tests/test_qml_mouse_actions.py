@@ -1994,6 +1994,47 @@ def check_reviewers(app, client):
         if abs(row_width - list_width) > 1.0:
             raise AssertionError(f"reviewers row no longer fills list width: row={row_width}, list={list_width}")
 
+        view.setWidth(420)
+        pump(app, 12)
+        if row.property("compactLayout") is not True:
+            raise AssertionError("reviewers row did not switch to compact layout")
+        for name in (
+            "reviewerReviewButton_avifenesh_eigen",
+            "reviewerLearnButton_avifenesh_eigen",
+            "reviewerPauseButton_avifenesh_eigen",
+        ):
+            item = find_visual_item(root, name)
+            if item is None or item.property("qaTextFits") is not True:
+                raise AssertionError(f"reviewers compact action did not fit: {name}")
+            center = item.mapToScene(QPointF(float(item.property("width") or 0) / 2, float(item.property("height") or 0) / 2))
+            if center.x() < 0 or center.x() > view.width() or center.y() < 0 or center.y() > view.height():
+                raise AssertionError(f"reviewers compact action was clipped: {name} at {center.x():.1f},{center.y():.1f}")
+        start = len(client.calls)
+        compact_review = click_item(app, view, root, "reviewerReviewButton_avifenesh_eigen")
+        if ("RevutoTrigger", ("avifenesh/eigen", "review")) not in client.calls[start:]:
+            invoke_click(compact_review)
+            pump(app)
+        assert_call(client, start, "RevutoTrigger", ("avifenesh/eigen", "review"))
+        view.setWidth(320)
+        pump(app, 12)
+        if row.property("ultraCompactLayout") is not True:
+            raise AssertionError("reviewers row did not switch to ultra-compact layout")
+        for name in (
+            "reviewerReviewButton_avifenesh_eigen",
+            "reviewerLearnButton_avifenesh_eigen",
+            "reviewerPauseButton_avifenesh_eigen",
+        ):
+            item = find_visual_item(root, name)
+            if item is None or item.property("qaTextFits") is not True:
+                raise AssertionError(f"reviewers ultra-compact action did not fit: {name}")
+            center = item.mapToScene(QPointF(float(item.property("width") or 0) / 2, float(item.property("height") or 0) / 2))
+            if center.x() < 0 or center.x() > view.width() or center.y() < 0 or center.y() > view.height():
+                raise AssertionError(f"reviewers ultra-compact action was clipped: {name} at {center.x():.1f},{center.y():.1f}")
+        view.setWidth(SIZE.width())
+        pump(app, 12)
+        if row.property("compactLayout") is not False:
+            raise AssertionError("reviewers row did not restore desktop layout")
+
         refresh = find_visual_item(root, "reviewersRefreshButton")
         if refresh is None or refresh.property("qaTextFits") is not True:
             raise AssertionError("reviewers refresh button text does not fit")
