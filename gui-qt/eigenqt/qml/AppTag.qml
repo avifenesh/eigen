@@ -7,8 +7,8 @@ Rectangle {
     id: root
 
     property string text: ""
-    property color backgroundColor: Theme.colors.bgOverlay
-    property color borderColor: Theme.colors.borderHairline
+    property color backgroundColor: Theme.colors.surfaceOverlay
+    property color borderColor: Theme.colors.borderSubtle
     property color textColor: Theme.colors.textSecondary
     property string fontFamily: Theme.uiFonts[0]
     property int fontPixelSize: Theme.fontSize.micro

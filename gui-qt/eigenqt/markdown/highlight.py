@@ -2,7 +2,7 @@
 highlight.py — Pygments syntax highlighting → Qt rich-text HTML.
 
 Uses Pygments HTML formatter with inline styles (noclasses=True).
-Deep-teal color scheme (matches tokens.css --syn-* colors).
+Graphite control-surface color scheme (matches the QML --syn-* colors).
 Cache highlighted results by (lang, source-hash) for streaming performance.
 """
 
@@ -26,39 +26,29 @@ from pygments.token import (
 )
 
 
-class DeepTealStyle(Style):
+class GraphiteStyle(Style):
     """
-    Deep-teal Pygments style (matches tokens.css --syn-* colors).
-
-    Deepteal palette:
-    - keyword: #c58fd8 (purple)
-    - string: #8fc98a (green)
-    - func: #6fb7e8 (blue)
-    - comment: #5e6e6a (muted gray-green)
-    - type: #e0b36a (gold)
-    - number: #e8a878 (peach)
-    - builtin: #69c2b8 (teal brand)
-    - text: #c7d2d0 (syn-text)
+    Graphite Pygments style matching the Qt syntax tokens.
     """
 
-    background_color = "#0a1012"  # --syn-bg
-    default_style = "#c7d2d0"  # --syn-text
+    background_color = "#11161b"  # --syn-bg
+    default_style = "#d5dfdc"  # --syn-text
 
     styles = {
-        Comment: "#5e6e6a italic",  # --syn-comment
-        Keyword: "#c58fd8 bold",  # --syn-keyword
-        Keyword.Namespace: "#c58fd8",
-        Keyword.Type: "#e0b36a",  # --syn-type
-        Name.Class: "#e0b36a",  # --syn-type
-        Name.Function: "#6fb7e8",  # --syn-func
-        Name.Builtin: "#69c2b8",  # --syn-builtin
-        Name.Decorator: "#c58fd8",
-        String: "#8fc98a",  # --syn-string
-        Number: "#e8a878",  # --syn-number
-        Operator: "#9ab0ac",  # --syn-punct
-        Text: "#c7d2d0",
-        Whitespace: "#c7d2d0",
-        Error: "#d67e72",  # --error
+        Comment: "#71807c italic",  # --syn-comment
+        Keyword: "#d6a2ed bold",  # --syn-keyword
+        Keyword.Namespace: "#d6a2ed",
+        Keyword.Type: "#f2b867",  # --syn-type
+        Name.Class: "#f2b867",  # --syn-type
+        Name.Function: "#8bb9ff",  # --syn-func
+        Name.Builtin: "#5bd6c2",  # --syn-builtin
+        Name.Decorator: "#d6a2ed",
+        String: "#a6da7a",  # --syn-string
+        Number: "#efa979",  # --syn-number
+        Operator: "#acbbb7",  # --syn-punct
+        Text: "#d5dfdc",
+        Whitespace: "#d5dfdc",
+        Error: "#ff9382",  # --error
     }
 
 
@@ -70,7 +60,7 @@ def highlight(lang: str, source: str) -> str:
     """
     Highlight source code → Qt rich-text HTML.
 
-    Uses Pygments with DeepTealStyle. Cache by (lang, hash(source)) for streaming.
+    Uses Pygments with GraphiteStyle. Cache by (lang, hash(source)) for streaming.
     Returns HTML <div> with inline styles (no CSS classes).
     """
     # Cache key: (lang, hash of source)
@@ -100,7 +90,7 @@ def highlight(lang: str, source: str) -> str:
 
     # Pygments HTML formatter with inline styles
     formatter = HtmlFormatter(
-        style=DeepTealStyle,
+        style=GraphiteStyle,
         noclasses=True,
         nowrap=True,  # No <div class="highlight"> wrapper
         prestyles="margin: 0; padding: 0; background-color: transparent;",

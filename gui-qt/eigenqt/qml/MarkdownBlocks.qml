@@ -52,7 +52,7 @@ Column {
         Rectangle {
             width: parent.width
             implicitHeight: codeColumn.height
-            color: "#0a1012"  // --syn-bg
+            color: Theme.colors.synBg
             radius: Theme.radius.sm
             border.width: 1
             border.color: Theme.colors.borderSubtle
@@ -122,7 +122,7 @@ Column {
                         textFormat: Text.RichText
                         font.family: Theme.monoFonts[0]
                         font.pixelSize: Theme.fontSize.code
-                        color: "#c7d2d0"  // --syn-text
+                        color: Theme.colors.synText
                         wrapMode: Text.NoWrap
                         lineHeight: 1.5  // --lh-code
                         padding: Theme.space.md
