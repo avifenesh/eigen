@@ -15,6 +15,7 @@ ComboBox {
     readonly property int popupHorizontalMargin: Theme.space.md
     property bool qaPopupOpen: false
     property bool qaForceKeyboardFocus: false
+    property bool qaShowToolTip: false
     property int qaActivateIndex: -1
     property int keyboardIndex: -1
     readonly property real popupSpacing: Theme.space.xs
@@ -52,6 +53,12 @@ ComboBox {
     readonly property real qaHorizontalPadding: Math.min(qaLeftTextInset, qaRightTextInset)
     readonly property real qaVerticalPadding: Math.max(0, (control.height - displayLabel.paintedHeight) / 2)
     readonly property bool qaVisualFocus: visualFocus
+    readonly property bool qaToolTipThemed: appToolTip.qaThemed
+    readonly property color qaToolTipBackgroundColor: appToolTip.qaBackgroundColor
+    readonly property color qaToolTipTextColor: appToolTip.qaTextColor
+    readonly property real qaToolTipHorizontalPadding: appToolTip.qaHorizontalPadding
+    readonly property real qaToolTipVerticalPadding: appToolTip.qaVerticalPadding
+    readonly property bool qaToolTipVisible: appToolTip.visible
 
     onQaPopupOpenChanged: syncQaPopup()
     onQaForceKeyboardFocusChanged: syncQaKeyboardFocus()
@@ -73,11 +80,16 @@ ComboBox {
     leftPadding: Theme.space.lg
     rightPadding: Theme.space.xxxl
     Accessible.name: accessibleName || effectiveDisplayText || objectName
-    ToolTip.delay: 600
-    ToolTip.timeout: 4000
-    ToolTip.visible: toolTipText !== "" && hovered
-    ToolTip.text: toolTipText
     Keys.onPressed: function(event) { handleKey(event) }
+
+    AppToolTip {
+        id: appToolTip
+        objectName: control.objectName ? control.objectName + "_tooltip" : "appComboBoxTooltip"
+        delay: control.qaShowToolTip ? 0 : 600
+        persistent: control.qaShowToolTip
+        requestedVisible: control.toolTipText !== "" && (control.hovered || control.qaShowToolTip)
+        text: control.toolTipText
+    }
 
     background: Rectangle {
         implicitHeight: 32

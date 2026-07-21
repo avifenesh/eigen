@@ -8,12 +8,19 @@ Switch {
     property string accessibleName: ""
     property string toolTipText: ""
     property bool qaForceKeyboardFocus: false
+    property bool qaShowToolTip: false
     readonly property bool qaChecked: checked
     readonly property bool qaTextFits: true
     readonly property string qaText: checked ? "on" : "off"
     readonly property string qaAccessibleName: accessibleName || toolTipText || objectName
     readonly property bool showingFocus: visualFocus || activeFocus
     readonly property bool qaVisualFocus: showingFocus
+    readonly property bool qaToolTipThemed: appToolTip.qaThemed
+    readonly property color qaToolTipBackgroundColor: appToolTip.qaBackgroundColor
+    readonly property color qaToolTipTextColor: appToolTip.qaTextColor
+    readonly property real qaToolTipHorizontalPadding: appToolTip.qaHorizontalPadding
+    readonly property real qaToolTipVerticalPadding: appToolTip.qaVerticalPadding
+    readonly property bool qaToolTipVisible: appToolTip.visible
 
     implicitWidth: 44
     implicitHeight: 24
@@ -25,15 +32,20 @@ Switch {
     Accessible.description: checked ? "On" : "Off"
     Accessible.role: Accessible.Button
     Accessible.onPressAction: click()
-    ToolTip.delay: 600
-    ToolTip.timeout: 4000
-    ToolTip.visible: toolTipText !== "" && hovered
-    ToolTip.text: toolTipText
     onQaForceKeyboardFocusChanged: syncQaKeyboardFocus()
     Component.onCompleted: syncQaKeyboardFocus()
     Keys.onReturnPressed: function(event) { activateFromKey(event) }
     Keys.onEnterPressed: function(event) { activateFromKey(event) }
     Keys.onSpacePressed: function(event) { activateFromKey(event) }
+
+    AppToolTip {
+        id: appToolTip
+        objectName: control.objectName ? control.objectName + "_tooltip" : "appSwitchTooltip"
+        delay: control.qaShowToolTip ? 0 : 600
+        persistent: control.qaShowToolTip
+        requestedVisible: control.toolTipText !== "" && (control.hovered || control.qaShowToolTip)
+        text: control.toolTipText
+    }
 
     indicator: Rectangle {
         x: 0
