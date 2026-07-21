@@ -111,3 +111,114 @@ def test_crons_model_surfaces_load_error():
 
     assert model.load_error == "systemctl unavailable"
     assert model.loading is False
+
+
+def test_crons_model_runs_guarded_timer_action_and_refreshes():
+    client = fake_client()
+    model = CronsModel(client)
+
+    model.set_timer("eigen-dream.timer", "stop")
+
+    action_call = client.call.call_args
+    assert action_call.args == ("SetTimer", "eigen-dream.timer", "stop")
+    assert model.pending_actions == ["timer:eigen-dream.timer"]
+
+    model.set_timer("eigen-dream.timer", "disable")
+    assert client.call.call_count == 1
+
+    action_call.kwargs["callback"]({"result": None})
+
+    assert model.pending_actions == []
+    assert model.action_message == "Stopped eigen-dream.timer"
+    assert client.call.call_count == 2
+    assert client.call.call_args.args == ("Crons",)
+
+
+def test_crons_model_timer_error_clears_pending_without_refresh():
+    client = fake_client()
+    model = CronsModel(client)
+
+    model.set_timer("eigen-dream.timer", "disable")
+    callback = client.call.call_args.kwargs["callback"]
+    callback({"error": {"message": "systemctl denied"}})
+
+    assert model.pending_actions == []
+    assert model.action_error == "systemctl denied"
+    assert model.action_message == ""
+    assert client.call.call_count == 1
+
+
+def test_crons_model_rejects_invalid_timer_action_locally():
+    client = fake_client()
+    model = CronsModel(client)
+
+    model.set_timer("eigen-dream.service", "restart")
+
+    client.call.assert_not_called()
+    assert model.action_error == "Choose a valid timer action"
+
+
+def test_crons_model_adds_job_and_emits_completion():
+    ensure_app()
+    client = fake_client()
+    model = CronsModel(client)
+    added = []
+    model.jobAdded.connect(lambda: added.append(True))
+
+    model.add_crontab(" 0 9 * * 1-5 ", " eigen run standup ")
+
+    action_call = client.call.call_args
+    assert action_call.args == ("AddCrontab", "0 9 * * 1-5", "eigen run standup")
+    assert model.adding_job is True
+
+    action_call.kwargs["callback"]({"result": None})
+
+    assert model.adding_job is False
+    assert model.action_message == "Scheduled job added"
+    assert added == [True]
+    assert client.call.call_args.args == ("Crons",)
+
+
+def test_crons_model_add_validation_and_backend_error_preserve_feedback():
+    client = fake_client()
+    model = CronsModel(client)
+
+    model.add_crontab("", "eigen run")
+    client.call.assert_not_called()
+    assert model.action_error == "Schedule and command are required"
+
+    model.add_crontab("@daily", "eigen run")
+    callback = client.call.call_args.kwargs["callback"]
+    callback({"error": "duplicate crontab entry"})
+
+    assert model.adding_job is False
+    assert model.action_error == "duplicate crontab entry"
+    assert client.call.call_count == 1
+
+
+def test_crons_model_removes_exact_job_and_handles_invalid_response():
+    client = fake_client()
+    model = CronsModel(client)
+
+    model.remove_crontab("@hourly", "eigen run compact")
+
+    action_call = client.call.call_args
+    key = "crontab:@hourly\neigen run compact"
+    assert action_call.args == ("RemoveCrontab", "@hourly", "eigen run compact")
+    assert model.pending_actions == [key]
+
+    action_call.kwargs["callback"](None)
+
+    assert model.pending_actions == []
+    assert model.action_error == "Invalid daemon response"
+    assert client.call.call_count == 1
+
+
+def test_crons_model_rejects_invalid_snapshot_response():
+    model = CronsModel(fake_client())
+    model._set_loading(True)
+
+    model._on_crons_result(None)
+
+    assert model.loading is False
+    assert model.load_error == "Invalid daemon response"

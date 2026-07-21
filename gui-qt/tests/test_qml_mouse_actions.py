@@ -1383,9 +1383,12 @@ def seed_machines_inventory(model):
 
 
 def seed_crons_inventory(model):
-    model._crons = [{"name": "eigen-dream", "kind": "timer", "next": "today 19:30", "last": "today 17:00", "active": True, "enabled": True, "command": "eigen-dream.service", "unit": "eigen-dream.timer"}]
+    model._crons = [
+        {"name": "eigen-dream", "kind": "timer", "next": "today 19:30", "last": "today 17:00", "active": True, "enabled": True, "command": "eigen-dream.service", "unit": "eigen-dream.timer"},
+        {"name": "eigen run daily", "kind": "crontab", "next": "0 9 * * *", "last": "", "active": True, "enabled": True, "command": "eigen run daily"},
+    ]
     model._timers = 1
-    model._crontab = 0
+    model._crontab = 1
     model._systemd_available = True
     model.crons_changed.emit()
     model.summary_changed.emit()
@@ -1731,6 +1734,97 @@ def check_utility_load_errors(app, client):
             (),
             flick_name="cronsFlick",
         )
+
+        seed_crons_inventory(crons)
+        crons._set_loading(False)
+        crons._set_load_error("")
+        timer_button = find_visual_item(root, "cronsTimerRunButton_eigen_dream_timer")
+        if timer_button is None or timer_button.property("qaTextFits") is not True:
+            raise AssertionError("crons timer action text was clipped")
+        start = len(client.calls)
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "cronsTimerRunButton_eigen_dream_timer",
+            client,
+            start,
+            "SetTimer",
+            ("eigen-dream.timer", "stop"),
+            flick_name="cronsFlick",
+        )
+
+        seed_crons_inventory(crons)
+        crons._set_loading(False)
+        schedule_button = click_item(app, view, root, "cronsScheduleJobButton", flick_name="cronsFlick")
+        if root.property("addJobOpen") is not True:
+            invoke_click(schedule_button)
+            pump(app)
+        if root.property("addJobOpen") is not True:
+            raise AssertionError("crons schedule button did not open the add form")
+        schedule_input = find_visual_item(root, "cronsScheduleInput")
+        command_input = find_visual_item(root, "cronsCommandInput")
+        assert_app_text_field(schedule_input, "crons schedule")
+        assert_app_text_field(command_input, "crons command")
+        click_item(app, view, root, "cronsPreset_weekdays", flick_name="cronsFlick")
+        if root.property("addSpec") != "0 9 * * 1-5":
+            raise AssertionError(f"crons preset did not populate schedule: {root.property('addSpec')!r}")
+        set_text(app, root, "cronsCommandInput", "eigen run standup")
+        start = len(client.calls)
+        add_button = click_item(app, view, root, "cronsAddJobButton", flick_name="cronsFlick")
+        if ("AddCrontab", ("0 9 * * 1-5", "eigen run standup")) not in client.calls[start:]:
+            invoke_click(add_button)
+            pump(app)
+        assert_call(client, start, "AddCrontab", ("0 9 * * 1-5", "eigen run standup"))
+        if root.property("addJobOpen") is not False:
+            raise AssertionError("successful crontab add did not close the form")
+
+        seed_crons_inventory(crons)
+        crons._set_loading(False)
+        remove_name = "cronsRemoveButton_crontab_0_9_______eigen_run_daily"
+        confirm_name = "cronsRemoveConfirm_crontab_0_9_______eigen_run_daily"
+        click_item(app, view, root, remove_name, flick_name="cronsFlick")
+        confirm = find_visual_item(root, confirm_name)
+        if confirm is None or confirm.property("visible") is not True:
+            raise AssertionError("crons remove did not require confirmation")
+        start = len(client.calls)
+        click_item_until_call(
+            app,
+            view,
+            root,
+            confirm_name,
+            client,
+            start,
+            "RemoveCrontab",
+            ("0 9 * * *", "eigen run daily"),
+            flick_name="cronsFlick",
+        )
+
+        client.failures["SetTimer"] = "systemctl denied"
+        seed_crons_inventory(crons)
+        crons._set_loading(False)
+        start = len(client.calls)
+        click_item_until_call(
+            app,
+            view,
+            root,
+            "cronsTimerRunButton_eigen_dream_timer",
+            client,
+            start,
+            "SetTimer",
+            ("eigen-dream.timer", "stop"),
+            flick_name="cronsFlick",
+        )
+        action_error = find_visual_item(root, "cronsActionError")
+        action_error_text = find_visual_item(root, "cronsActionErrorText")
+        if action_error is None or action_error.property("visible") is not True:
+            raise AssertionError("failed timer action did not render an error")
+        if action_error_text is None or "systemctl denied" not in action_error_text.property("text"):
+            raise AssertionError("failed timer action rendered the wrong error")
+        click_item(app, view, root, "cronsActionErrorDismissButton")
+        if crons.action_error != "":
+            raise AssertionError("crons action error did not dismiss")
+        del client.failures["SetTimer"]
     finally:
         close_view(app, view)
 

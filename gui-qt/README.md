@@ -107,12 +107,12 @@ The reflect dispatcher in guiserver exposes all bridge methods by name. The cano
 
 ## Coexistence with Wails GUI
 
-Both GUIs attach to the **same daemon** (proven fan-out; any view may approve tools). A **loop-ownership flock** (`~/.eigen/gui-loops.lock`) ensures only one Bridge runs background loops (suggester LLM, GPU sampling, notifications). All writes (config, memory notes, Codex auth) are temp+rename+flock. The frozen Wails build is `bin/eigen-gui-legacy` (`make gui-legacy`) and serves DON'T-PORT views (Crons/Observe/Routing/Plugins/Dreaming/Profile).
+Both GUIs attach to the **same daemon** (proven fan-out; any view may approve tools). A **loop-ownership flock** (`~/.eigen/gui-loops.lock`) ensures only one Bridge runs background loops (suggester LLM, GPU sampling, notifications). All writes (config, memory notes, Codex auth) are temp+rename+flock. The frozen Wails build remains available as `bin/eigen-gui-legacy` (`make gui-legacy`) for fallback; all legacy routes are now available natively in Qt.
 
 ## Migration status
 
 - **Phase A (Go surgery + vertical slice):** ✓ COMPLETE
-- **Phase B (port by annoyance):** ✓ COMPLETE — all 12 views ported (Chat, Home, Sessions, Live, Tasks, Board, Skills, Notes, Config, Reviewers, Connectors, Memory)
+- **Phase B (port by annoyance):** ✓ COMPLETE — all 19 legacy routes are native in Qt; Crons also supports guarded timer and crontab management
 - **Phase C (flip + delete):** FLIPPED — primary desktop entry points at the Qt launcher; keep `bin/eigen-gui-legacy` for fallback until the legacy frontend is removed
 
 See `/home/avifenesh/projects/eigen/docs/qt-migration-plan.md` for full architecture and decision log.
