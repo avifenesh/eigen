@@ -20,6 +20,9 @@ ApplicationWindow {
     height: 800
     title: "eigen"
     property bool railVisible: true
+    property bool railCollapsed: typeof uiSettings !== "undefined" ? uiSettings.railCollapsed : false
+    readonly property bool qaRailCollapsed: railCollapsed
+    readonly property real qaRailWidth: rail.width
     readonly property string daemonStatusValue: typeof daemonStatus !== "undefined"
         ? String(daemonStatus)
         : (daemonOnline ? "online" : "offline")
@@ -42,6 +45,12 @@ ApplicationWindow {
         onActivated: commandPalette.showPalette()
     }
 
+    Shortcut {
+        sequence: "Ctrl+B"
+        context: Qt.ApplicationShortcut
+        onActivated: root.toggleRailCollapsed()
+    }
+
     // Fonts: rely on system font stack (Inter if installed, else system sans-serif)
     // No qrc:/ resource compilation exists; Theme.js provides fallback stack
 
@@ -59,9 +68,12 @@ ApplicationWindow {
             id: rail
             objectName: "mainRail"
             visible: root.railVisible
-            Layout.preferredWidth: root.railVisible ? 208 : 0
-            Layout.minimumWidth: root.railVisible ? 208 : 0
-            Layout.maximumWidth: root.railVisible ? 208 : 0
+            collapsed: root.railCollapsed
+            Layout.preferredWidth: root.railVisible
+                ? (root.railCollapsed ? rail.collapsedWidth : rail.expandedWidth)
+                : 0
+            Layout.minimumWidth: Layout.preferredWidth
+            Layout.maximumWidth: Layout.preferredWidth
             Layout.fillHeight: true
 
             currentRoute: root.currentRoute
@@ -77,6 +89,7 @@ ApplicationWindow {
                 root.currentRoute = route
             }
             onCommandPaletteRequested: commandPalette.showPalette()
+            onCollapseRequested: root.toggleRailCollapsed()
         }
 
         // Center: view routing via StackLayout
@@ -444,6 +457,17 @@ ApplicationWindow {
     readonly property var ctxRpc: rpcClient
     readonly property var ctxSessionController: sessionController
     readonly property var ctxStats: statsData
+
+    onRailCollapsedChanged: {
+        if (typeof uiSettings !== "undefined" && uiSettings.railCollapsed !== root.railCollapsed) {
+            uiSettings.railCollapsed = root.railCollapsed
+        }
+    }
+
+    function toggleRailCollapsed() {
+        if (!root.railVisible) root.railVisible = true
+        root.railCollapsed = !root.railCollapsed
+    }
 
     // NOTE: the Python-side models/values (sessionsModel, dashboardModel,
     // feedModel, tasksModel, liveSessionsModel, statsData, daemonOnline,

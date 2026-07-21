@@ -12,15 +12,22 @@ Rectangle {
     property int badge: 0
     property bool badgeLive: false
     property bool isActive: false
+    property bool collapsed: false
+    property bool qaShowToolTip: false
     readonly property int baseHeight: 32
+    readonly property int collapsedBadgeSize: 17
     readonly property bool qaVisualFocus: activeFocus
     readonly property bool qaTextFits: !navLabel.truncated
+    readonly property bool qaCollapsed: collapsed
+    readonly property bool qaLabelVisible: navLabel.visible
+    readonly property bool qaCollapsedBadgeVisible: collapsedBadge.visible
+    readonly property bool qaToolTipVisible: collapsedToolTip.visible
     signal clicked()
 
     default property alias contentData: subContainer.data
 
     objectName: route ? "navItem_" + route : ""
-    implicitHeight: baseHeight + subContainer.implicitHeight
+    implicitHeight: baseHeight + (collapsed ? 0 : subContainer.implicitHeight)
     radius: Theme.radius.sm
     activeFocusOnTab: true
     focusPolicy: Qt.StrongFocus
@@ -34,6 +41,15 @@ Rectangle {
 
     Behavior on color {
         ColorAnimation { duration: Theme.duration.fast }
+    }
+
+    AppToolTip {
+        id: collapsedToolTip
+        objectName: navItem.route ? "navTooltip_" + navItem.route : "navItemTooltip"
+        delay: navItem.qaShowToolTip ? 0 : 600
+        persistent: navItem.qaShowToolTip
+        requestedVisible: navItem.collapsed && (mainMouseArea.containsMouse || navItem.qaShowToolTip)
+        text: navItem.label
     }
 
     // Focus track: warm clay marks where this window is, leaving teal to brand.
@@ -75,8 +91,8 @@ Rectangle {
 
     RowLayout {
         anchors.fill: parent
-        anchors.leftMargin: Theme.space.lg
-        anchors.rightMargin: Theme.space.sm
+        anchors.leftMargin: navItem.collapsed ? Theme.space.sm : Theme.space.lg
+        anchors.rightMargin: navItem.collapsed ? Theme.space.sm : Theme.space.sm
         spacing: Theme.space.sm
 
         // Glyph
@@ -87,6 +103,7 @@ Rectangle {
             color: navItem.isActive ? Theme.colors.focus : Theme.colors.textMuted
             opacity: navItem.isActive ? 1.0 : 0.85
             Layout.preferredWidth: 18
+            Layout.fillWidth: navItem.collapsed
             horizontalAlignment: Text.AlignHCenter
 
             Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
@@ -95,6 +112,7 @@ Rectangle {
         // Label
         Label {
             id: navLabel
+            visible: !navItem.collapsed
             text: navItem.label
             font.family: Theme.uiFonts[0]
             font.pixelSize: Theme.fontSize.bodySm
@@ -119,7 +137,7 @@ Rectangle {
             readonly property real qaHorizontalPadding: Math.min(qaLeftTextInset, qaRightTextInset)
             readonly property real qaVerticalPadding: Math.min(qaTopTextInset, qaBottomTextInset)
 
-            visible: navItem.badge > 0
+            visible: !navItem.collapsed && navItem.badge > 0
             implicitWidth: Math.max(34, badgeLabel.implicitWidth + Theme.space.xl * 2)
             implicitHeight: Math.max(26, badgeLabel.implicitHeight + Theme.space.md * 2)
             radius: implicitHeight / 2
@@ -152,6 +170,33 @@ Rectangle {
             }
         }
     }
+
+    }
+
+    Rectangle {
+        id: collapsedBadge
+        objectName: navItem.route ? "navCollapsedBadge_" + navItem.route : ""
+        visible: navItem.collapsed && navItem.badge > 0
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.topMargin: 2
+        anchors.rightMargin: 2
+        width: Math.max(navItem.collapsedBadgeSize, collapsedBadgeLabel.implicitWidth + Theme.space.sm)
+        height: navItem.collapsedBadgeSize
+        radius: height / 2
+        color: navItem.badgeLive ? Theme.colors.stateSelected : Theme.colors.bgOverlay
+        border.width: 1
+        border.color: navItem.badgeLive ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
+
+        Label {
+            id: collapsedBadgeLabel
+            anchors.centerIn: parent
+            text: navItem.badge
+            font.family: Theme.monoFonts[0]
+            font.pixelSize: 9
+            font.weight: Theme.fontWeight.semibold
+            color: navItem.badgeLive ? Theme.colors.focusBright : Theme.colors.textSecondary
+        }
     }
 
     // Container for sub-content (like running sessions under Chat)
@@ -162,7 +207,9 @@ Rectangle {
         anchors.right: parent.right
         anchors.topMargin: 0
         implicitHeight: childrenRect.height
-        height: implicitHeight
+        height: navItem.collapsed ? 0 : implicitHeight
+        visible: !navItem.collapsed
+        clip: true
     }
 
     Keys.onReturnPressed: function(event) {
