@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from PySide6.QtCore import QCoreApplication, QObject, Signal
+import pytest
+from PySide6.QtCore import QCoreApplication, QObject, QTimer, Signal
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -451,6 +452,78 @@ def test_rpc_call_send_failure_reports_error_without_raising(monkeypatch):
     client.shutdown()
 
 
+def test_rpc_client_reconnect_timer_is_qt_owned_and_shutdown_latched(monkeypatch):
+    from eigenqt.rpc.client import RpcClient
+
+    QCoreApplication.instance() or QCoreApplication([])
+    monkeypatch.setattr(RpcClient, "_start_workers", lambda self: None)
+    client = RpcClient(sock_path=Path("/tmp/eigen-missing-guiserver.sock"))
+
+    assert isinstance(client._reconnect_timer, QTimer)
+    assert client._reconnect_timer.parent() is client
+    assert client._reconnect_timer.thread() == client.thread()
+    assert client._reconnect_timer.isSingleShot() is True
+
+    restarts = []
+    client._stop_workers = lambda: None
+    client._start_workers = lambda: restarts.append(True)
+    client._schedule_reconnect()
+
+    assert client._reconnect_timer.isActive() is True
+    assert client._reconnect_timer.interval() == 1000
+
+    client._reconnect_timer.stop()
+    client._reconnect()
+    assert restarts == [True]
+
+    client.shutdown()
+    client._schedule_reconnect()
+    client._reconnect()
+    assert client._reconnect_timer.isActive() is False
+    assert restarts == [True]
+
+
+def test_rpc_client_connects_when_guiserver_appears_during_backoff(tmp_path):
+    from test_client_mock import MockGuiserver
+
+    from eigenqt.rpc.client import RpcClient
+
+    app = QCoreApplication.instance() or QCoreApplication([])
+    socket_path = tmp_path / "guiserver.sock"
+    server = MockGuiserver(socket_path)
+    client = RpcClient(sock_path=socket_path)
+    connected = []
+    events = []
+    timed_out = []
+
+    def on_connected():
+        connected.append(True)
+        client.subscribe(["eigen:daemon:stats"])
+
+    def on_event(channel, data):
+        events.append((channel, data))
+        app.quit()
+
+    client.connected.connect(on_connected)
+    client.event.connect(on_event)
+    QTimer.singleShot(150, server.start)
+    watchdog = QTimer(client)
+    watchdog.setSingleShot(True)
+    watchdog.timeout.connect(lambda: (timed_out.append(True), app.quit()))
+    watchdog.start(5000)
+
+    app.exec()
+    watchdog.stop()
+    client.shutdown()
+    server.stop()
+
+    assert timed_out == []
+    assert connected == [True]
+    assert events[0][0] == "eigen:daemon:stats"
+    assert client._shutting_down is True
+    assert client._reconnect_timer.isActive() is False
+
+
 def test_rpc_client_replays_event_subscriptions_after_worker_ready(monkeypatch):
     from eigenqt.rpc.client import RpcClient
 
@@ -515,6 +588,41 @@ def test_rpc_worker_send_failure_clears_pending_callback():
     assert error == "send failed: dead guiserver socket"
     assert worker._pending == {}
     assert payloads == []
+
+
+def test_rpc_worker_closed_socket_rejects_call_and_clears_callback():
+    from eigenqt.rpc.client import _RpcWorker
+
+    worker = _RpcWorker(Path("/tmp/eigen-missing-guiserver.sock"))
+    payloads = []
+
+    ok, error = worker.enqueue_call("Stats", (), payloads.append)
+
+    assert ok is False
+    assert error == "send failed: socket unavailable"
+    assert worker._pending == {}
+    assert payloads == []
+
+
+def test_rpc_sync_timeout_releases_pending_callback(monkeypatch):
+    from eigenqt.rpc.client import RpcClient, _RpcWorker
+
+    class SinkSocket:
+        def sendall(self, _payload):
+            pass
+
+    monkeypatch.setattr(RpcClient, "_start_workers", lambda self: None)
+    client = RpcClient(sock_path=Path("/tmp/eigen-missing-guiserver.sock"))
+    worker = _RpcWorker(client.sock_path)
+    worker._sock = SinkSocket()
+    client._rpc_worker = worker
+    client._rpc_ready = True
+
+    with pytest.raises(TimeoutError, match=r"call_sync\(Stats\) timed out"):
+        client.call_sync("Stats", timeout=0.01)
+
+    assert worker._pending == {}
+    client.shutdown()
 
 
 def test_rpc_worker_disconnect_fails_pending_callbacks_once():
