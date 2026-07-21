@@ -8,6 +8,8 @@ from pathlib import Path
 import main
 import pytest
 
+from eigenqt.markdown.palette import palette_for
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -47,6 +49,12 @@ def test_qt_theme_argument_is_added_once_from_the_persisted_setting(tmp_path):
     ) == ["eigen-qt", "--eigen-qt-theme=nord"]
 
 
+def test_qt_theme_from_argv_keeps_helpers_on_the_qml_palette():
+    assert main.qt_theme_from_argv(["eigen-qt", "--eigen-qt-theme=gruvbox"]) == "gruvbox"
+    assert main.qt_theme_from_argv(["eigen-qt", "--eigen-qt-theme=unknown"]) == "deepteal"
+    assert main.qt_theme_from_argv(["eigen-qt"]) == "deepteal"
+
+
 @pytest.mark.parametrize(
     ("theme", "expected"),
     [
@@ -82,6 +90,28 @@ def test_qml_palettes_keep_semantic_roles_distinct_and_readable(theme):
     assert _contrast(colors["surface"], colors["background"]) >= 1.08
     danger_fill = _composite(colors["errorBackground"], colors["surface2"])
     assert _contrast(colors["primary"], danger_fill) >= 4.5
+    markdown = palette_for(theme)
+    assert {
+        "inlineBackground": markdown.inline_background,
+        "inlineText": markdown.inline_text,
+        "link": markdown.link,
+        "syntax": markdown.syntax_background,
+        "syntaxText": markdown.syntax_text,
+        "syntaxKeyword": markdown.syntax_keyword,
+        "syntaxType": markdown.syntax_type,
+        "syntaxFunction": markdown.syntax_function,
+        "syntaxString": markdown.syntax_string,
+        "syntaxNumber": markdown.syntax_number,
+        "syntaxComment": markdown.syntax_comment,
+        "syntaxPunctuation": markdown.syntax_punctuation,
+        "syntaxBuiltin": markdown.syntax_builtin,
+        "error": markdown.error,
+    } == {key: colors[key] for key in (
+        "inlineBackground", "inlineText", "link", "syntax", "syntaxText",
+        "syntaxKeyword", "syntaxType", "syntaxFunction", "syntaxString",
+        "syntaxNumber", "syntaxComment", "syntaxPunctuation", "syntaxBuiltin",
+        "error",
+    )}
 
 
 def _probe_qml_theme(theme):
@@ -114,6 +144,19 @@ QtObject {
     property string syntax: Theme.colors.synBg
     property string focus: Theme.colors.focus
     property string accent: Theme.colors.accent
+    property string inlineBackground: Theme.colors.surfaceRaised2
+    property string inlineText: Theme.colors.synBuiltin
+    property string link: Theme.colors.info
+    property string syntaxText: Theme.colors.synText
+    property string syntaxKeyword: Theme.colors.synKeyword
+    property string syntaxType: Theme.colors.synType
+    property string syntaxFunction: Theme.colors.synFunc
+    property string syntaxString: Theme.colors.synString
+    property string syntaxNumber: Theme.colors.synNumber
+    property string syntaxComment: Theme.colors.synComment
+    property string syntaxPunctuation: Theme.colors.synPunct
+    property string syntaxBuiltin: Theme.colors.synBuiltin
+    property string error: Theme.colors.error
     property string errorBackground: Theme.colors.errorBg
 }
 """
@@ -126,7 +169,10 @@ if obj is None:
     raise SystemExit(str(component.errors()))
 names = (
     "palette", "background", "surface", "surface2", "primary", "secondary",
-    "muted", "brand", "syntax", "focus", "accent", "errorBackground",
+    "muted", "brand", "syntax", "focus", "accent", "inlineBackground",
+    "inlineText", "link", "syntaxText", "syntaxKeyword", "syntaxType",
+    "syntaxFunction", "syntaxString", "syntaxNumber", "syntaxComment",
+    "syntaxPunctuation", "syntaxBuiltin", "error", "errorBackground",
 )
 print(json.dumps({name: obj.property(name) for name in names}))
 '''

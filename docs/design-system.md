@@ -79,8 +79,10 @@ ROLE, never a hue.
    shell aliases roles in `internal/app/style.go` as `c*`/`s*` — those MUST map
    to `theme.*`, never to literals.) QML cannot import the Go package, so
    `gui-qt/eigenqt/qml/Theme.js` mirrors the same semantic roles and supported
-   palette names; `gui-qt/tests/test_theme_startup.py` loads those runtime QML
-   values to guard role separation and contrast.
+   palette names. Python-rendered inline markdown and syntax highlighting use
+   `gui-qt/eigenqt/markdown/palette.py`; `gui-qt/tests/test_theme_startup.py`
+   loads runtime QML values and cross-checks that bridge while guarding role
+   separation and contrast.
 3. **Restraint = information.** Every styled thing must MEAN something. Color
    is signal, not flair. Default to neutral; spend a bright/loud color only
    where it earns attention.

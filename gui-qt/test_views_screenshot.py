@@ -63,6 +63,15 @@ VALID_PNG_BASE64 = (
 )
 
 
+def screenshot_theme(argv):
+    prefix = "--eigen-qt-theme="
+    for arg in argv:
+        if arg.startswith(prefix):
+            value = arg[len(prefix):].strip().lower()
+            return value if value in {"deepteal", "nord", "gruvbox"} else "deepteal"
+    return "deepteal"
+
+
 class ScreenshotRpcClient(QObject):
     """Offline RPC double for deterministic screenshot QA."""
 
@@ -1515,8 +1524,9 @@ def main():
 
     client = ScreenshotRpcClient()
     clipboard_helper = ClipboardHelper(app)
-    highlighter = HighlighterHelper(app)
-    markdown_parser = MarkdownHelper(app)
+    theme = screenshot_theme(sys.argv)
+    highlighter = HighlighterHelper(app, theme=theme)
+    markdown_parser = MarkdownHelper(app, theme=theme)
     terminal_helper = TerminalHelper(app)
     atexit.register(client.shutdown)
     ok = True

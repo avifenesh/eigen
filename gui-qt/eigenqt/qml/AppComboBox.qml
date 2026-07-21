@@ -81,9 +81,9 @@ ComboBox {
 
     background: Rectangle {
         implicitHeight: 32
-        color: !control.enabled
-            ? Theme.colors.bgInset
-            : (control.visualFocus ? Theme.colors.stateFocusBg : Theme.colors.bgInset)
+        color: control.enabled && control.visualFocus
+            ? Theme.colors.stateFocusBg
+            : Theme.colors.bgInset
         border.width: control.visualFocus ? 2 : 1
         border.color: control.visualFocus
             ? Theme.colors.borderFocus
