@@ -21,6 +21,7 @@ Rectangle {
     property var tokenActions: ({})
     property string actionError: ""
     property int feedCount: 0
+    readonly property bool compactLayout: width < 720
     readonly property int qaFeedCount: feedCount
     readonly property bool qaDashboardLoaded: dashboardLoaded()
     readonly property bool qaFeedFresh: feedFresh()
@@ -143,6 +144,7 @@ Rectangle {
     }
 
     component DashboardPanel: Rectangle {
+        objectName: title ? "homeDashboardPanel_" + root.safeObjectName(title) : ""
         property string icon: ""
         property string title: ""
         property string badge: ""
@@ -646,12 +648,17 @@ Rectangle {
             spacing: Theme.space.xl
 
             // ZONE 1: COCKPIT
-            RowLayout {
+            GridLayout {
+                id: homeHeader
+                objectName: "homeHeader"
                 Layout.fillWidth: true
                 Layout.topMargin: Theme.space.xl
-                spacing: Theme.space.xl
+                columns: root.compactLayout ? 1 : 2
+                columnSpacing: Theme.space.xl
+                rowSpacing: Theme.space.lg
 
                 ColumnLayout {
+                    Layout.fillWidth: true
                     spacing: Theme.space.xs
 
                     Label {
@@ -667,10 +674,10 @@ Rectangle {
                         font.family: Theme.uiFonts[0]
                         font.pixelSize: Theme.fontSize.bodySm
                         color: Theme.colors.textMuted
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
                     }
                 }
-
-                Item { Layout.fillWidth: true }
 
                 AppButton {
                     objectName: "homeStartSessionButton"
@@ -680,6 +687,7 @@ Rectangle {
                     variant: "primary"
                     Layout.preferredHeight: 36
                     Layout.preferredWidth: 140
+                    Layout.alignment: root.compactLayout ? Qt.AlignLeft : Qt.AlignRight
                 }
             }
 
@@ -787,8 +795,9 @@ Rectangle {
 
             // ZONE 1.5: TODAY (command center: calendar, mail, machine)
             GridLayout {
+                objectName: "homeDashboardGrid"
                 Layout.fillWidth: true
-                columns: 3
+                columns: root.compactLayout ? 1 : 3
                 columnSpacing: Theme.space.lg
                 rowSpacing: Theme.space.lg
 
@@ -931,9 +940,10 @@ Rectangle {
 
             // GPU cards (full-width)
             GridLayout {
+                objectName: "homeGpuGrid"
                 visible: dashboardModel && dashboardModel.gpus.length > 0
                 Layout.fillWidth: true
-                columns: 2
+                columns: root.compactLayout ? 1 : 2
                 columnSpacing: Theme.space.lg
                 rowSpacing: Theme.space.lg
 
@@ -984,7 +994,7 @@ Rectangle {
                     objectName: "homeFeedGrid"
                     visible: root.feedCount > 0
                     Layout.fillWidth: true
-                    columns: 2
+                    columns: root.compactLayout ? 1 : 2
                     columnSpacing: Theme.space.lg
                     rowSpacing: Theme.space.lg
 

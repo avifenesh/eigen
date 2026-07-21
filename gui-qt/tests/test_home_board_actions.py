@@ -271,6 +271,31 @@ if home.property("qaFeedCount") != 1:
 if feed_empty.property("visible") is not False or feed_grid.property("visible") is not True:
     raise AssertionError("home feed did not replace its empty state after hydration")
 
+home_view.resize(QSize(512, 900))
+pump(app, 20)
+home_header = find_item(home, "homeHeader")
+dashboard_grid = find_item(home, "homeDashboardGrid")
+gpu_grid = find_item(home, "homeGpuGrid")
+start_session = find_item(home, "homeStartSessionButton")
+if home_header is None or dashboard_grid is None or gpu_grid is None or start_session is None:
+    raise AssertionError("compact home layout did not expose its responsive chrome")
+if dashboard_grid.property("columns") != 1 or gpu_grid.property("columns") != 1 or feed_grid.property("columns") != 1:
+    raise AssertionError("compact home grids did not stack into one column")
+for object_name in ("homeDashboardPanel_Today", "homeDashboardPanel_Inbox", "homeDashboardPanel_Machine"):
+    panel = find_item(home, object_name)
+    if panel is None or float(panel.property("width") or 0) < 470:
+        raise AssertionError(f"compact home panel stayed narrow: {object_name}={panel.property('width') if panel else None}")
+for label, item in (("header", home_header), ("start session", start_session)):
+    top_left = item.mapToScene(QPointF(0, 0))
+    bottom_right = item.mapToScene(QPointF(float(item.property("width") or 0), float(item.property("height") or 0)))
+    if top_left.x() < -0.5 or bottom_right.x() > home_view.width() + 0.5:
+        raise AssertionError(f"compact home {label} escaped horizontally: {top_left.x()}..{bottom_right.x()}")
+
+home_view.resize(SIZE)
+pump(app, 20)
+if dashboard_grid.property("columns") != 3 or gpu_grid.property("columns") != 2 or feed_grid.property("columns") != 2:
+    raise AssertionError("home desktop grids did not restore after compact layout")
+
 start = len(client.calls)
 feed_start = find_item(home, "homeFeedStart_home_git")
 if feed_start is None or feed_start.property("text") != "Start":
