@@ -63,7 +63,7 @@ def test_qt_theme_from_argv_keeps_helpers_on_the_qml_palette():
     [
         (
             "studio",
-            {"background": "#f4f6f5", "brand": "#126d64", "syntax": "#f0f3f1", "focus": "#b85f32", "accent": "#74547f"},
+            {"background": "#f4f6f8", "brand": "#0b736a", "syntax": "#f1f3f5", "focus": "#c55338", "accent": "#66558f"},
         ),
         (
             "deepteal",
