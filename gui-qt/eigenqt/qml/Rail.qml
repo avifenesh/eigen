@@ -32,6 +32,13 @@ Rectangle {
     property var sessionController: null
     property int sessionsEpoch: 0
     property int feedEpoch: 0
+    property bool collapsed: false
+    readonly property int collapsedWidth: 60
+    readonly property int expandedWidth: 208
+    readonly property bool qaCanScroll: navFlick.contentHeight > navFlick.height + 0.5
+    readonly property real qaScrollPosition: navFlick.contentY
+    readonly property bool qaScrollBarVisible: navScrollBar.visible
+    signal collapseRequested()
 
     onSessionsModelChanged: sessionsEpoch += 1
     onFeedModelChanged: feedEpoch += 1
@@ -58,11 +65,12 @@ Rectangle {
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: Theme.space.xl
-                anchors.rightMargin: Theme.space.lg
-                spacing: Theme.space.md
+                anchors.rightMargin: root.collapsed ? Theme.space.xl : Theme.space.lg
+                spacing: root.collapsed ? 0 : Theme.space.md
 
                 // λ mark — spectrum-filled teal (signature eigenvalue mark)
                 Label {
+                    visible: !root.collapsed
                     text: "λ"
                     font.family: Theme.uiFonts[0]
                     font.pixelSize: 22
@@ -73,6 +81,7 @@ Rectangle {
                 }
 
                 Label {
+                    visible: !root.collapsed
                     text: "eigen"
                     font.family: Theme.uiFonts[0]
                     font.pixelSize: Theme.fontSize.h2
@@ -85,6 +94,7 @@ Rectangle {
 
                 AppButton {
                     objectName: "railCommandPaletteButton"
+                    visible: !root.collapsed
                     text: "⌘"
                     compact: true
                     variant: "ghost"
@@ -92,6 +102,17 @@ Rectangle {
                     Layout.preferredWidth: 28
                     Layout.preferredHeight: 28
                     onClicked: root.commandPaletteRequested()
+                }
+
+                AppButton {
+                    objectName: "railCollapseButton"
+                    text: root.collapsed ? "»" : "«"
+                    compact: true
+                    variant: "ghost"
+                    toolTipText: root.collapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)"
+                    Layout.preferredWidth: 28
+                    Layout.preferredHeight: 28
+                    onClicked: root.collapseRequested()
                 }
             }
         }
@@ -105,6 +126,24 @@ Rectangle {
             contentWidth: width
             contentHeight: navColumn.implicitHeight
             clip: true
+            boundsBehavior: Flickable.StopAtBounds
+
+            ScrollBar.vertical: ScrollBar {
+                id: navScrollBar
+                objectName: "railNavScrollBar"
+                policy: ScrollBar.AsNeeded
+                width: 6
+
+                contentItem: Rectangle {
+                    implicitWidth: 4
+                    radius: 2
+                    color: Theme.colors.textGhost
+                    opacity: navScrollBar.active ? 0.88 : 0.62
+                    Behavior on opacity { NumberAnimation { duration: Theme.duration.fast } }
+                }
+
+                background: Item {}
+            }
 
             ColumnLayout {
                 id: navColumn
@@ -114,11 +153,12 @@ Rectangle {
                 // ZONE: Work
                 ColumnLayout {
                     Layout.fillWidth: true
-                    Layout.topMargin: Theme.space.lg
+                    Layout.topMargin: root.collapsed ? Theme.space.sm : Theme.space.lg
                     spacing: 0
 
                     // Zone label
                     Label {
+                        visible: !root.collapsed
                         text: "Work"
                         font.family: Theme.uiFonts[0]
                         font.pixelSize: Theme.fontSize.micro
@@ -137,6 +177,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "home"
+                        collapsed: root.collapsed
                         label: "Home"
                         glyph: "◆"
                         badge: actionFeedCount()
@@ -150,6 +191,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "chat"
+                        collapsed: root.collapsed
                         label: "Chat"
                         glyph: "▶"
                         badge: runningSessionsCount()
@@ -281,6 +323,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "sessions"
+                        collapsed: root.collapsed
                         label: "Sessions"
                         glyph: "≡"
                         badge: {
@@ -297,6 +340,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "live"
+                        collapsed: root.collapsed
                         label: "Live"
                         glyph: "◐"
                         badge: workingAndApprovalCount()
@@ -310,6 +354,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "board"
+                        collapsed: root.collapsed
                         label: "Board"
                         glyph: "▤"
                         badge: 0
@@ -323,6 +368,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "tasks"
+                        collapsed: root.collapsed
                         label: "Tasks"
                         glyph: "⋔"
                         badge: root.tasksModel ? root.tasksModel.running_count : 0
@@ -336,6 +382,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "skills"
+                        collapsed: root.collapsed
                         label: "Skills"
                         glyph: "✦"
                         badge: 0
@@ -348,11 +395,12 @@ Rectangle {
                 // ZONE: Knowledge
                 ColumnLayout {
                     Layout.fillWidth: true
-                    Layout.topMargin: Theme.space.lg
+                    Layout.topMargin: root.collapsed ? Theme.space.sm : Theme.space.lg
                     spacing: 0
 
                     // Zone label
                     Label {
+                        visible: !root.collapsed
                         text: "Knowledge"
                         font.family: Theme.uiFonts[0]
                         font.pixelSize: Theme.fontSize.micro
@@ -368,6 +416,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "memory"
+                        collapsed: root.collapsed
                         label: "Memory"
                         glyph: "❖"
                         badge: 0
@@ -381,6 +430,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "notes"
+                        collapsed: root.collapsed
                         label: "Notes"
                         glyph: "≣"
                         badge: 0
@@ -394,6 +444,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "dreaming"
+                        collapsed: root.collapsed
                         label: "Dreaming"
                         glyph: "☾"
                         badge: 0
@@ -406,11 +457,12 @@ Rectangle {
                 // ZONE: System
                 ColumnLayout {
                     Layout.fillWidth: true
-                    Layout.topMargin: Theme.space.lg
+                    Layout.topMargin: root.collapsed ? Theme.space.sm : Theme.space.lg
                     spacing: 0
 
                     // Zone label
                     Label {
+                        visible: !root.collapsed
                         text: "System"
                         font.family: Theme.uiFonts[0]
                         font.pixelSize: Theme.fontSize.micro
@@ -426,6 +478,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "observe"
+                        collapsed: root.collapsed
                         label: "Observe"
                         glyph: "◉"
                         badge: 0
@@ -439,6 +492,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "routing"
+                        collapsed: root.collapsed
                         label: "Routing"
                         glyph: "⇄"
                         badge: 0
@@ -452,6 +506,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "machines"
+                        collapsed: root.collapsed
                         label: "Machines"
                         glyph: "M"
                         badge: 0
@@ -465,6 +520,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "crons"
+                        collapsed: root.collapsed
                         label: "Crons"
                         glyph: "◷"
                         badge: 0
@@ -478,6 +534,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "plugins"
+                        collapsed: root.collapsed
                         label: "Plugins"
                         glyph: "+"
                         badge: 0
@@ -491,6 +548,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "connectors"
+                        collapsed: root.collapsed
                         label: "Connectors"
                         glyph: "⟐"
                         badge: 0
@@ -504,6 +562,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "profile"
+                        collapsed: root.collapsed
                         label: "Profile"
                         glyph: "◑"
                         badge: 0
@@ -517,6 +576,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "config"
+                        collapsed: root.collapsed
                         label: "Config"
                         glyph: "⚙"
                         badge: 0
@@ -530,6 +590,7 @@ Rectangle {
                         Layout.leftMargin: Theme.space.sm
                         Layout.rightMargin: Theme.space.sm
                         route: "reviewers"
+                        collapsed: root.collapsed
                         label: "Reviewers"
                         glyph: "⌕"
                         badge: 0
@@ -551,6 +612,43 @@ Rectangle {
         function onRowsInserted() { root.sessionsEpoch += 1 }
         function onRowsRemoved() { root.sessionsEpoch += 1 }
         function onDataChanged() { root.sessionsEpoch += 1 }
+    }
+
+    onCurrentRouteChanged: Qt.callLater(ensureCurrentRouteVisible)
+    onCollapsedChanged: Qt.callLater(ensureCurrentRouteVisible)
+    onHeightChanged: Qt.callLater(ensureCurrentRouteVisible)
+
+    function ensureCurrentRouteVisible() {
+        if (!navFlick || navFlick.height <= 0) return
+        var target = findRouteItem(navColumn, root.currentRoute)
+        if (!target) return
+        var point = target.mapToItem(navFlick.contentItem, 0, 0)
+        var top = point.y
+        var bottom = top + target.height
+        var margin = Theme.space.sm
+        var nextY = navFlick.contentY
+        if (root.currentRoute === "home") {
+            nextY = 0
+        } else if (top < navFlick.contentY + margin) {
+            nextY = Math.max(0, top - margin)
+        } else if (bottom > navFlick.contentY + navFlick.height - margin) {
+            nextY = Math.min(
+                Math.max(0, navFlick.contentHeight - navFlick.height),
+                bottom - navFlick.height + margin
+            )
+        }
+        navFlick.contentY = nextY
+    }
+
+    function findRouteItem(item, route) {
+        if (!item) return null
+        if (item.objectName === "navItem_" + route) return item
+        var children = item.children || []
+        for (var i = 0; i < children.length; i++) {
+            var match = findRouteItem(children[i], route)
+            if (match) return match
+        }
+        return null
     }
 
     Connections {

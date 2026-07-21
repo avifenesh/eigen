@@ -1200,6 +1200,93 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
     else:
         print(f"✗ Failed to save {output}")
 
+    collapse_button = find_item(window.contentItem(), "railCollapseButton")
+    rail = find_item(window.contentItem(), "mainRail")
+    collapsed_chat = find_item(window.contentItem(), "navItem_chat")
+    if collapse_button is None or rail is None or collapsed_chat is None:
+        print("✗ Main collapsed rail proof could not find navigation controls")
+        window.hide()
+        return False
+    click_item(window, collapse_button)
+    QTest.qWait(80)
+    for _ in range(12):
+        app.processEvents()
+    if window.property("qaRailCollapsed") is not True or abs(float(rail.property("width") or 0) - 60) > 0.5:
+        print(
+            "✗ Main collapsed rail proof kept the wrong geometry: "
+            f"collapsed={window.property('qaRailCollapsed')} width={rail.property('width')}"
+        )
+        window.hide()
+        return False
+    if collapsed_chat.property("qaLabelVisible") is not False or collapsed_chat.property("qaCollapsedBadgeVisible") is not True:
+        print("✗ Main collapsed rail proof lost icon-only label/badge behavior")
+        window.hide()
+        return False
+    collapsed_chat.setProperty("qaShowToolTip", True)
+    QTest.qWait(30)
+    for _ in range(8):
+        app.processEvents()
+    if collapsed_chat.property("qaToolTipVisible") is not True:
+        print("✗ Main collapsed rail proof did not expose the route tooltip")
+        window.hide()
+        return False
+    output_collapsed = SCREENSHOTS / "qa-fix-main-rail-collapsed.png"
+    image_collapsed = window.grabWindow()
+    success_collapsed = image_collapsed.save(str(output_collapsed))
+    if success_collapsed:
+        print(f"✓ Saved {output_collapsed}")
+    else:
+        print(f"✗ Failed to save {output_collapsed}")
+    collapsed_chat.setProperty("qaShowToolTip", False)
+    click_item(window, collapse_button)
+    QTest.qWait(80)
+    for _ in range(12):
+        app.processEvents()
+    if window.property("qaRailCollapsed") is not False:
+        print("✗ Main collapsed rail proof did not restore the expanded rail")
+        window.hide()
+        return False
+
+    window.setProperty("height", 420)
+    window.setProperty("currentRoute", "reviewers")
+    QTest.qWait(80)
+    for _ in range(14):
+        app.processEvents()
+    compact_flick = find_item(window.contentItem(), "railNavFlick")
+    compact_scroll = find_item(window.contentItem(), "railNavScrollBar")
+    compact_reviewers = find_item(window.contentItem(), "navItem_reviewers")
+    if compact_flick is None or compact_scroll is None or compact_reviewers is None:
+        print("✗ Main compact rail proof could not find overflow controls")
+        window.hide()
+        return False
+    compact_top = compact_reviewers.mapToItem(compact_flick, QPointF(0, 0)).y()
+    compact_bottom = compact_reviewers.mapToItem(
+        compact_flick, QPointF(0, float(compact_reviewers.property("height") or 0))
+    ).y()
+    if compact_top < -0.5 or compact_bottom > float(compact_flick.property("height") or 0) + 0.5:
+        print(
+            "✗ Main compact rail proof left Reviewers off-screen: "
+            f"{compact_top:.1f}..{compact_bottom:.1f} in {compact_flick.property('height')}"
+        )
+        window.hide()
+        return False
+    if rail.property("qaCanScroll") is not True or rail.property("qaScrollBarVisible") is not True:
+        print("✗ Main compact rail proof hid its overflow affordance")
+        window.hide()
+        return False
+    output_compact_rail = SCREENSHOTS / "qa-fix-main-rail-compact-overflow.png"
+    image_compact_rail = window.grabWindow()
+    success_compact_rail = image_compact_rail.save(str(output_compact_rail))
+    if success_compact_rail:
+        print(f"✓ Saved {output_compact_rail}")
+    else:
+        print(f"✗ Failed to save {output_compact_rail}")
+    window.setProperty("height", 800)
+    window.setProperty("currentRoute", "chat")
+    QTest.qWait(80)
+    for _ in range(14):
+        app.processEvents()
+
     ctx.setContextProperty("daemonStatus", "reconnecting")
     ctx.setContextProperty("daemonOnline", False)
     for _ in range(8):

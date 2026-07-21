@@ -10,7 +10,7 @@ import sys
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
+from PySide6.QtCore import Property, QObject, QSettings, QTimer, Signal, Slot
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -53,6 +53,36 @@ from eigenqt.webengine import initialize_webengine
 
 ROOT = Path(__file__).resolve().parent
 QT_THEME_NAMES = {"deepteal", "nord", "gruvbox"}
+
+
+class UiSettings(QObject):
+    """Small persistent store for desktop-only chrome preferences."""
+
+    railCollapsedChanged = Signal()
+
+    def __init__(self, parent=None, settings=None):
+        super().__init__(parent)
+        self._settings = settings or QSettings()
+        value = self._settings.value("ui/railCollapsed", False)
+        self._rail_collapsed = (
+            value.strip().lower() in {"1", "true", "yes", "on"}
+            if isinstance(value, str)
+            else bool(value)
+        )
+
+    @Property(bool, notify=railCollapsedChanged)
+    def railCollapsed(self):
+        return self._rail_collapsed
+
+    @railCollapsed.setter
+    def railCollapsed(self, collapsed):
+        collapsed = bool(collapsed)
+        if self._rail_collapsed == collapsed:
+            return
+        self._rail_collapsed = collapsed
+        self._settings.setValue("ui/railCollapsed", collapsed)
+        self._settings.sync()
+        self.railCollapsedChanged.emit()
 
 
 def resolve_qt_theme(config_path: Path | None = None) -> str:
@@ -105,6 +135,7 @@ class AppContext(QObject):
         self._stats = {}
         self._recovering_guiserver = False
         self._shutting_down = False
+        self.ui_settings = UiSettings(self)
 
         self.guiserver = GuiserverSupervisor(parent=self)
         self._ensure_guiserver()
@@ -516,6 +547,7 @@ def main():
     ctx.setContextProperty("highlighter", highlighter_helper)
     ctx.setContextProperty("markdownParser", markdown_helper)
     ctx.setContextProperty("terminalHelper", terminal_helper)
+    ctx.setContextProperty("uiSettings", app_context.ui_settings)
 
     # Bind property changes
     app_context.daemonOnlineChanged.connect(lambda: ctx.setContextProperty("daemonOnline", app_context.daemonOnline))

@@ -487,6 +487,31 @@ class FakeSessionController(QObject):
         self.sessionIdChanged.emit()
 
 
+class FakeUiSettings(QObject):
+    railCollapsedChanged = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self._rail_collapsed = False
+
+    def get_rail_collapsed(self):
+        return self._rail_collapsed
+
+    def set_rail_collapsed(self, value):
+        value = bool(value)
+        if value == self._rail_collapsed:
+            return
+        self._rail_collapsed = value
+        self.railCollapsedChanged.emit()
+
+    railCollapsed = Property(
+        bool,
+        get_rail_collapsed,
+        set_rail_collapsed,
+        notify=railCollapsedChanged,
+    )
+
+
 def seeded_sessions():
     return [
         {
@@ -745,6 +770,7 @@ try:
     clipboard = ClipboardHelper(app)
     highlighter = HighlighterHelper(app)
     markdown = MarkdownHelper(app)
+    ui_settings = FakeUiSettings()
 
     engine = QQmlApplicationEngine()
     engine.addImportPath(str(ROOT / "eigenqt"))
@@ -783,6 +809,7 @@ try:
     ctx.setContextProperty("clipboardHelper", clipboard)
     ctx.setContextProperty("highlighter", highlighter)
     ctx.setContextProperty("markdownParser", markdown)
+    ctx.setContextProperty("uiSettings", ui_settings)
 
     engine.load(str(ROOT / "eigenqt" / "qml" / "Main.qml"))
     if not engine.rootObjects():
@@ -910,6 +937,56 @@ try:
             raise AssertionError(f"Rail badge {badge_name} horizontal padding too small: {badge.property('qaHorizontalPadding')}")
         if float(badge.property("qaVerticalPadding") or 0) < 7.5:
             raise AssertionError(f"Rail badge {badge_name} vertical padding too small: {badge.property('qaVerticalPadding')}")
+
+    collapse_button = find_item_in_window(window, "railCollapseButton")
+    rail = find_item_in_window(window, "mainRail")
+    palette_button = find_item_in_window(window, "railCommandPaletteButton")
+    if collapse_button is None or rail is None or palette_button is None:
+        raise AssertionError("Rail did not expose its collapse controls")
+    click_item(app, window, "railCollapseButton")
+    if window.property("qaRailCollapsed") is not True or abs(float(window.property("qaRailWidth") or 0) - 60) > 0.5:
+        raise AssertionError(
+            f"Rail mouse collapse produced {window.property('qaRailCollapsed')}/{window.property('qaRailWidth')}"
+        )
+    if ui_settings.railCollapsed is not True:
+        raise AssertionError("Rail mouse collapse did not persist through the UI settings context")
+    if chat_nav.property("qaCollapsed") is not True or chat_nav.property("qaLabelVisible") is not False:
+        raise AssertionError("Collapsed rail kept the Chat text label visible")
+    if home_nav.property("qaCollapsedBadgeVisible") is not True:
+        raise AssertionError("Collapsed rail discarded the Home count badge")
+    if palette_button.property("visible") is not False or running_row.property("visible") is not False:
+        raise AssertionError("Collapsed rail kept expanded-only controls visible")
+    chat_nav.setProperty("qaShowToolTip", True)
+    pump(app, 8)
+    if chat_nav.property("qaToolTipVisible") is not True:
+        raise AssertionError("Collapsed Chat route did not expose its themed label tooltip")
+    chat_nav.setProperty("qaShowToolTip", False)
+    config_nav = find_item_in_window(window, "navItem_config")
+    if config_nav is None:
+        raise AssertionError("Collapsed rail did not retain the Config route")
+    config_nav.forceActiveFocus(Qt.TabFocusReason)
+    pump(app, 8)
+    QTest.keyClick(window, Qt.Key_Return)
+    pump(app, 12)
+    if window.property("currentRoute") != "config":
+        raise AssertionError("Collapsed rail Config route did not activate from the keyboard")
+    click_item(app, window, "navItem_home")
+    if window.property("currentRoute") != "home":
+        raise AssertionError("Collapsed rail Home route did not activate from the mouse")
+    click_item(app, window, "railCollapseButton")
+    if window.property("qaRailCollapsed") is not False or abs(float(window.property("qaRailWidth") or 0) - 208) > 0.5:
+        raise AssertionError("Rail mouse expand did not restore the full navigation")
+    if ui_settings.railCollapsed is not False:
+        raise AssertionError("Rail mouse expand did not persist through the UI settings context")
+    QTest.keyClick(window, Qt.Key_B, Qt.ControlModifier)
+    pump(app, 12)
+    if window.property("qaRailCollapsed") is not True:
+        raise AssertionError("Ctrl+B did not collapse the rail")
+    QTest.keyClick(window, Qt.Key_B, Qt.ControlModifier)
+    pump(app, 12)
+    if window.property("qaRailCollapsed") is not False:
+        raise AssertionError("Second Ctrl+B did not expand the rail")
+
     if float(chat_nav.property("height") or 0) <= 30:
         raise AssertionError("Chat nav item did not expand for running-session rows")
     if scene_top(running_row) < scene_top(chat_nav) + 30 - 0.5:
@@ -988,6 +1065,33 @@ try:
             )
         if nav.property("qaTextFits") is not True:
             raise AssertionError(f"{object_name} label does not fit")
+
+    window.setProperty("height", 420)
+    window.setProperty("currentRoute", "reviewers")
+    pump(app, 18)
+    rail_flick = find_item_in_window(window, "railNavFlick")
+    rail_scroll = find_item_in_window(window, "railNavScrollBar")
+    reviewers_nav = find_item_in_window(window, "navItem_reviewers")
+    if rail_flick is None or rail_scroll is None or reviewers_nav is None:
+        raise AssertionError("Compact rail did not expose its scroll affordance")
+    reviewers_top = reviewers_nav.mapToItem(rail_flick, QPointF(0, 0)).y()
+    reviewers_bottom = reviewers_nav.mapToItem(
+        rail_flick, QPointF(0, float(reviewers_nav.property("height") or 0))
+    ).y()
+    if reviewers_top < -0.5 or reviewers_bottom > float(rail_flick.property("height") or 0) + 0.5:
+        raise AssertionError(
+            f"Compact rail did not reveal the active Reviewers route: {reviewers_top:.1f}..{reviewers_bottom:.1f}"
+        )
+    if rail.property("qaCanScroll") is not True or rail.property("qaScrollBarVisible") is not True:
+        raise AssertionError("Compact rail hid its overflow affordance")
+    if float(rail.property("qaScrollPosition") or 0) <= 0:
+        raise AssertionError("Compact rail did not scroll to the active lower route")
+    window.setProperty("currentRoute", "home")
+    pump(app, 18)
+    if float(rail.property("qaScrollPosition") or 0) > 0.5:
+        raise AssertionError("Compact rail did not return Home to the visible top")
+    window.setProperty("height", SIZE.height())
+    pump(app, 18)
 
     click_item(app, window, "navItem_dreaming")
     pump(app, 30)
