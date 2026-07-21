@@ -359,10 +359,29 @@ import "Theme.js" as Theme
     pump(app)
     if button.property("qaToolTipVisible") is True:
         raise AssertionError("AppButton tooltip did not close after hover")
-    button.setProperty("qaShowToolTip", True)
+    button.setProperty("qaToolTipDelay", 0)
+    button.setProperty("qaToolTipTimeout", 80)
+    QTest.mouseMove(root, item_center(button))
     pump(app)
     if button.property("qaToolTipVisible") is not True:
-        raise AssertionError("AppButton themed tooltip did not open")
+        raise AssertionError("AppButton tooltip did not reopen before its timeout")
+    QTest.qWait(120)
+    pump(app)
+    if button.property("qaToolTipVisible") is True:
+        raise AssertionError("AppButton tooltip did not close after its timeout")
+    QTest.mouseMove(root, QPoint(1, 1))
+    pump(app)
+    QTest.mouseMove(root, item_center(button))
+    pump(app)
+    if button.property("qaToolTipVisible") is not True:
+        raise AssertionError("AppButton tooltip did not reopen after timing out")
+    QTest.mouseMove(root, QPoint(1, 1))
+    pump(app)
+    button.setProperty("qaShowToolTip", True)
+    QTest.qWait(120)
+    pump(app)
+    if button.property("qaToolTipVisible") is not True:
+        raise AssertionError("AppButton forced tooltip did not remain open")
     button.setProperty("qaShowToolTip", False)
     pump(app)
     if button.property("qaToolTipVisible") is True:

@@ -86,7 +86,8 @@ ComboBox {
         id: appToolTip
         objectName: control.objectName ? control.objectName + "_tooltip" : "appComboBoxTooltip"
         delay: control.qaShowToolTip ? 0 : 600
-        visible: control.toolTipText !== "" && (control.hovered || control.qaShowToolTip)
+        persistent: control.qaShowToolTip
+        requestedVisible: control.toolTipText !== "" && (control.hovered || control.qaShowToolTip)
         text: control.toolTipText
     }
 

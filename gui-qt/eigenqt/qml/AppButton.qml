@@ -19,6 +19,8 @@ Button {
     property int contentAlignment: Text.AlignHCenter
     property bool qaForceKeyboardFocus: false
     property bool qaShowToolTip: false
+    property int qaToolTipDelay: 600
+    property int qaToolTipTimeout: 4000
     readonly property bool qaIsAppButton: true
     readonly property bool qaTextFits: textContentFits(contentItem)
     readonly property string qaText: text
@@ -53,8 +55,10 @@ Button {
     AppToolTip {
         id: appToolTip
         objectName: control.objectName ? control.objectName + "_tooltip" : "appButtonTooltip"
-        delay: control.qaShowToolTip ? 0 : 600
-        visible: control.toolTipText !== "" && (control.hovered || control.qaShowToolTip)
+        delay: control.qaShowToolTip ? 0 : control.qaToolTipDelay
+        persistent: control.qaShowToolTip
+        timeoutDuration: control.qaToolTipTimeout
+        requestedVisible: control.toolTipText !== "" && (control.hovered || control.qaShowToolTip)
         text: control.toolTipText
     }
 

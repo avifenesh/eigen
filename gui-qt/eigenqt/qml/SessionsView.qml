@@ -315,7 +315,7 @@ Rectangle {
                                         Layout.fillWidth: true
                                         AppToolTip {
                                             objectName: "sessionsDirTooltip_" + row.safeId
-                                            visible: dirHover.hovered && sessionDirLabel.fullPath.length > 0
+                                            requestedVisible: dirHover.hovered && sessionDirLabel.fullPath.length > 0
                                                 && sessionDirLabel.fullPath !== sessionDirLabel.text
                                             text: sessionDirLabel.fullPath
                                         }

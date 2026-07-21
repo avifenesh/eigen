@@ -6,6 +6,9 @@ ToolTip {
     id: control
 
     property real maximumWidth: 360
+    property bool requestedVisible: false
+    property bool persistent: false
+    property int timeoutDuration: 4000
     readonly property bool qaThemed: true
     readonly property color qaBackgroundColor: Theme.colors.surfaceOverlay
     readonly property color qaTextColor: Theme.colors.textPrimary
@@ -14,7 +17,7 @@ ToolTip {
     readonly property real qaVerticalPadding: Math.min(topPadding, bottomPadding)
 
     delay: 600
-    timeout: 4000
+    timeout: persistent ? -1 : timeoutDuration
     leftPadding: Theme.space.lg
     rightPadding: Theme.space.lg
     topPadding: Theme.space.sm
@@ -23,6 +26,16 @@ ToolTip {
         maximumWidth,
         tipLabel.implicitWidth + leftPadding + rightPadding
     )
+    onRequestedVisibleChanged: syncVisibility()
+    Component.onCompleted: syncVisibility()
+
+    function syncVisibility() {
+        if (requestedVisible) {
+            open()
+        } else {
+            close()
+        }
+    }
 
     contentItem: Label {
         id: tipLabel
