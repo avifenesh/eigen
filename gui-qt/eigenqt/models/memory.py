@@ -411,12 +411,12 @@ class MemoryModel(QObject):
     def is_empty(self) -> bool:
         if not self._current:
             return True
-        note_count = self._current.get("noteCount", 0)
-        ad_hoc = self._current.get("adHoc", [])
-        summary = self._current.get("summary", "")
-        bans = self._current.get("banList", [])
-        profile = self._current.get("profile", "")
-        profile_learned = self._current.get("profileLearned", "")
+        note_count = self._current.get("noteCount") or 0
+        ad_hoc = self._current.get("adHoc") or []
+        summary = self._current.get("summary") or ""
+        bans = self._current.get("banList") or []
+        profile = self._current.get("profile") or ""
+        profile_learned = self._current.get("profileLearned") or ""
         return (
             note_count == 0
             and len(ad_hoc) == 0
@@ -429,7 +429,7 @@ class MemoryModel(QObject):
     # Derived property: hasBackupHistory
     @Property(bool, notify=current_changed)
     def has_backup_history(self) -> bool:
-        return (self._current or {}).get("backups", 0) > 0
+        return ((self._current or {}).get("backups") or 0) > 0
 
     # Derived property: moveTargets (all scopes except current)
     @Property(list, notify=scopes_changed)

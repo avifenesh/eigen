@@ -1089,6 +1089,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
         "transcriptModel": transcript_model,
         "approvalsModel": ApprovalsModel(client, ""),
         "daemonOnline": True,
+        "daemonStatus": "online",
         "guiserverSha": "qa1234567890",
         "statsData": {"running_turns": 2, "sessions": 7},
         "clipboardHelper": clipboard_helper,
@@ -1198,6 +1199,27 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
         print(f"✓ Saved {output}")
     else:
         print(f"✗ Failed to save {output}")
+
+    ctx.setContextProperty("daemonStatus", "reconnecting")
+    ctx.setContextProperty("daemonOnline", False)
+    for _ in range(8):
+        app.processEvents()
+    daemon_status = find_item(window.contentItem(), "mainDaemonStatusText")
+    if daemon_status is None or daemon_status.property("text") != "daemon reconnecting":
+        print("✗ Main shell did not render the reconnecting daemon state")
+        window.hide()
+        return False
+    output_reconnecting = SCREENSHOTS / "qa-fix-main-reconnecting.png"
+    image_reconnecting = window.grabWindow()
+    success_reconnecting = image_reconnecting.save(str(output_reconnecting))
+    if success_reconnecting:
+        print(f"✓ Saved {output_reconnecting}")
+    else:
+        print(f"✗ Failed to save {output_reconnecting}")
+    ctx.setContextProperty("daemonStatus", "online")
+    ctx.setContextProperty("daemonOnline", True)
+    for _ in range(8):
+        app.processEvents()
 
     palette_launcher = find_item(window.contentItem(), "railCommandPaletteButton")
     if palette_launcher is None or palette_launcher.property("qaTextFits") is not True:
@@ -1512,7 +1534,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
         print(f"✗ Failed to save {output_safe}")
 
     window.hide()
-    return success and success_palette and success_error and success_min and success_compact and success_compact_dropdown and success_narrow and success_safe
+    return success and success_reconnecting and success_palette and success_error and success_min and success_compact and success_compact_dropdown and success_narrow and success_safe
 
 
 def main():

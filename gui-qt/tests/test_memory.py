@@ -185,6 +185,22 @@ def test_scope_payload_drives_derived_state(model):
     assert model.has_backup_history is True
 
 
+def test_nullable_empty_scope_payload_is_safe(model):
+    model.current = {
+        "scope": "global",
+        "summary": None,
+        "adHoc": None,
+        "noteCount": None,
+        "profile": None,
+        "profileLearned": None,
+        "banList": None,
+        "backups": None,
+    }
+
+    assert model.is_empty is True
+    assert model.has_backup_history is False
+
+
 def test_scope_load_error_preserves_stale_current(model):
     """Refresh errors should surface without clearing the last usable memory."""
     model.current = {

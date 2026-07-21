@@ -776,7 +776,8 @@ try:
     ctx.setContextProperty("sessionController", controller)
     ctx.setContextProperty("transcriptModel", transcript_model)
     ctx.setContextProperty("approvalsModel", approvals_model)
-    ctx.setContextProperty("daemonOnline", True)
+    ctx.setContextProperty("daemonOnline", False)
+    ctx.setContextProperty("daemonStatus", "connecting")
     ctx.setContextProperty("guiserverSha", "abcdef1234567890")
     ctx.setContextProperty("statsData", {"running_turns": 2, "sessions": 7})
     ctx.setContextProperty("clipboardHelper", clipboard)
@@ -802,6 +803,22 @@ try:
     window.show()
     pump(app, 30)
     assert_no_qml_issues(messages)
+
+    daemon_status = find_item_in_window(window, "mainDaemonStatusText")
+    if daemon_status is None or daemon_status.property("text") != "daemon connecting":
+        raise AssertionError("Main did not distinguish startup from daemon offline")
+    for status, expected in (
+        ("reconnecting", "daemon reconnecting"),
+        ("offline", "daemon offline"),
+        ("online", "daemon online"),
+    ):
+        ctx.setContextProperty("daemonStatus", status)
+        ctx.setContextProperty("daemonOnline", status == "online")
+        pump(app, 4)
+        if daemon_status.property("text") != expected:
+            raise AssertionError(
+                f"Main daemon status {status!r} rendered as {daemon_status.property('text')!r}"
+            )
 
     if window.property("currentRoute") != "home" or window.property("activeRouteIndex") != 0:
         raise AssertionError("Main did not start on the home route")
