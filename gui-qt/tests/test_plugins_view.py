@@ -10,7 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize("theme_name", ["deepteal", "nord", "gruvbox"])
+@pytest.mark.parametrize("theme_name", ["studio", "deepteal", "nord", "gruvbox"])
 def test_plugins_view_management_controls_are_responsive_and_clickable(theme_name):
     script = r"""
 import os

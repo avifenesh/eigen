@@ -112,6 +112,7 @@ def test_inline_formatting():
 @pytest.mark.parametrize(
     ("theme", "background", "code", "link"),
     [
+        ("studio", "#edf1ef", "#0d7167", "#286b91"),
         ("deepteal", "#1d282c", "#69c2b8", "#6fb7e8"),
         ("nord", "#2b3140", "#8fbcbb", "#88c0d0"),
         ("gruvbox", "#3c3836", "#8ec07c", "#83a598"),
@@ -128,6 +129,7 @@ def test_inline_formatting_uses_the_active_palette(theme, background, code, link
 @pytest.mark.parametrize(
     ("theme", "keyword", "number"),
     [
+        ("studio", "#783c90", "#9c4f28"),
         ("deepteal", "#c58fd8", "#e8a878"),
         ("nord", "#b48ead", "#d08770"),
         ("gruvbox", "#fb4934", "#d3869b"),

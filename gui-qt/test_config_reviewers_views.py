@@ -127,7 +127,7 @@ def test_config_view_loads():
                             "key": "theme",
                             "desc": "Color palette",
                             "value": "deepteal",
-                            "options": ["deepteal", "nord", "gruvbox"],
+                            "options": ["studio", "deepteal", "nord", "gruvbox"],
                             "multi": False,
                             "allowEmpty": False,
                         }

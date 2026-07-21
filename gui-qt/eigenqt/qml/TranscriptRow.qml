@@ -58,7 +58,7 @@ Item {
                         text: root.text
                         font.family: Theme.uiFonts[0]
                         font.pixelSize: Theme.fontSize.body
-                        color: Theme.colors.textPrimary
+                        color: Theme.colors.brandDimForeground
                         wrapMode: Text.Wrap
                     }
                 }

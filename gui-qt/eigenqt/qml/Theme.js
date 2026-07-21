@@ -12,16 +12,16 @@ var colors = {
     surfaceOverlay: "#243136",
     bgInset: "#080b0c",
 
-    stateHover: "rgba(221,228,227,0.07)",
-    stateActive: "rgba(62,158,150,0.18)",
-    stateSelected: "rgba(208,140,94,0.16)",
+    stateHover: "#12dde4e3",
+    stateActive: "#2e3e9e96",
+    stateSelected: "#29d08c5e",
 
-    borderHairline: "rgba(221,228,227,0.13)",
-    borderSubtle: "rgba(221,228,227,0.21)",
-    borderStrong: "rgba(221,228,227,0.34)",
-    borderBrand: "rgba(105,194,184,0.72)",
-    borderFocus: "rgba(208,140,94,0.72)",
-    divider: "rgba(221,228,227,0.13)",
+    borderHairline: "#21dde4e3",
+    borderSubtle: "#36dde4e3",
+    borderStrong: "#57dde4e3",
+    borderBrand: "#b869c2b8",
+    borderFocus: "#b8d08c5e",
+    divider: "#21dde4e3",
 
     textPrimary: "#dde4e3",
     textSecondary: "#aab6b3",
@@ -32,23 +32,25 @@ var colors = {
     brandStrong: "#347f79",
     brandBright: "#69c2b8",
     brandDim: "#2a6e68",
+    brandForeground: "#0b0e0f",
+    brandDimForeground: "#f8fbfa",
 
     focus: "#d08c5e",
     focusBright: "#e8a878",
 
     accent: "#9e7ba6",
-    accentBg: "rgba(158,123,166,0.15)",
-    borderAccentFaint: "rgba(158,123,166,0.4)",
+    accentBg: "#269e7ba6",
+    borderAccentFaint: "#669e7ba6",
 
     success: "#7ba86b",
-    successBg: "rgba(123,168,107,0.15)",
+    successBg: "#267ba86b",
     warn: "#c9a24b",
     info: "#6fb7e8",
-    warnBg: "rgba(201,162,75,0.15)",
+    warnBg: "#26c9a24b",
     error: "#c06a5e",
-    errorBg: "rgba(192,106,94,0.16)",
+    errorBg: "#29c06a5e",
     working: "#d08c5e",
-    workingBg: "rgba(208,140,94,0.16)",
+    workingBg: "#29d08c5e",
 
     // Status dots
     dotWorking: "#d08c5e",
@@ -80,14 +82,15 @@ var colors = {
     bgRaised: "#151d20",
     bgRaised2: "#1d282c",
     bgOverlay: "#243136",
-    borderBrandFaint: "rgba(105,194,184,0.38)",
-    stateFocusBg: "rgba(208,140,94,0.12)",
+    borderBrandFaint: "#6169c2b8",
+    stateFocusBg: "#1fd08c5e",
     textFaint: "#5d6966",
-    brandBg: "rgba(62,158,150,0.17)"
+    brandBg: "#2b3e9e96"
 }
 
 var paletteName = startupPaletteName()
-if (paletteName === "nord") applyNordPalette()
+if (paletteName === "studio") applyStudioPalette()
+else if (paletteName === "nord") applyNordPalette()
 else if (paletteName === "gruvbox") applyGruvboxPalette()
 
 function startupPaletteName() {
@@ -95,10 +98,79 @@ function startupPaletteName() {
         return "deepteal"
     var args = Qt.application.arguments
     for (var i = 0; i < args.length; ++i) {
-        var match = /^--eigen-qt-theme=(deepteal|nord|gruvbox)$/.exec(args[i])
+        var match = /^--eigen-qt-theme=(deepteal|studio|nord|gruvbox)$/.exec(args[i])
         if (match) return match[1]
     }
     return "deepteal"
+}
+
+function applyStudioPalette() {
+    colors.bgWell = "#e3e7e5"
+    colors.bgBase = "#f4f6f5"
+    colors.surfaceRaised = "#ffffff"
+    colors.surfaceRaised2 = "#edf1ef"
+    colors.surfaceOverlay = "#e2e8e5"
+    colors.bgInset = "#e9eeeb"
+    colors.stateHover = "#0f17211f"
+    colors.stateActive = "#21126d64"
+    colors.stateSelected = "#1fb85f32"
+    colors.stateFocusBg = "#17b85f32"
+    colors.borderHairline = "#2417211f"
+    colors.borderSubtle = "#3617211f"
+    colors.borderStrong = "#5717211f"
+    colors.borderBrand = "#9e126d64"
+    colors.borderBrandFaint = "#4d126d64"
+    colors.borderFocus = "#b8b85f32"
+    colors.divider = "#2117211f"
+    colors.textPrimary = "#17211f"
+    colors.textSecondary = "#3e4d49"
+    colors.textMuted = "#5f6f6b"
+    colors.textGhost = "#7c8985"
+    colors.textFaint = "#909b97"
+    colors.brand = "#126d64"
+    colors.brandStrong = "#0d554f"
+    colors.brandBright = "#1b756b"
+    colors.brandDim = "#0b514b"
+    colors.brandForeground = "#f4f6f5"
+    colors.brandDimForeground = "#f4f6f5"
+    colors.brandBg = "#1f126d64"
+    colors.focus = "#b85f32"
+    colors.focusBright = "#8f4120"
+    colors.accent = "#74547f"
+    colors.accentBg = "#1c74547f"
+    colors.borderAccentFaint = "#5774547f"
+    colors.success = "#347a46"
+    colors.successBg = "#1c347a46"
+    colors.warn = "#946514"
+    colors.warnBg = "#1f946514"
+    colors.info = "#286b91"
+    colors.error = "#af4339"
+    colors.errorBg = "#1aaf4339"
+    colors.working = "#a65329"
+    colors.workingBg = "#1ca65329"
+    colors.dotWorking = colors.working
+    colors.dotLive = colors.brand
+    colors.dotIdle = colors.textGhost
+    colors.dotOk = colors.success
+    colors.dotWarn = colors.warn
+    colors.dotError = colors.error
+    colors.diffAddBg = "#e4f1e7"
+    colors.diffAddGutter = "#347a46"
+    colors.diffDelBg = "#f5e5e3"
+    colors.diffDelGutter = "#af4339"
+    colors.synBg = "#f0f3f1"
+    colors.synText = "#24312e"
+    colors.synKeyword = "#783c90"
+    colors.synType = "#875b0e"
+    colors.synFunc = "#1f668d"
+    colors.synString = "#356f43"
+    colors.synNumber = "#9c4f28"
+    colors.synComment = "#697773"
+    colors.synPunct = "#50605c"
+    colors.synBuiltin = "#0d7167"
+    colors.bgRaised = colors.surfaceRaised
+    colors.bgRaised2 = colors.surfaceRaised2
+    colors.bgOverlay = colors.surfaceOverlay
 }
 
 function applyNordPalette() {
@@ -108,17 +180,17 @@ function applyNordPalette() {
     colors.surfaceRaised2 = "#2b3140"
     colors.surfaceOverlay = "#353c4d"
     colors.bgInset = "#171b22"
-    colors.stateHover = "rgba(255,255,255,0.04)"
-    colors.stateActive = "rgba(255,255,255,0.07)"
-    colors.stateSelected = "rgba(209,160,176,0.14)"
-    colors.stateFocusBg = "rgba(209,160,176,0.1)"
-    colors.borderHairline = "rgba(216,222,233,0.08)"
-    colors.borderSubtle = "rgba(216,222,233,0.12)"
-    colors.borderStrong = "rgba(216,222,233,0.2)"
-    colors.borderBrand = "rgba(129,161,193,0.55)"
-    colors.borderBrandFaint = "rgba(129,161,193,0.24)"
-    colors.borderFocus = "rgba(209,160,176,0.62)"
-    colors.divider = "rgba(216,222,233,0.07)"
+    colors.stateHover = "#0affffff"
+    colors.stateActive = "#12ffffff"
+    colors.stateSelected = "#24d1a0b0"
+    colors.stateFocusBg = "#1ad1a0b0"
+    colors.borderHairline = "#14d8dee9"
+    colors.borderSubtle = "#1fd8dee9"
+    colors.borderStrong = "#33d8dee9"
+    colors.borderBrand = "#8c81a1c1"
+    colors.borderBrandFaint = "#3d81a1c1"
+    colors.borderFocus = "#9ed1a0b0"
+    colors.divider = "#12d8dee9"
     colors.textPrimary = "#d8dee9"
     colors.textSecondary = "#9aa5b8"
     colors.textMuted = "#79839a"
@@ -128,30 +200,32 @@ function applyNordPalette() {
     colors.brandStrong = "#5e81ac"
     colors.brandBright = "#b3c4d8"
     colors.brandDim = "#4c6a8a"
-    colors.brandBg = "rgba(129,161,193,0.12)"
+    colors.brandForeground = "#1b1f27"
+    colors.brandDimForeground = "#f8fbfa"
+    colors.brandBg = "#1f81a1c1"
     colors.focus = "#d1a0b0"
     colors.focusBright = "#edc3d0"
     colors.accent = "#b48ead"
-    colors.accentBg = "rgba(180,142,173,0.14)"
-    colors.borderAccentFaint = "rgba(180,142,173,0.34)"
+    colors.accentBg = "#24b48ead"
+    colors.borderAccentFaint = "#57b48ead"
     colors.success = "#a3be8c"
-    colors.successBg = "rgba(163,190,140,0.12)"
+    colors.successBg = "#1fa3be8c"
     colors.warn = "#ebcb8b"
-    colors.warnBg = "rgba(235,203,139,0.12)"
+    colors.warnBg = "#1febcb8b"
     colors.info = "#88c0d0"
     colors.error = "#bf616a"
-    colors.errorBg = "rgba(191,97,106,0.13)"
+    colors.errorBg = "#21bf616a"
     colors.working = "#d08770"
-    colors.workingBg = "rgba(208,135,112,0.12)"
+    colors.workingBg = "#1fd08770"
     colors.dotWorking = colors.brand
     colors.dotLive = colors.brand
     colors.dotIdle = colors.textMuted
     colors.dotOk = colors.success
     colors.dotWarn = colors.warn
     colors.dotError = colors.error
-    colors.diffAddBg = "rgba(30,42,34,0.85)"
+    colors.diffAddBg = "#d91e2a22"
     colors.diffAddGutter = "#3a6b4c"
-    colors.diffDelBg = "rgba(46,32,38,0.85)"
+    colors.diffDelBg = "#d92e2026"
     colors.diffDelGutter = "#7a4640"
     colors.synBg = "#171b22"
     colors.synText = "#d8dee9"
@@ -175,17 +249,17 @@ function applyGruvboxPalette() {
     colors.surfaceRaised2 = "#3c3836"
     colors.surfaceOverlay = "#504945"
     colors.bgInset = "#1d2021"
-    colors.stateHover = "rgba(255,255,255,0.04)"
-    colors.stateActive = "rgba(255,255,255,0.07)"
-    colors.stateSelected = "rgba(211,134,155,0.15)"
-    colors.stateFocusBg = "rgba(211,134,155,0.1)"
-    colors.borderHairline = "rgba(235,219,178,0.08)"
-    colors.borderSubtle = "rgba(235,219,178,0.12)"
-    colors.borderStrong = "rgba(235,219,178,0.2)"
-    colors.borderBrand = "rgba(131,165,152,0.55)"
-    colors.borderBrandFaint = "rgba(131,165,152,0.24)"
-    colors.borderFocus = "rgba(211,134,155,0.62)"
-    colors.divider = "rgba(235,219,178,0.07)"
+    colors.stateHover = "#0affffff"
+    colors.stateActive = "#12ffffff"
+    colors.stateSelected = "#26d3869b"
+    colors.stateFocusBg = "#1ad3869b"
+    colors.borderHairline = "#14ebdbb2"
+    colors.borderSubtle = "#1febdbb2"
+    colors.borderStrong = "#33ebdbb2"
+    colors.borderBrand = "#8c83a598"
+    colors.borderBrandFaint = "#3d83a598"
+    colors.borderFocus = "#9ed3869b"
+    colors.divider = "#12ebdbb2"
     colors.textPrimary = "#ebdbb2"
     colors.textSecondary = "#a89984"
     colors.textMuted = "#928374"
@@ -195,30 +269,32 @@ function applyGruvboxPalette() {
     colors.brandStrong = "#689d6a"
     colors.brandBright = "#bdddd0"
     colors.brandDim = "#427b58"
-    colors.brandBg = "rgba(131,165,152,0.13)"
+    colors.brandForeground = "#282828"
+    colors.brandDimForeground = "#f8fbfa"
+    colors.brandBg = "#2183a598"
     colors.focus = "#d3869b"
     colors.focusBright = "#e9a9bd"
     colors.accent = "#b16286"
-    colors.accentBg = "rgba(177,98,134,0.16)"
-    colors.borderAccentFaint = "rgba(177,98,134,0.38)"
+    colors.accentBg = "#29b16286"
+    colors.borderAccentFaint = "#61b16286"
     colors.success = "#b8bb26"
-    colors.successBg = "rgba(184,187,38,0.12)"
+    colors.successBg = "#1fb8bb26"
     colors.warn = "#fabd2f"
-    colors.warnBg = "rgba(250,189,47,0.12)"
+    colors.warnBg = "#1ffabd2f"
     colors.info = "#83a598"
     colors.error = "#fb4934"
-    colors.errorBg = "rgba(251,73,52,0.13)"
+    colors.errorBg = "#21fb4934"
     colors.working = "#fe8019"
-    colors.workingBg = "rgba(254,128,25,0.12)"
+    colors.workingBg = "#1ffe8019"
     colors.dotWorking = colors.brand
     colors.dotLive = colors.brand
     colors.dotIdle = colors.textMuted
     colors.dotOk = colors.success
     colors.dotWarn = colors.warn
     colors.dotError = colors.error
-    colors.diffAddBg = "rgba(40,40,15,0.85)"
+    colors.diffAddBg = "#d928280f"
     colors.diffAddGutter = "#4a6b1f"
-    colors.diffDelBg = "rgba(50,26,22,0.85)"
+    colors.diffDelBg = "#d9321a16"
     colors.diffDelGutter = "#8a3a30"
     colors.synBg = "#1d2021"
     colors.synText = "#ebdbb2"

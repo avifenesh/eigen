@@ -68,7 +68,7 @@ def screenshot_theme(argv):
     for arg in argv:
         if arg.startswith(prefix):
             value = arg[len(prefix):].strip().lower()
-            return value if value in {"deepteal", "nord", "gruvbox"} else "deepteal"
+            return value if value in {"deepteal", "studio", "nord", "gruvbox"} else "deepteal"
     return "deepteal"
 
 

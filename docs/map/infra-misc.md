@@ -19,7 +19,7 @@
 - **Role:** The palette/role system — the data a theme IS, plus the package-level role vars and ready-made styles every UI call site references.
 - **Key symbols:**
   - `Palette` (struct) — full set of role colors (Base/Surface/Overlay elevation, Text/Dim/Faint/Ghost text tiers, Accent/Title/Ok/Warn/Err/Tool/…, diff backgrounds, 7-color syntax palette, loader ramp stops, and the `Spectrum` brand sweep).
-  - `deepTealPalette`, `nordPalette`, `gruvboxPalette` (vars) — the three registered themes (deepteal is the default).
+  - `studioPalette`, `deepTealPalette`, `nordPalette`, `gruvboxPalette` (vars) — the four registered themes (deepteal remains the fallback).
   - `palettes` (map), `PaletteNames() []string` — the theme registry and its name list (used by `config` for validation/option lists).
   - `Active` (var) + `selectPalette(name)` — the palette chosen at init from `EIGEN_THEME` (defaults to deepteal); read-only after init.
   - Role vars (`Text`, `Dim`, `Accent`, `Working`, `Focus`, `Sel`, `SynKeyword`, … `Spectrum`) — assigned from `Active`; call sites reference these, never raw colors.
