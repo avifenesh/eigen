@@ -4164,6 +4164,44 @@ def main():
 
     ok = capture_view("memory", "MemoryView.qml", setup_memory) and ok
 
+    def assert_memory_compact_notes(_view, root):
+        pane_bar = find_visible_item(root, "memoryCompactPaneBar")
+        notes = find_visible_item(root, "memoryFlick")
+        details = find_visible_item(root, "memoryDetailsPane")
+        if pane_bar is None or notes is None or details is not None:
+            raise AssertionError("compact memory notes pane did not render alone")
+        if float(notes.property("width") or 0) < 500:
+            raise AssertionError(f"compact memory notes pane stayed narrow: {notes.property('width')}")
+
+    ok = capture_view(
+        "memory-compact-notes",
+        "MemoryView.qml",
+        setup_memory,
+        assert_memory_compact_notes,
+        width=512,
+        height=700,
+    ) and ok
+
+    def show_memory_compact_details(_view, root):
+        root.setProperty("compactPane", "details")
+        for _ in range(8):
+            app.processEvents()
+        notes = find_visible_item(root, "memoryFlick")
+        details = find_visible_item(root, "memoryDetailsPane")
+        if notes is not None or details is None:
+            raise AssertionError("compact memory details pane did not render alone")
+        if float(details.property("width") or 0) < 500:
+            raise AssertionError(f"compact memory details pane stayed narrow: {details.property('width')}")
+
+    ok = capture_view(
+        "memory-compact-details",
+        "MemoryView.qml",
+        setup_memory,
+        show_memory_compact_details,
+        width=512,
+        height=700,
+    ) and ok
+
     def show_memory_load_error(_view, root):
         model = root.property("memoryModel")
         if model is not None:
