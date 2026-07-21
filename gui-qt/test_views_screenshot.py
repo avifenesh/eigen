@@ -1791,6 +1791,33 @@ def main():
 
     ok = capture_view("home", "HomeView.qml", setup_home, assert_home_tags) and ok
 
+    def assert_home_narrow(_view, root):
+        if root.property("compactLayout") is not True:
+            raise AssertionError("narrow Home did not activate compact layout")
+        start_button = find_item(root, "homeStartSessionButton")
+        dashboard_grid = find_item(root, "homeDashboardGrid")
+        gpu_grid = find_item(root, "homeGpuGrid")
+        feed_grid = find_item(root, "homeFeedGrid")
+        if start_button is None or scene_right(start_button) > 512:
+            raise AssertionError("narrow Home clipped the primary action")
+        if dashboard_grid is None or gpu_grid is None or feed_grid is None:
+            raise AssertionError("narrow Home did not expose responsive grids")
+        if dashboard_grid.property("columns") != 1 or gpu_grid.property("columns") != 1 or feed_grid.property("columns") != 1:
+            raise AssertionError("narrow Home grids did not stack")
+        for object_name in ("homeDashboardPanel_Today", "homeDashboardPanel_Inbox", "homeDashboardPanel_Machine"):
+            panel = find_item(root, object_name)
+            if panel is None or float(panel.property("width") or 0) < 470 or scene_right(panel) > 512:
+                raise AssertionError(f"narrow Home clipped {object_name}")
+
+    ok = capture_view(
+        "home-narrow",
+        "HomeView.qml",
+        setup_home,
+        assert_home_narrow,
+        width=512,
+        height=900,
+    ) and ok
+
     def show_home_start_pending(_view, root):
         root.setPending("new-session", True)
 
