@@ -1072,6 +1072,51 @@ def check_memory(app, client):
     memory = seeded_memory_model(client)
     view, root = load_view(app, client, "MemoryView.qml", context={"memoryModel": memory}, root_props={"memoryModel": memory})
     try:
+        compact_bar = find_visual_item(root, "memoryCompactPaneBar")
+        if compact_bar is None or compact_bar.property("visible") is not False:
+            raise AssertionError("memory compact pane switcher rendered at desktop width")
+
+        view.setWidth(512)
+        pump(app, 12)
+        memory_flick = find_visual_item(root, "memoryFlick")
+        details_pane = find_visual_item(root, "memoryDetailsPane")
+        notes_button = find_visual_item(root, "memoryCompactPane_notes")
+        details_button = find_visual_item(root, "memoryCompactPane_details")
+        scope_combo = find_visual_item(root, "memoryScopeCombo")
+        add_note_button = find_visual_item(root, "memoryAddNoteButton")
+        if compact_bar.property("visible") is not True:
+            raise AssertionError("memory compact pane switcher did not render at narrow width")
+        if memory_flick is None or memory_flick.property("visible") is not True or memory_flick.width() < 500:
+            raise AssertionError(f"memory notes pane did not use the narrow canvas: {memory_flick.width() if memory_flick else None}")
+        if details_pane is None or details_pane.property("visible") is not False:
+            raise AssertionError("memory details pane stayed visible beside compact notes")
+        if notes_button is None or details_button is None:
+            raise AssertionError("memory compact pane controls did not render")
+        if notes_button.property("selected") is not True or notes_button.property("qaTextFits") is not True:
+            raise AssertionError("memory compact notes control did not render cleanly")
+        for label, item in (("scope", scope_combo), ("add note", add_note_button), ("notes pane", notes_button), ("details pane", details_button)):
+            if item is None:
+                raise AssertionError(f"missing memory compact {label} control")
+            left = item.mapToScene(QPointF(0, 0)).x()
+            right = item.mapToScene(QPointF(float(item.property("width") or 0), 0)).x()
+            if left < 0 or right > 512:
+                raise AssertionError(f"memory compact {label} control escaped the view: {left}..{right}")
+
+        press_key_on_item(app, view, root, "memoryCompactPane_details", Qt.Key_Return)
+        if root.property("compactPane") != "details":
+            invoke_click(details_button)
+            pump(app)
+        if memory_flick.property("visible") is not False or details_pane.property("visible") is not True:
+            raise AssertionError("memory compact details control did not switch panes")
+        if details_pane.width() < 500 or details_button.property("selected") is not True or details_button.property("qaTextFits") is not True:
+            raise AssertionError(f"memory details pane did not use the narrow canvas: {details_pane.width()}")
+
+        click_item(app, view, root, "memoryCompactPane_notes")
+        view.setWidth(SIZE.width())
+        pump(app, 12)
+        if compact_bar.property("visible") is not False or memory_flick.property("visible") is not True or details_pane.property("visible") is not True:
+            raise AssertionError("memory desktop split did not restore after compact layout")
+
         button = click_item(app, view, root, "memoryAddNoteButton")
         if not memory.composing:
             invoke_click(button)

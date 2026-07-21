@@ -10,6 +10,8 @@ Rectangle {
     id: root
     color: Theme.colors.bgBase
     property var memoryModel: null
+    property string compactPane: "notes"
+    readonly property bool compactLayout: width < 680
     readonly property var activeMemoryModel: memoryModel || fallbackMemoryModel
     readonly property var fallbackMemoryModel: ({
         scopes: [],
@@ -113,7 +115,8 @@ Rectangle {
                     AppComboBox {
                         id: scopeCombo
                         objectName: "memoryScopeCombo"
-                        Layout.preferredWidth: 300
+                        Layout.fillWidth: root.compactLayout
+                        Layout.preferredWidth: root.compactLayout ? 0 : 300
                         Layout.preferredHeight: 32
                         model: activeMemoryModel.scopes
                         textRole: "name"
@@ -166,7 +169,7 @@ Rectangle {
 
                 // Dir label (beside picker for disambiguation)
                 Label {
-                    visible: !!(activeMemoryModel.current && activeMemoryModel.current.dir)
+                    visible: !root.compactLayout && !!(activeMemoryModel.current && activeMemoryModel.current.dir)
                     text: activeMemoryModel.current ? activeMemoryModel.short_dir(activeMemoryModel.current.dir || "") : ""
                     font.family: Theme.uiFonts[0]
                     font.pixelSize: Theme.fontSize.label
@@ -302,6 +305,45 @@ Rectangle {
                     Layout.preferredHeight: 28
                     onClicked: activeMemoryModel.clear_action_error()
                 }
+            }
+        }
+
+        Rectangle {
+            id: compactPaneBar
+            objectName: "memoryCompactPaneBar"
+            visible: root.compactLayout && !!(activeMemoryModel.current && !activeMemoryModel.is_empty)
+            Layout.fillWidth: true
+            Layout.preferredHeight: 44
+            color: Theme.colors.bgBase
+            border.width: 1
+            border.color: Theme.colors.borderHairline
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: Theme.space.xl
+                anchors.rightMargin: Theme.space.xl
+                spacing: 0
+
+                Repeater {
+                    model: [
+                        { value: "notes", label: "Notes" },
+                        { value: "details", label: "Details" }
+                    ]
+
+                    delegate: AppButton {
+                        objectName: "memoryCompactPane_" + modelData.value
+                        text: modelData.label
+                        toolTipText: "Show memory " + modelData.label.toLowerCase()
+                        selected: root.compactPane === modelData.value
+                        compact: true
+                        segmentPosition: index === 0 ? "first" : "last"
+                        Layout.preferredWidth: 96
+                        Layout.preferredHeight: 30
+                        onClicked: root.compactPane = modelData.value
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
             }
         }
 
@@ -483,18 +525,20 @@ Rectangle {
             }
 
             // Content: main + sidebar (split horizontal)
-            RowLayout {
+            Item {
                 visible: !!(activeMemoryModel.current && !activeMemoryModel.is_empty)
                 anchors.fill: parent
                 anchors.topMargin: memoryRefreshErrorBanner.visible ? memoryRefreshErrorBanner.height + Theme.space.sm : 0
-                spacing: 0
 
                 // Main content (left)
                 Flickable {
                     id: memoryFlick
                     objectName: "memoryFlick"
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    visible: !root.compactLayout || root.compactPane === "notes"
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.right: root.compactLayout ? parent.right : memoryDetailsPane.left
                     contentWidth: width
                     contentHeight: memoryContent.implicitHeight + Theme.space.xl * 2
                     clip: true
@@ -769,8 +813,13 @@ Rectangle {
 
                 // Sidebar (right)
                 Rectangle {
-                    Layout.preferredWidth: 300
-                    Layout.fillHeight: true
+                    id: memoryDetailsPane
+                    objectName: "memoryDetailsPane"
+                    visible: !root.compactLayout || root.compactPane === "details"
+                    anchors.top: parent.top
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    width: root.compactLayout ? parent.width : 300
                     color: Theme.colors.bgWell
                     border.width: 1
                     border.color: Theme.colors.borderHairline
