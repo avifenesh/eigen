@@ -339,6 +339,71 @@ board_view, board_root = make_view(
 board_started = []
 board_root.sessionStarted.connect(lambda session_id: board_started.append(session_id))
 
+board._on_board_result(
+    {
+        "result": {
+            "lanes": client.board_payload["lanes"]
+            + [
+                {
+                    "name": "valkey-glide",
+                    "dir": "/repo/valkey-glide",
+                    "repo": "valkey-io/valkey-glide",
+                    "remote": True,
+                    "branch": "main",
+                    "items": [],
+                }
+            ]
+        }
+    }
+)
+board_view.resize(QSize(512, 820))
+pump(app, 20)
+
+header_controls = find_item(board_root, "boardHeaderControls")
+filter_bar = find_item(board_root, "boardFilterBar")
+refresh_button = find_item(board_root, "boardRefreshButton")
+if header_controls is None or filter_bar is None or refresh_button is None:
+    raise AssertionError("compact board chrome did not render")
+for item, label in ((header_controls, "header controls"), (refresh_button, "refresh button")):
+    top_left = item.mapToScene(QPointF(0, 0))
+    bottom_right = item.mapToScene(
+        QPointF(float(item.property("width") or 0), float(item.property("height") or 0))
+    )
+    if top_left.x() < -0.5 or bottom_right.x() > board_view.width() + 0.5:
+        raise AssertionError(
+            f"compact board {label} escaped horizontally: "
+            f"{top_left.x()}..{bottom_right.x()}"
+        )
+
+responsive_chips = [
+    "boardOwnerFilterChip_all",
+    "boardOwnerFilterChip_local",
+    "boardOwnerFilterChip_valkey_io",
+    "boardStateFilterChip_all",
+    "boardStateFilterChip_prs",
+    "boardStateFilterChip_issues",
+    "boardStateFilterChip_dirty",
+]
+for object_name in responsive_chips:
+    chip = find_item(board_root, object_name)
+    if chip is None:
+        raise AssertionError(f"compact board lost filter chip {object_name}")
+    top_left = chip.mapToScene(QPointF(0, 0))
+    bottom_right = chip.mapToScene(
+        QPointF(float(chip.property("width") or 0), float(chip.property("height") or 0))
+    )
+    if top_left.x() < -0.5 or bottom_right.x() > board_view.width() + 0.5:
+        raise AssertionError(
+            f"compact board clipped filter chip {object_name}: "
+            f"{top_left.x()}..{bottom_right.x()}"
+        )
+if float(filter_bar.property("height") or 0) <= 40:
+    raise AssertionError("compact board filter groups did not wrap onto another row")
+
+board_view.resize(SIZE)
+board._on_board_result({"result": client.board_payload})
+pump(app, 20)
+
 for object_name in (
     "boardOwnerFilterChip_all",
     "boardStateFilterChip_all",

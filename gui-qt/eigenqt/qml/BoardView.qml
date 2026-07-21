@@ -26,6 +26,7 @@ Rectangle {
     property string actionError: ""
     property string boardActionError: ""
     readonly property string visibleActionError: actionError !== "" ? actionError : boardActionError
+    readonly property bool compactChrome: width > 0 && width < 760
 
     // Role constants (Qt.UserRole + N, matching BoardModel Python roles)
     readonly property int dirRole: 257
@@ -396,20 +397,26 @@ Rectangle {
 
         // Header
         Rectangle {
+            id: boardHeader
+            objectName: "boardHeader"
             Layout.fillWidth: true
-            Layout.preferredHeight: 90
+            Layout.preferredHeight: root.compactChrome ? 128 : 90
             color: Theme.colors.bgBase
             border.width: 1
             border.color: Theme.colors.borderHairline
 
-            RowLayout {
+            GridLayout {
+                id: boardHeaderGrid
                 anchors.fill: parent
                 anchors.margins: Theme.space.xl
-                spacing: Theme.space.xl
+                columns: root.compactChrome ? 1 : 2
+                columnSpacing: Theme.space.xl
+                rowSpacing: Theme.space.sm
 
                 ColumnLayout {
                     spacing: Theme.space.xs
                     Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignVCenter
 
                     Label {
                         text: "Work board"
@@ -425,12 +432,18 @@ Rectangle {
                         font.pixelSize: Theme.fontSize.label
                         color: Theme.colors.textMuted
                         wrapMode: Text.WordWrap
-                        Layout.maximumWidth: 600
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: root.compactChrome ? boardHeaderGrid.width : 600
                     }
                 }
 
                 RowLayout {
+                    objectName: "boardHeaderControls"
                     spacing: Theme.space.md
+                    Layout.fillWidth: root.compactChrome
+                    Layout.alignment: root.compactChrome
+                        ? Qt.AlignLeft
+                        : (Qt.AlignRight | Qt.AlignVCenter)
 
                     // View toggle (Segmented-style)
                     Row {
@@ -521,16 +534,26 @@ Rectangle {
 
         // Filters row (only for projects view)
         Rectangle {
+            id: boardFilterBar
+            objectName: "boardFilterBar"
             visible: viewMode === "projects" && boardModel && boardRows > 0
             Layout.fillWidth: true
-            Layout.preferredHeight: visible ? 40 : 0
+            Layout.preferredHeight: visible
+                ? Math.max(40, boardFilterGroups.childrenRect.height + Theme.space.md * 2)
+                : 0
             color: Theme.colors.bgBase
 
-            RowLayout {
-                anchors.fill: parent
+            Flow {
+                id: boardFilterGroups
+                objectName: "boardFilterGroups"
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
                 anchors.leftMargin: Theme.space.xl
                 anchors.rightMargin: Theme.space.xl
+                anchors.topMargin: Theme.space.md
                 spacing: Theme.space.xl
+                height: childrenRect.height
 
                 // Owner filter chips
                 Row {
