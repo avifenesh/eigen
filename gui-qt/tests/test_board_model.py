@@ -1,9 +1,11 @@
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, Signal
 
-from eigenqt.models.board import BoardModel
+from eigenqt.models.board import BoardModel, KanbanModel
 
 
 class FakeRpcClient(QObject):
+    connected = Signal()
+
     def __init__(self, responses=None):
         super().__init__()
         self.calls = []
@@ -13,6 +15,29 @@ class FakeRpcClient(QObject):
         self.calls.append((method, args))
         if callback:
             callback(self.responses.get(method, {"result": "s-new"}))
+
+
+class StartupRpcClient(QObject):
+    connected = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.ready = False
+        self.defer = False
+        self.calls = []
+
+    def call(self, method, *args, callback=None):
+        self.calls.append((method, args))
+        if not callback:
+            return
+        if self.defer:
+            return
+        if not self.ready:
+            callback({"error": "not connected"})
+        elif method == "Board":
+            callback({"result": {"lanes": [{"name": "eigen", "items": []}]}})
+        elif method == "Kanban":
+            callback({"result": {"columns": [{"id": "todo", "cards": []}]}})
 
 
 def seed_board(model: BoardModel, pinned: bool = False):
@@ -61,3 +86,42 @@ def test_board_model_surfaces_lane_session_error_without_emitting_session():
     assert started == []
     assert model.actionError == "Could not start session: daemon offline"
 
+
+def test_board_models_retry_startup_load_when_rpc_connects():
+    client = StartupRpcClient()
+    board = BoardModel(client)
+    kanban = KanbanModel(client)
+
+    board.load()
+    kanban.load()
+
+    assert board.error == "not connected"
+    assert kanban.error == "not connected"
+    assert client.calls == [("Board", ()), ("Kanban", ())]
+
+    client.ready = True
+    client.connected.emit()
+
+    assert board.rowCount() == 1
+    assert board.error == ""
+    assert len(kanban.columns) == 1
+    assert kanban.error == ""
+    assert client.calls == [
+        ("Board", ()),
+        ("Kanban", ()),
+        ("Board", ()),
+        ("Kanban", ()),
+    ]
+
+
+def test_board_models_do_not_duplicate_in_flight_load_on_connect():
+    client = StartupRpcClient()
+    client.defer = True
+    board = BoardModel(client)
+    kanban = KanbanModel(client)
+
+    board.load()
+    kanban.load()
+    client.connected.emit()
+
+    assert client.calls == [("Board", ()), ("Kanban", ())]
