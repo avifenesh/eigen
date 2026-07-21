@@ -313,10 +313,12 @@ Rectangle {
                                         color: Theme.colors.textMuted
                                         elide: Text.ElideMiddle
                                         Layout.fillWidth: true
-                                        ToolTip.delay: 600
-                                        ToolTip.timeout: 4000
-                                        ToolTip.visible: dirHover.hovered && fullPath.length > 0 && fullPath !== text
-                                        ToolTip.text: fullPath
+                                        AppToolTip {
+                                            objectName: "sessionsDirTooltip_" + row.safeId
+                                            visible: dirHover.hovered && sessionDirLabel.fullPath.length > 0
+                                                && sessionDirLabel.fullPath !== sessionDirLabel.text
+                                            text: sessionDirLabel.fullPath
+                                        }
 
                                         HoverHandler {
                                             id: dirHover

@@ -1226,6 +1226,24 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
         print("✗ Main command palette proof did not render a clean rail launcher")
         window.hide()
         return False
+    palette_launcher.setProperty("qaShowToolTip", True)
+    QTest.qWait(30)
+    for _ in range(8):
+        app.processEvents()
+    if palette_launcher.property("qaToolTipVisible") is not True:
+        print("✗ Main shell themed tooltip did not open")
+        window.hide()
+        return False
+    output_tooltip = SCREENSHOTS / "qa-fix-main-tooltip.png"
+    image_tooltip = window.grabWindow()
+    success_tooltip = image_tooltip.save(str(output_tooltip))
+    if success_tooltip:
+        print(f"✓ Saved {output_tooltip}")
+    else:
+        print(f"✗ Failed to save {output_tooltip}")
+    palette_launcher.setProperty("qaShowToolTip", False)
+    for _ in range(4):
+        app.processEvents()
     click_item(window, palette_launcher)
     QTest.qWait(80)
     for _ in range(12):
@@ -1534,7 +1552,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
         print(f"✗ Failed to save {output_safe}")
 
     window.hide()
-    return success and success_reconnecting and success_palette and success_error and success_min and success_compact and success_compact_dropdown and success_narrow and success_safe
+    return success and success_reconnecting and success_tooltip and success_palette and success_error and success_min and success_compact and success_compact_dropdown and success_narrow and success_safe
 
 
 def main():

@@ -18,6 +18,7 @@ Button {
     property real compactIconHorizontalPadding: Theme.space.md
     property int contentAlignment: Text.AlignHCenter
     property bool qaForceKeyboardFocus: false
+    property bool qaShowToolTip: false
     readonly property bool qaIsAppButton: true
     readonly property bool qaTextFits: textContentFits(contentItem)
     readonly property string qaText: text
@@ -27,6 +28,12 @@ Button {
     readonly property real qaVerticalPadding: Math.min(topPadding, bottomPadding)
     readonly property bool showingFocus: visualFocus || activeFocus
     readonly property bool qaVisualFocus: showingFocus
+    readonly property bool qaToolTipThemed: appToolTip.qaThemed
+    readonly property color qaToolTipBackgroundColor: appToolTip.qaBackgroundColor
+    readonly property color qaToolTipTextColor: appToolTip.qaTextColor
+    readonly property real qaToolTipHorizontalPadding: appToolTip.qaHorizontalPadding
+    readonly property real qaToolTipVerticalPadding: appToolTip.qaVerticalPadding
+    readonly property bool qaToolTipVisible: appToolTip.visible
 
     implicitWidth: Math.max(32, contentItem.implicitWidth + leftPadding + rightPadding)
     implicitHeight: Math.max(compact ? 24 : 32, contentItem.implicitHeight + topPadding + bottomPadding)
@@ -37,15 +44,19 @@ Button {
     topPadding: compact ? Theme.space.xs : Theme.space.sm
     bottomPadding: compact ? Theme.space.xs : Theme.space.sm
     Accessible.name: toolTipText || text
-    ToolTip.delay: 600
-    ToolTip.timeout: 4000
-    ToolTip.visible: toolTipText !== "" && hovered
-    ToolTip.text: toolTipText
     onQaForceKeyboardFocusChanged: syncQaKeyboardFocus()
     Component.onCompleted: syncQaKeyboardFocus()
     Keys.onReturnPressed: function(event) { activateFromKey(event) }
     Keys.onEnterPressed: function(event) { activateFromKey(event) }
     Keys.onSpacePressed: function(event) { activateFromKey(event) }
+
+    AppToolTip {
+        id: appToolTip
+        objectName: control.objectName ? control.objectName + "_tooltip" : "appButtonTooltip"
+        delay: control.qaShowToolTip ? 0 : 600
+        visible: control.toolTipText !== "" && (control.hovered || control.qaShowToolTip)
+        text: control.toolTipText
+    }
 
     background: Rectangle {
         radius: control.pill ? Theme.radius.full : (control.segmentPosition === "middle" ? 0 : Theme.radius.sm)

@@ -43,6 +43,21 @@ def test_infinite_qml_animations_are_motion_gated():
     )
 
 
+def test_tooltips_use_the_shared_native_theme():
+    tooltip = (ROOT / "eigenqt" / "qml" / "AppToolTip.qml").read_text()
+    assert "Theme.colors.surfaceOverlay" in tooltip
+    assert "Theme.colors.textPrimary" in tooltip
+    assert "Theme.colors.borderStrong" in tooltip
+
+    offenders = []
+    for path in (ROOT / "eigenqt" / "qml").glob("*.qml"):
+        if path.name == "AppToolTip.qml":
+            continue
+        if re.search(r"(?<![A-Za-z0-9_])ToolTip\.", path.read_text()):
+            offenders.append(str(path.relative_to(ROOT)))
+    assert not offenders, "Default bright Qt tooltips remain in: " + ", ".join(offenders)
+
+
 def test_app_button_and_combo_keyboard_contracts():
     script = r"""
 from pathlib import Path
@@ -146,6 +161,8 @@ import "Theme.js" as Theme
         property string numberOptionText: objectCombo.optionText(42)
         property color expectedFocusBorder: Theme.colors.borderFocus
         property color expectedDangerText: Theme.colors.textPrimary
+        property color expectedTooltipBackground: Theme.colors.surfaceOverlay
+        property color expectedTooltipText: Theme.colors.textPrimary
 
     ColumnLayout {
         anchors.fill: parent
@@ -318,6 +335,38 @@ import "Theme.js" as Theme
         raise AssertionError(f"AppButton horizontal padding too small: {button.property('qaHorizontalPadding')}")
     if float(button.property("qaVerticalPadding") or 0) < 5.5:
         raise AssertionError(f"AppButton vertical padding too small: {button.property('qaVerticalPadding')}")
+    if button.property("qaToolTipThemed") is not True:
+        raise AssertionError("AppButton did not use the shared themed tooltip")
+    if button.property("qaToolTipBackgroundColor") != root.property("expectedTooltipBackground"):
+        raise AssertionError("AppButton tooltip did not use the active overlay color")
+    if button.property("qaToolTipTextColor") != root.property("expectedTooltipText"):
+        raise AssertionError("AppButton tooltip did not use the active text color")
+    if float(button.property("qaToolTipHorizontalPadding") or 0) < 11.5:
+        raise AssertionError("AppButton tooltip horizontal padding is too small")
+    if float(button.property("qaToolTipVerticalPadding") or 0) < 5.5:
+        raise AssertionError("AppButton tooltip vertical padding is too small")
+    QTest.mouseMove(root, QPoint(1, 1))
+    pump(app)
+    QTest.mouseMove(root, item_center(button))
+    pump(app)
+    if button.property("qaToolTipVisible") is True:
+        raise AssertionError("AppButton tooltip ignored its hover delay")
+    QTest.qWait(700)
+    pump(app)
+    if button.property("qaToolTipVisible") is not True:
+        raise AssertionError("AppButton tooltip did not open after hover")
+    QTest.mouseMove(root, QPoint(1, 1))
+    pump(app)
+    if button.property("qaToolTipVisible") is True:
+        raise AssertionError("AppButton tooltip did not close after hover")
+    button.setProperty("qaShowToolTip", True)
+    pump(app)
+    if button.property("qaToolTipVisible") is not True:
+        raise AssertionError("AppButton themed tooltip did not open")
+    button.setProperty("qaShowToolTip", False)
+    pump(app)
+    if button.property("qaToolTipVisible") is True:
+        raise AssertionError("AppButton themed tooltip did not close")
     if compact_action.property("qaTextFits") is not True:
         raise AssertionError("Compact AppButton text does not fit")
     if float(compact_action.property("qaHorizontalPadding") or 0) < 11.5:
@@ -417,6 +466,8 @@ import "Theme.js" as Theme
         raise AssertionError("AppComboBox did not expose keyboard focus")
     if combo.property("qaBorderColor") != root.property("expectedFocusBorder"):
         raise AssertionError("AppComboBox keyboard focus did not use the semantic focus border")
+    if combo.property("qaToolTipThemed") is not True:
+        raise AssertionError("AppComboBox did not use the shared themed tooltip")
     QTest.keyClick(root, Qt.Key_Down)
     pump(app)
     if not combo.property("qaPopupActuallyOpen") or combo.property("qaKeyboardIndex") != 1:
@@ -499,6 +550,8 @@ import "Theme.js" as Theme
         raise AssertionError("AppSwitch accessible name was not exposed")
     if not route_switch.property("qaTextFits"):
         raise AssertionError("AppSwitch reported text overflow")
+    if route_switch.property("qaToolTipThemed") is not True:
+        raise AssertionError("AppSwitch did not use the shared themed tooltip")
     QTest.keyClick(root, Qt.Key_Return)
     pump(app)
     if root.property("switchClicks") != 1 or not root.property("lastSwitchChecked") or not route_switch.property("qaChecked"):
