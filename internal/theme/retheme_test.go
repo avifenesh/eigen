@@ -16,7 +16,7 @@ func TestReThemeSwapsAllRoles(t *testing.T) {
 	}
 	// Brand rule invariant in EVERY palette: Focus/Sel must differ from the
 	// brand blues (Accent/Title) — selection/active must never be brand.
-	for _, p := range []Palette{deepTealPalette, nord, gruv} {
+	for _, p := range []Palette{studioPalette, deepTealPalette, nord, gruv} {
 		if p.Focus == p.Accent || p.Focus == p.Title {
 			t.Errorf("%s: Focus must not equal brand Accent/Title", p.Name)
 		}

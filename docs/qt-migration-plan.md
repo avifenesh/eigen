@@ -48,7 +48,7 @@ gui-qt/eigenqt/
   markdown/   markdown-it-py token walk → typed block-list model;
               QSyntaxHighlighter code fences; math via matplotlib.mathtext → SVG,
               raw-LaTeX fallback
-  qml/        Theme.qml (deepteal/nord/gruvbox by name), Rail, ~10 views at
+  qml/        Theme.js (studio/deepteal/nord/gruvbox by name), Rail, ~10 views at
               switchover (+7 trickled later), ~15 components
 ```
 

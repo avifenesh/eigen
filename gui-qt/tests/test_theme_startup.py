@@ -19,6 +19,9 @@ def test_resolve_qt_theme_reads_only_known_config_values(tmp_path):
     config.write_text(json.dumps({"theme": "nord"}))
     assert main.resolve_qt_theme(config) == "nord"
 
+    config.write_text(json.dumps({"theme": "studio"}))
+    assert main.resolve_qt_theme(config) == "studio"
+
     config.write_text(json.dumps({"theme": "unknown"}))
     assert main.resolve_qt_theme(config) == "deepteal"
 
@@ -59,6 +62,10 @@ def test_qt_theme_from_argv_keeps_helpers_on_the_qml_palette():
     ("theme", "expected"),
     [
         (
+            "studio",
+            {"background": "#f4f6f5", "brand": "#126d64", "syntax": "#f0f3f1", "focus": "#b85f32", "accent": "#74547f"},
+        ),
+        (
             "deepteal",
             {"background": "#0b0e0f", "brand": "#3e9e96", "syntax": "#11171a", "focus": "#d08c5e", "accent": "#9e7ba6"},
         ),
@@ -79,7 +86,7 @@ def test_qml_theme_uses_the_startup_palette_argument(theme, expected):
     assert {key: actual[key] for key in expected} == expected
 
 
-@pytest.mark.parametrize("theme", ["deepteal", "nord", "gruvbox"])
+@pytest.mark.parametrize("theme", ["studio", "deepteal", "nord", "gruvbox"])
 def test_qml_palettes_keep_semantic_roles_distinct_and_readable(theme):
     colors = _probe_qml_theme(theme)
 
@@ -88,6 +95,10 @@ def test_qml_palettes_keep_semantic_roles_distinct_and_readable(theme):
     assert _contrast(colors["secondary"], colors["background"]) >= 4.5
     assert _contrast(colors["muted"], colors["background"]) >= 3
     assert _contrast(colors["surface"], colors["background"]) >= 1.08
+    assert _contrast(colors["brandForeground"], colors["brand"]) >= 4.5
+    assert _contrast(colors["brandDimForeground"], colors["brandDim"]) >= 4.5
+    for state_fill in ("selectedFill", "successFill", "errorFill"):
+        assert colors[state_fill] not in {"#ff000000", "#00000000"}
     danger_fill = _composite(colors["errorBackground"], colors["surface2"])
     assert _contrast(colors["primary"], danger_fill) >= 4.5
     markdown = palette_for(theme)
@@ -121,7 +132,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QUrl
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QColor, QGuiApplication
 from PySide6.QtQml import QQmlComponent, QQmlEngine
 
 root = Path.cwd()
@@ -130,7 +141,7 @@ app = QGuiApplication(["theme-probe", f"--eigen-qt-theme={theme}"])
 engine = QQmlEngine()
 component = QQmlComponent(engine)
 qml = b"""
-import QtQml
+import QtQuick
 import "Theme.js" as Theme
 QtObject {
     property string palette: Theme.paletteName
@@ -141,6 +152,9 @@ QtObject {
     property string secondary: Theme.colors.textSecondary
     property string muted: Theme.colors.textMuted
     property string brand: Theme.colors.brand
+    property string brandDim: Theme.colors.brandDim
+    property string brandForeground: Theme.colors.brandForeground
+    property string brandDimForeground: Theme.colors.brandDimForeground
     property string syntax: Theme.colors.synBg
     property string focus: Theme.colors.focus
     property string accent: Theme.colors.accent
@@ -158,6 +172,9 @@ QtObject {
     property string syntaxBuiltin: Theme.colors.synBuiltin
     property string error: Theme.colors.error
     property string errorBackground: Theme.colors.errorBg
+    property color selectedFill: Theme.colors.stateSelected
+    property color successFill: Theme.colors.successBg
+    property color errorFill: Theme.colors.errorBg
 }
 """
 component.setData(
@@ -169,12 +186,15 @@ if obj is None:
     raise SystemExit(str(component.errors()))
 names = (
     "palette", "background", "surface", "surface2", "primary", "secondary",
-    "muted", "brand", "syntax", "focus", "accent", "inlineBackground",
+    "muted", "brand", "brandDim", "brandForeground", "brandDimForeground", "syntax", "focus", "accent", "inlineBackground",
     "inlineText", "link", "syntaxText", "syntaxKeyword", "syntaxType",
     "syntaxFunction", "syntaxString", "syntaxNumber", "syntaxComment",
     "syntaxPunctuation", "syntaxBuiltin", "error", "errorBackground",
 )
-print(json.dumps({name: obj.property(name) for name in names}))
+payload = {name: obj.property(name) for name in names}
+for name in ("selectedFill", "successFill", "errorFill"):
+    payload[name] = obj.property(name).name(QColor.HexArgb)
+print(json.dumps(payload))
 '''
     env = os.environ.copy()
     env["QT_QPA_PLATFORM"] = "offscreen"
@@ -208,8 +228,12 @@ def _rgb(value):
 
 
 def _composite(foreground, background):
-    channels = foreground.removeprefix("rgba(").removesuffix(")").split(",")
-    foreground_rgb = tuple(int(channel) / 255 for channel in channels[:3])
-    alpha = float(channels[3])
+    if foreground.startswith("#") and len(foreground) == 9:
+        alpha = int(foreground[1:3], 16) / 255
+        foreground_rgb = tuple(int(foreground[index:index + 2], 16) / 255 for index in (3, 5, 7))
+    else:
+        channels = foreground.removeprefix("rgba(").removesuffix(")").split(",")
+        foreground_rgb = tuple(int(channel) / 255 for channel in channels[:3])
+        alpha = float(channels[3])
     background_rgb = _rgb(background)
     return tuple(alpha * front + (1 - alpha) * back for front, back in zip(foreground_rgb, background_rgb))

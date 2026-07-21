@@ -154,7 +154,7 @@ Button {
                 font.weight: (control.variant === "primary" || control.selected) ? Theme.fontWeight.semibold : Theme.fontWeight.medium
                 color: {
                     if (!control.enabled) return control.variant === "primary" ? Theme.colors.textMuted : Theme.colors.textFaint
-                    if (control.variant === "primary") return Theme.colors.bgBase
+                    if (control.variant === "primary") return Theme.colors.brandForeground
                     if (control.variant === "danger") return Theme.colors.textPrimary
                     if (control.selected) return Theme.colors.focusBright
                     return Theme.colors.textSecondary

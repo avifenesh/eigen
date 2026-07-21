@@ -116,6 +116,52 @@ var deepTealPalette = Palette{
 	},
 }
 
+// studioPalette pairs the Qt desktop's daylight work surface with an adaptive
+// terminal palette. It stays neutral until semantic roles need color: mineral
+// teal for commands, clay for focus, violet for tools, and direct status hues.
+var studioPalette = Palette{
+	Name:          "studio",
+	Base:          lipgloss.AdaptiveColor{Dark: "#111416", Light: "#F4F6F5"},
+	Surface:       lipgloss.AdaptiveColor{Dark: "#1A1F22", Light: "#FFFFFF"},
+	Overlay:       lipgloss.AdaptiveColor{Dark: "#242B2E", Light: "#E2E8E5"},
+	Text:          lipgloss.AdaptiveColor{Dark: "#E7ECEA", Light: "#17211F"},
+	Dim:           lipgloss.AdaptiveColor{Dark: "#A5B0AD", Light: "#3E4D49"},
+	Faint:         lipgloss.AdaptiveColor{Dark: "#74817D", Light: "#5F6F6B"},
+	Ghost:         lipgloss.AdaptiveColor{Dark: "#56625F", Light: "#7C8985"},
+	Accent:        lipgloss.AdaptiveColor{Dark: "#63C9BD", Light: "#126D64"},
+	Title:         lipgloss.AdaptiveColor{Dark: "#8DDED5", Light: "#0D554F"},
+	Ok:            lipgloss.AdaptiveColor{Dark: "#83BC8A", Light: "#347A46"},
+	Warn:          lipgloss.AdaptiveColor{Dark: "#D5AD61", Light: "#946514"},
+	Err:           lipgloss.AdaptiveColor{Dark: "#D8796F", Light: "#AF4339"},
+	Tool:          lipgloss.AdaptiveColor{Dark: "#B69AC0", Light: "#74547F"},
+	Code:          lipgloss.AdaptiveColor{Dark: "#63C9BD", Light: "#0D7167"},
+	Link:          lipgloss.AdaptiveColor{Dark: "#78B7DB", Light: "#286B91"},
+	Heading:       lipgloss.AdaptiveColor{Dark: "#63C9BD", Light: "#126D64"},
+	Working:       lipgloss.AdaptiveColor{Dark: "#D58A5D", Light: "#A65329"},
+	Focus:         lipgloss.AdaptiveColor{Dark: "#D58A5D", Light: "#B85F32"},
+	Sel:           lipgloss.AdaptiveColor{Dark: "#D58A5D", Light: "#B85F32"},
+	OnBright:      lipgloss.AdaptiveColor{Dark: "#111416", Light: "#F4F6F5"},
+	AddBg:         lipgloss.AdaptiveColor{Dark: "#17291E", Light: "#E4F1E7"},
+	DelBg:         lipgloss.AdaptiveColor{Dark: "#301B1D", Light: "#F5E5E3"},
+	SynKeyword:    lipgloss.AdaptiveColor{Dark: "#C99DDA", Light: "#783C90"},
+	SynType:       lipgloss.AdaptiveColor{Dark: "#DEB86E", Light: "#875B0E"},
+	SynFunc:       lipgloss.AdaptiveColor{Dark: "#78B7DB", Light: "#1F668D"},
+	SynString:     lipgloss.AdaptiveColor{Dark: "#83BC8A", Light: "#356F43"},
+	SynNumber:     lipgloss.AdaptiveColor{Dark: "#E3A176", Light: "#9C4F28"},
+	SynComment:    lipgloss.AdaptiveColor{Dark: "#74817D", Light: "#697773"},
+	SynPunct:      lipgloss.AdaptiveColor{Dark: "#A5B0AD", Light: "#50605C"},
+	AccentBright:  lipgloss.AdaptiveColor{Dark: "#A7E9E1", Light: "#0D554F"},
+	FaintDim:      lipgloss.AdaptiveColor{Dark: "#46514E", Light: "#AAB4B0"},
+	WorkingDim:    lipgloss.AdaptiveColor{Dark: "#8A593D", Light: "#D49A77"},
+	WorkingBright: lipgloss.AdaptiveColor{Dark: "#EAB18D", Light: "#8F4120"},
+	Spectrum: []lipgloss.AdaptiveColor{
+		{Dark: "#63C9BD", Light: "#126D64"},
+		{Dark: "#78B7DB", Light: "#286B91"},
+		{Dark: "#B69AC0", Light: "#74547F"},
+		{Dark: "#D58A5D", Light: "#B85F32"},
+	},
+}
+
 var nordPalette = Palette{
 	Name:          "nord",
 	Base:          lipgloss.AdaptiveColor{Dark: "#1b1f27", Light: "#F0F4F8"},
@@ -194,12 +240,13 @@ var gruvboxPalette = Palette{
 // palettes is the registry of named themes (the re-theme menu).
 var palettes = map[string]Palette{
 	deepTealPalette.Name: deepTealPalette,
+	studioPalette.Name:   studioPalette,
 	nordPalette.Name:     nordPalette,
 	gruvboxPalette.Name:  gruvboxPalette,
 }
 
 // PaletteNames lists the available theme names (for config option lists / docs).
-func PaletteNames() []string { return []string{"deepteal", "nord", "gruvbox"} }
+func PaletteNames() []string { return []string{"studio", "deepteal", "nord", "gruvbox"} }
 
 // Active is the palette in force (selected at init from EIGEN_THEME, default
 // deepteal — the user-chosen luxury palette). Read-only after init.

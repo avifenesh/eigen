@@ -17,12 +17,15 @@ visual change.
 
 Qt desktop alignment: **2026-07-21.** The Qt shell uses the same role meanings
 with desktop-native elevation, input, focus-ring, and compact-layout behavior.
+Its `studio` palette adds a daylight-neutral operational surface: mineral teal
+for commands, clay for focus, violet for metadata, and direct semantic status
+colors. `deepteal` remains the fallback and the default dark palette.
 
 ## v2 at a glance (the luxury redesign)
-- **Palette = "deep teal"** (default; user-chosen): jewel petrol-teal brand
+- **Palette = "deep teal"** (default dark; user-chosen): jewel petrol-teal brand
   `#3E9E96` + warm-clay Focus `#D08C5E` on a deep base `#0B0E0F`. Rich + composed
   jewel tones, bold via presence not saturation (rejected: brass=too brown,
-  neon=too electric). nord/gruvbox remain as alternate palettes.
+  neon=too electric). `studio`, `nord`, and `gruvbox` remain alternate palettes.
 - **Elevation surfaces** (the "construction"/depth — Warp-like): `Base` (canvas)
   → `Surface` (rail, right panel, code blocks, tables) → `Overlay` (active
   session, selection, popovers). Painted via `fillBG` (internal/tui/surface.go),
@@ -206,8 +209,9 @@ Bootstrapped here; the full effort:
    the brand rule (internal/theme/swatch.go). Run it to eyeball the whole
    system / verify a re-theme.
 5. **Re-theme proof** — DONE: `theme.Palette` is the data a theme IS; named
-   palettes `nord` (default) + `gruvbox` (warm, higher-contrast) live in
-   theme.go. Select via the config `theme` key or `EIGEN_THEME=<name>`; the
+   palettes `studio` (daylight neutral), `deepteal` (default dark), `nord`
+   (calm blue), and `gruvbox` (warm, higher-contrast) live in theme.go. Select
+   via the config `theme` key or `EIGEN_THEME=<name>`; the
    role vars + every S* style + both ramps derive from the chosen palette at
    init, so it re-themes the WHOLE product with zero call-site changes. main.go
    re-execs once with EIGEN_THEME set when the config picks a non-default theme

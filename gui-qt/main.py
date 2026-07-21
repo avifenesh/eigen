@@ -52,7 +52,7 @@ from eigenqt.terminal_helper import TerminalHelper
 from eigenqt.webengine import initialize_webengine
 
 ROOT = Path(__file__).resolve().parent
-QT_THEME_NAMES = {"deepteal", "nord", "gruvbox"}
+QT_THEME_NAMES = {"deepteal", "studio", "nord", "gruvbox"}
 
 
 class UiSettings(QObject):

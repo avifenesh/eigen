@@ -38,7 +38,7 @@ type Config struct {
 	// in the TUI (alt+q) + /steer //queue.
 	InputMode  string `json:"input_mode,omitempty"`
 	Effort     string `json:"effort"`    // default reasoning effort for new sessions (per-model levels; e.g. max)
-	Theme      string `json:"theme"`     // named color palette (nord|gruvbox); applied at startup via EIGEN_THEME
+	Theme      string `json:"theme"`     // named color palette; applied at startup via EIGEN_THEME
 	NerdFont   string `json:"nerd_font"` // on|off icon tier (Nerd Font glyphs vs Unicode fallback); applied via EIGEN_NERD_FONT
 	MaxTokens  int    `json:"max_tokens"`
 	TTSCmd     string `json:"tts_cmd"`

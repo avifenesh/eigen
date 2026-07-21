@@ -27,7 +27,7 @@ gui-qt/
     models/     TranscriptModel (16ms delta coalescing, per-row dataChanged),
                 SessionsModel, FeedModel, TasksModel, BoardModel, etc.
     markdown/   markdown-it-py walk → typed block-list; QSyntaxHighlighter
-    qml/        Theme.qml (deepteal/nord/gruvbox), Rail, 12 views, ~15 components
+    qml/        Theme.js (studio/deepteal/nord/gruvbox), Rail, views, shared controls
   main.py       Qt app entry (QGuiApplication, QQmlApplicationEngine, theme init)
   run.sh        Launcher: bootstrap venv + pip install -r requirements.txt, exec main.py
   requirements.txt  PySide6, pytest, markdown-it-py, pygments
