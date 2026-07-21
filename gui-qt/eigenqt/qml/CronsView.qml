@@ -3,22 +3,84 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import "Theme.js" as Theme
 
-// Crons view - read-only scheduled work snapshot.
+// Crons view - scheduled work inventory and guarded native controls.
 Rectangle {
     id: root
     objectName: "cronsView"
     color: Theme.colors.bgBase
 
     property var cronsModel: null
+    property bool addJobOpen: false
+    property string addSpec: ""
+    property string addCommand: ""
+    property string confirmingKey: ""
     readonly property var crons: cronsModel ? cronsModel.crons || [] : []
     readonly property var timers: timerRows()
     readonly property var crontab: crontabRows()
+    readonly property var pendingActions: cronsModel ? cronsModel.pending_actions || [] : []
     readonly property int qaTimerCount: timers.length
     readonly property int qaCrontabCount: crontab.length
+    readonly property bool compact: width < 720
 
     onCronsModelChanged: syncActiveModel()
-    onVisibleChanged: syncActiveModel()
+    onVisibleChanged: {
+        if (!visible) confirmingKey = ""
+        syncActiveModel()
+    }
     Component.onCompleted: syncActiveModel()
+
+    Connections {
+        target: root.cronsModel
+
+        function onJobAdded() {
+            root.addSpec = ""
+            root.addCommand = ""
+            root.addJobOpen = false
+        }
+    }
+
+    component FeedbackBanner: Rectangle {
+        id: banner
+        property string tone: "success"
+        property string message: ""
+        property string textObjectName: ""
+        property string buttonObjectName: ""
+        signal dismissed()
+
+        Layout.fillWidth: true
+        Layout.preferredHeight: visible ? Math.max(42, bannerText.implicitHeight + Theme.space.lg) : 0
+        color: tone === "error" ? Theme.colors.errorBg : Theme.colors.successBg
+        border.width: visible ? 1 : 0
+        border.color: tone === "error" ? Theme.colors.error : Theme.colors.success
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: Theme.space.xl
+            anchors.rightMargin: Theme.space.xl
+            spacing: Theme.space.md
+
+            Label {
+                id: bannerText
+                objectName: banner.textObjectName
+                text: banner.message
+                font.family: Theme.uiFonts[0]
+                font.pixelSize: Theme.fontSize.bodySm
+                color: banner.tone === "error" ? Theme.colors.error : Theme.colors.textPrimary
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+
+            AppButton {
+                objectName: banner.buttonObjectName
+                text: "X"
+                compact: true
+                toolTipText: "Dismiss message"
+                Layout.preferredWidth: 28
+                Layout.preferredHeight: 28
+                onClicked: banner.dismissed()
+            }
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -74,6 +136,26 @@ Rectangle {
             }
         }
 
+        FeedbackBanner {
+            objectName: "cronsActionError"
+            visible: root.cronsModel && root.cronsModel.action_error !== ""
+            tone: "error"
+            message: root.cronsModel ? root.cronsModel.action_error : ""
+            textObjectName: "cronsActionErrorText"
+            buttonObjectName: "cronsActionErrorDismissButton"
+            onDismissed: if (root.cronsModel) root.cronsModel.clear_action_error()
+        }
+
+        FeedbackBanner {
+            objectName: "cronsActionMessage"
+            visible: root.cronsModel && root.cronsModel.action_message !== ""
+            tone: "success"
+            message: root.cronsModel ? root.cronsModel.action_message : ""
+            textObjectName: "cronsActionMessageText"
+            buttonObjectName: "cronsActionMessageDismissButton"
+            onDismissed: if (root.cronsModel) root.cronsModel.clear_action_message()
+        }
+
         Flickable {
             id: cronsFlick
             objectName: "cronsFlick"
@@ -90,6 +172,208 @@ Rectangle {
                 spacing: Theme.space.lg
 
                 Item { Layout.preferredHeight: Theme.space.xl }
+
+                RowLayout {
+                    visible: !root.addJobOpen
+                    Layout.fillWidth: true
+                    spacing: Theme.space.md
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+
+                        Label {
+                            text: "Automate a command"
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.bodySm
+                            font.weight: Theme.fontWeight.semibold
+                            color: Theme.colors.textPrimary
+                        }
+
+                        Label {
+                            text: "Create a crontab entry without leaving Eigen."
+                            font.family: Theme.uiFonts[0]
+                            font.pixelSize: Theme.fontSize.label
+                            color: Theme.colors.textMuted
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    AppButton {
+                        objectName: "cronsScheduleJobButton"
+                        text: "Schedule job"
+                        variant: "primary"
+                        compact: true
+                        toolTipText: "Create a crontab job"
+                        onClicked: {
+                            root.confirmingKey = ""
+                            root.addJobOpen = true
+                        }
+                    }
+                }
+
+                Rectangle {
+                    objectName: "cronsAddPanel"
+                    visible: root.addJobOpen
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    Layout.preferredHeight: visible ? addJobColumn.implicitHeight + Theme.space.xxl * 2 : 0
+                    radius: Theme.radius.sm
+                    color: Theme.colors.bgInset
+                    border.width: 1
+                    border.color: Theme.colors.borderSubtle
+
+                    ColumnLayout {
+                        id: addJobColumn
+                        anchors.fill: parent
+                        anchors.margins: Theme.space.xxl
+                        spacing: Theme.space.lg
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.space.md
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                spacing: 2
+
+                                Label {
+                                    text: "Schedule a command"
+                                    font.family: Theme.uiFonts[0]
+                                    font.pixelSize: Theme.fontSize.body
+                                    font.weight: Theme.fontWeight.semibold
+                                    color: Theme.colors.textPrimary
+                                }
+
+                                Label {
+                                    text: "The schedule is validated by the system bridge before your crontab changes."
+                                    font.family: Theme.uiFonts[0]
+                                    font.pixelSize: Theme.fontSize.label
+                                    color: Theme.colors.textMuted
+                                    wrapMode: Text.Wrap
+                                    Layout.fillWidth: true
+                                }
+                            }
+
+                            AppButton {
+                                objectName: "cronsAddCloseButton"
+                                text: "X"
+                                compact: true
+                                toolTipText: "Close schedule form"
+                                enabled: root.cronsModel && !root.cronsModel.adding_job
+                                Layout.preferredWidth: 30
+                                Layout.preferredHeight: 30
+                                onClicked: root.addJobOpen = false
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            spacing: Theme.space.sm
+
+                            Label {
+                                text: "Schedule"
+                                font.family: Theme.uiFonts[0]
+                                font.pixelSize: Theme.fontSize.micro
+                                font.weight: Theme.fontWeight.semibold
+                                font.capitalization: Font.AllUppercase
+                                color: Theme.colors.textFaint
+                            }
+
+                            AppTextField {
+                                objectName: "cronsScheduleInput"
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                placeholderText: "@daily or 0 9 * * 1-5"
+                                text: root.addSpec
+                                enabled: root.cronsModel && !root.cronsModel.adding_job
+                                onTextChanged: if (root.addSpec !== text) root.addSpec = text
+                            }
+
+                            Flow {
+                                id: presetFlow
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                Layout.preferredHeight: childrenRect.height
+                                spacing: Theme.space.sm
+
+                                Repeater {
+                                    model: [
+                                        {"label": "Every hour", "spec": "@hourly", "key": "hourly"},
+                                        {"label": "Every day 9am", "spec": "0 9 * * *", "key": "daily"},
+                                        {"label": "Weekdays 9am", "spec": "0 9 * * 1-5", "key": "weekdays"},
+                                        {"label": "Weekly Monday", "spec": "0 9 * * 1", "key": "weekly"}
+                                    ]
+
+                                    delegate: AppButton {
+                                        required property var modelData
+                                        objectName: "cronsPreset_" + modelData.key
+                                        text: modelData.label
+                                        compact: true
+                                        pill: true
+                                        variant: "ghost"
+                                        selected: root.addSpec === modelData.spec
+                                        enabled: root.cronsModel && !root.cronsModel.adding_job
+                                        onClicked: root.addSpec = modelData.spec
+                                    }
+                                }
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            spacing: Theme.space.sm
+
+                            Label {
+                                text: "Command"
+                                font.family: Theme.uiFonts[0]
+                                font.pixelSize: Theme.fontSize.micro
+                                font.weight: Theme.fontWeight.semibold
+                                font.capitalization: Font.AllUppercase
+                                color: Theme.colors.textFaint
+                            }
+
+                            AppTextField {
+                                objectName: "cronsCommandInput"
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                placeholderText: "eigen run ... or notify-send 'standup'"
+                                text: root.addCommand
+                                enabled: root.cronsModel && !root.cronsModel.adding_job
+                                onTextChanged: if (root.addCommand !== text) root.addCommand = text
+                                onAccepted: root.submitJob()
+                            }
+                        }
+
+                        Flow {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.preferredHeight: childrenRect.height
+                            spacing: Theme.space.sm
+
+                            AppButton {
+                                objectName: "cronsAddJobButton"
+                                text: root.cronsModel && root.cronsModel.adding_job ? "Adding..." : "Add job"
+                                variant: "primary"
+                                enabled: root.cronsModel && !root.cronsModel.adding_job
+                                    && root.addSpec.trim() !== "" && root.addCommand.trim() !== ""
+                                onClicked: root.submitJob()
+                            }
+
+                            AppButton {
+                                objectName: "cronsAddCancelButton"
+                                text: "Cancel"
+                                variant: "ghost"
+                                enabled: root.cronsModel && !root.cronsModel.adding_job
+                                onClicked: root.addJobOpen = false
+                            }
+                        }
+                    }
+                }
 
                 Rectangle {
                     visible: root.cronsModel && root.cronsModel.loading && root.crons.length === 0
@@ -162,7 +446,8 @@ Rectangle {
                 }
 
                 Rectangle {
-                    visible: root.cronsModel && !root.cronsModel.loading && root.cronsModel.load_error === "" && root.crons.length === 0
+                    visible: root.cronsModel && !root.cronsModel.loading && root.cronsModel.load_error === ""
+                        && root.crons.length === 0 && !root.addJobOpen
                     Layout.fillWidth: true
                     Layout.preferredHeight: visible ? 132 : 0
                     radius: Theme.radius.md
@@ -229,11 +514,15 @@ Rectangle {
                         delegate: Rectangle {
                             id: timerRow
                             readonly property var cron: modelData || ({})
+                            readonly property string timerKey: "timer:" + String(cron.unit || "")
+                            readonly property bool pending: root.pendingActions.indexOf(timerKey) >= 0
                             readonly property bool lead: index === 0 && cron.active && !root.isEmptyWhen(cron.next || "")
-                            readonly property bool qaTextFits: !timerWhenLabel.truncated && !timerNameLabel.truncated && !timerCommandLabel.truncated && !timerLastLabel.truncated
+                            readonly property bool qaTextFits: !timerWhenLabel.truncated && !timerNameLabel.truncated
+                                && !timerCommandLabel.truncated && !timerLastLabel.truncated
+                                && timerRunButton.qaTextFits && timerEnableButton.qaTextFits
                             objectName: "cronsTimerRow_" + root.safeObjectName(cron.unit || cron.name || index)
                             Layout.fillWidth: true
-                            implicitHeight: Math.max(82, timerRowLayout.implicitHeight + Theme.space.lg)
+                            implicitHeight: Math.max(82, timerRowLayout.implicitHeight + Theme.space.xxl)
                             radius: Theme.radius.md
                             color: lead ? Theme.colors.stateSelected : Theme.colors.surfaceRaised
                             border.width: 1
@@ -249,15 +538,18 @@ Rectangle {
                                 color: Theme.colors.brandBright
                             }
 
-                            RowLayout {
+                            GridLayout {
                                 id: timerRowLayout
                                 anchors.fill: parent
                                 anchors.margins: Theme.space.lg
-                                spacing: Theme.space.lg
+                                rowSpacing: Theme.space.lg
+                                columnSpacing: Theme.space.lg
+                                columns: root.compact ? 1 : 3
 
                                 ColumnLayout {
-                                    Layout.preferredWidth: 88
-                                    Layout.minimumWidth: 88
+                                    Layout.preferredWidth: root.compact ? -1 : 88
+                                    Layout.minimumWidth: root.compact ? 0 : 88
+                                    Layout.fillWidth: root.compact
                                     spacing: 2
 
                                     Label {
@@ -346,6 +638,41 @@ Rectangle {
                                         Layout.fillWidth: true
                                     }
                                 }
+
+                                Flow {
+                                    Layout.fillWidth: root.compact
+                                    Layout.preferredWidth: root.compact ? -1 : 176
+                                    Layout.preferredHeight: childrenRect.height
+                                    spacing: Theme.space.sm
+
+                                    AppButton {
+                                        id: timerRunButton
+                                        objectName: "cronsTimerRunButton_" + root.safeObjectName(cron.unit || index)
+                                        text: timerRow.pending ? "Applying..." : (cron.active ? "Stop" : "Start")
+                                        variant: cron.active ? "secondary" : "primary"
+                                        compact: true
+                                        enabled: root.cronsModel && !timerRow.pending
+                                        toolTipText: (cron.active ? "Stop " : "Start ") + String(cron.name || cron.unit || "timer")
+                                        onClicked: if (root.cronsModel) {
+                                            root.confirmingKey = ""
+                                            root.cronsModel.set_timer(cron.unit || "", cron.active ? "stop" : "start")
+                                        }
+                                    }
+
+                                    AppButton {
+                                        id: timerEnableButton
+                                        objectName: "cronsTimerEnableButton_" + root.safeObjectName(cron.unit || index)
+                                        text: cron.enabled ? "Disable" : "Enable"
+                                        variant: "ghost"
+                                        compact: true
+                                        enabled: root.cronsModel && !timerRow.pending
+                                        toolTipText: (cron.enabled ? "Disable " : "Enable ") + String(cron.name || cron.unit || "timer")
+                                        onClicked: if (root.cronsModel) {
+                                            root.confirmingKey = ""
+                                            root.cronsModel.set_timer(cron.unit || "", cron.enabled ? "disable" : "enable")
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -390,24 +717,32 @@ Rectangle {
                         delegate: Rectangle {
                             id: tabRow
                             readonly property var cron: modelData || ({})
-                            readonly property bool qaTextFits: !tabCadenceLabel.truncated && tabSpecTag.qaTextFits && !tabCommandLabel.truncated
+                            readonly property string resourceKey: root.crontabKey(cron.next || "", cron.command || "")
+                            readonly property bool pending: root.pendingActions.indexOf(resourceKey) >= 0
+                            readonly property bool confirming: root.confirmingKey === resourceKey
+                            readonly property bool qaTextFits: !tabCadenceLabel.truncated && tabSpecTag.qaTextFits
+                                && !tabCommandLabel.truncated && tabRemoveButton.qaTextFits
+                                && (!tabConfirmButton.visible || tabConfirmButton.qaTextFits)
                             objectName: "cronsTabRow_" + root.safeObjectName(cron.next + "_" + cron.command || index)
                             Layout.fillWidth: true
-                            implicitHeight: Math.max(64, tabRowLayout.implicitHeight + Theme.space.lg)
+                            implicitHeight: Math.max(64, tabRowLayout.implicitHeight + Theme.space.xxl)
                             radius: Theme.radius.md
                             color: Theme.colors.surfaceRaised
                             border.width: 1
                             border.color: Theme.colors.borderHairline
 
-                            RowLayout {
+                            GridLayout {
                                 id: tabRowLayout
                                 anchors.fill: parent
                                 anchors.margins: Theme.space.lg
-                                spacing: Theme.space.lg
+                                rowSpacing: Theme.space.lg
+                                columnSpacing: Theme.space.lg
+                                columns: root.compact ? 1 : 3
 
                                 ColumnLayout {
-                                    Layout.preferredWidth: 170
-                                    Layout.minimumWidth: 150
+                                    Layout.preferredWidth: root.compact ? -1 : 170
+                                    Layout.minimumWidth: root.compact ? 0 : 150
+                                    Layout.fillWidth: root.compact
                                     spacing: Theme.space.xs
 
                                     Label {
@@ -442,6 +777,47 @@ Rectangle {
                                     wrapMode: Text.WrapAnywhere
                                     Layout.fillWidth: true
                                 }
+
+                                Flow {
+                                    Layout.fillWidth: root.compact
+                                    Layout.preferredWidth: root.compact ? -1 : 250
+                                    Layout.preferredHeight: childrenRect.height
+                                    spacing: Theme.space.sm
+
+                                    Label {
+                                        visible: tabRow.confirming
+                                        height: 28
+                                        verticalAlignment: Text.AlignVCenter
+                                        text: "Remove this job?"
+                                        font.family: Theme.uiFonts[0]
+                                        font.pixelSize: Theme.fontSize.micro
+                                        color: Theme.colors.textMuted
+                                    }
+
+                                    AppButton {
+                                        id: tabConfirmButton
+                                        objectName: "cronsRemoveConfirm_" + root.safeObjectName(resourceKey)
+                                        visible: tabRow.confirming
+                                        text: tabRow.pending ? "Removing..." : "Confirm"
+                                        variant: "danger"
+                                        compact: true
+                                        enabled: root.cronsModel && !tabRow.pending
+                                        onClicked: if (root.cronsModel) {
+                                            root.cronsModel.remove_crontab(cron.next || "", cron.command || "")
+                                            root.confirmingKey = ""
+                                        }
+                                    }
+
+                                    AppButton {
+                                        id: tabRemoveButton
+                                        objectName: "cronsRemoveButton_" + root.safeObjectName(resourceKey)
+                                        text: tabRow.pending ? "Removing..." : (tabRow.confirming ? "Cancel" : "Remove")
+                                        variant: tabRow.confirming ? "secondary" : "ghost"
+                                        compact: true
+                                        enabled: root.cronsModel && !tabRow.pending
+                                        onClicked: root.confirmingKey = tabRow.confirming ? "" : tabRow.resourceKey
+                                    }
+                                }
                             }
                         }
                     }
@@ -456,6 +832,16 @@ Rectangle {
         if (root.cronsModel && root.cronsModel.set_active) {
             root.cronsModel.set_active(activeOverride === undefined ? root.visible : activeOverride)
         }
+    }
+
+    function submitJob() {
+        if (!root.cronsModel || root.cronsModel.adding_job) return
+        root.confirmingKey = ""
+        root.cronsModel.add_crontab(root.addSpec, root.addCommand)
+    }
+
+    function crontabKey(spec, command) {
+        return "crontab:" + String(spec || "").trim() + "\n" + String(command || "").trim()
     }
 
     function timerRows() {

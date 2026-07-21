@@ -3638,6 +3638,77 @@ def main():
 
     ok = capture_view("crons", "CronsView.qml", setup_crons, show_crons) and ok
 
+    def show_crons_add(_view, root):
+        root.setProperty("addJobOpen", True)
+        root.setProperty("addSpec", "0 9 * * 1-5")
+        root.setProperty("addCommand", "eigen run standup")
+        for _ in range(12):
+            app.processEvents()
+        # The compact Flow settles on the next rendered frame after opening.
+        QTest.qWait(80)
+        app.processEvents()
+        for object_name in (
+            "cronsAddPanel",
+            "cronsScheduleInput",
+            "cronsCommandInput",
+            "cronsAddJobButton",
+            "cronsAddCancelButton",
+        ):
+            item = find_visible_item(root, object_name)
+            if item is None:
+                raise AssertionError(f"crons add screenshot did not render {object_name}")
+            if item.property("qaTextFits") is not None and item.property("qaTextFits") is not True:
+                raise AssertionError(f"crons add screenshot clipped {object_name}")
+            if scene_right(item) > float(root.property("width") or 0) + 0.5:
+                raise AssertionError(f"crons add screenshot pushed {object_name} outside the view")
+
+    ok = capture_view("crons-add", "CronsView.qml", setup_crons, show_crons_add) and ok
+    ok = capture_view(
+        "crons-add-narrow",
+        "CronsView.qml",
+        setup_crons,
+        show_crons_add,
+        width=430,
+        height=820,
+    ) and ok
+
+    def show_crons_timer_pending(_view, root):
+        model = root.property("cronsModel")
+        model._pending_actions.add("timer:eigen-dream.timer")
+        model.pending_actions_changed.emit()
+        for _ in range(8):
+            app.processEvents()
+        button = find_visible_item(root, "cronsTimerRunButton_eigen_dream_timer")
+        if button is None or button.property("qaText") != "Applying..." or button.property("enabled") is not False:
+            raise AssertionError("crons timer pending state was not visible and guarded")
+
+    ok = capture_view("crons-timer-pending", "CronsView.qml", setup_crons, show_crons_timer_pending) and ok
+
+    def show_crons_remove_confirm(_view, root):
+        root.setProperty("confirmingKey", "crontab:0 9 * * *\neigen run daily")
+        for _ in range(8):
+            app.processEvents()
+        confirm = find_visible_item(root, "cronsRemoveConfirm_crontab_0_9_______eigen_run_daily")
+        cancel = find_visible_item(root, "cronsRemoveButton_crontab_0_9_______eigen_run_daily")
+        if confirm is None or cancel is None:
+            raise AssertionError("crons remove confirmation controls did not render")
+        if confirm.property("qaTextFits") is not True or cancel.property("qaTextFits") is not True:
+            raise AssertionError("crons remove confirmation controls clipped text")
+
+    ok = capture_view("crons-remove-confirm", "CronsView.qml", setup_crons, show_crons_remove_confirm) and ok
+
+    def show_crons_action_error(_view, root):
+        model = root.property("cronsModel")
+        model._set_action_error("systemctl denied")
+        for _ in range(8):
+            app.processEvents()
+        error = find_visible_item(root, "cronsActionError")
+        text = find_visible_item(root, "cronsActionErrorText")
+        if error is None or text is None or "systemctl denied" not in text.property("text"):
+            raise AssertionError("crons action error did not render")
+
+    ok = capture_view("crons-action-error", "CronsView.qml", setup_crons, show_crons_action_error) and ok
+
     def show_crons_load_error(_view, root):
         model = root.property("cronsModel")
         model._crons = []
