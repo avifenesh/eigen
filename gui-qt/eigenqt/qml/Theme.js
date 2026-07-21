@@ -1,85 +1,89 @@
 .pragma library
 
-// Eigen design tokens — restrained graphite structure with high-signal accents.
-// The saved theme is passed by main.py before QML loads, so it applies at app
-// startup just like the TUI and legacy GUI. Geometry stays shared across themes.
+// Eigen design tokens. The default Qt palette follows the product's deep-teal
+// roles: petrol-teal is structural brand, warm clay is focus/selection, and
+// violet is tool metadata. The saved theme is resolved before QML loads.
 
 var colors = {
-    bgWell: "#0d1014",
-    bgBase: "#15191e",
-    surfaceRaised: "#1d232a",
-    surfaceRaised2: "#252d35",
-    surfaceOverlay: "#303a44",
-    bgInset: "#11161b",
+    bgWell: "#101619",
+    bgBase: "#0b0e0f",
+    surfaceRaised: "#151d20",
+    surfaceRaised2: "#1d282c",
+    surfaceOverlay: "#243136",
+    bgInset: "#080b0c",
 
-    stateHover: "rgba(255,255,255,0.075)",
-    stateActive: "rgba(91,214,194,0.18)",
-    stateSelected: "rgba(91,214,194,0.16)",
+    stateHover: "rgba(221,228,227,0.07)",
+    stateActive: "rgba(62,158,150,0.18)",
+    stateSelected: "rgba(208,140,94,0.16)",
 
-    borderHairline: "rgba(233,240,238,0.11)",
-    borderSubtle: "rgba(233,240,238,0.18)",
-    borderStrong: "rgba(233,240,238,0.3)",
-    borderBrand: "rgba(91,214,194,0.68)",
-    divider: "rgba(233,240,238,0.12)",
+    borderHairline: "rgba(221,228,227,0.13)",
+    borderSubtle: "rgba(221,228,227,0.21)",
+    borderStrong: "rgba(221,228,227,0.34)",
+    borderBrand: "rgba(105,194,184,0.72)",
+    borderFocus: "rgba(208,140,94,0.72)",
+    divider: "rgba(221,228,227,0.13)",
 
-    textPrimary: "#f1f5f4",
-    textSecondary: "#c0cac7",
-    textMuted: "#8d9996",
-    textGhost: "#65716f",
+    textPrimary: "#dde4e3",
+    textSecondary: "#aab6b3",
+    textMuted: "#8d9b98",
+    textGhost: "#74817e",
 
-    brand: "#5bd6c2",
-    brandStrong: "#2aa892",
-    brandBright: "#a7f2e6",
-    brandDim: "#236f63",
+    brand: "#3e9e96",
+    brandStrong: "#347f79",
+    brandBright: "#69c2b8",
+    brandDim: "#2a6e68",
 
-    accent: "#8bb9ff",
-    accentBg: "rgba(139,185,255,0.14)",
-    borderAccentFaint: "rgba(139,185,255,0.32)",
+    focus: "#d08c5e",
+    focusBright: "#e8a878",
 
-    success: "#a6da7a",
-    successBg: "rgba(166,218,122,0.14)",
-    warn: "#f2b867",
-    info: "#8bb9ff",
-    warnBg: "rgba(242,184,103,0.14)",
-    error: "#ff9382",
-    errorBg: "rgba(255,147,130,0.14)",
-    working: "#e9a978",
-    workingBg: "rgba(233,169,120,0.14)",
+    accent: "#9e7ba6",
+    accentBg: "rgba(158,123,166,0.15)",
+    borderAccentFaint: "rgba(158,123,166,0.4)",
+
+    success: "#7ba86b",
+    successBg: "rgba(123,168,107,0.15)",
+    warn: "#c9a24b",
+    info: "#6fb7e8",
+    warnBg: "rgba(201,162,75,0.15)",
+    error: "#c06a5e",
+    errorBg: "rgba(192,106,94,0.16)",
+    working: "#d08c5e",
+    workingBg: "rgba(208,140,94,0.16)",
 
     // Status dots
-    dotWorking: "#5bd6c2",  // brand mint, breathes
-    dotLive: "#5bd6c2",     // static mint
-    dotIdle: "#8d9996",     // textMuted
-    dotOk: "#a6da7a",       // success
-    dotWarn: "#f2b867",     // warn
-    dotError: "#ff9382",    // error
+    dotWorking: "#d08c5e",
+    dotLive: "#3e9e96",
+    dotIdle: "#74817e",
+    dotOk: "#7ba86b",
+    dotWarn: "#c9a24b",
+    dotError: "#c06a5e",
 
     // Diff colors (from tokens.css --diff-*)
-    diffAddBg: "rgba(33,61,43,0.88)",
-    diffAddGutter: "#75be79",
-    diffDelBg: "rgba(82,37,40,0.88)",
-    diffDelGutter: "#e58074",
+    diffAddBg: "#10261c",
+    diffAddGutter: "#7ba86b",
+    diffDelBg: "#2a1517",
+    diffDelGutter: "#c06a5e",
 
     // Syntax highlighting (code surfaces)
-    synBg: "#11161b",
-    synText: "#d5dfdc",
-    synKeyword: "#d6a2ed",
-    synType: "#f2b867",
-    synFunc: "#8bb9ff",
-    synString: "#a6da7a",
-    synNumber: "#efa979",
+    synBg: "#11171a",
+    synText: "#dde4e3",
+    synKeyword: "#c58fd8",
+    synType: "#e0b36a",
+    synFunc: "#6fb7e8",
+    synString: "#8fc98a",
+    synNumber: "#e8a878",
     synComment: "#71807c",
-    synPunct: "#acbbb7",
-    synBuiltin: "#5bd6c2",
+    synPunct: "#9ab0ac",
+    synBuiltin: "#69c2b8",
 
     // Additional tokens
-    bgRaised: "#1d232a",
-    bgRaised2: "#252d35",
-    bgOverlay: "#303a44",
-    borderBrandFaint: "rgba(91,214,194,0.34)",
-    stateFocusBg: "rgba(91,214,194,0.12)",
-    textFaint: "#56615f",
-    brandBg: "rgba(91,214,194,0.16)"
+    bgRaised: "#151d20",
+    bgRaised2: "#1d282c",
+    bgOverlay: "#243136",
+    borderBrandFaint: "rgba(105,194,184,0.38)",
+    stateFocusBg: "rgba(208,140,94,0.12)",
+    textFaint: "#5d6966",
+    brandBg: "rgba(62,158,150,0.17)"
 }
 
 var paletteName = startupPaletteName()
@@ -106,13 +110,14 @@ function applyNordPalette() {
     colors.bgInset = "#171b22"
     colors.stateHover = "rgba(255,255,255,0.04)"
     colors.stateActive = "rgba(255,255,255,0.07)"
-    colors.stateSelected = "rgba(129,161,193,0.12)"
-    colors.stateFocusBg = "rgba(129,161,193,0.08)"
+    colors.stateSelected = "rgba(209,160,176,0.14)"
+    colors.stateFocusBg = "rgba(209,160,176,0.1)"
     colors.borderHairline = "rgba(216,222,233,0.08)"
     colors.borderSubtle = "rgba(216,222,233,0.12)"
     colors.borderStrong = "rgba(216,222,233,0.2)"
     colors.borderBrand = "rgba(129,161,193,0.55)"
     colors.borderBrandFaint = "rgba(129,161,193,0.24)"
+    colors.borderFocus = "rgba(209,160,176,0.62)"
     colors.divider = "rgba(216,222,233,0.07)"
     colors.textPrimary = "#d8dee9"
     colors.textSecondary = "#9aa5b8"
@@ -124,9 +129,11 @@ function applyNordPalette() {
     colors.brandBright = "#b3c4d8"
     colors.brandDim = "#4c6a8a"
     colors.brandBg = "rgba(129,161,193,0.12)"
-    colors.accent = "#88c0d0"
-    colors.accentBg = "rgba(136,192,208,0.12)"
-    colors.borderAccentFaint = "rgba(136,192,208,0.28)"
+    colors.focus = "#d1a0b0"
+    colors.focusBright = "#edc3d0"
+    colors.accent = "#b48ead"
+    colors.accentBg = "rgba(180,142,173,0.14)"
+    colors.borderAccentFaint = "rgba(180,142,173,0.34)"
     colors.success = "#a3be8c"
     colors.successBg = "rgba(163,190,140,0.12)"
     colors.warn = "#ebcb8b"
@@ -170,13 +177,14 @@ function applyGruvboxPalette() {
     colors.bgInset = "#1d2021"
     colors.stateHover = "rgba(255,255,255,0.04)"
     colors.stateActive = "rgba(255,255,255,0.07)"
-    colors.stateSelected = "rgba(131,165,152,0.13)"
-    colors.stateFocusBg = "rgba(131,165,152,0.08)"
+    colors.stateSelected = "rgba(211,134,155,0.15)"
+    colors.stateFocusBg = "rgba(211,134,155,0.1)"
     colors.borderHairline = "rgba(235,219,178,0.08)"
     colors.borderSubtle = "rgba(235,219,178,0.12)"
     colors.borderStrong = "rgba(235,219,178,0.2)"
     colors.borderBrand = "rgba(131,165,152,0.55)"
     colors.borderBrandFaint = "rgba(131,165,152,0.24)"
+    colors.borderFocus = "rgba(211,134,155,0.62)"
     colors.divider = "rgba(235,219,178,0.07)"
     colors.textPrimary = "#ebdbb2"
     colors.textSecondary = "#a89984"
@@ -188,9 +196,11 @@ function applyGruvboxPalette() {
     colors.brandBright = "#bdddd0"
     colors.brandDim = "#427b58"
     colors.brandBg = "rgba(131,165,152,0.13)"
-    colors.accent = "#8ec07c"
-    colors.accentBg = "rgba(142,192,124,0.12)"
-    colors.borderAccentFaint = "rgba(142,192,124,0.28)"
+    colors.focus = "#d3869b"
+    colors.focusBright = "#e9a9bd"
+    colors.accent = "#b16286"
+    colors.accentBg = "rgba(177,98,134,0.16)"
+    colors.borderAccentFaint = "rgba(177,98,134,0.38)"
     colors.success = "#b8bb26"
     colors.successBg = "rgba(184,187,38,0.12)"
     colors.warn = "#fabd2f"
@@ -259,12 +269,12 @@ var radius = {
 var rSm = 5
 
 var fontSize = {
-    display: 28,
-    h1: 22,
-    h2: 18,
+    display: 30,
+    h1: 24,
+    h2: 19,
     h3: 15,
-    body: 13,     // fsBody
-    bodySm: 12,   // fsBodySm
+    body: 14,     // fsBody
+    bodySm: 13,   // fsBodySm
     label: 12,    // fsLabel
     micro: 11,
     code: 13,     // fsCode

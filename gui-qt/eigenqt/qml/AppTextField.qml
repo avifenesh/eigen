@@ -5,9 +5,9 @@ import "Theme.js" as Theme
 TextField {
     id: control
 
-    property color backgroundColor: Theme.colors.bgRaised
+    property color backgroundColor: Theme.colors.bgInset
     property color borderColor: Theme.colors.borderSubtle
-    property color focusBorderColor: Theme.colors.borderBrandFaint
+    property color focusBorderColor: Theme.colors.borderFocus
     property real normalBorderWidth: 1
     property real focusedBorderWidth: 1
     property real backgroundRadius: Theme.radius.sm

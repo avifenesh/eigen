@@ -144,6 +144,8 @@ import "Theme.js" as Theme
         property string missingOptionText: objectCombo.optionText({})
         property string nullOptionText: objectCombo.optionText(null)
         property string numberOptionText: objectCombo.optionText(42)
+        property color expectedFocusBorder: Theme.colors.borderFocus
+        property color expectedDangerText: Theme.colors.textPrimary
 
     ColumnLayout {
         anchors.fill: parent
@@ -266,6 +268,14 @@ import "Theme.js" as Theme
             compact: true
             toolTipText: "Dismiss"
         }
+
+        AppButton {
+            objectName: "dangerAction"
+            x: 280
+            y: 356
+            text: "Remove"
+            variant: "danger"
+        }
     }
 ''',
         QUrl.fromLocalFile(str(ROOT / "eigenqt" / "qml" / "AppControlsHarness.qml")),
@@ -290,7 +300,8 @@ import "Theme.js" as Theme
     compact_action = find_item(root_item, "sampleCompactAction")
     compact_icon_action = find_item(root_item, "sampleCompactIconAction")
     route_switch = find_item(root_item, "routeSwitch")
-    if button is None or custom_button is None or disabled_button is None or sample_tag is None or sample_pill_chip is None or sample_text_field is None or sample_text_area is None or combo is None or object_combo is None or bottom_combo is None or compact_action is None or compact_icon_action is None or route_switch is None:
+    danger_action = find_item(root_item, "dangerAction")
+    if button is None or custom_button is None or disabled_button is None or sample_tag is None or sample_pill_chip is None or sample_text_field is None or sample_text_area is None or combo is None or object_combo is None or bottom_combo is None or compact_action is None or compact_icon_action is None or route_switch is None or danger_action is None:
         raise AssertionError("control harness did not render all controls")
 
     button.setProperty("qaForceKeyboardFocus", True)
@@ -299,6 +310,8 @@ import "Theme.js" as Theme
         raise AssertionError("AppButton did not expose its QA marker")
     if not button.property("qaVisualFocus"):
         raise AssertionError("AppButton did not expose keyboard focus")
+    if button.property("qaBorderColor") != root.property("expectedFocusBorder"):
+        raise AssertionError("AppButton keyboard focus did not use the semantic focus border")
     if not button.property("qaTextFits"):
         raise AssertionError("AppButton text does not fit")
     if float(button.property("qaHorizontalPadding") or 0) < 15.5:
@@ -343,6 +356,8 @@ import "Theme.js" as Theme
     pump(app)
     if root.property("disabledButtonClicks") != 0:
         raise AssertionError("Disabled primary AppButton activated")
+    if danger_action.property("qaTextColor") != root.property("expectedDangerText"):
+        raise AssertionError("Danger AppButton did not use the accessible foreground")
 
     if sample_tag.property("qaIsAppTag") is not True:
         raise AssertionError("AppTag did not expose its QA marker")
@@ -400,6 +415,8 @@ import "Theme.js" as Theme
         raise AssertionError(f"AppComboBox vertical padding too small: {combo.property('qaVerticalPadding')}")
     if not combo.property("qaVisualFocus"):
         raise AssertionError("AppComboBox did not expose keyboard focus")
+    if combo.property("qaBorderColor") != root.property("expectedFocusBorder"):
+        raise AssertionError("AppComboBox keyboard focus did not use the semantic focus border")
     QTest.keyClick(root, Qt.Key_Down)
     pump(app)
     if not combo.property("qaPopupActuallyOpen") or combo.property("qaKeyboardIndex") != 1:

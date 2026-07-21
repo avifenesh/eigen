@@ -446,7 +446,7 @@ Rectangle {
                                 placeholderText: "USER.md"
                                 backgroundColor: Theme.colors.bgInset
                                 borderColor: Theme.colors.borderSubtle
-                                focusBorderColor: Theme.colors.borderBrandFaint
+                                focusBorderColor: Theme.colors.borderFocus
                                 backgroundRadius: Theme.radius.sm
 
                                 onTextChanged: {

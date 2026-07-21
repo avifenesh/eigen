@@ -201,7 +201,7 @@ Rectangle {
                     font.pixelSize: Theme.fontSize.codeSm
                     backgroundColor: Theme.colors.synBg
                     borderColor: Theme.colors.borderHairline
-                    focusBorderColor: Theme.colors.borderBrand
+                    focusBorderColor: Theme.colors.borderFocus
                     normalBorderWidth: 0
                     focusedBorderWidth: 1
                     backgroundRadius: Theme.radius.sm
@@ -274,7 +274,7 @@ Rectangle {
                     Layout.preferredHeight: 30
                     backgroundColor: Theme.colors.bgInset
                     borderColor: Theme.colors.borderHairline
-                    focusBorderColor: Theme.colors.borderBrand
+                    focusBorderColor: Theme.colors.borderFocus
                     enabled: root.started
                     placeholderText: root.started ? "Run a shell command" : "Terminal is not running"
                     font.family: Theme.monoFonts[0]

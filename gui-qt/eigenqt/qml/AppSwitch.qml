@@ -50,7 +50,7 @@ Switch {
         }
         border.width: control.showingFocus ? 2 : 1
         border.color: {
-            if (control.showingFocus) return Theme.colors.brandBright
+            if (control.showingFocus) return Theme.colors.borderFocus
             if (!control.enabled) return Theme.colors.borderHairline
             if (control.checked) return Theme.colors.brand
             return Theme.colors.borderSubtle

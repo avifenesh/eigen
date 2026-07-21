@@ -421,7 +421,7 @@ Rectangle {
                             return mouseArea.containsMouse ? Theme.colors.stateHover : "transparent"
                         }
                         border.width: activeFocus ? 1 : 0
-                        border.color: Theme.colors.brandBright
+                        border.color: activeFocus ? Theme.colors.borderFocus : "transparent"
 
                         Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
                         Behavior on border.color { ColorAnimation { duration: Theme.duration.fast } }

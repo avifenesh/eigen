@@ -699,7 +699,7 @@ Rectangle {
                                     placeholderText: "(unset)"
                                     backgroundColor: Theme.colors.bgRaised2
                                     borderColor: Theme.colors.borderSubtle
-                                    focusBorderColor: Theme.colors.borderBrandFaint
+                                    focusBorderColor: Theme.colors.borderFocus
                                     onEditingFinished: {
                                         if (text !== fieldDelegate.fieldValue) {
                                             commitConfig(fieldDelegate.fieldKey, text)

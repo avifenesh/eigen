@@ -21,6 +21,8 @@ Button {
     readonly property bool qaIsAppButton: true
     readonly property bool qaTextFits: textContentFits(contentItem)
     readonly property string qaText: text
+    readonly property color qaTextColor: buttonLabel.color
+    readonly property color qaBorderColor: background.border.color
     readonly property real qaHorizontalPadding: Math.min(leftPadding, rightPadding)
     readonly property real qaVerticalPadding: Math.min(topPadding, bottomPadding)
     readonly property bool showingFocus: visualFocus || activeFocus
@@ -54,15 +56,15 @@ Button {
             if (control.hovered) return control.variant === "primary" ? Theme.colors.brandBright : Theme.colors.surfaceRaised2
             if (control.variant === "primary") return Theme.colors.brand
             if (control.variant === "danger") return Theme.colors.errorBg
-            return control.variant === "ghost" ? "transparent" : Theme.colors.bgRaised
+            return control.variant === "ghost" ? "transparent" : Theme.colors.surfaceRaised2
         }
         border.width: control.showingFocus ? 2 : 1
         border.color: {
-            if (control.showingFocus) return control.variant === "primary" ? Theme.colors.textPrimary : Theme.colors.brandBright
+            if (control.showingFocus) return Theme.colors.borderFocus
             if (!control.enabled) return control.variant === "primary" ? Theme.colors.borderBrandFaint : Theme.colors.borderHairline
             if (control.variant === "primary") return control.hovered ? Theme.colors.brandBright : Theme.colors.brandStrong
             if (control.variant === "danger") return Theme.colors.error
-            if (control.selected) return Theme.colors.borderBrandFaint
+            if (control.selected) return Theme.colors.borderFocus
             return control.hovered ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle
         }
 
@@ -92,7 +94,7 @@ Button {
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             width: 1
-            color: control.showingFocus ? Theme.colors.brandBright : Theme.colors.borderSubtle
+            color: control.showingFocus ? Theme.colors.borderFocus : Theme.colors.borderSubtle
             opacity: control.selected ? 0.45 : 0.7
         }
     }
@@ -133,13 +135,13 @@ Button {
                 anchors.verticalCenter: parent.verticalCenter
                 text: control.text
                 font.family: Theme.uiFonts[0]
-                font.pixelSize: control.compact ? Theme.fontSize.label : Theme.fontSize.bodySm
+                font.pixelSize: Theme.fontSize.label
                 font.weight: (control.variant === "primary" || control.selected) ? Theme.fontWeight.semibold : Theme.fontWeight.medium
                 color: {
                     if (!control.enabled) return control.variant === "primary" ? Theme.colors.textMuted : Theme.colors.textFaint
                     if (control.variant === "primary") return Theme.colors.bgBase
-                    if (control.variant === "danger") return Theme.colors.error
-                    if (control.selected) return Theme.colors.brandBright
+                    if (control.variant === "danger") return Theme.colors.textPrimary
+                    if (control.selected) return Theme.colors.focusBright
                     return Theme.colors.textSecondary
                 }
                 horizontalAlignment: control.contentAlignment
@@ -154,7 +156,7 @@ Button {
                 text: control.badgeText
                 font.family: Theme.monoFonts[0]
                 font.pixelSize: Theme.fontSize.micro
-                color: control.selected ? Theme.colors.brand : Theme.colors.textFaint
+                color: control.selected ? Theme.colors.focus : Theme.colors.textFaint
                 verticalAlignment: Text.AlignVCenter
             }
         }

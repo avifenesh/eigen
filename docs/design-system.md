@@ -2,7 +2,8 @@
 
 The single, durable brief for eigen's visual language. Source of truth for
 color, type weight, glyphs, spacing, and the rules that keep the chat TUI
-(`internal/tui`) and the app shell (`internal/app`) looking like ONE product.
+(`internal/tui`), app shell (`internal/app`), and Qt desktop (`gui-qt`) looking
+like ONE product.
 
 Status: **v2 — 2026-06-14 (luxury redesign).** Built from a from-scratch
 review (see `docs/design-inventory.md` for the map + `docs/design-references.md`
@@ -13,6 +14,9 @@ tinting, markdown tables, pretty-printed + tinted JSON tool results), composed
 vertical rhythm, and motion in several
 places. When in doubt, this doc wins; update it in the same commit as any
 visual change.
+
+Qt desktop alignment: **2026-07-21.** The Qt shell uses the same role meanings
+with desktop-native elevation, input, focus-ring, and compact-layout behavior.
 
 ## v2 at a glance (the luxury redesign)
 - **Palette = "deep teal"** (default; user-chosen): jewel petrol-teal brand
@@ -30,6 +34,9 @@ visual change.
   ◈ task · ▦ image · ▪ tool). `❯` is reserved for the prompt/you-are-here.
 - **One selection treatment**: a Focus `▎` bar + Focus-tinted text, shared by
   the chat rail, the app-shell rows, and selected transcript blocks.
+- **Desktop as an instrument panel**: the Qt shell uses a quiet petrol-teal
+  structure, recessed inputs, warm-clay selection and keyboard focus, and
+  violet tool/source metadata. Persistent status appears once, at the bottom.
 - **Transcript as a document**: fenced code in a framed block on Surface with a
   lang chip + lightweight syntax tinting (keywords/strings/comments/numbers);
   markdown tables rendered aligned + bordered on Surface; crisp prose on the
@@ -67,10 +74,13 @@ ROLE, never a hue.
 1. **Roles, not hues.** Call sites import a semantic role (`Text`, `Dim`,
    `Accent`, `Focus`, `Ok`, …) from `internal/theme`, never a raw color. A
    re-theme is then one edit in `theme.go`.
-2. **One palette, two surfaces.** `internal/theme` is imported by BOTH
+2. **One palette, three surfaces.** `internal/theme` is imported by BOTH
    `internal/tui` and `internal/app`. Neither defines its own colors. (The app
    shell aliases roles in `internal/app/style.go` as `c*`/`s*` — those MUST map
-   to `theme.*`, never to literals.)
+   to `theme.*`, never to literals.) QML cannot import the Go package, so
+   `gui-qt/eigenqt/qml/Theme.js` mirrors the same semantic roles and supported
+   palette names; `gui-qt/tests/test_theme_startup.py` loads those runtime QML
+   values to guard role separation and contrast.
 3. **Restraint = information.** Every styled thing must MEAN something. Color
    is signal, not flair. Default to neutral; spend a bright/loud color only
    where it earns attention.

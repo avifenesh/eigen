@@ -563,7 +563,7 @@ Rectangle {
                             Accessible.onPressAction: activate()
                             color: modelData.value === ownerFilter ? Theme.colors.brandBright : (activeFocus ? Theme.colors.stateFocusBg : (ownerMouse.containsMouse ? Theme.colors.stateHover : Theme.colors.bgRaised))
                             border.width: 1
-                            border.color: activeFocus ? Theme.colors.brandBright : (modelData.value === ownerFilter ? Theme.colors.brandBright : Theme.colors.borderSubtle)
+                            border.color: activeFocus ? Theme.colors.borderFocus : (modelData.value === ownerFilter ? Theme.colors.brandBright : Theme.colors.borderSubtle)
 
                             function activate() {
                                 ownerFilter = modelData.value
@@ -629,7 +629,7 @@ Rectangle {
                             Accessible.onPressAction: activate()
                             color: modelData.value === stateFilter ? Theme.colors.brandBright : (activeFocus ? Theme.colors.stateFocusBg : (stateMouse.containsMouse ? Theme.colors.stateHover : Theme.colors.bgRaised))
                             border.width: 1
-                            border.color: activeFocus ? Theme.colors.brandBright : (modelData.value === stateFilter ? Theme.colors.brandBright : Theme.colors.borderSubtle)
+                            border.color: activeFocus ? Theme.colors.borderFocus : (modelData.value === stateFilter ? Theme.colors.brandBright : Theme.colors.borderSubtle)
 
                             function activate() {
                                 stateFilter = modelData.value

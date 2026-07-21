@@ -38,7 +38,7 @@ from eigenqt.models.skills import ProposalsModel, SkillsModel
 
 ROOT = Path.cwd()
 SIZE = QSize(1200, 800)
-EXPECTED_PLACEHOLDER_COLOR = "#65716f"
+EXPECTED_PLACEHOLDER_COLOR = "#74817e"
 
 
 def color_name(value):

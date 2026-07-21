@@ -398,7 +398,7 @@ Item {
                                 qaAllowHorizontalOverflow: true
                                 backgroundColor: Theme.colors.synBg
                                 borderColor: Theme.colors.borderHairline
-                                focusBorderColor: Theme.colors.borderBrand
+                                focusBorderColor: Theme.colors.borderFocus
                                 normalBorderWidth: 0
                                 focusedBorderWidth: 1
                                 backgroundRadius: 0

@@ -181,7 +181,7 @@ def _render_inline(inline_token) -> str:
             html_parts.append("</i>")
 
         elif child.type == "code_inline":
-            # Inline code (light gray background, monospace)
+            # Inline code uses the same raised petrol surface as code blocks.
             escaped = (
                 child.content
                 .replace("&", "&amp;")
@@ -189,14 +189,14 @@ def _render_inline(inline_token) -> str:
                 .replace(">", "&gt;")
             )
             html_parts.append(
-                f'<code style="background-color: rgba(255,255,255,0.06); '
+                f'<code style="background-color: #1a2428; color: #69c2b8; '
                 f'padding: 2px 4px; border-radius: 3px; '
                 f'font-family: monospace;">{escaped}</code>'
             )
 
         elif child.type == "link_open":
             href = child.attrGet("href") or ""
-            html_parts.append(f'<a href="{href}" style="color: #5fb0c4; text-decoration: none;">')
+            html_parts.append(f'<a href="{href}" style="color: #69c2b8; text-decoration: none;">')
         elif child.type == "link_close":
             html_parts.append("</a>")
 

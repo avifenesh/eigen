@@ -56,9 +56,9 @@ ApplicationWindow {
             id: rail
             objectName: "mainRail"
             visible: root.railVisible
-            Layout.preferredWidth: root.railVisible ? 200 : 0
-            Layout.minimumWidth: root.railVisible ? 200 : 0
-            Layout.maximumWidth: root.railVisible ? 200 : 0
+            Layout.preferredWidth: root.railVisible ? 208 : 0
+            Layout.minimumWidth: root.railVisible ? 208 : 0
+            Layout.maximumWidth: root.railVisible ? 208 : 0
             Layout.fillHeight: true
 
             currentRoute: root.currentRoute
@@ -67,8 +67,6 @@ ApplicationWindow {
             tasksModel: root.ctxTasks
             feedModel: root.ctxFeed
             statsData: root.ctxStats
-            daemonOnline: root.ctxDaemonOnline
-            guiserverSha: root.ctxSha
             sessionController: root.ctxSessionController
 
             onRouteChanged: function(route) {
@@ -315,11 +313,18 @@ ApplicationWindow {
     Rectangle {
         objectName: "mainStatusStrip"
         Layout.fillWidth: true
-        Layout.preferredHeight: 28
-        Layout.minimumHeight: 28
+        Layout.preferredHeight: 26
+        Layout.minimumHeight: 26
         color: Theme.colors.bgWell
-        border.width: 1
-        border.color: Theme.colors.borderHairline
+        border.width: 0
+
+        Rectangle {
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 1
+            color: Theme.colors.borderHairline
+        }
 
         RowLayout {
             anchors.fill: parent
@@ -426,8 +431,6 @@ ApplicationWindow {
     readonly property var ctxRpc: rpcClient
     readonly property var ctxSessionController: sessionController
     readonly property var ctxStats: statsData
-    readonly property bool ctxDaemonOnline: daemonOnline
-    readonly property string ctxSha: guiserverSha
 
     // NOTE: the Python-side models/values (sessionsModel, dashboardModel,
     // feedModel, tasksModel, liveSessionsModel, statsData, daemonOnline,

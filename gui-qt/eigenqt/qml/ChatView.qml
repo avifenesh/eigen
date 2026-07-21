@@ -673,7 +673,7 @@ Rectangle {
                         wrapMode: TextArea.Wrap
                         backgroundColor: Theme.colors.surfaceRaised
                         borderColor: "transparent"
-                        focusBorderColor: Theme.colors.borderBrand
+                        focusBorderColor: Theme.colors.borderFocus
                         normalBorderWidth: 0
                         focusedBorderWidth: 1
                         backgroundRadius: Theme.radius.md

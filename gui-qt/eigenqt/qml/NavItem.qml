@@ -12,7 +12,7 @@ Rectangle {
     property int badge: 0
     property bool badgeLive: false
     property bool isActive: false
-    readonly property int baseHeight: 30
+    readonly property int baseHeight: 32
     readonly property bool qaVisualFocus: activeFocus
     readonly property bool qaTextFits: !navLabel.truncated
     signal clicked()
@@ -29,12 +29,14 @@ Rectangle {
     Accessible.description: isActive ? "Current route" : "Open " + label
     Accessible.onPressAction: activate()
     color: navItem.isActive ? Theme.colors.stateSelected : (mainMouseArea.containsMouse ? Theme.colors.stateHover : "transparent")
+    border.width: navItem.activeFocus ? 1 : 0
+    border.color: navItem.activeFocus ? Theme.colors.borderFocus : "transparent"
 
     Behavior on color {
         ColorAnimation { duration: Theme.duration.fast }
     }
 
-    // Active left edge (teal bar)
+    // Focus track: warm clay marks where this window is, leaving teal to brand.
     Rectangle {
         visible: navItem.isActive
         anchors.left: parent.left
@@ -43,7 +45,7 @@ Rectangle {
         width: 2
         height: 24
         radius: 9
-        color: Theme.colors.brandBright
+        color: Theme.colors.focus
 
         // Spring-grow animation
         transform: Scale {
@@ -82,7 +84,7 @@ Rectangle {
             text: navItem.glyph
             font.family: Theme.uiFonts[0]
             font.pixelSize: Theme.fontSize.bodySm
-            color: navItem.isActive ? Theme.colors.brand : Theme.colors.textMuted
+            color: navItem.isActive ? Theme.colors.focus : Theme.colors.textMuted
             opacity: navItem.isActive ? 1.0 : 0.85
             Layout.preferredWidth: 18
             horizontalAlignment: Text.AlignHCenter
@@ -97,7 +99,7 @@ Rectangle {
             font.family: Theme.uiFonts[0]
             font.pixelSize: Theme.fontSize.bodySm
             font.weight: Theme.fontWeight.medium
-            color: navItem.isActive ? Theme.colors.brandBright : Theme.colors.textSecondary
+            color: navItem.isActive ? Theme.colors.focusBright : Theme.colors.textSecondary
             elide: Text.ElideRight
             Layout.fillWidth: true
 
@@ -144,7 +146,7 @@ Rectangle {
                 font.family: Theme.uiFonts[0]
                 font.pixelSize: Theme.fontSize.micro
                 font.weight: Theme.fontWeight.semibold
-                color: navItem.badgeLive ? Theme.colors.brandBright : Theme.colors.textSecondary
+                color: navItem.badgeLive ? Theme.colors.focusBright : Theme.colors.textSecondary
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
             }

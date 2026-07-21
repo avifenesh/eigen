@@ -76,7 +76,7 @@ Rectangle {
             ? Theme.colors.stateFocusBg
             : (mouseArea.containsMouse ? Theme.colors.bgRaised2 : Theme.colors.bgRaised)
         border.width: skillCard.activeFocus ? 2 : 1
-        border.color: skillCard.activeFocus ? Theme.colors.brandBright : Theme.colors.borderHairline
+        border.color: skillCard.activeFocus ? Theme.colors.borderFocus : Theme.colors.borderHairline
         radius: Theme.radius.md
         implicitHeight: 92
         activeFocusOnTab: true
@@ -183,7 +183,7 @@ Rectangle {
         implicitHeight: contentLayout.implicitHeight + Theme.space.lg * 2
         color: proposalCard.activeFocus ? Theme.colors.stateFocusBg : Theme.colors.bgBase
         border.width: proposalCard.activeFocus ? 2 : 1
-        border.color: proposalCard.activeFocus ? Theme.colors.brandBright : Theme.colors.workingBg
+        border.color: proposalCard.activeFocus ? Theme.colors.borderFocus : Theme.colors.workingBg
         radius: Theme.radius.md
         activeFocusOnTab: true
         focusPolicy: Qt.StrongFocus

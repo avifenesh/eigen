@@ -158,7 +158,7 @@ Rectangle {
                     font.family: Theme.uiFonts[0]
                     font.pixelSize: Theme.fontSize.label
                     font.weight: Theme.fontWeight.semibold
-                    color: Theme.colors.textFaint
+                    color: Theme.colors.textMuted
                     textFormat: Text.PlainText
                 }
 
@@ -632,7 +632,6 @@ Rectangle {
                 spacing: Theme.space.xl
 
                 ColumnLayout {
-                    Layout.fillWidth: true
                     spacing: Theme.space.xs
 
                     Label {
@@ -650,6 +649,8 @@ Rectangle {
                         color: Theme.colors.textMuted
                     }
                 }
+
+                Item { Layout.fillWidth: true }
 
                 AppButton {
                     objectName: "homeStartSessionButton"

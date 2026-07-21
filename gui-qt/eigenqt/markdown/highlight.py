@@ -2,7 +2,7 @@
 highlight.py — Pygments syntax highlighting → Qt rich-text HTML.
 
 Uses Pygments HTML formatter with inline styles (noclasses=True).
-Graphite control-surface color scheme (matches the QML --syn-* colors).
+Deep-teal control-surface color scheme (matches the QML syntax tokens).
 Cache highlighted results by (lang, source-hash) for streaming performance.
 """
 
@@ -28,27 +28,27 @@ from pygments.token import (
 
 class GraphiteStyle(Style):
     """
-    Graphite Pygments style matching the Qt syntax tokens.
+    Pygments style matching the default Qt syntax tokens.
     """
 
-    background_color = "#11161b"  # --syn-bg
-    default_style = "#d5dfdc"  # --syn-text
+    background_color = "#11171a"  # --syn-bg
+    default_style = "#dde4e3"  # --syn-text
 
     styles = {
         Comment: "#71807c italic",  # --syn-comment
-        Keyword: "#d6a2ed bold",  # --syn-keyword
-        Keyword.Namespace: "#d6a2ed",
-        Keyword.Type: "#f2b867",  # --syn-type
-        Name.Class: "#f2b867",  # --syn-type
-        Name.Function: "#8bb9ff",  # --syn-func
-        Name.Builtin: "#5bd6c2",  # --syn-builtin
-        Name.Decorator: "#d6a2ed",
-        String: "#a6da7a",  # --syn-string
-        Number: "#efa979",  # --syn-number
-        Operator: "#acbbb7",  # --syn-punct
-        Text: "#d5dfdc",
-        Whitespace: "#d5dfdc",
-        Error: "#ff9382",  # --error
+        Keyword: "#c58fd8 bold",  # --syn-keyword
+        Keyword.Namespace: "#c58fd8",
+        Keyword.Type: "#e0b36a",  # --syn-type
+        Name.Class: "#e0b36a",  # --syn-type
+        Name.Function: "#6fb7e8",  # --syn-func
+        Name.Builtin: "#69c2b8",  # --syn-builtin
+        Name.Decorator: "#c58fd8",
+        String: "#8fc98a",  # --syn-string
+        Number: "#e8a878",  # --syn-number
+        Operator: "#9ab0ac",  # --syn-punct
+        Text: "#dde4e3",
+        Whitespace: "#dde4e3",
+        Error: "#c06a5e",  # --error
     }
 
 
@@ -84,7 +84,7 @@ def highlight(lang: str, source: str) -> str:
             .replace("<", "&lt;")
             .replace(">", "&gt;")
         )
-        html = f'<pre style="margin: 0; padding: 0; font-family: monospace; color: #c7d2d0;">{escaped}</pre>'
+        html = f'<pre style="margin: 0; padding: 0; font-family: monospace; color: #dde4e3;">{escaped}</pre>'
         _highlight_cache[cache_key] = html
         return html
 
