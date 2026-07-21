@@ -47,6 +47,22 @@ Rectangle {
     readonly property int qaProposalCount: proposalCount()
     property int proposalsShown: pageSize
     property int activeShown: pageSize
+
+    function proposalScrollLimit() {
+        return Math.max(0, proposalScroller.contentWidth - proposalScroller.width)
+    }
+
+    function scrollProposals(direction) {
+        var cardStep = 268 + Theme.space.lg
+        proposalScroller.contentX = Math.max(
+            0,
+            Math.min(proposalScrollLimit(), proposalScroller.contentX + direction * cardStep)
+        )
+    }
+
+    function clampProposalScroll() {
+        proposalScroller.contentX = Math.min(proposalScroller.contentX, proposalScrollLimit())
+    }
     onSkillsModelChanged: {
         root.modelEpoch += 1
         syncActiveModels()
@@ -593,6 +609,7 @@ Rectangle {
 
                         // Header
                         RowLayout {
+                            Layout.fillWidth: true
                             spacing: Theme.space.sm
 
                             // Pulse dot
@@ -629,17 +646,54 @@ Rectangle {
                                 minimumHeight: 20
                                 pill: false
                             }
+
+                            Item { Layout.fillWidth: true }
+
+                            RowLayout {
+                                spacing: 0
+
+                                AppButton {
+                                    objectName: "skillsProposalPreviousButton"
+                                    text: "‹"
+                                    compact: true
+                                    segmentPosition: "first"
+                                    toolTipText: "Previous proposals"
+                                    enabled: proposalScroller.contentX > 0.5
+                                    Layout.preferredWidth: 30
+                                    Layout.preferredHeight: 28
+                                    onClicked: root.scrollProposals(-1)
+                                }
+
+                                AppButton {
+                                    objectName: "skillsProposalNextButton"
+                                    text: "›"
+                                    compact: true
+                                    segmentPosition: "last"
+                                    toolTipText: "More proposals"
+                                    enabled: proposalScroller.contentX < root.proposalScrollLimit() - 0.5
+                                    Layout.preferredWidth: 30
+                                    Layout.preferredHeight: 28
+                                    onClicked: root.scrollProposals(1)
+                                }
+                            }
                         }
 
                         // Horizontal scroll of proposals
                         Flickable {
                             id: proposalScroller
                             objectName: "skillsProposalScroller"
+                            readonly property bool hasOverflow: contentWidth > width + 1
                             Layout.fillWidth: true
                             Layout.preferredHeight: Math.max(96, proposalsRow.implicitHeight)
+                                + (hasOverflow ? Theme.space.lg : 0)
                             contentWidth: proposalsRow.implicitWidth
                             contentHeight: proposalsRow.implicitHeight
+                            flickableDirection: Flickable.HorizontalFlick
+                            interactive: hasOverflow
                             clip: true
+                            boundsBehavior: Flickable.StopAtBounds
+                            onContentWidthChanged: root.clampProposalScroll()
+                            onWidthChanged: root.clampProposalScroll()
 
                             Row {
                                 id: proposalsRow
@@ -701,6 +755,27 @@ Rectangle {
                                             Layout.alignment: Qt.AlignHCenter
                                         }
                                     }
+                                }
+                            }
+
+                            ScrollBar.horizontal: ScrollBar {
+                                id: proposalScrollBar
+                                objectName: "skillsProposalScrollBar"
+                                policy: proposalScroller.hasOverflow ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                                height: 8
+                                padding: 2
+
+                                contentItem: Rectangle {
+                                    implicitHeight: 4
+                                    radius: 2
+                                    color: Theme.colors.working
+                                    opacity: proposalScrollBar.pressed ? 1.0 : 0.72
+                                }
+
+                                background: Rectangle {
+                                    implicitHeight: 4
+                                    radius: 2
+                                    color: Theme.colors.borderHairline
                                 }
                             }
                         }

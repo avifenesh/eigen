@@ -3149,6 +3149,41 @@ def main():
         )
         return props
 
+    def setup_skills_with_proposal_overflow(ctx):
+        props = setup_skills(ctx)
+        props["proposalsModel"]._on_skills_result(
+            {
+                "result": {
+                    "proposals": [
+                        {"name": "qt-qa", "description": "Visual QML proof", "path": "/tmp/qt-qa/SKILL.md"},
+                        {"name": "rpc-recovery", "description": "Recover disconnected routes", "path": "/tmp/rpc-recovery/SKILL.md"},
+                        {"name": "desktop-proof", "description": "Exercise installed desktop flows", "path": "/tmp/desktop-proof/SKILL.md"},
+                    ]
+                }
+            }
+        )
+        return props
+
+    def assert_skills_proposal_overflow(_view, root):
+        previous = find_item(root, "skillsProposalPreviousButton")
+        next_button = find_item(root, "skillsProposalNextButton")
+        scrollbar = find_item(root, "skillsProposalScrollBar")
+        if previous is None or previous.property("enabled") is not False:
+            raise AssertionError("skills proposal overflow previous control started enabled")
+        if next_button is None or next_button.property("enabled") is not True or next_button.property("qaTextFits") is not True:
+            raise AssertionError("skills proposal overflow next control did not render cleanly")
+        if scrollbar is None or scrollbar.property("visible") is not True:
+            raise AssertionError("skills proposal overflow scrollbar was not visible")
+
+    ok = capture_view(
+        "skills-proposals-narrow",
+        "SkillsView.qml",
+        setup_skills_with_proposal_overflow,
+        assert_skills_proposal_overflow,
+        width=512,
+        height=700,
+    ) and ok
+
     def show_skills_markdown_preview(_view, root):
         body = (
             "# frontend-design\n\n"

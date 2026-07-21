@@ -2262,6 +2262,39 @@ def check_skills(app, client):
         if float(root.property("qaProposalScrollerHeight") or 0) > 130:
             raise AssertionError(f"single proposal scroller is too tall: {root.property('qaProposalScrollerHeight')}")
 
+        overflow_snapshot = seeded_skill_snapshot()
+        overflow_snapshot["proposals"] = [
+            {"name": "qt-qa", "description": "Visual QML proof", "path": "/tmp/qt-qa/SKILL.md"},
+            {"name": "rpc-recovery", "description": "Recover disconnected routes", "path": "/tmp/rpc-recovery/SKILL.md"},
+            {"name": "desktop-proof", "description": "Exercise installed desktop flows", "path": "/tmp/desktop-proof/SKILL.md"},
+        ]
+        proposals._on_skills_result({"result": overflow_snapshot})
+        view.setWidth(512)
+        pump(app, 12)
+        previous_button = find_visual_item(root, "skillsProposalPreviousButton")
+        next_button = find_visual_item(root, "skillsProposalNextButton")
+        proposal_scrollbar = find_visual_item(root, "skillsProposalScrollBar")
+        if previous_button is None or next_button is None or proposal_scrollbar is None:
+            raise AssertionError("skills proposal overflow controls did not render")
+        if previous_button.property("enabled") is not False or next_button.property("enabled") is not True:
+            raise AssertionError("skills proposal overflow controls started in the wrong state")
+        if proposal_scrollbar.property("visible") is not True:
+            raise AssertionError("skills proposal overflow did not expose its scrollbar")
+        start_x = float(proposal_scroller.property("contentX") or 0)
+        press_key_on_item(app, view, root, "skillsProposalNextButton", Qt.Key_Return, flick_name="skillsFlick")
+        moved_x = float(proposal_scroller.property("contentX") or 0)
+        if moved_x <= start_x or previous_button.property("enabled") is not True:
+            raise AssertionError(f"skills proposal next control did not advance the strip: {start_x} -> {moved_x}")
+        press_key_on_item(app, view, root, "skillsProposalPreviousButton", Qt.Key_Return, flick_name="skillsFlick")
+        if float(proposal_scroller.property("contentX") or 0) != 0:
+            raise AssertionError("skills proposal previous control did not return to the strip start")
+
+        proposals._on_skills_result({"result": seeded_skill_snapshot()})
+        view.setWidth(SIZE.width())
+        pump(app, 12)
+        if proposal_scrollbar.property("visible") is not False or float(proposal_scroller.property("contentX") or 0) != 0:
+            raise AssertionError("skills proposal strip did not clamp after overflow cleared")
+
         skills._set_load_error("daemon offline")
         retry = assert_load_error_retry(app, view, root, "skillsRefreshErrorBanner", "skillsRefreshErrorText", "skillsRefreshErrorRetry")
         start = len(client.calls)
