@@ -52,18 +52,24 @@ class RpcClient(QObject):
         # Connection tracking
         self._rpc_ready = False
         self._events_ready = False
+        self._shutting_down = False
         # Desired event subscriptions.  Models often subscribe before the
         # events socket is ready, and the socket can reconnect underneath them;
         # replay this set whenever a worker reaches ready so live transcript
         # deltas do not require a manual chat refresh.
         self._subscriptions: set[str] = set()
-        self._reconnect_timer: Optional[threading.Timer] = None
+        self._reconnect_timer = QTimer(self)
+        self._reconnect_timer.setSingleShot(True)
+        self._reconnect_timer.timeout.connect(self._reconnect)
         self._backoff_sec = 1.0
 
         self._start_workers()
 
     def _start_workers(self) -> None:
         """Spawn both worker threads and attempt connection."""
+        if self._shutting_down:
+            return
+
         # RPC worker
         self._rpc_thread = QThread()
         self._rpc_worker = _RpcWorker(self.sock_path)
@@ -83,22 +89,36 @@ class RpcClient(QObject):
 
         self._events_worker.ready.connect(self._on_events_ready, Qt.QueuedConnection)
         self._events_worker.error.connect(self._on_events_error, Qt.QueuedConnection)
-        self._events_worker.event_data.connect(lambda ch, data: self.event.emit(ch, data), Qt.QueuedConnection)
-        self._events_worker.event_dropped.connect(lambda ch: self.dropped.emit(ch), Qt.QueuedConnection)
+        self._events_worker.event_data.connect(self._on_event_data, Qt.QueuedConnection)
+        self._events_worker.event_dropped.connect(self._on_event_dropped, Qt.QueuedConnection)
 
         self._events_thread.started.connect(self._events_worker.connect_and_run)
         self._events_thread.start()
 
     @Slot()
     def _on_rpc_ready(self) -> None:
+        if self._shutting_down:
+            return
         self._rpc_ready = True
         self._check_both_ready()
 
     @Slot()
     def _on_events_ready(self) -> None:
+        if self._shutting_down:
+            return
         self._events_ready = True
         self._replay_subscriptions()
         self._check_both_ready()
+
+    @Slot(str, dict)
+    def _on_event_data(self, channel: str, data: dict) -> None:
+        if not self._shutting_down:
+            self.event.emit(channel, data)
+
+    @Slot(str)
+    def _on_event_dropped(self, channel: str) -> None:
+        if not self._shutting_down:
+            self.dropped.emit(channel)
 
     def _replay_subscriptions(self) -> None:
         """Send all desired event subscriptions to a ready events worker."""
@@ -118,6 +138,8 @@ class RpcClient(QObject):
 
     @Slot(str)
     def _on_rpc_error(self, reason: str) -> None:
+        if self._shutting_down:
+            return
         self._rpc_ready = False
         if self._rpc_worker:
             self._rpc_worker.fail_pending(f"rpc: {reason}")
@@ -125,32 +147,39 @@ class RpcClient(QObject):
 
     @Slot(str)
     def _on_events_error(self, reason: str) -> None:
+        if self._shutting_down:
+            return
         self._events_ready = False
         self._handle_disconnect(f"events: {reason}")
 
     def _handle_disconnect(self, reason: str) -> None:
         """Handle disconnect and schedule reconnect with backoff."""
+        if self._shutting_down:
+            return
         if not self._rpc_ready or not self._events_ready:
             self.disconnected.emit(reason)
             self._schedule_reconnect()
 
     def _schedule_reconnect(self) -> None:
         """Schedule reconnect with exponential backoff (1s, 2s, 4s, ... max 15s)."""
-        if self._reconnect_timer and self._reconnect_timer.is_alive():
+        if self._shutting_down or self._reconnect_timer.isActive():
             return  # already scheduled
 
         delay = self._backoff_sec
         self._backoff_sec = min(self._backoff_sec * 2, 15.0)
 
-        self._reconnect_timer = threading.Timer(delay, self._reconnect)
-        self._reconnect_timer.start()
+        self._reconnect_timer.start(max(1, round(delay * 1000)))
 
+    @Slot()
     def _reconnect(self) -> None:
         """Tear down and restart workers."""
+        if self._shutting_down:
+            return
         if self._rpc_worker:
             self._rpc_worker.fail_pending("rpc: reconnecting")
         self._stop_workers()
-        self._start_workers()
+        if not self._shutting_down:
+            self._start_workers()
 
     def _stop_workers(self) -> None:
         """Stop both worker threads gracefully."""
@@ -239,6 +268,8 @@ class RpcClient(QObject):
         if not self._rpc_worker or not self._rpc_ready:
             raise RuntimeError("not connected")
 
+        worker = self._rpc_worker
+
         event = threading.Event()
         result_box = {}
 
@@ -247,7 +278,7 @@ class RpcClient(QObject):
             event.set()
 
         try:
-            ok, error = self._rpc_worker.enqueue_call(method, args, cb)
+            ok, error = worker.enqueue_call(method, args, cb)
         except Exception as exc:
             ok, error = False, f"send failed: {exc}"
         if not ok:
@@ -256,6 +287,7 @@ class RpcClient(QObject):
             raise RuntimeError(error)
 
         if not event.wait(timeout):
+            worker.cancel_pending_callback(cb)
             raise TimeoutError(f"call_sync({method}) timed out after {timeout}s")
 
         payload = result_box["payload"]
@@ -292,8 +324,13 @@ class RpcClient(QObject):
 
     def shutdown(self) -> None:
         """Gracefully shut down both workers and threads."""
-        if self._reconnect_timer and self._reconnect_timer.is_alive():
-            self._reconnect_timer.cancel()
+        if self._shutting_down:
+            return
+        self._shutting_down = True
+        self._reconnect_timer.stop()
+        fail_pending = getattr(self._rpc_worker, "fail_pending", None)
+        if callable(fail_pending):
+            fail_pending("rpc: client shutting down")
         self._stop_workers()
 
 
@@ -393,6 +430,15 @@ class _RpcWorker(QObject):
         for cb in pending:
             cb({"error": reason})
 
+    def cancel_pending_callback(self, callback: Callable) -> bool:
+        """Forget one timed-out callback without disturbing other requests."""
+        with self._lock:
+            for req_id, pending_callback in tuple(self._pending.items()):
+                if pending_callback is callback:
+                    self._pending.pop(req_id, None)
+                    return True
+        return False
+
     def stop(self) -> None:
         """Stop the worker."""
         self._running = False
@@ -405,7 +451,7 @@ class _RpcWorker(QObject):
     def _send(self, obj: dict) -> None:
         """Send JSON line (NOT thread-safe — caller must hold lock if needed)."""
         if not self._sock:
-            return
+            raise ConnectionError("socket unavailable")
         line = json.dumps(obj).encode("utf-8") + b"\n"
         self._sock.sendall(line)
 
@@ -505,7 +551,7 @@ class _EventsWorker(QObject):
     def _send(self, obj: dict) -> None:
         """Send JSON line."""
         if not self._sock:
-            return
+            raise ConnectionError("socket unavailable")
         line = json.dumps(obj).encode("utf-8") + b"\n"
         self._sock.sendall(line)
 
