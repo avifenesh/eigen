@@ -14,7 +14,7 @@ eigen guiserver (new subcommand) ~/.eigen/guiserver.sock  (mode 0600)
 eigen-qt (PySide6)               pure view
 ```
 
-- **guiserver**: The `internal/gui.Bridge` with Wails coupling removed (~30 lines), Emitter abstracted, reflect dispatcher exposing all 161+ bridge methods by name, two-socket protocol (RPC + events), per-connection subscriptions, one bounded-queue backpressure policy. Compiles **tagless** (no webkitgtk), joins `make gate`. Spawned/supervised by Qt; lingers 5 minutes after last client disconnect.
+- **guiserver**: The `internal/gui.Bridge` with Wails coupling removed (~30 lines), Emitter abstracted, reflect dispatcher exposing all 161+ bridge methods by name, two-socket protocol (RPC + events), per-connection subscriptions, one bounded-queue backpressure policy. Compiles **tagless** (no webkitgtk), joins `make gate`. Spawned/supervised by Qt; lingers 5 minutes after last client disconnect. Runtime socket loss is shown as reconnecting while Qt rechecks or respawns the sidecar off the render thread and the RPC workers retry their connections.
 - **Qt layer**: PySide6 + QML. Socket I/O + JSON parsing on worker thread; parsed payloads cross to GUI thread via queued signals. Models (transcript/sessions/feed/tasks/board/diff/filetree/etc.) drive native QML views. Markdown pipeline: markdown-it-py token walk → typed block-list model; Pygments code fences; math via raw-LaTeX fallback (KaTeX-parity deferred). View lifecycle mirrors the Svelte `viewCache` (active + recently-used live, others suspended).
 
 ## Layout

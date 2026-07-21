@@ -29,20 +29,33 @@ def test_app_context_starts_guiserver_and_tracks_daemon_health(monkeypatch):
 
     import main
 
+    class ImmediateThread:
+        def __init__(self, *, target, **_kwargs):
+            self._target = target
+
+        def start(self):
+            self._target()
+
     class FakeSupervisor(QObject):
         instances = []
+        next_error = None
 
         def __init__(self, parent=None):
             super().__init__(parent)
             self.ensure_calls = []
+            self.error = FakeSupervisor.next_error
+            FakeSupervisor.next_error = None
             FakeSupervisor.instances.append(self)
 
         def ensure_running(self, timeout=10.0):
             self.ensure_calls.append(timeout)
+            if self.error is not None:
+                raise self.error
             return {"sha": "abcdef1234567890", "manifest": "manifest-ok"}
 
     class FakeRpcClient(QObject):
         connected = Signal()
+        disconnected = Signal(str)
         event = Signal(str, dict)
         dropped = Signal(str)
         callDone = Signal(int, "QVariantMap")
@@ -51,6 +64,7 @@ def test_app_context_starts_guiserver_and_tracks_daemon_health(monkeypatch):
             super().__init__(kwargs.get("parent"))
             self.calls = []
             self.subscriptions = []
+            self.shutdown_calls = 0
 
         def call(self, method, *args, callback=None):
             self.calls.append((method, args))
@@ -77,7 +91,7 @@ def test_app_context_starts_guiserver_and_tracks_daemon_health(monkeypatch):
             self.subscriptions.append([f"unsub:{ch}" for ch in channels])
 
         def shutdown(self):
-            pass
+            self.shutdown_calls += 1
 
     class DummyModel(QObject):
         def __init__(self, *args, **kwargs):
@@ -104,6 +118,7 @@ def test_app_context_starts_guiserver_and_tracks_daemon_health(monkeypatch):
 
     monkeypatch.setattr(main, "GuiserverSupervisor", FakeSupervisor)
     monkeypatch.setattr(main, "RpcClient", FakeRpcClient)
+    monkeypatch.setattr(main.threading, "Thread", ImmediateThread)
     for attr in (
         "ApprovalsModel",
         "BoardModel",
@@ -133,6 +148,9 @@ def test_app_context_starts_guiserver_and_tracks_daemon_health(monkeypatch):
 
     assert FakeSupervisor.instances[0].ensure_calls == [10.0]
     assert ctx.guiserverSha == "abcdef1234567890"
+    assert ctx.daemonStatus == "connecting"
+    assert ctx.daemonOnline is False
+    assert ctx._stats_timer.isActive() is False
 
     ctx._on_hello({"error": "not connected"})
     assert ctx.guiserverSha == "abcdef1234567890"
@@ -147,8 +165,10 @@ def test_app_context_starts_guiserver_and_tracks_daemon_health(monkeypatch):
     assert ("hello", ()) in ctx.rpc_client.calls
     assert ("Stats", ()) in ctx.rpc_client.calls
     assert ctx.guiserverSha == "feedfacecafebeef"
+    assert ctx.daemonStatus == "online"
     assert ctx.daemonOnline is True
     assert ctx.stats["sessions"] == 4
+    assert ctx._stats_timer.isActive() is True
 
     ctx.rpc_client.event.emit(
         "eigen:daemon:stats", {"sessions": 8, "running_turns": 2}
@@ -161,14 +181,36 @@ def test_app_context_starts_guiserver_and_tracks_daemon_health(monkeypatch):
         "eigen:daemon:health", {"ok": False, "error": "daemon down"}
     )
     app.processEvents()
+    assert ctx.daemonStatus == "offline"
     assert ctx.daemonOnline is False
 
     ctx.rpc_client.event.emit(
         "eigen:daemon:stats", {"sessions": 9, "running_turns": 0}
     )
     app.processEvents()
+    assert ctx.daemonStatus == "online"
     assert ctx.daemonOnline is True
     assert ctx.stats["sessions"] == 9
+
+    ctx.rpc_client.disconnected.emit("rpc: socket closed")
+    app.processEvents()
+    assert ctx.daemonStatus == "reconnecting"
+    assert ctx.daemonOnline is False
+    assert ctx._stats_timer.isActive() is False
+    assert len(FakeSupervisor.instances) == 2
+    assert FakeSupervisor.instances[1].ensure_calls == [10.0]
+    assert ctx._recovering_guiserver is False
+
+    FakeSupervisor.next_error = RuntimeError("binary unavailable")
+    ctx.rpc_client.disconnected.emit("events: socket closed")
+    app.processEvents()
+    assert len(FakeSupervisor.instances) == 3
+    assert FakeSupervisor.instances[2].ensure_calls == [10.0]
+    assert ctx.guiserverSha == "error"
+    assert ctx.daemonStatus == "offline"
+
+    ctx.shutdown()
+    assert ctx.rpc_client.shutdown_calls == 1
 
 
 def test_session_controller_ignores_stale_initial_state_reply():

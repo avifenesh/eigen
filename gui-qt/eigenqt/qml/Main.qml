@@ -20,6 +20,9 @@ ApplicationWindow {
     height: 800
     title: "eigen"
     property bool railVisible: true
+    readonly property string daemonStatusValue: typeof daemonStatus !== "undefined"
+        ? String(daemonStatus)
+        : (daemonOnline ? "online" : "offline")
     Component.onCompleted: {
         width = initialWindowWidth
         height = initialWindowHeight
@@ -337,14 +340,24 @@ ApplicationWindow {
                 objectName: "mainDaemonStatus"
                 spacing: Theme.space.sm
                 Rectangle {
+                    objectName: "mainDaemonStatusDot"
                     width: 8
                     height: 8
                     radius: 4
-                    color: daemonOnline ? Theme.colors.dotLive : Theme.colors.dotIdle
+                    color: root.daemonStatusValue === "online"
+                        ? Theme.colors.dotLive
+                        : (root.daemonStatusValue === "connecting" || root.daemonStatusValue === "reconnecting"
+                            ? Theme.colors.dotWorking
+                            : Theme.colors.dotIdle)
                     anchors.verticalCenter: parent.verticalCenter
                 }
                 Label {
-                    text: daemonOnline ? "daemon online" : "daemon offline"
+                    objectName: "mainDaemonStatusText"
+                    text: root.daemonStatusValue === "online"
+                        ? "daemon online"
+                        : (root.daemonStatusValue === "connecting"
+                            ? "daemon connecting"
+                            : (root.daemonStatusValue === "reconnecting" ? "daemon reconnecting" : "daemon offline"))
                     font.family: Theme.uiFonts[0]
                     font.pixelSize: Theme.fontSize.micro
                     color: Theme.colors.textSecondary

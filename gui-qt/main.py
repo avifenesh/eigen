@@ -7,6 +7,7 @@ Accepts --session <id> flag to open a session directly.
 """
 import json
 import sys
+import threading
 from pathlib import Path
 
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
@@ -91,14 +92,19 @@ class AppContext(QObject):
     """Main application context exposed to QML (RpcClient + status signals)."""
 
     daemonOnlineChanged = Signal()
+    daemonStatusChanged = Signal()
     guiserverShaChanged = Signal()
+    guiserverRecoveryFinished = Signal(bool, str)
     statsChanged = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._daemon_online = False
+        self._daemon_status = "connecting"
         self._guiserver_sha = "starting"
         self._stats = {}
+        self._recovering_guiserver = False
+        self._shutting_down = False
 
         self.guiserver = GuiserverSupervisor(parent=self)
         self._ensure_guiserver()
@@ -141,7 +147,9 @@ class AppContext(QObject):
 
         # Connect signals
         self.rpc_client.connected.connect(self._on_connected)
+        self.rpc_client.disconnected.connect(self._on_disconnected)
         self.rpc_client.event.connect(self._on_event)
+        self.guiserverRecoveryFinished.connect(self._on_guiserver_recovery)
 
         # Fetch hello once connected
         QTimer.singleShot(500, self._fetch_hello)
@@ -150,16 +158,57 @@ class AppContext(QObject):
         self._stats_timer = QTimer(self)
         self._stats_timer.setInterval(5000)
         self._stats_timer.timeout.connect(self._fetch_stats)
-        self._stats_timer.start()
 
     def _on_connected(self):
         """Handle RPC connected signal."""
         print("RPC connected")
+        self._set_daemon_status("connecting")
+        if not self._stats_timer.isActive():
+            self._stats_timer.start()
         self.rpc_client.subscribe(
             ["eigen:daemon:stats", "eigen:daemon:health"]
         )
         self._fetch_hello()
         self._fetch_stats()
+
+    def _on_disconnected(self, _reason: str):
+        """Show reconnecting promptly and avoid polling a known-dead socket."""
+        self._stats_timer.stop()
+        self._set_daemon_status("reconnecting")
+        self._recover_guiserver_async()
+
+    def _recover_guiserver_async(self):
+        """Repair a crashed/stale guiserver without blocking the GUI thread."""
+        if self._recovering_guiserver or self._shutting_down:
+            return
+        self._recovering_guiserver = True
+        threading.Thread(
+            target=self._recover_guiserver,
+            name="eigen-guiserver-recovery",
+            daemon=True,
+        ).start()
+
+    def _recover_guiserver(self):
+        try:
+            supervisor = GuiserverSupervisor()
+            hello = supervisor.ensure_running(timeout=10.0)
+            self.guiserverRecoveryFinished.emit(
+                True, str(hello.get("sha") or "unknown")
+            )
+        except Exception as exc:
+            self.guiserverRecoveryFinished.emit(False, str(exc))
+
+    @Slot(bool, str)
+    def _on_guiserver_recovery(self, recovered: bool, detail: str):
+        self._recovering_guiserver = False
+        if self._shutting_down:
+            return
+        if recovered:
+            self._set_guiserver_sha(detail)
+            return
+        print(f"guiserver recovery failed: {detail}", file=sys.stderr)
+        self._set_guiserver_sha("error")
+        self._set_daemon_status("offline")
 
     def _on_event(self, channel: str, data: dict):
         """Handle RPC event signal."""
@@ -167,9 +216,11 @@ class AppContext(QObject):
             if isinstance(data, dict):
                 self._stats = data
                 self.statsChanged.emit()
-            self._set_daemon_online(True)
+            self._set_daemon_status("online")
         elif channel == "eigen:daemon:health":
-            self._set_daemon_online(bool(data.get("ok", False)))
+            self._set_daemon_status(
+                "online" if bool(data.get("ok", False)) else "offline"
+            )
 
     def _ensure_guiserver(self):
         """Start or attach to the guiserver before the RPC workers connect."""
@@ -178,6 +229,7 @@ class AppContext(QObject):
         except Exception as exc:
             print(f"guiserver supervisor failed: {exc}", file=sys.stderr)
             self._set_guiserver_sha("error")
+            self._set_daemon_status("offline")
             return
 
         self._set_guiserver_sha(hello.get("sha") or "unknown")
@@ -212,13 +264,30 @@ class AppContext(QObject):
         if isinstance(payload, dict):
             self._stats = payload
             self.statsChanged.emit()
-            self._set_daemon_online(True)
+            self._set_daemon_status("online")
+            return
+
+        error = result.get("error")
+        if error and error != "not connected":
+            self._set_daemon_status("offline")
 
     def _set_daemon_online(self, online: bool):
-        if self._daemon_online == online:
+        self._set_daemon_status("online" if online else "offline")
+
+    def _set_daemon_status(self, status: str):
+        known_statuses = {"connecting", "online", "offline", "reconnecting"}
+        status = status if status in known_statuses else "offline"
+        online = status == "online"
+        status_changed = self._daemon_status != status
+        online_changed = self._daemon_online != online
+        if not status_changed and not online_changed:
             return
+        self._daemon_status = status
         self._daemon_online = online
-        self.daemonOnlineChanged.emit()
+        if status_changed:
+            self.daemonStatusChanged.emit()
+        if online_changed:
+            self.daemonOnlineChanged.emit()
 
     def _set_guiserver_sha(self, sha: str):
         if self._guiserver_sha == sha:
@@ -231,6 +300,11 @@ class AppContext(QObject):
         """Daemon online status."""
         return self._daemon_online
 
+    @Property(str, notify=daemonStatusChanged)
+    def daemonStatus(self):
+        """Human-facing daemon connection lifecycle state."""
+        return self._daemon_status
+
     @Property(str, notify=guiserverShaChanged)
     def guiserverSha(self):
         """Guiserver SHA."""
@@ -240,6 +314,13 @@ class AppContext(QObject):
     def stats(self):
         """Daemon stats (for home stats strip)."""
         return self._stats
+
+    @Slot()
+    def shutdown(self):
+        """Stop timers and socket threads before the Qt event loop exits."""
+        self._shutting_down = True
+        self._stats_timer.stop()
+        self.rpc_client.shutdown()
 
 
 class SessionController(QObject):
@@ -428,6 +509,7 @@ def main():
     ctx.setContextProperty("transcriptModel", session_controller.transcript_model)
     ctx.setContextProperty("approvalsModel", session_controller.approvals_model)
     ctx.setContextProperty("daemonOnline", app_context.daemonOnline)
+    ctx.setContextProperty("daemonStatus", app_context.daemonStatus)
     ctx.setContextProperty("guiserverSha", app_context.guiserverSha)
     ctx.setContextProperty("statsData", app_context.stats)
     ctx.setContextProperty("clipboardHelper", clipboard_helper)
@@ -437,8 +519,10 @@ def main():
 
     # Bind property changes
     app_context.daemonOnlineChanged.connect(lambda: ctx.setContextProperty("daemonOnline", app_context.daemonOnline))
+    app_context.daemonStatusChanged.connect(lambda: ctx.setContextProperty("daemonStatus", app_context.daemonStatus))
     app_context.guiserverShaChanged.connect(lambda: ctx.setContextProperty("guiserverSha", app_context.guiserverSha))
     app_context.statsChanged.connect(lambda: ctx.setContextProperty("statsData", app_context.stats))
+    app.aboutToQuit.connect(app_context.shutdown)
 
     # Parse CLI args for --session <id>
     session_arg = None
