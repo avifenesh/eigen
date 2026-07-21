@@ -234,6 +234,19 @@ app = QGuiApplication([])
 client = FakeRpcClient()
 
 feed = FeedModel(client)
+home_view, home = make_view(
+    "HomeView.qml",
+    client,
+    {"rpcClient": client, "feedModel": feed, "statsData": {}, "sessionsModel": None},
+)
+home_started = []
+home.sessionStarted.connect(lambda session_id: home_started.append(session_id))
+feed_empty = find_item(home, "homeFeedEmpty")
+feed_grid = find_item(home, "homeFeedGrid")
+if feed_empty is None or feed_empty.property("visible") is not True:
+    raise AssertionError("home did not render the initial empty feed state")
+if feed_grid is None or feed_grid.property("visible") is not False:
+    raise AssertionError("home rendered an empty feed grid")
 feed._on_feed_result(
     {
         "result": {
@@ -252,13 +265,11 @@ feed._on_feed_result(
         }
     }
 )
-home_view, home = make_view(
-    "HomeView.qml",
-    client,
-    {"rpcClient": client, "feedModel": feed, "statsData": {}, "sessionsModel": None},
-)
-home_started = []
-home.sessionStarted.connect(lambda session_id: home_started.append(session_id))
+pump(app, 20)
+if home.property("qaFeedCount") != 1:
+    raise AssertionError(f"home feed count did not react to hydration: {home.property('qaFeedCount')}")
+if feed_empty.property("visible") is not False or feed_grid.property("visible") is not True:
+    raise AssertionError("home feed did not replace its empty state after hydration")
 
 start = len(client.calls)
 feed_start = find_item(home, "homeFeedStart_home_git")

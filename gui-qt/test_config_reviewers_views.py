@@ -91,6 +91,19 @@ def test_config_view_loads():
     view.show()
     errors = []
 
+    def assert_populated_state():
+        empty = find_item(root, "configEmptyState")
+        if empty is None or empty.property("visible") is True:
+            errors.append("ConfigView kept the empty state after fields loaded")
+        if root.property("qaEmptyStateVisible") is not False:
+            errors.append("ConfigView reactive empty-state flag stayed active")
+        tabs = root.property("currentTabs")
+        if hasattr(tabs, "toVariant"):
+            tabs = tabs.toVariant()
+        if "General" not in (tabs or []):
+            errors.append(f"ConfigView did not render loaded tabs: {tabs}")
+        app.quit()
+
     def assert_load_state():
         empty = find_item(root, "configEmptyState")
         empty_refresh = find_item(root, "configEmptyRefreshButton")
@@ -105,7 +118,24 @@ def test_config_view_loads():
                 errors.append("ConfigView missing no-fields refresh action")
         else:
             errors.append("ConfigView showed neither empty state nor load-error state")
-        app.quit()
+        config_model._on_config_result(
+            {
+                "result": {
+                    "path": "/home/user/.eigen/config.json",
+                    "fields": [
+                        {
+                            "key": "theme",
+                            "desc": "Color palette",
+                            "value": "deepteal",
+                            "options": ["deepteal", "nord", "gruvbox"],
+                            "multi": False,
+                            "allowEmpty": False,
+                        }
+                    ],
+                }
+            }
+        )
+        QTimer.singleShot(50, assert_populated_state)
 
     QTimer.singleShot(50, assert_load_state)
     QTimer.singleShot(1000, app.quit)

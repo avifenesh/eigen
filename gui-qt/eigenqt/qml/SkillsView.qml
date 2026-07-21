@@ -556,7 +556,7 @@ Rectangle {
                 Rectangle {
                     id: proposalReviewStrip
                     objectName: "skillsProposalReviewStrip"
-                    visible: root.proposalsModel && root.proposalsModel.rowCount() > 0
+                    visible: root.proposalCount() > 0
                     Layout.fillWidth: true
                     implicitHeight: proposalsContent.implicitHeight + Theme.space.lg * 2
                     color: "transparent"
@@ -799,7 +799,10 @@ Rectangle {
 
                 // Empty state — no skills at all
                 Label {
-                    visible: !root.hasInitialLoadError() && (!root.skillsModel || (root.skillsModel.rowCount() === 0 && (!root.proposalsModel || root.proposalsModel.rowCount() === 0)))
+                    objectName: "skillsEmptyState"
+                    visible: !root.hasInitialLoadError()
+                        && root.totalSkillCount() === 0
+                        && root.proposalCount() === 0
                     text: "No skills yet — add one above."
                     font.pixelSize: Theme.fontSize.bodySm
                     color: Theme.colors.textMuted
@@ -1203,6 +1206,11 @@ Rectangle {
     function proposalCount() {
         root.modelEpoch
         return root.proposalsModel ? root.proposalsModel.rowCount() : 0
+    }
+
+    function totalSkillCount() {
+        root.modelEpoch
+        return root.skillsModel ? root.skillsModel.rowCount() : 0
     }
 
     function proposalRemaining() {

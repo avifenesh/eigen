@@ -22,14 +22,21 @@ Rectangle {
     // bindings froze on the initial empty model → black content pane.
     property var currentTabs: []
     property var currentTabFields
+    property int configFieldCount: 0
+    property int ruleChainCount: 0
+    readonly property bool qaEmptyStateVisible: configEmptyState.visible
     onActiveTabChanged: currentTabFields = tabFields()
     onConfigModelChanged: {
+        syncModelCounts()
         syncValuesFromModel()
         currentTabs = availableTabs()
         currentTabFields = tabFields()
         syncActiveModels()
     }
-    onRuleChainsModelChanged: syncActiveModels()
+    onRuleChainsModelChanged: {
+        syncModelCounts()
+        syncActiveModels()
+    }
     onVisibleChanged: syncActiveModels()
 
     // Key → tab mapping (matches Svelte Config.svelte)
@@ -712,11 +719,12 @@ Rectangle {
                 }
 
                 Rectangle {
+                    id: configEmptyState
                     objectName: "configEmptyState"
                     visible: root.configModel !== null
                         && !root.hasInitialLoadError()
-                        && root.configModel.rowCount() === 0
-                        && (root.ruleChainsModel === null || root.ruleChainsModel.rowCount() === 0)
+                        && root.configFieldCount === 0
+                        && root.ruleChainCount === 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: visible ? 260 : 0
                     color: "transparent"
@@ -770,6 +778,7 @@ Rectangle {
 
     // Initialize values from model on startup
     Component.onCompleted: {
+        syncModelCounts()
         currentTabs = availableTabs()
         currentTabFields = tabFields()
         if (root.configModel) {
@@ -783,6 +792,7 @@ Rectangle {
     Connections {
         target: root.configModel
         function onModelReset() {
+            root.syncModelCounts()
             syncValuesFromModel()
             root.currentTabs = root.availableTabs()
             root.currentTabFields = root.tabFields()
@@ -812,6 +822,9 @@ Rectangle {
 
     Connections {
         target: root.ruleChainsModel
+        function onModelReset() {
+            root.syncModelCounts()
+        }
         function onSet_rule_chain_done(role_name, stored_chain, success, error_msg) {
             root.setRuleChainSaving(role_name, false)
             if (!success) {
@@ -840,6 +853,11 @@ Rectangle {
         }
     }
 
+    function syncModelCounts() {
+        root.configFieldCount = root.configModel ? root.configModel.rowCount() : 0
+        root.ruleChainCount = root.ruleChainsModel ? root.ruleChainsModel.rowCount() : 0
+    }
+
     function configLoadError() {
         if (root.configModel && root.configModel.load_error) {
             return String(root.configModel.load_error)
@@ -859,11 +877,11 @@ Rectangle {
     }
 
     function configRowCount() {
-        return root.configModel ? root.configModel.rowCount() : 0
+        return root.configFieldCount
     }
 
     function ruleChainRowCount() {
-        return root.ruleChainsModel ? root.ruleChainsModel.rowCount() : 0
+        return root.ruleChainCount
     }
 
     function retryLoad() {

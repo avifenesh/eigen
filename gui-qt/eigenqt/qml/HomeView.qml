@@ -20,6 +20,8 @@ Rectangle {
     property var pendingActions: ({})
     property var tokenActions: ({})
     property string actionError: ""
+    property int feedCount: 0
+    readonly property int qaFeedCount: feedCount
 
     Connections {
         target: root.rpcClient ? root.rpcClient : null
@@ -27,6 +29,16 @@ Rectangle {
             root.handleCallDone(token, payload)
         }
     }
+
+    Connections {
+        target: root.feedModel ? root.feedModel : null
+        ignoreUnknownSignals: true
+        function onModelReset() { root.syncFeedCount() }
+        function onRowsInserted() { root.syncFeedCount() }
+        function onRowsRemoved() { root.syncFeedCount() }
+    }
+
+    onFeedModelChanged: syncFeedCount()
 
     function safeObjectName(value) {
         return String(value || "").replace(/[^A-Za-z0-9_]+/g, "_")
@@ -947,22 +959,25 @@ Rectangle {
                         textFormat: Text.PlainText
                     }
                     Label {
-                        visible: feedModel && feedModel.rowCount() > 0
-                        text: feedModel ? feedModel.rowCount() : ""
+                        objectName: "homeFeedCount"
+                        visible: root.feedCount > 0
+                        text: root.feedCount
                         font.pixelSize: Theme.fontSize.label
                         color: Theme.colors.textGhost
                     }
                 }
 
                 Label {
-                    visible: !feedModel || feedModel.rowCount() === 0
+                    objectName: "homeFeedEmpty"
+                    visible: root.feedCount === 0
                     text: "Nothing loose to act on — clean tree, no open work."
                     font.pixelSize: Theme.fontSize.bodySm
                     color: Theme.colors.textMuted
                 }
 
                 GridLayout {
-                    visible: feedModel && feedModel.rowCount() > 0
+                    objectName: "homeFeedGrid"
+                    visible: root.feedCount > 0
                     Layout.fillWidth: true
                     columns: 2
                     columnSpacing: Theme.space.lg
@@ -1135,7 +1150,14 @@ Rectangle {
         function onRowsRemoved() { root.recentList = recentSessions() }
         function onDataChanged() { root.recentList = recentSessions() }
     }
-    Component.onCompleted: recentList = recentSessions()
+    Component.onCompleted: {
+        recentList = recentSessions()
+        syncFeedCount()
+    }
+
+    function syncFeedCount() {
+        root.feedCount = root.feedModel ? root.feedModel.rowCount() : 0
+    }
 
     function recentSessions() {
         if (!sessionsModel) return []
