@@ -989,9 +989,7 @@ offline_view.setSource(QUrl())
 # disturbs the broader chat workflow below.
 maintenance_client = FakeRpcClient()
 maintenance_state = FakeSessionState()
-maintenance_transcript = StaticTranscript(
-    [{"kind": "assistant", "text": "A completed turn", "streaming": False, "blocks": []}]
-)
+maintenance_transcript = StaticTranscript([])
 maintenance_approvals = ApprovalModel(
     [{"id": "approval-maintenance", "tool": "shell", "args": "{}"}]
 )
@@ -1012,6 +1010,13 @@ maintenance_view, maintenance_chat = make_view(
 )
 maintenance_view.resize(900, 480)
 pump(app, 20)
+if maintenance_chat.property("qaConversationAvailable") is not False:
+    raise AssertionError("Empty maintenance chat reported conversation actions available")
+maintenance_transcript.appendNote("A completed turn")
+QTest.qWait(50)
+pump(app, 20)
+if maintenance_chat.property("qaConversationAvailable") is not True:
+    raise AssertionError("Chat maintenance actions did not react to transcript hydration")
 actions = click_item(app, maintenance_view, maintenance_chat, "chatSessionActionsButton")
 if maintenance_chat.property("qaSessionActionsOpen") is not True:
     raise AssertionError("Session actions trigger did not open its popup")
@@ -1025,6 +1030,8 @@ for object_name in ["chatCompactSessionButton", "chatResendSessionButton", "chat
     action = find_item_in(maintenance_view, maintenance_chat, object_name)
     if action is None or action.property("visible") is not True:
         raise AssertionError(f"Session actions popup is missing {object_name}")
+    if action.property("enabled") is not True:
+        raise AssertionError(f"{object_name} stayed disabled after transcript hydration")
     if float(action.property("qaHorizontalPadding") or 0) < 11.5:
         raise AssertionError(f"{object_name} has cramped horizontal padding")
 

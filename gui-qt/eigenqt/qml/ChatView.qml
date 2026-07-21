@@ -102,6 +102,8 @@ Rectangle {
     readonly property bool qaConfirmClearSession: confirmClearSession
     readonly property bool sessionMaintenanceBusy: compactingSession || resendingSession || clearingSession
     readonly property bool sessionActionsAvailable: !!rpcClient && typeof rpcClient.callToken === "function"
+    readonly property bool conversationAvailable: transcriptListView.count > 0
+    readonly property bool qaConversationAvailable: conversationAvailable
 
     signal backClicked()
     signal routeRequested(string route)
@@ -864,7 +866,7 @@ Rectangle {
                 contentAlignment: Text.AlignLeft
                 compact: true
                 variant: "ghost"
-                enabled: root.sessionActionsAvailable && root.hasConversationRows() && !root.isStreaming && !root.sessionMaintenanceBusy
+                enabled: root.sessionActionsAvailable && root.conversationAvailable && !root.isStreaming && !root.sessionMaintenanceBusy
                 toolTipText: root.isStreaming ? "Finish or interrupt the current turn first" : "Summarize older context to free tokens"
                 onClicked: root.runSessionAction(
                     "compactSession", "Compact", [root.sessionId, 0], "Could not compact context", true)
@@ -879,7 +881,7 @@ Rectangle {
                 contentAlignment: Text.AlignLeft
                 compact: true
                 variant: "ghost"
-                enabled: root.sessionActionsAvailable && root.hasConversationRows() && !root.isStreaming && !root.sessionMaintenanceBusy
+                enabled: root.sessionActionsAvailable && root.conversationAvailable && !root.isStreaming && !root.sessionMaintenanceBusy
                 toolTipText: root.isStreaming ? "Finish or interrupt the current turn first" : "Retry the last turn"
                 onClicked: root.runSessionAction(
                     "resendSession", "Resend", [root.sessionId], "Could not resend last turn", true)
@@ -901,7 +903,7 @@ Rectangle {
                 contentAlignment: Text.AlignLeft
                 compact: true
                 variant: "danger"
-                enabled: root.sessionActionsAvailable && root.hasConversationRows() && !root.isStreaming && !root.sessionMaintenanceBusy
+                enabled: root.sessionActionsAvailable && root.conversationAvailable && !root.isStreaming && !root.sessionMaintenanceBusy
                 toolTipText: root.isStreaming ? "Finish or interrupt the current turn first" : "Remove every message in this session"
                 onClicked: root.confirmClearSession = true
             }
@@ -1214,12 +1216,6 @@ Rectangle {
         var below = point.y + sessionActionsButton.height + Theme.space.sm
         if (below + sessionActionsPopup.height <= root.height - Theme.space.lg) return below
         return Math.max(Theme.space.lg, point.y - sessionActionsPopup.height - Theme.space.sm)
-    }
-
-    function hasConversationRows() {
-        return !!root.transcriptModel
-            && typeof root.transcriptModel.rowCount === "function"
-            && root.transcriptModel.rowCount() > 0
     }
 
     function setSessionActionPending(kind, pending) {

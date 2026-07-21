@@ -2551,7 +2551,11 @@ def main():
         ctx.setContextProperty("ruleChainsModel", rule_chains_model)
         return {"configModel": config_model, "ruleChainsModel": rule_chains_model}
 
-    ok = capture_view("config", "ConfigView.qml", setup_config) and ok
+    def assert_config_loaded(_view, root):
+        if root.property("qaEmptyStateVisible") is not False:
+            raise AssertionError("config screenshot retained the empty-state artwork after data loaded")
+
+    ok = capture_view("config", "ConfigView.qml", setup_config, assert_config_loaded) and ok
 
     def show_config_integrations(_view, root):
         root.setProperty("activeTab", "Integrations")

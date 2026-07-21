@@ -2195,7 +2195,8 @@ def check_skills(app, client):
     finally:
         close_view(app, offline_view)
 
-    skills, proposals = seeded_skill_models(client)
+    skills = SkillsModel(client)
+    proposals = ProposalsModel(client)
     view, root = load_view(app, client, "SkillsView.qml", context={"skillsModel": skills, "proposalsModel": proposals}, root_props={"skillsModel": skills, "proposalsModel": proposals, "rpcClient": client})
     try:
         if not skills._poll_timer.isActive() or not proposals._poll_timer.isActive():
@@ -2204,8 +2205,13 @@ def check_skills(app, client):
         proposal_scroller = find_visual_item(root, "skillsProposalScroller")
         if proposal_strip is None or proposal_scroller is None:
             raise AssertionError("skills proposal review strip was not exposed")
+        if proposal_strip.property("visible") is not True or float(root.property("qaProposalStripHeight") or 0) <= 0:
+            raise AssertionError("skills proposal strip did not appear after async model hydration")
         if root.property("qaProposalCount") != 1:
             raise AssertionError(f"unexpected seeded proposal count: {root.property('qaProposalCount')}")
+        empty_state = find_visual_item(root, "skillsEmptyState")
+        if empty_state is None or empty_state.property("visible") is not False:
+            raise AssertionError("skills empty state remained visible after async model hydration")
         if float(root.property("qaProposalStripHeight") or 0) > 180:
             raise AssertionError(f"single proposal strip is too tall: {root.property('qaProposalStripHeight')}")
         if float(root.property("qaProposalScrollerHeight") or 0) > 130:
