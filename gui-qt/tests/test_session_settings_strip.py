@@ -56,6 +56,13 @@ def find_visible_item(root, object_name):
     return max(matches, key=lambda item: float(item.property("width") or 0) * float(item.property("height") or 0), default=None)
 
 
+def count_items(root, object_name):
+    count = 1 if root.objectName() == object_name else 0
+    for child in root.childItems():
+        count += count_items(child, object_name)
+    return count
+
+
 def assert_inside_window(item, window_width, window_height):
     width = float(item.property("width") or 0)
     height = float(item.property("height") or 0)
@@ -129,7 +136,15 @@ for window_width in (1180, 420):
         assert_inside_window(control, window_width, HEIGHT)
         if control.property("qaTextFits") is not True:
             raise AssertionError(f"{name} text is clipped at {window_width}px")
+        if count_items(root, name) != 1:
+            raise AssertionError(f"inactive responsive layout retained duplicate {name} at {window_width}px")
         controls.append(control)
+    fast_label = find_visible_item(root, "sessionFastLabel")
+    if fast_label is None or fast_label.property("text") != "Fast":
+        raise AssertionError(f"Fast switch lost its visible label at {window_width}px")
+    assert_inside_window(fast_label, window_width, HEIGHT)
+    if count_items(root, "sessionFastLabel") != 1:
+        raise AssertionError(f"inactive responsive layout retained duplicate Fast label at {window_width}px")
     model_combo = find_visible_item(root, "sessionModelCombo")
     if model_combo.property("count") != 2:
         raise AssertionError(f"model picker exposed non-GPT options at {window_width}px: {model_combo.property('count')}")
