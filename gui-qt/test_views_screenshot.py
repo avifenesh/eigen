@@ -1801,6 +1801,46 @@ def main():
 
     ok = capture_view("home-action-error", "HomeView.qml", setup_home, show_home_action_error) and ok
 
+    def setup_home_loading(ctx):
+        dashboard_model = DashboardModel(client)
+        feed_model = FeedModel(client)
+        sessions_model = SessionsModel(client)
+        return {
+            "dashboardModel": dashboard_model,
+            "feedModel": feed_model,
+            "sessionsModel": sessions_model,
+            "rpcClient": client,
+            "statsData": {},
+        }
+
+    def assert_home_loading(_view, root):
+        expected = {
+            "homeStatValue_sessions": "—",
+            "homeStatValue_running": "—",
+            "homeStatValue_tasks": "—",
+            "homeStatValue_cache_hit": "—",
+            "homeDashboardState_Today": "Loading…",
+            "homeDashboardState_Inbox": "Loading…",
+            "homeMachineCpuValue": "—",
+            "homeMachineMemoryValue": "—",
+            "homeMachineDiskValue": "—",
+            "homeFeedEmpty": "Scanning your projects for things to act on…",
+            "homeResumeEmpty": "Loading sessions…",
+        }
+        for object_name, expected_text in expected.items():
+            item = find_item(root, object_name)
+            if item is None:
+                raise AssertionError(f"missing truthful loading item {object_name}")
+            actual = str(item.property("qaText") or item.property("text") or "")
+            if actual != expected_text:
+                raise AssertionError(f"{object_name} showed {actual!r}, expected {expected_text!r}")
+        rendered = " ".join(str(item.property("text") or "") for item in root.findChildren(QObject))
+        for false_value in ("NaN", "0/0 GB", "Connect Google"):
+            if false_value in rendered:
+                raise AssertionError(f"home loading state rendered false value {false_value!r}")
+
+    ok = capture_view("home-loading", "HomeView.qml", setup_home_loading, assert_home_loading) and ok
+
     # 2. SessionsView
     def setup_sessions(ctx):
         sessions_model = SessionsModel(client)
@@ -1829,6 +1869,18 @@ def main():
         return {"sessionsModel": sessions_model}
 
     ok = capture_view("sessions", "SessionsView.qml", setup_sessions) and ok
+
+    def setup_sessions_loading(ctx):
+        return {"sessionsModel": SessionsModel(client)}
+
+    def assert_sessions_loading(_view, root):
+        empty = find_item(root, "sessionsEmptyState")
+        if empty is None or empty.property("qaText") != "Loading sessions…":
+            raise AssertionError("sessions loading state was presented as an empty list")
+        if root.property("qaSessionsLoaded") is not False:
+            raise AssertionError("sessions loading screenshot reported hydrated data")
+
+    ok = capture_view("sessions-loading", "SessionsView.qml", setup_sessions_loading, assert_sessions_loading) and ok
 
     def show_sessions_row_focus(_view, root):
         row = find_item(root, "sessionsRow_s_qa_chat")

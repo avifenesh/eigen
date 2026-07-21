@@ -199,10 +199,15 @@ def test_sessions_model_ignores_stale_refresh_callbacks():
 
     model.refresh()
     first = client.calls[-1]
+    assert model.loading is True
+    assert model.loaded is False
     model.refresh()
     second = client.calls[-1]
 
     _reply(second, [_session("s-fresh", updated=20)])
+    assert model.loading is False
+    assert model.loaded is True
+    assert model.loadError == ""
     assert model.rowCount() == 1
     assert model.data(model.index(0, 0), model.IdRole) == "s-fresh"
 
@@ -210,6 +215,48 @@ def test_sessions_model_ignores_stale_refresh_callbacks():
     assert model.rowCount() == 1
     assert model.data(model.index(0, 0), model.IdRole) == "s-fresh"
 
+
+def test_sessions_model_surfaces_initial_load_error_and_recovers():
+    ensure_qt_app()
+    client = DeferredRpcClient()
+    model = SessionsModel(client)
+
+    model.refresh()
+    failed = client.calls[-1]
+    failed["callback"]({"error": {"message": "daemon offline"}})
+
+    assert model.loading is False
+    assert model.loaded is False
+    assert model.loadError == "daemon offline"
+    assert model.rowCount() == 0
+
+    model.refresh()
+    recovered = client.calls[-1]
+    assert model.loading is True
+    assert model.loadError == ""
+    _reply(recovered, [_session("s-recovered", updated=20)])
+
+    assert model.loading is False
+    assert model.loaded is True
+    assert model.loadError == ""
+    assert model.data(model.index(0, 0), model.IdRole) == "s-recovered"
+
+
+def test_sessions_model_keeps_loaded_rows_when_refresh_fails():
+    ensure_qt_app()
+    client = DeferredRpcClient()
+    model = SessionsModel(client)
+    model._on_sessions_result({"result": [_session("s-existing", updated=20)]})
+
+    model.refresh()
+    refresh = client.calls[-1]
+    refresh["callback"]({"error": "temporary failure"})
+
+    assert model.loaded is True
+    assert model.loading is False
+    assert model.loadError == "temporary failure"
+    assert model.rowCount() == 1
+    assert model.data(model.index(0, 0), model.IdRole) == "s-existing"
 
 def test_sessions_model_remove_ignores_older_list_snapshot():
     ensure_qt_app()

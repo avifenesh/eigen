@@ -7,7 +7,7 @@ Working-now and resume use slices from SessionsModel (see sessions.py).
 """
 
 import sys
-from typing import Optional
+from typing import Any, Optional
 
 from PySide6.QtCore import (
     QAbstractListModel,
@@ -23,6 +23,16 @@ from PySide6.QtCore import (
 from eigenqt.rpc import RpcClient
 
 
+def _err_text(value: Any) -> str:
+    """Extract a readable RPC error string."""
+    if isinstance(value, dict):
+        nested = value.get("message") or value.get("error")
+        if nested is not None and nested is not value:
+            return _err_text(nested)
+        return "Unknown error"
+    return str(value) if value else "Unknown error"
+
+
 class DashboardModel(QObject):
     """
     Dashboard data model for Home view.
@@ -32,6 +42,7 @@ class DashboardModel(QObject):
     """
 
     dataChanged = Signal()
+    loadStateChanged = Signal()
 
     def __init__(self, client: RpcClient, parent: Optional[QObject] = None):
         super().__init__(parent)
@@ -47,6 +58,10 @@ class DashboardModel(QObject):
         self._unread: list[dict] = []
         self._health: dict = {}
         self._gpus: list[dict] = []
+        self._loading = False
+        self._loaded = False
+        self._load_error = ""
+        self._load_seq = 0
 
         self._client.connected.connect(self._on_connected)
 
@@ -58,12 +73,17 @@ class DashboardModel(QObject):
 
     def _fetch_dashboard(self):
         """Async fetch Dashboard RPC."""
-        self._client.call("Dashboard", callback=self._on_dashboard_result)
+        self._load_seq += 1
+        seq = self._load_seq
+        self._set_load_state(loading=True, load_error="")
+        self._client.call("Dashboard", callback=lambda result: self._on_dashboard_result(result, seq))
 
-    @Slot(dict)
-    def _on_dashboard_result(self, result: dict):
+    def _on_dashboard_result(self, result: dict, seq: Optional[int] = None):
         """Handle Dashboard RPC result."""
+        if seq is not None and seq != self._load_seq:
+            return
         if "error" in result:
+            self._set_load_state(loading=False, load_error=_err_text(result.get("error")))
             return
 
         data = result.get("result") or {}
@@ -74,9 +94,42 @@ class DashboardModel(QObject):
         self._health = data.get("health") or {}
         self._gpus = self._health.get("gpus") or []
 
+        self._set_load_state(loading=False, loaded=True, load_error="")
         self.dataChanged.emit()
 
+    def _set_load_state(
+        self,
+        *,
+        loading: Optional[bool] = None,
+        loaded: Optional[bool] = None,
+        load_error: Optional[str] = None,
+    ):
+        changed = False
+        if loading is not None and loading != self._loading:
+            self._loading = loading
+            changed = True
+        if loaded is not None and loaded != self._loaded:
+            self._loaded = loaded
+            changed = True
+        if load_error is not None and load_error != self._load_error:
+            self._load_error = load_error
+            changed = True
+        if changed:
+            self.loadStateChanged.emit()
+
     # Properties (read-only for QML)
+    @Property(bool, notify=loadStateChanged)
+    def loading(self) -> bool:
+        return self._loading
+
+    @Property(bool, notify=loadStateChanged)
+    def loaded(self) -> bool:
+        return self._loaded
+
+    @Property(str, notify=loadStateChanged)
+    def loadError(self) -> str:
+        return self._load_error
+
     @Property(bool, notify=dataChanged)
     def google_connected(self) -> bool:
         return self._google_connected
@@ -128,6 +181,7 @@ class FeedModel(QAbstractListModel):
     DirNameRole = Qt.UserRole + 6
     TaskRole = Qt.UserRole + 7
     URLRole = Qt.UserRole + 8
+    freshChanged = Signal()
 
     def __init__(self, client: RpcClient, parent: Optional[QObject] = None):
         super().__init__(parent)
@@ -157,6 +211,11 @@ class FeedModel(QAbstractListModel):
         if parent.isValid():
             return 0
         return len(self._items)
+
+    @Property(bool, notify=freshChanged)
+    def fresh(self) -> bool:
+        """Whether the daemon has completed at least one feed scan."""
+        return self._fresh
 
     def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
         """Return data for index/role."""
@@ -201,11 +260,15 @@ class FeedModel(QAbstractListModel):
 
         data = result.get("result") or {}
         items = data.get("items") or []
-        self._fresh = data.get("fresh", False)
+        fresh = bool(data.get("fresh", False))
+        fresh_changed = fresh != self._fresh
+        self._fresh = fresh
 
         self.beginResetModel()
         self._items = items
         self.endResetModel()
+        if fresh_changed:
+            self.freshChanged.emit()
 
     @Slot(str, dict)
     def _on_event(self, channel: str, data: dict):
