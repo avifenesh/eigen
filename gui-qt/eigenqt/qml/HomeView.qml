@@ -22,6 +22,10 @@ Rectangle {
     property string actionError: ""
     property int feedCount: 0
     readonly property int qaFeedCount: feedCount
+    readonly property bool qaDashboardLoaded: dashboardLoaded()
+    readonly property bool qaFeedFresh: feedFresh()
+    readonly property bool qaSessionsLoaded: sessionsLoaded()
+    readonly property bool qaStatsReady: statsReady()
 
     Connections {
         target: root.rpcClient ? root.rpcClient : null
@@ -114,15 +118,16 @@ Rectangle {
     // Inline component definitions
     component StatItem: ColumnLayout {
         property string label: ""
-        property var value: 0
+        property var value: ""
+        property bool ready: true
         property bool highlight: false
 
         spacing: Theme.space.xs
 
         Label {
-            // value is a var (stats fields arrive async) — coerce so a
-            // transient undefined never hits the QString property.
-            text: value === undefined || value === null ? "0" : String(value)
+            objectName: "homeStatValue_" + root.safeObjectName(label)
+            readonly property string qaText: text
+            text: ready && value !== undefined && value !== null ? String(value) : "—"
             font.family: Theme.uiFonts[0]
             font.pixelSize: Theme.fontSize.h3
             font.weight: Theme.fontWeight.semibold
@@ -210,6 +215,7 @@ Rectangle {
         property string label: ""
         property string value: ""
         property real pct: 0
+        property string qaName: ""
 
         spacing: Theme.space.xs
 
@@ -226,6 +232,8 @@ Rectangle {
             Item { Layout.fillWidth: true }
 
             Label {
+                objectName: qaName
+                readonly property string qaText: text
                 text: value
                 font.pixelSize: Theme.fontSize.label
                 color: Theme.colors.textSecondary
@@ -732,7 +740,8 @@ Rectangle {
 
                     StatItem {
                         label: "sessions"
-                        value: statsData ? statsData.sessions : 0
+                        ready: root.sessionStatReady()
+                        value: root.sessionStatValue()
                     }
 
                     Rectangle {
@@ -743,8 +752,9 @@ Rectangle {
 
                     StatItem {
                         label: "running"
-                        value: statsData ? statsData.running_turns : 0
-                        highlight: statsData && statsData.running_turns > 0
+                        ready: root.statsReady()
+                        value: root.statsValue("running_turns")
+                        highlight: ready && Number(value) > 0
                     }
 
                     Rectangle {
@@ -755,7 +765,8 @@ Rectangle {
 
                     StatItem {
                         label: "tasks"
-                        value: statsData ? statsData.bg_tasks : 0
+                        ready: root.statsReady()
+                        value: root.statsValue("bg_tasks")
                     }
 
                     Rectangle {
@@ -766,7 +777,8 @@ Rectangle {
 
                     StatItem {
                         label: "cache hit"
-                        value: cacheHitPct() + "%"
+                        ready: root.statsReady()
+                        value: root.cacheHitPct() + "%"
                     }
 
                     Item { Layout.fillWidth: true }
@@ -791,21 +803,16 @@ Rectangle {
                     content: Item {
                         anchors.fill: parent
                         Label {
-                            visible: !dashboardModel || !dashboardModel.google_connected
+                            objectName: "homeDashboardState_Today"
+                            readonly property string qaText: text
+                            visible: !root.dashboardLoaded() || !dashboardModel.google_connected || dashboardModel.events.length === 0
                             anchors.centerIn: parent
-                            text: "Connect Google to see your calendar."
-                            font.pixelSize: Theme.fontSize.label
-                            color: Theme.colors.textGhost
-                        }
-                        Label {
-                            visible: dashboardModel && dashboardModel.google_connected && dashboardModel.events.length === 0
-                            anchors.centerIn: parent
-                            text: "No upcoming events."
+                            text: root.dashboardSectionText("calendar")
                             font.pixelSize: Theme.fontSize.label
                             color: Theme.colors.textGhost
                         }
                         ListView {
-                            visible: dashboardModel && dashboardModel.events.length > 0
+                            visible: root.dashboardLoaded() && dashboardModel.google_connected && dashboardModel.events.length > 0
                             anchors.fill: parent
                             model: dashboardModel ? dashboardModel.events.slice(0, 5) : []
                             spacing: Theme.space.sm
@@ -836,28 +843,23 @@ Rectangle {
                 DashboardPanel {
                     icon: "⊠"
                     title: "Inbox"
-                    badge: dashboardModel && dashboardModel.google_connected && dashboardModel.unread_count > 0 ? dashboardModel.unread_count.toString() : ""
+                    badge: root.dashboardLoaded() && dashboardModel.google_connected && dashboardModel.unread_count > 0 ? dashboardModel.unread_count.toString() : ""
                     Layout.fillWidth: true
                     Layout.minimumHeight: 140
 
                     content: Item {
                         anchors.fill: parent
                         Label {
-                            visible: !dashboardModel || !dashboardModel.google_connected
+                            objectName: "homeDashboardState_Inbox"
+                            readonly property string qaText: text
+                            visible: !root.dashboardLoaded() || !dashboardModel.google_connected || dashboardModel.unread.length === 0
                             anchors.centerIn: parent
-                            text: "Connect Google to see your inbox."
-                            font.pixelSize: Theme.fontSize.label
-                            color: Theme.colors.textGhost
-                        }
-                        Label {
-                            visible: dashboardModel && dashboardModel.google_connected && dashboardModel.unread.length === 0
-                            anchors.centerIn: parent
-                            text: "Inbox zero — nothing unread."
+                            text: root.dashboardSectionText("inbox")
                             font.pixelSize: Theme.fontSize.label
                             color: Theme.colors.textGhost
                         }
                         ListView {
-                            visible: dashboardModel && dashboardModel.unread.length > 0
+                            visible: root.dashboardLoaded() && dashboardModel.google_connected && dashboardModel.unread.length > 0
                             anchors.fill: parent
                             model: dashboardModel ? dashboardModel.unread.slice(0, 5) : []
                             spacing: Theme.space.sm
@@ -890,9 +892,9 @@ Rectangle {
                     icon: "▦"
                     title: "Machine"
                     badge: ""
-                    tempLabel: dashboardModel && dashboardModel.health.cpuTempC > 0 ? Math.round(dashboardModel.health.cpuTempC) + "°C" : ""
-                    tempHot: dashboardModel && dashboardModel.health.cpuTempC >= 90
-                    tempWarm: dashboardModel && dashboardModel.health.cpuTempC >= 80
+                    tempLabel: root.healthText("cpuTempC", 1, "°C", false)
+                    tempHot: root.healthNumber("cpuTempC") >= 90
+                    tempWarm: root.healthNumber("cpuTempC") >= 80
                     Layout.fillWidth: true
                     Layout.minimumHeight: 140
 
@@ -903,24 +905,25 @@ Rectangle {
                         // CPU load
                         MetricRow {
                             label: "CPU load"
-                            value: dashboardModel ? Math.round(dashboardModel.health.loadPerCpu * 100) + "%" : "0%"
-                            pct: dashboardModel ? dashboardModel.health.loadPerCpu * 100 : 0
+                            qaName: "homeMachineCpuValue"
+                            value: root.healthText("loadPerCpu", 100, "%", false)
+                            pct: root.healthPercent("loadPerCpu", 100)
                         }
 
                         // Memory
                         MetricRow {
                             label: "Memory"
-                            value: (dashboardModel && dashboardModel.health.memUsedGb !== undefined)
-                                ? dashboardModel.health.memUsedGb.toFixed(1) + "/" + dashboardModel.health.memTotalGb.toFixed(1) + " GB" : "0/0 GB"
-                            pct: (dashboardModel && dashboardModel.health.memUsedPct !== undefined) ? dashboardModel.health.memUsedPct : 0
+                            qaName: "homeMachineMemoryValue"
+                            value: root.memoryText()
+                            pct: root.healthPercent("memUsedPct", 1)
                         }
 
                         // Disk
                         MetricRow {
                             label: "Disk /"
-                            value: (dashboardModel && dashboardModel.health.diskUsedPct !== undefined)
-                                ? Math.round(dashboardModel.health.diskUsedPct) + "%" : "0%"
-                            pct: (dashboardModel && dashboardModel.health.diskUsedPct !== undefined) ? dashboardModel.health.diskUsedPct : 0
+                            qaName: "homeMachineDiskValue"
+                            value: root.healthText("diskUsedPct", 1, "%", false)
+                            pct: root.healthPercent("diskUsedPct", 1)
                         }
                     }
                 }
@@ -970,7 +973,9 @@ Rectangle {
                 Label {
                     objectName: "homeFeedEmpty"
                     visible: root.feedCount === 0
-                    text: "Nothing loose to act on — clean tree, no open work."
+                    text: root.feedFresh()
+                        ? "Nothing loose to act on — clean tree, no open work."
+                        : "Scanning your projects for things to act on…"
                     font.pixelSize: Theme.fontSize.bodySm
                     color: Theme.colors.textMuted
                 }
@@ -1058,8 +1063,10 @@ Rectangle {
                 }
 
                 Label {
+                    objectName: "homeResumeEmpty"
+                    readonly property string qaText: text
                     visible: root.recentList.length === 0
-                    text: "No sessions yet — start one above."
+                    text: root.resumeEmptyText()
                     font.pixelSize: Theme.fontSize.bodySm
                     color: Theme.colors.textMuted
                 }
@@ -1095,11 +1102,103 @@ Rectangle {
     }
 
     function cacheHitPct() {
-        if (!statsData) return 0
+        if (!statsReady()) return 0
         var read = statsData.cache_read_tokens || 0
         var total = (statsData.input_tokens || 0) + read + (statsData.cache_write_tokens || 0)
         if (total <= 0) return 0
         return Math.min(100, Math.max(0, Math.round((read / total) * 100)))
+    }
+
+    function dashboardLoaded() {
+        if (!dashboardModel) return false
+        if (dashboardModel.loaded === undefined || dashboardModel.loaded === null) return true
+        return !!dashboardModel.loaded
+    }
+
+    function dashboardLoadError() {
+        if (!dashboardModel || dashboardModel.loadError === undefined || dashboardModel.loadError === null) return ""
+        return String(dashboardModel.loadError)
+    }
+
+    function dashboardSectionText(section) {
+        if (!dashboardLoaded()) {
+            return dashboardLoadError().length > 0 ? "Dashboard unavailable — retrying." : "Loading…"
+        }
+        if (!dashboardModel.google_connected) {
+            return section === "calendar"
+                ? "Connect Google to see your calendar."
+                : "Connect Google to see your inbox."
+        }
+        return section === "calendar" ? "No upcoming events." : "Inbox zero — nothing unread."
+    }
+
+    function feedFresh() {
+        if (!feedModel) return false
+        if (feedModel.fresh === undefined || feedModel.fresh === null) return true
+        return !!feedModel.fresh
+    }
+
+    function sessionsLoaded() {
+        if (!sessionsModel) return false
+        if (sessionsModel.loaded === undefined || sessionsModel.loaded === null) return true
+        return !!sessionsModel.loaded
+    }
+
+    function sessionsLoadError() {
+        if (!sessionsModel || sessionsModel.loadError === undefined || sessionsModel.loadError === null) return ""
+        return String(sessionsModel.loadError)
+    }
+
+    function statsReady() {
+        return !!statsData && statsData.sessions !== undefined && statsData.sessions !== null
+    }
+
+    function statsValue(name) {
+        if (!statsReady() || statsData[name] === undefined || statsData[name] === null) return 0
+        return statsData[name]
+    }
+
+    function sessionStatReady() {
+        return statsReady() || sessionsLoaded()
+    }
+
+    function sessionStatValue() {
+        if (statsReady()) return statsData.sessions
+        if (!sessionsLoaded()) return 0
+        if (sessionsModel.totalCount !== undefined && sessionsModel.totalCount !== null) return sessionsModel.totalCount
+        return sessionsModel.rowCount()
+    }
+
+    function healthNumber(name) {
+        if (!dashboardLoaded() || !dashboardModel.health) return NaN
+        var value = Number(dashboardModel.health[name])
+        return isFinite(value) ? value : NaN
+    }
+
+    function healthPercent(name, scale) {
+        var value = healthNumber(name)
+        return isFinite(value) ? Math.max(0, Math.min(100, value * scale)) : 0
+    }
+
+    function healthText(name, scale, suffix, decimal) {
+        var value = healthNumber(name)
+        if (!isFinite(value)) return "—"
+        var scaled = value * scale
+        return (decimal ? scaled.toFixed(1) : Math.round(scaled)) + suffix
+    }
+
+    function memoryText() {
+        var used = healthNumber("memUsedGb")
+        var total = healthNumber("memTotalGb")
+        if (!isFinite(used) || !isFinite(total)) return "—"
+        return used.toFixed(1) + "/" + total.toFixed(1) + " GB"
+    }
+
+    function resumeEmptyText() {
+        if (!sessionsLoaded()) {
+            return sessionsLoadError().length > 0 ? "Could not load sessions. Open Sessions to retry." : "Loading sessions…"
+        }
+        return "No sessions yet — start one above."
     }
 
     function formatEventTime(start, allDay) {

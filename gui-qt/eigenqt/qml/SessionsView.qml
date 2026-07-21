@@ -14,6 +14,7 @@ Rectangle {
     property bool autoPruneAttempted: false
     readonly property bool qaAutoPruneAttempted: autoPruneAttempted
     readonly property bool qaAutoPruneTimerRunning: autoPruneTimer.running
+    readonly property bool qaSessionsLoaded: sessionsLoaded()
 
     signal sessionClicked(string sessionId)
 
@@ -82,7 +83,7 @@ Rectangle {
                     variant: "secondary"
                     toolTipText: "Remove empty sessions now"
                     Layout.preferredWidth: 104
-                    enabled: root.sessionsModel !== null && root.totalSessionsCount() > 0 && !root.sessionsModel.pruning
+                    enabled: root.sessionsModel !== null && root.sessionsLoaded() && root.totalSessionsCount() > 0 && !root.sessionsModel.pruning
                     onClicked: root.sessionsModel.pruneSessions()
                 }
             }
@@ -97,7 +98,7 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.maximumWidth: 460
                     Layout.preferredHeight: 34
-                    enabled: root.sessionsModel !== null
+                    enabled: root.sessionsModel !== null && root.sessionsLoaded()
                     text: root.queryText()
                     placeholderText: "Search sessions..."
                     focusBorderColor: Theme.colors.brandBright
@@ -410,11 +411,11 @@ Rectangle {
                 }
 
                 Label {
+                    objectName: "sessionsEmptyState"
+                    readonly property string qaText: text
                     anchors.centerIn: parent
                     visible: root.filteredSessionsCount() === 0
-                    text: root.totalSessionsCount() === 0
-                        ? "No sessions yet"
-                        : "No sessions match \"" + root.queryText() + "\""
+                    text: root.sessionsEmptyText()
                     font.family: Theme.uiFonts[0]
                     font.pixelSize: Theme.fontSize.h3
                     color: Theme.colors.textMuted
@@ -425,6 +426,7 @@ Rectangle {
 
     Connections {
         target: root.sessionsModel ? root.sessionsModel : null
+        ignoreUnknownSignals: true
 
         function onModelReset() {
             root.modelEpoch += 1
@@ -444,6 +446,11 @@ Rectangle {
 
         function onDataChanged() {
             root.modelEpoch += 1
+        }
+
+        function onLoadStateChanged() {
+            root.modelEpoch += 1
+            root.scheduleAutoPrune()
         }
     }
 
@@ -471,12 +478,35 @@ Rectangle {
     }
 
     function sessionsCountText() {
+        if (!sessionsLoaded()) {
+            return sessionsLoadError().length > 0 ? "Could not load sessions" : "Loading sessions…"
+        }
         const total = totalSessionsCount()
         const filtered = filteredSessionsCount()
         if (queryText().length > 0) {
             return filtered + " shown · " + total + " total"
         }
         return total + (total === 1 ? " session" : " sessions")
+    }
+
+    function sessionsLoaded() {
+        if (!root.sessionsModel) return false
+        if (root.sessionsModel.loaded === undefined || root.sessionsModel.loaded === null) return true
+        return !!root.sessionsModel.loaded
+    }
+
+    function sessionsLoadError() {
+        if (!root.sessionsModel || root.sessionsModel.loadError === undefined || root.sessionsModel.loadError === null) return ""
+        return String(root.sessionsModel.loadError)
+    }
+
+    function sessionsEmptyText() {
+        if (!sessionsLoaded()) {
+            return sessionsLoadError().length > 0 ? "Could not load sessions. Refresh to retry." : "Loading sessions…"
+        }
+        return totalSessionsCount() === 0
+            ? "No sessions yet"
+            : "No sessions match \"" + queryText() + "\""
     }
 
     function isRemoving(sessionId) {
@@ -523,6 +553,7 @@ Rectangle {
 
     function scheduleAutoPrune() {
         if (root.autoPruneAttempted || !root.visible || !root.sessionsModel) return
+        if (!root.sessionsLoaded()) return
         if (root.totalSessionsCount() <= 0) return
         if (root.sessionsModel.pruning) return
         autoPruneTimer.restart()
@@ -530,6 +561,7 @@ Rectangle {
 
     function runAutoPrune() {
         if (root.autoPruneAttempted || !root.visible || !root.sessionsModel) return
+        if (!root.sessionsLoaded()) return
         if (root.totalSessionsCount() <= 0) return
         if (root.sessionsModel.pruning) {
             root.scheduleAutoPrune()

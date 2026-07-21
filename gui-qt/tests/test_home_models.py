@@ -71,6 +71,21 @@ class MockRpcClient(QObject):
         self._subscribed.extend(channels)
 
 
+class DeferredRpcClient(QObject):
+    connected = Signal()
+    event = Signal(str, dict)
+
+    def __init__(self):
+        super().__init__()
+        self.calls = []
+
+    def call(self, method, params=None, callback=None):
+        self.calls.append({"method": method, "params": params, "callback": callback})
+
+    def subscribe(self, channels):
+        pass
+
+
 def test_dashboard_model_normalization(dashboard_fixture):
     """Dashboard DTO → model properties."""
     app = QCoreApplication.instance() or QCoreApplication([])
@@ -82,6 +97,9 @@ def test_dashboard_model_normalization(dashboard_fixture):
     model._on_dashboard_result({"result": dashboard_fixture})
 
     # Check properties
+    assert model.loaded is True
+    assert model.loading is False
+    assert model.loadError == ""
     assert model.google_connected is True
     assert len(model.events) == 2
     assert model.events[0]["summary"] == "Team standup"
@@ -116,6 +134,7 @@ def test_feed_model_normalization(feed_fixture):
 
     # Check row count
     assert model.rowCount() == 2
+    assert model.fresh is True
 
     # Check first item (git)
     idx0 = model.index(0, 0)
@@ -150,3 +169,49 @@ def test_feed_model_dismiss(feed_fixture):
     assert model.rowCount() == 1
     idx0 = model.index(0, 0)
     assert model.data(idx0, FeedModel.KeyRole) == "github:5678"
+
+
+def test_dashboard_model_exposes_loading_error_and_recovery(dashboard_fixture):
+    QCoreApplication.instance() or QCoreApplication([])
+    client = DeferredRpcClient()
+    model = DashboardModel(client)
+
+    model._fetch_dashboard()
+    first = client.calls[-1]
+    assert model.loading is True
+    assert model.loaded is False
+    assert model.loadError == ""
+
+    first["callback"]({"error": {"message": "daemon offline"}})
+    assert model.loading is False
+    assert model.loaded is False
+    assert model.loadError == "daemon offline"
+
+    model._fetch_dashboard()
+    second = client.calls[-1]
+    assert model.loading is True
+    assert model.loadError == ""
+    second["callback"]({"result": dashboard_fixture})
+
+    assert model.loading is False
+    assert model.loaded is True
+    assert model.loadError == ""
+    assert model.google_connected is True
+
+
+def test_dashboard_model_ignores_stale_refresh_reply(dashboard_fixture):
+    QCoreApplication.instance() or QCoreApplication([])
+    client = DeferredRpcClient()
+    model = DashboardModel(client)
+
+    model._fetch_dashboard()
+    stale = client.calls[-1]
+    model._fetch_dashboard()
+    current = client.calls[-1]
+
+    current["callback"]({"result": dashboard_fixture})
+    stale["callback"]({"error": "old failure"})
+
+    assert model.loaded is True
+    assert model.loading is False
+    assert model.loadError == ""

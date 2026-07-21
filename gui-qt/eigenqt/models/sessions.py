@@ -34,6 +34,7 @@ class SessionsModel(QAbstractListModel):
     totalCountChanged = Signal()
     filteredCountChanged = Signal()
     sessionEntriesChanged = Signal()
+    loadStateChanged = Signal()
 
     # Qt roles
     IdRole = Qt.UserRole + 1
@@ -58,6 +59,9 @@ class SessionsModel(QAbstractListModel):
         self._action_message = ""
         self._query = ""
         self._load_seq = 0
+        self._loading = False
+        self._loaded = False
+        self._load_error = ""
 
         # Connect to RPC + events
         self._client.connected.connect(self._on_connected)
@@ -111,6 +115,21 @@ class SessionsModel(QAbstractListModel):
     def pruning(self) -> bool:
         """Whether PruneSessions is in flight."""
         return self._pruning
+
+    @Property(bool, notify=loadStateChanged)
+    def loading(self) -> bool:
+        """Whether a session-list request is in flight."""
+        return self._loading
+
+    @Property(bool, notify=loadStateChanged)
+    def loaded(self) -> bool:
+        """Whether at least one session-list request has succeeded."""
+        return self._loaded
+
+    @Property(str, notify=loadStateChanged)
+    def loadError(self) -> str:
+        """Most recent session-list load error."""
+        return self._load_error
 
     @Property(list, notify=removingChanged)
     def removing(self) -> list[str]:
@@ -196,6 +215,7 @@ class SessionsModel(QAbstractListModel):
         if seq is not None and seq != self._load_seq:
             return
         if "error" in result:
+            self._set_load_state(loading=False, load_error=_err_text(result.get("error")))
             return
 
         sessions = result.get("result") or []
@@ -214,6 +234,7 @@ class SessionsModel(QAbstractListModel):
         existing_ids = {session.get("id", "") for session in sessions}
         self._unread.intersection_update(existing_ids)
         self.sessionEntriesChanged.emit()
+        self._set_load_state(loading=False, loaded=True, load_error="")
 
     @Slot(str, dict)
     def _on_event(self, channel: str, data: dict):
@@ -242,6 +263,7 @@ class SessionsModel(QAbstractListModel):
         """Fetch the session list, ignoring replies from older refreshes."""
         self._load_seq += 1
         seq = self._load_seq
+        self._set_load_state(loading=True, load_error="")
         self._client.call("Sessions", callback=lambda result: self._on_sessions_result(result, seq))
 
     @Slot(str, result=bool)
@@ -405,6 +427,26 @@ class SessionsModel(QAbstractListModel):
             return
         self._pruning = value
         self.pruningChanged.emit()
+
+    def _set_load_state(
+        self,
+        *,
+        loading: Optional[bool] = None,
+        loaded: Optional[bool] = None,
+        load_error: Optional[str] = None,
+    ):
+        changed = False
+        if loading is not None and loading != self._loading:
+            self._loading = loading
+            changed = True
+        if loaded is not None and loaded != self._loaded:
+            self._loaded = loaded
+            changed = True
+        if load_error is not None and load_error != self._load_error:
+            self._load_error = load_error
+            changed = True
+        if changed:
+            self.loadStateChanged.emit()
 
     def _set_action_error(self, value: str):
         if self._action_error == value:
