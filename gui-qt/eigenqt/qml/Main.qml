@@ -20,7 +20,9 @@ ApplicationWindow {
     height: 800
     title: "eigen"
     property bool railVisible: true
-    property bool railCollapsed: typeof uiSettings !== "undefined" ? uiSettings.railCollapsed : false
+    property bool railCollapsed: typeof uiSettings !== "undefined" && uiSettings
+        ? uiSettings.railCollapsed
+        : false
     readonly property bool qaRailCollapsed: railCollapsed
     readonly property real qaRailWidth: rail.width
     readonly property string daemonStatusValue: typeof daemonStatus !== "undefined"
@@ -459,7 +461,8 @@ ApplicationWindow {
     readonly property var ctxStats: statsData
 
     onRailCollapsedChanged: {
-        if (typeof uiSettings !== "undefined" && uiSettings.railCollapsed !== root.railCollapsed) {
+        if (typeof uiSettings !== "undefined" && uiSettings
+                && uiSettings.railCollapsed !== root.railCollapsed) {
             uiSettings.railCollapsed = root.railCollapsed
         }
     }

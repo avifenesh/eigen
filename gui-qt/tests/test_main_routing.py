@@ -1484,6 +1484,11 @@ try:
     if sum(1 for call in client.calls if call[0] == "SendInput") != send_count:
         raise AssertionError(f"/rail leaked into SendInput: {client.calls}")
 
+    messages.clear()
+    ctx.setContextProperty("uiSettings", None)
+    pump(app, 12)
+    if window.property("railCollapsed") is not False:
+        raise AssertionError("Main did not fall back when uiSettings was released")
     assert_no_qml_issues(messages)
 finally:
     qInstallMessageHandler(previous_handler)
