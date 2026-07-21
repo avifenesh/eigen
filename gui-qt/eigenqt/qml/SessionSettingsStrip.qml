@@ -113,6 +113,38 @@ Rectangle {
         }
     }
 
+    Component {
+        id: fastControlComponent
+
+        RowLayout {
+            spacing: Theme.space.sm
+
+            Label {
+                objectName: "sessionFastLabel"
+                text: "Fast"
+                font.family: Theme.uiFonts[0]
+                font.pixelSize: Theme.fontSize.micro
+                font.weight: Theme.fontWeight.semibold
+                color: root.sessionState && root.sessionState.fast ? Theme.colors.brandBright : Theme.colors.textMuted
+                verticalAlignment: Text.AlignVCenter
+                Layout.preferredWidth: 28
+                elide: Text.ElideRight
+            }
+
+            AppSwitch {
+                objectName: "sessionFastSwitch"
+                checked: !!(root.sessionState && root.sessionState.fast)
+                accessibleName: "Fast mode"
+                toolTipText: "Prioritize lower latency"
+                onClicked: {
+                    if (root.sessionState) {
+                        root.sessionState.setFast(!root.sessionState.fast)
+                    }
+                }
+            }
+        }
+    }
+
     RowLayout {
         visible: !root.compactControls
         anchors.fill: parent
@@ -120,61 +152,38 @@ Rectangle {
         spacing: Theme.space.lg
 
         Loader {
+            active: !root.compactControls
             Layout.preferredWidth: 220
             Layout.preferredHeight: 32
             sourceComponent: modelComboComponent
         }
 
         Loader {
+            active: !root.compactControls
             Layout.preferredWidth: 112
             Layout.preferredHeight: 32
             sourceComponent: permComboComponent
         }
 
         Loader {
-            active: root.sessionState && root.sessionState.effortLevels && root.sessionState.effortLevels.length > 0
+            active: !root.compactControls && root.sessionState && root.sessionState.effortLevels && root.sessionState.effortLevels.length > 0
             Layout.preferredWidth: active ? 120 : 0
             Layout.preferredHeight: active ? 32 : 0
             sourceComponent: effortComboComponent
         }
 
         Loader {
-            active: root.sessionState && root.sessionState.search !== ""
+            active: !root.compactControls && root.sessionState && root.sessionState.search !== ""
             Layout.preferredWidth: active ? 112 : 0
             Layout.preferredHeight: active ? 32 : 0
             sourceComponent: searchComboComponent
         }
 
         Loader {
-            active: root.sessionState && root.sessionState.fastOk
+            active: !root.compactControls && root.sessionState && root.sessionState.fastOk
             Layout.preferredWidth: active ? 80 : 0
             Layout.preferredHeight: active ? 32 : 0
-            sourceComponent: RowLayout {
-                spacing: Theme.space.sm
-
-                Label {
-                    text: "fast"
-                    font.family: Theme.uiFonts[0]
-                    font.pixelSize: Theme.fontSize.micro
-                    font.weight: Theme.fontWeight.semibold
-                    color: root.sessionState && root.sessionState.fast ? Theme.colors.brandBright : Theme.colors.textMuted
-                    verticalAlignment: Text.AlignVCenter
-                    Layout.preferredWidth: 26
-                    elide: Text.ElideRight
-                }
-
-                AppSwitch {
-                    objectName: "sessionFastSwitch"
-                    checked: !!(root.sessionState && root.sessionState.fast)
-                    accessibleName: "Fast tier"
-                    toolTipText: "Fast tier"
-                    onClicked: {
-                        if (root.sessionState) {
-                            root.sessionState.setFast(!root.sessionState.fast)
-                        }
-                    }
-                }
-            }
+            sourceComponent: fastControlComponent
         }
 
         // Title (double-click to rename)
@@ -254,19 +263,21 @@ Rectangle {
         spacing: Theme.space.md
 
         Loader {
+            active: root.compactControls
             width: root.compactModelWidth
             height: 32
             sourceComponent: modelComboComponent
         }
 
         Loader {
+            active: root.compactControls
             width: 104
             height: 32
             sourceComponent: permComboComponent
         }
 
         Loader {
-            active: root.sessionState && root.sessionState.effortLevels && root.sessionState.effortLevels.length > 0
+            active: root.compactControls && root.sessionState && root.sessionState.effortLevels && root.sessionState.effortLevels.length > 0
             visible: active
             width: active ? 120 : 0
             height: active ? 32 : 0
@@ -274,7 +285,7 @@ Rectangle {
         }
 
         Loader {
-            active: root.sessionState && root.sessionState.search !== ""
+            active: root.compactControls && root.sessionState && root.sessionState.search !== ""
             visible: active
             width: active ? 104 : 0
             height: active ? 32 : 0
@@ -282,21 +293,11 @@ Rectangle {
         }
 
         Loader {
-            active: root.sessionState && root.sessionState.fastOk
+            active: root.compactControls && root.sessionState && root.sessionState.fastOk
             visible: active
-            width: active ? 44 : 0
+            width: active ? 80 : 0
             height: active ? 32 : 0
-            sourceComponent: AppSwitch {
-                objectName: "sessionFastSwitch"
-                checked: !!(root.sessionState && root.sessionState.fast)
-                accessibleName: "Fast tier"
-                toolTipText: "Fast tier"
-                onClicked: {
-                    if (root.sessionState) {
-                        root.sessionState.setFast(!root.sessionState.fast)
-                    }
-                }
-            }
+            sourceComponent: fastControlComponent
         }
     }
 }
