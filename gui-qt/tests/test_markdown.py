@@ -14,6 +14,7 @@ Tests:
 
 import pytest
 from eigenqt.markdown import parse
+from eigenqt.markdown.highlight import clear_cache, highlight
 
 
 def test_fenced_code_block():
@@ -106,6 +107,38 @@ def test_inline_formatting():
     assert "<code" in html and "code</code>" in html
     assert '<a href="https://example.com"' in html
     assert "a link</a>" in html
+
+
+@pytest.mark.parametrize(
+    ("theme", "background", "code", "link"),
+    [
+        ("deepteal", "#1d282c", "#69c2b8", "#6fb7e8"),
+        ("nord", "#2b3140", "#8fbcbb", "#88c0d0"),
+        ("gruvbox", "#3c3836", "#8ec07c", "#83a598"),
+    ],
+)
+def test_inline_formatting_uses_the_active_palette(theme, background, code, link):
+    html = parse("Use `code` and [docs](https://example.com).", theme)[0].content
+
+    assert f"background-color: {background}" in html
+    assert f"color: {code}" in html
+    assert f"color: {link}" in html
+
+
+@pytest.mark.parametrize(
+    ("theme", "keyword", "number"),
+    [
+        ("deepteal", "#c58fd8", "#e8a878"),
+        ("nord", "#b48ead", "#d08770"),
+        ("gruvbox", "#fb4934", "#d3869b"),
+    ],
+)
+def test_syntax_highlighting_uses_the_active_palette(theme, keyword, number):
+    clear_cache()
+    html = highlight("python", "def answer():\n    return 42\n", theme).lower()
+
+    assert keyword in html
+    assert number in html
 
 
 def test_headings():

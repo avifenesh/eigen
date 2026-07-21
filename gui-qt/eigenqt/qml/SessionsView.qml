@@ -224,7 +224,7 @@ Rectangle {
                     radius: Theme.radius.md
                     color: rowHover.hovered ? Theme.colors.surfaceRaised2 : Theme.colors.surfaceRaised
                     border.width: activeFocus ? 2 : 1
-                    border.color: activeFocus ? Theme.colors.brandBright : Theme.colors.borderHairline
+                    border.color: activeFocus ? Theme.colors.borderFocus : Theme.colors.borderHairline
                     activeFocusOnTab: true
                     Accessible.name: root.textOrFallback(model.title, "untitled session")
 

@@ -187,7 +187,7 @@ Rectangle {
             font.weight: Theme.fontWeight.semibold
             backgroundColor: activeFocus ? Theme.colors.surfaceRaised : "transparent"
             borderColor: "transparent"
-            focusBorderColor: Theme.colors.borderBrand
+            focusBorderColor: Theme.colors.borderFocus
             normalBorderWidth: 0
             focusedBorderWidth: activeFocus ? 1 : 0
             Layout.fillWidth: true

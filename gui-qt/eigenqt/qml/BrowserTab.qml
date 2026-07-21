@@ -79,7 +79,7 @@ Rectangle {
                     Layout.preferredHeight: 30
                     backgroundColor: Theme.colors.bgInset
                     borderColor: Theme.colors.borderHairline
-                    focusBorderColor: Theme.colors.borderBrand
+                    focusBorderColor: Theme.colors.borderFocus
                     text: root.currentUrl
                     font.family: Theme.monoFonts[0]
                     font.pixelSize: Theme.fontSize.codeSm

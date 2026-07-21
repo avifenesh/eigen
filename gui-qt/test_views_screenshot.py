@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from PySide6.QtCore import QObject, Property, QPoint, QPointF, QTimer, QUrl, Qt, Signal, Slot
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
-from PySide6.QtQuick import QQuickView
+from PySide6.QtQuick import QQuickItem, QQuickView
 from PySide6.QtTest import QTest
 
 from eigenqt.models.board import BoardModel, KanbanModel
@@ -61,6 +61,15 @@ SCREENSHOTS.mkdir(exist_ok=True)
 VALID_PNG_BASE64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAG0lEQVQImWPUb3j7/4deMQPjp5M+/3/2cTMAAFRICM+3aAs3AAAAAElFTkSuQmCC"
 )
+
+
+def screenshot_theme(argv):
+    prefix = "--eigen-qt-theme="
+    for arg in argv:
+        if arg.startswith(prefix):
+            value = arg[len(prefix):].strip().lower()
+            return value if value in {"deepteal", "nord", "gruvbox"} else "deepteal"
+    return "deepteal"
 
 
 class ScreenshotRpcClient(QObject):
@@ -745,10 +754,17 @@ def scene_right(item):
     return item.mapToScene(QPointF(float(item.property("width") or 0), 0)).x()
 
 
+def quick_item_snapshot(root_item):
+    """Let Qt collect live items before Python wraps any WebEngine children."""
+    if root_item is None:
+        return []
+    return [root_item, *root_item.findChildren(QQuickItem)]
+
+
 def assert_app_tags_have_padding(view_name, root_item):
     failures = []
 
-    def visit(item):
+    def inspect(item):
         if item is None:
             return
         if item.property("qaIsAppTag") is True:
@@ -765,11 +781,8 @@ def assert_app_tags_have_padding(view_name, root_item):
                         f"padding={horizontal_padding:.1f}x{vertical_padding:.1f} "
                         f"size={width:.1f}x{height:.1f}"
                     )
-        if hasattr(item, "childItems"):
-            for child in item.childItems():
-                visit(child)
-
-    visit(root_item)
+    for item in quick_item_snapshot(root_item):
+        inspect(item)
     if failures:
         raise AssertionError(f"{view_name} rendered cramped AppTag text: {failures[:8]}")
 
@@ -777,7 +790,7 @@ def assert_app_tags_have_padding(view_name, root_item):
 def assert_marked_chips_have_padding(view_name, root_item, markers, label):
     failures = []
 
-    def visit(item):
+    def inspect(item):
         if item is None:
             return
         if any(item.property(marker) is True for marker in markers):
@@ -794,11 +807,8 @@ def assert_marked_chips_have_padding(view_name, root_item, markers, label):
                         f"padding={horizontal_padding:.1f}x{vertical_padding:.1f} "
                         f"size={width:.1f}x{height:.1f}"
                     )
-        if hasattr(item, "childItems"):
-            for child in item.childItems():
-                visit(child)
-
-    visit(root_item)
+    for item in quick_item_snapshot(root_item):
+        inspect(item)
     if failures:
         raise AssertionError(f"{view_name} rendered cramped {label} text: {failures[:8]}")
 
@@ -814,7 +824,7 @@ def assert_task_chips_have_padding(view_name, root_item):
 def assert_app_combos_have_padding(view_name, root_item):
     failures = []
 
-    def visit(item):
+    def inspect(item):
         if item is None:
             return
         if item.property("qaIsAppComboBox") is True or item.property("qaIsAppComboBoxOption") is True:
@@ -831,11 +841,8 @@ def assert_app_combos_have_padding(view_name, root_item):
                         f"padding={horizontal_padding:.1f}x{vertical_padding:.1f} "
                         f"size={width:.1f}x{height:.1f}"
                     )
-        if hasattr(item, "childItems"):
-            for child in item.childItems():
-                visit(child)
-
-    visit(root_item)
+    for item in quick_item_snapshot(root_item):
+        inspect(item)
     if failures:
         raise AssertionError(f"{view_name} rendered cramped AppComboBox text: {failures[:8]}")
 
@@ -843,7 +850,7 @@ def assert_app_combos_have_padding(view_name, root_item):
 def assert_app_text_fields_have_padding(view_name, root_item):
     failures = []
 
-    def visit(item):
+    def inspect(item):
         if item is None:
             return
         if item.property("qaIsAppTextField") is True:
@@ -861,11 +868,8 @@ def assert_app_text_fields_have_padding(view_name, root_item):
                         f"padding={horizontal_padding:.1f}x{vertical_padding:.1f} "
                         f"size={width:.1f}x{height:.1f}"
                     )
-        if hasattr(item, "childItems"):
-            for child in item.childItems():
-                visit(child)
-
-    visit(root_item)
+    for item in quick_item_snapshot(root_item):
+        inspect(item)
     if failures:
         raise AssertionError(f"{view_name} rendered cramped AppTextField text: {failures[:8]}")
 
@@ -873,7 +877,7 @@ def assert_app_text_fields_have_padding(view_name, root_item):
 def assert_app_text_areas_have_padding(view_name, root_item):
     failures = []
 
-    def visit(item):
+    def inspect(item):
         if item is None:
             return
         if item.property("qaIsAppTextArea") is True:
@@ -891,11 +895,8 @@ def assert_app_text_areas_have_padding(view_name, root_item):
                         f"padding={horizontal_padding:.1f}x{vertical_padding:.1f} "
                         f"size={width:.1f}x{height:.1f}"
                     )
-        if hasattr(item, "childItems"):
-            for child in item.childItems():
-                visit(child)
-
-    visit(root_item)
+    for item in quick_item_snapshot(root_item):
+        inspect(item)
     if failures:
         raise AssertionError(f"{view_name} rendered cramped AppTextArea text: {failures[:8]}")
 
@@ -904,7 +905,7 @@ def assert_app_buttons_have_padding(view_name, root_item):
     failures = []
     icon_text = {"", "×", "✕", "↑", "↓", "←", "→", "↗", "⌫"}
 
-    def visit(item):
+    def inspect(item):
         if item is None:
             return
         if item.property("qaIsAppButton") is True:
@@ -928,11 +929,8 @@ def assert_app_buttons_have_padding(view_name, root_item):
                         f"required={required_horizontal:.1f}x{required_vertical:.1f} "
                         f"size={width:.1f}x{height:.1f}"
                     )
-        if hasattr(item, "childItems"):
-            for child in item.childItems():
-                visit(child)
-
-    visit(root_item)
+    for item in quick_item_snapshot(root_item):
+        inspect(item)
     if failures:
         raise AssertionError(f"{view_name} rendered cramped AppButton text: {failures[:8]}")
 
@@ -1428,6 +1426,54 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
     for _ in range(14):
         app.processEvents()
 
+    window.setProperty("minimumWidth", 720)
+    window.setProperty("minimumHeight", 420)
+    window.setProperty("width", 720)
+    window.setProperty("height", 420)
+    QTest.qWait(80)
+    for _ in range(14):
+        app.processEvents()
+
+    narrow_rail = find_visible_item(window.contentItem(), "mainRail")
+    narrow_model_combo = find_visible_item(window.contentItem(), "sessionModelCombo")
+    if narrow_rail is None or narrow_model_combo is None:
+        print("✗ Main narrow chat proof could not find the rail/model picker")
+        window.hide()
+        return False
+    if float(narrow_rail.property("width") or 0) < 207.5:
+        print(f"✗ Main narrow chat proof collapsed the rail: {narrow_rail.property('width')}")
+        window.hide()
+        return False
+    for item, label in (
+        (narrow_model_combo, "model picker"),
+        (fast_switch, "fast switch"),
+        (send_button, "send button"),
+    ):
+        if scene_right(item) > scene_right(window.contentItem()) + 0.5:
+            print(
+                f"✗ Main narrow chat proof clipped {label}: "
+                f"right={scene_right(item):.1f}, "
+                f"content right={scene_right(window.contentItem()):.1f}"
+            )
+            window.hide()
+            return False
+    if scene_bottom(send_button) > scene_top(status_strip) + 0.5:
+        print(
+            "✗ Main narrow chat proof clipped send button: "
+            f"send bottom={scene_bottom(send_button):.1f}, "
+            f"status top={scene_top(status_strip):.1f}"
+        )
+        window.hide()
+        return False
+
+    output_narrow = SCREENSHOTS / "qa-fix-main-chat-narrow.png"
+    image_narrow = window.grabWindow()
+    success_narrow = image_narrow.save(str(output_narrow))
+    if success_narrow:
+        print(f"✓ Saved {output_narrow}")
+    else:
+        print(f"✗ Failed to save {output_narrow}")
+
     safe_bottom_inset = 40
     if not window.setProperty("bottomPadding", safe_bottom_inset):
         print("✗ Main safe-area chat proof could not set bottomPadding")
@@ -1466,7 +1512,7 @@ def capture_main_shell(client, clipboard_helper, highlighter, markdown_parser, t
         print(f"✗ Failed to save {output_safe}")
 
     window.hide()
-    return success and success_palette and success_error and success_min and success_compact and success_compact_dropdown and success_safe
+    return success and success_palette and success_error and success_min and success_compact and success_compact_dropdown and success_narrow and success_safe
 
 
 def main():
@@ -1478,8 +1524,9 @@ def main():
 
     client = ScreenshotRpcClient()
     clipboard_helper = ClipboardHelper(app)
-    highlighter = HighlighterHelper(app)
-    markdown_parser = MarkdownHelper(app)
+    theme = screenshot_theme(sys.argv)
+    highlighter = HighlighterHelper(app, theme=theme)
+    markdown_parser = MarkdownHelper(app, theme=theme)
     terminal_helper = TerminalHelper(app)
     atexit.register(client.shutdown)
     ok = True
@@ -2115,34 +2162,46 @@ def main():
 
     ok = capture_view("chat-attachment", "ChatView.qml", setup_chat, show_chat_attachment) and ok
 
-    def open_chat_model_dropdown(_view, root):
-        combo = find_item(root, "sessionModelCombo")
+    def open_chat_dropdown(root, object_name, label, expected_count=None):
+        combo = find_item(root, object_name)
         if combo is None:
-            raise AssertionError("chat screenshot did not render the model picker")
-        if int(combo.property("count") or 0) != 3:
-            raise AssertionError(f"chat model picker expected three GPT choices, saw {combo.property('count')}")
+            raise AssertionError(f"chat screenshot did not render the {label} picker")
+        count = int(combo.property("count") or 0)
+        if expected_count is not None and count != expected_count:
+            raise AssertionError(f"chat {label} picker expected {expected_count} choices, saw {count}")
+        if count < 1:
+            raise AssertionError(f"chat {label} picker had no choices")
         combo.setProperty("qaPopupOpen", True)
+        QTest.qWait(80)
+        app.processEvents()
+        if combo.property("qaPopupActuallyOpen") is not True:
+            raise AssertionError(f"chat {label} picker popup did not open")
+        if combo.property("qaPopupInsideWindow") is not True:
+            raise AssertionError(
+                f"chat {label} picker popup escaped the window: "
+                f"above={combo.property('qaPopupAvailableAbove')} "
+                f"below={combo.property('qaPopupAvailableBelow')} "
+                f"height={combo.property('qaPopupEffectiveHeight')} "
+                f"width={combo.property('qaPopupEffectiveWidth')}"
+            )
+
+    def open_chat_model_dropdown(_view, root):
+        open_chat_dropdown(root, "sessionModelCombo", "model", expected_count=3)
 
     ok = capture_view("chat-model-dropdown", "ChatView.qml", setup_chat, open_chat_model_dropdown) and ok
 
     def open_chat_perm_dropdown(_view, root):
-        combo = find_item(root, "sessionPermCombo")
-        if combo is not None:
-            combo.setProperty("qaPopupOpen", True)
+        open_chat_dropdown(root, "sessionPermCombo", "permission")
 
     ok = capture_view("chat-perm-dropdown", "ChatView.qml", setup_chat, open_chat_perm_dropdown) and ok
 
     def open_chat_effort_dropdown(_view, root):
-        combo = find_item(root, "sessionEffortCombo")
-        if combo is not None:
-            combo.setProperty("qaPopupOpen", True)
+        open_chat_dropdown(root, "sessionEffortCombo", "effort")
 
     ok = capture_view("chat-effort-dropdown", "ChatView.qml", setup_chat, open_chat_effort_dropdown) and ok
 
     def open_chat_search_dropdown(_view, root):
-        combo = find_item(root, "sessionSearchCombo")
-        if combo is not None:
-            combo.setProperty("qaPopupOpen", True)
+        open_chat_dropdown(root, "sessionSearchCombo", "search")
 
     ok = capture_view("chat-search-dropdown", "ChatView.qml", setup_chat, open_chat_search_dropdown) and ok
 

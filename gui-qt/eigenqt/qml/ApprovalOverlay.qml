@@ -122,7 +122,7 @@ Rectangle {
                                 bottomPadding: Theme.space.lg
                                 backgroundColor: "transparent"
                                 borderColor: "transparent"
-                                focusBorderColor: Theme.colors.borderBrandFaint
+                                focusBorderColor: Theme.colors.borderFocus
                                 normalBorderWidth: 0
                                 focusedBorderWidth: 1
                                 backgroundRadius: Theme.radius.xs

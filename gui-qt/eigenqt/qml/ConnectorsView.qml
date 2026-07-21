@@ -1225,7 +1225,7 @@ Rectangle {
             return tileMouseArea.containsMouse ? Theme.colors.stateHover : Theme.colors.bgRaised2
         }
         border.width: tile.activeFocus ? 2 : 1
-        border.color: tile.activeFocus ? Theme.colors.brandBright : Theme.colors.borderSubtle
+        border.color: tile.activeFocus ? Theme.colors.borderFocus : Theme.colors.borderSubtle
         radius: Theme.radius.md
         opacity: isAdded ? 0.55 : 1.0
         activeFocusOnTab: true

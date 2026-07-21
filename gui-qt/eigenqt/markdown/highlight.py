@@ -2,11 +2,12 @@
 highlight.py — Pygments syntax highlighting → Qt rich-text HTML.
 
 Uses Pygments HTML formatter with inline styles (noclasses=True).
-Graphite control-surface color scheme (matches the QML --syn-* colors).
-Cache highlighted results by (lang, source-hash) for streaming performance.
+The active Qt palette supplies the syntax roles.
+Cache highlighted results by (theme, lang, source-hash) for streaming performance.
 """
 
 import hashlib
+from functools import lru_cache
 from typing import Dict, Tuple
 
 from pygments import highlight as pygments_highlight
@@ -25,47 +26,49 @@ from pygments.token import (
     Whitespace,
 )
 
-
-class GraphiteStyle(Style):
-    """
-    Graphite Pygments style matching the Qt syntax tokens.
-    """
-
-    background_color = "#11161b"  # --syn-bg
-    default_style = "#d5dfdc"  # --syn-text
-
-    styles = {
-        Comment: "#71807c italic",  # --syn-comment
-        Keyword: "#d6a2ed bold",  # --syn-keyword
-        Keyword.Namespace: "#d6a2ed",
-        Keyword.Type: "#f2b867",  # --syn-type
-        Name.Class: "#f2b867",  # --syn-type
-        Name.Function: "#8bb9ff",  # --syn-func
-        Name.Builtin: "#5bd6c2",  # --syn-builtin
-        Name.Decorator: "#d6a2ed",
-        String: "#a6da7a",  # --syn-string
-        Number: "#efa979",  # --syn-number
-        Operator: "#acbbb7",  # --syn-punct
-        Text: "#d5dfdc",
-        Whitespace: "#d5dfdc",
-        Error: "#ff9382",  # --error
-    }
+from .palette import MarkdownPalette, palette_for
 
 
-# Highlight cache: (lang, source_hash) → HTML
-_highlight_cache: Dict[Tuple[str, str], str] = {}
+@lru_cache(maxsize=3)
+def _style_for(palette: MarkdownPalette) -> type[Style]:
+    class PaletteStyle(Style):
+        background_color = palette.syntax_background
+        default_style = palette.syntax_text
+        styles = {
+            Comment: f"{palette.syntax_comment} italic",
+            Keyword: f"{palette.syntax_keyword} bold",
+            Keyword.Namespace: palette.syntax_keyword,
+            Keyword.Type: palette.syntax_type,
+            Name.Class: palette.syntax_type,
+            Name.Function: palette.syntax_function,
+            Name.Builtin: palette.syntax_builtin,
+            Name.Decorator: palette.syntax_keyword,
+            String: palette.syntax_string,
+            Number: palette.syntax_number,
+            Operator: palette.syntax_punctuation,
+            Text: palette.syntax_text,
+            Whitespace: palette.syntax_text,
+            Error: palette.error,
+        }
+
+    return PaletteStyle
 
 
-def highlight(lang: str, source: str) -> str:
+# Highlight cache: (theme, lang, source_hash) → HTML
+_highlight_cache: Dict[Tuple[str, str, str], str] = {}
+
+
+def highlight(lang: str, source: str, theme: str = "deepteal") -> str:
     """
     Highlight source code → Qt rich-text HTML.
 
-    Uses Pygments with GraphiteStyle. Cache by (lang, hash(source)) for streaming.
+    Uses Pygments with the active theme. Cache by theme, language, and source.
     Returns HTML <div> with inline styles (no CSS classes).
     """
     # Cache key: (lang, hash of source)
     source_hash = hashlib.sha256(source.encode("utf-8")).hexdigest()[:16]
-    cache_key = (lang, source_hash)
+    palette = palette_for(theme)
+    cache_key = (theme, lang, source_hash)
 
     if cache_key in _highlight_cache:
         return _highlight_cache[cache_key]
@@ -84,13 +87,16 @@ def highlight(lang: str, source: str) -> str:
             .replace("<", "&lt;")
             .replace(">", "&gt;")
         )
-        html = f'<pre style="margin: 0; padding: 0; font-family: monospace; color: #c7d2d0;">{escaped}</pre>'
+        html = (
+            '<pre style="margin: 0; padding: 0; font-family: monospace; '
+            f'color: {palette.syntax_text};">{escaped}</pre>'
+        )
         _highlight_cache[cache_key] = html
         return html
 
     # Pygments HTML formatter with inline styles
     formatter = HtmlFormatter(
-        style=GraphiteStyle,
+        style=_style_for(palette),
         noclasses=True,
         nowrap=True,  # No <div class="highlight"> wrapper
         prestyles="margin: 0; padding: 0; background-color: transparent;",

@@ -211,7 +211,7 @@ Rectangle {
                             readOnly: true
                             backgroundColor: Theme.colors.bgInset
                             borderColor: Theme.colors.borderHairline
-                            focusBorderColor: Theme.colors.borderBrandFaint
+                            focusBorderColor: Theme.colors.borderFocus
                             normalBorderWidth: 0
                             focusedBorderWidth: 1
                             backgroundRadius: Theme.radius.sm
@@ -254,7 +254,7 @@ Rectangle {
                                 readOnly: true
                                 backgroundColor: Theme.colors.bgInset
                                 borderColor: root.isError ? Theme.colors.error : Theme.colors.borderHairline
-                                focusBorderColor: root.isError ? Theme.colors.error : Theme.colors.borderBrandFaint
+                                focusBorderColor: root.isError ? Theme.colors.error : Theme.colors.borderFocus
                                 normalBorderWidth: root.isError ? 1 : 0
                                 focusedBorderWidth: 1
                                 backgroundRadius: Theme.radius.sm

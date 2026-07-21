@@ -7,8 +7,15 @@ import "Theme.js" as Theme
 Rectangle {
     id: root
     color: Theme.colors.bgWell
-    border.width: 1
-    border.color: Theme.colors.borderHairline
+    border.width: 0
+
+    Rectangle {
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        width: 1
+        color: Theme.colors.borderHairline
+    }
 
     // Current route (controlled by parent)
     property string currentRoute: "home"
@@ -22,9 +29,6 @@ Rectangle {
     property var feedModel: null
     property var statsData: null
 
-    // Daemon status for footer
-    property bool daemonOnline: false
-    property string guiserverSha: ""
     property var sessionController: null
     property int sessionsEpoch: 0
     property int feedEpoch: 0
@@ -39,7 +43,7 @@ Rectangle {
         // BRAND HEADER — λ mark + wordmark
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 48
+            Layout.preferredHeight: 54
             color: Theme.colors.bgWell
 
             // Bottom border separator
@@ -53,15 +57,15 @@ Rectangle {
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: 18  // align λ with glyph column below (scroll --sp-3 + item --sp-5)
-                anchors.rightMargin: Theme.space.md
-                spacing: Theme.space.sm
+                anchors.leftMargin: Theme.space.xl
+                anchors.rightMargin: Theme.space.lg
+                spacing: Theme.space.md
 
                 // λ mark — spectrum-filled teal (signature eigenvalue mark)
                 Label {
                     text: "λ"
                     font.family: Theme.uiFonts[0]
-                    font.pixelSize: 20
+                    font.pixelSize: 22
                     font.weight: Theme.fontWeight.bold
                     color: Theme.colors.brandBright
                     // Spectrum gradient (clipped to text) — simplified for QML (no webkit-background-clip)
@@ -121,7 +125,7 @@ Rectangle {
                         font.weight: Theme.fontWeight.semibold
                         font.capitalization: Font.AllUppercase
                         // letterSpacing: 0.8
-                        color: Theme.colors.textFaint
+                        color: Theme.colors.textMuted
                         Layout.leftMargin: Theme.space.lg
                         Layout.bottomMargin: Theme.space.xs
                     }
@@ -191,7 +195,7 @@ Rectangle {
                                     color: activeFocus ? Theme.colors.stateFocusBg : (subMouseArea.containsMouse ? Theme.colors.stateHover : "transparent")
                                     radius: Theme.radius.sm
                                     border.width: activeFocus ? 1 : 0
-                                    border.color: activeFocus ? Theme.colors.brandBright : "transparent"
+                                    border.color: activeFocus ? Theme.colors.borderFocus : "transparent"
 
                                     Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
                                     Behavior on border.color { ColorAnimation { duration: Theme.duration.fast } }
@@ -253,7 +257,7 @@ Rectangle {
                                             text: shortTitle(session)
                                             font.family: Theme.uiFonts[0]
                                             font.pixelSize: Theme.fontSize.label
-                                            color: runningSessionRow.activeFocus ? Theme.colors.brandBright : Theme.colors.textSecondary
+                                            color: runningSessionRow.activeFocus ? Theme.colors.focusBright : Theme.colors.textSecondary
                                             elide: Text.ElideRight
                                             Layout.fillWidth: true
                                         }
@@ -354,7 +358,7 @@ Rectangle {
                         font.pixelSize: Theme.fontSize.micro
                         font.weight: Theme.fontWeight.semibold
                         font.capitalization: Font.AllUppercase
-                        color: Theme.colors.textFaint
+                        color: Theme.colors.textMuted
                         Layout.leftMargin: Theme.space.lg
                         Layout.bottomMargin: Theme.space.xs
                     }
@@ -412,7 +416,7 @@ Rectangle {
                         font.pixelSize: Theme.fontSize.micro
                         font.weight: Theme.fontWeight.semibold
                         font.capitalization: Font.AllUppercase
-                        color: Theme.colors.textFaint
+                        color: Theme.colors.textMuted
                         Layout.leftMargin: Theme.space.lg
                         Layout.bottomMargin: Theme.space.xs
                     }
@@ -537,63 +541,6 @@ Rectangle {
             }
         }
 
-        // FOOTER — daemon status dot + state + version
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 36
-            color: Theme.colors.bgWell
-
-            // Top border separator
-            Rectangle {
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: 1
-                color: Theme.colors.borderHairline
-            }
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: Theme.space.lg
-                anchors.rightMargin: Theme.space.lg
-                spacing: Theme.space.sm
-
-                // Status dot
-                Rectangle {
-                    width: 6
-                    height: 6
-                    radius: 3
-                    color: root.daemonOnline ? Theme.colors.dotLive : Theme.colors.dotError
-
-                    // Breathing animation when online
-                    SequentialAnimation on opacity {
-                        running: Theme.continuousMotion && root.daemonOnline
-                        loops: Animation.Infinite
-                        NumberAnimation { from: 1.0; to: 0.62; duration: Theme.duration.breath / 2 }
-                        NumberAnimation { from: 0.62; to: 1.0; duration: Theme.duration.breath / 2 }
-                    }
-                }
-
-                Label {
-                    text: root.daemonOnline ? "online" : "offline"
-                    font.family: Theme.uiFonts[0]
-                    font.pixelSize: Theme.fontSize.micro
-                    font.capitalization: Font.AllUppercase
-                    // letterSpacing: 0.8
-                    color: root.daemonOnline ? Theme.colors.textMuted : Theme.colors.error
-                }
-
-                Item { Layout.fillWidth: true }
-
-                Label {
-                    visible: root.guiserverSha !== ""
-                    text: root.guiserverSha.substring(0, 8)
-                    font.family: Theme.monoFonts[0]
-                    font.pixelSize: Theme.fontSize.micro
-                    color: Theme.colors.textFaint
-                }
-            }
-        }
     }
 
     Connections {

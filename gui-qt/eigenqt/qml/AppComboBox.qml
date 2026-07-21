@@ -45,6 +45,7 @@ ComboBox {
         ) + 0.5)
     readonly property string qaText: effectiveDisplayText
     readonly property bool qaIsAppComboBox: true
+    readonly property color qaBorderColor: background.border.color
     readonly property real qaLeftTextInset: displayLabel.x + displayLabel.leftPadding
     readonly property real qaRightTextInset: control.width
         - (displayLabel.x + displayLabel.leftPadding + displayLabel.paintedWidth)
@@ -80,13 +81,13 @@ ComboBox {
 
     background: Rectangle {
         implicitHeight: 32
-        color: !control.enabled
-            ? Theme.colors.bgInset
-            : (control.visualFocus ? Theme.colors.stateFocusBg : Theme.colors.bgRaised)
+        color: control.enabled && control.visualFocus
+            ? Theme.colors.stateFocusBg
+            : Theme.colors.bgInset
         border.width: control.visualFocus ? 2 : 1
         border.color: control.visualFocus
-            ? Theme.colors.brandBright
-            : (control.activeFocus ? Theme.colors.borderBrandFaint : Theme.colors.borderSubtle)
+            ? Theme.colors.borderFocus
+            : (control.activeFocus ? Theme.colors.borderFocus : Theme.colors.borderSubtle)
         radius: Theme.radius.sm
     }
 

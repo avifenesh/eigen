@@ -77,6 +77,16 @@ def with_qt_theme_argument(argv: list[str], config_path: Path | None = None) -> 
     return [*argv, qt_theme_argument(resolve_qt_theme(config_path))]
 
 
+def qt_theme_from_argv(argv: list[str]) -> str:
+    """Return the validated startup palette already passed to QML."""
+    prefix = "--eigen-qt-theme="
+    for arg in argv:
+        if arg.startswith(prefix):
+            value = arg[len(prefix):].strip().lower()
+            return value if value in QT_THEME_NAMES else "deepteal"
+    return "deepteal"
+
+
 class AppContext(QObject):
     """Main application context exposed to QML (RpcClient + status signals)."""
 
@@ -361,6 +371,7 @@ def main():
     # Theme.js reads this before QML is constructed. The config contract is
     # startup-only, matching the TUI and legacy GUI behavior.
     sys.argv = with_qt_theme_argument(sys.argv)
+    qt_theme = qt_theme_from_argv(sys.argv)
 
     app = QGuiApplication(sys.argv)
     app.setOrganizationName("eigen")
@@ -384,8 +395,8 @@ def main():
 
     # Create helpers
     clipboard_helper = ClipboardHelper(app)
-    highlighter_helper = HighlighterHelper(app)
-    markdown_helper = MarkdownHelper(app)
+    highlighter_helper = HighlighterHelper(app, theme=qt_theme)
+    markdown_helper = MarkdownHelper(app, theme=qt_theme)
     terminal_helper = TerminalHelper(app)
 
     # Expose to QML

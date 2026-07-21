@@ -1021,7 +1021,7 @@ Rectangle {
                                         text: activeMemoryModel.ban_title
                                         backgroundColor: Theme.colors.bgRaised
                                         borderColor: Theme.colors.borderSubtle
-                                        focusBorderColor: Theme.colors.borderBrandFaint
+                                        focusBorderColor: Theme.colors.borderFocus
                                         backgroundRadius: Theme.radius.md
 
                                         onTextChanged: activeMemoryModel.ban_title = text

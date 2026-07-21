@@ -155,7 +155,7 @@ Rectangle {
 
                                 color: selected ? Theme.colors.surfaceRaised2 : (activeFocus ? Theme.colors.stateFocusBg : "transparent")
                                 border.width: activeFocus ? 1 : 0
-                                border.color: activeFocus ? Theme.colors.brandBright : "transparent"
+                                border.color: activeFocus ? Theme.colors.borderFocus : "transparent"
 
                                 Behavior on color { ColorAnimation { duration: Theme.duration.fast } }
                                 Behavior on border.color { ColorAnimation { duration: Theme.duration.fast } }

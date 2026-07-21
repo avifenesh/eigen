@@ -131,7 +131,7 @@ Rectangle {
                             Accessible.onPressAction: activate()
                             color: root.providerFilter === "" ? Theme.colors.stateSelected : (activeFocus ? Theme.colors.stateFocusBg : (allProviderMouse.containsMouse ? Theme.colors.stateHover : "transparent"))
                             border.width: activeFocus || root.providerFilter === "" ? 1 : 0
-                            border.color: activeFocus ? Theme.colors.brandBright : Theme.colors.borderBrandFaint
+                            border.color: activeFocus ? Theme.colors.borderFocus : Theme.colors.borderBrandFaint
 
                             function activate() {
                                 root.providerFilter = ""
@@ -198,7 +198,7 @@ Rectangle {
                                 Accessible.onPressAction: activate()
                                 color: selected ? Theme.colors.stateSelected : (activeFocus ? Theme.colors.stateFocusBg : (providerMouse.containsMouse ? Theme.colors.stateHover : "transparent"))
                                 border.width: activeFocus || selected ? 1 : 0
-                                border.color: activeFocus ? Theme.colors.brandBright : Theme.colors.borderBrandFaint
+                                border.color: activeFocus ? Theme.colors.borderFocus : Theme.colors.borderBrandFaint
 
                                 function activate() {
                                     root.providerFilter = selected ? "" : providerName

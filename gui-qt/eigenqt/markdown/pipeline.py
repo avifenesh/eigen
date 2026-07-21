@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from typing import Literal
 from markdown_it import MarkdownIt
 
+from .palette import MarkdownPalette, palette_for
+
 
 @dataclass
 class Block:
@@ -29,7 +31,7 @@ class Block:
     ordered: bool = False  # list ordered flag
 
 
-def parse(text: str) -> list[Block]:
+def parse(text: str, theme: str = "deepteal") -> list[Block]:
     """
     Parse markdown text → flat list[Block].
 
@@ -43,6 +45,8 @@ def parse(text: str) -> list[Block]:
     Tables produce {type: "table", rows: [[cell, ...], ...]}.
     Lists produce {type: "list", items: [...], ordered: bool}.
     """
+    palette = palette_for(theme)
+
     # Use commonmark preset + enable tables, strikethrough (but disable linkify)
     md = MarkdownIt("commonmark").enable(["table", "strikethrough"])
     tokens = md.parse(text)
@@ -56,7 +60,7 @@ def parse(text: str) -> list[Block]:
             # Paragraph: para_open → inline → para_close
             inline_token = tokens[i + 1] if i + 1 < len(tokens) else None
             if inline_token and inline_token.type == "inline":
-                html = _render_inline(inline_token)
+                html = _render_inline(inline_token, palette)
                 blocks.append(Block(type="para", content=html))
             i += 3  # skip para_open, inline, para_close
 
@@ -65,7 +69,7 @@ def parse(text: str) -> list[Block]:
             level = int(token.tag[1])  # h1 → 1, h2 → 2, etc.
             inline_token = tokens[i + 1] if i + 1 < len(tokens) else None
             if inline_token and inline_token.type == "inline":
-                html = _render_inline(inline_token)
+                html = _render_inline(inline_token, palette)
                 blocks.append(Block(type="heading", content=html, level=level))
             i += 3
 
@@ -93,7 +97,7 @@ def parse(text: str) -> list[Block]:
                     k = j + 1
                     while k < len(tokens) and tokens[k].type != "list_item_close":
                         if tokens[k].type == "inline":
-                            html = _render_inline(tokens[k])
+                            html = _render_inline(tokens[k], palette)
                             items.append(html)
                             break
                         k += 1
@@ -112,7 +116,7 @@ def parse(text: str) -> list[Block]:
             while j < len(tokens) and tokens[j].type != "table_close":
                 if tokens[j].type == "inline":
                     # Cell content
-                    html = _render_inline(tokens[j])
+                    html = _render_inline(tokens[j], palette)
                     current_row.append(html)
                 elif tokens[j].type == "tr_close":
                     if current_row:
@@ -130,7 +134,7 @@ def parse(text: str) -> list[Block]:
             j = i + 1
             while j < len(tokens) and tokens[j].type != "blockquote_close":
                 if tokens[j].type == "inline":
-                    html = _render_inline(tokens[j])
+                    html = _render_inline(tokens[j], palette)
                     content_parts.append(html)
                 j += 1
             html = "<br>".join(content_parts)
@@ -148,7 +152,7 @@ def parse(text: str) -> list[Block]:
     return blocks
 
 
-def _render_inline(inline_token) -> str:
+def _render_inline(inline_token, palette: MarkdownPalette) -> str:
     """
     Render inline token children → Qt rich-text HTML.
 
@@ -181,7 +185,7 @@ def _render_inline(inline_token) -> str:
             html_parts.append("</i>")
 
         elif child.type == "code_inline":
-            # Inline code (light gray background, monospace)
+            # Inline code uses the same raised petrol surface as code blocks.
             escaped = (
                 child.content
                 .replace("&", "&amp;")
@@ -189,14 +193,18 @@ def _render_inline(inline_token) -> str:
                 .replace(">", "&gt;")
             )
             html_parts.append(
-                f'<code style="background-color: rgba(255,255,255,0.06); '
+                f'<code style="background-color: {palette.inline_background}; '
+                f'color: {palette.inline_text}; '
                 f'padding: 2px 4px; border-radius: 3px; '
                 f'font-family: monospace;">{escaped}</code>'
             )
 
         elif child.type == "link_open":
             href = child.attrGet("href") or ""
-            html_parts.append(f'<a href="{href}" style="color: #5fb0c4; text-decoration: none;">')
+            html_parts.append(
+                f'<a href="{href}" style="color: {palette.link}; '
+                f'text-decoration: none;">'
+            )
         elif child.type == "link_close":
             html_parts.append("</a>")
 

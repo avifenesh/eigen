@@ -12,6 +12,10 @@ from eigenqt.markdown.pipeline import parse
 class MarkdownHelper(QObject):
     """Markdown parser helper (exposes parse to QML)."""
 
+    def __init__(self, parent=None, *, theme: str = "deepteal"):
+        super().__init__(parent)
+        self._theme = theme
+
     @Slot(str, result="QVariantList")
     def parse(self, text: str) -> list[dict]:
         """
@@ -26,7 +30,7 @@ class MarkdownHelper(QObject):
         - {type: "quote", content: html}
         - {type: "hr"}
         """
-        blocks = parse(text)
+        blocks = parse(text, self._theme)
         result = []
         for block in blocks:
             d = {"type": block.type}
