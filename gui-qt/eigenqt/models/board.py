@@ -58,6 +58,10 @@ class BoardModel(QAbstractListModel):
         self._action_error = ""
         self._pinning: set[str] = set()
 
+        connected = getattr(self._client, "connected", None)
+        if connected is not None:
+            connected.connect(self._on_connected)
+
     def roleNames(self) -> dict[int, bytes]:
         """Expose roles to QML."""
         return {
@@ -143,12 +147,19 @@ class BoardModel(QAbstractListModel):
     @Slot()
     def load(self):
         """Fetch board data from daemon."""
+        if self._loading:
+            return
         self._loading = True
         self.loadingChanged.emit()
         self._error = ""
         self.errorChanged.emit()
 
         self._client.call("Board", callback=self._on_board_result)
+
+    @Slot()
+    def _on_connected(self):
+        """Retry the startup load once the RPC sockets are ready."""
+        self.load()
 
     @Slot(dict)
     def _on_board_result(self, result: dict):
@@ -253,6 +264,10 @@ class KanbanModel(QObject):
         self._loading = False
         self._error = ""
 
+        connected = getattr(self._client, "connected", None)
+        if connected is not None:
+            connected.connect(self._on_connected)
+
     @Property(list, notify=columnsChanged)
     def columns(self):
         """Kanban columns (list of dicts with id/title/cards)."""
@@ -271,12 +286,19 @@ class KanbanModel(QObject):
     @Slot()
     def load(self):
         """Fetch kanban data from daemon."""
+        if self._loading:
+            return
         self._loading = True
         self.loadingChanged.emit()
         self._error = ""
         self.errorChanged.emit()
 
         self._client.call("Kanban", callback=self._on_kanban_result)
+
+    @Slot()
+    def _on_connected(self):
+        """Retry the startup load once the RPC sockets are ready."""
+        self.load()
 
     @Slot(dict)
     def _on_kanban_result(self, result: dict):
