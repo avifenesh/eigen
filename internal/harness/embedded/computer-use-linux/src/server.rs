@@ -24,7 +24,7 @@ use crate::windows::{
 use anyhow::Result;
 use rmcp::{
     handler::server::wrapper::{Json, Parameters},
-    model::{CallToolResult, Content},
+    model::{CallToolResult, ContentBlock as Content},
     schemars::JsonSchema,
     tool, tool_handler, tool_router, ErrorData, ServerHandler, ServiceExt,
 };
