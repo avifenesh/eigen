@@ -11,7 +11,7 @@
     "@wailsio/runtime": "3.0.0-alpha.94",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "katex": "^0.17.0",
+    "katex": "^0.18.2",
     "marked": "^18.0.5",
     "marked-katex-extension": "^5.1.10"
   },
