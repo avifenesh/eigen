@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/avifenesh/eigen/internal/cred"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/theme"
 	"golang.org/x/sys/unix"
@@ -319,7 +320,21 @@ func Set(c *Config, key, value string) error {
 	case "notify_cmd":
 		c.NotifyCmd = value
 	case "telegram_token":
+		// The bot token goes to the OS keyring when this machine has the
+		// cred-set helper; config.json then holds no secret.
+		if value != "" && cred.Available() {
+			if err := cred.Store(TelegramTokenCred, value); err != nil {
+				return err
+			}
+			c.TelegramToken = ""
+			setStoredTelegramToken(value)
+			return nil
+		}
 		c.TelegramToken = value
+		if value == "" && storedTelegramToken() != "" {
+			// There is no delete helper: the bridge stays on while the keyring holds the token.
+			return fmt.Errorf("telegram_token cleared in config.json, but the keyring still holds %s; remove it there (secret-tool clear service tower-crane name %s, and its .cred copy) to turn the bridge off", TelegramTokenCred, TelegramTokenCred)
+		}
 	case "judge_model":
 		c.JudgeModel = value
 	case "dream_model":
@@ -530,7 +545,7 @@ func Get(c Config, key string) string {
 	case "notify_cmd":
 		return c.NotifyCmd
 	case "telegram_token":
-		if c.TelegramToken != "" {
+		if TelegramToken(c) != "" {
 			return "set"
 		}
 		return ""
@@ -626,4 +641,52 @@ func splitChain(s string) []string {
 		}
 	}
 	return out
+}
+
+// TelegramTokenCred is the keyring credential name of the Telegram bot token.
+const TelegramTokenCred = "eigen-telegram-token"
+
+// TelegramToken returns the bot token: EIGEN_TELEGRAM_TOKEN, then
+// config.json's telegram_token (legacy), then the keyring.
+func TelegramToken(c Config) string {
+	if t := strings.TrimSpace(os.Getenv("EIGEN_TELEGRAM_TOKEN")); t != "" {
+		return t
+	}
+	if t := strings.TrimSpace(c.TelegramToken); t != "" {
+		return t
+	}
+	return storedTelegramToken()
+}
+
+// The keyring copy of the token is read once per process: Get runs on every
+// UI redraw and must not start cred-get each time. Set refreshes it.
+var tgStored struct {
+	sync.Mutex
+	done bool
+	v    string
+}
+
+func storedTelegramToken() string {
+	tgStored.Lock()
+	defer tgStored.Unlock()
+	if !tgStored.done {
+		if t, err := cred.Get(TelegramTokenCred); err == nil {
+			tgStored.v = strings.TrimSpace(t)
+		}
+		tgStored.done = true
+	}
+	return tgStored.v
+}
+
+func setStoredTelegramToken(v string) {
+	tgStored.Lock()
+	defer tgStored.Unlock()
+	tgStored.v, tgStored.done = strings.TrimSpace(v), true
+}
+
+// resetStoredTelegramToken forgets the cached keyring copy (tests).
+func resetStoredTelegramToken() {
+	tgStored.Lock()
+	defer tgStored.Unlock()
+	tgStored.v, tgStored.done = "", false
 }

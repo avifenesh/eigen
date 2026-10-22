@@ -18,6 +18,7 @@ import (
 	"github.com/avifenesh/eigen/internal/app"
 	"github.com/avifenesh/eigen/internal/chat"
 	"github.com/avifenesh/eigen/internal/config"
+	"github.com/avifenesh/eigen/internal/cred"
 	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/dream"
 	"github.com/avifenesh/eigen/internal/hook"
@@ -49,6 +50,7 @@ func runDaemon(cfg config.Config) {
 	// daemon reached via `ssh host eigen daemon stdio`) needs creds too — else
 	// it can't build sessions (no AWS creds → "converse credentials" errors).
 	// Existing env vars win (an explicit export overrides the snapshot).
+	// Secret keys are "cred:NAME" references there, resolved from the keyring.
 	loadDaemonEnv()
 
 	gmem, _ := memory.OpenGlobal()
@@ -653,12 +655,102 @@ func loadDaemonEnv() {
 		}
 		_ = os.Setenv(k, strings.TrimSpace(v))
 	}
+	// Secret keys are written as "cred:NAME" references (and systemd's
+	// EnvironmentFile passes them through verbatim): resolve them here.
+	for _, err := range cred.ResolveEnv() {
+		fmt.Fprintln(os.Stderr, "eigen daemon: credential:", err)
+	}
+}
+
+// readDaemonEnvRefs returns KEY -> credential name for the "KEY=cred:NAME"
+// lines of an existing daemon.env, so a reinstall keeps the names in use.
+func readDaemonEnvRefs(path string) map[string]string {
+	refs := map[string]string{}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return refs
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		k, v, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok {
+			continue
+		}
+		if name, isRef := cred.ParseRef(v); isRef {
+			refs[strings.TrimSpace(k)] = name
+		}
+	}
+	return refs
+}
+
+// daemonEnvLines renders daemon.env: plain KEY=VALUE for settings, and
+// KEY=cred:NAME for secret keys. A secret found in the environment that the
+// keyring does not hold yet is stored there with cred-set; it never reaches
+// the file. Without the cred helpers (a machine with no keyring setup) the old
+// behaviour stays: the value is snapshotted. notes lists what happened, by
+// key and credential name only.
+func daemonEnvLines(existing map[string]string) (lines, notes []string, err error) {
+	keyring := cred.Available()
+	for _, k := range credentialEnvKeys {
+		v := os.Getenv(k)
+		name, secret := remote.SecretKeyNames[k]
+		if !secret {
+			if v != "" {
+				lines = append(lines, k+"="+v)
+			}
+			continue
+		}
+		if n := cred.Resolved()[k]; n != "" {
+			name = n // the env value came from a cred:NAME reference
+		}
+		if n := existing[k]; n != "" {
+			name = n
+		}
+		if v != "" && cred.Resolved()[k] != "" {
+			// The value came from a cred:NAME reference: keep naming it, never snapshot it.
+			lines = append(lines, k+"="+cred.Ref(name))
+			continue
+		}
+		if ref, isRef := cred.ParseRef(v); isRef {
+			lines = append(lines, k+"="+cred.Ref(ref)) // unresolved reference: keep the name
+			continue
+		}
+		if !keyring {
+			if v != "" {
+				lines = append(lines, k+"="+v)
+				notes = append(notes, k+": no cred-set on this machine, value snapshotted")
+			}
+			continue
+		}
+		if v == "" {
+			if existing[k] != "" {
+				lines = append(lines, k+"="+cred.Ref(name))
+			}
+			continue
+		}
+		switch stored, gerr := cred.Get(name); {
+		case gerr != nil:
+			// cred-get fails the same way for a missing entry and for a locked or
+			// unreadable one, so never overwrite: store only when the name is new.
+			if serr := cred.StoreNew(name, v); errors.Is(serr, cred.ErrExists) {
+				return nil, nil, fmt.Errorf("%s: keyring credential %s exists but cred-get could not read it (locked keyring?); unlock it or check it with cred-get %s, then rerun", k, name, name)
+			} else if serr != nil {
+				return nil, nil, fmt.Errorf("%s: %w", k, serr)
+			}
+			notes = append(notes, k+": stored in the keyring as "+name)
+		case stored != v:
+			// Never repoint a key at a different credential silently.
+			return nil, nil, fmt.Errorf("%s: keyring credential %s holds a different value; name the right one with %s=cred:NAME in ~/.eigen/daemon.env, or replace it with cred-set %s", k, name, k, name)
+		}
+		lines = append(lines, k+"="+cred.Ref(name))
+	}
+	return lines, notes, nil
 }
 
 // daemonInstall writes + enables a systemd user unit so the daemon starts at
-// login and restarts on failure. Credentials are snapshotted from the CURRENT
-// environment into ~/.eigen/daemon.env (chmod 600) — rerun install after
-// rotating keys. daemonUninstall reverses it.
+// login and restarts on failure. Settings are snapshotted from the CURRENT
+// environment into ~/.eigen/daemon.env (chmod 600); secret keys are written
+// as cred:NAME keyring references, never values (see daemonEnvLines).
+// daemonUninstall reverses it.
 func daemonInstall() {
 	home, _ := os.UserHomeDir()
 	exe, err := os.Executable()
@@ -670,11 +762,12 @@ func daemonInstall() {
 	// Snapshot credentials the unit will need.
 	envPath := filepath.Join(home, ".eigen", "daemon.env")
 	_ = os.MkdirAll(filepath.Dir(envPath), 0o755)
-	var envLines []string
-	for _, k := range credentialEnvKeys {
-		if v := os.Getenv(k); v != "" {
-			envLines = append(envLines, k+"="+v)
-		}
+	envLines, notes, err := daemonEnvLines(readDaemonEnvRefs(envPath))
+	if err != nil {
+		fail(fmt.Errorf("daemon.env: %w", err))
+	}
+	for _, n := range notes {
+		fmt.Println("credentials:", n)
 	}
 	if err := os.WriteFile(envPath, []byte(strings.Join(envLines, "\n")+"\n"), 0o600); err != nil {
 		fail(fmt.Errorf("write %s: %w", envPath, err))
@@ -710,7 +803,7 @@ WantedBy=default.target
 		}
 	}
 	fmt.Printf("installed %s (enabled at login)\n", unitPath)
-	fmt.Printf("credentials snapshot: %s (rerun install after rotating keys)\n", envPath)
+	fmt.Printf("credentials: %s (secret keys are cred:NAME keyring references; rotate with cred-set NAME)\n", envPath)
 	if daemon.RunningPID(daemon.PIDPath()) != 0 {
 		fmt.Println("note: a daemon is already running — it stays; systemd takes over from next login")
 		fmt.Println("      (or: eigen daemon stop && systemctl --user start eigen-daemon)")
@@ -1046,7 +1139,7 @@ func reclassifyGlobalDown(prov llm.Provider, gmem *memory.Store, byDir map[strin
 // telegramConfigured reports whether a Telegram bot token is set (config or env)
 // — the gate for the daemon auto-starting the bridge.
 func telegramConfigured(cfg config.Config) bool {
-	return strings.TrimSpace(cfg.TelegramToken) != "" || strings.TrimSpace(os.Getenv("EIGEN_TELEGRAM_TOKEN")) != ""
+	return config.TelegramToken(cfg) != ""
 }
 
 // telegramSupervisor keeps `eigen telegram` running: spawn it, and if it exits,

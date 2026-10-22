@@ -185,6 +185,17 @@ var CredentialKeys = []string{
 	"EIGEN_MANTLE_REGION", "EIGEN_REASONING_EFFORT", "EIGEN_NOTIFY_CMD",
 }
 
+// SecretKeyNames maps each secret in CredentialKeys to the default keyring
+// credential name `eigen daemon install` references it by (KEY=cred:NAME).
+// The rest of CredentialKeys are plain settings.
+var SecretKeyNames = map[string]string{
+	"AWS_BEARER_TOKEN_BEDROCK": "eigen-bedrock-bearer",
+	"XAI_API_KEY":              "xai-api-key",
+	"EIGEN_GROK_API_KEY":       "eigen-grok-api-key",
+	"GLM_API_KEY":              "glm-api-key",
+	"ANTHROPIC_API_KEY":        "anthropic-api-key",
+}
+
 // CredentialSnapshot builds the KEY=VALUE daemon.env content from the current
 // environment (only set vars).
 func CredentialSnapshot() string {

@@ -103,7 +103,11 @@
     daemon, exec `bin attach <id>` (auto-starts the new binary's daemon).
   - `loadDaemonEnv`, `daemonInstall`, `daemonUninstall`, `daemonInstanceSuffix`,
     `credentialEnvKeys` (= `remote.CredentialKeys`) — systemd unit + credential
-    snapshot lifecycle.
+    snapshot lifecycle. `daemonEnvLines` / `readDaemonEnvRefs`: install writes
+    secret keys (`remote.SecretKeyNames`) as `KEY=cred:NAME` keyring references,
+    storing a not-yet-stored value with `cred-set`, and refuses to repoint a key
+    at a keyring entry holding a different value; settings stay plain values.
+    `loadDaemonEnv` resolves the references (`cred.ResolveEnv`).
   - `runDevCmd` / `devFindGo` — `eigen dev`: build the source tree and re-exec on
     the isolated `dev` instance.
   - `sweepStaleWorkspaces`, `nightlyDreamer`, `runNightlyDream`,
