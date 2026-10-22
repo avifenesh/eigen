@@ -30,6 +30,7 @@ import (
 	"github.com/avifenesh/eigen/internal/chat"
 	"github.com/avifenesh/eigen/internal/config"
 	"github.com/avifenesh/eigen/internal/connector"
+	"github.com/avifenesh/eigen/internal/cred"
 	"github.com/avifenesh/eigen/internal/daemon"
 	"github.com/avifenesh/eigen/internal/dream"
 	"github.com/avifenesh/eigen/internal/feed"
@@ -62,6 +63,12 @@ func main() {
 	home, _ := os.UserHomeDir()
 	if err := config.LoadEnvFiles(filepath.Join(home, ".eigen", ".env")); err != nil {
 		fmt.Fprintln(os.Stderr, "eigen: env:", err)
+	}
+	// A "cred:NAME" value (in ~/.eigen/.env or the inherited environment) names
+	// a keyring credential; swap in the real value now so no key has to live
+	// in an env file.
+	for _, err := range cred.ResolveEnv() {
+		fmt.Fprintln(os.Stderr, "eigen: credential:", err)
 	}
 	// Optional ~/.eigen/config.json supplies defaults; flags/env override it.
 	cfg := config.Load()
@@ -2696,12 +2703,9 @@ func runTelegram(cfg config.Config) {
 		fmt.Fprintf(os.Stderr, "eigen telegram: instance %q is not production — the bridge serves prod only (set EIGEN_TELEGRAM_FORCE=1 to override). Exiting.\n", inst)
 		return
 	}
-	token := strings.TrimSpace(os.Getenv("EIGEN_TELEGRAM_TOKEN"))
+	token := config.TelegramToken(cfg)
 	if token == "" {
-		token = strings.TrimSpace(cfg.TelegramToken)
-	}
-	if token == "" {
-		fail(fmt.Errorf("no Telegram bot token: set telegram_token in config or EIGEN_TELEGRAM_TOKEN (create a bot with @BotFather)"))
+		fail(fmt.Errorf("no Telegram bot token: set telegram_token in config (stored in the keyring as %s) or EIGEN_TELEGRAM_TOKEN (create a bot with @BotFather)", config.TelegramTokenCred))
 	}
 	allow := cfg.TelegramAllow
 	if env := strings.TrimSpace(os.Getenv("EIGEN_TELEGRAM_ALLOW")); env != "" {

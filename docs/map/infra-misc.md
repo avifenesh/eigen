@@ -78,7 +78,12 @@
   - `loadOne(path)` — single-file scanner (1 MB line buffer).
   - `stripInlineComment(val)` — drops a trailing unquoted `" #..."` comment from a value, preserving non-whitespace `#` (e.g. `color=#fff`) and backslash-escaped hashes.
 - **Depends on:** stdlib only (`bufio`, `os`, `strings`).
-- **Used by / entrypoint:** entrypoint: `main.go` loads `~/.eigen/.env` at startup.
+- **Used by / entrypoint:** entrypoint: `main.go` loads `~/.eigen/.env` at startup, then `cred.ResolveEnv()` swaps any `KEY=cred:NAME` value for the keyring credential.
+
+### internal/cred/cred.go
+- **Role:** keyring credentials through the machine's `cred-get` / `cred-set` helpers (PATH, then `~/.local/bin`; `EIGEN_CRED_GET` / `EIGEN_CRED_SET` override, `off` disables, tests set `off`).
+- **Key symbols:** `ParseRef`/`Ref` (`cred:NAME`), `Get(name)`, `Store(name, value)` (value on stdin), `Available()`, `ResolveEnv()` (replaces references, unsets unresolved ones), `Resolved()`.
+- **Used by / entrypoint:** `main.go` (startup), `daemon.go` (`loadDaemonEnv`, `daemonEnvLines`), `internal/config` (`telegram_token` is stored in the keyring as `eigen-telegram-token`; `TelegramToken(cfg)` reads env, then config, then keyring).
 
 ### internal/config/fields.go
 - **Role:** Field metadata describing each settable key for UIs (descriptions, closed option sets, dynamic option sources, multi-select + secret flags).

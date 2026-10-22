@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/avifenesh/eigen/internal/cred"
 	"github.com/avifenesh/eigen/internal/llm"
 	"github.com/avifenesh/eigen/internal/theme"
 	"golang.org/x/sys/unix"
@@ -319,6 +320,15 @@ func Set(c *Config, key, value string) error {
 	case "notify_cmd":
 		c.NotifyCmd = value
 	case "telegram_token":
+		// The bot token goes to the OS keyring when this machine has the
+		// cred-set helper; config.json then holds no secret.
+		if value != "" && cred.Available() {
+			if err := cred.Store(TelegramTokenCred, value); err != nil {
+				return err
+			}
+			c.TelegramToken = ""
+			return nil
+		}
 		c.TelegramToken = value
 	case "judge_model":
 		c.JudgeModel = value
@@ -530,7 +540,7 @@ func Get(c Config, key string) string {
 	case "notify_cmd":
 		return c.NotifyCmd
 	case "telegram_token":
-		if c.TelegramToken != "" {
+		if TelegramToken(c) != "" {
 			return "set"
 		}
 		return ""
@@ -626,4 +636,22 @@ func splitChain(s string) []string {
 		}
 	}
 	return out
+}
+
+// TelegramTokenCred is the keyring credential name of the Telegram bot token.
+const TelegramTokenCred = "eigen-telegram-token"
+
+// TelegramToken returns the bot token: EIGEN_TELEGRAM_TOKEN, then
+// config.json's telegram_token (legacy), then the keyring.
+func TelegramToken(c Config) string {
+	if t := strings.TrimSpace(os.Getenv("EIGEN_TELEGRAM_TOKEN")); t != "" {
+		return t
+	}
+	if t := strings.TrimSpace(c.TelegramToken); t != "" {
+		return t
+	}
+	if t, err := cred.Get(TelegramTokenCred); err == nil {
+		return strings.TrimSpace(t)
+	}
+	return ""
 }
