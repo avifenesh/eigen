@@ -437,7 +437,8 @@ func (m *model) command(line string) tea.Cmd {
 				m.push(&block{kind: blockNote, isErr: true, body: sb("config: save: " + err.Error())})
 				break
 			}
-			m.note("config: " + key + " = " + value + "   (applies to new sessions)")
+			// echo the stored form: a secret (telegram_token) shows as "set", never its value
+			m.note("config: " + key + " = " + config.Get(c, key) + "   (applies to new sessions)")
 		default:
 			m.push(&block{kind: blockNote, isErr: true, body: sb("usage: /config            (show)\n       /config <key>          (describe)\n       /config <key> <value>  (set)")})
 		}
