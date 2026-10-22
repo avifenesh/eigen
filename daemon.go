@@ -705,6 +705,11 @@ func daemonEnvLines(existing map[string]string) (lines, notes []string, err erro
 		if n := existing[k]; n != "" {
 			name = n
 		}
+		if v != "" && cred.Resolved()[k] != "" {
+			// The value came from a cred:NAME reference: keep naming it, never snapshot it.
+			lines = append(lines, k+"="+cred.Ref(name))
+			continue
+		}
 		if ref, isRef := cred.ParseRef(v); isRef {
 			lines = append(lines, k+"="+cred.Ref(ref)) // unresolved reference: keep the name
 			continue
@@ -724,7 +729,11 @@ func daemonEnvLines(existing map[string]string) (lines, notes []string, err erro
 		}
 		switch stored, gerr := cred.Get(name); {
 		case gerr != nil:
-			if serr := cred.Store(name, v); serr != nil {
+			// cred-get fails the same way for a missing entry and for a locked or
+			// unreadable one, so never overwrite: store only when the name is new.
+			if serr := cred.StoreNew(name, v); errors.Is(serr, cred.ErrExists) {
+				return nil, nil, fmt.Errorf("%s: keyring credential %s exists but cred-get could not read it (locked keyring?); unlock it or check it with cred-get %s, then rerun", k, name, name)
+			} else if serr != nil {
 				return nil, nil, fmt.Errorf("%s: %w", k, serr)
 			}
 			notes = append(notes, k+": stored in the keyring as "+name)

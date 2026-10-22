@@ -327,9 +327,14 @@ func Set(c *Config, key, value string) error {
 				return err
 			}
 			c.TelegramToken = ""
+			setStoredTelegramToken(value)
 			return nil
 		}
 		c.TelegramToken = value
+		if value == "" && storedTelegramToken() != "" {
+			// There is no delete helper: the bridge stays on while the keyring holds the token.
+			return fmt.Errorf("telegram_token cleared in config.json, but the keyring still holds %s; remove it there (secret-tool clear service tower-crane name %s, and its .cred copy) to turn the bridge off", TelegramTokenCred, TelegramTokenCred)
+		}
 	case "judge_model":
 		c.JudgeModel = value
 	case "dream_model":
@@ -650,8 +655,38 @@ func TelegramToken(c Config) string {
 	if t := strings.TrimSpace(c.TelegramToken); t != "" {
 		return t
 	}
-	if t, err := cred.Get(TelegramTokenCred); err == nil {
-		return strings.TrimSpace(t)
+	return storedTelegramToken()
+}
+
+// The keyring copy of the token is read once per process: Get runs on every
+// UI redraw and must not start cred-get each time. Set refreshes it.
+var tgStored struct {
+	sync.Mutex
+	done bool
+	v    string
+}
+
+func storedTelegramToken() string {
+	tgStored.Lock()
+	defer tgStored.Unlock()
+	if !tgStored.done {
+		if t, err := cred.Get(TelegramTokenCred); err == nil {
+			tgStored.v = strings.TrimSpace(t)
+		}
+		tgStored.done = true
 	}
-	return ""
+	return tgStored.v
+}
+
+func setStoredTelegramToken(v string) {
+	tgStored.Lock()
+	defer tgStored.Unlock()
+	tgStored.v, tgStored.done = strings.TrimSpace(v), true
+}
+
+// resetStoredTelegramToken forgets the cached keyring copy (tests).
+func resetStoredTelegramToken() {
+	tgStored.Lock()
+	defer tgStored.Unlock()
+	tgStored.v, tgStored.done = "", false
 }

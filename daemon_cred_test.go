@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/avifenesh/eigen/internal/cred"
 )
 
 func fakeCredHelpers(t *testing.T) string {
@@ -13,8 +15,9 @@ func fakeCredHelpers(t *testing.T) string {
 	kr := filepath.Join(dir, "kr")
 	_ = os.Mkdir(kr, 0o700)
 	get, set := filepath.Join(dir, "cred-get"), filepath.Join(dir, "cred-set")
-	_ = os.WriteFile(get, []byte("#!/bin/sh\n[ -f \""+kr+"/$1\" ] || exit 1\ncat \""+kr+"/$1\"\n"), 0o755)
-	_ = os.WriteFile(set, []byte("#!/bin/sh\ncat > \""+kr+"/$1\"\n"), 0o755)
+	// cred-get fails for every entry while kr/.locked exists, like a locked keyring.
+	_ = os.WriteFile(get, []byte("#!/bin/sh\n[ -f \""+kr+"/.locked\" ] && exit 1\n[ -f \""+kr+"/$1\" ] || exit 1\ncat \""+kr+"/$1\"\n"), 0o755)
+	_ = os.WriteFile(set, []byte("#!/bin/sh\nif [ \"$1\" = --new ]; then shift; [ -f \""+kr+"/$1\" ] && exit 3; fi\ncat > \""+kr+"/$1\"\n"), 0o755)
 	t.Setenv("EIGEN_CRED_GET", get)
 	t.Setenv("EIGEN_CRED_SET", set)
 	for _, k := range credentialEnvKeys {
@@ -71,6 +74,35 @@ func TestDaemonEnvLinesWithoutKeyring(t *testing.T) {
 	t.Setenv("GLM_API_KEY", "fake-glm")
 	lines, _, err := daemonEnvLines(nil)
 	if err != nil || strings.Join(lines, "\n") != "GLM_API_KEY=fake-glm" {
+		t.Fatalf("lines %v err %v", lines, err)
+	}
+}
+
+// A lookup that fails on a locked keyring must not overwrite the stored key.
+func TestDaemonEnvLinesNeverOverwritesAnUnreadableKey(t *testing.T) {
+	kr := fakeCredHelpers(t)
+	_ = os.WriteFile(filepath.Join(kr, "glm-api-key"), []byte("fake-stored"), 0o600)
+	_ = os.WriteFile(filepath.Join(kr, ".locked"), nil, 0o600)
+	t.Setenv("GLM_API_KEY", "fake-glm")
+	if _, _, err := daemonEnvLines(nil); err == nil || strings.Contains(err.Error(), "fake-") {
+		t.Fatalf("want an error without values, got %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(kr, "glm-api-key")); string(b) != "fake-stored" {
+		t.Fatal("the stored key was overwritten")
+	}
+}
+
+// A key that came from a cred:NAME reference stays a reference even without cred-set.
+func TestDaemonEnvLinesKeepsResolvedReferenceWithoutCredSet(t *testing.T) {
+	kr := fakeCredHelpers(t)
+	_ = os.WriteFile(filepath.Join(kr, "tc-test-fake-ref"), []byte("fake-ref-value"), 0o600)
+	t.Setenv("GLM_API_KEY", "cred:tc-test-fake-ref")
+	if errs := cred.ResolveEnv(); len(errs) != 0 {
+		t.Fatal(errs)
+	}
+	t.Setenv("EIGEN_CRED_SET", "off")
+	lines, _, err := daemonEnvLines(nil)
+	if err != nil || strings.Join(lines, "\n") != "GLM_API_KEY=cred:tc-test-fake-ref" {
 		t.Fatalf("lines %v err %v", lines, err)
 	}
 }

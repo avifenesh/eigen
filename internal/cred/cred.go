@@ -33,6 +33,9 @@ var nameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 // ErrNoHelper means cred-get / cred-set is not installed on this machine.
 var ErrNoHelper = errors.New("credential helper not installed")
 
+// ErrExists means StoreNew found the credential already stored.
+var ErrExists = errors.New("credential already stored")
+
 const timeout = 20 * time.Second
 
 // ValidName reports whether name is a usable credential name.
@@ -113,7 +116,13 @@ func Get(name string) (string, error) {
 
 // Store writes value to the keyring as name via `cred-set name` (value on
 // stdin), which also refreshes the systemd-creds copy.
-func Store(name, value string) error {
+func Store(name, value string) error { return store(name, value, false) }
+
+// StoreNew is Store that never replaces an existing credential: it runs
+// `cred-set --new name` and returns ErrExists when name is already stored.
+func StoreNew(name, value string) error { return store(name, value, true) }
+
+func store(name, value string, onlyNew bool) error {
 	if !ValidName(name) {
 		return fmt.Errorf("bad credential name %q", name)
 	}
@@ -126,11 +135,19 @@ func Store(name, value string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, name)
+	args := []string{name}
+	if onlyNew {
+		args = []string{"--new", name}
+	}
+	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Stdin = strings.NewReader(value)
 	var stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = nil, &stderr
 	if err := cmd.Run(); err != nil {
+		var exit *exec.ExitError
+		if onlyNew && errors.As(err, &exit) && exit.ExitCode() == 3 {
+			return fmt.Errorf("cred-set %s: %w", name, ErrExists)
+		}
 		return fmt.Errorf("cred-set %s: %v: %s", name, err, strings.TrimSpace(stderr.String()))
 	}
 	return nil
