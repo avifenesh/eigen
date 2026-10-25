@@ -333,7 +333,7 @@ func Set(c *Config, key, value string) error {
 		c.TelegramToken = value
 		if value == "" && storedTelegramToken() != "" {
 			// There is no delete helper: the bridge stays on while the keyring holds the token.
-			return fmt.Errorf("telegram_token cleared in config.json, but the keyring still holds %s; remove it there (secret-tool clear service tower-crane name %s, and its .cred copy) to turn the bridge off", TelegramTokenCred, TelegramTokenCred)
+			return fmt.Errorf("telegram_token cleared in config.json, but the keyring still holds %s; remove it there (secret-tool clear service cred name %s, and its .cred copy) to turn the bridge off", TelegramTokenCred, TelegramTokenCred)
 		}
 	case "judge_model":
 		c.JudgeModel = value

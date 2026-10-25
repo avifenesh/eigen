@@ -3,7 +3,7 @@
 //
 // A value of the form "cred:NAME" in ~/.eigen/.env, ~/.eigen/daemon.env or the
 // process environment is a reference: eigen replaces it at start with the
-// output of `cred-get NAME` (Secret Service service=tower-crane name=NAME, then
+// output of `cred-get NAME` (Secret Service service=cred name=NAME, then
 // the systemd-creds copy). Writing a key goes through `cred-set NAME`, which
 // reads the value on stdin. Values never reach argv, logs or disk.
 //
