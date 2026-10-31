@@ -100,7 +100,9 @@ Core (always needed):
 - **ripgrep (`rg`)** — used for search, glob, and retrieval indexing.
 - **bash** — used by the shell tool.
 
-Building Eigen itself does **not** require Rust, Node, or any desktop tooling.
+Building the CLI/daemon (`make core`, `bin/eigen`) does **not** require Rust, Node, or any desktop tooling.
+`make build` also builds the Wails desktop GUI (`bin/eigen-gui`), which needs Node (npm or pnpm) and the GTK 3 and WebKitGTK 4.1 development packages (`libgtk-3-dev`, `libwebkit2gtk-4.1-dev`).
+The Qt desktop GUI needs `python3`; [`gui-qt/run.sh`](gui-qt/README.md) installs PySide6 into its own venv.
 
 Optional, only for the bundled harness capabilities you choose to install (see
 [Built-in harness helpers](#built-in-harness-helpers) and
@@ -122,9 +124,11 @@ Eigen currently builds from source.
 ```bash
 git clone https://github.com/avifenesh/eigen.git
 cd eigen
-make build
+make core
 ./bin/eigen --help
 ```
+
+`make core` builds the CLI/daemon only. `make build` builds it plus the desktop GUI.
 
 For a user-local install:
 
@@ -168,6 +172,7 @@ What happens:
 - Persistent local daemon with session attach/resume.
 - Bundled harness helper sources for Linux Computer Use, isolated agent workspaces, connector-only Chrome bridge, and orientation/provenance history; install them with `eigen harness install` instead of maintaining sibling checkouts or separate helper packages.
 - TUI/app pages for live work, projects, sessions, config, models, providers, observability, memory, crons, machines, and plugins.
+- Qt desktop GUI over the `eigen guiserver` socket, attached to the same daemon as the TUI. See [`gui-qt/README.md`](gui-qt/README.md).
 - Structured observability for tool failures, model/token usage, skills, hooks, subagents, route decisions, and runtime pressure.
 - Background subtasks and task groups with route-aware model selection.
 - Plugin marketplace support for Claude/Codex-style bundles.
@@ -262,7 +267,8 @@ eigen orientation related "$PWD" internal/app/app.go
 ## Development
 
 ```bash
-make build      # compile ./bin/eigen
+make core       # compile ./bin/eigen (CLI/daemon)
+make build      # compile ./bin/eigen and the Wails desktop GUI ./bin/eigen-gui
 make test       # go test ./...
 make vet        # go vet ./...
 make gate       # build + vet + test + gofmt check

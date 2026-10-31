@@ -14,7 +14,7 @@ eigen guiserver (new subcommand) ~/.eigen/guiserver.sock  (mode 0600)
 eigen-qt (PySide6)               pure view
 ```
 
-- **guiserver**: The `internal/gui.Bridge` with Wails coupling removed (~30 lines), Emitter abstracted, reflect dispatcher exposing all 161+ bridge methods by name, two-socket protocol (RPC + events), per-connection subscriptions, one bounded-queue backpressure policy. Compiles **tagless** (no webkitgtk), joins `make gate`. Spawned/supervised by Qt; lingers 5 minutes after last client disconnect. Runtime socket loss is shown as reconnecting while Qt rechecks or respawns the sidecar off the render thread and the RPC workers retry their connections.
+- **guiserver**: The `internal/gui.Bridge` with Wails coupling removed (~30 lines), Emitter abstracted, reflect dispatcher exposing the bridge methods by name (140 in `internal/gui/bridge.manifest.json`), two-socket protocol (RPC + events), per-connection subscriptions, one bounded-queue backpressure policy. Compiles **tagless** (no webkitgtk), joins `make gate`. Spawned/supervised by Qt; lingers 5 minutes after last client disconnect. Runtime socket loss is shown as reconnecting while Qt rechecks or respawns the sidecar off the render thread and the RPC workers retry their connections.
 - **Qt layer**: PySide6 + QML. Socket I/O + JSON parsing on worker thread; parsed payloads cross to GUI thread via queued signals. Models (transcript/sessions/feed/tasks/board/diff/filetree/etc.) drive native QML views. Markdown pipeline: markdown-it-py token walk → typed block-list model; Pygments code fences; math via raw-LaTeX fallback (KaTeX-parity deferred). View lifecycle mirrors the Svelte `viewCache` (active + recently-used live, others suspended).
 
 ## Layout
@@ -49,7 +49,7 @@ Install or refresh the launcher and desktop entries with:
 ./install-desktop.sh
 ```
 
-The installer writes `~/.local/bin/eigen-qt`, `~/.local/share/applications/eigen-qt.desktop`, and the primary `~/.local/share/applications/eigen-gui.desktop`. The launcher checks for stale Go source, rebuilds `bin/eigen` (which includes guiserver) if needed, bootstraps the Qt venv, then launches `main.py`.
+The installer writes `~/.local/bin/eigen-qt`, `~/.local/share/applications/eigen-qt.desktop`, and the primary `~/.local/share/applications/eigen-gui.desktop`. The launcher checks for stale Go source, rebuilds `bin/eigen` (which includes guiserver) if needed, bootstraps the Qt venv, then launches `main.py`. `install-desktop.sh` runs `install-desktop.shk` and needs the `shuck` interpreter (`~/.local/bin/shuck` or on `PATH`).
 
 **Directly** (for development):
 
@@ -103,7 +103,7 @@ DISPLAY=:0 ./take_live_screenshot.sh
 
 ## Bridge method signatures
 
-The reflect dispatcher in guiserver exposes all bridge methods by name. The canonical method inventory is in `/home/avifenesh/projects/eigen/internal/gui/bridge.manifest.json`. **READ IT — do not guess signatures.** The manifest hash is part of the `hello` handshake; on mismatch Qt auto-kills and respawns guiserver.
+The reflect dispatcher in guiserver exposes all bridge methods by name. The canonical method inventory is in [`internal/gui/bridge.manifest.json`](../internal/gui/bridge.manifest.json). **READ IT — do not guess signatures.** The manifest hash is part of the `hello` handshake; on mismatch Qt auto-kills and respawns guiserver.
 
 ## Coexistence with Wails GUI
 
@@ -115,4 +115,4 @@ Both GUIs attach to the **same daemon** (proven fan-out; any view may approve to
 - **Phase B (port by annoyance):** ✓ COMPLETE — all 19 legacy routes are native in Qt; Crons also supports guarded timer and crontab management
 - **Phase C (flip + delete):** FLIPPED — primary desktop entry points at the Qt launcher; keep `bin/eigen-gui-legacy` for fallback until the legacy frontend is removed
 
-See `/home/avifenesh/projects/eigen/docs/qt-migration-plan.md` for full architecture and decision log.
+See [`docs/qt-migration-plan.md`](../docs/qt-migration-plan.md) for full architecture and decision log.
