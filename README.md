@@ -95,7 +95,7 @@ Eigen is **Linux-first** and targets local terminal workflows.
 
 Core (always needed):
 
-- **Go** — the toolchain version is pinned in `go.mod`; building/testing Eigen needs only Go.
+- **Go** — the toolchain version is pinned in `go.mod`; building the CLI/daemon and running the tests needs only Go.
 - **git** — used for provenance/orientation, diffs, worktrees, and memory.
 - **ripgrep (`rg`)** — used for search, glob, and retrieval indexing.
 - **bash** — used by the shell tool.
@@ -271,7 +271,7 @@ make core       # compile ./bin/eigen (CLI/daemon)
 make build      # compile ./bin/eigen and the Wails desktop GUI ./bin/eigen-gui
 make test       # go test ./...
 make vet        # go vet ./...
-make gate       # build + vet + test + gofmt check
+make gate       # core + vet + test + gofmt check
 make race       # focused race tests for daemon/agent packages
 make harness    # optional: install bundled orientation/chrome/computer-use/workspace helpers
 ```
